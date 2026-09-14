@@ -30,7 +30,7 @@ public final class WorkspaceBindings implements AutoCloseable {
     private static <K> Map<K,List<Integer>> frozen(Map<K,List<Integer>> values){
         var result=new LinkedHashMap<K,List<Integer>>();values.forEach((key,list)->result.put(key,List.copyOf(list)));return Collections.unmodifiableMap(result);
     }
-    private record Inputs(String generation,Map<Path,String> hashes,List<Path> files) { }
+    private record Inputs(String generation,Map<Path,String> hashes,List<Path> files,List<Path> classpath) { }
     private record Stamp(Map<String,Object> attributes,String hash) { }
     private final LinkedHashMap<Path,Stamp> hashes=new LinkedHashMap<>(256,.75f,true);
     private Inputs inputs;
@@ -55,7 +55,7 @@ public final class WorkspaceBindings implements AutoCloseable {
                 for(Path file:children.filter(Files::isRegularFile).filter(p->p.toString().endsWith(".class")||p.toString().endsWith(".jar")).sorted().toList())values.put(file,hash(file));
             }else values.put(path,hash(path));
         }
-        return new Inputs(generation,Map.copyOf(values),List.copyOf(files));
+        return new Inputs(generation,Map.copyOf(values),List.copyOf(files),List.copyOf(classpath));
     }
     public Snapshot peek(List<Path> files,List<Path> classpath,Documents documents,String generation)throws Exception {
         if(snapshot==null)return null;

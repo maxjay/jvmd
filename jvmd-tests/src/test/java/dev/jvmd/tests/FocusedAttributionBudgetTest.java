@@ -22,6 +22,9 @@ class FocusedAttributionBudgetTest {
             for(int i=0;i<70;i++){var position=text.position(offsets.get(i));before=System.nanoTime();var response=daemon.request("symbol.atPosition",Map.of("session",session,"path",file.toString(),"line",position.line(),"character",position.character()));double elapsed=(System.nanoTime()-before)/1e6;
                 assertThat(response.path("tier").asInt()).isEqualTo(2);assertThat(response.path("warnings").isEmpty()).isTrue();assertThat(response.path("result").path("name").asText()).isEqualTo("input");if(i>=20)times[i-20]=elapsed;
             }
+            var status=daemon.request("session.status",Map.of("session",session)).path("result").path("analyzer");
+            assertThat(status.path("queries").asLong()).isEqualTo(70);assertThat(status.path("focus_layout_parses").asLong()).isEqualTo(1);
+            System.out.println("phase-4-analyzer "+status);
             Arrays.sort(times);var measured=Map.of("session_open_ms",open,"focused_p50_ms",times[25],"focused_p95_ms",times[47],"focused_max_ms",times[49]);
             System.out.println("phase-4-perf "+Json.MAPPER.writeValueAsString(measured));Json.MAPPER.writerWithDefaultPrettyPrinter().writeValue(TestSupport.repo().resolve("jvmd-tests/target/phase-4-perf.json").toFile(),measured);
             assertThat(open).as("session open ms").isLessThan(200);assertThat(times[47]).as("uncached focused attribution p95 ms").isLessThan(50);

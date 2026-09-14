@@ -15,6 +15,7 @@ public final class Analyzer implements AutoCloseable {
         public Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates){this(gav,release,classpath,sources,generation,coordinates,List.of("--release",release));}
     }
     private final CompilerPool compiler=new CompilerPool();
+    private final Focusing focusing=new Focusing();
     private final LinkedHashMap<String,Envelope> outlines=new LinkedHashMap<>(16,.75f,true);
     private record Cached(Path file,String hash,String stamp,int start,int end,CompilerPool.Outcome<Bindings.Snapshot> result) { }
     private record Outline(List<Map<String,Object>> symbols,Set<Path> dependencies) { }
@@ -108,7 +109,7 @@ public final class Analyzer implements AutoCloseable {
                 focused.get(entry.getKey());cacheHits++;return cached.result();
             }
         }
-        var focus=cursor==null?null:new Focusing().focus(path,text,cursor);
+        var focus=cursor==null?null:focusing.focus(path,text,cursor);
         String source=focus==null?text:focus.source();Path file=path;
         var outcome=compiler.query(path,source,2,(task,units,tier)->Bindings.capture(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates),file,text,true));
         if(outcome.result()!=null&&outcome.warnings().isEmpty()){
@@ -139,6 +140,6 @@ public final class Analyzer implements AutoCloseable {
         if(!ref.contains("(")){String simple=path.replaceAll("\\([^)]*\\)","");return simple.equals(ref)||simple.endsWith("."+ref)||simple.endsWith("/"+ref);}
         return false;
     }
-    public Map<String,Object> status(){var result=new LinkedHashMap<String,Object>(compiler.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("dependencies",dependencies.status());return result;}
-    @Override public void close()throws Exception{outlines.clear();focused.clear();compiler.close();}
+    public Map<String,Object> status(){var result=new LinkedHashMap<String,Object>(compiler.status());result.putAll(focusing.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("dependencies",dependencies.status());return result;}
+    @Override public void close()throws Exception{outlines.clear();focused.clear();focusing.clear();compiler.close();}
 }

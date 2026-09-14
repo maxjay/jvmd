@@ -13,7 +13,12 @@ public final class Focusing {
     /** Implements 4.2: original body intervals, with identical offsets in focused source. */
     public record Span(int start,int end) { }
     private record Body(int start,int end,int preserve,String name,int declarationStart,int declarationEnd) { }
-    public Result focus(Path path,String source,int cursor)throws Exception {
+    private final LinkedHashMap<String,List<Body>> layouts=new LinkedHashMap<>(16,.75f,true);
+    private long parses;
+    public Map<String,Object> status(){return Map.of("focus_layout_parses",parses,"focus_layout_cache_entries",layouts.size());}
+    public void clear(){layouts.clear();}
+    private List<Body> layout(Path path,String source)throws Exception{
+        String key=path+":"+dev.jvmd.core.Hashing.sha256(source.getBytes(java.nio.charset.StandardCharsets.UTF_8));var cached=layouts.get(key);if(cached!=null)return cached;parses++;
         var compiler=ToolProvider.getSystemJavaCompiler();var bodies=new ArrayList<Body>();
         try(var manager=compiler.getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8)){
             var task=(JavacTask)compiler.getTask(null,manager,d->{},List.of("-proc:none","--should-stop=ifError=FLOW"),null,List.of(Parser.source(path.toUri(),source)));
@@ -36,6 +41,10 @@ public final class Focusing {
                 }.scan(unit,null);
             }
         }
+        var result=List.copyOf(bodies);layouts.put(key,result);while(layouts.size()>16)layouts.remove(layouts.keySet().iterator().next());return result;
+    }
+    public Result focus(Path path,String source,int cursor)throws Exception{
+        var bodies=layout(path,source);
         var focused=bodies.stream().filter(b->cursor>=b.declarationStart()&&cursor<b.declarationEnd()).min(Comparator.comparingInt(b->b.end()-b.start())).orElse(null);
         char[] output=source.toCharArray();var replaced=new ArrayList<Span>();
         // Outer bodies first. Nested bodies inside an already-erased outer method need no second edit.

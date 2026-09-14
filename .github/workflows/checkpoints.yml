@@ -24,6 +24,7 @@ jobs:
           echo "JAVA_HOME=$RUNNER_TEMP/jvmd-toolchain/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/jvmd-toolchain/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
       - name: Compile and package
+        id: compile
         run: mvn -B -DskipTests install
       - name: Assemble runtime and train AOT
         run: |
@@ -44,6 +45,7 @@ jobs:
           bash jvmd-tests/smoke/run-compiler.sh
           mvn -B -pl jvmd-tests test -Dgroups=phase-4 -DexcludedGroups=corpus
       - name: Phase 4 clean corpus agreement
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: |
           bash jvmd-tests/corpus/fetch.sh
           mvn -B -q -f jvmd-tests/corpus/petclinic/pom.xml test-compile

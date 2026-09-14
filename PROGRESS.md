@@ -281,3 +281,7 @@ The complete corpus run also passes: **65,602 / 67,550 = 97.116210%**, with the 
 ### Resolver bundle isolation checkpoint
 
 Moved the Maven 3 model builder, Resolver libraries and real Aether workspace adapter into a shaded bundle loaded with the platform class loader as parent. The daemon resolver module exposes only platform/core types and serializes graph data across the boundary. Both future bundles compile the same graph/cache/compiler-option/processor-option implementation; there is no duplicated mediation logic. Settings security and installation settings files now participate in graph invalidation. The Maven 3 workspace-reader smoke still exercises an actual bundle-local Aether adapter. Native Maven 4 is the next checkpoint; its phase gate remains unchecked until its tests pass.
+
+### Native Maven 4 implementation checkpoint
+
+Added the isolated Maven 4.0.0-rc-6 / Resolver 2.0.21 bundle using native model/settings services, Maven 4 dependency scopes and transitive management, the simple local repository and JDK HTTP transport. Immutable native models are adapted to the shared graph code after Maven builds them. Reactor model results live only for one collection pass; the persistent cache still contains graphs and input hashes only. Native 4.1 subprojects and omitted parent/dependency versions, settings profiles, BOM imports, retained conflict losers, parent/settings invalidation and real Maven 4 live/verified agreement now have explicit CI tests. Phase completion is pending those results.

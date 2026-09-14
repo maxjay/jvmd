@@ -9,9 +9,9 @@ concurrency:
   group: checkpoints-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  phase-1:
+  checkpoints:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Install checksum-pinned Temurin 25.0.4.1+1
@@ -35,6 +35,10 @@ jobs:
         run: |
           bash jvmd-tests/smoke/run-resolver.sh
           mvn -B -pl jvmd-tests test -Dgroups=phase-2 -DexcludedGroups=corpus
+      - name: Phase 3 index prerequisites and complete repository gate
+        run: |
+          bash jvmd-tests/smoke/run-index.sh
+          mvn -B -pl jvmd-tests test -Dgroups=phase-3 -DexcludedGroups=perf -DargLine=-Xmx1024m
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

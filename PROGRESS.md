@@ -61,3 +61,20 @@ Smoke 9 joins 6,018 of 6,079 source signatures (98.99655%, above the 98% gate) a
 Spring Core 7.0.8 bytecode without attribution. Unmatched source signatures are counted and
 retain binary parameter names or argN fallbacks. The smoke includes Spring's repackaged bytecode
 libraries as input data; none is put on the daemon classpath.
+
+Phase-3 local gate: PASS, nine checkpoint classes (ten tests including the return-type overload
+regression). Full repository: 456 artifacts, 798,816 symbols, 859,650 structural edges,
+79,045 type names in 72,023.711 ms under a 1,024 MB heap cap. No index faults. All present sources
+jars are parsed eagerly; Spring Core's unmatched source-member counter is 61. Search uses FTS5
+trigrams, with escaped short-query fallback; duplicate-class warnings name all artifact paths.
+WAL is truncated on close. Immutable jar stat reuse, unconditional SNAPSHOT hashing and SHA-1
+rejection are tested.
+
+The corpus caught two JVM return-type-only overload collisions in Spring's Kotlin-generated
+classes. Both are preserved using return-type disambiguators only for colliding SCIP IDs. The
+SCIP format for ordinary Java methods is unchanged. A JVM-generated fixture reproduces this
+without adding a Kotlin dependency. A broad hierarchy join initially selected a quadratic plan;
+explicit owner-first joins and a composite index removed it. The complete pass above includes
+structural linking, with code-edge indexing still untouched until an explicit reference query.
+AOT training now exercises a mid-sized Jackson index, Maven resolution, and twenty parse/search
+requests; strict cache loading passes. Phase-3 CI confirmation is pending publication.

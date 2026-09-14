@@ -4,6 +4,7 @@ import dev.jvmd.analyzer.Parser;
 import dev.jvmd.core.*;
 import dev.jvmd.resolver.MavenResolver;
 import dev.jvmd.resolver.Resolution;
+import dev.jvmd.index.IndexService;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -13,8 +14,14 @@ public final class Application implements AutoCloseable {
     private final Dispatcher dispatcher = new Dispatcher(sessions, new Metrics());
     private final Config config;
     private volatile MavenResolver resolver;
+    private volatile java.util.concurrent.CompletableFuture<IndexService> index;
     public Application(Config config) {
         this.config = config;
+        if (config.indexOnStart()) initializeIndex(true);
+        dispatcher.status("index", () -> {
+            try { return index == null ? java.util.Map.of("phase", "disabled") : index.isDone() ? index.join().status() : java.util.Map.of("phase", "starting"); }
+            catch (Exception e) { return java.util.Map.of("phase", "failed", "reason", e.toString()); }
+        });
         dispatcher.status("aot_cache", () -> AotStatus.runtime(Path.of(System.getProperty("jvmd.aot.log", config.stateDir().resolve("aot.log").toString()))));
         dispatcher.status("resolver", () -> resolver == null ? java.util.Map.of("maven_major", config.mavenMajor(), "initialized", false) : resolver.status());
         dispatcher.register("session.open", (_, p) -> {
@@ -27,6 +34,22 @@ public final class Application implements AutoCloseable {
             });
         });
         dispatcher.register("deps.graph", (s, p) -> dependencyGraph(refresh(s), p));
+        dispatcher.register("symbol.find", (s, p) -> {
+            var database = index(); bindIndex(s, database);
+            int limit = Dispatcher.bounded(p,"limit",50,200);
+            String query = Dispatcher.required(p,"name_path");
+            long cursor; try { cursor = Long.parseLong(p.path("cursor").asText("0")); } catch (NumberFormatException e) { throw RpcException.invalid("Invalid cursor"); }
+            var found = database.find(query,s.state("resolution") == null ? null : s.id(),p.path("substring").asBoolean(),limit+1,cursor);
+            boolean truncated = found.size()>limit; var page=found.subList(0,Math.min(limit,found.size()));
+            return new Envelope(2,"index",truncated,truncated?page.getLast().get("id").toString():null,s.warnings(),java.util.Map.of("matches",page));
+        });
+        dispatcher.register("symbol.describe", (s, p) -> {
+            var database=index(); bindIndex(s,database);
+            var found=database.find(Dispatcher.required(p,"ref"),s.state("resolution")==null?null:s.id(),false,21,0);
+            if(found.size()!=1) return new Envelope(2,"index",found.size()>20,found.size()>20?found.get(19).get("id").toString():null,
+                    found.size()>1?java.util.List.of("ambiguous"):s.warnings(),java.util.Map.of("candidates",found.subList(0,Math.min(20,found.size()))));
+            return Envelope.of(2,"index",found.getFirst());
+        });
         dispatcher.register("session.status", (s, _) -> {
             var graph = (Resolution) s.state("resolution");
             return new Envelope(0, "live", false, null, s.warnings(), java.util.Map.of("session", s.id(),
@@ -69,7 +92,25 @@ public final class Application implements AutoCloseable {
         }
         session.put("resolution", graph);
         graph.warnings().forEach(session::warn);
+        if(index!=null && index.isDone() && !index.isCompletedExceptionally()) bindIndex(session,index.join());
         return graph;
+    }
+    private synchronized void initializeIndex(boolean scan) {
+        if(index!=null)return;
+        index=java.util.concurrent.CompletableFuture.supplyAsync(()->{
+            try {var service=new IndexService(config.stateDir().resolve("index.db"),config.m2Repo());if(scan)service.start();return service;}
+            catch(Exception e){throw new java.util.concurrent.CompletionException(e);}
+        }, task -> Thread.ofVirtual().name("jvmd-index-start").start(task));
+    }
+    private IndexService index() { initializeIndex(false); return index.join(); }
+    private void bindIndex(Session session,IndexService database)throws Exception {
+        var graph=(Resolution)session.state("resolution");if(graph==null)return;
+        String generation=graph.fingerprint()+":"+database.generation();
+        if(generation.equals(session.state("index_generation")))return;
+        var paths=graph.nodes().stream().filter(n->n.path()!=null&&n.winner()==null).map(n->new IndexService.WorkspaceArtifact(n.path(),n.scope())).toList();
+        var byId=graph.nodes().stream().collect(java.util.stream.Collectors.toMap(Resolution.Node::id,Resolution.Node::gav));
+        var edges=graph.edges().stream().map(e->java.util.Map.entry(byId.get(e.src()),byId.get(e.dst()))).toList();
+        database.loadWorkspace(session.id(),paths,edges).forEach(session::warn);session.put("index_generation",generation);
     }
     private static Envelope dependencyGraph(Resolution graph, com.fasterxml.jackson.databind.JsonNode params) {
         int depth = Dispatcher.bounded(params, "depth", 2, 20), limit = Dispatcher.bounded(params, "limit", 50, 200);
@@ -93,24 +134,39 @@ public final class Application implements AutoCloseable {
                         "fingerprint", graph.fingerprint(), "cached", graph.cached()));
     }
     @Override public void close() throws Exception {
-        try { sessions.close(); } finally { if (resolver != null) resolver.close(); }
+        try { sessions.close(); } finally {
+            try { if (resolver != null) resolver.close(); }
+            finally { if(index!=null&&!index.isCompletedExceptionally())index.join().close(); }
+        }
     }
     public static void main(String[] args) throws Exception {
         if (Runtime.version().feature() != 25) throw new IllegalStateException("jvmd requires pinned JDK 25");
         Config config = Config.load();
+        boolean training=args.length>0 && args[0].equals("--train");
+        if(training)config=new Config(config.jdkHome(),config.jbrHome(),config.m2Repo(),config.mavenMajor(),config.idleTimeout(),config.heapCeilingMb(),false,Files.createTempDirectory("jvmd-aot-state-"),config.socket());
         var app = new Application(config);
-        if (args.length > 0 && args[0].equals("--train")) {
+        if (training) {
             Path fixture = Files.createTempDirectory("jvmd-training-");
             try {
                 Path file = fixture.resolve("Training.java");
                 Files.writeString(file, "class Training { String name; int value() { return 42; } }");
                 var session = app.sessions.open(fixture);
+                Files.writeString(fixture.resolve("pom.xml"),"<project><modelVersion>4.0.0</modelVersion><groupId>dev.jvmd.training</groupId><artifactId>training</artifactId><version>1</version><dependencies><dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>2.22.2</version></dependency></dependencies></project>");
+                Path wrapper=Files.createDirectories(fixture.resolve(".mvn/wrapper"));
+                Files.writeString(wrapper.resolve("maven-wrapper.properties"),"distributionUrl=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.16/apache-maven-3.9.16-bin.zip");
+                app.refresh(session);
+                var database=app.index();
+                Path jackson=config.m2Repo().resolve("com/fasterxml/jackson/core/jackson-databind/2.22.2/jackson-databind-2.22.2.jar");
+                database.indexJar(jackson,"com.fasterxml.jackson.core:jackson-databind:2.22.2","jar");
+                database.linkEdges();
                 for (int i = 0; i < 20; i++) {
                     var request = Json.MAPPER.createObjectNode().put("jsonrpc", "2.0").put("id", i).put("method", "symbol.overview");
                     request.putObject("params").put("session", session.id()).put("path", file.toString());
                     app.dispatcher.dispatch(request);
+                    database.find(i%2==0?"ObjectMapper":"readValue",null,false,20,0);
+                    app.refresh(session);
                 }
-            } finally { app.close(); try (var files = Files.walk(fixture)) { for (Path file : files.sorted(java.util.Comparator.reverseOrder()).toList()) Files.delete(file); } }
+            } finally { app.close(); try (var files = Files.walk(fixture)) { for (Path file : files.sorted(java.util.Comparator.reverseOrder()).toList()) Files.delete(file); } try(var files=Files.walk(config.stateDir())){for(Path path:files.sorted(java.util.Comparator.reverseOrder()).toList())Files.delete(path);} }
             return;
         }
         var server = new UnixServer(config, app.dispatcher, app);

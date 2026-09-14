@@ -17,6 +17,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     private final List<Path> classpath;
     private final List<Path> directories;
     private final Map<Path,Catalog> catalogs=new HashMap<>();
+    private final Map<Path,Stamp> classFiles=new HashMap<>();
     private final LinkedHashMap<ByteKey,byte[]> bytes=new LinkedHashMap<>(64,.75f,true);
     private final long byteLimit;
     private long byteSize,hits,loads;
@@ -30,6 +31,20 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         // Directory inputs and source roots keep javac's own file-manager behavior.
         delegate.setLocationFromPaths(StandardLocation.CLASS_PATH,directories.stream().filter(Files::isDirectory).toList());
         delegate.setLocationFromPaths(StandardLocation.SOURCE_PATH,sources.stream().filter(Files::isDirectory).toList());
+    }
+    public void validateClasspath(){
+        try {
+            for(var path:classpath)if(path.toString().endsWith(".jar")){
+                var current=stamp(path);var catalog=catalogs.get(path);
+                if(catalog!=null&&!current.equals(catalog.stamp()))throw new IOException("classpath changed during analysis: "+path);
+            }
+            for(var file:classFiles.entrySet())if(!stamp(file.getKey()).equals(file.getValue()))throw new IOException("class file changed during analysis: "+file.getKey());
+        }catch(IOException e){throw new UncheckedIOException(e);}
+    }
+    private void track(JavaFileObject file)throws IOException {
+        if(file!=null && file.getKind()==JavaFileObject.Kind.CLASS && file.toUri().getScheme().equals("file")){
+            Path path=Path.of(file.toUri());classFiles.putIfAbsent(path,stamp(path));
+        }
     }
     public Map<String,Long> status(){return Map.of("class_bytes",byteSize,"class_byte_hits",hits,"class_byte_loads",loads);}
     private static Stamp stamp(Path path)throws IOException {var attrs=Files.readAttributes(path,java.nio.file.attribute.BasicFileAttributes.class);return new Stamp(attrs.size(),attrs.lastModifiedTime().to(java.util.concurrent.TimeUnit.NANOSECONDS));}
@@ -66,7 +81,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     @Override public Iterable<JavaFileObject> list(Location location,String packageName,Set<JavaFileObject.Kind> kinds,boolean recurse)throws IOException {
         if(location!=StandardLocation.CLASS_PATH||!kinds.contains(JavaFileObject.Kind.CLASS))return super.list(location,packageName,kinds,recurse);
         var result=new LinkedHashMap<String,JavaFileObject>();
-        for(var file:super.list(location,packageName,kinds,recurse))result.put(super.inferBinaryName(location,file),file);
+        for(var file:super.list(location,packageName,kinds,recurse)){track(file);result.put(super.inferBinaryName(location,file),file);}
         for(var path:classpath)if(path.toString().endsWith(".jar")){
             Catalog catalog;
             try{catalog=catalog(path);}catch(IOException e){throw new UncheckedIOException(e);}
@@ -77,7 +92,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     }
     @Override public JavaFileObject getJavaFileForInput(Location location,String className,JavaFileObject.Kind kind)throws IOException {
         if(location==StandardLocation.CLASS_PATH&&kind==JavaFileObject.Kind.CLASS){
-            var directory=super.getJavaFileForInput(location,className,kind);if(directory!=null)return directory;
+            var directory=super.getJavaFileForInput(location,className,kind);if(directory!=null){track(directory);return directory;}
             for(var path:classpath)if(path.toString().endsWith(".jar")){Catalog catalog;try{catalog=catalog(path);}catch(IOException e){throw new UncheckedIOException(e);}var entry=catalog.classes().get(className);if(entry!=null)return new BinaryFile(catalog,entry);}
             return null;
         }return super.getJavaFileForInput(location,className,kind);
@@ -86,6 +101,6 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     @Override public boolean isSameFile(FileObject a,FileObject b){if(a instanceof IndexedFileManager.BinaryFile||b instanceof IndexedFileManager.BinaryFile)return a.toUri().equals(b.toUri());return super.isSameFile(a,b);}
     @Override public boolean contains(Location location,FileObject file)throws IOException{if(file instanceof IndexedFileManager.BinaryFile)return location==StandardLocation.CLASS_PATH;return super.contains(location,file);}
     @Override public boolean hasLocation(Location location){return location==StandardLocation.CLASS_PATH||super.hasLocation(location);}
-    public void invalidate(){catalogs.clear();bytes.clear();byteSize=0;}
+    public void invalidate(){catalogs.clear();classFiles.clear();bytes.clear();byteSize=0;try{fileManager.flush();}catch(IOException e){throw new UncheckedIOException(e);}}
     @Override public void close()throws IOException{invalidate();super.close();}
 }

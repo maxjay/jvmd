@@ -25,7 +25,7 @@ public final class ResolverPerformanceProbe {
                 if (i >= 0) times[i] = (System.nanoTime() - before) / 1e6;
             }
             java.util.Arrays.sort(times);
-            var measurements = Map.of("maven_major",Integer.parseInt(args[3]),"cold_ms", cold, "warm_p50_ms", times[14], "warm_p95_ms", times[28], "nodes", graph.nodes().size());
+            var measurements = Map.of("maven_major",Integer.parseInt(args[3]),"cold_ms", cold, "warm_p50_ms", times[14], "warm_p95_ms", times[28], "nodes", graph.nodes().size(),"resolver",resolver.status());
             Json.MAPPER.writerWithDefaultPrettyPrinter().writeValue(Path.of(args[2]).toFile(), measurements);
             System.out.println("phase-2-perf " + Json.MAPPER.writeValueAsString(measurements));
             if (cold >= 1000 || times[28] >= 5) throw new AssertionError("Resolver budget exceeded: " + measurements);

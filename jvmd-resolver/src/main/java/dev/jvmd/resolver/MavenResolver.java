@@ -16,6 +16,7 @@ public final class MavenResolver implements AutoCloseable {
     private Object bundle;
     private Method call;
     private boolean closed;
+    private double bootstrapMillis;
     public MavenResolver(Config config) { this(config,new MavenEnvironment(config)); }
     public MavenResolver(Config config,MavenEnvironment environment) { this.config=config;this.environment=environment; }
     private Path bundlePath() {
@@ -32,7 +33,7 @@ public final class MavenResolver implements AutoCloseable {
     private void initialize() throws Exception {
         if(closed) throw new IllegalStateException("Resolver is closed");
         if(bundle!=null) return;
-        Path jar=bundlePath().toRealPath();
+        long started=System.nanoTime();Path jar=bundlePath().toRealPath();
         var candidate=new URLClassLoader(new java.net.URL[]{jar.toUri().toURL()},ClassLoader.getPlatformClassLoader());
         var thread=Thread.currentThread();var previous=thread.getContextClassLoader();thread.setContextClassLoader(candidate);
         try {
@@ -40,7 +41,7 @@ public final class MavenResolver implements AutoCloseable {
             String args=Json.MAPPER.writeValueAsString(Map.of("jdk_home",config.jdkHome().toString(),"m2_repo",config.m2Repo().toString(),
                     "maven_major",config.mavenMajor(),"state",config.stateDir().toString(),"socket",config.socket().toString(),"settings",environment.settingsFile().toString()));
             bundle=type.getConstructor(String.class).newInstance(args);
-            call=type.getMethod("call",String.class,String.class,BiFunction.class);loader=candidate;
+            call=type.getMethod("call",String.class,String.class,BiFunction.class);loader=candidate;bootstrapMillis=(System.nanoTime()-started)/1e6;
         } catch(Exception e) { candidate.close();throw unwrap(e); }
         finally { thread.setContextClassLoader(previous); }
     }
@@ -65,7 +66,7 @@ public final class MavenResolver implements AutoCloseable {
         return error;
     }
     public synchronized Map<String,Object> status() {
-        try { return Json.MAPPER.convertValue(invoke("status",Map.of(),null),new TypeReference<Map<String,Object>>(){}); }
+        try { var result=Json.MAPPER.convertValue(invoke("status",Map.of(),null),new TypeReference<Map<String,Object>>(){});result.put("bootstrap_ms",bootstrapMillis);return result; }
         catch(Exception e) { throw new IllegalStateException("Resolver status failed",e); }
     }
     public synchronized Resolution resolve(Path root) throws Exception { return resolveWorkspace(root,List.of(root),true); }

@@ -36,6 +36,7 @@ public final class MavenEngine implements AutoCloseable {
     public record Input(String path, long size, long modified, String hash, boolean strong) { }
     /** Implements 4.3: serialized graph cache without effective models. */
     public record Cached(String environment, List<Input> inputs, Resolution graph) { }
+    private Map<String,Double> timings=Map.of();
     private final Config config;
     private final MavenEnvironment environment;
     private final Models models;
@@ -48,7 +49,7 @@ public final class MavenEngine implements AutoCloseable {
         this.config = config; this.environment = environment; this.models = models; this.system = models.system();
     }
     public Map<String, Object> status() { return Map.of("maven_major", config.mavenMajor(), "resolver_version", models.resolverVersion(),
-            "maven_version", models.mavenVersion(), "model_builder", models.modelBuilder(), "collections", collections.get(), "cache_hits", cacheHits.get()); }
+            "maven_version", models.mavenVersion(), "model_builder", models.modelBuilder(), "collections", collections.get(), "cache_hits", cacheHits.get(),"cold_timings",timings); }
     public synchronized Resolution resolve(Path root) throws Exception {
         return resolve(root, (org.eclipse.aether.repository.WorkspaceReader)null);
     }
@@ -72,12 +73,12 @@ public final class MavenEngine implements AutoCloseable {
         if (workspace == null && prior != null && prior.environment().equals(context) && unchanged(prior.inputs())) {
             memory.put(root, prior); cacheHits.incrementAndGet(); return prior.graph().cachedCopy();
         }
-        var settings = models.settings(root);
+        long started=System.nanoTime();var settings = models.settings(root);long settingsAt=System.nanoTime();
         versions.remove(root);
         var warnings=new ArrayList<String>();for(Path candidate:roots){versions.remove(candidate);warnings.addAll(versions.computeIfAbsent(candidate,environment::versionWarnings));}
         if (warnings.stream().anyMatch(w -> w.startsWith("Maven major mismatch")))
             throw new dev.jvmd.core.RpcException(-32003, "unsupported_capability", Map.of("capability", "matching Maven resolver", "warnings", warnings));
-        Build build;
+        long versionAt=System.nanoTime();Build build;
         try { build = build(root, roots,ignoreVersions,settings, true, workspace, warnings); }
         catch (Exception offlineMiss) {
             if (settings.isOffline() || !models.isResolutionFailure(offlineMiss)) throw offlineMiss;
@@ -86,7 +87,7 @@ public final class MavenEngine implements AutoCloseable {
             build = build(root, roots,ignoreVersions,settings, true, workspace, warnings);
             build.warnings.add("offline_miss: completed one online fill pass");
         }
-        var inputs = new ArrayList<Input>();
+        long graphAt=System.nanoTime();var inputs = new ArrayList<Input>();
         for (Path path : build.inputs.stream().sorted().toList()) inputs.add(input(path, build.strong.contains(path)));
         String fingerprint = Hashing.sha256((context+Json.MAPPER.writeValueAsString(inputs)).getBytes(StandardCharsets.UTF_8));
         var graph = new Resolution(root.toString(), List.copyOf(build.modules), List.copyOf(build.nodes.values()),
@@ -100,6 +101,7 @@ public final class MavenEngine implements AutoCloseable {
             } finally { Files.deleteIfExists(temp); }
             memory.put(root, cached);
         }
+        timings=Map.of("settings_ms",(settingsAt-started)/1e6,"version_ms",(versionAt-settingsAt)/1e6,"graph_ms",(graphAt-versionAt)/1e6,"cache_write_ms",(System.nanoTime()-graphAt)/1e6);
         return graph;
     }
     private static final class Build {

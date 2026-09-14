@@ -5,4 +5,6 @@ CREATE INDEX signature_targets_target ON signature_targets(target,artifact_id);
 CREATE TABLE artifact_edges (src_artifact INTEGER NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,src INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,dst_artifact INTEGER NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,dst INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,kind TEXT NOT NULL,PRIMARY KEY(src_artifact,src,dst_artifact,dst,kind)) WITHOUT ROWID;
 CREATE INDEX artifact_edges_src ON artifact_edges(src,kind,src_artifact);
 CREATE INDEX artifact_edges_dst ON artifact_edges(dst,kind,dst_artifact);
+-- Existing source comments were stored globally; rejoin them per artifact after migration.
+UPDATE artifacts SET has_docs=0 WHERE kind IN ('jar','sources');
 PRAGMA user_version=4;

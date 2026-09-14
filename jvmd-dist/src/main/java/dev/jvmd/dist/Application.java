@@ -607,6 +607,11 @@ public final class Application implements AutoCloseable {
                     database.find(i%2==0?"ObjectMapper":"readValue",null,false,20,0);
                     app.refresh(session);
                 }
+                // Train platform services used only by the native Maven 4 bundle as well.
+                // Custom bundle classes retain their isolated loader at runtime.
+                Files.writeString(wrapper.resolve("maven-wrapper.properties"),"distributionUrl=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/4.0.0-rc-6/apache-maven-4.0.0-rc-6-bin.zip");
+                var nativeConfig=new Config(config.jdkHome(),null,config.m2Repo(),4,config.idleTimeout(),config.heapCeilingMb(),false,config.stateDir().resolve("maven4"),config.socket());
+                try(var nativeResolver=new MavenResolver(nativeConfig)){nativeResolver.resolve(fixture);nativeResolver.resolve(fixture);}
             } finally { app.close(); try (var files = Files.walk(fixture)) { for (Path file : files.sorted(java.util.Comparator.reverseOrder()).toList()) Files.delete(file); } try(var files=Files.walk(config.stateDir())){for(Path path:files.sorted(java.util.Comparator.reverseOrder()).toList())Files.delete(path);} }
             return;
         }

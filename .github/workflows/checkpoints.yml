@@ -132,7 +132,7 @@ jobs:
   corpus:
     concurrency:
       group: corpus-tests-${{ github.ref }}
-      cancel-in-progress: false
+      cancel-in-progress: true
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

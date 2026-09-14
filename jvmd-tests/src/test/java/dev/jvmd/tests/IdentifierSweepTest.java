@@ -17,13 +17,13 @@ class IdentifierSweepTest {
     @TempDir Path temp;
     @Test void allFourSymbolProbesMeetTheCommittedFloor()throws Exception{
         var reports=new ArrayList<Map<String,Object>>();double floor=Json.MAPPER.readTree(TestSupport.repo().resolve("jvmd-tests/floors.json").toFile()).path("identifier_correctness").asDouble();
-        long total=0,correct=0,probeCalls=0,probeReuse=0;
+        long total=0,correct=0,probeCalls=0,probeReuse=0,lexicalWords=0,contextualKeywords=0;
         for(Path root:List.of(TestSupport.repo().resolve("jvmd-tests/corpus/petclinic"),TestSupport.repo())){
             Path state=Files.createDirectories(temp.resolve(root.getFileName().toString()));
             var config=new Config(Path.of(System.getProperty("java.home")),null,Path.of(System.getProperty("user.home"),".m2/repository"),3,Duration.ofHours(4),1024,false,state,state.resolve("daemon.sock"));
             var files=new LinkedHashSet<Path>();
             try(var resolver=new MavenResolver(config)){for(var module:resolver.resolve(root).modules())for(String source:java.util.stream.Stream.concat(module.sources().stream(),module.testSources().stream()).toList())if(Files.isDirectory(Path.of(source)))try(var paths=Files.walk(Path.of(source))){paths.filter(Files::isRegularFile).filter(p->p.toString().endsWith(".java")).sorted().forEach(files::add);}}
-            try(var app=new Application(config)){
+            try(var app=new Application(config);var syntaxFiles=javax.tools.ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,null,null)){
                 String session=TestSupport.open(app,root);assertThat(session).isNotBlank();
                 // symbol.describe and symbol.references answer for a SCIP identity, not a position, so their
                 // outcome for a given (scip, token text) pair is constant within a session. The sweep reads only,
@@ -31,7 +31,13 @@ class IdentifierSweepTest {
                 var probeCache=new HashMap<String,boolean[]>();
                 for(Path file:files){
                     long count=0,matched=0;var misses=new ArrayList<Map<String,Object>>();var text=new SourceText(Files.readString(file));
-                    for(var token:text.tokens()){
+                    var syntaxProblems=new javax.tools.DiagnosticCollector<javax.tools.JavaFileObject>();
+                    var syntax=(com.sun.source.util.JavacTask)javax.tools.ToolProvider.getSystemJavaCompiler().getTask(null,syntaxFiles,syntaxProblems,List.of("-proc:none","--release","25"),null,syntaxFiles.getJavaFileObjects(file));
+                    var unit=syntax.parse().iterator().next();
+                    assertThat(syntaxProblems.getDiagnostics()).noneMatch(d->d.getKind()==javax.tools.Diagnostic.Kind.ERROR);
+                    var identifiers=text.identifiers(unit,com.sun.source.util.Trees.instance(syntax).getSourcePositions());
+                    lexicalWords+=text.tokens().size();contextualKeywords+=text.tokens().size()-identifiers.size();
+                    for(var token:identifiers){
                         count++;var position=text.position(token.start());
                         var location=Map.of("session",session,"path",file.toString(),"line",position.line(),"character",position.character());
                         var at=TestSupport.complete(app.dispatcher(),"symbol.atPosition",location).path("result").path("result");
@@ -73,9 +79,9 @@ class IdentifierSweepTest {
             }
         }
         double rate=total==0?0:(double)correct/total;
-        var result=Map.of("identifiers",total,"correct",correct,"rate",rate,"floor",floor,"probe_calls",probeCalls,"probe_reuse",probeReuse,"files",reports);
+        var result=Map.of("identifiers",total,"correct",correct,"rate",rate,"floor",floor,"probe_calls",probeCalls,"probe_reuse",probeReuse,"lexical_words",lexicalWords,"contextual_keywords",contextualKeywords,"files",reports);
         Json.MAPPER.writerWithDefaultPrettyPrinter().writeValue(TestSupport.repo().resolve("jvmd-tests/target/sweep.json").toFile(),result);
-        System.out.println("identifier-sweep "+correct+"/"+total+" rate="+rate+" probe-calls="+probeCalls+" probe-reuse="+probeReuse);
+        System.out.println("identifier-sweep "+correct+"/"+total+" rate="+rate+" probe-calls="+probeCalls+" probe-reuse="+probeReuse+" lexical-words="+lexicalWords+" contextual-keywords="+contextualKeywords);
         assertThat(total).isGreaterThan(1000);assertThat(rate).as("identifier correctness across binding, description, position search and references").isGreaterThanOrEqualTo(floor);
     }
 }

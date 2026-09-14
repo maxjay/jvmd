@@ -22,6 +22,39 @@ public final class SourceText {
     private int lowerBound(int offset){var values=tokens();int low=0,high=values.size();while(low<high){int middle=(low+high)>>>1;if(values.get(middle).start()<offset)low=middle+1;else high=middle;}return low;}
     public List<Token> tokens(int start,int end){var values=tokens();int from=lowerBound(start),to=lowerBound(end);if(to>from&&values.get(to-1).end()>end)to--;return values.subList(from,Math.max(from,to));}
     public int nextCode(int start){int i=start;while(i<text.length()){if(Character.isWhitespace(text.charAt(i))){i++;continue;}if(text.startsWith("/*",i)){int end=text.indexOf("*/",i+2);i=end<0?text.length():end+2;continue;}if(text.startsWith("//",i)){int end=text.indexOf('\n',i+2);i=end<0?text.length():end+1;continue;}break;}return i;}
+    /**
+     * Implements 5: classify contextual keywords from a parsed unit, without using binding success.
+     * The raw spans remain available to tolerant editing; actual identifier uses of the same words survive.
+     */
+    public List<Token> identifiers(com.sun.source.tree.CompilationUnitTree unit,com.sun.source.util.SourcePositions positions){
+        var contextual=Set.of("exports","module","open","opens","provides","requires","to","transitive","uses","with","var","yield","record","sealed","permits","when","non");
+        var names=new HashSet<Integer>();boolean[] erroneous={false};
+        new com.sun.source.util.TreeScanner<Void,Void>(){
+            int start(com.sun.source.tree.Tree tree){return (int)positions.getStartPosition(unit,tree);}
+            int end(com.sun.source.tree.Tree tree){return (int)positions.getEndPosition(unit,tree);}
+            void name(String name,int begin,int finish,boolean last){
+                if(!contextual.contains(name)||begin<0||finish<begin)return;
+                var token=named(name,begin,finish,last);if(token!=null)names.add(token.start());
+            }
+            @Override public Void visitIdentifier(com.sun.source.tree.IdentifierTree tree,Void unused){name(tree.getName().toString(),start(tree),end(tree),false);return super.visitIdentifier(tree,unused);}
+            @Override public Void visitMemberSelect(com.sun.source.tree.MemberSelectTree tree,Void unused){name(tree.getIdentifier().toString(),start(tree),end(tree),true);return super.visitMemberSelect(tree,unused);}
+            @Override public Void visitMemberReference(com.sun.source.tree.MemberReferenceTree tree,Void unused){name(tree.getName().toString(),start(tree),end(tree),true);return super.visitMemberReference(tree,unused);}
+            @Override public Void visitVariable(com.sun.source.tree.VariableTree tree,Void unused){name(tree.getName().toString(),start(tree),tree.getInitializer()==null?end(tree):start(tree.getInitializer()),true);return super.visitVariable(tree,unused);}
+            @Override public Void visitMethod(com.sun.source.tree.MethodTree tree,Void unused){
+                int begin=start(tree);if(tree.getReturnType()!=null)begin=Math.max(begin,end(tree.getReturnType()));
+                for(var type:tree.getTypeParameters())begin=Math.max(begin,end(type));
+                name(tree.getName().toString(),begin,tree.getBody()==null?end(tree):start(tree.getBody()),false);return super.visitMethod(tree,unused);
+            }
+            @Override public Void visitClass(com.sun.source.tree.ClassTree tree,Void unused){name(tree.getSimpleName().toString(),Math.max(start(tree),end(tree.getModifiers())),end(tree),false);return super.visitClass(tree,unused);}
+            @Override public Void visitTypeParameter(com.sun.source.tree.TypeParameterTree tree,Void unused){name(tree.getName().toString(),start(tree),end(tree),false);return super.visitTypeParameter(tree,unused);}
+            @Override public Void visitLabeledStatement(com.sun.source.tree.LabeledStatementTree tree,Void unused){name(tree.getLabel().toString(),start(tree),start(tree.getStatement()),false);return super.visitLabeledStatement(tree,unused);}
+            @Override public Void visitBreak(com.sun.source.tree.BreakTree tree,Void unused){if(tree.getLabel()!=null)name(tree.getLabel().toString(),start(tree),end(tree),true);return super.visitBreak(tree,unused);}
+            @Override public Void visitContinue(com.sun.source.tree.ContinueTree tree,Void unused){if(tree.getLabel()!=null)name(tree.getLabel().toString(),start(tree),end(tree),true);return super.visitContinue(tree,unused);}
+            @Override public Void visitErroneous(com.sun.source.tree.ErroneousTree tree,Void unused){erroneous[0]=true;return super.visitErroneous(tree,unused);}
+        }.scan(unit,null);
+        if(erroneous[0])return tokens();
+        return tokens().stream().filter(token->!contextual.contains(token.text())||names.contains(token.start())).toList();
+    }
     public List<Token> tokens(){
         if(tokens!=null)return tokens;var result=new ArrayList<Token>();
         for(int i=0;i<text.length();){

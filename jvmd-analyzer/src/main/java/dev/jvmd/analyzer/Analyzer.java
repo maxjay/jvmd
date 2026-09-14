@@ -70,7 +70,7 @@ public final class Analyzer implements AutoCloseable {
                     if(method.getReturnType()!=null)prefix=Math.max(prefix,(int)trees.getSourcePositions().getEndPosition(unit,method.getReturnType()));
                     for(var type:method.getTypeParameters())prefix=Math.max(prefix,(int)trees.getSourcePositions().getEndPosition(unit,type));
                     for(var candidate:source.tokens(prefix,end))if(candidate.text().equals(name)){
-                        int next=source.nextCode(candidate.end());if(next<text.length()&&text.charAt(next)=='('){token=candidate;break;}
+                        int next=source.nextCode(candidate.end());if(next<text.length()&&(text.charAt(next)=='('||element.getKind()==ElementKind.CONSTRUCTOR&&method.getBody()!=null&&next==trees.getSourcePositions().getStartPosition(unit,method.getBody())&&text.charAt(next)=='{')){token=candidate;break;}
                     }
                 }else if(tree instanceof VariableTree variable){
                     int bound=variable.getInitializer()==null?end:(int)trees.getSourcePositions().getStartPosition(unit,variable.getInitializer());token=source.named(name,start,bound,true);

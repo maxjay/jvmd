@@ -399,3 +399,9 @@ The expanded sweep progressed through PetClinic into the daemon sources, but rep
 ### One input validation per relationship query
 
 The completed four-probe sweep on f797211e took 1502 seconds and reported 74,464/76,863 (96.878862%). Relationship queries now pass their validated source snapshot to description lookup instead of validating the entire workspace twice. Source enumeration uses the file visitor's existing attributes, and content hashing obtains strong Unix identity in one stat. Existing saved/unsaved source, membership and preserved-timestamp binary invalidation tests remain the gate. Validation pending on this commit.
+
+### Identifier syntax and compact constructor source positions
+
+The completed sweep's saved miss samples were dominated by contextual keywords: 1,650 `var`, 76 `record`, and module directives, among 1,901 sampled misses. Java 25 JLS 3.9 classifies these as keywords only in syntactic context. The sweep now uses a parse-only classification, independent of binding success, and still probes every identifier through position binding, position find, description and references. Legal identifiers with those same spellings are retained. Parse errors fail the corpus gate, and tolerant raw token spans remain unchanged for editing. Reports explicitly include raw lexical words and contextual-keyword counts; the 0.97 floor is unchanged. The previous raw rate remains above as evidence of the measurement correction, not an implementation accuracy gain.
+
+Separate production fixes recognize the source header of compact record constructors in both bindings and outlines. Regression tests exercise constructor identity, source positions and incoming instantiation edges, plus contextual words used as real identifiers and module-name components. Validation pending.

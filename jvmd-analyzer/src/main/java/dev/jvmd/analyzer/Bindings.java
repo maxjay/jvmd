@@ -47,7 +47,7 @@ public final class Bindings {
                 var unit=path.getCompilationUnit();var tree=path.getLeaf();var text=source(unit);int begin=start(unit,tree),finish=end(unit,tree);if(begin<0||finish<begin)return null;String name=identity.displayName(element);
                 if(tree instanceof MethodTree method){
                     int prefix=begin;if(method.getReturnType()!=null)prefix=Math.max(prefix,end(unit,method.getReturnType()));for(var parameter:method.getTypeParameters())prefix=Math.max(prefix,end(unit,parameter));
-                    for(var token:text.tokens(prefix,finish))if(token.text().equals(name)){int next=text.nextCode(token.end());if(next<text.text().length()&&text.text().charAt(next)=='(')return token;}
+                    for(var token:text.tokens(prefix,finish))if(token.text().equals(name)){int next=text.nextCode(token.end());if(next<text.text().length()&&(text.text().charAt(next)=='('||element.getKind()==ElementKind.CONSTRUCTOR&&method.getBody()!=null&&next==start(unit,method.getBody())&&text.text().charAt(next)=='{'))return token;}
                 }else if(tree instanceof VariableTree variable)return text.named(name,begin,variable.getInitializer()==null?finish:start(unit,variable.getInitializer()),true);
                 else if(tree instanceof ClassTree type)return text.named(name,Math.max(begin,end(unit,type.getModifiers())),finish,false);
                 else return text.named(name,begin,finish,false);

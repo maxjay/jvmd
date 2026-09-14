@@ -321,3 +321,9 @@ Hot-swap responses now separate class lookup, redefinition, class publication an
 ### User documentation checkpoint
 
 Restored the missing README introduction and build instructions and documented the complete agent/editor workflow, native resolver selection, full-SDK configuration, multi-repository manifests, verification, cursor handling, runtime evaluation, hot swap, JFR, resource limits and CI evidence. The MCP tool names were checked directly against the Java-owned catalog.
+
+### Repeated module queries and source-document variants
+
+The module fixture exposed javac's retained `ModuleSymbol.module_info.sourcefile`: its duplicate check compares file-object identity across queries. Cleanup now clears that source identity after detaching query results, alongside the existing package cleanup, without discarding the reusable binary context. This behavior was confirmed against the JDK 25 `Modules` and `JavacTaskPool` sources. Source-jar joins now write comments, ranges and recovered parameter names into the owning artifact membership, preserving each jar's source documentation when coordinates coincide. The variant test switches back to the first workspace after reading the second.
+
+Native Maven 4's first actual cold measurement was 1062.84 ms (limit 1000), with cached p95 2.95 ms (limit 5). Documentation depth-three p95 is 10.25 ms (limit 50). Both evaluation deadline tests pass. The latest complete hot-swap p95 is 96.54 ms; stage instrumentation remains to explain the prior outlier.

@@ -207,12 +207,25 @@ public final class IndexService implements AutoCloseable {
         var text=new LinkedHashMap<String,String>();try(var jar=new JarFile(sources.toFile(),false,JarFile.OPEN_READ,Runtime.version())){for(var entry:jar.versionedStream().filter(e->e.getName().endsWith(".java")&&!e.getName().startsWith("META-INF/")).toList()){try(var stream=jar.getInputStream(entry)){text.put(entry.getName(),new String(stream.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8));}}}
         var content=new BinaryReader().read(binary,false);var join=new SourceJoin().join(content.models(),text);long binaryId=artifact.id();Path sourceFile=sources;
         return database.write(c->{long sourceId=putArtifact(c,sourceFile,gav(sourceFile),"sources",hash,size,mtime);var keys=ids(c,binaryId);
-            try(var s=c.prepareStatement("UPDATE symbols SET doc=?,source_file=?,line=?,source_start=?,source_end=?,body_start=?,body_end=? WHERE id=?")){
+            try(var update=c.prepareStatement("UPDATE artifact_symbols SET data=?,source_file=? WHERE artifact_id=? AND symbol_id=?");
+                var lookup=c.prepareStatement("SELECT v.data,s.signature,s.parameters,s.metadata FROM artifact_symbols v JOIN symbols s ON s.id=v.symbol_id WHERE v.artifact_id=? AND v.symbol_id=?")){
                 for(var member:join.members()){
                     String key=member.descriptor()==null?member.owner():member.descriptor().equals("field")?member.owner()+"#"+member.name():member.owner()+"#"+member.name()+member.descriptor();Long id=keys.get(key);if(id==null)continue;
-                    s.setString(1,member.doc());s.setString(2,"jar:"+sourceFile.toUri()+"!/"+member.file());s.setInt(3,member.line());s.setInt(4,member.start());s.setInt(5,member.end());s.setInt(6,member.bodyStart());s.setInt(7,member.bodyEnd());s.setLong(8,id);s.addBatch();
-                    if(!member.parameters().isEmpty()) updateParameters(c,id,member.parameters());
-                }s.executeBatch();
+                    lookup.setLong(1,binaryId);lookup.setLong(2,id);
+                    try(var row=lookup.executeQuery()){
+                        if(!row.next())continue;
+                        var data=row.getString(1)==null?Json.MAPPER.createObjectNode():(com.fasterxml.jackson.databind.node.ObjectNode)Json.MAPPER.readTree(row.getString(1));
+                        String location="jar:"+sourceFile.toUri()+"!/"+member.file();
+                        data.put("doc",member.doc());data.put("source_file",location);data.put("line",member.line());data.put("source_start",member.start());data.put("source_end",member.end());data.put("body_start",member.bodyStart());data.put("body_end",member.bodyEnd());
+                        var metadata=data.has("metadata")?data.get("metadata"):Json.MAPPER.readTree(row.getString(4));
+                        if(!member.parameters().isEmpty()&&!metadata.path("parameter_names_from_class").asBoolean()){
+                            var original=data.has("parameters")?data.get("parameters"):Json.MAPPER.readTree(row.getString(3));String signature=data.path("signature").asText(row.getString(2));
+                            for(int i=0;i<Math.min(member.parameters().size(),original.size());i++)signature=signature.replaceAll("\\b"+java.util.regex.Pattern.quote(original.get(i).asText())+"\\b",java.util.regex.Matcher.quoteReplacement(member.parameters().get(i)));
+                            data.put("signature",signature);data.set("parameters",Json.MAPPER.valueToTree(member.parameters()));
+                        }
+                        update.setString(1,Json.MAPPER.writeValueAsString(data));update.setString(2,location);update.setLong(3,binaryId);update.setLong(4,id);update.addBatch();
+                    }
+                }update.executeBatch();
             }
             try(var s=c.prepareStatement("UPDATE artifacts SET has_docs=1 WHERE id=? OR id=?")){s.setLong(1,binaryId);s.setLong(2,sourceId);s.executeUpdate();}
             try(var s=c.prepareStatement("INSERT OR REPLACE INTO source_artifacts VALUES(?,?)")){s.setLong(1,binaryId);s.setLong(2,sourceId);s.executeUpdate();}
@@ -220,16 +233,8 @@ public final class IndexService implements AutoCloseable {
             return sourceId;
         });
     }
-    private static void updateParameters(Connection c,long id,List<String> names)throws Exception {
-        try(var q=c.prepareStatement("SELECT signature,parameters,metadata FROM symbols WHERE id=?")){q.setLong(1,id);try(var r=q.executeQuery()){
-            if(!r.next()||Json.MAPPER.readTree(r.getString(3)).path("parameter_names_from_class").asBoolean())return;
-            var original=Json.MAPPER.readTree(r.getString(2));String signature=r.getString(1);
-            for(int i=0;i<Math.min(names.size(),original.size());i++)signature=signature.replaceAll("\\b"+java.util.regex.Pattern.quote(original.get(i).asText())+"\\b",java.util.regex.Matcher.quoteReplacement(names.get(i)));
-            try(var s=c.prepareStatement("UPDATE symbols SET signature=?,parameters=? WHERE id=?")){s.setString(1,signature);s.setString(2,Json.MAPPER.writeValueAsString(names));s.setLong(3,id);s.executeUpdate();}
-        }}
-    }
     void ensureSignatureEdges(String workspace)throws Exception {
-        var pending=database.read(c->{var paths=new ArrayList<String[]>();try(var q=c.prepareStatement("SELECT a.path,a.gav,a.kind FROM artifacts a WHERE a.has_signature_edges=0"+(workspace==null?"":" AND (a.gav LIKE 'jdk:%' OR EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id))"))){if(workspace!=null)q.setString(1,workspace);try(var r=q.executeQuery()){while(r.next())paths.add(new String[]{r.getString(1),r.getString(2),r.getString(3)});}}return paths;});
+        var pending=database.read(c->{var paths=new ArrayList<String[]>();try(var q=c.prepareStatement("SELECT a.path,a.gav,a.kind FROM artifacts a WHERE a.has_signature_edges=0 AND a.kind<>'sources'"+(workspace==null?"":" AND (a.gav LIKE 'jdk:%' OR EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id))"))){if(workspace!=null)q.setString(1,workspace);try(var r=q.executeQuery()){while(r.next())paths.add(new String[]{r.getString(1),r.getString(2),r.getString(3)});}}return paths;});
         boolean changed=false;
         for(var item:pending){
             Path path=item[0].startsWith("jrt:")?Path.of(java.net.URI.create(item[0])):Path.of(item[0]);

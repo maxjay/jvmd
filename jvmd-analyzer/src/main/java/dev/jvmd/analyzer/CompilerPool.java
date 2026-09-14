@@ -80,6 +80,13 @@ public final class CompilerPool implements AutoCloseable {
             var element=trees.getElement(com.sun.source.util.TreePath.getPath(unit,declaration));
             if(element instanceof com.sun.tools.javac.code.Symbol.ClassSymbol type)packages.add(type.packge());
         }
+        // JavacTaskPool removes source classes but retains ModuleSymbol.module_info.
+        // Modules.enter compares source-file object identity, so a fresh in-memory object
+        // would otherwise be rejected as a duplicate module on the next query.
+        for(var unit:units)if(unit.getModule()!=null){
+            var element=trees.getElement(com.sun.source.util.TreePath.getPath(unit,unit.getModule()));
+            if(element instanceof com.sun.tools.javac.code.Symbol.ModuleSymbol module){module.module_info.sourcefile=null;module.module_info.classfile=null;}
+        }
         var completer=com.sun.tools.javac.code.ClassFinder.instance(((JavacTaskImpl)task).getContext()).getCompleter();
         for(var pkg:packages){pkg.members_field=null;pkg.completer=completer;}
     }

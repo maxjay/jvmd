@@ -40,7 +40,7 @@ class ArtifactSignatureVariantTest {
             index.loadWorkspace("one",List.of(new IndexService.WorkspaceArtifact(first.toString(),"compile")),List.of());
             index.loadWorkspace("two",List.of(new IndexService.WorkspaceArtifact(second.toString(),"compile")),List.of());
             var docs=new Documentation(index,Path.of(System.getProperty("java.home")));var code=new CodePass(index);
-            for(String workspace:List.of("one","two")) {
+            for(String workspace:List.of("one","two","one")) {
                 String selected=workspace.equals("one")?"Left":"Right",other=workspace.equals("one")?"Right":"Left",parent=workspace.equals("one")?"First":"Second";
                 var type=index.find("Sample",workspace,false,10,0).getFirst();
                 var hierarchy=code.hierarchy(List.of(type),true,workspace);

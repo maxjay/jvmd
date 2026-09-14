@@ -39,9 +39,9 @@ class LspStdioTest {
             }finally{shim.destroy();if(!shim.waitFor(5,TimeUnit.SECONDS))shim.destroyForcibly();reader.join(1000);}
         }
     }
-    private static void notify(OutputStream output,String method,Map<String,Object> params)throws Exception{Framing.write(output,Json.MAPPER.writeValueAsBytes(Map.of("jsonrpc","2.0","method",method,"params",params)));}
+    private static void notify(OutputStream output,String method,Map<String,?> params)throws Exception{Framing.write(output,Json.MAPPER.writeValueAsBytes(Map.of("jsonrpc","2.0","method",method,"params",params)));}
     private static JsonNode next(BlockingQueue<JsonNode> messages)throws Exception{var result=messages.poll(30,TimeUnit.SECONDS);assertThat(result).isNotNull();return result;}
-    private static JsonNode request(OutputStream output,BlockingQueue<JsonNode> messages,int id,String method,Map<String,Object> params)throws Exception{
+    private static JsonNode request(OutputStream output,BlockingQueue<JsonNode> messages,int id,String method,Map<String,?> params)throws Exception{
         Framing.write(output,Json.MAPPER.writeValueAsBytes(Map.of("jsonrpc","2.0","id",id,"method",method,"params",params)));
         JsonNode result;do{result=next(messages);}while(!result.has("id"));assertThat(result.path("id").asInt()).isEqualTo(id);assertThat(result.has("error")).as(result.toString()).isFalse();return result.path("result");
     }

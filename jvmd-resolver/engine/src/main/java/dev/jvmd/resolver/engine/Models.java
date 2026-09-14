@@ -9,6 +9,11 @@ import org.eclipse.aether.repository.RemoteRepository;
 
 /** Implements 4.3: each bundle supplies its own native model builder and resolver session semantics. */
 public interface Models extends AutoCloseable {
+    /** Implements 4.3: config-independent native services, transferred to exactly one bundle owner. */
+    interface Bootstrap extends AutoCloseable {
+        Models create(dev.jvmd.core.Config config,dev.jvmd.resolver.MavenEnvironment environment);
+        @Override void close();
+    }
     record Built(Model model, List<Path> inputs, List<String> children) { }
     RepositorySystem system();
     String mavenVersion();

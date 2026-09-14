@@ -28,9 +28,17 @@ public final class VersionModels implements Models {
     }
     private final Config config;
     private final MavenEnvironment environment;
-    private final Supply supply = new Supply();
-    private final RepositorySystem system = supply.get();
-    public VersionModels(Config config, MavenEnvironment environment) { this.config=config; this.environment=environment; }
+    private final Supply supply;
+    private final RepositorySystem system;
+    private record Startup(Supply supply,RepositorySystem system) implements Models.Bootstrap {
+        @Override public Models create(Config config,MavenEnvironment environment){return new VersionModels(config,environment,this);}
+        @Override public void close(){system.shutdown();}
+    }
+    public static Models.Bootstrap bootstrap(){var supply=new Supply();return new Startup(supply,supply.get());}
+    public VersionModels(Config config,MavenEnvironment environment){this(config,environment,(Startup)bootstrap());}
+    private VersionModels(Config config,MavenEnvironment environment,Startup startup){
+        this.config=config;this.environment=environment;this.supply=startup.supply();this.system=startup.system();
+    }
     @Override public RepositorySystem system() { return system; }
     @Override public String mavenVersion() { return "3.9.16"; }
     @Override public String resolverVersion() { return "1.9.27"; }

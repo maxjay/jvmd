@@ -11,22 +11,33 @@ import java.util.function.BiFunction;
 public final class Bundle implements AutoCloseable {
     private final MavenEngine engine;
     public Bundle(String configuration) throws Exception {
-        var c=Json.MAPPER.readTree(configuration);
-        var config=new Config(Path.of(c.path("jdk_home").asText()),null,Path.of(c.path("m2_repo").asText()),c.path("maven_major").asInt(),
-                Duration.ofHours(4),512,false,Path.of(c.path("state").asText()),Path.of(c.path("socket").asText()));
-        var environment=new MavenEnvironment(config,Path.of(c.path("settings").asText()));
-        // Both tasks are part of the cold request. DTO codecs have no Maven state and
-        // can initialize while native services load, keeping reflection off the later cache-write path.
-        try(var codecs=java.util.concurrent.Executors.newSingleThreadExecutor(Thread.ofPlatform().name("jvmd-resolver-codecs-"+config.mavenMajor()).factory())){
-            var ready=codecs.submit(()->{
+        // All initialization stays inside the cold request. Native services do not
+        // depend on config parsing or DTO codecs, so the two class-loading paths overlap.
+        try(var startup=java.util.concurrent.Executors.newSingleThreadExecutor(Thread.ofPlatform().name("jvmd-resolver-bootstrap").factory())){
+            var ready=startup.submit(VersionModels::bootstrap);Models models=null;
+            try{
+                var c=Json.MAPPER.readTree(configuration);
+                var config=new Config(Path.of(c.path("jdk_home").asText()),null,Path.of(c.path("m2_repo").asText()),c.path("maven_major").asInt(),
+                        Duration.ofHours(4),512,false,Path.of(c.path("state").asText()),Path.of(c.path("socket").asText()));
+                var environment=new MavenEnvironment(config,Path.of(c.path("settings").asText()));
                 for(Class<?> type:List.of(MavenEngine.Input.class,MavenEngine.Cached.class,Resolution.class,
                         Resolution.Module.class,Resolution.Node.class,Resolution.Edge.class,Resolution.Processing.class))
                     Json.MAPPER.writerFor(type);
-            });
-            Models models=new VersionModels(config,environment);
-            try{ready.get();engine=new MavenEngine(config,environment,models);}
-            catch(Exception|Error failure){models.close();throw failure;}
+                models=ready.get().create(config,environment);engine=new MavenEngine(config,environment,models);
+            }catch(Exception|Error failure){
+                if(models!=null){try{models.close();}catch(Exception|Error cleanup){failure.addSuppressed(cleanup);}}
+                else discard(ready,failure);
+                throw failure;
+            }
         }
+    }
+    private static void discard(java.util.concurrent.Future<Models.Bootstrap> ready,Throwable failure){
+        boolean interrupted=false;
+        try{
+            for(;;)try{ready.get().close();return;}
+            catch(InterruptedException retry){interrupted=true;}
+            catch(java.util.concurrent.ExecutionException|RuntimeException|Error cleanup){failure.addSuppressed(cleanup);return;}
+        }finally{if(interrupted)Thread.currentThread().interrupt();}
     }
     public String call(String method,String request,BiFunction<String,String,String> callback) throws Exception {
         try {

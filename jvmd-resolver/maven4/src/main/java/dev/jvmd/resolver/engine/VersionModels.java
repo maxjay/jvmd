@@ -35,9 +35,16 @@ public final class VersionModels implements Models {
     private Path root;
     private final Map<String,Double> timings=new LinkedHashMap<>();
     @Override public Map<String,Double> timings(){return Map.copyOf(timings);}
-    public VersionModels(Config config,MavenEnvironment environment) {
-        this.config=config;this.environment=environment;
-        long started=System.nanoTime();injector=Injector.create();injector.bindInstance(Injector.class,injector);
+    private record Startup(Injector injector,Lookup lookup,RepositorySystem system,Map<String,Double> timings) implements Models.Bootstrap {
+        @Override public Models create(Config config,MavenEnvironment environment){return new VersionModels(config,environment,this);}
+        @Override public void close(){system.shutdown();}
+    }
+    public VersionModels(Config config,MavenEnvironment environment){this(config,environment,(Startup)bootstrap());}
+    private VersionModels(Config config,MavenEnvironment environment,Startup startup){
+        this.config=config;this.environment=environment;this.injector=startup.injector();this.lookup=startup.lookup();this.system=startup.system();timings.putAll(startup.timings());
+    }
+    public static Models.Bootstrap bootstrap(){
+        long started=System.nanoTime();var injector=Injector.create();injector.bindInstance(Injector.class,injector);
         // ApiRunner provides service registries only. Its test-only default Session is never requested.
         injector.bindImplicit(ApiRunner.class);
         injector.bindImplicit(org.apache.maven.impl.standalone.RepositorySystemSupplier.class);
@@ -46,9 +53,9 @@ public final class VersionModels implements Models {
         injector.bindScope(SessionScoped.class,new SessionScope());
         long bound=System.nanoTime();injector.discover(VersionModels.class.getClassLoader());
         long discovered=System.nanoTime();
-        lookup=injector.getInstance(Lookup.class);
-        system=injector.getInstance(RepositorySystem.class);
-        timings.put("bindings_ms",(bound-started)/1e6);timings.put("discovery_ms",(discovered-bound)/1e6);timings.put("services_ms",(System.nanoTime()-discovered)/1e6);
+        var lookup=injector.getInstance(Lookup.class);
+        var system=injector.getInstance(RepositorySystem.class);
+        return new Startup(injector,lookup,system,Map.of("bindings_ms",(bound-started)/1e6,"discovery_ms",(discovered-bound)/1e6,"services_ms",(System.nanoTime()-discovered)/1e6));
     }
     public static final class Transport {
         @Provides @Named("file") @Singleton public static TransporterFactory file() { return new FileTransporterFactory(); }

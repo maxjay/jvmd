@@ -42,6 +42,8 @@ public final class Application implements AutoCloseable {
                         "modules", graph == null ? 0 : graph.modules().size()));
             });
         });
+        dispatcher.register("run.start",this::run);
+        dispatcher.register("debug.op",(session,params)->runs(session).operation(Dispatcher.required(params,"run_session"),Dispatcher.required(params,"op"),params.path("args")));
         dispatcher.register("deps.graph", (s, p) -> dependencyGraph(refresh(s), p));
         dispatcher.register("symbol.atPosition",(s,p)->{
             Path path=sourcePath(s,Dispatcher.required(p,"path"));
@@ -67,10 +69,9 @@ public final class Application implements AutoCloseable {
         dispatcher.register("symbol.references",(s,p)->relationships(s,p,false));
         dispatcher.register("symbol.hierarchy",(s,p)->relationships(s,p,true));
         dispatcher.register("session.status", (s, _) -> {
-            var graph = (Resolution) s.state("resolution");
-            return new Envelope(0, "live", false, null, s.warnings(), java.util.Map.of("session", s.id(),
-                    "root", s.root().toString(), "classpath_state", graph == null ? "unresolved" : "resolved",
-                    "classpath_entries", graph == null ? 0 : graph.classpath().size(),"overlay",graph==null?Map.of():overlay(s,graph).status(), "metrics", dispatcher.status().get("metrics"),"annotation_processing",s.state("processors")==null?Map.of("initialized",false):((AnnotationProcessing)s.state("processors")).status(),"analyzer",s.state("analyzer")==null?Map.of("initialized",false):((Analyzer)s.state("analyzer")).status()));
+            var graph=(Resolution)s.state("resolution");var result=new LinkedHashMap<String,Object>();
+            result.put("session",s.id());result.put("root",s.root().toString());result.put("classpath_state",graph==null?"unresolved":"resolved");result.put("classpath_entries",graph==null?0:graph.classpath().size());result.put("overlay",graph==null?Map.of():overlay(s,graph).status());result.put("metrics",dispatcher.status().get("metrics"));result.put("annotation_processing",s.state("processors")==null?Map.of("initialized",false):((AnnotationProcessing)s.state("processors")).status());result.put("analyzer",s.state("analyzer")==null?Map.of("initialized",false):((Analyzer)s.state("analyzer")).status());result.put("runs",s.state("runs")==null?List.of():runs(s).status());
+            return new Envelope(0,"live",false,null,s.warnings(),result);
         });
         dispatcher.register("symbol.overview", (s, p) -> {
             Path path = sourcePath(s,Dispatcher.required(p,"path"));
@@ -225,6 +226,52 @@ public final class Application implements AutoCloseable {
         if(test&&session.state("apt:"+module.gav()+":main") instanceof AnnotationProcessing.Output main)classpath.addAll(0,main.classpath());
         var result=processor.prepare(new AnnotationProcessing.Request(module.gav()+(test?":test":":main"),Path.of(module.directory()),roots,classpath,settings.path().stream().map(Path::of).toList(),settings.names(),test?module.testCompilerOptions():module.compilerOptions(),settings.lombok()),java.time.Duration.ofSeconds(60));
         session.put("apt:"+module.gav()+(test?":test":":main"),result);result.warnings().forEach(session::warn);return result;
+    }
+    private static dev.jvmd.runtime.RunManager runs(Session session){return session.state("runs",()->new dev.jvmd.runtime.RunManager(session.id()));}
+    private Envelope run(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
+        String target=Dispatcher.required(params,"target");var graph=(Resolution)session.state("resolution");if(graph!=null)graph=refresh(session);
+        var matches=workspaceFind(session,target,false).stream().filter(s->Set.of("class","record","enum","method").contains(s.get("kind"))).toList();
+        if(matches.size()!=1)return page(1,"live","candidates",matches,0,20,matches.size()>1?List.of("ambiguous"):List.of("No workspace main class matched the target"));
+        var symbol=matches.getFirst();String main=Objects.toString(symbol.get("fqn"),symbol.get("name_path").toString().replace('/','$'));
+        Path source=Path.of(symbol.get("source_file").toString());var sourceRoots=new LinkedHashSet<Path>();var classpath=new LinkedHashSet<Path>();var coordinates=new LinkedHashMap<Path,String>();var targets=new ArrayList<dev.jvmd.runtime.RunManager.Target>();List<String> options;
+        Path output;
+        if(graph==null){
+            output=config.stateDir().resolve("run-classes").resolve(session.id());sourceRoots.addAll(workspace(session).roots());options=List.of("--release","25");classpath.add(output);coordinates.put(session.root(),"local:workspace:0");
+            var compiled=dev.jvmd.runtime.RuntimeCompiler.compile(config.jdkHome(),session.root(),List.of(source),List.copyOf(classpath),List.copyOf(sourceRoots),options,java.time.Duration.ofSeconds(60));dev.jvmd.runtime.RuntimeCompiler.publish(compiled,output);
+            targets.add(new dev.jvmd.runtime.RunManager.Target(session.root(),List.copyOf(sourceRoots),List.copyOf(classpath),options,output));
+        }else{
+            var module=graph.modules().stream().filter(m->source.startsWith(Path.of(m.directory()))).max(Comparator.comparingInt(m->m.directory().length())).orElseThrow();output=Path.of(module.classes());options=runtimeCompilerOptions(module);
+            compileRuntimeModule(session,graph,module,new HashSet<>(),new HashSet<>());
+            classpath.add(output);graph.classpaths().getOrDefault(module.gav()+":runtime",graph.classpaths().getOrDefault(module.gav()+":main",List.of())).forEach(path->classpath.add(Path.of(path)));
+            for(var local:graph.modules()){
+                var roots=local.sources().stream().map(Path::of).toList();sourceRoots.addAll(roots);coordinates.put(Path.of(local.directory()),local.gav());
+                var compilePath=new LinkedHashSet<Path>();compilePath.add(Path.of(local.classes()));graph.classpaths().getOrDefault(local.gav()+":main",List.of()).forEach(path->compilePath.add(Path.of(path)));overlay(session,graph).dependencies(graph,local.gav(),false).forEach(m->compilePath.add(Path.of(m.classes())));
+                targets.add(new dev.jvmd.runtime.RunManager.Target(Path.of(local.directory()),roots,List.copyOf(compilePath),runtimeCompilerOptions(local),Path.of(local.classes())));
+            }
+            for(var node:graph.nodes())if(node.path()!=null&&node.winner()==null)coordinates.put(Path.of(node.path()),node.gav());
+        }
+        var arguments=new ArrayList<String>();for(var argument:params.path("args")){if(!argument.isTextual())throw RpcException.invalid("Run arguments must be strings");arguments.add(argument.asText());}if(arguments.size()>1000)throw RpcException.invalid("Too many application arguments");
+        var launch=new dev.jvmd.runtime.DebugSession.Launch(config.jdkHome(),session.root(),List.copyOf(classpath),main,List.copyOf(arguments),params.path("debug").asBoolean());
+        var request=new dev.jvmd.runtime.RunManager.Request(launch,new dev.jvmd.runtime.SourceLookup(List.copyOf(sourceRoots),coordinates),config.jdkHome(),List.copyOf(sourceRoots),options,output,List.copyOf(targets));
+        return runs(session).start(request);
+    }
+    private static List<String> runtimeCompilerOptions(Resolution.Module module){
+        var options=new ArrayList<>(module.compilerOptions());var processor=module.processing();
+        if(processor.enabled()){
+            options.add("-proc:full");if(!processor.path().isEmpty())options.addAll(List.of("-processorpath",String.join(java.io.File.pathSeparator,processor.path())));if(!processor.names().isEmpty())options.addAll(List.of("-processor",String.join(",",processor.names())));
+        }return List.copyOf(options);
+    }
+    private void compileRuntimeModule(Session session,Resolution graph,Resolution.Module module,Set<String> finished,Set<String> visiting)throws Exception{
+        if(finished.contains(module.gav()))return;if(!visiting.add(module.gav()))throw RpcException.invalid("Runtime module dependency cycle: "+module.gav());
+        var dependencies=overlay(session,graph).dependencies(graph,module.gav(),false);for(var dependency:dependencies)compileRuntimeModule(session,graph,dependency,finished,visiting);
+        if(!module.packaging().equals("pom")&&overlay(session,graph).requiresSource(module)){
+            var roots=module.sources().stream().filter(path->!module.processing().enabled()||!path.contains("/generated-sources")).map(Path::of).toList();var files=new ArrayList<Path>();
+            for(Path root:roots)if(Files.isDirectory(root))try(var paths=Files.walk(root)){paths.filter(Files::isRegularFile).filter(path->path.toString().endsWith(".java")).sorted().forEach(files::add);}
+            if(!files.isEmpty()){
+                var classpath=new LinkedHashSet<Path>();classpath.add(Path.of(module.classes()));graph.classpaths().getOrDefault(module.gav()+":main",List.of()).forEach(path->classpath.add(Path.of(path)));dependencies.forEach(m->classpath.add(Path.of(m.classes())));
+                var compiled=dev.jvmd.runtime.RuntimeCompiler.compile(config.jdkHome(),Path.of(module.directory()),files,List.copyOf(classpath),roots,runtimeCompilerOptions(module),java.time.Duration.ofSeconds(60));dev.jvmd.runtime.RuntimeCompiler.publish(compiled,Path.of(module.classes()));
+            }
+        }visiting.remove(module.gav());finished.add(module.gav());
     }
     private synchronized MavenResolver resolver() {
         if (resolver == null) resolver = new MavenResolver(config);

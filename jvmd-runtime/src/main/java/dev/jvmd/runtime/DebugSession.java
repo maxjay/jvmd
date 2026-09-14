@@ -198,6 +198,15 @@ public final class DebugSession implements AutoCloseable {
         if(vm!=null&&!disconnected){result.put("hotswap",vm.canRedefineClasses()?"bodies_only":"unsupported");result.put("instance_info",vm.canGetInstanceInfo());}
         return result;
     }
+    synchronized void redefined()throws Exception{
+        requireDebug();
+        for(var breakpoint:breaks.values()){
+            var old=breakpoint.requests.stream().filter(r->r instanceof BreakpointRequest).toList();for(var request:old)try{vm.eventRequestManager().deleteEventRequest(request);}catch(InvalidRequestStateException ignored){}breakpoint.requests.removeAll(old);breakpoint.locations.clear();
+            var types=breakpoint.className==null?vm.allClasses():vm.classesByName(breakpoint.className);for(var type:types)if(type.isPrepared())bind(breakpoint,type);
+        }
+        for(var entry:new ArrayList<>(stopped.entrySet()))stopped.put(entry.getKey(),new Stop(entry.getValue().thread(),entry.getValue().events(),++epoch));
+    }
+    public long pid(){return process.pid();}
     public String output(){synchronized(output){return output.toString();}}
     public String id(){return id;}
     public Launch launch(){return launch;}

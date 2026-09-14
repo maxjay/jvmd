@@ -393,11 +393,11 @@ public final class Application implements AutoCloseable {
     }
     private Envelope occurrences(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
         String ref=Dispatcher.required(params,"ref");var snapshot=workspaceBindings(session,true);var description=describe(session,ref,snapshot);if(!(description.result() instanceof Map<?,?> symbol)||symbol.get("scip")==null)return description;
-        var snapshot=workspaceBindings(session,true);var found=snapshot.occurrences().stream().filter(o->o.scip().equals(symbol.get("scip"))&&(params.path("include_declaration").asBoolean()||!o.role().equals("declaration"))).toList();
+        var found=snapshot.occurrences().stream().filter(o->o.scip().equals(symbol.get("scip"))&&(params.path("include_declaration").asBoolean()||!o.role().equals("declaration"))).toList();
         return page(snapshot.tier(),"live","occurrences",found,cursor(params),Dispatcher.limit(params,1000,10000),snapshot.warnings());
     }
     private Envelope relationships(Session session,com.fasterxml.jackson.databind.JsonNode params,boolean hierarchy)throws Exception{
-        String ref=Dispatcher.required(params,"ref");var description=describe(session,ref);
+        String ref=Dispatcher.required(params,"ref");var snapshot=workspaceBindings(session,true);var description=describe(session,ref,snapshot);
         if(!(description.result() instanceof Map<?,?> symbol)||symbol.get("scip")==null)return description;
         String key=symbol.get("scip").toString();String direction=params.path("direction").asText(hierarchy?"up":"in");
         if(!(hierarchy?Set.of("up","down"):Set.of("in","out")).contains(direction))throw RpcException.invalid("Unknown relationship direction");

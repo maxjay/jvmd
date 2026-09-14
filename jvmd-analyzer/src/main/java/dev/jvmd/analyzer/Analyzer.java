@@ -14,11 +14,16 @@ public final class Analyzer implements AutoCloseable {
     public record Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates) { }
     private final CompilerPool compiler=new CompilerPool();
     private final LinkedHashMap<String,Envelope> outlines=new LinkedHashMap<>(16,.75f,true);
+    private record Cached(Path file,String hash,String stamp,int start,int end,CompilerPool.Outcome<Bindings.Snapshot> result) { }
+    private record Outline(List<Map<String,Object>> symbols,Set<Path> dependencies) { }
+    private final LinkedHashMap<String,Cached> focused=new LinkedHashMap<>(32,.75f,true);
+    private final Dependencies dependencies=new Dependencies();
+    private long cacheHits;
     private Context context;
     private IndexService index;
     private long budget;
     public void configure(Context context,IndexService index,long budget)throws Exception{
-        if(this.context==null||!this.context.generation().equals(context.generation()))outlines.clear();
+        if(this.context==null||!this.context.generation().equals(context.generation())){outlines.clear();focused.clear();}
         this.context=context;this.index=index;this.budget=budget;
         compiler.configure(context.generation(),context.release(),context.classpath(),context.sources(),index,budget);
     }
@@ -31,10 +36,12 @@ public final class Analyzer implements AutoCloseable {
         }return Hashing.sha256(value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
     public Envelope overview(Path path,String text,int depth,int limit,int offset)throws Exception{
+        touch(path,text);
         String key=path+":"+Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))+":"+classpathStamp()+":"+depth+":"+limit+":"+offset;
         var cached=outlines.get(key);if(cached!=null)return cached;
-        var result=compiler.query(path,text,1,(task,units,tier)->declarations(task,units,path,text,depth));
-        var symbols=result.result()==null?List.<Map<String,Object>>of():result.result();
+        var result=compiler.query(path,text,1,(task,units,tier)->new Outline(declarations(task,units,path,text,depth),Bindings.capture(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates),path,text,false).dependencies()));
+        if(result.result()!=null)dependencies.record(path,result.result().dependencies());
+        var symbols=result.result()==null?List.<Map<String,Object>>of():result.result().symbols();
         int from=Math.min(offset,symbols.size()),to=Math.min(symbols.size(),from+limit);boolean truncated=to<symbols.size();
         var envelope=new Envelope(result.tier(),"live",truncated,truncated?Integer.toString(to):null,result.warnings(),Map.of("symbols",List.copyOf(symbols.subList(from,to)),"diagnostics",result.diagnostics()));
         if(result.warnings().isEmpty()){outlines.put(key,envelope);while(outlines.size()>16)outlines.remove(outlines.keySet().iterator().next());}
@@ -78,6 +85,58 @@ public final class Analyzer implements AutoCloseable {
         }.scan(unit,0);
         return List.copyOf(result);
     }
-    public Map<String,Object> status(){var result=new LinkedHashMap<String,Object>(compiler.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);return result;}
-    @Override public void close()throws Exception{outlines.clear();compiler.close();}
+    private void touch(Path path,String text)throws Exception{
+        var changed=new LinkedHashSet<>(dependencies.observe(path,Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+        changed.addAll(dependencies.check(path));
+        if(!changed.isEmpty())invalidate(changed);
+    }
+    private void invalidate(Set<Path> changed){
+        focused.entrySet().removeIf(e->changed.contains(e.getValue().file()));
+        outlines.entrySet().removeIf(e->changed.stream().anyMatch(path->e.getKey().startsWith(path+":")));
+        compiler.recycle();
+    }
+    public void changed(Path path){invalidate(dependencies.changed(path));}
+    public CompilerPool.Outcome<Bindings.Snapshot> bindings(Path path,String text,Integer cursor)throws Exception{
+        path=path.toAbsolutePath().normalize();touch(path,text);
+        String hash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)),stamp=classpathStamp();
+        for(var entry:new ArrayList<>(focused.entrySet())){
+            var cached=entry.getValue();
+            if(cached.file().equals(path)&&cached.hash().equals(hash)&&cached.stamp().equals(stamp)
+                    &&(cursor==null?entry.getKey().endsWith(":full"):cursor>=cached.start()&&cursor<cached.end())){
+                focused.get(entry.getKey());cacheHits++;return cached.result();
+            }
+        }
+        var focus=cursor==null?null:new Focusing().focus(path,text,cursor);
+        String source=focus==null?text:focus.source();Path file=path;
+        var outcome=compiler.query(path,source,2,(task,units,tier)->Bindings.capture(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates),file,text,true));
+        if(outcome.result()!=null&&outcome.warnings().isEmpty()){
+            dependencies.record(path,outcome.result().dependencies());
+            String member=focus==null?"full":focus.member();focused.put(path+":"+hash+":"+member,new Cached(path,hash,stamp,focus==null?0:focus.member().equals("declarations")?cursor:focus.start(),focus==null?text.length():focus.member().equals("declarations")?cursor+1:focus.end(),outcome));
+            while(focused.size()>32)focused.remove(focused.keySet().iterator().next());
+        }return outcome;
+    }
+    public Envelope atPosition(Path path,String text,int line,int character)throws Exception{
+        int offset=new SourceText(text).offset(line,character);
+        var outcome=bindings(path,text,offset);var symbol=outcome.result()==null?null:outcome.result().at(offset);
+        return new Envelope(outcome.tier(),"live",false,null,outcome.warnings(),symbol==null?Map.of("resolved",false,"candidates",List.of()):symbol);
+    }
+    public Envelope diagnostics(Path path,String text)throws Exception{
+        var outcome=bindings(path,text,null);
+        return new Envelope(outcome.tier(),"live",false,null,outcome.warnings(),Map.of("diagnostics",outcome.diagnostics()));
+    }
+    public List<Map<String,Object>> known(String ref){
+        var found=new LinkedHashMap<String,Map<String,Object>>();
+        for(var cached:focused.values())if(cached.result().result()!=null)for(var symbol:cached.result().result().symbols().values())if(matches(symbol,ref,false))found.put(symbol.get("scip").toString(),symbol);
+        return List.copyOf(found.values());
+    }
+    public static boolean matches(Map<String,Object> symbol,String ref,boolean substring){
+        if(ref.equals(symbol.get("scip")))return true;
+        String name=Objects.toString(symbol.get("name"),""),path=Objects.toString(symbol.get("name_path"),"");
+        if(substring)return path.contains(ref)||name.contains(ref);
+        if(path.equals(ref)||name.equals(ref)||path.endsWith("."+ref)||path.endsWith("/"+ref))return true;
+        if(!ref.contains("(")){String simple=path.replaceAll("\\([^)]*\\)","");return simple.equals(ref)||simple.endsWith("."+ref)||simple.endsWith("/"+ref);}
+        return false;
+    }
+    public Map<String,Object> status(){var result=new LinkedHashMap<String,Object>(compiler.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("dependencies",dependencies.status());return result;}
+    @Override public void close()throws Exception{outlines.clear();focused.clear();compiler.close();}
 }

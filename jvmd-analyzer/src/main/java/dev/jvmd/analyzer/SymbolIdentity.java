@@ -39,6 +39,13 @@ public final class SymbolIdentity {
         if(module!=null&&!module.isUnnamed()&&(module.getQualifiedName().toString().startsWith("java.")||module.getQualifiedName().toString().startsWith("jdk.")))return "jdk:"+module.getQualifiedName()+":"+jdkVersion;
         return defaultGav;
     }
+    public String sourceFile(Element element){
+        var path=trees.getPath(element);
+        if(path==null){var type=declaring(element);if(type!=null)path=trees.getPath(type);}
+        java.net.URI uri=path==null?null:path.getCompilationUnit().getSourceFile().toUri();
+        if(uri==null&&declaring(element) instanceof ClassSymbol symbol&&symbol.sourcefile!=null)uri=symbol.sourcefile.toUri();
+        return uri!=null&&"file".equals(uri.getScheme())&&uri.getPath().endsWith(".java")?java.nio.file.Path.of(uri).toAbsolutePath().normalize().toString():null;
+    }
     public String displayName(Element e){return e.getKind()==ElementKind.CONSTRUCTOR?e.getEnclosingElement().getSimpleName().toString():e.getSimpleName().toString();}
     public String namePath(Element e){
         if(e instanceof TypeElement type)return binaryName(type).replace('$','/');

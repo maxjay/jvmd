@@ -34,6 +34,7 @@ public final class Analyzer implements AutoCloseable {
         compiler.configure(context.generation(),context.release(),context.classpath(),context.sources(),index,budget,context.compilerOptions());
         compiler.binarySources(context.binarySources());
     }
+    public void documents(Documents documents){compiler.documents(documents.snapshots());dependencies.documentHash(documents::hash);}
     private List<String> warnings(List<String> query){if(context.warnings().isEmpty())return query;var all=new LinkedHashSet<String>(context.warnings());all.addAll(query);return List.copyOf(all);}
     private String coordinates(String file){return context.coordinates().entrySet().stream().filter(e->file.startsWith(e.getKey())).max(Comparator.comparingInt(e->e.getKey().length())).map(Map.Entry::getValue).orElse(null);}
     private String classpathStamp()throws Exception{

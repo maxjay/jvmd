@@ -44,15 +44,18 @@ public final class Application implements AutoCloseable {
         });
         dispatcher.register("mcp.tools",(_,_) -> Envelope.of(2,"index",Map.of("catalog",dev.jvmd.mcp.McpTools.catalog())));
         dispatcher.register("mcp.invoke",(s,p)->dev.jvmd.mcp.McpTools.invoke(dispatcher,s.id(),p));
+        dispatcher.register("document.open",(s,p)->document(s,p,"open"));
+        dispatcher.register("document.change",(s,p)->document(s,p,"change"));
+        dispatcher.register("document.close",(s,p)->document(s,p,"close"));
         dispatcher.register("run.start",this::run);
         dispatcher.register("debug.op",(session,params)->runs(session).operation(Dispatcher.required(params,"run_session"),Dispatcher.required(params,"op"),params.path("args")));
         dispatcher.register("deps.graph", (s, p) -> dependencyGraph(refresh(s), p));
         dispatcher.register("symbol.atPosition",(s,p)->{
             Path path=sourcePath(s,Dispatcher.required(p,"path"));
-            return analyzer(s,path).atPosition(path,Files.readString(path),Dispatcher.bounded(p,"line",0,Integer.MAX_VALUE),Dispatcher.bounded(p,"character",0,Integer.MAX_VALUE));
+            return analyzer(s,path).atPosition(path,documents(s).text(path),Dispatcher.bounded(p,"line",0,Integer.MAX_VALUE),Dispatcher.bounded(p,"character",0,Integer.MAX_VALUE));
         });
         dispatcher.register("symbol.find",(s,p)->{
-            if(p.has("path")){Path path=sourcePath(s,Dispatcher.required(p,"path"));return analyzer(s,path).atPosition(path,Files.readString(path),Dispatcher.bounded(p,"line",0,Integer.MAX_VALUE),Dispatcher.bounded(p,"character",0,Integer.MAX_VALUE));}
+            if(p.has("path")){Path path=sourcePath(s,Dispatcher.required(p,"path"));return analyzer(s,path).atPosition(path,documents(s).text(path),Dispatcher.bounded(p,"line",0,Integer.MAX_VALUE),Dispatcher.bounded(p,"character",0,Integer.MAX_VALUE));}
             String ref=Dispatcher.required(p,"name_path"),scope=p.path("scope").asText("workspace");if(!Set.of("workspace","deps","all").contains(scope))throw RpcException.invalid("Unknown symbol scope");
             int limit=Dispatcher.limit(p,50,200),offset=cursor(p);boolean substring=p.path("substring").asBoolean();
             IndexService searchIndex=null;if(!scope.equals("workspace")){searchIndex=index();prepareIndex(s,searchIndex);}
@@ -84,12 +87,13 @@ public final class Application implements AutoCloseable {
         dispatcher.register("symbol.hierarchy",(s,p)->relationships(s,p,true));
         dispatcher.register("session.status", (s, _) -> {
             var graph=(Resolution)s.state("resolution");var result=new LinkedHashMap<String,Object>();
-            result.put("session",s.id());result.put("root",s.root().toString());result.put("classpath_state",graph==null?"unresolved":"resolved");result.put("classpath_entries",graph==null?0:graph.classpath().size());result.put("overlay",graph==null?Map.of():overlay(s,graph).status());result.put("metrics",dispatcher.status().get("metrics"));result.put("annotation_processing",s.state("processors")==null?Map.of("initialized",false):((AnnotationProcessing)s.state("processors")).status());result.put("analyzer",s.state("analyzer")==null?Map.of("initialized",false):((Analyzer)s.state("analyzer")).status());result.put("runs",s.state("runs")==null?List.of():runs(s).status());result.put("index",index==null?Map.of("phase","disabled"):index.isDone()&&!index.isCompletedExceptionally()?index.join().status():Map.of("phase","starting"));result.put("capabilities",Map.of("analysis_tiers",List.of(0,1,2),"mcp_tools",14,"runtime",true));
+            result.put("documents",documents(s).status());result.put("session",s.id());result.put("root",s.root().toString());result.put("classpath_state",graph==null?"unresolved":"resolved");result.put("classpath_entries",graph==null?0:graph.classpath().size());result.put("overlay",graph==null?Map.of():overlay(s,graph).status());result.put("metrics",dispatcher.status().get("metrics"));result.put("annotation_processing",s.state("processors")==null?Map.of("initialized",false):((AnnotationProcessing)s.state("processors")).status());result.put("analyzer",s.state("analyzer")==null?Map.of("initialized",false):((Analyzer)s.state("analyzer")).status());result.put("runs",s.state("runs")==null?List.of():runs(s).status());result.put("index",index==null?Map.of("phase","disabled"):index.isDone()&&!index.isCompletedExceptionally()?index.join().status():Map.of("phase","starting"));result.put("capabilities",Map.of("analysis_tiers",List.of(0,1,2),"mcp_tools",14,"runtime",true));
             return new Envelope(0,"live",false,null,s.warnings(),result);
         });
         dispatcher.register("symbol.overview",this::overview);
         dispatcher.register("diag.get",(s,p)->{
             if(p.path("verified").asBoolean()){
+                if(dirty(s))throw new RpcException(-32003,"unsupported_capability",Map.of("capability","verified","reason","Save editor changes before verifying the on-disk build"));
                 var verified=new Verifier(config).verify(s.root(),(com.fasterxml.jackson.databind.JsonNode)s.state("manifest"),java.time.Duration.ofMinutes(5));
                 s.put("last_verification",verified);
                 if(verified.exitCode()!=0)throw new RpcException(-32004,"verify_failed",verified);
@@ -97,7 +101,7 @@ public final class Application implements AutoCloseable {
             }
             var files=new ArrayList<Path>();for(var value:p.path("paths"))files.add(sourcePath(s,value.asText()));if(files.isEmpty())files.addAll(sourceFiles(s));
             var diagnostics=new ArrayList<Object>();var warnings=new LinkedHashSet<String>(s.warnings());int tier=2;
-            for(Path path:files){var result=analyzer(s,path).diagnostics(path,Files.readString(path));tier=Math.min(tier,result.tier());warnings.addAll(result.warnings());diagnostics.addAll((List<?>)((Map<?,?>)result.result()).get("diagnostics"));}
+            for(Path path:files){var result=analyzer(s,path).diagnostics(path,documents(s).text(path));tier=Math.min(tier,result.tier());warnings.addAll(result.warnings());diagnostics.addAll((List<?>)((Map<?,?>)result.result()).get("diagnostics"));}
             return page(tier,"live","diagnostics",diagnostics,cursor(p),Dispatcher.limit(p,200,1000),List.copyOf(warnings));
         });
     }
@@ -111,6 +115,27 @@ public final class Application implements AutoCloseable {
     }
     private static Path sourcePath(Session session,String value){return workspace(session).resolve(session.root(),value);}
 
+    public static Documents documents(Session session){return session.state("documents",Documents::new);}
+    private static boolean dirty(Session session)throws Exception{for(Path root:workspace(session).roots())if(documents(session).dirty(root))return true;return false;}
+    private Envelope document(Session session,com.fasterxml.jackson.databind.JsonNode params,String operation)throws Exception{
+        Path file=sourcePath(session,Dispatcher.required(params,"path"));if(!file.toString().endsWith(".java"))throw RpcException.invalid("Document must be Java source");
+        var documents=documents(session);
+        if(operation.equals("close"))documents.close(file);
+        else{
+            var version=params.path("version");if(!version.isIntegralNumber()||!version.canConvertToInt())throw RpcException.invalid("Document version must be an integer");
+            if(operation.equals("open")){if(!params.path("text").isTextual())throw RpcException.invalid("Document text is required");documents.open(file,params.path("text").asText(),version.intValue());}
+            else{
+                if(!params.path("changes").isArray())throw RpcException.invalid("Document changes must be an array");var changes=new ArrayList<Documents.Change>();
+                for(var value:params.path("changes")){if(!value.path("text").isTextual())throw RpcException.invalid("Change text is required");Documents.Range range=null;
+                    if(value.hasNonNull("range"))range=Json.MAPPER.treeToValue(value.path("range"),Documents.Range.class);changes.add(new Documents.Change(range,value.path("text").asText()));}
+                documents.change(file,version.intValue(),changes);
+            }
+        }
+        var analyzer=(Analyzer)session.state("analyzer");if(analyzer!=null)analyzer.changed(file);
+        session.put("last_verification",Map.of("stale",true));
+        return Envelope.of(0,"live",Map.of("path",file.toString(),"open",documents.contains(file),"generation",documents.generation()));
+    }
+
     private static int cursor(com.fasterxml.jackson.databind.JsonNode params){
         try{int value=Integer.parseInt(params.path("cursor").asText("0"));if(value<0)throw new NumberFormatException();return value;}catch(NumberFormatException e){throw RpcException.invalid("Invalid cursor");}
     }
@@ -121,6 +146,7 @@ public final class Application implements AutoCloseable {
         var graph=(Resolution)session.state("resolution");var roots=new LinkedHashSet<Path>();var files=new LinkedHashSet<Path>();
         if(graph==null)roots.addAll(workspace(session).roots());else for(var module:graph.modules()){module.sources().forEach(p->roots.add(Path.of(p)));module.testSources().forEach(p->roots.add(Path.of(p)));}
         for(Path root:roots)if(Files.isDirectory(root))try(var paths=Files.walk(root)){paths.filter(Files::isRegularFile).filter(p->p.toString().endsWith(".java")).sorted().forEach(files::add);}
+        documents(session).paths().stream().filter(workspace(session)::contains).sorted().forEach(files::add);
         return List.copyOf(files);
     }
     @SuppressWarnings("unchecked")
@@ -128,14 +154,14 @@ public final class Application implements AutoCloseable {
         boolean byPath=params.has("path");if(byPath==params.has("package"))throw RpcException.invalid("overview needs either path or package");
         int depth=Dispatcher.bounded(params,"depth",1,10),limit=Dispatcher.limit(params,100,1000),offset=cursor(params);
         Path path=byPath?sourcePath(session,Dispatcher.required(params,"path")):null;
-        if(path!=null&&Files.isRegularFile(path))return analyzer(session,path).overview(path,Files.readString(path),depth,limit,offset);
+        if(path!=null&&(Files.isRegularFile(path)||documents(session).contains(path)))return analyzer(session,path).overview(path,documents(session).text(path),depth,limit,offset);
         String wanted=byPath?"":Dispatcher.required(params,"package");
         if(!byPath){var parsed=NamePath.parse(wanted);if(parsed.identity()||parsed.parameters()!=null||wanted.contains("/"))throw RpcException.invalid("Invalid package");}
         var symbols=new ArrayList<Map<String,Object>>();var warnings=new LinkedHashSet<String>();int tier=1;
         for(Path file:sourceFiles(session)){
             if(path!=null&&!file.startsWith(path))continue;int page=0;
             do{
-                var outline=analyzer(session,file).overview(file,Files.readString(file),depth,1000,page);tier=Math.min(tier,outline.tier());warnings.addAll(outline.warnings());
+                var outline=analyzer(session,file).overview(file,documents(session).text(file),depth,1000,page);tier=Math.min(tier,outline.tier());warnings.addAll(outline.warnings());
                 for(var symbol:(List<Map<String,Object>>)((Map<?,?>)outline.result()).get("symbols")){
                     String fqn=Objects.toString(symbol.get("fqn"),"");int last=fqn.lastIndexOf('.');String pkg=last<0?"":fqn.substring(0,last);
                     if(byPath||pkg.equals(wanted))symbols.add(symbol);
@@ -148,25 +174,25 @@ public final class Application implements AutoCloseable {
     private List<Map<String,Object>> workspaceFind(Session session,String ref,boolean substring)throws Exception{
         var found=new LinkedHashMap<String,Map<String,Object>>();
         if(ref.contains(")/")){
-            for(Path file:sourceFiles(session)){var snapshot=analyzer(session,file).bindings(file,Files.readString(file),null);if(snapshot.result()!=null)for(var symbol:snapshot.result().symbols().values())if(Analyzer.matches(symbol,ref,substring))found.put(symbol.get("scip").toString(),symbol);}
+            for(Path file:sourceFiles(session)){var snapshot=analyzer(session,file).bindings(file,documents(session).text(file),null);if(snapshot.result()!=null)for(var symbol:snapshot.result().symbols().values())if(Analyzer.matches(symbol,ref,substring))found.put(symbol.get("scip").toString(),symbol);}
             return List.copyOf(found.values());
         }
         for(Path file:sourceFiles(session)){
             var analyzer=analyzer(session,file);int offset=0;var declarations=new ArrayList<Map<String,Object>>();
             do{
-                var outline=analyzer.overview(file,Files.readString(file),10,1000,offset);
+                var outline=analyzer.overview(file,documents(session).text(file),10,1000,offset);
                 for(var symbol:(List<Map<String,Object>>)((Map<?,?>)outline.result()).get("symbols")){declarations.add(symbol);if(symbol.get("scip")!=null&&Analyzer.matches(symbol,ref,substring))found.put(symbol.get("scip").toString(),symbol);}
                 if(!outline.truncated())break;offset=Integer.parseInt(outline.cursor());
             }while(true);
-            if(index!=null&&index.isDone()&&!index.isCompletedExceptionally())index.join().recordSource(file,Hashing.sha256(file),declarations,1,List.of());
+            if(index!=null&&index.isDone()&&!index.isCompletedExceptionally())index.join().recordSource(file,Hashing.sha256(documents(session).text(file).getBytes(java.nio.charset.StandardCharsets.UTF_8)),declarations,1,List.of());
         }return List.copyOf(found.values());
     }
     private Envelope describe(Session session,String ref)throws Exception{
         var analyzer=(Analyzer)session.state("analyzer");
         if((ref.startsWith("maven ")||ref.startsWith("local "))&&analyzer!=null){
             var known=analyzer.known(ref);if(known.size()==1){var symbol=known.getFirst();var file=symbol.get("source_file");
-                if(file!=null&&Files.isRegularFile(Path.of(file.toString()))&&symbol.get("name_start") instanceof Number position){
-                    Path path=Path.of(file.toString());String text=Files.readString(path);var snapshot=analyzer(session,path).bindings(path,text,position.intValue());if(snapshot.result()!=null){var current=snapshot.result().symbols().get(ref);if(current!=null)return new Envelope(snapshot.tier(),"live",false,null,snapshot.warnings(),current);}
+                if(file!=null&&(Files.isRegularFile(Path.of(file.toString()))||documents(session).contains(Path.of(file.toString())))&&symbol.get("name_start") instanceof Number position){
+                    Path path=Path.of(file.toString());String text=documents(session).text(path);var snapshot=analyzer(session,path).bindings(path,text,position.intValue());if(snapshot.result()!=null){var current=snapshot.result().symbols().get(ref);if(current!=null)return new Envelope(snapshot.tier(),"live",false,null,snapshot.warnings(),current);}
                 }else return Envelope.of(2,"live",symbol);
             }
         }
@@ -206,7 +232,7 @@ public final class Application implements AutoCloseable {
     private Envelope editSymbol(Session session,com.fasterxml.jackson.databind.JsonNode params,String operation)throws Exception{
         var description=describe(session,Dispatcher.required(params,"ref"));
         if(!(description.result() instanceof Map<?,?> symbol)||symbol.get("scip")==null)return description;
-        Path file=editable(session,symbol);String text=Files.readString(file);int start,end;String replacement;
+        Path file=editable(session,symbol);String text=documents(session).text(file);int start,end;String replacement;
         if(operation.equals("body")){
             if(!Set.of("method","ctor").contains(symbol.get("kind")))throw RpcException.invalid("replace_body requires a method or constructor");
             start=number(symbol,"body_start");end=number(symbol,"body_end");replacement=Dispatcher.required(params,"body").strip();
@@ -225,13 +251,13 @@ public final class Application implements AutoCloseable {
                 default->throw RpcException.invalid("position must be before, after or into");
             }end=start;
         }
-        return finishEdit(session,TextEdits.prepare(List.of(new TextEdits.Edit(file,start,end,replacement)),Map.of()),params.path("dry_run").asBoolean());
+        return finishEdit(session,TextEdits.prepare(List.of(new TextEdits.Edit(file,start,end,replacement)),Map.of(),documents(session).snapshots()),params.path("dry_run").asBoolean());
     }
     private Envelope editText(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
         var values=params.path("text_edits");if(!values.isArray()||values.isEmpty())throw RpcException.invalid("text_edits must be a nonempty array");
         var edits=new ArrayList<TextEdits.Edit>();var texts=new HashMap<Path,String>();
         for(var value:values){
-            Path file=sourcePath(session,Dispatcher.required(value,"path"));String text=texts.computeIfAbsent(file,path->{try{return Files.readString(path);}catch(Exception e){throw new IllegalArgumentException(e);}});
+            Path file=sourcePath(session,Dispatcher.required(value,"path"));String text=texts.computeIfAbsent(file,path->{try{return documents(session).text(path);}catch(Exception e){throw new IllegalArgumentException(e);}});
             int start,end;
             if(value.has("range")){var source=new dev.jvmd.analyzer.SourceText(text);var range=value.path("range");start=source.offset(Dispatcher.bounded(range.path("start"),"line",0,Integer.MAX_VALUE),Dispatcher.bounded(range.path("start"),"character",0,Integer.MAX_VALUE));end=source.offset(Dispatcher.bounded(range.path("end"),"line",0,Integer.MAX_VALUE),Dispatcher.bounded(range.path("end"),"character",0,Integer.MAX_VALUE));}
             else{if(!value.has("start")||!value.has("end"))throw RpcException.invalid("Each edit needs a range or start/end offsets");start=Dispatcher.bounded(value,"start",0,Integer.MAX_VALUE);end=Dispatcher.bounded(value,"end",0,Integer.MAX_VALUE);}
@@ -249,7 +275,7 @@ public final class Application implements AutoCloseable {
         editable(session,target);
         var symbols=new LinkedHashMap<String,Map<String,Object>>();var occurrences=new ArrayList<Bindings.Occurrence>();var edges=new LinkedHashSet<Bindings.Edge>();
         for(Path file:sourceFiles(session)){
-            var snapshot=analyzer(session,file).bindings(file,Files.readString(file),null);
+            var snapshot=analyzer(session,file).bindings(file,documents(session).text(file),null);
             if(snapshot.result()==null||snapshot.tier()<2||!snapshot.warnings().isEmpty()||snapshot.diagnostics().stream().anyMatch(d->d.kind().equals("ERROR")))throw new RpcException(-32003,"unsupported_capability",Map.of("capability","rename","reason","Resolve compiler errors before renaming: "+file,"diagnostics",snapshot.diagnostics()));
             symbols.putAll(snapshot.result().symbols());occurrences.addAll(snapshot.result().occurrences());edges.addAll(snapshot.result().edges());
         }
@@ -266,11 +292,12 @@ public final class Application implements AutoCloseable {
         }
         if(edits.isEmpty())throw RpcException.invalid("No resolved source occurrences for the rename");
         if(type){Path file=editable(session,target);String old=target.get("name").toString();if(!target.get("name_path").toString().contains("/")&&file.getFileName().toString().equals(old+".java")&&!newName.equals(old))renames.put(file,file.resolveSibling(newName+".java"));}
-        return finishEdit(session,TextEdits.prepare(List.copyOf(edits.values()),renames),params.path("dry_run").asBoolean());
+        return finishEdit(session,TextEdits.prepare(List.copyOf(edits.values()),renames,documents(session).snapshots()),params.path("dry_run").asBoolean());
     }
     @SuppressWarnings("unchecked")
     private Envelope finishEdit(Session session,TextEdits.Plan plan,boolean dryRun)throws Exception{
         if(dryRun)return Envelope.of(2,"live",Map.of("applied",false,"changes",plan.edits(),"diagnostics",List.of(),"verified",false));
+        for(var change:plan.edits())if(documents(session).contains(Path.of(change.get("path").toString())))throw new RpcException(-32003,"unsupported_capability",Map.of("capability","edit","reason","This file is open in an editor; apply its dry-run edit plan through the editor"));
         TextEdits.apply(plan);
         var existing=(Analyzer)session.state("analyzer");if(existing!=null)for(var change:plan.edits()){existing.changed(Path.of(change.get("path").toString()));if(change.get("new_path")!=null)existing.changed(Path.of(change.get("new_path").toString()));}
         session.put("last_verification",Map.of("stale",true));
@@ -302,7 +329,7 @@ public final class Application implements AutoCloseable {
         var allowed=new HashSet<String>();params.path("kinds").forEach(k->allowed.add(k.asText()));if(hierarchy)allowed.addAll(Set.of("extends","implements","overrides"));else if(allowed.isEmpty())allowed.addAll(Set.of("calls","reads","writes","instantiates"));
         var symbols=new LinkedHashMap<String,Map<String,Object>>();var edges=new LinkedHashSet<Bindings.Edge>();var occurrences=new ArrayList<Bindings.Occurrence>();var warnings=new LinkedHashSet<String>();
         for(Path file:sourceFiles(session)){
-            var snapshot=analyzer(session,file).bindings(file,Files.readString(file),null);tier=Math.min(tier,snapshot.tier());warnings.addAll(snapshot.warnings());if(snapshot.result()==null)continue;
+            var snapshot=analyzer(session,file).bindings(file,documents(session).text(file),null);tier=Math.min(tier,snapshot.tier());warnings.addAll(snapshot.warnings());if(snapshot.result()==null)continue;
             symbols.putAll(snapshot.result().symbols());edges.addAll(snapshot.result().edges());occurrences.addAll(snapshot.result().occurrences());
         }
         var root=new LinkedHashMap<String,Object>();for(var entry:symbol.entrySet())root.put(entry.getKey().toString(),entry.getValue());symbols.putIfAbsent(key,root);
@@ -337,7 +364,7 @@ public final class Application implements AutoCloseable {
             graph.classpaths().getOrDefault(gav+(test?":test":":main"),java.util.List.of()).forEach(p->classpath.add(Path.of(p)));
             module.sources().forEach(p->sources.add(Path.of(p)));if(test)module.testSources().forEach(p->sources.add(Path.of(p)));
             for(var dependency:overlay(session,graph).dependencies(graph,gav,test)){
-                boolean sourceOnly=overlay(session,graph).requiresSource(dependency);generation+=":"+dependency.gav()+":"+sourceOnly;
+                boolean sourceOnly=overlay(session,graph).requiresSource(dependency)||documents(session).dirty(Path.of(dependency.directory()));generation+=":"+dependency.gav()+":"+sourceOnly;
                 if(sourceOnly)dependency.sources().forEach(p->sources.add(Path.of(p)));classpath.add(Path.of(dependency.classes()));
                 // A built dependency uses its API; source changes (including preserved mtimes) switch to SOURCE_PATH.
                 coordinates.put(dependency.classes(),dependency.gav());
@@ -350,10 +377,12 @@ public final class Application implements AutoCloseable {
             for(var m:graph.modules()){m.sources().forEach(s->navigationSources.add(Path.of(s)));m.testSources().forEach(s->navigationSources.add(Path.of(s)));coordinates.put(m.directory(),m.gav());coordinates.put(Path.of(m.directory()).toUri().toString(),m.gav());}
             for(var node:graph.nodes())if(node.path()!=null&&node.winner()==null)coordinates.put(node.path(),node.gav());
         }else{sources.addAll(workspace(session).roots());for(Path root:workspace(session).roots()){coordinates.put(root.toString(),gav);coordinates.put(root.toUri().toString(),gav);}}
+        if(dirty(session)&&graph!=null&&graph.modules().stream().anyMatch(m->m.processing().enabled()||m.testProcessing().enabled()))processorWarnings.add("unsaved_processor_inputs: generated APIs reflect the last saved processor inputs");
         navigationSources.addAll(sources);
         var analyzer=session.state("analyzer",Analyzer::new);
         var availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
         analyzer.configure(new Analyzer.Context(gav,release,java.util.List.copyOf(classpath),java.util.List.copyOf(sources),generation,java.util.Map.copyOf(coordinates),options,Set.copyOf(binarySources),List.copyOf(processorWarnings),List.copyOf(navigationSources)),availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));
+        analyzer.documents(documents(session));
         return analyzer;
     }
     private AnnotationProcessing.Output prepareProcessing(Session session,Resolution.Module module,boolean test,Resolution graph)throws Exception{
@@ -370,6 +399,7 @@ public final class Application implements AutoCloseable {
     }
     private static dev.jvmd.runtime.RunManager runs(Session session){return session.state("runs",()->new dev.jvmd.runtime.RunManager(session.id()));}
     private Envelope run(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
+        if(dirty(session))throw new RpcException(-32003,"unsupported_capability",Map.of("capability","run","reason","Save editor changes before compiling a run"));
         String target=Dispatcher.required(params,"target");var graph=(Resolution)session.state("resolution");if(graph!=null)graph=refresh(session);
         var matches=workspaceFind(session,target,false).stream().filter(s->Set.of("class","record","enum","method").contains(s.get("kind"))).toList();
         if(matches.size()!=1)return page(1,"live","candidates",matches,0,20,matches.size()>1?List.of("ambiguous"):List.of("No workspace main class matched the target"));

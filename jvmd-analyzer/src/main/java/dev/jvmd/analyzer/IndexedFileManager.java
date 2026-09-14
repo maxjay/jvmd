@@ -16,6 +16,9 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     private record ByteKey(Path path,Stamp stamp,String entry) { }
     private final List<Path> classpath;
     private final List<Path> directories;
+    private final List<Path> sourceRoots;
+    private Map<Path,String> documents=Map.of();
+    public void documents(Map<Path,String> values){documents=Map.copyOf(values);}
     private final Map<Path,Catalog> catalogs=new HashMap<>();
     private final Map<Path,Stamp> classFiles=new HashMap<>();
     private final LinkedHashMap<ByteKey,byte[]> bytes=new LinkedHashMap<>(64,.75f,true);
@@ -24,11 +27,11 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     private Set<Path> binarySources=Set.of();
     public void binarySources(Set<Path> sources){binarySources=Set.copyOf(sources);}
     private boolean preferBinary(JavaFileObject file){
-        return file.getKind()==JavaFileObject.Kind.SOURCE&&file.toUri().getScheme().equals("file")&&binarySources.contains(Path.of(file.toUri()).toAbsolutePath().normalize());
+        return file.getKind()==JavaFileObject.Kind.SOURCE&&file.toUri().getScheme().equals("file")&&binarySources.contains(Path.of(file.toUri()).toAbsolutePath().normalize())&&!documents.containsKey(Path.of(file.toUri()).toAbsolutePath().normalize());
     }
     public IndexedFileManager(StandardJavaFileManager delegate,List<Path> classpath,List<Path> sources,
                               IndexService index,long byteLimit)throws Exception {
-        super(delegate);this.byteLimit=byteLimit;
+        super(delegate);this.byteLimit=byteLimit;this.sourceRoots=sources.stream().map(p->p.toAbsolutePath().normalize()).sorted(Comparator.comparingInt((Path p)->p.getNameCount()).reversed()).toList();
         var paths=new ArrayList<Path>();
         for(var path:classpath){path=path.toAbsolutePath().normalize();var artifact=index==null?null:index.artifact(path);paths.add(artifact==null?path:Path.of(artifact.path()));}
         this.classpath=List.copyOf(paths);
@@ -83,9 +86,23 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         @Override public long getLastModified(){return catalog.stamp().modified()/1_000_000;}
         @Override public String getName(){return catalog.path()+"!/"+entry.path();}
     }
+    private static final class SourceFile extends SimpleJavaFileObject {
+        final String binary,text;
+        SourceFile(Path file,String binary,String text){super(file.toUri(),Kind.SOURCE);this.binary=binary;this.text=text;}
+        @Override public CharSequence getCharContent(boolean ignoreEncodingErrors){return text;}
+        @Override public long getLastModified(){return Long.MAX_VALUE;}
+    }
+    private String sourceName(Path file){
+        for(Path root:sourceRoots)if(file.startsWith(root)){String relative=root.relativize(file).toString();if(relative.endsWith(".java"))return relative.substring(0,relative.length()-5).replace(java.io.File.separatorChar,'.');}
+        return null;
+    }
     @Override public Iterable<JavaFileObject> list(Location location,String packageName,Set<JavaFileObject.Kind> kinds,boolean recurse)throws IOException {
-        if(location==StandardLocation.SOURCE_PATH&&!binarySources.isEmpty()){
-            var sources=new ArrayList<JavaFileObject>();for(var file:super.list(location,packageName,kinds,recurse))if(!preferBinary(file))sources.add(file);return sources;
+        if(location==StandardLocation.SOURCE_PATH){
+            var sources=new LinkedHashMap<String,JavaFileObject>();for(var file:super.list(location,packageName,kinds,recurse))if(!preferBinary(file))sources.put(super.inferBinaryName(location,file),file);
+            if(kinds.contains(JavaFileObject.Kind.SOURCE))for(var entry:documents.entrySet()){
+                String binary=sourceName(entry.getKey());if(binary==null)continue;int dot=binary.lastIndexOf('.');String pkg=dot<0?"":binary.substring(0,dot);
+                if(pkg.equals(packageName)||recurse&&(packageName.isEmpty()||pkg.startsWith(packageName+".")))sources.put(binary,new SourceFile(entry.getKey(),binary,entry.getValue()));
+            }return sources.values();
         }
         if(location!=StandardLocation.CLASS_PATH||!kinds.contains(JavaFileObject.Kind.CLASS))return super.list(location,packageName,kinds,recurse);
         var result=new LinkedHashMap<String,JavaFileObject>();
@@ -99,16 +116,17 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         return result.values();
     }
     @Override public JavaFileObject getJavaFileForInput(Location location,String className,JavaFileObject.Kind kind)throws IOException {
+        if(location==StandardLocation.SOURCE_PATH&&kind==JavaFileObject.Kind.SOURCE)for(var entry:documents.entrySet())if(className.equals(sourceName(entry.getKey())))return new SourceFile(entry.getKey(),className,entry.getValue());
         if(location==StandardLocation.CLASS_PATH&&kind==JavaFileObject.Kind.CLASS){
             var directory=super.getJavaFileForInput(location,className,kind);if(directory!=null){track(directory);return directory;}
             for(var path:classpath)if(path.toString().endsWith(".jar")){Catalog catalog;try{catalog=catalog(path);}catch(IOException e){throw new UncheckedIOException(e);}var entry=catalog.classes().get(className);if(entry!=null)return new BinaryFile(catalog,entry);}
             return null;
         }var file=super.getJavaFileForInput(location,className,kind);return file!=null&&location==StandardLocation.SOURCE_PATH&&preferBinary(file)?null:file;
     }
-    @Override public String inferBinaryName(Location location,JavaFileObject file){return file instanceof IndexedFileManager.BinaryFile binary?binary.entry.binary():super.inferBinaryName(location,file);}
-    @Override public boolean isSameFile(FileObject a,FileObject b){if(a instanceof IndexedFileManager.BinaryFile||b instanceof IndexedFileManager.BinaryFile)return a.toUri().equals(b.toUri());return super.isSameFile(a,b);}
-    @Override public boolean contains(Location location,FileObject file)throws IOException{if(file instanceof IndexedFileManager.BinaryFile)return location==StandardLocation.CLASS_PATH;return super.contains(location,file);}
-    @Override public boolean hasLocation(Location location){return location==StandardLocation.CLASS_PATH||super.hasLocation(location);}
+    @Override public String inferBinaryName(Location location,JavaFileObject file){return file instanceof SourceFile source?source.binary:file instanceof IndexedFileManager.BinaryFile binary?binary.entry.binary():super.inferBinaryName(location,file);}
+    @Override public boolean isSameFile(FileObject a,FileObject b){if(a instanceof SourceFile||b instanceof SourceFile||a instanceof IndexedFileManager.BinaryFile||b instanceof IndexedFileManager.BinaryFile)return a.toUri().equals(b.toUri());return super.isSameFile(a,b);}
+    @Override public boolean contains(Location location,FileObject file)throws IOException{if(file instanceof SourceFile)return location==StandardLocation.SOURCE_PATH;if(file instanceof IndexedFileManager.BinaryFile)return location==StandardLocation.CLASS_PATH;return super.contains(location,file);}
+    @Override public boolean hasLocation(Location location){return location==StandardLocation.CLASS_PATH||location==StandardLocation.SOURCE_PATH&&!documents.isEmpty()||super.hasLocation(location);}
     public void invalidate(){catalogs.clear();classFiles.clear();bytes.clear();byteSize=0;try{fileManager.flush();}catch(IOException e){throw new UncheckedIOException(e);}}
     @Override public void close()throws IOException{invalidate();super.close();}
 }

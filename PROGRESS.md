@@ -212,3 +212,16 @@ The runtime protocol correction e473770 passed both CI jobs (run 34817902360). S
 - LazyCodeReferencesTest passed, with all previous checkpoints green on c7ace16. Added scoped parameter/local name paths and dependency hierarchy traversal to close the remaining lookup cases.
 
 - Completed find depth expansion, kind filtering before dependency page limits, and status index/capability reporting. Added dependency hierarchy coverage alongside package and scoped-name tests.
+
+
+### Phase 8 exit: complete agent session on the corpus
+
+Commit 0c89f926 passed both jobs in [run 34823237638](https://github.com/maxjay/jvmd/actions/runs/34823237638): seventeen phase-8 Java checks, three Node transport checks, and the actual PetClinic caller traversal, body replacement, and verified Maven build. The agent session restores the original source and records target/agent-session.json. The fourteen tool schemas are frozen.
+
+Strict AOT measurements: startup 305.332047 ms / 600; session open 5.338127 ms / 200; focused attribution p95 37.166884 ms / 50; documentation closure p95 8.547171 ms / 50; runtime attach 19.986755 ms / 500. Corpus identifier sweep: 55,125 / 56,799 = 97.052765%, above the unchanged 97% floor. PetClinic and jvmd both report live=0 and verified=0 diagnostics.
+
+### Phase 9 document synchronization checkpoint
+
+Versioned editor buffers now feed focused queries, workspace traversal, rename plans, and javac's source-path lookup. Changes invalidate reverse dependencies without attributing them. Closing a buffer restores disk content; newly opened Java files need not exist on disk. Incremental edits use sequential UTF-16 ranges, preserve CRLF, reject split surrogate pairs and stale versions, and apply the notification atomically.
+
+Editor-owned files use dry-run edit plans so the client applies its own changes. Verified builds and launches refuse dirty buffers because their compilers read saved files. Generated processor APIs are explicitly labeled when their saved inputs differ from the editor. Phase-9 synchronization tests have been added to CI; the phase is not yet marked complete.

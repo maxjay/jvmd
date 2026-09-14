@@ -560,13 +560,13 @@ independent of each other after 4. Phases 10 and 11 are independent of 5 to 9.
 
 ### Phase 8: agent surface
 
-- [ ] Name path parser and resolver with overload suffix and ambiguity response
-- [ ] All fourteen tools registered; argument schemas snapshot-tested so a rename fails CI
-- [ ] `replace_body`, `insert`, `rename`, `edit` each return member-scoped diagnostics
-- [ ] `references` with `direction` and `depth` triggering pass 3 on demand
-- [ ] Budget enforcement: no `result` over 64KB without a cursor
-- [ ] MCP stdio shim in the opencode TypeScript client
-- [ ] Exit: an agent session on the corpus completes "find every caller of X three deep, replace
+- [x] Name path parser and resolver with overload suffix and ambiguity response
+- [x] All fourteen tools registered; argument schemas snapshot-tested so a rename fails CI
+- [x] `replace_body`, `insert`, `rename`, `edit` each return member-scoped diagnostics
+- [x] `references` with `direction` and `depth` triggering pass 3 on demand
+- [x] Budget enforcement: no `result` over 64KB without a cursor
+- [x] MCP stdio shim in the opencode TypeScript client
+- [x] Exit: an agent session on the corpus completes "find every caller of X three deep, replace
       the body of Y, get a verified pass" with no tool returning an unbounded list and no schema error
 
 ### Phase 9: LSP facade

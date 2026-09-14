@@ -36,6 +36,7 @@ public final class CompilerPool implements AutoCloseable {
         this.generation=generation;this.release=release;this.compilerOptions=List.copyOf(options);pool=new JavacTaskPool(1);baseline=heap();
         manager=new IndexedFileManager(ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8),classpath,sources,index,Math.min(32L*1024*1024,Math.max(1024*1024,budget/8)));
     }
+    public void documents(Map<Path,String> documents){checkThread();manager.documents(documents);}
     public void binarySources(Set<Path> sources){checkThread();manager.binarySources(sources);}
     public boolean cacheValid(){checkThread();try{manager.validateClasspath();return true;}catch(RuntimeException e){recycle();return false;}}
     private void checkThread(){if(Thread.currentThread()!=owner||owner.isVirtual())throw new IllegalStateException("Compiler access must stay on its session platform executor");}

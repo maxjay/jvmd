@@ -54,7 +54,7 @@ public final class SymbolIdentity {
         if(path==null){var type=declaring(element);if(type!=null)path=path(type);}
         java.net.URI uri=path==null?null:path.getCompilationUnit().getSourceFile().toUri();
         if(uri==null&&declaring(element) instanceof ClassSymbol symbol&&symbol.sourcefile!=null)uri=symbol.sourcefile.toUri();
-        if(uri!=null&&"file".equals(uri.getScheme())&&uri.getPath().endsWith(".java")&&java.nio.file.Files.isRegularFile(java.nio.file.Path.of(uri))){String file=java.nio.file.Path.of(uri).toAbsolutePath().normalize().toString();sourceLocations.put(sourceKey,file);return file;}
+        if(uri!=null&&"file".equals(uri.getScheme())&&uri.getPath().endsWith(".java")&&(path!=null||java.nio.file.Files.isRegularFile(java.nio.file.Path.of(uri)))){String file=java.nio.file.Path.of(uri).toAbsolutePath().normalize().toString();sourceLocations.put(sourceKey,file);return file;}
         var type=declaring(element);if(type==null)return null;
         String key=binaryName(type),cached=sourceLocations.get(key);if(cached!=null)return cached.isEmpty()?null:cached;
         String filename=type instanceof ClassSymbol symbol&&symbol.sourcefile!=null?symbol.sourcefile.getName():key.substring(key.lastIndexOf('.')+1).split("\\$",2)[0]+".java";filename=filename.substring(filename.lastIndexOf('/')+1);

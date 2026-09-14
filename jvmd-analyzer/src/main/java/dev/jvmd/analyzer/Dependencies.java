@@ -8,6 +8,8 @@ import java.util.*;
 public final class Dependencies {
     private final Map<Path,Set<Path>> forward=new HashMap<>(),reverse=new HashMap<>();
     private final Map<Path,String> hashes=new HashMap<>();
+    private java.util.function.Function<Path,String> documentHash=_->null;
+    public void documentHash(java.util.function.Function<Path,String> lookup){documentHash=lookup;}
     private final Set<Path> stale=new LinkedHashSet<>();
     public Set<Path> observe(Path path,String hash){
         path=path.toAbsolutePath().normalize();
@@ -31,7 +33,7 @@ public final class Dependencies {
         while(!queue.isEmpty()){Path next=queue.removeFirst();if(result.add(next))queue.addAll(reverse.getOrDefault(next,Set.of()));}
         stale.addAll(result);return Set.copyOf(result);
     }
-    private static String hash(Path file)throws Exception{return Files.isRegularFile(file)?Hashing.sha256(Files.readAllBytes(file)):"missing";}
+    private String hash(Path file)throws Exception{String memory=documentHash.apply(file);return memory!=null?memory:Files.isRegularFile(file)?Hashing.sha256(Files.readAllBytes(file)):"missing";}
     public boolean stale(Path file){return stale.contains(file.toAbsolutePath().normalize());}
     public Map<String,Object> status(){return Map.of("tracked_files",hashes.size(),"reverse_edges",reverse.values().stream().mapToInt(Set::size).sum(),"stale_files",stale.stream().map(Path::toString).sorted().toList());}
 }

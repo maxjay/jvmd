@@ -71,6 +71,8 @@ jobs:
       - name: Agent surface checkpoints
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: mvn -B -pl jvmd-tests test -Dgroups=phase-8 -DexcludedGroups=corpus
+      - name: Editor document synchronization
+        run: mvn -B -pl jvmd-tests test -Dgroups=phase-9
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

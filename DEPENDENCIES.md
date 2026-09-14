@@ -31,3 +31,13 @@ Phase 5 processor fixtures, inspected 2026-09-14:
 |---|---|---|
 | org.projectlombok:lombok | 1.18.48 | Test scope only: real external processor and reduced-fidelity API fixture. Never packaged in the daemon image. Does not violate the in-process processor prohibition. [Publisher changelog](https://projectlombok.org/changelog). |
 | org.mapstruct:mapstruct and mapstruct-processor | 1.6.3 | Test scope only: real generated-source acceptance fixture. Processor runs in a child JVM. [Publisher reference](https://mapstruct.org/documentation/stable/reference/html/). |
+
+Phase 8 shim toolchain, inspected 2026-09-14:
+
+| Dependency | Pin | Reason |
+|---|---|---|
+| Node.js | 24.21.0 LTS | Run the TypeScript stdio adapter with built-in type stripping and the built-in test runner. No npm packages or MCP SDK enter the daemon. [Publisher release](https://github.com/nodejs/node/releases/tag/v24.21.0). |
+| actions/setup-node | 249970729cb0ef3589644e2896645e5dc5ba9c38 (v6) | Pin the shim's CI runtime; build infrastructure only. [Publisher source](https://github.com/actions/setup-node/tree/249970729cb0ef3589644e2896645e5dc5ba9c38). |
+
+MCP framing and tool responses follow the [2025-11-25 stdio transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
+and [tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools).

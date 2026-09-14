@@ -59,6 +59,15 @@ jobs:
       - name: Runtime inspection and evaluation checkpoints
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: mvn -B -pl jvmd-tests test -Dgroups=phase-10 -DexcludedGroups=corpus
+      - name: Install pinned Node.js for the stdio shim
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+      - name: Stdio framing and MCP transport tests
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        working-directory: shim
+        run: node --test test/*.test.ts
       - name: Agent surface checkpoints
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: mvn -B -pl jvmd-tests test -Dgroups=phase-8 -DexcludedGroups=corpus

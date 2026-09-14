@@ -25,7 +25,7 @@ public record Config(Path jdkHome, Path jbrHome, Path m2Repo, int mavenMajor,
         Path runtimeDir = runtime == null ? Path.of(System.getProperty("java.io.tmpdir"), "jvmd-" + uid) : Path.of(runtime);
         Files.createDirectories(runtimeDir);
         if (runtime == null) Files.setPosixFilePermissions(runtimeDir, java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
-        Path socket = Path.of(System.getProperty("jvmd.socket", runtimeDir.resolve("jvmd-" + uid + ".sock").toString()));
+        Path socket = Path.of(System.getProperty("jvmd.socket",System.getenv().getOrDefault("JVMD_SOCKET",config.path("socket").asText(runtimeDir.resolve("jvmd-" + uid + ".sock").toString()))));
         return new Config(Path.of(config.path("jdk_home").asText(System.getProperty("java.home"))),
                 config.hasNonNull("jbr_home") ? Path.of(config.get("jbr_home").asText()) : null,
                 Path.of(config.path("m2_repo").asText(home.resolve(".m2/repository").toString())),

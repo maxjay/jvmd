@@ -30,12 +30,14 @@ public final class ResponseBudget {
     }
     private static ObjectNode envelope(ObjectNode response){return (ObjectNode)(response.has("error")?response.path("error").path("data"):response.path("result"));}
     public ObjectNode enforce(ObjectNode response,String method,JsonNode params)throws Exception{
+        int maximum=Dispatcher.bounded(params,"_response_bytes",MAX_BYTES,MAX_BYTES);if(maximum<4096)throw RpcException.invalid("_response_bytes must be at least 4096");
+        if(Json.MAPPER.writeValueAsBytes(response).length<=maximum)return response;
+        int payloadBudget=maximum-2048;
         ObjectNode original=envelope(response);var document=Json.MAPPER.createObjectNode();document.set("payload",original.path("result"));document.set("warnings",original.path("warnings"));
-        if(Json.MAPPER.writeValueAsBytes(document).length<=MAX_BYTES)return response;
         var pending=new ArrayDeque<JsonNode>();pending.add(document);var fragments=new ArrayList<JsonNode>();long bytes=0;
         while(!pending.isEmpty()){
             JsonNode node=pending.removeFirst();byte[] encoded=Json.MAPPER.writeValueAsBytes(node);
-            if(encoded.length<=MAX_BYTES){fragments.add(node);bytes+=encoded.length;if(bytes>MAX_STORED_BYTES)throw RpcException.invalid("Response exceeds continuation storage; request a smaller limit");continue;}
+            if(encoded.length<=payloadBudget){fragments.add(node);bytes+=encoded.length;if(bytes>MAX_STORED_BYTES)throw RpcException.invalid("Response exceeds continuation storage; request a smaller limit");continue;}
             Candidate candidate=largest(node,List.of(),null);
             if(candidate==null||candidate.weight()<1024)candidate=objectCandidate(node,List.of());
             if(candidate==null)throw RpcException.invalid("Response contains an unsplittable value");

@@ -177,3 +177,14 @@ The runtime protocol correction e473770 passed both CI jobs (run 34817902360). S
 - Added tests for identity-preserving edits, previews, member diagnostics, invalid ranges and stale plans. CI validation is pending this checkpoint.
 
 - Passing cce6db1 measurements: strict-AOT startup 289.29 ms (600 ms budget), workspace open 9.85 ms (200), focused attribution p95 42.52 ms (50), Spring documentation depth 3 p95 10.72 ms (50), runtime attach 21.17 ms (500).
+
+
+### Phase 8 checkpoint: fourteen MCP tools and stdio transport
+
+- Added a Java-owned catalog with exactly fourteen tools and frozen argument schemas, plus strict schema validation and core-protocol mappings. The Java schema snapshot prevents accidental argument renames.
+- Added a dependency-free TypeScript MCP stdio adapter, Content-Length Unix RPC transport, automatic daemon start and workspace reuse. Tool results retain tiers, provenance and continuations.
+- The MCP adapter requests 30 KB core pages so escaped JSON text remains below the 64 KB tool-result limit. Budget continuations never re-run the underlying operation.
+- CI now pins Node.js 24.21.0. Tests cover fragmented Unicode framing, concurrent RPC replies, MCP error continuations and a real strict-AOT stdio session that finds callers three deep, replaces a body and passes external javac verification.
+- Package overview, lazy dependency code traversal and the full corpus agent-session exit remain open.
+
+- SemanticEditsTest passed all four tests on d3170c3. The existing gates stayed green: startup 291.95 ms, workspace open 5.72 ms, focused attribution p95 35.21 ms, documentation depth 3 p95 8.48 ms, attach 16.71 ms.

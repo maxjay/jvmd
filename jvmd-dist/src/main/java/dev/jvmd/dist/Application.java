@@ -42,6 +42,8 @@ public final class Application implements AutoCloseable {
                         "modules", graph == null ? 0 : graph.modules().size()));
             });
         });
+        dispatcher.register("mcp.tools",(_,_) -> Envelope.of(2,"index",Map.of("catalog",dev.jvmd.mcp.McpTools.catalog())));
+        dispatcher.register("mcp.invoke",(s,p)->dev.jvmd.mcp.McpTools.invoke(dispatcher,s.id(),p));
         dispatcher.register("run.start",this::run);
         dispatcher.register("debug.op",(session,params)->runs(session).operation(Dispatcher.required(params,"run_session"),Dispatcher.required(params,"op"),params.path("args")));
         dispatcher.register("deps.graph", (s, p) -> dependencyGraph(refresh(s), p));

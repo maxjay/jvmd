@@ -73,7 +73,7 @@ public final class Dispatcher {
             if(id!=null)response=budgets.enforce(response,method,params);
         } catch (RpcException e) {
             response.remove("result");
-            envelope = Envelope.of(1, "live", e.data());
+            envelope = e.data() instanceof Envelope provided?provided:Envelope.of(1, "live", e.data());
             response.set("error", Json.MAPPER.valueToTree(Map.of("code", e.code(), "message", e.getMessage(), "data", envelope)));
         } catch (Exception | AssertionError | LinkageError e) {
             response.remove("error");

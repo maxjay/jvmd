@@ -376,3 +376,10 @@ The expanded identifier sweep timed out after 1,270 reference requests (about 1.
 The release-target module wrapper now passes unsaved dependency API changes in CI. Its remaining assertion expected a binary-module visibility diagnostic for an unbuilt source module. A plain javac reproduction reports `compiler.err.doesnt.exist` for that source layout. The test now compares live error codes with a fresh, ordinary javac analysis of the identical source module setup; the binary-module test still requires the export visibility diagnostic. Local Java 17 reproduction confirms unchanged, changed API, and unsaved export behavior; Java 25 remains the required CI gate.
 
 Latest native Maven 4 cold measurement remains over budget: 1120.235825 ms against 1000 ms. No threshold changed; further performance work remains open.
+
+
+### Green checkpoints and indexed workspace traversal
+
+Commit a61b8285501127c714cf62851aadea61f8517686 passed every checkpoint in run 34852170574, including new cache invalidation and native module agreement tests. Focused attribution was 32.642884 ms p95. Maven 3 cold/warm p95 was 750.258620/2.464921 ms; Maven 4 was 779.221240/2.012762 ms. Fine native-service and model/dependency timing is now recorded because earlier runners exceeded the cold budget.
+
+The partial expanded corpus trace contained 3,651 successful reference requests at 12.286154 ms p50 and 18.593814 ms p95, down from roughly 1.37 s p95. It is not a completed correctness sweep. The next change indexes source adjacency and occurrence positions so each query visits its frontier, preserves graph/occurrence order, and avoids copying the complete workspace. A validated snapshot also avoids repeating local index scans; weak identity tracking permits cache eviction. Processor inputs and generated binary outputs participate in snapshot invalidation. Full corpus completion and the 97% four-probe floor remain required.

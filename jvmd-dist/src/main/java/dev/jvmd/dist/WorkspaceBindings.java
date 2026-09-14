@@ -14,7 +14,22 @@ public final class WorkspaceBindings implements AutoCloseable {
     /** Implements 4.8: one immutable source graph shared by navigation, references and semantic edits. */
     public record Snapshot(Map<String,Map<String,Object>> symbols,Map<String,Map<String,Object>> declarations,
                            List<Bindings.Edge> edges,List<Bindings.Occurrence> occurrences,
-                           List<CompilerPool.Problem> diagnostics,int tier,List<String> warnings) { }
+                           List<CompilerPool.Problem> diagnostics,int tier,List<String> warnings,
+                           @com.fasterxml.jackson.annotation.JsonIgnore Map<String,List<Integer>> outgoing,
+                           @com.fasterxml.jackson.annotation.JsonIgnore Map<String,List<Integer>> incoming,
+                           @com.fasterxml.jackson.annotation.JsonIgnore Map<Bindings.Edge,List<Integer>> edgeOccurrences) {
+        public List<Bindings.Edge> adjacent(Set<String> frontier,boolean forward){
+            var selected=new TreeSet<Integer>();var index=forward?outgoing:incoming;for(String symbol:frontier)selected.addAll(index.getOrDefault(symbol,List.of()));
+            return selected.stream().map(edges::get).toList();
+        }
+        public List<Bindings.Occurrence> references(Set<Bindings.Edge> selected){
+            var positions=new TreeSet<Integer>();for(var edge:selected)positions.addAll(edgeOccurrences.getOrDefault(edge,List.of()));
+            return positions.stream().map(occurrences::get).toList();
+        }
+    }
+    private static <K> Map<K,List<Integer>> frozen(Map<K,List<Integer>> values){
+        var result=new LinkedHashMap<K,List<Integer>>();values.forEach((key,list)->result.put(key,List.copyOf(list)));return Collections.unmodifiableMap(result);
+    }
     private record Inputs(String generation,Map<Path,String> hashes,List<Path> files) { }
     private record Stamp(Map<String,Object> attributes,String hash) { }
     private final LinkedHashMap<Path,Stamp> hashes=new LinkedHashMap<>(256,.75f,true);
@@ -64,10 +79,14 @@ public final class WorkspaceBindings implements AutoCloseable {
             }
         }
         if(!current.equals(inputs(sources.files(),classpath,documents,generation))){warnings.add("workspace_changed_during_query: retry for a consistent graph");tier=Math.min(tier,1);}
-        var result=new Snapshot(Collections.unmodifiableMap(symbols),Collections.unmodifiableMap(declarations),List.copyOf(edges),List.copyOf(occurrences),List.copyOf(diagnostics),tier,List.copyOf(warnings));
+        var edgeList=List.copyOf(edges);var outgoing=new LinkedHashMap<String,List<Integer>>();var incoming=new LinkedHashMap<String,List<Integer>>();
+        for(int i=0;i<edgeList.size();i++){var edge=edgeList.get(i);outgoing.computeIfAbsent(edge.src(),k->new ArrayList<>()).add(i);incoming.computeIfAbsent(edge.dst(),k->new ArrayList<>()).add(i);}
+        var edgeOccurrences=new LinkedHashMap<Bindings.Edge,List<Integer>>();
+        for(int i=0;i<occurrences.size();i++){var occurrence=occurrences.get(i);if(occurrence.container()!=null)edgeOccurrences.computeIfAbsent(new Bindings.Edge(occurrence.container(),occurrence.scip(),occurrence.role()),k->new ArrayList<>()).add(i);}
+        var result=new Snapshot(Collections.unmodifiableMap(symbols),Collections.unmodifiableMap(declarations),edgeList,List.copyOf(occurrences),List.copyOf(diagnostics),tier,List.copyOf(warnings),frozen(outgoing),frozen(incoming),frozen(edgeOccurrences));
         if(tier==2&&warnings.stream().noneMatch(w->w.startsWith("analyzer_fault"))){
             long size=Json.MAPPER.writeValueAsBytes(result).length;
-            if(size<=Math.min(128L*1024*1024,Math.max(0,byteBudget))){snapshot=result;inputs=current;serializedBytes=size;}
+            if(size+96L*edgeList.size()+40L*occurrences.size()<=Math.min(128L*1024*1024,Math.max(0,byteBudget))){snapshot=result;inputs=current;serializedBytes=size;}
         }
         return result;
     }

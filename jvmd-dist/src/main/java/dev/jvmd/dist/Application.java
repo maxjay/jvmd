@@ -167,7 +167,13 @@ public final class Application implements AutoCloseable {
     private WorkspaceBindings.Snapshot workspaceBindings(Session session,boolean load)throws Exception{
         var graph=(Resolution)session.state("resolution");if(graph!=null)graph=refresh(session);
         var classpath=new LinkedHashSet<Path>();
-        if(graph!=null){graph.classpath().forEach(path->classpath.add(Path.of(path)));for(var module:graph.modules()){classpath.add(Path.of(module.classes()));classpath.add(Path.of(module.testClasses()));}}
+        if(graph!=null){graph.classpath().forEach(path->classpath.add(Path.of(path)));for(var module:graph.modules()){
+            classpath.add(Path.of(module.classes()));classpath.add(Path.of(module.testClasses()));
+            for(boolean test:List.of(false,true)){
+                (test?module.testProcessing():module.processing()).path().forEach(path->classpath.add(Path.of(path)));
+                if(session.state("apt:"+module.gav()+(test?":test":":main")) instanceof AnnotationProcessing.Output output)classpath.addAll(output.classpath());
+            }
+        }}
         var cache=session.state("workspace_bindings",WorkspaceBindings::new);var files=sourceFiles(session);String generation=graph==null?"plain":graph.fingerprint();
         return load?cache.get(()->sourceFiles(session),List.copyOf(classpath),documents(session),generation,(long)config.heapCeilingMb()*1024*1024/Math.max(1,sessions.list().size())/4,
                 (file,text)->analyzer(session,file).bindings(file,text,null)):cache.peek(files,List.copyOf(classpath),documents(session),generation);
@@ -389,21 +395,26 @@ public final class Application implements AutoCloseable {
         int depth=Dispatcher.bounded(params,"depth",hierarchy?3:1,20),limit=Dispatcher.limit(params,100,1000),offset=cursor(params),tier=2;
         var allowed=new HashSet<String>();params.path("kinds").forEach(k->allowed.add(k.asText()));if(hierarchy)allowed.addAll(Set.of("extends","implements","overrides"));else if(allowed.isEmpty())allowed.addAll(Set.of("calls","reads","writes","instantiates"));
         var snapshot=workspaceBindings(session,true);tier=Math.min(tier,snapshot.tier());
-        var symbols=new LinkedHashMap<>(snapshot.symbols());var edges=new LinkedHashSet<>(snapshot.edges());var occurrences=snapshot.occurrences();var warnings=new LinkedHashSet<>(snapshot.warnings());
-        var root=new LinkedHashMap<String,Object>();for(var entry:symbol.entrySet())root.put(entry.getKey().toString(),entry.getValue());symbols.putIfAbsent(key,root);
-        var database=index();prepareIndex(session,database);var code=session.state("code_pass",()->new dev.jvmd.index.CodePass(database));
+        var symbols=new LinkedHashMap<String,Map<String,Object>>();var warnings=new LinkedHashSet<>(snapshot.warnings());
+        var root=new LinkedHashMap<String,Object>();for(var entry:symbol.entrySet())root.put(entry.getKey().toString(),entry.getValue());symbols.put(key,snapshot.symbols().getOrDefault(key,root));
+        var database=index();bindIndex(session,database);
+        if(!(session.state("indexed_workspace_bindings") instanceof java.lang.ref.WeakReference<?> prior)||prior.get()!=snapshot){prepareIndex(session,database);session.put("indexed_workspace_bindings",new java.lang.ref.WeakReference<>(snapshot));}
+        var code=session.state("code_pass",()->new dev.jvmd.index.CodePass(database));
         var reached=new LinkedHashSet<String>();reached.add(key);var selected=new LinkedHashSet<Bindings.Edge>();var frontier=new LinkedHashSet<String>();frontier.add(key);
         for(int d=0;d<depth;d++){
-            if(code!=null){
-                var inputs=frontier.stream().map(symbols::get).filter(Objects::nonNull).toList();String filter=session.state("resolution")==null?null:session.id();
-                var expansion=hierarchy?code.hierarchy(inputs,outgoing,filter):code.expand(inputs,outgoing,allowed,filter);
-                expansion.symbols().forEach(node->symbols.putIfAbsent(node.get("scip").toString(),node));for(var edge:expansion.edges())edges.add(new Bindings.Edge(edge.src(),edge.dst(),edge.kind()));warnings.addAll(expansion.warnings());
-            }
+            var edges=new LinkedHashSet<>(snapshot.adjacent(frontier,outgoing));
+            var inputs=frontier.stream().map(symbols::get).filter(Objects::nonNull).toList();String filter=session.state("resolution")==null?null:session.id();
+            var expansion=hierarchy?code.hierarchy(inputs,outgoing,filter):code.expand(inputs,outgoing,allowed,filter);
+            expansion.symbols().forEach(node->{String identity=node.get("scip").toString();symbols.putIfAbsent(identity,snapshot.symbols().getOrDefault(identity,node));});
+            for(var edge:expansion.edges())edges.add(new Bindings.Edge(edge.src(),edge.dst(),edge.kind()));warnings.addAll(expansion.warnings());
             var next=new LinkedHashSet<String>();
-            for(var edge:edges)if(allowed.contains(edge.kind())&&frontier.contains(outgoing?edge.src():edge.dst())){selected.add(edge);if(!reached.contains(outgoing?edge.dst():edge.src()))next.add(outgoing?edge.dst():edge.src());}
+            for(var edge:edges)if(allowed.contains(edge.kind())&&frontier.contains(outgoing?edge.src():edge.dst())){
+                selected.add(edge);String target=outgoing?edge.dst():edge.src();var node=snapshot.symbols().get(target);if(node!=null)symbols.putIfAbsent(target,node);
+                if(!reached.contains(target))next.add(target);
+            }
             if(next.isEmpty())break;reached.addAll(next);frontier=next;
         }
-        var edgeList=List.copyOf(selected);var matches=occurrences.stream().filter(o->selected.contains(new Bindings.Edge(o.container(),o.scip(),o.role()))).toList();
+        var edgeList=List.copyOf(selected);var matches=snapshot.references(selected);
         var nodes=reached.stream().map(symbols::get).filter(Objects::nonNull).toList();int max=Math.max(edgeList.size(),Math.max(matches.size(),nodes.size())),to=Math.min(max,offset+limit);boolean more=to<max;
         return new Envelope(tier,"live",more,more?Integer.toString(to):null,List.copyOf(warnings),Map.of("symbols",slice(nodes,offset,limit),"edges",slice(edgeList,offset,limit),"references",slice(matches,offset,limit)));
     }

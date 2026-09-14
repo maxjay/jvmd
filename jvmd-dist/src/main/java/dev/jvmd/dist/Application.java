@@ -62,15 +62,23 @@ public final class Application implements AutoCloseable {
             IndexService searchIndex=null;if(!scope.equals("workspace")){searchIndex=index();prepareIndex(s,searchIndex);}
             var kinds=new HashSet<String>();p.path("kinds").forEach(k->kinds.add(k.asText()));int depth=Dispatcher.bounded(p,"depth",0,10);
             var matches=new LinkedHashMap<String,Map<String,Object>>();
-            if(!scope.equals("deps"))for(var symbol:workspaceFind(s,ref,substring))matches.put(symbol.get("scip").toString(),symbol);
-            if(!scope.equals("workspace")){var database=searchIndex;for(var symbol:database.find(ref,s.state("resolution")==null?null:s.id(),substring,offset+limit+1,0,kinds))matches.putIfAbsent(symbol.get("scip").toString(),symbol);}
-            if(depth>0)for(var parent:List.copyOf(matches.values())){
-                String path=Objects.toString(parent.get("name_path"),"");if(path.isEmpty())continue;
-                var children=new ArrayList<Map<String,Object>>();
-                if(!scope.equals("deps"))children.addAll(workspaceFind(s,path+"/",true));
-                if(!scope.equals("workspace"))children.addAll(searchIndex.find(path+"/",s.state("resolution")==null?null:s.id(),true,offset+limit+1,0,kinds));
-                int parentDepth=(int)path.chars().filter(c->c=='/').count();
-                for(var child:children){String candidate=Objects.toString(child.get("name_path"),"");if(candidate.startsWith(path+"/")&&candidate.chars().filter(c->c=='/').count()-parentDepth<=depth)matches.putIfAbsent(child.get("scip").toString(),child);}
+            int needed=Math.addExact(Math.addExact(offset,limit),1);
+            if(!scope.equals("deps"))for(var parent:workspaceFind(s,ref,substring)) {
+                expandFind(s,parent,scope,searchIndex,depth,kinds,needed,matches);
+                if(matches.size()>=needed)break;
+            }
+            if(!scope.equals("workspace")&&matches.size()<needed) {
+                long after=0;
+                while(matches.size()<needed) {
+                    var parents=searchIndex.find(ref,s.state("resolution")==null?null:s.id(),substring,128,after,depth>0?Set.of():kinds);
+                    if(parents.isEmpty())break;
+                    for(var parent:parents) {
+                        after=((Number)parent.get("id")).longValue();
+                        expandFind(s,parent,scope,searchIndex,depth,kinds,needed,matches);
+                        if(matches.size()>=needed)break;
+                    }
+                    if(parents.size()<128)break;
+                }
             }
             var all=new ArrayList<Map<String,Object>>();
             for(var symbol:matches.values())if(kinds.isEmpty()||kinds.contains(symbol.get("kind"))){
@@ -178,6 +186,31 @@ public final class Application implements AutoCloseable {
         }return page(tier,"live","symbols",symbols,offset,limit,List.copyOf(warnings));
     }
     @SuppressWarnings("unchecked")
+    private void expandFind(Session session,Map<String,Object> parent,String scope,IndexService database,int depth,Set<String> kinds,
+                            int needed,LinkedHashMap<String,Map<String,Object>> matches)throws Exception {
+        if(kinds.isEmpty()||kinds.contains(parent.get("kind")))matches.putIfAbsent(parent.get("scip").toString(),parent);
+        if(depth==0||matches.size()>=needed)return;
+        String path=Objects.toString(parent.get("name_path"),"");if(path.isEmpty())return;
+        int parentDepth=(int)path.chars().filter(c->c=='/').count();
+        if(!scope.equals("deps"))for(var child:workspaceFind(session,path+"/",true)) {
+            String candidate=Objects.toString(child.get("name_path"),"");
+            if(candidate.startsWith(path+"/")&&candidate.chars().filter(c->c=='/').count()-parentDepth<=depth&&(kinds.isEmpty()||kinds.contains(child.get("kind"))))
+                matches.putIfAbsent(child.get("scip").toString(),child);
+            if(matches.size()>=needed)return;
+        }
+        if(!scope.equals("workspace")) {
+            long after=0;
+            while(matches.size()<needed) {
+                var children=database.descendants(path,session.state("resolution")==null?null:session.id(),depth,128,after,kinds);
+                if(children.isEmpty())break;
+                for(var child:children) {
+                    after=((Number)child.get("id")).longValue();matches.putIfAbsent(child.get("scip").toString(),child);
+                    if(matches.size()>=needed)return;
+                }
+                if(children.size()<128)break;
+            }
+        }
+    }
     private List<Map<String,Object>> workspaceFind(Session session,String ref,boolean substring)throws Exception{
         var found=new LinkedHashMap<String,Map<String,Object>>();
         if(ref.contains(")/")){

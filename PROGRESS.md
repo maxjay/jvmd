@@ -289,3 +289,7 @@ Added the isolated Maven 4.0.0-rc-6 / Resolver 2.0.21 bundle using native model/
 ### Module architecture checkpoint
 
 All eight daemon modules now compile with explicit `module-info.java` descriptors. Only the analyzer's compiler invocation receives qualified exports of javac internals. Descriptor checks assert the compiled `requires` sets; a negative compilation test demonstrates that a module requiring the public compiler API cannot access javac's internal packages. Class-file checks reject internal javac references outside the analyzer. Qualified reflection opens apply only to jvmd's own JSON records. The classpath-based AOT distribution remains subject to its existing startup/runtime gates.
+
+### Filtered symbol search pagination checkpoint
+
+Search discovers depth-expansion parents before applying kind filters, then applies both depth and kind filters before filling each page. Parent and descendant scans use stable index-ID batches and stop once a page plus continuation evidence is available. This prevents a class filter from hiding its methods and prevents deeper nested members from consuming a shallower page. New tests walk every page in both source and dependency scopes, including 160 deeper members ahead of the requested methods.

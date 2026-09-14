@@ -229,6 +229,16 @@ public final class IndexService implements AutoCloseable {
     }
     public List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after)throws Exception{return find(query,workspace,substring,limit,after,Set.of());}
     public List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds)throws Exception{
+        return findMatching(query,workspace,substring,limit,after,kinds,_->true);
+    }
+    public List<Map<String,Object>> descendants(String path,String workspace,int depth,int limit,long after,Set<String> kinds)throws Exception {
+        int parentDepth=(int)path.chars().filter(c->c=='/').count();
+        return findMatching(path+"/",workspace,true,limit,after,kinds,symbol->{
+            String candidate=Objects.toString(symbol.get("name_path"),"");
+            return candidate.startsWith(path+"/")&&candidate.chars().filter(c->c=='/').count()-parentDepth<=depth;
+        });
+    }
+    private List<Map<String,Object>> findMatching(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds,java.util.function.Predicate<Map<String,Object>> filter)throws Exception{
         var name=substring?null:dev.jvmd.core.NamePath.parse(query);
         return database.read(c->{
             String match=substring?"(s.name LIKE ? ESCAPE '\\' OR s.name_path LIKE ? ESCAPE '\\')":"(s.name=? OR s.scip=? OR s.binary_key=?)";
@@ -239,7 +249,7 @@ public final class IndexService implements AutoCloseable {
                 if(substring){String pattern="%"+query.replace("\\","\\\\").replace("%","\\%").replace("_","\\_")+"%";statement.setString(i++,pattern);statement.setString(i++,pattern);}
                 else{statement.setString(i++,name.leaf());statement.setString(i++,query);statement.setString(i++,query);}
                 if(workspace!=null)statement.setString(i,workspace);
-                try(var rows=statement.executeQuery()){while(rows.next()&&result.size()<limit){if(!kinds.isEmpty()&&!kinds.contains(rows.getString("kind")))continue;var value=symbol(rows);if(substring||name.matches(value)||query.equals(value.get("binary_key")))result.add(value);}}
+                try(var rows=statement.executeQuery()){while(rows.next()&&result.size()<limit){var value=symbol(rows);if(!kinds.isEmpty()&&!kinds.contains(value.get("kind")))continue;if((substring||name.matches(value)||query.equals(value.get("binary_key")))&&filter.test(value))result.add(value);}}
             }return result;
         });
     }

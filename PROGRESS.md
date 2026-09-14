@@ -383,3 +383,8 @@ Latest native Maven 4 cold measurement remains over budget: 1120.235825 ms again
 Commit a61b8285501127c714cf62851aadea61f8517686 passed every checkpoint in run 34852170574, including new cache invalidation and native module agreement tests. Focused attribution was 32.642884 ms p95. Maven 3 cold/warm p95 was 750.258620/2.464921 ms; Maven 4 was 779.221240/2.012762 ms. Fine native-service and model/dependency timing is now recorded because earlier runners exceeded the cold budget.
 
 The partial expanded corpus trace contained 3,651 successful reference requests at 12.286154 ms p50 and 18.593814 ms p95, down from roughly 1.37 s p95. It is not a completed correctness sweep. The next change indexes source adjacency and occurrence positions so each query visits its frontier, preserves graph/occurrence order, and avoids copying the complete workspace. A validated snapshot also avoids repeating local index scans; weak identity tracking permits cache eviction. Processor inputs and generated binary outputs participate in snapshot invalidation. Full corpus completion and the 97% four-probe floor remain required.
+
+
+### Source ownership follows the effective Maven roots
+
+Final review found that build-helper sources outside a module directory were assigned the parent aggregator's compiler context. Module selection now prefers the effective main/test source roots and assigns their source identities to the owning module. A protocol test covers a shared source directory outside its child module, sibling type resolution, and the child artifact's SCIP identity. This is relevant to the repository's shared native resolver engine. Validation awaits CI on this commit.

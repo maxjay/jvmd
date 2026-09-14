@@ -426,7 +426,9 @@ public final class Application implements AutoCloseable {
         List<String> options=List.of("--release","25");
         var classpath=new java.util.ArrayList<Path>();var sources=new java.util.ArrayList<Path>();var coordinates=new java.util.LinkedHashMap<String,String>();var binarySources=new LinkedHashSet<Path>();var processorWarnings=new LinkedHashSet<String>();var navigationSources=new LinkedHashSet<Path>();
         if(graph!=null){
-            var module=graph.modules().stream().filter(m->path.startsWith(Path.of(m.directory()))).max(java.util.Comparator.comparingInt(m->m.directory().length())).orElse(graph.modules().getFirst());
+            var fallback=graph.modules().stream().filter(m->path.startsWith(Path.of(m.directory()))).max(java.util.Comparator.comparingInt(m->m.directory().length())).orElse(graph.modules().getFirst());
+            var module=graph.modules().stream().filter(m->java.util.stream.Stream.concat(m.sources().stream(),m.testSources().stream()).anyMatch(source->path.startsWith(Path.of(source))))
+                    .max(java.util.Comparator.comparingInt(m->java.util.stream.Stream.concat(m.sources().stream(),m.testSources().stream()).filter(source->path.startsWith(Path.of(source))).mapToInt(String::length).max().orElse(0))).orElse(fallback);
             gav=module.gav();release=module.release()==null||module.release().isBlank()?"25":module.release();generation=graph.fingerprint()+":"+gav;
             boolean test=module.testSources().stream().anyMatch(root->path.startsWith(Path.of(root)));
             options=test?module.testCompilerOptions():module.compilerOptions();generation+=test?":test":":main";
@@ -443,7 +445,16 @@ public final class Application implements AutoCloseable {
             var processing=prepareProcessing(session,module,false,graph);
             if(processing!=null){classpath.addAll(0,processing.classpath());sources.addAll(0,processing.sourceRoots());binarySources.addAll(processing.binarySources());processorWarnings.addAll(processing.warnings());generation+=":"+processing.fingerprint();coordinates.put(processing.sourceRoots().getFirst().toString(),gav);}
             if(test){var testOutput=prepareProcessing(session,module,true,graph);if(testOutput!=null){classpath.addAll(0,testOutput.classpath());sources.addAll(0,testOutput.sourceRoots());binarySources.addAll(testOutput.binarySources());processorWarnings.addAll(testOutput.warnings());generation+=":"+testOutput.fingerprint();coordinates.put(testOutput.sourceRoots().getFirst().toString(),gav);}}
-            for(var m:graph.modules()){m.sources().forEach(s->navigationSources.add(Path.of(s)));m.testSources().forEach(s->navigationSources.add(Path.of(s)));coordinates.put(m.directory(),m.gav());coordinates.put(Path.of(m.directory()).toUri().toString(),m.gav());}
+            for(var m:graph.modules()){
+                for(String source:java.util.stream.Stream.concat(m.sources().stream(),m.testSources().stream()).toList()){
+                    navigationSources.add(Path.of(source));coordinates.putIfAbsent(source,m.gav());coordinates.putIfAbsent(Path.of(source).toUri().toString(),m.gav());
+                }
+                coordinates.put(m.directory(),m.gav());coordinates.put(Path.of(m.directory()).toUri().toString(),m.gav());
+            }
+            // Shared build-helper roots take the identity of the module whose compiler context owns this query.
+            for(String source:java.util.stream.Stream.concat(module.sources().stream(),module.testSources().stream()).toList()){
+                coordinates.put(source,gav);coordinates.put(Path.of(source).toUri().toString(),gav);
+            }
             for(var node:graph.nodes())if(node.path()!=null&&node.winner()==null)coordinates.put(node.path(),node.gav());
         }else{sources.addAll(workspace(session).roots());for(Path root:workspace(session).roots()){coordinates.put(root.toString(),gav);coordinates.put(root.toUri().toString(),gav);}}
         if(dirty(session)&&graph!=null&&graph.modules().stream().anyMatch(m->m.processing().enabled()||m.testProcessing().enabled()))processorWarnings.add("unsaved_processor_inputs: generated APIs reflect the last saved processor inputs");

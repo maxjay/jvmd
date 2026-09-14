@@ -131,7 +131,7 @@ public final class Application implements AutoCloseable {
                 documents.change(file,version.intValue(),changes);
             }
         }
-        var analyzer=(Analyzer)session.state("analyzer");if(analyzer!=null)analyzer.changed(file);
+        var analyzer=(Analyzer)session.state("analyzer");if(analyzer!=null){analyzer.changed(file);if(!Files.isRegularFile(file)&&(operation.equals("open")||operation.equals("close")))analyzer.namespaceChanged();}
         session.put("last_verification",Map.of("stale",true));
         return Envelope.of(0,"live",Map.of("path",file.toString(),"open",documents.contains(file),"generation",documents.generation()));
     }

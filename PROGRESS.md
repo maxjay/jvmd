@@ -225,3 +225,6 @@ Strict AOT measurements: startup 305.332047 ms / 600; session open 5.338127 ms /
 Versioned editor buffers now feed focused queries, workspace traversal, rename plans, and javac's source-path lookup. Changes invalidate reverse dependencies without attributing them. Closing a buffer restores disk content; newly opened Java files need not exist on disk. Incremental edits use sequential UTF-16 ranges, preserve CRLF, reject split surrogate pairs and stale versions, and apply the notification atomically.
 
 Editor-owned files use dry-run edit plans so the client applies its own changes. Verified builds and launches refuse dirty buffers because their compilers read saved files. Generated processor APIs are explicitly labeled when their saved inputs differ from the editor. Phase-9 synchronization tests have been added to CI; the phase is not yet marked complete.
+
+
+The first phase-9 run exposed a stale failed lookup when a previously missing source file was opened. Cross-file edits, closing saved buffers, rename plans, stale versions, and UTF-16 synchronization passed. Failed semantic snapshots now expire on source changes, and adding or removing an in-memory file invalidates cached namespace lookups without running attribution. The unchanged regression test checks this behavior in the next run.

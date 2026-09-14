@@ -109,7 +109,13 @@ public final class Analyzer implements AutoCloseable {
         outlines.entrySet().removeIf(e->changed.stream().anyMatch(path->e.getKey().startsWith(path+":")));
         compiler.recycle();
     }
-    public void changed(Path path){invalidate(dependencies.changed(path));}
+    public void changed(Path path){
+        invalidate(dependencies.changed(path));
+        // An unresolved lookup has no declaration edge; any source change can satisfy it.
+        focused.entrySet().removeIf(e->e.getValue().result().diagnostics().stream().anyMatch(d->d.kind().equals("ERROR")));
+        outlines.entrySet().removeIf(e->Json.MAPPER.valueToTree(e.getValue().result()).path("diagnostics").findValuesAsText("kind").contains("ERROR"));
+    }
+    public void namespaceChanged(){outlines.clear();focused.clear();compiler.recycle();}
     public CompilerPool.Outcome<Bindings.Snapshot> bindings(Path path,String text,Integer cursor)throws Exception{
         path=path.toAbsolutePath().normalize();touch(path,text);
         String hash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)),stamp=classpathStamp();

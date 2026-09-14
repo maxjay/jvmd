@@ -54,7 +54,7 @@ final class LocalArtifacts {
                 }
             }
         }
-        String fingerprint=HexFormat.of().formatHex(digest.digest());var previous=index.artifact(module.directory());if(previous!=null&&fingerprint.equals(previous.sha256())){state.observed=Map.copyOf(observed);state.artifact=previous.id();return previous.id();}
+        String fingerprint=HexFormat.of().formatHex(digest.digest());var previous=index.artifact(module.directory());if(previous!=null&&previous.hasSignatureEdges()&&fingerprint.equals(previous.sha256())){state.observed=Map.copyOf(observed);state.artifact=previous.id();return previous.id();}
         var symbols=new LinkedHashMap<String,BinaryReader.Symbol>();var edges=new LinkedHashSet<BinaryReader.Edge>();var models=new LinkedHashMap<String,java.lang.classfile.ClassModel>();var warnings=new ArrayList<String>();
         // Stale outputs must not reintroduce declarations removed from the source API.
         if(oldestClass!=Long.MAX_VALUE&&oldestClass>=newestSource)for(Path output:module.outputs())if(Files.isDirectory(output)){

@@ -47,15 +47,15 @@ public final class CodePass {
         String name=key.contains("#")?key.substring(0,key.indexOf('#')):key;int split=name.lastIndexOf('.');if(split<0)return;
         String module=jdkPackages.get(name.substring(0,split));if(module==null)return;
         Path file=FileSystems.getFileSystem(java.net.URI.create("jrt:/")).getPath("/modules",module,name.replace('.','/')+".class");
-        if(Files.isRegularFile(file)&&index.artifact(file)==null)index.indexJdk(file,module,Path.of("/nonexistent-jvmd-src.zip"));
+        if(Files.isRegularFile(file)){var artifact=index.artifact(file);if(artifact==null||!artifact.hasSignatureEdges())index.indexJdk(file,module,Path.of("/nonexistent-jvmd-src.zip"));}
     }
     public Expansion hierarchy(List<Map<String,Object>> frontier,boolean outgoing,String workspace)throws Exception{
         var identities=frontier.stream().map(s->Objects.toString(s.get("scip"),"")).filter(s->!s.isEmpty()).distinct().toList();
         if(identities.isEmpty())return new Expansion(List.of(),List.of(),List.of());
-        index.linkEdges();
+        index.ensureSignatureEdges(workspace);index.linkEdges();
         var rows=index.database().read(c->{var result=new ArrayList<Map<String,Object>>();
-            String side=outgoing?"src":"dst";try(var q=c.prepareStatement("SELECT DISTINCT e.src,e.dst,e.kind FROM edges e JOIN symbols s ON s.id=e."+side+" WHERE s.scip IN ("+placeholders(identities.size())+") AND e.kind IN ('extends','implements','overrides') ORDER BY e.src,e.dst,e.kind")){
-                int i=1;for(String identity:identities)q.setString(i++,identity);try(var r=q.executeQuery()){while(r.next())result.add(Map.of("src",r.getLong(1),"dst",r.getLong(2),"kind",r.getString(3)));}
+            String side=outgoing?"src":"dst";try(var q=c.prepareStatement(EdgeScope.CONTEXT+"SELECT DISTINCT e.src,e.dst,e.kind FROM artifact_edges e JOIN symbols s ON s.id=e."+side+" WHERE s.scip IN ("+placeholders(identities.size())+") AND e.kind IN ('extends','implements','overrides') AND "+EdgeScope.edge("e")+" ORDER BY e.src,e.dst,e.kind")){
+                q.setString(1,workspace);int i=2;for(String identity:identities)q.setString(i++,identity);try(var r=q.executeQuery()){while(r.next())result.add(Map.of("src",r.getLong(1),"dst",r.getLong(2),"kind",r.getString(3)));}
             }return result;
         });
         var nodes=new LinkedHashMap<String,Map<String,Object>>();var edges=new ArrayList<IndexService.SourceEdge>();
@@ -83,8 +83,8 @@ public final class CodePass {
         }
         String predicate=outgoing?"s.scip":"t.target";Collection<String> selected=outgoing?identities:keys;
         var raw=index.database().read(c->{var rows=new ArrayList<Map<String,Object>>();
-            String sql="SELECT DISTINCT t.src,t.target,t.kind FROM code_targets t JOIN symbols s ON s.id=t.src JOIN artifacts a ON a.id=t.artifact_id WHERE "+predicate+" IN ("+placeholders(selected.size())+")"+membership("a",workspace)+" ORDER BY t.src,t.target,t.kind";
-            try(var q=c.prepareStatement(sql)){int i=1;for(String value:selected)q.setString(i++,value);if(workspace!=null)q.setString(i,workspace);
+            String sql=EdgeScope.CONTEXT+"SELECT DISTINCT t.src,t.target,t.kind FROM code_targets t JOIN symbols s ON s.id=t.src WHERE "+predicate+" IN ("+placeholders(selected.size())+") AND "+EdgeScope.chosen("t.src","t.artifact_id")+" ORDER BY t.src,t.target,t.kind";
+            try(var q=c.prepareStatement(sql)){q.setString(1,workspace);int i=2;for(String value:selected)q.setString(i++,value);
                 try(var r=q.executeQuery()){while(r.next())if(kinds.isEmpty()||kinds.contains(r.getString(3)))rows.add(Map.of("src",r.getLong(1),"target",r.getString(2),"kind",r.getString(3)));}
             }return rows;
         });
@@ -96,8 +96,8 @@ public final class CodePass {
             if(known.containsKey(target))targets=List.of(known.get(target));
             else{
                 ensureJdk(target);
-                var ids=index.database().read(c->{var values=new ArrayList<Long>();try(var q=c.prepareStatement("SELECT id FROM symbols WHERE binary_key=? ORDER BY id")){q.setString(1,target);try(var r=q.executeQuery()){while(r.next())values.add(r.getLong(1));}}return values;});
-                var matches=new ArrayList<Map<String,Object>>();for(long id:ids){var match=index.byId(id,workspace);if(match!=null)matches.add(match);}targets=matches;
+                var ids=index.database().read(c->{var values=new ArrayList<Long>();try(var q=c.prepareStatement("SELECT DISTINCT s.id FROM symbols s JOIN artifact_symbols v ON v.symbol_id=s.id WHERE COALESCE(json_extract(v.data,'$.binary_key'),s.binary_key)=? ORDER BY s.id")){q.setString(1,target);try(var r=q.executeQuery()){while(r.next())values.add(r.getLong(1));}}return values;});
+                var matches=new ArrayList<Map<String,Object>>();for(long id:ids){var match=index.byId(id,workspace);if(match!=null&&binaryKey(match).equals(target))matches.add(match);}targets=matches;
             }
             if(targets.isEmpty()){if(warnings.size()<50)warnings.add("unresolved_code_target: "+target);continue;}
             if(targets.size()>1&&warnings.size()<50)warnings.add("ambiguous_code_target: "+target);

@@ -293,3 +293,7 @@ All eight daemon modules now compile with explicit `module-info.java` descriptor
 ### Filtered symbol search pagination checkpoint
 
 Search discovers depth-expansion parents before applying kind filters, then applies both depth and kind filters before filling each page. Parent and descendant scans use stable index-ID batches and stop once a page plus continuation evidence is available. This prevents a class filter from hiding its methods and prevents deeper nested members from consuming a shallower page. New tests walk every page in both source and dependency scopes, including 160 deeper members ahead of the requested methods.
+
+### Artifact relationship isolation checkpoint
+
+Schema 4 records the source and destination artifact identities for signature, hierarchy and override relationships. Documentation closures, inherited comments, hierarchy and lazy bytecode queries now select the same content variant as symbol metadata. Two different jars with the same Maven coordinates no longer mix relationships even when both possible target types exist in both jars. Migration rebuilds unattributed old relationships from the selected binaries instead of copying an ambiguous union; local fingerprints and lazy JDK entries also rebuild. Regression fixtures cover both variants and lookup-triggered migration. CI validation pending.

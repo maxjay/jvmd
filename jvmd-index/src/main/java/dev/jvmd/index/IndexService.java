@@ -11,7 +11,7 @@ import java.util.jar.JarFile;
 /** Implements 4.4: machine-global eager skeleton/docs indexing, content invalidation and queries. */
 public final class IndexService implements AutoCloseable {
     /** Implements 4.4: persisted artifact identity and fast-path file stamps. */
-    public record Artifact(long id,String gav,String kind,String sha256,String path,long size,long mtime,boolean hasDocs,boolean hasCodeEdges) { }
+    public record Artifact(long id,String gav,String kind,String sha256,String path,long size,long mtime,boolean hasDocs,boolean hasCodeEdges,boolean hasSignatureEdges) { }
     /** Implements 4.4: one workspace's filtered artifact membership. */
     public record WorkspaceArtifact(String path,String scope) { }
     private final IndexDatabase database;
@@ -48,16 +48,17 @@ public final class IndexService implements AutoCloseable {
         return relative.subpath(0,n-3).toString().replace(java.io.File.separatorChar,'.')+":"+relative.getName(n-3)+":"+relative.getName(n-2);
     }
     private static String location(Path path){return path.getFileSystem().provider().getScheme().equals("file")?path.toAbsolutePath().normalize().toString():path.toUri().toString();}
-    public Artifact artifact(Path path) throws Exception {return database.read(c->{try(var s=c.prepareStatement("SELECT a.*,p.size AS actual_size,p.mtime AS actual_mtime FROM artifact_paths p JOIN artifacts a ON a.id=p.artifact_id WHERE p.path=?")){s.setString(1,location(path));try(var r=s.executeQuery()){return r.next()?new Artifact(r.getLong("id"),r.getString("gav"),r.getString("kind"),r.getString("sha256"),location(path),r.getLong("actual_size"),r.getLong("actual_mtime"),r.getInt("has_docs")!=0,r.getInt("has_code_edges")!=0):null;}}});}
+    public Artifact artifact(Path path) throws Exception {return database.read(c->{try(var s=c.prepareStatement("SELECT a.*,p.size AS actual_size,p.mtime AS actual_mtime FROM artifact_paths p JOIN artifacts a ON a.id=p.artifact_id WHERE p.path=?")){s.setString(1,location(path));try(var r=s.executeQuery()){return r.next()?new Artifact(r.getLong("id"),r.getString("gav"),r.getString("kind"),r.getString("sha256"),location(path),r.getLong("actual_size"),r.getLong("actual_mtime"),r.getInt("has_docs")!=0,r.getInt("has_code_edges")!=0,r.getInt("has_signature_edges")!=0):null;}}});}
     public long indexJar(Path path,String gav,String kind) throws Exception {
         path=path.toAbsolutePath().normalize();var previous=artifact(path);
         var stamp=Files.readAttributes(path,java.nio.file.attribute.BasicFileAttributes.class);long size=stamp.size(),mtime=stamp.lastModifiedTime().to(TimeUnit.NANOSECONDS);
-        if(previous!=null&&!gav.contains("SNAPSHOT")&&!kind.equals("local")&&previous.size()==size&&previous.mtime()==mtime){reused.incrementAndGet();return previous.id();}
+        if(previous!=null&&previous.hasSignatureEdges()&&!gav.contains("SNAPSHOT")&&!kind.equals("local")&&previous.size()==size&&previous.mtime()==mtime){reused.incrementAndGet();return previous.id();}
         verifyChecksum(path);String hash=Files.isDirectory(path)?directoryHash(path):Hashing.sha256(path);hashed.incrementAndGet();
-        if(previous!=null&&previous.sha256().equals(hash)){recordPath(path,previous.id(),size,mtime);reused.incrementAndGet();return previous.id();}
+        if(previous!=null&&previous.hasSignatureEdges()&&previous.sha256().equals(hash)){recordPath(path,previous.id(),size,mtime);reused.incrementAndGet();return previous.id();}
         var content=new BinaryReader().read(path,kind.equals("local"));content.warnings().forEach(this::warn);
         Path file=path;long id=database.write(c->{long artifact=putArtifact(c,file,gav,kind,hash,size,mtime);
             if(ids(c,artifact).isEmpty())storeContent(c,artifact,gav,kind,content,Map.of());
+            else storeSignatureTargets(c,artifact,content.edges(),ids(c,artifact));
             return artifact;
         });indexed.incrementAndGet();return id;
     }
@@ -86,7 +87,15 @@ public final class IndexService implements AutoCloseable {
             }owners.executeBatch();names.executeBatch();
         }
         try(var edges=c.prepareStatement("INSERT OR IGNORE INTO edge_targets VALUES(?,?,?)")){for(var edge:content.edges())if(keys.containsKey(edge.src())){edges.setLong(1,keys.get(edge.src()));edges.setString(2,edge.target());edges.setString(3,edge.kind());edges.addBatch();}edges.executeBatch();}
+        storeSignatureTargets(c,artifact,content.edges(),keys);
         if(!content.models().isEmpty())storeClassReferences(c,artifact,content.models().values());
+    }
+    private static void storeSignatureTargets(Connection c,long artifact,List<BinaryReader.Edge> edges,Map<String,Long> keys)throws Exception {
+        try(var insert=c.prepareStatement("INSERT OR IGNORE INTO signature_targets VALUES(?,?,?,?)")) {
+            for(var edge:edges)if(keys.containsKey(edge.src())){insert.setLong(1,artifact);insert.setLong(2,keys.get(edge.src()));insert.setString(3,edge.target());insert.setString(4,edge.kind());insert.addBatch();}
+            insert.executeBatch();
+        }
+        try(var update=c.prepareStatement("UPDATE artifacts SET has_signature_edges=1 WHERE id=?")){update.setLong(1,artifact);update.executeUpdate();}
     }
     static void storeClassReferences(Connection c,long artifact,Collection<java.lang.classfile.ClassModel> classes)throws Exception{
         try(var clear=c.prepareStatement("DELETE FROM artifact_class_refs WHERE artifact_id=?")){clear.setLong(1,artifact);clear.executeUpdate();}
@@ -120,6 +129,7 @@ public final class IndexService implements AutoCloseable {
         long id=database.write(c->{
             long artifact=putArtifact(c,module.directory(),module.gav(),"local",hash,size,mtime);
             if(ids(c,artifact).isEmpty())storeContent(c,artifact,module.gav(),"local",content,sourceData);
+            else storeSignatureTargets(c,artifact,content.edges(),ids(c,artifact));
             return artifact;
         });indexed.incrementAndGet();return id;
     }
@@ -130,6 +140,8 @@ public final class IndexService implements AutoCloseable {
     }
     void storeSource(long artifact,Path file,List<Map<String,Object>> symbols,int tier,List<SourceEdge> edges)throws Exception{
         database.write(c->{
+            try(var remove=c.prepareStatement("DELETE FROM artifact_edges WHERE src_artifact=? AND src IN (SELECT symbol_id FROM artifact_symbols WHERE artifact_id=? AND source_file=?)")) {remove.setLong(1,artifact);remove.setLong(2,artifact);remove.setString(3,file.toString());remove.executeUpdate();}
+            try(var remove=c.prepareStatement("DELETE FROM signature_targets WHERE artifact_id=? AND src IN (SELECT symbol_id FROM artifact_symbols WHERE artifact_id=? AND source_file=?)")) {remove.setLong(1,artifact);remove.setLong(2,artifact);remove.setString(3,file.toString());remove.executeUpdate();}
             try(var remove=c.prepareStatement("DELETE FROM artifact_symbols WHERE artifact_id=? AND source_file=?")){remove.setLong(1,artifact);remove.setString(2,file.toString());remove.executeUpdate();}
             var kinds=Set.of("package","class","interface","enum","record","annotation","method","ctor","field","enumconst");
             try(var insert=c.prepareStatement("INSERT INTO symbols(scip,artifact_id,kind,name,signature,erased_descriptor,binary_key,fqn,name_path,parameters,metadata) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(scip) DO NOTHING");
@@ -148,6 +160,9 @@ public final class IndexService implements AutoCloseable {
             try(var cleanup=c.prepareStatement("DELETE FROM symbols WHERE artifact_id=? AND NOT EXISTS(SELECT 1 FROM artifact_symbols a WHERE a.symbol_id=symbols.id)")){cleanup.setLong(1,artifact);cleanup.executeUpdate();}
             try(var link=c.prepareStatement("INSERT OR IGNORE INTO edges SELECT a.id,b.id,? FROM symbols a,symbols b WHERE a.scip=? AND b.scip=?")){
                 for(var edge:edges){link.setString(1,edge.kind());link.setString(2,edge.src());link.setString(3,edge.dst());link.addBatch();}link.executeBatch();
+            }
+            try(var link=c.prepareStatement("INSERT OR IGNORE INTO artifact_edges SELECT ?,a.id,v.artifact_id,b.id,? FROM symbols a JOIN artifact_symbols own ON own.symbol_id=a.id AND own.artifact_id=? JOIN symbols b ON b.scip=? JOIN artifact_symbols v ON v.symbol_id=b.id WHERE a.scip=?")) {
+                for(var edge:edges){link.setLong(1,artifact);link.setString(2,edge.kind());link.setLong(3,artifact);link.setString(4,edge.dst());link.setString(5,edge.src());link.addBatch();}link.executeBatch();
             }
             try(var names=c.prepareStatement("DELETE FROM simple_names WHERE artifact_id=?")){names.setLong(1,artifact);names.executeUpdate();}
             try(var names=c.prepareStatement("INSERT INTO simple_names SELECT s.name,s.fqn,? FROM symbols s JOIN artifact_symbols a ON a.symbol_id=s.id WHERE a.artifact_id=? AND s.kind IN ('class','interface','record','enum','annotation')")){names.setLong(1,artifact);names.setLong(2,artifact);names.executeUpdate();}
@@ -174,7 +189,7 @@ public final class IndexService implements AutoCloseable {
     }
     private void recordPath(Path p,long id,long size,long mtime)throws Exception{database.write(c->{putPath(c,p,id,size,mtime);return null;});}
     private static void putPath(Connection c,Path p,long id,long size,long mtime)throws Exception{try(var s=c.prepareStatement("INSERT OR REPLACE INTO artifact_paths VALUES(?,?,?,?)")){s.setString(1,location(p));s.setLong(2,id);s.setLong(3,size);s.setLong(4,mtime);s.executeUpdate();}}
-    private static Map<String,Long> ids(Connection c,long artifact)throws Exception{var ids=new HashMap<String,Long>();try(var s=c.prepareStatement("SELECT s.id,s.binary_key FROM artifact_symbols a JOIN symbols s ON s.id=a.symbol_id WHERE a.artifact_id=?")){s.setLong(1,artifact);try(var r=s.executeQuery()){while(r.next())ids.put(r.getString(2),r.getLong(1));}}return ids;}
+    private static Map<String,Long> ids(Connection c,long artifact)throws Exception{var ids=new HashMap<String,Long>();try(var s=c.prepareStatement("SELECT s.id,COALESCE(json_extract(a.data,'$.binary_key'),s.binary_key) FROM artifact_symbols a JOIN symbols s ON s.id=a.symbol_id WHERE a.artifact_id=?")){s.setLong(1,artifact);try(var r=s.executeQuery()){while(r.next())ids.put(r.getString(2),r.getLong(1));}}return ids;}
     private static void verifyChecksum(Path path)throws Exception {
         Path checksum=path.resolveSibling(path.getFileName()+".sha1");if(!Files.isRegularFile(checksum))return;
         String expected=Files.readString(checksum).trim().split("\\s+")[0].toLowerCase(Locale.ROOT);
@@ -213,8 +228,23 @@ public final class IndexService implements AutoCloseable {
             try(var s=c.prepareStatement("UPDATE symbols SET signature=?,parameters=? WHERE id=?")){s.setString(1,signature);s.setString(2,Json.MAPPER.writeValueAsString(names));s.setLong(3,id);s.executeUpdate();}
         }}
     }
+    void ensureSignatureEdges(String workspace)throws Exception {
+        var pending=database.read(c->{var paths=new ArrayList<String[]>();try(var q=c.prepareStatement("SELECT a.path,a.gav,a.kind FROM artifacts a WHERE a.has_signature_edges=0"+(workspace==null?"":" AND (a.gav LIKE 'jdk:%' OR EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id))"))){if(workspace!=null)q.setString(1,workspace);try(var r=q.executeQuery()){while(r.next())paths.add(new String[]{r.getString(1),r.getString(2),r.getString(3)});}}return paths;});
+        boolean changed=false;
+        for(var item:pending){
+            Path path=item[0].startsWith("jrt:")?Path.of(java.net.URI.create(item[0])):Path.of(item[0]);
+            if(!Files.exists(path))continue;
+            if(item[1].startsWith("jdk:"))indexJdk(path,item[1].split(":")[1],Path.of(System.getProperty("java.home"),"lib/src.zip"));
+            else if(item[2].equals("local"))locals.refresh(path);
+            else indexJar(path,item[1],item[2]);
+            changed=true;
+        }
+        if(changed)linkEdges();
+    }
     public void linkEdges()throws Exception{database.write(c->{try(var s=c.createStatement()){
         s.executeUpdate("INSERT OR IGNORE INTO edges SELECT t.src,s.id,t.kind FROM edge_targets t JOIN symbols s ON s.binary_key=t.target");
+        s.executeUpdate("INSERT OR IGNORE INTO artifact_edges SELECT t.artifact_id,t.src,v.artifact_id,s.id,t.kind FROM signature_targets t JOIN symbols s ON s.binary_key=t.target JOIN artifact_symbols v ON v.symbol_id=s.id");
+        s.executeUpdate("INSERT OR IGNORE INTO artifact_edges SELECT h.src_artifact,child.id,h.dst_artifact,parent.id,'overrides' FROM artifact_edges h JOIN symbols child ON child.owner_id=h.src JOIN artifact_symbols cv ON cv.symbol_id=child.id AND cv.artifact_id=h.src_artifact JOIN symbols parent ON parent.owner_id=h.dst AND parent.name=child.name JOIN artifact_symbols pv ON pv.symbol_id=parent.id AND pv.artifact_id=h.dst_artifact WHERE h.kind IN ('extends','implements') AND child.kind='method' AND parent.kind='method' AND substr(COALESCE(json_extract(cv.data,'$.erased_descriptor'),child.erased_descriptor),1,instr(COALESCE(json_extract(cv.data,'$.erased_descriptor'),child.erased_descriptor),')'))=substr(COALESCE(json_extract(pv.data,'$.erased_descriptor'),parent.erased_descriptor),1,instr(COALESCE(json_extract(pv.data,'$.erased_descriptor'),parent.erased_descriptor),')')) AND (COALESCE(json_extract(cv.data,'$.flags'),child.flags) & 8)=0 AND (COALESCE(json_extract(pv.data,'$.flags'),parent.flags) & 10)=0");
         s.executeUpdate("INSERT OR IGNORE INTO edges SELECT child.id,parent.id,'overrides' FROM edges hierarchy CROSS JOIN symbols child ON child.owner_id=hierarchy.src CROSS JOIN symbols parent ON parent.owner_id=hierarchy.dst AND parent.name=child.name AND substr(parent.erased_descriptor,1,instr(parent.erased_descriptor,')'))=substr(child.erased_descriptor,1,instr(child.erased_descriptor,')')) WHERE hierarchy.kind IN ('extends','implements') AND child.kind='method' AND parent.kind='method' AND (child.flags & 8)=0 AND (parent.flags & 10)=0");
     }return null;});}
     public List<String> loadWorkspace(String workspace,List<WorkspaceArtifact> paths,List<Map.Entry<String,String>> dependencies)throws Exception{
@@ -262,7 +292,7 @@ public final class IndexService implements AutoCloseable {
         });
     }
     synchronized long indexJdk(Path file,String module,Path sourceZip)throws Exception{
-        var old=artifact(file);if(old!=null&&old.hasDocs())return old.id();
+        var old=artifact(file);if(old!=null&&old.hasDocs()&&old.hasSignatureEdges())return old.id();
         String gav="jdk:"+module+":"+Runtime.version().feature();var content=new BinaryReader().read(file,false);var sourceData=new HashMap<String,Map<String,Object>>();
         if(Files.isRegularFile(sourceZip)){
             String relative=file.toString().substring(("/modules/"+module+"/").length());String entry=module+"/"+relative.substring(0,relative.length()-6).split("\\$",2)[0]+".java";
@@ -275,6 +305,7 @@ public final class IndexService implements AutoCloseable {
             }}
         }
         String hash=Hashing.sha256(file);long id=database.write(c->{long artifact=putArtifact(c,file,gav,"jar",hash,Files.size(file),0);
+            storeSignatureTargets(c,artifact,content.edges(),ids(c,artifact));
             if(ids(c,artifact).isEmpty())storeContent(c,artifact,gav,"jar",content,sourceData);
             else if(!sourceData.isEmpty()){
                 // A previous image may have had signatures but no src.zip.

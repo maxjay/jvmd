@@ -74,6 +74,14 @@ jobs:
           tar -xzf "$jbr_archive" --strip-components=1 -C "$RUNNER_TEMP/jvmd-jbr"
           "$RUNNER_TEMP/jvmd-jbr/bin/java" -version
           echo "JVMD_JBR_HOME=$RUNNER_TEMP/jvmd-jbr" >> "$GITHUB_ENV"
+      - name: Install checksum-pinned HotswapAgent fixture
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        shell: bash
+        run: |
+          ha_jar="$RUNNER_TEMP/hotswap-agent-2.0.3.jar"
+          curl -fsSL --retry 3 --max-time 120 'https://github.com/HotswapProjects/HotswapAgent/releases/download/RELEASE-2.0.3/hotswap-agent-2.0.3.jar' -o "$ha_jar"
+          printf '%s  %s\n' 4ef49724b7d8523536d2e2a7310f827f4db9f4fed3489224e05d7bf87f0594f9 "$ha_jar" | sha256sum --check -
+          echo "JVMD_HOTSWAP_AGENT=$ha_jar" >> "$GITHUB_ENV"
       - name: Enhanced hot swap on JBR and stock fallback
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: mvn -B -pl jvmd-tests test -Dgroups=phase-11 -DexcludedGroups=corpus
@@ -103,6 +111,7 @@ jobs:
             jvmd-tests/target/agent-session.json
             jvmd-tests/target/editor-session.json
             jvmd-tests/target/enhanced-hotswap.json
+            jvmd-tests/target/hotswap-agent.json
             jvmd-tests/target/daemon-perf-output.log
             jvmd-dist/target/training-state/*.log
   corpus:
@@ -141,5 +150,6 @@ jobs:
             jvmd-tests/target/agent-session.json
             jvmd-tests/target/editor-session.json
             jvmd-tests/target/enhanced-hotswap.json
+            jvmd-tests/target/hotswap-agent.json
             jvmd-tests/target/daemon-perf-output.log
             jvmd-dist/target/training-state/*.log

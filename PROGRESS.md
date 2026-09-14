@@ -255,3 +255,11 @@ The new checkpoint tests adding a method, adding a field on an existing object, 
 Run 34826215769 is green in both jobs. CorpusLspSessionTest passed against pinned PetClinic: an unsaved invalid expression produced a native diagnostic, restoring the buffer cleared it, hover and definition located getPets, semantic rename returned versioned changes across files, and the saved project received a verified Maven pass. The actual TypeScript stdio/AOT-daemon path is covered separately by LspStdioTest; no manual editor UI inspection is claimed.
 
 The full identifier sweep reports 60,436 / 62,279 = 97.040736%, above the unchanged 97% floor. PetClinic and jvmd both have live=0 and verified=0 diagnostics. Phase 9 is checked complete based on these protocol and corpus tests.
+
+## Runtime checkpoint — compiled evaluation and enhanced JBR
+
+Commit e19c819 passes the complete checkpoint job, including two real compiled-evaluation tests. Lambdas over generic frame locals, private instance access, object creation, void invocations, local mutation copyback, cached compilation, target exceptions, stale frame rejection, and a parentless application class loader all pass. A repeated compiled expression took 13.0 ms with no compilation; its initial compile took 703.1 ms and invocation 98.0 ms. Tier 1 remains the default.
+
+The pinned JBR successfully adds methods, fields, and changes signatures without restart. Stock Java returns restart_required for the same structural request. JBR's raw JDI capability flags for method/schema changes remain false, so detection uses its verified launch flag and reports the raw flags separately.
+
+Strict-AOT metrics on this checkpoint: startup 294.0 ms / 600; session open 5.61 ms / 200; focused attribution p95 38.75 ms / 50; depth-3 documentation p95 9.58 ms / 50; attach 16.80 ms / 500. Full hot-swap latency still needs the new end-to-end budget gate: external compilation measured approximately 600 ms although JDI redefinition was under 11 ms. HotswapAgent evaluation, Maven 4 alignment, and the architecture audit remain in progress.

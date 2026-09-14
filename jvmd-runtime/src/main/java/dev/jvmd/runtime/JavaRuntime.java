@@ -10,6 +10,18 @@ public final class JavaRuntime {
     /** Implements 4.7: checked debuggee VM selection and its explicit launch options. */
     public record Selection(Path home,List<String> options,boolean enhanced,String version,List<String> warnings) { }
     private JavaRuntime() { }
+    public static Selection select(Path jdk,Path jbr,Path agent)throws Exception{
+        var runtime=select(jdk,jbr);if(agent==null)return runtime;
+        if(!runtime.enhanced())throw new RpcException(-32003,"unsupported_capability",Map.of("capability","framework_reload","reason","HotswapAgent requires a configured enhanced JBR"));
+        Path file=agent.toAbsolutePath().normalize();
+        if(!Files.isRegularFile(file))throw RpcException.invalid("Configured hotswap_agent jar does not exist: "+file);
+        try(var jar=new java.util.jar.JarFile(file.toFile())){
+            var manifest=jar.getManifest();
+            if(manifest==null||!"org.hotswap.agent.HotswapAgent".equals(manifest.getMainAttributes().getValue("Premain-Class")))throw RpcException.invalid("Configured hotswap_agent is not a HotswapAgent premain jar");
+        }
+        var options=new ArrayList<>(runtime.options());options.add("-XX:HotswapAgent=external");options.add("-javaagent:"+file);
+        return new Selection(runtime.home(),List.copyOf(options),true,runtime.version(),runtime.warnings());
+    }
     private static String property(Properties release,String key){String value=release.getProperty(key,"");return value.startsWith("\"")&&value.endsWith("\"")?value.substring(1,value.length()-1):value;}
     public static Selection select(Path jdk,Path jbr)throws Exception{
         if(jbr==null)return new Selection(jdk,List.of(),false,"",List.of());

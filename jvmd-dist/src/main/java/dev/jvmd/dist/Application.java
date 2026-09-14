@@ -462,7 +462,7 @@ public final class Application implements AutoCloseable {
         }visiting.remove(module.gav());finished.add(module.gav());
     }
     private synchronized dev.jvmd.runtime.JavaRuntime.Selection debuggeeRuntime()throws Exception{
-        if(debuggeeRuntime==null)debuggeeRuntime=dev.jvmd.runtime.JavaRuntime.select(config.jdkHome(),config.jbrHome());return debuggeeRuntime;
+        if(debuggeeRuntime==null)debuggeeRuntime=dev.jvmd.runtime.JavaRuntime.select(config.jdkHome(),config.jbrHome(),config.hotswapAgent());return debuggeeRuntime;
     }
     private synchronized MavenResolver resolver() {
         if (resolver == null) resolver = new MavenResolver(config);

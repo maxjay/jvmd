@@ -206,7 +206,8 @@ public final class DebugSession implements AutoCloseable {
         if(vm!=null&&!disconnected){boolean enhanced=launch.vmOptions().contains("-XX:+AllowEnhancedClassRedefinition");
             result.put("hotswap",vm.canRedefineClasses()?(enhanced?"enhanced":"bodies_only"):"unsupported");result.put("instance_info",vm.canGetInstanceInfo());
             result.put("jdi_redefinition",Map.of("redefine_classes",vm.canRedefineClasses(),"add_method",vm.canAddMethod(),"unrestricted",vm.canUnrestrictedlyRedefineClasses()));
-            result.put("hotswap_detection",enhanced?"configured_jbr_flag":"jdi");result.put("java_home",launch.javaHome().toString());result.put("vm_version",vm.version());}
+            result.put("hotswap_detection",enhanced?"configured_jbr_flag":"jdi");result.put("java_home",launch.javaHome().toString());result.put("vm_version",vm.version());
+            result.put("framework_reload",launch.vmOptions().contains("-XX:HotswapAgent=external")?"hotswap_agent":"disabled");}
         return result;
     }
     synchronized void redefined()throws Exception{

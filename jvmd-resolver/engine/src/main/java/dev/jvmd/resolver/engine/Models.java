@@ -14,6 +14,7 @@ public interface Models extends AutoCloseable {
     String mavenVersion();
     String resolverVersion();
     String modelBuilder();
+    default Map<String,Double> timings(){return Map.of();}
     Settings settings(Path root) throws Exception;
     DefaultRepositorySystemSession session(Settings settings, boolean offline) throws Exception;
     Built build(Path pom, DefaultRepositorySystemSession session, Settings settings, Properties properties,

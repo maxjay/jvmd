@@ -33,18 +33,22 @@ public final class VersionModels implements Models {
     private final Map<DefaultRepositorySystemSession,RepositorySystemSession.CloseableSession> sessions=new IdentityHashMap<>();
     private final Map<DefaultRepositorySystemSession,Map<Path,Built>> built=new IdentityHashMap<>();
     private Path root;
+    private final Map<String,Double> timings=new LinkedHashMap<>();
+    @Override public Map<String,Double> timings(){return Map.copyOf(timings);}
     public VersionModels(Config config,MavenEnvironment environment) {
         this.config=config;this.environment=environment;
-        injector=Injector.create();injector.bindInstance(Injector.class,injector);
+        long started=System.nanoTime();injector=Injector.create();injector.bindInstance(Injector.class,injector);
         // ApiRunner provides service registries only. Its test-only default Session is never requested.
         injector.bindImplicit(ApiRunner.class);
         injector.bindImplicit(org.apache.maven.impl.standalone.RepositorySystemSupplier.class);
         injector.bindImplicit(Transport.class);
         injector.bindImplicit(Credentials.class);
         injector.bindScope(SessionScoped.class,new SessionScope());
-        injector.discover(VersionModels.class.getClassLoader());
+        long bound=System.nanoTime();injector.discover(VersionModels.class.getClassLoader());
+        long discovered=System.nanoTime();
         lookup=injector.getInstance(Lookup.class);
         system=injector.getInstance(RepositorySystem.class);
+        timings.put("bindings_ms",(bound-started)/1e6);timings.put("discovery_ms",(discovered-bound)/1e6);timings.put("services_ms",(System.nanoTime()-discovered)/1e6);
     }
     public static final class Transport {
         @Provides @Named("file") @Singleton public static TransporterFactory file() { return new FileTransporterFactory(); }

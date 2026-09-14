@@ -49,7 +49,7 @@ public final class MavenEngine implements AutoCloseable {
         this.config = config; this.environment = environment; this.models = models; this.system = models.system();
     }
     public Map<String, Object> status() { return Map.of("maven_major", config.mavenMajor(), "resolver_version", models.resolverVersion(),
-            "maven_version", models.mavenVersion(), "model_builder", models.modelBuilder(), "collections", collections.get(), "cache_hits", cacheHits.get(),"cold_timings",timings); }
+            "maven_version", models.mavenVersion(), "model_builder", models.modelBuilder(), "collections", collections.get(), "cache_hits", cacheHits.get(),"cold_timings",timings,"native_timings",models.timings()); }
     public synchronized Resolution resolve(Path root) throws Exception {
         return resolve(root, (org.eclipse.aether.repository.WorkspaceReader)null);
     }
@@ -101,10 +101,11 @@ public final class MavenEngine implements AutoCloseable {
             } finally { Files.deleteIfExists(temp); }
             memory.put(root, cached);
         }
-        timings=Map.of("settings_ms",(settingsAt-started)/1e6,"version_ms",(versionAt-settingsAt)/1e6,"graph_ms",(graphAt-versionAt)/1e6,"cache_write_ms",(System.nanoTime()-graphAt)/1e6);
+        timings=Map.of("settings_ms",(settingsAt-started)/1e6,"version_ms",(versionAt-settingsAt)/1e6,"graph_ms",(graphAt-versionAt)/1e6,"models_ms",build.modelMillis,"dependencies_ms",build.dependencyMillis,"cache_write_ms",(System.nanoTime()-graphAt)/1e6);
         return graph;
     }
     private static final class Build {
+        double modelMillis,dependencyMillis;
         final Set<Path> inputs = java.util.concurrent.ConcurrentHashMap.newKeySet();
         final Set<Path> strong = new LinkedHashSet<>();
         final List<Resolution.Module> modules = new ArrayList<>();
@@ -115,7 +116,7 @@ public final class MavenEngine implements AutoCloseable {
     }
     private Build build(Path root,List<Path> roots,boolean ignoreVersions,org.apache.maven.settings.Settings settings, boolean offline,
                         org.eclipse.aether.repository.WorkspaceReader workspace, List<String> versionWarnings) throws Exception {
-        var build = new Build(); build.warnings.addAll(versionWarnings);
+        long started=System.nanoTime();var build = new Build(); build.warnings.addAll(versionWarnings);
         var session = models.session(settings, offline);
         try {
         var poms=new ReactorPoms(roots, models);build.inputs.addAll(poms.inputs());build.strong.addAll(poms.inputs());
@@ -161,6 +162,7 @@ public final class MavenEngine implements AutoCloseable {
         var localOverlay=new WorkspaceOverlay(prepared.stream().map(Prepared::module).toList(),ignoreVersions);
         var overlay = new OverlayReader(localOverlay);
         session.setWorkspaceReader(org.eclipse.aether.util.repository.ChainedWorkspaceReader.newInstance(overlay,org.eclipse.aether.util.repository.ChainedWorkspaceReader.newInstance(workspace,poms)));
+        long modelsAt=System.nanoTime();build.modelMillis=(modelsAt-started)/1e6;
         for(var item:prepared){
             session.setUserProperties(item.properties()); models.associate(session, settings, item.directory(), remap(item.properties()), item.remotes()); var model=item.model();var remotes=item.remotes();var moduleDir=item.directory();var module=item.module();
             String gav=module.gav(),release=module.release();var sources=module.sources();var testSources=module.testSources();var m=model.getBuild();
@@ -180,7 +182,7 @@ public final class MavenEngine implements AutoCloseable {
                     processors(model,false,moduleDir,session,remotes,main,build),processors(model,true,moduleDir,session,remotes,test,build)));
             build.classpaths.put(gav + ":main", List.copyOf(main)); build.classpaths.put(gav + ":test", List.copyOf(test));build.classpaths.put(gav+":runtime",List.copyOf(runtime));
         }
-        build.warnings.addAll(localOverlay.warnings());
+        build.dependencyMillis=(System.nanoTime()-modelsAt)/1e6;build.warnings.addAll(localOverlay.warnings());
         return build;
         } finally { models.closeSession(session); }
     }

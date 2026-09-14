@@ -32,7 +32,9 @@ jobs:
       - name: Phase 1 checkpoints including performance budgets
         run: mvn -B -pl jvmd-tests test -Dgroups=phase-1 -DexcludedGroups=corpus
       - name: Phase 2 checkpoints
-        run: mvn -B -pl jvmd-tests test -Dgroups=phase-2
+        run: |
+          bash jvmd-tests/smoke/run-resolver.sh
+          mvn -B -pl jvmd-tests test -Dgroups=phase-2 -DexcludedGroups=corpus
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

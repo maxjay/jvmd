@@ -285,3 +285,7 @@ Moved the Maven 3 model builder, Resolver libraries and real Aether workspace ad
 ### Native Maven 4 implementation checkpoint
 
 Added the isolated Maven 4.0.0-rc-6 / Resolver 2.0.21 bundle using native model/settings services, Maven 4 dependency scopes and transitive management, the simple local repository and JDK HTTP transport. Immutable native models are adapted to the shared graph code after Maven builds them. Reactor model results live only for one collection pass; the persistent cache still contains graphs and input hashes only. Native 4.1 subprojects and omitted parent/dependency versions, settings profiles, BOM imports, retained conflict losers, parent/settings invalidation and real Maven 4 live/verified agreement now have explicit CI tests. Phase completion is pending those results.
+
+### Module architecture checkpoint
+
+All eight daemon modules now compile with explicit `module-info.java` descriptors. Only the analyzer's compiler invocation receives qualified exports of javac internals. Descriptor checks assert the compiled `requires` sets; a negative compilation test demonstrates that a module requiring the public compiler API cannot access javac's internal packages. Class-file checks reject internal javac references outside the analyzer. Qualified reflection opens apply only to jvmd's own JSON records. The classpath-based AOT distribution remains subject to its existing startup/runtime gates.

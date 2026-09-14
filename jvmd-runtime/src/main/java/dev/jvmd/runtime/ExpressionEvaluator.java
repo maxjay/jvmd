@@ -21,7 +21,13 @@ public final class ExpressionEvaluator {
     private int nodes;
     public ExpressionEvaluator(DebugSession debug,String frame)throws Exception{
         this.debug=debug;vm=debug.vm();var current=debug.frame(frame);thread=current.thread();self=current.thisObject();declaring=current.location().declaringType();
-        try{for(var entry:current.getValues(current.visibleVariables()).entrySet())locals.put(entry.getKey().name(),entry.getValue());}catch(AbsentInformationException e){throw debug.missingLocals();}
+        if(current.location().method().isObsolete())throw new RpcException(-32003,"unsupported_capability",Map.of("capability","eval","reason","obsolete_frame: resume or step out of the replaced method before evaluating"));
+        try{for(var entry:current.getValues(current.visibleVariables()).entrySet())locals.put(entry.getKey().name(),entry.getValue());}
+        catch(AbsentInformationException e){
+            // javac omits an empty LocalVariableTable even with -g. A debug-enabled declaring class
+            // can therefore have a valid static frame with no locals; a class without tables still fails.
+            if(!debug.hasLocalInformation(declaring))throw debug.missingLocals();
+        }
     }
     public Envelope evaluate(String expression)throws Exception{
         if(expression==null||expression.isBlank()||expression.length()>8192)throw RpcException.invalid("An expression of 1..8192 characters is required");

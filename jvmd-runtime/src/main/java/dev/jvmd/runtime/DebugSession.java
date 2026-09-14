@@ -76,10 +76,13 @@ public final class DebugSession implements AutoCloseable {
         }else{eventReader=null;debugInfo="disabled";}
     }
     private void requireDebug(){if(vm==null)throw new RpcException(-32003,"unsupported_capability",Map.of("capability","debug","reason","Launch with debug=true"));if(disconnected||closed)throw RpcException.invalid("Debuggee is disconnected");}
+    boolean hasLocalInformation(ReferenceType type){
+        for(Method method:type.methods())if(!method.isNative()&&!method.isAbstract())try{method.variables();return true;}catch(AbsentInformationException ignored){}
+        return false;
+    }
     private void debugInfo(ReferenceType main){
-        main.availableStrata();
-        try{for(Method method:main.methods())if(!method.isNative()&&!method.isAbstract()){method.variables();debugInfo="available";return;}debugInfo="no_local_variables";}
-        catch(AbsentInformationException e){debugInfo="no_local_variables";if(!warnings.contains("debug: no_local_variables"))warnings.add("debug: no_local_variables");}
+        main.availableStrata();debugInfo=hasLocalInformation(main)?"available":"no_local_variables";
+        if(debugInfo.equals("no_local_variables")&&!warnings.contains("debug: no_local_variables"))warnings.add("debug: no_local_variables");
     }
     private void events(){
         try{
@@ -146,7 +149,7 @@ public final class DebugSession implements AutoCloseable {
         if(offset<0||limit<1||limit>200)throw RpcException.invalid("Frame page limit must be 1..200");
         var stop=stop(thread);int size=stop.thread().frameCount(),from=Math.min(offset,size),to=Math.min(size,from+limit);var values=new ArrayList<Map<String,Object>>();int number=from;
         for(var frame:stop.thread().frames(from,to-from)){
-            var location=frame.location();var value=new LinkedHashMap<String,Object>();value.put("frame",frameId(stop,number));value.put("index",number++);value.put("thread",stop.thread().uniqueID());value.put("class",location.declaringType().name());value.put("method",location.method().name());value.put("scip",sources.symbol(location.declaringType(),location.method()));value.put("descriptor",location.method().signature());value.put("line",location.lineNumber());var source=sources.find(location.declaringType());value.put("source_file",source==null?null:source.toString());values.add(value);
+            var location=frame.location();var value=new LinkedHashMap<String,Object>();value.put("frame",frameId(stop,number));value.put("index",number++);value.put("thread",stop.thread().uniqueID());value.put("class",location.declaringType().name());value.put("method",location.method().name());value.put("scip",sources.symbol(location.declaringType(),location.method()));value.put("descriptor",location.method().signature());value.put("obsolete",location.method().isObsolete());value.put("line",location.lineNumber());var source=sources.find(location.declaringType());value.put("source_file",source==null?null:source.toString());values.add(value);
         }
         return new Envelope(2,"live",to<size,to<size?Integer.toString(to):null,List.copyOf(warnings),Map.of("frames",values));
     }

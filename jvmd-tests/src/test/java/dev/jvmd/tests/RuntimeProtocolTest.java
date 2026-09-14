@@ -32,6 +32,7 @@ class RuntimeProtocolTest {
             assertThat(op(app,session,id,"frames",Map.of()).path("frames").get(0).path("source_file").asText()).isEqualTo(file.toString());
             Files.writeString(file,source.replace("return ++count;","return 42;"));
             var swap=op(app,session,id,"hotswap",Map.of("paths",List.of(file.toString())));assertThat(swap.path("restart_required").asBoolean()).isFalse();assertThat(swap.path("redefined").asInt()).isPositive();
+            op(app,session,id,"continue",Map.of());awaitStop(app,session,id);
             assertThat(op(app,session,id,"eval",Map.of("expression","Probe.tick()")).path("value").path("value").asText()).isEqualTo("42");
             String added=source.replace("return ++count;","return 42;").replace("static int count;","static int count; static int added(){return 99;}");Files.writeString(file,added);
             var unsupported=op(app,session,id,"hotswap",Map.of("path",file.toString()));assertThat(unsupported.path("restart_required").asBoolean()).isTrue();assertThat(unsupported.path("reason").asText()).isNotBlank();

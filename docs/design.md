@@ -571,9 +571,9 @@ independent of each other after 4. Phases 10 and 11 are independent of 5 to 9.
 
 ### Phase 9: LSP facade
 
-- [ ] The nine methods in 4.9 over the same session model
-- [ ] `publishDiagnostics` on change with debounce of 200ms
-- [ ] Exit: opencode's editor shows diagnostics, hover, definition and rename on the corpus
+- [x] The nine methods in 4.9 over the same session model
+- [x] `publishDiagnostics` on change with debounce of 200ms
+- [x] Exit: opencode's editor shows diagnostics, hover, definition and rename on the corpus
 
 ### Phase 10: runtime and debug
 

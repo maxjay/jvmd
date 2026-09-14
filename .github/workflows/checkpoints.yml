@@ -59,6 +59,24 @@ jobs:
       - name: Runtime inspection and evaluation checkpoints
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: mvn -B -pl jvmd-tests test -Dgroups=phase-10 -DexcludedGroups=corpus
+      - name: Install pinned JBR for enhanced hot swap
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        shell: bash
+        run: |
+          jbr_archive="$RUNNER_TEMP/jbrsdk-25.0.4.1-linux-x64-b583.48.tar.gz"
+          curl -fsSL --retry 3 --max-time 180 "https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk-25.0.4.1-linux-x64-b583.48.tar.gz" -o "$jbr_archive"
+          curl -fsSL --retry 3 "https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk-25.0.4.1-linux-x64-b583.48.tar.gz.checksum" -o "$jbr_archive.checksum"
+          read -r jbr_digest _ < "$jbr_archive.checksum"
+          [[ "$jbr_digest" =~ ^[[:xdigit:]]{128}$ ]]
+          printf '%s  %s\n' "$jbr_digest" "$jbr_archive" | sha512sum --check -
+          sha512sum "$jbr_archive"
+          mkdir -p "$RUNNER_TEMP/jvmd-jbr"
+          tar -xzf "$jbr_archive" --strip-components=1 -C "$RUNNER_TEMP/jvmd-jbr"
+          "$RUNNER_TEMP/jvmd-jbr/bin/java" -version
+          echo "JVMD_JBR_HOME=$RUNNER_TEMP/jvmd-jbr" >> "$GITHUB_ENV"
+      - name: Enhanced hot swap on JBR and stock fallback
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        run: mvn -B -pl jvmd-tests test -Dgroups=phase-11 -DexcludedGroups=corpus
       - name: Install pinned Node.js for the stdio shim
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
@@ -84,6 +102,7 @@ jobs:
             jvmd-tests/target/sweep.json
             jvmd-tests/target/agent-session.json
             jvmd-tests/target/editor-session.json
+            jvmd-tests/target/enhanced-hotswap.json
             jvmd-tests/target/daemon-perf-output.log
             jvmd-dist/target/training-state/*.log
   corpus:
@@ -121,5 +140,6 @@ jobs:
             jvmd-tests/target/sweep.json
             jvmd-tests/target/agent-session.json
             jvmd-tests/target/editor-session.json
+            jvmd-tests/target/enhanced-hotswap.json
             jvmd-tests/target/daemon-perf-output.log
             jvmd-dist/target/training-state/*.log

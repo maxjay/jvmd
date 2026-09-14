@@ -17,6 +17,7 @@ public final class Application implements AutoCloseable {
     private final Dispatcher dispatcher = new Dispatcher(sessions, new Metrics());
     private final Config config;
     private volatile MavenResolver resolver;
+    private volatile dev.jvmd.runtime.JavaRuntime.Selection debuggeeRuntime;
     private volatile java.util.concurrent.CompletableFuture<IndexService> index;
     public Application(Config config) {
         this.config = config;
@@ -437,7 +438,8 @@ public final class Application implements AutoCloseable {
             for(var node:graph.nodes())if(node.path()!=null&&node.winner()==null)coordinates.put(Path.of(node.path()),node.gav());
         }
         var arguments=new ArrayList<String>();for(var argument:params.path("args")){if(!argument.isTextual())throw RpcException.invalid("Run arguments must be strings");arguments.add(argument.asText());}if(arguments.size()>1000)throw RpcException.invalid("Too many application arguments");
-        var launch=new dev.jvmd.runtime.DebugSession.Launch(config.jdkHome(),session.root(),List.copyOf(classpath),main,List.copyOf(arguments),params.path("debug").asBoolean());
+        var runtime=debuggeeRuntime();runtime.warnings().forEach(session::warn);
+        var launch=new dev.jvmd.runtime.DebugSession.Launch(runtime.home(),session.root(),List.copyOf(classpath),main,List.copyOf(arguments),params.path("debug").asBoolean(),runtime.options());
         var request=new dev.jvmd.runtime.RunManager.Request(launch,new dev.jvmd.runtime.SourceLookup(List.copyOf(sourceRoots),coordinates),config.jdkHome(),List.copyOf(sourceRoots),options,output,List.copyOf(targets));
         return runs(session).start(request);
     }
@@ -458,6 +460,9 @@ public final class Application implements AutoCloseable {
                 var compiled=dev.jvmd.runtime.RuntimeCompiler.compile(config.jdkHome(),Path.of(module.directory()),files,List.copyOf(classpath),roots,runtimeCompilerOptions(module),java.time.Duration.ofSeconds(60));dev.jvmd.runtime.RuntimeCompiler.publish(compiled,Path.of(module.classes()));
             }
         }visiting.remove(module.gav());finished.add(module.gav());
+    }
+    private synchronized dev.jvmd.runtime.JavaRuntime.Selection debuggeeRuntime()throws Exception{
+        if(debuggeeRuntime==null)debuggeeRuntime=dev.jvmd.runtime.JavaRuntime.select(config.jdkHome(),config.jbrHome());return debuggeeRuntime;
     }
     private synchronized MavenResolver resolver() {
         if (resolver == null) resolver = new MavenResolver(config);

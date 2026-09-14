@@ -235,3 +235,23 @@ The first phase-9 run exposed a stale failed lookup when a previously missing so
 The buffer regression fix passed all three synchronization checks in run 34824844334. Existing checkpoints stayed green: AOT startup 334.203589 ms, open 6.344585 ms, focused attribution p95 36.966617 ms, documentation p95 8.634252 ms, and attach 19.231791 ms.
 
 This checkpoint adds the nine LSP queries over the same core session, public-javac completion/signatures, semantic tokens, protocol-safe rename plans, the stdio launcher, 200 ms diagnostic debounce, stale-version suppression, and native partial results. Tests exercise every Java facade query plus the actual TypeScript-to-strict-AOT-daemon editor path. Phase 9 remains unchecked until its corpus exit is demonstrated.
+
+
+### Phase 9 checkpoint verification
+
+Commit 8097236 passed the complete checkpoint job in run 34826215769: six phase-9 Java checks (including all nine facade methods and the real stdio-to-AOT-daemon path), seven Node framing/transport checks, and all earlier checkpoints. The first LSP build identified only a generic test-map signature mismatch, corrected in 8097236.
+
+Strict AOT results: startup 306.190887 ms / 600; session open 5.192724 ms / 200; focused attribution p95 36.243459 ms / 50; documentation p95 7.863372 ms / 50; runtime attach 15.872986 ms / 500. The corpus editor exit is still running.
+
+### Phase 11 enhanced runtime checkpoint
+
+Configured JBR detection checks the vendor metadata and support for AllowEnhancedClassRedefinition once, before a run. The daemon remains on its pinned JDK. Missing or invalid JBR paths retain stock behavior with a status warning. Launches report the selected VM, the checked enhanced flag and raw JDI redefinition bits. The raw add-method and unrestricted bits cannot detect JBR enhancement: the pinned upstream JDWP implementation hardcodes both to false.
+
+The new checkpoint tests adding a method, adding a field on an existing object, changing a method signature and evaluating each result without restarting on JBR. The same method addition must return restart_required on stock Java. Enhanced runtime and compiled evaluation phase completion remain unchecked pending their tests.
+
+
+### Phase 9 exit verified on the corpus
+
+Run 34826215769 is green in both jobs. CorpusLspSessionTest passed against pinned PetClinic: an unsaved invalid expression produced a native diagnostic, restoring the buffer cleared it, hover and definition located getPets, semantic rename returned versioned changes across files, and the saved project received a verified Maven pass. The actual TypeScript stdio/AOT-daemon path is covered separately by LspStdioTest; no manual editor UI inspection is claimed.
+
+The full identifier sweep reports 60,436 / 62,279 = 97.040736%, above the unchanged 97% floor. PetClinic and jvmd both have live=0 and verified=0 diagnostics. Phase 9 is checked complete based on these protocol and corpus tests.

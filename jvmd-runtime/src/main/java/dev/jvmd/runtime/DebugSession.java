@@ -14,7 +14,10 @@ import java.util.concurrent.*;
 /** Implements 4.7: one launched application, JDI event loop, line breakpoints and stopped frames. */
 public final class DebugSession implements AutoCloseable {
     /** Implements 4.7: launch configuration reused on restart. */
-    public record Launch(Path javaHome,Path directory,List<Path> classpath,String main,List<String> args,boolean debug) { }
+    public record Launch(Path javaHome,Path directory,List<Path> classpath,String main,List<String> args,boolean debug,List<String> vmOptions) {
+        public Launch(Path javaHome,Path directory,List<Path> classpath,String main,List<String> args,boolean debug){this(javaHome,directory,classpath,main,args,debug,List.of());}
+        public Launch {classpath=List.copyOf(classpath);args=List.copyOf(args);vmOptions=List.copyOf(vmOptions);}
+    }
     private record Stop(ThreadReference thread,EventSet events,long epoch) { }
     private static final class Break {
         final String id,className;final Path file;final int line;final List<EventRequest> requests=new ArrayList<>();final Set<String> locations=new HashSet<>();
@@ -41,6 +44,7 @@ public final class DebugSession implements AutoCloseable {
     public DebugSession(String id,Launch launch,SourceLookup sources,ObjectHandles handles)throws Exception{
         this.id=id;this.launch=launch;this.sources=sources;this.handles=handles;
         var command=new ArrayList<String>();command.add(launch.javaHome().resolve("bin/java").toString());
+        command.addAll(launch.vmOptions());
         if(launch.debug())command.add("-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=127.0.0.1:0");
         command.addAll(List.of("-cp",launch.classpath().stream().map(Path::toString).collect(java.util.stream.Collectors.joining(File.pathSeparator)),launch.main()));command.addAll(launch.args());
         process=new ProcessBuilder(command).directory(launch.directory().toFile()).redirectErrorStream(true).start();
@@ -198,7 +202,10 @@ public final class DebugSession implements AutoCloseable {
     }
     public synchronized Map<String,Object> status(){
         var result=new LinkedHashMap<String,Object>();result.put("run_session",id);result.put("pid",process.pid());result.put("port",jdwpPort);result.put("alive",process.isAlive());result.put("debug",debugInfo);result.put("attach_ms",attachMillis);result.put("stopped_threads",stopped.keySet().stream().limit(100).toList());result.put("handles",handles.size());result.put("warnings",List.copyOf(warnings));result.put("source_roots",sources.roots());
-        if(vm!=null&&!disconnected){result.put("hotswap",vm.canRedefineClasses()?"bodies_only":"unsupported");result.put("instance_info",vm.canGetInstanceInfo());}
+        if(vm!=null&&!disconnected){boolean enhanced=launch.vmOptions().contains("-XX:+AllowEnhancedClassRedefinition");
+            result.put("hotswap",vm.canRedefineClasses()?(enhanced?"enhanced":"bodies_only"):"unsupported");result.put("instance_info",vm.canGetInstanceInfo());
+            result.put("jdi_redefinition",Map.of("redefine_classes",vm.canRedefineClasses(),"add_method",vm.canAddMethod(),"unrestricted",vm.canUnrestrictedlyRedefineClasses()));
+            result.put("hotswap_detection",enhanced?"configured_jbr_flag":"jdi");result.put("java_home",launch.javaHome().toString());result.put("vm_version",vm.version());}
         return result;
     }
     synchronized void redefined()throws Exception{

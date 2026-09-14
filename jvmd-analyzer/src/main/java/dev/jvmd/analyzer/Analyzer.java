@@ -11,7 +11,8 @@ import javax.lang.model.element.*;
 /** Implements 4.2: session-owned semantic state and detached declaration snapshots. */
 public final class Analyzer implements AutoCloseable {
     /** Implements 4.2 and 4.3: effective module classpath and source roots. */
-    public record Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates,List<String> compilerOptions) {
+    public record Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates,List<String> compilerOptions,Set<Path> binarySources,List<String> warnings) {
+        public Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates,List<String> compilerOptions){this(gav,release,classpath,sources,generation,coordinates,compilerOptions,Set.of(),List.of());}
         public Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates){this(gav,release,classpath,sources,generation,coordinates,List.of("--release",release));}
     }
     private final CompilerPool compiler=new CompilerPool();
@@ -30,7 +31,9 @@ public final class Analyzer implements AutoCloseable {
         if(this.context==null||!this.context.generation().equals(context.generation())){outlines.clear();focused.clear();}
         this.context=context;this.index=index;this.budget=budget;
         compiler.configure(context.generation(),context.release(),context.classpath(),context.sources(),index,budget,context.compilerOptions());
+        compiler.binarySources(context.binarySources());
     }
+    private List<String> warnings(List<String> query){if(context.warnings().isEmpty())return query;var all=new LinkedHashSet<String>(context.warnings());all.addAll(query);return List.copyOf(all);}
     private String coordinates(String file){return context.coordinates().entrySet().stream().filter(e->file.startsWith(e.getKey())).max(Comparator.comparingInt(e->e.getKey().length())).map(Map.Entry::getValue).orElse(null);}
     private String classpathStamp()throws Exception{
         var value=new StringBuilder(context.generation());
@@ -47,7 +50,7 @@ public final class Analyzer implements AutoCloseable {
         if(result.result()!=null)dependencies.record(path,result.result().dependencies());
         var symbols=result.result()==null?List.<Map<String,Object>>of():result.result().symbols();
         int from=Math.min(offset,symbols.size()),to=Math.min(symbols.size(),from+limit);boolean truncated=to<symbols.size();
-        var envelope=new Envelope(result.tier(),"live",truncated,truncated?Integer.toString(to):null,result.warnings(),Map.of("symbols",List.copyOf(symbols.subList(from,to)),"diagnostics",result.diagnostics()));
+        var envelope=new Envelope(result.tier(),"live",truncated,truncated?Integer.toString(to):null,warnings(result.warnings()),Map.of("symbols",List.copyOf(symbols.subList(from,to)),"diagnostics",result.diagnostics()));
         if(result.warnings().isEmpty()){outlines.put(key,envelope);while(outlines.size()>16)outlines.remove(outlines.keySet().iterator().next());}
         return envelope;
     }
@@ -126,11 +129,11 @@ public final class Analyzer implements AutoCloseable {
     public Envelope atPosition(Path path,String text,int line,int character)throws Exception{
         int offset=sourceText(path,text).offset(line,character);
         var outcome=bindings(path,text,offset);var symbol=outcome.result()==null?null:outcome.result().at(offset);
-        return new Envelope(outcome.tier(),"live",false,null,outcome.warnings(),symbol==null?Map.of("resolved",false,"candidates",List.of()):symbol);
+        return new Envelope(outcome.tier(),"live",false,null,warnings(outcome.warnings()),symbol==null?Map.of("resolved",false,"candidates",List.of()):symbol);
     }
     public Envelope diagnostics(Path path,String text)throws Exception{
         var outcome=bindings(path,text,null);
-        return new Envelope(outcome.tier(),"live",false,null,outcome.warnings(),Map.of("diagnostics",outcome.diagnostics()));
+        return new Envelope(outcome.tier(),"live",false,null,warnings(outcome.warnings()),Map.of("diagnostics",outcome.diagnostics()));
     }
     public List<Map<String,Object>> known(String ref){
         var found=new LinkedHashMap<String,Map<String,Object>>();

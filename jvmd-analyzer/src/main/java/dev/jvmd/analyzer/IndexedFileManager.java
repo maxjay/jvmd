@@ -21,6 +21,11 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     private final LinkedHashMap<ByteKey,byte[]> bytes=new LinkedHashMap<>(64,.75f,true);
     private final long byteLimit;
     private long byteSize,hits,loads;
+    private Set<Path> binarySources=Set.of();
+    public void binarySources(Set<Path> sources){binarySources=Set.copyOf(sources);}
+    private boolean preferBinary(JavaFileObject file){
+        return file.getKind()==JavaFileObject.Kind.SOURCE&&file.toUri().getScheme().equals("file")&&binarySources.contains(Path.of(file.toUri()).toAbsolutePath().normalize());
+    }
     public IndexedFileManager(StandardJavaFileManager delegate,List<Path> classpath,List<Path> sources,
                               IndexService index,long byteLimit)throws Exception {
         super(delegate);this.byteLimit=byteLimit;
@@ -79,6 +84,9 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         @Override public String getName(){return catalog.path()+"!/"+entry.path();}
     }
     @Override public Iterable<JavaFileObject> list(Location location,String packageName,Set<JavaFileObject.Kind> kinds,boolean recurse)throws IOException {
+        if(location==StandardLocation.SOURCE_PATH&&!binarySources.isEmpty()){
+            var sources=new ArrayList<JavaFileObject>();for(var file:super.list(location,packageName,kinds,recurse))if(!preferBinary(file))sources.add(file);return sources;
+        }
         if(location!=StandardLocation.CLASS_PATH||!kinds.contains(JavaFileObject.Kind.CLASS))return super.list(location,packageName,kinds,recurse);
         var result=new LinkedHashMap<String,JavaFileObject>();
         for(var file:super.list(location,packageName,kinds,recurse)){track(file);result.put(super.inferBinaryName(location,file),file);}
@@ -95,7 +103,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
             var directory=super.getJavaFileForInput(location,className,kind);if(directory!=null){track(directory);return directory;}
             for(var path:classpath)if(path.toString().endsWith(".jar")){Catalog catalog;try{catalog=catalog(path);}catch(IOException e){throw new UncheckedIOException(e);}var entry=catalog.classes().get(className);if(entry!=null)return new BinaryFile(catalog,entry);}
             return null;
-        }return super.getJavaFileForInput(location,className,kind);
+        }var file=super.getJavaFileForInput(location,className,kind);return file!=null&&location==StandardLocation.SOURCE_PATH&&preferBinary(file)?null:file;
     }
     @Override public String inferBinaryName(Location location,JavaFileObject file){return file instanceof IndexedFileManager.BinaryFile binary?binary.entry.binary():super.inferBinaryName(location,file);}
     @Override public boolean isSameFile(FileObject a,FileObject b){if(a instanceof IndexedFileManager.BinaryFile||b instanceof IndexedFileManager.BinaryFile)return a.toUri().equals(b.toUri());return super.isSameFile(a,b);}

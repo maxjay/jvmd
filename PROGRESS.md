@@ -105,3 +105,12 @@ Workspace source takes precedence over compiled outputs so edits with preserved 
 ## Phase 5 — in progress
 
 Annotation processors will run only in external JVMs. The default Lombok policy is reduced fidelity with an explicit status warning; generated public APIs will be supplied by external compilation. No processor runs in the daemon.
+
+ 
+Phase 5 implementation checkpoint (validation queued):
+- Effective Maven processor paths (including transitive dependencies and exclusions), configured generated roots, and separate test configuration.
+- Time-boxed external javac processing with bounded disk output, source/processor content hashes, cancellation, and per-module generation caching.
+- Lombok reduced-fidelity status policy; externally compiled generated APIs used for implicit source lookup. Original source remains available for navigation and explicit analysis.
+- Real MapStruct/Lombok integration fixtures plus child-exit and timeout containment tests.
+- Repeat phase 4 corpus gate remained clean at e9f8de1; focused attribution repeated at p95 56.901 ms, above the unchanged 50 ms budget. Added query-local identity and source-location caches to remove repeated lookups; awaiting CI measurement.
+- Local executor remains disconnected. Changes are committed through GitHub and validated by Actions; no local test result is claimed.

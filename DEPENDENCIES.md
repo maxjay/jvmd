@@ -24,3 +24,10 @@ API references: [JavacTask](https://docs.oracle.com/en/java/javase/25/docs/api/j
 [Trees](https://docs.oracle.com/en/java/javase/25/docs/api/jdk.compiler/com/sun/source/util/Trees.html),
 [ServerSocketChannel](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/nio/channels/ServerSocketChannel.html).
 JavacTaskPool and JavacTaskImpl signatures are checked in the pinned JDK's `lib/src.zip`.
+
+Phase 5 processor fixtures, inspected 2026-09-14:
+
+| Dependency | Pin | Reason |
+|---|---|---|
+| org.projectlombok:lombok | 1.18.48 | Test scope only: real external processor and reduced-fidelity API fixture. Never packaged in the daemon image. Does not violate the in-process processor prohibition. [Publisher changelog](https://projectlombok.org/changelog). |
+| org.mapstruct:mapstruct and mapstruct-processor | 1.6.3 | Test scope only: real generated-source acceptance fixture. Processor runs in a child JVM. [Publisher reference](https://mapstruct.org/documentation/stable/reference/html/). |

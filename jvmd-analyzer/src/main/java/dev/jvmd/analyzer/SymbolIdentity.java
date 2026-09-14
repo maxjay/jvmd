@@ -16,6 +16,11 @@ public final class SymbolIdentity {
     private final Function<String,String> coordinates;
     private final List<java.nio.file.Path> sources;
     private final Map<String,String> sourceLocations=new HashMap<>();
+    private final Map<Element,String> scips=new IdentityHashMap<>(),namePaths=new IdentityHashMap<>();
+    private final Map<TypeElement,String> gavs=new IdentityHashMap<>();
+    private final Map<Element,com.sun.source.util.TreePath> paths=new IdentityHashMap<>();
+    public com.sun.source.util.TreePath path(Element element){if(!paths.containsKey(element))paths.put(element,trees.getPath(element));return paths.get(element);}
+    public void remember(Element element,com.sun.source.util.TreePath path){if(element!=null)paths.put(element,path);}
     public SymbolIdentity(JavacTask task,String defaultGav,String jdkVersion,Function<String,String> coordinates){this(task,defaultGav,jdkVersion,coordinates,List.of());}
     public SymbolIdentity(JavacTask task,String defaultGav,String jdkVersion,Function<String,String> coordinates,List<java.nio.file.Path> sources){this.sources=List.copyOf(sources);elements=task.getElements();types=task.getTypes();trees=Trees.instance(task);this.defaultGav=defaultGav;this.jdkVersion=jdkVersion;this.coordinates=coordinates;}
     public String descriptor(TypeMirror type){
@@ -31,10 +36,11 @@ public final class SymbolIdentity {
     public String descriptor(ExecutableElement method){var value=new StringBuilder("(");for(var p:method.getParameters())value.append(descriptor(p.asType()));return value.append(')').append(descriptor(method.getReturnType())).toString();}
     public TypeElement declaring(Element element){while(element!=null&&!(element instanceof TypeElement))element=element.getEnclosingElement();return (TypeElement)element;}
     public String binaryName(TypeElement type){return elements.getBinaryName(type).toString();}
-    public String gav(Element element){
+    public String gav(Element element){TypeElement type=declaring(element);if(gavs.containsKey(type))return gavs.get(type);String value=resolveGav(element);gavs.put(type,value);return value;}
+    private String resolveGav(Element element){
         TypeElement type=declaring(element);
         if(type instanceof ClassSymbol symbol){
-            var path=trees.getPath(type);
+            var path=path(type);
             if(path!=null){String found=coordinates.apply(path.getCompilationUnit().getSourceFile().toUri().toString());if(found!=null)return found;}
             if(symbol.classfile!=null){String found=coordinates.apply(symbol.classfile.getName());if(found!=null)return found;}
         }
@@ -43,11 +49,12 @@ public final class SymbolIdentity {
         return defaultGav;
     }
     public String sourceFile(Element element){
-        var path=trees.getPath(element);
-        if(path==null){var type=declaring(element);if(type!=null)path=trees.getPath(type);}
+        var declaring=declaring(element);if(declaring==null)return null;String sourceKey=binaryName(declaring);if(sourceLocations.containsKey(sourceKey)){String prior=sourceLocations.get(sourceKey);return prior.isEmpty()?null:prior;}
+        var path=path(element);
+        if(path==null){var type=declaring(element);if(type!=null)path=path(type);}
         java.net.URI uri=path==null?null:path.getCompilationUnit().getSourceFile().toUri();
         if(uri==null&&declaring(element) instanceof ClassSymbol symbol&&symbol.sourcefile!=null)uri=symbol.sourcefile.toUri();
-        if(uri!=null&&"file".equals(uri.getScheme())&&uri.getPath().endsWith(".java")&&java.nio.file.Files.isRegularFile(java.nio.file.Path.of(uri)))return java.nio.file.Path.of(uri).toAbsolutePath().normalize().toString();
+        if(uri!=null&&"file".equals(uri.getScheme())&&uri.getPath().endsWith(".java")&&java.nio.file.Files.isRegularFile(java.nio.file.Path.of(uri))){String file=java.nio.file.Path.of(uri).toAbsolutePath().normalize().toString();sourceLocations.put(sourceKey,file);return file;}
         var type=declaring(element);if(type==null)return null;
         String key=binaryName(type),cached=sourceLocations.get(key);if(cached!=null)return cached.isEmpty()?null:cached;
         String filename=type instanceof ClassSymbol symbol&&symbol.sourcefile!=null?symbol.sourcefile.getName():key.substring(key.lastIndexOf('.')+1).split("\\$",2)[0]+".java";filename=filename.substring(filename.lastIndexOf('/')+1);
@@ -56,16 +63,18 @@ public final class SymbolIdentity {
         sourceLocations.put(key,"");return null;
     }
     public String displayName(Element e){return e.getKind()==ElementKind.CONSTRUCTOR?e.getEnclosingElement().getSimpleName().toString():e.getSimpleName().toString();}
-    public String namePath(Element e){
+    public String namePath(Element e){String value=namePaths.get(e);if(value==null){value=resolveNamePath(e);namePaths.put(e,value);}return value;}
+    private String resolveNamePath(Element e){
         if(e instanceof TypeElement type)return binaryName(type).replace('$','/');
         if(e instanceof PackageElement pkg)return pkg.getQualifiedName().toString();
         if(e instanceof ModuleElement module)return module.getQualifiedName().toString();
         if(e instanceof ExecutableElement method)return namePath(method.getEnclosingElement())+"/"+displayName(method)+"("+String.join(",",method.getParameters().stream().map(p->java.lang.constant.ClassDesc.ofDescriptor(descriptor(p.asType())).displayName().replace('$','.')).toList())+")";
         Element parent=e.getEnclosingElement();return (parent==null?"":namePath(parent)+"/")+displayName(e);
     }
-    public String scip(Element e){
+    public String scip(Element e){String value=scips.get(e);if(value==null){value=resolveScip(e);scips.put(e,value);}return value;}
+    private String resolveScip(Element e){
         if(Set.of(ElementKind.LOCAL_VARIABLE,ElementKind.RESOURCE_VARIABLE,ElementKind.EXCEPTION_PARAMETER,ElementKind.BINDING_VARIABLE).contains(e.getKind())){
-            var path=trees.getPath(e);String file=path==null?namePath(e):path.getCompilationUnit().getSourceFile().toUri().toString();long start=path==null?0:trees.getSourcePositions().getStartPosition(path.getCompilationUnit(),path.getLeaf());
+            var path=path(e);String file=path==null?namePath(e):path.getCompilationUnit().getSourceFile().toUri().toString();long start=path==null?0:trees.getSourcePositions().getStartPosition(path.getCompilationUnit(),path.getLeaf());
             return "local "+dev.jvmd.core.Hashing.sha256(file.getBytes(java.nio.charset.StandardCharsets.UTF_8)).substring(0,12)+"_"+start+"_"+displayName(e);
         }
         String[] coordinate=gav(e).split(":",3);return "maven "+coordinate[0]+"/"+coordinate[1]+" "+coordinate[2]+" "+descriptorPath(e);

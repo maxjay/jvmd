@@ -1,7 +1,7 @@
 name: Checkpoints
 on:
   push:
-    branches: [main, codex/implementation]
+    branches: [main]
   pull_request:
 permissions:
   contents: read
@@ -44,6 +44,9 @@ jobs:
         run: |
           bash jvmd-tests/smoke/run-compiler.sh
           mvn -B -pl jvmd-tests test -Dgroups=phase-4 -DexcludedGroups=corpus
+      - name: Phase 5 external annotation processing
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        run: mvn -B -pl jvmd-tests test -Dgroups=phase-5 -DexcludedGroups=perf,corpus
       - name: Phase 4 clean corpus agreement
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: |

@@ -64,7 +64,7 @@ public final class Application implements AutoCloseable {
             var graph = (Resolution) s.state("resolution");
             return new Envelope(0, "live", false, null, s.warnings(), java.util.Map.of("session", s.id(),
                     "root", s.root().toString(), "classpath_state", graph == null ? "unresolved" : "resolved",
-                    "classpath_entries", graph == null ? 0 : graph.classpath().size(), "metrics", dispatcher.status().get("metrics"),"analyzer",s.state("analyzer")==null?Map.of("initialized",false):((Analyzer)s.state("analyzer")).status()));
+                    "classpath_entries", graph == null ? 0 : graph.classpath().size(), "metrics", dispatcher.status().get("metrics"),"annotation_processing",s.state("processors")==null?Map.of("initialized",false):((AnnotationProcessing)s.state("processors")).status(),"analyzer",s.state("analyzer")==null?Map.of("initialized",false):((Analyzer)s.state("analyzer")).status()));
         });
         dispatcher.register("symbol.overview", (s, p) -> {
             Path path = s.root().resolve(Dispatcher.required(p, "path")).normalize();
@@ -81,7 +81,7 @@ public final class Application implements AutoCloseable {
                 return new Envelope(2,"verified",false,null,verified.warnings(),Map.of("diagnostics",verified.diagnostics(),"exit_code",verified.exitCode(),"elapsed_ms",verified.elapsedMillis()));
             }
             var files=new ArrayList<Path>();for(var value:p.path("paths"))files.add(sourcePath(s,value.asText()));if(files.isEmpty())files.addAll(sourceFiles(s));
-            var diagnostics=new ArrayList<Object>();var warnings=new LinkedHashSet<String>();int tier=2;
+            var diagnostics=new ArrayList<Object>();var warnings=new LinkedHashSet<String>(s.warnings());int tier=2;
             for(Path path:files){var result=analyzer(s,path).diagnostics(path,Files.readString(path));tier=Math.min(tier,result.tier());warnings.addAll(result.warnings());diagnostics.addAll((List<?>)((Map<?,?>)result.result()).get("diagnostics"));}
             return page(tier,"live","diagnostics",diagnostics,cursor(p),Dispatcher.bounded(p,"limit",200,1000),List.copyOf(warnings));
         });
@@ -156,7 +156,7 @@ public final class Application implements AutoCloseable {
         if(graph!=null)graph=refresh(session);
         String gav="local:workspace:0",release="25",generation="plain";
         List<String> options=List.of("--release","25");
-        var classpath=new java.util.ArrayList<Path>();var sources=new java.util.ArrayList<Path>();var coordinates=new java.util.LinkedHashMap<String,String>();
+        var classpath=new java.util.ArrayList<Path>();var sources=new java.util.ArrayList<Path>();var coordinates=new java.util.LinkedHashMap<String,String>();var binarySources=new LinkedHashSet<Path>();var processorWarnings=new LinkedHashSet<String>();
         if(graph!=null){
             var module=graph.modules().stream().filter(m->path.startsWith(Path.of(m.directory()))).max(java.util.Comparator.comparingInt(m->m.directory().length())).orElse(graph.modules().getFirst());
             gav=module.gav();release=module.release()==null||module.release().isBlank()?"25":module.release();generation=graph.fingerprint()+":"+gav;
@@ -164,13 +164,28 @@ public final class Application implements AutoCloseable {
             options=test?module.testCompilerOptions():module.compilerOptions();generation+=test?":test":":main";
             graph.classpaths().getOrDefault(gav+(test?":test":":main"),java.util.List.of()).forEach(p->classpath.add(Path.of(p)));
             module.sources().forEach(p->sources.add(Path.of(p)));if(test)module.testSources().forEach(p->sources.add(Path.of(p)));
+            var processing=prepareProcessing(session,module,false,graph);
+            if(processing!=null){classpath.addAll(0,processing.classpath());sources.addAll(0,processing.sourceRoots());binarySources.addAll(processing.binarySources());processorWarnings.addAll(processing.warnings());generation+=":"+processing.fingerprint();coordinates.put(processing.sourceRoots().getFirst().toString(),gav);}
+            if(test){var testOutput=prepareProcessing(session,module,true,graph);if(testOutput!=null){classpath.addAll(0,testOutput.classpath());sources.addAll(0,testOutput.sourceRoots());binarySources.addAll(testOutput.binarySources());processorWarnings.addAll(testOutput.warnings());generation+=":"+testOutput.fingerprint();coordinates.put(testOutput.sourceRoots().getFirst().toString(),gav);}}
             for(var m:graph.modules()){coordinates.put(m.directory(),m.gav());coordinates.put(Path.of(m.directory()).toUri().toString(),m.gav());}
             for(var node:graph.nodes())if(node.path()!=null&&node.winner()==null)coordinates.put(node.path(),node.gav());
         }else{sources.add(session.root());coordinates.put(session.root().toString(),gav);coordinates.put(session.root().toUri().toString(),gav);}
         var analyzer=session.state("analyzer",Analyzer::new);
         var availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
-        analyzer.configure(new Analyzer.Context(gav,release,java.util.List.copyOf(classpath),java.util.List.copyOf(sources),generation,java.util.Map.copyOf(coordinates),options),availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));
+        analyzer.configure(new Analyzer.Context(gav,release,java.util.List.copyOf(classpath),java.util.List.copyOf(sources),generation,java.util.Map.copyOf(coordinates),options,Set.copyOf(binarySources),List.copyOf(processorWarnings)),availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));
         return analyzer;
+    }
+    private AnnotationProcessing.Output prepareProcessing(Session session,Resolution.Module module,boolean test,Resolution graph)throws Exception{
+        var settings=test?module.testProcessing():module.processing();
+        if(settings.lombok())session.warn("lombok_reduced_fidelity: generated member bodies and positions are unavailable");
+        if(!settings.enabled())return null;
+        var processor=session.state("processors",()->new AnnotationProcessing(config));
+        // Only original source roots are processor inputs; prior generated files are never fed back into Filer.
+        var roots=(test?module.testSources():module.sources()).stream().filter(p->!p.equals(settings.generatedDirectory())&&!p.contains("/generated-sources")&&!p.contains("/generated-test-sources")).map(Path::of).toList();
+        var classpath=new ArrayList<Path>(graph.classpaths().getOrDefault(module.gav()+(test?":test":":main"),List.of()).stream().map(Path::of).toList());
+        if(test&&session.state("apt:"+module.gav()+":main") instanceof AnnotationProcessing.Output main)classpath.addAll(0,main.classpath());
+        var result=processor.prepare(new AnnotationProcessing.Request(module.gav()+(test?":test":":main"),Path.of(module.directory()),roots,classpath,settings.path().stream().map(Path::of).toList(),settings.names(),test?module.testCompilerOptions():module.compilerOptions(),settings.lombok()),java.time.Duration.ofSeconds(60));
+        session.put("apt:"+module.gav()+(test?":test":":main"),result);result.warnings().forEach(session::warn);return result;
     }
     private synchronized MavenResolver resolver() {
         if (resolver == null) resolver = new MavenResolver(config);
@@ -188,6 +203,7 @@ public final class Application implements AutoCloseable {
         }
         session.put("resolution", graph);
         graph.warnings().forEach(session::warn);
+        if(graph.modules().stream().anyMatch(m->m.processing().lombok()||m.testProcessing().lombok()))session.warn("lombok_reduced_fidelity: generated member bodies and positions are unavailable");
         if(index!=null && index.isDone() && !index.isCompletedExceptionally()) bindIndex(session,index.join());
         return graph;
     }

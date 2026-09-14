@@ -47,7 +47,7 @@ public final class Bindings {
                 var declaring=identity.declaring(element);row.put("declaring",declaring==null?null:declaring.getQualifiedName().toString());row.put("fqn",declaring==null?null:identity.binaryName(declaring));
                 row.put("parameters",element instanceof ExecutableElement m?m.getParameters().stream().map(p->p.getSimpleName().toString()).toList():List.of());
                 row.put("type_parameters",element instanceof Parameterizable generic?generic.getTypeParameters().stream().map(Object::toString).toList():List.of());
-                var path=trees.getPath(element);String sourceFile=identity.sourceFile(element);if(sourceFile!=null)dependencies.add(Path.of(sourceFile));row.put("file",sourceFile);row.put("source_file",sourceFile);
+                var path=identity.path(element);String sourceFile=identity.sourceFile(element);if(sourceFile!=null)dependencies.add(Path.of(sourceFile));row.put("file",sourceFile);row.put("source_file",sourceFile);
                 if(path!=null){var unit=path.getCompilationUnit();var text=source(unit);int begin=start(unit,path.getLeaf()),finish=end(unit,path.getLeaf());var token=declaration(path,element);
                     row.put("start",begin);row.put("end",finish);row.put("source_start",begin);row.put("source_end",finish);row.put("range",text.range(begin,finish));
                     if(token!=null){row.put("name_start",token.start());row.put("name_end",token.end());row.put("name_range",text.range(token.start(),token.end()));row.put("line",text.position(token.start()).line()+1);row.put("character",text.position(token.start()).character());}
@@ -91,7 +91,7 @@ public final class Bindings {
         }
         var capture=new Capture();
         for(var unit:units)new TreePathScanner<Void,String>(){
-            Element element(){return trees.getElement(getCurrentPath());}
+            Element element(){var element=trees.getElement(getCurrentPath());if(getCurrentPath().getLeaf() instanceof ClassTree||getCurrentPath().getLeaf() instanceof MethodTree||getCurrentPath().getLeaf() instanceof VariableTree||getCurrentPath().getLeaf() instanceof TypeParameterTree)identity.remember(element,getCurrentPath());return element;}
             @Override public Void visitClass(ClassTree tree,String parent){var e=element();String scip=capture.symbol(e);if(e!=null){capture.occurrence(getCurrentPath(),e,identity.displayName(e),true,"declaration",parent);capture.structure(e);}return super.visitClass(tree,scip);}
             @Override public Void visitMethod(MethodTree tree,String parent){var e=element();String scip=capture.symbol(e);if(e!=null){capture.occurrence(getCurrentPath(),e,identity.displayName(e),true,"declaration",parent);capture.structure(e);}if(bodies)return super.visitMethod(tree,scip);scan(tree.getModifiers(),scip);scan(tree.getReturnType(),scip);scan(tree.getTypeParameters(),scip);scan(tree.getParameters(),scip);scan(tree.getThrows(),scip);return null;}
             @Override public Void visitVariable(VariableTree tree,String parent){var e=element();if(e!=null){capture.occurrence(getCurrentPath(),e,identity.displayName(e),true,"declaration",parent);capture.structure(e);}scan(tree.getModifiers(),parent);scan(tree.getType(),parent);if(bodies)scan(tree.getInitializer(),e!=null&&e.getKind().isField()?capture.symbol(e):parent);return null;}

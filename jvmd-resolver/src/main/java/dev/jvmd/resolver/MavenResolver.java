@@ -172,12 +172,9 @@ public final class MavenResolver implements AutoCloseable {
             remotes = new ArrayList<>(system.newResolutionRepositories(session, remotes));
             String gav = model.getGroupId() + ":" + model.getArtifactId() + ":" + model.getVersion();
             var m = model.getBuild();
-            var sources = List.of(m.getSourceDirectory(), moduleDir.resolve("target/generated-sources/annotations").toString());
-            var testSources = List.of(m.getTestSourceDirectory(), moduleDir.resolve("target/generated-test-sources/test-annotations").toString());
+            var sources = ProcessorSettings.sourceRoots(model,false,moduleDir);
+            var testSources = ProcessorSettings.sourceRoots(model,true,moduleDir);
             String release = model.getProperties().getProperty("maven.compiler.release", model.getProperties().getProperty("java.version", model.getProperties().getProperty("maven.compiler.source", "25")));
-            build.modules.add(new Resolution.Module(gav, moduleDir.toString(), model.getPackaging(), sources, testSources,
-                    m.getOutputDirectory(), m.getTestOutputDirectory(), release,
-                    model.getDependencies().stream().map(d -> d.getGroupId() + ":" + d.getArtifactId() + ":" + d.getVersion()).toList(),CompilerSettings.options(model,false),CompilerSettings.options(model,true)));
             var collect = new CollectRequest().setRootArtifact(new DefaultArtifact(model.getGroupId(), model.getArtifactId(), "pom", model.getVersion()))
                     .setRepositories(remotes).setDependencies(model.getDependencies().stream().map(d -> dependency(d, session)).toList());
             if (model.getDependencyManagement() != null) collect.setManagedDependencies(model.getDependencyManagement().getDependencies().stream().map(d -> dependency(d, session)).toList());
@@ -188,11 +185,34 @@ public final class MavenResolver implements AutoCloseable {
             main.add(m.getOutputDirectory()); test.add(m.getTestOutputDirectory()); test.add(m.getOutputDirectory());
             var seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<DependencyNode, Boolean>());
             walk(resolved.getRoot(), null, gav, build, main, test, seen);
+            build.modules.add(new Resolution.Module(gav, moduleDir.toString(), model.getPackaging(), sources, testSources,
+                    m.getOutputDirectory(), m.getTestOutputDirectory(), release,
+                    model.getDependencies().stream().map(d -> d.getGroupId() + ":" + d.getArtifactId() + ":" + d.getVersion()).toList(),CompilerSettings.options(model,false),CompilerSettings.options(model,true),
+                    processors(model,false,moduleDir,session,remotes,main,build),processors(model,true,moduleDir,session,remotes,test,build)));
             build.classpaths.put(gav + ":main", List.copyOf(main)); build.classpaths.put(gav + ":test", List.copyOf(test));
             for (String child : model.getModules()) queue.add(moduleDir.resolve(child).normalize());
         }
         return build;
     }
+    private Resolution.Processing processors(Model model,boolean test,Path module,org.eclipse.aether.RepositorySystemSession session,List<RemoteRepository> repositories,Set<String> classpath,Build build)throws Exception {
+        var config=CompilerSettings.configuration(model,test);var coordinates=ProcessorSettings.dependencies(model,test);var names=ProcessorSettings.names(model,test);
+        String proc=ProcessorSettings.value(config,"proc",model.getProperties().getProperty("maven.compiler.proc",""));
+        boolean lombok=classpath.stream().anyMatch(MavenResolver::lombok);
+        var paths=new LinkedHashSet<String>();
+        if(!coordinates.isEmpty()&&!"none".equals(proc)){
+            var request=new CollectRequest().setRepositories(repositories).setDependencies(coordinates.stream().map(d->dependency(d,session)).toList());
+            if(Boolean.parseBoolean(ProcessorSettings.value(config,"annotationProcessorPathsUseDepMgmt","false"))&&model.getDependencyManagement()!=null)
+                request.setManagedDependencies(model.getDependencyManagement().getDependencies().stream().map(d->dependency(d,session)).toList());
+            collections.incrementAndGet();var resolved=system.resolveDependencies(session,new DependencyRequest(request,(node,parents)->node.getData().get(ConflictResolver.NODE_DATA_WINNER)==null));
+            for(var artifact:resolved.getArtifactResults())if(artifact.getArtifact()!=null&&artifact.getArtifact().getFile()!=null)paths.add(artifact.getArtifact().getFile().getAbsolutePath());
+        }
+        boolean explicit=!coordinates.isEmpty()||!names.isEmpty()||proc.equals("only")||proc.equals("full");
+        boolean enabled=!"none".equals(proc)&&(explicit||lombok);
+        if(enabled&&paths.isEmpty())paths.addAll(classpath);
+        lombok|=paths.stream().anyMatch(MavenResolver::lombok);
+        return new Resolution.Processing(List.copyOf(paths),names,enabled,lombok,ProcessorSettings.generatedDirectory(model,test,module));
+    }
+    private static boolean lombok(String path){return Path.of(path).getFileName().toString().matches("lombok-[0-9].*\\.jar");}
     private static RepositoryPolicy policy(org.apache.maven.model.RepositoryPolicy policy) {
         return new RepositoryPolicy(policy == null || policy.isEnabled(), RepositoryPolicy.UPDATE_POLICY_NEVER,
                 policy == null || policy.getChecksumPolicy() == null ? RepositoryPolicy.CHECKSUM_POLICY_FAIL : policy.getChecksumPolicy());
@@ -228,7 +248,7 @@ public final class MavenResolver implements AutoCloseable {
     }
     private String contextFingerprint() {
         String properties = environment.systemProperties().entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()).sorted().collect(java.util.stream.Collectors.joining("\n"));
-        return Hashing.sha256(("compiler-settings-v2\n" + config.mavenMajor() + "\n" + config.m2Repo() + "\n" + properties).getBytes(StandardCharsets.UTF_8));
+        return Hashing.sha256(("processor-settings-v3\n" + config.mavenMajor() + "\n" + config.m2Repo() + "\n" + properties).getBytes(StandardCharsets.UTF_8));
     }
     private static Input input(Path path, boolean strong) throws Exception {
         path = path.toAbsolutePath().normalize();

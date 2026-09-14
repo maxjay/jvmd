@@ -39,6 +39,10 @@ jobs:
         run: |
           bash jvmd-tests/smoke/run-index.sh
           mvn -B -pl jvmd-tests test -Dgroups=phase-3 -DexcludedGroups=perf -DargLine=-Xmx1024m
+      - name: Phase 4 compiler prerequisites and checkpoints
+        run: |
+          bash jvmd-tests/smoke/run-compiler.sh
+          mvn -B -pl jvmd-tests test -Dgroups=phase-4
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

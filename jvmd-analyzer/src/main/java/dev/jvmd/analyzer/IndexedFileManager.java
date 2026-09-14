@@ -19,6 +19,14 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     private final List<Path> sourceRoots;
     private final Map<Location,List<Path>> modulePaths=new HashMap<>();
     private final Map<Location,List<Path>> moduleSources=new HashMap<>();
+    private record ModuleLocation(Location delegate) implements Location {
+        @Override public String getName(){return "jvmd:"+delegate.getName();}
+        @Override public boolean isOutputLocation(){return delegate.isOutputLocation();}
+        @Override public boolean isModuleOrientedLocation(){return delegate.isModuleOrientedLocation();}
+    }
+    private final Map<Location,ModuleLocation> wrappedLocations=new HashMap<>();
+    private Location wrap(Location location){return location==null||location instanceof ModuleLocation?location:wrappedLocations.computeIfAbsent(location,ModuleLocation::new);}
+    private static Location delegate(Location location){return location instanceof ModuleLocation module?module.delegate():location;}
     private Map<Path,String> moduleDescriptors;
     private Path moduleOutput;
     private Map<Path,String> documents=Map.of();
@@ -50,11 +58,11 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         for(Path root:sourceRoots){Path file=root.resolve("module-info.java");String text=documents.get(file);if(text==null&&Files.isRegularFile(file))text=Files.readString(file);if(text!=null)descriptors.put(root,text);}
         if(descriptors.equals(moduleDescriptors))return;
         if(!moduleSources.isEmpty())fileManager.setLocationFromPaths(StandardLocation.MODULE_SOURCE_PATH,List.of());
-        moduleSources.clear();modulePaths.clear();
+        moduleSources.clear();modulePaths.clear();wrappedLocations.clear();
         fileManager.setLocationFromPaths(StandardLocation.SOURCE_PATH,sourceRoots.stream().filter(Files::isDirectory).toList());
         fileManager.setLocationFromPaths(StandardLocation.MODULE_PATH,descriptors.isEmpty()?List.of():classpath.stream().filter(Files::exists).toList());
         for(var group:fileManager.listLocationsForModules(StandardLocation.MODULE_PATH))for(var location:group){
-            var entries=new ArrayList<Path>();fileManager.getLocationAsPaths(location).forEach(entries::add);modulePaths.put(location,List.copyOf(entries));
+            var entries=new ArrayList<Path>();fileManager.getLocationAsPaths(location).forEach(entries::add);modulePaths.put(wrap(location),List.copyOf(entries));
         }
         fileManager.setLocationFromPaths(StandardLocation.CLASS_PATH,classInputs().stream().filter(Files::isDirectory).toList());
         if(descriptors.size()>1){
@@ -76,7 +84,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
                 fileManager.setLocationFromPaths(StandardLocation.CLASS_OUTPUT,List.of(moduleOutput));
                 for(var entry:roots.entrySet())fileManager.setLocationForModule(StandardLocation.MODULE_SOURCE_PATH,entry.getKey(),entry.getValue());
                 for(var group:fileManager.listLocationsForModules(StandardLocation.MODULE_SOURCE_PATH))for(var location:group){
-                    var entries=new ArrayList<Path>();fileManager.getLocationAsPaths(location).forEach(entries::add);moduleSources.put(location,List.copyOf(entries));
+                    var entries=new ArrayList<Path>();fileManager.getLocationAsPaths(location).forEach(entries::add);moduleSources.put(wrap(location),List.copyOf(entries));
                 }
             }
         }
@@ -152,16 +160,16 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     @Override public Iterable<JavaFileObject> list(Location location,String packageName,Set<JavaFileObject.Kind> kinds,boolean recurse)throws IOException {
         List<Path> sourceInputs=location==StandardLocation.SOURCE_PATH?sourceRoots:moduleSources.get(location);
         if(sourceInputs!=null){
-            var sources=new LinkedHashMap<String,JavaFileObject>();for(var file:super.list(location,packageName,kinds,recurse))if(!preferBinary(file))sources.put(super.inferBinaryName(location,file),file);
+            var sources=new LinkedHashMap<String,JavaFileObject>();for(var file:super.list(delegate(location),packageName,kinds,recurse))if(!preferBinary(file))sources.put(super.inferBinaryName(delegate(location),file),file);
             if(kinds.contains(JavaFileObject.Kind.SOURCE))for(var entry:documents.entrySet()){
                 String binary=sourceName(entry.getKey(),sourceInputs);if(binary==null)continue;int dot=binary.lastIndexOf('.');String pkg=dot<0?"":binary.substring(0,dot);
                 if(pkg.equals(packageName)||recurse&&(packageName.isEmpty()||pkg.startsWith(packageName+".")))sources.put(binary,new SourceFile(entry.getKey(),binary,entry.getValue()));
             }return sources.values();
         }
         List<Path> inputs=location==StandardLocation.CLASS_PATH?classInputs():modulePaths.get(location);
-        if(inputs==null||!kinds.contains(JavaFileObject.Kind.CLASS))return super.list(location,packageName,kinds,recurse);
+        if(inputs==null||!kinds.contains(JavaFileObject.Kind.CLASS))return super.list(delegate(location),packageName,kinds,recurse);
         var result=new LinkedHashMap<String,JavaFileObject>();
-        if(inputs.stream().anyMatch(Files::isDirectory))for(var file:super.list(location,packageName,kinds,recurse)){track(file);result.put(super.inferBinaryName(location,file),file);}
+        if(inputs.stream().anyMatch(Files::isDirectory))for(var file:super.list(delegate(location),packageName,kinds,recurse)){track(file);result.put(super.inferBinaryName(delegate(location),file),file);}
         for(var path:inputs)if(path.toString().endsWith(".jar")){
             Catalog catalog;
             try{catalog=catalog(path);}catch(IOException e){throw new UncheckedIOException(e);}
@@ -175,12 +183,12 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         if(sourceInputs!=null&&kind==JavaFileObject.Kind.SOURCE)for(var entry:documents.entrySet())if(className.equals(sourceName(entry.getKey(),sourceInputs)))return new SourceFile(entry.getKey(),className,entry.getValue());
         List<Path> inputs=location==StandardLocation.CLASS_PATH?classInputs():modulePaths.get(location);
         if(inputs!=null&&kind==JavaFileObject.Kind.CLASS&&!className.equals("module-info")){
-            if(inputs.stream().anyMatch(Files::isDirectory)){var directory=super.getJavaFileForInput(location,className,kind);if(directory!=null){track(directory);return directory;}}
+            if(inputs.stream().anyMatch(Files::isDirectory)){var directory=super.getJavaFileForInput(delegate(location),className,kind);if(directory!=null){track(directory);return directory;}}
             for(var path:inputs)if(path.toString().endsWith(".jar")){Catalog catalog;try{catalog=catalog(path);}catch(IOException e){throw new UncheckedIOException(e);}var entry=catalog.classes().get(className);if(entry!=null)return new BinaryFile(catalog,entry);}
             return null;
-        }var file=super.getJavaFileForInput(location,className,kind);return file!=null&&sourceInputs!=null&&preferBinary(file)?null:file;
+        }var file=super.getJavaFileForInput(delegate(location),className,kind);return file!=null&&sourceInputs!=null&&preferBinary(file)?null:file;
     }
-    @Override public String inferBinaryName(Location location,JavaFileObject file){return file instanceof SourceFile source?source.binary:file instanceof IndexedFileManager.BinaryFile binary?binary.entry.binary():super.inferBinaryName(location,file);}
+    @Override public String inferBinaryName(Location location,JavaFileObject file){return file instanceof SourceFile source?source.binary:file instanceof IndexedFileManager.BinaryFile binary?binary.entry.binary():super.inferBinaryName(delegate(location),file);}
     @Override public boolean isSameFile(FileObject a,FileObject b){if(a instanceof SourceFile||b instanceof SourceFile||a instanceof IndexedFileManager.BinaryFile||b instanceof IndexedFileManager.BinaryFile)return a.toUri().equals(b.toUri());return super.isSameFile(a,b);}
     @Override public boolean contains(Location location,FileObject file)throws IOException{
         if(file instanceof SourceFile){
@@ -190,14 +198,24 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
             return false;
         }
         if(file instanceof IndexedFileManager.BinaryFile binary)return location==StandardLocation.CLASS_PATH?classInputs().contains(binary.catalog.path()):modulePaths.getOrDefault(location,List.of()).contains(binary.catalog.path());
-        return super.contains(location,file);
+        return super.contains(delegate(location),file);
     }
     @Override public Location getLocationForModule(Location location,JavaFileObject file)throws IOException{
         if(file instanceof SourceFile)file=fileManager.getJavaFileObjectsFromPaths(List.of(Path.of(file.toUri()))).iterator().next();
         if(file instanceof IndexedFileManager.BinaryFile binary&&location==StandardLocation.MODULE_PATH){for(var entry:modulePaths.entrySet())if(entry.getValue().contains(binary.catalog.path()))return entry.getKey();return null;}
-        return super.getLocationForModule(location,file);
+        return wrap(super.getLocationForModule(delegate(location),file));
     }
-    @Override public boolean hasLocation(Location location){if(location==StandardLocation.MODULE_SOURCE_PATH)return !moduleSources.isEmpty();return location==StandardLocation.CLASS_PATH||location==StandardLocation.SOURCE_PATH&&moduleSources.isEmpty()&&!documents.isEmpty()||super.hasLocation(location);}
+    @Override public Location getLocationForModule(Location location,String name)throws IOException{return wrap(super.getLocationForModule(delegate(location),name));}
+    @Override public Iterable<Set<Location>> listLocationsForModules(Location location)throws IOException{
+        var result=new ArrayList<Set<Location>>();for(var group:super.listLocationsForModules(delegate(location))){var entries=new LinkedHashSet<Location>();for(var entry:group)entries.add(wrap(entry));result.add(entries);}return result;
+    }
+    @Override public String inferModuleName(Location location)throws IOException{return super.inferModuleName(delegate(location));}
+    @Override public FileObject getFileForInput(Location location,String packageName,String relativeName)throws IOException{return super.getFileForInput(delegate(location),packageName,relativeName);}
+    @Override public FileObject getFileForOutput(Location location,String packageName,String relativeName,FileObject sibling)throws IOException{return super.getFileForOutput(delegate(location),packageName,relativeName,sibling);}
+    @Override public JavaFileObject getJavaFileForOutput(Location location,String className,JavaFileObject.Kind kind,FileObject sibling)throws IOException{return super.getJavaFileForOutput(delegate(location),className,kind,sibling);}
+    @Override public ClassLoader getClassLoader(Location location){return super.getClassLoader(delegate(location));}
+    @Override public <S> ServiceLoader<S> getServiceLoader(Location location,Class<S> service)throws IOException{return super.getServiceLoader(delegate(location),service);}
+    @Override public boolean hasLocation(Location location){if(location==StandardLocation.MODULE_SOURCE_PATH)return !moduleSources.isEmpty();return location==StandardLocation.CLASS_PATH||location==StandardLocation.SOURCE_PATH&&moduleSources.isEmpty()&&!documents.isEmpty()||super.hasLocation(delegate(location));}
     public void invalidate(){catalogs.clear();classFiles.clear();bytes.clear();byteSize=0;try{fileManager.flush();configureModules();}catch(IOException e){throw new UncheckedIOException(e);}}
     @Override public void close()throws IOException{try{super.close();}finally{catalogs.clear();classFiles.clear();bytes.clear();byteSize=0;if(moduleOutput!=null)try(var files=Files.walk(moduleOutput)){for(Path file:files.sorted(Comparator.reverseOrder()).toList())Files.delete(file);}}}
 }

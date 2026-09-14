@@ -38,7 +38,8 @@ public final class ResponseBudget {
         while(!pending.isEmpty()){
             JsonNode node=pending.removeFirst();byte[] encoded=Json.MAPPER.writeValueAsBytes(node);
             if(encoded.length<=payloadBudget){fragments.add(node);bytes+=encoded.length;if(bytes>MAX_STORED_BYTES)throw RpcException.invalid("Response exceeds continuation storage; request a smaller limit");continue;}
-            Candidate candidate=largest(node,List.of(),null);
+            Candidate candidate=independentFields(node,List.of(),payloadBudget);
+            if(candidate==null)candidate=largest(node,List.of(),null);
             if(candidate==null||candidate.weight()<1024)candidate=objectCandidate(node,List.of());
             if(candidate==null)throw RpcException.invalid("Response contains an unsplittable value");
             List<JsonNode> split=split(node,candidate);pending.addFirst(split.get(1));pending.addFirst(split.get(0));
@@ -47,7 +48,7 @@ public final class ResponseBudget {
         String key="budget:"+UUID.randomUUID();var pages=new ArrayList<ObjectNode>();
         for(int i=0;i<fragments.size();i++){
             ObjectNode page=response.deepCopy(),value=envelope(page);var fragment=fragments.get(i);JsonNode payload=fragment.path("payload");
-            ObjectNode result;if(payload.isObject())result=(ObjectNode)payload.deepCopy();else{result=Json.MAPPER.createObjectNode();result.set(payload.isTextual()?"text":"items",payload);}
+            ObjectNode result;if(payload.isObject())result=(ObjectNode)payload.deepCopy();else{result=Json.MAPPER.createObjectNode();if(!payload.isMissingNode())result.set(payload.isTextual()?"text":"items",payload);}
             if(fragment.has("_jvmd_segments"))result.set("_jvmd_segments",fragment.get("_jvmd_segments"));
             value.set("result",result);value.set("warnings",fragment.path("warnings").isArray()?fragment.path("warnings"):Json.MAPPER.createArrayNode());boolean more=i+1<fragments.size();
             if(more){value.put("truncated",true);value.put("cursor",key+":"+(i+1));}pages.add(page);
@@ -58,18 +59,31 @@ public final class ResponseBudget {
         }
         return pages.getFirst();
     }
+    private static Candidate independentFields(JsonNode node,List<String> path,int budget)throws Exception{
+        if(node.isObject()){
+            int large=0;for(var entry:node.properties())if(!entry.getKey().equals("_jvmd_segments")&&Json.MAPPER.writeValueAsBytes(entry.getValue()).length>=Math.max(1024,budget/4))large++;
+            // Split independent large fields before values, avoiding their Cartesian duplication.
+            if(large>1)return new Candidate(path,node,Json.MAPPER.writeValueAsBytes(node).length);
+            for(var entry:node.properties())if(!entry.getKey().equals("_jvmd_segments")){
+                var child=new ArrayList<>(path);child.add(entry.getKey());var found=independentFields(entry.getValue(),List.copyOf(child),budget);if(found!=null)return found;
+            }
+        }else if(node.isArray())for(int i=0;i<node.size();i++){
+            var child=new ArrayList<>(path);child.add(Integer.toString(i));var found=independentFields(node.get(i),List.copyOf(child),budget);if(found!=null)return found;
+        }
+        return null;
+    }
     private static Candidate objectCandidate(JsonNode node,List<String> path)throws Exception{
         if(node.isObject()){
             Candidate largest=null;
             for(var entry:node.properties())if(!entry.getKey().equals("_jvmd_segments")&&entry.getValue().isObject()){
                 var child=new ArrayList<>(path);child.add(entry.getKey());var candidate=objectCandidate(entry.getValue(),List.copyOf(child));if(candidate!=null&&(largest==null||candidate.weight()>largest.weight()))largest=candidate;
             }
-            if(largest!=null)return largest;if(node.size()>1)return new Candidate(path,node,Json.MAPPER.writeValueAsBytes(node).length);
+            if(largest!=null)return largest;if(node.size()-(node.has("_jvmd_segments")?1:0)>1)return new Candidate(path,node,Json.MAPPER.writeValueAsBytes(node).length);
         }return null;
     }
     private static Candidate largest(JsonNode node,List<String> path,Candidate best)throws Exception{
         if(node.isArray()&&node.size()>1||node.isTextual()&&node.textValue().length()>1){
-            long weight=node.isTextual()?node.textValue().length():Json.MAPPER.writeValueAsBytes(node).length;if(best==null||weight>best.weight())best=new Candidate(path,node,weight);
+            long weight=Json.MAPPER.writeValueAsBytes(node).length;if(best==null||weight>best.weight())best=new Candidate(path,node,weight);
         }
         if(node.isObject())for(var entry:node.properties()){if(entry.getKey().equals("_jvmd_segments"))continue;var child=new ArrayList<>(path);child.add(entry.getKey());best=largest(entry.getValue(),List.copyOf(child),best);}
         else if(node.isArray())for(int i=0;i<node.size();i++){var child=new ArrayList<>(path);child.add(Integer.toString(i));best=largest(node.get(i),List.copyOf(child),best);}
@@ -77,7 +91,8 @@ public final class ResponseBudget {
     }
     private static String pointer(List<String> path){return path.isEmpty()?"":"/"+String.join("/",path.stream().map(p->p.replace("~","~0").replace("/","~1")).toList());}
     private static List<JsonNode> split(JsonNode original,Candidate candidate){
-        JsonNode value=candidate.node();int size=value.isTextual()?value.textValue().length():value.size();if(size<2)throw RpcException.invalid("Response contains an unsplittable value");
+        JsonNode value=candidate.node();if(value.isObject()){value=value.deepCopy();((ObjectNode)value).remove("_jvmd_segments");}
+        int size=value.isTextual()?value.textValue().length():value.size();if(size<2)throw RpcException.invalid("Response contains an unsplittable value");
         int middle=size/2;if(value.isTextual()&&middle>0&&middle<size&&Character.isHighSurrogate(value.textValue().charAt(middle-1))&&Character.isLowSurrogate(value.textValue().charAt(middle)))middle++;
         var halves=new ArrayList<JsonNode>();
         for(int half=0;half<2;half++){
@@ -87,7 +102,7 @@ public final class ResponseBudget {
             else if(value.isObject()){var object=Json.MAPPER.createObjectNode();int i=0;for(var entry:value.properties()){if(i>=begin&&i<end)object.set(entry.getKey(),entry.getValue());i++;}part=object;}
             else throw RpcException.invalid("Response contains an unsplittable value");
             JsonNode copy=original.deepCopy();
-            if(candidate.path().isEmpty())copy=part;
+            if(candidate.path().isEmpty()){copy=part;if(copy.isObject()&&original.has("_jvmd_segments"))((ObjectNode)copy).set("_jvmd_segments",original.get("_jvmd_segments").deepCopy());}
             else{
                 JsonNode parent=copy;for(int i=0;i<candidate.path().size()-1;i++){String key=candidate.path().get(i);parent=parent.isArray()?parent.get(Integer.parseInt(key)):parent.get(key);}
                 String key=candidate.path().getLast();if(parent.isArray())((ArrayNode)parent).set(Integer.parseInt(key),part);else ((ObjectNode)parent).set(key,part);

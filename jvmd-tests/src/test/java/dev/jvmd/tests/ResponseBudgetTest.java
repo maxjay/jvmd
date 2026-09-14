@@ -62,7 +62,8 @@ class ResponseBudgetTest {
             var payload=Map.of("symbols",symbols,"edges",List.of(Map.of("src","local first","dst","local last")));
             var warnings=List.of("warning "+"🧪".repeat(5000));
             dispatcher.register("probe.nested",(s,p)->{calls.incrementAndGet();return new Envelope(2,"live",true,"native-next",warnings,payload);});
-            var response=TestSupport.complete(dispatcher,"probe.nested",Map.of("session",session.id(),"_response_bytes",4096)).path("result");
+            var answer=TestSupport.complete(dispatcher,"probe.nested",Map.of("session",session.id(),"_response_bytes",4096));
+            assertThat(answer.has("error")).withFailMessage("Continuation failed: %s",answer.path("error")).isFalse();var response=answer.path("result");
             assertThat(response.path("result")).isEqualTo(Json.MAPPER.valueToTree(payload));
             assertThat(response.path("warnings")).isEqualTo(Json.MAPPER.valueToTree(warnings));
             assertThat(response.path("cursor").asText()).isEqualTo("native-next");assertThat(calls.get()).isEqualTo(1);

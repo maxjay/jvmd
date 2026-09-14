@@ -58,6 +58,7 @@ class DaemonStartupBudgetTest {
             }
             java.util.Arrays.sort(times);
             var measures = java.util.Map.of("startup_ms", startupMs, "overview_p50_ms", times[7], "overview_p95_ms", times[14]);
+            System.out.println("phase-1-perf " + Json.MAPPER.writeValueAsString(measures));
             Json.MAPPER.writerWithDefaultPrettyPrinter().writeValue(TestSupport.repo().resolve("jvmd-tests/target/phase-1-perf.json").toFile(), measures);
             assertThat(startupMs).as("strict AOT cold startup ms").isLessThan(600);
             assertThat(times[14]).as("2k-line overview p95 ms").isLessThan(50);

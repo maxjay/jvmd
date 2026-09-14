@@ -32,7 +32,7 @@ final class NativeSession extends AbstractSession {
     @Override public Map<String,String> getEffectiveProperties(Project project) {
         var result=new HashMap<>(getSystemProperties());if(project!=null)result.putAll(project.getModel().getProperties());result.putAll(properties);return result;
     }
-    @Override public Version getMavenVersion() { return getService(ModelVersionParser.class).parseVersion("4.0.0-rc-6"); }
+    @Override public Version getMavenVersion() { return parseVersion("4.0.0-rc-6"); }
     @Override public int getDegreeOfConcurrency() { return 1; }
     @Override public Instant getStartTime() { return started; }
     @Override public Path getTopDirectory() { return root; }

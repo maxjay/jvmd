@@ -5,11 +5,11 @@ on:
   pull_request:
 permissions:
   contents: read
-concurrency:
-  group: checkpoints-${{ github.ref }}
-  cancel-in-progress: true
 jobs:
   checkpoints:
+    concurrency:
+      group: checkpoint-tests-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -127,6 +127,9 @@ jobs:
             jvmd-tests/target/daemon-perf-output.log
             jvmd-dist/target/training-state/*.log
   corpus:
+    concurrency:
+      group: corpus-tests-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

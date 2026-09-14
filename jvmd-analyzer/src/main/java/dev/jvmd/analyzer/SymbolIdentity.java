@@ -14,7 +14,10 @@ public final class SymbolIdentity {
     private final Trees trees;
     private final String defaultGav,jdkVersion;
     private final Function<String,String> coordinates;
-    public SymbolIdentity(JavacTask task,String defaultGav,String jdkVersion,Function<String,String> coordinates){elements=task.getElements();types=task.getTypes();trees=Trees.instance(task);this.defaultGav=defaultGav;this.jdkVersion=jdkVersion;this.coordinates=coordinates;}
+    private final List<java.nio.file.Path> sources;
+    private final Map<String,String> sourceLocations=new HashMap<>();
+    public SymbolIdentity(JavacTask task,String defaultGav,String jdkVersion,Function<String,String> coordinates){this(task,defaultGav,jdkVersion,coordinates,List.of());}
+    public SymbolIdentity(JavacTask task,String defaultGav,String jdkVersion,Function<String,String> coordinates,List<java.nio.file.Path> sources){this.sources=List.copyOf(sources);elements=task.getElements();types=task.getTypes();trees=Trees.instance(task);this.defaultGav=defaultGav;this.jdkVersion=jdkVersion;this.coordinates=coordinates;}
     public String descriptor(TypeMirror type){
         type=types.erasure(type);
         return switch(type.getKind()){
@@ -44,7 +47,13 @@ public final class SymbolIdentity {
         if(path==null){var type=declaring(element);if(type!=null)path=trees.getPath(type);}
         java.net.URI uri=path==null?null:path.getCompilationUnit().getSourceFile().toUri();
         if(uri==null&&declaring(element) instanceof ClassSymbol symbol&&symbol.sourcefile!=null)uri=symbol.sourcefile.toUri();
-        return uri!=null&&"file".equals(uri.getScheme())&&uri.getPath().endsWith(".java")?java.nio.file.Path.of(uri).toAbsolutePath().normalize().toString():null;
+        if(uri!=null&&"file".equals(uri.getScheme())&&uri.getPath().endsWith(".java")&&java.nio.file.Files.isRegularFile(java.nio.file.Path.of(uri)))return java.nio.file.Path.of(uri).toAbsolutePath().normalize().toString();
+        var type=declaring(element);if(type==null)return null;
+        String key=binaryName(type),cached=sourceLocations.get(key);if(cached!=null)return cached.isEmpty()?null:cached;
+        String filename=type instanceof ClassSymbol symbol&&symbol.sourcefile!=null?symbol.sourcefile.getName():key.substring(key.lastIndexOf('.')+1).split("\\$",2)[0]+".java";filename=filename.substring(filename.lastIndexOf('/')+1);
+        String pkg=elements.getPackageOf(type).getQualifiedName().toString().replace('.','/');String relative=(pkg.isEmpty()?"":pkg+"/")+filename;
+        for(var root:sources){var file=root.resolve(relative);if(java.nio.file.Files.isRegularFile(file)){String found=file.toAbsolutePath().normalize().toString();sourceLocations.put(key,found);return found;}}
+        sourceLocations.put(key,"");return null;
     }
     public String displayName(Element e){return e.getKind()==ElementKind.CONSTRUCTOR?e.getEnclosingElement().getSimpleName().toString():e.getSimpleName().toString();}
     public String namePath(Element e){

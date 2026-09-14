@@ -36,6 +36,7 @@ class IdentifierSweepTest {
                     }
                     total+=count;correct+=matched;reports.add(Map.of("file",file.toString(),"identifiers",count,"correct",matched,"rate",count==0?1d:(double)matched/count,"misses",misses));
                     System.out.println("sweep-file "+root.relativize(file)+" "+matched+"/"+count);
+                    if(matched<count)System.out.println("sweep-misses "+root.relativize(file)+" "+Json.MAPPER.writeValueAsString(misses));
                 }
             }
         }

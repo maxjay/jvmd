@@ -17,7 +17,7 @@ public final class Analyzer implements AutoCloseable {
     private final CompilerPool compiler=new CompilerPool();
     private final Focusing focusing=new Focusing();
     private final LinkedHashMap<String,Envelope> outlines=new LinkedHashMap<>(16,.75f,true);
-    private record Cached(Path file,String hash,String stamp,int start,int end,CompilerPool.Outcome<Bindings.Snapshot> result) { }
+    private record Cached(Path file,String hash,String stamp,int start,int end,List<Focusing.Span> excluded,CompilerPool.Outcome<Bindings.Snapshot> result) { }
     private record Outline(List<Map<String,Object>> symbols,Set<Path> dependencies) { }
     private final LinkedHashMap<String,Cached> focused=new LinkedHashMap<>(32,.75f,true);
     private final Dependencies dependencies=new Dependencies();
@@ -43,7 +43,7 @@ public final class Analyzer implements AutoCloseable {
         touch(path,text);
         String key=path+":"+Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))+":"+classpathStamp()+":"+depth+":"+limit+":"+offset;
         var cached=outlines.get(key);if(cached!=null)return cached;
-        var result=compiler.query(path,text,1,(task,units,tier)->new Outline(declarations(task,units,path,text,depth),Bindings.capture(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates),path,sourceText(path,text),false).dependencies()));
+        var result=compiler.query(path,text,1,(task,units,tier)->new Outline(declarations(task,units,path,text,depth),Bindings.capture(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.sources()),path,sourceText(path,text),false).dependencies()));
         if(result.result()!=null)dependencies.record(path,result.result().dependencies());
         var symbols=result.result()==null?List.<Map<String,Object>>of():result.result().symbols();
         int from=Math.min(offset,symbols.size()),to=Math.min(symbols.size(),from+limit);boolean truncated=to<symbols.size();
@@ -52,7 +52,7 @@ public final class Analyzer implements AutoCloseable {
         return envelope;
     }
     private List<Map<String,Object>> declarations(JavacTask task,List<CompilationUnitTree> units,Path file,String text,int depth){
-        var identity=new SymbolIdentity(task,context.gav(),context.release(),this::coordinates);var trees=Trees.instance(task);var docs=DocTrees.instance(task);var source=sourceText(file,text);
+        var identity=new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.sources());var trees=Trees.instance(task);var docs=DocTrees.instance(task);var source=sourceText(file,text);
         var result=new ArrayList<Map<String,Object>>();
         for(var unit:units)new TreePathScanner<Void,Integer>(){
             private void add(Tree tree,Element element,int level){
@@ -110,16 +110,16 @@ public final class Analyzer implements AutoCloseable {
         for(var entry:new ArrayList<>(focused.entrySet())){
             var cached=entry.getValue();
             if(cached.file().equals(path)&&cached.hash().equals(hash)&&cached.stamp().equals(stamp)
-                    &&(cursor==null?entry.getKey().endsWith(":full"):cursor>=cached.start()&&cursor<cached.end())){
+                    &&(cursor==null?entry.getKey().endsWith(":full"):cursor>=cached.start()&&cursor<cached.end()&&cached.excluded().stream().noneMatch(span->cursor>=span.start()&&cursor<span.end()))){
                 focused.get(entry.getKey());cacheHits++;return cached.result();
             }
         }
         var focus=cursor==null?null:focusing.focus(path,text,cursor);
         String source=focus==null?text:focus.source();Path file=path;
-        var outcome=compiler.query(path,source,2,(task,units,tier)->Bindings.capture(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates),file,sourceText(file,text),true));
+        var outcome=compiler.query(path,source,2,(task,units,tier)->Bindings.capture(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.sources()),file,sourceText(file,text),true));
         if(outcome.result()!=null&&outcome.warnings().isEmpty()){
             dependencies.record(path,outcome.result().dependencies());
-            String member=focus==null?"full":focus.member();focused.put(path+":"+hash+":"+member,new Cached(path,hash,stamp,focus==null?0:focus.member().equals("declarations")?cursor:focus.start(),focus==null?text.length():focus.member().equals("declarations")?cursor+1:focus.end(),outcome));
+            String member=focus==null?"full":focus.member();focused.put(path+":"+hash+":"+member,new Cached(path,hash,stamp,focus==null?0:focus.member().equals("declarations")?cursor:focus.start(),focus==null?text.length():focus.member().equals("declarations")?cursor+1:focus.end(),focus==null?List.of():focus.replaced(),outcome));
             while(focused.size()>32)focused.remove(focused.keySet().iterator().next());
         }return outcome;
     }

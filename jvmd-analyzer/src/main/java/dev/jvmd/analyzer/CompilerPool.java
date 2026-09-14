@@ -44,7 +44,7 @@ public final class CompilerPool implements AutoCloseable {
         var diagnostics=new DiagnosticCollector<JavaFileObject>();var warnings=new ArrayList<String>();int[] actual={tier};boolean[] fault={false},implicitSource={false};queries++;
         var options=new ArrayList<String>(compilerOptions);
         for(String option:options)if(option.startsWith("-proc")||option.startsWith("-processor")||option.startsWith("--processor")||option.startsWith("-Xplugin"))throw new IllegalArgumentException("Compiler extensions run only in the external processor process: "+option);
-        options.addAll(List.of("-proc:none","--should-stop=ifError=FLOW","-parameters","-g"));
+        options.addAll(List.of("-proc:none","--should-stop=ifError=FLOW","-Xprefer:source","-parameters","-g"));
         try {
             manager.validateClasspath();
             T value=pool.getTask(new java.io.StringWriter(),manager,diagnostics,options,null,List.of(Parser.source(path.toUri(),source)),task->{
@@ -67,7 +67,7 @@ public final class CompilerPool implements AutoCloseable {
             return new Outcome<>(level,value,problems,List.copyOf(warnings));
         }catch(QueryFailure e){throw (Exception)e.getCause();}
         catch(AssertionError|RuntimeException e){System.getLogger("jvmd.analyzer").log(System.Logger.Level.ERROR,"Compiler query fault in "+path,e);fault[0]=true;faults++;return new Outcome<>(Math.min(1,tier),null,List.of(),List.of("analyzer_fault: "+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage())));}
-        finally{if(fault[0]||implicitSource[0])recycle();}
+        finally{if(fault[0])recycle();}
     }
     private static void resetSourcePackages(JavacTask task,List<CompilationUnitTree> units){
         // JavacTaskPool removes source classes from Symtab, but retains their package scope.

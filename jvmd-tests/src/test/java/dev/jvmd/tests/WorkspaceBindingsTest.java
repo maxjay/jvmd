@@ -11,6 +11,17 @@ import static org.assertj.core.api.Assertions.*;
 @Tag("phase-4")
 class WorkspaceBindingsTest {
     @TempDir Path root;
+    @Test void anOuterFocusDoesNotCoverErasedNestedMethodBodies()throws Exception{
+        String text="class Nested { int outer(){ int outside=1; class Inner { int nested(){ int inside=2; return inside; } } return outside; } }";
+        Path file=root.resolve("Nested.java");Files.writeString(file,text);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(new Analyzer.Context("test:app:1","25",List.of(),List.of(root),"1",Map.of(root.toUri().toString(),"test:app:1")),null,256L*1024*1024);
+            int outer=text.lastIndexOf("outside"),inner=text.indexOf("return inside")+7;
+            assertThat(analyzer.bindings(file,text,outer).result().at(outer).get("name")).isEqualTo("outside");
+            var result=analyzer.bindings(file,text,inner);assertThat(result.warnings()).isEmpty();assertThat(result.result().at(inner).get("name")).isEqualTo("inside");
+            assertThat(((Number)analyzer.status().get("queries")).longValue()).isEqualTo(2);
+        }
+    }
     @Test void bindsOverloadsShadowedVariablesAndOverrides()throws Exception{
         String text="""
                 interface Parent { int apply(int value); }

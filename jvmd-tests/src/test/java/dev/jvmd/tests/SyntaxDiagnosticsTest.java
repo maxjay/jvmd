@@ -19,4 +19,14 @@ class SyntaxDiagnosticsTest {
             assertThat(diagnostics.get(0).path("tier").asInt()).isZero();
         }
     }
+    @Test void editingAPreviouslyParsedFileDoesNotRetainOldDiagnostics() throws Exception {
+        try (var parser = new Parser()) {
+            Path path=Path.of("Edited.java");String broken="class Edited { int value = ; }";
+            var first=parser.overview(path,broken,1,10);
+            assertThat(Json.MAPPER.valueToTree(first.result()).path("diagnostics").isEmpty()).isFalse();
+            var fixed=parser.overview(path,broken.replace("= ;","=0;"),1,10);
+            assertThat(Json.MAPPER.valueToTree(fixed.result()).path("diagnostics").isEmpty()).isTrue();
+            assertThat(Json.MAPPER.valueToTree(parser.overview(path,broken,1,10).result()).path("diagnostics").isEmpty()).isFalse();
+        }
+    }
 }

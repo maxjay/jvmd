@@ -20,9 +20,12 @@ import javax.tools.ToolProvider;
 
 /** Implements 4.2 tier 0: javac parsing with declaration ranges and syntax diagnostics. */
 public final class Parser implements AutoCloseable {
+    private final java.util.LinkedHashMap<String, Envelope> cache = new java.util.LinkedHashMap<>(16,0.75f,true);
     private final javax.tools.JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
     private final javax.tools.StandardJavaFileManager manager = compiler.getStandardFileManager(null, null, java.nio.charset.StandardCharsets.UTF_8);
     public Envelope overview(Path path, String text, int depth, int limit) throws java.io.IOException {
+        String key=path.toAbsolutePath().normalize()+":"+dev.jvmd.core.Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))+":"+depth+":"+limit;
+        var cached=cache.get(key);if(cached!=null)return cached;
         var diagnostics = new DiagnosticCollector<JavaFileObject>();
         JavacTask task = (JavacTask) compiler.getTask(null, manager, diagnostics,
                 List.of("-proc:none", "--should-stop=ifError=FLOW"), null, List.of(source(path.toUri(), text)));
@@ -57,13 +60,14 @@ public final class Parser implements AutoCloseable {
                 "code", d.getCode(), "kind", d.getKind().name(), "file", path.toString(), "line", d.getLineNumber(),
                 "character", Math.max(0, d.getColumnNumber() - 1), "message", d.getMessage(java.util.Locale.ROOT))).toList();
         boolean truncated = declarations.size() > limit;
-        return new Envelope(0, "live", truncated, truncated ? Integer.toString(limit) : null, List.of(),
-                Map.of("symbols", declarations.subList(0, Math.min(limit, declarations.size())), "diagnostics", errors));
+        var result = new Envelope(0, "live", truncated, truncated ? Integer.toString(limit) : null, List.of(),
+                Map.of("symbols", List.copyOf(declarations.subList(0, Math.min(limit, declarations.size()))), "diagnostics", errors));
+        cache.put(key,result);while(cache.size()>16)cache.remove(cache.keySet().iterator().next());return result;
     }
     public static JavaFileObject source(URI uri, String text) {
         return new SimpleJavaFileObject(uri, JavaFileObject.Kind.SOURCE) {
             @Override public CharSequence getCharContent(boolean ignoreErrors) { return text; }
         };
     }
-    @Override public void close() throws java.io.IOException { manager.close(); }
+    @Override public void close() throws java.io.IOException { cache.clear(); manager.close(); }
 }

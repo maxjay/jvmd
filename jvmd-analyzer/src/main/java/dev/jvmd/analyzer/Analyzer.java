@@ -155,12 +155,8 @@ public final class Analyzer implements AutoCloseable {
         return List.copyOf(found.values());
     }
     public static boolean matches(Map<String,Object> symbol,String ref,boolean substring){
-        if(ref.equals(symbol.get("scip")))return true;
-        String name=Objects.toString(symbol.get("name"),""),path=Objects.toString(symbol.get("name_path"),"");
-        if(substring)return path.contains(ref)||name.contains(ref);
-        if(path.equals(ref)||name.equals(ref)||path.endsWith("."+ref)||path.endsWith("/"+ref))return true;
-        if(!ref.contains("(")){String simple=path.replaceAll("\\([^)]*\\)","");return simple.equals(ref)||simple.endsWith("."+ref)||simple.endsWith("/"+ref);}
-        return false;
+        if(substring)return Objects.toString(symbol.get("name_path"),"").contains(ref)||Objects.toString(symbol.get("name"),"").contains(ref);
+        return NamePath.parse(ref).matches(symbol);
     }
     public Map<String,Object> status(){var result=new LinkedHashMap<String,Object>(compiler.status());result.putAll(focusing.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("dependencies",dependencies.status());return result;}
     @Override public void close()throws Exception{outlines.clear();focused.clear();focusing.clear();sourceTexts.clear();compiler.close();}

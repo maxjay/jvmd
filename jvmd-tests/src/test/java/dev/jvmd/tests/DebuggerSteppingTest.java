@@ -34,6 +34,8 @@ class DebuggerSteppingTest {
             debug.step(null,"step_into");debug.awaitStop(Duration.ofSeconds(10));var into=top(debug);assertThat(into.path("method").asText()).isEqualTo("helper");
             debug.step(null,"step_over");debug.awaitStop(Duration.ofSeconds(10));var over=top(debug);assertThat(over.path("method").asText()).isEqualTo("helper");assertThat(over.path("line").asInt()).isGreaterThan(into.path("line").asInt());
             debug.step(null,"step_out");debug.awaitStop(Duration.ofSeconds(10));assertThat(top(debug).path("method").asText()).isEqualTo("main");
+            // STEP_OUT stops at the invocation return, before the caller stores the result.
+            debug.step(null,"step_over");debug.awaitStop(Duration.ofSeconds(10));assertThat(top(debug).path("line").asInt()).isEqualTo(RuntimeFixtures.line(source,"System.out.println(result)"));
             assertThat(Json.MAPPER.valueToTree(debug.locals(null,0,20).result()).toString()).contains("result","4");
         }
     }

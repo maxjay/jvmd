@@ -51,7 +51,7 @@ public final class Application implements AutoCloseable {
         });
         dispatcher.register("symbol.find",(s,p)->{
             if(p.has("path")){Path path=sourcePath(s,Dispatcher.required(p,"path"));return analyzer(s,path).atPosition(path,Files.readString(path),Dispatcher.bounded(p,"line",0,Integer.MAX_VALUE),Dispatcher.bounded(p,"character",0,Integer.MAX_VALUE));}
-            String ref=Dispatcher.required(p,"name_path"),scope=p.path("scope").asText("all");if(!Set.of("workspace","deps","all").contains(scope))throw RpcException.invalid("Unknown symbol scope");
+            String ref=Dispatcher.required(p,"name_path"),scope=p.path("scope").asText("workspace");if(!Set.of("workspace","deps","all").contains(scope))throw RpcException.invalid("Unknown symbol scope");
             int limit=Dispatcher.limit(p,50,200),offset=cursor(p);boolean substring=p.path("substring").asBoolean();
             IndexService searchIndex=null;if(!scope.equals("workspace")){searchIndex=index();prepareIndex(s,searchIndex);}
             var matches=new LinkedHashMap<String,Map<String,Object>>();
@@ -63,7 +63,7 @@ public final class Application implements AutoCloseable {
                 var value=new LinkedHashMap<>(symbol);value.put("doc",dev.jvmd.index.DocMarkdown.summary((String)symbol.get("doc")));
                 if(p.path("include_body").asBoolean()&&all.size()>=offset&&all.size()<offset+limit)value=new LinkedHashMap<>(dev.jvmd.index.Documentation.withBody(value));all.add(value);
             }
-            return page(2,"live","matches",all,offset,limit,s.warnings());
+            return page(scope.equals("deps")?2:1,scope.equals("deps")?"index":"live","matches",all,offset,limit,s.warnings());
         });
         dispatcher.register("symbol.describe",this::describeDocumented);
         dispatcher.register("symbol.references",(s,p)->relationships(s,p,false));
@@ -321,7 +321,7 @@ public final class Application implements AutoCloseable {
         bindIndex(session,database);
     }
     private static Envelope dependencyGraph(Resolution graph, com.fasterxml.jackson.databind.JsonNode params) {
-        int depth = Dispatcher.bounded(params, "depth", 2, 20), limit = Dispatcher.bounded(params, "limit", 50, 200);
+        int depth = Dispatcher.bounded(params, "depth", 2, 20), limit = Dispatcher.limit(params, 50, 200), offset=cursor(params);
         String scope = params.path("scope").asText("all");
         if (!java.util.List.of("all", "compile", "runtime", "test", "provided").contains(scope)) throw RpcException.invalid("Unknown dependency scope");
         var reach = new java.util.LinkedHashSet<String>();
@@ -336,9 +336,9 @@ public final class Application implements AutoCloseable {
         var selected = reach;
         var nodes = graph.nodes().stream().filter(n -> selected.contains(n.id())).toList();
         var edges = graph.edges().stream().filter(e -> selected.contains(e.src()) && selected.contains(e.dst())).toList();
-        boolean truncated = nodes.size() > limit || edges.size() > limit;
-        return new Envelope(2, "index", truncated, truncated ? Integer.toString(limit) : null, graph.warnings(),
-                java.util.Map.of("nodes", nodes.subList(0, Math.min(limit, nodes.size())), "edges", edges.subList(0, Math.min(limit, edges.size())),
+        boolean truncated = Math.max(nodes.size(),edges.size()) > offset+limit;
+        return new Envelope(2, "index", truncated, truncated ? Integer.toString(offset+limit) : null, graph.warnings(),
+                java.util.Map.of("nodes", slice(nodes,offset,limit), "edges", slice(edges,offset,limit),
                         "fingerprint", graph.fingerprint(), "cached", graph.cached()));
     }
     @Override public void close() throws Exception {

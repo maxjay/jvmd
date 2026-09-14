@@ -207,9 +207,18 @@ public final class IndexService implements AutoCloseable {
         });
     }
     public List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after)throws Exception{
-        return database.read(c->{String match=substring?(query.length()>=3?"s.id IN (SELECT rowid FROM symbols_fts WHERE name LIKE ? ESCAPE '\\')":"s.name LIKE ? ESCAPE '\\'"):"(s.name=? OR s.name_path=? OR s.scip=? OR s.binary_key=? OR s.name_path LIKE ? ESCAPE '\\')";
-            String sql="SELECT * FROM (SELECT s.*,a.id AS selected_artifact,a.gav,a.path AS artifact_path,a.kind AS artifact_kind,v.data AS variant_data,ROW_NUMBER() OVER(PARTITION BY s.id ORDER BY CASE a.kind WHEN 'local' THEN 0 ELSE 1 END,a.id) AS preference FROM symbols s JOIN artifact_symbols v ON v.symbol_id=s.id JOIN artifacts a ON a.id=v.artifact_id WHERE s.id>? AND "+match+(workspace==null?"":" AND EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id)")+") WHERE preference=1 ORDER BY id LIMIT ?";
-            var result=new ArrayList<Map<String,Object>>();try(var s=c.prepareStatement(sql)){int i=1;s.setLong(i++,after);if(substring)s.setString(i++,"%"+query.replace("\\","\\\\").replace("%","\\%").replace("_","\\_")+"%");else { for(int j=0;j<4;j++)s.setString(i++,query);s.setString(i++,"%."+query.replace("\\","\\\\").replace("%","\\%").replace("_","\\_")); }if(workspace!=null)s.setString(i++,workspace);s.setInt(i,limit);try(var r=s.executeQuery()){while(r.next())result.add(symbol(r));}}return result;
+        var name=substring?null:dev.jvmd.core.NamePath.parse(query);
+        return database.read(c->{
+            String match=substring?"(s.name LIKE ? ESCAPE '\\' OR s.name_path LIKE ? ESCAPE '\\')":"(s.name=? OR s.scip=? OR s.binary_key=?)";
+            String sql="SELECT * FROM (SELECT s.*,a.id AS selected_artifact,a.gav,a.path AS artifact_path,a.kind AS artifact_kind,v.data AS variant_data,ROW_NUMBER() OVER(PARTITION BY s.id ORDER BY CASE a.kind WHEN 'local' THEN 0 ELSE 1 END,a.id) AS preference FROM symbols s JOIN artifact_symbols v ON v.symbol_id=s.id JOIN artifacts a ON a.id=v.artifact_id WHERE s.id>? AND "+match+(workspace==null?"":" AND EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id)")+") WHERE preference=1 ORDER BY id";
+            var result=new ArrayList<Map<String,Object>>();
+            try(var statement=c.prepareStatement(sql)){
+                int i=1;statement.setLong(i++,after);
+                if(substring){String pattern="%"+query.replace("\\","\\\\").replace("%","\\%").replace("_","\\_")+"%";statement.setString(i++,pattern);statement.setString(i++,pattern);}
+                else{statement.setString(i++,name.leaf());statement.setString(i++,query);statement.setString(i++,query);}
+                if(workspace!=null)statement.setString(i,workspace);
+                try(var rows=statement.executeQuery()){while(rows.next()&&result.size()<limit){var value=symbol(rows);if(substring||name.matches(value)||query.equals(value.get("binary_key")))result.add(value);}}
+            }return result;
         });
     }
     public Map<String,Object> byId(long id)throws Exception{return byId(id,null);}

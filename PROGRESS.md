@@ -154,3 +154,12 @@ Phase 5 full regression: PASS, CI run 34811222662, commit b193a37.
 2026-09-14: Phase 8 begins with dispatcher-wide 64 KiB response fragments, including warnings and verification-error tails. Continuations are scoped to the method and arguments, expire after 60 seconds, preserve native cursors, and replay cached output without repeating a mutation or verification process. Unicode splits preserve surrogate pairs and report UTF-16 offsets in _jvmd_segments. List limits now reject zero and non-integer values. New tests cover full row recovery, Unicode recovery, warning pages, cross-session rejection, and single-execution error pagination. Fourteen MCP tools, semantic edits, bytecode references and the stdio shim remain open.
 
 The runtime protocol correction e473770 passed both CI jobs (run 34817902360). Seven phase-10 tests passed, including stock schema-change/restart, JFR output, absent-variable-table refusal and collection after expiry. Strict-AOT attach: 18.865003 ms; focused attribution p95: 41.697203 ms; documentation p95: 18.692029 ms. A supplementary real step-into/over/out regression accompanies the response-budget checkpoint; phase 10 will be ticked after that regression passes.
+
+
+### Phase 8 checkpoint: name paths and dependency pages
+
+- Added one grammar for source and indexed symbols. Erased JVM descriptors disambiguate qualified parameters; simple parameter names retain every matching overload.
+- Workspace find now defaults to workspace scope and reports tier 1 for declaration-only results. Dependency graph continuation advances both node and edge pages.
+- Added source and dependency overload tests covering nested owners, multidimensional arrays, and malformed references. CI evidence will be appended after this checkpoint passes.
+
+- ResponseBudgetTest passed all three tests on de4b4ac: bounded Unicode/list/error pages and no repeated side effects. The supplementary step-out test required advancing past the caller's assignment before inspecting its new local; this corrects the test expectation, with production stepping unchanged.

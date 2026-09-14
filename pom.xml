@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>dev.jvmd</groupId><artifactId>jvmd</artifactId><version>0.1.0-SNAPSHOT</version><packaging>pom</packaging>
+  <name>jvmd</name>
+  <modules>
+    <module>jvmd-core</module><module>jvmd-analyzer</module><module>jvmd-resolver</module>
+    <module>jvmd-index</module><module>jvmd-runtime</module><module>jvmd-mcp</module>
+    <module>jvmd-lsp</module><module>jvmd-dist</module><module>jvmd-tests</module>
+  </modules>
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>25</maven.compiler.release>
+    <jackson.version>2.22.2</jackson.version><sqlite.version>3.53.4.0</sqlite.version>
+    <resolver.version>1.9.27</resolver.version><maven.version>3.9.16</maven.version>
+    <junit.version>5.14.4</junit.version><assertj.version>3.27.7</assertj.version>
+    <argLine></argLine><excludedGroups>perf,corpus</excludedGroups>
+  </properties>
+  <dependencyManagement><dependencies>
+    <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>${jackson.version}</version></dependency>
+    <dependency><groupId>org.xerial</groupId><artifactId>sqlite-jdbc</artifactId><version>${sqlite.version}</version></dependency>
+    <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>${junit.version}</version></dependency>
+    <dependency><groupId>org.assertj</groupId><artifactId>assertj-core</artifactId><version>${assertj.version}</version></dependency>
+  </dependencies></dependencyManagement>
+  <build><pluginManagement><plugins>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.16.0</version><configuration><debug>true</debug><debuglevel>lines,vars,source</debuglevel><parameters>true</parameters></configuration></plugin>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.6.0</version><configuration><useModulePath>false</useModulePath><failIfNoTests>false</failIfNoTests><excludedGroups>${excludedGroups}</excludedGroups><argLine>${argLine} --add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED</argLine></configuration></plugin>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId><version>3.4.2</version></plugin>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-dependency-plugin</artifactId><version>3.8.1</version></plugin>
+  </plugins></pluginManagement></build>
+</project>

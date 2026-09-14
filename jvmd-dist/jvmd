@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+image="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+state="${XDG_CACHE_HOME:-$HOME/.cache}/jvmd"
+mkdir -p "$state"
+exec "$image/bin/java" -XX:AOTCache="$image/lib/jvmd/jvmd.aot" \
+  -Xlog:aot=info:file="$state/aot.log" -Djvmd.aot.log="$state/aot.log" \
+  -Djvmd.state="$state" -cp "$image/lib/jvmd/*" dev.jvmd.dist.Application "$@"

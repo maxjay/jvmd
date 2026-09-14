@@ -27,7 +27,7 @@ public final class ObjectHandles implements AutoCloseable {
     public synchronized String pin(ObjectReference object){
         if(closed)throw new IllegalStateException("Run session is closed");expire();long id=object.uniqueID();String prior=identities.get(id);
         if(prior!=null){entries.put(prior,new Entry(object,clock.getAsLong()+ttl));return prior;}
-        if(entries.size()>=CAPACITY)throw new RpcException(-32005,"budget_exceeded",Map.of("capability","object handles","limit",CAPACITY,"cursor",entries.keySet().iterator().next(),"reason","Release this handle or wait for its TTL before retrying"));
+        if(entries.size()>=CAPACITY)throw new RpcException(-32005,"budget_exceeded",Map.of("capability","object handles","limit",CAPACITY,"release_handle",entries.keySet().iterator().next(),"reason","Release this handle or wait for its TTL before retrying"));
         object.disableCollection();String handle="obj:"+session+":"+(++sequence);entries.put(handle,new Entry(object,clock.getAsLong()+ttl));identities.put(id,handle);return handle;
     }
     public synchronized ObjectReference get(String handle){

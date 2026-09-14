@@ -19,6 +19,7 @@ public final class ExpressionEvaluator {
     private final ReferenceType declaring;
     private final Map<String,Value> locals=new HashMap<>();
     private int nodes;
+    private long deadline;
     public ExpressionEvaluator(DebugSession debug,String frame)throws Exception{
         this.debug=debug;vm=debug.vm();var current=debug.frame(frame);thread=current.thread();self=current.thisObject();declaring=current.location().declaringType();
         if(current.location().method().isObsolete())throw new RpcException(-32003,"unsupported_capability",Map.of("capability","eval","reason","obsolete_frame: resume or step out of the replaced method before evaluating"));
@@ -31,6 +32,7 @@ public final class ExpressionEvaluator {
     }
     public Envelope evaluate(String expression)throws Exception{
         if(expression==null||expression.isBlank()||expression.length()>8192)throw RpcException.invalid("An expression of 1..8192 characters is required");
+        deadline=System.nanoTime()+java.time.Duration.ofSeconds(5).toNanos();
         var diagnostics=new DiagnosticCollector<JavaFileObject>();var compiler=ToolProvider.getSystemJavaCompiler();
         try(var manager=compiler.getStandardFileManager(diagnostics,Locale.ROOT,StandardCharsets.UTF_8)){
             String source="class Eval { Object value(){ return ("+expression+"); } }";
@@ -47,7 +49,7 @@ public final class ExpressionEvaluator {
         }
     }
     private Object eval(ExpressionTree tree,int depth)throws Exception{
-        if(++nodes>512||depth>64)throw new RpcException(-32005,"budget_exceeded",Map.of("reason","Expression complexity exceeds 512 nodes or depth 64","cursor","expression"));
+        if(++nodes>512||depth>64)throw new RpcException(-32005,"budget_exceeded",Map.of("reason","Expression complexity exceeds 512 nodes or depth 64"));
         if(tree instanceof ParenthesizedTree p)return eval(p.getExpression(),depth+1);
         if(tree instanceof LiteralTree literal)return mirror(literal.getValue());
         if(tree instanceof IdentifierTree identifier){
@@ -149,7 +151,7 @@ public final class ExpressionEvaluator {
         var method=candidates.getFirst();Value result=debug.invocation(()->{
             if(method.isStatic()){if(method.declaringType() instanceof ClassType type)return type.invokeMethod(thread,method,arguments,ClassType.INVOKE_SINGLE_THREADED);if(method.declaringType() instanceof InterfaceType type)return type.invokeMethod(thread,method,arguments,ObjectReference.INVOKE_SINGLE_THREADED);}
             return requireObject(value(receiver)).invokeMethod(thread,method,arguments,ObjectReference.INVOKE_SINGLE_THREADED);
-        });if(result instanceof ObjectReference object)debug.handles().pin(object);return result;
+        },java.time.Duration.ofNanos(Math.max(1,deadline-System.nanoTime())));if(result instanceof ObjectReference object)debug.handles().pin(object);return result;
     }
     private String string(Value value)throws Exception{
         if(value==null)return "null";if(value instanceof StringReference s)return s.value();if(value instanceof CharValue c)return Character.toString(c.value());if(value instanceof ObjectReference){Value text=invoke(value,"toString",List.of());return text instanceof StringReference s?s.value():"null";}return value.toString();

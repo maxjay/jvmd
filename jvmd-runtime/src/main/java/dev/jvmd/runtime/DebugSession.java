@@ -173,14 +173,26 @@ public final class DebugSession implements AutoCloseable {
         for(var variable:selected)result.add(Map.of("name",variable.name(),"type",variable.typeName(),"scip",variable.isArgument()?sources.symbol(frame.location().declaringType(),frame.location().method())+"("+variable.name()+")":"local "+id+"_"+Integer.toUnsignedString(Objects.hash(ref,variable.name(),variable.signature())),"value",value(values.get(variable))));
         return new Envelope(2,"live",to<variables.size(),to<variables.size()?Integer.toString(to):null,List.copyOf(warnings),Map.of("locals",result,"this",value(frame.thisObject())));
     }
-    <T> T invocation(java.util.concurrent.Callable<T> action)throws Exception{
+    <T> T invocation(java.util.concurrent.Callable<T> action)throws Exception{return invocation(action,Duration.ofSeconds(5));}
+    <T> T invocation(java.util.concurrent.Callable<T> action,Duration timeout)throws Exception{
         var enabled=new ArrayList<EventRequest>();
         synchronized(this){
             requireDebug();if(invoking)throw RpcException.invalid("An evaluation is already running");invoking=true;
             var requests=new ArrayList<EventRequest>();requests.addAll(vm.eventRequestManager().breakpointRequests());requests.addAll(vm.eventRequestManager().stepRequests());requests.addAll(vm.eventRequestManager().classPrepareRequests());
             for(var request:requests)if(request.isEnabled()){request.disable();enabled.add(request);}
         }
-        try{return action.call();}
+        var evaluation=new FutureTask<T>(action);Thread.ofVirtual().name("jvmd-eval-"+id).start(evaluation);
+        try{return evaluation.get(Math.max(1,timeout.toNanos()),TimeUnit.NANOSECONDS);}
+        catch(TimeoutException|InterruptedException failure){
+            // JDI invocation has no safe cancellation. This daemon owns the launched process;
+            // terminate it rather than leave an unknown mutation running behind a usable frame.
+            disconnected=true;process.descendants().forEach(ProcessHandle::destroyForcibly);process.destroyForcibly();evaluation.cancel(true);
+            try{process.waitFor(2,TimeUnit.SECONDS);}catch(InterruptedException interrupted){Thread.currentThread().interrupt();}
+            synchronized(this){stopped.clear();++epoch;nextStop.completeExceptionally(new IOException("Evaluation aborted"));}
+            warnings.add("evaluation_aborted: application terminated; restart is required and external side effects may remain");
+            if(failure instanceof InterruptedException)Thread.currentThread().interrupt();
+            throw new RpcException(-32003,"evaluation_timeout",Map.of("timeout_ms",timeout.toMillis(),"run_session",id,"restart_required",true,"process_terminated",true,"side_effects_may_remain",true));
+        }catch(ExecutionException failure){if(failure.getCause() instanceof Exception e)throw e;if(failure.getCause() instanceof Error e)throw e;throw new IllegalStateException(failure.getCause());}
         finally{synchronized(this){
             invoking=false;
             if(!disconnected&&!closed){

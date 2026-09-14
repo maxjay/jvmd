@@ -148,7 +148,8 @@ public final class LspFacade {
         var params=Json.MAPPER.createObjectNode().put("limit",1000);params.putArray("paths").add(file.toString());var answer=query.all("diag.get",params,"diagnostics");var result=Json.MAPPER.createObjectNode().put("uri",file.toUri().toString());var diagnostics=result.putArray("diagnostics");
         for(var problem:answer.path("diagnostics")){
             String source=problem.path("file").asText();if(!source.isEmpty()&&!uri(source).equals(file.toUri().toString()))continue;
-            var range=Json.MAPPER.valueToTree(Map.of("start",Documents.position(documents.text(file),problem.path("start").asLong()),"end",Documents.position(documents.text(file),problem.path("end").asLong())));
+            long start=Math.max(0,problem.path("start").asLong()),end=Math.max(start,problem.path("end").asLong());
+            var range=Json.MAPPER.valueToTree(Map.of("start",Documents.position(documents.text(file),start),"end",Documents.position(documents.text(file),end)));
             int severity=switch(problem.path("kind").asText()){case "ERROR"->1;case "WARNING","MANDATORY_WARNING"->2;default->3;};
             diagnostics.add(Json.MAPPER.valueToTree(Map.of("range",range,"severity",severity,"code",problem.path("code").asText(),"source","jvmd live","message",problem.path("message").asText(),"data",Map.of("tier",problem.path("tier").asInt(),"source",problem.path("source").asText("live")))));
         }

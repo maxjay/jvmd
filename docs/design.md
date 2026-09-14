@@ -577,14 +577,14 @@ independent of each other after 4. Phases 10 and 11 are independent of 5 to 9.
 
 ### Phase 10: runtime and debug
 
-- [ ] Launch with JDWP on an ephemeral port, parse port, attach
-- [ ] `-g` precondition check and capability report in `status`
-- [ ] `break`, `unbreak`, `continue`, `step_*`, `frames`, `locals`
-- [ ] `inspect` with depth and breadth caps and TTL handles
-- [ ] `eval` tier 1 interpreter
-- [ ] `histogram`, `instances`, `referrers` with required `max`
-- [ ] `hotswap` for method bodies on a stock JDK; `restart_required` on unsupported change
-- [ ] Exit: attach under 500ms after app ready; a handle expires and the object becomes collectable;
+- [x] Launch with JDWP on an ephemeral port, parse port, attach
+- [x] `-g` precondition check and capability report in `status`
+- [x] `break`, `unbreak`, `continue`, `step_*`, `frames`, `locals`
+- [x] `inspect` with depth and breadth caps and TTL handles
+- [x] `eval` tier 1 interpreter
+- [x] `histogram`, `instances`, `referrers` with required `max`
+- [x] `hotswap` for method bodies on a stock JDK; `restart_required` on unsupported change
+- [x] Exit: attach under 500ms after app ready; a handle expires and the object becomes collectable;
       `referrers` on a deliberately retained object returns the retaining chain; `MethodEntryRequest`
       does not appear anywhere in the codebase (grep test)
 

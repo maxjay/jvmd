@@ -66,6 +66,10 @@ public final class Application implements AutoCloseable {
             return page(scope.equals("deps")?2:1,scope.equals("deps")?"index":"live","matches",all,offset,limit,s.warnings());
         });
         dispatcher.register("symbol.describe",this::describeDocumented);
+        dispatcher.register("edit.replaceBody",(s,p)->editSymbol(s,p,"body"));
+        dispatcher.register("edit.insert",(s,p)->editSymbol(s,p,"insert"));
+        dispatcher.register("edit.rename",this::renameSymbol);
+        dispatcher.register("edit.text",this::editText);
         dispatcher.register("symbol.references",(s,p)->relationships(s,p,false));
         dispatcher.register("symbol.hierarchy",(s,p)->relationships(s,p,true));
         dispatcher.register("session.status", (s, _) -> {
@@ -161,6 +165,102 @@ public final class Application implements AutoCloseable {
         var docs=session.state("documentation",()->new dev.jvmd.index.Documentation(database,config.jdkHome()));
         var result=docs.describe(symbol,workspace,detail,depth,limit,offset);var warnings=new LinkedHashSet<>(base.warnings());warnings.addAll(result.warnings());
         return new Envelope(Math.min(base.tier(),result.tier()),base.source(),result.truncated(),result.cursor(),List.copyOf(warnings),result.result());
+    }
+    private static int number(Map<?,?> symbol,String key){
+        if(!(symbol.get(key) instanceof Number value)||value.intValue()<0)throw RpcException.invalid("Symbol has no editable "+key);return value.intValue();
+    }
+    private Path editable(Session session,Map<?,?> symbol){
+        Object location=symbol.get("source_file");if(location==null||location.toString().startsWith("jar:"))throw RpcException.invalid("Symbol has no editable workspace source");
+        return sourcePath(session,location.toString());
+    }
+    private Envelope editSymbol(Session session,com.fasterxml.jackson.databind.JsonNode params,String operation)throws Exception{
+        var description=describe(session,Dispatcher.required(params,"ref"));
+        if(!(description.result() instanceof Map<?,?> symbol)||symbol.get("scip")==null)return description;
+        Path file=editable(session,symbol);String text=Files.readString(file);int start,end;String replacement;
+        if(operation.equals("body")){
+            if(!Set.of("method","ctor").contains(symbol.get("kind")))throw RpcException.invalid("replace_body requires a method or constructor");
+            start=number(symbol,"body_start");end=number(symbol,"body_end");replacement=Dispatcher.required(params,"body").strip();
+            if(!replacement.startsWith("{"))replacement="{\n"+replacement+"\n}";
+        }else{
+            String position=Dispatcher.required(params,"position");replacement=Dispatcher.required(params,"code");
+            switch(position){
+                case "before"->{start=number(symbol,"source_start");replacement+="\n";}
+                case "after"->{start=number(symbol,"source_end");replacement="\n"+replacement;}
+                case "into"->{
+                    if(Set.of("class","interface","enum","record","annotation").contains(symbol.get("kind"))){start=number(symbol,"source_end")-1;if(start>=text.length()||text.charAt(start)!='}')throw RpcException.invalid("Type has no complete closing brace");}
+                    else if(Set.of("method","ctor").contains(symbol.get("kind")))start=number(symbol,"body_end")-1;
+                    else throw RpcException.invalid("insert into requires a type or member body");
+                    replacement="\n"+replacement+"\n";
+                }
+                default->throw RpcException.invalid("position must be before, after or into");
+            }end=start;
+        }
+        return finishEdit(session,TextEdits.prepare(List.of(new TextEdits.Edit(file,start,end,replacement)),Map.of()),params.path("dry_run").asBoolean());
+    }
+    private Envelope editText(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
+        var values=params.path("text_edits");if(!values.isArray()||values.isEmpty())throw RpcException.invalid("text_edits must be a nonempty array");
+        var edits=new ArrayList<TextEdits.Edit>();var texts=new HashMap<Path,String>();
+        for(var value:values){
+            Path file=sourcePath(session,Dispatcher.required(value,"path"));String text=texts.computeIfAbsent(file,path->{try{return Files.readString(path);}catch(Exception e){throw new IllegalArgumentException(e);}});
+            int start,end;
+            if(value.has("range")){var source=new dev.jvmd.analyzer.SourceText(text);var range=value.path("range");start=source.offset(Dispatcher.bounded(range.path("start"),"line",0,Integer.MAX_VALUE),Dispatcher.bounded(range.path("start"),"character",0,Integer.MAX_VALUE));end=source.offset(Dispatcher.bounded(range.path("end"),"line",0,Integer.MAX_VALUE),Dispatcher.bounded(range.path("end"),"character",0,Integer.MAX_VALUE));}
+            else{if(!value.has("start")||!value.has("end"))throw RpcException.invalid("Each edit needs a range or start/end offsets");start=Dispatcher.bounded(value,"start",0,Integer.MAX_VALUE);end=Dispatcher.bounded(value,"end",0,Integer.MAX_VALUE);}
+            if(!value.path("new_text").isTextual())throw RpcException.invalid("Each edit needs new_text");
+            if(value.has("sha256")&&!value.path("sha256").asText().equals(Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))))throw RpcException.invalid("Source hash changed: "+file);
+            edits.add(new TextEdits.Edit(file,start,end,value.path("new_text").asText()));
+        }
+        return finishEdit(session,TextEdits.prepare(edits,Map.of(),texts),params.path("dry_run").asBoolean());
+    }
+    private Envelope renameSymbol(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
+        String newName=Dispatcher.required(params,"new_name");
+        if(!javax.lang.model.SourceVersion.isIdentifier(newName)||javax.lang.model.SourceVersion.isKeyword(newName)||Set.of("var","yield","record","sealed","permits").contains(newName))throw RpcException.invalid("new_name must be a Java identifier");
+        var description=describe(session,Dispatcher.required(params,"ref"));
+        if(!(description.result() instanceof Map<?,?> target)||target.get("scip")==null)return description;
+        editable(session,target);
+        var symbols=new LinkedHashMap<String,Map<String,Object>>();var occurrences=new ArrayList<Bindings.Occurrence>();var edges=new LinkedHashSet<Bindings.Edge>();
+        for(Path file:sourceFiles(session)){
+            var snapshot=analyzer(session,file).bindings(file,Files.readString(file),null);
+            if(snapshot.result()==null||snapshot.tier()<2||!snapshot.warnings().isEmpty()||snapshot.diagnostics().stream().anyMatch(d->d.kind().equals("ERROR")))throw new RpcException(-32003,"unsupported_capability",Map.of("capability","rename","reason","Resolve compiler errors before renaming: "+file,"diagnostics",snapshot.diagnostics()));
+            symbols.putAll(snapshot.result().symbols());occurrences.addAll(snapshot.result().occurrences());edges.addAll(snapshot.result().edges());
+        }
+        String key=target.get("scip").toString();var family=new LinkedHashSet<String>();family.add(key);boolean type=Set.of("class","interface","enum","annotation","record").contains(target.get("kind"));
+        if(target.get("kind").equals("ctor"))throw RpcException.invalid("Rename the declaring type to rename its constructors");
+        if(type)for(var symbol:symbols.values())if("ctor".equals(symbol.get("kind"))&&Objects.equals(symbol.get("fqn"),target.get("fqn")))family.add(symbol.get("scip").toString());
+        if(target.get("kind").equals("method")){
+            boolean changed;do{changed=false;for(var edge:edges)if(edge.kind().equals("overrides")&&(family.contains(edge.src())||family.contains(edge.dst()))){changed|=family.add(edge.src());changed|=family.add(edge.dst());}}while(changed);
+            for(String member:family){var symbol=symbols.get(member);if(symbol==null)throw RpcException.invalid("Override declaration is unavailable: "+member);editable(session,symbol);}
+        }
+        var edits=new LinkedHashMap<String,TextEdits.Edit>();var renames=new LinkedHashMap<Path,Path>();
+        for(var occurrence:occurrences)if(family.contains(occurrence.scip())){
+            Path file=sourcePath(session,occurrence.file());edits.putIfAbsent(file+":"+occurrence.start(),new TextEdits.Edit(file,occurrence.start(),occurrence.end(),newName));
+        }
+        if(edits.isEmpty())throw RpcException.invalid("No resolved source occurrences for the rename");
+        if(type){Path file=editable(session,target);String old=target.get("name").toString();if(!target.get("name_path").toString().contains("/")&&file.getFileName().toString().equals(old+".java")&&!newName.equals(old))renames.put(file,file.resolveSibling(newName+".java"));}
+        return finishEdit(session,TextEdits.prepare(List.copyOf(edits.values()),renames),params.path("dry_run").asBoolean());
+    }
+    @SuppressWarnings("unchecked")
+    private Envelope finishEdit(Session session,TextEdits.Plan plan,boolean dryRun)throws Exception{
+        if(dryRun)return Envelope.of(2,"live",Map.of("applied",false,"changes",plan.edits(),"diagnostics",List.of(),"verified",false));
+        TextEdits.apply(plan);
+        var existing=(Analyzer)session.state("analyzer");if(existing!=null)for(var change:plan.edits()){existing.changed(Path.of(change.get("path").toString()));if(change.get("new_path")!=null)existing.changed(Path.of(change.get("new_path").toString()));}
+        session.put("last_verification",Map.of("stale",true));
+        var diagnostics=new ArrayList<Object>();var members=new ArrayList<Map<String,Object>>();var warnings=new LinkedHashSet<String>();int tier=2;
+        for(Path file:plan.files()){
+            String text=Files.readString(file);var analyzer=analyzer(session,file);var declarations=new ArrayList<Map<String,Object>>();int offset=0;
+            do{var outline=analyzer.overview(file,text,10,1000,offset);declarations.addAll((List<Map<String,Object>>)((Map<?,?>)outline.result()).get("symbols"));if(!outline.truncated())break;offset=Integer.parseInt(outline.cursor());}while(true);
+            var selected=new LinkedHashSet<Map<String,Object>>();
+            for(int[] touched:plan.touched(file)){
+                while(touched[0]<touched[1]&&Character.isWhitespace(text.charAt(touched[0])))touched[0]++;
+                while(touched[1]>touched[0]&&Character.isWhitespace(text.charAt(touched[1]-1)))touched[1]--;
+                var enclosing=declarations.stream().filter(s->s.get("source_start") instanceof Number start&&s.get("source_end") instanceof Number end&&start.intValue()<=touched[0]&&end.intValue()>=touched[1]).min(Comparator.comparingInt(s->((Number)s.get("source_end")).intValue()-((Number)s.get("source_start")).intValue()));
+                if(enclosing.isPresent())selected.add(enclosing.get());
+            }
+            var result=analyzer.diagnostics(file,text);tier=Math.min(tier,result.tier());warnings.addAll(result.warnings());
+            for(var problem:(List<dev.jvmd.analyzer.CompilerPool.Problem>)((Map<?,?>)result.result()).get("diagnostics"))
+                if(selected.isEmpty()||problem.start()<0||selected.stream().anyMatch(s->problem.start()>=((Number)s.get("source_start")).longValue()&&problem.start()<=((Number)s.get("source_end")).longValue()))diagnostics.add(problem);
+            for(var member:selected){var row=new LinkedHashMap<String,Object>();row.put("path",file.toString());row.put("scip",member.get("scip"));row.put("range",member.get("range"));members.add(row);}
+        }
+        return new Envelope(tier,"live",false,null,List.copyOf(warnings),Map.of("applied",true,"changes",plan.edits(),"changed_files",plan.files().stream().map(Path::toString).toList(),"members",members,"diagnostics",diagnostics,"verified",false));
     }
     private Envelope relationships(Session session,com.fasterxml.jackson.databind.JsonNode params,boolean hierarchy)throws Exception{
         String ref=Dispatcher.required(params,"ref");var description=describe(session,ref);

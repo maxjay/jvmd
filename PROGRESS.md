@@ -163,3 +163,17 @@ The runtime protocol correction e473770 passed both CI jobs (run 34817902360). S
 - Added source and dependency overload tests covering nested owners, multidimensional arrays, and malformed references. CI evidence will be appended after this checkpoint passes.
 
 - ResponseBudgetTest passed all three tests on de4b4ac: bounded Unicode/list/error pages and no repeated side effects. The supplementary step-out test required advancing past the caller's assignment before inspecting its new local; this corrects the test expectation, with production stepping unchanged.
+
+
+### Phase 10 complete; phase 8 name paths passed
+
+- All eight runtime tests passed on cce6db1: launch/attach, debug-info refusal, breakpoints and all three stepping modes, frames/locals, bounded inspection, interpreted evaluation, body hot swap, stock-JDK restart on schema changes, retained-object queries and real collection after handle expiry. JFR start and dump passed through the runtime protocol.
+- All five current phase-8 tests passed: three response-budget tests and two name-path tests. Phase 8 remains open for semantic editing, code-edge traversal and the MCP shim.
+
+### Phase 8 checkpoint: semantic edits
+
+- Added checked UTF-16 edit plans with source-change validation before writes, atomic replacement of individual files and rollback on failures.
+- Body replacement, declaration insertion and text edits return diagnostics scoped to touched declarations. Rename follows resolved occurrences and override families, and renames a top-level class's source file with its constructors.
+- Added tests for identity-preserving edits, previews, member diagnostics, invalid ranges and stale plans. CI validation is pending this checkpoint.
+
+- Passing cce6db1 measurements: strict-AOT startup 289.29 ms (600 ms budget), workspace open 9.85 ms (200), focused attribution p95 42.52 ms (50), Spring documentation depth 3 p95 10.72 ms (50), runtime attach 21.17 ms (500).

@@ -1,0 +1,173 @@
+name: Checkpoints
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  checkpoints:
+    concurrency:
+      group: checkpoint-tests-${{ github.ref }}
+      cancel-in-progress: true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install checksum-pinned Temurin 25.0.4.1+1
+        shell: bash
+        run: |
+          curl -fsSL --retry 3 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz' -o "$RUNNER_TEMP/temurin25.tar.gz"
+          printf '%s  %s\n' dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e "$RUNNER_TEMP/temurin25.tar.gz" | sha256sum --check -
+          mkdir -p "$RUNNER_TEMP/jvmd-toolchain"
+          tar -xzf "$RUNNER_TEMP/temurin25.tar.gz" -C "$RUNNER_TEMP/jvmd-toolchain"
+          echo "JAVA_HOME=$RUNNER_TEMP/jvmd-toolchain/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/jvmd-toolchain/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
+      - name: Compile and package
+        id: compile
+        run: mvn -B -DskipTests install
+      - name: Assemble runtime and train AOT
+        run: |
+          bash jvmd-dist/assemble.sh
+          bash jvmd-dist/train-aot.sh
+      - name: Phase 1 checkpoints including performance budgets
+        run: mvn -B -pl jvmd-tests test -Dgroups=phase-1 -DexcludedGroups=corpus
+      - name: Install pinned Maven 4 for native resolver agreement
+        shell: bash
+        run: |
+          maven4_archive="$RUNNER_TEMP/apache-maven-4.0.0-rc-6-bin.tar.gz"
+          maven4_url='https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/4.0.0-rc-6/apache-maven-4.0.0-rc-6-bin.tar.gz'
+          curl -fsSL --retry 3 "$maven4_url" -o "$maven4_archive"
+          curl -fsSL --retry 3 "$maven4_url.sha512" -o "$maven4_archive.sha512"
+          read -r maven4_digest _ < "$maven4_archive.sha512" || [[ -n "$maven4_digest" ]]
+          [[ "$maven4_digest" =~ ^[[:xdigit:]]{128}$ ]]
+          printf '%s  %s\n' "$maven4_digest" "$maven4_archive" | sha512sum --check -
+          tar -xzf "$maven4_archive" -C "$RUNNER_TEMP"
+          echo "JVMD_MAVEN4_HOME=$RUNNER_TEMP/apache-maven-4.0.0-rc-6" >> "$GITHUB_ENV"
+      - name: Phase 2 checkpoints
+        run: |
+          bash jvmd-tests/smoke/run-resolver.sh
+          mvn -B -pl jvmd-tests test -Dgroups=phase-2 -DexcludedGroups=corpus
+      - name: Phase 3 index prerequisites and complete repository gate
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        run: |
+          bash jvmd-tests/smoke/run-index.sh
+          mvn -B -pl jvmd-tests test -Dgroups=phase-3 -DexcludedGroups=perf -DargLine=-Xmx1024m
+      - name: Phase 4 compiler prerequisites and checkpoints
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        run: |
+          bash jvmd-tests/smoke/run-compiler.sh
+          mvn -B -pl jvmd-tests test -Dgroups=phase-4 -DexcludedGroups=corpus
+      - name: Phase 5 external annotation processing
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        run: mvn -B -pl jvmd-tests test -Dgroups=phase-5 -DexcludedGroups=perf,corpus
+      - name: Phase 6 prerequisite - unbuilt WorkspaceReader smoke
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        run: mvn -B -pl jvmd-tests test -Dgroups=smoke-4 -DexcludedGroups=perf,corpus
+      - name: Phase 6 repository overlays and cross-root debugging
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        run: mvn -B -pl jvmd-tests test -Dgroups=phase-6 -DexcludedGroups=perf,corpus
+      - name: Phase 7 documentation round trip and budget
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        run: mvn -B -pl jvmd-tests test -Dgroups=phase-7 -DexcludedGroups=corpus
+      - name: Runtime inspection and evaluation checkpoints
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        run: mvn -B -pl jvmd-tests test -Dgroups=phase-10 -DexcludedGroups=corpus
+      - name: Install pinned JBR for enhanced hot swap
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        shell: bash
+        run: |
+          jbr_archive="$RUNNER_TEMP/jbrsdk-25.0.4.1-linux-x64-b583.48.tar.gz"
+          curl -fsSL --retry 3 --max-time 180 "https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk-25.0.4.1-linux-x64-b583.48.tar.gz" -o "$jbr_archive"
+          curl -fsSL --retry 3 "https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk-25.0.4.1-linux-x64-b583.48.tar.gz.checksum" -o "$jbr_archive.checksum"
+          read -r jbr_digest _ < "$jbr_archive.checksum"
+          [[ "$jbr_digest" =~ ^[[:xdigit:]]{128}$ ]]
+          printf '%s  %s\n' "$jbr_digest" "$jbr_archive" | sha512sum --check -
+          sha512sum "$jbr_archive"
+          mkdir -p "$RUNNER_TEMP/jvmd-jbr"
+          tar -xzf "$jbr_archive" --strip-components=1 -C "$RUNNER_TEMP/jvmd-jbr"
+          "$RUNNER_TEMP/jvmd-jbr/bin/java" -version
+          echo "JVMD_JBR_HOME=$RUNNER_TEMP/jvmd-jbr" >> "$GITHUB_ENV"
+      - name: Install checksum-pinned HotswapAgent fixture
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        shell: bash
+        run: |
+          ha_jar="$RUNNER_TEMP/hotswap-agent-2.0.3.jar"
+          curl -fsSL --retry 3 --max-time 120 'https://github.com/HotswapProjects/HotswapAgent/releases/download/RELEASE-2.0.3/hotswap-agent-2.0.3.jar' -o "$ha_jar"
+          printf '%s  %s\n' 4ef49724b7d8523536d2e2a7310f827f4db9f4fed3489224e05d7bf87f0594f9 "$ha_jar" | sha256sum --check -
+          echo "JVMD_HOTSWAP_AGENT=$ha_jar" >> "$GITHUB_ENV"
+      - name: Enhanced hot swap on JBR and stock fallback
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        run: mvn -B -pl jvmd-tests test -Dgroups=phase-11 -DexcludedGroups=corpus
+      - name: Install pinned Node.js for the stdio shim
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+      - name: Stdio framing and MCP transport tests
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        working-directory: shim
+        run: node --test test/*.test.ts
+      - name: Agent surface checkpoints
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        run: mvn -B -pl jvmd-tests test -Dgroups=phase-8 -DexcludedGroups=corpus
+      - name: LSP facade and document synchronization
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        run: mvn -B -pl jvmd-tests test -Dgroups=phase-9 -DexcludedGroups=corpus
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: checkpoint-evidence
+          path: |
+            jvmd-tests/target/surefire-reports/
+            jvmd-tests/target/*perf.json
+            jvmd-tests/target/agreement.json
+            jvmd-tests/target/sweep.json
+            jvmd-tests/target/agent-session.json
+            jvmd-tests/target/editor-session.json
+            jvmd-tests/target/enhanced-hotswap.json
+            jvmd-tests/target/hotswap-agent.json
+            jvmd-tests/target/daemon-perf-output.log
+            jvmd-dist/target/training-state/*.log
+  corpus:
+    concurrency:
+      group: corpus-tests-${{ github.ref }}
+      cancel-in-progress: true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install checksum-pinned Temurin 25.0.4.1+1
+        shell: bash
+        run: |
+          curl -fsSL --retry 3 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz' -o "$RUNNER_TEMP/temurin25.tar.gz"
+          printf '%s  %s\n' dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e "$RUNNER_TEMP/temurin25.tar.gz" | sha256sum --check -
+          mkdir -p "$RUNNER_TEMP/jvmd-toolchain"
+          tar -xzf "$RUNNER_TEMP/temurin25.tar.gz" -C "$RUNNER_TEMP/jvmd-toolchain"
+          echo "JAVA_HOME=$RUNNER_TEMP/jvmd-toolchain/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/jvmd-toolchain/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
+      - name: Compile and package
+        id: compile
+        run: mvn -B -DskipTests install
+      - name: Phase 4 clean corpus agreement
+        run: |
+          bash jvmd-tests/corpus/fetch.sh
+          mvn -B -q -f jvmd-tests/corpus/petclinic/pom.xml test-compile
+          mvn -B -pl jvmd-tests test -Dgroups=phase-4 -DexcludedGroups=perf -DargLine=-Xmx1024m
+          mvn -B -pl jvmd-tests test -Dgroups=phase-8 -DexcludedGroups=perf -Dtest=CorpusAgentSessionTest -DargLine=-Xmx1024m
+          mvn -B -pl jvmd-tests test -Dgroups=phase-9 -DexcludedGroups=perf -Dtest=CorpusLspSessionTest -DargLine=-Xmx1024m
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: corpus-evidence
+          path: |
+            jvmd-tests/target/surefire-reports/
+            jvmd-tests/target/*perf.json
+            jvmd-tests/target/agreement.json
+            jvmd-tests/target/sweep.json
+            jvmd-tests/target/agent-session.json
+            jvmd-tests/target/editor-session.json
+            jvmd-tests/target/enhanced-hotswap.json
+            jvmd-tests/target/hotswap-agent.json
+            jvmd-tests/target/daemon-perf-output.log
+            jvmd-dist/target/training-state/*.log

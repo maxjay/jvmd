@@ -1,6 +1,6 @@
 **/target/
 **/node_modules/
-**/dist/
+/shim/dist/
 jvmd-tests/corpus/petclinic/
 jvmd-tests/corpus/user/
 *.aot

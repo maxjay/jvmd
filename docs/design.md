@@ -1,6 +1,8 @@
 # jvmd: Java semantic and runtime daemon for agent-driven editing
 
-Technical specification, revision 6. Incorporates `SMOKE.md` outcomes of 2026-09-14.
+Technical specification, revision 7. Incorporates `SMOKE.md` outcomes of 2026-09-14 and the
+first implementation cycle. Revision 6 defined the identifier sweep twice, inconsistently, in
+sections 5 and 12.4; that is fixed here and the four-probe reading is authoritative.
 
 **Scope.** One user, one machine, permanently. Nothing in this document exists to serve other users,
 other machines, portability, or a product. If a design choice only makes sense at scale, it is
@@ -449,9 +451,13 @@ Targets: daemon cold start under 600ms; new session open under 200ms; focused at
 - **Testing corpus.** Spring PetClinic pinned by SHA, plus one of the user's own multi-module
   repositories. Both must give zero `live` diagnostics at tier 2 on a clean checkout and zero
   disagreement between `live` and `verified`.
-- **Identifier sweep.** A test that probes every identifier token in the corpus for `describe`,
-  `find` by position, and `references`, and asserts the answer names the token. This is the metric
-  that exposed `jj-language-server`'s 22.5% hover correctness; it is the floor that can only rise.
+- **Identifier sweep.** A test that probes every identifier token in the corpus through exactly four
+  queries: `symbol.atPosition`, `symbol.find` by position, `symbol.describe`, and `symbol.references`
+  with `direction=out`. A token counts as correct only when all four answers retain its name and its
+  SCIP identity; for an ambiguous reference, every candidate must satisfy all four. Unresolved tokens
+  stay in the denominator and still receive every probe. This is the metric that exposed
+  `jj-language-server`'s 22.5% hover correctness; it is the floor that can only rise. See 12.4 for
+  the test's mechanics; the two sections must not disagree.
 
 ---
 
@@ -464,137 +470,139 @@ Multi-user. Any form of remote operation. Tier-2 `eval` before phase 11.
 
 ## 7. Build plan with checkpoints
 
+Implementation status below is backed by [CI run 34882043173](https://github.com/maxjay/jvmd/actions/runs/34882043173): all checkpoint and corpus tests passed on 6f7acce. See PROGRESS.md for timings and the user-directed decision to retain the existing passing CI arrangement.
+
 A checkpoint is ticked when its exit criterion passes as a test in CI. Phases 1 to 4 are the
 critical path and must be sequential. Phases 5 and 6 unblock real codebases. Phases 7 to 9 are
 independent of each other after 4. Phases 10 and 11 are independent of 5 to 9.
 
 ### Phase 1: daemon skeleton
 
-- [ ] JSON-RPC 2.0 server over `$XDG_RUNTIME_DIR/jvmd-<uid>.sock` with Content-Length framing
-- [ ] Response envelope enforced at the dispatcher; a tool that omits `tier` fails a unit test
-- [ ] Session manager: open, close, list; one executor per session
-- [ ] Idle timeout and clean shutdown flushing WAL
-- [ ] Structured request log and `status` with per-method p50 and p95
-- [ ] `parse()` tier 0: `overview` on a file returns declarations with lines
-- [ ] Syntax diagnostics from `DiagnosticListener` surfaced with `source: live, tier: 0`
-- [ ] jlink image with `--add-options` carrying every `--add-exports` and AOT flag
-- [ ] AOT cache training script; CI runs the daemon with `-XX:AOTMode=on`
-- [ ] Runtime `auto` mode with `-Xlog:aot` to file; `status.aot_cache` reports `used` or `rejected` with reason
-- [ ] Exit: daemon cold start under 600ms measured in CI; `overview` under 50ms on a 2k-line file
+- [x] JSON-RPC 2.0 server over `$XDG_RUNTIME_DIR/jvmd-<uid>.sock` with Content-Length framing
+- [x] Response envelope enforced at the dispatcher; a tool that omits `tier` fails a unit test
+- [x] Session manager: open, close, list; one executor per session
+- [x] Idle timeout and clean shutdown flushing WAL
+- [x] Structured request log and `status` with per-method p50 and p95
+- [x] `parse()` tier 0: `overview` on a file returns declarations with lines
+- [x] Syntax diagnostics from `DiagnosticListener` surfaced with `source: live, tier: 0`
+- [x] jlink image with `--add-options` carrying every `--add-exports` and AOT flag
+- [x] AOT cache training script; CI runs the daemon with `-XX:AOTMode=on`
+- [x] Runtime `auto` mode with `-Xlog:aot` to file; `status.aot_cache` reports `used` or `rejected` with reason
+- [x] Exit: daemon cold start under 600ms measured in CI; `overview` under 50ms on a 2k-line file
 
 ### Phase 2: resolver
 
-- [ ] Resolver bundle selected by `maven_major`; detected Maven version disagreement surfaces in `status`
-- [ ] `RepositorySystemSupplier` bootstrap with simple local repository manager
-- [ ] Offline-first resolution with one online pass for misses
-- [ ] `conflictResolver.verbose` on; conflict losers present in the returned graph
-- [ ] Resolution cache keyed by root, parent chain and settings hashes
-- [ ] `pom.xml` change detection, re-resolve, classpath diff
-- [ ] `deps` tool returns the graph with losers and reasons
-- [ ] Exit: Spring Boot starter graph resolves fully offline from a warm `~/.m2` under 1s cold, under
+- [x] Resolver bundle selected by `maven_major`; detected Maven version disagreement surfaces in `status`
+- [x] `RepositorySystemSupplier` bootstrap with simple local repository manager
+- [x] Offline-first resolution with one online pass for misses
+- [x] `conflictResolver.verbose` on; conflict losers present in the returned graph
+- [x] Resolution cache keyed by root, parent chain and settings hashes
+- [x] `pom.xml` change detection, re-resolve, classpath diff
+- [x] `deps` tool returns the graph with losers and reasons
+- [x] Exit: Spring Boot starter graph resolves fully offline from a warm `~/.m2` under 1s cold, under
       5ms cached; result matches `mvn dependency:tree` on the corpus exactly
 
 ### Phase 3: index
 
-- [ ] Schema from 4.4 created with migrations
-- [ ] Pass 1 over one jar: `Signature` parsed, generics preserved, `MethodParameters` captured
-- [ ] Multi-release selection pinned to the daemon JDK
-- [ ] Pass 1 eager over all of `~/.m2`, parallel readers, one writer, progress in `status`
-- [ ] Pass 2 over a sources jar: docs rendered, parameter names joined to class file by erased
+- [x] Schema from 4.4 created with migrations
+- [x] Pass 1 over one jar: `Signature` parsed, generics preserved, `MethodParameters` captured
+- [x] Multi-release selection pinned to the daemon JDK
+- [x] Pass 1 eager over all of `~/.m2`, parallel readers, one writer, progress in `status`
+- [x] Pass 2 over a sources jar: docs rendered, parameter names joined to class file by erased
       descriptor, unmatched members keep `arg0` with a counter in `status`
-- [ ] `simple_names` and FTS5 populated; `find` with `substring=true` works
-- [ ] Workspace load: `workspace_artifacts`, `depends_on`, duplicate-class warning
-- [ ] Invalidation: `(size, mtime)` fast path, rehash on mismatch, SNAPSHOT always rehashed
-- [ ] Exit: full `~/.m2` pass 1 completes; `describe` on a Spring symbol returns generics intact,
+- [x] `simple_names` and FTS5 populated; `find` with `substring=true` works
+- [x] Workspace load: `workspace_artifacts`, `depends_on`, duplicate-class warning
+- [x] Invalidation: `(size, mtime)` fast path, rehash on mismatch, SNAPSHOT always rehashed
+- [x] Exit: full `~/.m2` pass 1 completes; `describe` on a Spring symbol returns generics intact,
       real parameter names, and docs; a deliberately duplicated class across two jars is reported at
       load
 
 ### Phase 4: analyzer
 
-- [ ] `JavaFileManager` serving `CLASS_PATH` from index-recorded jar paths with an LRU byte cache
-- [ ] `--should-stop=ifError=FLOW` set; attribution proceeds with errors present
-- [ ] `JavacTaskPool` per session, recycle on classpath change and memory threshold
-- [ ] Tier 1 via `enter()`; `overview` upgrades to tier 1 output
-- [ ] Focusing implemented with line-preserving padding; positions map 1:1
-- [ ] Catch-and-degrade around `analyze()` with `analyzer_fault` warning
-- [ ] Reverse-dependency map and lazy re-attribution of dependents
-- [ ] `diagnostics` with `source: live`; `verified` runs the manifest's verify command and parses
+- [x] `JavaFileManager` serving `CLASS_PATH` from index-recorded jar paths with an LRU byte cache
+- [x] `--should-stop=ifError=FLOW` set; attribution proceeds with errors present
+- [x] `JavacTaskPool` per session, recycle on classpath change and memory threshold
+- [x] Tier 1 via `enter()`; `overview` upgrades to tier 1 output
+- [x] Focusing implemented with line-preserving padding; positions map 1:1
+- [x] Catch-and-degrade around `analyze()` with `analyzer_fault` warning
+- [x] Reverse-dependency map and lazy re-attribution of dependents
+- [x] `diagnostics` with `source: live`; `verified` runs the manifest's verify command and parses
       `file:line:col: error: code` output
-- [ ] `describe`, `find` by position, `references` (workspace, from attribution), `hierarchy`
-- [ ] Exit: zero `live` diagnostics at tier 2 on clean PetClinic; zero disagreement between `live`
+- [x] `describe`, `find` by position, `references` (workspace, from attribution), `hierarchy`
+- [x] Exit: zero `live` diagnostics at tier 2 on clean PetClinic; zero disagreement between `live`
       and `verified` on the corpus; a file with a deliberate syntax error and an unresolved type still
       resolves other members; deleting a classfile from the classpath produces `analyzer_fault`, not a
       dead daemon; focused attribution under 50ms on a 2k-line file
 
 ### Phase 5: annotation processing
 
-- [ ] `target/generated-sources` and `target/generated-test-sources` on the session source path
-- [ ] APT run out of process: a child JVM running `javac -proc:only -processorpath <resolved>
+- [x] `target/generated-sources` and `target/generated-test-sources` on the session source path
+- [x] APT run out of process: a child JVM running `javac -proc:only -processorpath <resolved>
       -s <generated dir>`, time-boxed by the daemon, output read from disk. In-process is not an
       option: JEP 486 permanently disabled `SecurityManager` in JDK 24, and a processor is arbitrary
       code that can leak, spin, or kill the daemon
-- [ ] Lombok decision recorded: either special-cased via its javac plugin path, or documented as
+- [x] Lombok decision recorded: either special-cased via its javac plugin path, or documented as
       reduced fidelity with a `status` warning
-- [ ] Exit: a Lombok `@Getter` project and a MapStruct project give zero phantom `cant.resolve`
+- [x] Exit: a Lombok `@Getter` project and a MapStruct project give zero phantom `cant.resolve`
       diagnostics at tier 2
 
 ### Phase 6: multi-repo overlay
 
-- [ ] Manifest parsing, root scanning, reactor support, `gav -> module` map
-- [ ] `WorkspaceReader` substituting built modules
-- [ ] Unbuilt modules served from source roots via the file manager
-- [ ] Version-ignore substitution with warning; cycle detection reported in `status`
-- [ ] Local modules as `kind = local` artifacts with content-hash invalidation
-- [ ] Cross-module diagnostic attribution (`originates:`)
-- [ ] Debug source lookup across all roots
-- [ ] Exit: repo A depends on repo B; edit B unbuilt; `describe` from A lands in B's source;
+- [x] Manifest parsing, root scanning, reactor support, `gav -> module` map
+- [x] `WorkspaceReader` substituting built modules
+- [x] Unbuilt modules served from source roots via the file manager
+- [x] Version-ignore substitution with warning; cycle detection reported in `status`
+- [x] Local modules as `kind = local` artifacts with content-hash invalidation
+- [x] Cross-module diagnostic attribution (`originates:`)
+- [x] Debug source lookup across all roots
+- [x] Exit: repo A depends on repo B; edit B unbuilt; `describe` from A lands in B's source;
       `diagnostics` in A reports the break with `originates: <B gav>`; a breakpoint set in B binds
 
 ### Phase 7: documentation round trip
 
-- [ ] `describe` with `doc_depth` over the signature closure CTE
-- [ ] `{@inheritDoc}` expansion over `overrides`
-- [ ] `find` with `include_body` returning sources-jar source for third-party symbols
-- [ ] Exit: `describe("StringUtils/hasText(String)", doc_depth=3)` under 50ms, returns docs for
+- [x] `describe` with `doc_depth` over the signature closure CTE
+- [x] `{@inheritDoc}` expansion over `overrides`
+- [x] `find` with `include_body` returning sources-jar source for third-party symbols
+- [x] Exit: `describe("StringUtils/hasText(String)", doc_depth=3)` under 50ms, returns docs for
       every type in the closure, truncates with a cursor at the limit
 
 ### Phase 8: agent surface
 
-- [ ] Name path parser and resolver with overload suffix and ambiguity response
-- [ ] All fourteen tools registered; argument schemas snapshot-tested so a rename fails CI
-- [ ] `replace_body`, `insert`, `rename`, `edit` each return member-scoped diagnostics
-- [ ] `references` with `direction` and `depth` triggering pass 3 on demand
-- [ ] Budget enforcement: no `result` over 64KB without a cursor
-- [ ] MCP stdio shim in the opencode TypeScript client
-- [ ] Exit: an agent session on the corpus completes "find every caller of X three deep, replace
+- [x] Name path parser and resolver with overload suffix and ambiguity response
+- [x] All fourteen tools registered; argument schemas snapshot-tested so a rename fails CI
+- [x] `replace_body`, `insert`, `rename`, `edit` each return member-scoped diagnostics
+- [x] `references` with `direction` and `depth` triggering pass 3 on demand
+- [x] Budget enforcement: no `result` over 64KB without a cursor
+- [x] MCP stdio shim in the opencode TypeScript client
+- [x] Exit: an agent session on the corpus completes "find every caller of X three deep, replace
       the body of Y, get a verified pass" with no tool returning an unbounded list and no schema error
 
 ### Phase 9: LSP facade
 
-- [ ] The nine methods in 4.9 over the same session model
-- [ ] `publishDiagnostics` on change with debounce of 200ms
-- [ ] Exit: opencode's editor shows diagnostics, hover, definition and rename on the corpus
+- [x] The nine methods in 4.9 over the same session model
+- [x] `publishDiagnostics` on change with debounce of 200ms
+- [x] Exit: opencode's editor shows diagnostics, hover, definition and rename on the corpus
 
 ### Phase 10: runtime and debug
 
-- [ ] Launch with JDWP on an ephemeral port, parse port, attach
-- [ ] `-g` precondition check and capability report in `status`
-- [ ] `break`, `unbreak`, `continue`, `step_*`, `frames`, `locals`
-- [ ] `inspect` with depth and breadth caps and TTL handles
-- [ ] `eval` tier 1 interpreter
-- [ ] `histogram`, `instances`, `referrers` with required `max`
-- [ ] `hotswap` for method bodies on a stock JDK; `restart_required` on unsupported change
-- [ ] Exit: attach under 500ms after app ready; a handle expires and the object becomes collectable;
+- [x] Launch with JDWP on an ephemeral port, parse port, attach
+- [x] `-g` precondition check and capability report in `status`
+- [x] `break`, `unbreak`, `continue`, `step_*`, `frames`, `locals`
+- [x] `inspect` with depth and breadth caps and TTL handles
+- [x] `eval` tier 1 interpreter
+- [x] `histogram`, `instances`, `referrers` with required `max`
+- [x] `hotswap` for method bodies on a stock JDK; `restart_required` on unsupported change
+- [x] Exit: attach under 500ms after app ready; a handle expires and the object becomes collectable;
       `referrers` on a deliberately retained object returns the retaining chain; `MethodEntryRequest`
       does not appear anywhere in the codebase (grep test)
 
 ### Phase 11: enhanced hot swap and tier-2 eval
 
-- [ ] JBR detection and `-XX:+AllowEnhancedClassRedefinition`; capability reported as `enhanced`
-- [ ] Add a method, add a field, change a signature via `hotswap`
-- [ ] HotswapAgent evaluation against the current JBR; adopt or record as not viable
-- [ ] Tier-2 `eval`: javac-compiled synthetic method over frame locals, helper classloader
-- [ ] Exit: on JBR, adding a method and calling it via `eval` works without restart; on stock JDK the
+- [x] JBR detection and `-XX:+AllowEnhancedClassRedefinition`; capability reported as `enhanced`
+- [x] Add a method, add a field, change a signature via `hotswap`
+- [x] HotswapAgent evaluation against the current JBR; adopt or record as not viable
+- [x] Tier-2 `eval`: javac-compiled synthetic method over frame locals, helper classloader
+- [x] Exit: on JBR, adding a method and calling it via `eval` works without restart; on stock JDK the
       same request returns `restart_required` with the reason
 
 ---
@@ -682,14 +690,14 @@ tests never stop the build; a failing advisory test flips its default and is rec
 | # | Test | Blocks | Status |
 |---|---|---|---|
 | 1 | JBR with `-XX:+AllowEnhancedClassRedefinition`: add a method to a loaded class through JDI `redefineClasses`; confirm it is callable | 11 | PASS, 2026-09-14, JBR 25.0.4.1 b583.48; `added()I` returned 42; redefine 7.9ms |
-| 2 | javac with `--should-stop=ifError=FLOW`: a file with a syntax error and an unresolved type; `Trees.getElement` still resolves other members; delete a classfile from the classpath and confirm the fault is catchable | 4 | not run |
-| 3 | `RepositorySystemSupplier` resolving Spring Boot fully offline from a warm `~/.m2`; measure | 2 | not run |
-| 4 | `WorkspaceReader` substituting a local module for a published GAV, unbuilt | 6 | not run |
-| 5 | AOT cache round trip with `-XX:AOTMode=on` on a fixture jar; measure the delta. The daemon round trip is phase 1's exit criterion, not a pre-phase test | 1 | PASS as fixture training; daemon result pending phase 1 |
+| 2 | javac with `--should-stop=ifError=FLOW`: a file with a syntax error and an unresolved type; `Trees.getElement` still resolves other members; delete a classfile from the classpath and confirm the fault is catchable | 4 | PASS; tolerant bindings and disappearing indexed-classpath seam, see SMOKE.md |
+| 3 | `RepositorySystemSupplier` resolving Spring Boot fully offline from a warm `~/.m2`; measure | 2 | PASS; see SMOKE.md and PROGRESS.md |
+| 4 | `WorkspaceReader` substituting a local module for a published GAV, unbuilt | 6 | PASS; WorkspaceReaderSmokeTest, see SMOKE.md |
+| 5 | AOT cache round trip with `-XX:AOTMode=on` on a fixture jar; measure the delta. The daemon round trip is phase 1's exit criterion, not a pre-phase test | 1 | PASS; fixture and strict daemon AOT, 208.102ms startup in CI run 34882043173 |
 | 6 | `canGetInstanceInfo` on the target JVMs; `referringObjects` on a deliberately retained object | 10 | PASS on Temurin and JBR; holder found by object identity |
 | 7 | Debuggee with `-XX:AOTCache` plus JDWP | advisory | FAIL: linked cache rejected at VM init. Default flipped: no debuggee AOT. Re-run with `-XX:-AOTClassLinking` as the experiment |
-| 8 | `java.lang.classfile` reading a multi-release jar and returning the right version's class | 3 | not run |
-| 9 | Pass 2 join rate on `spring-core`: percentage of methods whose source signature matched the class-file descriptor; target above 98% | 3 | not run |
+| 8 | `java.lang.classfile` reading a multi-release jar and returning the right version's class | 3 | PASS; Spring Core selects versions 21 and 24 on JDK 25 |
+| 9 | Pass 2 join rate on `spring-core`: percentage of methods whose source signature matched the class-file descriptor; target above 98% | 3 | PASS; 98.99655% on Spring Core 7.0.8 |
 | 10 | Method-body hot swap on stock JDK through JDI | 10 | PASS, Temurin 25.0.4.1; redefine 1.7ms; attach 27ms after ready |
 
 ## 10. Open decisions
@@ -710,10 +718,10 @@ tests never stop the build; a failing advisory test flips its default and is rec
 - `jj-language-server` measurements referenced here were taken directly on a cloned checkout with
   instrumented probes over Spring PetClinic. Reliable.
 - Section 3 verification is at the level of "the API exists and is documented to do this" against
-  current upstream sources. Nothing has been built in this configuration.
+  current upstream sources. The implementation now passes the checkpoint and corpus suites cited in section 7.
 - The JBR flag and its reachability through JDI `redefineClasses` are now measured, not inferred:
   section 9 test 1. AOT plus JDWP incompatibility is measured: section 9 test 7.
-- HotswapAgent against current JBR is unverified.
+- HotswapAgent against current JBR passes the JavaBeans metadata refresh fixture. It is optional and off by default; this does not claim general framework reload support.
 - The javac fault triggers cited are real bug reports; the mitigation is standard practice in
   NetBeans, not something invented here.
 - Ranked stack risks: javac internal API drift across JDK updates; resolver alignment with the
@@ -827,10 +835,14 @@ Example, `symbol.describe`:
   exits 0.
 - Perf budgets are assertions with the numbers from 4.10, run only under `-XX:AOTCache` and
   tagged `@Tag("perf")`; they fail the build in CI, not locally.
-- `IdentifierSweepTest` (5, cross-cutting): every identifier token in the corpus probed through
-  `symbol.atPosition` then `symbol.describe`; asserts the answer names the token; records the rate
-  in `target/sweep.json`; fails if the rate drops below the committed floor in
-  `jvmd-tests/floors.json`.
+- `IdentifierSweepTest` (5, cross-cutting): the four-probe sweep defined in section 5. Records the
+  rate in `target/sweep.json`; fails if it drops below the committed floor in
+  `jvmd-tests/floors.json`. `symbol.describe` and `symbol.references` answer for a SCIP identity
+  rather than a position, and the sweep is read-only, so their outcome for a given
+  `(scip, token text)` pair is memoized per session; `atPosition` and `find` run per token. The key
+  is the SCIP, never the `ref`: `ref` collapses a resolved symbol named `Foo` and an unresolved
+  token `Foo` onto the same entry, which would cross-contaminate the two and inflate the rate.
+  Gets its own CI job, not the remainder of another job's budget.
 - `ForbiddenIdentifiersTest`: greps `src/main` for `org.eclipse.jdt`, `MethodEntryRequest`,
   `MethodExitRequest`, `SecurityManager`, `dependency:tree`, `WatchService` inside `jvmd-index`,
   `ASTParser`, `lsp4j`, `objectweb.asm`. Any hit fails.
@@ -871,8 +883,14 @@ An agent does not ask these; it applies the default and records it in `SMOKE.md`
 6. One commit per checkpoint, message equal to the checkpoint text. No commit that leaves the
    phase's tag red.
 7. When the specification is ambiguous, resolve in this order: section 8 anti-instructions, then
-   section 1 acceptance criteria, then the nearest section 4 text, then stop and ask.
-8. At the end of each phase, append to `PROGRESS.md`: checkpoints ticked, measured numbers against
+   section 1 acceptance criteria, then the nearest section 4 text, then stop and ask. **If two
+   sections disagree, or you believe a gate should be stricter than written, stop and ask; do not
+   implement the stricter reading.** Tightening a gate mid-build turns a passing checkpoint into a
+   failing one and spends the remaining effort on a wall you created.
+8. Drain evidence before adding code. No more than three entries may stand at "CI validation
+   pending" at once; gather their evidence before starting new work.
+9. At the end of each phase, append to `PROGRESS.md`: checkpoints ticked, measured numbers against
    the 4.10 budgets, anything deferred and why, any smoke test that has since changed outcome.
-9. Do not optimise anything that has not failed a budget assertion.
-10. Do not extend scope. Section 6 non-goals are not suggestions.
+10. Do not optimise anything that has not failed a budget assertion. Landing 0.1% inside a budget
+    after three attempts is target-chasing; report the stage attribution and stop.
+11. Do not extend scope. Section 6 non-goals are not suggestions.

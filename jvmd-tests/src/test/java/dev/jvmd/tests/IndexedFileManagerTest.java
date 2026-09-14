@@ -1,0 +1,28 @@
+package dev.jvmd.tests;
+import dev.jvmd.analyzer.*;
+import dev.jvmd.index.*;
+import java.nio.file.*;
+import java.util.*;
+import javax.tools.*;
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.io.TempDir;
+import static org.assertj.core.api.Assertions.*;
+/** Implements phase 4 checkpoint: indexed class bytes with bounded LRU and stale-byte detection. */
+@Tag("phase-4")
+class IndexedFileManagerTest {
+ @TempDir Path temp;
+ @Test void completesPrivateSupportTypesAndDoesNotHideDeletedJars()throws Exception{
+  Path jar=IndexFixtures.jar(temp,"support","package fixture; class Parent { public int inherited; } public class Sample extends Parent { public int value; }",true);
+  var compiler=ToolProvider.getSystemJavaCompiler();
+  try(var index=new IndexService(temp.resolve("index.db"),temp)){
+   index.indexJar(jar,"fixture:support:1","jar");
+   try(var manager=new IndexedFileManager(compiler.getStandardFileManager(null,null,null),List.of(jar),List.of(),index,1024*1024)){
+    var diagnostics=new DiagnosticCollector<JavaFileObject>();var task=(com.sun.source.util.JavacTask)compiler.getTask(null,manager,diagnostics,List.of("-proc:none","--should-stop=ifError=FLOW"),null,List.of(Parser.source(temp.resolve("Use.java").toUri(),"class Use { int get(fixture.Sample s){return s.inherited+s.value;} }")));
+    task.analyze();assertThat(diagnostics.getDiagnostics()).noneMatch(d->d.getKind()==Diagnostic.Kind.ERROR);
+    var file=manager.getJavaFileForInput(StandardLocation.CLASS_PATH,"fixture.Sample",JavaFileObject.Kind.CLASS);byte[] original;try(var in=file.openInputStream()){original=in.readAllBytes();}try(var in=file.openInputStream()){assertThat(in.readAllBytes()).isEqualTo(original);}
+    assertThat(manager.status().get("class_byte_hits")).isPositive();assertThat(manager.status().get("class_bytes")).isLessThanOrEqualTo(1024*1024);
+    Files.delete(jar);assertThatThrownBy(file::openInputStream).isInstanceOf(java.io.UncheckedIOException.class);
+   }
+  }
+ }
+}

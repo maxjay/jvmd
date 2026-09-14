@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+image="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+export JVMD_LAUNCHER="$image/bin/jvmd"
+exec node "$image/lib/jvmd/shim/src/main.ts" --mcp "$@"

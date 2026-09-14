@@ -1,0 +1,20 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>
+  <parent><groupId>dev.jvmd</groupId><artifactId>jvmd</artifactId><version>0.1.0-SNAPSHOT</version><relativePath>../../pom.xml</relativePath></parent>
+  <artifactId>jvmd-resolver-maven3</artifactId>
+  <dependencies>
+    <dependency><groupId>dev.jvmd</groupId><artifactId>jvmd-resolver</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>org.apache.maven.resolver</groupId><artifactId>maven-resolver-supplier</artifactId><version>${resolver.version}</version></dependency>
+    <dependency><groupId>org.apache.maven.resolver</groupId><artifactId>maven-resolver-transport-http</artifactId><version>${resolver.version}</version></dependency>
+    <dependency><groupId>org.apache.maven</groupId><artifactId>maven-core</artifactId><version>${maven.version}</version></dependency>
+    <dependency><groupId>org.apache.maven</groupId><artifactId>maven-settings-builder</artifactId><version>${maven.version}</version></dependency>
+    <dependency><groupId>org.apache.maven</groupId><artifactId>maven-resolver-provider</artifactId><version>${maven.version}</version></dependency>
+  </dependencies>
+  <build><finalName>maven3</finalName><plugins>
+    <plugin><groupId>org.codehaus.mojo</groupId><artifactId>build-helper-maven-plugin</artifactId><version>3.6.1</version><executions><execution><id>shared-engine</id><phase>generate-sources</phase><goals><goal>add-source</goal></goals><configuration><sources><source>${project.basedir}/../engine/src/main/java</source></sources></configuration></execution></executions></plugin>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-shade-plugin</artifactId><version>3.6.2</version><executions><execution><phase>package</phase><goals><goal>shade</goal></goals><configuration>
+      <createDependencyReducedPom>false</createDependencyReducedPom><minimizeJar>false</minimizeJar>
+      <filters><filter><artifact>*:*</artifact><excludes><exclude>module-info.class</exclude><exclude>META-INF/versions/**/module-info.class</exclude><exclude>META-INF/*.SF</exclude><exclude>META-INF/*.RSA</exclude><exclude>META-INF/*.DSA</exclude></excludes></filter></filters>
+      <transformers><transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/><transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer"><resource>META-INF/maven/org.apache.maven.api.di.Inject</resource></transformer></transformers>
+    </configuration></execution></executions></plugin>
+  </plugins></build>
+</project>

@@ -1,0 +1,14 @@
+{
+  "name": "jvmd-shim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.21.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "mcp": "node src/main.ts --mcp",
+    "lsp": "node src/main.ts --lsp"
+  }
+}

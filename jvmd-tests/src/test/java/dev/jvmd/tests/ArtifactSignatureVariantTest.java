@@ -13,12 +13,25 @@ import static org.assertj.core.api.Assertions.*;
 class ArtifactSignatureVariantTest {
     @TempDir Path root;
     private Path variant(String name,String parent,String result) throws Exception {
-        String source="package fixture; public class Sample extends "+parent+" { /** Variant result. */ public "+result+" value(){return new "+result+"();} /** {@inheritDoc} */ public String inherited(){return \"value\";} } "+
-                "class First { /** First parent documentation. */ public String inherited(){return \"first\";} } "+
-                "class Second { /** Second parent documentation. */ public String inherited(){return \"second\";} } "+
-                "/** Left result. */ class Left {} /** Right result. */ class Right {}";
-        return IndexFixtures.jar(root.resolve(name),name,source,false);
+        Path directory=Files.createDirectories(root.resolve(name)),classes=Files.createDirectories(directory.resolve("classes"));
+        var sources=new LinkedHashMap<String,String>();
+        sources.put("Sample","public class Sample extends "+parent+" { /** Variant result. */ public "+result+" value(){return new "+result+"();} /** {@inheritDoc} */ public String inherited(){return \"value\";} }");
+        sources.put("First","public class First { /** First parent documentation. */ public String inherited(){return \"first\";} }");
+        sources.put("Second","public class Second { /** Second parent documentation. */ public String inherited(){return \"second\";} }");
+        sources.put("Left","/** Left result. */ public class Left {}");sources.put("Right","/** Right result. */ public class Right {}");
+        var arguments=new ArrayList<>(List.of("-g","-d",classes.toString()));
+        for(var entry:sources.entrySet()){Path file=directory.resolve(entry.getKey()+".java");Files.writeString(file,"package fixture; "+entry.getValue());arguments.add(file.toString());}
+        assertThat(javax.tools.ToolProvider.getSystemJavaCompiler().run(null,null,null,arguments.toArray(String[]::new))).isZero();
+        Path jar=directory.resolve(name+".jar");
+        try(var output=new java.util.jar.JarOutputStream(Files.newOutputStream(jar));var paths=Files.walk(classes)){
+            for(Path file:paths.filter(Files::isRegularFile).toList()){output.putNextEntry(new java.util.jar.JarEntry(classes.relativize(file).toString().replace(java.io.File.separatorChar,'/')));Files.copy(file,output);output.closeEntry();}
+        }
+        try(var output=new java.util.jar.JarOutputStream(Files.newOutputStream(directory.resolve(name+"-sources.jar")))){
+            for(var entry:sources.entrySet()){output.putNextEntry(new java.util.jar.JarEntry("fixture/"+entry.getKey()+".java"));output.write(("package fixture; "+entry.getValue()).getBytes(java.nio.charset.StandardCharsets.UTF_8));output.closeEntry();}
+        }
+        return jar;
     }
+
     @Test void sameScipUsesOnlyTheSelectedContentVariantsRelationships() throws Exception {
         Path first=variant("first","First","Left"),second=variant("second","Second","Right");
         try(var index=new IndexService(root.resolve("index.db"),root)) {

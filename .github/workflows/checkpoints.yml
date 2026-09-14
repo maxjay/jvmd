@@ -49,10 +49,12 @@ jobs:
           bash jvmd-tests/smoke/run-resolver.sh
           mvn -B -pl jvmd-tests test -Dgroups=phase-2 -DexcludedGroups=corpus
       - name: Phase 3 index prerequisites and complete repository gate
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: |
           bash jvmd-tests/smoke/run-index.sh
           mvn -B -pl jvmd-tests test -Dgroups=phase-3 -DexcludedGroups=perf -DargLine=-Xmx1024m
       - name: Phase 4 compiler prerequisites and checkpoints
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: |
           bash jvmd-tests/smoke/run-compiler.sh
           mvn -B -pl jvmd-tests test -Dgroups=phase-4 -DexcludedGroups=corpus
@@ -110,6 +112,7 @@ jobs:
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: mvn -B -pl jvmd-tests test -Dgroups=phase-8 -DexcludedGroups=corpus
       - name: LSP facade and document synchronization
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: mvn -B -pl jvmd-tests test -Dgroups=phase-9 -DexcludedGroups=corpus
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()

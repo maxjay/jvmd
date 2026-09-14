@@ -29,6 +29,6 @@ public final class ResolverPerformanceProbe {
             Json.MAPPER.writerWithDefaultPrettyPrinter().writeValue(Path.of(args[2]).toFile(), measurements);
             System.out.println("phase-2-perf " + Json.MAPPER.writeValueAsString(measurements));
             if (cold >= 1000 || times[28] >= 5) throw new AssertionError("Resolver budget exceeded: " + measurements);
-        }
+        }catch(dev.jvmd.core.RpcException error){System.err.println(Json.MAPPER.writeValueAsString(error.data()));throw error;}
     }
 }

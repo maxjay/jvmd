@@ -19,6 +19,16 @@ class ResolvedGraphBudgetTest {
         Path project = TestSupport.repo().resolve("jvmd-tests/smoke/resolver/warmup");
         Path baseline = project.resolve("target/dependency-tree.json");
         assertThat(baseline).as("Run smoke/run-resolver.sh before the perf gate").isRegularFile();
+        if(major==4){
+            Path original=project;project=Files.createDirectories(temp.resolve("maven4-project"));Files.copy(original.resolve("pom.xml"),project.resolve("pom.xml"));
+            Path wrapper=Files.createDirectories(project.resolve(".mvn/wrapper"));
+            Files.writeString(wrapper.resolve("maven-wrapper.properties"),"distributionUrl=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/4.0.0-rc-6/apache-maven-4.0.0-rc-6-bin.zip\n");
+            String home=System.getenv("JVMD_MAVEN4_HOME");assertThat(home).as("CI installs the pinned native Maven 4 build").isNotBlank();
+            Path buildLog=temp.resolve("maven4-tree.log");
+            var build=new ProcessBuilder(Path.of(home,"bin/mvn").toString(),"-B","-f",project.resolve("pom.xml").toString(),"org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree","-DoutputType=json","-DoutputFile=target/dependency-tree.json").redirectErrorStream(true).redirectOutput(buildLog.toFile()).start();
+            try{assertThat(build.waitFor(60,TimeUnit.SECONDS)).isTrue();assertThat(build.exitValue()).withFailMessage(Files.readString(buildLog)).isZero();}finally{build.destroyForcibly();}
+            baseline=project.resolve("target/dependency-tree.json");assertThat(baseline).isRegularFile();
+        }
         Path image = TestSupport.repo().resolve("jvmd-dist/target/image");
         Path probe = temp.resolve("resolver-probe.jar");
         String name = "dev/jvmd/tests/ResolverPerformanceProbe.class";

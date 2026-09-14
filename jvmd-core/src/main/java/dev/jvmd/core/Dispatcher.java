@@ -40,8 +40,12 @@ public final class Dispatcher {
         return status;
     }
     public ObjectNode dispatch(JsonNode request) {
+        if (request == null) request = Json.MAPPER.nullNode();
         String method = request.path("method").asText("");
         JsonNode id = request.get("id");
+        boolean validRequest = request.isObject() && request.path("jsonrpc").asText().equals("2.0")
+                && request.path("method").isTextual() && !method.isEmpty()
+                && (id == null || id.isTextual() || id.isNumber() || id.isNull());
         var response = Json.MAPPER.createObjectNode().put("jsonrpc", "2.0");
         response.set("id", id == null ? Json.MAPPER.nullNode() : id);
         long start = System.nanoTime();
@@ -50,8 +54,7 @@ public final class Dispatcher {
         Envelope envelope;
         boolean fault = false;
         try {
-            if (!request.isObject() || !request.path("jsonrpc").asText().equals("2.0") || method.isEmpty()
-                    || (id != null && !(id.isTextual() || id.isNumber() || id.isNull())))
+            if (!validRequest)
                 throw new RpcException(-32600, "Invalid Request", null);
             if (!params.isMissingNode() && !params.isObject()) throw RpcException.invalid("Params must be an object");
             Handler handler = methods.get(method);
@@ -66,11 +69,12 @@ public final class Dispatcher {
             response.set("error", Json.MAPPER.valueToTree(Map.of("code", e.code(), "message", e.getMessage(), "data", envelope)));
         } catch (Exception | AssertionError | LinkageError e) {
             fault = true;
+            System.getLogger("jvmd").log(System.Logger.Level.ERROR, "Request fault: " + method, e);
             envelope = Envelope.of(1, "live", Map.of()).warn("analyzer_fault: " + e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage()));
             response.set("result", Json.MAPPER.valueToTree(envelope));
         }
         metrics.record(method, sessionId, System.nanoTime() - start, envelope, fault);
-        return id == null && request.isObject() && request.has("method") ? null : response;
+        return id == null && validRequest ? null : response;
     }
     public static String required(JsonNode params, String key) {
         JsonNode value = params.get(key);

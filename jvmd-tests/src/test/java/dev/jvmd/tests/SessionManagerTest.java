@@ -11,6 +11,12 @@ import static org.assertj.core.api.Assertions.*;
 @Tag("phase-1")
 class SessionManagerTest {
     @TempDir Path temp;
+    @Test void aFailingResourceStillTerminatesTheSessionExecutor() throws Exception {
+        var session = new Session("failure", temp);
+        session.put("resource", (AutoCloseable) () -> { throw new java.io.IOException("fixture close failure"); });
+        assertThatThrownBy(session::close).isInstanceOf(java.io.IOException.class);
+        assertThatThrownBy(() -> session.execute(() -> 1)).isInstanceOf(java.util.concurrent.RejectedExecutionException.class);
+    }
     @Test void canonicalRootsReuseAnExecutorAndDifferentRootsAreIndependent() throws Exception {
         try (var sessions = new Sessions()) {
             var one = sessions.open(temp);

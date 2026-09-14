@@ -13,6 +13,16 @@ import static org.assertj.core.api.Assertions.*;
 @Tag("phase-1")
 class EnvelopeTest {
     @TempDir Path temp;
+    @Test void malformedRequestsGetErrorsEvenWithoutAnId() throws Exception {
+        try (var sessions = new Sessions()) {
+            var dispatcher = new Dispatcher(sessions, new Metrics());
+            var malformed = Json.MAPPER.createObjectNode().put("method", "daemon.status");
+            assertThat(dispatcher.dispatch(malformed).path("error").path("code").asInt()).isEqualTo(-32600);
+            assertThat(dispatcher.dispatch(null).path("error").path("code").asInt()).isEqualTo(-32600);
+            var notification = malformed.put("jsonrpc", "2.0");
+            assertThat(dispatcher.dispatch(notification)).isNull();
+        }
+    }
     @Test void allMethodsAndFaultsCarryRequiredFields() throws Exception {
         try (var app = new Application(TestSupport.config(temp, Duration.ofHours(4)))) {
             String session = TestSupport.open(app, temp);

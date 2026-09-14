@@ -6,6 +6,11 @@ import java.nio.file.Path;
 /** Implements 4.10: report runtime auto-mode cache acceptance and rejection reasons. */
 public final class AotStatus {
     private AotStatus() { }
+    public static String runtime(Path log) {
+        if (java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments().stream()
+                .noneMatch(arg -> arg.startsWith("-XX:AOTCache="))) return "rejected: no cache configured for this JVM";
+        return read(log);
+    }
     public static String read(Path log) {
         if (log == null || !Files.isRegularFile(log)) return "rejected: no AOT log configured";
         try {

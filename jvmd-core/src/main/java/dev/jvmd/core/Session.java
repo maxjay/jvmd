@@ -40,7 +40,7 @@ public final class Session implements AutoCloseable {
         }
     }
     @Override public void close() throws Exception {
-        execute(() -> {
+        try { execute(() -> {
             Exception failure = null;
             for (Object resource : state.values()) if (resource instanceof AutoCloseable c) {
                 try { c.close(); } catch (Exception e) { failure = e; }
@@ -48,8 +48,9 @@ public final class Session implements AutoCloseable {
             state.clear();
             if (failure != null) throw failure;
             return null;
-        });
-        executor.shutdown();
-        if (Thread.currentThread() != owner && !executor.awaitTermination(5, TimeUnit.SECONDS)) executor.shutdownNow();
+        }); } finally {
+            executor.shutdown();
+            if (Thread.currentThread() != owner && !executor.awaitTermination(5, TimeUnit.SECONDS)) executor.shutdownNow();
+        }
     }
 }

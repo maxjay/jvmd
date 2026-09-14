@@ -12,14 +12,14 @@ public final class RunManager implements AutoCloseable {
     public record Target(Path directory,List<Path> sources,List<Path> classpath,List<String> options,Path output) { }
     /** Implements 4.7: detached launch configuration and per-module compilation boundaries. */
     public record Request(DebugSession.Launch launch,SourceLookup sources,Path compilerHome,List<Path> sourceRoots,List<String> compilerOptions,Path output,List<Target> targets) { }
-    private record Run(Request request,DebugSession debug) { }
+    private record Run(Request request,DebugSession debug,CompiledEvaluation evaluation) { }
     private final String workspace;
     private final LinkedHashMap<String,Run> runs=new LinkedHashMap<>();
     private long sequence;
     public RunManager(String workspace){this.workspace=workspace;}
     public Envelope start(Request request)throws Exception{
         if(runs.size()>=8)throw RpcException.invalid("At most eight application runs can be open in one workspace");
-        String id=workspace+"r"+(++sequence);var debug=new DebugSession(id,request.launch(),request.sources());runs.put(id,new Run(request,debug));return Envelope.of(2,"live",debug.status());
+        String id=workspace+"r"+(++sequence);var debug=new DebugSession(id,request.launch(),request.sources());runs.put(id,new Run(request,debug,new CompiledEvaluation(debug,request)));return Envelope.of(2,"live",debug.status());
     }
     public Envelope operation(String id,String op,JsonNode args)throws Exception{
         var run=runs.get(id);if(run==null)throw new RpcException(-32001,"session_not_found",Map.of("run_session",id));var debug=run.debug();
@@ -31,11 +31,15 @@ public final class RunManager implements AutoCloseable {
             case "frames"->debug.frames(thread(args),offset(args),positive(args,"limit",20,200));
             case "locals"->debug.locals(args.path("frame").asText(null),offset(args),positive(args,"limit",20,200));
             case "inspect"->args.path("release").asBoolean()?Envelope.of(2,"live",Map.of("released",debug.handles().release(Dispatcher.required(args,"handle")))):debug.inspect(Dispatcher.required(args,"handle"),Dispatcher.bounded(args,"depth",2,4),positive(args,"breadth",20,20),args.path("cursor").asText(null));
-            case "eval"->debug.eval(Dispatcher.required(args,"expression"),args.path("frame").asText(null));
+            case "eval"->{
+                int tier=args.path("tier").asInt(1);if(tier!=1&&tier!=2)throw RpcException.invalid("Evaluation tier must be 1 or 2");
+                yield tier==2?run.evaluation().evaluate(Dispatcher.required(args,"expression"),args.path("frame").asText(null)):debug.eval(Dispatcher.required(args,"expression"),args.path("frame").asText(null));
+            }
             case "histogram"->args.has("jfr")?profile(run,args.path("jfr")):debug.memory().histogram(positive(args,"limit",50,100),args.path("cursor").asText(null));
             case "instances"->debug.memory().instances(Dispatcher.required(args,"ref"),maximum(args),positive(args,"limit",50,100),args.path("cursor").asText(null));
             case "referrers"->debug.memory().referrers(Dispatcher.required(args,"handle"),maximum(args),positive(args,"limit",50,100),args.path("cursor").asText(null));
             case "hotswap"->{
+                run.evaluation().clear();
                 var changed=new ArrayList<Path>();for(var path:args.path("paths"))changed.add(source(run,path.asText()));if(changed.isEmpty()&&args.has("path"))changed.add(source(run,args.get("path").asText()));
                 if(changed.isEmpty())throw RpcException.invalid("Hot swap requires changed source paths");
                 var groups=new LinkedHashMap<Target,List<Path>>();

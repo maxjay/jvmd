@@ -46,7 +46,8 @@ public final class DebugSession implements AutoCloseable {
         var command=new ArrayList<String>();command.add(launch.javaHome().resolve("bin/java").toString());
         command.addAll(launch.vmOptions());
         if(launch.debug())command.add("-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=127.0.0.1:0");
-        command.addAll(List.of("-cp",launch.classpath().stream().map(Path::toString).collect(java.util.stream.Collectors.joining(File.pathSeparator)),launch.main()));command.addAll(launch.args());
+        var targetClasspath=new ArrayList<>(launch.classpath());if(launch.debug())targetClasspath.add(EvaluationSupport.bridge());
+        command.addAll(List.of("-cp",targetClasspath.stream().map(Path::toString).collect(java.util.stream.Collectors.joining(File.pathSeparator)),launch.main()));command.addAll(launch.args());
         process=new ProcessBuilder(command).directory(launch.directory().toFile()).redirectErrorStream(true).start();
         var port=new CompletableFuture<Integer>();
         reader=Thread.ofVirtual().name("jvmd-run-output-"+id).start(()->{

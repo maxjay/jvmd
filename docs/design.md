@@ -590,11 +590,11 @@ independent of each other after 4. Phases 10 and 11 are independent of 5 to 9.
 
 ### Phase 11: enhanced hot swap and tier-2 eval
 
-- [ ] JBR detection and `-XX:+AllowEnhancedClassRedefinition`; capability reported as `enhanced`
-- [ ] Add a method, add a field, change a signature via `hotswap`
+- [x] JBR detection and `-XX:+AllowEnhancedClassRedefinition`; capability reported as `enhanced`
+- [x] Add a method, add a field, change a signature via `hotswap`
 - [ ] HotswapAgent evaluation against the current JBR; adopt or record as not viable
 - [ ] Tier-2 `eval`: javac-compiled synthetic method over frame locals, helper classloader
-- [ ] Exit: on JBR, adding a method and calling it via `eval` works without restart; on stock JDK the
+- [x] Exit: on JBR, adding a method and calling it via `eval` works without restart; on stock JDK the
       same request returns `restart_required` with the reason
 
 ---

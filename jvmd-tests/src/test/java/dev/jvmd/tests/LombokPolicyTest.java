@@ -12,6 +12,12 @@ import static org.assertj.core.api.Assertions.*;
 @Tag("phase-5")
 class LombokPolicyTest {
     @TempDir Path root;
+    @Test void aProcessorOnTheTestClasspathDoesNotEnableProcessing()throws Exception{
+        MavenFixtures.project(root,"<dependencies>"+AnnotationFixtures.dependency("org.projectlombok","lombok",AnnotationFixtures.LOMBOK).replace("</dependency>","<scope>test</scope></dependency>")+"</dependencies>");
+        try(var resolver=new MavenResolver(AnnotationFixtures.config(root))){
+            var module=resolver.resolve(root).modules().getFirst();assertThat(module.processing().enabled()).isFalse();assertThat(module.testProcessing().enabled()).isFalse();assertThat(module.testProcessing().lombok()).isFalse();
+        }
+    }
     @Test void policyIsVisibleAtOpenBeforeAnyAttribution()throws Exception{
         MavenFixtures.project(root,"<dependencies>"+AnnotationFixtures.dependency("org.projectlombok","lombok",AnnotationFixtures.LOMBOK)+"</dependencies>"+AnnotationFixtures.processor("org.projectlombok","lombok",AnnotationFixtures.LOMBOK));
         var config=AnnotationFixtures.config(root);

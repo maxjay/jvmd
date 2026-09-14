@@ -528,14 +528,14 @@ independent of each other after 4. Phases 10 and 11 are independent of 5 to 9.
 
 ### Phase 5: annotation processing
 
-- [ ] `target/generated-sources` and `target/generated-test-sources` on the session source path
-- [ ] APT run out of process: a child JVM running `javac -proc:only -processorpath <resolved>
+- [x] `target/generated-sources` and `target/generated-test-sources` on the session source path
+- [x] APT run out of process: a child JVM running `javac -proc:only -processorpath <resolved>
       -s <generated dir>`, time-boxed by the daemon, output read from disk. In-process is not an
       option: JEP 486 permanently disabled `SecurityManager` in JDK 24, and a processor is arbitrary
       code that can leak, spin, or kill the daemon
-- [ ] Lombok decision recorded: either special-cased via its javac plugin path, or documented as
+- [x] Lombok decision recorded: either special-cased via its javac plugin path, or documented as
       reduced fidelity with a `status` warning
-- [ ] Exit: a Lombok `@Getter` project and a MapStruct project give zero phantom `cant.resolve`
+- [x] Exit: a Lombok `@Getter` project and a MapStruct project give zero phantom `cant.resolve`
       diagnostics at tier 2
 
 ### Phase 6: multi-repo overlay

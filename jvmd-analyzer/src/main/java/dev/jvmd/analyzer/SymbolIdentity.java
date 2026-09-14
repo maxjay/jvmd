@@ -17,7 +17,7 @@ public final class SymbolIdentity {
     private final List<java.nio.file.Path> sources;
     private final Map<String,String> sourceLocations=new HashMap<>();
     private final Map<Element,String> scips=new IdentityHashMap<>(),namePaths=new IdentityHashMap<>();
-    private final Map<TypeElement,String> gavs=new IdentityHashMap<>();
+    private final Map<Element,String> gavs=new IdentityHashMap<>();
     private final Map<Element,com.sun.source.util.TreePath> paths=new IdentityHashMap<>();
     public com.sun.source.util.TreePath path(Element element){if(!paths.containsKey(element))paths.put(element,trees.getPath(element));return paths.get(element);}
     public void remember(Element element,com.sun.source.util.TreePath path){if(element!=null)paths.put(element,path);}
@@ -36,7 +36,7 @@ public final class SymbolIdentity {
     public String descriptor(ExecutableElement method){var value=new StringBuilder("(");for(var p:method.getParameters())value.append(descriptor(p.asType()));return value.append(')').append(descriptor(method.getReturnType())).toString();}
     public TypeElement declaring(Element element){while(element!=null&&!(element instanceof TypeElement))element=element.getEnclosingElement();return (TypeElement)element;}
     public String binaryName(TypeElement type){return elements.getBinaryName(type).toString();}
-    public String gav(Element element){TypeElement type=declaring(element);if(gavs.containsKey(type))return gavs.get(type);String value=resolveGav(element);gavs.put(type,value);return value;}
+    public String gav(Element element){Element owner=declaring(element);if(owner==null)owner=element;if(gavs.containsKey(owner))return gavs.get(owner);String value=resolveGav(element);gavs.put(owner,value);return value;}
     private String resolveGav(Element element){
         TypeElement type=declaring(element);
         if(type instanceof ClassSymbol symbol){

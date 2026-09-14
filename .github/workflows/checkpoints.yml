@@ -47,6 +47,9 @@ jobs:
       - name: Phase 5 external annotation processing
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: mvn -B -pl jvmd-tests test -Dgroups=phase-5 -DexcludedGroups=perf,corpus
+      - name: Phase 6 prerequisite - unbuilt WorkspaceReader smoke
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        run: mvn -B -pl jvmd-tests test -Dgroups=smoke-4 -DexcludedGroups=perf,corpus
       - name: Phase 4 clean corpus agreement
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: |

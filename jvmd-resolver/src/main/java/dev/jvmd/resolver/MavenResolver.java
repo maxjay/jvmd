@@ -207,10 +207,10 @@ public final class MavenResolver implements AutoCloseable {
             for(var artifact:resolved.getArtifactResults())if(artifact.getArtifact()!=null&&artifact.getArtifact().getFile()!=null)paths.add(artifact.getArtifact().getFile().getAbsolutePath());
         }
         boolean explicit=!coordinates.isEmpty()||!names.isEmpty()||proc.equals("only")||proc.equals("full");
-        boolean enabled=!"none".equals(proc)&&(explicit||lombok);
+        boolean enabled=!"none".equals(proc)&&explicit;
         if(enabled&&paths.isEmpty())paths.addAll(classpath);
         lombok|=paths.stream().anyMatch(MavenResolver::lombok);
-        return new Resolution.Processing(List.copyOf(paths),names,enabled,lombok,ProcessorSettings.generatedDirectory(model,test,module));
+        return new Resolution.Processing(List.copyOf(paths),names,enabled,enabled&&lombok,ProcessorSettings.generatedDirectory(model,test,module));
     }
     private static boolean lombok(String path){return Path.of(path).getFileName().toString().matches("lombok-[0-9].*\\.jar");}
     private static RepositoryPolicy policy(org.apache.maven.model.RepositoryPolicy policy) {

@@ -114,3 +114,10 @@ Phase 5 implementation checkpoint (validation queued):
 - Real MapStruct/Lombok integration fixtures plus child-exit and timeout containment tests.
 - Repeat phase 4 corpus gate remained clean at e9f8de1; focused attribution repeated at p95 56.901 ms, above the unchanged 50 ms budget. Added query-local identity and source-location caches to remove repeated lookups; awaiting CI measurement.
 - Local executor remains disconnected. Changes are committed through GitHub and validated by Actions; no local test result is claimed.
+
+ 
+Phase 5 gate: PASS, CI run 34810626086 (2026-09-14).
+- Real MapStruct and Lombok bindings, generated main/test source roots, processor timeout, and processor JVM termination containment all passed.
+- The same run passed the unchanged focused-attribution budget after query-local identity caching.
+- Full-corpus validation exposed a configuration risk before completion: a test-only Lombok dependency activated processing without an explicit Maven request. Corrected activation to follow JDK 25's explicit processor configuration, with a regression test.
+- Blocking smoke 4 is queued before phase 6 implementation: source API substitution with an unbuilt WorkspaceReader and an older published artifact.

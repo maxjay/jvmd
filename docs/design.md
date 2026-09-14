@@ -540,14 +540,14 @@ independent of each other after 4. Phases 10 and 11 are independent of 5 to 9.
 
 ### Phase 6: multi-repo overlay
 
-- [ ] Manifest parsing, root scanning, reactor support, `gav -> module` map
-- [ ] `WorkspaceReader` substituting built modules
-- [ ] Unbuilt modules served from source roots via the file manager
-- [ ] Version-ignore substitution with warning; cycle detection reported in `status`
-- [ ] Local modules as `kind = local` artifacts with content-hash invalidation
-- [ ] Cross-module diagnostic attribution (`originates:`)
-- [ ] Debug source lookup across all roots
-- [ ] Exit: repo A depends on repo B; edit B unbuilt; `describe` from A lands in B's source;
+- [x] Manifest parsing, root scanning, reactor support, `gav -> module` map
+- [x] `WorkspaceReader` substituting built modules
+- [x] Unbuilt modules served from source roots via the file manager
+- [x] Version-ignore substitution with warning; cycle detection reported in `status`
+- [x] Local modules as `kind = local` artifacts with content-hash invalidation
+- [x] Cross-module diagnostic attribution (`originates:`)
+- [x] Debug source lookup across all roots
+- [x] Exit: repo A depends on repo B; edit B unbuilt; `describe` from A lands in B's source;
       `diagnostics` in A reports the break with `originates: <B gav>`; a breakpoint set in B binds
 
 ### Phase 7: documentation round trip

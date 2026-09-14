@@ -20,6 +20,8 @@ public final class BinaryReader {
         var classes = new LinkedHashMap<String, ClassModel>(); var entries = new HashMap<String,String>(); var warnings = new ArrayList<String>();
         if (Files.isDirectory(path)) {
             try (var files=Files.walk(path)) { for(var file:files.filter(p->p.toString().endsWith(".class")).toList()) parse(Files.readAllBytes(file),path.relativize(file).toString(),classes,entries,warnings); }
+        } else if(path.toString().endsWith(".class")) {
+            parse(Files.readAllBytes(path),path.getFileName().toString(),classes,entries,warnings);
         } else try (var jar=new JarFile(path.toFile(),false,JarFile.OPEN_READ,Runtime.version())) {
             for(var entry:jar.versionedStream().filter(e->e.getName().endsWith(".class")).toList()) {
                 try(var stream=jar.getInputStream(entry)){parse(stream.readAllBytes(),entry.getRealName(),classes,entries,warnings);}

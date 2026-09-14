@@ -16,9 +16,10 @@ final class AotDaemon implements AutoCloseable {
     final java.io.OutputStream output;
     final double startupMillis;
     private long sequence;
-    AotDaemon(Path temp)throws Exception{
+    AotDaemon(Path temp)throws Exception{this(temp,Map.of());}
+    AotDaemon(Path temp,Map<String,Object> overrides)throws Exception{
         Path image=TestSupport.repo().resolve("jvmd-dist/target/image"),socket=temp.resolve("semantic.sock"),log=temp.resolve("daemon.log"),config=temp.resolve("config.json"),aot=temp.resolve("aot.log");
-        Files.writeString(config,"{\"index_on_start\":false}");
+        var settings=new LinkedHashMap<String,Object>();settings.put("index_on_start",false);settings.putAll(overrides);Json.MAPPER.writeValue(config.toFile(),settings);
         long start=System.nanoTime();
         process=new ProcessBuilder(image.resolve("bin/java").toString(),"-XX:AOTCache="+image.resolve("lib/jvmd/jvmd.aot"),"-XX:AOTMode=on","-Xlog:aot=info:file="+aot,"-Djvmd.aot.log="+aot,"-Djvmd.config="+config,"-Djvmd.socket="+socket,"-Djvmd.state="+temp.resolve("state"),"-cp",image.resolve("lib/jvmd/*").toString(),"dev.jvmd.dist.Application").redirectErrorStream(true).redirectOutput(log.toFile()).start();
         while(process.isAlive()&&System.nanoTime()-start<TimeUnit.SECONDS.toNanos(10)){if(Files.exists(log)&&Files.readString(log).contains("READY "))break;Thread.sleep(2);}

@@ -56,10 +56,14 @@ public final class Application implements AutoCloseable {
             if(!scope.equals("deps"))for(var symbol:workspaceFind(s,ref,substring))matches.put(symbol.get("scip").toString(),symbol);
             if(!scope.equals("workspace")){var database=searchIndex;for(var symbol:database.find(ref,s.state("resolution")==null?null:s.id(),substring,offset+limit+1,0))matches.putIfAbsent(symbol.get("scip").toString(),symbol);}
             var kinds=new HashSet<String>();p.path("kinds").forEach(k->kinds.add(k.asText()));
-            var all=matches.values().stream().filter(symbol->kinds.isEmpty()||kinds.contains(symbol.get("kind"))).toList();
+            var all=new ArrayList<Map<String,Object>>();
+            for(var symbol:matches.values())if(kinds.isEmpty()||kinds.contains(symbol.get("kind"))){
+                var value=new LinkedHashMap<>(symbol);value.put("doc",dev.jvmd.index.DocMarkdown.summary((String)symbol.get("doc")));
+                if(p.path("include_body").asBoolean()&&all.size()>=offset&&all.size()<offset+limit)value=new LinkedHashMap<>(dev.jvmd.index.Documentation.withBody(value));all.add(value);
+            }
             return page(2,"live","matches",all,offset,limit,s.warnings());
         });
-        dispatcher.register("symbol.describe",(s,p)->describe(s,Dispatcher.required(p,"ref")));
+        dispatcher.register("symbol.describe",this::describeDocumented);
         dispatcher.register("symbol.references",(s,p)->relationships(s,p,false));
         dispatcher.register("symbol.hierarchy",(s,p)->relationships(s,p,true));
         dispatcher.register("session.status", (s, _) -> {
@@ -137,6 +141,25 @@ public final class Application implements AutoCloseable {
         var database=index();prepareIndex(session,database);var found=database.find(ref,session.state("resolution")==null?null:session.id(),false,21,0);
         if(found.size()!=1)return page(2,"index","candidates",found,0,20,found.size()>1?List.of("ambiguous"):session.warnings());
         return Envelope.of(2,"index",found.getFirst());
+    }
+    private Envelope describeDocumented(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
+        int depth=Dispatcher.bounded(params,"doc_depth",0,10),limit=Dispatcher.bounded(params,"limit",50,200),offset=cursor(params);
+        String detail=params.path("detail").asText("summary");if(!Set.of("summary","full").contains(detail))throw RpcException.invalid("Unknown documentation detail");
+        var base=describe(session,Dispatcher.required(params,"ref"));
+        if(!(base.result() instanceof Map<?,?> raw)||raw.get("scip")==null)return base;
+        var symbol=new LinkedHashMap<String,Object>();for(var entry:raw.entrySet())symbol.put(entry.getKey().toString(),entry.getValue());
+        if(!symbol.containsKey("id")&&depth==0){
+            if(detail.equals("summary"))symbol.put("doc",dev.jvmd.index.DocMarkdown.summary((String)symbol.get("doc")));symbol.put("closure",List.of());
+            return new Envelope(base.tier(),base.source(),base.truncated(),base.cursor(),base.warnings(),symbol);
+        }
+        var database=index();String workspace=session.state("resolution")==null?null:session.id();
+        if(!symbol.containsKey("id")){
+            prepareIndex(session,database);var indexed=database.find(symbol.get("scip").toString(),workspace,false,2,0);
+            if(indexed.size()==1){var current=new LinkedHashMap<>(indexed.getFirst());current.putAll(symbol);symbol=current;}
+        }
+        var docs=session.state("documentation",()->new dev.jvmd.index.Documentation(database,config.jdkHome()));
+        var result=docs.describe(symbol,workspace,detail,depth,limit,offset);var warnings=new LinkedHashSet<>(base.warnings());warnings.addAll(result.warnings());
+        return new Envelope(Math.min(base.tier(),result.tier()),base.source(),result.truncated(),result.cursor(),List.copyOf(warnings),result.result());
     }
     private Envelope relationships(Session session,com.fasterxml.jackson.databind.JsonNode params,boolean hierarchy)throws Exception{
         String ref=Dispatcher.required(params,"ref");var description=describe(session,ref);

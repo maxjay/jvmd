@@ -17,7 +17,6 @@ public final class Dependencies {
     }
     public void record(Path file,Set<Path> dependencies)throws Exception{
         file=file.toAbsolutePath().normalize();
-        for(Path old:forward.getOrDefault(file,Set.of())){var refs=reverse.get(old);if(refs!=null){refs.remove(file);if(refs.isEmpty())reverse.remove(old);}}
         var copy=new LinkedHashSet<Path>(forward.getOrDefault(file,Set.of()));
         for(Path dependency:dependencies){dependency=dependency.toAbsolutePath().normalize();if(dependency.equals(file))continue;copy.add(dependency);reverse.computeIfAbsent(dependency,k->new LinkedHashSet<>()).add(file);hashes.putIfAbsent(dependency,hash(dependency));}
         forward.put(file,Set.copyOf(copy));stale.remove(file);

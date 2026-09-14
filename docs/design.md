@@ -552,10 +552,10 @@ independent of each other after 4. Phases 10 and 11 are independent of 5 to 9.
 
 ### Phase 7: documentation round trip
 
-- [ ] `describe` with `doc_depth` over the signature closure CTE
-- [ ] `{@inheritDoc}` expansion over `overrides`
-- [ ] `find` with `include_body` returning sources-jar source for third-party symbols
-- [ ] Exit: `describe("StringUtils/hasText(String)", doc_depth=3)` under 50ms, returns docs for
+- [x] `describe` with `doc_depth` over the signature closure CTE
+- [x] `{@inheritDoc}` expansion over `overrides`
+- [x] `find` with `include_body` returning sources-jar source for third-party symbols
+- [x] Exit: `describe("StringUtils/hasText(String)", doc_depth=3)` under 50ms, returns docs for
       every type in the closure, truncates with a cursor at the limit
 
 ### Phase 8: agent surface

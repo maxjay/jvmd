@@ -56,6 +56,9 @@ jobs:
       - name: Phase 7 documentation round trip and budget
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: mvn -B -pl jvmd-tests test -Dgroups=phase-7 -DexcludedGroups=corpus
+      - name: Runtime inspection and evaluation checkpoints
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        run: mvn -B -pl jvmd-tests test -Dgroups=phase-10 -DexcludedGroups=perf,corpus
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

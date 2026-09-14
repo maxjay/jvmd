@@ -32,12 +32,14 @@ public final class DebugSession implements AutoCloseable {
     private final StringBuilder output=new StringBuilder();
     private final Thread reader,eventReader;
     private CompletableFuture<Void> nextStop=new CompletableFuture<>();
-    private volatile boolean closed,disconnected;
+    private volatile boolean closed,disconnected,invoking;
     private volatile String debugInfo="pending";
     private long sequence,epoch;
     private final double attachMillis;
-    public DebugSession(String id,Launch launch,SourceLookup sources)throws Exception{
-        this.id=id;this.launch=launch;this.sources=sources;handles=new ObjectHandles(id);
+    private final Integer jdwpPort;
+    public DebugSession(String id,Launch launch,SourceLookup sources)throws Exception{this(id,launch,sources,new ObjectHandles(id));}
+    public DebugSession(String id,Launch launch,SourceLookup sources,ObjectHandles handles)throws Exception{
+        this.id=id;this.launch=launch;this.sources=sources;this.handles=handles;
         var command=new ArrayList<String>();command.add(launch.javaHome().resolve("bin/java").toString());
         if(launch.debug())command.add("-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=127.0.0.1:0");
         command.addAll(List.of("-cp",launch.classpath().stream().map(Path::toString).collect(java.util.stream.Collectors.joining(File.pathSeparator)),launch.main()));command.addAll(launch.args());
@@ -57,16 +59,16 @@ public final class DebugSession implements AutoCloseable {
                 port.completeExceptionally(new IOException("Application exited before JDWP readiness: "+output()));
             }catch(Exception e){port.completeExceptionally(e);}
         });
-        VirtualMachine connected=null;double elapsed=0;
+        VirtualMachine connected=null;double elapsed=0;Integer listening=null;
         try{
             if(launch.debug()){
-                int address=port.get(10,TimeUnit.SECONDS);
+                int address=port.get(10,TimeUnit.SECONDS);listening=address;
                 var connector=Bootstrap.virtualMachineManager().attachingConnectors().stream().filter(c->c.name().equals("com.sun.jdi.SocketAttach")).findFirst().orElseThrow();
                 var arguments=connector.defaultArguments();arguments.get("hostname").setValue("127.0.0.1");arguments.get("port").setValue(Integer.toString(address));arguments.get("timeout").setValue("5000");
                 long before=System.nanoTime();connected=connector.attach(arguments);elapsed=(System.nanoTime()-before)/1e6;
             }
         }catch(Exception e){handles.close();process.destroyForcibly();throw e;}
-        vm=connected;attachMillis=elapsed;
+        vm=connected;attachMillis=elapsed;jdwpPort=listening;
         if(vm!=null){
             var prepare=vm.eventRequestManager().createClassPrepareRequest();prepare.addClassFilter(launch.main());prepare.setSuspendPolicy(EventRequest.SUSPEND_EVENT_THREAD);prepare.enable();
             for(var main:vm.classesByName(launch.main()))if(main.isPrepared())debugInfo(main);
@@ -90,7 +92,7 @@ public final class DebugSession implements AutoCloseable {
                         else if(event instanceof StepEvent step){vm.eventRequestManager().deleteEventRequest(step.request());stopped.put(step.thread().uniqueID(),new Stop(step.thread(),events,++epoch));suspend=true;}
                         else if(event instanceof VMDeathEvent||event instanceof VMDisconnectEvent){disconnected=true;nextStop.completeExceptionally(new IOException("Application disconnected"));}
                     }
-                    if(suspend)nextStop.complete(null);else events.resume();
+                    if(invoking){if(suspend){stopped.entrySet().removeIf(e->e.getValue().events()==events);}events.resume();}else if(suspend)nextStop.complete(null);else events.resume();
                 }
             }
         }catch(VMDisconnectedException ignored){disconnected=true;nextStop.completeExceptionally(new IOException("Application disconnected"));}
@@ -141,6 +143,7 @@ public final class DebugSession implements AutoCloseable {
         CompletableFuture<Void> future;synchronized(this){if(!stopped.isEmpty())return;future=nextStop;}future.get(timeout.toMillis(),TimeUnit.MILLISECONDS);
     }
     public synchronized Envelope frames(Long thread,int offset,int limit)throws Exception{
+        if(offset<0||limit<1||limit>200)throw RpcException.invalid("Frame page limit must be 1..200");
         var stop=stop(thread);int size=stop.thread().frameCount(),from=Math.min(offset,size),to=Math.min(size,from+limit);var values=new ArrayList<Map<String,Object>>();int number=from;
         for(var frame:stop.thread().frames(from,to-from)){
             var location=frame.location();var value=new LinkedHashMap<String,Object>();value.put("frame",frameId(stop,number));value.put("index",number++);value.put("thread",stop.thread().uniqueID());value.put("class",location.declaringType().name());value.put("method",location.method().name());value.put("scip",sources.symbol(location.declaringType(),location.method()));value.put("descriptor",location.method().signature());value.put("line",location.lineNumber());var source=sources.find(location.declaringType());value.put("source_file",source==null?null:source.toString());values.add(value);
@@ -155,21 +158,43 @@ public final class DebugSession implements AutoCloseable {
         catch(NumberFormatException|IndexOutOfBoundsException e){throw RpcException.invalid("Invalid frame");}
     }
     public synchronized Envelope locals(String ref,int offset,int limit)throws Exception{
+        if(offset<0||limit<1||limit>200)throw RpcException.invalid("Local page limit must be 1..200");
         var frame=frame(ref);List<LocalVariable> variables;
         try{variables=frame.visibleVariables();}catch(AbsentInformationException e){throw missingLocals();}
         int from=Math.min(offset,variables.size()),to=Math.min(variables.size(),from+limit);var selected=variables.subList(from,to);var values=frame.getValues(selected);var result=new ArrayList<Map<String,Object>>();
-        for(var variable:selected)result.add(Map.of("name",variable.name(),"type",variable.typeName(),"value",value(values.get(variable))));
+        for(var variable:selected)result.add(Map.of("name",variable.name(),"type",variable.typeName(),"scip",variable.isArgument()?sources.symbol(frame.location().declaringType(),frame.location().method())+"("+variable.name()+")":"local "+id+"_"+Integer.toUnsignedString(Objects.hash(ref,variable.name(),variable.signature())),"value",value(values.get(variable))));
         return new Envelope(2,"live",to<variables.size(),to<variables.size()?Integer.toString(to):null,List.copyOf(warnings),Map.of("locals",result,"this",value(frame.thisObject())));
     }
+    <T> T invocation(java.util.concurrent.Callable<T> action)throws Exception{
+        var enabled=new ArrayList<EventRequest>();
+        synchronized(this){
+            requireDebug();if(invoking)throw RpcException.invalid("An evaluation is already running");invoking=true;
+            var requests=new ArrayList<EventRequest>();requests.addAll(vm.eventRequestManager().breakpointRequests());requests.addAll(vm.eventRequestManager().stepRequests());requests.addAll(vm.eventRequestManager().classPrepareRequests());
+            for(var request:requests)if(request.isEnabled()){request.disable();enabled.add(request);}
+        }
+        try{return action.call();}
+        finally{synchronized(this){
+            invoking=false;
+            if(!disconnected&&!closed){
+                for(var request:enabled)try{request.enable();}catch(InvalidRequestStateException ignored){}
+                for(var entry:new ArrayList<>(stopped.entrySet()))stopped.put(entry.getKey(),new Stop(entry.getValue().thread(),entry.getValue().events(),++epoch));
+                for(var breakpoint:breaks.values())for(var type:vm.classesByName(breakpoint.className==null?"":breakpoint.className))if(type.isPrepared())bind(breakpoint,type);
+            }
+        }}
+    }
+    public Envelope eval(String expression,String frame)throws Exception{if(debugInfo.equals("no_local_variables"))throw missingLocals();return new ExpressionEvaluator(this,frame).evaluate(expression);}
+    public Envelope inspect(String handle,int depth,int breadth,String cursor)throws Exception{return new Inspection(this).inspect(handle,depth,breadth,cursor);}
+    private final MemoryView memory=new MemoryView(this);
+    public MemoryView memory(){return memory;}
     RpcException missingLocals(){return new RpcException(-32003,"unsupported_capability",Map.of("capability","eval","reason","debug: no_local_variables; compile with -g"));}
     public Map<String,Object> value(Value value){
         if(value==null)return Map.of("kind","null");
         if(value instanceof StringReference string){String text=string.value();return Map.of("kind","string","handle",handles.pin(string),"value",text.substring(0,Math.min(500,text.length())),"truncated",text.length()>500);}
-        if(value instanceof ObjectReference object)return Map.of("kind","object","type",object.referenceType().name(),"handle",handles.pin(object));
+        if(value instanceof ObjectReference object){var row=new LinkedHashMap<String,Object>();row.put("kind","object");row.put("type",object.referenceType().name());row.put("scip",object instanceof ArrayReference?null:sources.symbol(object.referenceType(),null));row.put("handle",handles.pin(object));return row;}
         return Map.of("kind","primitive","type",value.type().name(),"value",value.toString());
     }
     public synchronized Map<String,Object> status(){
-        var result=new LinkedHashMap<String,Object>();result.put("run_session",id);result.put("pid",process.pid());result.put("alive",process.isAlive());result.put("debug",debugInfo);result.put("attach_ms",attachMillis);result.put("stopped_threads",stopped.keySet().stream().limit(100).toList());result.put("handles",handles.size());result.put("warnings",List.copyOf(warnings));result.put("source_roots",sources.roots());
+        var result=new LinkedHashMap<String,Object>();result.put("run_session",id);result.put("pid",process.pid());result.put("port",jdwpPort);result.put("alive",process.isAlive());result.put("debug",debugInfo);result.put("attach_ms",attachMillis);result.put("stopped_threads",stopped.keySet().stream().limit(100).toList());result.put("handles",handles.size());result.put("warnings",List.copyOf(warnings));result.put("source_roots",sources.roots());
         if(vm!=null&&!disconnected){result.put("hotswap",vm.canRedefineClasses()?"bodies_only":"unsupported");result.put("instance_info",vm.canGetInstanceInfo());}
         return result;
     }

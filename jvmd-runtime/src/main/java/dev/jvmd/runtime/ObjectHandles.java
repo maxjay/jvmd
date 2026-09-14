@@ -22,12 +22,12 @@ public final class ObjectHandles implements AutoCloseable {
     private boolean closed;
     public ObjectHandles(String session){this(session,Duration.ofSeconds(60),System::nanoTime);}
     public ObjectHandles(String session,Duration ttl,LongSupplier clock){
-        this.session=session;this.ttl=ttl.toNanos();this.clock=clock;reap=REAPER.scheduleWithFixedDelay(this::expire,1,1,TimeUnit.SECONDS);
+        if(ttl.isZero()||ttl.isNegative())throw new IllegalArgumentException("TTL must be positive");this.session=session;this.ttl=ttl.toNanos();this.clock=clock;reap=REAPER.scheduleWithFixedDelay(this::expire,1,1,TimeUnit.SECONDS);
     }
     public synchronized String pin(ObjectReference object){
         if(closed)throw new IllegalStateException("Run session is closed");expire();long id=object.uniqueID();String prior=identities.get(id);
         if(prior!=null){entries.put(prior,new Entry(object,clock.getAsLong()+ttl));return prior;}
-        if(entries.size()>=CAPACITY)throw new RpcException(-32005,"budget_exceeded",Map.of("capability","object handles","limit",CAPACITY,"cursor","release-handles"));
+        if(entries.size()>=CAPACITY)throw new RpcException(-32005,"budget_exceeded",Map.of("capability","object handles","limit",CAPACITY,"cursor",entries.keySet().iterator().next(),"reason","Release this handle or wait for its TTL before retrying"));
         object.disableCollection();String handle="obj:"+session+":"+(++sequence);entries.put(handle,new Entry(object,clock.getAsLong()+ttl));identities.put(id,handle);return handle;
     }
     public synchronized ObjectReference get(String handle){

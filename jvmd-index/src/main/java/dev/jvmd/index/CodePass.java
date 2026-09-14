@@ -71,15 +71,19 @@ public final class CodePass {
         var keys=new LinkedHashSet<String>();var identities=new LinkedHashSet<String>();var owners=new LinkedHashSet<String>();
         for(var symbol:frontier){String key=binaryKey(symbol);if(!key.isBlank())keys.add(key);if(symbol.get("scip")!=null)identities.add(symbol.get("scip").toString());if(symbol.get("fqn")!=null)owners.add(symbol.get("fqn").toString());}
         if(keys.isEmpty()||identities.isEmpty())return new Expansion(List.of(),List.of(),List.of());
-        for(var artifact:artifacts(workspace)){
-            long id=prepare(artifact,false);
-            boolean touched=index.database().read(c->{
-                String sql=outgoing?"SELECT 1 FROM artifact_symbols v JOIN symbols s ON s.id=v.symbol_id WHERE v.artifact_id=? AND s.scip IN ("+placeholders(identities.size())+") LIMIT 1"
-                    :"SELECT 1 FROM artifact_class_refs WHERE artifact_id=? AND target IN ("+placeholders(owners.size())+") LIMIT 1";
-                if(!outgoing&&owners.isEmpty())return false;
-                try(var q=c.prepareStatement(sql)){q.setLong(1,id);int i=2;for(String value:outgoing?identities:owners)q.setString(i++,value);try(var r=q.executeQuery()){return r.next();}}
+        if(outgoing){
+            var candidates=index.database().read(c->{var values=new ArrayList<Candidate>();
+                String sql=EdgeScope.CONTEXT+"SELECT DISTINCT a.id,a.path,a.gav,a.has_class_refs FROM artifacts a JOIN artifact_symbols v ON v.artifact_id=a.id JOIN symbols s ON s.id=v.symbol_id WHERE a.kind='jar' AND a.path NOT LIKE 'jrt:%' AND s.scip IN ("+placeholders(identities.size())+") AND "+EdgeScope.chosen("s.id","a.id");
+                try(var q=c.prepareStatement(sql)){q.setString(1,workspace);int i=2;for(String identity:identities)q.setString(i++,identity);try(var r=q.executeQuery()){while(r.next())values.add(new Candidate(r.getLong(1),r.getString(2),r.getString(3),r.getBoolean(4)));}}return values;
             });
-            if(touched)prepare(new Candidate(id,artifact.path(),artifact.gav(),true),true);
+            for(var candidate:candidates)prepare(candidate,true);
+        }else if(!owners.isEmpty()){
+            for(var artifact:artifacts(workspace))prepare(artifact,false);
+            var candidates=index.database().read(c->{var values=new ArrayList<Candidate>();
+                String sql="SELECT DISTINCT a.id,a.path,a.gav,a.has_class_refs FROM artifacts a JOIN artifact_class_refs r ON r.artifact_id=a.id WHERE a.kind='jar' AND r.target IN ("+placeholders(owners.size())+")"+membership("a",workspace);
+                try(var q=c.prepareStatement(sql)){int i=1;for(String owner:owners)q.setString(i++,owner);if(workspace!=null)q.setString(i,workspace);try(var r=q.executeQuery()){while(r.next())values.add(new Candidate(r.getLong(1),r.getString(2),r.getString(3),r.getBoolean(4)));}}return values;
+            });
+            for(var candidate:candidates)prepare(candidate,true);
         }
         String predicate=outgoing?"s.scip":"t.target";Collection<String> selected=outgoing?identities:keys;
         var raw=index.database().read(c->{var rows=new ArrayList<Map<String,Object>>();

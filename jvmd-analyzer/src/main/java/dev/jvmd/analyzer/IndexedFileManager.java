@@ -10,7 +10,7 @@ import javax.tools.*;
 
 /** Implements 4.2: indexed classpath paths, multi-release bytes, bounded LRU and source overlays. */
 public final class IndexedFileManager extends ForwardingJavaFileManager<StandardJavaFileManager> {
-    private record Stamp(long size,long modified) { }
+    private record Stamp(long size,long modified,Object identity) { }
     private record Entry(String binary,String path) { }
     private record Catalog(Path path,Stamp stamp,Map<String,List<Entry>> packages,Map<String,Entry> classes) { }
     private record ByteKey(Path path,Stamp stamp,String entry) { }
@@ -109,7 +109,10 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         }
     }
     public Map<String,Long> status(){return Map.of("class_bytes",byteSize,"class_byte_hits",hits,"class_byte_loads",loads);}
-    private static Stamp stamp(Path path)throws IOException {var attrs=Files.readAttributes(path,java.nio.file.attribute.BasicFileAttributes.class);return new Stamp(attrs.size(),attrs.lastModifiedTime().to(java.util.concurrent.TimeUnit.NANOSECONDS));}
+    private static Stamp stamp(Path path)throws IOException {
+        try{var attrs=Files.readAttributes(path,"unix:size,lastModifiedTime,ctime,ino");return new Stamp(((Number)attrs.get("size")).longValue(),((java.nio.file.attribute.FileTime)attrs.get("lastModifiedTime")).to(java.util.concurrent.TimeUnit.NANOSECONDS),List.of(attrs.get("ctime"),attrs.get("ino")));}
+        catch(UnsupportedOperationException|IllegalArgumentException ignored){var attrs=Files.readAttributes(path,java.nio.file.attribute.BasicFileAttributes.class);return new Stamp(attrs.size(),attrs.lastModifiedTime().to(java.util.concurrent.TimeUnit.NANOSECONDS),dev.jvmd.core.Hashing.sha256(path));}
+    }
     private Catalog catalog(Path path)throws IOException {
         Stamp stamp=stamp(path);var old=catalogs.get(path);if(old!=null&&old.stamp().equals(stamp))return old;
         if(old!=null)throw new UncheckedIOException(new IOException("classpath changed during analysis: "+path));

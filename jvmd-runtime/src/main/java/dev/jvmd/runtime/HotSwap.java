@@ -27,6 +27,6 @@ public final class HotSwap {
         RuntimeCompiler.publish(compiled,output);
         if(restart==null)debug.redefined();
         var result=new LinkedHashMap<String,Object>();result.put("restart_required",restart!=null);result.put("reason",restart);result.put("classes",names);result.put("redefined",restart==null?classes.size():0);result.put("compile_ms",compiled.elapsedMillis());result.put("redefine_ms",redefine);result.put("compiler_output",compiled.output());
-        return Envelope.of(2,"live",result);
+        result.put("compiler_mode",compiled.mode());return Envelope.of(2,"live",result);
     }
 }

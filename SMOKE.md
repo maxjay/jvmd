@@ -40,3 +40,5 @@ catchable `RuntimeException`. No internal javac imports are used in the smoke ha
 checks the daemon's stale-classpath boundary explicitly; it does not claim the previously fixed
 JDK missing-class assertion still reproduces on this JDK update. Phase 4 can proceed after the
 phase-3 CI gate.
+
+Phase-11 HotswapAgent evaluation (CI run 34833512079): PASS on JBR 25.0.4.1 b583.48. The pinned RELEASE-2.0.3 asset refreshes JavaBeans metadata after adding a getter and preserves calls on existing objects. Without the agent the control retains cached metadata. Adopted as optional `hotswap_agent` config, off by default. Agent output labels the digest-pinned release binary 2.0.4-SNAPSHOT; full evidence is in target/hotswap-agent.json. Stock body hot-swap request performance failed at p95 606.12 ms against 100 ms; compilation is the measured bottleneck.

@@ -8,6 +8,8 @@ if [[ -e "$image" ]]; then mv "$image" "$image.previous.$(date +%s%N)"; fi
   --no-header-files --no-man-pages --output "$image" \
   --add-options='--enable-native-access=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED -XX:AOTMode=auto'
 mkdir -p "$image/lib/jvmd"
+# javac --release needs the pinned SDK's platform signatures for older Java releases.
+cp "$JAVA_HOME/lib/ct.sym" "$image/lib/ct.sym"
 cp "$repo_dir/jvmd-dist/target/lib/"*.jar "$image/lib/jvmd/"
 cp "$repo_dir/jvmd-dist/target/jvmd-dist-0.1.0-SNAPSHOT.jar" "$image/lib/jvmd/"
 cp "$repo_dir/jvmd-dist/jvmd" "$image/bin/jvmd"

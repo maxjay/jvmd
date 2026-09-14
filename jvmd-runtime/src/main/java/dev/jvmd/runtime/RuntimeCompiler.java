@@ -10,10 +10,13 @@ import java.util.concurrent.TimeUnit;
 /** Implements 4.7: isolated javac compilation, bounded diagnostics, and class-file publication. */
 public final class RuntimeCompiler {
     /** Implements 4.7: compiled bytecode stays private to the runtime implementation. */
-    public record Compilation(Map<String,byte[]> classes,double elapsedMillis,String output) { }
+    public record Compilation(Map<String,byte[]> classes,double elapsedMillis,String output,String mode) {
+        public Compilation(Map<String,byte[]> classes,double elapsedMillis,String output){this(classes,elapsedMillis,output,"external");}
+    }
     private RuntimeCompiler() { }
     public static Compilation compile(Path javaHome,Path directory,List<Path> sources,List<Path> classpath,List<Path> sourceRoots,List<String> options,Duration timeout)throws Exception{
         if(sources.isEmpty()||sources.size()>1000)throw RpcException.invalid("Compile requires 1..1000 source files");
+        if(InProcessCompiler.eligible(javaHome,options))return InProcessCompiler.compile(javaHome,sources,classpath,sourceRoots,options,timeout);
         Path temporary=Files.createTempDirectory("jvmd-runtime-compile-"),output=Files.createDirectories(temporary.resolve("classes")),arguments=temporary.resolve("javac.args");
         var before=new LinkedHashMap<Path,String>();for(Path source:sources)before.put(source,Hashing.sha256(source));
         var args=new ArrayList<String>(options);if(options.stream().noneMatch(option->option.startsWith("-proc:")))args.add("-proc:none");args.addAll(List.of("-g","-parameters","-XDrawDiagnostics","-s",Files.createDirectories(temporary.resolve("generated")).toString(),"-d",output.toString()));
@@ -27,7 +30,7 @@ public final class RuntimeCompiler {
             if(!child.waitFor(timeout.toMillis(),TimeUnit.MILLISECONDS)){kill(child);throw new RpcException(-32004,"verify_failed",Map.of("reason","Runtime compilation timed out","output",tail.toString()));}
             reader.join(2000);if(child.exitValue()!=0)throw new RpcException(-32004,"verify_failed",Map.of("exit_code",child.exitValue(),"output",tail.toString()));
             for(var source:before.entrySet())if(!Hashing.sha256(source.getKey()).equals(source.getValue()))throw RpcException.invalid("Source changed during compilation: "+source.getKey());
-            var classes=new LinkedHashMap<String,byte[]>();long size=0;try(var files=Files.walk(output)){for(Path file:files.filter(p->p.toString().endsWith(".class")).sorted().toList()){size+=Files.size(file);if(size>128L*1024*1024)throw new RpcException(-32005,"budget_exceeded",Map.of("reason","Compiled output exceeds 128 MiB","cursor","compile"));classes.put(output.relativize(file).toString().replace(java.io.File.separatorChar,'/'),Files.readAllBytes(file));}}
+            var classes=new LinkedHashMap<String,byte[]>();long size=0;try(var files=Files.walk(output)){for(Path file:files.filter(p->p.toString().endsWith(".class")).sorted().toList()){size+=Files.size(file);if(size>128L*1024*1024)throw new RpcException(-32005,"budget_exceeded",Map.of("reason","Compiled output exceeds 128 MiB"));classes.put(output.relativize(file).toString().replace(java.io.File.separatorChar,'/'),Files.readAllBytes(file));}}
             return new Compilation(Collections.unmodifiableMap(classes),(System.nanoTime()-start)/1e6,tail.toString());
         }finally{if(child!=null&&child.isAlive())kill(child);delete(temporary);}
     }

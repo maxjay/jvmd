@@ -263,3 +263,11 @@ Commit e19c819 passes the complete checkpoint job, including two real compiled-e
 The pinned JBR successfully adds methods, fields, and changes signatures without restart. Stock Java returns restart_required for the same structural request. JBR's raw JDI capability flags for method/schema changes remain false, so detection uses its verified launch flag and reports the raw flags separately.
 
 Strict-AOT metrics on this checkpoint: startup 294.0 ms / 600; session open 5.61 ms / 200; focused attribution p95 38.75 ms / 50; depth-3 documentation p95 9.58 ms / 50; attach 16.80 ms / 500. Full hot-swap latency still needs the new end-to-end budget gate: external compilation measured approximately 600 ms although JDI redefinition was under 11 ms. HotswapAgent evaluation, Maven 4 alignment, and the architecture audit remain in progress.
+
+## Phase 11 exit and R1 performance correction
+
+The complete phase-11 tag passes in commit 3239f5a: JBR schema changes, stock restart_required, compiled evaluation, and HotswapAgent metadata refresh. The agent is viable and adopted as optional configuration, disabled by default. The no-agent control retained stale JavaBeans metadata after adding a getter, while the agent refreshed it. Its release filename and startup version differ; the SHA-256 pin identifies the evaluated binary.
+
+The newly added strict-AOT end-to-end hot-swap gate failed at p95 606.12 ms / 100. The five requests took 582–606 ms; compilation took 576–600 ms and redefinition 0.86–1.64 ms. This failure authorizes the compiler optimization: matching-SDK, processor-free compilation moves to the public compiler API with explicit classpaths and bounded diagnostics. Processor execution stays in a child JVM, with a PID-based isolation test. The 100 ms threshold remains unchanged.
+
+The rename audit also found that single-static-import declarations can name several overloads. The implementation now returns every bound identity, retains the original import when other overloads remain, and adds an import for the renamed method. Editor hover and definition expose the overload set. The identifier sweep still probes every lexical token at the unchanged 0.97 floor; an overload set counts as correct only when every candidate describes back to that token.

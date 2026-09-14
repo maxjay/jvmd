@@ -317,3 +317,7 @@ The corpus sweep now invokes position search and outgoing references for every i
 ### Runtime profiling and exact file publication
 
 Hot-swap responses now separate class lookup, redefinition, class publication and breakpoint rebinding, while the performance evidence also captures daemon request metrics. This identifies the extra latency observed outside the compiler without changing the request budget. JFR dumps use a temporary recording and publish it to the exact requested path, avoiding jcmd's second-stage quote and percent-substitution parser; the runtime protocol test now uses spaces, quotes and a literal `%p`. The behavior was checked against OpenJDK's JCmd/Arguments and JFR ArgumentParser sources. Renamed source files use atomic create-if-absent publication, preventing a concurrently created destination from being overwritten; rollback also preserves concurrent edits. CI validation pending.
+
+### User documentation checkpoint
+
+Restored the missing README introduction and build instructions and documented the complete agent/editor workflow, native resolver selection, full-SDK configuration, multi-repository manifests, verification, cursor handling, runtime evaluation, hot swap, JFR, resource limits and CI evidence. The MCP tool names were checked directly against the Java-owned catalog.

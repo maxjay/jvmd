@@ -41,3 +41,23 @@ Maven 4 is explicitly refused by this Maven 3 build; a major mismatch never prod
 One necessary option detail was confirmed experimentally: `AOTCacheOutput` and `AOTCache` cannot
 both be present on a Java command. The jlink image bakes all compiler exports and `AOTMode=auto`;
 training and runtime scripts supply their respective, mutually exclusive cache flag.
+
+Phase-2 selected-Maven-3 gate: PASS in [CI run 34802235793](https://github.com/maxjay/jvmd/actions/runs/34802235793),
+all eight checkpoint classes. Cold resolution 537.289 ms (budget 1,000 ms), warm p95
+1.110 ms (budget 5 ms), exact selected-GAV agreement with Maven's Spring Boot starter tree.
+Local equivalent: cold 488.933 ms, warm p95 1.155 ms. Parent/settings/root content edits,
+including same-size and preserved-mtime edits, invalidate the cache. Conflict losers remain
+visible without contaminating the selected classpath. POM edits expose the classpath diff.
+This distribution selects Maven 3 per the observed build machine; Maven 4 requests explicitly
+refuse instead of returning a mismatched graph. A separately selected Maven 4 bundle remains
+an implementation item before the full design can be called complete.
+
+Phase-1 repeat in that CI run: cold startup 244.855 ms, overview p95 19.430 ms.
+
+## Phase 3 — prerequisites passed, implementation in progress
+
+Smoke 8 selects Spring Core's Java 21 and 24 class entries on the pinned Java 25 runtime.
+Smoke 9 joins 6,018 of 6,079 source signatures (98.99655%, above the 98% gate) against
+Spring Core 7.0.8 bytecode without attribution. Unmatched source signatures are counted and
+retain binary parameter names or argN fallbacks. The smoke includes Spring's repackaged bytecode
+libraries as input data; none is put on the daemon classpath.

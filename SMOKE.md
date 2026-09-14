@@ -21,3 +21,11 @@ bundling; Lombok reduced fidelity unless corpus requires it; verification via mv
 otherwise `mvn -q test-compile`; MCP stdio shim; no debuggee AOT.
 
 These are fixture measurements. They do not certify daemon or corpus acceptance budgets.
+
+### Tests 8 and 9 — PASS, 2026-09-14
+
+Command: `bash jvmd-tests/smoke/run-index.sh`, Temurin 25.0.4.1+1.
+Spring Core 7.0.8 uses the Java 21 VirtualThreadDelegate and the Java 24 ClassFile metadata
+classes; no future version is selected. Parse-only source join: 6,079 eligible source methods,
+6,018 joined to binary descriptors, 98.99655% (gate >98%). The 61 unmatched signatures are
+reported explicitly. Binary descriptors remain authoritative. This unblocks phase 3.

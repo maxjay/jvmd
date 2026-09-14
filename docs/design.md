@@ -683,13 +683,13 @@ tests never stop the build; a failing advisory test flips its default and is rec
 |---|---|---|---|
 | 1 | JBR with `-XX:+AllowEnhancedClassRedefinition`: add a method to a loaded class through JDI `redefineClasses`; confirm it is callable | 11 | PASS, 2026-09-14, JBR 25.0.4.1 b583.48; `added()I` returned 42; redefine 7.9ms |
 | 2 | javac with `--should-stop=ifError=FLOW`: a file with a syntax error and an unresolved type; `Trees.getElement` still resolves other members; delete a classfile from the classpath and confirm the fault is catchable | 4 | not run |
-| 3 | `RepositorySystemSupplier` resolving Spring Boot fully offline from a warm `~/.m2`; measure | 2 | not run |
+| 3 | `RepositorySystemSupplier` resolving Spring Boot fully offline from a warm `~/.m2`; measure | 2 | PASS; see SMOKE.md and PROGRESS.md |
 | 4 | `WorkspaceReader` substituting a local module for a published GAV, unbuilt | 6 | not run |
 | 5 | AOT cache round trip with `-XX:AOTMode=on` on a fixture jar; measure the delta. The daemon round trip is phase 1's exit criterion, not a pre-phase test | 1 | PASS as fixture training; daemon result pending phase 1 |
 | 6 | `canGetInstanceInfo` on the target JVMs; `referringObjects` on a deliberately retained object | 10 | PASS on Temurin and JBR; holder found by object identity |
 | 7 | Debuggee with `-XX:AOTCache` plus JDWP | advisory | FAIL: linked cache rejected at VM init. Default flipped: no debuggee AOT. Re-run with `-XX:-AOTClassLinking` as the experiment |
-| 8 | `java.lang.classfile` reading a multi-release jar and returning the right version's class | 3 | not run |
-| 9 | Pass 2 join rate on `spring-core`: percentage of methods whose source signature matched the class-file descriptor; target above 98% | 3 | not run |
+| 8 | `java.lang.classfile` reading a multi-release jar and returning the right version's class | 3 | PASS; Spring Core selects versions 21 and 24 on JDK 25 |
+| 9 | Pass 2 join rate on `spring-core`: percentage of methods whose source signature matched the class-file descriptor; target above 98% | 3 | PASS; 98.99655% on Spring Core 7.0.8 |
 | 10 | Method-body hot swap on stock JDK through JDI | 10 | PASS, Temurin 25.0.4.1; redefine 1.7ms; attach 27ms after ready |
 
 ## 10. Open decisions

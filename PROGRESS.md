@@ -367,3 +367,12 @@ The independent response-fragment tests pass in run 34848203379, including the u
 ### Expanded corpus traversal budget failure
 
 The first four-probe corpus job hit its unchanged 30-minute timeout in run 34846031572. It completed only 1270 reference calls: median 1288.17 ms, p95 1371.23 ms, maximum 3510.37 ms. That revision also had the now-fixed migration failure, so its zero correctness count is not a binding-rate claim. The traversal still attributed the entire workspace before each index failure. This measured failure authorizes bounded reuse of detached workspace graphs and narrower dependency scans. Superseded corpus runs now cancel so subsequent fixes can be validated promptly; the complete token sweep and 0.97 floor remain unchanged.
+
+
+### Workspace graph reuse and module diagnostic agreement
+
+The expanded identifier sweep timed out after 1,270 reference requests (about 1.37 s p95). Navigation, references, occurrences and rename now share a bounded detached workspace graph. Source hashes, editor buffers, file membership, classpath contents and resolver generations invalidate it. Outgoing bytecode traversal selects only artifacts containing frontier symbols; incoming candidate membership is batched. Session status exposes graph builds and reuse. Added protocol coverage for saved edits with preserved timestamps, unsaved buffers, additions/deletions, and binary replacement with failed lookup recovery. These changes await the next full CI run.
+
+The release-target module wrapper now passes unsaved dependency API changes in CI. Its remaining assertion expected a binary-module visibility diagnostic for an unbuilt source module. A plain javac reproduction reports `compiler.err.doesnt.exist` for that source layout. The test now compares live error codes with a fresh, ordinary javac analysis of the identical source module setup; the binary-module test still requires the export visibility diagnostic. Local Java 17 reproduction confirms unchanged, changed API, and unsaved export behavior; Java 25 remains the required CI gate.
+
+Latest native Maven 4 cold measurement remains over budget: 1120.235825 ms against 1000 ms. No threshold changed; further performance work remains open.

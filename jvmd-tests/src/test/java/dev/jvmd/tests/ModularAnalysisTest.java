@@ -69,7 +69,9 @@ class ModularAnalysisTest {
             assertThat(changed.warnings()).isEmpty();assertThat(changed.diagnostics()).anyMatch(p->p.kind().equals("ERROR")&&p.code().equals("compiler.err.prob.found.req"));
             pool.recycle();pool.documents(Map.of());
             var forbidden=pool.query(main,"package app; class Main { internal.Hidden hidden; }",2,(task,units,tier)->units.size());
-            assertThat(forbidden.warnings()).isEmpty();assertThat(forbidden.diagnostics()).anyMatch(p->p.kind().equals("ERROR")&&p.code().equals("compiler.err.package.not.visible")&&p.message().contains("does not export"));
+            assertThat(forbidden.warnings()).isEmpty();
+            var expected=nativeErrors(main,"package app; class Main { internal.Hidden hidden; }",application,library);
+            assertThat(expected).isNotEmpty();assertThat(forbidden.diagnostics().stream().filter(p->p.kind().equals("ERROR")).map(CompilerPool.Problem::code).toList()).containsExactlyElementsOf(expected);
             pool.recycle();pool.documents(Map.of(library.resolve("module-info.java"),"module fixture.library { exports api; exports internal; }"));
             var exported=pool.query(main,"package app; class Main { internal.Hidden hidden; }",2,(task,units,tier)->units.size());
             assertThat(exported.warnings()).isEmpty();assertThat(exported.diagnostics()).noneMatch(p->p.kind().equals("ERROR"));
@@ -77,4 +79,17 @@ class ModularAnalysisTest {
         }
         try(var files=Files.walk(root)){assertThat(files.filter(p->p.toString().endsWith(".class")).toList()).isEmpty();}
     }
+    private static List<String> nativeErrors(Path main,String text,Path application,Path library)throws Exception{
+        String original=Files.readString(main);Path output=Files.createTempDirectory("jvmd-native-module-analysis-");
+        var compiler=javax.tools.ToolProvider.getSystemJavaCompiler();var diagnostics=new javax.tools.DiagnosticCollector<javax.tools.JavaFileObject>();
+        try(var manager=compiler.getStandardFileManager(diagnostics,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8)){
+            Files.writeString(main,text);manager.setLocationFromPaths(javax.tools.StandardLocation.CLASS_OUTPUT,List.of(output));
+            manager.setLocationForModule(javax.tools.StandardLocation.MODULE_SOURCE_PATH,"fixture.application",List.of(application));
+            manager.setLocationForModule(javax.tools.StandardLocation.MODULE_SOURCE_PATH,"fixture.library",List.of(library));
+            var task=(com.sun.source.util.JavacTask)compiler.getTask(new java.io.StringWriter(),manager,diagnostics,List.of("--release","25","-proc:none"),null,manager.getJavaFileObjects(main));
+            task.parse();task.analyze();
+            return diagnostics.getDiagnostics().stream().filter(d->d.getKind()==javax.tools.Diagnostic.Kind.ERROR).map(javax.tools.Diagnostic::getCode).toList();
+        }finally{Files.writeString(main,original);Files.delete(output);}
+    }
+
 }

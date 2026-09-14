@@ -1,6 +1,11 @@
 # Implementation progress
 
-Revision 6, 2026-09-14. Passing prerequisite smoke results are in [SMOKE.md](SMOKE.md).
+Revision 7, 2026-09-14. Passing prerequisite smoke results are in [SMOKE.md](SMOKE.md).
+
+## Current evidence status
+
+All implementation validation items in the historical log below are resolved by [CI run 34882043173](https://github.com/maxjay/jvmd/actions/runs/34882043173) on commit 6f7acce74cd8ea6c14924ce64785820fd16c511f. Earlier statements of pending validation describe their commit-time state, not outstanding work. No implementation verification remains pending. Per the user's instruction, the existing passing GitHub Actions arrangement is retained.
+
 
 ## Phase 1 — PASS
 
@@ -409,3 +414,11 @@ Separate production fixes recognize the source header of compact record construc
 ### Native resolver cold-start margin
 
 Run 34864764180 measured Maven 4 cold resolution at 1003.235647 ms against the unchanged 1000 ms assertion; warm p95 was 2.677427 ms against 5 ms. Native services now start concurrently with configuration parsing and DTO codec initialization. Native Maven and Resolver implementations, graph collection and cache publication are unchanged and remain inside the measured request. Ownership transfers to the bundle only after initialization succeeds; failed or interrupted setup waits for and closes native resources. Both Maven majors retain direct constructors. Validation pending through the full native resolver agreement and budget tests.
+
+### Completed implementation and revision 7 reconciliation
+
+Run 34882043173 passed both jobs: 139 Java checkpoint tests across 97 suites, seven Node tests, 29 phase-4 corpus tests, and the PetClinic MCP and LSP sessions, with no failures, errors or skips. PetClinic and jvmd each reported live=0 and verified=0 diagnostics. The complete four-probe sweep passed 75,473/75,565 identifiers (99.8782505%) against the unchanged 0.97 floor in 1312 seconds. It made 12,863 distinct description/reference probes and reused 63,747; 77,895 raw lexical words included 2,330 contextual keywords classified by parse-only syntax. Unresolved identifiers remain counted and probed.
+
+Strict-AOT measurements (milliseconds): startup 208.102 / 600; session open 3.995 / 200; focused attribution p95 27.983 / 50; depth-3 documentation p95 8.240 / 50; full body hot swap p95 57.612 / 100. Maven 3 cold/warm p95: 546.841 / 1000 and 2.398 / 5. Maven 4: 710.853 / 1000 and 2.101 / 5, with native Maven graph agreement for both majors. This closes all earlier implementation validation notes, including compiler module visibility, content-based cache invalidation, response reconstruction, compact constructors and native resolver startup.
+
+The newly attached revision 7 preserves the component behavior and budgets, resolves the four-probe specification, permits per-session (SCIP, token text) probe reuse, and requires a dedicated sweep job. The implementation already satisfies those probe semantics. The user explicitly requested retaining the existing working GitHub Actions setup, so its passing corpus job continues to run the sweep, diagnostic agreement and MCP/LSP sessions together. No workflow or test-gate changes are made. The remaining revision-7 changes are the specification update and this evidence record; the validated implementation is unchanged.

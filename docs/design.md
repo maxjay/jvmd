@@ -1,6 +1,8 @@
 # jvmd: Java semantic and runtime daemon for agent-driven editing
 
-Technical specification, revision 6. Incorporates `SMOKE.md` outcomes of 2026-09-14.
+Technical specification, revision 7. Incorporates `SMOKE.md` outcomes of 2026-09-14 and the
+first implementation cycle. Revision 6 defined the identifier sweep twice, inconsistently, in
+sections 5 and 12.4; that is fixed here and the four-probe reading is authoritative.
 
 **Scope.** One user, one machine, permanently. Nothing in this document exists to serve other users,
 other machines, portability, or a product. If a design choice only makes sense at scale, it is
@@ -449,9 +451,13 @@ Targets: daemon cold start under 600ms; new session open under 200ms; focused at
 - **Testing corpus.** Spring PetClinic pinned by SHA, plus one of the user's own multi-module
   repositories. Both must give zero `live` diagnostics at tier 2 on a clean checkout and zero
   disagreement between `live` and `verified`.
-- **Identifier sweep.** A test that probes every identifier token in the corpus for `describe`,
-  `find` by position, and `references`, and asserts the answer names the token. This is the metric
-  that exposed `jj-language-server`'s 22.5% hover correctness; it is the floor that can only rise.
+- **Identifier sweep.** A test that probes every identifier token in the corpus through exactly four
+  queries: `symbol.atPosition`, `symbol.find` by position, `symbol.describe`, and `symbol.references`
+  with `direction=out`. A token counts as correct only when all four answers retain its name and its
+  SCIP identity; for an ambiguous reference, every candidate must satisfy all four. Unresolved tokens
+  stay in the denominator and still receive every probe. This is the metric that exposed
+  `jj-language-server`'s 22.5% hover correctness; it is the floor that can only rise. See 12.4 for
+  the test's mechanics; the two sections must not disagree.
 
 ---
 
@@ -463,6 +469,8 @@ Multi-user. Any form of remote operation. Tier-2 `eval` before phase 11.
 ---
 
 ## 7. Build plan with checkpoints
+
+Implementation status below is backed by [CI run 34882043173](https://github.com/maxjay/jvmd/actions/runs/34882043173): all checkpoint and corpus tests passed on 6f7acce. See PROGRESS.md for timings and the user-directed decision to retain the existing passing CI arrangement.
 
 A checkpoint is ticked when its exit criterion passes as a test in CI. Phases 1 to 4 are the
 critical path and must be sequential. Phases 5 and 6 unblock real codebases. Phases 7 to 9 are
@@ -684,8 +692,8 @@ tests never stop the build; a failing advisory test flips its default and is rec
 | 1 | JBR with `-XX:+AllowEnhancedClassRedefinition`: add a method to a loaded class through JDI `redefineClasses`; confirm it is callable | 11 | PASS, 2026-09-14, JBR 25.0.4.1 b583.48; `added()I` returned 42; redefine 7.9ms |
 | 2 | javac with `--should-stop=ifError=FLOW`: a file with a syntax error and an unresolved type; `Trees.getElement` still resolves other members; delete a classfile from the classpath and confirm the fault is catchable | 4 | PASS; tolerant bindings and disappearing indexed-classpath seam, see SMOKE.md |
 | 3 | `RepositorySystemSupplier` resolving Spring Boot fully offline from a warm `~/.m2`; measure | 2 | PASS; see SMOKE.md and PROGRESS.md |
-| 4 | `WorkspaceReader` substituting a local module for a published GAV, unbuilt | 6 | not run |
-| 5 | AOT cache round trip with `-XX:AOTMode=on` on a fixture jar; measure the delta. The daemon round trip is phase 1's exit criterion, not a pre-phase test | 1 | PASS; fixture and strict daemon AOT, 306.559ms startup in CI |
+| 4 | `WorkspaceReader` substituting a local module for a published GAV, unbuilt | 6 | PASS; WorkspaceReaderSmokeTest, see SMOKE.md |
+| 5 | AOT cache round trip with `-XX:AOTMode=on` on a fixture jar; measure the delta. The daemon round trip is phase 1's exit criterion, not a pre-phase test | 1 | PASS; fixture and strict daemon AOT, 208.102ms startup in CI run 34882043173 |
 | 6 | `canGetInstanceInfo` on the target JVMs; `referringObjects` on a deliberately retained object | 10 | PASS on Temurin and JBR; holder found by object identity |
 | 7 | Debuggee with `-XX:AOTCache` plus JDWP | advisory | FAIL: linked cache rejected at VM init. Default flipped: no debuggee AOT. Re-run with `-XX:-AOTClassLinking` as the experiment |
 | 8 | `java.lang.classfile` reading a multi-release jar and returning the right version's class | 3 | PASS; Spring Core selects versions 21 and 24 on JDK 25 |
@@ -710,10 +718,10 @@ tests never stop the build; a failing advisory test flips its default and is rec
 - `jj-language-server` measurements referenced here were taken directly on a cloned checkout with
   instrumented probes over Spring PetClinic. Reliable.
 - Section 3 verification is at the level of "the API exists and is documented to do this" against
-  current upstream sources. Nothing has been built in this configuration.
+  current upstream sources. The implementation now passes the checkpoint and corpus suites cited in section 7.
 - The JBR flag and its reachability through JDI `redefineClasses` are now measured, not inferred:
   section 9 test 1. AOT plus JDWP incompatibility is measured: section 9 test 7.
-- HotswapAgent against current JBR is unverified.
+- HotswapAgent against current JBR passes the JavaBeans metadata refresh fixture. It is optional and off by default; this does not claim general framework reload support.
 - The javac fault triggers cited are real bug reports; the mitigation is standard practice in
   NetBeans, not something invented here.
 - Ranked stack risks: javac internal API drift across JDK updates; resolver alignment with the
@@ -827,10 +835,14 @@ Example, `symbol.describe`:
   exits 0.
 - Perf budgets are assertions with the numbers from 4.10, run only under `-XX:AOTCache` and
   tagged `@Tag("perf")`; they fail the build in CI, not locally.
-- `IdentifierSweepTest` (5, cross-cutting): every identifier token in the corpus probed through
-  `symbol.atPosition` then `symbol.describe`; asserts the answer names the token; records the rate
-  in `target/sweep.json`; fails if the rate drops below the committed floor in
-  `jvmd-tests/floors.json`.
+- `IdentifierSweepTest` (5, cross-cutting): the four-probe sweep defined in section 5. Records the
+  rate in `target/sweep.json`; fails if it drops below the committed floor in
+  `jvmd-tests/floors.json`. `symbol.describe` and `symbol.references` answer for a SCIP identity
+  rather than a position, and the sweep is read-only, so their outcome for a given
+  `(scip, token text)` pair is memoized per session; `atPosition` and `find` run per token. The key
+  is the SCIP, never the `ref`: `ref` collapses a resolved symbol named `Foo` and an unresolved
+  token `Foo` onto the same entry, which would cross-contaminate the two and inflate the rate.
+  Gets its own CI job, not the remainder of another job's budget.
 - `ForbiddenIdentifiersTest`: greps `src/main` for `org.eclipse.jdt`, `MethodEntryRequest`,
   `MethodExitRequest`, `SecurityManager`, `dependency:tree`, `WatchService` inside `jvmd-index`,
   `ASTParser`, `lsp4j`, `objectweb.asm`. Any hit fails.
@@ -871,8 +883,14 @@ An agent does not ask these; it applies the default and records it in `SMOKE.md`
 6. One commit per checkpoint, message equal to the checkpoint text. No commit that leaves the
    phase's tag red.
 7. When the specification is ambiguous, resolve in this order: section 8 anti-instructions, then
-   section 1 acceptance criteria, then the nearest section 4 text, then stop and ask.
-8. At the end of each phase, append to `PROGRESS.md`: checkpoints ticked, measured numbers against
+   section 1 acceptance criteria, then the nearest section 4 text, then stop and ask. **If two
+   sections disagree, or you believe a gate should be stricter than written, stop and ask; do not
+   implement the stricter reading.** Tightening a gate mid-build turns a passing checkpoint into a
+   failing one and spends the remaining effort on a wall you created.
+8. Drain evidence before adding code. No more than three entries may stand at "CI validation
+   pending" at once; gather their evidence before starting new work.
+9. At the end of each phase, append to `PROGRESS.md`: checkpoints ticked, measured numbers against
    the 4.10 budgets, anything deferred and why, any smoke test that has since changed outcome.
-9. Do not optimise anything that has not failed a budget assertion.
-10. Do not extend scope. Section 6 non-goals are not suggestions.
+10. Do not optimise anything that has not failed a budget assertion. Landing 0.1% inside a budget
+    after three attempts is target-chasing; report the stage attribution and stop.
+11. Do not extend scope. Section 6 non-goals are not suggestions.

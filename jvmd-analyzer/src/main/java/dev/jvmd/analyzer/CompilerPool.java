@@ -37,12 +37,18 @@ public final class CompilerPool implements AutoCloseable {
         checkThread();if(manager==null)throw new IllegalStateException("Compiler classpath not configured");
         if(tier<0||tier>2)throw new IllegalArgumentException("tier");
         if(heap()-baseline>budget)recycle();
-        var diagnostics=new DiagnosticCollector<JavaFileObject>();var warnings=new ArrayList<String>();int[] actual={tier};boolean[] fault={false};queries++;
+        var diagnostics=new DiagnosticCollector<JavaFileObject>();var warnings=new ArrayList<String>();int[] actual={tier};boolean[] fault={false},implicitSource={false};queries++;
         List<String> options=List.of("-proc:none","--should-stop=ifError=FLOW","--release",release,"-parameters","-g");
         try {
             manager.validateClasspath();
             T value=pool.getTask(new java.io.StringWriter(),manager,diagnostics,options,null,List.of(Parser.source(path.toUri(),source)),task->{
                 var units=new ArrayList<CompilationUnitTree>();
+                task.addTaskListener(new com.sun.source.util.TaskListener(){
+                    @Override public void finished(com.sun.source.util.TaskEvent event){
+                        if(event.getKind()==com.sun.source.util.TaskEvent.Kind.PARSE&&event.getCompilationUnit()!=null
+                                &&!event.getCompilationUnit().getSourceFile().toUri().equals(path.toUri()))implicitSource[0]=true;
+                    }
+                });
                 try {
                     task.parse().forEach(units::add);
                     if(tier>=1){var entered=((JavacTaskImpl)task).enter();if(tier==2)((JavacTaskImpl)task).analyze(entered);}
@@ -55,7 +61,7 @@ public final class CompilerPool implements AutoCloseable {
             return new Outcome<>(level,value,problems,List.copyOf(warnings));
         }catch(QueryFailure e){throw (Exception)e.getCause();}
         catch(AssertionError|RuntimeException e){fault[0]=true;faults++;return new Outcome<>(Math.min(1,tier),null,List.of(),List.of("analyzer_fault: "+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage())));}
-        finally{if(fault[0])recycle();}
+        finally{if(fault[0]||implicitSource[0])recycle();}
     }
     private static final class QueryFailure extends RuntimeException {QueryFailure(Exception cause){super(cause);}}
     private long heap(){return heapUsage.getAsLong();}

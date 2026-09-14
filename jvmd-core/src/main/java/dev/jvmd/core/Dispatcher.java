@@ -29,6 +29,12 @@ public final class Dispatcher {
         register("session.status", (s, _) -> new Envelope(0, "live", false, null, s.warnings(),
                 Map.of("session", s.id(), "root", s.root().toString(), "metrics", metrics.snapshot())));
     }
+    /** Implements 4.9: compose core queries on the same session executor; the outer RPC owns byte paging. */
+    public Envelope query(Session session,String method,JsonNode params)throws Exception{
+        if(session==null||method.startsWith("daemon.")||method.startsWith("session."))throw RpcException.invalid("An in-process query requires a workspace method");
+        var handler=methods.get(method);if(handler==null)throw new RpcException(-32601,"Method not found",Map.of("method",method));
+        return session.execute(()->{var result=handler.call(session,params);if(result==null)throw new IllegalStateException("Handler omitted envelope");return result;});
+    }
     public void register(String name, Handler handler) { methods.put(name, handler); }
     public java.util.Set<String> methods() { return java.util.Set.copyOf(methods.keySet()); }
     public void status(String name, Supplier<Object> provider) { statusProviders.put(name, provider); }

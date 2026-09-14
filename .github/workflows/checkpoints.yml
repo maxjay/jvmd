@@ -71,8 +71,8 @@ jobs:
       - name: Agent surface checkpoints
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: mvn -B -pl jvmd-tests test -Dgroups=phase-8 -DexcludedGroups=corpus
-      - name: Editor document synchronization
-        run: mvn -B -pl jvmd-tests test -Dgroups=phase-9
+      - name: LSP facade and document synchronization
+        run: mvn -B -pl jvmd-tests test -Dgroups=phase-9 -DexcludedGroups=corpus
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -83,6 +83,7 @@ jobs:
             jvmd-tests/target/agreement.json
             jvmd-tests/target/sweep.json
             jvmd-tests/target/agent-session.json
+            jvmd-tests/target/editor-session.json
             jvmd-tests/target/daemon-perf-output.log
             jvmd-dist/target/training-state/*.log
   corpus:
@@ -108,6 +109,7 @@ jobs:
           mvn -B -q -f jvmd-tests/corpus/petclinic/pom.xml test-compile
           mvn -B -pl jvmd-tests test -Dgroups=phase-4 -DexcludedGroups=perf -DargLine=-Xmx1024m
           mvn -B -pl jvmd-tests test -Dgroups=phase-8 -DexcludedGroups=perf -Dtest=CorpusAgentSessionTest -DargLine=-Xmx1024m
+          mvn -B -pl jvmd-tests test -Dgroups=phase-9 -DexcludedGroups=perf -Dtest=CorpusLspSessionTest -DargLine=-Xmx1024m
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -118,5 +120,6 @@ jobs:
             jvmd-tests/target/agreement.json
             jvmd-tests/target/sweep.json
             jvmd-tests/target/agent-session.json
+            jvmd-tests/target/editor-session.json
             jvmd-tests/target/daemon-perf-output.log
             jvmd-dist/target/training-state/*.log

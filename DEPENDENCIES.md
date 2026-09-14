@@ -41,3 +41,6 @@ Phase 8 shim toolchain, inspected 2026-09-14:
 
 MCP framing and tool responses follow the [2025-11-25 stdio transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
 and [tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools).
+
+
+Phase 9 adds no dependency. The LSP facade depends only on jvmd-core; the TypeScript bridge uses Node's built-in modules. Protocol shapes were checked against the [official LSP 3.17 sources](https://github.com/microsoft/language-server-protocol/tree/gh-pages/_specifications/lsp/3.17). Completion and signature help use public JDK 25 Trees.getScope/isAccessible, Scope, Elements.getAllMembers and Types.asMemberOf; their APIs were verified in the [JDK 25 Trees documentation](https://docs.oracle.com/en/java/javase/25/docs/api/jdk.compiler/com/sun/source/util/Trees.html) and [Types documentation](https://docs.oracle.com/en/java/javase/25/docs/api/java.compiler/javax/lang/model/util/Types.html). No extra javac exports are introduced.

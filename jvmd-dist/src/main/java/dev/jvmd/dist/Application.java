@@ -78,6 +78,12 @@ public final class Application implements AutoCloseable {
             }
             return page(scope.equals("deps")?2:1,scope.equals("deps")?"index":"live","matches",all,offset,limit,s.warnings());
         });
+        dispatcher.register("symbol.completion",(s,p)->{Path path=sourcePath(s,Dispatcher.required(p,"path"));return analyzer(s,path).completion(path,documents(s).text(path),Dispatcher.bounded(p,"line",0,Integer.MAX_VALUE),Dispatcher.bounded(p,"character",0,Integer.MAX_VALUE),Dispatcher.limit(p,100,1000),cursor(p));});
+        dispatcher.register("symbol.signatureHelp",(s,p)->{Path path=sourcePath(s,Dispatcher.required(p,"path"));return analyzer(s,path).signatureHelp(path,documents(s).text(path),Dispatcher.bounded(p,"line",0,Integer.MAX_VALUE),Dispatcher.bounded(p,"character",0,Integer.MAX_VALUE));});
+        dispatcher.register("symbol.semanticTokens",(s,p)->{Path path=sourcePath(s,Dispatcher.required(p,"path"));return analyzer(s,path).semanticTokens(path,documents(s).text(path),Dispatcher.limit(p,2000,10000),cursor(p));});
+        dispatcher.register("symbol.occurrences",this::occurrences);
+        dispatcher.register("lsp.request",(s,p)->dev.jvmd.lsp.LspFacade.request(dispatcher,s,documents(s),p));
+        dispatcher.register("lsp.diagnostics",(s,p)->dev.jvmd.lsp.LspFacade.diagnostics(dispatcher,s,documents(s),p));
         dispatcher.register("symbol.describe",this::describeDocumented);
         dispatcher.register("edit.replaceBody",(s,p)->editSymbol(s,p,"body"));
         dispatcher.register("edit.insert",(s,p)->editSymbol(s,p,"insert"));
@@ -318,6 +324,15 @@ public final class Application implements AutoCloseable {
             for(var member:selected){var row=new LinkedHashMap<String,Object>();row.put("path",file.toString());row.put("scip",member.get("scip"));row.put("range",member.get("range"));members.add(row);}
         }
         return new Envelope(tier,"live",false,null,List.copyOf(warnings),Map.of("applied",true,"changes",plan.edits(),"changed_files",plan.files().stream().map(Path::toString).toList(),"members",members,"diagnostics",diagnostics,"verified",false));
+    }
+    private Envelope occurrences(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
+        String ref=Dispatcher.required(params,"ref");var description=describe(session,ref);if(!(description.result() instanceof Map<?,?> symbol)||symbol.get("scip")==null)return description;
+        var found=new ArrayList<Bindings.Occurrence>();var warnings=new LinkedHashSet<String>();int tier=2;
+        for(Path file:sourceFiles(session)){
+            var snapshot=analyzer(session,file).bindings(file,documents(session).text(file),null);tier=Math.min(tier,snapshot.tier());warnings.addAll(snapshot.warnings());
+            if(snapshot.result()!=null)for(var occurrence:snapshot.result().occurrences())if(occurrence.scip().equals(symbol.get("scip"))&&(params.path("include_declaration").asBoolean()||!occurrence.role().equals("declaration")))found.add(occurrence);
+        }
+        return page(tier,"live","occurrences",found,cursor(params),Dispatcher.limit(params,1000,10000),List.copyOf(warnings));
     }
     private Envelope relationships(Session session,com.fasterxml.jackson.databind.JsonNode params,boolean hierarchy)throws Exception{
         String ref=Dispatcher.required(params,"ref");var description=describe(session,ref);

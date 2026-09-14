@@ -1,22 +1,11 @@
-# jvmd
+undefined
 
-A resident Java semantic and runtime daemon. The implementation follows [revision 6](docs/design.md).
-Check [PROGRESS.md](PROGRESS.md) for tested checkpoints; unimplemented phases are not advertised as capabilities.
+The same image includes an editor adapter:
 
-Build with the pinned JDK 25.0.4.1+1 and Maven 3:
+~~~sh
+jvmd-dist/target/image/bin/jvmd-lsp --root /path/to/workspace
+~~~
 
-```sh
-mvn -B -DskipTests install
-bash jvmd-dist/assemble.sh
-bash jvmd-dist/train-aot.sh
-mvn -pl jvmd-tests test -Dgroups=phase-1 -DexcludedGroups=corpus
-jvmd-dist/target/image/bin/jvmd
-```
+Configure it as the editor's Java language server over stdio. It advertises UTF-16 incremental synchronization, hover, definition, references, semantic rename with preparation, hierarchical document symbols, completion, signature help, and full semantic tokens. The editor owns open documents; queries see unsaved buffers across files. Diagnostics debounce for 200 ms, and results for superseded versions are discarded. Rename returns a versioned WorkspaceEdit, including a file operation when the client advertises that capability.
 
-The last test command includes performance assertions and requires a Linux environment that permits
-Unix domain sockets. GitHub Actions builds the runtime image, trains its cache, and runs that gate.
-The daemon reads `~/.config/jvmd/config.json`; protocol messages use Content-Length framing over
-`$XDG_RUNTIME_DIR/jvmd-<uid>.sock`. Without XDG runtime state, a private directory under `/tmp` is used.
-
-Never put application dependencies on the daemon classpath. Debuggee AOT is disabled by default.
-Use `JVMD_JDK_HOME` and `JVMD_JBR_HOME` to run the standalone `jvmd-tests/smoke` scripts.
+The adapter shares the daemon and workspace sessions with MCP. Closing it releases its open documents without shutting down a shared session. For very large references, outlines or token sets, clients can provide partialResultToken; each result/progress frame stays below 64 KiB. Completion marks incomplete pages using the native LSP flag. Diagnostics that exceed the display budget include an explicit omitted-count diagnostic. Save buffers before requesting a verified build or launching compiled code.

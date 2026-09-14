@@ -228,3 +228,10 @@ Editor-owned files use dry-run edit plans so the client applies its own changes.
 
 
 The first phase-9 run exposed a stale failed lookup when a previously missing source file was opened. Cross-file edits, closing saved buffers, rename plans, stale versions, and UTF-16 synchronization passed. Failed semantic snapshots now expire on source changes, and adding or removing an in-memory file invalidates cached namespace lookups without running attribution. The unchanged regression test checks this behavior in the next run.
+
+
+### Phase 9: nine-query editor facade
+
+The buffer regression fix passed all three synchronization checks in run 34824844334. Existing checkpoints stayed green: AOT startup 334.203589 ms, open 6.344585 ms, focused attribution p95 36.966617 ms, documentation p95 8.634252 ms, and attach 19.231791 ms.
+
+This checkpoint adds the nine LSP queries over the same core session, public-javac completion/signatures, semantic tokens, protocol-safe rename plans, the stdio launcher, 200 ms diagnostic debounce, stale-version suppression, and native partial results. Tests exercise every Java facade query plus the actual TypeScript-to-strict-AOT-daemon editor path. Phase 9 remains unchecked until its corpus exit is demonstrated.

@@ -55,5 +55,18 @@ class ResponseBudgetTest {
             assertThat(calls.get()).isEqualTo(1);
         }
     }
+    @Test void corpusClientReassemblesNestedArraysUnicodeAndWarningsBeforeScoring()throws Exception{
+        try(var sessions=new Sessions()){
+            var session=sessions.open(root);var dispatcher=new Dispatcher(sessions,new Metrics());var calls=new AtomicInteger();
+            var symbols=List.of(Map.of("name","first","scip","local first","doc","🙂abc".repeat(8000)),Map.of("name","last","scip","local last","doc","界".repeat(20000)));
+            var payload=Map.of("symbols",symbols,"edges",List.of(Map.of("src","local first","dst","local last")));
+            var warnings=List.of("warning "+"🧪".repeat(5000));
+            dispatcher.register("probe.nested",(s,p)->{calls.incrementAndGet();return new Envelope(2,"live",true,"native-next",warnings,payload);});
+            var response=TestSupport.complete(dispatcher,"probe.nested",Map.of("session",session.id(),"_response_bytes",4096)).path("result");
+            assertThat(response.path("result")).isEqualTo(Json.MAPPER.valueToTree(payload));
+            assertThat(response.path("warnings")).isEqualTo(Json.MAPPER.valueToTree(warnings));
+            assertThat(response.path("cursor").asText()).isEqualTo("native-next");assertThat(calls.get()).isEqualTo(1);
+        }
+    }
     private static JsonNode request(Dispatcher dispatcher,String method,Map<String,?> args){var request=Json.MAPPER.createObjectNode().put("jsonrpc","2.0").put("id",1).put("method",method);request.set("params",Json.MAPPER.valueToTree(args));return dispatcher.dispatch(request);}
 }

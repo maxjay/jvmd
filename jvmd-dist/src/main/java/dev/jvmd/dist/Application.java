@@ -402,7 +402,7 @@ public final class Application implements AutoCloseable {
             if(next.isEmpty())break;reached.addAll(next);frontier=next;
         }
         var edgeList=List.copyOf(selected);var matches=occurrences.stream().filter(o->selected.contains(new Bindings.Edge(o.container(),o.scip(),o.role()))).toList();
-        var nodes=symbols.values().stream().filter(s->reached.contains(s.get("scip"))).toList();int max=Math.max(edgeList.size(),Math.max(matches.size(),nodes.size())),to=Math.min(max,offset+limit);boolean more=to<max;
+        var nodes=reached.stream().map(symbols::get).filter(Objects::nonNull).toList();int max=Math.max(edgeList.size(),Math.max(matches.size(),nodes.size())),to=Math.min(max,offset+limit);boolean more=to<max;
         return new Envelope(tier,"live",more,more?Integer.toString(to):null,List.copyOf(warnings),Map.of("symbols",slice(nodes,offset,limit),"edges",slice(edgeList,offset,limit),"references",slice(matches,offset,limit)));
     }
     private static <T> List<T> slice(List<T> list,int offset,int limit){return List.copyOf(list.subList(Math.min(offset,list.size()),Math.min(list.size(),offset+limit)));}

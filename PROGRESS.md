@@ -335,3 +335,7 @@ AOT training now exercises the native Maven 4 resolver as well as Maven 3 so pla
 ### Migration comments and module visibility validation
 
 Run 34846031572 traced the AOT/index failures to a standalone SQL comment passed to SQLite by the line-oriented migration runner. Migration now skips blank and comment-only lines; fresh database and populated migration tests cover the fix. Repeated modular queries and unsaved-source attribution pass after module identity cleanup. The negative visibility assertion now matches javac's actual `compiler.err.package.not.visible` diagnostic and checks its non-exported-package explanation. The instrumented full hot-swap gate passes at 78.211137 ms p95 / 100; compilation is 44–69 ms and publication/rebinding are each below 0.5 ms. The new AOT resolver measurement remains blocked until migration succeeds.
+
+### Corpus continuation correctness
+
+The corpus client now reconstructs bounded response fragments using their declared array and UTF-16 offsets before checking symbol identities. It follows native reference pages when the root is not yet present. A nested Unicode/array/warning fixture verifies exact reconstruction, unchanged native cursors and a single underlying invocation. Relationship nodes now follow breadth-first discovery order, ensuring the requested root appears first even when its declaration follows its callees in source. Every token still receives all four queries at the unchanged 0.97 floor. CI validation pending.

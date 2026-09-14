@@ -24,6 +24,10 @@ class WorkspaceSemanticProtocolTest {
             assertThat(described.path("scip").asText()).isEqualTo(scip);assertThat(described.path("file").asText()).isEqualTo(file.toString());
             var references=TestSupport.request(app.dispatcher(),"symbol.references",Map.of("session",session,"ref","Example/echo(int)","kinds",List.of("calls"),"direction","in")).path("result");
             assertThat(references.path("warnings").isEmpty()).isTrue();assertThat(references.path("result").path("edges").toString()).contains("Example#caller().");
+            var first=TestSupport.request(app.dispatcher(),"symbol.references",Map.of("session",session,"ref","Example/caller()","direction","out","limit",1)).path("result");
+            assertThat(first.path("result").path("symbols").get(0).path("name").asText()).isEqualTo("caller");assertThat(first.path("truncated").asBoolean()).isTrue();
+            var next=TestSupport.request(app.dispatcher(),"symbol.references",Map.of("session",session,"ref","Example/caller()","direction","out","limit",1,"cursor",first.path("cursor").asText())).path("result");
+            assertThat(next.path("result").path("symbols").get(0).path("name").asText()).isEqualTo("echo");assertThat(next.path("truncated").asBoolean()).isFalse();
             var hierarchy=TestSupport.request(app.dispatcher(),"symbol.hierarchy",Map.of("session",session,"ref","Example","direction","up")).path("result").path("result");
             assertThat(hierarchy.path("edges").toString()).contains("implements").contains("Parent#");
             var find=TestSupport.request(app.dispatcher(),"symbol.find",Map.of("session",session,"name_path","echo","scope","workspace","limit",1)).path("result");

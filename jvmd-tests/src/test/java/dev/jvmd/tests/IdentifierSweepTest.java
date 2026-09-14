@@ -30,8 +30,8 @@ class IdentifierSweepTest {
                     for(var token:text.tokens()){
                         count++;var position=text.position(token.start());
                         var location=Map.of("session",session,"path",file.toString(),"line",position.line(),"character",position.character());
-                        var at=TestSupport.request(app.dispatcher(),"symbol.atPosition",location).path("result").path("result");
-                        var found=TestSupport.request(app.dispatcher(),"symbol.find",location).path("result").path("result");
+                        var at=TestSupport.complete(app.dispatcher(),"symbol.atPosition",location).path("result").path("result");
+                        var found=TestSupport.complete(app.dispatcher(),"symbol.find",location).path("result").path("result");
                         var candidates=new ArrayList<com.fasterxml.jackson.databind.JsonNode>();
                         if(at.path("ambiguous").asBoolean())at.path("candidates").forEach(candidates::add);else candidates.add(at);
                         var foundIds=new LinkedHashSet<String>();if(found.path("ambiguous").asBoolean())found.path("candidates").forEach(c->foundIds.add(c.path("scip").asText()));else foundIds.add(found.path("scip").asText());
@@ -40,10 +40,15 @@ class IdentifierSweepTest {
                         var evidence=new ArrayList<Object>();
                         for(var candidate:candidates){
                             String scip=candidate.path("scip").asText(),ref=scip.isEmpty()?token.text():scip;
-                            var described=TestSupport.request(app.dispatcher(),"symbol.describe",Map.of("session",session,"ref",ref)).path("result").path("result");
-                            var references=TestSupport.request(app.dispatcher(),"symbol.references",Map.of("session",session,"ref",ref,"direction","out","depth",1,"limit",1000)).path("result").path("result");
+                            var described=TestSupport.complete(app.dispatcher(),"symbol.describe",Map.of("session",session,"ref",ref)).path("result").path("result");
+                            var referenceArgs=new LinkedHashMap<String,Object>(Map.of("session",session,"ref",ref,"direction","out","depth",1,"limit",1000));
                             boolean namesRoot=false;
-                            for(var symbol:references.path("symbols"))if(symbol.path("scip").asText().equals(scip)&&symbol.path("name").asText().equals(token.text()))namesRoot=true;
+                            do {
+                                var page=TestSupport.complete(app.dispatcher(),"symbol.references",referenceArgs).path("result");
+                                for(var symbol:page.path("result").path("symbols"))if(symbol.path("scip").asText().equals(scip)&&symbol.path("name").asText().equals(token.text()))namesRoot=true;
+                                if(namesRoot||!page.path("truncated").asBoolean())break;
+                                referenceArgs.put("cursor",page.path("cursor").asText());
+                            } while(true);
                             boolean description=described.path("scip").asText().equals(scip)&&described.path("name").asText().equals(token.text());
                             valid&=candidate.path("name").asText().equals(token.text())&&description&&namesRoot;
                             evidence.add(Map.of("scip",scip,"description_names_token",description,"references_name_token",namesRoot));

@@ -37,6 +37,14 @@ public final class ProcessorSettings {
         roots.add(absolute(module,test?build.getTestSourceDirectory():build.getSourceDirectory()));
         String generated=absolute(module,Path.of(build.getDirectory()).resolve(test?"generated-test-sources":"generated-sources").toString());roots.add(generated);
         roots.add(generatedDirectory(model,test,module));
+        for(var plugin:build.getPlugins()) if(plugin.getGroupId().equals("org.codehaus.mojo") && plugin.getArtifactId().equals("build-helper-maven-plugin")) {
+            for(var execution:plugin.getExecutions()) if(execution.getGoals().contains(test?"add-test-source":"add-source")) {
+                Xpp3Dom configuration=execution.getConfiguration() instanceof Xpp3Dom c?new Xpp3Dom(c):new Xpp3Dom("configuration");
+                if(plugin.getConfiguration() instanceof Xpp3Dom c) configuration=Xpp3Dom.mergeXpp3Dom(configuration,new Xpp3Dom(c));
+                var additions=configuration.getChild("sources");
+                if(additions!=null) for(var addition:additions.getChildren()) if(addition.getValue()!=null) roots.add(absolute(module,addition.getValue()));
+            }
+        }
         // Build helper generators conventionally create one source root below this directory.
         if(Files.isDirectory(Path.of(generated)))try(var children=Files.list(Path.of(generated))){children.filter(Files::isDirectory).sorted().map(Path::toString).forEach(roots::add);}catch(java.io.IOException e){throw new java.io.UncheckedIOException(e);}
         return List.copyOf(roots);

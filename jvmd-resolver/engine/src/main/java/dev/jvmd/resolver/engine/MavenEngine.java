@@ -158,7 +158,7 @@ public final class MavenEngine implements AutoCloseable {
         }
         var localOverlay=new WorkspaceOverlay(prepared.stream().map(Prepared::module).toList(),ignoreVersions);
         var overlay = new OverlayReader(localOverlay);
-        session.setWorkspaceReader(org.eclipse.aether.util.repository.ChainedWorkspaceReader.newInstance(overlay,workspace,poms));
+        session.setWorkspaceReader(org.eclipse.aether.util.repository.ChainedWorkspaceReader.newInstance(overlay,org.eclipse.aether.util.repository.ChainedWorkspaceReader.newInstance(workspace,poms)));
         for(var item:prepared){
             session.setUserProperties(item.properties()); models.associate(session, settings, item.directory(), remap(item.properties()), item.remotes()); var model=item.model();var remotes=item.remotes();var moduleDir=item.directory();var module=item.module();
             String gav=module.gav(),release=module.release();var sources=module.sources();var testSources=module.testSources();var m=model.getBuild();

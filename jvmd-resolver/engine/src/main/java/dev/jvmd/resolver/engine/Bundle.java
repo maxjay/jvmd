@@ -15,7 +15,18 @@ public final class Bundle implements AutoCloseable {
         var config=new Config(Path.of(c.path("jdk_home").asText()),null,Path.of(c.path("m2_repo").asText()),c.path("maven_major").asInt(),
                 Duration.ofHours(4),512,false,Path.of(c.path("state").asText()),Path.of(c.path("socket").asText()));
         var environment=new MavenEnvironment(config,Path.of(c.path("settings").asText()));
-        engine=new MavenEngine(config,environment,new VersionModels(config,environment));
+        // Both tasks are part of the cold request. DTO codecs have no Maven state and
+        // can initialize while native services load, keeping reflection off the later cache-write path.
+        try(var codecs=java.util.concurrent.Executors.newSingleThreadExecutor(Thread.ofPlatform().name("jvmd-resolver-codecs-"+config.mavenMajor()).factory())){
+            var ready=codecs.submit(()->{
+                for(Class<?> type:List.of(MavenEngine.Input.class,MavenEngine.Cached.class,Resolution.class,
+                        Resolution.Module.class,Resolution.Node.class,Resolution.Edge.class,Resolution.Processing.class))
+                    Json.MAPPER.writerFor(type);
+            });
+            Models models=new VersionModels(config,environment);
+            try{ready.get();engine=new MavenEngine(config,environment,models);}
+            catch(Exception|Error failure){models.close();throw failure;}
+        }
     }
     public String call(String method,String request,BiFunction<String,String,String> callback) throws Exception {
         try {

@@ -42,7 +42,12 @@ jobs:
       - name: Phase 4 compiler prerequisites and checkpoints
         run: |
           bash jvmd-tests/smoke/run-compiler.sh
-          mvn -B -pl jvmd-tests test -Dgroups=phase-4
+          mvn -B -pl jvmd-tests test -Dgroups=phase-4 -DexcludedGroups=corpus
+      - name: Phase 4 clean corpus agreement
+        run: |
+          bash jvmd-tests/corpus/fetch.sh
+          mvn -B -q -f jvmd-tests/corpus/petclinic/pom.xml test-compile
+          mvn -B -pl jvmd-tests test -Dgroups=phase-4 -DexcludedGroups=perf -DargLine=-Xmx1024m
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -50,5 +55,6 @@ jobs:
           path: |
             jvmd-tests/target/surefire-reports/
             jvmd-tests/target/*perf.json
+            jvmd-tests/target/agreement.json
             jvmd-tests/target/daemon-perf-output.log
             jvmd-dist/target/training-state/*.log

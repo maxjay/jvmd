@@ -259,6 +259,8 @@ public final class Application implements AutoCloseable {
                     var request = Json.MAPPER.createObjectNode().put("jsonrpc", "2.0").put("id", i).put("method", "symbol.overview");
                     request.putObject("params").put("session", session.id()).put("path", file.toString());
                     app.dispatcher.dispatch(request);
+                    request.put("method","symbol.atPosition");request.putObject("params").put("session",session.id()).put("path",file.toString()).put("line",0).put("character",43);
+                    app.dispatcher.dispatch(request);
                     database.find(i%2==0?"ObjectMapper":"readValue",null,false,20,0);
                     app.refresh(session);
                 }

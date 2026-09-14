@@ -32,8 +32,10 @@ class DaemonStartupBudgetTest {
         long started = System.nanoTime();
         var process = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile()).start();
         try (var channel = SocketChannel.open(StandardProtocolFamily.UNIX)) {
-            while (!Files.exists(socket) && process.isAlive() && System.nanoTime() - started < TimeUnit.SECONDS.toNanos(10)) Thread.sleep(2);
-            assertThat(Files.exists(socket)).withFailMessage(Files.readString(log)).isTrue();
+            // bind() creates the pathname just before listen(); a pathname alone is not readiness.
+            while (!Files.readString(log).contains("READY ") && process.isAlive()
+                    && System.nanoTime() - started < TimeUnit.SECONDS.toNanos(10)) Thread.sleep(2);
+            assertThat(Files.readString(log)).contains("READY ");
             channel.connect(UnixDomainSocketAddress.of(socket));
             var in = Channels.newInputStream(channel); var out = Channels.newOutputStream(channel);
             Framing.write(out, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"daemon.status\"}".getBytes());
@@ -59,6 +61,9 @@ class DaemonStartupBudgetTest {
             Json.MAPPER.writerWithDefaultPrettyPrinter().writeValue(TestSupport.repo().resolve("jvmd-tests/target/phase-1-perf.json").toFile(), measures);
             assertThat(startupMs).as("strict AOT cold startup ms").isLessThan(600);
             assertThat(times[14]).as("2k-line overview p95 ms").isLessThan(50);
-        } finally { process.destroy(); if (!process.waitFor(5, TimeUnit.SECONDS)) process.destroyForcibly(); }
+        } finally {
+            process.destroy(); if (!process.waitFor(5, TimeUnit.SECONDS)) process.destroyForcibly();
+            if (Files.exists(log)) Files.copy(log, TestSupport.repo().resolve("jvmd-tests/target/daemon-perf-output.log"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 }

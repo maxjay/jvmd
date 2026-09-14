@@ -62,7 +62,7 @@ public final class IndexService implements AutoCloseable {
         });indexed.incrementAndGet();return id;
     }
     private void storeContent(Connection c,long artifact,String gav,String kind,BinaryReader.Content content,Map<String,Map<String,Object>> sourceData)throws Exception{
-        var keys=new HashMap<String,Long>();
+        var keys=ids(c,artifact);
         var identities=content.symbols().stream().collect(java.util.stream.Collectors.groupingBy(symbol->scip(gav,symbol),java.util.stream.Collectors.counting()));
         String insert="INSERT INTO symbols(scip,artifact_id,kind,name,signature,erased_descriptor,flags,binary_key,fqn,name_path,class_entry,parameters,metadata) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(scip) DO NOTHING RETURNING id";
         try(var s=c.prepareStatement(insert);var lookup=c.prepareStatement("SELECT id,artifact_id FROM symbols WHERE scip=?");var associate=c.prepareStatement("INSERT OR REPLACE INTO artifact_symbols(artifact_id,symbol_id,data,source_file) VALUES(?,?,?,?)")){
@@ -86,6 +86,27 @@ public final class IndexService implements AutoCloseable {
             }owners.executeBatch();names.executeBatch();
         }
         try(var edges=c.prepareStatement("INSERT OR IGNORE INTO edge_targets VALUES(?,?,?)")){for(var edge:content.edges())if(keys.containsKey(edge.src())){edges.setLong(1,keys.get(edge.src()));edges.setString(2,edge.target());edges.setString(3,edge.kind());edges.addBatch();}edges.executeBatch();}
+        if(!content.models().isEmpty())storeClassReferences(c,artifact,content.models().values());
+    }
+    static void storeClassReferences(Connection c,long artifact,Collection<java.lang.classfile.ClassModel> classes)throws Exception{
+        try(var clear=c.prepareStatement("DELETE FROM artifact_class_refs WHERE artifact_id=?")){clear.setLong(1,artifact);clear.executeUpdate();}
+        try(var insert=c.prepareStatement("INSERT OR IGNORE INTO artifact_class_refs VALUES(?,?)")){for(String target:CodeReader.classReferences(classes)){insert.setLong(1,artifact);insert.setString(2,target);insert.addBatch();}insert.executeBatch();}
+        try(var update=c.prepareStatement("UPDATE artifacts SET has_class_refs=1 WHERE id=?")){update.setLong(1,artifact);update.executeUpdate();}
+    }
+    synchronized void storeCode(long artifact,String gav,BinaryReader.Content content,List<BinaryReader.Edge> edges)throws Exception{
+        database.write(c->{
+            var known=ids(c,artifact);
+            var missing=content.symbols().stream().filter(symbol->!known.containsKey(symbol.key())).toList();
+            if(!missing.isEmpty())storeContent(c,artifact,gav,"jar",new BinaryReader.Content(missing,content.edges(),content.models(),content.warnings()),Map.of());
+            var keys=ids(c,artifact);
+            try(var remove=c.prepareStatement("DELETE FROM code_targets WHERE artifact_id=?")){remove.setLong(1,artifact);remove.executeUpdate();}
+            try(var insert=c.prepareStatement("INSERT OR IGNORE INTO code_targets VALUES(?,?,?,?)")){
+                for(var edge:edges)if(keys.containsKey(edge.src())){insert.setLong(1,artifact);insert.setLong(2,keys.get(edge.src()));insert.setString(3,edge.target());insert.setString(4,edge.kind());insert.addBatch();}insert.executeBatch();
+            }
+            storeClassReferences(c,artifact,content.models().values());
+            try(var update=c.prepareStatement("UPDATE artifacts SET has_code_edges=1 WHERE id=?")){update.setLong(1,artifact);update.executeUpdate();}
+            return null;
+        });indexed.incrementAndGet();
     }
     /** Implements 4.4 and phase 6: a module's source and binary inputs, independent of Maven objects. */
     public record LocalModule(Path directory,String gav,List<Path> sources,List<Path> outputs) {
@@ -117,7 +138,7 @@ public final class IndexService implements AutoCloseable {
                 for(var symbol:symbols){
                     if(symbol.get("scip")==null||!kinds.contains(symbol.get("kind"))||!file.toString().equals(symbol.get("source_file")))continue;
                     String scip=symbol.get("scip").toString();String fqn=Objects.toString(symbol.get("fqn"),Objects.toString(symbol.get("name_path"),""));
-                    insert.setString(1,scip);insert.setLong(2,artifact);insert.setString(3,symbol.get("kind").toString());insert.setString(4,Objects.toString(symbol.get("name"),""));insert.setString(5,(String)symbol.get("signature"));insert.setString(6,(String)symbol.get("erased_descriptor"));insert.setString(7,Objects.toString(symbol.get("binary_key"),fqn+"#"+Objects.toString(symbol.get("name_path"),scip)));insert.setString(8,fqn);insert.setString(9,Objects.toString(symbol.get("name_path"),scip));insert.setString(10,Json.MAPPER.writeValueAsString(symbol.getOrDefault("parameters",List.of())));insert.setString(11,"{}");insert.executeUpdate();
+                    insert.setString(1,scip);insert.setLong(2,artifact);insert.setString(3,symbol.get("kind").toString());insert.setString(4,Objects.toString(symbol.get("name"),""));insert.setString(5,(String)symbol.get("signature"));insert.setString(6,(String)symbol.get("erased_descriptor"));insert.setString(7,Objects.toString(symbol.get("binary_key"),Set.of("class","interface","enum","record","annotation").contains(symbol.get("kind"))?fqn:fqn+"#"+("ctor".equals(symbol.get("kind"))?"<init>":symbol.get("name"))+("method".equals(symbol.get("kind"))||"ctor".equals(symbol.get("kind"))?Objects.toString(symbol.get("erased_descriptor"),""):"")));insert.setString(8,fqn);insert.setString(9,Objects.toString(symbol.get("name_path"),scip));insert.setString(10,Json.MAPPER.writeValueAsString(symbol.getOrDefault("parameters",List.of())));insert.setString(11,"{}");insert.executeUpdate();
                     lookup.setString(1,scip);long id;try(var r=lookup.executeQuery()){r.next();id=r.getLong(1);}
                     var data=new LinkedHashMap<>(symbol);data.put("tier",tier);
                     associate.setLong(1,artifact);associate.setLong(2,id);associate.setString(3,Json.MAPPER.writeValueAsString(data));associate.setString(4,file.toString());associate.addBatch();

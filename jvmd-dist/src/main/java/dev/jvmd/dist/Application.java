@@ -271,15 +271,25 @@ public final class Application implements AutoCloseable {
         if(!(hierarchy?Set.of("up","down"):Set.of("in","out")).contains(direction))throw RpcException.invalid("Unknown relationship direction");
         boolean outgoing=direction.equals("out")||direction.equals("up");
         int depth=Dispatcher.bounded(params,"depth",hierarchy?3:1,20),limit=Dispatcher.limit(params,100,1000),offset=cursor(params),tier=2;
-        var allowed=new HashSet<String>();params.path("kinds").forEach(k->allowed.add(k.asText()));if(hierarchy)allowed.addAll(Set.of("extends","implements","overrides"));
+        var allowed=new HashSet<String>();params.path("kinds").forEach(k->allowed.add(k.asText()));if(hierarchy)allowed.addAll(Set.of("extends","implements","overrides"));else if(allowed.isEmpty())allowed.addAll(Set.of("calls","reads","writes","instantiates"));
         var symbols=new LinkedHashMap<String,Map<String,Object>>();var edges=new LinkedHashSet<Bindings.Edge>();var occurrences=new ArrayList<Bindings.Occurrence>();var warnings=new LinkedHashSet<String>();
         for(Path file:sourceFiles(session)){
             var snapshot=analyzer(session,file).bindings(file,Files.readString(file),null);tier=Math.min(tier,snapshot.tier());warnings.addAll(snapshot.warnings());if(snapshot.result()==null)continue;
             symbols.putAll(snapshot.result().symbols());edges.addAll(snapshot.result().edges());occurrences.addAll(snapshot.result().occurrences());
         }
-        var reached=new LinkedHashSet<String>();reached.add(key);var selected=new LinkedHashSet<Bindings.Edge>();
-        for(int d=0;d<depth;d++){var next=new LinkedHashSet<String>();for(var edge:edges)if((allowed.isEmpty()||allowed.contains(edge.kind()))&&reached.contains(outgoing?edge.src():edge.dst())){selected.add(edge);next.add(outgoing?edge.dst():edge.src());}if(!reached.addAll(next))break;}
-        var edgeList=List.copyOf(selected);var matches=occurrences.stream().filter(o->reached.contains(o.scip())&&!o.role().equals("declaration")).toList();
+        var root=new LinkedHashMap<String,Object>();for(var entry:symbol.entrySet())root.put(entry.getKey().toString(),entry.getValue());symbols.putIfAbsent(key,root);
+        dev.jvmd.index.CodePass code=null;if(!hierarchy){var database=index();prepareIndex(session,database);code=session.state("code_pass",()->new dev.jvmd.index.CodePass(database));}
+        var reached=new LinkedHashSet<String>();reached.add(key);var selected=new LinkedHashSet<Bindings.Edge>();var frontier=new LinkedHashSet<String>();frontier.add(key);
+        for(int d=0;d<depth;d++){
+            if(code!=null){
+                var expansion=code.expand(frontier.stream().map(symbols::get).filter(Objects::nonNull).toList(),outgoing,allowed,session.state("resolution")==null?null:session.id());
+                expansion.symbols().forEach(node->symbols.putIfAbsent(node.get("scip").toString(),node));for(var edge:expansion.edges())edges.add(new Bindings.Edge(edge.src(),edge.dst(),edge.kind()));warnings.addAll(expansion.warnings());
+            }
+            var next=new LinkedHashSet<String>();
+            for(var edge:edges)if(allowed.contains(edge.kind())&&frontier.contains(outgoing?edge.src():edge.dst())){selected.add(edge);if(!reached.contains(outgoing?edge.dst():edge.src()))next.add(outgoing?edge.dst():edge.src());}
+            if(next.isEmpty())break;reached.addAll(next);frontier=next;
+        }
+        var edgeList=List.copyOf(selected);var matches=occurrences.stream().filter(o->selected.contains(new Bindings.Edge(o.container(),o.scip(),o.role()))).toList();
         var nodes=symbols.values().stream().filter(s->reached.contains(s.get("scip"))).toList();int max=Math.max(edgeList.size(),Math.max(matches.size(),nodes.size())),to=Math.min(max,offset+limit);boolean more=to<max;
         return new Envelope(tier,"live",more,more?Integer.toString(to):null,List.copyOf(warnings),Map.of("symbols",slice(nodes,offset,limit),"edges",slice(edgeList,offset,limit),"references",slice(matches,offset,limit)));
     }

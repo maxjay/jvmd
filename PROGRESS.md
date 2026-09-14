@@ -188,3 +188,16 @@ The runtime protocol correction e473770 passed both CI jobs (run 34817902360). S
 - Package overview, lazy dependency code traversal and the full corpus agent-session exit remain open.
 
 - SemanticEditsTest passed all four tests on d3170c3. The existing gates stayed green: startup 291.95 ms, workspace open 5.72 ms, focused attribution p95 35.21 ms, documentation depth 3 p95 8.48 ms, attach 16.71 ms.
+
+
+### Phase 8 MCP checkpoint passed
+
+- All thirteen current Java agent-surface tests and three Node transport tests passed on 1175aba. The strict-AOT stdio session completed caller traversal, editing and compiler verification; schema snapshots and bounded MCP error/operation continuations passed.
+- Current measurements: startup 281.44 ms, workspace open 6.23 ms, focused attribution p95 34.96 ms, documentation depth 3 p95 9.66 ms, attach 19.00 ms.
+
+### Phase 8 checkpoint: lazy dependency code references
+
+- Added schema 3 with artifact-scoped code targets and a constant-pool class-reference catalog. The eager skeleton pass does not read method bodies; incoming queries use the catalog to identify candidate jars.
+- Explicit references queries decode invoke, field access, allocation, cast/type-check and invokedynamic bootstrap handles. Source call edges remain javac-derived. Query results filter by workspace membership and follow the requested direction, kinds and depth.
+- Bytecode scans persist their completed state per content-hashed artifact. Missing private caller declarations are added only when that artifact's code is requested.
+- Tests cover call chains, field reads/writes, allocation, casts, method references, untouched artifacts and workspace isolation. Validation is pending.

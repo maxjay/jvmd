@@ -309,3 +309,7 @@ JDI method execution now has a five-second deadline for both interpreted and com
 ### Fixture corrections from the expanded gates
 
 The Maven 4 AOT probe initially stopped before measurement because its Spring fixture still detected Maven 3 on PATH. The Maven 4 variant now declares its actual wrapper version and produces its comparison tree with the checksum-pinned Maven 4 executable. Resolver errors print their structured details in the probe log. Artifact-variant fixtures now expose public support classes, matching pass 1's documented public/protected scope. Independent index/compiler/LSP prerequisites run after a resolver test failure so subsequent gate evidence remains meaningful. The first new hot-swap run recorded four requests at 54–66 ms and one at 147.5 ms, with compilation below 55 ms in all five; the unchanged 100 ms assertion correctly failed and is under investigation.
+
+### Complete identifier-sweep contract
+
+The corpus sweep now invokes position search and outgoing references for every identifier as well as binding and description. A token counts as correct only when all four answers retain its name and SCIP identity; ambiguous static imports must satisfy the checks for every candidate. Unresolved tokens stay in the denominator and still receive every probe. The committed 0.97 floor is unchanged. Expanded corpus execution pending.

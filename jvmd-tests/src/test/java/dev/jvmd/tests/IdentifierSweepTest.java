@@ -11,11 +11,11 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
-/** Implements 5 and 12.4: every lexical identifier is probed for binding and description correctness. */
+/** Implements 5 and 12.4: every lexical identifier is probed through binding, description, position search and references. */
 @Tag("phase-4") @Tag("corpus")
 class IdentifierSweepTest {
     @TempDir Path temp;
-    @Test void bindingsAndDescriptionsMeetTheCommittedFloor()throws Exception{
+    @Test void allFourSymbolProbesMeetTheCommittedFloor()throws Exception{
         var reports=new ArrayList<Map<String,Object>>();double floor=Json.MAPPER.readTree(TestSupport.repo().resolve("jvmd-tests/floors.json").toFile()).path("identifier_correctness").asDouble();
         long total=0,correct=0;
         for(Path root:List.of(TestSupport.repo().resolve("jvmd-tests/corpus/petclinic"),TestSupport.repo())){
@@ -29,19 +29,26 @@ class IdentifierSweepTest {
                     long count=0,matched=0;var misses=new ArrayList<Map<String,Object>>();var text=new SourceText(Files.readString(file));
                     for(var token:text.tokens()){
                         count++;var position=text.position(token.start());
-                        var at=TestSupport.request(app.dispatcher(),"symbol.atPosition",Map.of("session",session,"path",file.toString(),"line",position.line(),"character",position.character())).path("result").path("result");
-                        String scip=at.path("scip").asText();boolean valid=!scip.isEmpty()&&at.path("name").asText().equals(token.text());
-                        if(valid){var described=TestSupport.request(app.dispatcher(),"symbol.describe",Map.of("session",session,"ref",scip)).path("result").path("result");valid=described.path("scip").asText().equals(scip)&&described.path("name").asText().equals(token.text());}
-                        if(!valid&&at.path("ambiguous").asBoolean()&&at.path("candidates").size()>1){
-                            valid=true;
-                            for(var candidate:at.path("candidates")){
-                                String id=candidate.path("scip").asText();
-                                if(id.isEmpty()||!candidate.path("name").asText().equals(token.text())){valid=false;break;}
-                                var described=TestSupport.request(app.dispatcher(),"symbol.describe",Map.of("session",session,"ref",id)).path("result").path("result");
-                                if(!described.path("scip").asText().equals(id)||!described.path("name").asText().equals(token.text())){valid=false;break;}
-                            }
+                        var location=Map.of("session",session,"path",file.toString(),"line",position.line(),"character",position.character());
+                        var at=TestSupport.request(app.dispatcher(),"symbol.atPosition",location).path("result").path("result");
+                        var found=TestSupport.request(app.dispatcher(),"symbol.find",location).path("result").path("result");
+                        var candidates=new ArrayList<com.fasterxml.jackson.databind.JsonNode>();
+                        if(at.path("ambiguous").asBoolean())at.path("candidates").forEach(candidates::add);else candidates.add(at);
+                        var foundIds=new LinkedHashSet<String>();if(found.path("ambiguous").asBoolean())found.path("candidates").forEach(c->foundIds.add(c.path("scip").asText()));else foundIds.add(found.path("scip").asText());
+                        var expectedIds=new LinkedHashSet<String>();candidates.forEach(c->expectedIds.add(c.path("scip").asText()));
+                        boolean valid=!candidates.isEmpty()&&!expectedIds.contains("")&&foundIds.equals(expectedIds);
+                        var evidence=new ArrayList<Object>();
+                        for(var candidate:candidates){
+                            String scip=candidate.path("scip").asText(),ref=scip.isEmpty()?token.text():scip;
+                            var described=TestSupport.request(app.dispatcher(),"symbol.describe",Map.of("session",session,"ref",ref)).path("result").path("result");
+                            var references=TestSupport.request(app.dispatcher(),"symbol.references",Map.of("session",session,"ref",ref,"direction","out","depth",1,"limit",1000)).path("result").path("result");
+                            boolean namesRoot=false;
+                            for(var symbol:references.path("symbols"))if(symbol.path("scip").asText().equals(scip)&&symbol.path("name").asText().equals(token.text()))namesRoot=true;
+                            boolean description=described.path("scip").asText().equals(scip)&&described.path("name").asText().equals(token.text());
+                            valid&=candidate.path("name").asText().equals(token.text())&&description&&namesRoot;
+                            evidence.add(Map.of("scip",scip,"description_names_token",description,"references_name_token",namesRoot));
                         }
-                        if(valid)matched++;else if(misses.size()<30)misses.add(Map.of("token",token.text(),"line",position.line()+1,"character",position.character(),"answer",at));
+                        if(valid)matched++;else if(misses.size()<30)misses.add(Map.of("token",token.text(),"line",position.line()+1,"character",position.character(),"answer",at,"find",found,"probes",evidence));
                     }
                     total+=count;correct+=matched;reports.add(Map.of("file",file.toString(),"identifiers",count,"correct",matched,"rate",count==0?1d:(double)matched/count,"misses",misses));
                     System.out.println("sweep-file "+root.relativize(file)+" "+matched+"/"+count);
@@ -53,6 +60,6 @@ class IdentifierSweepTest {
         var result=Map.of("identifiers",total,"correct",correct,"rate",rate,"floor",floor,"files",reports);
         Json.MAPPER.writerWithDefaultPrettyPrinter().writeValue(TestSupport.repo().resolve("jvmd-tests/target/sweep.json").toFile(),result);
         System.out.println("identifier-sweep "+correct+"/"+total+" rate="+rate);
-        assertThat(total).isGreaterThan(1000);assertThat(rate).as("identifier binding and description correctness").isGreaterThanOrEqualTo(floor);
+        assertThat(total).isGreaterThan(1000);assertThat(rate).as("identifier correctness across binding, description, position search and references").isGreaterThanOrEqualTo(floor);
     }
 }

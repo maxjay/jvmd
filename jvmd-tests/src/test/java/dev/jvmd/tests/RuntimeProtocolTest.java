@@ -40,7 +40,7 @@ class RuntimeProtocolTest {
             op(app,session,next,"break",Map.of("class","Probe","path",file.toString(),"line",3));awaitStop(app,session,next);
             assertThat(op(app,session,next,"eval",Map.of("expression","Probe.added()")).path("value").path("value").asText()).isEqualTo("99");
             op(app,session,next,"histogram",Map.of("jfr",Map.of("action","start","name","allocation","duration_seconds",60)));
-            var recording=op(app,session,next,"histogram",Map.of("jfr",Map.of("action","dump","name","allocation","path","target/allocation.jfr")));assertThat(Files.size(Path.of(recording.path("file").asText()))).isGreaterThan(1000);
+            var recording=op(app,session,next,"histogram",Map.of("jfr",Map.of("action","dump","name","allocation","path","target/recordings with spaces/allocation-%p-\"quoted\".jfr")));assertThat(Path.of(recording.path("file").asText())).isEqualTo(workspace.resolve("target/recordings with spaces/allocation-%p-\"quoted\".jfr"));assertThat(Files.size(Path.of(recording.path("file").asText()))).isGreaterThan(1000);
             op(app,session,next,"stop",Map.of());assertThat(call(app,"session.status",Map.of("session",session)).path("runs").isEmpty()).isTrue();
         }
     }

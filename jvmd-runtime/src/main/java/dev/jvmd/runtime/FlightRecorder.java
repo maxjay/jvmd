@@ -18,7 +18,17 @@ public final class FlightRecorder {
     }
     public Map<String,Object> dump(String name,Path destination)throws Exception{
         if(name==null||!name.matches("[A-Za-z0-9_-]{1,64}"))throw RpcException.invalid("Invalid recording name");
-        Files.createDirectories(destination.toAbsolutePath().getParent());var result=new LinkedHashMap<>(command(List.of("JFR.dump","name="+name,"filename="+destination.toAbsolutePath())));result.put("file",destination.toAbsolutePath().toString());return result;
+        destination=destination.toAbsolutePath().normalize();Files.createDirectories(destination.getParent());
+        Path temporary=Files.createTempDirectory("jvmd-recording-"),recording=temporary.resolve("capture.jfr");
+        try{
+            // jcmd joins argv and JFR parses quotes and %p/%t itself. Keep user paths out of
+            // that second parser, then publish the completed recording to the exact requested path.
+            String path=recording.toString().replace("%","%%"),quote=path.contains("\"")?"'":"\"";
+            if(path.contains(quote)||path.contains("\n")||path.contains("\r"))throw RpcException.invalid("Temporary recording directory cannot be represented by jcmd");
+            var result=new LinkedHashMap<>(command(List.of("JFR.dump","name="+name,"filename="+quote+path+quote)));
+            if(!Files.isRegularFile(recording)||Files.size(recording)==0)throw new RpcException(-32003,"unsupported_capability",Map.of("capability","jfr","reason","The JVM did not produce a recording","output",result));
+            Files.move(recording,destination,StandardCopyOption.REPLACE_EXISTING);result.put("file",destination.toString());return result;
+        }finally{Files.deleteIfExists(recording);Files.deleteIfExists(temporary);}
     }
     private Map<String,Object> command(List<String> arguments)throws Exception{
         var command=new ArrayList<String>(List.of(javaHome.resolve("bin/jcmd").toString(),Long.toString(pid)));command.addAll(arguments);

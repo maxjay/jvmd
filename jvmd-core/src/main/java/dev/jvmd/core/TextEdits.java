@@ -67,14 +67,17 @@ public final class TextEdits {
             }
             for(var change:plan.changes)unchanged(change);
             for(var change:plan.changes){
-                unchanged(change);Files.move(staged.get(change),change.target(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);applied.add(change);
+                unchanged(change);
+                if(change.file().equals(change.target()))Files.move(staged.get(change),change.target(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
+                else Files.createLink(change.target(),staged.get(change)); // Atomic create-if-absent: a concurrent destination is never overwritten.
+                applied.add(change);
                 if(!change.file().equals(change.target()))Files.delete(change.file());
             }
         }catch(Exception failure){
             for(var change:applied.reversed())try{
                 if(!Files.readString(change.target()).equals(change.after()))throw new java.io.IOException("Concurrent change prevents rollback: "+change.target());
                 Path backup=Files.createTempFile(change.file().getParent(),".jvmd-rollback-",".java");
-                try{Files.writeString(backup,change.before());Files.setPosixFilePermissions(backup,Files.getPosixFilePermissions(change.target()));Files.move(backup,change.file(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);}finally{Files.deleteIfExists(backup);}
+                try{Files.writeString(backup,change.before());Files.setPosixFilePermissions(backup,Files.getPosixFilePermissions(change.target()));if(change.file().equals(change.target()))Files.move(backup,change.file(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);else if(Files.exists(change.file())){if(!Files.readString(change.file()).equals(change.before()))throw new java.io.IOException("Concurrent source prevents rollback: "+change.file());}else Files.createLink(change.file(),backup);}finally{Files.deleteIfExists(backup);}
                 if(!change.target().equals(change.file()))Files.delete(change.target());
             }catch(Exception rollback){failure.addSuppressed(rollback);}
             throw failure;

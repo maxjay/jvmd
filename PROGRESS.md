@@ -313,3 +313,7 @@ The Maven 4 AOT probe initially stopped before measurement because its Spring fi
 ### Complete identifier-sweep contract
 
 The corpus sweep now invokes position search and outgoing references for every identifier as well as binding and description. A token counts as correct only when all four answers retain its name and SCIP identity; ambiguous static imports must satisfy the checks for every candidate. Unresolved tokens stay in the denominator and still receive every probe. The committed 0.97 floor is unchanged. Expanded corpus execution pending.
+
+### Runtime profiling and exact file publication
+
+Hot-swap responses now separate class lookup, redefinition, class publication and breakpoint rebinding, while the performance evidence also captures daemon request metrics. This identifies the extra latency observed outside the compiler without changing the request budget. JFR dumps use a temporary recording and publish it to the exact requested path, avoiding jcmd's second-stage quote and percent-substitution parser; the runtime protocol test now uses spaces, quotes and a literal `%p`. The behavior was checked against OpenJDK's JCmd/Arguments and JFR ArgumentParser sources. Renamed source files use atomic create-if-absent publication, preventing a concurrently created destination from being overwritten; rollback also preserves concurrent edits. CI validation pending.

@@ -249,8 +249,14 @@ public final class Application implements AutoCloseable {
         var analyzer=(Analyzer)session.state("analyzer");
         if((ref.startsWith("maven ")||ref.startsWith("local "))&&analyzer!=null){
             var known=analyzer.known(ref);if(known.size()==1){var symbol=known.getFirst();var file=symbol.get("source_file");
+                if(file!=null&&session.state("workspace_bindings")!=null){
+                    var workspace=workspaceBindings(session,false);var cached=workspace==null?null:workspace.symbols().get(ref);
+                    if(cached!=null&&Objects.equals(cached.get("source_file"),file)&&cached.get("name_start") instanceof Number)
+                        return new Envelope(workspace.tier(),"live",false,null,workspace.warnings(),cached);
+                }
                 if(file!=null&&(Files.isRegularFile(Path.of(file.toString()))||documents(session).contains(Path.of(file.toString())))&&symbol.get("name_start") instanceof Number position){
-                    Path path=Path.of(file.toString());String text=documents(session).text(path);var snapshot=analyzer(session,path).bindings(path,text,position.intValue());if(snapshot.result()!=null){var current=snapshot.result().symbols().get(ref);if(current!=null)return new Envelope(snapshot.tier(),"live",false,null,snapshot.warnings(),current);}
+                    Path path=Path.of(file.toString());
+                    String text=documents(session).text(path);var snapshot=analyzer(session,path).bindings(path,text,position.intValue());if(snapshot.result()!=null){var current=snapshot.result().symbols().get(ref);if(current!=null)return new Envelope(snapshot.tier(),"live",false,null,snapshot.warnings(),current);}
                 }else return Envelope.of(2,"live",symbol);
             }
         }

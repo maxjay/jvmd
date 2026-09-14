@@ -388,3 +388,10 @@ The partial expanded corpus trace contained 3,651 successful reference requests 
 ### Source ownership follows the effective Maven roots
 
 Final review found that build-helper sources outside a module directory were assigned the parent aggregator's compiler context. Module selection now prefers the effective main/test source roots and assigns their source identities to the owning module. A protocol test covers a shared source directory outside its child module, sibling type resolution, and the child artifact's SCIP identity. This is relevant to the repository's shared native resolver engine. Validation awaits CI on this commit.
+
+
+### Preserve focused compiler contexts during source navigation
+
+Commit f633c639 passed all checkpoints: 136 Java tests across 95 suites, no failures or skips, plus the Node shim tests. Its Maven 4 offline direct executor reduced cold resolution from the previous 1094.949124 ms to 999.254122 ms, with warm p95 2.621265 ms; cold margin remains small. Startup was 247.012402 ms, focused p95 36.158071 ms, documentation p95 9.882501 ms, and full body hot-swap p95 86.291841 ms.
+
+The expanded sweep progressed through PetClinic into the daemon sources, but repeated source descriptions can reconfigure the compiler for a different module and evict the current file's focused bindings. Validated workspace descriptions now satisfy known source references directly. Declaration metadata takes precedence over later implicit/binary references to retain source positions and documentation. The cache protocol test now requires repeated source descriptions to preserve the compiler query count while retaining the existing content-change checks. The full four-probe sweep remains required.

@@ -32,6 +32,14 @@ class WorkspaceBindingsCacheTest {
             String session=TestSupport.open(app,root);
             assertThat(references(app,session).path("edges").toString()).contains("Api#a().");
             long initial=builds(app,session);references(app,session);assertThat(builds(app,session)).isEqualTo(initial);
+            var bound=request(app,"symbol.atPosition",Map.of("session",session,"path",caller.toString(),"line",0,"character",first.indexOf("a()")));
+            String identity=bound.path("scip").asText();assertThat(identity).endsWith("Api#a().");
+            long queries=request(app,"session.status",Map.of("session",session)).path("analyzer").path("queries").asLong();
+            for(int i=0;i<4;i++){
+                var described=request(app,"symbol.describe",Map.of("session",session,"ref",identity));assertThat(described.path("file").asText()).isEqualTo(api.toString());
+                assertThat(described.path("name_start").asInt(-1)).isGreaterThanOrEqualTo(0);
+            }
+            assertThat(request(app,"session.status",Map.of("session",session)).path("analyzer").path("queries").asLong()).isEqualTo(queries);
             var stamp=Files.getLastModifiedTime(caller);Files.writeString(caller,second);Files.setLastModifiedTime(caller,stamp);
             assertThat(references(app,session).path("edges").toString()).contains("Api#b().").doesNotContain("Api#a().");assertThat(builds(app,session)).isGreaterThan(initial);
             request(app,"document.open",Map.of("session",session,"path",caller.toString(),"version",1,"text",first));

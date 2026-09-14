@@ -79,6 +79,8 @@ public final class WorkspaceBindings implements AutoCloseable {
             }
         }
         if(!current.equals(inputs(sources.files(),classpath,documents,generation))){warnings.add("workspace_changed_during_query: retry for a consistent graph");tier=Math.min(tier,1);}
+        // A declaration keeps its complete source metadata over later binary or implicit references.
+        symbols.putAll(declarations);
         var edgeList=List.copyOf(edges);var outgoing=new LinkedHashMap<String,List<Integer>>();var incoming=new LinkedHashMap<String,List<Integer>>();
         for(int i=0;i<edgeList.size();i++){var edge=edgeList.get(i);outgoing.computeIfAbsent(edge.src(),k->new ArrayList<>()).add(i);incoming.computeIfAbsent(edge.dst(),k->new ArrayList<>()).add(i);}
         var edgeOccurrences=new LinkedHashMap<Bindings.Edge,List<Integer>>();

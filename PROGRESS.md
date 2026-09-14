@@ -78,3 +78,16 @@ explicit owner-first joins and a composite index removed it. The complete pass a
 structural linking, with code-edge indexing still untouched until an explicit reference query.
 AOT training now exercises a mid-sized Jackson index, Maven resolution, and twenty parse/search
 requests; strict cache loading passes. Phase-3 CI confirmation is pending publication.
+
+Phase-3 CI gate: PASS in [run 34804015960](https://github.com/maxjay/jvmd/actions/runs/34804015960),
+all ten tests across nine checkpoint classes. CI's 202-artifact Maven repository indexes in
+33,135 ms: 224,278 symbols and 223,374 structural edges, no faults. The first integration run
+caught overview p95=81.618 ms during eager indexing. A bounded, content-keyed parse-result cache
+fixed the real regression; unchanged source does not repay parsing, and edit invalidation is
+regression-tested. Repeat CI: startup 309.406 ms, overview p95 11.438 ms; resolver cold 492.935 ms,
+warm p95 1.648 ms. Budgets remain unchanged. Phases 1–3 now pass together.
+
+## Phase 4 — prerequisite passed, implementation in progress
+
+The tolerant compiler smoke confirms bindings survive mixed syntax/type errors and the indexed
+file-manager fault boundary catches a class disappearing after enumeration. See SMOKE.md.

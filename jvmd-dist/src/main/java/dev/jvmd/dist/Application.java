@@ -280,6 +280,7 @@ public final class Application implements AutoCloseable {
         var description=describe(session,Dispatcher.required(params,"ref"));
         if(!(description.result() instanceof Map<?,?> target)||target.get("scip")==null)return description;
         editable(session,target);
+        if(newName.equals(target.get("name")))return Envelope.of(2,"live",Map.of("applied",false,"changes",List.of(),"diagnostics",List.of(),"verified",false));
         var symbols=new LinkedHashMap<String,Map<String,Object>>();var occurrences=new ArrayList<Bindings.Occurrence>();var edges=new LinkedHashSet<Bindings.Edge>();
         for(Path file:sourceFiles(session)){
             var snapshot=analyzer(session,file).bindings(file,documents(session).text(file),null);
@@ -294,8 +295,14 @@ public final class Application implements AutoCloseable {
             for(String member:family){var symbol=symbols.get(member);if(symbol==null)throw RpcException.invalid("Override declaration is unavailable: "+member);editable(session,symbol);}
         }
         var edits=new LinkedHashMap<String,TextEdits.Edit>();var renames=new LinkedHashMap<Path,Path>();
+        var imported=new HashMap<String,Set<String>>();for(var occurrence:occurrences)if(occurrence.importSite()!=null)imported.computeIfAbsent(occurrence.file()+":"+occurrence.start(),_->new HashSet<>()).add(occurrence.scip());
         for(var occurrence:occurrences)if(family.contains(occurrence.scip())){
-            Path file=sourcePath(session,occurrence.file());edits.putIfAbsent(file+":"+occurrence.start(),new TextEdits.Edit(file,occurrence.start(),occurrence.end(),newName));
+            Path file=sourcePath(session,occurrence.file());var site=occurrence.importSite();
+            boolean remaining=site!=null&&!family.containsAll(imported.get(occurrence.file()+":"+occurrence.start()));
+            if(remaining){
+                String text=documents(session).text(file),newline=text.contains("\r\n")?"\r\n":"\n";
+                edits.putIfAbsent(file+":import:"+site.start(),new TextEdits.Edit(file,site.end(),site.end(),newline+"import static "+site.qualifier()+"."+newName+";"+newline));
+            }else edits.putIfAbsent(file+":"+occurrence.start(),new TextEdits.Edit(file,occurrence.start(),occurrence.end(),newName));
         }
         if(edits.isEmpty())throw RpcException.invalid("No resolved source occurrences for the rename");
         if(type){Path file=editable(session,target);String old=target.get("name").toString();if(!target.get("name_path").toString().contains("/")&&file.getFileName().toString().equals(old+".java")&&!newName.equals(old))renames.put(file,file.resolveSibling(newName+".java"));}

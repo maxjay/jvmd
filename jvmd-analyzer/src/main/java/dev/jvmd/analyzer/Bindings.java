@@ -11,12 +11,23 @@ import javax.lang.model.type.*;
 /** Implements 4.2: immutable binding snapshots; no compiler-owned object escapes the query. */
 public final class Bindings {
     /** Implements 4.2 and 4.9: a bound identifier in UTF-16 source coordinates. */
-    public record Occurrence(String scip,String token,String file,int start,int end,SourceText.Range range,String role,String container) { }
+    public record Occurrence(String scip,String token,String file,int start,int end,SourceText.Range range,String role,String container,ImportSite importSite) {
+        public Occurrence(String scip,String token,String file,int start,int end,SourceText.Range range,String role,String container){this(scip,token,file,start,end,range,role,container,null);}
+    }
+    /** Implements 4.9: a single-static-import can name multiple overloaded methods. */
+    public record ImportSite(int start,int end,String qualifier) { }
     /** Implements 4.4: resolved structural and source-code relationships. */
     public record Edge(String src,String dst,String kind) { }
     /** Implements 4.2: detached declarations, references and source dependencies. */
     public record Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies) {
-        public Map<String,Object> at(int offset){return occurrences.stream().filter(o->o.start()<=offset&&offset<o.end()).min(Comparator.comparingInt(o->o.end()-o.start())).map(o->{var value=new LinkedHashMap<String,Object>(symbols.get(o.scip()));value.put("occurrence",o);return Collections.unmodifiableMap(value);}).orElse(null);}
+        public Map<String,Object> at(int offset){
+            var occurrence=occurrences.stream().filter(o->o.start()<=offset&&offset<o.end()).min(Comparator.comparingInt(o->o.end()-o.start())).orElse(null);if(occurrence==null)return null;
+            if(occurrence.importSite()!=null){
+                var candidates=occurrences.stream().filter(o->o.start()==occurrence.start()&&o.end()==occurrence.end()&&o.importSite()!=null).map(o->symbols.get(o.scip())).distinct().toList();
+                if(candidates.size()>1)return Map.of("resolved",true,"ambiguous",true,"name",occurrence.token(),"occurrence",occurrence,"candidates",candidates);
+            }
+            var value=new LinkedHashMap<String,Object>(symbols.get(occurrence.scip()));value.put("occurrence",occurrence);return Collections.unmodifiableMap(value);
+        }
     }
     private Bindings() { }
     public static Snapshot capture(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,Path requested,String original,boolean bodies){
@@ -113,6 +124,22 @@ public final class Bindings {
         var capture=new Capture();
         for(var unit:units)new TreePathScanner<Void,String>(){
             Element element(){var element=trees.getElement(getCurrentPath());if(getCurrentPath().getLeaf() instanceof ClassTree||getCurrentPath().getLeaf() instanceof MethodTree||getCurrentPath().getLeaf() instanceof VariableTree||getCurrentPath().getLeaf() instanceof TypeParameterTree)identity.remember(element,getCurrentPath());return element;}
+            @Override public Void visitImport(ImportTree tree,String parent){
+                if(tree.isStatic()&&tree.getQualifiedIdentifier() instanceof MemberSelectTree selected&&!selected.getIdentifier().contentEquals("*")){
+                    var selectedPath=new TreePath(getCurrentPath(),selected);var owner=trees.getElement(new TreePath(selectedPath,selected.getExpression()));
+                    if(owner instanceof TypeElement type&&type.asType() instanceof DeclaredType declared){
+                        var scope=trees.getScope(getCurrentPath());var text=capture.source(unit);int begin=capture.start(unit,selected),finish=capture.end(unit,selected);
+                        var token=text.named(selected.getIdentifier().toString(),begin,finish,true);
+                        if(token!=null)for(var member:task.getElements().getAllMembers(type))
+                            if(member.getModifiers().contains(Modifier.STATIC)&&member.getSimpleName().contentEquals(selected.getIdentifier())&&trees.isAccessible(scope,member,declared)){
+                                String scip=capture.symbol(member);if(scip==null)continue;String file=Path.of(unit.getSourceFile().toUri()).toString();
+                                var site=new ImportSite(capture.start(unit,tree),capture.end(unit,tree),selected.getExpression().toString());
+                                occurrences.putIfAbsent(file+":"+token.start()+":"+scip,new Occurrence(scip,token.text(),file,token.start(),token.end(),text.range(token.start(),token.end()),"import",null,site));
+                            }
+                    }
+                }
+                return super.visitImport(tree,parent);
+            }
             @Override public Void visitClass(ClassTree tree,String parent){var e=element();String scip=capture.symbol(e);if(e!=null){capture.occurrence(getCurrentPath(),e,identity.displayName(e),true,"declaration",parent);capture.structure(e);}return super.visitClass(tree,scip);}
             @Override public Void visitMethod(MethodTree tree,String parent){var e=element();
                 int begin=capture.start(unit,tree),end=capture.end(unit,tree);

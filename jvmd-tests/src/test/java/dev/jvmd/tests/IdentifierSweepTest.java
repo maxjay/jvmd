@@ -32,6 +32,15 @@ class IdentifierSweepTest {
                         var at=TestSupport.request(app.dispatcher(),"symbol.atPosition",Map.of("session",session,"path",file.toString(),"line",position.line(),"character",position.character())).path("result").path("result");
                         String scip=at.path("scip").asText();boolean valid=!scip.isEmpty()&&at.path("name").asText().equals(token.text());
                         if(valid){var described=TestSupport.request(app.dispatcher(),"symbol.describe",Map.of("session",session,"ref",scip)).path("result").path("result");valid=described.path("scip").asText().equals(scip)&&described.path("name").asText().equals(token.text());}
+                        if(!valid&&at.path("ambiguous").asBoolean()&&at.path("candidates").size()>1){
+                            valid=true;
+                            for(var candidate:at.path("candidates")){
+                                String id=candidate.path("scip").asText();
+                                if(id.isEmpty()||!candidate.path("name").asText().equals(token.text())){valid=false;break;}
+                                var described=TestSupport.request(app.dispatcher(),"symbol.describe",Map.of("session",session,"ref",id)).path("result").path("result");
+                                if(!described.path("scip").asText().equals(id)||!described.path("name").asText().equals(token.text())){valid=false;break;}
+                            }
+                        }
                         if(valid)matched++;else if(misses.size()<30)misses.add(Map.of("token",token.text(),"line",position.line()+1,"character",position.character(),"answer",at));
                     }
                     total+=count;correct+=matched;reports.add(Map.of("file",file.toString(),"identifiers",count,"correct",matched,"rate",count==0?1d:(double)matched/count,"misses",misses));

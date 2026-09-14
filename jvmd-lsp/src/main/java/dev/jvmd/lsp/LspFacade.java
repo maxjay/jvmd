@@ -90,7 +90,29 @@ public final class LspFacade {
             return query.finish(items.isEmpty()?Json.MAPPER.nullNode():Json.MAPPER.valueToTree(Map.of("signatures",items,"activeSignature",signatures.path("activeSignature").asInt(),"activeParameter",signatures.path("activeParameter").asInt())));
         }
         if(!Set.of("textDocument/hover","textDocument/definition","textDocument/references","textDocument/rename","textDocument/prepareRename").contains(method))throw new RpcException(-32601,"Method not found",Map.of("method",method));
-        var symbol=query.one("symbol.atPosition",arguments);if(!symbol.hasNonNull("scip"))return query.finish(Json.MAPPER.nullNode());String ref=symbol.path("scip").asText();
+        var symbol=query.one("symbol.atPosition",arguments);
+        if(symbol.path("ambiguous").asBoolean()&&!symbol.hasNonNull("scip")){
+            if(method.equals("textDocument/hover")){
+                var signatures=new ArrayList<String>();for(var candidate:symbol.path("candidates"))signatures.add(candidate.path("signature").asText());
+                return query.finish(Json.MAPPER.valueToTree(Map.of("contents",Map.of("kind","markdown","value","~~~java\n"+String.join("\n",signatures)+"\n~~~"),"range",symbol.path("occurrence").path("range"))));
+            }
+            if(method.equals("textDocument/definition")||method.equals("textDocument/references")){
+                var locations=new LinkedHashMap<String,JsonNode>();
+                for(var candidate:symbol.path("candidates")){
+                    if(method.equals("textDocument/definition")){
+                        if(!candidate.hasNonNull("source_file"))candidate=query.one("symbol.describe",Json.MAPPER.createObjectNode().put("ref",candidate.path("scip").asText()).put("detail","summary").put("doc_depth",1));
+                        var found=location(candidate);if(!found.isNull())locations.putIfAbsent(found.toString(),found);
+                    }else{
+                        var found=query.all("symbol.occurrences",Json.MAPPER.createObjectNode().put("ref",candidate.path("scip").asText()).put("include_declaration",nativeParams.path("context").path("includeDeclaration").asBoolean()).put("limit",1000),"occurrences");
+                        for(var occurrence:found.path("occurrences")){JsonNode value=Json.MAPPER.valueToTree(Map.of("uri",uri(occurrence.path("file").asText()),"range",occurrence.path("range")));locations.putIfAbsent(value.toString(),value);}
+                    }
+                }
+                return query.finish(Json.MAPPER.valueToTree(locations.values()));
+            }
+            if(method.equals("textDocument/rename"))throw RpcException.invalid("This import names multiple overloads; select a declaration or call to rename one overload");
+            return query.finish(Json.MAPPER.nullNode());
+        }
+        if(!symbol.hasNonNull("scip"))return query.finish(Json.MAPPER.nullNode());String ref=symbol.path("scip").asText();
         if(method.equals("textDocument/hover")){
             var described=query.one("symbol.describe",Json.MAPPER.createObjectNode().put("ref",ref).put("detail","full").put("doc_depth",0));String signature=described.path("signature").asText(symbol.path("signature").asText());String doc=described.path("doc").asText("");
             String markdown="~~~java\n"+signature+"\n~~~"+(doc.isEmpty()?"":"\n\n"+doc)+(query.warnings.isEmpty()?"":"\n\n"+String.join("\n\n",query.warnings));

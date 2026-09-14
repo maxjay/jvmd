@@ -64,7 +64,10 @@ public final class VersionModels implements Models {
     private RepositorySystemSession.CloseableSession base(boolean offline) {
         return new MavenSessionBuilderSupplier(system,false).get().setSystemProperties(environment.systemProperties())
                 .setOffline(offline).setConfigProperty("aether.conflictResolver.verbose",true)
-                .setConfigProperty("aether.dependencyCollector.impl","bf").setUpdatePolicy(RepositoryPolicy.UPDATE_POLICY_NEVER)
+                .setConfigProperty("aether.dependencyCollector.impl","bf")
+                // Resolver's direct executor avoids worker/class-loading contention for local POMs.
+                // The online fill retains native parallel collection for network transfers.
+                .setConfigProperty("aether.dependencyCollector.bf.threads",offline?1:5).setUpdatePolicy(RepositoryPolicy.UPDATE_POLICY_NEVER)
                 .withLocalRepositories(new LocalRepository(config.m2Repo(),"simple")).build();
     }
     @Override public Settings settings(Path root) throws Exception {

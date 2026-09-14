@@ -131,3 +131,6 @@ Phase 5 full regression: PASS, CI run 34811222662, commit b193a37.
 - Phase 6 implementation now includes ordered manifest roots, Maven reactor discovery, source-only dependencies, built-output substitution, version/cycle status, navigation and diagnostic origins. Its tests are queued.
 - The source-lookup exit test also exercises the initial phase-10 JDI launch, line-breakpoint and frame implementation. Phase 10 is permitted after phase 4; memory inspection, eval, hotswap and its complete gate remain in progress.
 - Processor content hashes now reuse Linux change-time/file stamps on unchanged inputs; a processor-bytecode replacement test preserves mtime to verify regeneration.
+
+
+2026-09-14: Commit 158e639 passed independent checkpoint and full corpus jobs (run 34812834988). Phase 6 repository substitution, source invalidation, diagnostic origins and cross-root JDI breakpoint tests pass. Local module index artifacts remain open. The next optimization omits unrelated method answer DTOs from focused queries while retaining their signature dependencies; a regression covers overload ambiguity after an unselected parameter hierarchy changes. The 50 ms budget and corpus floor are unchanged.

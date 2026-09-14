@@ -23,6 +23,9 @@ public final class Bindings {
         return capture(task,units,identity,requested,new SourceText(original),bodies);
     }
     public static Snapshot capture(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,Path requested,SourceText original,boolean bodies){
+        return capture(task,units,identity,requested,original,bodies,null);
+    }
+    public static Snapshot capture(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,Path requested,SourceText original,boolean bodies,Focusing.Span focus){
         var trees=Trees.instance(task);var docs=DocTrees.instance(task);var symbols=new LinkedHashMap<String,Map<String,Object>>();var occurrences=new LinkedHashMap<String,Occurrence>();var edges=new LinkedHashSet<Edge>();var dependencies=new LinkedHashSet<Path>();
         var texts=new HashMap<String,SourceText>();texts.put(requested.toUri().toString(),original);
         class Capture {
@@ -73,6 +76,22 @@ public final class Bindings {
                 else if(type instanceof WildcardType wildcard){typeEdges(owner,wildcard.getExtendsBound(),kind,visited);typeEdges(owner,wildcard.getSuperBound(),kind,visited);}
                 else if(type instanceof IntersectionType intersection)for(var bound:intersection.getBounds())typeEdges(owner,bound,kind,visited);
             }
+            final Set<Object> dependencyTypes=new HashSet<>();
+            void dependencyType(TypeMirror type){
+                if(type==null||type.getKind().isPrimitive()||type.getKind()==TypeKind.VOID||type.getKind()==TypeKind.NONE||type.getKind()==TypeKind.ERROR)return;
+                if(!dependencyTypes.add(type instanceof TypeVariable variable?variable.asElement():type.toString()))return;
+                if(type instanceof ArrayType array)dependencyType(array.getComponentType());
+                else if(type instanceof DeclaredType declared){
+                    String file=identity.sourceFile(declared.asElement());if(file!=null){dependencies.add(Path.of(file));for(var parent:task.getTypes().directSupertypes(type))dependencyType(parent);}
+                    for(var argument:declared.getTypeArguments())dependencyType(argument);
+                }else if(type instanceof TypeVariable variable)dependencyType(variable.getUpperBound());
+                else if(type instanceof WildcardType wildcard){dependencyType(wildcard.getExtendsBound());dependencyType(wildcard.getSuperBound());}
+                else if(type instanceof IntersectionType intersection)for(var bound:intersection.getBounds())dependencyType(bound);
+            }
+            void signatureDependencies(Element element){
+                if(element instanceof ExecutableElement method){dependencyType(method.getReturnType());for(var parameter:method.getParameters())dependencyType(parameter.asType());for(var exception:method.getThrownTypes())dependencyType(exception);for(var parameter:method.getTypeParameters())for(var bound:parameter.getBounds())dependencyType(bound);}
+                if(element!=null)for(var annotation:element.getAnnotationMirrors())dependencyType(annotation.getAnnotationType());
+            }
             void structure(Element element){
                 String owner=symbol(element);if(owner==null)return;
                 if(element instanceof TypeElement type){typeEdges(owner,type.getSuperclass(),"extends",new HashSet<>());for(var parent:type.getInterfaces())typeEdges(owner,parent,type.getKind().isInterface()?"extends":"implements",new HashSet<>());}
@@ -93,7 +112,10 @@ public final class Bindings {
         for(var unit:units)new TreePathScanner<Void,String>(){
             Element element(){var element=trees.getElement(getCurrentPath());if(getCurrentPath().getLeaf() instanceof ClassTree||getCurrentPath().getLeaf() instanceof MethodTree||getCurrentPath().getLeaf() instanceof VariableTree||getCurrentPath().getLeaf() instanceof TypeParameterTree)identity.remember(element,getCurrentPath());return element;}
             @Override public Void visitClass(ClassTree tree,String parent){var e=element();String scip=capture.symbol(e);if(e!=null){capture.occurrence(getCurrentPath(),e,identity.displayName(e),true,"declaration",parent);capture.structure(e);}return super.visitClass(tree,scip);}
-            @Override public Void visitMethod(MethodTree tree,String parent){var e=element();String scip=capture.symbol(e);if(e!=null){capture.occurrence(getCurrentPath(),e,identity.displayName(e),true,"declaration",parent);capture.structure(e);}if(bodies)return super.visitMethod(tree,scip);scan(tree.getModifiers(),scip);scan(tree.getReturnType(),scip);scan(tree.getTypeParameters(),scip);scan(tree.getParameters(),scip);scan(tree.getThrows(),scip);return null;}
+            @Override public Void visitMethod(MethodTree tree,String parent){var e=element();
+                int begin=capture.start(unit,tree),end=capture.end(unit,tree);
+                if(focus!=null&&(end<=focus.start()||begin>=focus.end())){capture.signatureDependencies(e);return null;}
+                String scip=capture.symbol(e);if(e!=null){capture.occurrence(getCurrentPath(),e,identity.displayName(e),true,"declaration",parent);capture.structure(e);}if(bodies)return super.visitMethod(tree,scip);scan(tree.getModifiers(),scip);scan(tree.getReturnType(),scip);scan(tree.getTypeParameters(),scip);scan(tree.getParameters(),scip);scan(tree.getThrows(),scip);return null;}
             @Override public Void visitVariable(VariableTree tree,String parent){var e=element();if(e!=null){capture.occurrence(getCurrentPath(),e,identity.displayName(e),true,"declaration",parent);capture.structure(e);}scan(tree.getModifiers(),parent);scan(tree.getType(),parent);if(bodies)scan(tree.getInitializer(),e!=null&&e.getKind().isField()?capture.symbol(e):parent);return null;}
             @Override public Void visitTypeParameter(TypeParameterTree tree,String parent){var e=element();if(e!=null)capture.occurrence(getCurrentPath(),e,tree.getName().toString(),true,"declaration",parent);return super.visitTypeParameter(tree,parent);}
             @Override public Void visitBlock(BlockTree tree,String parent){return bodies?super.visitBlock(tree,parent):null;}

@@ -17,8 +17,10 @@ public final class SourceText {
     public Position position(long offset){int point=(int)Math.max(0,Math.min(text.length(),offset));int line=Arrays.binarySearch(lines,point);if(line<0)line=-line-2;return new Position(line,point-lines[line]);}
     public int offset(int line,int character){if(line<0||line>=lines.length||character<0)throw new IllegalArgumentException("Position outside file");int offset=lines[line]+character;int end=line+1<lines.length?lines[line+1]-1:text.length();if(offset>end)throw new IllegalArgumentException("Position outside line");return offset;}
     public Range range(long start,long end){return new Range(position(start),position(Math.max(start,end)));}
-    public Token tokenAt(int offset){for(var token:tokens())if(token.start()<=offset&&offset<token.end())return token;return null;}
-    public Token named(String name,int start,int end,boolean last){Token selected=null;for(var token:tokens())if(token.start()>=start&&token.end()<=end&&token.text().equals(name)){selected=token;if(!last)return token;}return selected;}
+    public Token tokenAt(int offset){var values=tokens();int index=lowerBound(offset);if(index<values.size()&&values.get(index).start()==offset)return values.get(index);if(index>0&&values.get(index-1).end()>offset)return values.get(index-1);return null;}
+    public Token named(String name,int start,int end,boolean last){Token selected=null;for(var token:tokens(start,end))if(token.text().equals(name)){selected=token;if(!last)return token;}return selected;}
+    private int lowerBound(int offset){var values=tokens();int low=0,high=values.size();while(low<high){int middle=(low+high)>>>1;if(values.get(middle).start()<offset)low=middle+1;else high=middle;}return low;}
+    public List<Token> tokens(int start,int end){var values=tokens();int from=lowerBound(start),to=lowerBound(end);if(to>from&&values.get(to-1).end()>end)to--;return values.subList(from,Math.max(from,to));}
     public int nextCode(int start){int i=start;while(i<text.length()){if(Character.isWhitespace(text.charAt(i))){i++;continue;}if(text.startsWith("/*",i)){int end=text.indexOf("*/",i+2);i=end<0?text.length():end+2;continue;}if(text.startsWith("//",i)){int end=text.indexOf('\n',i+2);i=end<0?text.length():end+1;continue;}break;}return i;}
     public List<Token> tokens(){
         if(tokens!=null)return tokens;var result=new ArrayList<Token>();

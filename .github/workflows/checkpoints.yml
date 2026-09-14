@@ -58,5 +58,6 @@ jobs:
             jvmd-tests/target/surefire-reports/
             jvmd-tests/target/*perf.json
             jvmd-tests/target/agreement.json
+            jvmd-tests/target/sweep.json
             jvmd-tests/target/daemon-perf-output.log
             jvmd-dist/target/training-state/*.log

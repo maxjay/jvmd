@@ -20,8 +20,11 @@ public final class Bindings {
     }
     private Bindings() { }
     public static Snapshot capture(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,Path requested,String original,boolean bodies){
+        return capture(task,units,identity,requested,new SourceText(original),bodies);
+    }
+    public static Snapshot capture(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,Path requested,SourceText original,boolean bodies){
         var trees=Trees.instance(task);var docs=DocTrees.instance(task);var symbols=new LinkedHashMap<String,Map<String,Object>>();var occurrences=new LinkedHashMap<String,Occurrence>();var edges=new LinkedHashSet<Edge>();var dependencies=new LinkedHashSet<Path>();
-        var texts=new HashMap<String,SourceText>();texts.put(requested.toUri().toString(),new SourceText(original));
+        var texts=new HashMap<String,SourceText>();texts.put(requested.toUri().toString(),original);
         class Capture {
             SourceText source(CompilationUnitTree unit){return texts.computeIfAbsent(unit.getSourceFile().toUri().toString(),key->{try{return new SourceText(unit.getSourceFile().getCharContent(true).toString());}catch(Exception e){return new SourceText("");}});}
             int start(CompilationUnitTree unit,Tree tree){return (int)trees.getSourcePositions().getStartPosition(unit,tree);}
@@ -30,7 +33,7 @@ public final class Bindings {
                 var unit=path.getCompilationUnit();var tree=path.getLeaf();var text=source(unit);int begin=start(unit,tree),finish=end(unit,tree);if(begin<0||finish<begin)return null;String name=identity.displayName(element);
                 if(tree instanceof MethodTree method){
                     int prefix=begin;if(method.getReturnType()!=null)prefix=Math.max(prefix,end(unit,method.getReturnType()));for(var parameter:method.getTypeParameters())prefix=Math.max(prefix,end(unit,parameter));
-                    for(var token:text.tokens())if(token.start()>=prefix&&token.end()<=finish&&token.text().equals(name)){int next=text.nextCode(token.end());if(next<text.text().length()&&text.text().charAt(next)=='(')return token;}
+                    for(var token:text.tokens(prefix,finish))if(token.text().equals(name)){int next=text.nextCode(token.end());if(next<text.text().length()&&text.text().charAt(next)=='(')return token;}
                 }else if(tree instanceof VariableTree variable)return text.named(name,begin,variable.getInitializer()==null?finish:start(unit,variable.getInitializer()),true);
                 else if(tree instanceof ClassTree type)return text.named(name,Math.max(begin,end(unit,type.getModifiers())),finish,false);
                 else return text.named(name,begin,finish,false);
@@ -40,7 +43,7 @@ public final class Bindings {
                 if(element==null||element.asType().getKind()==TypeKind.ERROR)return null;
                 final String scip;try{scip=identity.scip(element);}catch(IllegalArgumentException unresolved){return null;}
                 if(symbols.containsKey(scip))return scip;
-                var row=new LinkedHashMap<String,Object>();row.put("scip",scip);row.put("name",identity.displayName(element));row.put("name_path",identity.namePath(element));row.put("kind",SymbolIdentity.kind(element));row.put("signature",identity.signature(element));row.put("gav",identity.gav(element));row.put("artifact",identity.gav(element));row.put("resolved",true);row.put("modifiers",element.getModifiers().stream().map(Object::toString).sorted().toList());
+                var row=new LinkedHashMap<String,Object>();row.put("scip",scip);row.put("name",identity.displayName(element));try{row.put("name_path",identity.namePath(element));}catch(IllegalArgumentException unresolved){row.put("name_path",identity.displayName(element));row.put("signature_complete",false);}row.put("kind",SymbolIdentity.kind(element));row.put("signature",identity.signature(element));row.put("gav",identity.gav(element));row.put("artifact",identity.gav(element));row.put("resolved",true);row.put("modifiers",element.getModifiers().stream().map(Object::toString).sorted().toList());
                 var declaring=identity.declaring(element);row.put("declaring",declaring==null?null:declaring.getQualifiedName().toString());row.put("fqn",declaring==null?null:identity.binaryName(declaring));
                 row.put("parameters",element instanceof ExecutableElement m?m.getParameters().stream().map(p->p.getSimpleName().toString()).toList():List.of());
                 row.put("type_parameters",element instanceof Parameterizable generic?generic.getTypeParameters().stream().map(Object::toString).toList():List.of());

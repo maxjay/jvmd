@@ -35,11 +35,12 @@ public final class Verifier {
         String executable=Path.of(command.getFirst()).getFileName().toString();
         boolean maven=Set.of("mvn","mvnw","mvnd").contains(executable);
         if(maven){command.add("-Dmaven.compiler.fork=true");command.add("-Dmaven.compiler.executable="+wrapper);command.add("-Dstyle.color=never");}
+        Process running=null;
         try{
             var builder=new ProcessBuilder(command).directory(root.toFile()).redirectErrorStream(true);
             builder.environment().put("JVMD_VERIFY_JAVAC",config.jdkHome().resolve("bin/javac").toString());builder.environment().put("JVMD_VERIFY_CAPTURE",captures.toString());
             builder.environment().put("JAVA_HOME",config.jdkHome().toString());
-            Process process=builder.start();var tail=new ArrayDeque<String>();int[] length={0};
+            Process process=builder.start();running=process;var tail=new ArrayDeque<String>();int[] length={0};
             var reader=Thread.ofVirtual().name("jvmd-verify-output").start(()->{
                 try(var stream=process.inputReader(StandardCharsets.UTF_8)){for(String line;(line=stream.readLine())!=null;){if(line.length()>TAIL_LIMIT)line=line.substring(line.length()-TAIL_LIMIT);synchronized(tail){tail.addLast(line);length[0]+=line.length()+1;while(length[0]>TAIL_LIMIT&&!tail.isEmpty())length[0]-=tail.removeFirst().length()+1;}}}
                 catch(java.io.IOException ignored) { }
@@ -60,6 +61,7 @@ public final class Verifier {
             if(exit!=0&&diagnostics.isEmpty())warnings.add("build_failed_without_structured_diagnostics");
             return new Result(exit,!complete,List.copyOf(diagnostics),output,List.copyOf(command),List.copyOf(warnings),TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started));
         }finally{
+            if(running!=null&&running.isAlive()){running.descendants().forEach(ProcessHandle::destroyForcibly);running.destroyForcibly();}
             try(var files=Files.walk(directory)){for(Path file:files.sorted(Comparator.reverseOrder()).toList())Files.deleteIfExists(file);}
         }
     }

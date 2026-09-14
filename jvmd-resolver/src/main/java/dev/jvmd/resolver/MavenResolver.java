@@ -221,14 +221,14 @@ public final class MavenResolver implements AutoCloseable {
         if (parent != null) build.edges.add(new Resolution.Edge(parent, id, scope));
         if (winner == null && artifact != null && artifact.getExtension().equals("jar") && path != null) {
             test.add(path);
-            if (!scope.equals("test")) main.add(path);
+            if (!scope.equals("test") && !scope.equals("runtime")) main.add(path);
         }
         if (!seen.add(node) || winner != null) return;
         for (var child : node.getChildren()) walk(child, id, root, build, main, test, seen);
     }
     private String contextFingerprint() {
         String properties = environment.systemProperties().entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()).sorted().collect(java.util.stream.Collectors.joining("\n"));
-        return Hashing.sha256(("compiler-settings-v1\n" + config.mavenMajor() + "\n" + config.m2Repo() + "\n" + properties).getBytes(StandardCharsets.UTF_8));
+        return Hashing.sha256(("compiler-settings-v2\n" + config.mavenMajor() + "\n" + config.m2Repo() + "\n" + properties).getBytes(StandardCharsets.UTF_8));
     }
     private static Input input(Path path, boolean strong) throws Exception {
         path = path.toAbsolutePath().normalize();

@@ -14,6 +14,11 @@ import static org.assertj.core.api.Assertions.*;
 @Tag("phase-4")
 class EffectiveCompilerOptionsTest {
     @TempDir Path root;
+    @Test void runtimeDependenciesStayOffTheCompileClasspath()throws Exception{
+        var config=TestSupport.config(root,Duration.ofHours(4));Path jar=MavenFixtures.artifact(config.m2Repo(),"runtime","1","");
+        MavenFixtures.project(root,"<dependencies>"+MavenFixtures.dependency("runtime","1").replace("</dependency>","<scope>runtime</scope></dependency>")+"</dependencies>");
+        try(var resolver=new MavenResolver(config)){var graph=resolver.resolve(root);assertThat(graph.classpaths().get("fixture:app:1:main")).doesNotContain(jar.toString());assertThat(graph.classpaths().get("fixture:app:1:test")).contains(jar.toString());}
+    }
     @Test void blankReleaseUsesSourceTargetAndExplicitCompilerExports()throws Exception{
         Files.writeString(root.resolve("pom.xml"),"""
                 <project><modelVersion>4.0.0</modelVersion><groupId>test</groupId><artifactId>options</artifactId><version>1</version>

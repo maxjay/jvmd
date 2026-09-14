@@ -37,10 +37,13 @@ public final class WorkspaceBindings implements AutoCloseable {
     private Snapshot snapshot;
     private long hits,builds,serializedBytes;
     private String hash(Path file)throws Exception {
-        if(!Files.isRegularFile(file))return "missing";
         Map<String,Object> attributes=null;
-        try{attributes=Files.readAttributes(file,"unix:size,lastModifiedTime,ctime,ino");}
-        catch(UnsupportedOperationException|IllegalArgumentException ignored) { }
+        try{
+            try{attributes=Files.readAttributes(file,"unix:size,lastModifiedTime,ctime,ino,isRegularFile");if(!Boolean.TRUE.equals(attributes.get("isRegularFile")))return "missing";}
+            catch(UnsupportedOperationException|IllegalArgumentException ignored){
+                if(!Files.readAttributes(file,java.nio.file.attribute.BasicFileAttributes.class).isRegularFile())return "missing";
+            }
+        }catch(NoSuchFileException missing){return "missing";}
         var previous=hashes.get(file);
         if(attributes!=null&&previous!=null&&previous.attributes().equals(attributes))return previous.hash();
         String value=Hashing.sha256(file);
@@ -51,8 +54,8 @@ public final class WorkspaceBindings implements AutoCloseable {
         var values=new LinkedHashMap<Path,String>();
         for(Path file:files){String memory=documents.hash(file);values.put(file,memory==null?hash(file):memory);}
         for(Path path:classpath){
-            if(Files.isDirectory(path))try(var children=Files.walk(path)){
-                for(Path file:children.filter(Files::isRegularFile).filter(p->p.toString().endsWith(".class")||p.toString().endsWith(".jar")).sorted().toList())values.put(file,hash(file));
+            if(Files.isDirectory(path))try(var children=Files.find(path,Integer.MAX_VALUE,(file,attributes)->(file.toString().endsWith(".class")||file.toString().endsWith(".jar"))&&(attributes.isRegularFile()||attributes.isSymbolicLink()&&Files.isRegularFile(file)))){
+                for(Path file:children.sorted().toList())values.put(file,hash(file));
             }else values.put(path,hash(path));
         }
         return new Inputs(generation,Map.copyOf(values),List.copyOf(files),List.copyOf(classpath));

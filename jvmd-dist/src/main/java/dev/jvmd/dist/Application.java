@@ -160,7 +160,7 @@ public final class Application implements AutoCloseable {
     private List<Path> sourceFiles(Session session)throws Exception{
         var graph=(Resolution)session.state("resolution");var roots=new LinkedHashSet<Path>();var files=new LinkedHashSet<Path>();
         if(graph==null)roots.addAll(workspace(session).roots());else for(var module:graph.modules()){module.sources().forEach(p->roots.add(Path.of(p)));module.testSources().forEach(p->roots.add(Path.of(p)));}
-        for(Path root:roots)if(Files.isDirectory(root))try(var paths=Files.walk(root)){paths.filter(Files::isRegularFile).filter(p->p.toString().endsWith(".java")).sorted().forEach(files::add);}
+        for(Path root:roots)if(Files.isDirectory(root))try(var paths=Files.find(root,Integer.MAX_VALUE,(path,attributes)->path.toString().endsWith(".java")&&(attributes.isRegularFile()||attributes.isSymbolicLink()&&Files.isRegularFile(path)))){paths.sorted().forEach(files::add);}
         documents(session).paths().stream().filter(workspace(session)::contains).sorted().forEach(files::add);
         return List.copyOf(files);
     }
@@ -174,9 +174,9 @@ public final class Application implements AutoCloseable {
                 if(session.state("apt:"+module.gav()+(test?":test":":main")) instanceof AnnotationProcessing.Output output)classpath.addAll(output.classpath());
             }
         }}
-        var cache=session.state("workspace_bindings",WorkspaceBindings::new);var files=sourceFiles(session);String generation=graph==null?"plain":graph.fingerprint();
+        var cache=session.state("workspace_bindings",WorkspaceBindings::new);String generation=graph==null?"plain":graph.fingerprint();
         return load?cache.get(()->sourceFiles(session),List.copyOf(classpath),documents(session),generation,(long)config.heapCeilingMb()*1024*1024/Math.max(1,sessions.list().size())/4,
-                (file,text)->analyzer(session,file).bindings(file,text,null)):cache.peek(files,List.copyOf(classpath),documents(session),generation);
+                (file,text)->analyzer(session,file).bindings(file,text,null)):cache.peek(sourceFiles(session),List.copyOf(classpath),documents(session),generation);
     }
     @SuppressWarnings("unchecked")
     private Envelope overview(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
@@ -246,6 +246,10 @@ public final class Application implements AutoCloseable {
         }return List.copyOf(found.values());
     }
     private Envelope describe(Session session,String ref)throws Exception{
+        return describe(session,ref,null);
+    }
+    private Envelope describe(Session session,String ref,WorkspaceBindings.Snapshot validated)throws Exception{
+        if(validated!=null){var symbol=validated.symbols().get(ref);if(symbol!=null)return new Envelope(validated.tier(),"live",false,null,validated.warnings(),symbol);}
         var analyzer=(Analyzer)session.state("analyzer");
         if((ref.startsWith("maven ")||ref.startsWith("local "))&&analyzer!=null){
             var known=analyzer.known(ref);if(known.size()==1){var symbol=known.getFirst();var file=symbol.get("source_file");
@@ -388,7 +392,7 @@ public final class Application implements AutoCloseable {
         return new Envelope(tier,"live",false,null,List.copyOf(warnings),Map.of("applied",true,"changes",plan.edits(),"changed_files",plan.files().stream().map(Path::toString).toList(),"members",members,"diagnostics",diagnostics,"verified",false));
     }
     private Envelope occurrences(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
-        String ref=Dispatcher.required(params,"ref");var description=describe(session,ref);if(!(description.result() instanceof Map<?,?> symbol)||symbol.get("scip")==null)return description;
+        String ref=Dispatcher.required(params,"ref");var snapshot=workspaceBindings(session,true);var description=describe(session,ref,snapshot);if(!(description.result() instanceof Map<?,?> symbol)||symbol.get("scip")==null)return description;
         var snapshot=workspaceBindings(session,true);var found=snapshot.occurrences().stream().filter(o->o.scip().equals(symbol.get("scip"))&&(params.path("include_declaration").asBoolean()||!o.role().equals("declaration"))).toList();
         return page(snapshot.tier(),"live","occurrences",found,cursor(params),Dispatcher.limit(params,1000,10000),snapshot.warnings());
     }
@@ -400,7 +404,7 @@ public final class Application implements AutoCloseable {
         boolean outgoing=direction.equals("out")||direction.equals("up");
         int depth=Dispatcher.bounded(params,"depth",hierarchy?3:1,20),limit=Dispatcher.limit(params,100,1000),offset=cursor(params),tier=2;
         var allowed=new HashSet<String>();params.path("kinds").forEach(k->allowed.add(k.asText()));if(hierarchy)allowed.addAll(Set.of("extends","implements","overrides"));else if(allowed.isEmpty())allowed.addAll(Set.of("calls","reads","writes","instantiates"));
-        var snapshot=workspaceBindings(session,true);tier=Math.min(tier,snapshot.tier());
+        tier=Math.min(tier,snapshot.tier());
         var symbols=new LinkedHashMap<String,Map<String,Object>>();var warnings=new LinkedHashSet<>(snapshot.warnings());
         var root=new LinkedHashMap<String,Object>();for(var entry:symbol.entrySet())root.put(entry.getKey().toString(),entry.getValue());symbols.put(key,snapshot.symbols().getOrDefault(key,root));
         var database=index();bindIndex(session,database);

@@ -51,9 +51,10 @@ public final class Application implements AutoCloseable {
             if(p.has("path")){Path path=sourcePath(s,Dispatcher.required(p,"path"));return analyzer(s,path).atPosition(path,Files.readString(path),Dispatcher.bounded(p,"line",0,Integer.MAX_VALUE),Dispatcher.bounded(p,"character",0,Integer.MAX_VALUE));}
             String ref=Dispatcher.required(p,"name_path"),scope=p.path("scope").asText("all");if(!Set.of("workspace","deps","all").contains(scope))throw RpcException.invalid("Unknown symbol scope");
             int limit=Dispatcher.bounded(p,"limit",50,200),offset=cursor(p);boolean substring=p.path("substring").asBoolean();
+            IndexService searchIndex=null;if(!scope.equals("workspace")){searchIndex=index();prepareIndex(s,searchIndex);}
             var matches=new LinkedHashMap<String,Map<String,Object>>();
             if(!scope.equals("deps"))for(var symbol:workspaceFind(s,ref,substring))matches.put(symbol.get("scip").toString(),symbol);
-            if(!scope.equals("workspace")){var database=index();bindIndex(s,database);for(var symbol:database.find(ref,s.state("resolution")==null?null:s.id(),substring,offset+limit+1,0))matches.put(symbol.get("scip").toString(),symbol);}
+            if(!scope.equals("workspace")){var database=searchIndex;for(var symbol:database.find(ref,s.state("resolution")==null?null:s.id(),substring,offset+limit+1,0))matches.putIfAbsent(symbol.get("scip").toString(),symbol);}
             var kinds=new HashSet<String>();p.path("kinds").forEach(k->kinds.add(k.asText()));
             var all=matches.values().stream().filter(symbol->kinds.isEmpty()||kinds.contains(symbol.get("kind"))).toList();
             return page(2,"live","matches",all,offset,limit,s.warnings());
@@ -112,12 +113,13 @@ public final class Application implements AutoCloseable {
     private List<Map<String,Object>> workspaceFind(Session session,String ref,boolean substring)throws Exception{
         var found=new LinkedHashMap<String,Map<String,Object>>();
         for(Path file:sourceFiles(session)){
-            var analyzer=analyzer(session,file);int offset=0;
+            var analyzer=analyzer(session,file);int offset=0;var declarations=new ArrayList<Map<String,Object>>();
             do{
                 var outline=analyzer.overview(file,Files.readString(file),10,1000,offset);
-                for(var symbol:(List<Map<String,Object>>)((Map<?,?>)outline.result()).get("symbols"))if(symbol.get("scip")!=null&&Analyzer.matches(symbol,ref,substring))found.put(symbol.get("scip").toString(),symbol);
+                for(var symbol:(List<Map<String,Object>>)((Map<?,?>)outline.result()).get("symbols")){declarations.add(symbol);if(symbol.get("scip")!=null&&Analyzer.matches(symbol,ref,substring))found.put(symbol.get("scip").toString(),symbol);}
                 if(!outline.truncated())break;offset=Integer.parseInt(outline.cursor());
             }while(true);
+            if(index!=null&&index.isDone()&&!index.isCompletedExceptionally())index.join().recordSource(file,Hashing.sha256(file),declarations,1,List.of());
         }return List.copyOf(found.values());
     }
     private Envelope describe(Session session,String ref)throws Exception{
@@ -132,7 +134,7 @@ public final class Application implements AutoCloseable {
         var local=workspaceFind(session,ref,false);
         if(local.size()==1)return Envelope.of(1,"live",local.getFirst());
         if(local.size()>1)return page(1,"live","candidates",local,0,20,List.of("ambiguous"));
-        var database=index();bindIndex(session,database);var found=database.find(ref,session.state("resolution")==null?null:session.id(),false,21,0);
+        var database=index();prepareIndex(session,database);var found=database.find(ref,session.state("resolution")==null?null:session.id(),false,21,0);
         if(found.size()!=1)return page(2,"index","candidates",found,0,20,found.size()>1?List.of("ambiguous"):session.warnings());
         return Envelope.of(2,"index",found.getFirst());
     }
@@ -231,12 +233,22 @@ public final class Application implements AutoCloseable {
     private IndexService index() { initializeIndex(false); return index.join(); }
     private void bindIndex(Session session,IndexService database)throws Exception {
         var graph=(Resolution)session.state("resolution");if(graph==null)return;
+        for(var module:graph.modules()){
+            var roots=new ArrayList<Path>();module.sources().forEach(p->roots.add(Path.of(p)));module.testSources().forEach(p->roots.add(Path.of(p)));
+            database.registerLocal(new IndexService.LocalModule(Path.of(module.directory()),module.gav(),roots,List.of(Path.of(module.classes()),Path.of(module.testClasses()))));
+        }
         String generation=graph.fingerprint()+":"+database.generation();
         if(generation.equals(session.state("index_generation")))return;
-        var paths=graph.nodes().stream().filter(n->n.path()!=null&&n.winner()==null).map(n->new IndexService.WorkspaceArtifact(n.path(),n.scope())).toList();
+        var paths=new ArrayList<>(graph.nodes().stream().filter(n->n.path()!=null&&n.winner()==null).map(n->new IndexService.WorkspaceArtifact(n.path(),n.scope())).toList());
+        for(var module:graph.modules())paths.add(new IndexService.WorkspaceArtifact(module.directory(),"local"));
         var byId=graph.nodes().stream().collect(java.util.stream.Collectors.toMap(Resolution.Node::id,Resolution.Node::gav));
         var edges=graph.edges().stream().map(e->java.util.Map.entry(byId.get(e.src()),byId.get(e.dst()))).toList();
         database.loadWorkspace(session.id(),paths,edges).forEach(session::warn);session.put("index_generation",generation);
+    }
+    private void prepareIndex(Session session,IndexService database)throws Exception{
+        bindIndex(session,database);var graph=(Resolution)session.state("resolution");
+        if(graph!=null)for(var module:graph.modules())database.refreshLocal(Path.of(module.directory()));
+        bindIndex(session,database);
     }
     private static Envelope dependencyGraph(Resolution graph, com.fasterxml.jackson.databind.JsonNode params) {
         int depth = Dispatcher.bounded(params, "depth", 2, 20), limit = Dispatcher.bounded(params, "limit", 50, 200);

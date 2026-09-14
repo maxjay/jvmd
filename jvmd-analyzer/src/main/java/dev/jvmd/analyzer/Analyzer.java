@@ -124,6 +124,7 @@ public final class Analyzer implements AutoCloseable {
         var outcome=compiler.query(path,source,2,(task,units,tier)->Bindings.capture(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),file,sourceText(file,text),true,focus==null?null:focus.member().equals("declarations")?new Focusing.Span(cursor,cursor+1):new Focusing.Span(focus.start(),focus.end())));
         if(outcome.result()!=null&&outcome.warnings().isEmpty()){
             dependencies.record(path,outcome.result().dependencies());
+            if(cursor==null&&index!=null)index.recordSource(path,hash,List.copyOf(outcome.result().symbols().values()),outcome.tier(),outcome.result().edges().stream().map(e->new IndexService.SourceEdge(e.src(),e.dst(),e.kind())).toList());
             String member=focus==null?"full":focus.member();focused.put(path+":"+hash+":"+member,new Cached(path,hash,stamp,focus==null?0:focus.member().equals("declarations")?cursor:focus.start(),focus==null?text.length():focus.member().equals("declarations")?cursor+1:focus.end(),focus==null?List.of():focus.replaced(),outcome));
             while(focused.size()>32)focused.remove(focused.keySet().iterator().next());
         }return outcome;

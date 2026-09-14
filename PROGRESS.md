@@ -134,3 +134,6 @@ Phase 5 full regression: PASS, CI run 34811222662, commit b193a37.
 
 
 2026-09-14: Commit 158e639 passed independent checkpoint and full corpus jobs (run 34812834988). Phase 6 repository substitution, source invalidation, diagnostic origins and cross-root JDI breakpoint tests pass. Local module index artifacts remain open. The next optimization omits unrelated method answer DTOs from focused queries while retaining their signature dependencies; a regression covers overload ambiguity after an unselected parameter hierarchy changes. The 50 ms budget and corpus floor are unchanged.
+
+
+2026-09-14: Focused materialization checkpoint d7c4954 passes its overload dependency regression and all checkpoint jobs (run 34813676063). Focused p95 37.772670 ms; p50 19.170712 ms; session open 7.033502 ms. The full corpus job also passed. Local module indexing now has migration 2 memberships preserving a single SCIP with per-artifact source data, asynchronous registration, strong source/output hashes with ctime-based hash reuse, stale binary suppression, source snapshot persistence, and tests covering equal coordinates, deletion, preserved mtimes, jar replacement, and schema migration. Phase 6 remains unchecked until these tests pass.

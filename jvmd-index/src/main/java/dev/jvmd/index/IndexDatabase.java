@@ -22,10 +22,10 @@ public final class IndexDatabase implements AutoCloseable {
             statement.execute("PRAGMA journal_mode=WAL"); statement.execute("PRAGMA synchronous=NORMAL");
             int version;
             try (var result = statement.executeQuery("PRAGMA user_version")) { result.next(); version = result.getInt(1); }
-            if (version > 1) throw new IllegalStateException("Index schema is newer than this daemon: " + version);
-            if (version == 0) {
+            if (version > 2) throw new IllegalStateException("Index schema is newer than this daemon: " + version);
+            for (int migration = version + 1; migration <= 2; migration++) {
                 writer.setAutoCommit(false);
-                try (var stream = IndexDatabase.class.getResourceAsStream("schema-1.sql")) {
+                try (var stream = IndexDatabase.class.getResourceAsStream("schema-" + migration + ".sql")) {
                     if (stream == null) throw new IllegalStateException("Missing index migration");
                     for (String sql : new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).split("\\R"))
                         if (!sql.isBlank()) statement.execute(sql);

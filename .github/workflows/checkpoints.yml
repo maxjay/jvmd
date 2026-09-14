@@ -39,7 +39,7 @@ jobs:
           maven4_url='https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/4.0.0-rc-6/apache-maven-4.0.0-rc-6-bin.tar.gz'
           curl -fsSL --retry 3 "$maven4_url" -o "$maven4_archive"
           curl -fsSL --retry 3 "$maven4_url.sha512" -o "$maven4_archive.sha512"
-          read -r maven4_digest _ < "$maven4_archive.sha512"
+          read -r maven4_digest _ < "$maven4_archive.sha512" || [[ -n "$maven4_digest" ]]
           [[ "$maven4_digest" =~ ^[[:xdigit:]]{128}$ ]]
           printf '%s  %s\n' "$maven4_digest" "$maven4_archive" | sha512sum --check -
           tar -xzf "$maven4_archive" -C "$RUNNER_TEMP"

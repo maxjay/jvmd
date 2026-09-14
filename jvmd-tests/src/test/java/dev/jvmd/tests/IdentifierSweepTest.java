@@ -17,7 +17,7 @@ class IdentifierSweepTest {
     @TempDir Path temp;
     @Test void allFourSymbolProbesMeetTheCommittedFloor()throws Exception{
         var reports=new ArrayList<Map<String,Object>>();double floor=Json.MAPPER.readTree(TestSupport.repo().resolve("jvmd-tests/floors.json").toFile()).path("identifier_correctness").asDouble();
-        long total=0,correct=0;
+        long total=0,correct=0,probeCalls=0,probeReuse=0;
         for(Path root:List.of(TestSupport.repo().resolve("jvmd-tests/corpus/petclinic"),TestSupport.repo())){
             Path state=Files.createDirectories(temp.resolve(root.getFileName().toString()));
             var config=new Config(Path.of(System.getProperty("java.home")),null,Path.of(System.getProperty("user.home"),".m2/repository"),3,Duration.ofHours(4),1024,false,state,state.resolve("daemon.sock"));
@@ -25,6 +25,10 @@ class IdentifierSweepTest {
             try(var resolver=new MavenResolver(config)){for(var module:resolver.resolve(root).modules())for(String source:java.util.stream.Stream.concat(module.sources().stream(),module.testSources().stream()).toList())if(Files.isDirectory(Path.of(source)))try(var paths=Files.walk(Path.of(source))){paths.filter(Files::isRegularFile).filter(p->p.toString().endsWith(".java")).sorted().forEach(files::add);}}
             try(var app=new Application(config)){
                 String session=TestSupport.open(app,root);assertThat(session).isNotBlank();
+                // symbol.describe and symbol.references answer for a SCIP identity, not a position, so their
+                // outcome for a given (scip, token text) pair is constant within a session. The sweep reads only,
+                // so memoizing keeps the four-probe contract identical while removing repeated identical traversals.
+                var probeCache=new HashMap<String,boolean[]>();
                 for(Path file:files){
                     long count=0,matched=0;var misses=new ArrayList<Map<String,Object>>();var text=new SourceText(Files.readString(file));
                     for(var token:text.tokens()){
@@ -40,16 +44,23 @@ class IdentifierSweepTest {
                         var evidence=new ArrayList<Object>();
                         for(var candidate:candidates){
                             String scip=candidate.path("scip").asText(),ref=scip.isEmpty()?token.text():scip;
-                            var described=TestSupport.complete(app.dispatcher(),"symbol.describe",Map.of("session",session,"ref",ref)).path("result").path("result");
-                            var referenceArgs=new LinkedHashMap<String,Object>(Map.of("session",session,"ref",ref,"direction","out","depth",1,"limit",1000));
-                            boolean namesRoot=false;
-                            do {
-                                var page=TestSupport.complete(app.dispatcher(),"symbol.references",referenceArgs).path("result");
-                                for(var symbol:page.path("result").path("symbols"))if(symbol.path("scip").asText().equals(scip)&&symbol.path("name").asText().equals(token.text()))namesRoot=true;
-                                if(namesRoot||!page.path("truncated").asBoolean())break;
-                                referenceArgs.put("cursor",page.path("cursor").asText());
-                            } while(true);
-                            boolean description=described.path("scip").asText().equals(scip)&&described.path("name").asText().equals(token.text());
+                            String probeKey=scip+"\u0000"+token.text();
+                            boolean[] probes=probeCache.get(probeKey);
+                            if(probes!=null)probeReuse++;else{
+                                probeCalls++;
+                                var described=TestSupport.complete(app.dispatcher(),"symbol.describe",Map.of("session",session,"ref",ref)).path("result").path("result");
+                                var referenceArgs=new LinkedHashMap<String,Object>(Map.of("session",session,"ref",ref,"direction","out","depth",1,"limit",1000));
+                                boolean namesRoot=false;
+                                do {
+                                    var page=TestSupport.complete(app.dispatcher(),"symbol.references",referenceArgs).path("result");
+                                    for(var symbol:page.path("result").path("symbols"))if(symbol.path("scip").asText().equals(scip)&&symbol.path("name").asText().equals(token.text()))namesRoot=true;
+                                    if(namesRoot||!page.path("truncated").asBoolean())break;
+                                    referenceArgs.put("cursor",page.path("cursor").asText());
+                                } while(true);
+                                probes=new boolean[]{described.path("scip").asText().equals(scip)&&described.path("name").asText().equals(token.text()),namesRoot};
+                                probeCache.put(probeKey,probes);
+                            }
+                            boolean description=probes[0],namesRoot=probes[1];
                             valid&=candidate.path("name").asText().equals(token.text())&&description&&namesRoot;
                             evidence.add(Map.of("scip",scip,"description_names_token",description,"references_name_token",namesRoot));
                         }
@@ -62,9 +73,9 @@ class IdentifierSweepTest {
             }
         }
         double rate=total==0?0:(double)correct/total;
-        var result=Map.of("identifiers",total,"correct",correct,"rate",rate,"floor",floor,"files",reports);
+        var result=Map.of("identifiers",total,"correct",correct,"rate",rate,"floor",floor,"probe_calls",probeCalls,"probe_reuse",probeReuse,"files",reports);
         Json.MAPPER.writerWithDefaultPrettyPrinter().writeValue(TestSupport.repo().resolve("jvmd-tests/target/sweep.json").toFile(),result);
-        System.out.println("identifier-sweep "+correct+"/"+total+" rate="+rate);
+        System.out.println("identifier-sweep "+correct+"/"+total+" rate="+rate+" probe-calls="+probeCalls+" probe-reuse="+probeReuse);
         assertThat(total).isGreaterThan(1000);assertThat(rate).as("identifier correctness across binding, description, position search and references").isGreaterThanOrEqualTo(floor);
     }
 }

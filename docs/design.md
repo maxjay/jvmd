@@ -682,7 +682,7 @@ tests never stop the build; a failing advisory test flips its default and is rec
 | # | Test | Blocks | Status |
 |---|---|---|---|
 | 1 | JBR with `-XX:+AllowEnhancedClassRedefinition`: add a method to a loaded class through JDI `redefineClasses`; confirm it is callable | 11 | PASS, 2026-09-14, JBR 25.0.4.1 b583.48; `added()I` returned 42; redefine 7.9ms |
-| 2 | javac with `--should-stop=ifError=FLOW`: a file with a syntax error and an unresolved type; `Trees.getElement` still resolves other members; delete a classfile from the classpath and confirm the fault is catchable | 4 | not run |
+| 2 | javac with `--should-stop=ifError=FLOW`: a file with a syntax error and an unresolved type; `Trees.getElement` still resolves other members; delete a classfile from the classpath and confirm the fault is catchable | 4 | PASS; tolerant bindings and disappearing indexed-classpath seam, see SMOKE.md |
 | 3 | `RepositorySystemSupplier` resolving Spring Boot fully offline from a warm `~/.m2`; measure | 2 | PASS; see SMOKE.md and PROGRESS.md |
 | 4 | `WorkspaceReader` substituting a local module for a published GAV, unbuilt | 6 | not run |
 | 5 | AOT cache round trip with `-XX:AOTMode=on` on a fixture jar; measure the delta. The daemon round trip is phase 1's exit criterion, not a pre-phase test | 1 | PASS as fixture training; daemon result pending phase 1 |

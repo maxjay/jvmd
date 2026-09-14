@@ -29,3 +29,14 @@ Spring Core 7.0.8 uses the Java 21 VirtualThreadDelegate and the Java 24 ClassFi
 classes; no future version is selected. Parse-only source join: 6,079 eligible source methods,
 6,018 joined to binary descriptors, 98.99655% (gate >98%). The 61 unmatched signatures are
 reported explicitly. Binary descriptors remain authoritative. This unblocks phase 3.
+
+### Test 2 — PASS, 2026-09-14
+
+Command: `bash jvmd-tests/smoke/run-compiler.sh`, Temurin 25.0.4.1+1.
+With `--should-stop=ifError=FLOW`, `good()` remains bound in a unit containing both a syntax
+error and an unresolved type. The disappearing indexed-classpath probe captures a class entry,
+deletes its file, and raises `UncheckedIOException` at the file-manager seam; javac wraps it as a
+catchable `RuntimeException`. No internal javac imports are used in the smoke harness. This
+checks the daemon's stale-classpath boundary explicitly; it does not claim the previously fixed
+JDK missing-class assertion still reproduces on this JDK update. Phase 4 can proceed after the
+phase-3 CI gate.

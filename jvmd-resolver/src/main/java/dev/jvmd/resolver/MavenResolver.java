@@ -78,6 +78,7 @@ public final class MavenResolver implements AutoCloseable {
             memory.put(root, prior); cacheHits.incrementAndGet(); return prior.graph().cachedCopy();
         }
         var settings = environment.settings();
+        versions.remove(root);
         List<String> warnings = versions.computeIfAbsent(root, environment::versionWarnings);
         if (warnings.stream().anyMatch(w -> w.startsWith("Maven major mismatch")))
             throw new dev.jvmd.core.RpcException(-32003, "unsupported_capability", Map.of("capability", "matching Maven resolver", "warnings", warnings));
@@ -131,6 +132,7 @@ public final class MavenResolver implements AutoCloseable {
         repositories = system.newResolutionRepositories(session, repositories);
         build.inputs.add(environment.settingsFile()); build.strong.add(environment.settingsFile());
         Path configFile = root.resolve(".mvn/maven.config"); build.inputs.add(configFile); build.strong.add(configFile);
+        Path wrapper = root.resolve(".mvn/wrapper/maven-wrapper.properties"); build.inputs.add(wrapper); build.strong.add(wrapper);
         var properties = new Properties();
         var active = new ArrayList<>(settings.getActiveProfiles()); var inactive = new ArrayList<String>();
         if (Files.isRegularFile(configFile)) for (String line : Files.readAllLines(configFile)) {
@@ -212,9 +214,10 @@ public final class MavenResolver implements AutoCloseable {
         var winner = (DependencyNode) node.getData().get(ConflictResolver.NODE_DATA_WINNER);
         String winnerId = winner == null ? null : root + "|" + winner.getArtifact().toString();
         String path = artifact == null || artifact.getFile() == null ? null : artifact.getFile().getAbsolutePath();
-        build.nodes.putIfAbsent(id, new Resolution.Node(id, gav, artifact == null ? "pom" : artifact.getExtension(),
+        var entry = new Resolution.Node(id, gav, artifact == null ? "pom" : artifact.getExtension(),
                 artifact == null ? "" : artifact.getClassifier(), scope, path, winnerId,
-                winnerId == null ? "selected by Maven" : "conflict: selected " + winnerId, node.getDependency() != null && node.getDependency().isOptional()));
+                winnerId == null ? "selected by Maven" : "conflict: selected " + winnerId, node.getDependency() != null && node.getDependency().isOptional());
+        build.nodes.merge(id, entry, (old, current) -> old.winner() != null && current.winner() == null ? current : old);
         if (parent != null) build.edges.add(new Resolution.Edge(parent, id, scope));
         if (winner == null && artifact != null && artifact.getExtension().equals("jar") && path != null) {
             test.add(path);

@@ -80,6 +80,7 @@ jobs:
             jvmd-tests/target/*perf.json
             jvmd-tests/target/agreement.json
             jvmd-tests/target/sweep.json
+            jvmd-tests/target/agent-session.json
             jvmd-tests/target/daemon-perf-output.log
             jvmd-dist/target/training-state/*.log
   corpus:
@@ -104,6 +105,7 @@ jobs:
           bash jvmd-tests/corpus/fetch.sh
           mvn -B -q -f jvmd-tests/corpus/petclinic/pom.xml test-compile
           mvn -B -pl jvmd-tests test -Dgroups=phase-4 -DexcludedGroups=perf -DargLine=-Xmx1024m
+          mvn -B -pl jvmd-tests test -Dgroups=phase-8 -DexcludedGroups=perf -Dtest=CorpusAgentSessionTest -DargLine=-Xmx1024m
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -113,5 +115,6 @@ jobs:
             jvmd-tests/target/*perf.json
             jvmd-tests/target/agreement.json
             jvmd-tests/target/sweep.json
+            jvmd-tests/target/agent-session.json
             jvmd-tests/target/daemon-perf-output.log
             jvmd-dist/target/training-state/*.log

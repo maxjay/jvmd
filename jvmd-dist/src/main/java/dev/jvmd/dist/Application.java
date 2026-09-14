@@ -56,10 +56,18 @@ public final class Application implements AutoCloseable {
             String ref=Dispatcher.required(p,"name_path"),scope=p.path("scope").asText("workspace");if(!Set.of("workspace","deps","all").contains(scope))throw RpcException.invalid("Unknown symbol scope");
             int limit=Dispatcher.limit(p,50,200),offset=cursor(p);boolean substring=p.path("substring").asBoolean();
             IndexService searchIndex=null;if(!scope.equals("workspace")){searchIndex=index();prepareIndex(s,searchIndex);}
+            var kinds=new HashSet<String>();p.path("kinds").forEach(k->kinds.add(k.asText()));int depth=Dispatcher.bounded(p,"depth",0,10);
             var matches=new LinkedHashMap<String,Map<String,Object>>();
             if(!scope.equals("deps"))for(var symbol:workspaceFind(s,ref,substring))matches.put(symbol.get("scip").toString(),symbol);
-            if(!scope.equals("workspace")){var database=searchIndex;for(var symbol:database.find(ref,s.state("resolution")==null?null:s.id(),substring,offset+limit+1,0))matches.putIfAbsent(symbol.get("scip").toString(),symbol);}
-            var kinds=new HashSet<String>();p.path("kinds").forEach(k->kinds.add(k.asText()));
+            if(!scope.equals("workspace")){var database=searchIndex;for(var symbol:database.find(ref,s.state("resolution")==null?null:s.id(),substring,offset+limit+1,0,kinds))matches.putIfAbsent(symbol.get("scip").toString(),symbol);}
+            if(depth>0)for(var parent:List.copyOf(matches.values())){
+                String path=Objects.toString(parent.get("name_path"),"");if(path.isEmpty())continue;
+                var children=new ArrayList<Map<String,Object>>();
+                if(!scope.equals("deps"))children.addAll(workspaceFind(s,path+"/",true));
+                if(!scope.equals("workspace"))children.addAll(searchIndex.find(path+"/",s.state("resolution")==null?null:s.id(),true,offset+limit+1,0,kinds));
+                int parentDepth=(int)path.chars().filter(c->c=='/').count();
+                for(var child:children){String candidate=Objects.toString(child.get("name_path"),"");if(candidate.startsWith(path+"/")&&candidate.chars().filter(c->c=='/').count()-parentDepth<=depth)matches.putIfAbsent(child.get("scip").toString(),child);}
+            }
             var all=new ArrayList<Map<String,Object>>();
             for(var symbol:matches.values())if(kinds.isEmpty()||kinds.contains(symbol.get("kind"))){
                 var value=new LinkedHashMap<>(symbol);value.put("doc",dev.jvmd.index.DocMarkdown.summary((String)symbol.get("doc")));
@@ -76,15 +84,10 @@ public final class Application implements AutoCloseable {
         dispatcher.register("symbol.hierarchy",(s,p)->relationships(s,p,true));
         dispatcher.register("session.status", (s, _) -> {
             var graph=(Resolution)s.state("resolution");var result=new LinkedHashMap<String,Object>();
-            result.put("session",s.id());result.put("root",s.root().toString());result.put("classpath_state",graph==null?"unresolved":"resolved");result.put("classpath_entries",graph==null?0:graph.classpath().size());result.put("overlay",graph==null?Map.of():overlay(s,graph).status());result.put("metrics",dispatcher.status().get("metrics"));result.put("annotation_processing",s.state("processors")==null?Map.of("initialized",false):((AnnotationProcessing)s.state("processors")).status());result.put("analyzer",s.state("analyzer")==null?Map.of("initialized",false):((Analyzer)s.state("analyzer")).status());result.put("runs",s.state("runs")==null?List.of():runs(s).status());
+            result.put("session",s.id());result.put("root",s.root().toString());result.put("classpath_state",graph==null?"unresolved":"resolved");result.put("classpath_entries",graph==null?0:graph.classpath().size());result.put("overlay",graph==null?Map.of():overlay(s,graph).status());result.put("metrics",dispatcher.status().get("metrics"));result.put("annotation_processing",s.state("processors")==null?Map.of("initialized",false):((AnnotationProcessing)s.state("processors")).status());result.put("analyzer",s.state("analyzer")==null?Map.of("initialized",false):((Analyzer)s.state("analyzer")).status());result.put("runs",s.state("runs")==null?List.of():runs(s).status());result.put("index",index==null?Map.of("phase","disabled"):index.isDone()&&!index.isCompletedExceptionally()?index.join().status():Map.of("phase","starting"));result.put("capabilities",Map.of("analysis_tiers",List.of(0,1,2),"mcp_tools",14,"runtime",true));
             return new Envelope(0,"live",false,null,s.warnings(),result);
         });
-        dispatcher.register("symbol.overview", (s, p) -> {
-            Path path = sourcePath(s,Dispatcher.required(p,"path"));
-            int offset;try{offset=Integer.parseInt(p.path("cursor").asText("0"));}catch(NumberFormatException e){throw RpcException.invalid("Invalid cursor");}
-            if(offset<0)throw RpcException.invalid("Invalid cursor");
-            return analyzer(s,path).overview(path,Files.readString(path),Dispatcher.bounded(p,"depth",1,10),Dispatcher.limit(p,100,1000),offset);
-        });
+        dispatcher.register("symbol.overview",this::overview);
         dispatcher.register("diag.get",(s,p)->{
             if(p.path("verified").asBoolean()){
                 var verified=new Verifier(config).verify(s.root(),(com.fasterxml.jackson.databind.JsonNode)s.state("manifest"),java.time.Duration.ofMinutes(5));
@@ -121,8 +124,33 @@ public final class Application implements AutoCloseable {
         return List.copyOf(files);
     }
     @SuppressWarnings("unchecked")
+    private Envelope overview(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
+        boolean byPath=params.has("path");if(byPath==params.has("package"))throw RpcException.invalid("overview needs either path or package");
+        int depth=Dispatcher.bounded(params,"depth",1,10),limit=Dispatcher.limit(params,100,1000),offset=cursor(params);
+        Path path=byPath?sourcePath(session,Dispatcher.required(params,"path")):null;
+        if(path!=null&&Files.isRegularFile(path))return analyzer(session,path).overview(path,Files.readString(path),depth,limit,offset);
+        String wanted=byPath?"":Dispatcher.required(params,"package");
+        if(!byPath){var parsed=NamePath.parse(wanted);if(parsed.identity()||parsed.parameters()!=null||wanted.contains("/"))throw RpcException.invalid("Invalid package");}
+        var symbols=new ArrayList<Map<String,Object>>();var warnings=new LinkedHashSet<String>();int tier=1;
+        for(Path file:sourceFiles(session)){
+            if(path!=null&&!file.startsWith(path))continue;int page=0;
+            do{
+                var outline=analyzer(session,file).overview(file,Files.readString(file),depth,1000,page);tier=Math.min(tier,outline.tier());warnings.addAll(outline.warnings());
+                for(var symbol:(List<Map<String,Object>>)((Map<?,?>)outline.result()).get("symbols")){
+                    String fqn=Objects.toString(symbol.get("fqn"),"");int last=fqn.lastIndexOf('.');String pkg=last<0?"":fqn.substring(0,last);
+                    if(byPath||pkg.equals(wanted))symbols.add(symbol);
+                }
+                if(!outline.truncated())break;page=Integer.parseInt(outline.cursor());
+            }while(true);
+        }return page(tier,"live","symbols",symbols,offset,limit,List.copyOf(warnings));
+    }
+    @SuppressWarnings("unchecked")
     private List<Map<String,Object>> workspaceFind(Session session,String ref,boolean substring)throws Exception{
         var found=new LinkedHashMap<String,Map<String,Object>>();
+        if(ref.contains(")/")){
+            for(Path file:sourceFiles(session)){var snapshot=analyzer(session,file).bindings(file,Files.readString(file),null);if(snapshot.result()!=null)for(var symbol:snapshot.result().symbols().values())if(Analyzer.matches(symbol,ref,substring))found.put(symbol.get("scip").toString(),symbol);}
+            return List.copyOf(found.values());
+        }
         for(Path file:sourceFiles(session)){
             var analyzer=analyzer(session,file);int offset=0;var declarations=new ArrayList<Map<String,Object>>();
             do{
@@ -278,11 +306,12 @@ public final class Application implements AutoCloseable {
             symbols.putAll(snapshot.result().symbols());edges.addAll(snapshot.result().edges());occurrences.addAll(snapshot.result().occurrences());
         }
         var root=new LinkedHashMap<String,Object>();for(var entry:symbol.entrySet())root.put(entry.getKey().toString(),entry.getValue());symbols.putIfAbsent(key,root);
-        dev.jvmd.index.CodePass code=null;if(!hierarchy){var database=index();prepareIndex(session,database);code=session.state("code_pass",()->new dev.jvmd.index.CodePass(database));}
+        var database=index();prepareIndex(session,database);var code=session.state("code_pass",()->new dev.jvmd.index.CodePass(database));
         var reached=new LinkedHashSet<String>();reached.add(key);var selected=new LinkedHashSet<Bindings.Edge>();var frontier=new LinkedHashSet<String>();frontier.add(key);
         for(int d=0;d<depth;d++){
             if(code!=null){
-                var expansion=code.expand(frontier.stream().map(symbols::get).filter(Objects::nonNull).toList(),outgoing,allowed,session.state("resolution")==null?null:session.id());
+                var inputs=frontier.stream().map(symbols::get).filter(Objects::nonNull).toList();String filter=session.state("resolution")==null?null:session.id();
+                var expansion=hierarchy?code.hierarchy(inputs,outgoing,filter):code.expand(inputs,outgoing,allowed,filter);
                 expansion.symbols().forEach(node->symbols.putIfAbsent(node.get("scip").toString(),node));for(var edge:expansion.edges())edges.add(new Bindings.Edge(edge.src(),edge.dst(),edge.kind()));warnings.addAll(expansion.warnings());
             }
             var next=new LinkedHashSet<String>();

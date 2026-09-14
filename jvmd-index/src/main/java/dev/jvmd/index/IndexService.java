@@ -227,7 +227,8 @@ public final class IndexService implements AutoCloseable {
             return warnings;
         });
     }
-    public List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after)throws Exception{
+    public List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after)throws Exception{return find(query,workspace,substring,limit,after,Set.of());}
+    public List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds)throws Exception{
         var name=substring?null:dev.jvmd.core.NamePath.parse(query);
         return database.read(c->{
             String match=substring?"(s.name LIKE ? ESCAPE '\\' OR s.name_path LIKE ? ESCAPE '\\')":"(s.name=? OR s.scip=? OR s.binary_key=?)";
@@ -238,7 +239,7 @@ public final class IndexService implements AutoCloseable {
                 if(substring){String pattern="%"+query.replace("\\","\\\\").replace("%","\\%").replace("_","\\_")+"%";statement.setString(i++,pattern);statement.setString(i++,pattern);}
                 else{statement.setString(i++,name.leaf());statement.setString(i++,query);statement.setString(i++,query);}
                 if(workspace!=null)statement.setString(i,workspace);
-                try(var rows=statement.executeQuery()){while(rows.next()&&result.size()<limit){var value=symbol(rows);if(substring||name.matches(value)||query.equals(value.get("binary_key")))result.add(value);}}
+                try(var rows=statement.executeQuery()){while(rows.next()&&result.size()<limit){if(!kinds.isEmpty()&&!kinds.contains(rows.getString("kind")))continue;var value=symbol(rows);if(substring||name.matches(value)||query.equals(value.get("binary_key")))result.add(value);}}
             }return result;
         });
     }

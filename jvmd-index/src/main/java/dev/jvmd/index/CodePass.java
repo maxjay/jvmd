@@ -49,6 +49,23 @@ public final class CodePass {
         Path file=FileSystems.getFileSystem(java.net.URI.create("jrt:/")).getPath("/modules",module,name.replace('.','/')+".class");
         if(Files.isRegularFile(file)&&index.artifact(file)==null)index.indexJdk(file,module,Path.of("/nonexistent-jvmd-src.zip"));
     }
+    public Expansion hierarchy(List<Map<String,Object>> frontier,boolean outgoing,String workspace)throws Exception{
+        var identities=frontier.stream().map(s->Objects.toString(s.get("scip"),"")).filter(s->!s.isEmpty()).distinct().toList();
+        if(identities.isEmpty())return new Expansion(List.of(),List.of(),List.of());
+        index.linkEdges();
+        var rows=index.database().read(c->{var result=new ArrayList<Map<String,Object>>();
+            String side=outgoing?"src":"dst";try(var q=c.prepareStatement("SELECT DISTINCT e.src,e.dst,e.kind FROM edges e JOIN symbols s ON s.id=e."+side+" WHERE s.scip IN ("+placeholders(identities.size())+") AND e.kind IN ('extends','implements','overrides') ORDER BY e.src,e.dst,e.kind")){
+                int i=1;for(String identity:identities)q.setString(i++,identity);try(var r=q.executeQuery()){while(r.next())result.add(Map.of("src",r.getLong(1),"dst",r.getLong(2),"kind",r.getString(3)));}
+            }return result;
+        });
+        var nodes=new LinkedHashMap<String,Map<String,Object>>();var edges=new ArrayList<IndexService.SourceEdge>();
+        for(var row:rows){
+            var source=index.byId(((Number)row.get("src")).longValue(),workspace);var destination=index.byId(((Number)row.get("dst")).longValue(),workspace);
+            if(source==null||destination==null||"local".equals(source.get("artifact_kind")))continue;
+            String from=source.get("scip").toString(),to=destination.get("scip").toString();nodes.put(from,source);nodes.put(to,destination);edges.add(new IndexService.SourceEdge(from,to,row.get("kind").toString()));
+        }
+        return new Expansion(List.copyOf(nodes.values()),List.copyOf(edges),List.of());
+    }
     public Expansion expand(List<Map<String,Object>> frontier,boolean outgoing,Set<String> kinds,String workspace)throws Exception{
         if(frontier.isEmpty())return new Expansion(List.of(),List.of(),List.of());
         var keys=new LinkedHashSet<String>();var identities=new LinkedHashSet<String>();var owners=new LinkedHashSet<String>();

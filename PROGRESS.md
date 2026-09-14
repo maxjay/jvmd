@@ -201,3 +201,14 @@ The runtime protocol correction e473770 passed both CI jobs (run 34817902360). S
 - Explicit references queries decode invoke, field access, allocation, cast/type-check and invokedynamic bootstrap handles. Source call edges remain javac-derived. Query results filter by workspace membership and follow the requested direction, kinds and depth.
 - Bytecode scans persist their completed state per content-hashed artifact. Missing private caller declarations are added only when that artifact's code is requested.
 - Tests cover call chains, field reads/writes, allocation, casts, method references, untouched artifacts and workspace isolation. Validation is pending.
+
+
+### Phase 8 checkpoint: package overview and corpus agent session
+
+- Package and directory overview use the same tiered, paged declaration model as file overview.
+- Added a real PetClinic agent-session exit test: follow callers three deep through MCP mappings, replace Owner.getPets, run Maven verification, and restore the corpus source afterward. Every tool result is checked against the response budget.
+- Last complete corpus run (1175aba): 52,320 / 53,866 identifiers resolved correctly (97.1299%, floor 97%); PetClinic and jvmd both had zero live diagnostics and zero verified diagnostics.
+
+- LazyCodeReferencesTest passed, with all previous checkpoints green on c7ace16. Added scoped parameter/local name paths and dependency hierarchy traversal to close the remaining lookup cases.
+
+- Completed find depth expansion, kind filtering before dependency page limits, and status index/capability reporting. Added dependency hierarchy coverage alongside package and scoped-name tests.

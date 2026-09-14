@@ -71,6 +71,11 @@ public final class SymbolIdentity {
         if(e instanceof ExecutableElement method)return namePath(method.getEnclosingElement())+"/"+displayName(method)+"("+String.join(",",method.getParameters().stream().map(p->java.lang.constant.ClassDesc.ofDescriptor(descriptor(p.asType())).displayName().replace('$','.')).toList())+")";
         Element parent=e.getEnclosingElement();return (parent==null?"":namePath(parent)+"/")+displayName(e);
     }
+    public String qualifiedNamePath(Element element){
+        if(element instanceof TypeElement||element instanceof PackageElement||element instanceof ModuleElement)return namePath(element);
+        if(element instanceof ExecutableElement method)return qualifiedNamePath(method.getEnclosingElement())+"/"+displayName(method)+"("+String.join(",",method.getParameters().stream().map(p->qualifiedErased(p.asType())).toList())+")";
+        Element parent=element.getEnclosingElement();return (parent==null?"":qualifiedNamePath(parent)+"/")+displayName(element);
+    }
     public String scip(Element e){String value=scips.get(e);if(value==null){value=resolveScip(e);scips.put(e,value);}return value;}
     private String resolveScip(Element e){
         if(Set.of(ElementKind.LOCAL_VARIABLE,ElementKind.RESOURCE_VARIABLE,ElementKind.EXCEPTION_PARAMETER,ElementKind.BINDING_VARIABLE).contains(e.getKind())){

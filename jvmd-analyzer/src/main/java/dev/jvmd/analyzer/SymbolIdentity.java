@@ -1,0 +1,77 @@
+package dev.jvmd.analyzer;
+import com.sun.source.util.JavacTask;
+import com.sun.source.util.Trees;
+import com.sun.tools.javac.code.Symbol.ClassSymbol;
+import java.util.*;
+import java.util.function.Function;
+import javax.lang.model.element.*;
+import javax.lang.model.type.*;
+import javax.lang.model.util.*;
+/** Implements 4.2: javac-resolved SCIP identity, erased descriptors and name paths. */
+public final class SymbolIdentity {
+    private final Elements elements;
+    private final Types types;
+    private final Trees trees;
+    private final String defaultGav,jdkVersion;
+    private final Function<String,String> coordinates;
+    public SymbolIdentity(JavacTask task,String defaultGav,String jdkVersion,Function<String,String> coordinates){elements=task.getElements();types=task.getTypes();trees=Trees.instance(task);this.defaultGav=defaultGav;this.jdkVersion=jdkVersion;this.coordinates=coordinates;}
+    public String descriptor(TypeMirror type){
+        type=types.erasure(type);
+        return switch(type.getKind()){
+            case BOOLEAN->"Z";case BYTE->"B";case SHORT->"S";case INT->"I";case LONG->"J";case CHAR->"C";case FLOAT->"F";case DOUBLE->"D";case VOID->"V";
+            case ARRAY->"["+descriptor(((ArrayType)type).getComponentType());
+            case DECLARED->"L"+elements.getBinaryName((TypeElement)((DeclaredType)type).asElement()).toString().replace('.','/')+";";
+            case ERROR->throw new IllegalArgumentException("Unresolved type: "+type);
+            default->"Ljava/lang/Object;";
+        };
+    }
+    public String descriptor(ExecutableElement method){var value=new StringBuilder("(");for(var p:method.getParameters())value.append(descriptor(p.asType()));return value.append(')').append(descriptor(method.getReturnType())).toString();}
+    public TypeElement declaring(Element element){while(element!=null&&!(element instanceof TypeElement))element=element.getEnclosingElement();return (TypeElement)element;}
+    public String binaryName(TypeElement type){return elements.getBinaryName(type).toString();}
+    public String gav(Element element){
+        TypeElement type=declaring(element);
+        if(type instanceof ClassSymbol symbol){
+            var path=trees.getPath(type);
+            if(path!=null){String found=coordinates.apply(path.getCompilationUnit().getSourceFile().toUri().toString());if(found!=null)return found;}
+            if(symbol.classfile!=null){String found=coordinates.apply(symbol.classfile.getName());if(found!=null)return found;}
+        }
+        var module=elements.getModuleOf(element);
+        if(module!=null&&!module.isUnnamed()&&(module.getQualifiedName().toString().startsWith("java.")||module.getQualifiedName().toString().startsWith("jdk.")))return "jdk:"+module.getQualifiedName()+":"+jdkVersion;
+        return defaultGav;
+    }
+    public String displayName(Element e){return e.getKind()==ElementKind.CONSTRUCTOR?e.getEnclosingElement().getSimpleName().toString():e.getSimpleName().toString();}
+    public String namePath(Element e){
+        if(e instanceof TypeElement type)return binaryName(type).replace('$','/');
+        if(e instanceof PackageElement pkg)return pkg.getQualifiedName().toString();
+        if(e instanceof ModuleElement module)return module.getQualifiedName().toString();
+        if(e instanceof ExecutableElement method)return namePath(method.getEnclosingElement())+"/"+displayName(method)+"("+String.join(",",method.getParameters().stream().map(p->java.lang.constant.ClassDesc.ofDescriptor(descriptor(p.asType())).displayName().replace('$','.')).toList())+")";
+        Element parent=e.getEnclosingElement();return (parent==null?"":namePath(parent)+"/")+displayName(e);
+    }
+    public String scip(Element e){
+        if(Set.of(ElementKind.LOCAL_VARIABLE,ElementKind.RESOURCE_VARIABLE,ElementKind.EXCEPTION_PARAMETER,ElementKind.BINDING_VARIABLE).contains(e.getKind())){
+            var path=trees.getPath(e);String file=path==null?namePath(e):path.getCompilationUnit().getSourceFile().toUri().toString();long start=path==null?0:trees.getSourcePositions().getStartPosition(path.getCompilationUnit(),path.getLeaf());
+            return "local "+dev.jvmd.core.Hashing.sha256(file.getBytes(java.nio.charset.StandardCharsets.UTF_8)).substring(0,12)+"_"+start+"_"+displayName(e);
+        }
+        String[] coordinate=gav(e).split(":",3);return "maven "+coordinate[0]+"/"+coordinate[1]+" "+coordinate[2]+" "+descriptorPath(e);
+    }
+    private String descriptorPath(Element e){
+        if(e instanceof PackageElement pkg)return pkg.getQualifiedName().toString().replace('.','/')+"/";
+        if(e instanceof ModuleElement module)return module.getQualifiedName()+"/";
+        if(e instanceof TypeElement type)return binaryName(type).replace('.','/').replace('$','#')+"#";
+        if(e instanceof ExecutableElement method)return descriptorPath(e.getEnclosingElement())+method.getSimpleName()+"("+String.join(",",method.getParameters().stream().map(p->qualifiedErased(p.asType())).toList())+").";
+        if(e.getKind()==ElementKind.TYPE_PARAMETER)return descriptorPath(e.getEnclosingElement())+"["+e.getSimpleName()+"]";
+        if(e.getKind()==ElementKind.PARAMETER)return descriptorPath(e.getEnclosingElement())+"("+e.getSimpleName()+")";
+        return descriptorPath(e.getEnclosingElement())+e.getSimpleName()+".";
+    }
+    private String qualifiedErased(TypeMirror type){return dev.jvmd.index.Signatures.qualified(java.lang.constant.ClassDesc.ofDescriptor(descriptor(type)));}
+    public String signature(Element e){
+        String modifiers=String.join(" ",e.getModifiers().stream().map(Object::toString).sorted().toList());if(!modifiers.isEmpty())modifiers+=" ";
+        if(e instanceof ExecutableElement m){String generics=typeParameters(m.getTypeParameters());if(!generics.isEmpty())generics+=" ";return modifiers+generics+(m.getKind()==ElementKind.CONSTRUCTOR?"":m.getReturnType()+" ")+displayName(m)+"("+String.join(", ",m.getParameters().stream().map(p->p.asType()+" "+p.getSimpleName()).toList())+")"+(m.getThrownTypes().isEmpty()?"":" throws "+String.join(", ",m.getThrownTypes().stream().map(Object::toString).toList()));}
+        if(e instanceof TypeElement type){String s=modifiers+kind(type)+" "+type.getQualifiedName()+typeParameters(type.getTypeParameters());if(type.getSuperclass().getKind()!=TypeKind.NONE&&!type.getSuperclass().toString().equals("java.lang.Object"))s+=" extends "+type.getSuperclass();if(!type.getInterfaces().isEmpty())s+=(type.getKind()==ElementKind.INTERFACE?" extends ":" implements ")+String.join(", ",type.getInterfaces().stream().map(Object::toString).toList());return s;}
+        if(e instanceof PackageElement pkg)return "package "+pkg.getQualifiedName();
+        if(e instanceof ModuleElement module)return "module "+module.getQualifiedName();
+        return modifiers+e.asType()+" "+e.getSimpleName();
+    }
+    private static String typeParameters(List<? extends TypeParameterElement> values){if(values.isEmpty())return "";return "<"+String.join(", ",values.stream().map(p->p.getSimpleName()+(p.getBounds().size()==1&&p.getBounds().getFirst().toString().equals("java.lang.Object")?"":" extends "+String.join(" & ",p.getBounds().stream().map(Object::toString).toList()))).toList())+">";}
+    public static String kind(Element e){return switch(e.getKind()){case CONSTRUCTOR->"ctor";case ANNOTATION_TYPE->"annotation";case ENUM_CONSTANT->"enumconst";default->e.getKind().name().toLowerCase(Locale.ROOT);};}
+}

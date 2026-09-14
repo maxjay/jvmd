@@ -1,0 +1,83 @@
+package dev.jvmd.analyzer;
+
+import com.sun.source.tree.*;
+import com.sun.source.util.*;
+import dev.jvmd.core.*;
+import dev.jvmd.index.*;
+import java.nio.file.*;
+import java.util.*;
+import javax.lang.model.element.*;
+
+/** Implements 4.2: session-owned semantic state and detached declaration snapshots. */
+public final class Analyzer implements AutoCloseable {
+    /** Implements 4.2 and 4.3: effective module classpath and source roots. */
+    public record Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates) { }
+    private final CompilerPool compiler=new CompilerPool();
+    private final LinkedHashMap<String,Envelope> outlines=new LinkedHashMap<>(16,.75f,true);
+    private Context context;
+    private IndexService index;
+    private long budget;
+    public void configure(Context context,IndexService index,long budget)throws Exception{
+        if(this.context==null||!this.context.generation().equals(context.generation()))outlines.clear();
+        this.context=context;this.index=index;this.budget=budget;
+        compiler.configure(context.generation(),context.release(),context.classpath(),context.sources(),index,budget);
+    }
+    private String coordinates(String file){return context.coordinates().entrySet().stream().filter(e->file.startsWith(e.getKey())).max(Comparator.comparingInt(e->e.getKey().length())).map(Map.Entry::getValue).orElse(null);}
+    private String classpathStamp()throws Exception{
+        var value=new StringBuilder(context.generation());
+        for(var path:context.classpath())if(path.toString().endsWith(".jar")){
+            if(Files.isRegularFile(path))value.append(path).append(':').append(Files.size(path)).append(':').append(Files.getLastModifiedTime(path).to(java.util.concurrent.TimeUnit.NANOSECONDS));
+            else value.append(path).append(":missing");
+        }return Hashing.sha256(value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+    public Envelope overview(Path path,String text,int depth,int limit,int offset)throws Exception{
+        String key=path+":"+Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))+":"+classpathStamp()+":"+depth+":"+limit+":"+offset;
+        var cached=outlines.get(key);if(cached!=null)return cached;
+        var result=compiler.query(path,text,1,(task,units,tier)->declarations(task,units,path,text,depth));
+        var symbols=result.result()==null?List.<Map<String,Object>>of():result.result();
+        int from=Math.min(offset,symbols.size()),to=Math.min(symbols.size(),from+limit);boolean truncated=to<symbols.size();
+        var envelope=new Envelope(result.tier(),"live",truncated,truncated?Integer.toString(to):null,result.warnings(),Map.of("symbols",List.copyOf(symbols.subList(from,to)),"diagnostics",result.diagnostics()));
+        if(result.warnings().isEmpty()){outlines.put(key,envelope);while(outlines.size()>16)outlines.remove(outlines.keySet().iterator().next());}
+        return envelope;
+    }
+    private List<Map<String,Object>> declarations(JavacTask task,List<CompilationUnitTree> units,Path file,String text,int depth){
+        var identity=new SymbolIdentity(task,context.gav(),context.release(),this::coordinates);var trees=Trees.instance(task);var docs=DocTrees.instance(task);var source=new SourceText(text);
+        var result=new ArrayList<Map<String,Object>>();
+        for(var unit:units)new TreePathScanner<Void,Integer>(){
+            private void add(Tree tree,Element element,int level){
+                if(element==null||level>depth)return;
+                int start=(int)trees.getSourcePositions().getStartPosition(unit,tree),end=(int)trees.getSourcePositions().getEndPosition(unit,tree);if(start<0||end<start)return;
+                String name=identity.displayName(element);int nameStart=start,nameEnd=start;SourceText.Token token=null;
+                if(tree instanceof MethodTree method){
+                    int prefix=start;
+                    if(method.getReturnType()!=null)prefix=Math.max(prefix,(int)trees.getSourcePositions().getEndPosition(unit,method.getReturnType()));
+                    for(var type:method.getTypeParameters())prefix=Math.max(prefix,(int)trees.getSourcePositions().getEndPosition(unit,type));
+                    for(var candidate:source.tokens())if(candidate.start()>=prefix&&candidate.end()<=end&&candidate.text().equals(name)){
+                        int next=source.nextCode(candidate.end());if(next<text.length()&&text.charAt(next)=='('){token=candidate;break;}
+                    }
+                }else if(tree instanceof VariableTree variable){
+                    int bound=variable.getInitializer()==null?end:(int)trees.getSourcePositions().getStartPosition(unit,variable.getInitializer());token=source.named(name,start,bound,true);
+                }else if(tree instanceof ClassTree type){
+                    int prefix=(int)trees.getSourcePositions().getEndPosition(unit,type.getModifiers());token=source.named(name,Math.max(start,prefix),end,false);
+                }
+                if(token!=null){nameStart=token.start();nameEnd=token.end();}
+                var row=new LinkedHashMap<String,Object>();
+                row.put("name",name);row.put("kind",SymbolIdentity.kind(element));row.put("signature",identity.signature(element));try{row.put("name_path",identity.namePath(element));row.put("scip",identity.scip(element));row.put("resolved",true);}catch(IllegalArgumentException unresolved){row.put("name_path",name);row.put("scip",null);row.put("resolved",false);}row.put("gav",identity.gav(element));
+                row.put("modifiers",element.getModifiers().stream().map(Object::toString).sorted().toList());row.put("file",file.toString());row.put("source_file",file.toString());row.put("line",source.position(nameStart).line()+1);row.put("character",source.position(nameStart).character());
+                row.put("start",start);row.put("end",end);row.put("source_start",start);row.put("source_end",end);row.put("name_start",nameStart);row.put("name_end",nameEnd);row.put("range",source.range(start,end));row.put("name_range",source.range(nameStart,nameEnd));
+                var comment=docs.getDocCommentTree(getCurrentPath());row.put("doc",comment==null?null:DocMarkdown.render(comment.toString()));
+                var declaring=identity.declaring(element);row.put("fqn",declaring==null?null:identity.binaryName(declaring));row.put("declaring",declaring==null?null:declaring.getQualifiedName().toString());
+                row.put("parameters",element instanceof ExecutableElement method?method.getParameters().stream().map(p->p.getSimpleName().toString()).toList():List.of());
+                try{row.put("erased_descriptor",element instanceof ExecutableElement method?identity.descriptor(method):element instanceof VariableElement variable?identity.descriptor(variable.asType()):null);}catch(IllegalArgumentException unresolved){row.put("erased_descriptor",null);row.put("signature_complete",false);}
+                row.put("body_start",tree instanceof MethodTree method&&method.getBody()!=null?(int)trees.getSourcePositions().getStartPosition(unit,method.getBody()):-1);row.put("body_end",tree instanceof MethodTree method&&method.getBody()!=null?(int)trees.getSourcePositions().getEndPosition(unit,method.getBody()):-1);
+                result.add(Collections.unmodifiableMap(row));
+            }
+            @Override public Void visitClass(ClassTree node,Integer level){if(level>depth)return null;add(node,trees.getElement(getCurrentPath()),level);return super.visitClass(node,level+1);}
+            @Override public Void visitMethod(MethodTree node,Integer level){add(node,trees.getElement(getCurrentPath()),level);return null;}
+            @Override public Void visitVariable(VariableTree node,Integer level){add(node,trees.getElement(getCurrentPath()),level);return null;}
+        }.scan(unit,0);
+        return List.copyOf(result);
+    }
+    public Map<String,Object> status(){var result=new LinkedHashMap<String,Object>(compiler.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);return result;}
+    @Override public void close()throws Exception{outlines.clear();compiler.close();}
+}

@@ -1,6 +1,7 @@
 package dev.jvmd.dist;
 
 import dev.jvmd.analyzer.Parser;
+import dev.jvmd.analyzer.Analyzer;
 import dev.jvmd.core.*;
 import dev.jvmd.resolver.MavenResolver;
 import dev.jvmd.resolver.Resolution;
@@ -59,8 +60,9 @@ public final class Application implements AutoCloseable {
         dispatcher.register("symbol.overview", (s, p) -> {
             Path path = s.root().resolve(Dispatcher.required(p, "path")).normalize();
             if (!path.startsWith(s.root())) throw RpcException.invalid("Path is outside workspace");
-            Parser parser = s.state("parser", Parser::new);
-            return parser.overview(path, Files.readString(path), Dispatcher.bounded(p, "depth", 1, 10), Dispatcher.bounded(p, "limit", 100, 1000));
+            int offset;try{offset=Integer.parseInt(p.path("cursor").asText("0"));}catch(NumberFormatException e){throw RpcException.invalid("Invalid cursor");}
+            if(offset<0)throw RpcException.invalid("Invalid cursor");
+            return analyzer(s,path).overview(path,Files.readString(path),Dispatcher.bounded(p,"depth",1,10),Dispatcher.bounded(p,"limit",100,1000),offset);
         });
         dispatcher.register("diag.get", (s, p) -> {
             if (p.path("verified").asBoolean()) throw new RpcException(-32003, "unsupported_capability", java.util.Map.of("capability", "verified diagnostics"));
@@ -76,6 +78,25 @@ public final class Application implements AutoCloseable {
     }
     public Dispatcher dispatcher() { return dispatcher; }
     public Sessions sessions() { return sessions; }
+    private Analyzer analyzer(Session session,Path path)throws Exception{
+        var graph=(Resolution)session.state("resolution");
+        if(graph!=null)graph=refresh(session);
+        String gav="local:workspace:0",release="25",generation="plain";
+        var classpath=new java.util.ArrayList<Path>();var sources=new java.util.ArrayList<Path>();var coordinates=new java.util.LinkedHashMap<String,String>();
+        if(graph!=null){
+            var module=graph.modules().stream().filter(m->path.startsWith(Path.of(m.directory()))).max(java.util.Comparator.comparingInt(m->m.directory().length())).orElse(graph.modules().getFirst());
+            gav=module.gav();release=module.release()==null||module.release().isBlank()?"25":module.release();generation=graph.fingerprint()+":"+gav;
+            boolean test=module.testSources().stream().anyMatch(root->path.startsWith(Path.of(root)));
+            graph.classpaths().getOrDefault(gav+(test?":test":":main"),java.util.List.of()).forEach(p->classpath.add(Path.of(p)));
+            module.sources().forEach(p->sources.add(Path.of(p)));if(test)module.testSources().forEach(p->sources.add(Path.of(p)));
+            for(var m:graph.modules()){coordinates.put(m.directory(),m.gav());coordinates.put(Path.of(m.directory()).toUri().toString(),m.gav());}
+            for(var node:graph.nodes())if(node.path()!=null&&node.winner()==null)coordinates.put(node.path(),node.gav());
+        }else{sources.add(session.root());coordinates.put(session.root().toString(),gav);coordinates.put(session.root().toUri().toString(),gav);}
+        var analyzer=session.state("analyzer",Analyzer::new);
+        var availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
+        analyzer.configure(new Analyzer.Context(gav,release,java.util.List.copyOf(classpath),java.util.List.copyOf(sources),generation,java.util.Map.copyOf(coordinates)),availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));
+        return analyzer;
+    }
     private synchronized MavenResolver resolver() {
         if (resolver == null) resolver = new MavenResolver(config);
         return resolver;

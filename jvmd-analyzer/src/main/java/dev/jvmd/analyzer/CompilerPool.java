@@ -24,12 +24,16 @@ public final class CompilerPool implements AutoCloseable {
     private JavacTaskPool pool=new JavacTaskPool(1);
     private IndexedFileManager manager;
     private String generation,release;
+    private List<String> compilerOptions=List.of();
     private long budget,baseline,recycles,faults,queries;
     public void configure(String generation,String release,List<Path> classpath,List<Path> sources,IndexService index,long budget)throws Exception {
+        configure(generation,release,classpath,sources,index,budget,List.of("--release",release));
+    }
+    public void configure(String generation,String release,List<Path> classpath,List<Path> sources,IndexService index,long budget,List<String> options)throws Exception{
         checkThread();this.budget=Math.max(1,budget);
-        if(Objects.equals(this.generation,generation)&&Objects.equals(this.release,release)&&manager!=null)return;
+        if(Objects.equals(this.generation,generation)&&Objects.equals(this.release,release)&&this.compilerOptions.equals(options)&&manager!=null)return;
         if(manager!=null){manager.close();recycles++;}
-        this.generation=generation;this.release=release;pool=new JavacTaskPool(1);baseline=heap();
+        this.generation=generation;this.release=release;this.compilerOptions=List.copyOf(options);pool=new JavacTaskPool(1);baseline=heap();
         manager=new IndexedFileManager(ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8),classpath,sources,index,Math.min(32L*1024*1024,Math.max(1024*1024,budget/8)));
     }
     private void checkThread(){if(Thread.currentThread()!=owner||owner.isVirtual())throw new IllegalStateException("Compiler access must stay on its session platform executor");}
@@ -38,7 +42,9 @@ public final class CompilerPool implements AutoCloseable {
         if(tier<0||tier>2)throw new IllegalArgumentException("tier");
         if(heap()-baseline>budget)recycle();
         var diagnostics=new DiagnosticCollector<JavaFileObject>();var warnings=new ArrayList<String>();int[] actual={tier};boolean[] fault={false},implicitSource={false};queries++;
-        List<String> options=List.of("-proc:none","--should-stop=ifError=FLOW","--release",release,"-parameters","-g");
+        var options=new ArrayList<String>(compilerOptions);
+        for(String option:options)if(option.startsWith("-proc")||option.startsWith("-processor")||option.startsWith("--processor")||option.startsWith("-Xplugin"))throw new IllegalArgumentException("Compiler extensions run only in the external processor process: "+option);
+        options.addAll(List.of("-proc:none","--should-stop=ifError=FLOW","-parameters","-g"));
         try {
             manager.validateClasspath();
             T value=pool.getTask(new java.io.StringWriter(),manager,diagnostics,options,null,List.of(Parser.source(path.toUri(),source)),task->{

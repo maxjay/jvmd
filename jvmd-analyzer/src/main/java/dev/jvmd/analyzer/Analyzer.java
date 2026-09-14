@@ -11,7 +11,9 @@ import javax.lang.model.element.*;
 /** Implements 4.2: session-owned semantic state and detached declaration snapshots. */
 public final class Analyzer implements AutoCloseable {
     /** Implements 4.2 and 4.3: effective module classpath and source roots. */
-    public record Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates) { }
+    public record Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates,List<String> compilerOptions) {
+        public Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates){this(gav,release,classpath,sources,generation,coordinates,List.of("--release",release));}
+    }
     private final CompilerPool compiler=new CompilerPool();
     private final LinkedHashMap<String,Envelope> outlines=new LinkedHashMap<>(16,.75f,true);
     private record Cached(Path file,String hash,String stamp,int start,int end,CompilerPool.Outcome<Bindings.Snapshot> result) { }
@@ -25,7 +27,7 @@ public final class Analyzer implements AutoCloseable {
     public void configure(Context context,IndexService index,long budget)throws Exception{
         if(this.context==null||!this.context.generation().equals(context.generation())){outlines.clear();focused.clear();}
         this.context=context;this.index=index;this.budget=budget;
-        compiler.configure(context.generation(),context.release(),context.classpath(),context.sources(),index,budget);
+        compiler.configure(context.generation(),context.release(),context.classpath(),context.sources(),index,budget,context.compilerOptions());
     }
     private String coordinates(String file){return context.coordinates().entrySet().stream().filter(e->file.startsWith(e.getKey())).max(Comparator.comparingInt(e->e.getKey().length())).map(Map.Entry::getValue).orElse(null);}
     private String classpathStamp()throws Exception{

@@ -177,7 +177,7 @@ public final class MavenResolver implements AutoCloseable {
             String release = model.getProperties().getProperty("maven.compiler.release", model.getProperties().getProperty("java.version", model.getProperties().getProperty("maven.compiler.source", "25")));
             build.modules.add(new Resolution.Module(gav, moduleDir.toString(), model.getPackaging(), sources, testSources,
                     m.getOutputDirectory(), m.getTestOutputDirectory(), release,
-                    model.getDependencies().stream().map(d -> d.getGroupId() + ":" + d.getArtifactId() + ":" + d.getVersion()).toList()));
+                    model.getDependencies().stream().map(d -> d.getGroupId() + ":" + d.getArtifactId() + ":" + d.getVersion()).toList(),CompilerSettings.options(model,false),CompilerSettings.options(model,true)));
             var collect = new CollectRequest().setRootArtifact(new DefaultArtifact(model.getGroupId(), model.getArtifactId(), "pom", model.getVersion()))
                     .setRepositories(remotes).setDependencies(model.getDependencies().stream().map(d -> dependency(d, session)).toList());
             if (model.getDependencyManagement() != null) collect.setManagedDependencies(model.getDependencyManagement().getDependencies().stream().map(d -> dependency(d, session)).toList());
@@ -228,7 +228,7 @@ public final class MavenResolver implements AutoCloseable {
     }
     private String contextFingerprint() {
         String properties = environment.systemProperties().entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()).sorted().collect(java.util.stream.Collectors.joining("\n"));
-        return Hashing.sha256((config.mavenMajor() + "\n" + config.m2Repo() + "\n" + properties).getBytes(StandardCharsets.UTF_8));
+        return Hashing.sha256(("compiler-settings-v1\n" + config.mavenMajor() + "\n" + config.m2Repo() + "\n" + properties).getBytes(StandardCharsets.UTF_8));
     }
     private static Input input(Path path, boolean strong) throws Exception {
         path = path.toAbsolutePath().normalize();

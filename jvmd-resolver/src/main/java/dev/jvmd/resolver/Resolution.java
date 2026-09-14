@@ -10,7 +10,11 @@ public record Resolution(String root, List<Module> modules, List<Node> nodes, Li
     /** Implements 4.3 and 4.6: module paths derived by Maven's model builder. */
     public record Module(String gav, String directory, String packaging, List<String> sources,
                          List<String> testSources, String classes, String testClasses,
-                         String release, List<String> dependencies) { }
+                         String release, List<String> dependencies,List<String> compilerOptions,List<String> testCompilerOptions) {
+        public Module(String gav,String directory,String packaging,List<String> sources,List<String> testSources,String classes,String testClasses,String release,List<String> dependencies){
+            this(gav,directory,packaging,sources,testSources,classes,testClasses,release,dependencies,List.of("--release",release==null||release.isBlank()?"25":release),List.of("--release",release==null||release.isBlank()?"25":release));
+        }
+    }
     /** Implements 4.3: version winners and retained conflict losers. */
     public record Node(String id, String gav, String extension, String classifier, String scope,
                        String path, String winner, String reason, boolean optional) { }

@@ -91,3 +91,17 @@ warm p95 1.648 ms. Budgets remain unchanged. Phases 1–3 now pass together.
 
 The tolerant compiler smoke confirms bindings survive mixed syntax/type errors and the indexed
 file-manager fault boundary catches a class disappearing after enumeration. See SMOKE.md.
+
+Phase-4 checkpoints through compiler settings pass in [CI run 34807688604](https://github.com/maxjay/jvmd/actions/runs/34807688604): indexed classpath bytes, tolerant FLOW attribution, pool recycling, tier-one outlines, focusing, fault degradation, lazy source invalidation, bound navigation/graphs, and a real Maven verification runner preserving javac diagnostic codes and locations. Verification timeouts terminate the child process tree.
+
+The full corpus gate remains in progress. It caught stale package scopes in pooled compiler contexts, then distinct cached copies of the same source type. Focused attribution initially measured p95 67.362 ms, then 57.402 ms; source-layout and identifier-span caches reduced it to **43.341 ms p95** (20.672 ms median, 47.995 ms maximum) in [run 34808660727](https://github.com/maxjay/jvmd/actions/runs/34808660727). This test attributes 70 different members of a 2,002-line file: 70 compiler queries, no binding-cache hits; only the unchanged source layout is reused. Session open was 4.405 ms. The 50 ms limit has not changed.
+
+That run's initial identifier sweep scored 28,275 / 30,816 (91.754%) against the committed 95% floor. The sweep exposed an outer-focus cache incorrectly covering erased nested method bodies; a dedicated regression and cache-coverage fix are committed. Corpus agreement and the sweep must both pass before phase 4 is marked complete. Measured compiler memory is conservatively guarded using process heap growth, not claimed as a precise retained-object-graph measurement.
+
+Phase-4 exit: **PASS** in [run 34809147407](https://github.com/maxjay/jvmd/actions/runs/34809147407), commit `4bdb750a558728dece83ba8b31d64c26bce4c60c`. PetClinic and jvmd each return zero live diagnostics at tier 2 and zero verified diagnostics from real `mvn test-compile`. Identifier sweep: **30,337 / 31,145 = 97.405683%**, with the committed floor raised to 97%. Most remaining lexical misses are contextual `var`/`record` keywords; static imports of overloaded methods remain ambiguous. The test records every miss; it does not discard them from the denominator. All 20 non-performance tests, including corpus checks, pass; the independent performance run passes all 19 tests. Focused p95 **48.571 ms**, median 28.374 ms, maximum 61.075 ms; session open **5.539 ms**; startup **306.559 ms** and outline p95 **6.666 ms**. The 50 ms focused gate is a p95 assertion, not a claim about every individual request.
+
+Workspace source takes precedence over compiled outputs so edits with preserved timestamps cannot be masked by old class files. Pooled package completion is reset for parsed source packages, keeping javac's jar symbol cache while preventing stale source identity. Nested focus snapshots explicitly exclude erased bodies. The compiler extensions remain confined to the analyzer and use only the original three javac exports. Full design work continues with phases 5–11 and the recorded Maven 4 bundle item.
+
+## Phase 5 — in progress
+
+Annotation processors will run only in external JVMs. The default Lombok policy is reduced fidelity with an explicit status warning; generated public APIs will be supplied by external compilation. No processor runs in the daemon.

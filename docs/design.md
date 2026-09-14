@@ -470,17 +470,17 @@ independent of each other after 4. Phases 10 and 11 are independent of 5 to 9.
 
 ### Phase 1: daemon skeleton
 
-- [ ] JSON-RPC 2.0 server over `$XDG_RUNTIME_DIR/jvmd-<uid>.sock` with Content-Length framing
-- [ ] Response envelope enforced at the dispatcher; a tool that omits `tier` fails a unit test
-- [ ] Session manager: open, close, list; one executor per session
-- [ ] Idle timeout and clean shutdown flushing WAL
-- [ ] Structured request log and `status` with per-method p50 and p95
-- [ ] `parse()` tier 0: `overview` on a file returns declarations with lines
-- [ ] Syntax diagnostics from `DiagnosticListener` surfaced with `source: live, tier: 0`
-- [ ] jlink image with `--add-options` carrying every `--add-exports` and AOT flag
-- [ ] AOT cache training script; CI runs the daemon with `-XX:AOTMode=on`
-- [ ] Runtime `auto` mode with `-Xlog:aot` to file; `status.aot_cache` reports `used` or `rejected` with reason
-- [ ] Exit: daemon cold start under 600ms measured in CI; `overview` under 50ms on a 2k-line file
+- [x] JSON-RPC 2.0 server over `$XDG_RUNTIME_DIR/jvmd-<uid>.sock` with Content-Length framing
+- [x] Response envelope enforced at the dispatcher; a tool that omits `tier` fails a unit test
+- [x] Session manager: open, close, list; one executor per session
+- [x] Idle timeout and clean shutdown flushing WAL
+- [x] Structured request log and `status` with per-method p50 and p95
+- [x] `parse()` tier 0: `overview` on a file returns declarations with lines
+- [x] Syntax diagnostics from `DiagnosticListener` surfaced with `source: live, tier: 0`
+- [x] jlink image with `--add-options` carrying every `--add-exports` and AOT flag
+- [x] AOT cache training script; CI runs the daemon with `-XX:AOTMode=on`
+- [x] Runtime `auto` mode with `-Xlog:aot` to file; `status.aot_cache` reports `used` or `rejected` with reason
+- [x] Exit: daemon cold start under 600ms measured in CI; `overview` under 50ms on a 2k-line file
 
 ### Phase 2: resolver
 
@@ -496,32 +496,32 @@ independent of each other after 4. Phases 10 and 11 are independent of 5 to 9.
 
 ### Phase 3: index
 
-- [ ] Schema from 4.4 created with migrations
-- [ ] Pass 1 over one jar: `Signature` parsed, generics preserved, `MethodParameters` captured
-- [ ] Multi-release selection pinned to the daemon JDK
-- [ ] Pass 1 eager over all of `~/.m2`, parallel readers, one writer, progress in `status`
-- [ ] Pass 2 over a sources jar: docs rendered, parameter names joined to class file by erased
+- [x] Schema from 4.4 created with migrations
+- [x] Pass 1 over one jar: `Signature` parsed, generics preserved, `MethodParameters` captured
+- [x] Multi-release selection pinned to the daemon JDK
+- [x] Pass 1 eager over all of `~/.m2`, parallel readers, one writer, progress in `status`
+- [x] Pass 2 over a sources jar: docs rendered, parameter names joined to class file by erased
       descriptor, unmatched members keep `arg0` with a counter in `status`
-- [ ] `simple_names` and FTS5 populated; `find` with `substring=true` works
-- [ ] Workspace load: `workspace_artifacts`, `depends_on`, duplicate-class warning
-- [ ] Invalidation: `(size, mtime)` fast path, rehash on mismatch, SNAPSHOT always rehashed
-- [ ] Exit: full `~/.m2` pass 1 completes; `describe` on a Spring symbol returns generics intact,
+- [x] `simple_names` and FTS5 populated; `find` with `substring=true` works
+- [x] Workspace load: `workspace_artifacts`, `depends_on`, duplicate-class warning
+- [x] Invalidation: `(size, mtime)` fast path, rehash on mismatch, SNAPSHOT always rehashed
+- [x] Exit: full `~/.m2` pass 1 completes; `describe` on a Spring symbol returns generics intact,
       real parameter names, and docs; a deliberately duplicated class across two jars is reported at
       load
 
 ### Phase 4: analyzer
 
-- [ ] `JavaFileManager` serving `CLASS_PATH` from index-recorded jar paths with an LRU byte cache
-- [ ] `--should-stop=ifError=FLOW` set; attribution proceeds with errors present
-- [ ] `JavacTaskPool` per session, recycle on classpath change and memory threshold
-- [ ] Tier 1 via `enter()`; `overview` upgrades to tier 1 output
-- [ ] Focusing implemented with line-preserving padding; positions map 1:1
-- [ ] Catch-and-degrade around `analyze()` with `analyzer_fault` warning
-- [ ] Reverse-dependency map and lazy re-attribution of dependents
-- [ ] `diagnostics` with `source: live`; `verified` runs the manifest's verify command and parses
+- [x] `JavaFileManager` serving `CLASS_PATH` from index-recorded jar paths with an LRU byte cache
+- [x] `--should-stop=ifError=FLOW` set; attribution proceeds with errors present
+- [x] `JavacTaskPool` per session, recycle on classpath change and memory threshold
+- [x] Tier 1 via `enter()`; `overview` upgrades to tier 1 output
+- [x] Focusing implemented with line-preserving padding; positions map 1:1
+- [x] Catch-and-degrade around `analyze()` with `analyzer_fault` warning
+- [x] Reverse-dependency map and lazy re-attribution of dependents
+- [x] `diagnostics` with `source: live`; `verified` runs the manifest's verify command and parses
       `file:line:col: error: code` output
-- [ ] `describe`, `find` by position, `references` (workspace, from attribution), `hierarchy`
-- [ ] Exit: zero `live` diagnostics at tier 2 on clean PetClinic; zero disagreement between `live`
+- [x] `describe`, `find` by position, `references` (workspace, from attribution), `hierarchy`
+- [x] Exit: zero `live` diagnostics at tier 2 on clean PetClinic; zero disagreement between `live`
       and `verified` on the corpus; a file with a deliberate syntax error and an unresolved type still
       resolves other members; deleting a classfile from the classpath produces `analyzer_fault`, not a
       dead daemon; focused attribution under 50ms on a 2k-line file
@@ -685,7 +685,7 @@ tests never stop the build; a failing advisory test flips its default and is rec
 | 2 | javac with `--should-stop=ifError=FLOW`: a file with a syntax error and an unresolved type; `Trees.getElement` still resolves other members; delete a classfile from the classpath and confirm the fault is catchable | 4 | PASS; tolerant bindings and disappearing indexed-classpath seam, see SMOKE.md |
 | 3 | `RepositorySystemSupplier` resolving Spring Boot fully offline from a warm `~/.m2`; measure | 2 | PASS; see SMOKE.md and PROGRESS.md |
 | 4 | `WorkspaceReader` substituting a local module for a published GAV, unbuilt | 6 | not run |
-| 5 | AOT cache round trip with `-XX:AOTMode=on` on a fixture jar; measure the delta. The daemon round trip is phase 1's exit criterion, not a pre-phase test | 1 | PASS as fixture training; daemon result pending phase 1 |
+| 5 | AOT cache round trip with `-XX:AOTMode=on` on a fixture jar; measure the delta. The daemon round trip is phase 1's exit criterion, not a pre-phase test | 1 | PASS; fixture and strict daemon AOT, 306.559ms startup in CI |
 | 6 | `canGetInstanceInfo` on the target JVMs; `referringObjects` on a deliberately retained object | 10 | PASS on Temurin and JBR; holder found by object identity |
 | 7 | Debuggee with `-XX:AOTCache` plus JDWP | advisory | FAIL: linked cache rejected at VM init. Default flipped: no debuggee AOT. Re-run with `-XX:-AOTClassLinking` as the experiment |
 | 8 | `java.lang.classfile` reading a multi-release jar and returning the right version's class | 3 | PASS; Spring Core selects versions 21 and 24 on JDK 25 |

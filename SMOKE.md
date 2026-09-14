@@ -42,3 +42,7 @@ JDK missing-class assertion still reproduces on this JDK update. Phase 4 can pro
 phase-3 CI gate.
 
 Phase-11 HotswapAgent evaluation (CI run 34833512079): PASS on JBR 25.0.4.1 b583.48. The pinned RELEASE-2.0.3 asset refreshes JavaBeans metadata after adding a getter and preserves calls on existing objects. Without the agent the control retains cached metadata. Adopted as optional `hotswap_agent` config, off by default. Agent output labels the digest-pinned release binary 2.0.4-SNAPSHOT; full evidence is in target/hotswap-agent.json. Stock body hot-swap request performance failed at p95 606.12 ms against 100 ms; compilation is the measured bottleneck.
+
+## Updated runtime and resolver outcomes
+
+The full method-body hot-swap RPC budget now passes after moving processor-free, matching-SDK compilation to the public compiler API. The original 606.12 ms external-compiler failure remains recorded above. Latest strict-AOT measurement: 92.618860 ms p95 / 100 in [run 34846787820](https://github.com/maxjay/jvmd/actions/runs/34846787820), including compilation, class publication and breakpoint rebinding. Processor execution remains external. Native Maven 3 and Maven 4 resolution both pass exact build-graph agreement and the 1000 ms cold / 5 ms cached limits (762.47/3.38 ms and 994.73/2.53 ms respectively).

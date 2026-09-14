@@ -343,3 +343,9 @@ The corpus client now reconstructs bounded response fragments using their declar
 ### Authenticated repository coverage for both native resolvers
 
 Added a loopback HTTP repository fixture for Maven 3 and Maven 4. It requires Basic authentication configured through a Maven settings mirror, verifies that the online fill fetches both the dependency POM and jar, then stops the server and forces a new graph build from the local repository. The fixture tests actual native transports and settings services with no public network dependency. The server API was checked against the [JDK 25 HttpServer documentation](https://docs.oracle.com/en/java/javase/25/docs/api/jdk.httpserver/com/sun/net/httpserver/HttpServer.html). CI validation pending.
+
+### Native resolver acceptance passed
+
+Phase 2 passes in [run 34846787820](https://github.com/maxjay/jvmd/actions/runs/34846787820): Maven 3 cold 762.466138 ms and cached p95 3.375804 ms; native Maven 4 cold 994.731755 ms and cached p95 2.533505 ms, against the unchanged 1000/5 ms limits. Both selected graphs match the actual respective Maven builds. Authenticated HTTP mirrors, offline rebuilds, Maven 4.1 inference and live/verified diagnostics pass. The Maven 4 cold stage is 327.99 ms bootstrap, 41.06 ms settings, 0.88 ms version detection, 496.60 ms graph building and 63.15 ms cache publication. Native Maven 4 has little cold-budget margin, so subsequent checkpoint runs retain the assertion.
+
+The same run passes artifact-specific signature/documentation migration, the full eager index, focused attribution at 33.707540 ms p95, documentation at 10.962375 ms p95, startup at 256.609552 ms, and full hot swap at 92.618860 ms p95. The remaining focused gate failures are a fragmented-response fixture and module-path visibility attribution, addressed in the next checkpoints.

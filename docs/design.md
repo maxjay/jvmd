@@ -484,14 +484,14 @@ independent of each other after 4. Phases 10 and 11 are independent of 5 to 9.
 
 ### Phase 2: resolver
 
-- [ ] Resolver bundle selected by `maven_major`; detected Maven version disagreement surfaces in `status`
-- [ ] `RepositorySystemSupplier` bootstrap with simple local repository manager
-- [ ] Offline-first resolution with one online pass for misses
-- [ ] `conflictResolver.verbose` on; conflict losers present in the returned graph
-- [ ] Resolution cache keyed by root, parent chain and settings hashes
-- [ ] `pom.xml` change detection, re-resolve, classpath diff
-- [ ] `deps` tool returns the graph with losers and reasons
-- [ ] Exit: Spring Boot starter graph resolves fully offline from a warm `~/.m2` under 1s cold, under
+- [x] Resolver bundle selected by `maven_major`; detected Maven version disagreement surfaces in `status`
+- [x] `RepositorySystemSupplier` bootstrap with simple local repository manager
+- [x] Offline-first resolution with one online pass for misses
+- [x] `conflictResolver.verbose` on; conflict losers present in the returned graph
+- [x] Resolution cache keyed by root, parent chain and settings hashes
+- [x] `pom.xml` change detection, re-resolve, classpath diff
+- [x] `deps` tool returns the graph with losers and reasons
+- [x] Exit: Spring Boot starter graph resolves fully offline from a warm `~/.m2` under 1s cold, under
       5ms cached; result matches `mvn dependency:tree` on the corpus exactly
 
 ### Phase 3: index

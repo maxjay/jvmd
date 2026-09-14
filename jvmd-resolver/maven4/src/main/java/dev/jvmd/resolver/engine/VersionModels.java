@@ -40,6 +40,7 @@ public final class VersionModels implements Models {
         injector.bindImplicit(ApiRunner.class);
         injector.bindImplicit(org.apache.maven.impl.standalone.RepositorySystemSupplier.class);
         injector.bindImplicit(Transport.class);
+        injector.bindImplicit(Credentials.class);
         injector.bindScope(SessionScoped.class,new SessionScope());
         injector.discover(VersionModels.class.getClassLoader());
         lookup=injector.getInstance(Lookup.class);

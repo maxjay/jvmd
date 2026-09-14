@@ -50,7 +50,7 @@ public final class CompilerPool implements AutoCloseable {
         options.addAll(List.of("-proc:none","--should-stop=ifError=FLOW","-Xprefer:source","-parameters","-g"));
         try {
             manager.validateClasspath();
-            T value=pool.getTask(new java.io.StringWriter(),manager,diagnostics,options,null,List.of(Parser.source(path.toUri(),source)),task->{
+            T value=pool.getTask(new java.io.StringWriter(),manager,diagnostics,options,null,List.of(manager.source(path,source)),task->{
                 var units=new ArrayList<CompilationUnitTree>();var parsed=new ArrayList<CompilationUnitTree>();
                 task.addTaskListener(new com.sun.source.util.TaskListener(){
                     @Override public void finished(com.sun.source.util.TaskEvent event){

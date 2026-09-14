@@ -14,7 +14,8 @@ import static org.assertj.core.api.Assertions.*;
 @Tag("phase-2") @Tag("perf")
 class ResolvedGraphBudgetTest {
     @TempDir Path temp;
-    @Test void graphAgreesWithMavenAndMeetsColdAndCachedBudgets() throws Exception {
+    @org.junit.jupiter.params.ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(ints={3,4})
+    void graphAgreesWithMavenAndMeetsColdAndCachedBudgets(int major) throws Exception {
         Path project = TestSupport.repo().resolve("jvmd-tests/smoke/resolver/warmup");
         Path baseline = project.resolve("target/dependency-tree.json");
         assertThat(baseline).as("Run smoke/run-resolver.sh before the perf gate").isRegularFile();
@@ -25,11 +26,11 @@ class ResolvedGraphBudgetTest {
              var input = getClass().getClassLoader().getResourceAsStream(name)) {
             output.putNextEntry(new java.util.jar.JarEntry(name)); input.transferTo(output); output.closeEntry();
         }
-        Path measurements = TestSupport.repo().resolve("jvmd-tests/target/phase-2-perf.json");
+        Path measurements = TestSupport.repo().resolve("jvmd-tests/target/phase-2-maven"+major+"-perf.json");
         Path log = temp.resolve("probe.log");
         var process = new ProcessBuilder(image.resolve("bin/java").toString(), "-XX:AOTMode=on",
                 "-XX:AOTCache=" + image.resolve("lib/jvmd/jvmd.aot"), "-cp", image.resolve("lib/jvmd/*") + ":" + probe,
-                "dev.jvmd.tests.ResolverPerformanceProbe", project.toString(), temp.resolve("state").toString(), measurements.toString())
+                "dev.jvmd.tests.ResolverPerformanceProbe", project.toString(), temp.resolve("state").toString(), measurements.toString(),Integer.toString(major))
                 .redirectErrorStream(true).redirectOutput(log.toFile()).start();
         try {
             assertThat(process.waitFor(30, TimeUnit.SECONDS)).isTrue();
@@ -37,7 +38,7 @@ class ResolvedGraphBudgetTest {
             System.out.println("phase-2-perf " + Files.readString(measurements));
         } finally { process.destroyForcibly(); }
         var config = new dev.jvmd.core.Config(Path.of(System.getProperty("java.home")), null,
-                Path.of(System.getProperty("user.home"), ".m2/repository"), 3, Duration.ofHours(4), 512, false, temp.resolve("agreement"), temp.resolve("unused.sock"));
+                Path.of(System.getProperty("user.home"), ".m2/repository"), major, Duration.ofHours(4), 512, false, temp.resolve("agreement"), temp.resolve("unused.sock"));
         try (var resolver = new MavenResolver(config)) {
             var graph = resolver.resolve(project);
             var expected = new java.util.TreeSet<String>();

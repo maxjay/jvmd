@@ -11,7 +11,7 @@ import java.util.Map;
 public final class ResolverPerformanceProbe {
     public static void main(String[] args) throws Exception {
         var config = new Config(Path.of(System.getProperty("java.home")), null,
-                Path.of(System.getProperty("user.home"), ".m2/repository"), 3,
+                Path.of(System.getProperty("user.home"), ".m2/repository"), Integer.parseInt(args[3]),
                 Duration.ofHours(4), 512, false, Path.of(args[1]), Path.of(args[1], "unused.sock"));
         try (var resolver = new MavenResolver(config)) {
             long started = System.nanoTime();
@@ -25,7 +25,7 @@ public final class ResolverPerformanceProbe {
                 if (i >= 0) times[i] = (System.nanoTime() - before) / 1e6;
             }
             java.util.Arrays.sort(times);
-            var measurements = Map.of("cold_ms", cold, "warm_p50_ms", times[14], "warm_p95_ms", times[28], "nodes", graph.nodes().size());
+            var measurements = Map.of("maven_major",Integer.parseInt(args[3]),"cold_ms", cold, "warm_p50_ms", times[14], "warm_p95_ms", times[28], "nodes", graph.nodes().size());
             Json.MAPPER.writerWithDefaultPrettyPrinter().writeValue(Path.of(args[2]).toFile(), measurements);
             System.out.println("phase-2-perf " + Json.MAPPER.writeValueAsString(measurements));
             if (cold >= 1000 || times[28] >= 5) throw new AssertionError("Resolver budget exceeded: " + measurements);

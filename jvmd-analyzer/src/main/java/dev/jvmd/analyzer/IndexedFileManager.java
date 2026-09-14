@@ -17,6 +17,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     private final List<Path> classpath;
     private final List<Path> directories;
     private final List<Path> sourceRoots;
+    private final Map<Location,List<Path>> modulePaths=new HashMap<>();
     private Map<Path,String> documents=Map.of();
     public void documents(Map<Path,String> values){documents=Map.copyOf(values);}
     private final Map<Path,Catalog> catalogs=new HashMap<>();
@@ -39,6 +40,12 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         // Directory inputs and source roots keep javac's own file-manager behavior.
         delegate.setLocationFromPaths(StandardLocation.CLASS_PATH,directories.stream().filter(Files::isDirectory).toList());
         delegate.setLocationFromPaths(StandardLocation.SOURCE_PATH,sources.stream().filter(Files::isDirectory).toList());
+        if(sources.stream().anyMatch(root->Files.isRegularFile(root.resolve("module-info.java")))){
+            delegate.setLocationFromPaths(StandardLocation.MODULE_PATH,paths.stream().filter(Files::exists).toList());
+            for(var group:delegate.listLocationsForModules(StandardLocation.MODULE_PATH))for(var location:group){
+                var entries=new ArrayList<Path>();delegate.getLocationAsPaths(location).forEach(entries::add);modulePaths.put(location,List.copyOf(entries));
+            }
+        }
     }
     public void validateClasspath(){
         try {
@@ -92,6 +99,10 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         @Override public CharSequence getCharContent(boolean ignoreEncodingErrors){return text;}
         @Override public long getLastModified(){return Long.MAX_VALUE;}
     }
+    public JavaFileObject source(Path file,String text){
+        file=file.toAbsolutePath().normalize();String binary=sourceName(file);
+        return new SourceFile(file,binary==null?file.getFileName().toString().replaceFirst("\\.java$", ""):binary,text);
+    }
     private String sourceName(Path file){
         for(Path root:sourceRoots)if(file.startsWith(root)){String relative=root.relativize(file).toString();if(relative.endsWith(".java"))return relative.substring(0,relative.length()-5).replace(java.io.File.separatorChar,'.');}
         return null;
@@ -104,10 +115,11 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
                 if(pkg.equals(packageName)||recurse&&(packageName.isEmpty()||pkg.startsWith(packageName+".")))sources.put(binary,new SourceFile(entry.getKey(),binary,entry.getValue()));
             }return sources.values();
         }
-        if(location!=StandardLocation.CLASS_PATH||!kinds.contains(JavaFileObject.Kind.CLASS))return super.list(location,packageName,kinds,recurse);
+        List<Path> inputs=location==StandardLocation.CLASS_PATH?classpath:modulePaths.get(location);
+        if(inputs==null||!kinds.contains(JavaFileObject.Kind.CLASS))return super.list(location,packageName,kinds,recurse);
         var result=new LinkedHashMap<String,JavaFileObject>();
-        for(var file:super.list(location,packageName,kinds,recurse)){track(file);result.put(super.inferBinaryName(location,file),file);}
-        for(var path:classpath)if(path.toString().endsWith(".jar")){
+        if(inputs.stream().anyMatch(Files::isDirectory))for(var file:super.list(location,packageName,kinds,recurse)){track(file);result.put(super.inferBinaryName(location,file),file);}
+        for(var path:inputs)if(path.toString().endsWith(".jar")){
             Catalog catalog;
             try{catalog=catalog(path);}catch(IOException e){throw new UncheckedIOException(e);}
             if(recurse){for(var item:catalog.packages().entrySet())if(packageName.isEmpty()||item.getKey().equals(packageName)||item.getKey().startsWith(packageName+"."))for(var entry:item.getValue())result.putIfAbsent(entry.binary(),new BinaryFile(catalog,entry));}
@@ -117,15 +129,29 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     }
     @Override public JavaFileObject getJavaFileForInput(Location location,String className,JavaFileObject.Kind kind)throws IOException {
         if(location==StandardLocation.SOURCE_PATH&&kind==JavaFileObject.Kind.SOURCE)for(var entry:documents.entrySet())if(className.equals(sourceName(entry.getKey())))return new SourceFile(entry.getKey(),className,entry.getValue());
-        if(location==StandardLocation.CLASS_PATH&&kind==JavaFileObject.Kind.CLASS){
-            var directory=super.getJavaFileForInput(location,className,kind);if(directory!=null){track(directory);return directory;}
-            for(var path:classpath)if(path.toString().endsWith(".jar")){Catalog catalog;try{catalog=catalog(path);}catch(IOException e){throw new UncheckedIOException(e);}var entry=catalog.classes().get(className);if(entry!=null)return new BinaryFile(catalog,entry);}
+        List<Path> inputs=location==StandardLocation.CLASS_PATH?classpath:modulePaths.get(location);
+        if(inputs!=null&&kind==JavaFileObject.Kind.CLASS&&!className.equals("module-info")){
+            if(inputs.stream().anyMatch(Files::isDirectory)){var directory=super.getJavaFileForInput(location,className,kind);if(directory!=null){track(directory);return directory;}}
+            for(var path:inputs)if(path.toString().endsWith(".jar")){Catalog catalog;try{catalog=catalog(path);}catch(IOException e){throw new UncheckedIOException(e);}var entry=catalog.classes().get(className);if(entry!=null)return new BinaryFile(catalog,entry);}
             return null;
         }var file=super.getJavaFileForInput(location,className,kind);return file!=null&&location==StandardLocation.SOURCE_PATH&&preferBinary(file)?null:file;
     }
     @Override public String inferBinaryName(Location location,JavaFileObject file){return file instanceof SourceFile source?source.binary:file instanceof IndexedFileManager.BinaryFile binary?binary.entry.binary():super.inferBinaryName(location,file);}
     @Override public boolean isSameFile(FileObject a,FileObject b){if(a instanceof SourceFile||b instanceof SourceFile||a instanceof IndexedFileManager.BinaryFile||b instanceof IndexedFileManager.BinaryFile)return a.toUri().equals(b.toUri());return super.isSameFile(a,b);}
-    @Override public boolean contains(Location location,FileObject file)throws IOException{if(file instanceof SourceFile)return location==StandardLocation.SOURCE_PATH;if(file instanceof IndexedFileManager.BinaryFile)return location==StandardLocation.CLASS_PATH;return super.contains(location,file);}
+    @Override public boolean contains(Location location,FileObject file)throws IOException{
+        if(file instanceof SourceFile){
+            Path path=Path.of(file.toUri()).toAbsolutePath().normalize();
+            if(location==StandardLocation.SOURCE_PATH)return sourceRoots.stream().anyMatch(path::startsWith);
+            return false;
+        }
+        if(file instanceof IndexedFileManager.BinaryFile binary)return location==StandardLocation.CLASS_PATH?classpath.contains(binary.catalog.path()):modulePaths.getOrDefault(location,List.of()).contains(binary.catalog.path());
+        return super.contains(location,file);
+    }
+    @Override public Location getLocationForModule(Location location,JavaFileObject file)throws IOException{
+        if(file instanceof SourceFile)file=fileManager.getJavaFileObjectsFromPaths(List.of(Path.of(file.toUri()))).iterator().next();
+        if(file instanceof IndexedFileManager.BinaryFile binary&&location==StandardLocation.MODULE_PATH){for(var entry:modulePaths.entrySet())if(entry.getValue().contains(binary.catalog.path()))return entry.getKey();return null;}
+        return super.getLocationForModule(location,file);
+    }
     @Override public boolean hasLocation(Location location){return location==StandardLocation.CLASS_PATH||location==StandardLocation.SOURCE_PATH&&!documents.isEmpty()||super.hasLocation(location);}
     public void invalidate(){catalogs.clear();classFiles.clear();bytes.clear();byteSize=0;try{fileManager.flush();}catch(IOException e){throw new UncheckedIOException(e);}}
     @Override public void close()throws IOException{invalidate();super.close();}

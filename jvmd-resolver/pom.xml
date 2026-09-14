@@ -1,13 +1,5 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0">
-  <modelVersion>4.0.0</modelVersion>
+<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>
   <parent><groupId>dev.jvmd</groupId><artifactId>jvmd</artifactId><version>0.1.0-SNAPSHOT</version></parent>
   <artifactId>jvmd-resolver</artifactId>
-  <dependencies>
-    <dependency><groupId>dev.jvmd</groupId><artifactId>jvmd-core</artifactId><version>${project.version}</version></dependency>
-    <dependency><groupId>org.apache.maven.resolver</groupId><artifactId>maven-resolver-supplier</artifactId><version>${resolver.version}</version></dependency>
-    <dependency><groupId>org.apache.maven.resolver</groupId><artifactId>maven-resolver-transport-http</artifactId><version>${resolver.version}</version></dependency>
-    <dependency><groupId>org.apache.maven</groupId><artifactId>maven-core</artifactId><version>${maven.version}</version></dependency>
-    <dependency><groupId>org.apache.maven</groupId><artifactId>maven-settings-builder</artifactId><version>${maven.version}</version></dependency>
-    <dependency><groupId>org.apache.maven</groupId><artifactId>maven-resolver-provider</artifactId><version>${maven.version}</version></dependency>
-  </dependencies>
+  <dependencies><dependency><groupId>dev.jvmd</groupId><artifactId>jvmd-core</artifactId><version>${project.version}</version></dependency></dependencies>
 </project>

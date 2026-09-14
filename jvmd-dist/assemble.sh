@@ -11,6 +11,8 @@ mkdir -p "$image/lib/jvmd"
 # javac --release needs the pinned SDK's platform signatures for older Java releases.
 cp "$JAVA_HOME/lib/ct.sym" "$image/lib/ct.sym"
 cp "$repo_dir/jvmd-dist/target/lib/"*.jar "$image/lib/jvmd/"
+mkdir -p "$image/lib/jvmd/resolvers"
+cp "$repo_dir/jvmd-resolver/maven3/target/maven3.jar" "$image/lib/jvmd/resolvers/"
 cp "$repo_dir/jvmd-dist/target/jvmd-dist-0.1.0-SNAPSHOT.jar" "$image/lib/jvmd/"
 cp "$repo_dir/jvmd-dist/jvmd" "$image/bin/jvmd"
 cp "$repo_dir/jvmd-dist/jvmd-mcp" "$image/bin/jvmd-mcp"

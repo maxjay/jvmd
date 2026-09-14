@@ -4,7 +4,7 @@
   <groupId>dev.jvmd</groupId><artifactId>jvmd</artifactId><version>0.1.0-SNAPSHOT</version><packaging>pom</packaging>
   <name>jvmd</name>
   <modules>
-    <module>jvmd-core</module><module>jvmd-analyzer</module><module>jvmd-resolver</module>
+    <module>jvmd-core</module><module>jvmd-analyzer</module><module>jvmd-resolver</module><module>jvmd-resolver/maven3</module>
     <module>jvmd-index</module><module>jvmd-runtime</module><module>jvmd-mcp</module>
     <module>jvmd-lsp</module><module>jvmd-dist</module><module>jvmd-tests</module>
   </modules>

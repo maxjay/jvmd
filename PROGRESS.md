@@ -271,3 +271,13 @@ The complete phase-11 tag passes in commit 3239f5a: JBR schema changes, stock re
 The newly added strict-AOT end-to-end hot-swap gate failed at p95 606.12 ms / 100. The five requests took 582–606 ms; compilation took 576–600 ms and redefinition 0.86–1.64 ms. This failure authorizes the compiler optimization: matching-SDK, processor-free compilation moves to the public compiler API with explicit classpaths and bounded diagnostics. Processor execution stays in a child JVM, with a PID-based isolation test. The 100 ms threshold remains unchanged.
 
 The rename audit also found that single-static-import declarations can name several overloads. The implementation now returns every bound identity, retains the original import when other overloads remain, and adds an import for the renamed method. Editor hover and definition expose the overload set. The identifier sweep still probes every lexical token at the unchanged 0.97 floor; an overload set counts as correct only when every candidate describes back to that token.
+
+### Runtime performance and corpus completion (8cf51718)
+
+The strict-AOT full hot-swap RPC gate passes at **92.818328 ms p95**, including compilation and publication, against the unchanged 100 ms budget. The previous external javac baseline was 606.12271 ms. Explicit processors remain external and their process-isolation tests pass. All checkpoint tests pass.
+
+The complete corpus run also passes: **65,602 / 67,550 = 97.116210%**, with the unchanged 0.97 floor. Both jvmd and PetClinic report `live=0 verified=0`; corpus agent and LSP sessions pass (79.51 s and 19.27 s).
+
+### Resolver bundle isolation checkpoint
+
+Moved the Maven 3 model builder, Resolver libraries and real Aether workspace adapter into a shaded bundle loaded with the platform class loader as parent. The daemon resolver module exposes only platform/core types and serializes graph data across the boundary. Both future bundles compile the same graph/cache/compiler-option/processor-option implementation; there is no duplicated mediation logic. Settings security and installation settings files now participate in graph invalidation. The Maven 3 workspace-reader smoke still exercises an actual bundle-local Aether adapter. Native Maven 4 is the next checkpoint; its phase gate remains unchecked until its tests pass.

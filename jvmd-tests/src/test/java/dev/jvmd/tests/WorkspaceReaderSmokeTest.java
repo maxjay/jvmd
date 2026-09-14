@@ -5,8 +5,7 @@ import dev.jvmd.resolver.*;
 import java.nio.file.*;
 import java.util.*;
 import java.time.Duration;
-import org.eclipse.aether.artifact.*;
-import org.eclipse.aether.repository.*;
+import dev.jvmd.resolver.WorkspaceSource.Artifact;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
@@ -26,16 +25,14 @@ class WorkspaceReaderSmokeTest {
         Path local=Files.createDirectories(root.resolve("local")),sources=Files.createDirectories(local.resolve("src/main/java/p"));
         Files.writeString(local.resolve("pom.xml"),MavenFixtures.pom("fixture","library","2",""));
         Path provider=sources.resolve("Library.java");Files.writeString(provider,"package p; public class Library { public String localApi(){return \"local\";} }");
-        var reader=new WorkspaceReader(){
-            private final WorkspaceRepository repository=new WorkspaceRepository("smoke-local");
-            @Override public WorkspaceRepository getRepository(){return repository;}
+        var reader=new WorkspaceSource(){
             @Override public java.io.File findArtifact(Artifact artifact){
-                if(!artifact.getGroupId().equals("fixture")||!artifact.getArtifactId().equals("library"))return null;
-                return artifact.getExtension().equals("pom")?local.resolve("pom.xml").toFile():null;
+                if(!artifact.groupId().equals("fixture")||!artifact.artifactId().equals("library"))return null;
+                return artifact.extension().equals("pom")?local.resolve("pom.xml").toFile():null;
             }
-            @Override public List<String> findVersions(Artifact artifact){return artifact.getGroupId().equals("fixture")&&artifact.getArtifactId().equals("library")?List.of("2"):List.of();}
+            @Override public List<String> findVersions(Artifact artifact){return artifact.groupId().equals("fixture")&&artifact.artifactId().equals("library")?List.of("2"):List.of();}
         };
-        assertThat(reader.findArtifact(new DefaultArtifact("fixture:library:jar:1"))).isNull();
+        assertThat(reader.findArtifact(new Artifact("fixture","library","jar","","1"))).isNull();
         Path app=MavenFixtures.project(root.resolve("app"),"<dependencies>"+MavenFixtures.dependency("library","1")+"</dependencies>");
         Path use=Files.createDirectories(app.resolve("src/main/java/p")).resolve("Use.java");String text="package p; class Use { String read(){return new Library().localApi();} }";Files.writeString(use,text);
         try(var resolver=new MavenResolver(config);var analyzer=new Analyzer()){

@@ -1,4 +1,6 @@
-package dev.jvmd.resolver;
+package dev.jvmd.resolver.engine;
+
+import dev.jvmd.resolver.*;
 
 import org.apache.maven.model.*;
 import org.codehaus.plexus.util.xml.Xpp3Dom;

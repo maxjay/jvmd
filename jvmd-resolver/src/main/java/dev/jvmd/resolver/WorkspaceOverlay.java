@@ -1,22 +1,19 @@
 package dev.jvmd.resolver;
 
-import org.eclipse.aether.artifact.Artifact;
-import org.eclipse.aether.repository.*;
+import dev.jvmd.resolver.WorkspaceSource.Artifact;
 import java.nio.file.*;
 import java.io.*;
 import java.util.*;
 
 /** Implements 4.6: built artifacts, source-only modules, version substitution and cycle reporting. */
-public final class WorkspaceOverlay implements WorkspaceReader {
+public final class WorkspaceOverlay implements WorkspaceSource {
     private final List<Resolution.Module> modules;
     private final Map<String,List<Resolution.Module>> byGa=new LinkedHashMap<>();
     private final Set<String> warnings=new java.util.concurrent.ConcurrentSkipListSet<>();
-    private final WorkspaceRepository repository;
     private final boolean ignoreVersions;
     public WorkspaceOverlay(List<Resolution.Module> modules,boolean ignoreVersions){
         this.modules=List.copyOf(modules);this.ignoreVersions=ignoreVersions;
         for(var module:modules)byGa.computeIfAbsent(ga(module.gav()),_->new ArrayList<>()).add(module);
-        repository=new WorkspaceRepository("jvmd-local",modules.stream().map(m->m.gav()+"@"+m.directory()).toList());
         for(var entry:byGa.entrySet())if(entry.getValue().size()>1)warnings.add("overlay_duplicate: "+entry.getKey()+": "+entry.getValue().stream().map(Resolution.Module::directory).toList());
         var visited=new HashSet<String>();for(var module:modules)cycles(module,visited,new LinkedHashSet<>());
     }
@@ -27,23 +24,22 @@ public final class WorkspaceOverlay implements WorkspaceReader {
         if(exact.isPresent())return exact.get();if(!ignoreVersions)return null;
         var module=values.getFirst();warnings.add("overlay_version: requested "+gav+"; using "+module.gav()+" ["+module.directory()+"]");return module;
     }
-    public Resolution.Module match(Artifact artifact){return artifact==null?null:match(artifact.getGroupId()+":"+artifact.getArtifactId()+":"+artifact.getVersion());}
-    @Override public WorkspaceRepository getRepository(){return repository;}
+    public Resolution.Module match(Artifact artifact){return artifact==null?null:match(artifact.groupId()+":"+artifact.artifactId()+":"+artifact.version());}
     @Override public File findArtifact(Artifact artifact){
         var module=match(artifact);if(module==null)return null;
-        if(artifact.getExtension().equals("pom"))return Path.of(module.directory(),"pom.xml").toFile();
-        if(!artifact.getExtension().equals("jar")||!Set.of("","tests").contains(artifact.getClassifier()))return null;
-        boolean test=artifact.getClassifier().equals("tests");Path classes=Path.of(test?module.testClasses():module.classes());
+        if(artifact.extension().equals("pom"))return Path.of(module.directory(),"pom.xml").toFile();
+        if(!artifact.extension().equals("jar")||!Set.of("","tests").contains(artifact.classifier()))return null;
+        boolean test=artifact.classifier().equals("tests");Path classes=Path.of(test?module.testClasses():module.classes());
         try{return fresh(classes,test?java.util.stream.Stream.concat(module.sources().stream(),module.testSources().stream()).toList():module.sources())?classes.toFile():null;}
         catch(IOException e){warnings.add("overlay_io: "+module.gav()+": "+e.getMessage());return null;}
     }
     // Resolver 1.9 has only File; this also provides the 2.0 Path seam without an internal API.
     public Path findArtifactPath(Artifact artifact){File file=findArtifact(artifact);return file==null?null:file.toPath();}
     @Override public List<String> findVersions(Artifact artifact){
-        return byGa.getOrDefault(artifact.getGroupId()+":"+artifact.getArtifactId(),List.of()).stream().map(m->m.gav().substring(m.gav().lastIndexOf(':')+1)).distinct().toList();
+        return byGa.getOrDefault(artifact.groupId()+":"+artifact.artifactId(),List.of()).stream().map(m->m.gav().substring(m.gav().lastIndexOf(':')+1)).distinct().toList();
     }
     public boolean sourceOnly(Artifact artifact){
-        return artifact!=null&&artifact.getExtension().equals("jar")&&Set.of("","tests").contains(artifact.getClassifier())&&match(artifact)!=null&&findArtifact(artifact)==null;
+        return artifact!=null&&artifact.extension().equals("jar")&&Set.of("","tests").contains(artifact.classifier())&&match(artifact)!=null&&findArtifact(artifact)==null;
     }
     public boolean requiresSource(Resolution.Module module){
         try{return !fresh(Path.of(module.classes()),module.sources());}catch(IOException e){warnings.add("overlay_io: "+module.gav()+": "+e.getMessage());return true;}

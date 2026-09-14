@@ -1,18 +1,6 @@
 package dev.jvmd.resolver;
 
 import dev.jvmd.core.Config;
-import dev.jvmd.core.RpcException;
-import org.apache.maven.repository.internal.MavenRepositorySystemUtils;
-import org.apache.maven.settings.Settings;
-import org.apache.maven.settings.building.DefaultSettingsBuilderFactory;
-import org.apache.maven.settings.building.DefaultSettingsBuildingRequest;
-import org.eclipse.aether.DefaultRepositorySystemSession;
-import org.eclipse.aether.RepositorySystem;
-import org.eclipse.aether.repository.LocalRepository;
-import org.eclipse.aether.util.repository.AuthenticationBuilder;
-import org.eclipse.aether.util.repository.DefaultAuthenticationSelector;
-import org.eclipse.aether.util.repository.DefaultMirrorSelector;
-import org.eclipse.aether.util.repository.DefaultProxySelector;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -36,40 +24,17 @@ public final class MavenEnvironment {
         System.getenv().forEach((key, value) -> props.setProperty("env." + key, value));
         return props;
     }
-    public Settings settings() throws Exception {
-        var request = new DefaultSettingsBuildingRequest().setSystemProperties(systemProperties()).setUserProperties(new Properties());
-        if (Files.isRegularFile(settingsFile)) request.setUserSettingsFile(settingsFile.toFile());
-        String mavenHome = System.getenv("MAVEN_HOME");
-        if (mavenHome != null) request.setGlobalSettingsFile(Path.of(mavenHome, "conf/settings.xml").toFile());
-        var settings = new DefaultSettingsBuilderFactory().newInstance().build(request).getEffectiveSettings();
-        var security = new org.sonatype.plexus.components.sec.dispatcher.DefaultSecDispatcher(new org.sonatype.plexus.components.cipher.DefaultPlexusCipher());
-        security.setConfigurationFile(Path.of(System.getProperty("user.home"), ".m2/settings-security.xml").toString());
-        var decrypted = new org.apache.maven.settings.crypto.DefaultSettingsDecrypter(security)
-                .decrypt(new org.apache.maven.settings.crypto.DefaultSettingsDecryptionRequest(settings));
-        if (!decrypted.getProblems().isEmpty()) throw new IllegalStateException("Maven settings credentials could not be decrypted");
-        settings.setServers(decrypted.getServers()); settings.setProxies(decrypted.getProxies());
-        return settings;
+    public Path globalSettingsFile() {
+        String home = System.getProperty("maven.home", System.getenv("MAVEN_HOME"));
+        return home == null ? null : Path.of(home, "conf/settings.xml");
     }
-    public DefaultRepositorySystemSession session(RepositorySystem system, Settings settings, boolean offline) throws Exception {
-        if (config.mavenMajor() != 3) throw new RpcException(-32003, "unsupported_capability",
-                java.util.Map.of("capability", "Maven 4 resolver bundle", "reason", "This build is pinned to Maven 3; refusing a mismatched graph"));
-        var session = MavenRepositorySystemUtils.newSession();
-        session.setSystemProperties(systemProperties());
-        session.setOffline(offline || settings.isOffline());
-        session.setConfigProperty("aether.conflictResolver.verbose", true);
-        session.setConfigProperty("aether.dependencyCollector.impl", "bf");
-        session.setLocalRepositoryManager(system.newLocalRepositoryManager(session, new LocalRepository(config.m2Repo().toFile(), "simple")));
-        var mirrors = new DefaultMirrorSelector();
-        for (var m : settings.getMirrors()) mirrors.add(m.getId(), m.getUrl(), m.getLayout(), false, m.isBlocked(), m.getMirrorOf(), m.getMirrorOfLayouts());
-        session.setMirrorSelector(mirrors);
-        var auth = new DefaultAuthenticationSelector();
-        for (var s : settings.getServers()) auth.add(s.getId(), new AuthenticationBuilder().addUsername(s.getUsername()).addPassword(s.getPassword()).addPrivateKey(s.getPrivateKey(), s.getPassphrase()).build());
-        session.setAuthenticationSelector(auth);
-        var proxies = new DefaultProxySelector();
-        for (var p : settings.getProxies()) if (p.isActive()) proxies.add(new org.eclipse.aether.repository.Proxy(p.getProtocol(), p.getHost(), p.getPort(),
-                new AuthenticationBuilder().addUsername(p.getUsername()).addPassword(p.getPassword()).build()), p.getNonProxyHosts());
-        session.setProxySelector(proxies);
-        return session;
+    public List<Path> settingsInputs(List<Path> roots) {
+        var files = new ArrayList<Path>(); files.add(settingsFile);
+        Path global = globalSettingsFile(); if (global != null) files.add(global);
+        Path home = Path.of(System.getProperty("user.home"), ".m2");
+        files.add(home.resolve("settings-security.xml")); files.add(home.resolve("settings-security4.xml"));
+        for (Path root : roots) files.add(root.resolve(".mvn/settings.xml"));
+        return List.copyOf(files);
     }
     public List<String> versionWarnings(Path root) {
         var warnings = new ArrayList<String>(); String version = null;

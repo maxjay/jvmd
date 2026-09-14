@@ -52,7 +52,7 @@ public final class Application implements AutoCloseable {
         dispatcher.register("symbol.find",(s,p)->{
             if(p.has("path")){Path path=sourcePath(s,Dispatcher.required(p,"path"));return analyzer(s,path).atPosition(path,Files.readString(path),Dispatcher.bounded(p,"line",0,Integer.MAX_VALUE),Dispatcher.bounded(p,"character",0,Integer.MAX_VALUE));}
             String ref=Dispatcher.required(p,"name_path"),scope=p.path("scope").asText("all");if(!Set.of("workspace","deps","all").contains(scope))throw RpcException.invalid("Unknown symbol scope");
-            int limit=Dispatcher.bounded(p,"limit",50,200),offset=cursor(p);boolean substring=p.path("substring").asBoolean();
+            int limit=Dispatcher.limit(p,50,200),offset=cursor(p);boolean substring=p.path("substring").asBoolean();
             IndexService searchIndex=null;if(!scope.equals("workspace")){searchIndex=index();prepareIndex(s,searchIndex);}
             var matches=new LinkedHashMap<String,Map<String,Object>>();
             if(!scope.equals("deps"))for(var symbol:workspaceFind(s,ref,substring))matches.put(symbol.get("scip").toString(),symbol);
@@ -77,7 +77,7 @@ public final class Application implements AutoCloseable {
             Path path = sourcePath(s,Dispatcher.required(p,"path"));
             int offset;try{offset=Integer.parseInt(p.path("cursor").asText("0"));}catch(NumberFormatException e){throw RpcException.invalid("Invalid cursor");}
             if(offset<0)throw RpcException.invalid("Invalid cursor");
-            return analyzer(s,path).overview(path,Files.readString(path),Dispatcher.bounded(p,"depth",1,10),Dispatcher.bounded(p,"limit",100,1000),offset);
+            return analyzer(s,path).overview(path,Files.readString(path),Dispatcher.bounded(p,"depth",1,10),Dispatcher.limit(p,100,1000),offset);
         });
         dispatcher.register("diag.get",(s,p)->{
             if(p.path("verified").asBoolean()){
@@ -89,7 +89,7 @@ public final class Application implements AutoCloseable {
             var files=new ArrayList<Path>();for(var value:p.path("paths"))files.add(sourcePath(s,value.asText()));if(files.isEmpty())files.addAll(sourceFiles(s));
             var diagnostics=new ArrayList<Object>();var warnings=new LinkedHashSet<String>(s.warnings());int tier=2;
             for(Path path:files){var result=analyzer(s,path).diagnostics(path,Files.readString(path));tier=Math.min(tier,result.tier());warnings.addAll(result.warnings());diagnostics.addAll((List<?>)((Map<?,?>)result.result()).get("diagnostics"));}
-            return page(tier,"live","diagnostics",diagnostics,cursor(p),Dispatcher.bounded(p,"limit",200,1000),List.copyOf(warnings));
+            return page(tier,"live","diagnostics",diagnostics,cursor(p),Dispatcher.limit(p,200,1000),List.copyOf(warnings));
         });
     }
     public Dispatcher dispatcher() { return dispatcher; }
@@ -144,7 +144,7 @@ public final class Application implements AutoCloseable {
         return Envelope.of(2,"index",found.getFirst());
     }
     private Envelope describeDocumented(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
-        int depth=Dispatcher.bounded(params,"doc_depth",0,10),limit=Dispatcher.bounded(params,"limit",50,200),offset=cursor(params);
+        int depth=Dispatcher.bounded(params,"doc_depth",0,10),limit=Dispatcher.limit(params,50,200),offset=cursor(params);
         String detail=params.path("detail").asText("summary");if(!Set.of("summary","full").contains(detail))throw RpcException.invalid("Unknown documentation detail");
         var base=describe(session,Dispatcher.required(params,"ref"));
         if(!(base.result() instanceof Map<?,?> raw)||raw.get("scip")==null)return base;
@@ -168,7 +168,7 @@ public final class Application implements AutoCloseable {
         String key=symbol.get("scip").toString();String direction=params.path("direction").asText(hierarchy?"up":"in");
         if(!(hierarchy?Set.of("up","down"):Set.of("in","out")).contains(direction))throw RpcException.invalid("Unknown relationship direction");
         boolean outgoing=direction.equals("out")||direction.equals("up");
-        int depth=Dispatcher.bounded(params,"depth",hierarchy?3:1,20),limit=Dispatcher.bounded(params,"limit",100,1000),offset=cursor(params),tier=2;
+        int depth=Dispatcher.bounded(params,"depth",hierarchy?3:1,20),limit=Dispatcher.limit(params,100,1000),offset=cursor(params),tier=2;
         var allowed=new HashSet<String>();params.path("kinds").forEach(k->allowed.add(k.asText()));if(hierarchy)allowed.addAll(Set.of("extends","implements","overrides"));
         var symbols=new LinkedHashMap<String,Map<String,Object>>();var edges=new LinkedHashSet<Bindings.Edge>();var occurrences=new ArrayList<Bindings.Occurrence>();var warnings=new LinkedHashSet<String>();
         for(Path file:sourceFiles(session)){

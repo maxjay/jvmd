@@ -15,6 +15,7 @@ public final class Dispatcher {
     private final Metrics metrics;
     private final Map<String, Handler> methods = new ConcurrentHashMap<>();
     private final Map<String, Supplier<Object>> statusProviders = new ConcurrentHashMap<>();
+    private final ResponseBudget budgets=new ResponseBudget();
     private final AtomicBoolean shutdown = new AtomicBoolean();
     public Dispatcher(Sessions sessions, Metrics metrics) {
         this.sessions = sessions; this.metrics = metrics;
@@ -61,17 +62,29 @@ public final class Dispatcher {
             if (handler == null) throw new RpcException(-32601, "Method not found", Map.of("method", method));
             Session session = method.startsWith("daemon.") || method.equals("session.open") || method.equals("session.close")
                     ? null : sessions.get(required(params, "session"));
-            envelope = session == null ? handler.call(null, params) : session.execute(() -> handler.call(session, params));
-            if (envelope == null) throw new IllegalStateException("Handler omitted envelope");
-            response.set("result", Json.MAPPER.valueToTree(envelope));
+            var continuation=budgets.resume(method,params,id);
+            if(continuation!=null){
+                response=continuation;var value=response.has("error")?response.path("error").path("data"):response.path("result");envelope=Json.MAPPER.treeToValue(value,Envelope.class);
+            }else{
+                envelope = session == null ? handler.call(null, params) : session.execute(() -> handler.call(session, params));
+                if (envelope == null) throw new IllegalStateException("Handler omitted envelope");
+                response.set("result", Json.MAPPER.valueToTree(envelope));
+            }
+            if(id!=null)response=budgets.enforce(response,method,params);
         } catch (RpcException e) {
+            response.remove("result");
             envelope = Envelope.of(1, "live", e.data());
             response.set("error", Json.MAPPER.valueToTree(Map.of("code", e.code(), "message", e.getMessage(), "data", envelope)));
         } catch (Exception | AssertionError | LinkageError e) {
+            response.remove("error");
             fault = true;
             System.getLogger("jvmd").log(System.Logger.Level.ERROR, "Request fault: " + method, e);
             envelope = Envelope.of(1, "live", Map.of()).warn("analyzer_fault: " + e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage()));
             response.set("result", Json.MAPPER.valueToTree(envelope));
+        }
+        if(id!=null&&response.has("error"))try{response=budgets.enforce(response,method,params);}catch(Exception budget){
+            envelope=Envelope.of(1,"live",Map.of("reason","Error response cannot be paged","detail",String.valueOf(budget.getMessage())));
+            response.set("error",Json.MAPPER.valueToTree(Map.of("code",-32005,"message","budget_exceeded","data",envelope)));
         }
         metrics.record(method, sessionId, System.nanoTime() - start, envelope, fault);
         return id == null && validRequest ? null : response;
@@ -81,7 +94,9 @@ public final class Dispatcher {
         if (value == null || !value.isTextual() || value.asText().isBlank()) throw RpcException.invalid("Required string: " + key);
         return value.asText();
     }
+    public static int limit(JsonNode params,int fallback,int maximum){int value=bounded(params,"limit",fallback,maximum);if(value==0)throw RpcException.invalid("limit must be positive");return value;}
     public static int bounded(JsonNode params, String key, int fallback, int maximum) {
+        if(params.has(key)&&(!params.path(key).isIntegralNumber()||!params.path(key).canConvertToInt()))throw RpcException.invalid(key+" must be an integer");
         int value = params.path(key).asInt(fallback);
         if (value < 0 || value > maximum) throw RpcException.invalid(key + " must be between 0 and " + maximum);
         return value;

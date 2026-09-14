@@ -28,7 +28,7 @@ public final class IndexDatabase implements AutoCloseable {
                 try (var stream = IndexDatabase.class.getResourceAsStream("schema-" + migration + ".sql")) {
                     if (stream == null) throw new IllegalStateException("Missing index migration");
                     for (String sql : new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).split("\\R"))
-                        if (!sql.isBlank()) statement.execute(sql);
+                        if (!sql.isBlank()&&!sql.stripLeading().startsWith("--")) statement.execute(sql);
                     writer.commit();
                 } catch (Exception e) { writer.rollback(); throw e; }
                 finally { writer.setAutoCommit(true); }

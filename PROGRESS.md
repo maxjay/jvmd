@@ -331,3 +331,7 @@ Native Maven 4's first actual cold measurement was 1062.84 ms (limit 1000), with
 ### Native Maven 4 cold-start investigation
 
 AOT training now exercises the native Maven 4 resolver as well as Maven 3 so platform services used exclusively by Maven 4 enter the training workload. Bundle classes remain isolated. Resolver status and performance artifacts separate bootstrap, settings, version detection, graph building and cache publication to expose remaining cold-start cost. The 1000/5 ms assertions remain unchanged. Schema-4 migration also invalidates old globally stored source comments so they are rejoined per artifact.
+
+### Migration comments and module visibility validation
+
+Run 34846031572 traced the AOT/index failures to a standalone SQL comment passed to SQLite by the line-oriented migration runner. Migration now skips blank and comment-only lines; fresh database and populated migration tests cover the fix. Repeated modular queries and unsaved-source attribution pass after module identity cleanup. The negative visibility assertion now matches javac's actual `compiler.err.package.not.visible` diagnostic and checks its non-exported-package explanation. The instrumented full hot-swap gate passes at 78.211137 ms p95 / 100; compilation is 44–69 ms and publication/rebinding are each below 0.5 ms. The new AOT resolver measurement remains blocked until migration succeeds.

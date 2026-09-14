@@ -43,7 +43,7 @@ class ModularAnalysisTest {
             var valid=pool.query(unsaved,text,2,(task,units,tier)->units.size());
             assertThat(valid.warnings()).isEmpty();assertThat(valid.diagnostics()).noneMatch(p->p.kind().equals("ERROR"));
             var inaccessible=pool.query(unsaved,"package app; class Unsaved { internal.Hidden hidden; }",2,(task,units,tier)->units.size());
-            assertThat(inaccessible.warnings()).isEmpty();assertThat(inaccessible.diagnostics()).anyMatch(p->p.kind().equals("ERROR")&&p.code().contains("not.def.access"));
+            assertThat(inaccessible.warnings()).isEmpty();assertThat(inaccessible.diagnostics()).anyMatch(p->p.kind().equals("ERROR")&&p.code().equals("compiler.err.package.not.visible")&&p.message().contains("does not export"));
             assertThat(pool.status().get("faults")).isEqualTo(0L);
         }
     }

@@ -18,20 +18,22 @@ public final class AnnotationProcessing implements AutoCloseable {
                          List<String> warnings,int exitCode,boolean timedOut,long elapsedMillis,String log) { }
     private final Config config;
     private final Map<String,Output> cache=new LinkedHashMap<>();
-    private long runs,hits;
+    private record Hashed(Map<String,Object> stamp,String hash) { }
+    private final Map<Path,Hashed> hashes=new HashMap<>();
+    private long runs,hits,bytesHashed;
     private volatile Process active;
     public AnnotationProcessing(Config config){this.config=config;}
     public synchronized Output prepare(Request request,Duration timeout)throws Exception {
         var inputs=javaFiles(request.sourceRoots());
         var fingerprint=new StringBuilder(Json.MAPPER.writeValueAsString(request));
-        for(Path input:inputs)fingerprint.append(input).append(Hashing.sha256(input));
+        for(Path input:inputs)fingerprint.append(input).append(contentHash(input));
         var binaries=new LinkedHashSet<Path>(request.classpath());binaries.addAll(request.processorPath());
         for(Path path:binaries) {
-            if(Files.isRegularFile(path))fingerprint.append(path).append(Hashing.sha256(path));
-            else if(Files.isDirectory(path))try(var entries=Files.walk(path)){for(Path file:entries.filter(Files::isRegularFile).sorted().toList())fingerprint.append(file).append(Hashing.sha256(file));}
+            if(Files.isRegularFile(path))fingerprint.append(path).append(contentHash(path));
+            else if(Files.isDirectory(path))try(var entries=Files.walk(path)){for(Path file:entries.filter(Files::isRegularFile).sorted().toList())fingerprint.append(file).append(contentHash(file));}
         }
         // Lombok's own configuration can change generated signatures without a source edit.
-        for(Path path=request.directory();path!=null;path=path.getParent()){Path file=path.resolve("lombok.config");if(Files.isRegularFile(file))fingerprint.append(file).append(Hashing.sha256(file));}
+        for(Path path=request.directory();path!=null;path=path.getParent()){Path file=path.resolve("lombok.config");if(Files.isRegularFile(file))fingerprint.append(file).append(contentHash(file));}
         String hash=Hashing.sha256(fingerprint.toString().getBytes(StandardCharsets.UTF_8));
         var prior=cache.get(request.key());
         if(prior!=null&&prior.fingerprint().equals(hash)&&prior.sourceRoots().stream().allMatch(Files::isDirectory)){hits++;return prior;}
@@ -60,6 +62,13 @@ public final class AnnotationProcessing implements AutoCloseable {
             if(prior!=null)for(Path source:prior.sourceRoots())deleteTree(source.getParent());
             return result;
         }catch(Exception e){deleteTree(work);throw e;}
+    }
+    private String contentHash(Path path)throws IOException {
+        Map<String,Object> stamp;
+        try{stamp=Files.readAttributes(path,"unix:size,lastModifiedTime,ctime,ino");}
+        catch(UnsupportedOperationException e){bytesHashed+=Files.size(path);return Hashing.sha256(path);}
+        var previous=hashes.get(path);if(previous!=null&&previous.stamp().equals(stamp))return previous.hash();
+        String hash=Hashing.sha256(path);bytesHashed+=Files.size(path);hashes.put(path,new Hashed(stamp,hash));return hash;
     }
     private record Exit(int exitCode,boolean timedOut) { }
     private Exit invoke(Request request,List<Path> inputs,Path generated,Path classes,Path work,Path log,String mode,Duration timeout)throws Exception {
@@ -103,7 +112,7 @@ public final class AnnotationProcessing implements AutoCloseable {
     private static void kill(Process process){var children=process.descendants().toList();children.reversed().forEach(ProcessHandle::destroyForcibly);process.destroyForcibly();}
     private static void deleteTree(Path root)throws IOException{if(Files.exists(root))try(var paths=Files.walk(root)){for(Path path:paths.sorted(Comparator.reverseOrder()).toList())Files.deleteIfExists(path);}}
     public synchronized Map<String,Object> status(){
-        return Map.of("runs",runs,"cache_hits",hits,"modules",cache.entrySet().stream().map(e->Map.of("module",e.getKey(),"exit_code",e.getValue().exitCode(),"timed_out",e.getValue().timedOut(),"elapsed_ms",e.getValue().elapsedMillis(),"warnings",e.getValue().warnings())).toList());
+        return Map.of("runs",runs,"cache_hits",hits,"bytes_hashed",bytesHashed,"modules",cache.entrySet().stream().map(e->Map.of("module",e.getKey(),"exit_code",e.getValue().exitCode(),"timed_out",e.getValue().timedOut(),"elapsed_ms",e.getValue().elapsedMillis(),"warnings",e.getValue().warnings())).toList());
     }
     @Override public void close(){var process=active;if(process!=null)kill(process);}
 }

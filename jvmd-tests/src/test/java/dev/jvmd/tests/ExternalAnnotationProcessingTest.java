@@ -26,6 +26,10 @@ class ExternalAnnotationProcessingTest {
         try(var processors=new AnnotationProcessing(TestSupport.config(root,Duration.ofHours(4)))){
             var output=processors.prepare(request,Duration.ofSeconds(10));assertThat(output.exitCode()).isEqualTo(37);assertThat(output.log()).contains("processor-pid=").doesNotContain("processor-pid="+ProcessHandle.current().pid()+"\n");
             assertThat(output.warnings().toString()).contains("annotation_processing_failed");assertThat(processors.prepare(request,Duration.ofSeconds(10)).fingerprint()).isEqualTo(output.fingerprint());assertThat(processors.status().get("runs")).isEqualTo(1L);
+            long bytes=((Number)processors.status().get("bytes_hashed")).longValue();processors.prepare(request,Duration.ofSeconds(10));assertThat(processors.status().get("bytes_hashed")).isEqualTo(bytes);
+            Path binary=request.processorPath().getFirst().resolve("ExitProcessor.class");var time=Files.getLastModifiedTime(binary);
+            request("ExitProcessor","System.out.println(\"updated\"); System.exit(38); return false;");Files.setLastModifiedTime(binary,time);
+            assertThat(processors.prepare(request,Duration.ofSeconds(10)).exitCode()).isEqualTo(38);
         }
     }
     @Test void spinningProcessorIsKilledAtItsDeadline()throws Exception{

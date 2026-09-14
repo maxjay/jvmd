@@ -121,3 +121,13 @@ Phase 5 gate: PASS, CI run 34810626086 (2026-09-14).
 - The same run passed the unchanged focused-attribution budget after query-local identity caching.
 - Full-corpus validation exposed a configuration risk before completion: a test-only Lombok dependency activated processing without an explicit Maven request. Corrected activation to follow JDK 25's explicit processor configuration, with a regression test.
 - Blocking smoke 4 is queued before phase 6 implementation: source API substitution with an unbuilt WorkspaceReader and an older published artifact.
+
+
+Phase 5 full regression: PASS, CI run 34811222662, commit b193a37.
+- 33,386 / 34,297 identifiers: 97.34379% (floor 97%).
+- PetClinic and jvmd: live=0, verified=0; real Maven test-compile.
+- Startup 302.308 ms; focused p95 48.490 ms; session open 6.490 ms.
+- Blocking smoke 4 PASS: unbuilt reader returns null and source API replaces the old published jar.
+- Phase 6 implementation now includes ordered manifest roots, Maven reactor discovery, source-only dependencies, built-output substitution, version/cycle status, navigation and diagnostic origins. Its tests are queued.
+- The source-lookup exit test also exercises the initial phase-10 JDI launch, line-breakpoint and frame implementation. Phase 10 is permitted after phase 4; memory inspection, eval, hotswap and its complete gate remain in progress.
+- Processor content hashes now reuse Linux change-time/file stamps on unchanged inputs; a processor-bytecode replacement test preserves mtime to verify regeneration.

@@ -11,7 +11,8 @@ import javax.lang.model.element.*;
 /** Implements 4.2: session-owned semantic state and detached declaration snapshots. */
 public final class Analyzer implements AutoCloseable {
     /** Implements 4.2 and 4.3: effective module classpath and source roots. */
-    public record Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates,List<String> compilerOptions,Set<Path> binarySources,List<String> warnings) {
+    public record Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates,List<String> compilerOptions,Set<Path> binarySources,List<String> warnings,List<Path> navigationSources) {
+        public Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates,List<String> compilerOptions,Set<Path> binarySources,List<String> warnings){this(gav,release,classpath,sources,generation,coordinates,compilerOptions,binarySources,warnings,sources);}
         public Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates,List<String> compilerOptions){this(gav,release,classpath,sources,generation,coordinates,compilerOptions,Set.of(),List.of());}
         public Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates){this(gav,release,classpath,sources,generation,coordinates,List.of("--release",release));}
     }
@@ -36,6 +37,7 @@ public final class Analyzer implements AutoCloseable {
     private List<String> warnings(List<String> query){if(context.warnings().isEmpty())return query;var all=new LinkedHashSet<String>(context.warnings());all.addAll(query);return List.copyOf(all);}
     private String coordinates(String file){return context.coordinates().entrySet().stream().filter(e->file.startsWith(e.getKey())).max(Comparator.comparingInt(e->e.getKey().length())).map(Map.Entry::getValue).orElse(null);}
     private String classpathStamp()throws Exception{
+        if(!compiler.cacheValid()){outlines.clear();focused.clear();}
         var value=new StringBuilder(context.generation());
         for(var path:context.classpath())if(path.toString().endsWith(".jar")){
             if(Files.isRegularFile(path))value.append(path).append(':').append(Files.size(path)).append(':').append(Files.getLastModifiedTime(path).to(java.util.concurrent.TimeUnit.NANOSECONDS));
@@ -46,7 +48,7 @@ public final class Analyzer implements AutoCloseable {
         touch(path,text);
         String key=path+":"+Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))+":"+classpathStamp()+":"+depth+":"+limit+":"+offset;
         var cached=outlines.get(key);if(cached!=null)return cached;
-        var result=compiler.query(path,text,1,(task,units,tier)->new Outline(declarations(task,units,path,text,depth),Bindings.capture(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.sources()),path,sourceText(path,text),false).dependencies()));
+        var result=compiler.query(path,text,1,(task,units,tier)->new Outline(declarations(task,units,path,text,depth),Bindings.capture(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),path,sourceText(path,text),false).dependencies()));
         if(result.result()!=null)dependencies.record(path,result.result().dependencies());
         var symbols=result.result()==null?List.<Map<String,Object>>of():result.result().symbols();
         int from=Math.min(offset,symbols.size()),to=Math.min(symbols.size(),from+limit);boolean truncated=to<symbols.size();
@@ -55,7 +57,7 @@ public final class Analyzer implements AutoCloseable {
         return envelope;
     }
     private List<Map<String,Object>> declarations(JavacTask task,List<CompilationUnitTree> units,Path file,String text,int depth){
-        var identity=new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.sources());var trees=Trees.instance(task);var docs=DocTrees.instance(task);var source=sourceText(file,text);
+        var identity=new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources());var trees=Trees.instance(task);var docs=DocTrees.instance(task);var source=sourceText(file,text);
         var result=new ArrayList<Map<String,Object>>();
         for(var unit:units)new TreePathScanner<Void,Integer>(){
             private void add(Tree tree,Element element,int level){
@@ -119,7 +121,7 @@ public final class Analyzer implements AutoCloseable {
         }
         var focus=cursor==null?null:focusing.focus(path,text,cursor);
         String source=focus==null?text:focus.source();Path file=path;
-        var outcome=compiler.query(path,source,2,(task,units,tier)->Bindings.capture(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.sources()),file,sourceText(file,text),true));
+        var outcome=compiler.query(path,source,2,(task,units,tier)->Bindings.capture(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),file,sourceText(file,text),true));
         if(outcome.result()!=null&&outcome.warnings().isEmpty()){
             dependencies.record(path,outcome.result().dependencies());
             String member=focus==null?"full":focus.member();focused.put(path+":"+hash+":"+member,new Cached(path,hash,stamp,focus==null?0:focus.member().equals("declarations")?cursor:focus.start(),focus==null?text.length():focus.member().equals("declarations")?cursor+1:focus.end(),focus==null?List.of():focus.replaced(),outcome));
@@ -133,7 +135,18 @@ public final class Analyzer implements AutoCloseable {
     }
     public Envelope diagnostics(Path path,String text)throws Exception{
         var outcome=bindings(path,text,null);
-        return new Envelope(outcome.tier(),"live",false,null,warnings(outcome.warnings()),Map.of("diagnostics",outcome.diagnostics()));
+        var warnings=new LinkedHashSet<String>(warnings(outcome.warnings()));
+        if(outcome.result()!=null)for(var problem:outcome.diagnostics())if(problem.kind().equals("ERROR")){
+            for(var occurrence:outcome.result().occurrences())if(occurrence.end()>=problem.start()&&occurrence.start()<=Math.max(problem.start(),problem.end())){
+                var symbol=outcome.result().symbols().get(occurrence.scip());if(symbol==null||symbol.get("source_file")==null)continue;
+                String gav=Objects.toString(symbol.get("gav"),context.gav());if(!gav.equals(context.gav()))warnings.add("originates: "+gav);
+            }
+            // An unresolved selected member can erase its own occurrence; its declaring source remains a dependency.
+            if(warnings.stream().noneMatch(w->w.startsWith("originates:"))&&problem.code().contains("cant.resolve"))for(Path dependency:outcome.result().dependencies()){
+                String gav=coordinates(dependency.toString());if(gav!=null&&!gav.equals(context.gav()))warnings.add("originates: "+gav);
+            }
+        }
+        return new Envelope(outcome.tier(),"live",false,null,List.copyOf(warnings),Map.of("diagnostics",outcome.diagnostics()));
     }
     public List<Map<String,Object>> known(String ref){
         var found=new LinkedHashMap<String,Map<String,Object>>();

@@ -34,8 +34,9 @@ public final class Application implements AutoCloseable {
             else if(manifest.isTextual())manifest=Json.MAPPER.readTree(session.root().resolve(manifest.asText()).toFile());
             if(!manifest.isObject())throw RpcException.invalid("manifest must be an object or path");
             session.put("manifest",manifest);
+            session.put("workspace_manifest",WorkspaceManifest.read(session.root(),manifest));
             return session.execute(() -> {
-                Resolution graph = Files.isRegularFile(session.root().resolve("pom.xml")) ? refresh(session) : null;
+                Resolution graph = workspace(session).roots().stream().anyMatch(root->Files.isRegularFile(root.resolve("pom.xml"))) ? refresh(session) : null;
                 return new Envelope(0, "live", false, null, session.warnings(), java.util.Map.of("session", session.id(),
                         "root", session.root().toString(), "classpath_entries", graph == null ? 0 : graph.classpath().size(),
                         "modules", graph == null ? 0 : graph.modules().size()));
@@ -64,11 +65,10 @@ public final class Application implements AutoCloseable {
             var graph = (Resolution) s.state("resolution");
             return new Envelope(0, "live", false, null, s.warnings(), java.util.Map.of("session", s.id(),
                     "root", s.root().toString(), "classpath_state", graph == null ? "unresolved" : "resolved",
-                    "classpath_entries", graph == null ? 0 : graph.classpath().size(), "metrics", dispatcher.status().get("metrics"),"annotation_processing",s.state("processors")==null?Map.of("initialized",false):((AnnotationProcessing)s.state("processors")).status(),"analyzer",s.state("analyzer")==null?Map.of("initialized",false):((Analyzer)s.state("analyzer")).status()));
+                    "classpath_entries", graph == null ? 0 : graph.classpath().size(),"overlay",graph==null?Map.of():overlay(s,graph).status(), "metrics", dispatcher.status().get("metrics"),"annotation_processing",s.state("processors")==null?Map.of("initialized",false):((AnnotationProcessing)s.state("processors")).status(),"analyzer",s.state("analyzer")==null?Map.of("initialized",false):((Analyzer)s.state("analyzer")).status()));
         });
         dispatcher.register("symbol.overview", (s, p) -> {
-            Path path = s.root().resolve(Dispatcher.required(p, "path")).normalize();
-            if (!path.startsWith(s.root())) throw RpcException.invalid("Path is outside workspace");
+            Path path = sourcePath(s,Dispatcher.required(p,"path"));
             int offset;try{offset=Integer.parseInt(p.path("cursor").asText("0"));}catch(NumberFormatException e){throw RpcException.invalid("Invalid cursor");}
             if(offset<0)throw RpcException.invalid("Invalid cursor");
             return analyzer(s,path).overview(path,Files.readString(path),Dispatcher.bounded(p,"depth",1,10),Dispatcher.bounded(p,"limit",100,1000),offset);
@@ -88,9 +88,14 @@ public final class Application implements AutoCloseable {
     }
     public Dispatcher dispatcher() { return dispatcher; }
     public Sessions sessions() { return sessions; }
-    private static Path sourcePath(Session session,String value){
-        Path path=session.root().resolve(value).toAbsolutePath().normalize();if(!path.startsWith(session.root()))throw RpcException.invalid("Path is outside workspace");return path;
+    private static WorkspaceManifest workspace(Session session){return session.state("workspace_manifest",()->new WorkspaceManifest(List.of(session.root()),true));}
+    private static dev.jvmd.resolver.WorkspaceOverlay overlay(Session session,Resolution graph){
+        var old=(dev.jvmd.resolver.WorkspaceOverlay)session.state("overlay");
+        if(old==null||!graph.fingerprint().equals(session.state("overlay_generation"))){old=new dev.jvmd.resolver.WorkspaceOverlay(graph.modules(),workspace(session).ignoreVersions());session.put("overlay",old);session.put("overlay_generation",graph.fingerprint());}
+        return old;
     }
+    private static Path sourcePath(Session session,String value){return workspace(session).resolve(session.root(),value);}
+
     private static int cursor(com.fasterxml.jackson.databind.JsonNode params){
         try{int value=Integer.parseInt(params.path("cursor").asText("0"));if(value<0)throw new NumberFormatException();return value;}catch(NumberFormatException e){throw RpcException.invalid("Invalid cursor");}
     }
@@ -99,7 +104,7 @@ public final class Application implements AutoCloseable {
     }
     private List<Path> sourceFiles(Session session)throws Exception{
         var graph=(Resolution)session.state("resolution");var roots=new LinkedHashSet<Path>();var files=new LinkedHashSet<Path>();
-        if(graph==null)roots.add(session.root());else for(var module:graph.modules()){module.sources().forEach(p->roots.add(Path.of(p)));module.testSources().forEach(p->roots.add(Path.of(p)));}
+        if(graph==null)roots.addAll(workspace(session).roots());else for(var module:graph.modules()){module.sources().forEach(p->roots.add(Path.of(p)));module.testSources().forEach(p->roots.add(Path.of(p)));}
         for(Path root:roots)if(Files.isDirectory(root))try(var paths=Files.walk(root)){paths.filter(Files::isRegularFile).filter(p->p.toString().endsWith(".java")).sorted().forEach(files::add);}
         return List.copyOf(files);
     }
@@ -156,7 +161,7 @@ public final class Application implements AutoCloseable {
         if(graph!=null)graph=refresh(session);
         String gav="local:workspace:0",release="25",generation="plain";
         List<String> options=List.of("--release","25");
-        var classpath=new java.util.ArrayList<Path>();var sources=new java.util.ArrayList<Path>();var coordinates=new java.util.LinkedHashMap<String,String>();var binarySources=new LinkedHashSet<Path>();var processorWarnings=new LinkedHashSet<String>();
+        var classpath=new java.util.ArrayList<Path>();var sources=new java.util.ArrayList<Path>();var coordinates=new java.util.LinkedHashMap<String,String>();var binarySources=new LinkedHashSet<Path>();var processorWarnings=new LinkedHashSet<String>();var navigationSources=new LinkedHashSet<Path>();
         if(graph!=null){
             var module=graph.modules().stream().filter(m->path.startsWith(Path.of(m.directory()))).max(java.util.Comparator.comparingInt(m->m.directory().length())).orElse(graph.modules().getFirst());
             gav=module.gav();release=module.release()==null||module.release().isBlank()?"25":module.release();generation=graph.fingerprint()+":"+gav;
@@ -164,15 +169,24 @@ public final class Application implements AutoCloseable {
             options=test?module.testCompilerOptions():module.compilerOptions();generation+=test?":test":":main";
             graph.classpaths().getOrDefault(gav+(test?":test":":main"),java.util.List.of()).forEach(p->classpath.add(Path.of(p)));
             module.sources().forEach(p->sources.add(Path.of(p)));if(test)module.testSources().forEach(p->sources.add(Path.of(p)));
+            for(var dependency:overlay(session,graph).dependencies(graph,gav,test)){
+                boolean sourceOnly=overlay(session,graph).requiresSource(dependency);generation+=":"+dependency.gav()+":"+sourceOnly;
+                if(sourceOnly)dependency.sources().forEach(p->sources.add(Path.of(p)));classpath.add(Path.of(dependency.classes()));
+                // A built dependency uses its API; source changes (including preserved mtimes) switch to SOURCE_PATH.
+                coordinates.put(dependency.classes(),dependency.gav());
+                var generated=prepareProcessing(session,dependency,false,graph);
+                if(generated!=null){classpath.addAll(0,generated.classpath());sources.addAll(generated.sourceRoots());binarySources.addAll(generated.binarySources());processorWarnings.addAll(generated.warnings());generation+=":"+generated.fingerprint();}
+            }
             var processing=prepareProcessing(session,module,false,graph);
             if(processing!=null){classpath.addAll(0,processing.classpath());sources.addAll(0,processing.sourceRoots());binarySources.addAll(processing.binarySources());processorWarnings.addAll(processing.warnings());generation+=":"+processing.fingerprint();coordinates.put(processing.sourceRoots().getFirst().toString(),gav);}
             if(test){var testOutput=prepareProcessing(session,module,true,graph);if(testOutput!=null){classpath.addAll(0,testOutput.classpath());sources.addAll(0,testOutput.sourceRoots());binarySources.addAll(testOutput.binarySources());processorWarnings.addAll(testOutput.warnings());generation+=":"+testOutput.fingerprint();coordinates.put(testOutput.sourceRoots().getFirst().toString(),gav);}}
-            for(var m:graph.modules()){coordinates.put(m.directory(),m.gav());coordinates.put(Path.of(m.directory()).toUri().toString(),m.gav());}
+            for(var m:graph.modules()){m.sources().forEach(s->navigationSources.add(Path.of(s)));m.testSources().forEach(s->navigationSources.add(Path.of(s)));coordinates.put(m.directory(),m.gav());coordinates.put(Path.of(m.directory()).toUri().toString(),m.gav());}
             for(var node:graph.nodes())if(node.path()!=null&&node.winner()==null)coordinates.put(node.path(),node.gav());
-        }else{sources.add(session.root());coordinates.put(session.root().toString(),gav);coordinates.put(session.root().toUri().toString(),gav);}
+        }else{sources.addAll(workspace(session).roots());for(Path root:workspace(session).roots()){coordinates.put(root.toString(),gav);coordinates.put(root.toUri().toString(),gav);}}
+        navigationSources.addAll(sources);
         var analyzer=session.state("analyzer",Analyzer::new);
         var availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
-        analyzer.configure(new Analyzer.Context(gav,release,java.util.List.copyOf(classpath),java.util.List.copyOf(sources),generation,java.util.Map.copyOf(coordinates),options,Set.copyOf(binarySources),List.copyOf(processorWarnings)),availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));
+        analyzer.configure(new Analyzer.Context(gav,release,java.util.List.copyOf(classpath),java.util.List.copyOf(sources),generation,java.util.Map.copyOf(coordinates),options,Set.copyOf(binarySources),List.copyOf(processorWarnings),List.copyOf(navigationSources)),availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));
         return analyzer;
     }
     private AnnotationProcessing.Output prepareProcessing(Session session,Resolution.Module module,boolean test,Resolution graph)throws Exception{
@@ -192,7 +206,7 @@ public final class Application implements AutoCloseable {
         return resolver;
     }
     private Resolution refresh(Session session) throws Exception {
-        Resolution graph = resolver().resolve(session.root());
+        Resolution graph = resolver().resolveWorkspace(session.root(),workspace(session).roots(),workspace(session).ignoreVersions());
         var previous = (Resolution) session.state("resolution");
         if (previous == null || !previous.fingerprint().equals(graph.fingerprint())) {
             var oldPaths = previous == null ? java.util.List.<String>of() : previous.classpath();

@@ -339,3 +339,7 @@ Run 34846031572 traced the AOT/index failures to a standalone SQL comment passed
 ### Corpus continuation correctness
 
 The corpus client now reconstructs bounded response fragments using their declared array and UTF-16 offsets before checking symbol identities. It follows native reference pages when the root is not yet present. A nested Unicode/array/warning fixture verifies exact reconstruction, unchanged native cursors and a single underlying invocation. Relationship nodes now follow breadth-first discovery order, ensuring the requested root appears first even when its declaration follows its callees in source. Every token still receives all four queries at the unchanged 0.97 floor. CI validation pending.
+
+### Authenticated repository coverage for both native resolvers
+
+Added a loopback HTTP repository fixture for Maven 3 and Maven 4. It requires Basic authentication configured through a Maven settings mirror, verifies that the online fill fetches both the dependency POM and jar, then stops the server and forces a new graph build from the local repository. The fixture tests actual native transports and settings services with no public network dependency. The server API was checked against the [JDK 25 HttpServer documentation](https://docs.oracle.com/en/java/javase/25/docs/api/jdk.httpserver/com/sun/net/httpserver/HttpServer.html). CI validation pending.

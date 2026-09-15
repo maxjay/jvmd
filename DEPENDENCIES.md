@@ -1,7 +1,9 @@
 # Dependencies
 
 Pins inspected against publisher Maven Central metadata on 2026-09-14. Java 25.0.4.1+1
-and Maven 3.9.16 are the build toolchain. JBR 25.0.4.1+1-b583.48 is optional and never bundled.
+and Maven 3.9.16 are the original build toolchain. Maven 3.8.3 is also supported for source builds and project verification; the full reactor was built with it on 2026-09-15. JBR 25.0.4.1+1-b583.48 is optional and never bundled.
+
+The tests unpack `org.apache.maven:apache-maven:3.8.3:zip:bin` using the existing pinned Maven Dependency Plugin. This test-only distribution verifies wrapper selection, a real multi-module build, and agreement between live and Maven 3.8.3 compiler diagnostics. It is not included in the daemon runtime; the embedded Maven 3 resolver remains 3.9.16 / Resolver 1.9.27.
 
 | Dependency | Pin | Reason |
 |---|---|---|

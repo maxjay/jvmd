@@ -15,7 +15,7 @@ Give your coding agent and editor a shared view of your code, dependencies, and 
 
 ## Get started
 
-Build from the repository root with **Temurin 25.0.4.1+1**, **Maven 3.9.16**, and `JAVA_HOME` set to the full JDK. The adapters also need **Node.js 24.21.0+**; no npm install.
+Build from the repository root with **Temurin 25.0.4.1+1**, **Maven 3.8.3 or 3.9.16**, and `JAVA_HOME` set to the full JDK. The adapters also need **Node.js 24.21.0+**; no npm install.
 
 ```sh
 mvn -B -DskipTests install
@@ -115,4 +115,5 @@ The same run passed **99.878%** of **75,565** identifier checks across Spring Pe
 - [Configuration & multiple repositories](docs/usage.md#configuration)
 - [Debugging, hot swap & recordings](docs/usage.md#debug-and-hot-swap)
 - [Adapter setup](shim/README.md)
+- [Build a client: integration guide & API](docs/integration.md)
 - [Design](docs/design.md) · [Dependencies](DEPENDENCIES.md) · [Validation history](PROGRESS.md)

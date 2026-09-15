@@ -4,11 +4,13 @@
 
 Setup, configuration, and day-to-day use. For implementation details, see the [design](design.md).
 
+Writing an editor extension or agent integration? Start with the [client integration guide and API catalog](integration.md).
+
 [Build](#build-and-start) · [Configuration](#configuration) · [Connect](#connect-an-agent-or-editor) · [Workspaces](#multiple-repositories-and-verification) · [Debug](#debug-and-hot-swap)
 
 ## Build and start
 
-Build with Temurin **25.0.4.1+1**, Maven **3.9.16**, and `JAVA_HOME` pointing to that full SDK. The stdio adapters require Node.js **24.21.0** or newer and need no npm installation. CI validates Linux amd64; the generated runtime image belongs to the host platform.
+Build with Temurin **25.0.4.1+1**, Maven **3.8.3 or 3.9.16**, and `JAVA_HOME` pointing to that full SDK. The stdio adapters require Node.js **24.21.0** or newer and need no npm installation. CI validates Linux amd64; the generated runtime image belongs to the host platform.
 
 ```sh
 mvn -B -DskipTests install
@@ -39,6 +41,8 @@ Create `~/.config/jvmd/config.json` with the full SDK path used to build and ver
 ### Maven
 
 Set `maven_major` to match the project's wrapper or installed Maven. Maven 3 uses 3.9.16 / Resolver 1.9.27; Maven 4 uses the native 4.0.0-rc-6 model builder / Resolver 2.0.21. Settings, mirrors, credentials, proxies and profiles participate in resolution. A major mismatch is reported and must be resolved before using the graph. Resolution starts offline and makes one online fill pass for missing artifacts. Application jars and both Maven bundles remain outside the daemon's application class loader.
+
+**Maven 3.8.3 projects:** set `maven_major` to `3` and keep the project's 3.8.3 wrapper. Verification honors an explicit `verify_command` first, then the primary root's `mvnw`, then installed `mvnd` or `mvn`. Non-executable wrapper files are run through `sh`. Without a wrapper, set `verify_command` to an argument array starting with `/absolute/path/to/apache-maven-3.8.3/bin/mvn`. The embedded resolver remains 3.9.16; the project build runs with 3.8.3. See the [compatibility contract](integration.md#maven-383).
 
 ## Connect an agent or editor
 

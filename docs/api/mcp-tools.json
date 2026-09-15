@@ -1,0 +1,811 @@
+[
+  {
+    "method": "symbol.overview",
+    "tool": {
+      "name": "overview",
+      "description": "List Java declarations without bodies.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "package": {
+            "type": "string",
+            "minLength": 1
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Continue a previous page using the same arguments.",
+            "minLength": 1
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "required": [
+              "path"
+            ],
+            "not": {
+              "required": [
+                "package"
+              ]
+            }
+          },
+          {
+            "required": [
+              "package"
+            ],
+            "not": {
+              "required": [
+                "path"
+              ]
+            }
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    }
+  },
+  {
+    "method": "symbol.find",
+    "tool": {
+      "name": "find",
+      "description": "Find symbols by name path. Simple overloads may return multiple candidates.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "workspace",
+              "deps",
+              "all"
+            ],
+            "default": "workspace"
+          },
+          "kinds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "package",
+                "class",
+                "interface",
+                "enum",
+                "record",
+                "annotation",
+                "method",
+                "ctor",
+                "field",
+                "enumconst"
+              ]
+            },
+            "maxItems": 1000
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10,
+            "default": 0
+          },
+          "include_body": {
+            "type": "boolean",
+            "default": false
+          },
+          "substring": {
+            "type": "boolean",
+            "default": false
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Continue a previous page using the same arguments.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name_path"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    }
+  },
+  {
+    "method": "symbol.describe",
+    "tool": {
+      "name": "describe",
+      "description": "Describe a name path or SCIP identity and its signature documentation closure.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "detail": {
+            "type": "string",
+            "enum": [
+              "summary",
+              "full"
+            ],
+            "default": "summary"
+          },
+          "doc_depth": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Continue a previous page using the same arguments.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    }
+  },
+  {
+    "method": "symbol.references",
+    "tool": {
+      "name": "references",
+      "description": "Follow resolved callers or callees across workspace and dependency artifacts.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "in",
+              "out"
+            ],
+            "default": "in"
+          },
+          "kinds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "calls",
+                "reads",
+                "writes",
+                "instantiates"
+              ]
+            },
+            "maxItems": 1000
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Continue a previous page using the same arguments.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    }
+  },
+  {
+    "method": "symbol.hierarchy",
+    "tool": {
+      "name": "hierarchy",
+      "description": "Follow inheritance, implementation and override relationships.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down"
+            ],
+            "default": "up"
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "default": 3
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Continue a previous page using the same arguments.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    }
+  },
+  {
+    "method": "deps.graph",
+    "tool": {
+      "name": "deps",
+      "description": "Resolved GAV graph, including conflict losers and selection reasons.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "compile",
+              "runtime",
+              "test",
+              "provided"
+            ],
+            "default": "all"
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "default": 2
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Continue a previous page using the same arguments.",
+            "minLength": 1
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    }
+  },
+  {
+    "method": "edit.replaceBody",
+    "tool": {
+      "name": "replace_body",
+      "description": "Replace a method or constructor body. Applies a checked source edit and returns live member diagnostics. A change is complete only after diagnostics(verified=true) passes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Continue a previous page using the same arguments.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "ref",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false
+      }
+    }
+  },
+  {
+    "method": "edit.insert",
+    "tool": {
+      "name": "insert",
+      "description": "Insert Java code before, after or into a declaration. Applies a checked source edit and returns live member diagnostics. A change is complete only after diagnostics(verified=true) passes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "position": {
+            "type": "string",
+            "enum": [
+              "before",
+              "after",
+              "into"
+            ]
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Continue a previous page using the same arguments.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "ref",
+          "position",
+          "code"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false
+      }
+    }
+  },
+  {
+    "method": "edit.rename",
+    "tool": {
+      "name": "rename",
+      "description": "Rename resolved occurrences and the complete workspace override family. Applies a checked source edit and returns live member diagnostics. A change is complete only after diagnostics(verified=true) passes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "new_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Continue a previous page using the same arguments.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "ref",
+          "new_name"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false
+      }
+    }
+  },
+  {
+    "method": "edit.text",
+    "tool": {
+      "name": "edit",
+      "description": "Apply nonoverlapping UTF-16 ranges, optionally guarded by a source SHA-256. Applies a checked source edit and returns live member diagnostics. A change is complete only after diagnostics(verified=true) passes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text_edits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "range": {
+                  "type": "object",
+                  "properties": {
+                    "start": {
+                      "type": "object",
+                      "properties": {
+                        "line": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647,
+                          "default": 0
+                        },
+                        "character": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647,
+                          "default": 0
+                        }
+                      },
+                      "required": [
+                        "line",
+                        "character"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "end": {
+                      "type": "object",
+                      "properties": {
+                        "line": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647,
+                          "default": 0
+                        },
+                        "character": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647,
+                          "default": 0
+                        }
+                      },
+                      "required": [
+                        "line",
+                        "character"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "start",
+                    "end"
+                  ],
+                  "additionalProperties": false
+                },
+                "start": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647,
+                  "default": 0
+                },
+                "end": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647,
+                  "default": 0
+                },
+                "new_text": {
+                  "type": "string"
+                },
+                "sha256": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "path",
+                "new_text"
+              ],
+              "additionalProperties": false,
+              "oneOf": [
+                {
+                  "required": [
+                    "range"
+                  ],
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "start"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "end"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                {
+                  "required": [
+                    "start",
+                    "end"
+                  ],
+                  "not": {
+                    "required": [
+                      "range"
+                    ]
+                  }
+                }
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 100000
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Continue a previous page using the same arguments.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "text_edits"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false
+      }
+    }
+  },
+  {
+    "method": "diag.get",
+    "tool": {
+      "name": "diagnostics",
+      "description": "Get live diagnostics or run the authoritative build. A change is complete only when verified=true passes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "maxItems": 1000
+          },
+          "verified": {
+            "type": "boolean",
+            "default": false
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 200
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Continue a previous page using the same arguments.",
+            "minLength": 1
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false
+      }
+    }
+  },
+  {
+    "method": "session.status",
+    "tool": {
+      "name": "status",
+      "description": "Workspace tiers, classpath, capabilities, index progress, counters and faults.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Continue a previous page using the same arguments.",
+            "minLength": 1
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    }
+  },
+  {
+    "method": "run.start",
+    "tool": {
+      "name": "run",
+      "description": "Launch a workspace main class, with optional debugging. Debuggee AOT is disabled.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000
+          },
+          "debug": {
+            "type": "boolean",
+            "default": false
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Continue a previous page using the same arguments.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false
+      }
+    }
+  },
+  {
+    "method": "debug.op",
+    "tool": {
+      "name": "debug",
+      "description": "Inspect or control a run session. Heap instances/referrers require args.max; object handles expire after 60 seconds.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "Run session returned by run.",
+            "minLength": 1
+          },
+          "op": {
+            "type": "string",
+            "enum": [
+              "break",
+              "unbreak",
+              "continue",
+              "step_over",
+              "step_into",
+              "step_out",
+              "frames",
+              "locals",
+              "inspect",
+              "eval",
+              "hotswap",
+              "restart",
+              "histogram",
+              "instances",
+              "referrers",
+              "stop"
+            ]
+          },
+          "args": {
+            "type": "object"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Continue a previous page using the same arguments.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "session",
+          "op"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false
+      }
+    }
+  }
+]

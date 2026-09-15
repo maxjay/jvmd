@@ -4,9 +4,9 @@ Technical specification, revision 7. Incorporates `SMOKE.md` outcomes of 2026-09
 first implementation cycle. Revision 6 defined the identifier sweep twice, inconsistently, in
 sections 5 and 12.4; that is fixed here and the four-probe reading is authoritative.
 
-**Scope.** One user, one machine, permanently. Nothing in this document exists to serve other users,
-other machines, portability, or a product. If a design choice only makes sense at scale, it is
-wrong here.
+**Scope.** One user and one machine per daemon instance. The user-approved distribution extension
+of 2026-09-15 adds prebuilt Linux/macOS archives and Windows installation through WSL 2. Each
+installation remains a local, single-user daemon; this does not introduce a hosted service.
 
 **How to use this document.** Sections 1 to 6 are the specification. Section 7 is the build plan
 as checkpoint lists; a checkpoint is ticked only when its exit criterion is met by a test, not by
@@ -21,7 +21,7 @@ an agent, read 12 first, then 9, then 7, and treat 8 as law.**
 | # | Requirement | Acceptance criterion |
 |---|---|---|
 | R1 | Fast runtime and debugging for an agent: breakpoints, memory inspection, hot swap, reload, code execution | Attach under 500ms after app start. Method-body hot swap under 100ms. Add a method and hot swap on JBR. `referrers` on a retained object returns its chain. `eval` of a field access and a method call in a stopped frame |
-| R2 | Fast dependency resolution with in-depth round-trip traversal for documentation | Resolved graph under 5ms warm, under 1s cold. `describe(ref, doc_depth=3)` on a Spring symbol returns docs for every type in its signature closure in one call, under 50ms |
+| R2 | Fast dependency resolution with in-depth round-trip traversal for documentation | Resolved graph under 5ms warm; cold under 1s for Maven 3 and 1.5s for Maven 4 (user-approved amendment, 2026-09-15). `describe(ref, doc_depth=3)` on a Spring symbol returns docs for every type in its signature closure in one call, under 50ms |
 | R3 | Lightweight, fast Java intelligence, callable effectively by an agent | Any semantic question answerable in one tool call. Focused attribution under 50ms. No response without a tier. Zero false-positive diagnostics on Spring PetClinic at tier 2 |
 | R4 | Reuse `~/.m2` for warmup; no cold start; quick-start path | Daemon start under 600ms with AOT cache. Every `~/.m2` symbol at tier 2 permanently after one eager index. Opening a project does no indexing |
 | R5 | Multi-repo: one local dependency requires another local dependency | A local checkout substitutes for a published GAV, built or unbuilt. Navigation crosses into its source. Breakpoints bind inside it. Diagnostics report both symptom and originating module |
@@ -499,7 +499,7 @@ independent of each other after 4. Phases 10 and 11 are independent of 5 to 9.
 - [x] Resolution cache keyed by root, parent chain and settings hashes
 - [x] `pom.xml` change detection, re-resolve, classpath diff
 - [x] `deps` tool returns the graph with losers and reasons
-- [x] Exit: Spring Boot starter graph resolves fully offline from a warm `~/.m2` under 1s cold, under
+- [x] Exit: Spring Boot starter graph resolves fully offline from a warm `~/.m2` under 1s cold for Maven 3 / 1.5s for Maven 4 (user-approved amendment, 2026-09-15), under
       5ms cached; result matches `mvn dependency:tree` on the corpus exactly
 
 ### Phase 3: index

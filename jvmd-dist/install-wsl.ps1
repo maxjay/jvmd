@@ -25,7 +25,7 @@ curl -fsSL --retry 3 --proto '=https' --proto-redir '=https' "$base/install.sh.s
 (cd "$work" && sha256sum -c install.sh.sha256)
 bash "$work/install.sh" "$1"
 '@
-$encodedScript = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($script))
+$encodedScript = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($script.Replace("`r`n", "`n")))
 # ASCII argv avoids Windows PowerShell 5.1's native quoting of multiline shell source.
 & wsl.exe --distribution $Distribution --exec bash -c 'printf %s $1 | base64 -d | bash -s -- $2' installer $encodedScript $Version
 if ($LASTEXITCODE -ne 0) { throw 'jvmd installation inside WSL failed.' }

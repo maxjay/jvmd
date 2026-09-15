@@ -10,8 +10,11 @@ import java.util.Map;
 /** Implements 12.4: resolver budget measurements in a strict-AOT child JVM. */
 public final class ResolverPerformanceProbe {
     public static void main(String[] args) throws Exception {
+        int major=Integer.parseInt(args[3]);
+        // User-approved CI allowance for native Maven 4 startup; no production timeout changes.
+        int coldBudget=major==4?1500:1000;
         var config = new Config(Path.of(System.getProperty("java.home")), null,
-                Path.of(System.getProperty("user.home"), ".m2/repository"), Integer.parseInt(args[3]),
+                Path.of(System.getProperty("user.home"), ".m2/repository"), major,
                 Duration.ofHours(4), 512, false, Path.of(args[1]), Path.of(args[1], "unused.sock"));
         try (var resolver = new MavenResolver(config)) {
             long started = System.nanoTime();
@@ -25,10 +28,10 @@ public final class ResolverPerformanceProbe {
                 if (i >= 0) times[i] = (System.nanoTime() - before) / 1e6;
             }
             java.util.Arrays.sort(times);
-            var measurements = Map.of("maven_major",Integer.parseInt(args[3]),"cold_ms", cold, "warm_p50_ms", times[14], "warm_p95_ms", times[28], "nodes", graph.nodes().size(),"resolver",resolver.status());
+            var measurements = Map.of("maven_major",major,"cold_ms", cold,"cold_budget_ms",coldBudget,"warm_p95_budget_ms",5, "warm_p50_ms", times[14], "warm_p95_ms", times[28], "nodes", graph.nodes().size(),"resolver",resolver.status());
             Json.MAPPER.writerWithDefaultPrettyPrinter().writeValue(Path.of(args[2]).toFile(), measurements);
             System.out.println("phase-2-perf " + Json.MAPPER.writeValueAsString(measurements));
-            if (cold >= 1000 || times[28] >= 5) throw new AssertionError("Resolver budget exceeded: " + measurements);
+            if (cold >= coldBudget || times[28] >= 5) throw new AssertionError("Resolver budget exceeded: " + measurements);
         }catch(dev.jvmd.core.RpcException error){System.err.println(Json.MAPPER.writeValueAsString(error.data()));throw error;}
     }
 }

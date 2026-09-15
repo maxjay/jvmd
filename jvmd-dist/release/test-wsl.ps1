@@ -35,3 +35,5 @@ try {
     Remove-Variable JvmdInstallerTestCalls,JvmdInstallerWslAvailable -Scope Global
     Remove-Item -Recurse -Force $testDirectory
 }
+# The unavailable-WSL case deliberately set a native failure code; do not leak the mock into the runner.
+$global:LASTEXITCODE = 0

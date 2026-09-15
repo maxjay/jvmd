@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -95,6 +96,29 @@ def rpc(sock_path, method):
         return result["result"]["result"]
 
 
+def check_launcher_paths(image, work):
+    """Capture real launcher argv: upgrades must not retarget an existing process's classpath."""
+    install = work / "launcher symlink check"
+    physical = (install / "versions/fixed").resolve()
+    (physical / "bin").mkdir(parents=True)
+    (physical / "lib/jvmd/node/bin").mkdir(parents=True)
+    (install / "current").symlink_to("versions/fixed")
+    stub = '#!/usr/bin/env python3\nimport json,os,sys\nprint(json.dumps({"args":sys.argv,"launcher":os.environ.get("JVMD_LAUNCHER")}))\n'
+    for executable in [physical / "bin/java", physical / "lib/jvmd/node/bin/node"]:
+        executable.write_text(stub)
+        executable.chmod(0o755)
+    for name in ["jvmd", "jvmd-lsp", "jvmd-mcp"]:
+        shutil.copy2(image / "bin" / name, physical / "bin" / name)
+        result = json.loads(subprocess.check_output([str(install / "current/bin" / name)],
+                            env=dict(os.environ, XDG_CACHE_HOME=str(work / "launcher-cache")), text=True))
+        assert result["args"][0].startswith(str(physical)), result
+        assert "/current/" not in json.dumps(result), result
+        if name == "jvmd":
+            assert result["args"][result["args"].index("-cp") + 1] == str(physical / "lib/jvmd/*"), result
+        else:
+            assert result["launcher"] == str(physical / "bin/jvmd"), result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", required=True, type=Path)
@@ -118,6 +142,7 @@ def main():
         subprocess.run(install + ["--sha256", expected], check=True)
         image = (prefix / "current").resolve()
         assert image.parent.name == "versions" and (prefix / "previous").is_dir()
+        check_launcher_paths(image, work)
         # Force AOT acceptance after extraction to a new path, before ordinary auto-mode fallback is allowed.
         aot_log = work / "relocated-aot.log"
         aot = subprocess.run([str(image / "bin/java"), "-XX:AOTMode=on",
@@ -189,7 +214,7 @@ def main():
             if socket_path.exists():
                 rpc(socket_path, "daemon.shutdown")
         evidence = {"distribution": json.loads((image / "distribution.json").read_text()),
-                    "checksum": "passed", "corruption_rejected": True, "upgrade_selection": "passed",
+                    "checksum": "passed", "corruption_rejected": True, "upgrade_selection": "passed", "immutable_launch_paths": True,
                     "relocated_aot": "used", "bundled_node": True, "mcp_tools": 14,
                     "lsp_unsaved_hover": "passed", "lsp_uri_identity": "passed", "shared_daemon_teardown": "passed"}
         args.evidence.write_text(json.dumps(evidence, indent=2) + "\n")

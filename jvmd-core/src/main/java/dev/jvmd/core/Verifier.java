@@ -33,7 +33,8 @@ public final class Verifier {
                 """);
         Files.setPosixFilePermissions(wrapper,java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
         String executable=Path.of(command.getFirst()).getFileName().toString();
-        boolean maven=Set.of("mvn","mvnw","mvnd").contains(executable);
+        boolean maven=Set.of("mvn","mvnw","mvnd").contains(executable)
+                || (Set.of("sh","bash").contains(executable)&&command.size()>1&&Path.of(command.get(1)).getFileName().toString().equals("mvnw"));
         if(maven){command.add("-Dmaven.compiler.fork=true");command.add("-Dmaven.compiler.executable="+wrapper);command.add("-Dstyle.color=never");}
         Process running=null;
         try{
@@ -74,7 +75,14 @@ public final class Verifier {
         var setting=manifest==null?null:manifest.get("verify_command");var command=new ArrayList<String>();
         if(setting!=null&&setting.isArray())setting.forEach(value->command.add(value.asText()));
         else if(setting!=null&&setting.isTextual())command.addAll(split(setting.asText()));
-        else command.addAll(List.of(onPath("mvnd")?"mvnd":"mvn","-q","test-compile"));
+        else {
+            Path wrapper=root.resolve("mvnw").toAbsolutePath().normalize();
+            if(Files.isRegularFile(wrapper)){
+                if(!Files.isExecutable(wrapper))command.add("sh");
+                command.add(wrapper.toString());
+            }else command.add(onPath("mvnd")?"mvnd":"mvn");
+            command.addAll(List.of("-q","test-compile"));
+        }
         if(command.isEmpty())throw RpcException.invalid("verify_command is empty");return command;
     }
     private static boolean onPath(String command){for(String entry:Objects.toString(System.getenv("PATH"),"").split(java.io.File.pathSeparator))if(Files.isExecutable(Path.of(entry,command)))return true;return false;}

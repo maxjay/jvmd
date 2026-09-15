@@ -1,6 +1,8 @@
 # jvmd stdio adapters
 
-Use Node.js 24.21.0 or newer. No npm installation or compilation is required.
+For custom clients, including an OpenCode fork or VS Code extension, see the [integration guide](../docs/integration.md) and [tool schemas](../docs/api/mcp-tools.json).
+
+Source builds use Node.js 24.21.0 or newer. [Prebuilt archives](../docs/install.md) include Node.js. No npm installation or compilation is required.
 
 After building and training the daemon image:
 

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-image="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+image="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 export JVMD_LAUNCHER="$image/bin/jvmd"
-exec node "$image/lib/jvmd/shim/src/main.ts" --mcp "$@"
+node="$image/lib/jvmd/node/bin/node"
+if [[ ! -x "$node" ]]; then node=node; fi
+exec "$node" "$image/lib/jvmd/shim/src/main.ts" --mcp "$@"

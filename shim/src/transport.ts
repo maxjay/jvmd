@@ -76,7 +76,7 @@ export class RpcClient {
 }
 export async function defaults() {
   let config:any={};
-  try{config=JSON.parse(await readFile(path.join(os.homedir(),".config/jvmd/config.json"),"utf8"));}
+  try{config=JSON.parse(await readFile(process.env.JVMD_CONFIG||path.join(os.homedir(),".config/jvmd/config.json"),"utf8"));}
   catch(error){if((error as NodeJS.ErrnoException).code!=="ENOENT")throw error;}
   const uid=process.getuid!();
   return {socket:config.socket||path.join(process.env.XDG_RUNTIME_DIR||path.join(os.tmpdir(),"jvmd-"+uid),"jvmd-"+uid+".sock"),launcher:process.env.JVMD_LAUNCHER||"jvmd"};

@@ -50,4 +50,25 @@ class LspFacadeTest {
             assertThat(rename.path("documentChanges").get(1).path("newUri").asText()).isEqualTo(root.resolve("Renamed.java").toUri().toString());assertThat(Files.exists(root.resolve("Renamed.java"))).isFalse();
         }
     }
+    @Test void aliasedWorkspaceKeepsUnsavedDocumentsAndDiagnosticUris()throws Exception{
+        Path actual=Files.createDirectories(root.resolve("workspace")).toRealPath();
+        Path alias=Files.createSymbolicLink(root.resolve("linked-workspace"),actual);
+        Path file=actual.resolve("Example.java"),clientFile=alias.resolve("Example.java");
+        String disk="class Example { int value(){return 1;} }",unsaved=disk.replace("value","answer");
+        Files.writeString(file,disk);
+        try(var app=new Application(TestSupport.config(root,Duration.ofHours(4)))){
+            String session=TestSupport.open(app,alias);
+            var opened=TestSupport.request(app.dispatcher(),"document.open",Map.of("session",session,"path",clientFile.toString(),"version",1,"text",unsaved));
+            assertThat(opened.has("error")).as(opened.toString()).isFalse();
+            var hover=call(app,session,"textDocument/hover",clientFile,unsaved,unsaved.indexOf("answer")+2,Map.of());
+            assertThat(hover.toString()).contains("answer");
+            var diagnostic=TestSupport.request(app.dispatcher(),"lsp.diagnostics",Map.of("session",session,"uri",clientFile.toUri().toString()));
+            assertThat(diagnostic.has("error")).as(diagnostic.toString()).isFalse();
+            var value=diagnostic.path("result").path("result").path("value");
+            assertThat(value.path("uri").asText()).isEqualTo(clientFile.toUri().toString());
+            assertThat(value.path("version").asInt()).isEqualTo(1);
+            assertThat(value.path("diagnostics").isEmpty()).isTrue();
+            assertThat(Files.readString(file)).isEqualTo(disk);
+        }
+    }
 }

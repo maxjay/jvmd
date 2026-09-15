@@ -61,6 +61,7 @@ jobs:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: [build, windows-installer]
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     permissions:
       contents: write
       actions: read
@@ -71,26 +72,62 @@ jobs:
       - name: Require a tested commit from main
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
+          set -euo pipefail
           git merge-base --is-ancestor HEAD origin/main
           revision="$(git rev-parse HEAD)"
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$revision&status=success&per_page=100" \
-            --jq '.workflow_runs | any(.name == "Checkpoints")' | grep -qx true
+
+          for attempt in $(seq 1 160); do
+            state="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$revision&per_page=100" \
+              --jq '[.workflow_runs[] | select(.name == "Checkpoints" and .event == "push")][0] | if . == null then "missing" elif .status != "completed" then .status else .conclusion end')"
+
+            case "$state" in
+              success)
+                echo "Checkpoints passed for $revision"
+                exit 0
+                ;;
+              failure|cancelled|timed_out|action_required|stale|neutral|skipped)
+                echo "Checkpoints finished with conclusion: $state" >&2
+                exit 1
+                ;;
+              *)
+                echo "Waiting for Checkpoints on $revision (state: $state, attempt: $attempt/160)"
+                sleep 15
+                ;;
+            esac
+          done
+
+          echo "Timed out waiting for Checkpoints on $revision" >&2
+          exit 1
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           pattern: jvmd-*
           path: release-assets
           merge-multiple: true
-      - name: Publish immutable release assets
+      - name: Publish release assets
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
+          set -euo pipefail
           cp jvmd-dist/install.sh jvmd-dist/install-wsl.ps1 release-assets/
           (cd release-assets && sha256sum install.sh > install.sh.sha256 && sha256sum install-wsl.ps1 > install-wsl.ps1.sha256)
           (cd release-assets && cat ./*.sha256 > SHA256SUMS)
           cp docs/install.md release-notes.md
+
           options=()
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then options+=(--prerelease --latest=false); fi
-          gh release create "$GITHUB_REF_NAME" release-assets/* --verify-tag \
-            --title "jvmd $GITHUB_REF_NAME" --notes-file release-notes.md "${options[@]}"
+
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; reusing it"
+            gh release edit "$GITHUB_REF_NAME" \
+              --title "jvmd $GITHUB_REF_NAME" \
+              --notes-file release-notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag \
+              --title "jvmd $GITHUB_REF_NAME" \
+              --notes-file release-notes.md "${options[@]}"
+          fi
+
+          gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber

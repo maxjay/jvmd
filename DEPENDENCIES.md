@@ -5,6 +5,8 @@ and Maven 3.9.16 are the original build toolchain. Maven 3.8.3 is also supported
 
 The tests unpack `org.apache.maven:apache-maven:3.8.3:zip:bin` using the existing pinned Maven Dependency Plugin. This test-only distribution verifies wrapper selection, a real multi-module build, and agreement between live and Maven 3.8.3 compiler diagnostics. It is not included in the daemon runtime; the embedded Maven 3 resolver remains 3.9.16 / Resolver 1.9.27.
 
+Prebuilt distributions bundle Node.js 24.21.0 alongside the linked Temurin runtime. [`jvmd-dist/release/toolchains.json`](jvmd-dist/release/toolchains.json) pins publisher URLs and archive hashes for Linux x64/arm64 and macOS x64/arm64, plus Maven 3.9.16 for release builds. Temurin hashes were checked against the publisher's GitHub release asset digests; Node hashes against its `SHASUMS256.txt`, and Maven against its Maven Central SHA-512 sidecar on 2026-09-15. Runtime legal notices and Node's license are included in the archives.
+
 | Dependency | Pin | Reason |
 |---|---|---|
 | jackson-databind (with core/annotations) | 2.22.2 | JSON-RPC and config; native record support. Section 12.2. |

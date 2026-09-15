@@ -32,7 +32,7 @@ python3 jvmd-dist/export-api.py --check
 
 ## Launch and distribution
 
-Treat the built `image/` directory as one installation. Preserve its `bin/` and `lib/` layout, resolver bundles, shim sources, and trained cache. This contract also applies to a future prebuilt archive; it does not imply that release downloads are already published.
+Treat the built `image/` directory as one installation. Preserve its `bin/` and `lib/` layout, resolver bundles, shim sources, and trained cache. [Prebuilt distributions](install.md) add a matching Node.js runtime and are tested after extraction to a different path. PR workflow artifacts provide previews; tagged builds publish release downloads after their checks pass.
 
 ```sh
 /opt/jvmd/bin/jvmd-lsp --root /absolute/path/to/project
@@ -44,14 +44,16 @@ Launch only the adapter your client needs. Each adapter connects to the resident
 | Dependency | Integration responsibility |
 | --- | --- |
 | Bundled Java runtime | Keep it with the matching application and AOT cache |
-| Node.js 24.21.0+ | Current adapter launchers execute `node` from PATH |
+| Node.js 24.21.0+ | Included in prebuilt archives; ordinary source images fall back to `node` from PATH |
 | Full project JDK | Configure `jdk_home` for compilation, verification, launching, and JFR |
 | Maven / project wrapper | Required for verified Maven builds; resolution itself uses embedded libraries |
-| Platform | Linux amd64 is validated; macOS needs its own build and validation; native Windows is not supported by the current Unix launchers and file APIs |
+| Platform | Native archive checks cover Linux and macOS on x64/arm64; Windows uses the Linux build through WSL 2 |
 
 For VS Code Remote/WSL/SSH, run jvmd on the host containing the workspace. Paths and file URIs must refer to that host. A Windows UI connected to a WSL extension host uses a Linux installation.
 
 Machine configuration is `~/.config/jvmd/config.json`; see the [configuration guide](usage.md#configuration). For Maven 3.8.3 projects, use `"maven_major": 3`.
+
+`JVMD_CONFIG` selects another configuration file for both adapters and their launched daemon. An existing shared daemon keeps the configuration with which it started.
 
 Adapters accept `--socket /path/to/socket` and `--launcher /path/to/jvmd`. `JVMD_SOCKET` selects the socket for both connection and automatic launch; the installed launchers set `JVMD_LAUNCHER` to their neighboring daemon.
 

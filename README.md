@@ -15,6 +15,10 @@ Give your coding agent and editor a shared view of your code, dependencies, and 
 
 ## Get started
 
+Want a ready-to-run download? See [installing prebuilt distributions](docs/install.md) for Linux, macOS, and Windows through WSL 2. Archives bundle Java, Node.js, and the trained cache.
+
+To build from source:
+
 Build from the repository root with **Temurin 25.0.4.1+1**, **Maven 3.8.3 or 3.9.16**, and `JAVA_HOME` set to the full JDK. The adapters also need **Node.js 24.21.0+**; no npm install.
 
 ```sh

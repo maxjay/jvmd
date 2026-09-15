@@ -4,6 +4,26 @@ import { LspBridge, collect } from "../src/lsp.ts";
 import { setTimeout as delay } from "node:timers/promises";
 
 function envelope(value:any){return {tier:2,source:"live",truncated:false,cursor:null,warnings:[],result:{value}};}
+test("LSP returns the client's root alias in locations and rename edits",async()=>{
+  const sent:any[]=[];
+  const client:any={call:async(method:string,params:any)=>{
+    if(method==="session.open")return {result:{session:"s1",root:"/physical/project"}};
+    if(params.method==="initialize")return envelope({capabilities:{}});
+    if(params.method==="textDocument/definition")return envelope({uri:"file:///physical/project/Example.java",range:{}});
+    return envelope({changes:{"file:///physical/project/Example.java":[]},documentChanges:[{textDocument:{uri:"file:///physical/project/Example.java",version:3},edits:[]},{kind:"rename",oldUri:"file:///physical/project/Example.java",newUri:"file:///physical/project/New.java"}]});
+  }};
+  const bridge=new LspBridge(async()=>client,"/linked/project",message=>sent.push(message));
+  await bridge.handle({jsonrpc:"2.0",id:1,method:"initialize",params:{}});
+  await bridge.handle({jsonrpc:"2.0",id:2,method:"textDocument/definition",params:{}});
+  assert.equal(sent.at(-1).result.uri,"file:///linked/project/Example.java");
+  await bridge.handle({jsonrpc:"2.0",id:3,method:"textDocument/rename",params:{}});
+  const result=sent.at(-1).result;
+  assert.deepEqual(Object.keys(result.changes),["file:///linked/project/Example.java"]);
+  assert.equal(result.documentChanges[0].textDocument.uri,"file:///linked/project/Example.java");
+  assert.equal(result.documentChanges[0].textDocument.version,3);
+  assert.equal(result.documentChanges[1].newUri,"file:///linked/project/New.java");
+  await bridge.close();
+});
 test("LSP synchronizes notifications in order and debounces diagnostics for 200 ms",async()=>{
   const seen:any[]=[],sent:any[]=[];let version=0;
   const client:any={call:async(method:string,params:any)=>{

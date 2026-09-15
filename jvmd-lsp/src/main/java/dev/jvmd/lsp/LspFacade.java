@@ -40,7 +40,8 @@ public final class LspFacade {
         URI parsed;try{parsed=URI.create(uri);}catch(IllegalArgumentException error){throw RpcException.invalid("Invalid document URI");}
         if(!"file".equalsIgnoreCase(parsed.getScheme()))throw RpcException.invalid("Only workspace file URIs can be queried");
         Path file;try{file=Path.of(parsed).toAbsolutePath().normalize();}catch(Exception error){throw RpcException.invalid("Invalid file URI");}
-        var manifest=(WorkspaceManifest)session.state("workspace_manifest");if(!(manifest==null?file.startsWith(session.root()):manifest.contains(file)))throw RpcException.invalid("Document URI is outside workspace roots");return file;
+        var manifest=(WorkspaceManifest)session.state("workspace_manifest");if(manifest==null)manifest=new WorkspaceManifest(List.of(session.root()),true);
+        return manifest.resolve(session.root(),file.toString());
     }
     private static String uri(String path){return path.startsWith("jar:")||path.startsWith("file:")?path:Path.of(path).toUri().toString();}
     private static JsonNode range(JsonNode symbol){
@@ -145,7 +146,7 @@ public final class LspFacade {
     }
     public static Envelope diagnostics(Dispatcher dispatcher,Session session,Documents documents,JsonNode request)throws Exception{
         Path file=path(session,Dispatcher.required(request,"uri"));var query=new Query(dispatcher,session);
-        var params=Json.MAPPER.createObjectNode().put("limit",1000);params.putArray("paths").add(file.toString());var answer=query.all("diag.get",params,"diagnostics");var result=Json.MAPPER.createObjectNode().put("uri",file.toUri().toString());var diagnostics=result.putArray("diagnostics");
+        var params=Json.MAPPER.createObjectNode().put("limit",1000);params.putArray("paths").add(file.toString());var answer=query.all("diag.get",params,"diagnostics");var result=Json.MAPPER.createObjectNode().put("uri",request.path("uri").asText());var diagnostics=result.putArray("diagnostics");
         for(var problem:answer.path("diagnostics")){
             String source=problem.path("file").asText();if(!source.isEmpty()&&!uri(source).equals(file.toUri().toString()))continue;
             long start=Math.max(0,problem.path("start").asLong()),end=Math.max(start,problem.path("end").asLong());

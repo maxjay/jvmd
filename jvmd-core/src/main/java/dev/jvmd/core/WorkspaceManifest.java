@@ -16,5 +16,15 @@ public record WorkspaceManifest(List<Path> roots,boolean ignoreVersions) {
         return new WorkspaceManifest(List.copyOf(roots),manifest.path("ignore_versions").asBoolean(true));
     }
     public boolean contains(Path path){Path file=path.toAbsolutePath().normalize();return roots.stream().anyMatch(file::startsWith);}
-    public Path resolve(Path primary,String value){Path path=primary.resolve(value).toAbsolutePath().normalize();if(!contains(path))throw RpcException.invalid("Path is outside workspace roots");return path;}
+    public Path resolve(Path primary,String value){Path path=canonical(primary.resolve(value));if(!contains(path))throw RpcException.invalid("Path is outside workspace roots");return path;}
+    /** Resolve existing ancestors too, so a new unsaved file can live under a symlinked root. */
+    public static Path canonical(Path value){
+        Path path=value.toAbsolutePath().normalize();var missing=new ArrayDeque<Path>();
+        while(path!=null){
+            try{Path real=path.toRealPath();while(!missing.isEmpty())real=real.resolve(missing.removeLast());return real;}
+            catch(NoSuchFileException absent){if(Files.isSymbolicLink(path))throw RpcException.invalid("Path contains a dangling symbolic link");missing.add(path.getFileName());path=path.getParent();}
+            catch(java.io.IOException failure){throw RpcException.invalid("Cannot resolve workspace path: "+failure.getMessage());}
+        }
+        throw RpcException.invalid("Cannot resolve workspace path");
+    }
 }

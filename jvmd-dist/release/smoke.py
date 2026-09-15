@@ -163,8 +163,12 @@ def main():
                 assert capabilities["capabilities"]["hoverProvider"]
                 lsp.send("initialized", {}, notification=True)
                 lsp.send("textDocument/didOpen", {"textDocument": {"uri": source.as_uri(), "languageId": "java", "version": 1, "text": text}}, notification=True)
+                lsp.send("textDocument/didChange", {"textDocument": {"uri": source.as_uri(), "version": 2},
+                                                    "contentChanges": [{"text": text.replace("value", "answer")}]}, notification=True)
                 hover = lsp.send("textDocument/hover", {"textDocument": {"uri": source.as_uri()}, "position": {"line": 0, "character": text.index("value") + 2}})
-                assert hover and "value" in json.dumps(hover), hover
+                assert hover and "answer" in json.dumps(hover), hover
+                definition = lsp.send("textDocument/definition", {"textDocument": {"uri": source.as_uri()}, "position": {"line": 0, "character": text.index("value") + 2}})
+                assert definition["uri"] == source.as_uri(), definition
                 lsp.send("shutdown", {})
                 lsp.send("exit", {}, notification=True)
                 lsp.close()
@@ -187,7 +191,7 @@ def main():
         evidence = {"distribution": json.loads((image / "distribution.json").read_text()),
                     "checksum": "passed", "corruption_rejected": True, "upgrade_selection": "passed",
                     "relocated_aot": "used", "bundled_node": True, "mcp_tools": 14,
-                    "lsp_hover": "passed", "shared_daemon_teardown": "passed"}
+                    "lsp_unsaved_hover": "passed", "lsp_uri_identity": "passed", "shared_daemon_teardown": "passed"}
         args.evidence.write_text(json.dumps(evidence, indent=2) + "\n")
         print(json.dumps(evidence))
 

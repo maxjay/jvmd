@@ -18,4 +18,17 @@ class WorkspaceManifestTest {
         assertThat(manifest.resolve(root,"a/Source.java")).isEqualTo(a.resolve("Source.java"));
         assertThatThrownBy(()->manifest.resolve(root,"outside.java")).isInstanceOf(RpcException.class);
     }
+    @Test void aliasesResolveToOwnedFilesAndCannotEscapeThroughLinks()throws Exception{
+        Path actual=Files.createDirectories(root.resolve("workspace")).toRealPath();
+        Path alias=Files.createSymbolicLink(root.resolve("alias"),actual);
+        Path file=Files.writeString(actual.resolve("Example.java"),"class Example {}");
+        var manifest=new WorkspaceManifest(List.of(actual),true);
+        assertThat(manifest.resolve(actual,alias.resolve("Example.java").toString())).isEqualTo(file);
+        assertThat(manifest.resolve(actual,alias.resolve("new/Unsaved.java").toString())).isEqualTo(actual.resolve("new/Unsaved.java"));
+        Path outside=Files.createDirectories(root.resolve("outside")).toRealPath();
+        Files.createSymbolicLink(actual.resolve("escape"),outside);
+        assertThatThrownBy(()->manifest.resolve(actual,"escape/New.java")).isInstanceOf(RpcException.class).hasMessageContaining("outside workspace");
+        Files.createSymbolicLink(actual.resolve("dangling"),outside.resolve("missing"));
+        assertThatThrownBy(()->manifest.resolve(actual,"dangling/New.java")).isInstanceOf(RpcException.class);
+    }
 }

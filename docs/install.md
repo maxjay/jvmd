@@ -108,6 +108,8 @@ The archive is built and trained once on its native OS/CPU runner. Release tests
 
 Normal launches use JVM AOT auto mode. If a cache cannot be used on a particular machine, the JVM can fall back to ordinary loading; `daemon.status` reports cache acceptance. This preserves execution semantics, but it does not promise identical startup times across CPUs, disks, repositories, or operating systems. Keep the matching runtime and jars together, and do not strip or rewrite them after installation.
 
+The millisecond performance targets are CI assertions, not production cutoffs. A query taking 200 ms instead of a tested 50 ms target still returns normally. Prebuilt users do not run the benchmark suite. Separate operational deadlines prevent hangs: adapter startup is 10 seconds, adapter requests six minutes, verified builds five minutes, and debugger method evaluation five seconds. Evaluation timeout can terminate the debugged application; see the [integration contract](integration.md#runtime-and-debugging).
+
 ## Build and publish distributions
 
 Maintainers can build the current platform with Python 3.9+, Bash, curl, and tar:

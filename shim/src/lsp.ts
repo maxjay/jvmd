@@ -1,5 +1,6 @@
 /** Implements 4.9: LSP lifecycle, native replies and debounced diagnostics over the same daemon. */
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { RpcClient, type Message } from "./transport.ts";
 
@@ -49,6 +50,8 @@ export class LspBridge {
   private timers=new Map<string,ReturnType<typeof setTimeout>>();
   private versions=new Map<string,number>();
   private generations=new Map<string,number>();
+  private rootAliases:{canonical:string;client:string}[]=[];
+  private documentUris=new Map<string,string>();
   constructor(getClient:()=>Promise<RpcClient>,root:string,send:(message:Message)=>void,exit:(code:number)=>void=code=>{process.exitCode=code;}){this.getClient=getClient;this.root=root;this.send=send;this.exit=exit;}
   getClient:()=>Promise<RpcClient>;root:string;send:(message:Message)=>void;exit:(code:number)=>void;
   handle(message:Message):Promise<void>{
@@ -66,7 +69,10 @@ export class LspBridge {
         if(params.capabilities?.general?.positionEncodings&&!params.capabilities.general.positionEncodings.includes("utf-16"))throw rpcError(-32602,"jvmd requires the LSP UTF-16 position encoding");
         this.capabilities=params.capabilities||{};if(params.rootUri)this.root=fileURLToPath(params.rootUri);else if(params.rootPath)this.root=path.resolve(params.rootPath);
         const client=await this.getClient();const openParams:any={root:this.root};if(params.workspaceFolders?.length)openParams.manifest={roots:params.workspaceFolders.map((folder:any)=>fileURLToPath(folder.uri))};
-        this.session=(await client.call("session.open",openParams)).result.session;
+        const opened=(await client.call("session.open",openParams)).result;this.session=opened.session;
+        const roots=[this.root,...(openParams.manifest?.roots||[])];
+        this.rootAliases=(await Promise.all(roots.map(async(root:string)=>({client:path.resolve(root),canonical:await realpath(root).catch(()=>root===this.root?(opened.root||root):root)}))))
+          .filter(root=>root.client!==root.canonical).sort((a,b)=>b.canonical.length-a.canonical.length);
         const result=await collect(client,"lsp.request",{session:this.session,method:"initialize",params,client:this.capabilities});
         this.initialized=true;this.send({jsonrpc:"2.0",id,result:result.result.value});return;
       }
@@ -79,11 +85,13 @@ export class LspBridge {
         const document=params.textDocument||{},uri=document.uri;if(typeof uri!=="string")throw rpcError(-32602,"Document URI is required");
         const common={session:this.session,path:fileURLToPath(uri)};
         if(method==="textDocument/didOpen"){
-          if(document.languageId!=="java")return;await client.call("document.open",{...common,text:document.text,version:document.version});this.versions.set(uri,document.version);this.schedule(uri);
+          if(document.languageId!=="java")return;const opened=await client.call("document.open",{...common,text:document.text,version:document.version});
+          if(opened.result?.path){const canonical=pathToFileURL(opened.result.path).href;if(canonical!==uri)this.documentUris.set(canonical,uri);}
+          this.versions.set(uri,document.version);this.schedule(uri);
         }else if(method==="textDocument/didChange"){
           await client.call("document.change",{...common,version:document.version,changes:params.contentChanges});this.versions.set(uri,document.version);this.schedule(uri);
         }else if(method==="textDocument/didClose"){
-          const timer=this.timers.get(uri);if(timer)clearTimeout(timer);this.timers.delete(uri);await client.call("document.close",common);this.versions.delete(uri);this.send({jsonrpc:"2.0",method:"textDocument/publishDiagnostics",params:{uri,diagnostics:[]}});
+          const timer=this.timers.get(uri);if(timer)clearTimeout(timer);this.timers.delete(uri);await client.call("document.close",common);this.versions.delete(uri);for(const [canonical,original] of this.documentUris)if(original===uri)this.documentUris.delete(canonical);this.send({jsonrpc:"2.0",method:"textDocument/publishDiagnostics",params:{uri,diagnostics:[]}});
         }else if(method==="textDocument/didSave"){this.schedule(uri);}
         else throw rpcError(-32601,"Method not found: "+method);return;
       }
@@ -96,6 +104,7 @@ export class LspBridge {
     }
   }
   private reply(id:Message["id"],method:string,params:any,value:any,cursor?:string){
+    if((this.rootAliases.length||this.documentUris.size)&&["textDocument/definition","textDocument/references","textDocument/documentSymbol","textDocument/rename"].includes(method))value=this.clientUris(value);
     const response={jsonrpc:"2.0",id,result:value};
     if(Buffer.byteLength(JSON.stringify(response))<=MAX_BYTES){this.send(response);return;}
     if(method==="textDocument/completion"){
@@ -110,6 +119,18 @@ export class LspBridge {
       this.send({jsonrpc:"2.0",id,result:semantic?{data:[],resultId:value.resultId}:[]});return;
     }
     throw rpcError(-32005,"Editor result exceeds 64 KiB; request partial results",{cursor});
+  }
+  private clientUris(value:any):any{
+    if(typeof value==="string"){
+      if(this.documentUris.has(value))return this.documentUris.get(value);
+      if(!value.startsWith("file:"))return value;
+      let file:string;try{file=fileURLToPath(value);}catch{return value;}
+      for(const root of this.rootAliases){const relative=path.relative(root.canonical,file);if(relative!==".."&&!relative.startsWith(".."+path.sep)&&!path.isAbsolute(relative))return pathToFileURL(path.join(root.client,relative)).href;}
+      return value;
+    }
+    if(Array.isArray(value))return value.map(item=>this.clientUris(item));
+    if(value&&typeof value==="object")return Object.fromEntries(Object.entries(value).map(([key,item])=>[key.startsWith("file:")?this.clientUris(key):key,this.clientUris(item)]));
+    return value;
   }
   private schedule(uri:string){
     const previous=this.timers.get(uri);if(previous)clearTimeout(previous);const generation=this.generations.get(uri),version=this.versions.get(uri);

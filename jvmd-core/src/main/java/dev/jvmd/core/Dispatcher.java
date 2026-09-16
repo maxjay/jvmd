@@ -33,7 +33,7 @@ public final class Dispatcher {
     public Envelope query(Session session,String method,JsonNode params)throws Exception{
         if(session==null||method.startsWith("daemon.")||method.startsWith("session."))throw RpcException.invalid("An in-process query requires a workspace method");
         var handler=methods.get(method);if(handler==null)throw new RpcException(-32601,"Method not found",Map.of("method",method));
-        return session.execute(()->{var result=handler.call(session,params);if(result==null)throw new IllegalStateException("Handler omitted envelope");return result;});
+        return session.execute(()->RequestScope.call(method,()->{var result=handler.call(session,params);if(result==null)throw new IllegalStateException("Handler omitted envelope");return result;}));
     }
     public void register(String name, Handler handler) { methods.put(name, handler); }
     public java.util.Set<String> methods() { return java.util.Set.copyOf(methods.keySet()); }
@@ -72,7 +72,7 @@ public final class Dispatcher {
             if(continuation!=null){
                 response=continuation;var value=response.has("error")?response.path("error").path("data"):response.path("result");envelope=Json.MAPPER.treeToValue(value,Envelope.class);
             }else{
-                envelope = session == null ? handler.call(null, params) : session.execute(() -> handler.call(session, params));
+                envelope = session == null ? RequestScope.call(method,()->handler.call(null,params)) : session.execute(() -> RequestScope.call(method,()->handler.call(session,params)));
                 if (envelope == null) throw new IllegalStateException("Handler omitted envelope");
                 response.set("result", Json.MAPPER.valueToTree(envelope));
             }

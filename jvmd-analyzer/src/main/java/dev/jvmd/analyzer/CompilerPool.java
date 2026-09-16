@@ -4,6 +4,7 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
 import com.sun.tools.javac.api.JavacTaskImpl;
 import com.sun.tools.javac.api.JavacTaskPool;
+import dev.jvmd.core.RequestScope;
 import dev.jvmd.index.IndexService;
 import java.nio.file.Path;
 import java.util.*;
@@ -26,6 +27,8 @@ public final class CompilerPool implements AutoCloseable {
     private String generation,release;
     private List<String> compilerOptions=List.of();
     private long budget,baseline,recycles,faults,queries,queryNanos,configureCalls,configureNanos,classpathValidations,classpathValidationNanos;
+    private long validatedRequestId=-1;
+    private boolean validatedRequestResult;
     public void configure(String generation,String release,List<Path> classpath,List<Path> sources,IndexService index,long budget)throws Exception {
         configure(generation,release,classpath,sources,index,budget,List.of("--release",release));
     }
@@ -35,16 +38,19 @@ public final class CompilerPool implements AutoCloseable {
             this.budget=Math.max(1,budget);
             if(Objects.equals(this.generation,generation)&&Objects.equals(this.release,release)&&this.compilerOptions.equals(options)&&manager!=null)return;
             if(manager!=null){manager.close();recycles++;}
-            this.generation=generation;this.release=release;this.compilerOptions=List.copyOf(options);pool=new JavacTaskPool(1);baseline=heap();
+            this.generation=generation;this.release=release;this.compilerOptions=List.copyOf(options);pool=new JavacTaskPool(1);baseline=heap();validatedRequestId=-1;
             manager=new IndexedFileManager(ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8),classpath,sources,index,Math.min(32L*1024*1024,Math.max(1024*1024,budget/8)));
         }finally{configureNanos+=System.nanoTime()-started;}
     }
     public void documents(Map<Path,String> documents){checkThread();manager.documents(documents);}
     public void binarySources(Set<Path> sources){checkThread();manager.binarySources(sources);}
     public boolean cacheValid(){
-        checkThread();long started=System.nanoTime();classpathValidations++;
-        try{manager.validateClasspath();return true;}catch(RuntimeException e){recycle();return false;}
+        checkThread();long request=RequestScope.id();if(request!=0&&request==validatedRequestId)return validatedRequestResult;
+        long started=System.nanoTime();classpathValidations++;
+        boolean valid;
+        try{manager.validateClasspath();valid=true;}catch(RuntimeException e){recycle();valid=false;}
         finally{classpathValidationNanos+=System.nanoTime()-started;}
+        if(request!=0){validatedRequestId=request;validatedRequestResult=valid;}return valid;
     }
     private void checkThread(){if(Thread.currentThread()!=owner||owner.isVirtual())throw new IllegalStateException("Compiler access must stay on its session platform executor");}
     public <T> Outcome<T> query(Path path,String source,int tier,Query<T> query)throws Exception {
@@ -101,7 +107,7 @@ public final class CompilerPool implements AutoCloseable {
     }
     private static final class QueryFailure extends RuntimeException {QueryFailure(Exception cause){super(cause);}}
     private long heap(){return heapUsage.getAsLong();}
-    public void recycle(){checkThread();pool=new JavacTaskPool(1);if(manager!=null)manager.invalidate();baseline=heap();recycles++;}
+    public void recycle(){checkThread();pool=new JavacTaskPool(1);if(manager!=null)manager.invalidate();baseline=heap();recycles++;validatedRequestId=-1;}
     public Map<String,Object> status(){
         checkThread();var status=new LinkedHashMap<String,Object>();
         status.put("queries",queries);status.put("query_ms",nanosToMillis(queryNanos));
@@ -110,5 +116,5 @@ public final class CompilerPool implements AutoCloseable {
         status.put("recycles",recycles);status.put("faults",faults);status.put("heap_growth_bytes",Math.max(0,heap()-baseline));status.put("heap_budget_bytes",budget);if(manager!=null)status.putAll(manager.status());var output=new java.io.ByteArrayOutputStream();pool.printStatistics(new java.io.PrintStream(output));status.put("pool_statistics",output.toString(java.nio.charset.StandardCharsets.UTF_8));return status;
     }
     private static double nanosToMillis(long nanos){return Math.round(nanos/1000.0)/1000.0;}
-    @Override public void close()throws Exception{checkThread();if(manager!=null)manager.close();pool=new JavacTaskPool(1);}
+    @Override public void close()throws Exception{checkThread();if(manager!=null)manager.close();pool=new JavacTaskPool(1);validatedRequestId=-1;}
 }

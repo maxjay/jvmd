@@ -28,7 +28,10 @@ public final class Dependencies {
         while(!visit.isEmpty()){Path path=visit.removeFirst();if(!seen.add(path))continue;changed.addAll(observe(path,hash(path)));visit.addAll(forward.getOrDefault(path,Set.of()));}
         return changed;
     }
-    public Set<Path> changed(Path path){return changed(path,null);}
+    public Set<Path> changed(Path path){
+        path=path.toAbsolutePath().normalize();String authoritative=documentHash.apply(path);
+        return changed(path,authoritative);
+    }
     public Set<Path> changed(Path path,String currentHash){
         path=path.toAbsolutePath().normalize();if(currentHash!=null)hashes.put(path,currentHash);
         var result=new LinkedHashSet<Path>();var queue=new ArrayDeque<Path>();queue.add(path);

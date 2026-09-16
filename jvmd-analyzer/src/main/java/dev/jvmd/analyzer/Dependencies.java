@@ -33,10 +33,10 @@ public final class Dependencies {
         return changed(path,authoritative);
     }
     public Set<Path> changed(Path path,String currentHash){
-        path=path.toAbsolutePath().normalize();if(currentHash!=null)hashes.put(path,currentHash);
+        path=path.toAbsolutePath().normalize();boolean authoritative=currentHash!=null;if(authoritative)hashes.put(path,currentHash);
         var result=new LinkedHashSet<Path>();var queue=new ArrayDeque<Path>();queue.add(path);
         while(!queue.isEmpty()){Path next=queue.removeFirst();if(result.add(next))queue.addAll(reverse.getOrDefault(next,Set.of()));}
-        stale.addAll(result);return Set.copyOf(result);
+        if(authoritative)stale.add(path);else stale.addAll(result);return Set.copyOf(result);
     }
     private String hash(Path file)throws Exception{String memory=documentHash.apply(file);return memory!=null?memory:Files.isRegularFile(file)?Hashing.sha256(Files.readAllBytes(file)):"missing";}
     public boolean stale(Path file){return stale.contains(file.toAbsolutePath().normalize());}

@@ -18,13 +18,14 @@ public final class Analyzer implements AutoCloseable {
     }
     private final CompilerPool compiler=new CompilerPool();
     private final Focusing focusing=new Focusing();
+    private final DiagnosticStore diagnosticStore=new DiagnosticStore();
     private final LinkedHashMap<String,Envelope> outlines=new LinkedHashMap<>(16,.75f,true);
     private record Cached(Path file,String hash,String stamp,int start,int end,List<Focusing.Span> excluded,CompilerPool.Outcome<Bindings.Snapshot> result) { }
     private record Outline(List<Map<String,Object>> symbols,Set<Path> dependencies) { }
     private final LinkedHashMap<String,Cached> focused=new LinkedHashMap<>(32,.75f,true);
     private final Dependencies dependencies=new Dependencies();
     private final LinkedHashMap<String,SourceText> sourceTexts=new LinkedHashMap<>(16,.75f,true);
-    private long cacheHits;
+    private long cacheHits,bindingComputations,diagnosticFilesAnalysed,diagnosticFilesReused,indexWrites,indexWriteNanos;
     private Context context;
     private IndexService index;
     private long budget;
@@ -105,6 +106,7 @@ public final class Analyzer implements AutoCloseable {
         if(!changed.isEmpty())invalidate(changed);
     }
     private void invalidate(Set<Path> changed){
+        diagnosticStore.invalidate(changed);
         focused.entrySet().removeIf(e->changed.contains(e.getValue().file()));
         outlines.entrySet().removeIf(e->changed.stream().anyMatch(path->e.getKey().startsWith(path+":")));
         compiler.recycle();
@@ -114,8 +116,10 @@ public final class Analyzer implements AutoCloseable {
         // An unresolved lookup has no declaration edge; any source change can satisfy it.
         focused.entrySet().removeIf(e->e.getValue().result().diagnostics().stream().anyMatch(d->d.kind().equals("ERROR")));
         outlines.entrySet().removeIf(e->Json.MAPPER.valueToTree(e.getValue().result()).path("diagnostics").findValuesAsText("kind").contains("ERROR"));
+        // A previously unresolved workspace diagnostic can also become resolvable after an arbitrary source edit.
+        diagnosticStore.clear();
     }
-    public void namespaceChanged(){outlines.clear();focused.clear();compiler.recycle();}
+    public void namespaceChanged(){diagnosticStore.clear();outlines.clear();focused.clear();compiler.recycle();}
     public CompilerPool.Outcome<Bindings.Snapshot> bindings(Path path,String text,Integer cursor)throws Exception{
         path=path.toAbsolutePath().normalize();touch(path,text);
         String hash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)),stamp=classpathStamp();
@@ -127,11 +131,11 @@ public final class Analyzer implements AutoCloseable {
             }
         }
         var focus=cursor==null?null:focusing.focus(path,text,cursor);
-        String source=focus==null?text:focus.source();Path file=path;
+        String source=focus==null?text:focus.source();Path file=path;bindingComputations++;
         var outcome=compiler.query(path,source,2,(task,units,tier)->Bindings.capture(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),file,sourceText(file,text),true,focus==null?null:focus.member().equals("declarations")?new Focusing.Span(cursor,cursor+1):new Focusing.Span(focus.start(),focus.end())));
         if(outcome.result()!=null&&outcome.warnings().isEmpty()){
             dependencies.record(path,outcome.result().dependencies());
-            if(cursor==null&&index!=null)index.recordSource(path,hash,List.copyOf(outcome.result().symbols().values()),outcome.tier(),outcome.result().edges().stream().map(e->new IndexService.SourceEdge(e.src(),e.dst(),e.kind())).toList());
+            if(cursor==null&&index!=null){long started=System.nanoTime();indexWrites++;try{index.recordSource(path,hash,List.copyOf(outcome.result().symbols().values()),outcome.tier(),outcome.result().edges().stream().map(e->new IndexService.SourceEdge(e.src(),e.dst(),e.kind())).toList());}finally{indexWriteNanos+=System.nanoTime()-started;}}
             String member=focus==null?"full":focus.member();focused.put(path+":"+hash+":"+member,new Cached(path,hash,stamp,focus==null?0:focus.member().equals("declarations")?cursor:focus.start(),focus==null?text.length():focus.member().equals("declarations")?cursor+1:focus.end(),focus==null?List.of():focus.replaced(),outcome));
             while(focused.size()>32)focused.remove(focused.keySet().iterator().next());
         }return outcome;
@@ -142,7 +146,13 @@ public final class Analyzer implements AutoCloseable {
         return new Envelope(outcome.tier(),"live",false,null,warnings(outcome.warnings()),symbol==null?Map.of("resolved",false,"candidates",List.of()):symbol);
     }
     public Envelope diagnostics(Path path,String text)throws Exception{
+        path=path.toAbsolutePath().normalize();touch(path,text);
+        String sourceHash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)),stamp=classpathStamp(),generation=context.generation();
+        var cached=diagnosticStore.get(path,sourceHash,generation,stamp);
+        if(cached!=null){diagnosticFilesReused++;return cached;}
+        long computations=bindingComputations;
         var outcome=bindings(path,text,null);
+        if(bindingComputations>computations)diagnosticFilesAnalysed++;else diagnosticFilesReused++;
         var warnings=new LinkedHashSet<String>(warnings(outcome.warnings()));
         if(outcome.result()!=null)for(var problem:outcome.diagnostics())if(problem.kind().equals("ERROR")){
             for(var occurrence:outcome.result().occurrences())if(occurrence.end()>=problem.start()&&occurrence.start()<=Math.max(problem.start(),problem.end())){
@@ -154,7 +164,9 @@ public final class Analyzer implements AutoCloseable {
                 String gav=coordinates(dependency.toString());if(gav!=null&&!gav.equals(context.gav()))warnings.add("originates: "+gav);
             }
         }
-        return new Envelope(outcome.tier(),"live",false,null,List.copyOf(warnings),Map.of("diagnostics",outcome.diagnostics()));
+        var envelope=new Envelope(outcome.tier(),"live",false,null,List.copyOf(warnings),Map.of("diagnostics",outcome.diagnostics()));
+        if(outcome.warnings().isEmpty())diagnosticStore.put(path,sourceHash,generation,stamp,envelope);
+        return envelope;
     }
     public Envelope completion(Path path,String text,int line,int character,int limit,int offset)throws Exception{
         int cursor=Documents.offset(text,new Documents.Position(line,character)),start=cursor,end=cursor;
@@ -192,6 +204,6 @@ public final class Analyzer implements AutoCloseable {
         if(substring)return Objects.toString(symbol.get("name_path"),"").contains(ref)||Objects.toString(symbol.get("name"),"").contains(ref);
         return NamePath.parse(ref).matches(symbol);
     }
-    public Map<String,Object> status(){var result=new LinkedHashMap<String,Object>(compiler.status());result.putAll(focusing.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("dependencies",dependencies.status());return result;}
-    @Override public void close()throws Exception{outlines.clear();focused.clear();focusing.clear();sourceTexts.clear();compiler.close();}
+    public Map<String,Object> status(){var result=new LinkedHashMap<String,Object>(compiler.status());result.putAll(focusing.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("binding_computations",bindingComputations);result.put("diagnostic_store",diagnosticStore.status());result.put("diagnostic_files_analysed",diagnosticFilesAnalysed);result.put("diagnostic_files_reused",diagnosticFilesReused);result.put("index_record_source_calls",indexWrites);result.put("index_record_source_ms",Math.round(indexWriteNanos/1000.0)/1000.0);result.put("dependencies",dependencies.status());return result;}
+    @Override public void close()throws Exception{diagnosticStore.clear();outlines.clear();focused.clear();focusing.clear();sourceTexts.clear();compiler.close();}
 }

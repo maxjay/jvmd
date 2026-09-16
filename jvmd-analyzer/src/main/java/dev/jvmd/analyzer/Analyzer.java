@@ -23,10 +23,14 @@ public final class Analyzer implements AutoCloseable {
     private final LinkedHashMap<String,Envelope> outlines=new LinkedHashMap<>(16,.75f,true);
     private record Cached(Path file,String hash,String stamp,int start,int end,List<Focusing.Span> excluded,CompilerPool.Outcome<Bindings.Snapshot> result) { }
     private record Outline(List<Map<String,Object>> symbols,Set<Path> dependencies) { }
+    private record PendingApi(String previous,Set<Path> affected) { PendingApi { affected=Set.copyOf(affected); } }
     private final LinkedHashMap<String,Cached> focused=new LinkedHashMap<>(32,.75f,true);
     private final Dependencies dependencies=new Dependencies();
     private final LinkedHashMap<String,SourceText> sourceTexts=new LinkedHashMap<>(16,.75f,true);
-    private long cacheHits,bindingComputations,diagnosticFilesAnalysed,diagnosticFilesReused,indexWrites,indexWriteNanos;
+    private final Map<Path,String> apiFingerprints=new HashMap<>();
+    private final Map<Path,PendingApi> pendingApi=new HashMap<>();
+    private final Map<Path,Set<Path>> conditionalByFile=new HashMap<>();
+    private long cacheHits,bindingComputations,diagnosticFilesAnalysed,diagnosticFilesReused,indexWrites,indexWriteNanos,apiFingerprintChanges,apiFingerprintUnchanged;
     private Context context;
     private IndexService index;
     private long budget;
@@ -107,21 +111,34 @@ public final class Analyzer implements AutoCloseable {
         changed.addAll(dependencies.check(path));
         if(!changed.isEmpty())invalidate(changed);
     }
-    private void invalidate(Set<Path> changed){
-        diagnosticStore.invalidate(changed);
+    private void invalidateCompilerCaches(Set<Path> changed){
         focused.entrySet().removeIf(e->changed.contains(e.getValue().file()));
         outlines.entrySet().removeIf(e->changed.stream().anyMatch(path->e.getKey().startsWith(path+":")));
         for(var pool:compilerPools.values())pool.recycle();
     }
+    private void invalidate(Set<Path> changed){diagnosticStore.invalidate(changed);invalidateCompilerCaches(changed);}
+    private void conditionallyInvalidate(Path path,Set<Path> affected){
+        path=path.toAbsolutePath().normalize();pendingApi.put(path,new PendingApi(apiFingerprints.get(path),affected));diagnosticStore.invalidate(Set.of(path));
+        for(Path candidate:affected){candidate=candidate.toAbsolutePath().normalize();if(candidate.equals(path))continue;var origins=new LinkedHashSet<>(conditionalByFile.getOrDefault(candidate,Set.of()));origins.add(path);conditionalByFile.put(candidate,Set.copyOf(origins));}
+        invalidateCompilerCaches(affected);
+    }
+    private void resolveApiChange(Path path,String fingerprint){
+        path=path.toAbsolutePath().normalize();apiFingerprints.put(path,fingerprint);var pending=pendingApi.remove(path);if(pending==null)return;
+        boolean changed=pending.previous()==null||!pending.previous().equals(fingerprint);
+        if(changed){apiFingerprintChanges++;var invalid=new LinkedHashSet<>(pending.affected());invalid.addAll(diagnosticStore.unresolvedFiles());diagnosticStore.invalidate(invalid);}
+        else apiFingerprintUnchanged++;
+        var iterator=conditionalByFile.entrySet().iterator();while(iterator.hasNext()){var entry=iterator.next();var origins=new LinkedHashSet<>(entry.getValue());origins.remove(path);if(origins.isEmpty())iterator.remove();else entry.setValue(Set.copyOf(origins));}
+    }
+    private void invalidateConditionalIfUnresolved(Path path){
+        path=path.toAbsolutePath().normalize();var origins=conditionalByFile.get(path);if(origins!=null&&origins.stream().anyMatch(pendingApi::containsKey))diagnosticStore.invalidate(Set.of(path));
+    }
     public void changed(Path path){
-        invalidate(dependencies.changed(path));
-        // An unresolved lookup has no declaration edge; any source change can satisfy it.
+        path=path.toAbsolutePath().normalize();conditionallyInvalidate(path,dependencies.changed(path));
+        // An unresolved lookup has no declaration edge; an API change will invalidate unresolved diagnostic states after attribution.
         focused.entrySet().removeIf(e->e.getValue().result().diagnostics().stream().anyMatch(d->d.kind().equals("ERROR")));
         outlines.entrySet().removeIf(e->Json.MAPPER.valueToTree(e.getValue().result()).path("diagnostics").findValuesAsText("kind").contains("ERROR"));
-        // A previously unresolved workspace diagnostic can also become resolvable after an arbitrary source edit.
-        diagnosticStore.clear();
     }
-    public void namespaceChanged(){diagnosticStore.clear();outlines.clear();focused.clear();for(var pool:compilerPools.values())pool.recycle();}
+    public void namespaceChanged(){diagnosticStore.clear();outlines.clear();focused.clear();apiFingerprints.clear();pendingApi.clear();conditionalByFile.clear();for(var pool:compilerPools.values())pool.recycle();}
     public CompilerPool.Outcome<Bindings.Snapshot> bindings(Path path,String text,Integer cursor)throws Exception{
         path=path.toAbsolutePath().normalize();touch(path,text);
         String hash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)),stamp=classpathStamp();
@@ -137,7 +154,7 @@ public final class Analyzer implements AutoCloseable {
         var outcome=compiler.query(path,source,2,(task,units,tier)->Bindings.capture(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),file,sourceText(file,text),true,focus==null?null:focus.member().equals("declarations")?new Focusing.Span(cursor,cursor+1):new Focusing.Span(focus.start(),focus.end())));
         if(outcome.result()!=null&&outcome.warnings().isEmpty()){
             dependencies.record(path,outcome.result().dependencies());
-            if(cursor==null&&index!=null){long started=System.nanoTime();indexWrites++;try{index.recordSource(path,hash,List.copyOf(outcome.result().symbols().values()),outcome.tier(),outcome.result().edges().stream().map(e->new IndexService.SourceEdge(e.src(),e.dst(),e.kind())).toList());}finally{indexWriteNanos+=System.nanoTime()-started;}}
+            if(cursor==null){resolveApiChange(path,ApiFingerprint.of(outcome.result(),path));if(index!=null){long started=System.nanoTime();indexWrites++;try{index.recordSource(path,hash,List.copyOf(outcome.result().symbols().values()),outcome.tier(),outcome.result().edges().stream().map(e->new IndexService.SourceEdge(e.src(),e.dst(),e.kind())).toList());}finally{indexWriteNanos+=System.nanoTime()-started;}}}
             String member=focus==null?"full":focus.member();focused.put(path+":"+hash+":"+member,new Cached(path,hash,stamp,focus==null?0:focus.member().equals("declarations")?cursor:focus.start(),focus==null?text.length():focus.member().equals("declarations")?cursor+1:focus.end(),focus==null?List.of():focus.replaced(),outcome));
             while(focused.size()>32)focused.remove(focused.keySet().iterator().next());
         }return outcome;
@@ -148,7 +165,7 @@ public final class Analyzer implements AutoCloseable {
         return new Envelope(outcome.tier(),"live",false,null,warnings(outcome.warnings()),symbol==null?Map.of("resolved",false,"candidates",List.of()):symbol);
     }
     public Envelope diagnostics(Path path,String text)throws Exception{
-        path=path.toAbsolutePath().normalize();touch(path,text);
+        path=path.toAbsolutePath().normalize();touch(path,text);invalidateConditionalIfUnresolved(path);
         String sourceHash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)),stamp=classpathStamp(),generation=context.generation();
         var cached=diagnosticStore.get(path,sourceHash,generation,stamp);
         if(cached!=null){diagnosticFilesReused++;return cached;}
@@ -167,7 +184,7 @@ public final class Analyzer implements AutoCloseable {
             }
         }
         var envelope=new Envelope(outcome.tier(),"live",false,null,List.copyOf(warnings),Map.of("diagnostics",outcome.diagnostics()));
-        if(outcome.warnings().isEmpty())diagnosticStore.put(path,sourceHash,generation,stamp,envelope);
+        if(outcome.warnings().isEmpty())diagnosticStore.put(path,sourceHash,generation,stamp,envelope,apiFingerprints.get(path),outcome.result()==null?Set.of():outcome.result().dependencies());
         return envelope;
     }
     public Envelope completion(Path path,String text,int line,int character,int limit,int offset)throws Exception{
@@ -207,8 +224,8 @@ public final class Analyzer implements AutoCloseable {
         return NamePath.parse(ref).matches(symbol);
     }
     public Map<String,Object> status(){
-        var result=new LinkedHashMap<String,Object>(compiler.status());result.putAll(focusing.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("binding_computations",bindingComputations);result.put("diagnostic_store",diagnosticStore.status());result.put("diagnostic_files_analysed",diagnosticFilesAnalysed);result.put("diagnostic_files_reused",diagnosticFilesReused);result.put("index_record_source_calls",indexWrites);result.put("index_record_source_ms",Math.round(indexWriteNanos/1000.0)/1000.0);result.put("dependencies",dependencies.status());
+        var result=new LinkedHashMap<String,Object>(compiler.status());result.putAll(focusing.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("binding_computations",bindingComputations);result.put("diagnostic_store",diagnosticStore.status());result.put("diagnostic_files_analysed",diagnosticFilesAnalysed);result.put("diagnostic_files_reused",diagnosticFilesReused);result.put("index_record_source_calls",indexWrites);result.put("index_record_source_ms",Math.round(indexWriteNanos/1000.0)/1000.0);result.put("api_fingerprint_changes",apiFingerprintChanges);result.put("api_fingerprint_unchanged",apiFingerprintUnchanged);result.put("pending_api_files",pendingApi.size());result.put("conditional_files",conditionalByFile.size());result.put("dependencies",dependencies.status());
         var modules=new LinkedHashMap<String,Object>();for(var entry:compilerPools.entrySet())modules.put(entry.getKey(),entry.getValue().status());result.put("module_compilers",modules);return result;
     }
-    @Override public void close()throws Exception{diagnosticStore.clear();outlines.clear();focused.clear();focusing.clear();sourceTexts.clear();for(var pool:compilerPools.values())pool.close();compilerPools.clear();compiler=null;}
+    @Override public void close()throws Exception{diagnosticStore.clear();outlines.clear();focused.clear();focusing.clear();sourceTexts.clear();apiFingerprints.clear();pendingApi.clear();conditionalByFile.clear();for(var pool:compilerPools.values())pool.close();compilerPools.clear();compiler=null;}
 }

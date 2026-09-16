@@ -28,8 +28,10 @@ public final class Dependencies {
         while(!visit.isEmpty()){Path path=visit.removeFirst();if(!seen.add(path))continue;changed.addAll(observe(path,hash(path)));visit.addAll(forward.getOrDefault(path,Set.of()));}
         return changed;
     }
-    public Set<Path> changed(Path path){
-        var result=new LinkedHashSet<Path>();var queue=new ArrayDeque<Path>();queue.add(path.toAbsolutePath().normalize());
+    public Set<Path> changed(Path path){return changed(path,null);}
+    public Set<Path> changed(Path path,String currentHash){
+        path=path.toAbsolutePath().normalize();if(currentHash!=null)hashes.put(path,currentHash);
+        var result=new LinkedHashSet<Path>();var queue=new ArrayDeque<Path>();queue.add(path);
         while(!queue.isEmpty()){Path next=queue.removeFirst();if(result.add(next))queue.addAll(reverse.getOrDefault(next,Set.of()));}
         stale.addAll(result);return Set.copyOf(result);
     }

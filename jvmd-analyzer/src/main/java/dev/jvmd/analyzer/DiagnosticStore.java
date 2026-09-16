@@ -14,19 +14,40 @@ public final class DiagnosticStore {
             Objects.requireNonNull(classpathFingerprint);
         }
     }
-    private final Map<Key,Envelope> files=new LinkedHashMap<>();
+    public record State(Envelope diagnostics,String apiFingerprint,Set<Path> dependencies) {
+        public State { dependencies=Set.copyOf(dependencies); }
+    }
+    private final Map<Key,State> files=new LinkedHashMap<>();
     private long hits,misses,puts,invalidations;
 
-    public Envelope get(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint){
+    public State get(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint){
         var value=files.get(new Key(file,sourceHash,contextFingerprint,classpathFingerprint));
         if(value==null)misses++;else hits++;
         return value;
     }
 
-    public void put(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint,Envelope diagnostics){
+    public void put(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint,Envelope diagnostics,String apiFingerprint,Set<Path> dependencies){
         Path normalized=file.toAbsolutePath().normalize();
         files.keySet().removeIf(key->key.file().equals(normalized)&&key.contextFingerprint().equals(contextFingerprint));
-        files.put(new Key(normalized,sourceHash,contextFingerprint,classpathFingerprint),diagnostics);puts++;
+        files.put(new Key(normalized,sourceHash,contextFingerprint,classpathFingerprint),new State(diagnostics,apiFingerprint,dependencies));puts++;
+    }
+
+    public String apiFingerprint(Path file){
+        Path normalized=file.toAbsolutePath().normalize();String result=null;
+        for(var entry:files.entrySet())if(entry.getKey().file().equals(normalized))result=entry.getValue().apiFingerprint();
+        return result;
+    }
+
+    public Set<Path> unresolvedFiles(){
+        var result=new LinkedHashSet<Path>();
+        for(var entry:files.entrySet())if(hasUnresolved(entry.getValue().diagnostics()))result.add(entry.getKey().file());
+        return Set.copyOf(result);
+    }
+
+    private static boolean hasUnresolved(Envelope envelope){
+        if(!(envelope.result() instanceof Map<?,?> result)||!(result.get("diagnostics") instanceof List<?> diagnostics))return false;
+        for(Object value:diagnostics)if(value instanceof CompilerPool.Problem problem&&problem.code().contains("cant.resolve"))return true;
+        return false;
     }
 
     public void invalidate(Collection<Path> paths){

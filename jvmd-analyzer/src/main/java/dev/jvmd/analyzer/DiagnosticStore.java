@@ -20,12 +20,21 @@ public final class DiagnosticStore {
     private final Map<Key,State> files=new LinkedHashMap<>();
     private long hits,misses,puts,invalidations;
 
-    public State get(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint){
+    public Envelope get(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint){
+        var value=lookup(file,sourceHash,contextFingerprint,classpathFingerprint);return value==null?null:value.diagnostics();
+    }
+    public State state(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint){
+        return lookup(file,sourceHash,contextFingerprint,classpathFingerprint);
+    }
+    private State lookup(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint){
         var value=files.get(new Key(file,sourceHash,contextFingerprint,classpathFingerprint));
         if(value==null)misses++;else hits++;
         return value;
     }
 
+    public void put(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint,Envelope diagnostics){
+        put(file,sourceHash,contextFingerprint,classpathFingerprint,diagnostics,null,Set.of());
+    }
     public void put(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint,Envelope diagnostics,String apiFingerprint,Set<Path> dependencies){
         Path normalized=file.toAbsolutePath().normalize();
         files.keySet().removeIf(key->key.file().equals(normalized)&&key.contextFingerprint().equals(contextFingerprint));
@@ -34,7 +43,7 @@ public final class DiagnosticStore {
 
     public String apiFingerprint(Path file){
         Path normalized=file.toAbsolutePath().normalize();String result=null;
-        for(var entry:files.entrySet())if(entry.getKey().file().equals(normalized))result=entry.getValue().apiFingerprint();
+        for(var entry:files.entrySet())if(entry.getKey().file().equals(normalized)&&entry.getValue().apiFingerprint()!=null)result=entry.getValue().apiFingerprint();
         return result;
     }
 

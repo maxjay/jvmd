@@ -25,4 +25,9 @@ public final class RequestScope {
     public static Context current(){return current.get();}
     public static long id(){var value=current.get();return value==null?0:value.id();}
     public static String method(){var value=current.get();return value==null?null:value.method();}
+    public static void clearMemo(){var cache=values.get();if(cache!=null)cache.clear();}
+    public static <T> T isolated(ThrowingSupplier<T> work)throws Exception{
+        var previous=current.get();var memo=values.get();current.remove();values.remove();
+        try{return work.get();}finally{if(previous!=null)current.set(previous);if(memo!=null)values.set(memo);}
+    }
 }

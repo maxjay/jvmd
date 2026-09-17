@@ -197,3 +197,40 @@ that harness mismatch. No workflow edits or weakened correctness floors are incl
 Remaining: coordinator and generation checks, cold batching, restart persistence,
 Lombok fidelity, full invalidation matrix, workload benchmarks and full CI validation.
 The original private 26.8 s / 8.45 s workload remains unavailable here.
+
+
+## 2026-09-17 — Checkpoint 7: cold batching, persistence and scheduling
+
+Previous checkpoint SHA: `a4086813f83d83eb71ab10a324f9ef57d6a44bd9`.
+This checkpoint: commit containing this entry; SHA follows in the next checkpoint.
+
+Changes:
+- `WorkspaceAnalysisCoordinator` owns live diagnostic refresh, deterministic merge and
+  pagination. Changed prerequisites are refreshed before dependants, including the
+  alphabetically-earlier dependant case. `Application` delegates to it.
+- `CompilerPool.batchQuery` attributes a set of sources with one javac task. The coordinator
+  chooses batches at 16 stale files / 25% of a module, bounded to 128 files or 4 MiB source
+  text per chunk. Detailed binding graphs remain independent of diagnostic summaries.
+- `DiagnosticSnapshots` stores checksummed immutable objects with atomic manifest entries.
+  Writes are asynchronous and bounded. Restore validates source, JDK/schema/context,
+  classpath, namespace and dependency content, including authoritative unsaved buffers.
+  Corrupt objects are cache misses. Restored dependencies rehydrate reverse invalidation.
+- Source identities are captured around attribution; superseded results are rejected.
+  Classpath identities include content and output directories, not jar size/mtime alone.
+- `Session`, `RequestScope`, `Dispatcher` allow interactive requests at compiler-safe batch
+  boundaries, on the same owner platform thread, with isolated request memoization.
+  A document generation change yields an explicit superseded-response warning.
+
+Validation: 15 focused tests passed locally. Added `BatchDiagnosticsTest`,
+`PersistentDiagnosticsTest`, `DiagnosticSchedulingTest`; retained all checkpoint-6 tests.
+A 100-file cold batch exactly matched 100 individual compiler results and used **1** javac
+query. Repeated request: **0** queries. The latest run measured **214.7 ms cold / 5.6 ms
+warm** (prior runs 227.2/3.6 and 259.7/3.1 ms). These are local synthetic figures, not a
+rerun of the private corporate workspace. The 40-file AOT test now requires one cold query.
+Restart tests prove zero javac on unchanged restore, corruption rebuild, and correct
+invalidation after an unsaved dependency API edit.
+
+Remaining: high-fidelity external Lombok mode, larger multi-module benchmark, full
+correctness matrix, stable processor-output reuse, API/docs and existing CI gates.
+Optional parallel module actors remain deliberately gated: batching already removes
+most repeated compiler setup, and no shared compiler is accessed concurrently.

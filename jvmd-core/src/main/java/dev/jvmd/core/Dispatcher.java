@@ -72,7 +72,8 @@ public final class Dispatcher {
             if(continuation!=null){
                 response=continuation;var value=response.has("error")?response.path("error").path("data"):response.path("result");envelope=Json.MAPPER.treeToValue(value,Envelope.class);
             }else{
-                envelope = session == null ? RequestScope.call(method,()->handler.call(null,params)) : session.execute(() -> RequestScope.call(method,()->handler.call(session,params)));
+                int priority=method.startsWith("document.")?0:method.equals("lsp.diagnostics")?1:method.equals("diag.get")?(params.path("paths").isEmpty()?5:3):2;
+                envelope = session == null ? RequestScope.call(method,()->handler.call(null,params)) : session.execute(priority,() -> RequestScope.call(method,()->handler.call(session,params)));
                 if (envelope == null) throw new IllegalStateException("Handler omitted envelope");
                 response.set("result", Json.MAPPER.valueToTree(envelope));
             }

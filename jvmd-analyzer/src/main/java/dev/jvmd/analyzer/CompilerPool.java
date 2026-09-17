@@ -26,6 +26,7 @@ public final class CompilerPool implements AutoCloseable {
     private IndexedFileManager manager;
     private String generation,release;
     private List<String> compilerOptions=List.of();
+    private long batchQueries,batchFiles;
     private long budget,baseline,recycles,faults,queries,queryNanos,configureCalls,configureNanos,classpathValidations,classpathValidationNanos;
     private long validatedRequestId=-1;
     private boolean validatedRequestResult;
@@ -53,7 +54,16 @@ public final class CompilerPool implements AutoCloseable {
         if(request!=0){validatedRequestId=request;validatedRequestResult=valid;}return valid;
     }
     private void checkThread(){if(Thread.currentThread()!=owner||owner.isVirtual())throw new IllegalStateException("Compiler access must stay on its session platform executor");}
+    public record SourceInput(Path file,String text){public SourceInput{file=file.toAbsolutePath().normalize();}}
     public <T> Outcome<T> query(Path path,String source,int tier,Query<T> query)throws Exception {
+        return execute(List.of(new SourceInput(path,source)),tier,query);
+    }
+    public <T> Outcome<T> batchQuery(List<SourceInput> sources,int tier,Query<T> query)throws Exception {
+        checkThread();if(sources.isEmpty())throw new IllegalArgumentException("Empty source batch");
+        batchQueries++;batchFiles+=sources.size();return execute(List.copyOf(sources),tier,query);
+    }
+    private <T> Outcome<T> execute(List<SourceInput> sources,int tier,Query<T> query)throws Exception {
+        Path path=sources.getFirst().file();
         checkThread();if(manager==null)throw new IllegalStateException("Compiler classpath not configured");
         if(tier<0||tier>2)throw new IllegalArgumentException("tier");
         if(heap()-baseline>budget)recycle();
@@ -65,7 +75,7 @@ public final class CompilerPool implements AutoCloseable {
         try {
             long validationStarted=System.nanoTime();classpathValidations++;
             try{manager.validateClasspath();}finally{classpathValidationNanos+=System.nanoTime()-validationStarted;}
-            T value=pool.getTask(new java.io.StringWriter(),manager,diagnostics,options,null,List.of(manager.source(path,source)),task->{
+            T value=pool.getTask(new java.io.StringWriter(),manager,diagnostics,options,null,sources.stream().map(input->manager.source(input.file(),input.text())).toList(),task->{
                 var units=new ArrayList<CompilationUnitTree>();var parsed=new ArrayList<CompilationUnitTree>();
                 task.addTaskListener(new com.sun.source.util.TaskListener(){
                     @Override public void finished(com.sun.source.util.TaskEvent event){
@@ -110,7 +120,7 @@ public final class CompilerPool implements AutoCloseable {
     public void recycle(){checkThread();pool=new JavacTaskPool(1);if(manager!=null)manager.invalidate();baseline=heap();recycles++;validatedRequestId=-1;}
     public Map<String,Object> status(){
         checkThread();var status=new LinkedHashMap<String,Object>();
-        status.put("queries",queries);status.put("query_ms",nanosToMillis(queryNanos));
+        status.put("queries",queries);status.put("batch_queries",batchQueries);status.put("batch_files",batchFiles);status.put("query_ms",nanosToMillis(queryNanos));
         status.put("configure_calls",configureCalls);status.put("configure_ms",nanosToMillis(configureNanos));
         status.put("classpath_validations",classpathValidations);status.put("classpath_validation_ms",nanosToMillis(classpathValidationNanos));
         status.put("recycles",recycles);status.put("faults",faults);status.put("heap_growth_bytes",Math.max(0,heap()-baseline));status.put("heap_budget_bytes",budget);if(manager!=null)status.putAll(manager.status());var output=new java.io.ByteArrayOutputStream();pool.printStatistics(new java.io.PrintStream(output));status.put("pool_statistics",output.toString(java.nio.charset.StandardCharsets.UTF_8));return status;

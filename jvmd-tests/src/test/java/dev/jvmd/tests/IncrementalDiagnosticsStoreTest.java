@@ -21,7 +21,8 @@ class IncrementalDiagnosticsStoreTest {
             assertThat(first.path("result").path("diagnostics").size()).isEqualTo(40);
             var warm=daemon.request("session.status",Map.of("session",session)).path("result").path("analyzer");
             long warmQueries=warm.path("queries").asLong(),warmAnalysed=warm.path("diagnostic_files_analysed").asLong(),warmIndexWrites=warm.path("index_record_source_calls").asLong();
-            assertThat(warmQueries).isEqualTo(40L);
+            assertThat(warmQueries).isEqualTo(1L);
+            assertThat(warm.path("batch_queries").asLong()).isEqualTo(1L);
             assertThat(warmAnalysed).isEqualTo(40L);
             assertThat(warm.path("diagnostic_store").path("entries").asLong()).isEqualTo(40L);
 

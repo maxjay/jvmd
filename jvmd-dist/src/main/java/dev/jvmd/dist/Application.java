@@ -102,7 +102,7 @@ public final class Application implements AutoCloseable {
         dispatcher.register("symbol.hierarchy",(s,p)->relationships(s,p,true));
         dispatcher.register("session.status", (s, _) -> {
             var graph=(Resolution)s.state("resolution");var result=new LinkedHashMap<String,Object>();
-            result.put("file_states",documents(s).fileStates().status());result.put("analysis_contexts",s.state("analysis_contexts")==null?Map.of():((WorkspaceContextManager)s.state("analysis_contexts")).status());
+            result.put("diagnostics",s.state("diagnostics")==null?Map.of("initialized",false):diagnostics(s).status());result.put("file_states",documents(s).fileStates().status());result.put("analysis_contexts",s.state("analysis_contexts")==null?Map.of():((WorkspaceContextManager)s.state("analysis_contexts")).status());
             result.put("workspace_bindings",s.state("workspace_bindings")==null?Map.of("initialized",false):((WorkspaceBindings)s.state("workspace_bindings")).status());result.put("documents",documents(s).status());result.put("session",s.id());result.put("root",s.root().toString());result.put("classpath_state",graph==null?"unresolved":"resolved");result.put("classpath_entries",graph==null?0:graph.classpath().size());result.put("overlay",graph==null?Map.of():overlay(s,graph).status());result.put("metrics",dispatcher.status().get("metrics"));result.put("annotation_processing",s.state("processors")==null?Map.of("initialized",false):((AnnotationProcessing)s.state("processors")).status());result.put("analyzer",s.state("analyzer")==null?Map.of("initialized",false):((Analyzer)s.state("analyzer")).status());result.put("runs",s.state("runs")==null?List.of():runs(s).status());result.put("index",index==null?Map.of("phase","disabled"):index.isDone()&&!index.isCompletedExceptionally()?index.join().status():Map.of("phase","starting"));result.put("capabilities",Map.of("analysis_tiers",List.of(0,1,2),"mcp_tools",14,"runtime",true));
             return new Envelope(0,"live",false,null,s.warnings(),result);
         });
@@ -115,12 +115,12 @@ public final class Application implements AutoCloseable {
                 if(verified.exitCode()!=0)throw new RpcException(-32004,"verify_failed",verified);
                 return new Envelope(2,"verified",false,null,verified.warnings(),Map.of("diagnostics",verified.diagnostics(),"exit_code",verified.exitCode(),"elapsed_ms",verified.elapsedMillis()));
             }
-            var files=new ArrayList<Path>();for(var value:p.path("paths"))files.add(sourcePath(s,value.asText()));if(files.isEmpty())files.addAll(sourceFiles(s));
-            var diagnostics=new ArrayList<Object>();var warnings=new LinkedHashSet<String>(s.warnings());int tier=2;
-            for(Path path:files){var result=analyzer(s,path).diagnostics(path,documents(s));tier=Math.min(tier,result.tier());warnings.addAll(result.warnings());diagnostics.addAll((List<?>)((Map<?,?>)result.result()).get("diagnostics"));}
-            return page(tier,"live","diagnostics",diagnostics,cursor(p),Dispatcher.limit(p,200,1000),List.copyOf(warnings));
+            RequestScope.memo(List.of(s,"analysis-resolution"),()->s.state("resolution")==null?null:refresh(s));
+            var files=new ArrayList<Path>();for(var value:p.path("paths"))files.add(sourcePath(s,value.asText()));boolean whole=files.isEmpty();if(whole)files.addAll(sourceFiles(s));
+            return diagnostics(s).get(files,whole,cursor(p),Dispatcher.limit(p,200,1000),s.warnings());
         });
     }
+    private WorkspaceAnalysisCoordinator diagnostics(Session session){return session.state("diagnostics",()->new WorkspaceAnalysisCoordinator(documents(session),file->analyzer(session,file),session::yieldInteractive));}
     public Dispatcher dispatcher() { return dispatcher; }
     public Sessions sessions() { return sessions; }
     private static WorkspaceManifest workspace(Session session){return session.state("workspace_manifest",()->new WorkspaceManifest(List.of(session.root()),true));}
@@ -438,6 +438,7 @@ public final class Application implements AutoCloseable {
         var availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
         analyzer.configure(context,availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));
         analyzer.documents(documents(session));
+        analyzer.persistence(config.stateDir().resolve("diagnostics-v2").resolve(Hashing.sha256(session.root().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))));
         return analyzer;
     }
     private Analyzer.Context createAnalyzerContext(Session session,Path path,Resolution graph)throws Exception{

@@ -34,12 +34,12 @@ The `corpus` job of the same run failed for a harness reason rather than a diagn
 
 | Phase | Status | Notes |
 |---|---|---|
-| 1. Instrument current path | implemented, verification pending | CompilerPool javac/config/classpath timings and counts; Analyzer diagnostic reuse/analysis/index-write counters; Maven resolution counters; existing RPC Metrics provide request duration |
+| 1. Instrument current path | implemented, CI-verified | CompilerPool javac/config/classpath timings and counts; Analyzer diagnostic reuse/analysis/index-write counters; Maven resolution counters; existing RPC Metrics provide request duration |
 | 2. Prepare request context once | partial | Maven workspace resolution is memoized once per RPC; source enumeration was already once/request; `Application.analyzer(...)` still reconstructs some per-file module data and classpath-stamp work remains reducible |
-| 3. Preserve analyzer/compiler state per module context | implemented, verification pending | compiler pools are retained by context generation; A→B→A regression added |
-| 4. Detached per-file diagnostic state | implemented, verification pending | dedicated `DiagnosticStore`; unchanged repeated workspace request test asserts zero added javac, zero files analysed, zero index writes; real pagination exercised |
+| 3. Preserve analyzer/compiler state per module context | partial (pools and diagnostic states retained; focused/outline caches still cleared per generation) | compiler pools are retained by context generation; A→B→A regression added |
+| 4. Detached per-file diagnostic state | implemented, CI-verified | dedicated `DiagnosticStore`; unchanged repeated workspace request test asserts zero added javac, zero files analysed, zero index writes; real pagination exercised |
 | 5. Decouple index publication | not complete | synchronous `recordSource()` remains on changed/full semantic computations; unchanged cached `diag.get` bypasses it entirely |
-| 6. API/declaration fingerprints | implemented, verification pending | detached API fingerprint, conditional reverse-dependency invalidation for authoritative editor changes, body-only/signature regression added |
+| 6. API/declaration fingerprints | implemented, CI-verified (transitive case untested) | detached API fingerprint, conditional reverse-dependency invalidation for authoritative editor changes, body-only/signature regression added |
 | 7. Cold module-batched javac | not started | no shared-javac parallelism introduced |
 | 8. Persistent diagnostic snapshots/further optimization | not started | intentionally deferred until warm path is proven |
 
@@ -311,6 +311,89 @@ Perf-budget tests other than the diagnostics fixture (for example `FocusedAttrib
 2. ~~capture `diagnostics-perf.json` / test logs and record the actual warm measurement~~ — recorded above (22.5 ms warm, zero counters);
 3. finish or safely bound phase 5 source-index publication decoupling;
 4. if the warm-path suite is green, proceed to cold module-batched javac analysis rather than parallelizing shared compiler state.
+
+## Audit against the architecture document
+
+Checked commit `bde57f7` against `jvmd-incremental-diagnostics-architecture.md` on 2026-09-17.
+
+### Phase numbering
+
+This log's phase numbers are offset from the architecture document's (§60–§70). The mapping is:
+
+| Architecture doc | This log | State |
+|---|---|---|
+| Phase 0 — instrument existing path | 1 | done |
+| Phase 1 — fix request-level redundant work | 2 | partial |
+| Phase 2 — ModuleAnalyzerRegistry | 3 | partial |
+| Phase 3 — DiagnosticStore / zero javac | 4 | **done, CI-verified** |
+| Phase 4 — remove synchronous index publication | 5 | not started |
+| Phase 5 — API fingerprint invalidation | 6 | done (transitive case untested) |
+| Phase 6 — cold module batch analysis | 7 | not started |
+| Phase 7 — adaptive cold/warm selection | *missing* | not started |
+| Phase 8 — persistent diagnostic cache | 8 | not started |
+| Phase 9 — high-fidelity Lombok backend | *missing* | not started |
+| Phase 10 — parallel module actors | *missing* | not started |
+
+Architecture phases 7, 9 and 10 were absent from this log and are now recorded.
+
+### Definition of done (§83)
+
+| Criterion | State |
+|---|---|
+| Warm unchanged workspace: 0 javac, 0 analyses, 0 sync index writes, <= 1 resolution validation | met on both fixtures |
+| Body-only edit: changed file only, dependants untouched | met (`ApiFingerprintInvalidationTest`) |
+| API-changing edit: closure invalidated, unrelated sources cached | met for the direct dependant; transitive `C → B → A` untested |
+| Multi-module: switching modules does not destroy unrelated analyzer state | **partial** — see below |
+| Cold workspace: N files do not require N javac tasks | not met |
+| Restart: persisted states restored without javac | not met |
+| LSP shares state with `diag.get` (§43) | met — `LspFacade.diagnostics` delegates to `diag.get` |
+| Observability (§56/§58/§59) | partial — counters exist, phase timings and invalidation reasons do not |
+
+### Open gaps found by this audit
+
+1. **§62/§83 multi-module state is only half-retained.** `Analyzer.configure(...)` still runs
+   `outlines.clear(); focused.clear()` whenever the context generation changes, so an A→B→A
+   traversal still discards A's interactive focused cache. What survives is the per-generation
+   `CompilerPool` and the `DiagnosticStore` (keyed by context fingerprint), which is why warm
+   `diag.get` is unaffected. `ModuleAnalyzerContextReuseTest` asserts only pool reuse, so this
+   gap is not currently covered by a test.
+2. **Cross-module pool recycling.** `invalidateCompilerCaches(...)` calls `recycle()` on *every*
+   retained pool for any changed file, so an edit in module A discards module B's and C's warm
+   javac state. §23 scopes invalidation to the affected module/closure.
+3. **§14 classpath identity is still per file.** `CompilerPool.cacheValid()` is now memoized per
+   RPC (`6d60bd5`), but `Analyzer.classpathStamp()` still stats every classpath jar on each
+   `bindings(...)`/`diagnostics(...)` call, i.e. once per file rather than once per module
+   generation.
+4. **§18/§40 FileStateRegistry does not exist.** Every warm `diag.get` reads each source
+   (`documents(s).text(path)`) and SHA-256s it twice (`Dependencies.observe`, then the store key),
+   and `Dependencies.check` re-reads and re-hashes each file's forward-dependency closure. There is
+   no `size + mtime + ctime + inode` fast path for sources — though `AnnotationProcessing` already
+   uses exactly that idiom (`unix:size,lastModifiedTime,ctime,ino`) and can be reused. This is
+   O(workspace bytes) per warm request and is the next scaling limit after phase 5.
+5. **Benchmark fixture blind spot.** The 40-source fixture writes no `pom.xml`, so
+   `session.state("resolution")` is null and `Application.analyzer(...)` takes the `"plain"`
+   context path with an empty classpath. The 22.5 ms warm figure therefore does not exercise
+   gaps 3 or 4, nor the per-file module-context reconstruction §12 targets. §72 asks for small,
+   medium (~250 source) and large (~1,000 source, multi-module) fixtures; only the small one exists.
+6. **§11/§74/§75 structural refactor not performed.** `diag.get` remains an explicit per-file loop
+   in `Application`; no `WorkspaceAnalysisCoordinator`, `WorkspaceContextSnapshot` or
+   `ModuleAnalyzerRegistry` type exists. This was a deliberate choice (see the decisions section
+   below) and the warm-path invariant was met without it, but §12's "construct module contexts once
+   per request" benefit is unrealized: `Application.analyzer(...)` still rebuilds module lookup,
+   classpath, coordinates and navigation-source data for every file.
+7. **§16.2/§51 the store is unbounded.** `DiagnosticStore` has no byte budget or eviction, and
+   `put(...)` prunes only entries for the same file *and* context fingerprint, so states for
+   superseded contexts accumulate for the session's lifetime.
+8. **§17/§58 no explicit state model.** `VALID / STALE / CONDITIONALLY_STALE / UNKNOWN` and the
+   invalidation-reason enum are not modelled; conditional state lives in the ad hoc `pendingApi`
+   and `conditionalByFile` maps, and `session.status` exposes no reason counts.
+9. **§52/§53/§54 no generations, supersession or cancellation.** Keying snapshots by
+   `(sourceHash, contextGeneration, classpathStamp)` does prevent publishing a result under a newer
+   source identity, but there is no explicit generation check, bounded retry, or dropping of
+   superseded queued analyses.
+10. **§71 test-matrix rows with no coverage:** transitive API propagation, source deleted, package
+    rename/namespace change (`Analyzer.namespaceChanged()` has no test), workspace changed during
+    analysis, corrupted/persistent cache, and every batch-analysis row.
 
 ## Repository/design discrepancies and decisions
 

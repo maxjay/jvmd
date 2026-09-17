@@ -15,6 +15,7 @@ public final class Documents {
     private record Document(String text,int version,String hash) { }
     private static final long MAX_BYTES=64L*1024*1024;
     private final Map<Path,Document> documents=new LinkedHashMap<>();
+    private final FileStateRegistry files=new FileStateRegistry();
     private long bytes,generation;
     private static Path key(Path path){return path.toAbsolutePath().normalize();}
     public synchronized void open(Path file,String text,int version){if(contains(file))throw RpcException.invalid("Document is already open");set(key(file),text,version);}
@@ -35,6 +36,8 @@ public final class Documents {
     public synchronized void close(Path file){var previous=documents.remove(key(file));if(previous!=null){bytes-=2L*previous.text().length();generation++;}}
     public synchronized String text(Path file)throws Exception{var document=documents.get(key(file));return document==null?Files.readString(file):document.text();}
     public synchronized String hash(Path file){var document=documents.get(key(file));return document==null?null:document.hash();}
+    public synchronized String sourceHash(Path file)throws java.io.IOException{var hash=hash(file);return hash==null?files.hash(file):hash;}
+    public FileStateRegistry fileStates(){return files;}
     public synchronized Integer version(Path file){var document=documents.get(key(file));return document==null?null:document.version();}
     public synchronized boolean contains(Path file){return documents.containsKey(key(file));}
     public synchronized Map<Path,String> snapshots(){var result=new LinkedHashMap<Path,String>();documents.forEach((file,value)->result.put(file,value.text()));return Collections.unmodifiableMap(result);}

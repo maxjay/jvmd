@@ -102,6 +102,7 @@ public final class Application implements AutoCloseable {
         dispatcher.register("symbol.hierarchy",(s,p)->relationships(s,p,true));
         dispatcher.register("session.status", (s, _) -> {
             var graph=(Resolution)s.state("resolution");var result=new LinkedHashMap<String,Object>();
+            result.put("file_states",documents(s).fileStates().status());result.put("analysis_contexts",s.state("analysis_contexts")==null?Map.of():((WorkspaceContextManager)s.state("analysis_contexts")).status());
             result.put("workspace_bindings",s.state("workspace_bindings")==null?Map.of("initialized",false):((WorkspaceBindings)s.state("workspace_bindings")).status());result.put("documents",documents(s).status());result.put("session",s.id());result.put("root",s.root().toString());result.put("classpath_state",graph==null?"unresolved":"resolved");result.put("classpath_entries",graph==null?0:graph.classpath().size());result.put("overlay",graph==null?Map.of():overlay(s,graph).status());result.put("metrics",dispatcher.status().get("metrics"));result.put("annotation_processing",s.state("processors")==null?Map.of("initialized",false):((AnnotationProcessing)s.state("processors")).status());result.put("analyzer",s.state("analyzer")==null?Map.of("initialized",false):((Analyzer)s.state("analyzer")).status());result.put("runs",s.state("runs")==null?List.of():runs(s).status());result.put("index",index==null?Map.of("phase","disabled"):index.isDone()&&!index.isCompletedExceptionally()?index.join().status():Map.of("phase","starting"));result.put("capabilities",Map.of("analysis_tiers",List.of(0,1,2),"mcp_tools",14,"runtime",true));
             return new Envelope(0,"live",false,null,s.warnings(),result);
         });
@@ -116,7 +117,7 @@ public final class Application implements AutoCloseable {
             }
             var files=new ArrayList<Path>();for(var value:p.path("paths"))files.add(sourcePath(s,value.asText()));if(files.isEmpty())files.addAll(sourceFiles(s));
             var diagnostics=new ArrayList<Object>();var warnings=new LinkedHashSet<String>(s.warnings());int tier=2;
-            for(Path path:files){var result=analyzer(s,path).diagnostics(path,documents(s).text(path));tier=Math.min(tier,result.tier());warnings.addAll(result.warnings());diagnostics.addAll((List<?>)((Map<?,?>)result.result()).get("diagnostics"));}
+            for(Path path:files){var result=analyzer(s,path).diagnostics(path,documents(s));tier=Math.min(tier,result.tier());warnings.addAll(result.warnings());diagnostics.addAll((List<?>)((Map<?,?>)result.result()).get("diagnostics"));}
             return page(tier,"live","diagnostics",diagnostics,cursor(p),Dispatcher.limit(p,200,1000),List.copyOf(warnings));
         });
     }
@@ -430,15 +431,21 @@ public final class Application implements AutoCloseable {
     }
     private static <T> List<T> slice(List<T> list,int offset,int limit){return List.copyOf(list.subList(Math.min(offset,list.size()),Math.min(list.size(),offset+limit)));}
     private Analyzer analyzer(Session session,Path path)throws Exception{
-        var graph=(Resolution)session.state("resolution");
-        if(graph!=null)graph=refresh(session);
+        var graph=RequestScope.memo(List.of(session,"analysis-resolution"),()->session.state("resolution")==null?null:refresh(session));
+        var contexts=session.state("analysis_contexts",WorkspaceContextManager::new);
+        var context=contexts.context(path,graph,file->createAnalyzerContext(session,file,graph));
+        var analyzer=session.state("analyzer",Analyzer::new);
+        var availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
+        analyzer.configure(context,availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));
+        analyzer.documents(documents(session));
+        return analyzer;
+    }
+    private Analyzer.Context createAnalyzerContext(Session session,Path path,Resolution graph)throws Exception{
         String gav="local:workspace:0",release="25",generation="plain";
         List<String> options=List.of("--release","25");
         var classpath=new java.util.ArrayList<Path>();var sources=new java.util.ArrayList<Path>();var coordinates=new java.util.LinkedHashMap<String,String>();var binarySources=new LinkedHashSet<Path>();var processorWarnings=new LinkedHashSet<String>();var navigationSources=new LinkedHashSet<Path>();
         if(graph!=null){
-            var fallback=graph.modules().stream().filter(m->path.startsWith(Path.of(m.directory()))).max(java.util.Comparator.comparingInt(m->m.directory().length())).orElse(graph.modules().getFirst());
-            var module=graph.modules().stream().filter(m->java.util.stream.Stream.concat(m.sources().stream(),m.testSources().stream()).anyMatch(source->path.startsWith(Path.of(source))))
-                    .max(java.util.Comparator.comparingInt(m->java.util.stream.Stream.concat(m.sources().stream(),m.testSources().stream()).filter(source->path.startsWith(Path.of(source))).mapToInt(String::length).max().orElse(0))).orElse(fallback);
+            var module=WorkspaceContextManager.owner(path,graph);
             gav=module.gav();release=module.release()==null||module.release().isBlank()?"25":module.release();generation=graph.fingerprint()+":"+gav;
             boolean test=module.testSources().stream().anyMatch(root->path.startsWith(Path.of(root)));
             options=test?module.testCompilerOptions():module.compilerOptions();generation+=test?":test":":main";
@@ -469,12 +476,9 @@ public final class Application implements AutoCloseable {
         }else{sources.addAll(workspace(session).roots());for(Path root:workspace(session).roots()){coordinates.put(root.toString(),gav);coordinates.put(root.toUri().toString(),gav);}}
         if(dirty(session)&&graph!=null&&graph.modules().stream().anyMatch(m->m.processing().enabled()||m.testProcessing().enabled()))processorWarnings.add("unsaved_processor_inputs: generated APIs reflect the last saved processor inputs");
         navigationSources.addAll(sources);
-        var analyzer=session.state("analyzer",Analyzer::new);
-        var availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
-        analyzer.configure(new Analyzer.Context(gav,release,java.util.List.copyOf(classpath),java.util.List.copyOf(sources),generation,java.util.Map.copyOf(coordinates),options,Set.copyOf(binarySources),List.copyOf(processorWarnings),List.copyOf(navigationSources)),availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));
-        analyzer.documents(documents(session));
-        return analyzer;
+        return new Analyzer.Context(gav,release,List.copyOf(classpath),List.copyOf(sources),generation,Map.copyOf(coordinates),options,Set.copyOf(binarySources),List.copyOf(processorWarnings),List.copyOf(navigationSources));
     }
+
     private AnnotationProcessing.Output prepareProcessing(Session session,Resolution.Module module,boolean test,Resolution graph)throws Exception{
         var settings=test?module.testProcessing():module.processing();
         if(settings.lombok())session.warn("lombok_reduced_fidelity: generated member bodies and positions are unavailable");

@@ -28,7 +28,8 @@ class DiagnosticRequestContextTest {
             daemon.request("diag.get",Map.of("session",session,"limit",1000));
             var after=daemon.request("daemon.status",Map.of()).path("result").path("resolver");
             assertThat(after.path("resolve_calls").asLong()-calls).as("Maven resolves per diag.get").isEqualTo(1L);
-            assertThat(after.path("request_cache_hits").asLong()-hits).as("per-file refreshes served from request snapshot").isGreaterThanOrEqualTo(3L);
+            var status=daemon.request("session.status",Map.of("session",session)).path("result");
+            assertThat(status.path("analysis_contexts").path("context_constructions").asLong()).isEqualTo(1L);
         }
     }
 }

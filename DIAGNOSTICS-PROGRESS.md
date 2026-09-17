@@ -162,3 +162,38 @@ Repeated unchanged `diag.get`, measured on the 40-source fixture with the assemb
 - `CompilerPool` thread ownership is unchanged; nothing is parallelized (§29).
 - Request-level Maven reuse was implemented below `Application.analyzer(...)` through an RPC scope, so existing callers and semantics stay intact — this is why gap 6 is open by choice rather than oversight.
 - `WorkspaceBindings` remains for operations needing a coherent workspace binding graph (§77).
+
+
+## 2026-09-17 — Checkpoint 6: continuation, identity and publication
+
+Checkpoint commit: the commit containing this entry (its SHA is recorded in the next entry).
+Continues `2f805e6` from the audited continuation branch, including its corpus benchmark tag fix.
+
+Changes:
+- `FileStateRegistry`, `Documents`, `Dependencies`: reuse source hashes only with matching
+  size, mtime, ctime and inode; providers without change time rehash conservatively.
+  Warm diagnostics validate identities before loading source text.
+- `RequestScope`, `WorkspaceContextManager`, `Application`: construct each main/test
+  context once per RPC. Classpath stamping is request-memoized per compiler context.
+- `Analyzer`: preserve focused and outline caches across module switches; recycle only
+  compiler contexts that analysed affected files rather than every retained context.
+- `DiagnosticStore`: enforce a byte budget and record invalidation reasons.
+- `ApiFingerprint`, `Bindings`: include constants, annotation values, generic bounds,
+  inheritance, permits, record components, annotation defaults and parameter annotations.
+- `SourceIndexPublisher`, `IndexService`: bounded coalescing publication outside the
+  diagnostic response; publication failure does not discard diagnostic state.
+
+Validation: 10 focused tests passed locally with Temurin 25.0.4.1+1 / Maven 3.8.3.
+Command: `mvn -Dtest=DiagnosticIdentityTest,ApiFingerprintInvalidationTest,ModuleAnalyzerContextReuseTest,ReverseDependencyInvalidationTest,CompilerPoolLifecycleTest,SourceIndexPublisherTest -Dsurefire.failIfNoSpecifiedTests=false test`.
+New tests cover preserved-mtime diagnostics, warm stamp reuse, transitive constant
+invalidation, an unrelated cached file, diagnostic budget eviction and blocked/coalesced
+index publication. A→B→A now proves one query for A plus a focused-cache hit.
+
+Prior CI evidence checked: run `35159316456` passed the checkpoint job. The corpus
+job's only error was the AOT-only benchmark missing its image; identifier correctness
+was 0.998821 and live/verified agreement passed. The inherited `bde57f7` test tag fixes
+that harness mismatch. No workflow edits or weakened correctness floors are included.
+
+Remaining: coordinator and generation checks, cold batching, restart persistence,
+Lombok fidelity, full invalidation matrix, workload benchmarks and full CI validation.
+The original private 26.8 s / 8.45 s workload remains unavailable here.

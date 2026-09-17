@@ -29,8 +29,8 @@ class ModuleAnalyzerContextReuseTest {
             @SuppressWarnings("unchecked") var modules=(Map<String,Object>)analyzer.status().get("module_compilers");
             @SuppressWarnings("unchecked") var aStatus=(Map<String,Object>)modules.get("ctx-a");
             @SuppressWarnings("unchecked") var bStatus=(Map<String,Object>)modules.get("ctx-b");
-            assertThat(aStatus).containsEntry("queries",2L).containsEntry("recycles",0L);
-            assertThat(aStatus.get("pool_statistics").toString()).contains("1 reused Contexts");
+            assertThat(aStatus).containsEntry("queries",1L).containsEntry("recycles",0L);
+            assertThat(analyzer.status()).containsEntry("binding_cache_hits",1L);
             assertThat(bStatus).containsEntry("queries",1L).containsEntry("recycles",0L);
         }
     }

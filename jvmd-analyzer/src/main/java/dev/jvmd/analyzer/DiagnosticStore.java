@@ -17,8 +17,18 @@ public final class DiagnosticStore {
     public record State(Envelope diagnostics,String apiFingerprint,Set<Path> dependencies) {
         public State { dependencies=Set.copyOf(dependencies); }
     }
-    private final Map<Key,State> files=new LinkedHashMap<>();
+    public enum Validity { VALID, STALE, CONDITIONALLY_STALE, UNKNOWN }
+    public enum Reason { SOURCE_CONTENT_CHANGED, DEPENDENCY_API_CHANGED, SOURCE_ADDED, SOURCE_REMOVED,
+        NAMESPACE_CHANGED, CONTEXT_CHANGED, CLASSPATH_CHANGED, PROCESSOR_OUTPUT_CHANGED, JDK_CHANGED,
+        ANALYZER_VERSION_CHANGED, UNKNOWN }
+    private final Map<Key,State> files=new LinkedHashMap<>(256,.75f,true);
+    private final Map<Key,Long> weights=new HashMap<>();
+    private final Map<Reason,Long> reasons=new EnumMap<>(Reason.class);
+    private long budget=32L*1024*1024,bytes,evictions;
     private long hits,misses,puts,invalidations;
+    public void budget(long bytes){budget=Math.max(1024,bytes);trim();}
+    private void remove(Key key){files.remove(key);bytes-=weights.getOrDefault(key,0L);weights.remove(key);}
+    private void trim(){while(bytes>budget&&!files.isEmpty()){remove(files.keySet().iterator().next());evictions++;}}
 
     public Envelope get(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint){
         var value=lookup(file,sourceHash,contextFingerprint,classpathFingerprint);return value==null?null:value.diagnostics();
@@ -37,8 +47,13 @@ public final class DiagnosticStore {
     }
     public void put(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint,Envelope diagnostics,String apiFingerprint,Set<Path> dependencies){
         Path normalized=file.toAbsolutePath().normalize();
-        files.keySet().removeIf(key->key.file().equals(normalized)&&key.contextFingerprint().equals(contextFingerprint));
-        files.put(new Key(normalized,sourceHash,contextFingerprint,classpathFingerprint),new State(diagnostics,apiFingerprint,dependencies));puts++;
+        for(var key:List.copyOf(files.keySet()))if(key.file().equals(normalized)&&key.contextFingerprint().equals(contextFingerprint))remove(key);
+        var key=new Key(normalized,sourceHash,contextFingerprint,classpathFingerprint);
+        var state=new State(diagnostics,apiFingerprint,dependencies);
+        long size;
+        try{size=512L+2L*dev.jvmd.core.Json.MAPPER.writeValueAsBytes(diagnostics).length+2L*key.toString().length()+dependencies.stream().mapToLong(p->128L+2L*p.toString().length()).sum();}
+        catch(Exception error){throw new IllegalArgumentException("Diagnostic state is not detached",error);}
+        files.put(key,state);weights.put(key,size);bytes+=size;puts++;trim();
     }
 
     public String apiFingerprint(Path file){
@@ -60,15 +75,20 @@ public final class DiagnosticStore {
     }
 
     public void invalidate(Collection<Path> paths){
+        invalidate(paths,Reason.SOURCE_CONTENT_CHANGED);
+    }
+    public void invalidate(Collection<Path> paths,Reason reason){
         if(paths.isEmpty())return;
         var normalized=new HashSet<Path>();for(Path path:paths)normalized.add(path.toAbsolutePath().normalize());
-        int before=files.size();files.keySet().removeIf(key->normalized.contains(key.file()));invalidations+=before-files.size();
+        int before=files.size();for(var key:List.copyOf(files.keySet()))if(normalized.contains(key.file()))remove(key);invalidations+=before-files.size();
+        reasons.merge(reason,(long)normalized.size(),Long::sum);
     }
 
-    public void clear(){invalidations+=files.size();files.clear();}
+    public void clear(){invalidations+=files.size();files.clear();weights.clear();bytes=0;}
 
     public Map<String,Object> status(){
         return Map.of(
+                "bytes",bytes,"budget_bytes",budget,"evictions",evictions,"invalidation_reasons",Map.copyOf(reasons),
                 "entries",files.size(),
                 "hits",hits,
                 "misses",misses,

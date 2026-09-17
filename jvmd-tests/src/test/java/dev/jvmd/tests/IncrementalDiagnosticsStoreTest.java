@@ -8,7 +8,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 /** Architectural diagnostics assertions: warm snapshots must not fall back to javac. */
-@Tag("phase-4")
+@Tag("phase-4") @Tag("perf")
 class IncrementalDiagnosticsStoreTest {
     @TempDir Path temp;
 

@@ -20,13 +20,15 @@ The architecture document records the pre-redesign observed benchmark as:
 - fresh workspace diagnostics: approximately **26.8 s**
 - repeated workspace diagnostics: approximately **8.45 s**
 
-These remain the only directly comparable pre-change numbers available to this implementation branch. The connector environment cannot execute the repository locally, so branch measurements are collected by the repository's GitHub Actions AOT test harness. `IncrementalDiagnosticsStoreTest` now writes `jvmd-tests/target/diagnostics-perf.json` containing cold/warm timings and architectural counters for a deterministic 40-source fixture.
+These remain the only directly comparable pre-change numbers available to this implementation branch. Branch measurements are collected by the repository's GitHub Actions AOT test harness, and are also reproducible in a session container that installs the same pinned Temurin 25.0.4.1+1 toolchain, assembles `jvmd-dist/target/image` and trains the AOT cache. `IncrementalDiagnosticsStoreTest` now writes `jvmd-tests/target/diagnostics-perf.json` containing cold/warm timings and architectural counters for a deterministic 40-source fixture.
 
 ## Current phase
 
-**Verification of phases 1–4 and 6; phase 5 (index publication decoupling) and cold batching remain open.**
+**Phases 1–4 and 6 verified; phase 5 (index publication decoupling) and cold batching remain open.**
 
-The highest-value warm-path architecture is implemented and under CI verification. The work intentionally remains a draft PR until the new regression tests and the existing checkpoint/corpus suites are green.
+The `checkpoints` job of run `35159316456` (head `4b03c6fa34c1bcadfff5edba448fbbecbe3baa30`) is green, including the phase-4 step that runs `IncrementalDiagnosticsStoreTest` against the assembled AOT image. The acceptance invariant therefore holds under CI.
+
+The `corpus` job of the same run failed for a harness reason rather than a diagnostics regression: it runs `-Dgroups=phase-4 -DexcludedGroups=perf` without assembling `jvmd-dist/target/image`, so the AOT-daemon benchmark could not launch (`Cannot run program .../image/bin/java`). The test asserts a latency budget, so it is now tagged `perf` alongside the existing `FocusedAttributionBudgetTest`, which keeps it in the `checkpoints` job (where the image exists) and out of the corpus job.
 
 ## Phase status
 
@@ -172,7 +174,14 @@ Required measured deltas:
 - pagination files reanalysed: **0**;
 - warm fixture budget: **< 500 ms**.
 
-Actual milliseconds: **pending latest CI artifact/log**.
+Actual milliseconds, measured on the 40-source fixture with the assembled AOT image:
+
+```json
+{"files":40,"cold_ms":1618.6,"repeated_ms":22.5,"cold_javac_queries":40,
+ "repeated_additional_javac_queries":0,"repeated_files_reanalysed":0,"repeated_index_writes":0}
+```
+
+The warm unchanged request is **~22.5 ms** against a 500 ms budget, with all three architectural counters at zero. The same assertions pass in the CI `checkpoints` job; the numeric `diagnostics-perf.json` above was produced by a local reproduction of that job's toolchain and image.
 
 ### Checkpoint 5 — API fingerprint / conditional invalidation
 
@@ -257,7 +266,18 @@ repeated_files_reanalysed = 0
 repeated_index_writes = 0
 ```
 
-Latest numeric measurement is pending the CI run containing `ad2c3fa6f13a1783e6e50c600324417350a62876`.
+Measured on the 40-file fixture (see checkpoint 4):
+
+```text
+cold_ms                            = 1618.6
+repeated_ms                        = 22.5
+cold_javac_queries                 = 40
+repeated_additional_javac_queries  = 0
+repeated_files_reanalysed          = 0
+repeated_index_writes              = 0
+```
+
+Perf-budget tests other than the diagnostics fixture (for example `FocusedAttributionBudgetTest`, p95 < 50 ms) sit close to their thresholds on slower container hardware and can fail locally while passing on CI runners; the architectural counters are the environment-independent signal.
 
 ## Cache observability
 
@@ -277,7 +297,7 @@ Latest numeric measurement is pending the CI run containing `ad2c3fa6f13a1783e6e
 
 ## Known issues / regressions / remaining work
 
-- CI verification for the latest checkpoint is still required before marking phases complete.
+- The `corpus` job needed the diagnostics benchmark excluded (it does not assemble the AOT image); fixed by tagging the test `perf`. CI verification of that fix is pending.
 - Phase 2 still reconstructs some module/context Java data in `Application.analyzer(...)` per file and still computes classpath stamps more often than the target architecture ultimately requires.
 - Phase 5 has **not** yet moved changed-source `IndexService.recordSource()` work off the diagnostic response critical path. The warm unchanged path already performs zero writes, but changed-source publication is still synchronous.
 - Cold diagnostics still use one javac task/query per unknown file; module batching is not implemented.
@@ -287,8 +307,8 @@ Latest numeric measurement is pending the CI run containing `ad2c3fa6f13a1783e6e
 
 ## Next checkpoint
 
-1. run/inspect latest CI and repair any new regression rather than bypassing it;
-2. capture `diagnostics-perf.json` / test logs and record the actual warm measurement;
+1. ~~run/inspect latest CI and repair any new regression rather than bypassing it~~ — `checkpoints` green; corpus harness gap fixed by the `perf` tag, pending CI confirmation;
+2. ~~capture `diagnostics-perf.json` / test logs and record the actual warm measurement~~ — recorded above (22.5 ms warm, zero counters);
 3. finish or safely bound phase 5 source-index publication decoupling;
 4. if the warm-path suite is green, proceed to cold module-batched javac analysis rather than parallelizing shared compiler state.
 

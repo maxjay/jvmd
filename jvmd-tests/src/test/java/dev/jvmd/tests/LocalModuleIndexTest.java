@@ -35,7 +35,7 @@ class LocalModuleIndexTest {
                 analyzer.configure(new Analyzer.Context(gav,"25",List.of(),List.of(module.resolve("src/main/java")),"edited",Map.of(module.toString(),gav)),index,256L*1024*1024);
                 var bound=analyzer.bindings(source,edited,null);assertThat(bound.diagnostics()).isEmpty();
             }
-            assertThat(index.find("fresh","checkout",false,10,0)).singleElement().satisfies(s->assertThat(s).containsEntry("source_file",source.toString()));
+            assertThat(awaitFind(index,"fresh","checkout",1)).singleElement().satisfies(s->assertThat(s).containsEntry("source_file",source.toString()));
             assertThat(index.find("old","installed",false,10,0)).hasSize(1);
             assertThat(index.find("fresh","installed",false,10,0)).isEmpty();
             // Replacing an installed jar must preserve shared local symbol identities.
@@ -52,8 +52,13 @@ class LocalModuleIndexTest {
             index.registerLocal(new IndexService.LocalModule(module,"fixture:plain:1",List.of(module),List.of()));long id=index.refreshLocal(module);
             index.loadWorkspace("plain",List.of(new IndexService.WorkspaceArtifact(module.toString(),"local")),List.of());
             try(var analyzer=new Analyzer()){analyzer.configure(new Analyzer.Context("fixture:plain:1","25",List.of(),List.of(module),"plain",Map.of(module.toString(),"fixture:plain:1")),index,256L*1024*1024);analyzer.bindings(source,text,null);}
-            assertThat(index.find("value","plain",false,10,0)).hasSize(1);Files.setLastModifiedTime(source,java.nio.file.attribute.FileTime.fromMillis(1));assertThat(index.refreshLocal(module)).isEqualTo(id);
+            assertThat(awaitFind(index,"value","plain",1)).hasSize(1);Files.setLastModifiedTime(source,java.nio.file.attribute.FileTime.fromMillis(1));assertThat(index.refreshLocal(module)).isEqualTo(id);
             Files.delete(source);index.refreshLocalWorkspace("plain");assertThat(index.find("value","plain",false,10,0)).isEmpty();
         }
+    }
+    private static List<Map<String,Object>> awaitFind(IndexService index,String query,String workspace,int expected)throws Exception{
+        long deadline=System.nanoTime()+5_000_000_000L;List<Map<String,Object>> found;
+        do{found=index.find(query,workspace,false,10,0);if(found.size()==expected)return found;Thread.sleep(10);}while(System.nanoTime()<deadline);
+        return found;
     }
 }

@@ -18,6 +18,7 @@ final class SstSorter implements AutoCloseable {
     private final List<Entry> buffered=new ArrayList<>();
     private final Set<Path> temporary=new LinkedHashSet<>();
     private List<Path> runs=new ArrayList<>();
+    private byte[] namespace;
     private long bytes,peakBytes,spillBytes;
 
     SstSorter(Path directory,long budget){
@@ -25,7 +26,11 @@ final class SstSorter implements AutoCloseable {
         this.directory=directory;this.budget=budget;
     }
     void add(byte[] key,byte[] value)throws IOException{
-        var entry=new Entry(key,value);
+        if(key.length<66||key[64]!='|')throw new IOException("Invalid artifact namespace");
+        if(namespace==null)namespace=Arrays.copyOf(key,65);
+        else if(Arrays.mismatch(namespace,0,65,key,0,65)>=0)throw new IOException("Mixed artifact namespaces");
+        // A sort contains exactly one artifact. Keep its repeated SHA out of every spill row.
+        var entry=new Entry(Arrays.copyOfRange(key,65,key.length),value);
         if(!buffered.isEmpty()&&bytes+entry.bytes()>budget)spill();
         buffered.add(entry);bytes+=entry.bytes();peakBytes=Math.max(peakBytes,bytes);
         if(bytes>=budget)spill();
@@ -34,7 +39,7 @@ final class SstSorter implements AutoCloseable {
     long spillBytes(){return spillBytes;}
     String writeTo(SstFileWriter writer)throws Exception{
         var digest=MessageDigest.getInstance("SHA-256");
-        var postings=new PostingWriter(writer,digest);
+        var postings=new PostingWriter(writer,digest,namespace);
         Consumer write=postings::accept;
         if(runs.isEmpty()){
             buffered.sort(ORDER);byte[] previous=null;
@@ -75,13 +80,14 @@ final class SstSorter implements AutoCloseable {
     /** Bound each posting block to 256 sorted IDs. The key carries the block's maximum ID. */
     private static final class PostingWriter {
         private final SstFileWriter writer;private final MessageDigest digest;
+        private final byte[] namespace;
         private final ByteArrayOutputStream ids=new ByteArrayOutputStream(1024);
         private byte[] last;private int count,previous;
-        PostingWriter(SstFileWriter writer,MessageDigest digest){this.writer=writer;this.digest=digest;}
+        PostingWriter(SstFileWriter writer,MessageDigest digest,byte[] namespace){this.writer=writer;this.digest=digest;this.namespace=namespace;}
         void accept(Entry entry)throws Exception{
             byte[] key=entry.key();
-            boolean posting=entry.value().length==0&&key.length>76&&key[64]=='|'&&
-                    (key[65]=='3'||key[65]=='5'||key[65]=='7'||key[65]=='8'||(key[65]=='2'&&key[67]=='s'));
+            boolean posting=entry.value().length==0&&key.length>11&&
+                    (key[0]=='3'||key[0]=='5'||key[0]=='7'||key[0]=='8'||(key[0]=='2'&&key[2]=='s'));
             if(!posting){flush();put(key,entry.value());return;}
             int prefixLength=key.length-8;
             if(last!=null&&(count==256||last.length!=key.length||Arrays.mismatch(last,0,prefixLength,key,0,prefixLength)>=0))flush();
@@ -94,7 +100,10 @@ final class SstSorter implements AutoCloseable {
         void flush()throws Exception{
             if(last==null)return;put(last,ids.toByteArray());last=null;count=0;previous=0;ids.reset();
         }
-        private void put(byte[] key,byte[] value)throws Exception{hash(digest,key,value);writer.put(key,value);}
+        private void put(byte[] key,byte[] value)throws Exception{
+            byte[] full=Arrays.copyOf(namespace,namespace.length+key.length);System.arraycopy(key,0,full,namespace.length,key.length);
+            hash(digest,full,value);writer.put(full,value);
+        }
     }
     @FunctionalInterface private interface Consumer {void accept(Entry entry)throws Exception;}
     private static void merge(List<Path> paths,Consumer consumer)throws Exception{

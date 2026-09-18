@@ -17,7 +17,8 @@ import static org.assertj.core.api.Assertions.*;
 public class IndexRedesignBenchmarkTest {
     @Test void compareIsolatedProductionBackendsInFreshProcesses()throws Exception{
         Path output=TestSupport.repo().resolve("jvmd-tests/target/index-redesign-benchmark");Files.createDirectories(output);
-        Path runRoot=Files.createTempDirectory(output,"run-");
+        Path measurementRoot=Path.of(System.getProperty("jvmd.benchmark.state_root",output.toString()));Files.createDirectories(measurementRoot);
+        Path runRoot=Files.createTempDirectory(measurementRoot,"run-");
         String configured=System.getProperty("jvmd.benchmark.repository");
         boolean synthetic=configured==null;
         Path repository=synthetic?Files.createDirectories(runRoot.resolve("repository")):Path.of(configured).toAbsolutePath().normalize();
@@ -62,7 +63,13 @@ public class IndexRedesignBenchmarkTest {
         for(String property:List.of("jvmd.index.native_budget_mb","jvmd.index.sort_buffer_bytes","jvmd.index.generation_budget_mb"))
             if(System.getProperty(property)!=null)args.add(1,"-D"+property+"="+System.getProperty(property));
         var process=new ProcessBuilder(args).redirectErrorStream(true).redirectOutput(log.toFile()).start();
-        assertThat(process.waitFor()).as("worker result; see %s",log).isZero();
+        int exit=process.waitFor();
+        Path retained=output.resolve(state.getParent().getFileName()).resolve(state.getFileName());
+        if(!retained.equals(state)){
+            Files.createDirectories(retained);Files.copy(log,retained.resolve(log.getFileName()),StandardCopyOption.REPLACE_EXISTING);
+            if(Files.exists(result))Files.copy(result,retained.resolve(result.getFileName()),StandardCopyOption.REPLACE_EXISTING);
+        }
+        assertThat(exit).as("worker result; see %s",log).isZero();
         var value=Json.MAPPER.readValue(result.toFile(),new com.fasterxml.jackson.core.type.TypeReference<LinkedHashMap<String,Object>>(){});
         value.put("scenario",scenario);value.put("mode",mode);return value;
     }

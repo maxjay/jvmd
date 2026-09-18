@@ -54,6 +54,14 @@ order, records CPU, peak heap pool usage, Linux peak RSS, process-attributed wri
 bytes, index size, phase timings and first/repeated query latency. Raw files and
 median/min/max summaries are written under
 `jvmd-tests/target/index-redesign-benchmark`. The fast CI workflow retains JSON evidence.
+Use `-Djvmd.benchmark.state_root=/path/on/measured/filesystem` to control the
+measurement filesystem; completed JSON/logs are still retained in the target
+report directory. The local workspace mount was observed to restore deleted
+staging files, while the same worker under `/tmp` passed cleanup. Local follow-up
+measurements therefore use `/tmp` for both backends. The container uses overlayfs
+with `fsync=volatile`; these results cannot establish the durable WSL acceptance
+target. The earlier final-size figures are diagnostic only.
+
 The assertion gate checks unchanged restarts perform zero artifact rebuilds and
 zero global linking; no timing budget is weakened.
 

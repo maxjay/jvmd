@@ -143,3 +143,8 @@ That path remains the production control while Rocks is integrated and compared.
 - All 37 Rocks storage tests pass, including packed posting boundaries, corruption detection, reopen and spill cleanup. The expanded 42-test integration gate and full reactor build pass. Fresh-process performance validation is recorded in the next evidence checkpoint.
 - Distribution smoke now requests strict AOT explicitly so fallback diagnostic text cannot corrupt its JSON output. Production shutdown preserves shared native handles when store shutdown fails.
 - Acceptance remains open for the corporate 861-JAR run, complete body/API edit matrix, hard parsed-model memory bounds, production reclamation/fault injection, corpus floor and platform release results.
+
+### Checkpoint 9 — compact sort namespaces and controlled benchmark location
+- Removed the repeated 65-byte artifact namespace from each temporary sort row, restoring it only when writing the final SST. Posting semantics and the on-disk format are unchanged.
+- Added a benchmark state-root option and retained worker output outside the measured directory. Cleanup assertions found deleted staging files being restored under this session's workspace path; the same worker under `/tmp` passed. No production cleanup assertion was weakened. The local overlay mount uses `fsync=volatile`, so these measurements are preliminary rather than the durable WSL acceptance run.
+- The 37 Rocks storage tests pass after namespace compaction. The full 42-test integration gate passed on the preceding full-store checkpoint.

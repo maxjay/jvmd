@@ -50,7 +50,7 @@ public final class AnnotationProcessing implements AutoCloseable {
         try{
             if(!inputs.isEmpty()){
                 var result=invoke(request,inputs,generated,classes,work,log,"only",timeout);exit=result.exitCode();timedOut=result.timedOut();runs++;
-                if(exit==0&&!timedOut&&request.lombok()){
+                if(!timedOut&&request.lombok()){
                     long remaining=timeout.toMillis()-TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started);
                     if(remaining<=0){timedOut=true;exit=-1;}
                     else{result=invoke(request,inputs,generated,classes,work,log,"full",Duration.ofMillis(remaining));exit=result.exitCode();timedOut=result.timedOut();fullLombok=!timedOut;runs++;}

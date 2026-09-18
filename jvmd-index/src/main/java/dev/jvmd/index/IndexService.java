@@ -79,6 +79,7 @@ public final class IndexService implements AutoCloseable {
         result.put("phase",phase);result.put("total",total);result.put("scanned",scanned.get());result.put("indexed",indexed.get());
         result.put("reused",reused.get());result.put("hashes",hashed.get());result.put("faults",faults.get());result.put("warnings",List.copyOf(warnings));
         result.put("active_artifacts",Map.copyOf(activeArtifacts));result.put("store",store.status());result.put("generation_sink",generationSink.status());
+        result.put("read_backend",System.getProperty("jvmd.index.read.backend","shadow"));
         var timings=new LinkedHashMap<String,Object>();
         timings.put("scans",scans.get());timings.put("scan_ms",millis(scanNanos.get()));timings.put("discovery_ms",millis(discoveryNanos.get()));
         timings.put("hash_ms",millis(hashNanos.get()));timings.put("parse_ms",millis(parseNanos.get()));timings.put("storage_ms",millis(storageNanos.get()));
@@ -250,8 +251,19 @@ public final class IndexService implements AutoCloseable {
     public List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds)throws Exception{
         long started=System.nanoTime();queryCalls.incrementAndGet();
         try{
+            String mode=System.getProperty("jvmd.index.read.backend","shadow");
+            if(!Set.of("sqlite","shadow","rocksdb-sst").contains(mode))
+                throw new IllegalStateException("Unknown jvmd.index.read.backend: "+mode);
+
+            if(mode.equals("rocksdb-sst")&&workspace!=null){
+                var rocks=generationSink.shadowFind(workspace,query,substring,limit,after,kinds);
+                if(rocks.isPresent())return rocks.get();
+                shadowSkipped.incrementAndGet();
+            }
+
             var authoritative=store.find(query,workspace,substring,limit,after,kinds);
-            if(workspace==null){shadowSkipped.incrementAndGet();return authoritative;}
+            if(mode.equals("sqlite")||workspace==null)return authoritative;
+
             long shadowAfter=0L;
             if(after!=0){
                 var boundary=store.byId(after,workspace);
@@ -263,11 +275,14 @@ public final class IndexService implements AutoCloseable {
             var shadow=generationSink.shadowFind(workspace,query,substring,limit,shadowAfter,kinds);
             if(shadow.isEmpty()){shadowSkipped.incrementAndGet();return authoritative;}
             shadowComparisons.incrementAndGet();
-            var expected=authoritative.stream().map(value->Objects.toString(value.get("scip"),"")).filter(value->!value.isBlank()).collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-            var actual=shadow.get().stream().map(value->Objects.toString(value.get("scip"),"")).filter(value->!value.isBlank()).collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            var expected=authoritative.stream().map(value->Objects.toString(value.get("scip"),"")).filter(value->!value.isBlank())
+                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            var actual=shadow.get().stream().map(value->Objects.toString(value.get("scip"),"")).filter(value->!value.isBlank())
+                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
             if(!expected.equals(actual)){
                 shadowMismatches.incrementAndGet();
-                warn("rocks_shadow_mismatch: workspace="+workspace+" query="+query+" after="+after+" expected="+expected.size()+" actual="+actual.size());
+                warn("rocks_shadow_mismatch: workspace="+workspace+" query="+query+" after="+after+
+                        " expected="+expected.size()+" actual="+actual.size());
             }
             return authoritative;
         }finally{queryNanos.addAndGet(System.nanoTime()-started);}

@@ -78,7 +78,7 @@ class StoragePrototypeTest {
             entries.add(new PrototypeStore.Entry("F|fixture.Type|"+id,new byte[0]));
         }
         for(int i=0;i<relationships;i++){
-            int source=i%symbols;String id=hex8(source),target="dep.Type"+(i%1000),kind=(i&1)==0?"calls":"return_type";
+            int source=i%symbols;String id=hex8(source),target="dep.Type"+((i/symbols)*1000+(i%1000)),kind=(i&1)==0?"calls":"return_type";
             entries.add(new PrototypeStore.Entry("O|"+id+"|"+kind+"|"+target,new byte[0]));
             entries.add(new PrototypeStore.Entry("R|"+target+"|"+kind+"|"+id,new byte[0]));
         }

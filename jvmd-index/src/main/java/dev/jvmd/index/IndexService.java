@@ -159,13 +159,16 @@ public final class IndexService implements AutoCloseable {
     public void registerLocal(LocalModule module){if(locals.register(module))readers.submit(()->{try{locals.refresh(module.directory());}catch(Exception e){warn("local_artifact_fault: "+module.directory()+": "+e);}});}
     public long refreshLocal(Path directory)throws Exception{return locals.refresh(directory);}
     public void refreshLocalWorkspace(String workspace)throws Exception{locals.refreshWorkspace(workspace);}
-    long replaceLocal(LocalModule module,String hash,long size,long mtime,BinaryReader.Content content,Map<String,Map<String,Object>> sourceData)throws Exception{
-        long id=database.write(c->{
-            long artifact=putArtifact(c,module.directory(),module.gav(),"local",hash,size,mtime);
-            if(ids(c,artifact).isEmpty())storeContent(c,artifact,module.gav(),"local",content,sourceData);
-            else storeSignatureTargets(c,artifact,content.edges(),ids(c,artifact));
-            return artifact;
-        });indexed.incrementAndGet();return id;
+    long replaceLocal(LocalModule module,String hash,long size,long mtime,BinaryReader.Content content,
+                      Map<String,Map<String,Object>> sourceData)throws Exception{
+        var key=ArtifactIndexFormat.key(hash,"local-signatures");
+        var facts=ArtifactIndexFormat.from(content,key);
+        var classReferences=CodeReader.classReferences(content.models().values());
+        generationSink.publish(facts,classReferences);
+        long id=store.publishArtifact(new IndexStore.ArtifactInput(
+                new ArtifactContext(module.gav(),"local",location(module.directory())),key,size,mtime),
+                facts,classReferences,sourceData);
+        indexed.incrementAndGet();return id;
     }
     /** Implements 4.4: detached source relationships, never compiler-owned trees. */
     public record SourceEdge(String src,String dst,String kind) { }
@@ -173,57 +176,9 @@ public final class IndexService implements AutoCloseable {
         locals.recordSource(file.toAbsolutePath().normalize(),contentHash,symbols,tier,edges);
     }
     void storeSource(long artifact,Path file,List<Map<String,Object>> symbols,int tier,List<SourceEdge> edges)throws Exception{
-        database.write(c->{
-            try(var remove=c.prepareStatement("DELETE FROM artifact_edges WHERE src_artifact=? AND src IN (SELECT symbol_id FROM artifact_symbols WHERE artifact_id=? AND source_file=?)")) {remove.setLong(1,artifact);remove.setLong(2,artifact);remove.setString(3,file.toString());remove.executeUpdate();}
-            try(var remove=c.prepareStatement("DELETE FROM signature_targets WHERE artifact_id=? AND src IN (SELECT symbol_id FROM artifact_symbols WHERE artifact_id=? AND source_file=?)")) {remove.setLong(1,artifact);remove.setLong(2,artifact);remove.setString(3,file.toString());remove.executeUpdate();}
-            try(var remove=c.prepareStatement("DELETE FROM artifact_symbols WHERE artifact_id=? AND source_file=?")){remove.setLong(1,artifact);remove.setString(2,file.toString());remove.executeUpdate();}
-            var kinds=Set.of("package","class","interface","enum","record","annotation","method","ctor","field","enumconst");
-            try(var insert=c.prepareStatement("INSERT INTO symbols(scip,artifact_id,kind,name,signature,erased_descriptor,binary_key,fqn,name_path,parameters,metadata) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(scip) DO NOTHING");
-                var lookup=c.prepareStatement("SELECT id FROM symbols WHERE scip=?");
-                var associate=c.prepareStatement("INSERT OR REPLACE INTO artifact_symbols VALUES(?,?,?,?)")){
-                for(var symbol:symbols){
-                    if(symbol.get("scip")==null||!kinds.contains(symbol.get("kind"))||!file.toString().equals(symbol.get("source_file")))continue;
-                    String scip=symbol.get("scip").toString();String fqn=Objects.toString(symbol.get("fqn"),Objects.toString(symbol.get("name_path"),""));
-                    insert.setString(1,scip);insert.setLong(2,artifact);insert.setString(3,symbol.get("kind").toString());insert.setString(4,Objects.toString(symbol.get("name"),""));insert.setString(5,(String)symbol.get("signature"));insert.setString(6,(String)symbol.get("erased_descriptor"));insert.setString(7,Objects.toString(symbol.get("binary_key"),Set.of("class","interface","enum","record","annotation").contains(symbol.get("kind"))?fqn:fqn+"#"+("ctor".equals(symbol.get("kind"))?"<init>":symbol.get("name"))+("method".equals(symbol.get("kind"))||"ctor".equals(symbol.get("kind"))?Objects.toString(symbol.get("erased_descriptor"),""):"")));insert.setString(8,fqn);insert.setString(9,Objects.toString(symbol.get("name_path"),scip));insert.setString(10,Json.MAPPER.writeValueAsString(symbol.getOrDefault("parameters",List.of())));insert.setString(11,"{}");insert.executeUpdate();
-                    lookup.setString(1,scip);long id;try(var r=lookup.executeQuery()){r.next();id=r.getLong(1);}
-                    var data=new LinkedHashMap<>(symbol);data.put("tier",tier);
-                    associate.setLong(1,artifact);associate.setLong(2,id);associate.setString(3,Json.MAPPER.writeValueAsString(data));associate.setString(4,file.toString());associate.addBatch();
-                }associate.executeBatch();
-            }
-            // Keep the unique SCIP row while any installed or local artifact still owns it.
-            try(var cleanup=c.prepareStatement("DELETE FROM symbols WHERE artifact_id=? AND NOT EXISTS(SELECT 1 FROM artifact_symbols a WHERE a.symbol_id=symbols.id)")){cleanup.setLong(1,artifact);cleanup.executeUpdate();}
-            try(var link=c.prepareStatement("INSERT OR IGNORE INTO edges SELECT a.id,b.id,? FROM symbols a,symbols b WHERE a.scip=? AND b.scip=?")){
-                for(var edge:edges){link.setString(1,edge.kind());link.setString(2,edge.src());link.setString(3,edge.dst());link.addBatch();}link.executeBatch();
-            }
-            try(var link=c.prepareStatement("INSERT OR IGNORE INTO artifact_edges SELECT ?,a.id,v.artifact_id,b.id,? FROM symbols a JOIN artifact_symbols own ON own.symbol_id=a.id AND own.artifact_id=? JOIN symbols b ON b.scip=? JOIN artifact_symbols v ON v.symbol_id=b.id WHERE a.scip=?")) {
-                for(var edge:edges){link.setLong(1,artifact);link.setString(2,edge.kind());link.setLong(3,artifact);link.setString(4,edge.dst());link.setString(5,edge.src());link.addBatch();}link.executeBatch();
-            }
-            try(var names=c.prepareStatement("DELETE FROM simple_names WHERE artifact_id=?")){names.setLong(1,artifact);names.executeUpdate();}
-            try(var names=c.prepareStatement("INSERT INTO simple_names SELECT s.name,s.fqn,? FROM symbols s JOIN artifact_symbols a ON a.symbol_id=s.id WHERE a.artifact_id=? AND s.kind IN ('class','interface','record','enum','annotation')")){names.setLong(1,artifact);names.setLong(2,artifact);names.executeUpdate();}
-            return null;
-        });
+        var detached=edges.stream().map(edge->new IndexStore.SourceRelationship(edge.src(),edge.dst(),edge.kind())).toList();
+        store.publishSourceFile(artifact,file,symbols,tier,detached);
     }
-    private static void preserveSharedSymbols(Connection c,long artifact)throws Exception{
-        try(var s=c.prepareStatement("UPDATE symbols SET artifact_id=(SELECT min(a.artifact_id) FROM artifact_symbols a WHERE a.symbol_id=symbols.id AND a.artifact_id<>?) WHERE artifact_id=? AND EXISTS(SELECT 1 FROM artifact_symbols a WHERE a.symbol_id=symbols.id AND a.artifact_id<>?)")){
-            s.setLong(1,artifact);s.setLong(2,artifact);s.setLong(3,artifact);s.executeUpdate();
-        }
-    }
-    private long putArtifact(Connection c,Path path,String gav,String kind,String hash,long size,long mtime) throws Exception {
-        // Preserve a content identity shared by multiple paths; remove a replaced path's old identity only when unused.
-        Long old=null;try(var s=c.prepareStatement("SELECT artifact_id FROM artifact_paths WHERE path=?")){s.setString(1,location(path));try(var r=s.executeQuery()){if(r.next())old=r.getLong(1);}}
-        long id;try(var s=c.prepareStatement("INSERT INTO artifacts(gav,kind,sha256,path,size,mtime,indexed_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(sha256) DO NOTHING",Statement.RETURN_GENERATED_KEYS)){s.setString(1,gav);s.setString(2,kind);s.setString(3,hash);s.setString(4,location(path));s.setLong(5,size);s.setLong(6,mtime);s.setLong(7,System.currentTimeMillis());s.executeUpdate();}
-        try(var s=c.prepareStatement("SELECT id FROM artifacts WHERE sha256=?")){s.setString(1,hash);try(var r=s.executeQuery()){r.next();id=r.getLong(1);}}
-        putPath(c,path,id,size,mtime);
-        if(old!=null&&old!=id){
-            try(var copy=c.prepareStatement("INSERT OR IGNORE INTO workspace_artifacts SELECT workspace_id,?,scope FROM workspace_artifacts WHERE artifact_id=?")){copy.setLong(1,id);copy.setLong(2,old);copy.executeUpdate();}
-            boolean unused;try(var q=c.prepareStatement("SELECT count(*) FROM artifact_paths WHERE artifact_id=?")){q.setLong(1,old);try(var r=q.executeQuery()){r.next();unused=r.getLong(1)==0;}}
-            if(unused){preserveSharedSymbols(c,old);try(var q=c.prepareStatement("DELETE FROM artifacts WHERE id=?")){q.setLong(1,old);q.executeUpdate();}}
-        }
-        return id;
-    }
-    private void recordPath(Path p,long id,long size,long mtime)throws Exception{database.write(c->{putPath(c,p,id,size,mtime);return null;});}
-    private static void putPath(Connection c,Path p,long id,long size,long mtime)throws Exception{try(var s=c.prepareStatement("INSERT OR REPLACE INTO artifact_paths VALUES(?,?,?,?)")){s.setString(1,location(p));s.setLong(2,id);s.setLong(3,size);s.setLong(4,mtime);s.executeUpdate();}}
-    private static Map<String,Long> ids(Connection c,long artifact)throws Exception{var ids=new HashMap<String,Long>();try(var s=c.prepareStatement("SELECT s.id,COALESCE(json_extract(a.data,'$.binary_key'),s.binary_key) FROM artifact_symbols a JOIN symbols s ON s.id=a.symbol_id WHERE a.artifact_id=?")){s.setLong(1,artifact);try(var r=s.executeQuery()){while(r.next())ids.put(r.getString(2),r.getLong(1));}}return ids;}
     private static void verifyChecksum(Path path)throws Exception {
         Path checksum=path.resolveSibling(path.getFileName()+".sha1");if(!Files.isRegularFile(checksum))return;
         String expected=Files.readString(checksum).trim().split("\\s+")[0].toLowerCase(Locale.ROOT);
@@ -232,42 +187,46 @@ public final class IndexService implements AutoCloseable {
     }
     public static String directoryHash(Path root)throws Exception{var digest=java.security.MessageDigest.getInstance("SHA-256");try(var files=Files.walk(root)){for(var p:files.filter(Files::isRegularFile).sorted().toList()){digest.update(root.relativize(p).toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));digest.update(Hashing.sha256(p).getBytes(java.nio.charset.StandardCharsets.US_ASCII));}}return java.util.HexFormat.of().formatHex(digest.digest());}
     public long indexSources(Path sources)throws Exception {
-        sources=sources.toAbsolutePath().normalize();Path binary=sources.resolveSibling(sources.getFileName().toString().replaceFirst("-sources\\.jar$",".jar"));
-        if(!Files.isRegularFile(binary)){warn("sources_without_binary: "+sources);return -1;}
-        var artifact=artifact(binary);if(artifact==null){indexJar(binary,gav(binary),"jar");artifact=artifact(binary);}
-        var old=artifact(sources);var stamp=Files.readAttributes(sources,java.nio.file.attribute.BasicFileAttributes.class);long size=stamp.size(),mtime=stamp.lastModifiedTime().to(TimeUnit.NANOSECONDS);
-        if(old!=null&&artifact.hasDocs()&&!old.gav().contains("SNAPSHOT")&&old.size()==size&&old.mtime()==mtime){reused.incrementAndGet();return old.id();}
-        active(sources,"hash");long hashStarted=System.nanoTime();verifyChecksum(sources);String hash=Hashing.sha256(sources);hashNanos.addAndGet(System.nanoTime()-hashStarted);hashed.incrementAndGet();
-        active(sources,"source-parse");long parseStarted=System.nanoTime();
-        var text=new LinkedHashMap<String,String>();try(var jar=new JarFile(sources.toFile(),false,JarFile.OPEN_READ,Runtime.version())){for(var entry:jar.versionedStream().filter(e->e.getName().endsWith(".java")&&!e.getName().startsWith("META-INF/")).toList()){try(var stream=jar.getInputStream(entry)){text.put(entry.getName(),new String(stream.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8));}}}
-        var content=new BinaryReader().read(binary,false);var join=new SourceJoin().join(content.models(),text);parseNanos.addAndGet(System.nanoTime()-parseStarted);long binaryId=artifact.id();Path sourceFile=sources;
-        active(sources,"source-storage");long storageStarted=System.nanoTime();
-        long sourceResult=database.write(c->{long sourceId=putArtifact(c,sourceFile,gav(sourceFile),"sources",hash,size,mtime);var keys=ids(c,binaryId);
-            try(var update=c.prepareStatement("UPDATE artifact_symbols SET data=?,source_file=? WHERE artifact_id=? AND symbol_id=?");
-                var lookup=c.prepareStatement("SELECT v.data,s.signature,s.parameters,s.metadata FROM artifact_symbols v JOIN symbols s ON s.id=v.symbol_id WHERE v.artifact_id=? AND v.symbol_id=?")){
-                for(var member:join.members()){
-                    String key=member.descriptor()==null?member.owner():member.descriptor().equals("field")?member.owner()+"#"+member.name():member.owner()+"#"+member.name()+member.descriptor();Long id=keys.get(key);if(id==null)continue;
-                    lookup.setLong(1,binaryId);lookup.setLong(2,id);
-                    try(var row=lookup.executeQuery()){
-                        if(!row.next())continue;
-                        var data=row.getString(1)==null?Json.MAPPER.createObjectNode():(com.fasterxml.jackson.databind.node.ObjectNode)Json.MAPPER.readTree(row.getString(1));
-                        String location="jar:"+sourceFile.toUri()+"!/"+member.file();
-                        data.put("doc",member.doc());data.put("source_file",location);data.put("line",member.line());data.put("source_start",member.start());data.put("source_end",member.end());data.put("body_start",member.bodyStart());data.put("body_end",member.bodyEnd());
-                        var metadata=data.has("metadata")?data.get("metadata"):Json.MAPPER.readTree(row.getString(4));
-                        if(!member.parameters().isEmpty()&&!metadata.path("parameter_names_from_class").asBoolean()){
-                            var original=data.has("parameters")?data.get("parameters"):Json.MAPPER.readTree(row.getString(3));String signature=data.path("signature").asText(row.getString(2));
-                            for(int i=0;i<Math.min(member.parameters().size(),original.size());i++)signature=signature.replaceAll("\\b"+java.util.regex.Pattern.quote(original.get(i).asText())+"\\b",java.util.regex.Matcher.quoteReplacement(member.parameters().get(i)));
-                            data.put("signature",signature);data.set("parameters",Json.MAPPER.valueToTree(member.parameters()));
-                        }
-                        update.setString(1,Json.MAPPER.writeValueAsString(data));update.setString(2,location);update.setLong(3,binaryId);update.setLong(4,id);update.addBatch();
-                    }
-                }update.executeBatch();
+        sources=sources.toAbsolutePath().normalize();Path tracked=sources;
+        try{
+            Path binary=sources.resolveSibling(sources.getFileName().toString().replaceFirst("-sources\\.jar$",".jar"));
+            if(!Files.isRegularFile(binary)){warn("sources_without_binary: "+sources);return -1;}
+            var artifact=artifact(binary);if(artifact==null){indexJar(binary,gav(binary),"jar");artifact=artifact(binary);}
+            var old=artifact(sources);var stamp=Files.readAttributes(sources,java.nio.file.attribute.BasicFileAttributes.class);
+            long size=stamp.size(),mtime=stamp.lastModifiedTime().to(TimeUnit.NANOSECONDS);
+            if(old!=null&&artifact.hasDocs()&&!old.gav().contains("SNAPSHOT")&&old.size()==size&&old.mtime()==mtime){
+                reused.incrementAndGet();return old.id();
             }
-            try(var s=c.prepareStatement("UPDATE artifacts SET has_docs=1 WHERE id=? OR id=?")){s.setLong(1,binaryId);s.setLong(2,sourceId);s.executeUpdate();}
-            try(var s=c.prepareStatement("INSERT OR REPLACE INTO source_artifacts VALUES(?,?)")){s.setLong(1,binaryId);s.setLong(2,sourceId);s.executeUpdate();}
-            try(var s=c.prepareStatement("INSERT INTO counters VALUES('unmatched_source_members',?) ON CONFLICT(name) DO UPDATE SET value=value+excluded.value")){s.setInt(1,join.unmatched().size());s.executeUpdate();}
-            return sourceId;
-        });storageNanos.addAndGet(System.nanoTime()-storageStarted);activeArtifacts.remove(location(sources));return sourceResult;
+
+            active(sources,"hash");long hashStarted=System.nanoTime();verifyChecksum(sources);String hash=Hashing.sha256(sources);
+            hashNanos.addAndGet(System.nanoTime()-hashStarted);hashed.incrementAndGet();
+            active(sources,"source-parse");long parseStarted=System.nanoTime();
+            var text=new LinkedHashMap<String,String>();
+            try(var jar=new JarFile(sources.toFile(),false,JarFile.OPEN_READ,Runtime.version())){
+                for(var entry:jar.versionedStream().filter(e->e.getName().endsWith(".java")&&!e.getName().startsWith("META-INF/")).toList())
+                    try(var stream=jar.getInputStream(entry)){text.put(entry.getName(),new String(stream.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8));}
+            }
+            var content=new BinaryReader().read(binary,false);
+            var join=new SourceJoin().join(content.models(),text);
+            parseNanos.addAndGet(System.nanoTime()-parseStarted);
+
+            var members=new LinkedHashMap<String,Map<String,Object>>();
+            for(var member:join.members()){
+                String key=member.descriptor()==null?member.owner():member.descriptor().equals("field")
+                        ?member.owner()+"#"+member.name():member.owner()+"#"+member.name()+member.descriptor();
+                var data=new LinkedHashMap<String,Object>();
+                data.put("doc",member.doc());data.put("source_file","jar:"+sources.toUri()+"!/"+member.file());
+                data.put("line",member.line());data.put("source_start",member.start());data.put("source_end",member.end());
+                data.put("body_start",member.bodyStart());data.put("body_end",member.bodyEnd());data.put("parameters",member.parameters());
+                members.put(key,Collections.unmodifiableMap(data));
+            }
+
+            var key=ArtifactIndexFormat.key(hash,"sources");
+            var sourceInput=new IndexStore.ArtifactInput(new ArtifactContext(gav(sources),"sources",location(sources)),key,size,mtime);
+            active(sources,"source-storage");long storageStarted=System.nanoTime();
+            long id=store.publishDocumentation(artifact.id(),sourceInput,Map.copyOf(members),join.unmatched().size());
+            storageNanos.addAndGet(System.nanoTime()-storageStarted);return id;
+        }finally{activeArtifacts.remove(location(tracked));}
     }
     void ensureSignatureEdges(String workspace)throws Exception {
         boolean changed=false;
@@ -310,28 +269,36 @@ public final class IndexService implements AutoCloseable {
     }
     synchronized long indexJdk(Path file,String module,Path sourceZip)throws Exception{
         var old=artifact(file);if(old!=null&&old.hasDocs()&&old.hasSignatureEdges())return old.id();
-        String gav="jdk:"+module+":"+Runtime.version().feature();var content=new BinaryReader().read(file,false);var sourceData=new HashMap<String,Map<String,Object>>();
+        String gav="jdk:"+module+":"+Runtime.version().feature();
+        var content=new BinaryReader().read(file,false);
+        var sourceData=new HashMap<String,Map<String,Object>>();
         if(Files.isRegularFile(sourceZip)){
-            String relative=file.toString().substring(("/modules/"+module+"/").length());String entry=module+"/"+relative.substring(0,relative.length()-6).split("\\$",2)[0]+".java";
-            try(var zip=new java.util.zip.ZipFile(sourceZip.toFile())){var source=zip.getEntry(entry);if(source!=null){
-                String text;try(var input=zip.getInputStream(source)){text=new String(input.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);}
-                for(var member:new SourceJoin().join(content.models(),Map.of(entry,text)).members()){
-                    String key=member.descriptor()==null?member.owner():member.descriptor().equals("field")?member.owner()+"#"+member.name():member.owner()+"#"+member.name()+member.descriptor();
-                    var data=new LinkedHashMap<String,Object>();data.put("doc",member.doc());data.put("source_file","jar:"+sourceZip.toUri()+"!/"+entry);data.put("line",member.line());data.put("source_start",member.start());data.put("source_end",member.end());data.put("body_start",member.bodyStart());data.put("body_end",member.bodyEnd());data.put("parameters",member.parameters());sourceData.put(key,data);
+            String relative=file.toString().substring(("/modules/"+module+"/").length());
+            String entry=module+"/"+relative.substring(0,relative.length()-6).split("\\$",2)[0]+".java";
+            try(var zip=new java.util.zip.ZipFile(sourceZip.toFile())){
+                var source=zip.getEntry(entry);
+                if(source!=null){
+                    String text;try(var input=zip.getInputStream(source)){text=new String(input.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);}
+                    for(var member:new SourceJoin().join(content.models(),Map.of(entry,text)).members()){
+                        String memberKey=member.descriptor()==null?member.owner():member.descriptor().equals("field")
+                                ?member.owner()+"#"+member.name():member.owner()+"#"+member.name()+member.descriptor();
+                        var data=new LinkedHashMap<String,Object>();
+                        data.put("doc",member.doc());data.put("source_file","jar:"+sourceZip.toUri()+"!/"+entry);
+                        data.put("line",member.line());data.put("source_start",member.start());data.put("source_end",member.end());
+                        data.put("body_start",member.bodyStart());data.put("body_end",member.bodyEnd());data.put("parameters",member.parameters());
+                        sourceData.put(memberKey,Collections.unmodifiableMap(data));
+                    }
                 }
-            }}
-        }
-        String hash=Hashing.sha256(file);long id=database.write(c->{long artifact=putArtifact(c,file,gav,"jar",hash,Files.size(file),0);
-            storeSignatureTargets(c,artifact,content.edges(),ids(c,artifact));
-            if(ids(c,artifact).isEmpty())storeContent(c,artifact,gav,"jar",content,sourceData);
-            else if(!sourceData.isEmpty()){
-                // A previous image may have had signatures but no src.zip.
-                try(var clear=c.prepareStatement("DELETE FROM artifact_symbols WHERE artifact_id=?")){clear.setLong(1,artifact);clear.executeUpdate();}
-                storeContent(c,artifact,gav,"jar",content,sourceData);
             }
-            if(!sourceData.isEmpty())try(var update=c.prepareStatement("UPDATE artifacts SET has_docs=1 WHERE id=?")){update.setLong(1,artifact);update.executeUpdate();}
-            return artifact;
-        });indexed.incrementAndGet();return id;
+        }
+        String hash=Hashing.sha256(file);
+        var key=ArtifactIndexFormat.key(hash,"jdk-signatures");
+        var facts=ArtifactIndexFormat.from(content,key);
+        var classReferences=CodeReader.classReferences(content.models().values());
+        generationSink.publish(facts,classReferences);
+        long id=store.publishArtifact(new IndexStore.ArtifactInput(new ArtifactContext(gav,"jar",location(file)),key,Files.size(file),0),
+                facts,classReferences,Map.copyOf(sourceData));
+        indexed.incrementAndGet();return id;
     }
     static Map<String,Object> symbol(ResultSet r)throws Exception{var s=new LinkedHashMap<String,Object>();for(String field:List.of("id","artifact_id","owner_id","flags","line","source_start","source_end","body_start","body_end"))s.put(field,r.getObject(field));for(String field:List.of("scip","kind","name","name_path","signature","erased_descriptor","source_file","doc","fqn","binary_key","class_entry","gav","artifact_path","artifact_kind"))s.put(field,r.getString(field));s.put("parameters",Json.MAPPER.readTree(r.getString("parameters")));s.put("metadata",Json.MAPPER.readTree(r.getString("metadata")));String variant=r.getString("variant_data");if(variant!=null)s.putAll(Json.MAPPER.readValue(variant,new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>(){}));s.put("id",r.getLong("id"));s.put("artifact_id",r.getLong("selected_artifact"));s.put("gav",r.getString("gav"));s.put("artifact_path",r.getString("artifact_path"));s.put("artifact_kind",r.getString("artifact_kind"));return s;}
     public static String namePath(BinaryReader.Symbol s){String owner=s.fqn().replace('$','/');if(s.key().equals(s.fqn()))return owner;if(s.kind().equals("method")||s.kind().equals("ctor")){var type=java.lang.constant.MethodTypeDesc.ofDescriptor(s.descriptor());return owner+"/"+s.name()+"("+String.join(",",Arrays.stream(type.parameterArray()).map(p->p.displayName().replace('$','.')).toList())+")";}return owner+"/"+s.name();}

@@ -138,10 +138,18 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
             if(!kinds.isEmpty()&&!kinds.contains(value.symbol().kind()))continue;
             var row=new LinkedHashMap<String,Object>();
             int classpathIndex=indexOf(configured,value.entry().artifactCacheKey());
-            row.put("id",RocksWorkspaceResolver.cursor(classpathIndex,value.symbol().id()));
+            long cursor=RocksWorkspaceResolver.cursor(classpathIndex,value.symbol().id());
+            row.put("id",cursor);row.put("artifact_id",(long)classpathIndex+1);
+            row.put("owner_id",value.symbol().ownerId()<0?null:RocksWorkspaceResolver.cursor(classpathIndex,value.symbol().ownerId()));
+            row.put("flags",value.symbol().flags());row.put("line",null);
+            row.put("source_start",-1);row.put("source_end",-1);row.put("body_start",-1);row.put("body_end",-1);
             row.put("scip",value.scip());row.put("kind",value.symbol().kind());row.put("name",value.symbol().name());
-            row.put("name_path",value.namePath());row.put("binary_key",value.symbol().key());
+            row.put("name_path",value.namePath());row.put("signature",value.symbol().signature());
+            row.put("erased_descriptor",value.symbol().descriptor());row.put("source_file",null);row.put("doc",null);
+            row.put("fqn",value.symbol().fqn());row.put("binary_key",value.symbol().key());row.put("class_entry",value.symbol().entry());
             row.put("gav",value.entry().context().gav());row.put("artifact_path",value.entry().context().path());
+            row.put("artifact_kind",value.entry().context().kind());row.put("parameters",value.symbol().parameters());
+            row.put("metadata",dev.jvmd.core.Json.MAPPER.readTree(value.symbol().metadataJson()));row.put("tier",2);
             row.putAll(value.sourceData());
             result.add(Collections.unmodifiableMap(row));if(result.size()>=limit)break;
         }

@@ -224,9 +224,28 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         long started=System.nanoTime();
         var symbols=List.copyOf(snapshot.symbols().values());
         var edges=snapshot.edges().stream().map(e->new IndexService.SourceEdge(e.src(),e.dst(),e.kind())).toList();
-        String semantic=Hashing.sha256((hash+":"+apiFingerprints.get(file)+":"+stamp).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String api=apiFingerprints.get(file);
+        String semantic=Hashing.sha256((hash+":"+api+":"+stamp).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var exports=new LinkedHashSet<String>();
+        String source=file.toAbsolutePath().normalize().toString();
+        for(var symbol:symbols){
+            if(!source.equals(Objects.toString(symbol.get("source_file"),"")))continue;
+            String kind=Objects.toString(symbol.get("kind"),"");
+            if(kind.equals("local")||kind.equals("parameter"))continue;
+            if(symbol.get("modifiers") instanceof Collection<?> modifiers&&modifiers.contains("private"))continue;
+            for(String field:List.of("scip","fqn","binary_key","name_path")){
+                String value=Objects.toString(symbol.get(field),"");if(!value.isBlank())exports.add(value);
+            }
+        }
+        var known=new HashSet<String>(snapshot.symbols().keySet());
+        for(var symbol:symbols)for(String field:List.of("scip","binary_key","fqn")){
+            String value=Objects.toString(symbol.get(field),"");if(!value.isBlank())known.add(value);
+        }
+        var unresolved=new LinkedHashSet<String>();
+        for(var edge:snapshot.edges())if(!known.contains(edge.dst()))unresolved.add(edge.dst());
         long bytes=512L+2L*Json.MAPPER.writeValueAsBytes(symbols).length+edges.size()*192L;
-        index.publishSource(new SourceIndexPublisher.Delta(file,hash,semantic,symbols,tier,edges,bytes));
+        index.publishSource(new SourceIndexPublisher.Delta(file,hash,semantic,symbols,tier,edges,bytes,
+                context.gav(),api,stamp,snapshot.dependencies(),Set.copyOf(exports),Set.copyOf(unresolved)));
         indexWriteNanos+=System.nanoTime()-started;
     }
     public Envelope atPosition(Path path,String text,int line,int character)throws Exception{

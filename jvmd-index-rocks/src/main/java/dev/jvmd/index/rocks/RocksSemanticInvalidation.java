@@ -34,6 +34,20 @@ public final class RocksSemanticInvalidation implements AutoCloseable {
         db=RocksDB.open(options,path.toString());
     }
 
+
+    public synchronized Result observeFile(String moduleId,String contextFingerprint,Path file,FileInput input)throws Exception{
+        Objects.requireNonNull(file);Objects.requireNonNull(input);
+        String moduleKey=Hashing.sha256(moduleId.getBytes(StandardCharsets.UTF_8));
+        var merged=new TreeMap<Path,FileInput>();
+        for(var entry:load(moduleKey).entrySet()){
+            var value=entry.getValue();
+            merged.put(entry.getKey(),new FileInput(value.contentHash(),value.apiFingerprint(),value.dependencies(),
+                    value.exportedNames(),value.unresolvedTargets()));
+        }
+        merged.put(file.toAbsolutePath().normalize(),input);
+        return update(moduleId,contextFingerprint,merged);
+    }
+
     public synchronized Result update(String moduleId,String contextFingerprint,Map<Path,FileInput> input)throws Exception{
         Objects.requireNonNull(moduleId);Objects.requireNonNull(contextFingerprint);
         String moduleKey=Hashing.sha256(moduleId.getBytes(StandardCharsets.UTF_8));

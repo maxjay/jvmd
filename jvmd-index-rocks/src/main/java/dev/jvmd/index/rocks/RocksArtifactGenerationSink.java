@@ -14,7 +14,10 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
     private final RocksMigrationManager migration;
     private final String candidateGeneration;
     private final RocksWorkspaceResolver workspaceResolver;
+    private final RocksSemanticInvalidation semanticInvalidation;
     private final java.util.concurrent.ConcurrentHashMap<String,RocksWorkspaceResolver.Workspace> workspaces=new java.util.concurrent.ConcurrentHashMap<>();
+    private final AtomicLong semanticUpdates=new AtomicLong(),semanticReanalyze=new AtomicLong(),semanticApiChanges=new AtomicLong(),semanticBodyOnly=new AtomicLong();
+    private volatile Map<String,Object> lastSemanticResult=Map.of();
     private final Semaphore budget;
     private final int totalUnits;
     private final AtomicLong published=new AtomicLong(),reused=new AtomicLong(),waitNanos=new AtomicLong(),validationFailures=new AtomicLong();
@@ -29,6 +32,7 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
         this.repository=new RocksArtifactRepository(root);
         this.inventory=new RocksArtifactInventory(root.resolve("inventory"));
         this.workspaceResolver=new RocksWorkspaceResolver(root.resolve("workspace-resolution"),repository,inventory);
+        this.semanticInvalidation=new RocksSemanticInvalidation(root.resolve("semantic-state"));
         this.migration=migration;this.candidateGeneration=candidateGeneration;
         this.totalUnits=(int)Math.min(Integer.MAX_VALUE,Math.max(1,(maxEstimatedBytes+UNIT-1)/UNIT));
         this.budget=new Semaphore(totalUnits,true);
@@ -105,6 +109,22 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
                                                Map<String,Map<String,Object>> members,int unmatchedMembers)throws Exception{
         String docsKey=repository.publishDocumentation(binaryCacheKey,sourceInput.key(),members,unmatchedMembers);
         inventory.setDocumentation(binaryCacheKey,docsKey);
+    }
+
+
+    @Override public void publishSourceState(SourceIndexPublisher.Delta delta)throws Exception{
+        if(!delta.hasSemanticState())return;
+        var input=new RocksSemanticInvalidation.FileInput(delta.sourceHash(),delta.apiFingerprint(),
+                delta.dependencies(),delta.exportedNames(),delta.unresolvedTargets());
+        var result=semanticInvalidation.observeFile(delta.moduleId(),delta.contextFingerprint(),delta.file(),input);
+        semanticUpdates.incrementAndGet();semanticReanalyze.addAndGet(result.reanalyze().size());
+        semanticApiChanges.addAndGet(result.apiChanged().size());semanticBodyOnly.addAndGet(result.bodyOnly().size());
+        lastSemanticResult=Map.of(
+                "module",delta.moduleId(),"file",delta.file().toString(),
+                "reanalyze",result.reanalyze().stream().map(Path::toString).sorted().toList(),
+                "api_changed",result.apiChanged().stream().map(Path::toString).sorted().toList(),
+                "body_only",result.bodyOnly().stream().map(Path::toString).sorted().toList(),
+                "context_changed",result.contextChanged());
     }
 
     @Override public void configureWorkspace(String workspace,List<IndexStore.WorkspaceEntry> paths,List<Map.Entry<String,String>> dependencies)throws Exception{
@@ -196,6 +216,8 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
         result.put("backend","rocksdb-sst");result.put("published",published.get());result.put("reused",reused.get());
         result.put("validation_failures",validationFailures.get());result.put("shadow_workspaces",workspaces.size());
         result.put("workspace_resolution",workspaceResolver.status());
+        result.put("semantic_state",Map.of("updates",semanticUpdates.get(),"reanalyze_total",semanticReanalyze.get(),
+                "api_changes",semanticApiChanges.get(),"body_only",semanticBodyOnly.get(),"last",lastSemanticResult));
         result.put("budget_bytes",(long)totalUnits*UNIT);result.put("estimated_bytes_in_flight",(long)unitsInFlight.get()*UNIT);
         result.put("peak_estimated_bytes_in_flight",(long)peakUnits.get()*UNIT);result.put("budget_wait_ms",Math.round(waitNanos.get()/1000.0)/1000.0);
         try{
@@ -218,6 +240,6 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
 
     @Override public void close(){
         try{workspaceResolver.close();}
-        finally{try{inventory.close();}finally{repository.close();}}
+        finally{try{semanticInvalidation.close();}finally{try{inventory.close();}finally{repository.close();}}}
     }
 }

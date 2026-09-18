@@ -19,7 +19,7 @@ public final class IndexService implements AutoCloseable {
     private final IndexDatabase database;
     private final ArtifactGenerationSink generationSink;
     private final Path repository;
-    private final SourceIndexPublisher sourcePublisher=new SourceIndexPublisher(delta->recordSource(delta.file(),delta.sourceHash(),delta.symbols(),delta.tier(),delta.edges()),32L*1024*1024);
+    private final SourceIndexPublisher sourcePublisher=new SourceIndexPublisher(this::recordSource,32L*1024*1024);
     public void publishSource(SourceIndexPublisher.Delta delta){sourcePublisher.enqueue(delta);}
     public Map<String,Object> sourcePublisherStatus(){return sourcePublisher.status();}
     private final ExecutorService readers=Executors.newFixedThreadPool(Math.max(1,Math.min(4,Runtime.getRuntime().availableProcessors())),Thread.ofVirtual().name("jvmd-index-reader-",0).factory());
@@ -164,6 +164,10 @@ public final class IndexService implements AutoCloseable {
     }
     /** Implements 4.4: detached source relationships, never compiler-owned trees. */
     public record SourceEdge(String src,String dst,String kind) { }
+    private void recordSource(SourceIndexPublisher.Delta delta)throws Exception{
+        locals.recordSource(delta.file(),delta.sourceHash(),delta.symbols(),delta.tier(),delta.edges());
+        generationSink.publishSourceState(delta);
+    }
     public void recordSource(Path file,String contentHash,List<Map<String,Object>> symbols,int tier,List<SourceEdge> edges)throws Exception{
         locals.recordSource(file.toAbsolutePath().normalize(),contentHash,symbols,tier,edges);
     }

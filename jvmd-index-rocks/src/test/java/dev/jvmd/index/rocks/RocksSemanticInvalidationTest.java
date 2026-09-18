@@ -65,4 +65,19 @@ class RocksSemanticInvalidationTest {
     private static RocksSemanticInvalidation.FileInput file(String content,String api,Set<Path> deps,Set<String> exports,Set<String> unresolved){
         return new RocksSemanticInvalidation.FileInput(content,api,deps,exports,unresolved);
     }
+    @Test void incrementalObservationPreservesOtherFilesAndClassifiesBodyVsApi()throws Exception{
+        Path a=temp.resolve("observe-A.java").toAbsolutePath(),b=temp.resolve("observe-B.java").toAbsolutePath();
+        try(var state=new RocksSemanticInvalidation(temp.resolve("observe"))){
+            state.observeFile("module","ctx",a,file("a1","api-a",Set.of(),Set.of("pkg.A"),Set.of()));
+            state.observeFile("module","ctx",b,file("b1","api-b",Set.of(a),Set.of("pkg.B"),Set.of()));
+            var body=state.observeFile("module","ctx",a,file("a2","api-a",Set.of(),Set.of("pkg.A"),Set.of()));
+            assertThat(body.bodyOnly()).containsExactly(a);
+            assertThat(body.reanalyze()).containsExactly(a);
+
+            var api=state.observeFile("module","ctx",a,file("a3","api-a2",Set.of(),Set.of("pkg.A"),Set.of()));
+            assertThat(api.apiChanged()).containsExactly(a);
+            assertThat(api.reanalyze()).containsExactlyInAnyOrder(a,b);
+        }
+    }
+
 }

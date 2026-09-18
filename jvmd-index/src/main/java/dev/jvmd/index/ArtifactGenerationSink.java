@@ -11,6 +11,7 @@ public interface ArtifactGenerationSink extends AutoCloseable {
     default Set<String> completeScan(long scanGeneration)throws Exception{return Set.of();}
     default boolean needsDocumentation(String binaryCacheKey)throws Exception{return false;}
     default void publishDocumentation(String binaryCacheKey,IndexStore.ArtifactInput sourceInput,Map<String,Map<String,Object>> members,int unmatchedMembers)throws Exception{ }
+    default void publishSourceState(SourceIndexPublisher.Delta delta)throws Exception{ }
     default void configureWorkspace(String workspace,List<IndexStore.WorkspaceEntry> paths,List<Map.Entry<String,String>> dependencies)throws Exception{ }
     default OptionalLong shadowCursor(String workspace,String scip)throws Exception{return OptionalLong.empty();}
     default Optional<List<Map<String,Object>>> shadowFind(String workspace,String query,boolean substring,int limit,long after,Set<String> kinds)throws Exception{return Optional.empty();}

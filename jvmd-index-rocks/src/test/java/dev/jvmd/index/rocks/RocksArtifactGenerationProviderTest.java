@@ -101,4 +101,32 @@ class RocksArtifactGenerationProviderTest {
         }
     }
 
+    @Test void shadowSearchMaterializesActiveDocumentationOverlay()throws Exception{
+        Path root=temp.resolve("shadow-docs");
+        Path jar=Files.writeString(temp.resolve("documented.jar"),"binary");
+        var binaryKey=new ArtifactIndexFormat.Key("e".repeat(64),ArtifactIndexFormat.FORMAT_VERSION,
+                ArtifactIndexFormat.INDEXER_VERSION,Runtime.version().feature(),"signatures");
+        var symbol=new ArtifactIndexFormat.SymbolRecord(0,-1,"dep.Type","dep.Type","Type","class",
+                "class dep.Type",null,1,"dep/Type.class",java.util.List.of(),"{}");
+        var facts=new ArtifactIndexFormat.ArtifactData(binaryKey,java.util.List.of(symbol),java.util.List.of());
+        var sourceKey=new ArtifactIndexFormat.Key("f".repeat(64),ArtifactIndexFormat.FORMAT_VERSION,
+                ArtifactIndexFormat.INDEXER_VERSION,Runtime.version().feature(),"sources");
+        var context=new ArtifactContext("fixture:dep:1","jar",jar.toAbsolutePath().toString());
+
+        try(var sink=new RocksArtifactGenerationSink(root,8L*1024*1024)){
+            sink.publish(facts,java.util.Set.of());
+            long scan=sink.beginScan();
+            sink.observe(scan,new IndexStore.ArtifactInput(context,binaryKey,Files.size(jar),1));
+            sink.publishDocumentation(binaryKey.cacheKey(),
+                    new IndexStore.ArtifactInput(new ArtifactContext("fixture:dep:1","sources",jar.toAbsolutePath()+".sources"),
+                            sourceKey,100,1),
+                    java.util.Map.of("dep.Type",java.util.Map.of("doc","Dependency docs","source_file","jar:file:///dep-sources.jar!/dep/Type.java","line",4)),0);
+            sink.completeScan(scan);
+            sink.configureWorkspace("workspace",java.util.List.of(new IndexStore.WorkspaceEntry(jar.toString(),"compile")),java.util.List.of());
+
+            var row=sink.shadowFind("workspace","Type",false,10,java.util.Set.of()).orElseThrow().getFirst();
+            assertThat(row).containsEntry("doc","Dependency docs").containsEntry("line",4);
+        }
+    }
+
 }

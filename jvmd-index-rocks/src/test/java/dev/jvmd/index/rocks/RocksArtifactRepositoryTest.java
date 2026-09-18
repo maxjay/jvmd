@@ -104,4 +104,25 @@ class RocksArtifactRepositoryTest {
         }
         return new ArtifactIndexFormat.ArtifactData(key,List.copyOf(values),List.copyOf(edges));
     }
+    @Test void documentationOverlayIsContentAddressedSeparatelyFromBinaryFacts()throws Exception{
+        var data=facts(20,40);
+        try(var store=new RocksArtifactRepository(temp.resolve("docs"))){
+            store.publish(data,Set.of());
+            var sourceKey=new ArtifactIndexFormat.Key("f".repeat(64),ArtifactIndexFormat.FORMAT_VERSION,
+                    ArtifactIndexFormat.INDEXER_VERSION,Runtime.version().feature(),"sources");
+            var member=Map.<String,Object>of("doc","Example docs","source_file","jar:file:///repo/example-sources.jar!/fixture/Type.java",
+                    "line",12,"source_start",100,"source_end",180,"body_start",130,"body_end",175,
+                    "parameters",List.of("value"));
+            String docs=store.publishDocumentation(data.key().cacheKey(),sourceKey,
+                    Map.of("fixture.Type#method1()V",member),0);
+            assertThat(store.verifyDocumentation(docs,data.key().cacheKey(),sourceKey.binarySha256())).isTrue();
+            assertThat(store.documentation(docs,"fixture.Type#method1()V"))
+                    .containsEntry("doc","Example docs")
+                    .containsEntry("line",12);
+            assertThat(store.documentation(docs,"fixture.Type#missing()V")).isEmpty();
+            assertThat(store.publishDocumentation(data.key().cacheKey(),sourceKey,
+                    Map.of("fixture.Type#method1()V",member),0)).isEqualTo(docs);
+        }
+    }
+
 }

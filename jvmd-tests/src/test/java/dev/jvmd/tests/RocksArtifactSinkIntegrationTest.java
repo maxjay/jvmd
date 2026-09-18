@@ -26,4 +26,44 @@ class RocksArtifactSinkIntegrationTest {
             assertThat(((Number)repeated.get("published")).longValue()).isEqualTo(1L);
         }
     }
+
+    @Test void repositoryScanMaintainsInventoryWithoutRewritingUnchangedArtifacts()throws Exception{
+        Path repository=temp.resolve("scan-repository");
+        Path jar=IndexFixtures.jar(repository.resolve("fixture/sample/1"),"sample-1",IndexFixtures.generic(),false);
+        try(var sink=new RocksArtifactGenerationSink(temp.resolve("scan-rocks"),8L*1024*1024);
+            var index=new IndexService(temp.resolve("scan-index.db"),repository,sink)){
+            index.scan();
+            @SuppressWarnings("unchecked") var first=(java.util.Map<String,Object>)index.status().get("generation_sink");
+            assertThat(((Number)first.get("published")).longValue()).isEqualTo(1L);
+            assertThat(((Number)first.get("inventory_entries")).longValue()).isEqualTo(1L);
+
+            index.scan();
+            @SuppressWarnings("unchecked") var unchanged=(java.util.Map<String,Object>)index.status().get("generation_sink");
+            assertThat(((Number)unchanged.get("published")).longValue()).isEqualTo(1L);
+            assertThat(((Number)unchanged.get("inventory_entries")).longValue()).isEqualTo(1L);
+
+            Files.delete(jar);
+            index.scan();
+            @SuppressWarnings("unchecked") var deleted=(java.util.Map<String,Object>)index.status().get("generation_sink");
+            assertThat(((Number)deleted.get("inventory_entries")).longValue()).isZero();
+        }
+    }
+
+    @Test void failedSkeletonScanDoesNotReconcileAwayPriorInventory()throws Exception{
+        Path repository=temp.resolve("failed-repository");
+        Path jar=IndexFixtures.jar(repository.resolve("fixture/sample/1"),"sample-1",IndexFixtures.generic(),false);
+        try(var sink=new RocksArtifactGenerationSink(temp.resolve("failed-rocks"),8L*1024*1024);
+            var index=new IndexService(temp.resolve("failed-index.db"),repository,sink)){
+            index.scan();
+            @SuppressWarnings("unchecked") var first=(java.util.Map<String,Object>)index.status().get("generation_sink");
+            assertThat(((Number)first.get("inventory_entries")).longValue()).isEqualTo(1L);
+
+            Files.writeString(jar,"not-a-jar");
+            index.scan();
+            @SuppressWarnings("unchecked") var failed=(java.util.Map<String,Object>)index.status().get("generation_sink");
+            assertThat(((Number)failed.get("inventory_entries")).longValue()).isEqualTo(1L);
+            assertThat(((Number)index.status().get("faults")).longValue()).isGreaterThan(0L);
+        }
+    }
+
 }

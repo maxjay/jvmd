@@ -34,9 +34,11 @@ public final class RocksArtifactInventory implements AutoCloseable {
     private final Options options;
     private final RocksDB db;
 
-    public RocksArtifactInventory(Path root)throws Exception{
+    public RocksArtifactInventory(Path root)throws Exception{this(root,null);}
+
+    RocksArtifactInventory(Path root,RocksMemory memory)throws Exception{
         Path path=root.toAbsolutePath().normalize();Files.createDirectories(path);
-        options=new Options().setCreateIfMissing(true).setMaxOpenFiles(64);
+        options=memory==null?new Options().setCreateIfMissing(true).setMaxOpenFiles(64):memory.options(64);
         db=RocksDB.open(options,path.toString());
     }
 

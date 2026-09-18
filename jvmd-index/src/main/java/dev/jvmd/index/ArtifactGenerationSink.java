@@ -15,6 +15,7 @@ public interface ArtifactGenerationSink extends AutoCloseable {
             jdkFingerprint=jdkFingerprint==null?"":jdkFingerprint;
         }
     }
+    default AutoCloseable acquireArtifact(Path path)throws Exception{return ()->{};}
     void publish(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception;
     default boolean contains(ArtifactIndexFormat.Key key)throws Exception{return true;}
     default long beginScan()throws Exception{return 0L;}
@@ -22,6 +23,7 @@ public interface ArtifactGenerationSink extends AutoCloseable {
     default Set<String> completeScan(long scanGeneration)throws Exception{return Set.of();}
     default boolean needsDocumentation(String binaryCacheKey)throws Exception{return false;}
     default void publishDocumentation(String binaryCacheKey,IndexStore.ArtifactInput sourceInput,Map<String,Map<String,Object>> members,int unmatchedMembers)throws Exception{ }
+    default long semanticRevision(Path file)throws Exception{return 0L;}
     default void publishSourceState(SourceIndexPublisher.Delta delta)throws Exception{ }
     default void configureModuleState(ModuleStateInput input)throws Exception{ }
     default void configureWorkspace(String workspace,List<IndexStore.WorkspaceEntry> paths,List<Map.Entry<String,String>> dependencies)throws Exception{ }

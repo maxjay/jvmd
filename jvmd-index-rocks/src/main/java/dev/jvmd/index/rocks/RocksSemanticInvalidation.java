@@ -28,9 +28,11 @@ public final class RocksSemanticInvalidation implements AutoCloseable {
     private final Options options;
     private final RocksDB db;
 
-    public RocksSemanticInvalidation(Path root)throws Exception{
+    public RocksSemanticInvalidation(Path root)throws Exception{this(root,null);}
+
+    RocksSemanticInvalidation(Path root,RocksMemory memory)throws Exception{
         Path path=root.toAbsolutePath().normalize();Files.createDirectories(path);
-        options=new Options().setCreateIfMissing(true).setMaxOpenFiles(64);
+        options=memory==null?new Options().setCreateIfMissing(true).setMaxOpenFiles(64):memory.options(64);
         db=RocksDB.open(options,path.toString());
     }
 
@@ -45,7 +47,32 @@ public final class RocksSemanticInvalidation implements AutoCloseable {
                     value.exportedNames(),value.unresolvedTargets()));
         }
         merged.put(file.toAbsolutePath().normalize(),input);
-        return update(moduleId,contextFingerprint,merged);
+        var result=update(moduleId,contextFingerprint,merged);
+        var invalid=new LinkedHashSet<>(result.reanalyze());invalid.remove(file.toAbsolutePath().normalize());
+        invalidate(invalid);return result;
+    }
+
+    public synchronized long revision(Path file)throws Exception{
+        byte[] value=db.get(bytes("I|"+file.toAbsolutePath().normalize()));
+        return value==null?0:java.nio.ByteBuffer.wrap(value).getLong();
+    }
+    private void invalidate(Set<Path> files)throws Exception{
+        if(files.isEmpty())return;
+        try(var batch=new WriteBatch();var write=new WriteOptions()){
+            for(Path file:files)batch.put(bytes("I|"+file.toAbsolutePath().normalize()),java.nio.ByteBuffer.allocate(8).putLong(revision(file)+1).array());
+            db.write(write,batch);
+        }
+    }
+    public synchronized Result removeFiles(String moduleId,Set<Path> deleted)throws Exception{
+        String moduleKey=Hashing.sha256(moduleId.getBytes(StandardCharsets.UTF_8));
+        var merged=new TreeMap<Path,FileInput>();var normalized=deleted.stream().map(path->path.toAbsolutePath().normalize()).collect(java.util.stream.Collectors.toSet());
+        for(var entry:load(moduleKey).entrySet()){
+            if(normalized.contains(entry.getKey()))continue;var value=entry.getValue();
+            merged.put(entry.getKey(),new FileInput(value.contentHash(),value.apiFingerprint(),value.dependencies(),value.exportedNames(),value.unresolvedTargets()));
+        }
+        String context=textOrNull(db.get(bytes("C|"+moduleKey)));
+        if(context==null)return new Result(Set.of(),Set.of(),Set.of(),Set.of(),false);
+        var result=update(moduleId,context,merged);invalidate(result.reanalyze());return result;
     }
 
     public synchronized Result update(String moduleId,String contextFingerprint,Map<Path,FileInput> input)throws Exception{
@@ -76,12 +103,6 @@ public final class RocksSemanticInvalidation implements AutoCloseable {
         if(contextChanged)reanalyze.addAll(current.keySet());
         else{
             reanalyze.addAll(bodyOnly);reanalyze.addAll(apiChanged);
-            var queue=new ArrayDeque<Path>(apiChanged);
-            while(!queue.isEmpty()){
-                Path changed=queue.removeFirst();
-                for(Path dependant:reverse.getOrDefault(changed,Set.of()))
-                    if(current.containsKey(dependant)&&reanalyze.add(dependant))queue.addLast(dependant);
-            }
             var changedExports=new LinkedHashSet<String>();
             for(Path changed:apiChanged){
                 Stored old=prior.get(changed);if(old!=null)changedExports.addAll(old.exportedNames());
@@ -91,14 +112,26 @@ public final class RocksSemanticInvalidation implements AutoCloseable {
                 if(reanalyze.contains(entry.getKey()))continue;
                 if(matchesUnresolved(entry.getValue().unresolvedTargets(),changedExports))reanalyze.add(entry.getKey());
             }
+            var queue=new ArrayDeque<Path>(reanalyze.stream().filter(path->!bodyOnly.contains(path)).toList());
+            var visited=new HashSet<Path>();
+            while(!queue.isEmpty()){
+                Path changed=queue.removeFirst();if(!visited.add(changed))continue;
+                for(Path dependant:reverse.getOrDefault(changed,Set.of()))if(current.containsKey(dependant)){
+                    reanalyze.add(dependant);queue.addLast(dependant);
+                }
+            }
         }
         reanalyze.removeAll(deleted);
 
         try(var batch=new WriteBatch();var write=new WriteOptions()){
-            for(var entry:current.entrySet())batch.put(fileKey(moduleKey,entry.getKey()),encode(entry.getValue()));
+            boolean changed=false;
+            for(var entry:current.entrySet()){
+                byte[] key=fileKey(moduleKey,entry.getKey()),value=encode(entry.getValue());
+                if(!Arrays.equals(db.get(key),value)){batch.put(key,value);changed=true;}
+            }
             for(Path path:deleted)batch.delete(fileKey(moduleKey,path));
-            batch.put(bytes("C|"+moduleKey),bytes(contextFingerprint));
-            db.write(write,batch);
+            if(!contextFingerprint.equals(priorContext)){batch.put(bytes("C|"+moduleKey),bytes(contextFingerprint));changed=true;}
+            if(changed||!deleted.isEmpty())db.write(write,batch);
         }
 
         return new Result(Set.copyOf(reanalyze),Set.copyOf(apiChanged),Set.copyOf(bodyOnly),Set.copyOf(deleted),contextChanged);

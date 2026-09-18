@@ -76,6 +76,10 @@ public final class SourceIndexPublisher implements AutoCloseable {
     @Override public void close()throws InterruptedException{
         Thread thread;
         synchronized(this){closing=true;notifyAll();thread=worker;}
-        if(thread!=null){thread.join(5000);if(thread.isAlive())thread.interrupt();}
+        if(thread!=null){
+            thread.join(60000);
+            if(thread.isAlive()){thread.interrupt();thread.join(5000);}
+            if(thread.isAlive())throw new IllegalStateException("Source publisher did not stop; index handles remain open");
+        }
     }
 }

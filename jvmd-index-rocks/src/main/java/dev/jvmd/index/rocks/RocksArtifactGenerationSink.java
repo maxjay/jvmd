@@ -19,7 +19,10 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
     private final java.util.concurrent.ConcurrentHashMap<String,RocksWorkspaceResolver.Workspace> workspaces=new java.util.concurrent.ConcurrentHashMap<>();
     private final AtomicLong semanticUpdates=new AtomicLong(),semanticReanalyze=new AtomicLong(),semanticApiChanges=new AtomicLong(),semanticBodyOnly=new AtomicLong();
     private final AtomicLong workspaceStateUpdates=new AtomicLong(),workspaceFileWrites=new AtomicLong(),workspaceDirectoryWrites=new AtomicLong(),workspaceMetadataWrites=new AtomicLong();
+    private final java.util.concurrent.ConcurrentHashMap<String,ModuleStateInput> moduleInputs=new java.util.concurrent.ConcurrentHashMap<>();
     private volatile Map<String,Object> lastSemanticResult=Map.of(),lastWorkspaceState=Map.of();
+    private final RocksMemory memory;
+    private final ThreadLocal<Boolean> artifactPermit=ThreadLocal.withInitial(()->false);
     private final Semaphore budget;
     private final int totalUnits;
     private final AtomicLong published=new AtomicLong(),reused=new AtomicLong(),waitNanos=new AtomicLong(),validationFailures=new AtomicLong();
@@ -31,18 +34,45 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
 
     RocksArtifactGenerationSink(Path root,long maxEstimatedBytes,RocksMigrationManager migration,String candidateGeneration)throws Exception{
         if(maxEstimatedBytes<UNIT)throw new IllegalArgumentException("maxEstimatedBytes must be at least 1 MiB");
-        this.repository=new RocksArtifactRepository(root);
-        this.inventory=new RocksArtifactInventory(root.resolve("inventory"));
-        this.workspaceResolver=new RocksWorkspaceResolver(root.resolve("workspace-resolution"),repository,inventory);
-        this.semanticInvalidation=new RocksSemanticInvalidation(root.resolve("semantic-state"));
-        this.workspaceState=new RocksWorkspaceState(root.resolve("workspace-state"));
+        long nativeMb=Long.getLong("jvmd.index.native_budget_mb",64L);
+        this.memory=new RocksMemory(Math.multiplyExact(nativeMb,UNIT));
+        var opened=new ArrayList<AutoCloseable>();
+        try{
+            this.repository=new RocksArtifactRepository(root,memory);opened.add(repository);
+            this.inventory=new RocksArtifactInventory(root.resolve("inventory"),memory);opened.add(inventory);
+            this.workspaceResolver=new RocksWorkspaceResolver(root.resolve("workspace-resolution"),repository,inventory,memory);opened.add(workspaceResolver);
+            this.semanticInvalidation=new RocksSemanticInvalidation(root.resolve("semantic-state"),memory);opened.add(semanticInvalidation);
+            this.workspaceState=new RocksWorkspaceState(root.resolve("workspace-state"),memory);opened.add(workspaceState);
+        }catch(Exception|LinkageError error){
+            Collections.reverse(opened);for(var item:opened)try{item.close();}catch(Exception close){error.addSuppressed(close);}
+            memory.close();throw error;
+        }
         this.migration=migration;this.candidateGeneration=candidateGeneration;
         this.totalUnits=(int)Math.min(Integer.MAX_VALUE,Math.max(1,(maxEstimatedBytes+UNIT-1)/UNIT));
         this.budget=new Semaphore(totalUnits,true);
     }
 
+    @Override public AutoCloseable acquireArtifact(Path path)throws Exception{
+        if(artifactPermit.get())return ()->{};
+        long estimate=8L*UNIT;
+        if(Files.isRegularFile(path)&&path.toString().endsWith(".jar")){
+            try(var jar=new java.util.jar.JarFile(path.toFile())){
+                var entries=jar.entries();
+                while(entries.hasMoreElements()){
+                    var entry=entries.nextElement();
+                    if(entry.getName().endsWith(".class")||entry.getName().endsWith(".java"))
+                        estimate=Math.min((long)totalUnits*UNIT,estimate+Math.max(0,entry.getSize())*12L+1024L);
+                }
+            }
+        }
+        int units=(int)Math.min(totalUnits,Math.max(1,(estimate+UNIT-1)/UNIT));
+        long waiting=System.nanoTime();budget.acquire(units);waitNanos.addAndGet(System.nanoTime()-waiting);
+        int active=unitsInFlight.addAndGet(units);peakUnits.accumulateAndGet(active,Math::max);artifactPermit.set(true);
+        return ()->{artifactPermit.remove();unitsInFlight.addAndGet(-units);budget.release(units);};
+    }
+
     @Override public void publish(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{
-        int units=Math.min(totalUnits,Math.max(1,(int)((estimatedBytes(facts,classReferences)+UNIT-1)/UNIT)));
+        int units=artifactPermit.get()?0:(int)Math.min(totalUnits,Math.max(1,(estimatedBytes(facts,classReferences)+UNIT-1)/UNIT));
         long waiting=System.nanoTime();
         try{budget.acquire(units);}
         catch(InterruptedException e){Thread.currentThread().interrupt();throw e;}
@@ -119,11 +149,24 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
     }
 
 
+    @Override public long semanticRevision(Path file)throws Exception{return semanticInvalidation.revision(file);}
+
     @Override public void publishSourceState(SourceIndexPublisher.Delta delta)throws Exception{
         if(!delta.hasSemanticState())return;
         var input=new RocksSemanticInvalidation.FileInput(delta.sourceHash(),delta.apiFingerprint(),
                 delta.dependencies(),delta.exportedNames(),delta.unresolvedTargets());
-        var result=semanticInvalidation.observeFile(delta.moduleId(),delta.contextFingerprint(),delta.file(),input);
+        String moduleId=moduleInputs.values().stream()
+                .filter(module->module.sourceRoots().stream().anyMatch(delta.file()::startsWith))
+                .sorted(Comparator.comparingInt((ModuleStateInput module)->module.sourceRoots().stream().filter(delta.file()::startsWith).mapToInt(Path::getNameCount).max().orElse(0)).reversed())
+                .map(ModuleStateInput::moduleId).findFirst().orElse(delta.moduleId());
+        var result=semanticInvalidation.observeFile(moduleId,delta.contextFingerprint(),delta.file(),input);
+        var module=moduleInputs.get(moduleId);
+        if(module!=null){
+            var state=workspaceState.observeFile(new RocksWorkspaceState.ModuleInput(module.moduleId(),module.sourceRoots(),module.overlays(),
+                    module.compilerOptions(),module.processors(),module.generatedOutputs(),module.orderedClasspath(),module.jdkFingerprint()),delta.file(),delta.sourceHash());
+            workspaceStateUpdates.incrementAndGet();workspaceFileWrites.addAndGet(state.fileWrites());
+            workspaceDirectoryWrites.addAndGet(state.directoryWrites());workspaceMetadataWrites.addAndGet(state.metadataWrites());
+        }
         semanticUpdates.incrementAndGet();semanticReanalyze.addAndGet(result.reanalyze().size());
         semanticApiChanges.addAndGet(result.apiChanged().size());semanticBodyOnly.addAndGet(result.bodyOnly().size());
         lastSemanticResult=Map.of(
@@ -136,8 +179,10 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
 
 
     @Override public void configureModuleState(ArtifactGenerationSink.ModuleStateInput input)throws Exception{
+        moduleInputs.put(input.moduleId(),input);
         var state=workspaceState.update(new RocksWorkspaceState.ModuleInput(input.moduleId(),input.sourceRoots(),input.overlays(),
                 input.compilerOptions(),input.processors(),input.generatedOutputs(),input.orderedClasspath(),input.jdkFingerprint()));
+        if(!state.deletedFiles().isEmpty())semanticInvalidation.removeFiles(input.moduleId(),state.deletedFiles());
         workspaceStateUpdates.incrementAndGet();workspaceFileWrites.addAndGet(state.fileWrites());
         workspaceDirectoryWrites.addAndGet(state.directoryWrites());workspaceMetadataWrites.addAndGet(state.metadataWrites());
         lastWorkspaceState=Map.of("module",input.moduleId(),"fingerprint",state.fingerprint(),
@@ -238,7 +283,7 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
         var result=new LinkedHashMap<String,Object>();
         result.put("backend","rocksdb-sst");result.put("published",published.get());result.put("reused",reused.get());
         result.put("validation_failures",validationFailures.get());result.put("shadow_workspaces",workspaces.size());
-        result.put("workspace_resolution",workspaceResolver.status());
+        result.put("workspace_resolution",workspaceResolver.status());result.put("native_memory",memory.status());
         result.put("semantic_state",Map.of("updates",semanticUpdates.get(),"reanalyze_total",semanticReanalyze.get(),
                 "api_changes",semanticApiChanges.get(),"body_only",semanticBodyOnly.get(),"last",lastSemanticResult));
         result.put("workspace_state",Map.of("updates",workspaceStateUpdates.get(),"file_writes",workspaceFileWrites.get(),
@@ -265,6 +310,6 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
 
     @Override public void close(){
         try{workspaceResolver.close();}
-        finally{try{semanticInvalidation.close();}finally{try{workspaceState.close();}finally{try{inventory.close();}finally{repository.close();}}}}
+        finally{try{semanticInvalidation.close();}finally{try{workspaceState.close();}finally{try{inventory.close();}finally{try{repository.close();}finally{memory.close();}}}}}
     }
 }

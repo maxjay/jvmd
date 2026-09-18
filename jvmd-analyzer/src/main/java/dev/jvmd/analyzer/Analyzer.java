@@ -177,6 +177,12 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private void invalidateConditionalIfUnresolved(Path path){
         path=path.toAbsolutePath().normalize();var origins=conditionalByFile.get(path);if(origins!=null&&origins.stream().anyMatch(pendingApi::containsKey))diagnosticStore.invalidate(Set.of(path));
     }
+    private final Map<Path,Long> persistedSemanticRevisions=new HashMap<>();
+    private void reconcileSemanticRevision(Path path)throws Exception{
+        if(index==null)return;path=path.toAbsolutePath().normalize();long current=index.semanticRevision(path);
+        Long previous=persistedSemanticRevisions.put(path,current);
+        if((previous==null&&current!=0)||(previous!=null&&previous.longValue()!=current))invalidate(Set.of(path));
+    }
     public String contextKey(){return context.generation();}
     /** Detached API identity used by module actors to propagate cross-module conditional invalidation. */
     public String apiFingerprint(Path path){
@@ -197,7 +203,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     public void namespaceChanged(){diagnosticStore.clear();for(var caches:modules.values()){caches.outlines.clear();caches.focused.clear();}apiFingerprints.clear();pendingApi.clear();conditionalByFile.clear();for(var pool:compilerPools.values())pool.recycle();}
     public CompilerPool.Outcome<Bindings.Snapshot> bindings(Path path,String text,Integer cursor)throws Exception{
-        path=path.toAbsolutePath().normalize();touch(path,text);
+        path=path.toAbsolutePath().normalize();reconcileSemanticRevision(path);touch(path,text);
         String hash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)),stamp=classpathStamp();
         for(var entry:new ArrayList<>(focused.entrySet())){
             var cached=entry.getValue();
@@ -256,7 +262,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     /** Validate identity before reading source text: warm diagnostics need no source bytes. */
     public Envelope cachedDiagnostics(Path path,Documents documents)throws Exception{
         path=path.toAbsolutePath().normalize();String hash=documents.sourceHash(path);
-        touchHash(path,hash);invalidateConditionalIfUnresolved(path);
+        reconcileSemanticRevision(path);touchHash(path,hash);invalidateConditionalIfUnresolved(path);
         var cached=diagnosticStore.get(path,hash,context.generation(),classpathStamp());
         if(cached!=null){
             diagnosticFilesReused++;
@@ -313,7 +319,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         catch(Exception invalid){return false;}
     }
     public Envelope diagnostics(Path path,String text)throws Exception{
-        path=path.toAbsolutePath().normalize();touch(path,text);invalidateConditionalIfUnresolved(path);
+        path=path.toAbsolutePath().normalize();reconcileSemanticRevision(path);touch(path,text);invalidateConditionalIfUnresolved(path);
         String sourceHash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)),stamp=classpathStamp(),generation=context.generation();
         var cached=diagnosticStore.get(path,sourceHash,generation,stamp);
         if(cached!=null){diagnosticFilesReused++;return cached;}

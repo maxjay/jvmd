@@ -62,6 +62,22 @@ class RocksSemanticInvalidationTest {
         }
     }
 
+    @Test void unresolvedDependantsAndDeletionProducePersistentPerFileRevisions()throws Exception{
+        Path a=temp.resolve("A.java"),b=temp.resolve("B.java"),c=temp.resolve("C.java"),root=temp.resolve("revisions");
+        try(var state=new RocksSemanticInvalidation(root)){
+            state.observeFile("m","ctx",a,file("a1","api-a",Set.of(),Set.of("pkg.A"),Set.of()));
+            state.observeFile("m","ctx",b,file("b1","api-b",Set.of(),Set.of("pkg.B"),Set.of("pkg.A")));
+            state.observeFile("m","ctx",c,file("c1","api-c",Set.of(b),Set.of("pkg.C"),Set.of()));
+            var result=state.observeFile("m","ctx",a,file("a2","api-a2",Set.of(),Set.of("pkg.A"),Set.of()));
+            assertThat(result.reanalyze()).containsExactlyInAnyOrder(a,b,c);
+            assertThat(state.revision(a)).isZero();assertThat(state.revision(b)).isEqualTo(1);assertThat(state.revision(c)).isEqualTo(1);
+            state.observeFile("m","ctx",a,file("a3","api-a2",Set.of(),Set.of("pkg.A"),Set.of()));
+            assertThat(state.revision(b)).isEqualTo(1);
+            state.removeFiles("m",Set.of(a));assertThat(state.revision(b)).isEqualTo(2);assertThat(state.revision(c)).isEqualTo(2);
+        }
+        try(var reopened=new RocksSemanticInvalidation(root)){assertThat(reopened.revision(b)).isEqualTo(2);}
+    }
+
     private static RocksSemanticInvalidation.FileInput file(String content,String api,Set<Path> deps,Set<String> exports,Set<String> unresolved){
         return new RocksSemanticInvalidation.FileInput(content,api,deps,exports,unresolved);
     }

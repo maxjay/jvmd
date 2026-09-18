@@ -73,6 +73,27 @@ class RocksWorkspaceStateTest {
         }
     }
 
+    @Test void knownFileChangeUpdatesOnlyAncestorsAndMatchesAFullReconciliation()throws Exception{
+        Path src=Files.createDirectories(temp.resolve("known-src"));
+        Path folder=Files.createDirectories(src.resolve("a/b"));
+        Path file=Files.writeString(folder.resolve("A.java"),"class A {}");
+        Files.writeString(Files.createDirectories(src.resolve("unrelated")).resolve("B.java"),"class B {}");
+        var config=input(src,Map.of(),List.of("-g"),List.of(),"jdk-25");
+        try(var state=new RocksWorkspaceState(temp.resolve("known-state"))){
+            state.update(config);Files.writeString(file,"class A { int value; }");
+            var changed=state.observeFile(config,file,dev.jvmd.core.Hashing.sha256(file));
+            assertThat(changed.fileWrites()).isEqualTo(1);assertThat(changed.directoryWrites()).isEqualTo(6);
+            var reconciled=state.update(config);
+            assertThat(reconciled.fingerprint()).isEqualTo(changed.fingerprint());
+            assertThat(reconciled.fileWrites()+reconciled.directoryWrites()+reconciled.metadataWrites()).isZero();
+            Path created=folder.resolve("Unsaved.java");String text="class Unsaved {}";
+            var known=state.observeFile(config,created,dev.jvmd.core.Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+            var full=state.update(input(src,Map.of(created,text),List.of("-g"),List.of(),"jdk-25"));
+            assertThat(full.fingerprint()).isEqualTo(known.fingerprint());
+            assertThat(full.fileWrites()+full.directoryWrites()+full.metadataWrites()).isZero();
+        }
+    }
+
     private static RocksWorkspaceState.ModuleInput input(Path source,Map<Path,String> overlays,List<String> options,List<String> classpath,String jdk){
         return new RocksWorkspaceState.ModuleInput("fixture:module",List.of(source),overlays,options,List.of("processor-a"),
                 Map.of("generated","gen-v1"),classpath,jdk);

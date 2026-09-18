@@ -125,6 +125,24 @@ class RocksWorkspaceResolverTest {
         }
     }
 
+    @Test void inheritedMembersUseTheSelectedClassAndNeverALaterDuplicate()throws Exception{
+        var baseType=facts('a',"dep.Base",List.of());
+        var method=new ArtifactIndexFormat.SymbolRecord(1,0,"dep.Base#work()V","dep.Base","work","method","void work()","()V",1,"dep/Base.class",List.of(),"{}");
+        var base=new ArtifactIndexFormat.ArtifactData(baseType.key(),List.of(baseType.symbols().getFirst(),method),List.of());
+        var child=facts('b',"dep.Child",List.of(new ArtifactIndexFormat.Relationship(0,"dep.Base","extends")));
+        var duplicateType=facts('c',"dep.Child",List.of());
+        var extra=new ArtifactIndexFormat.SymbolRecord(1,0,"dep.Child#missing()V","dep.Child","missing","method","void missing()","()V",1,"dep/Child.class",List.of(),"{}");
+        var duplicate=new ArtifactIndexFormat.ArtifactData(duplicateType.key(),List.of(duplicateType.symbols().getFirst(),extra),List.of());
+        try(var artifacts=new RocksArtifactRepository(temp.resolve("inheritance"));
+            var resolver=new RocksWorkspaceResolver(temp.resolve("inheritance-cache"),artifacts)){
+            for(var value:List.of(base,child,duplicate))artifacts.publish(value,Set.of());
+            var workspace=new RocksWorkspaceResolver.Workspace(List.of(entry(child,"fixture:child:1"),entry(duplicate,"fixture:duplicate:1"),entry(base,"fixture:base:1")),"compiler");
+            assertThat(resolver.resolveFirst(workspace,"dep.Child#work()V")).get()
+                    .extracting(RocksWorkspaceResolver.ResolvedSymbol::artifactCacheKey).isEqualTo(base.key().cacheKey());
+            assertThat(resolver.resolveFirst(workspace,"dep.Child#missing()V")).isEmpty();
+        }
+    }
+
     private static RocksWorkspaceResolver.Entry entry(ArtifactIndexFormat.ArtifactData data,String gav){
         String artifact=gav.split(":")[1];
         return new RocksWorkspaceResolver.Entry(data.key().cacheKey(),new ArtifactContext(gav,"jar","/repo/"+artifact+".jar"),"compile","module-a","");

@@ -53,10 +53,11 @@ public final class RocksWorkspaceResolver implements AutoCloseable {
     public RocksWorkspaceResolver(Path root,RocksArtifactRepository artifacts)throws Exception{
         this(root,artifacts,null);
     }
-    public RocksWorkspaceResolver(Path root,RocksArtifactRepository artifacts,RocksArtifactInventory inventory)throws Exception{
+    public RocksWorkspaceResolver(Path root,RocksArtifactRepository artifacts,RocksArtifactInventory inventory)throws Exception{this(root,artifacts,inventory,null);}
+    RocksWorkspaceResolver(Path root,RocksArtifactRepository artifacts,RocksArtifactInventory inventory,RocksMemory memory)throws Exception{
         this.artifacts=Objects.requireNonNull(artifacts);this.inventory=inventory;
         Path path=root.toAbsolutePath().normalize();Files.createDirectories(path);
-        options=new Options().setCreateIfMissing(true).setMaxOpenFiles(64);
+        options=memory==null?new Options().setCreateIfMissing(true).setMaxOpenFiles(64):memory.options(64);
         cache=RocksDB.open(options,path.toString());
     }
 
@@ -85,13 +86,33 @@ public final class RocksWorkspaceResolver implements AutoCloseable {
             return Optional.of(decode(stored));
         }
         cacheMisses++;
-        for(int i=0;i<workspace.classpath().size();i++){
-            var entry=workspace.classpath().get(i);Integer localId=artifacts.binaryId(entry.artifactCacheKey(),binaryKey);
-            if(localId==null)continue;
-            var resolved=new ResolvedSymbol(entry.artifactCacheKey(),localId,i);
-            cache.put(cacheKey,encode(resolved));resolutions++;return Optional.of(resolved);
+        var resolved=lookup(workspace,binaryKey,new HashSet<>());
+        if(resolved.isPresent()){
+            cache.put(cacheKey,encode(resolved.get()));resolutions++;return resolved;
         }
         cache.put(cacheKey,new byte[]{MISS});resolutions++;return Optional.empty();
+    }
+
+    private Optional<ResolvedSymbol> lookup(Workspace workspace,String binaryKey,Set<String> visited)throws Exception{
+        if(!visited.add(binaryKey))return Optional.empty();
+        int member=binaryKey.indexOf('#');String owner=member<0?binaryKey:binaryKey.substring(0,member);
+        for(int i=0;i<workspace.classpath().size();i++){
+            var entry=workspace.classpath().get(i);Integer ownerId=artifacts.binaryId(entry.artifactCacheKey(),owner);
+            if(ownerId==null)continue;
+            Integer id=member<0?ownerId:artifacts.binaryId(entry.artifactCacheKey(),binaryKey);
+            if(id!=null)return Optional.of(new ResolvedSymbol(entry.artifactCacheKey(),id,i));
+            // Once a class has been selected, a later duplicate must not supply missing members.
+            if(binaryKey.substring(member+1).startsWith("<init>("))return Optional.empty();
+            for(var edge:artifacts.outgoing(entry.artifactCacheKey(),ownerId,Set.of("extends","implements"),Integer.MAX_VALUE)){
+                var inherited=lookup(workspace,edge.target()+binaryKey.substring(member),visited);
+                if(inherited.isPresent()){
+                    var symbol=artifacts.symbol(inherited.get().artifactCacheKey(),inherited.get().localId());
+                    if(symbol!=null&&(symbol.flags()&2)==0)return inherited;
+                }
+            }
+            return Optional.empty();
+        }
+        return Optional.empty();
     }
 
     public List<ResolvedSymbol> resolveAll(Workspace workspace,String binaryKey)throws Exception{

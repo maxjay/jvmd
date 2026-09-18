@@ -8,7 +8,22 @@ import java.util.*;
 /** SQLite control backend for the backend-neutral IndexStore contract. */
 public final class SqliteIndexStore implements IndexStore {
     private final IndexDatabase database;
-    public SqliteIndexStore(Path path)throws Exception{database=new IndexDatabase(path);}
+    private final java.util.concurrent.atomic.AtomicLong linkPasses=new java.util.concurrent.atomic.AtomicLong();
+    public SqliteIndexStore(Path path)throws Exception{
+        database=new IndexDatabase(path);
+        database.write(c->{try(var statement=c.createStatement()){
+            statement.execute("CREATE TABLE IF NOT EXISTS index_state (name TEXT PRIMARY KEY,value INTEGER NOT NULL)");
+            statement.execute("INSERT OR IGNORE INTO index_state VALUES('relationships_dirty',1)");
+        }return null;});
+    }
+    private static void markRelationshipsDirty(Connection c)throws SQLException{
+        try(var statement=c.createStatement()){statement.executeUpdate("UPDATE index_state SET value=1 WHERE name='relationships_dirty' AND value=0");}
+    }
+    private static boolean relationshipsDirty(Connection c)throws SQLException{
+        try(var statement=c.createStatement();var row=statement.executeQuery("SELECT value FROM index_state WHERE name='relationships_dirty'")){
+            return !row.next()||row.getInt(1)!=0;
+        }
+    }
     IndexDatabase database(){return database;}
     @Override public String backend(){return "sqlite";}
     private static String location(Path path){return path.getFileSystem().provider().getScheme().equals("file")?path.toAbsolutePath().normalize().toString():path.toUri().toString();}
@@ -30,7 +45,7 @@ public final class SqliteIndexStore implements IndexStore {
                                           Map<String,Map<String,Object>> sourceData)throws Exception{
         if(!facts.key().equals(input.key()))throw new IllegalArgumentException("Artifact facts/key mismatch");
         return database.write(c->{
-            long artifact=putArtifact(c,input);
+            markRelationshipsDirty(c);long artifact=putArtifact(c,input);
             var ids=ensureSymbols(c,artifact,input.context(),facts,sourceData);
             storeSignatureTargets(c,artifact,facts.relationships(),ids);
             storeClassReferences(c,artifact,classReferences);
@@ -43,7 +58,7 @@ public final class SqliteIndexStore implements IndexStore {
 
     @Override public void publishCode(long artifactId,ArtifactContext context,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{
         database.write(c->{
-            var ids=ensureSymbols(c,artifactId,context,facts,Map.of());
+            markRelationshipsDirty(c);var ids=ensureSymbols(c,artifactId,context,facts,Map.of());
             try(var remove=c.prepareStatement("DELETE FROM code_targets WHERE artifact_id=?")){
                 remove.setLong(1,artifactId);remove.executeUpdate();
             }
@@ -69,7 +84,7 @@ public final class SqliteIndexStore implements IndexStore {
     @Override public void publishSourceFile(long artifact,Path file,List<Map<String,Object>> symbols,int tier,
                                             List<SourceRelationship> relationships)throws Exception{
         database.write(c->{
-            String source=file.toAbsolutePath().normalize().toString();
+            markRelationshipsDirty(c);String source=file.toAbsolutePath().normalize().toString();
             try(var remove=c.prepareStatement("DELETE FROM artifact_edges WHERE src_artifact=? AND src IN (SELECT symbol_id FROM artifact_symbols WHERE artifact_id=? AND source_file=?)")){
                 remove.setLong(1,artifact);remove.setLong(2,artifact);remove.setString(3,source);remove.executeUpdate();
             }
@@ -174,12 +189,41 @@ public final class SqliteIndexStore implements IndexStore {
     }
 
     @Override public void resolveGlobalRelationships()throws Exception{
-        database.write(c->{try(var s=c.createStatement()){
+        if(!database.read(SqliteIndexStore::relationshipsDirty))return;
+        database.write(c->{if(!relationshipsDirty(c))return null;try(var s=c.createStatement()){
             s.executeUpdate("INSERT OR IGNORE INTO edges SELECT t.src,s.id,t.kind FROM edge_targets t JOIN symbols s ON s.binary_key=t.target");
             s.executeUpdate("INSERT OR IGNORE INTO artifact_edges SELECT t.artifact_id,t.src,v.artifact_id,s.id,t.kind FROM signature_targets t JOIN symbols s ON s.binary_key=t.target JOIN artifact_symbols v ON v.symbol_id=s.id");
             s.executeUpdate("INSERT OR IGNORE INTO artifact_edges SELECT h.src_artifact,child.id,h.dst_artifact,parent.id,'overrides' FROM artifact_edges h JOIN symbols child ON child.owner_id=h.src JOIN artifact_symbols cv ON cv.symbol_id=child.id AND cv.artifact_id=h.src_artifact JOIN symbols parent ON parent.owner_id=h.dst AND parent.name=child.name JOIN artifact_symbols pv ON pv.symbol_id=parent.id AND pv.artifact_id=h.dst_artifact WHERE h.kind IN ('extends','implements') AND child.kind='method' AND parent.kind='method' AND substr(COALESCE(json_extract(cv.data,'$.erased_descriptor'),child.erased_descriptor),1,instr(COALESCE(json_extract(cv.data,'$.erased_descriptor'),child.erased_descriptor),')'))=substr(COALESCE(json_extract(pv.data,'$.erased_descriptor'),parent.erased_descriptor),1,instr(COALESCE(json_extract(pv.data,'$.erased_descriptor'),parent.erased_descriptor),')')) AND (COALESCE(json_extract(cv.data,'$.flags'),child.flags) & 8)=0 AND (COALESCE(json_extract(pv.data,'$.flags'),parent.flags) & 10)=0");
             s.executeUpdate("INSERT OR IGNORE INTO edges SELECT child.id,parent.id,'overrides' FROM edges hierarchy CROSS JOIN symbols child ON child.owner_id=hierarchy.src CROSS JOIN symbols parent ON parent.owner_id=hierarchy.dst AND parent.name=child.name AND substr(parent.erased_descriptor,1,instr(parent.erased_descriptor,')'))=substr(child.erased_descriptor,1,instr(child.erased_descriptor,')')) WHERE hierarchy.kind IN ('extends','implements') AND child.kind='method' AND parent.kind='method' AND (child.flags & 8)=0 AND (parent.flags & 10)=0");
+            s.executeUpdate("UPDATE index_state SET value=0 WHERE name='relationships_dirty'");
+            linkPasses.incrementAndGet();
         }return null;});
+    }
+
+    @Override public boolean reconcilePaths(Path root,Set<Path> present)throws Exception{
+        Path normalized=root.toAbsolutePath().normalize();var stale=database.read(c->{
+            var result=new ArrayList<String>();
+            try(var statement=c.createStatement();var rows=statement.executeQuery("SELECT path FROM artifact_paths")){
+                while(rows.next()){
+                    String value=rows.getString(1);if(value.startsWith("jrt:"))continue;
+                    Path path=Path.of(value).toAbsolutePath().normalize();
+                    if(path.startsWith(normalized)&&!present.contains(path))result.add(value);
+                }
+            }
+            return result;
+        });
+        if(stale.isEmpty())return false;
+        database.write(c->{
+            markRelationshipsDirty(c);
+            try(var remove=c.prepareStatement("DELETE FROM artifact_paths WHERE path=?")){
+                for(String path:stale){remove.setString(1,path);remove.addBatch();}remove.executeBatch();
+            }
+            try(var statement=c.createStatement()){
+                statement.executeUpdate("DELETE FROM artifacts WHERE kind IN ('jar','sources') AND NOT EXISTS (SELECT 1 FROM artifact_paths p WHERE p.artifact_id=artifacts.id)");
+            }
+            return null;
+        });
+        return true;
     }
 
     private long putArtifact(Connection c,ArtifactInput input)throws Exception{
@@ -339,7 +383,7 @@ public final class SqliteIndexStore implements IndexStore {
     }
 
     @Override public Map<String,Long> counts()throws Exception{return database.counts();}
-    @Override public Map<String,Object> status(){var result=new LinkedHashMap<String,Object>(database.metrics());result.put("backend",backend());return Map.copyOf(result);}
+    @Override public Map<String,Object> status(){var result=new LinkedHashMap<String,Object>(database.metrics());result.put("backend",backend());result.put("link_passes",linkPasses.get());return Map.copyOf(result);}
 
     @Override public List<String> loadWorkspace(String workspace,List<WorkspaceEntry> paths,List<Map.Entry<String,String>> dependencies)throws Exception{
         return database.write(c->{

@@ -86,6 +86,37 @@ class RocksArtifactRepositoryTest {
         }
     }
 
+    @Test void spillsSortedRunsAndVerifiesEveryPosting()throws Exception{
+        String prior=System.getProperty("jvmd.index.sort_buffer_bytes");
+        System.setProperty("jvmd.index.sort_buffer_bytes","65536");
+        Path root=temp.resolve("spilled");var data=facts(1000,2000);String key=data.key().cacheKey();
+        try{
+            try(var store=new RocksArtifactRepository(root)){
+                store.publish(data,Set.of("dep.Type12"));
+                assertThat(store.verify(key)).isTrue();assertThat(store.artifact(key)).isEqualTo(data);
+                assertThat(((Number)store.status().get("sort_peak_bytes")).longValue()).isLessThanOrEqualTo(65536L);
+                assertThat(((Number)store.status().get("sort_spill_bytes")).longValue()).isPositive();
+                try(var files=Files.list(root.resolve("staging"))){assertThat(files.toList()).isEmpty();}
+            }
+            try(var options=new org.rocksdb.Options();var db=org.rocksdb.RocksDB.open(options,root.resolve("db").toString())){
+                db.delete((key+"|3|name|method0|00000000").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            try(var reopened=new RocksArtifactRepository(root)){assertThat(reopened.verify(key)).isFalse();}
+        }finally{if(prior==null)System.clearProperty("jvmd.index.sort_buffer_bytes");else System.setProperty("jvmd.index.sort_buffer_bytes",prior);}
+    }
+
+    @Test void failedBuildLeavesNoPublishedManifestOrSortRuns()throws Exception{
+        var data=facts(30,60);var duplicates=new ArrayList<>(data.relationships());duplicates.add(duplicates.getFirst());
+        var invalid=new ArtifactIndexFormat.ArtifactData(data.key(),data.symbols(),duplicates);
+        Path root=temp.resolve("failed-build");
+        try(var store=new RocksArtifactRepository(root)){
+            assertThatThrownBy(()->store.publish(invalid,Set.of())).isInstanceOf(java.io.IOException.class);
+            assertThat(store.contains(data.key().cacheKey())).isFalse();
+            try(var files=Files.list(root.resolve("staging"))){assertThat(files.toList()).isEmpty();}
+            assertThat(store.publish(data,Set.of()).reused()).isFalse();
+        }
+    }
+
     private static ArtifactIndexFormat.ArtifactData facts(int symbols,int relationships){
         return facts(symbols,relationships,'a');
     }

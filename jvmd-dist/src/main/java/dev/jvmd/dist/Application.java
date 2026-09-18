@@ -682,7 +682,7 @@ public final class Application implements AutoCloseable {
         String key=module.gav()+(test?":test":":main");
         var classpath=graph.classpaths().getOrDefault(key,List.of());
         var options=test?module.testCompilerOptions():module.compilerOptions();
-        database.configureModuleState(new ArtifactGenerationSink.ModuleStateInput(key,roots,Map.copyOf(overlays),options,
+        database.configureModuleState(new ArtifactGenerationSink.ModuleStateInput(module.directory()+"|"+key,roots,Map.copyOf(overlays),options,
                 List.copyOf(processors),Map.copyOf(generated),classpath,jdkFingerprint+"|release="+module.release()));
     }
 

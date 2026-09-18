@@ -38,6 +38,7 @@ public interface IndexStore extends AutoCloseable {
     long publishDocumentation(long binaryArtifactId,ArtifactInput sourceInput,
                               Map<String,Map<String,Object>> members,int unmatchedMembers)throws Exception;
     void resolveGlobalRelationships()throws Exception;
+    default boolean reconcilePaths(Path root,Set<Path> present)throws Exception{return false;}
 
     Map<String,Long> counts()throws Exception;
     Map<String,Object> status();

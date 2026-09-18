@@ -11,6 +11,21 @@ import static org.assertj.core.api.Assertions.*;
 @Tag("phase-4")
 class ReverseDependencyInvalidationTest {
     @TempDir Path root;
+    @Test void persistedIndexInvalidationIsConsumedBeforeServingCachedDiagnostics()throws Exception{
+        Path source=Files.writeString(root.resolve("Revision.java"),"class Revision {}");
+        var revision=new java.util.concurrent.atomic.AtomicLong();
+        var sink=new dev.jvmd.index.ArtifactGenerationSink(){
+            public void publish(dev.jvmd.index.ArtifactIndexFormat.ArtifactData facts,Set<String> refs){}
+            public long semanticRevision(Path file){return revision.get();}
+        };
+        try(var index=new dev.jvmd.index.IndexService(root.resolve("index.db"),root.resolve("repo"),sink);var analyzer=new Analyzer()){
+            analyzer.configure(new Analyzer.Context("test:app:1","25",List.of(),List.of(root),"1",Map.of()),index,256L*1024*1024);
+            var documents=new dev.jvmd.core.Documents();analyzer.documents(documents);
+            analyzer.diagnostics(source,documents);assertThat(analyzer.cachedDiagnostics(source,documents)).isNotNull();
+            revision.incrementAndGet();assertThat(analyzer.cachedDiagnostics(source,documents)).isNull();
+            analyzer.diagnostics(source,documents);assertThat(analyzer.cachedDiagnostics(source,documents)).isNotNull();
+        }
+    }
     @Test void aDependencyChangeIsObservedOnlyWhenTouched()throws Exception{
         Path dependency=root.resolve("Dependency.java"),use=root.resolve("Use.java");
         Files.writeString(dependency,"class Dependency { int value() { return 1; } }");

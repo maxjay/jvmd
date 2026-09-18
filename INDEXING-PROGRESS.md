@@ -107,3 +107,21 @@ That path remains the control backend until the storage prototype checkpoint sel
 - Fixed batched alias removal reference counts. Candidate validation is retained for initial activation rather than decoding every artifact on every unchanged scan.
 - Validation: all 31 Rocks repository, workspace, inventory, migration and invalidation tests pass on the pinned JDK. Added deterministic pagination/filter/null-overlay and multiple-alias deletion regressions.
 - The backend remains a migration with SQLite writes. This checkpoint does not claim the final performance or corpus acceptance gate.
+
+### Checkpoint 5 — bounded generation construction and incremental scans
+- Replaced the all-postings in-memory SST sort with external sorted runs, a bounded merge fan-in and cleanup on failure. Symbols remain individually readable; the production SST no longer embeds a second whole-artifact payload.
+- The `jvmd-index-v3` layout stores a checksum over every sorted key/value and verifies symbol, relationship and class-reference counts. Documentation overlays verify their member checksum/count as well.
+- All five production Rocks databases share one strict block-cache/write-buffer budget (default 64 MiB). Status exposes cache use, pinned cache, native table-reader estimates, memtables, compactions and write stalls. Other native/JVM overhead still requires process RSS measurement.
+- A weighted permit is acquired before JAR parsing and held through publication. Oversized artifacts run alone under the estimate; the estimate is not a hard process-memory cap. Sorted runs default to 4 MiB per active builder.
+- Selected-class member resolution follows inheritance and does not obtain missing members from later duplicate classes.
+- SQLite's migration control now records a transactional dirty-link marker. Unchanged scans and reopened unchanged indexes run zero global link passes; complete scans reconcile removed paths while preserving shared aliases.
+- Shutdown waits for index/source workers before closing native handles; failed shutdown leaves handles open rather than freeing them under an active worker.
+- Validation: 23 SQLite/Rocks index integration tests pass, including unchanged restart and JAR deletion. Rocks tests cover bounded spilling, corruption of a secondary posting, and failure before manifest publication. Full native platform and corporate-repository acceptance remain open.
+
+### Checkpoint 6 — production semantic and Merkle update paths
+- Analyzer source publication now selects the configured module by its source root, keeping main/test and distinct workspace directories separate.
+- Known file changes update one Merkle leaf and its ancestor child lists without a filesystem walk. Full reconciliation uses linear child aggregation and still discovers external additions/deletions.
+- Source deletion removes persisted semantic facts. API changes, unresolved lookup sites and their transitive dependants receive persistent invalidation revisions; body-only changes do not invalidate dependent files.
+- Analyzer cache checks consume those revisions on the owning compiler executor. The asynchronous index writer never touches compiler instances.
+- Unchanged semantic records are no longer rewritten when a different file is observed.
+- Validation: 36 Rocks tests and 32 integration tests pass, including persistent revision replay, unresolved transitive invalidation, known-file/reconciliation fingerprint agreement, reverse-dependency invalidation and compiler isolation.

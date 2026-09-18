@@ -12,7 +12,7 @@ import java.util.*;
  */
 public final class ArtifactIndexFormat {
     public static final int FORMAT_VERSION=1;
-    public static final String INDEXER_VERSION="jvmd-index-v2";
+    public static final String INDEXER_VERSION="jvmd-index-v3";
     private static final byte[] MAGIC="JVIDX001".getBytes(StandardCharsets.US_ASCII);
     private static final int MAX_STRINGS=5_000_000,MAX_SYMBOLS=5_000_000,MAX_RELATIONSHIPS=20_000_000,MAX_STRING_BYTES=32*1024*1024;
 

@@ -81,11 +81,13 @@ public final class ArtifactIndexFormat {
         if(data.key().formatVersion()!=FORMAT_VERSION)throw new IllegalArgumentException("Unsupported format version: "+data.key().formatVersion());
         var strings=new TreeSet<String>();
         for(var symbol:data.symbols()){
-            Collections.addAll(strings,symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),symbol.signature(),symbol.descriptor(),symbol.entry(),symbol.metadataJson());
+            for(String value:List.of(symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),symbol.metadataJson()))strings.add(value);
+            if(symbol.signature()!=null)strings.add(symbol.signature());
+            if(symbol.descriptor()!=null)strings.add(symbol.descriptor());
+            if(symbol.entry()!=null)strings.add(symbol.entry());
             strings.addAll(symbol.parameters());
         }
         for(var edge:data.relationships()){strings.add(edge.target());strings.add(edge.kind());}
-        strings.remove(null);
         var table=new ArrayList<>(strings);var ids=new HashMap<String,Integer>();for(int i=0;i<table.size();i++)ids.put(table.get(i),i);
 
         var bytes=new ByteArrayOutputStream();

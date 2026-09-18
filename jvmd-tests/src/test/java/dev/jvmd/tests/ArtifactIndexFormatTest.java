@@ -45,4 +45,13 @@ class ArtifactIndexFormatTest {
         var empty=new ArtifactIndexFormat.ArtifactData(future,List.of(),List.of());
         assertThatThrownBy(()->ArtifactIndexFormat.encode(empty)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("version");
     }
+    @Test void nullableSymbolFieldsRoundTrip()throws Exception{
+        var key=new ArtifactIndexFormat.Key("c".repeat(64),ArtifactIndexFormat.FORMAT_VERSION,
+                ArtifactIndexFormat.INDEXER_VERSION,Runtime.version().feature(),"signatures");
+        var symbol=new ArtifactIndexFormat.SymbolRecord(0,-1,"fixture.Type","fixture.Type","Type","class",
+                "class fixture.Type",null,1,null,List.of(),"{}");
+        var data=new ArtifactIndexFormat.ArtifactData(key,List.of(symbol),List.of());
+        assertThat(ArtifactIndexFormat.decode(ArtifactIndexFormat.encode(data))).isEqualTo(data);
+    }
+
 }

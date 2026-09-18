@@ -166,21 +166,14 @@ public final class IndexService implements AutoCloseable {
         try(var insert=c.prepareStatement("INSERT OR IGNORE INTO artifact_class_refs VALUES(?,?)")){for(String target:CodeReader.classReferences(classes)){insert.setLong(1,artifact);insert.setString(2,target);insert.addBatch();}insert.executeBatch();}
         try(var update=c.prepareStatement("UPDATE artifacts SET has_class_refs=1 WHERE id=?")){update.setLong(1,artifact);update.executeUpdate();}
     }
-    synchronized void storeCode(long artifact,String gav,BinaryReader.Content content,List<BinaryReader.Edge> edges)throws Exception{
-        database.write(c->{
-            var known=ids(c,artifact);
-            var missing=content.symbols().stream().filter(symbol->!known.containsKey(symbol.key())).toList();
-            if(!missing.isEmpty())storeContent(c,artifact,gav,"jar",new BinaryReader.Content(missing,content.edges(),content.models(),content.warnings()),Map.of());
-            var keys=ids(c,artifact);long relationshipsStarted=System.nanoTime();
-            try(var remove=c.prepareStatement("DELETE FROM code_targets WHERE artifact_id=?")){remove.setLong(1,artifact);remove.executeUpdate();}
-            try(var insert=c.prepareStatement("INSERT OR IGNORE INTO code_targets VALUES(?,?,?,?)")){
-                for(var edge:edges)if(keys.containsKey(edge.src())){insert.setLong(1,artifact);insert.setLong(2,keys.get(edge.src()));insert.setString(3,edge.target());insert.setString(4,edge.kind());insert.addBatch();}insert.executeBatch();
-            }
-            relationshipWriteNanos.addAndGet(System.nanoTime()-relationshipsStarted);
-            long classRefsStarted=System.nanoTime();storeClassReferences(c,artifact,content.models().values());classReferenceWriteNanos.addAndGet(System.nanoTime()-classRefsStarted);
-            try(var update=c.prepareStatement("UPDATE artifacts SET has_code_edges=1 WHERE id=?")){update.setLong(1,artifact);update.executeUpdate();}
-            return null;
-        });indexed.incrementAndGet();
+    synchronized void storeCode(long artifact,String gav,String hash,Path path,BinaryReader.Content content,List<BinaryReader.Edge> edges)throws Exception{
+        long prepareStarted=System.nanoTime();
+        var key=ArtifactIndexFormat.key(hash,"code");
+        var context=new ArtifactIndexFormat.Context(gav,"jar",location(path));
+        var facts=ArtifactIndexFormat.from(content,key,edges);
+        prepareNanos.addAndGet(System.nanoTime()-prepareStarted);
+        long storageStarted=System.nanoTime();store.publishCode(artifact,context,facts);
+        storageNanos.addAndGet(System.nanoTime()-storageStarted);indexed.incrementAndGet();
     }
     /** Implements 4.4 and phase 6: a module's source and binary inputs, independent of Maven objects. */
     public record LocalModule(Path directory,String gav,List<Path> sources,List<Path> outputs) {

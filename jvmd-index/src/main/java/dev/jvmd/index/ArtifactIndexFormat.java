@@ -48,6 +48,9 @@ public final class ArtifactIndexFormat {
     }
 
     public static ArtifactData from(BinaryReader.Content content,Key key)throws Exception{
+        return from(content,key,content.edges());
+    }
+    public static ArtifactData from(BinaryReader.Content content,Key key,Collection<BinaryReader.Edge> relationshipFacts)throws Exception{
         var ordered=new ArrayList<>(content.symbols());
         ordered.sort(Comparator.comparing(BinaryReader.Symbol::key)
                 .thenComparing(BinaryReader.Symbol::kind)
@@ -65,7 +68,7 @@ public final class ArtifactIndexFormat {
                     symbol.descriptor(),symbol.flags(),symbol.entry(),symbol.parameters(),canonicalJson(symbol.metadata())));
         }
         var relationships=new LinkedHashSet<Relationship>();
-        for(var edge:content.edges()){
+        for(var edge:relationshipFacts){
             Integer source=ids.get(edge.src());if(source==null)throw new IllegalArgumentException("Unknown relationship source: "+edge.src());
             relationships.add(new Relationship(source,edge.target(),edge.kind()));
         }

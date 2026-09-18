@@ -22,6 +22,7 @@ public interface IndexStore extends AutoCloseable {
     ArtifactRecord artifact(Path path)throws Exception;
     void publishPath(Path path,long artifactId,long size,long mtime)throws Exception;
     long publishBinary(ArtifactInput input,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception;
+    void publishCode(long artifactId,ArtifactContext context,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception;
 
     Map<String,Long> counts()throws Exception;
     Map<String,Object> status();

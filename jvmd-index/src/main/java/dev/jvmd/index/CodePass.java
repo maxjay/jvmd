@@ -31,7 +31,7 @@ public final class CodePass {
         if(code){
             var edges=CodeReader.read(content.models().values());
             if(!Hashing.sha256(file).equals(artifact.sha256()))throw RpcException.invalid("Artifact changed during code inspection: "+file);
-            index.storeCode(id,candidate.gav(),content,edges);
+            index.storeCode(id,candidate.gav(),artifact.sha256(),file,content,edges);
         }else index.database().write(c->{IndexService.storeClassReferences(c,id,content.models().values());return null;});
         return id;
     }

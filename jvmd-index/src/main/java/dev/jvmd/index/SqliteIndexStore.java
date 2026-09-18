@@ -30,11 +30,31 @@ public final class SqliteIndexStore implements IndexStore {
         if(!facts.key().equals(input.key()))throw new IllegalArgumentException("Artifact facts/key mismatch");
         return database.write(c->{
             long artifact=putArtifact(c,input);
-            var existing=ids(c,artifact);
-            if(existing.isEmpty())storeFacts(c,artifact,input.context(),facts);
-            else storeSignatureTargets(c,artifact,facts.relationships(),localIds(facts,existing));
+            var ids=ensureSymbols(c,artifact,input.context(),facts);
+            storeSignatureTargets(c,artifact,facts.relationships(),ids);
             storeClassReferences(c,artifact,classReferences);
             return artifact;
+        });
+    }
+
+    @Override public void publishCode(long artifactId,ArtifactContext context,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{
+        database.write(c->{
+            var ids=ensureSymbols(c,artifactId,context,facts);
+            try(var remove=c.prepareStatement("DELETE FROM code_targets WHERE artifact_id=?")){
+                remove.setLong(1,artifactId);remove.executeUpdate();
+            }
+            try(var insert=c.prepareStatement("INSERT OR IGNORE INTO code_targets VALUES(?,?,?,?)")){
+                for(var edge:facts.relationships()){
+                    Long src=ids.get(edge.sourceId());if(src==null)continue;
+                    insert.setLong(1,artifactId);insert.setLong(2,src);insert.setString(3,edge.target());insert.setString(4,edge.kind());insert.addBatch();
+                }
+                insert.executeBatch();
+            }
+            storeClassReferences(c,artifactId,classReferences);
+            try(var update=c.prepareStatement("UPDATE artifacts SET has_code_edges=1 WHERE id=?")){
+                update.setLong(1,artifactId);update.executeUpdate();
+            }
+            return null;
         });
     }
 
@@ -76,16 +96,19 @@ public final class SqliteIndexStore implements IndexStore {
         }
     }
 
-    private static void storeFacts(Connection c,long artifact,ArtifactContext context,ArtifactIndexFormat.ArtifactData facts)throws Exception{
+    private static Map<Integer,Long> ensureSymbols(Connection c,long artifact,ArtifactContext context,ArtifactIndexFormat.ArtifactData facts)throws Exception{
+        var existing=ids(c,artifact);
         var identityCounts=new HashMap<String,Integer>();
         for(var symbol:facts.symbols())identityCounts.merge(context.scip(symbol),1,Integer::sum);
-        var ids=new HashMap<Integer,Long>();
+        var mapped=localIds(facts,existing);
 
         String insert="INSERT INTO symbols(scip,artifact_id,kind,name,signature,erased_descriptor,flags,binary_key,fqn,name_path,class_entry,parameters,metadata) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(scip) DO NOTHING RETURNING id";
         try(var s=c.prepareStatement(insert);
             var lookup=c.prepareStatement("SELECT id,artifact_id FROM symbols WHERE scip=?");
-            var associate=c.prepareStatement("INSERT OR REPLACE INTO artifact_symbols(artifact_id,symbol_id,data,source_file) VALUES(?,?,?,?)")){
+            var associate=c.prepareStatement("INSERT OR REPLACE INTO artifact_symbols(artifact_id,symbol_id,data,source_file) VALUES(?,?,?,?)");
+            var names=c.prepareStatement("INSERT INTO simple_names VALUES(?,?,?)")){
             for(var symbol:facts.symbols()){
+                if(existing.containsKey(symbol.key()))continue;
                 String identity=context.scip(symbol);
                 if(identityCounts.getOrDefault(identity,0)>1&&(symbol.kind().equals("method")||symbol.kind().equals("ctor"))){
                     var type=java.lang.constant.MethodTypeDesc.ofDescriptor(symbol.descriptor());
@@ -101,10 +124,13 @@ public final class SqliteIndexStore implements IndexStore {
                     if(r.next()){id=r.getLong(1);primary=artifact;}
                     else{
                         lookup.setString(1,identity);
-                        try(var found=lookup.executeQuery()){if(!found.next())throw new SQLException("symbol upsert missing");id=found.getLong(1);primary=found.getLong(2);}
+                        try(var found=lookup.executeQuery()){
+                            if(!found.next())throw new SQLException("symbol upsert missing");
+                            id=found.getLong(1);primary=found.getLong(2);
+                        }
                     }
                 }
-                ids.put(symbol.id(),id);
+                mapped.put(symbol.id(),id);existing.put(symbol.key(),id);
 
                 Map<String,Object> data=null;
                 if(context.kind().equals("local")||primary!=artifact){
@@ -119,24 +145,23 @@ public final class SqliteIndexStore implements IndexStore {
                 }
                 associate.setLong(1,artifact);associate.setLong(2,id);
                 associate.setString(3,data==null?null:Json.MAPPER.writeValueAsString(data));associate.setString(4,null);associate.addBatch();
-            }
-            associate.executeBatch();
-        }
 
-        try(var owners=c.prepareStatement("UPDATE symbols SET owner_id=? WHERE id=? AND artifact_id=?");
-            var names=c.prepareStatement("INSERT INTO simple_names VALUES(?,?,?)")){
-            for(var symbol:facts.symbols()){
-                if(symbol.ownerId()>=0&&ids.containsKey(symbol.ownerId())){
-                    owners.setLong(1,ids.get(symbol.ownerId()));owners.setLong(2,ids.get(symbol.id()));owners.setLong(3,artifact);owners.addBatch();
-                }
                 if(symbol.key().equals(symbol.fqn())){
                     names.setString(1,symbol.name());names.setString(2,symbol.fqn());names.setLong(3,artifact);names.addBatch();
                 }
             }
-            owners.executeBatch();names.executeBatch();
+            associate.executeBatch();names.executeBatch();
         }
 
-        storeSignatureTargets(c,artifact,facts.relationships(),ids);
+        try(var owners=c.prepareStatement("UPDATE symbols SET owner_id=? WHERE id=? AND artifact_id=?")){
+            for(var symbol:facts.symbols()){
+                if(symbol.ownerId()>=0&&mapped.containsKey(symbol.ownerId())&&mapped.containsKey(symbol.id())){
+                    owners.setLong(1,mapped.get(symbol.ownerId()));owners.setLong(2,mapped.get(symbol.id()));owners.setLong(3,artifact);owners.addBatch();
+                }
+            }
+            owners.executeBatch();
+        }
+        return mapped;
     }
 
     private static Map<String,Long> ids(Connection c,long artifact)throws Exception{

@@ -39,13 +39,28 @@ class AnnotationProcessingBindingsTest {
         var config=AnnotationFixtures.config(root);
         try(var app=new Application(config)){
             String session=TestSupport.open(app,root);assertClean(app,session,List.of(use,provider));
+            var highFidelity=TestSupport.request(app.dispatcher(),"diag.get",Map.of("session",session,"paths",List.of(use.toString(),provider.toString()))).path("result");
+            assertThat(highFidelity.path("warnings").toString()).contains("diagnostic_fidelity=full_lombok_external");
+            assertThat(highFidelity.path("result").path("diagnostics").isEmpty()).isTrue();
             String content=Files.readString(use);var position=new SourceText(content).position(content.indexOf("getName"));
             var answer=TestSupport.request(app.dispatcher(),"symbol.atPosition",Map.of("session",session,"path",use.toString(),"line",position.line(),"character",position.character())).path("result");
             assertThat(answer.path("tier").asInt()).isEqualTo(2);assertThat(answer.path("result").path("scip").asText()).endsWith("Provider#getName().");assertThat(answer.path("warnings").toString()).contains("lombok_reduced_fidelity");
             var verified=new Verifier(config).verify(root,Json.MAPPER.createObjectNode(),Duration.ofMinutes(2));assertThat(verified.exitCode()).withFailMessage(verified.output()).isZero();
             var time=Files.getLastModifiedTime(provider);Files.writeString(provider,Files.readString(provider).replace("String name=\"Ada\"","int name=123456789"));Files.setLastModifiedTime(provider,time);
             var broken=TestSupport.request(app.dispatcher(),"diag.get",Map.of("session",session,"paths",List.of(use.toString()))).path("result");
-            assertThat(broken.path("result").path("diagnostics").toString()).contains("compiler.err.");
+            assertThat(broken.path("warnings").toString()).contains("diagnostic_fidelity=full_lombok_external");
+            assertThat(broken.path("result").path("diagnostics").toString()).contains("compiler.err.").contains("external-javac");
+            // The live path above deliberately proves content hashing beats a preserved mtime. Maven's
+            // own incremental compiler is timestamp-based, so make the separate verified build observe
+            // the edit rather than reusing target/classes from the previous verification.
+            Files.setLastModifiedTime(provider,java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis()+2000));
+            var verifiedBroken=new Verifier(config).verify(root,Json.MAPPER.createObjectNode(),Duration.ofMinutes(2));
+            assertThat(verifiedBroken.exitCode()).isNotZero();
+            var liveAgreement=new LinkedHashSet<String>();for(var problem:broken.path("result").path("diagnostics"))
+                if(problem.path("kind").asText().equals("ERROR"))liveAgreement.add(problem.path("code").asText()+"@"+problem.path("file").asText()+":"+problem.path("line").asLong()+":"+problem.path("character").asLong());
+            var verifiedAgreement=verifiedBroken.diagnostics().stream().filter(problem->problem.kind().equals("ERROR")&&problem.file().equals(use.toUri().toString()))
+                    .map(problem->problem.code()+"@"+problem.file()+":"+problem.line()+":"+problem.character()).collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            assertThat(liveAgreement).as("external Lombok diagnostics agree with the pinned real build").isEqualTo(verifiedAgreement).isNotEmpty();
         }
     }
     private static void assertClean(Application app,String session,List<Path> paths){

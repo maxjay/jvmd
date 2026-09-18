@@ -9,6 +9,8 @@ public final class Dependencies {
     private final Map<Path,Set<Path>> forward=new HashMap<>(),reverse=new HashMap<>();
     private final Map<Path,String> hashes=new HashMap<>();
     private java.util.function.Function<Path,String> documentHash=_->null;
+    private dev.jvmd.core.FileStateRegistry files=new dev.jvmd.core.FileStateRegistry();
+    public void fileStates(dev.jvmd.core.FileStateRegistry files){this.files=files;}
     public void documentHash(java.util.function.Function<Path,String> lookup){documentHash=lookup;}
     private final Set<Path> stale=new LinkedHashSet<>();
     public Set<Path> observe(Path path,String hash){
@@ -20,7 +22,7 @@ public final class Dependencies {
     public void record(Path file,Set<Path> dependencies)throws Exception{
         file=file.toAbsolutePath().normalize();
         var copy=new LinkedHashSet<Path>(forward.getOrDefault(file,Set.of()));
-        for(Path dependency:dependencies){dependency=dependency.toAbsolutePath().normalize();if(dependency.equals(file))continue;copy.add(dependency);reverse.computeIfAbsent(dependency,k->new LinkedHashSet<>()).add(file);hashes.putIfAbsent(dependency,hash(dependency));}
+        for(Path dependency:dependencies){dependency=dependency.toAbsolutePath().normalize();if(dependency.equals(file))continue;copy.add(dependency);reverse.computeIfAbsent(dependency,k->new LinkedHashSet<>()).add(file);if(!hashes.containsKey(dependency))hashes.put(dependency,hash(dependency));}
         forward.put(file,Set.copyOf(copy));stale.remove(file);
     }
     public Set<Path> check(Path file)throws Exception{
@@ -29,11 +31,16 @@ public final class Dependencies {
         return changed;
     }
     public Set<Path> changed(Path path){
-        var result=new LinkedHashSet<Path>();var queue=new ArrayDeque<Path>();queue.add(path.toAbsolutePath().normalize());
-        while(!queue.isEmpty()){Path next=queue.removeFirst();if(result.add(next))queue.addAll(reverse.getOrDefault(next,Set.of()));}
-        stale.addAll(result);return Set.copyOf(result);
+        path=path.toAbsolutePath().normalize();String authoritative=documentHash.apply(path);
+        return changed(path,authoritative);
     }
-    private String hash(Path file)throws Exception{String memory=documentHash.apply(file);return memory!=null?memory:Files.isRegularFile(file)?Hashing.sha256(Files.readAllBytes(file)):"missing";}
+    public Set<Path> changed(Path path,String currentHash){
+        path=path.toAbsolutePath().normalize();boolean authoritative=currentHash!=null;if(authoritative)hashes.put(path,currentHash);
+        var result=new LinkedHashSet<Path>();var queue=new ArrayDeque<Path>();queue.add(path);
+        while(!queue.isEmpty()){Path next=queue.removeFirst();if(result.add(next))queue.addAll(reverse.getOrDefault(next,Set.of()));}
+        if(authoritative)stale.add(path);else stale.addAll(result);return Set.copyOf(result);
+    }
+    private String hash(Path file)throws Exception{String memory=documentHash.apply(file);return memory!=null?memory:files.hash(file);}
     public boolean stale(Path file){return stale.contains(file.toAbsolutePath().normalize());}
     public Map<String,Object> status(){return Map.of("tracked_files",hashes.size(),"reverse_edges",reverse.values().stream().mapToInt(Set::size).sum(),"stale_files",stale.stream().map(Path::toString).sorted().toList());}
 }

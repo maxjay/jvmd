@@ -13,11 +13,15 @@ public final class AnnotationProcessing implements AutoCloseable {
     public record Request(String key,Path directory,List<Path> sourceRoots,List<Path> classpath,
                           List<Path> processorPath,List<String> processors,List<String> compilerOptions,
                           boolean lombok) { }
-    /** Implements phase 5: generated source roots and optional externally compiled Lombok APIs. */
+    /** Detached diagnostic emitted by the process-isolated compiler. */
+    public record Problem(String code,String kind,String file,long line,long character,String message) { }
+    /** Implements phase 5/diagnostics phase 9: generated APIs plus optional external semantic diagnostics. */
     public record Output(String fingerprint,List<Path> sourceRoots,List<Path> classpath,Set<Path> binarySources,
-                         List<String> warnings,int exitCode,boolean timedOut,long elapsedMillis,String log) { }
+                         List<Problem> diagnostics,String diagnosticFidelity,List<String> warnings,
+                         int exitCode,boolean timedOut,long elapsedMillis,String log) { }
     private final Config config;
-    private final Map<String,Output> cache=new LinkedHashMap<>();
+    private record CachedOutput(String inputFingerprint,Output output) { }
+    private final Map<String,CachedOutput> cache=new LinkedHashMap<>();
     private record Hashed(Map<String,Object> stamp,String hash) { }
     private final Map<Path,Hashed> hashes=new HashMap<>();
     private long runs,hits,bytesHashed;
@@ -35,31 +39,42 @@ public final class AnnotationProcessing implements AutoCloseable {
         // Lombok's own configuration can change generated signatures without a source edit.
         for(Path path=request.directory();path!=null;path=path.getParent()){Path file=path.resolve("lombok.config");if(Files.isRegularFile(file))fingerprint.append(file).append(contentHash(file));}
         String hash=Hashing.sha256(fingerprint.toString().getBytes(StandardCharsets.UTF_8));
-        var prior=cache.get(request.key());
-        if(prior!=null&&prior.fingerprint().equals(hash)&&prior.sourceRoots().stream().allMatch(Files::isDirectory)){hits++;return prior;}
+        var priorEntry=cache.get(request.key());var prior=priorEntry==null?null:priorEntry.output();
+        if(priorEntry!=null&&priorEntry.inputFingerprint().equals(hash)&&available(prior)){hits++;return prior;}
         long started=System.nanoTime();var warnings=new ArrayList<String>();
-        if(request.lombok())warnings.add("lombok_reduced_fidelity: generated members use external class files; their source bodies and generated member positions are unavailable");
+        if(request.lombok())warnings.add("lombok_reduced_fidelity: generated member bodies and positions are unavailable; diagnostics use external javac when available");
         Path workspace=config.stateDir().resolve("apt").resolve(Hashing.sha256(request.key().getBytes(StandardCharsets.UTF_8)));
         Files.createDirectories(workspace);Path work=Files.createTempDirectory(workspace,hash.substring(0,12)+"-");
         Path generated=Files.createDirectories(work.resolve("sources")),classes=Files.createDirectories(work.resolve("classes")),log=work.resolve("processor.log");
-        int exit=0;boolean timedOut=false;var binarySources=new LinkedHashSet<Path>();
+        int exit=0;boolean timedOut=false,fullLombok=false;var binarySources=new LinkedHashSet<Path>();
         try{
             if(!inputs.isEmpty()){
                 var result=invoke(request,inputs,generated,classes,work,log,"only",timeout);exit=result.exitCode();timedOut=result.timedOut();runs++;
-                if(exit==0&&!timedOut&&request.lombok()){
+                if(!timedOut&&request.lombok()){
                     long remaining=timeout.toMillis()-TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started);
                     if(remaining<=0){timedOut=true;exit=-1;}
-                    else{result=invoke(request,inputs,generated,classes,work,log,"full",Duration.ofMillis(remaining));exit=result.exitCode();timedOut=result.timedOut();runs++;}
+                    else{result=invoke(request,inputs,generated,classes,work,log,"full",Duration.ofMillis(remaining));exit=result.exitCode();timedOut=result.timedOut();fullLombok=!timedOut;runs++;}
                     if(exit==0&&!timedOut)for(Path input:inputs)if(lombokSource(Files.readString(input)))binarySources.add(input.toAbsolutePath().normalize());
                 }
             }
             String output=Files.exists(log)?Files.readString(log):"";
             if(exit!=0||timedOut)warnings.add((timedOut?"annotation_processing_timeout":"annotation_processing_failed")+": exit="+exit+"; "+output);
-            var result=new Output(hash,List.of(generated),exit==0&&request.lombok()?List.of(classes):List.of(),Set.copyOf(binarySources),
-                    List.copyOf(warnings),exit,timedOut,TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started),output);
-            cache.put(request.key(),result);
-            // Keep only the current generation for a module. Never delete project-owned output.
-            if(prior!=null)for(Path source:prior.sourceRoots())deleteTree(source.getParent());
+            var parsed=fullLombok?diagnostics(inputs,request.directory(),output):new ParsedDiagnostics(List.of(),true);
+            var diagnostics=parsed.problems();
+            String fidelity=fullLombok&&parsed.complete()?"full_lombok_external":request.lombok()?"reduced_lombok":"processor";
+            if(fullLombok&&!parsed.complete())warnings.add("lombok_external_diagnostics_ambiguous: falling back to resident per-file diagnostics");
+            if(request.lombok())warnings.add("lombok_diagnostic_fidelity="+fidelity);
+            String semantic=exit==0&&!timedOut?outputFingerprint(generated,classes,request.lombok()):hash;
+            var result=new Output(semantic,List.of(generated),exit==0&&request.lombok()?List.of(classes):List.of(),Set.copyOf(binarySources),
+                    diagnostics,fidelity,List.copyOf(warnings),exit,timedOut,TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started),output);
+            // If a rerun produces the same detached output, retain the old paths as well as the
+            // semantic fingerprint. Downstream compiler contexts therefore remain stable.
+            if(prior!=null&&prior.fingerprint().equals(semantic)&&available(prior)){
+                deleteTree(work);
+                result=new Output(semantic,prior.sourceRoots(),prior.classpath(),Set.copyOf(binarySources),
+                        diagnostics,fidelity,List.copyOf(warnings),exit,timedOut,TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started),output);
+            }else if(prior!=null)for(Path source:prior.sourceRoots())deleteTree(source.getParent());
+            cache.put(request.key(),new CachedOutput(hash,result));
             return result;
         }catch(Exception e){deleteTree(work);throw e;}
     }
@@ -69,6 +84,49 @@ public final class AnnotationProcessing implements AutoCloseable {
         catch(UnsupportedOperationException e){bytesHashed+=Files.size(path);return Hashing.sha256(path);}
         var previous=hashes.get(path);if(previous!=null&&previous.stamp().equals(stamp))return previous.hash();
         String hash=Hashing.sha256(path);bytesHashed+=Files.size(path);hashes.put(path,new Hashed(stamp,hash));return hash;
+    }
+    private static final java.util.regex.Pattern DRAW_DIAGNOSTIC=java.util.regex.Pattern.compile("^(.+\\.java):(\\d+):(\\d+): (compiler\\.(?:err|warn|note)\\.[^: ]+)(?:: (.*))?$");
+    private record ParsedDiagnostics(List<Problem> problems,boolean complete){ParsedDiagnostics{problems=List.copyOf(problems);}}
+    private static ParsedDiagnostics diagnostics(List<Path> inputs,Path directory,String output){
+        var diagnostics=new ArrayList<Problem>();boolean complete=true;
+        var normalized=inputs.stream().map(p->p.toAbsolutePath().normalize()).toList();
+        for(String line:output.split("\\R")){
+            var match=DRAW_DIAGNOSTIC.matcher(line.trim());if(!match.matches())continue;
+            Path emitted=Path.of(match.group(1)),file=null;
+            if(emitted.isAbsolute()){
+                Path candidate=emitted.toAbsolutePath().normalize();if(normalized.contains(candidate))file=candidate;
+            }else{
+                Path relative=emitted.normalize();
+                var matches=normalized.stream().filter(candidate->candidate.endsWith(relative)).toList();
+                if(matches.size()!=1&&relative.getNameCount()==1)matches=normalized.stream().filter(candidate->candidate.getFileName().equals(relative.getFileName())).toList();
+                if(matches.size()==1)file=matches.getFirst();
+                else{
+                    Path candidate=directory.resolve(relative).toAbsolutePath().normalize();
+                    if(normalized.contains(candidate))file=candidate;
+                }
+            }
+            if(file==null){complete=false;continue;}
+            String code=match.group(4),kind=code.startsWith("compiler.err.")?"ERROR":code.startsWith("compiler.warn.")?"WARNING":"NOTE";
+            String message=match.group(5)==null?code:match.group(5);
+            diagnostics.add(new Problem(code,kind,file.toUri().toString(),Long.parseLong(match.group(2)),Math.max(0,Long.parseLong(match.group(3))-1),message));
+        }
+        return new ParsedDiagnostics(diagnostics,complete);
+    }
+    private static boolean available(Output output){
+        return output!=null&&output.sourceRoots().stream().allMatch(Files::isDirectory)&&output.classpath().stream().allMatch(Files::isDirectory);
+    }
+    private String outputFingerprint(Path generated,Path classes,boolean includeClasses)throws Exception{
+        var fingerprint=new StringBuilder("processor-output-v1");
+        appendOutput(fingerprint,generated);
+        if(includeClasses)appendOutput(fingerprint,classes);
+        return Hashing.sha256(fingerprint.toString().getBytes(StandardCharsets.UTF_8));
+    }
+    private void appendOutput(StringBuilder fingerprint,Path root)throws Exception{
+        if(!Files.isDirectory(root))return;
+        try(var files=Files.walk(root)){
+            for(Path file:files.filter(Files::isRegularFile).sorted().toList())
+                fingerprint.append('\0').append(root.relativize(file)).append(':').append(contentHash(file));
+        }
     }
     private record Exit(int exitCode,boolean timedOut) { }
     private Exit invoke(Request request,List<Path> inputs,Path generated,Path classes,Path work,Path log,String mode,Duration timeout)throws Exception {
@@ -112,7 +170,7 @@ public final class AnnotationProcessing implements AutoCloseable {
     private static void kill(Process process){var children=process.descendants().toList();children.reversed().forEach(ProcessHandle::destroyForcibly);process.destroyForcibly();}
     private static void deleteTree(Path root)throws IOException{if(Files.exists(root))try(var paths=Files.walk(root)){for(Path path:paths.sorted(Comparator.reverseOrder()).toList())Files.deleteIfExists(path);}}
     public synchronized Map<String,Object> status(){
-        return Map.of("runs",runs,"cache_hits",hits,"bytes_hashed",bytesHashed,"modules",cache.entrySet().stream().map(e->Map.of("module",e.getKey(),"exit_code",e.getValue().exitCode(),"timed_out",e.getValue().timedOut(),"elapsed_ms",e.getValue().elapsedMillis(),"warnings",e.getValue().warnings())).toList());
+        return Map.of("runs",runs,"cache_hits",hits,"bytes_hashed",bytesHashed,"modules",cache.entrySet().stream().map(e->Map.of("module",e.getKey(),"exit_code",e.getValue().output().exitCode(),"timed_out",e.getValue().output().timedOut(),"elapsed_ms",e.getValue().output().elapsedMillis(),"diagnostic_fidelity",e.getValue().output().diagnosticFidelity(),"diagnostics",e.getValue().output().diagnostics().size(),"warnings",e.getValue().output().warnings())).toList());
     }
     @Override public void close(){var process=active;if(process!=null)kill(process);}
 }

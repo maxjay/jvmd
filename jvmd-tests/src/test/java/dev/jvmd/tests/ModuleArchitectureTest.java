@@ -20,7 +20,7 @@ class ModuleArchitectureTest {
                 "runtime",Set.of("java.base","dev.jvmd.core","jdk.jdi","java.compiler","jdk.compiler"),
                 "mcp",Set.of("java.base","dev.jvmd.core"),
                 "lsp",Set.of("java.base","dev.jvmd.core"),
-                "dist",Set.of("java.base","dev.jvmd.core","dev.jvmd.index","dev.jvmd.analyzer","dev.jvmd.resolver","dev.jvmd.runtime","dev.jvmd.mcp","dev.jvmd.lsp","java.compiler"));
+                "dist",Set.of("java.base","dev.jvmd.core","dev.jvmd.index","dev.jvmd.analyzer","dev.jvmd.resolver","dev.jvmd.runtime","dev.jvmd.mcp","dev.jvmd.lsp","java.compiler","java.management"));
         for(var entry:expected.entrySet()) {
             Path classes=TestSupport.repo().resolve("jvmd-"+entry.getKey()+"/target/classes");
             ModuleDescriptor descriptor;

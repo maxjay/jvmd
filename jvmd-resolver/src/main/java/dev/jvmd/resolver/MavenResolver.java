@@ -17,6 +17,12 @@ public final class MavenResolver implements AutoCloseable {
     private Method call;
     private boolean closed;
     private double bootstrapMillis;
+    private long resolveCalls,requestCacheHits,lastRequestId;
+    private RequestCacheKey lastRequestKey;
+    private Resolution lastRequestResolution;
+    private record RequestCacheKey(Path root,List<Path> roots,boolean ignoreVersions){
+        RequestCacheKey{root=root.toAbsolutePath().normalize();roots=roots.stream().map(path->path.toAbsolutePath().normalize()).toList();}
+    }
     public MavenResolver(Config config) { this(config,new MavenEnvironment(config)); }
     public MavenResolver(Config config,MavenEnvironment environment) { this.config=config;this.environment=environment; }
     private Path bundlePath() {
@@ -66,18 +72,22 @@ public final class MavenResolver implements AutoCloseable {
         return error;
     }
     public synchronized Map<String,Object> status() {
-        try { var result=Json.MAPPER.convertValue(invoke("status",Map.of(),null),new TypeReference<Map<String,Object>>(){});result.put("bootstrap_ms",bootstrapMillis);return result; }
+        try { var result=Json.MAPPER.convertValue(invoke("status",Map.of(),null),new TypeReference<Map<String,Object>>(){});result.put("bootstrap_ms",bootstrapMillis);result.put("resolve_calls",resolveCalls);result.put("request_cache_hits",requestCacheHits);return result; }
         catch(Exception e) { throw new IllegalStateException("Resolver status failed",e); }
     }
     public synchronized Resolution resolve(Path root) throws Exception { return resolveWorkspace(root,List.of(root),true); }
     public synchronized Resolution resolve(Path root,WorkspaceSource workspace) throws Exception {
-        return Json.MAPPER.treeToValue(invoke("resolve",Map.of("root",root.toString(),"roots",List.of(root.toString()),"ignore_versions",true),workspace),Resolution.class);
+        resolveCalls++;return Json.MAPPER.treeToValue(invoke("resolve",Map.of("root",root.toString(),"roots",List.of(root.toString()),"ignore_versions",true),workspace),Resolution.class);
     }
     public synchronized Resolution resolveWorkspace(Path root,List<Path> roots,boolean ignoreVersions) throws Exception {
-        return Json.MAPPER.treeToValue(invoke("resolve",Map.of("root",root.toString(),"roots",roots.stream().map(Path::toString).toList(),"ignore_versions",ignoreVersions),null),Resolution.class);
+        var key=new RequestCacheKey(root,roots,ignoreVersions);long request=RequestScope.id();
+        if(request!=0&&request==lastRequestId&&key.equals(lastRequestKey)&&lastRequestResolution!=null){requestCacheHits++;return lastRequestResolution;}
+        resolveCalls++;var result=Json.MAPPER.treeToValue(invoke("resolve",Map.of("root",root.toString(),"roots",roots.stream().map(Path::toString).toList(),"ignore_versions",ignoreVersions),null),Resolution.class);
+        if(request!=0){lastRequestId=request;lastRequestKey=key;lastRequestResolution=result;}
+        return result;
     }
     @Override public synchronized void close() {
-        if(closed)return;closed=true;
+        if(closed)return;closed=true;lastRequestResolution=null;lastRequestKey=null;
         try { if(bundle instanceof AutoCloseable closeable)closeable.close(); }
         catch(Exception e) { throw new IllegalStateException("Resolver shutdown failed",e); }
         finally { try { if(loader!=null)loader.close(); } catch(java.io.IOException e) { throw new IllegalStateException(e); } }

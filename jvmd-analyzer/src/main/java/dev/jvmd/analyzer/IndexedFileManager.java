@@ -33,6 +33,11 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     public void documents(Map<Path,String> values){documents=Map.copyOf(values);try{configureModules();}catch(IOException e){throw new UncheckedIOException(e);}}
     private final Map<Path,Catalog> catalogs=new HashMap<>();
     private final Map<Path,Stamp> classFiles=new HashMap<>();
+    private final WatchService classWatcher;
+    private final Map<WatchKey,Path> watchDirectories=new HashMap<>();
+    private final Set<Path> watchedPaths=new HashSet<>();
+    private boolean watcherReliable=true;
+    private long watchEvents,fullClassScans;
     private final LinkedHashMap<ByteKey,byte[]> bytes=new LinkedHashMap<>(64,.75f,true);
     private final long byteLimit;
     private long byteSize,hits,loads;
@@ -48,6 +53,9 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         for(var path:classpath){path=path.toAbsolutePath().normalize();var artifact=index==null?null:index.artifact(path);paths.add(artifact==null?path:Path.of(artifact.path()));}
         this.classpath=List.copyOf(paths);
         directories=paths.stream().filter(p->!p.toString().endsWith(".jar")).toList();
+        WatchService watcher=null;try{watcher=FileSystems.getDefault().newWatchService();}catch(IOException|UnsupportedOperationException ignored){watcherReliable=false;}
+        classWatcher=watcher;
+        if(classWatcher!=null)for(Path directory:directories)if(Files.isDirectory(directory))registerTree(directory);
         // Directory inputs and source roots keep javac's own file-manager behavior.
         delegate.setLocationFromPaths(StandardLocation.CLASS_PATH,directories.stream().filter(Files::isDirectory).toList());
         delegate.setLocationFromPaths(StandardLocation.SOURCE_PATH,sources.stream().filter(Files::isDirectory).toList());
@@ -100,15 +108,50 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
                 var current=stamp(path);var catalog=catalogs.get(path);
                 if(catalog!=null&&!current.equals(catalog.stamp()))throw new IOException("classpath changed during analysis: "+path);
             }
-            for(var file:classFiles.entrySet())if(!stamp(file.getKey()).equals(file.getValue()))throw new IOException("class file changed during analysis: "+file.getKey());
+            Path changed=watchedClasspathChange();
+            if(changed!=null)throw new IOException("classpath changed during analysis: "+changed);
+            if(!watcherReliable){
+                fullClassScans++;
+                for(var file:classFiles.entrySet())if(!stamp(file.getKey()).equals(file.getValue()))throw new IOException("class file changed during analysis: "+file.getKey());
+            }
         }catch(IOException e){throw new UncheckedIOException(e);}
+    }
+    private Path watchedClasspathChange(){
+        if(classWatcher==null)return null;
+        Path changed=null;WatchKey key;
+        while((key=classWatcher.poll())!=null){
+            Path directory=watchDirectories.get(key);
+            for(var event:key.pollEvents()){
+                watchEvents++;
+                if(event.kind()==StandardWatchEventKinds.OVERFLOW){
+                    watcherReliable=false;if(changed==null)changed=directory;continue;
+                }
+                if(directory==null||!(event.context() instanceof Path relative))continue;
+                Path candidate=directory.resolve(relative).toAbsolutePath().normalize();
+                if(event.kind()==StandardWatchEventKinds.ENTRY_CREATE&&Files.isDirectory(candidate))registerTree(candidate);
+                if(changed==null)changed=candidate;
+            }
+            if(!key.reset()){watchDirectories.remove(key);if(directory!=null)watchedPaths.remove(directory);watcherReliable=false;if(changed==null)changed=directory;}
+        }
+        return changed;
+    }
+    private void registerTree(Path root){
+        if(classWatcher==null)return;
+        try(var paths=Files.walk(root)){
+            for(Path directory:paths.filter(Files::isDirectory).toList()){
+                directory=directory.toAbsolutePath().normalize();if(!watchedPaths.add(directory))continue;
+                var key=directory.register(classWatcher,StandardWatchEventKinds.ENTRY_CREATE,StandardWatchEventKinds.ENTRY_MODIFY,StandardWatchEventKinds.ENTRY_DELETE);
+                watchDirectories.put(key,directory);
+            }
+        }catch(IOException|UnsupportedOperationException error){watcherReliable=false;}
     }
     private void track(JavaFileObject file)throws IOException {
         if(file!=null && file.getKind()==JavaFileObject.Kind.CLASS && file.toUri().getScheme().equals("file")){
             Path path=Path.of(file.toUri());classFiles.putIfAbsent(path,stamp(path));
         }
     }
-    public Map<String,Long> status(){return Map.of("class_bytes",byteSize,"class_byte_hits",hits,"class_byte_loads",loads);}
+    public Map<String,Long> status(){return Map.of("class_bytes",byteSize,"class_byte_hits",hits,"class_byte_loads",loads,
+            "classpath_watch_events",watchEvents,"classpath_full_scans",fullClassScans,"classpath_watch_directories",(long)watchDirectories.size());}
     private static Stamp stamp(Path path)throws IOException {
         try{var attrs=Files.readAttributes(path,"unix:size,lastModifiedTime,ctime,ino");return new Stamp(((Number)attrs.get("size")).longValue(),((java.nio.file.attribute.FileTime)attrs.get("lastModifiedTime")).to(java.util.concurrent.TimeUnit.NANOSECONDS),List.of(attrs.get("ctime"),attrs.get("ino")));}
         catch(UnsupportedOperationException|IllegalArgumentException ignored){var attrs=Files.readAttributes(path,java.nio.file.attribute.BasicFileAttributes.class);return new Stamp(attrs.size(),attrs.lastModifiedTime().to(java.util.concurrent.TimeUnit.NANOSECONDS),dev.jvmd.core.Hashing.sha256(path));}
@@ -220,5 +263,12 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     @Override public <S> ServiceLoader<S> getServiceLoader(Location location,Class<S> service)throws IOException{return super.getServiceLoader(delegate(location),service);}
     @Override public boolean hasLocation(Location location){if(location==StandardLocation.MODULE_SOURCE_PATH)return !moduleSources.isEmpty();return location==StandardLocation.CLASS_PATH||location==StandardLocation.SOURCE_PATH&&moduleSources.isEmpty()&&!documents.isEmpty()||super.hasLocation(delegate(location));}
     public void invalidate(){catalogs.clear();classFiles.clear();bytes.clear();byteSize=0;try{fileManager.flush();configureModules();}catch(IOException e){throw new UncheckedIOException(e);}}
-    @Override public void close()throws IOException{try{super.close();}finally{catalogs.clear();classFiles.clear();bytes.clear();byteSize=0;if(moduleOutput!=null)try(var files=Files.walk(moduleOutput)){for(Path file:files.sorted(Comparator.reverseOrder()).toList())Files.delete(file);}}}
+    @Override public void close()throws IOException{
+        try{super.close();}finally{
+            catalogs.clear();classFiles.clear();bytes.clear();byteSize=0;
+            if(classWatcher!=null)classWatcher.close();
+            watchDirectories.clear();watchedPaths.clear();
+            if(moduleOutput!=null)try(var files=Files.walk(moduleOutput)){for(Path file:files.sorted(Comparator.reverseOrder()).toList())Files.delete(file);}
+        }
+    }
 }

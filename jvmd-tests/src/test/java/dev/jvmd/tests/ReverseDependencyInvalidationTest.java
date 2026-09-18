@@ -32,6 +32,17 @@ class ReverseDependencyInvalidationTest {
             assertThat(((Number)analyzer.status().get("queries")).longValue()).isEqualTo(queries+1);
         }
     }
+    @Test void deletingASourceInvalidatesKnownDependantsOnNextTouch()throws Exception{
+        Path dependency=root.resolve("Dependency.java"),use=root.resolve("Use.java");
+        Files.writeString(dependency,"class Dependency { int value(){return 1;} }");
+        String text="class Use { int use(){return new Dependency().value();} }";Files.writeString(use,text);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(new Analyzer.Context("test:app:1","25",List.of(),List.of(root),"1",Map.of(root.toUri().toString(),"test:app:1")),null,256L*1024*1024);
+            assertThat(analyzer.bindings(use,text,null).diagnostics()).isEmpty();
+            Files.delete(dependency);
+            assertThat(analyzer.bindings(use,text,null).diagnostics()).anyMatch(d->d.code().contains("cant.resolve"));
+        }
+    }
     @Test void compiledOutputCannotHideAContentChangeWithPreservedMtime()throws Exception{
         Path dependency=root.resolve("Dependency.java"),use=root.resolve("Use.java"),classes=Files.createDirectories(root.resolve("classes"));
         Files.writeString(dependency,"class Dependency { int value() { return 1; } }");

@@ -32,6 +32,19 @@ class ExternalAnnotationProcessingTest {
             assertThat(processors.prepare(request,Duration.ofSeconds(10)).exitCode()).isEqualTo(38);
         }
     }
+    @Test void unchangedGeneratedOutputKeepsItsSemanticIdentityAndPaths()throws Exception{
+        var request=request("StableProcessor","if(!round.processingOver()){try(var writer=processingEnv.getFiler().createSourceFile(\"Generated\").openWriter()){writer.write(\"class Generated {}\");}catch(javax.annotation.processing.FilerException ignored){}catch(java.io.IOException e){throw new RuntimeException(e);}} return false;");
+        try(var processors=new AnnotationProcessing(TestSupport.config(root,Duration.ofHours(4)))){
+            var first=processors.prepare(request,Duration.ofSeconds(10));
+            assertThat(first.exitCode()).isZero();
+            Files.writeString(request.sourceRoots().getFirst().resolve("Input.java"),"class Input { int implementationOnly; }");
+            var second=processors.prepare(request,Duration.ofSeconds(10));
+            assertThat(second.exitCode()).isZero();
+            assertThat(second.fingerprint()).isEqualTo(first.fingerprint());
+            assertThat(second.sourceRoots()).isEqualTo(first.sourceRoots());
+            assertThat(processors.status().get("runs")).isEqualTo(2L);
+        }
+    }
     @Test void spinningProcessorIsKilledAtItsDeadline()throws Exception{
         var request=request("SpinProcessor","while(true){Thread.onSpinWait();}");
         try(var processors=new AnnotationProcessing(TestSupport.config(root,Duration.ofHours(4)))){

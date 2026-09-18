@@ -8,6 +8,7 @@ module dev.jvmd.dist {
     requires dev.jvmd.mcp;
     requires dev.jvmd.lsp;
     requires java.compiler;
+    requires java.management;
     exports dev.jvmd.dist;
     opens dev.jvmd.dist to com.fasterxml.jackson.databind;
 }

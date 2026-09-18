@@ -4,6 +4,7 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
 import com.sun.tools.javac.api.JavacTaskImpl;
 import com.sun.tools.javac.api.JavacTaskPool;
+import dev.jvmd.core.RequestScope;
 import dev.jvmd.index.IndexService;
 import java.nio.file.Path;
 import java.util.*;
@@ -25,32 +26,64 @@ public final class CompilerPool implements AutoCloseable {
     private IndexedFileManager manager;
     private String generation,release;
     private List<String> compilerOptions=List.of();
-    private long budget,baseline,recycles,faults,queries;
+    private long batchQueries,batchFiles;
+    private long budget,baseline,recycles,faults,queries,queryNanos,configureCalls,configureNanos,classpathValidations,classpathValidationNanos;
+    private long validatedRequestId=-1;
+    private boolean validatedRequestResult;
     public void configure(String generation,String release,List<Path> classpath,List<Path> sources,IndexService index,long budget)throws Exception {
         configure(generation,release,classpath,sources,index,budget,List.of("--release",release));
     }
     public void configure(String generation,String release,List<Path> classpath,List<Path> sources,IndexService index,long budget,List<String> options)throws Exception{
-        checkThread();this.budget=Math.max(1,budget);
-        if(Objects.equals(this.generation,generation)&&Objects.equals(this.release,release)&&this.compilerOptions.equals(options)&&manager!=null)return;
-        if(manager!=null){manager.close();recycles++;}
-        this.generation=generation;this.release=release;this.compilerOptions=List.copyOf(options);pool=new JavacTaskPool(1);baseline=heap();
-        manager=new IndexedFileManager(ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8),classpath,sources,index,Math.min(32L*1024*1024,Math.max(1024*1024,budget/8)));
+        checkThread();long started=System.nanoTime();configureCalls++;
+        try{
+            this.budget=Math.max(1,budget);
+            if(Objects.equals(this.generation,generation)&&Objects.equals(this.release,release)&&this.compilerOptions.equals(options)&&manager!=null)return;
+            if(manager!=null){manager.close();recycles++;}
+            this.generation=generation;this.release=release;this.compilerOptions=List.copyOf(options);pool=new JavacTaskPool(1);baseline=heap();validatedRequestId=-1;
+            manager=new IndexedFileManager(ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8),classpath,sources,index,Math.min(32L*1024*1024,Math.max(1024*1024,budget/8)));
+        }finally{configureNanos+=System.nanoTime()-started;}
     }
     public void documents(Map<Path,String> documents){checkThread();manager.documents(documents);}
     public void binarySources(Set<Path> sources){checkThread();manager.binarySources(sources);}
-    public boolean cacheValid(){checkThread();try{manager.validateClasspath();return true;}catch(RuntimeException e){recycle();return false;}}
+    public boolean cacheValid(){
+        checkThread();long request=RequestScope.id();if(request!=0&&request==validatedRequestId)return validatedRequestResult;
+        long started=System.nanoTime();classpathValidations++;
+        boolean valid;
+        try{manager.validateClasspath();valid=true;}catch(RuntimeException e){recycle();valid=false;}
+        finally{classpathValidationNanos+=System.nanoTime()-started;}
+        if(request!=0){validatedRequestId=request;validatedRequestResult=valid;}return valid;
+    }
     private void checkThread(){if(Thread.currentThread()!=owner||owner.isVirtual())throw new IllegalStateException("Compiler access must stay on its session platform executor");}
+    public record SourceInput(Path file,String text){public SourceInput{file=file.toAbsolutePath().normalize();}}
     public <T> Outcome<T> query(Path path,String source,int tier,Query<T> query)throws Exception {
+        return execute(List.of(new SourceInput(path,source)),tier,query);
+    }
+    public <T> Outcome<T> batchQuery(List<SourceInput> sources,int tier,Query<T> query)throws Exception {
+        checkThread();if(sources.isEmpty())throw new IllegalArgumentException("Empty source batch");
+        batchQueries++;batchFiles+=sources.size();return execute(List.copyOf(sources),tier,query);
+    }
+    private <T> Outcome<T> execute(List<SourceInput> sources,int tier,Query<T> query)throws Exception {
+        Path path=sources.getFirst().file();
         checkThread();if(manager==null)throw new IllegalStateException("Compiler classpath not configured");
         if(tier<0||tier>2)throw new IllegalArgumentException("tier");
         if(heap()-baseline>budget)recycle();
+        long queryStarted=System.nanoTime();
         var diagnostics=new DiagnosticCollector<JavaFileObject>();var warnings=new ArrayList<String>();int[] actual={tier};boolean[] fault={false},implicitSource={false};queries++;
         var options=new ArrayList<String>(compilerOptions);
         for(String option:options)if(option.startsWith("-proc")||option.startsWith("-processor")||option.startsWith("--processor")||option.startsWith("-Xplugin"))throw new IllegalArgumentException("Compiler extensions run only in the external processor process: "+option);
         options.addAll(List.of("-proc:none","--should-stop=ifError=FLOW","-Xprefer:source","-parameters","-g"));
         try {
-            manager.validateClasspath();
-            T value=pool.getTask(new java.io.StringWriter(),manager,diagnostics,options,null,List.of(manager.source(path,source)),task->{
+            long validationStarted=System.nanoTime();classpathValidations++;
+            try{
+                try{manager.validateClasspath();}
+                catch(java.io.UncheckedIOException changed){
+                    // A filesystem watch event can arrive after classpathStamp() validated but before
+                    // this query starts. No javac state has been touched yet, so recycle the caches and
+                    // revalidate once instead of degrading a legitimate classpath replacement to a fault.
+                    recycle();classpathValidations++;manager.validateClasspath();
+                }
+            }finally{classpathValidationNanos+=System.nanoTime()-validationStarted;}
+            T value=pool.getTask(new java.io.StringWriter(),manager,diagnostics,options,null,sources.stream().map(input->manager.source(input.file(),input.text())).toList(),task->{
                 var units=new ArrayList<CompilationUnitTree>();var parsed=new ArrayList<CompilationUnitTree>();
                 task.addTaskListener(new com.sun.source.util.TaskListener(){
                     @Override public void finished(com.sun.source.util.TaskEvent event){
@@ -70,7 +103,7 @@ public final class CompilerPool implements AutoCloseable {
             return new Outcome<>(level,value,problems,List.copyOf(warnings));
         }catch(QueryFailure e){throw (Exception)e.getCause();}
         catch(AssertionError|RuntimeException e){System.getLogger("jvmd.analyzer").log(System.Logger.Level.ERROR,"Compiler query fault in "+path,e);fault[0]=true;faults++;return new Outcome<>(Math.min(1,tier),null,List.of(),List.of("analyzer_fault: "+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage())));}
-        finally{if(fault[0])recycle();}
+        finally{queryNanos+=System.nanoTime()-queryStarted;if(fault[0])recycle();}
     }
     private static void resetSourcePackages(JavacTask task,List<CompilationUnitTree> units){
         // JavacTaskPool removes source classes from Symtab, but retains their package scope.
@@ -92,7 +125,14 @@ public final class CompilerPool implements AutoCloseable {
     }
     private static final class QueryFailure extends RuntimeException {QueryFailure(Exception cause){super(cause);}}
     private long heap(){return heapUsage.getAsLong();}
-    public void recycle(){checkThread();pool=new JavacTaskPool(1);if(manager!=null)manager.invalidate();baseline=heap();recycles++;}
-    public Map<String,Object> status(){checkThread();var status=new LinkedHashMap<String,Object>();status.put("queries",queries);status.put("recycles",recycles);status.put("faults",faults);status.put("heap_growth_bytes",Math.max(0,heap()-baseline));status.put("heap_budget_bytes",budget);if(manager!=null)status.putAll(manager.status());var output=new java.io.ByteArrayOutputStream();pool.printStatistics(new java.io.PrintStream(output));status.put("pool_statistics",output.toString(java.nio.charset.StandardCharsets.UTF_8));return status;}
-    @Override public void close()throws Exception{checkThread();if(manager!=null)manager.close();pool=new JavacTaskPool(1);}
+    public void recycle(){checkThread();pool=new JavacTaskPool(1);if(manager!=null)manager.invalidate();baseline=heap();recycles++;validatedRequestId=-1;}
+    public Map<String,Object> status(){
+        checkThread();var status=new LinkedHashMap<String,Object>();
+        status.put("queries",queries);status.put("batch_queries",batchQueries);status.put("batch_files",batchFiles);status.put("query_ms",nanosToMillis(queryNanos));
+        status.put("configure_calls",configureCalls);status.put("configure_ms",nanosToMillis(configureNanos));
+        status.put("classpath_validations",classpathValidations);status.put("classpath_validation_ms",nanosToMillis(classpathValidationNanos));
+        status.put("recycles",recycles);status.put("faults",faults);status.put("heap_growth_bytes",Math.max(0,heap()-baseline));status.put("heap_budget_bytes",budget);if(manager!=null)status.putAll(manager.status());var output=new java.io.ByteArrayOutputStream();pool.printStatistics(new java.io.PrintStream(output));status.put("pool_statistics",output.toString(java.nio.charset.StandardCharsets.UTF_8));return status;
+    }
+    private static double nanosToMillis(long nanos){return Math.round(nanos/1000.0)/1000.0;}
+    @Override public void close()throws Exception{checkThread();if(manager!=null)manager.close();pool=new JavacTaskPool(1);validatedRequestId=-1;}
 }

@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.LongAdder;
  * Analyzer/CompilerPool it touches; only detached envelopes, fingerprints and counters cross actors.
  */
 public final class ModuleAnalyzerRegistry implements AutoCloseable {
+    private record Detached<T>(T value,Map<Path,String> fingerprints){}
     private final Map<String,Actor> actors=new LinkedHashMap<>();
     private final Map<Path,String> fingerprints=new HashMap<>();
     private final Set<Path> pendingFingerprintChanges=new HashSet<>();
@@ -30,6 +31,7 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
         return Math.max(1,Math.min(4,Math.max(1,cpus/2)));
     }
     public int parallelism(){return parallelism;}
+    public synchronized long actorCalls(){long calls=0;for(var actor:actors.values())calls+=actor.calls.sum();return calls;}
 
     public synchronized DiagnosticEngine engine(String key,Analyzer.Context context,IndexService index,long totalBudget,
                                                 Documents documents,Path persistenceRoot)throws Exception{
@@ -122,19 +124,50 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
         private Handle(Actor actor){this.actor=actor;}
         public String contextKey(){return actor.contextKey();}
         public Set<Path> pendingPrerequisites(Path file)throws Exception{return actor.call(()->actor.analyzer.pendingPrerequisites(file));}
+        public Map<Path,Set<Path>> pendingPrerequisites(Collection<Path> files)throws Exception{
+            return actor.call(()->{
+                var result=new LinkedHashMap<Path,Set<Path>>();
+                for(Path file:files)result.put(file,actor.analyzer.pendingPrerequisites(file));
+                return Map.copyOf(result);
+            });
+        }
         public void changed(Path path,String hash)throws Exception{ModuleAnalyzerRegistry.this.changed(path,hash);}
         public void namespaceChanged()throws Exception{ModuleAnalyzerRegistry.this.namespaceChanged();}
         public Envelope cachedDiagnostics(Path path,Documents documents)throws Exception{
-            var value=actor.call(()->actor.analyzer.cachedDiagnostics(path,documents));
-            if(value!=null)recordFingerprint(path,actor.call(()->actor.analyzer.apiFingerprint(path)));return value;
+            var detached=actor.call(()->{
+                var value=actor.analyzer.cachedDiagnostics(path,documents);
+                return new Detached<>(value,value==null?Map.of():Map.of(path,actor.analyzer.apiFingerprint(path)));
+            });
+            publishFingerprints(detached.fingerprints());return detached.value();
+        }
+        public Map<Path,Envelope> cachedDiagnostics(Collection<Path> files,Documents documents)throws Exception{
+            var detached=actor.call(()->{
+                var values=new LinkedHashMap<Path,Envelope>();var fps=new LinkedHashMap<Path,String>();
+                for(Path file:files){
+                    var value=actor.analyzer.cachedDiagnostics(file,documents);
+                    if(value!=null){values.put(file,value);var fp=actor.analyzer.apiFingerprint(file);if(fp!=null)fps.put(file,fp);}
+                }
+                return new Detached<>(Map.copyOf(values),Map.copyOf(fps));
+            });
+            publishFingerprints(detached.fingerprints());return detached.value();
         }
         public Envelope diagnostics(Path path,Documents documents)throws Exception{
-            var value=actor.call(()->actor.analyzer.diagnostics(path,documents));
-            recordFingerprint(path,actor.call(()->actor.analyzer.apiFingerprint(path)));return value;
+            var detached=actor.call(()->{
+                var value=actor.analyzer.diagnostics(path,documents);var fp=actor.analyzer.apiFingerprint(path);
+                return new Detached<>(value,fp==null?Map.of():Map.of(path,fp));
+            });
+            publishFingerprints(detached.fingerprints());return detached.value();
         }
         public Map<Path,Envelope> diagnosticsBatch(Map<Path,String> sources)throws Exception{
-            var value=actor.call(()->actor.analyzer.diagnosticsBatch(sources));
-            for(Path path:sources.keySet())recordFingerprint(path,actor.call(()->actor.analyzer.apiFingerprint(path)));return value;
+            var detached=actor.call(()->{
+                var value=actor.analyzer.diagnosticsBatch(sources);var fps=new LinkedHashMap<Path,String>();
+                for(Path path:sources.keySet()){var fp=actor.analyzer.apiFingerprint(path);if(fp!=null)fps.put(path,fp);}
+                return new Detached<>(value,Map.copyOf(fps));
+            });
+            publishFingerprints(detached.fingerprints());return detached.value();
+        }
+        private void publishFingerprints(Map<Path,String> fingerprints)throws Exception{
+            for(var entry:fingerprints.entrySet())recordFingerprint(entry.getKey(),entry.getValue());
         }
         public Map<String,Object> status()throws Exception{return actor.status();}
         public long cpuNanos(){return actor.cpuNanos();}
@@ -146,7 +179,7 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
         private final ExecutorService executor;
         private final Analyzer analyzer;
         private final Handle handle;
-        private final LongAdder cpuNanos=new LongAdder();
+        private final LongAdder cpuNanos=new LongAdder(),calls=new LongAdder();
         private volatile String generation;
         private volatile long documentsGeneration=-1,budget=-1;
         private volatile IndexService index;
@@ -173,6 +206,7 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
         private <T> T call(Callable<T> work)throws Exception{
             if(actorClosed)throw new IllegalStateException("Module analyzer actor is closed");
             if(Thread.currentThread()==owner)return work.call();
+            calls.increment();
             var inherited=RequestScope.current();
             Future<T> future=executor.submit(()->{
                 long started=cpuTime();
@@ -191,7 +225,7 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
             var result=new LinkedHashMap<String,Object>(call(analyzer::status));var thread=owner;
             result.put("actor_key",key);result.put("actor_thread",thread==null?"":thread.getName());
             result.put("actor_virtual",thread!=null&&thread.isVirtual());result.put("actor_alive",thread!=null&&thread.isAlive());
-            result.put("actor_cpu_ms",Math.round(cpuNanos()/1000.0)/1000.0);return Map.copyOf(result);
+            result.put("actor_cpu_ms",Math.round(cpuNanos()/1000.0)/1000.0);result.put("actor_calls",calls.sum());return Map.copyOf(result);
         }
         private void localChanged(Path path,String hash)throws Exception{call(()->{analyzer.changed(path,hash);return null;});}
         private void localResolvedApi(Path path,String fingerprint)throws Exception{call(()->{analyzer.resolvedApi(path,fingerprint);return null;});}

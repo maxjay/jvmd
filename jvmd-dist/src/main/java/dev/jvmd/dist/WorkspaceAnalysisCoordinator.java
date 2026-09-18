@@ -66,7 +66,10 @@ public final class WorkspaceAnalysisCoordinator {
         long analysisStart=System.nanoTime();int analysed=0,reused=0,batches=0,incrementalModules=0;
 
         var prerequisites=new LinkedHashSet<Path>();
-        for(Path file:files)prerequisites.addAll(enginesByFile.get(file).pendingPrerequisites(file));
+        for(var entry:grouped.entrySet()){
+            var pending=enginesByGroup.get(entry.getKey()).pendingPrerequisites(entry.getValue());
+            for(var valuesForFile:pending.values())prerequisites.addAll(valuesForFile);
+        }
         for(Path prerequisite:prerequisites)if(!files.contains(prerequisite)&&!documents.sourceHash(prerequisite).equals("missing")){
             analyzers.forFile(prerequisite).diagnostics(prerequisite,documents);analysed++;
         }
@@ -80,11 +83,9 @@ public final class WorkspaceAnalysisCoordinator {
 
         var plans=new ArrayList<Plan>();
         for(var entry:grouped.entrySet()){
-            var engine=enginesByGroup.get(entry.getKey());var stale=new ArrayList<Path>();
-            for(Path file:entry.getValue())if(!values.containsKey(file)){
-                var cached=engine.cachedDiagnostics(file,documents);
-                if(cached==null)stale.add(file);else{values.put(file,cached);reused++;}
-            }
+            var engine=enginesByGroup.get(entry.getKey());var candidates=entry.getValue().stream().filter(file->!values.containsKey(file)).toList();
+            var cached=engine.cachedDiagnostics(candidates,documents);var stale=new ArrayList<Path>();
+            for(Path file:candidates){var value=cached.get(file);if(value==null)stale.add(file);else{values.put(file,value);reused++;}}
             if(!stale.isEmpty())plans.add(new Plan(engine,List.copyOf(stale),entry.getValue().size(),stale.size()>=16&&stale.size()*4>=entry.getValue().size()));
         }
 

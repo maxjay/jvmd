@@ -142,12 +142,15 @@ class ParallelModuleDiagnosticsTest {
             assertThat(((Number)coldMetrics.get("actor_parallelism_used")).intValue()).isEqualTo(Math.min(actors,4));
 
             long warmBefore=((Number)registry.analyzerStatus(Map.of()).get("queries")).longValue();
+            long warmActorCallsBefore=registry.actorCalls();
             started=System.nanoTime();
             var warm=RequestScope.call("diag.get",()->coordinator.get(files,true,0,1000,List.of()));
             double warmMs=(System.nanoTime()-started)/1e6;
+            long warmActorCalls=registry.actorCalls()-warmActorCallsBefore;
             long warmQueries=((Number)registry.analyzerStatus(Map.of()).get("queries")).longValue()-warmBefore;
             @SuppressWarnings("unchecked") var warmMetrics=(Map<String,Object>)coordinator.status().get("last");
             assertThat(warmMetrics.get("files_reanalysed")).isEqualTo(0);
+            assertThat(warmActorCalls).as("warm actor crossings should be module-batched, not per-file").isLessThanOrEqualTo(2L*roots.size());
             assertThat(problems(warm)).containsExactlyElementsOf(problems(cold));
             @SuppressWarnings("unchecked") var actorDetail=(Map<String,Object>)registry.status().get("actors");
             var actorThreads=new HashSet<String>();

@@ -205,14 +205,13 @@ public final class IndexService implements AutoCloseable {
     }
 
     void ensureSignatureEdges(String workspace)throws Exception {
-        var pending=database.read(c->{var paths=new ArrayList<String[]>();try(var q=c.prepareStatement("SELECT a.path,a.gav,a.kind FROM artifacts a WHERE a.has_signature_edges=0 AND a.kind<>'sources'"+(workspace==null?"":" AND (a.gav LIKE 'jdk:%' OR EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id))"))){if(workspace!=null)q.setString(1,workspace);try(var r=q.executeQuery()){while(r.next())paths.add(new String[]{r.getString(1),r.getString(2),r.getString(3)});}}return paths;});
         boolean changed=false;
-        for(var item:pending){
-            Path path=item[0].startsWith("jrt:")?Path.of(java.net.URI.create(item[0])):Path.of(item[0]);
+        for(var item:store.pendingSignatureArtifacts(workspace)){
+            Path path=item.path().startsWith("jrt:")?Path.of(java.net.URI.create(item.path())):Path.of(item.path());
             if(!Files.exists(path))continue;
-            if(item[1].startsWith("jdk:"))indexJdk(path,item[1].split(":")[1],Path.of(System.getProperty("java.home"),"lib/src.zip"));
-            else if(item[2].equals("local"))locals.refresh(path);
-            else indexJar(path,item[1],item[2]);
+            if(item.gav().startsWith("jdk:"))indexJdk(path,item.gav().split(":")[1],Path.of(System.getProperty("java.home"),"lib/src.zip"));
+            else if(item.kind().equals("local"))locals.refresh(path);
+            else indexJar(path,item.gav(),item.kind());
             changed=true;
         }
         if(changed)linkEdges();

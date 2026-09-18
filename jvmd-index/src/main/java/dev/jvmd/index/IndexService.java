@@ -61,10 +61,14 @@ public final class IndexService implements AutoCloseable {
             finally{scanned.incrementAndGet();}
         }));
         for(var job:jobs)job.get();
-        if(skeletonComplete.get())generationSink.completeScan(inventoryGeneration);
-        jobs.clear();phase="docs";long docsStarted=System.nanoTime();
-        for(var jar:jars)if(jar.getFileName().toString().endsWith("-sources.jar"))jobs.add(readers.submit(()->{try{indexSources(jar);}catch(Exception|LinkageError e){warn("source_fault: "+jar+": "+e);}finally{scanned.incrementAndGet();}}));
+        jobs.clear();phase="docs";long docsStarted=System.nanoTime();var docsComplete=new AtomicBoolean(true);
+        for(var jar:jars)if(jar.getFileName().toString().endsWith("-sources.jar"))jobs.add(readers.submit(()->{
+            try{indexSources(jar);}
+            catch(Exception|LinkageError e){docsComplete.set(false);warn("source_fault: "+jar+": "+e);}
+            finally{scanned.incrementAndGet();}
+        }));
         for(var job:jobs)job.get();docsNanos.addAndGet(System.nanoTime()-docsStarted);
+        if(skeletonComplete.get()&&docsComplete.get())generationSink.completeScan(inventoryGeneration);
         phase="linking";long linkStarted=System.nanoTime();linkEdges();linkNanos.addAndGet(System.nanoTime()-linkStarted);phase="ready";
         long elapsed=System.nanoTime()-start;scanNanos.addAndGet(elapsed);
         System.getLogger("dev.jvmd.index").log(System.Logger.Level.INFO,"index scan: {0} artifacts in {1} ms",jars.size(),elapsed/1_000_000);
@@ -181,7 +185,9 @@ public final class IndexService implements AutoCloseable {
             var artifact=artifact(binary);if(artifact==null){indexJar(binary,gav(binary),"jar");artifact=artifact(binary);}
             var old=artifact(sources);var stamp=Files.readAttributes(sources,java.nio.file.attribute.BasicFileAttributes.class);
             long size=stamp.size(),mtime=stamp.lastModifiedTime().to(TimeUnit.NANOSECONDS);
-            if(old!=null&&artifact.hasDocs()&&!old.gav().contains("SNAPSHOT")&&old.size()==size&&old.mtime()==mtime){
+            String binaryCacheKey=ArtifactIndexFormat.key(artifact.sha256(),"signatures").cacheKey();
+            if(old!=null&&artifact.hasDocs()&&!old.gav().contains("SNAPSHOT")&&old.size()==size&&old.mtime()==mtime
+                    &&!generationSink.needsDocumentation(binaryCacheKey)){
                 reused.incrementAndGet();return old.id();
             }
 
@@ -212,6 +218,7 @@ public final class IndexService implements AutoCloseable {
             var sourceInput=new IndexStore.ArtifactInput(new ArtifactContext(gav(sources),"sources",location(sources)),key,size,mtime);
             active(sources,"source-storage");long storageStarted=System.nanoTime();
             long id=store.publishDocumentation(artifact.id(),sourceInput,Map.copyOf(members),join.unmatched().size());
+            generationSink.publishDocumentation(binaryCacheKey,sourceInput,Map.copyOf(members),join.unmatched().size());
             storageNanos.addAndGet(System.nanoTime()-storageStarted);return id;
         }finally{activeArtifacts.remove(location(tracked));}
     }

@@ -90,6 +90,16 @@ public final class RocksArtifactInventory implements AutoCloseable {
         return Set.copyOf(unreferenced);
     }
 
+
+    public synchronized void setDocumentation(String binaryCacheKey,String documentationKey)throws Exception{
+        db.put(docKey(binaryCacheKey),documentationKey.getBytes(StandardCharsets.US_ASCII));
+    }
+
+    public synchronized Optional<String> documentation(String binaryCacheKey)throws Exception{
+        byte[] value=db.get(docKey(binaryCacheKey));
+        return value==null?Optional.empty():Optional.of(new String(value,StandardCharsets.US_ASCII));
+    }
+
     public synchronized long refcount(String cacheKey)throws Exception{return readLong(db.get(refKey(cacheKey)));}
 
     public synchronized List<Entry> entries(){
@@ -129,6 +139,7 @@ public final class RocksArtifactInventory implements AutoCloseable {
 
     private static byte[] pathKey(Path path){return ("P|"+normalize(path)).getBytes(StandardCharsets.UTF_8);}
     private static byte[] refKey(String cacheKey){return ("R|"+cacheKey).getBytes(StandardCharsets.UTF_8);}
+    private static byte[] docKey(String cacheKey){return ("D|"+cacheKey).getBytes(StandardCharsets.UTF_8);}
     private static String normalize(Path path){return path.toAbsolutePath().normalize().toString();}
     private static byte[] longBytes(long value){return java.nio.ByteBuffer.allocate(Long.BYTES).putLong(value).array();}
     private static long readLong(byte[] value){return value==null?0:java.nio.ByteBuffer.wrap(value).getLong();}

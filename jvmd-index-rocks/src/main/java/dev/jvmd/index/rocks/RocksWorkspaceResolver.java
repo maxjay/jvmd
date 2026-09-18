@@ -38,17 +38,23 @@ public final class RocksWorkspaceResolver implements AutoCloseable {
     public record ResolvedSymbol(String artifactCacheKey,int localId,int classpathIndex) { }
     public record ResolvedRelationship(String sourceArtifactCacheKey,int sourceLocalId,String kind,String symbolicTarget,
                                        ResolvedSymbol target) { }
-    public record WorkspaceSymbol(Entry entry,ArtifactIndexFormat.SymbolRecord symbol,String scip,String namePath) { }
+    public record WorkspaceSymbol(Entry entry,ArtifactIndexFormat.SymbolRecord symbol,String scip,String namePath,Map<String,Object> sourceData) {
+        public WorkspaceSymbol { sourceData=Map.copyOf(sourceData); }
+    }
 
     private static final byte MISS=0, HIT=1;
     static {RocksDB.loadLibrary();}
     private final RocksArtifactRepository artifacts;
+    private final RocksArtifactInventory inventory;
     private final Options options;
     private final RocksDB cache;
     private long cacheHits,cacheMisses,resolutions;
 
     public RocksWorkspaceResolver(Path root,RocksArtifactRepository artifacts)throws Exception{
-        this.artifacts=Objects.requireNonNull(artifacts);
+        this(root,artifacts,null);
+    }
+    public RocksWorkspaceResolver(Path root,RocksArtifactRepository artifacts,RocksArtifactInventory inventory)throws Exception{
+        this.artifacts=Objects.requireNonNull(artifacts);this.inventory=inventory;
         Path path=root.toAbsolutePath().normalize();Files.createDirectories(path);
         options=new Options().setCreateIfMissing(true).setMaxOpenFiles(64);
         cache=RocksDB.open(options,path.toString());
@@ -225,8 +231,13 @@ public final class RocksWorkspaceResolver implements AutoCloseable {
         }
     }
 
-    private static WorkspaceSymbol workspaceSymbol(Entry entry,ArtifactIndexFormat.SymbolRecord symbol){
-        return new WorkspaceSymbol(entry,symbol,entry.context().scip(symbol),ArtifactContext.namePath(symbol));
+    private WorkspaceSymbol workspaceSymbol(Entry entry,ArtifactIndexFormat.SymbolRecord symbol){
+        Map<String,Object> sourceData=Map.of();
+        if(inventory!=null)try{
+            var docs=inventory.documentation(entry.artifactCacheKey());
+            if(docs.isPresent())sourceData=artifacts.documentation(docs.get(),symbol.key());
+        }catch(Exception e){throw new IllegalStateException("Unable to load source documentation overlay",e);}
+        return new WorkspaceSymbol(entry,symbol,entry.context().scip(symbol),ArtifactContext.namePath(symbol),sourceData);
     }
     private static String scipPrefix(ArtifactContext context){
         String[] parts=context.gav().split(":",3);if(parts.length!=3)return "";

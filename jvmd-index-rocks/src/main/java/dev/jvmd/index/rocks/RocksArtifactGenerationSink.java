@@ -28,7 +28,7 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
         if(maxEstimatedBytes<UNIT)throw new IllegalArgumentException("maxEstimatedBytes must be at least 1 MiB");
         this.repository=new RocksArtifactRepository(root);
         this.inventory=new RocksArtifactInventory(root.resolve("inventory"));
-        this.workspaceResolver=new RocksWorkspaceResolver(root.resolve("workspace-resolution"),repository);
+        this.workspaceResolver=new RocksWorkspaceResolver(root.resolve("workspace-resolution"),repository,inventory);
         this.migration=migration;this.candidateGeneration=candidateGeneration;
         this.totalUnits=(int)Math.min(Integer.MAX_VALUE,Math.max(1,(maxEstimatedBytes+UNIT-1)/UNIT));
         this.budget=new Semaphore(totalUnits,true);
@@ -95,6 +95,18 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
     }
 
 
+
+    @Override public boolean needsDocumentation(String binaryCacheKey)throws Exception{
+        var docs=inventory.documentation(binaryCacheKey);
+        return docs.isEmpty();
+    }
+
+    @Override public void publishDocumentation(String binaryCacheKey,IndexStore.ArtifactInput sourceInput,
+                                               Map<String,Map<String,Object>> members,int unmatchedMembers)throws Exception{
+        String docsKey=repository.publishDocumentation(binaryCacheKey,sourceInput.key(),members,unmatchedMembers);
+        inventory.setDocumentation(binaryCacheKey,docsKey);
+    }
+
     @Override public void configureWorkspace(String workspace,List<IndexStore.WorkspaceEntry> paths,List<Map.Entry<String,String>> dependencies)throws Exception{
         var inventoryByPath=new HashMap<String,RocksArtifactInventory.Entry>();
         for(var entry:inventory.entries())inventoryByPath.put(Path.of(entry.path()).toAbsolutePath().normalize().toString(),entry);
@@ -124,7 +136,8 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
             row.put("scip",value.scip());row.put("kind",value.symbol().kind());row.put("name",value.symbol().name());
             row.put("name_path",value.namePath());row.put("binary_key",value.symbol().key());
             row.put("gav",value.entry().context().gav());row.put("artifact_path",value.entry().context().path());
-            result.add(Map.copyOf(row));if(result.size()>=limit)break;
+            row.putAll(value.sourceData());
+            result.add(Collections.unmodifiableMap(row));if(result.size()>=limit)break;
         }
         return Optional.of(List.copyOf(result));
     }

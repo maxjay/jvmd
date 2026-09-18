@@ -1,6 +1,7 @@
 package dev.jvmd.index.rocks;
 
 import dev.jvmd.index.*;
+import dev.jvmd.core.Json;
 import java.io.*;
 import java.nio.*;
 import java.nio.channels.FileChannel;
@@ -76,6 +77,55 @@ public final class RocksArtifactRepository implements AutoCloseable {
 
     private Publication result(String cacheKey,boolean wasReused,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{
         return new Publication(cacheKey,wasReused,facts.symbols().size(),facts.relationships().size(),classReferences.size(),storageBytes());
+    }
+
+
+    public String publishDocumentation(String binaryCacheKey,ArtifactIndexFormat.Key sourceKey,
+                                       Map<String,Map<String,Object>> members,int unmatchedMembers)throws Exception{
+        var binary=artifact(binaryCacheKey);if(binary==null)throw new IOException("Missing binary generation for documentation: "+binaryCacheKey);
+        String docsKey=ArtifactIndexFormat.documentationKey(binary.key(),sourceKey.binarySha256());
+        Object artifactLock=artifactLocks.computeIfAbsent(docsKey,ignored->new Object());
+        try{
+            synchronized(artifactLock){
+                if(verifyDocumentation(docsKey,binaryCacheKey,sourceKey.binarySha256()))return docsKey;
+                Path sst=staging.resolve(docsKey+"-"+UUID.randomUUID()+".docs.sst.tmp");
+                try{
+                    var entries=new ArrayList<SstEntry>();
+                    String manifest="kind=documentation\nbinary="+binaryCacheKey+"\nsource_sha="+sourceKey.binarySha256()+
+                            "\nmembers="+members.size()+"\nunmatched="+unmatchedMembers+"\n";
+                    entries.add(new SstEntry(key(docsKey,"9|manifest"),manifest.getBytes(StandardCharsets.UTF_8)));
+                    for(var entry:new TreeMap<>(members).entrySet())
+                        entries.add(new SstEntry(key(docsKey,"9|member|"+entry.getKey()),Json.MAPPER.writeValueAsBytes(entry.getValue())));
+                    entries.sort((left,right)->Arrays.compareUnsigned(left.key(),right.key()));
+                    try(var env=new EnvOptions();var writer=new SstFileWriter(env,options)){
+                        writer.open(sst.toString());
+                        for(var entry:entries)writer.put(entry.key(),entry.value());
+                        writer.finish();
+                    }
+                    try(var file=FileChannel.open(sst,StandardOpenOption.WRITE)){file.force(true);}
+                    synchronized(ingestLock){
+                        if(!verifyDocumentation(docsKey,binaryCacheKey,sourceKey.binarySha256())){
+                            try(var ingest=new IngestExternalFileOptions().setMoveFiles(true)){db.ingestExternalFile(List.of(sst.toString()),ingest);}
+                        }
+                    }
+                    if(!verifyDocumentation(docsKey,binaryCacheKey,sourceKey.binarySha256()))
+                        throw new IOException("Documentation publication verification failed: "+docsKey);
+                    return docsKey;
+                }finally{Files.deleteIfExists(sst);}
+            }
+        }finally{artifactLocks.remove(docsKey,artifactLock);}
+    }
+
+    public boolean verifyDocumentation(String docsKey,String binaryCacheKey,String sourceSha)throws Exception{
+        byte[] value=db.get(key(docsKey,"9|manifest"));if(value==null)return false;
+        var manifest=parseManifest(value);
+        return "documentation".equals(manifest.get("kind"))&&binaryCacheKey.equals(manifest.get("binary"))&&sourceSha.equals(manifest.get("source_sha"));
+    }
+
+    public Map<String,Object> documentation(String docsKey,String binaryKey)throws Exception{
+        if(docsKey==null||docsKey.isBlank())return Map.of();
+        byte[] value=db.get(key(docsKey,"9|member|"+binaryKey));if(value==null)return Map.of();
+        return Json.MAPPER.readValue(value,new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>(){});
     }
 
     public boolean contains(String cacheKey)throws Exception{return db.get(key(cacheKey,"0|manifest"))!=null;}

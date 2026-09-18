@@ -8,6 +8,8 @@ public final class RocksArtifactGenerationProvider implements ArtifactGeneration
     @Override public String backend(){return "rocksdb-sst";}
     @Override public int priority(){return 100;}
     @Override public ArtifactGenerationSink open(Path root,long maxEstimatedBytes)throws Exception{
-        return new RocksArtifactGenerationSink(root,maxEstimatedBytes);
+        var migration=new RocksMigrationManager(root);
+        String generation="format-"+ArtifactIndexFormat.FORMAT_VERSION+"-jdk"+Runtime.version().feature()+"-"+ArtifactIndexFormat.INDEXER_VERSION;
+        return new RocksArtifactGenerationSink(migration.candidate(generation),maxEstimatedBytes,migration,generation);
     }
 }

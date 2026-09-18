@@ -605,7 +605,7 @@ public final class Application implements AutoCloseable {
                 long defaultBudgetMb=Math.max(8L,Math.min(128L,config.heapCeilingMb()/8L));
                 long budgetMb=Long.getLong("jvmd.index.generation_budget_mb",defaultBudgetMb);
                 if(budgetMb<1)throw new IllegalArgumentException("jvmd.index.generation_budget_mb must be positive");
-                generations=ArtifactGenerationSink.open(config.stateDir().resolve("index-generations"),Math.multiplyExact(budgetMb,1024L*1024L));
+                generations=ArtifactGenerationSink.open(config.stateDir().resolve("index-v2"),Math.multiplyExact(budgetMb,1024L*1024L));
                 var service=new IndexService(config.stateDir().resolve("index.db"),config.m2Repo(),generations);
                 if(scan)service.start();
                 return service;

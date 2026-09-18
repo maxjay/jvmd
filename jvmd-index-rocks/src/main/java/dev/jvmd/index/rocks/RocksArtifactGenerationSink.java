@@ -11,15 +11,22 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
     private static final long UNIT=1024L*1024L;
     private final RocksArtifactRepository repository;
     private final RocksArtifactInventory inventory;
+    private final RocksMigrationManager migration;
+    private final String candidateGeneration;
     private final Semaphore budget;
     private final int totalUnits;
     private final AtomicLong published=new AtomicLong(),reused=new AtomicLong(),waitNanos=new AtomicLong();
     private final AtomicInteger unitsInFlight=new AtomicInteger(),peakUnits=new AtomicInteger();
 
     public RocksArtifactGenerationSink(Path root,long maxEstimatedBytes)throws Exception{
+        this(root,maxEstimatedBytes,null,null);
+    }
+
+    RocksArtifactGenerationSink(Path root,long maxEstimatedBytes,RocksMigrationManager migration,String candidateGeneration)throws Exception{
         if(maxEstimatedBytes<UNIT)throw new IllegalArgumentException("maxEstimatedBytes must be at least 1 MiB");
         this.repository=new RocksArtifactRepository(root);
         this.inventory=new RocksArtifactInventory(root.resolve("inventory"));
+        this.migration=migration;this.candidateGeneration=candidateGeneration;
         this.totalUnits=(int)Math.min(Integer.MAX_VALUE,Math.max(1,(maxEstimatedBytes+UNIT-1)/UNIT));
         this.budget=new Semaphore(totalUnits,true);
     }
@@ -51,7 +58,12 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
 
     @Override public Set<String> completeScan(long scanGeneration)throws Exception{
         if(scanGeneration<=0)return Set.of();
-        return inventory.completeScan(scanGeneration);
+        Set<String> unreferenced=inventory.completeScan(scanGeneration);
+        if(migration!=null&&candidateGeneration!=null){
+            migration.markValidated(candidateGeneration);
+            migration.activate(candidateGeneration);
+        }
+        return unreferenced;
     }
 
     @Override public Map<String,Object> status(){
@@ -62,6 +74,12 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
         try{
             result.put("repository",repository.status());
             result.put("inventory_entries",inventory.entries().size());
+            if(migration!=null){
+                var manifest=migration.manifest();
+                result.put("candidate_generation",candidateGeneration);
+                result.put("active_generation",manifest.active());
+                result.put("previous_generation",manifest.previous());
+            }
         }catch(Exception e){result.put("repository_error",e.toString());}
         return Map.copyOf(result);
     }

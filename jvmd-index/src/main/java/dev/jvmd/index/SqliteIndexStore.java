@@ -263,6 +263,16 @@ public final class SqliteIndexStore implements IndexStore {
         return workspace==null?"":" AND EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id="+alias+".id)";
     }
 
+    @Override public List<ArtifactWork> pendingSignatureArtifacts(String workspace)throws Exception{
+        return database.read(c->{var result=new ArrayList<ArtifactWork>();
+            String sql="SELECT a.path,a.gav,a.kind FROM artifacts a WHERE a.has_signature_edges=0 AND a.kind<>'sources'"+
+                    (workspace==null?"":" AND (a.gav LIKE 'jdk:%' OR EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id))")+" ORDER BY a.id";
+            try(var q=c.prepareStatement(sql)){if(workspace!=null)q.setString(1,workspace);
+                try(var r=q.executeQuery()){while(r.next())result.add(new ArtifactWork(r.getString(1),r.getString(2),r.getString(3)));}
+            }return List.copyOf(result);
+        });
+    }
+
     @Override public List<ArtifactCandidate> binaryArtifacts(String workspace)throws Exception{
         return database.read(c->{var result=new ArrayList<ArtifactCandidate>();
             try(var q=c.prepareStatement("SELECT a.id,a.path,a.gav,a.has_class_refs,a.has_code_edges FROM artifacts a WHERE a.kind='jar' AND a.path NOT LIKE 'jrt:%'"+membership("a",workspace)+" ORDER BY a.id")){

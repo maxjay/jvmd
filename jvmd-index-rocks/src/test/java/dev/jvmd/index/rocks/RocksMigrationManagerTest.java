@@ -38,7 +38,7 @@ class RocksMigrationManagerTest {
     }
     @Test void obsoleteGenerationsAreReclaimedOnlyAfterReaderPinsRelease()throws Exception{
         var manager=new RocksMigrationManager(temp.resolve("reclaim"));
-        for(String generation:java.util.List.of("v1","v2","v3","v4")){
+        for(String generation:java.util.List.of("v1","v2","v3")){
             manager.candidate(generation);manager.markValidated(generation);
         }
         manager.activate("v1");manager.activate("v2");
@@ -46,7 +46,7 @@ class RocksMigrationManagerTest {
         assertThat(pin.generation()).isEqualTo("v2");
         manager.activate("v3");
         assertThat(manager.pruneObsolete()).containsExactly("v1");
-        manager.activate("v4");
+        manager.candidate("v4");manager.markValidated("v4");manager.activate("v4");
         assertThat(manager.pruneObsolete()).isEmpty();
         assertThat(manager.pins()).containsEntry("v2",1);
         assertThat(Files.isDirectory(manager.root().resolve("generations/v2"))).isTrue();

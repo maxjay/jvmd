@@ -14,9 +14,19 @@ public interface IndexStore extends AutoCloseable {
     record ArtifactCandidate(long id,String path,String gav,boolean hasClassRefs,boolean hasCodeEdges) { }
     record ResolvedRelationship(Map<String,Object> source,Map<String,Object> target,String kind) { }
     record SymbolicReference(String sourceScip,String targetBinaryKey,String kind) { }
+    record ArtifactInput(ArtifactIndexFormat.Context context,ArtifactIndexFormat.Key key,long size,long mtime) {
+        public ArtifactInput {
+            Objects.requireNonNull(context);Objects.requireNonNull(key);
+            if(size<0)throw new IllegalArgumentException("size");
+        }
+    }
 
     String backend();
     ArtifactRecord artifact(Path path)throws Exception;
+    long publishArtifact(ArtifactInput input,ArtifactIndexFormat.ArtifactData facts,Map<String,Map<String,Object>> sourceData)throws Exception;
+    void publishCode(long artifactId,ArtifactIndexFormat.Context context,ArtifactIndexFormat.ArtifactData facts)throws Exception;
+    void publishClassReferences(long artifactId,Set<String> references)throws Exception;
+    void publishPath(Path path,long artifactId,long size,long mtime)throws Exception;
     Map<String,Long> counts()throws Exception;
     Map<String,Object> status();
     List<String> loadWorkspace(String workspace,List<WorkspaceEntry> paths,List<Map.Entry<String,String>> dependencies)throws Exception;

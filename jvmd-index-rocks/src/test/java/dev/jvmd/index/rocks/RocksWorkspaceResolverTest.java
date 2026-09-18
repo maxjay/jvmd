@@ -16,7 +16,9 @@ class RocksWorkspaceResolverTest {
         try(var artifacts=new RocksArtifactRepository(temp.resolve("artifacts"))){
             artifacts.publish(source,Set.of());artifacts.publish(depOne,Set.of());artifacts.publish(depTwo,Set.of());
             try(var resolver=new RocksWorkspaceResolver(temp.resolve("resolution"),artifacts)){
-                var sourceEntry=entry(source,"fixture:source:1"),one=entry(depOne,"fixture:dep:1"),two=entry(depTwo,"fixture:dep:2");
+                var sourceEntry=entry(source,"fixture:source:1");
+                var one=entry(depOne,"fixture:dep:1");
+                var two=entry(depTwo,"fixture:dep:2");
                 var first=new RocksWorkspaceResolver.Workspace(List.of(sourceEntry,one,two),"javac-25");
                 var second=new RocksWorkspaceResolver.Workspace(List.of(sourceEntry,two,one),"javac-25");
                 assertThat(resolver.resolveFirst(first,"dep.Type").orElseThrow().artifactCacheKey()).isEqualTo(depOne.key().cacheKey());
@@ -35,7 +37,8 @@ class RocksWorkspaceResolverTest {
         try(var artifacts=new RocksArtifactRepository(temp.resolve("search-artifacts"))){
             artifacts.publish(depOne,Set.of());artifacts.publish(depTwo,Set.of());
             try(var resolver=new RocksWorkspaceResolver(temp.resolve("search-resolution"),artifacts)){
-                var one=entry(depOne,"one:dep:1"),two=entry(depTwo,"two:dep:2");
+                var one=entry(depOne,"one:dep:1");
+                var two=entry(depTwo,"two:dep:2");
                 var workspace=new RocksWorkspaceResolver.Workspace(List.of(one,two),"javac-25");
                 assertThat(resolver.findName(workspace,"Type",false,10)).extracting(RocksWorkspaceResolver.WorkspaceSymbol::scip)
                         .containsExactly(one.context().scip(depOne.symbols().getFirst()),two.context().scip(depTwo.symbols().getFirst()));

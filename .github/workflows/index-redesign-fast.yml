@@ -1,0 +1,34 @@
+name: Index Redesign Fast Gate
+on:
+  push:
+    branches: [indexing/immutable-artifacts]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: index-redesign-fast-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  index-redesign:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install checksum-pinned Temurin 25.0.4.1+1
+        shell: bash
+        run: |
+          curl -fsSL --retry 3 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz' -o "$RUNNER_TEMP/temurin25.tar.gz"
+          printf '%s  %s\n' dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e "$RUNNER_TEMP/temurin25.tar.gz" | sha256sum --check -
+          mkdir -p "$RUNNER_TEMP/jvmd-toolchain"
+          tar -xzf "$RUNNER_TEMP/temurin25.tar.gz" -C "$RUNNER_TEMP/jvmd-toolchain"
+          echo "JAVA_HOME=$RUNNER_TEMP/jvmd-toolchain/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/jvmd-toolchain/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
+      - name: Compile index dependency graph
+        run: mvn -B -DskipTests -pl jvmd-index-rocks,jvmd-tests -am install
+      - name: Rocks storage and workspace tests
+        run: mvn -B -pl jvmd-index-rocks test
+      - name: Index contract integration tests
+        run: >
+          mvn -B -pl jvmd-tests test
+          -Dtest=IndexStoreContractTest,ArtifactIndexFormatTest,RocksArtifactSinkIntegrationTest,EagerRepositoryIndexTest,IndexSearchTest,WorkspaceIndexLoadTest,ArtifactSignatureVariantTest
+          -DexcludedGroups=

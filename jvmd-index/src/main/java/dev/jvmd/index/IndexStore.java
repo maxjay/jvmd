@@ -28,6 +28,7 @@ public interface IndexStore extends AutoCloseable {
     void publishCode(long artifactId,ArtifactIndexFormat.Context context,ArtifactIndexFormat.ArtifactData facts)throws Exception;
     void publishClassReferences(long artifactId,Set<String> references)throws Exception;
     void publishSourceFile(long artifactId,Path file,List<Map<String,Object>> symbols,int tier,List<SourceRelationship> relationships)throws Exception;
+    long publishDocumentation(long binaryArtifactId,ArtifactInput sourceInput,Map<String,Map<String,Object>> members,int unmatchedMembers)throws Exception;
     void publishPath(Path path,long artifactId,long size,long mtime)throws Exception;
     Map<String,Long> counts()throws Exception;
     Map<String,Object> status();

@@ -120,7 +120,23 @@ public final class Application implements AutoCloseable {
             return diagnostics(s).get(files,whole,cursor(p),Dispatcher.limit(p,200,1000),s.warnings());
         });
     }
-    private WorkspaceAnalysisCoordinator diagnostics(Session session){return session.state("diagnostics",()->new WorkspaceAnalysisCoordinator(documents(session),file->analyzer(session,file),session::yieldInteractive));}
+    private WorkspaceAnalysisCoordinator diagnostics(Session session){return session.state("diagnostics",()->new WorkspaceAnalysisCoordinator(documents(session),file->analyzer(session,file),session::yieldInteractive,file->externalDiagnostics(session,file)));}
+    private WorkspaceAnalysisCoordinator.ExternalResult externalDiagnostics(Session session,Path file)throws Exception{
+        var graph=(Resolution)session.state("resolution");if(graph==null)return null;
+        var module=WorkspaceContextManager.owner(file,graph);
+        boolean test=module.testSources().stream().anyMatch(root->file.startsWith(Path.of(root)));
+        var settings=test?module.testProcessing():module.processing();if(!settings.lombok())return null;
+        // The isolated worker consumes a saved module snapshot. Unsaved editor state must keep using
+        // the resident analyser until a future worker can materialize authoritative buffers.
+        if(documents(session).dirty(Path.of(module.directory())))return null;
+        var output=(AnnotationProcessing.Output)session.state("apt:"+module.gav()+(test?":test":":main"));
+        if(output==null||!output.diagnosticFidelity().equals("full_lombok_external"))return null;
+        String wanted=file.toAbsolutePath().normalize().toUri().toString();
+        var diagnostics=output.diagnostics().stream().filter(problem->problem.file().equals(wanted)).map(problem->
+                new dev.jvmd.analyzer.CompilerPool.Problem("external-javac",2,problem.code(),problem.kind(),problem.file(),
+                        problem.line(),problem.character(),-1,-1,problem.message())).toList();
+        return new WorkspaceAnalysisCoordinator.ExternalResult(diagnostics,output.diagnosticFidelity());
+    }
     public Dispatcher dispatcher() { return dispatcher; }
     public Sessions sessions() { return sessions; }
     private static WorkspaceManifest workspace(Session session){return session.state("workspace_manifest",()->new WorkspaceManifest(List.of(session.root()),true));}

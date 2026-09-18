@@ -6,5 +6,6 @@ module dev.jvmd.index {
     requires java.sql;
     requires org.xerial.sqlitejdbc;
     exports dev.jvmd.index;
+    uses dev.jvmd.index.ArtifactGenerationSinkProvider;
     opens dev.jvmd.index to com.fasterxml.jackson.databind;
 }

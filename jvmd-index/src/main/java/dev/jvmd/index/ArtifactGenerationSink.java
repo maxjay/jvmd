@@ -1,5 +1,6 @@
 package dev.jvmd.index;
 
+import java.nio.file.Path;
 import java.util.*;
 
 /** Optional destination for immutable artifact generations prepared during repository indexing. */
@@ -7,6 +8,26 @@ public interface ArtifactGenerationSink extends AutoCloseable {
     void publish(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception;
     default Map<String,Object> status(){return Map.of("backend","none");}
     @Override default void close()throws Exception { }
+
+    static ArtifactGenerationSink open(Path root,long maxEstimatedBytes)throws Exception{
+        return open(System.getProperty("jvmd.index.generation.backend","auto"),root,maxEstimatedBytes);
+    }
+
+    static ArtifactGenerationSink open(String backend,Path root,long maxEstimatedBytes)throws Exception{
+        Objects.requireNonNull(backend);Objects.requireNonNull(root);
+        if(backend.equals("none"))return none();
+        var providers=ServiceLoader.load(ArtifactGenerationSinkProvider.class).stream()
+                .map(ServiceLoader.Provider::get)
+                .sorted(Comparator.comparingInt(ArtifactGenerationSinkProvider::priority).reversed()
+                        .thenComparing(ArtifactGenerationSinkProvider::backend))
+                .toList();
+        if(backend.equals("auto")){
+            if(providers.isEmpty())return none();
+            return providers.getFirst().open(root,maxEstimatedBytes);
+        }
+        for(var provider:providers)if(provider.backend().equals(backend))return provider.open(root,maxEstimatedBytes);
+        throw new IllegalStateException("Artifact generation backend is unavailable: "+backend);
+    }
 
     static ArtifactGenerationSink none(){
         return new ArtifactGenerationSink(){

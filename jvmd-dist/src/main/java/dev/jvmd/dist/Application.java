@@ -9,6 +9,7 @@ import dev.jvmd.core.*;
 import dev.jvmd.resolver.MavenResolver;
 import dev.jvmd.resolver.Resolution;
 import dev.jvmd.index.IndexService;
+import dev.jvmd.index.ArtifactGenerationSink;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -599,8 +600,19 @@ public final class Application implements AutoCloseable {
     private synchronized void initializeIndex(boolean scan) {
         if(index!=null)return;
         index=java.util.concurrent.CompletableFuture.supplyAsync(()->{
-            try {var service=new IndexService(config.stateDir().resolve("index.db"),config.m2Repo());if(scan)service.start();return service;}
-            catch(Exception e){throw new java.util.concurrent.CompletionException(e);}
+            ArtifactGenerationSink generations=null;
+            try {
+                long defaultBudgetMb=Math.max(8L,Math.min(128L,config.heapCeilingMb()/8L));
+                long budgetMb=Long.getLong("jvmd.index.generation_budget_mb",defaultBudgetMb);
+                if(budgetMb<1)throw new IllegalArgumentException("jvmd.index.generation_budget_mb must be positive");
+                generations=ArtifactGenerationSink.open(config.stateDir().resolve("index-generations"),Math.multiplyExact(budgetMb,1024L*1024L));
+                var service=new IndexService(config.stateDir().resolve("index.db"),config.m2Repo(),generations);
+                if(scan)service.start();
+                return service;
+            } catch(Exception e){
+                if(generations!=null)try{generations.close();}catch(Exception close){e.addSuppressed(close);}
+                throw new java.util.concurrent.CompletionException(e);
+            }
         }, task -> Thread.ofVirtual().name("jvmd-index-start").start(task));
     }
     private IndexService index() { initializeIndex(false); return index.join(); }

@@ -53,11 +53,11 @@ class RocksSqliteAgreementTest {
                     var data=artifacts.artifact(resolved.artifactCacheKey());
                     return entry.context().scip(data.symbols().get(resolved.localId()));
                 }catch(Exception e){throw new RuntimeException(e);}
-            }).toList())).containsExactlyInAnyOrderElementsOf(sqliteScips(sqlite.find(binaryKey,"w",false,20,0)));
+            }).toList())).containsExactlyInAnyOrderElementsOf(sqliteScips(sqlite.store().symbolsByBinaryKey(binaryKey,"w")));
 
             String scip=first.scip();
             assertThat(resolver.byScip(workspace,scip)).isPresent();
-            assertThat(sqlite.find(scip,"w",false,20,0)).extracting(value->value.get("scip")).containsExactly(scip);
+            assertThat(sqlite.store().byScip(scip,"w")).isNotNull().extracting(value->value.get("scip")).isEqualTo(scip);
         }
     }
 

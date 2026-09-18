@@ -36,4 +36,25 @@ class RocksMigrationManagerTest {
         Files.writeString(root.resolve("active.manifest"),"format=99\nactive=broken\n");
         assertThatThrownBy(manager::manifest).isInstanceOf(java.io.IOException.class);
     }
+    @Test void obsoleteGenerationsAreReclaimedOnlyAfterReaderPinsRelease()throws Exception{
+        var manager=new RocksMigrationManager(temp.resolve("reclaim"));
+        for(String generation:java.util.List.of("v1","v2","v3","v4")){
+            manager.candidate(generation);manager.markValidated(generation);
+        }
+        manager.activate("v1");manager.activate("v2");
+        var pin=manager.pinActive().orElseThrow();
+        assertThat(pin.generation()).isEqualTo("v2");
+        manager.activate("v3");
+        assertThat(manager.pruneObsolete()).containsExactly("v1");
+        manager.activate("v4");
+        assertThat(manager.pruneObsolete()).isEmpty();
+        assertThat(manager.pins()).containsEntry("v2",1);
+        assertThat(Files.isDirectory(manager.root().resolve("generations/v2"))).isTrue();
+        pin.close();
+        assertThat(manager.pruneObsolete()).containsExactly("v2");
+        assertThat(Files.exists(manager.root().resolve("generations/v2"))).isFalse();
+        assertThat(Files.isDirectory(manager.root().resolve("generations/v3"))).isTrue();
+        assertThat(Files.isDirectory(manager.root().resolve("generations/v4"))).isTrue();
+    }
+
 }

@@ -20,13 +20,16 @@ public final class RocksMigrationManager {
     }
 
     private static final String MANIFEST="active.manifest",VALIDATED="VALIDATED";
+    private static final java.util.concurrent.ConcurrentHashMap<Path,java.util.concurrent.ConcurrentHashMap<String,java.util.concurrent.atomic.AtomicInteger>> PINS=new java.util.concurrent.ConcurrentHashMap<>();
     private final Path root,generations,manifest;
+    private final java.util.concurrent.ConcurrentHashMap<String,java.util.concurrent.atomic.AtomicInteger> pins;
 
     public RocksMigrationManager(Path root)throws Exception{
         this.root=root.toAbsolutePath().normalize();
         this.generations=this.root.resolve("generations");
         this.manifest=this.root.resolve(MANIFEST);
         Files.createDirectories(generations);
+        this.pins=PINS.computeIfAbsent(this.root,ignored->new java.util.concurrent.ConcurrentHashMap<>());
     }
 
     public synchronized Path candidate(String generation)throws Exception{
@@ -84,6 +87,47 @@ public final class RocksMigrationManager {
         String value=manifest().previous();return value.isBlank()?Optional.empty():Optional.of(generations.resolve(value));
     }
 
+
+    public final class Pin implements AutoCloseable {
+        private final String generation;private final Path path;private boolean closed;
+        private Pin(String generation,Path path){this.generation=generation;this.path=path;}
+        public String generation(){return generation;}
+        public Path path(){return path;}
+        @Override public synchronized void close(){
+            if(closed)return;closed=true;
+            pins.computeIfPresent(generation,(key,count)->count.decrementAndGet()<=0?null:count);
+        }
+    }
+
+    public synchronized Optional<Pin> pinActive()throws Exception{
+        Manifest current=manifest();if(current.active().isBlank())return Optional.empty();
+        Path path=generations.resolve(current.active());
+        if(!Files.isDirectory(path)||!validated(current.active()))throw new IOException("Active index generation is unavailable: "+current.active());
+        pins.computeIfAbsent(current.active(),ignored->new java.util.concurrent.atomic.AtomicInteger()).incrementAndGet();
+        return Optional.of(new Pin(current.active(),path));
+    }
+
+    public synchronized Set<String> pruneObsolete()throws Exception{
+        Manifest current=manifest();var keep=new HashSet<String>();
+        if(!current.active().isBlank())keep.add(current.active());
+        if(!current.previous().isBlank())keep.add(current.previous());
+        pins.forEach((generation,count)->{if(count.get()>0)keep.add(generation);});
+        var removed=new LinkedHashSet<String>();
+        try(var children=Files.list(generations)){
+            for(Path child:children.filter(Files::isDirectory).toList()){
+                String generation=child.getFileName().toString();
+                if(keep.contains(generation))continue;
+                deleteTree(child);removed.add(generation);
+            }
+        }
+        return Set.copyOf(removed);
+    }
+
+    public synchronized Map<String,Integer> pins(){
+        var result=new TreeMap<String,Integer>();pins.forEach((generation,count)->{if(count.get()>0)result.put(generation,count.get());});
+        return Map.copyOf(result);
+    }
+
     public Path root(){return root;}
 
     private void writeManifest(Manifest value)throws Exception{
@@ -106,6 +150,12 @@ public final class RocksMigrationManager {
     private static void forceDirectory(Path directory){
         try(var channel=FileChannel.open(directory,StandardOpenOption.READ)){channel.force(true);}
         catch(Exception ignored){}
+    }
+
+    private static void deleteTree(Path root)throws IOException{
+        try(var paths=Files.walk(root)){
+            for(Path path:paths.sorted(Comparator.reverseOrder()).toList())Files.deleteIfExists(path);
+        }
     }
 
     private static void validateGeneration(String generation){

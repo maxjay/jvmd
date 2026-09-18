@@ -66,6 +66,7 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
             validateCandidate();
             migration.markValidated(candidateGeneration);
             migration.activate(candidateGeneration);
+            migration.pruneObsolete();
         }
         return unreferenced;
     }
@@ -178,6 +179,7 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
                 result.put("candidate_generation",candidateGeneration);
                 result.put("active_generation",manifest.active());
                 result.put("previous_generation",manifest.previous());
+                result.put("generation_pins",migration.pins());
             }
         }catch(Exception e){result.put("repository_error",e.toString());}
         return Map.copyOf(result);

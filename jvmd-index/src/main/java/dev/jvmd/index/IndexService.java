@@ -22,6 +22,10 @@ public final class IndexService implements AutoCloseable {
     private final ExecutorService readers=Executors.newFixedThreadPool(Math.max(1,Math.min(4,Runtime.getRuntime().availableProcessors())),Thread.ofVirtual().name("jvmd-index-reader-",0).factory());
     private final ScheduledExecutorService scanner=Executors.newSingleThreadScheduledExecutor(Thread.ofVirtual().name("jvmd-index-scan").factory());
     private final AtomicLong scanned=new AtomicLong(),indexed=new AtomicLong(),reused=new AtomicLong(),hashed=new AtomicLong(),faults=new AtomicLong();
+    private final AtomicLong scans=new AtomicLong(),scanNanos=new AtomicLong(),discoveryNanos=new AtomicLong(),hashNanos=new AtomicLong(),
+            parseNanos=new AtomicLong(),storageNanos=new AtomicLong(),docsNanos=new AtomicLong(),linkNanos=new AtomicLong(),
+            queryCalls=new AtomicLong(),queryNanos=new AtomicLong(),workspaceResolutionCalls=new AtomicLong(),workspaceResolutionNanos=new AtomicLong();
+    private final ConcurrentHashMap<String,String> activeArtifacts=new ConcurrentHashMap<>();
     private final ConcurrentLinkedDeque<String> warnings=new ConcurrentLinkedDeque<>();
     private volatile String phase="idle";
     private volatile long total;
@@ -32,19 +36,37 @@ public final class IndexService implements AutoCloseable {
     public void start(){scanner.scheduleWithFixedDelay(()->{try{scan();}catch(Exception e){warn("index_scan_fault: "+e);}},0,60,TimeUnit.SECONDS);}
     public synchronized void scan() throws Exception {
         if(closed||!Files.isDirectory(repository))return;
-        long start=System.nanoTime(); phase="discovering";
+        long start=System.nanoTime();scans.incrementAndGet();phase="discovering";
+        long discoveryStarted=System.nanoTime();
         List<Path> jars;try(var files=Files.walk(repository)){jars=files.filter(Files::isRegularFile).filter(p->p.toString().endsWith(".jar")&&!p.getFileName().toString().endsWith("-javadoc.jar")).sorted().toList();}
+        discoveryNanos.addAndGet(System.nanoTime()-discoveryStarted);
         total=jars.size();scanned.set(0);phase="skeletons";
         var jobs=new ArrayList<Future<?>>();
         for(var jar:jars)if(!jar.getFileName().toString().endsWith("-sources.jar"))jobs.add(readers.submit(()->{try{indexJar(jar,gav(jar),"jar");}catch(Exception|LinkageError e){warn("artifact_fault: "+jar+": "+e);}finally{scanned.incrementAndGet();}}));
-        for(var job:jobs)job.get();jobs.clear();phase="docs";
+        for(var job:jobs)job.get();jobs.clear();phase="docs";long docsStarted=System.nanoTime();
         for(var jar:jars)if(jar.getFileName().toString().endsWith("-sources.jar"))jobs.add(readers.submit(()->{try{indexSources(jar);}catch(Exception|LinkageError e){warn("source_fault: "+jar+": "+e);}finally{scanned.incrementAndGet();}}));
-        for(var job:jobs)job.get();
-        phase="linking";linkEdges();phase="ready";
-        System.getLogger("dev.jvmd.index").log(System.Logger.Level.INFO,"index scan: {0} artifacts in {1} ms",jars.size(),(System.nanoTime()-start)/1_000_000);
+        for(var job:jobs)job.get();docsNanos.addAndGet(System.nanoTime()-docsStarted);
+        phase="linking";long linkStarted=System.nanoTime();linkEdges();linkNanos.addAndGet(System.nanoTime()-linkStarted);phase="ready";
+        long elapsed=System.nanoTime()-start;scanNanos.addAndGet(elapsed);
+        System.getLogger("dev.jvmd.index").log(System.Logger.Level.INFO,"index scan: {0} artifacts in {1} ms",jars.size(),elapsed/1_000_000);
     }
     private void warn(String warning){faults.incrementAndGet();warnings.add(warning);while(warnings.size()>50)warnings.poll();System.getLogger("dev.jvmd.index").log(System.Logger.Level.WARNING,warning);}
-    public Map<String,Object> status() throws Exception {var result=new LinkedHashMap<String,Object>();result.putAll(database.counts());result.put("source_publisher",sourcePublisher.status());result.put("phase",phase);result.put("total",total);result.put("scanned",scanned.get());result.put("indexed",indexed.get());result.put("reused",reused.get());result.put("hashes",hashed.get());result.put("faults",faults.get());result.put("warnings",List.copyOf(warnings));return result;}
+    public Map<String,Object> status() throws Exception {
+        var result=new LinkedHashMap<String,Object>();result.putAll(database.counts());result.put("source_publisher",sourcePublisher.status());
+        result.put("phase",phase);result.put("total",total);result.put("scanned",scanned.get());result.put("indexed",indexed.get());
+        result.put("reused",reused.get());result.put("hashes",hashed.get());result.put("faults",faults.get());result.put("warnings",List.copyOf(warnings));
+        result.put("active_artifacts",Map.copyOf(activeArtifacts));result.put("database",database.metrics());
+        var timings=new LinkedHashMap<String,Object>();
+        timings.put("scans",scans.get());timings.put("scan_ms",millis(scanNanos.get()));timings.put("discovery_ms",millis(discoveryNanos.get()));
+        timings.put("hash_ms",millis(hashNanos.get()));timings.put("parse_ms",millis(parseNanos.get()));timings.put("storage_ms",millis(storageNanos.get()));
+        timings.put("docs_ms",millis(docsNanos.get()));timings.put("link_ms",millis(linkNanos.get()));
+        timings.put("query_calls",queryCalls.get());timings.put("query_ms",millis(queryNanos.get()));
+        timings.put("workspace_resolution_calls",workspaceResolutionCalls.get());timings.put("workspace_resolution_ms",millis(workspaceResolutionNanos.get()));
+        result.put("timings",Map.copyOf(timings));
+        return result;
+    }
+    private static double millis(long nanos){return Math.round(nanos/1000.0)/1000.0;}
+    private void active(Path path,String operation){activeArtifacts.put(location(path),operation);}
     public String gav(Path path){
         Path relative=repository.relativize(path.toAbsolutePath().normalize());int n=relative.getNameCount();
         if(n<4)return "local:"+path.getFileName()+":0";
@@ -53,17 +75,21 @@ public final class IndexService implements AutoCloseable {
     private static String location(Path path){return path.getFileSystem().provider().getScheme().equals("file")?path.toAbsolutePath().normalize().toString():path.toUri().toString();}
     public Artifact artifact(Path path) throws Exception {return database.read(c->{try(var s=c.prepareStatement("SELECT a.*,p.size AS actual_size,p.mtime AS actual_mtime FROM artifact_paths p JOIN artifacts a ON a.id=p.artifact_id WHERE p.path=?")){s.setString(1,location(path));try(var r=s.executeQuery()){return r.next()?new Artifact(r.getLong("id"),r.getString("gav"),r.getString("kind"),r.getString("sha256"),location(path),r.getLong("actual_size"),r.getLong("actual_mtime"),r.getInt("has_docs")!=0,r.getInt("has_code_edges")!=0,r.getInt("has_signature_edges")!=0):null;}}});}
     public long indexJar(Path path,String gav,String kind) throws Exception {
-        path=path.toAbsolutePath().normalize();var previous=artifact(path);
-        var stamp=Files.readAttributes(path,java.nio.file.attribute.BasicFileAttributes.class);long size=stamp.size(),mtime=stamp.lastModifiedTime().to(TimeUnit.NANOSECONDS);
-        if(previous!=null&&previous.hasSignatureEdges()&&!gav.contains("SNAPSHOT")&&!kind.equals("local")&&previous.size()==size&&previous.mtime()==mtime){reused.incrementAndGet();return previous.id();}
-        verifyChecksum(path);String hash=Files.isDirectory(path)?directoryHash(path):Hashing.sha256(path);hashed.incrementAndGet();
-        if(previous!=null&&previous.hasSignatureEdges()&&previous.sha256().equals(hash)){recordPath(path,previous.id(),size,mtime);reused.incrementAndGet();return previous.id();}
-        var content=new BinaryReader().read(path,kind.equals("local"));content.warnings().forEach(this::warn);
-        Path file=path;long id=database.write(c->{long artifact=putArtifact(c,file,gav,kind,hash,size,mtime);
-            if(ids(c,artifact).isEmpty())storeContent(c,artifact,gav,kind,content,Map.of());
-            else storeSignatureTargets(c,artifact,content.edges(),ids(c,artifact));
-            return artifact;
-        });indexed.incrementAndGet();return id;
+        path=path.toAbsolutePath().normalize();Path tracked=path;active(path,"stat");
+        try{
+            var previous=artifact(path);
+            var stamp=Files.readAttributes(path,java.nio.file.attribute.BasicFileAttributes.class);long size=stamp.size(),mtime=stamp.lastModifiedTime().to(TimeUnit.NANOSECONDS);
+            if(previous!=null&&previous.hasSignatureEdges()&&!gav.contains("SNAPSHOT")&&!kind.equals("local")&&previous.size()==size&&previous.mtime()==mtime){reused.incrementAndGet();return previous.id();}
+            active(path,"hash");long hashStarted=System.nanoTime();verifyChecksum(path);String hash=Files.isDirectory(path)?directoryHash(path):Hashing.sha256(path);hashNanos.addAndGet(System.nanoTime()-hashStarted);hashed.incrementAndGet();
+            if(previous!=null&&previous.hasSignatureEdges()&&previous.sha256().equals(hash)){recordPath(path,previous.id(),size,mtime);reused.incrementAndGet();return previous.id();}
+            active(path,"parse");long parseStarted=System.nanoTime();var content=new BinaryReader().read(path,kind.equals("local"));parseNanos.addAndGet(System.nanoTime()-parseStarted);content.warnings().forEach(this::warn);
+            Path file=path;active(path,"storage");long storageStarted=System.nanoTime();
+            long id=database.write(c->{long artifact=putArtifact(c,file,gav,kind,hash,size,mtime);
+                if(ids(c,artifact).isEmpty())storeContent(c,artifact,gav,kind,content,Map.of());
+                else storeSignatureTargets(c,artifact,content.edges(),ids(c,artifact));
+                return artifact;
+            });storageNanos.addAndGet(System.nanoTime()-storageStarted);indexed.incrementAndGet();return id;
+        }finally{activeArtifacts.remove(location(tracked));}
     }
     private void storeContent(Connection c,long artifact,String gav,String kind,BinaryReader.Content content,Map<String,Map<String,Object>> sourceData)throws Exception{
         var keys=ids(c,artifact);
@@ -206,10 +232,12 @@ public final class IndexService implements AutoCloseable {
         var artifact=artifact(binary);if(artifact==null){indexJar(binary,gav(binary),"jar");artifact=artifact(binary);}
         var old=artifact(sources);var stamp=Files.readAttributes(sources,java.nio.file.attribute.BasicFileAttributes.class);long size=stamp.size(),mtime=stamp.lastModifiedTime().to(TimeUnit.NANOSECONDS);
         if(old!=null&&artifact.hasDocs()&&!old.gav().contains("SNAPSHOT")&&old.size()==size&&old.mtime()==mtime){reused.incrementAndGet();return old.id();}
-        verifyChecksum(sources);String hash=Hashing.sha256(sources);hashed.incrementAndGet();
+        active(sources,"hash");long hashStarted=System.nanoTime();verifyChecksum(sources);String hash=Hashing.sha256(sources);hashNanos.addAndGet(System.nanoTime()-hashStarted);hashed.incrementAndGet();
+        active(sources,"source-parse");long parseStarted=System.nanoTime();
         var text=new LinkedHashMap<String,String>();try(var jar=new JarFile(sources.toFile(),false,JarFile.OPEN_READ,Runtime.version())){for(var entry:jar.versionedStream().filter(e->e.getName().endsWith(".java")&&!e.getName().startsWith("META-INF/")).toList()){try(var stream=jar.getInputStream(entry)){text.put(entry.getName(),new String(stream.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8));}}}
-        var content=new BinaryReader().read(binary,false);var join=new SourceJoin().join(content.models(),text);long binaryId=artifact.id();Path sourceFile=sources;
-        return database.write(c->{long sourceId=putArtifact(c,sourceFile,gav(sourceFile),"sources",hash,size,mtime);var keys=ids(c,binaryId);
+        var content=new BinaryReader().read(binary,false);var join=new SourceJoin().join(content.models(),text);parseNanos.addAndGet(System.nanoTime()-parseStarted);long binaryId=artifact.id();Path sourceFile=sources;
+        active(sources,"source-storage");long storageStarted=System.nanoTime();
+        long sourceResult=database.write(c->{long sourceId=putArtifact(c,sourceFile,gav(sourceFile),"sources",hash,size,mtime);var keys=ids(c,binaryId);
             try(var update=c.prepareStatement("UPDATE artifact_symbols SET data=?,source_file=? WHERE artifact_id=? AND symbol_id=?");
                 var lookup=c.prepareStatement("SELECT v.data,s.signature,s.parameters,s.metadata FROM artifact_symbols v JOIN symbols s ON s.id=v.symbol_id WHERE v.artifact_id=? AND v.symbol_id=?")){
                 for(var member:join.members()){
@@ -234,7 +262,7 @@ public final class IndexService implements AutoCloseable {
             try(var s=c.prepareStatement("INSERT OR REPLACE INTO source_artifacts VALUES(?,?)")){s.setLong(1,binaryId);s.setLong(2,sourceId);s.executeUpdate();}
             try(var s=c.prepareStatement("INSERT INTO counters VALUES('unmatched_source_members',?) ON CONFLICT(name) DO UPDATE SET value=value+excluded.value")){s.setInt(1,join.unmatched().size());s.executeUpdate();}
             return sourceId;
-        });
+        });storageNanos.addAndGet(System.nanoTime()-storageStarted);activeArtifacts.remove(location(sources));return sourceResult;
     }
     void ensureSignatureEdges(String workspace)throws Exception {
         var pending=database.read(c->{var paths=new ArrayList<String[]>();try(var q=c.prepareStatement("SELECT a.path,a.gav,a.kind FROM artifacts a WHERE a.has_signature_edges=0 AND a.kind<>'sources'"+(workspace==null?"":" AND (a.gav LIKE 'jdk:%' OR EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id))"))){if(workspace!=null)q.setString(1,workspace);try(var r=q.executeQuery()){while(r.next())paths.add(new String[]{r.getString(1),r.getString(2),r.getString(3)});}}return paths;});
@@ -256,14 +284,15 @@ public final class IndexService implements AutoCloseable {
         s.executeUpdate("INSERT OR IGNORE INTO edges SELECT child.id,parent.id,'overrides' FROM edges hierarchy CROSS JOIN symbols child ON child.owner_id=hierarchy.src CROSS JOIN symbols parent ON parent.owner_id=hierarchy.dst AND parent.name=child.name AND substr(parent.erased_descriptor,1,instr(parent.erased_descriptor,')'))=substr(child.erased_descriptor,1,instr(child.erased_descriptor,')')) WHERE hierarchy.kind IN ('extends','implements') AND child.kind='method' AND parent.kind='method' AND (child.flags & 8)=0 AND (parent.flags & 10)=0");
     }return null;});}
     public List<String> loadWorkspace(String workspace,List<WorkspaceArtifact> paths,List<Map.Entry<String,String>> dependencies)throws Exception{
-        return database.write(c->{try(var s=c.prepareStatement("DELETE FROM workspace_artifacts WHERE workspace_id=?")){s.setString(1,workspace);s.executeUpdate();}
+        long started=System.nanoTime();workspaceResolutionCalls.incrementAndGet();
+        try{return database.write(c->{try(var s=c.prepareStatement("DELETE FROM workspace_artifacts WHERE workspace_id=?")){s.setString(1,workspace);s.executeUpdate();}
             try(var s=c.prepareStatement("INSERT OR IGNORE INTO workspace_artifacts SELECT ?,artifact_id,? FROM artifact_paths WHERE path=?")){for(var item:paths){s.setString(1,workspace);s.setString(2,item.scope());s.setString(3,Path.of(item.path()).toAbsolutePath().normalize().toString());s.addBatch();}s.executeBatch();}
             try(var s=c.prepareStatement("INSERT OR IGNORE INTO edges SELECT -a.id,-b.id,'depends_on' FROM artifacts a,artifacts b WHERE a.gav=? AND b.gav=?")){for(var edge:dependencies){s.setString(1,edge.getKey());s.setString(2,edge.getValue());s.addBatch();}s.executeBatch();}
             var warnings=new ArrayList<String>();
             try(var s=c.prepareStatement("SELECT s.fqn,group_concat(a.gav||' ['||a.path||']','; ') FROM simple_names s JOIN artifacts a ON a.id=s.artifact_id JOIN workspace_artifacts w ON w.artifact_id=a.id WHERE w.workspace_id=? GROUP BY s.fqn HAVING count(DISTINCT a.id)>1")){s.setString(1,workspace);try(var r=s.executeQuery()){while(r.next())warnings.add("duplicate_class: "+r.getString(1)+": "+r.getString(2));}}
             try(var s=c.prepareStatement("SELECT substr(s.fqn,1,length(s.fqn)-length(s.simple)-1) AS package,group_concat(DISTINCT a.gav) FROM simple_names s JOIN artifacts a ON a.id=s.artifact_id JOIN workspace_artifacts w ON w.artifact_id=a.id WHERE w.workspace_id=? GROUP BY package HAVING count(DISTINCT a.id)>1")){s.setString(1,workspace);try(var r=s.executeQuery()){while(r.next())warnings.add("split_package: "+r.getString(1)+": "+r.getString(2));}}
             return warnings;
-        });
+        });}finally{workspaceResolutionNanos.addAndGet(System.nanoTime()-started);}
     }
     public List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after)throws Exception{return find(query,workspace,substring,limit,after,Set.of());}
     public List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds)throws Exception{
@@ -277,8 +306,8 @@ public final class IndexService implements AutoCloseable {
         });
     }
     private List<Map<String,Object>> findMatching(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds,java.util.function.Predicate<Map<String,Object>> filter)throws Exception{
-        var name=substring?null:dev.jvmd.core.NamePath.parse(query);
-        return database.read(c->{
+        var name=substring?null:dev.jvmd.core.NamePath.parse(query);long started=System.nanoTime();queryCalls.incrementAndGet();
+        try{return database.read(c->{
             String match=substring?"(s.name LIKE ? ESCAPE '\\' OR s.name_path LIKE ? ESCAPE '\\')":"(s.name=? OR s.scip=? OR s.binary_key=?)";
             String sql="SELECT * FROM (SELECT s.*,a.id AS selected_artifact,a.gav,a.path AS artifact_path,a.kind AS artifact_kind,v.data AS variant_data,ROW_NUMBER() OVER(PARTITION BY s.id ORDER BY CASE a.kind WHEN 'local' THEN 0 ELSE 1 END,a.id) AS preference FROM symbols s JOIN artifact_symbols v ON v.symbol_id=s.id JOIN artifacts a ON a.id=v.artifact_id WHERE s.id>? AND "+match+(workspace==null?"":" AND EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id)")+") WHERE preference=1 ORDER BY id";
             var result=new ArrayList<Map<String,Object>>();
@@ -289,7 +318,7 @@ public final class IndexService implements AutoCloseable {
                 if(workspace!=null)statement.setString(i,workspace);
                 try(var rows=statement.executeQuery()){while(rows.next()&&result.size()<limit){var value=symbol(rows);if(!kinds.isEmpty()&&!kinds.contains(value.get("kind")))continue;if((substring||name.matches(value)||query.equals(value.get("binary_key")))&&filter.test(value))result.add(value);}}
             }return result;
-        });
+        });}finally{queryNanos.addAndGet(System.nanoTime()-started);}
     }
     public Map<String,Object> byId(long id)throws Exception{return byId(id,null);}
     public Map<String,Object> byId(long id,String workspace)throws Exception{

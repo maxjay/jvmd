@@ -11,6 +11,18 @@ import static org.assertj.core.api.Assertions.*;
 @Tag("phase-4")
 class IndexedFileManagerTest {
  @TempDir Path temp;
+ @Test void replacingAJarInvalidatesItsLoadedCatalogEvenWithPreservedMtime()throws Exception{
+  Path jar=IndexFixtures.jar(temp,"replace","package fixture; public class Sample { public int value(){return 1;} }",true);
+  var compiler=ToolProvider.getSystemJavaCompiler();
+  try(var manager=new IndexedFileManager(compiler.getStandardFileManager(null,null,null),List.of(jar),List.of(),null,1024*1024)){
+   var first=manager.getJavaFileForInput(StandardLocation.CLASS_PATH,"fixture.Sample",JavaFileObject.Kind.CLASS);
+   assertThat(first).isNotNull();try(var in=first.openInputStream()){assertThat(in.readAllBytes()).isNotEmpty();}
+   var timestamp=Files.getLastModifiedTime(jar);
+   IndexFixtures.jar(temp,"replace","package fixture; public class Sample { public String value(){return \"changed\";} }",true);
+   Files.setLastModifiedTime(jar,timestamp);
+   assertThatThrownBy(manager::validateClasspath).isInstanceOf(java.io.UncheckedIOException.class);
+  }
+ }
  @Test void completesPrivateSupportTypesAndDoesNotHideDeletedJars()throws Exception{
   Path jar=IndexFixtures.jar(temp,"support","package fixture; class Parent { public int inherited; } public class Sample extends Parent { public int value; }",true);
   var compiler=ToolProvider.getSystemJavaCompiler();

@@ -15,7 +15,7 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
     private final String candidateGeneration;
     private final Semaphore budget;
     private final int totalUnits;
-    private final AtomicLong published=new AtomicLong(),reused=new AtomicLong(),waitNanos=new AtomicLong();
+    private final AtomicLong published=new AtomicLong(),reused=new AtomicLong(),waitNanos=new AtomicLong(),validationFailures=new AtomicLong();
     private final AtomicInteger unitsInFlight=new AtomicInteger(),peakUnits=new AtomicInteger();
 
     public RocksArtifactGenerationSink(Path root,long maxEstimatedBytes)throws Exception{
@@ -60,15 +60,40 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
         if(scanGeneration<=0)return Set.of();
         Set<String> unreferenced=inventory.completeScan(scanGeneration);
         if(migration!=null&&candidateGeneration!=null){
+            validateCandidate();
             migration.markValidated(candidateGeneration);
             migration.activate(candidateGeneration);
         }
         return unreferenced;
     }
 
+    private void validateCandidate()throws Exception{
+        var failures=new ArrayList<String>();
+        var seen=new HashSet<String>();
+        for(var entry:inventory.entries()){
+            if(!seen.add(entry.cacheKey()))continue;
+            try{
+                if(!repository.verify(entry.cacheKey()))failures.add(entry.path()+": verification failed");
+                else{
+                    var facts=repository.artifact(entry.cacheKey());
+                    if(facts==null||!facts.key().binarySha256().equals(entry.binarySha256()))
+                        failures.add(entry.path()+": binary identity mismatch");
+                }
+            }catch(Exception e){
+                failures.add(entry.path()+": "+e.getClass().getSimpleName()+": "+Objects.toString(e.getMessage(),""));
+            }
+            if(failures.size()>=20)break;
+        }
+        if(!failures.isEmpty()){
+            validationFailures.incrementAndGet();
+            throw new IllegalStateException("Rocks candidate validation failed: "+String.join("; ",failures));
+        }
+    }
+
     @Override public Map<String,Object> status(){
         var result=new LinkedHashMap<String,Object>();
         result.put("backend","rocksdb-sst");result.put("published",published.get());result.put("reused",reused.get());
+        result.put("validation_failures",validationFailures.get());
         result.put("budget_bytes",(long)totalUnits*UNIT);result.put("estimated_bytes_in_flight",(long)unitsInFlight.get()*UNIT);
         result.put("peak_estimated_bytes_in_flight",(long)peakUnits.get()*UNIT);result.put("budget_wait_ms",Math.round(waitNanos.get()/1000.0)/1000.0);
         try{

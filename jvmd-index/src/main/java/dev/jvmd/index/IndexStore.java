@@ -23,6 +23,7 @@ public interface IndexStore extends AutoCloseable {
     List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds)throws Exception;
     List<Map<String,Object>> descendants(String path,String workspace,int depth,int limit,long after,Set<String> kinds)throws Exception;
     Map<String,Object> byId(long id,String workspace)throws Exception;
+    Map<String,Object> byScip(String scip,String workspace)throws Exception;
     List<ArtifactCandidate> binaryArtifacts(String workspace)throws Exception;
     List<ArtifactCandidate> artifactsOwning(Collection<String> scips,String workspace)throws Exception;
     List<ArtifactCandidate> artifactsReferencing(Collection<String> fqns,String workspace)throws Exception;

@@ -44,7 +44,8 @@ public final class RocksWorkspaceState implements AutoCloseable {
     public synchronized ModuleState update(ModuleInput input)throws Exception{
         String moduleKey=Hashing.sha256(input.moduleId().getBytes(StandardCharsets.UTF_8));
         String filePrefix="F|"+moduleKey+"|",dirPrefix="D|"+moduleKey+"|";
-        var priorFiles=load(filePrefix),priorDirs=load(dirPrefix);
+        var priorFiles=load(filePrefix);
+        var priorDirs=load(dirPrefix);
         var currentFiles=collect(input);
         var currentDirs=directoryFingerprints(currentFiles);
         String moduleFingerprint=moduleFingerprint(input,currentDirs);

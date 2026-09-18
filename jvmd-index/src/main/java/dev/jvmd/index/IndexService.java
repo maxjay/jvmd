@@ -56,12 +56,13 @@ public final class IndexService implements AutoCloseable {
         result.put("phase",phase);result.put("total",total);result.put("scanned",scanned.get());result.put("indexed",indexed.get());
         result.put("reused",reused.get());result.put("hashes",hashed.get());result.put("faults",faults.get());result.put("warnings",List.copyOf(warnings));
         result.put("active_artifacts",Map.copyOf(activeArtifacts));result.put("database",database.metrics());
-        result.put("timings",Map.of(
-                "scans",scans.get(),"scan_ms",millis(scanNanos.get()),"discovery_ms",millis(discoveryNanos.get()),
-                "hash_ms",millis(hashNanos.get()),"parse_ms",millis(parseNanos.get()),"storage_ms",millis(storageNanos.get()),
-                "docs_ms",millis(docsNanos.get()),"link_ms",millis(linkNanos.get()),
-                "query_calls",queryCalls.get(),"query_ms",millis(queryNanos.get()),
-                "workspace_resolution_calls",workspaceResolutionCalls.get(),"workspace_resolution_ms",millis(workspaceResolutionNanos.get())));
+        var timings=new LinkedHashMap<String,Object>();
+        timings.put("scans",scans.get());timings.put("scan_ms",millis(scanNanos.get()));timings.put("discovery_ms",millis(discoveryNanos.get()));
+        timings.put("hash_ms",millis(hashNanos.get()));timings.put("parse_ms",millis(parseNanos.get()));timings.put("storage_ms",millis(storageNanos.get()));
+        timings.put("docs_ms",millis(docsNanos.get()));timings.put("link_ms",millis(linkNanos.get()));
+        timings.put("query_calls",queryCalls.get());timings.put("query_ms",millis(queryNanos.get()));
+        timings.put("workspace_resolution_calls",workspaceResolutionCalls.get());timings.put("workspace_resolution_ms",millis(workspaceResolutionNanos.get()));
+        result.put("timings",Map.copyOf(timings));
         return result;
     }
     private static double millis(long nanos){return Math.round(nanos/1000.0)/1000.0;}

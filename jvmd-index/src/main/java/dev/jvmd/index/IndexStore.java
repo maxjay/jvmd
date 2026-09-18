@@ -14,6 +14,7 @@ public interface IndexStore extends AutoCloseable {
     record ArtifactCandidate(long id,String path,String gav,boolean hasClassRefs,boolean hasCodeEdges) { }
     record ResolvedRelationship(Map<String,Object> source,Map<String,Object> target,String kind) { }
     record SymbolicReference(String sourceScip,String targetBinaryKey,String kind) { }
+    record SourceRelationship(String sourceScip,String targetScip,String kind) { }
     record ArtifactInput(ArtifactIndexFormat.Context context,ArtifactIndexFormat.Key key,long size,long mtime) {
         public ArtifactInput {
             Objects.requireNonNull(context);Objects.requireNonNull(key);
@@ -26,6 +27,7 @@ public interface IndexStore extends AutoCloseable {
     long publishArtifact(ArtifactInput input,ArtifactIndexFormat.ArtifactData facts,Map<String,Map<String,Object>> sourceData)throws Exception;
     void publishCode(long artifactId,ArtifactIndexFormat.Context context,ArtifactIndexFormat.ArtifactData facts)throws Exception;
     void publishClassReferences(long artifactId,Set<String> references)throws Exception;
+    void publishSourceFile(long artifactId,Path file,List<Map<String,Object>> symbols,int tier,List<SourceRelationship> relationships)throws Exception;
     void publishPath(Path path,long artifactId,long size,long mtime)throws Exception;
     Map<String,Long> counts()throws Exception;
     Map<String,Object> status();

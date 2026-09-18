@@ -9,7 +9,7 @@ import java.util.*;
 import javax.lang.model.element.*;
 
 /** Implements 4.2: session-owned semantic state and detached declaration snapshots. */
-public final class Analyzer implements AutoCloseable {
+public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     /** Implements 4.2 and 4.3: effective module classpath and source roots. */
     public record Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates,List<String> compilerOptions,Set<Path> binarySources,List<String> warnings,List<Path> navigationSources) {
         public Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates,List<String> compilerOptions,Set<Path> binarySources,List<String> warnings){this(gav,release,classpath,sources,generation,coordinates,compilerOptions,binarySources,warnings,sources);}
@@ -178,6 +178,13 @@ public final class Analyzer implements AutoCloseable {
         path=path.toAbsolutePath().normalize();var origins=conditionalByFile.get(path);if(origins!=null&&origins.stream().anyMatch(pendingApi::containsKey))diagnosticStore.invalidate(Set.of(path));
     }
     public String contextKey(){return context.generation();}
+    /** Detached API identity used by module actors to propagate cross-module conditional invalidation. */
+    public String apiFingerprint(Path path){
+        path=path.toAbsolutePath().normalize();var value=apiFingerprints.get(path);
+        return value==null?diagnosticStore.apiFingerprint(path):value;
+    }
+    /** Import a detached API identity from another isolated module actor. */
+    public void resolvedApi(Path path,String fingerprint){if(fingerprint!=null)resolveApiChange(path.toAbsolutePath().normalize(),fingerprint);}
     public Set<Path> pendingPrerequisites(Path file){return conditionalByFile.getOrDefault(file.toAbsolutePath().normalize(),Set.of());}
     public void changed(Path path,String hash){
         path=path.toAbsolutePath().normalize();conditionallyInvalidate(path,dependencies.changed(path,hash));

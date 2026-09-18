@@ -18,7 +18,7 @@ Every current-state claim below is `[x]` when a named regression or CI run prove
 - [x] **Phase 7 — Adaptive cold/warm selection (§67).** The coordinator batches when at least 16 files and 25% of a module are stale; smaller changes take the incremental path. Superseded work is rejected at source-generation boundaries.
 - [x] **Phase 8 — Persistent diagnostic cache (§68).** Checksummed immutable snapshot objects and atomic manifests restore unchanged diagnostics across daemon restart. Corrupt or stale state is a cache miss; unsaved dependency state is authoritative.
 - [x] **Phase 9 — High-fidelity Lombok diagnostics (§69).** Saved Lombok sources can use isolated external javac diagnostics and are checked against a real build. Generated-member body/source-position navigation remains unavailable and is explicitly warned.
-- [ ] **Phase 10 — Parallel module actors (§70).** Intentionally deferred. Javac remains confined to the session owner thread; batching already removes most repeated compiler setup, so parallel actors require evidence before adding concurrency.
+- [~] **Phase 10 — Parallel module actors (§70).** Implementation complete; final CI is pending. Each module actor owns a platform thread, Analyzer and CompilerPool. Cold module groups run with a bounded cap of `min(configured, 4)` (production default `min(CPUs/2, 4)`), while detached API fingerprints preserve cross-module conditional invalidation. The phase-10 benchmark compares 1/2/4 actors and records wall clock, actor CPU, peak heap, GC and correctness.
 
 ## Acceptance invariant
 
@@ -70,7 +70,7 @@ The checked-in benchmarks are architectural regression evidence: they prove the 
 ## Remaining non-blocking work
 
 1. Add ~250- and ~1,000-source multi-module fixtures for long-run latency, memory and cache-budget calibration.
-2. Revisit parallel module actors only if those measurements show module-level serialization is materially limiting.
+2. Use the checked-in 1/2/4-actor measurements to decide whether production should keep the automatic actor count or pin a lower value on memory-constrained machines.
 3. Extend Lombok fidelity beyond diagnostics if generated-member body/source-position navigation becomes a requirement.
 4. Re-run the unavailable historical workload separately if an apples-to-apples 26.8 s / 8.45 s comparison is needed.
 
@@ -98,7 +98,7 @@ The checked-in benchmarks are architectural regression evidence: they prove the 
 ## Next actions
 
 1. Get the final checkpoint + corpus CI run green on the hardening/documentation commit.
-2. Keep Phase 10 gated unless larger workload evidence justifies parallel module actors.
+2. Review the 1/2/4-actor evidence after CI and keep the bounded production default only if heap/GC remain acceptable.
 3. Once CI is green, this branch is ready for review; do not merge it implicitly.
 
 ## Checkpoint history
@@ -248,3 +248,31 @@ Run `35342199973` checkpoint evidence:
 
 The checkpoint job is green. Corpus validation was still running when this source-of-truth
 entry was prepared; the final hardening commit intentionally triggers both jobs again.
+
+
+## 2026-09-18 — Checkpoint 9: isolated parallel module actors
+
+Implementation commit: this checkpoint.
+
+- Added a `DiagnosticEngine` isolation boundary and persistent `ModuleAnalyzerRegistry`.
+- Every module actor owns one dedicated **platform thread**, its `Analyzer`, and all
+  `CompilerPool` instances created by that analyzer. Javac is never invoked from the
+  virtual orchestration threads and one Analyzer is never accessed concurrently.
+- The coordinator parallelizes only distinct engines that explicitly report actor isolation.
+  Direct/shared analyzers remain serial, preserving the existing compiler ownership invariant.
+- Production actor concurrency defaults to `min(availableProcessors / 2, 4)` and can be
+  overridden with `-Djvmd.diagnostics.moduleActors=N` or `JVMD_DIAGNOSTIC_MODULE_ACTORS`.
+- Session heap budget is divided across the configured actor cap.
+- Cross-module source changes broadcast only detached source/API identities. A prior API
+  fingerprint is injected before conditional invalidation and the resolved fingerprint is
+  published after analysis, preserving body-only versus API-changing invalidation across actors.
+- `RequestScope` now carries a concurrent request memo so module actors share request-stable
+  preparation without sharing compiler objects.
+- Coordinator metrics now include actor parallelism used, actor CPU time, peak heap and GC
+  collections for the request.
+- `ParallelModuleDiagnosticsTest` compares 1, 2 and 4 actors on the same four-module,
+  256-source workload and asserts identical diagnostics, four cold module-batch queries,
+  zero warm javac work and zero compiler faults while recording wall/CPU/heap/GC evidence.
+- Corpus CI timeout is raised from 30 to 90 minutes. Run `35342914541` proved the prior
+  cancellation was the 30-minute job timeout: the final log line was
+  `The operation was canceled.` at approximately 30 minutes, with no test failure.

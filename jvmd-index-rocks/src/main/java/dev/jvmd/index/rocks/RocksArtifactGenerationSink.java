@@ -15,9 +15,11 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
     private final String candidateGeneration;
     private final RocksWorkspaceResolver workspaceResolver;
     private final RocksSemanticInvalidation semanticInvalidation;
+    private final RocksWorkspaceState workspaceState;
     private final java.util.concurrent.ConcurrentHashMap<String,RocksWorkspaceResolver.Workspace> workspaces=new java.util.concurrent.ConcurrentHashMap<>();
     private final AtomicLong semanticUpdates=new AtomicLong(),semanticReanalyze=new AtomicLong(),semanticApiChanges=new AtomicLong(),semanticBodyOnly=new AtomicLong();
-    private volatile Map<String,Object> lastSemanticResult=Map.of();
+    private final AtomicLong workspaceStateUpdates=new AtomicLong(),workspaceFileWrites=new AtomicLong(),workspaceDirectoryWrites=new AtomicLong(),workspaceMetadataWrites=new AtomicLong();
+    private volatile Map<String,Object> lastSemanticResult=Map.of(),lastWorkspaceState=Map.of();
     private final Semaphore budget;
     private final int totalUnits;
     private final AtomicLong published=new AtomicLong(),reused=new AtomicLong(),waitNanos=new AtomicLong(),validationFailures=new AtomicLong();
@@ -33,6 +35,7 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
         this.inventory=new RocksArtifactInventory(root.resolve("inventory"));
         this.workspaceResolver=new RocksWorkspaceResolver(root.resolve("workspace-resolution"),repository,inventory);
         this.semanticInvalidation=new RocksSemanticInvalidation(root.resolve("semantic-state"));
+        this.workspaceState=new RocksWorkspaceState(root.resolve("workspace-state"));
         this.migration=migration;this.candidateGeneration=candidateGeneration;
         this.totalUnits=(int)Math.min(Integer.MAX_VALUE,Math.max(1,(maxEstimatedBytes+UNIT-1)/UNIT));
         this.budget=new Semaphore(totalUnits,true);
@@ -127,6 +130,19 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
                 "context_changed",result.contextChanged());
     }
 
+
+    @Override public void configureModuleState(ArtifactGenerationSink.ModuleStateInput input)throws Exception{
+        var state=workspaceState.update(new RocksWorkspaceState.ModuleInput(input.moduleId(),input.sourceRoots(),input.overlays(),
+                input.compilerOptions(),input.processors(),input.generatedOutputs(),input.orderedClasspath(),input.jdkFingerprint()));
+        workspaceStateUpdates.incrementAndGet();workspaceFileWrites.addAndGet(state.fileWrites());
+        workspaceDirectoryWrites.addAndGet(state.directoryWrites());workspaceMetadataWrites.addAndGet(state.metadataWrites());
+        lastWorkspaceState=Map.of("module",input.moduleId(),"fingerprint",state.fingerprint(),
+                "changed_files",state.changedFiles().stream().map(Path::toString).sorted().toList(),
+                "deleted_files",state.deletedFiles().stream().map(Path::toString).sorted().toList(),
+                "unchanged_files",state.unchangedFiles(),"file_writes",state.fileWrites(),
+                "directory_writes",state.directoryWrites(),"metadata_writes",state.metadataWrites());
+    }
+
     @Override public void configureWorkspace(String workspace,List<IndexStore.WorkspaceEntry> paths,List<Map.Entry<String,String>> dependencies)throws Exception{
         var inventoryByPath=new HashMap<String,RocksArtifactInventory.Entry>();
         for(var entry:inventory.entries())inventoryByPath.put(Path.of(entry.path()).toAbsolutePath().normalize().toString(),entry);
@@ -218,6 +234,8 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
         result.put("workspace_resolution",workspaceResolver.status());
         result.put("semantic_state",Map.of("updates",semanticUpdates.get(),"reanalyze_total",semanticReanalyze.get(),
                 "api_changes",semanticApiChanges.get(),"body_only",semanticBodyOnly.get(),"last",lastSemanticResult));
+        result.put("workspace_state",Map.of("updates",workspaceStateUpdates.get(),"file_writes",workspaceFileWrites.get(),
+                "directory_writes",workspaceDirectoryWrites.get(),"metadata_writes",workspaceMetadataWrites.get(),"last",lastWorkspaceState));
         result.put("budget_bytes",(long)totalUnits*UNIT);result.put("estimated_bytes_in_flight",(long)unitsInFlight.get()*UNIT);
         result.put("peak_estimated_bytes_in_flight",(long)peakUnits.get()*UNIT);result.put("budget_wait_ms",Math.round(waitNanos.get()/1000.0)/1000.0);
         try{
@@ -240,6 +258,6 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
 
     @Override public void close(){
         try{workspaceResolver.close();}
-        finally{try{semanticInvalidation.close();}finally{try{inventory.close();}finally{repository.close();}}}
+        finally{try{semanticInvalidation.close();}finally{try{workspaceState.close();}finally{try{inventory.close();}finally{repository.close();}}}}
     }
 }

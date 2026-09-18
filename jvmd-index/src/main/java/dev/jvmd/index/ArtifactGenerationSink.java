@@ -5,6 +5,16 @@ import java.util.*;
 
 /** Optional destination for immutable artifact generations prepared during repository indexing. */
 public interface ArtifactGenerationSink extends AutoCloseable {
+    record ModuleStateInput(String moduleId,List<Path> sourceRoots,Map<Path,String> overlays,
+                            List<String> compilerOptions,List<String> processors,
+                            Map<String,String> generatedOutputs,List<String> orderedClasspath,String jdkFingerprint) {
+        public ModuleStateInput {
+            Objects.requireNonNull(moduleId);sourceRoots=List.copyOf(sourceRoots);overlays=Map.copyOf(overlays);
+            compilerOptions=List.copyOf(compilerOptions);processors=List.copyOf(processors);
+            generatedOutputs=Map.copyOf(generatedOutputs);orderedClasspath=List.copyOf(orderedClasspath);
+            jdkFingerprint=jdkFingerprint==null?"":jdkFingerprint;
+        }
+    }
     void publish(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception;
     default long beginScan()throws Exception{return 0L;}
     default void observe(long scanGeneration,IndexStore.ArtifactInput input)throws Exception{ }
@@ -12,6 +22,7 @@ public interface ArtifactGenerationSink extends AutoCloseable {
     default boolean needsDocumentation(String binaryCacheKey)throws Exception{return false;}
     default void publishDocumentation(String binaryCacheKey,IndexStore.ArtifactInput sourceInput,Map<String,Map<String,Object>> members,int unmatchedMembers)throws Exception{ }
     default void publishSourceState(SourceIndexPublisher.Delta delta)throws Exception{ }
+    default void configureModuleState(ModuleStateInput input)throws Exception{ }
     default void configureWorkspace(String workspace,List<IndexStore.WorkspaceEntry> paths,List<Map.Entry<String,String>> dependencies)throws Exception{ }
     default OptionalLong shadowCursor(String workspace,String scip)throws Exception{return OptionalLong.empty();}
     default Optional<List<Map<String,Object>>> shadowFind(String workspace,String query,boolean substring,int limit,long after,Set<String> kinds)throws Exception{return Optional.empty();}

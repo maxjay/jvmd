@@ -240,6 +240,10 @@ public final class IndexService implements AutoCloseable {
         if(changed)linkEdges();
     }
     public void linkEdges()throws Exception{store.resolveGlobalRelationships();}
+
+    public void configureModuleState(ArtifactGenerationSink.ModuleStateInput input)throws Exception{
+        generationSink.configureModuleState(input);
+    }
     public List<String> loadWorkspace(String workspace,List<WorkspaceArtifact> paths,List<Map.Entry<String,String>> dependencies)throws Exception{
         long started=System.nanoTime();workspaceResolutionCalls.incrementAndGet();
         try{

@@ -624,6 +624,14 @@ public final class Application implements AutoCloseable {
         }
         String generation=graph.fingerprint()+":"+database.generation();
         if(generation.equals(session.state("index_generation")))return;
+
+        var openDocuments=documents(session).snapshots();
+        String jdkFingerprint=Runtime.version()+"|"+config.jdkHome().toAbsolutePath().normalize();
+        for(var module:graph.modules()){
+            configureModuleIndexState(database,module,false,graph,openDocuments,jdkFingerprint);
+            configureModuleIndexState(database,module,true,graph,openDocuments,jdkFingerprint);
+        }
+
         var paths=new ArrayList<>(graph.nodes().stream().filter(n->n.path()!=null&&n.winner()==null).map(n->new IndexService.WorkspaceArtifact(n.path(),n.scope())).toList());
         for(var module:graph.modules())paths.add(new IndexService.WorkspaceArtifact(module.directory(),"local"));
         var byId=graph.nodes().stream().collect(java.util.stream.Collectors.toMap(Resolution.Node::id,Resolution.Node::gav));
@@ -656,6 +664,33 @@ public final class Application implements AutoCloseable {
                 java.util.Map.of("nodes", slice(nodes,offset,limit), "edges", slice(edges,offset,limit),
                         "fingerprint", graph.fingerprint(), "cached", graph.cached()));
     }
+
+    private void configureModuleIndexState(IndexService database,Resolution.Module module,boolean test,Resolution graph,
+                                           Map<Path,String> openDocuments,String jdkFingerprint)throws Exception{
+        var roots=(test?module.testSources():module.sources()).stream().map(Path::of).map(path->path.toAbsolutePath().normalize()).toList();
+        if(roots.isEmpty())return;
+        var overlays=new LinkedHashMap<Path,String>();
+        openDocuments.forEach((path,text)->{if(roots.stream().anyMatch(path::startsWith))overlays.put(path,text);});
+        var processing=test?module.testProcessing():module.processing();
+        var processors=new ArrayList<String>();processors.addAll(processing.path());processors.addAll(processing.names());
+        if(processing.lombok())processors.add("lombok");
+        var generated=new LinkedHashMap<String,String>();
+        if(processing.generatedDirectory()!=null&&!processing.generatedDirectory().isBlank()){
+            Path directory=Path.of(processing.generatedDirectory()).toAbsolutePath().normalize();
+            generated.put(directory.toString(),fingerprintDirectory(directory));
+        }
+        String key=module.gav()+(test?":test":":main");
+        var classpath=graph.classpaths().getOrDefault(key,List.of());
+        var options=test?module.testCompilerOptions():module.compilerOptions();
+        database.configureModuleState(new ArtifactGenerationSink.ModuleStateInput(key,roots,Map.copyOf(overlays),options,
+                List.copyOf(processors),Map.copyOf(generated),classpath,jdkFingerprint+"|release="+module.release()));
+    }
+
+    private static String fingerprintDirectory(Path directory)throws Exception{
+        if(!Files.isDirectory(directory))return "missing";
+        return IndexService.directoryHash(directory);
+    }
+
     @Override public void close() throws Exception {
         try { sessions.close(); } finally {
             try { if (resolver != null) resolver.close(); }

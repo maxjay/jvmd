@@ -74,7 +74,15 @@ public final class CompilerPool implements AutoCloseable {
         options.addAll(List.of("-proc:none","--should-stop=ifError=FLOW","-Xprefer:source","-parameters","-g"));
         try {
             long validationStarted=System.nanoTime();classpathValidations++;
-            try{manager.validateClasspath();}finally{classpathValidationNanos+=System.nanoTime()-validationStarted;}
+            try{
+                try{manager.validateClasspath();}
+                catch(java.io.UncheckedIOException changed){
+                    // A filesystem watch event can arrive after classpathStamp() validated but before
+                    // this query starts. No javac state has been touched yet, so recycle the caches and
+                    // revalidate once instead of degrading a legitimate classpath replacement to a fault.
+                    recycle();classpathValidations++;manager.validateClasspath();
+                }
+            }finally{classpathValidationNanos+=System.nanoTime()-validationStarted;}
             T value=pool.getTask(new java.io.StringWriter(),manager,diagnostics,options,null,sources.stream().map(input->manager.source(input.file(),input.text())).toList(),task->{
                 var units=new ArrayList<CompilationUnitTree>();var parsed=new ArrayList<CompilationUnitTree>();
                 task.addTaskListener(new com.sun.source.util.TaskListener(){

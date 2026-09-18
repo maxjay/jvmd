@@ -131,7 +131,9 @@ public final class IndexService implements AutoCloseable {
     synchronized void storeCode(long artifact,String gav,String hash,Path path,BinaryReader.Content content,List<BinaryReader.Edge> edges)throws Exception{
         var key=ArtifactIndexFormat.key(hash,"code");
         var facts=ArtifactIndexFormat.from(content,key,edges);
-        store.publishCode(artifact,new ArtifactContext(gav,"jar",location(path)),facts,CodeReader.classReferences(content.models().values()));
+        var classReferences=CodeReader.classReferences(content.models().values());
+        generationSink.publish(facts,classReferences);
+        store.publishCode(artifact,new ArtifactContext(gav,"jar",location(path)),facts,classReferences);
         indexed.incrementAndGet();
     }
     /** Implements 4.4 and phase 6: a module's source and binary inputs, independent of Maven objects. */

@@ -25,11 +25,11 @@ These numbers are evidence to reproduce, not acceptance measurements.
 
 - [~] **01 — Reproducible baseline.** Branch/base captured. Existing SQLite remains the control. Implementing checked-in environment/phase/storage/query measurement harness next. The real 861-JAR corporate repository remains a local benchmark.
 - [ ] **02 — Operation-level measurements.** Discovery, hash, parse, preparation/dedupe, queue wait, storage, publication and resolution timings.
-- [ ] **03 — `IndexStore` backend contract and correctness oracle.**
-- [ ] **04 — Artifact identity and compact binary record format.**
-- [ ] **05 — RocksDB external-SST vs minimal immutable-file prototype comparison.**
-- [ ] **06 — Bounded parallel artifact ingestion.**
-- [ ] **07 — Atomic artifact generations.**
+- [~] **03 — `IndexStore` backend contract and correctness oracle.** Read-side contract plus binary/code publication are behind the store boundary; SQLite remains the correctness oracle while remaining write/read paths migrate.
+- [~] **04 — Artifact identity and compact binary record format.** Versioned GAV-independent detached facts with artifact-local ids are implemented; source-doc and production compact-record refinements remain.
+- [x] **05 — RocksDB external-SST vs minimal immutable-file prototype comparison.** Measurement branch `benchmark/index-storage` selected RocksDB SST ingestion: comparable median publish time, ~83% lower stored bytes and ~66% lower steady-state write bytes in the 800k-fact CI comparison.
+- [~] **06 — Bounded parallel artifact ingestion.** Selected RocksDB backend now has a production artifact-generation module; scanner/coordinator integration and explicit memory/worker bounds remain.
+- [~] **07 — Atomic artifact generations.** One content-addressed artifact is built as one external SST containing manifest + indexes and ingested as a single publication; crash/failure matrix and generation reclamation remain.
 - [ ] **08 — Workspace-specific symbolic relationship resolution.**
 - [ ] **09 — Required search behavior.**
 - [ ] **10 — Incremental artifact discovery/reuse.**
@@ -65,6 +65,16 @@ The merged `main` path currently:
 That path remains the control backend until the storage prototype checkpoint selects a replacement.
 
 ## Checkpoint history
+
+### Checkpoint 2 — backend selection and first production generation store
+- Measurement branch: `benchmark/index-storage`.
+- Candidate workload: 100,000 symbols + 200,000 unique relationships = 800,000 sorted facts.
+- Immutable segment median publish: ~320 ms; final storage ~30.4 MB; median query p50/p95 ~0.117/0.376 ms.
+- RocksDB SST median publish: ~327 ms; final storage ~5.22 MB; steady-state process writes ~10.4 MB; median query p50/p95 ~0.430/0.746 ms.
+- Decision: RocksDB external-SST ingestion. Query latency remained sub-millisecond while stored bytes and write amplification were materially lower.
+- Added isolated `jvmd-index-rocks` module so JNI/native packaging does not enter the existing jlink runtime before the packaging phase.
+- First generation layout is cache-key-first, keeping every immutable artifact in one non-overlapping Rocks key range.
+- Manifest and all artifact-local indexes are written to one SST and ingested together.
 
 ### Checkpoint 0 — branch and plan
 - Branch: `indexing/immutable-artifacts`.

@@ -45,6 +45,16 @@ class DiagnosticIdentityTest {
         }
     }
 
+    @Test void compilerReleaseChangeCannotReuseAnOldDiagnosticState()throws Exception{
+        Path file=root.resolve("Modern.java");String text="record Modern(int value) {}";Files.writeString(file,text);var documents=new Documents();
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(new Analyzer.Context("test:app:1","11",List.of(),List.of(root),"same-module",Map.of(root.toString(),"test:app:1")),null,64L*1024*1024);analyzer.documents(documents);
+            assertThat(problems(analyzer.diagnostics(file,documents))).isNotEmpty();assertThat(analyzer.status()).containsEntry("queries",1L);
+            analyzer.configure(new Analyzer.Context("test:app:1","25",List.of(),List.of(root),"same-module",Map.of(root.toString(),"test:app:1")),null,64L*1024*1024);analyzer.documents(documents);
+            assertThat(problems(analyzer.diagnostics(file,documents))).isEmpty();assertThat(analyzer.status()).containsEntry("queries",2L);
+        }
+    }
+
     @Test void diagnosticMemoryHasAnEnforcedBudget(){
         var store=new DiagnosticStore();store.budget(1024);
         for(int i=0;i<100;i++)store.put(root.resolve("A"+i+".java"),"hash","context"+i,"cp",Envelope.of(2,"live",Map.of("diagnostics",List.of())));

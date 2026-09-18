@@ -15,6 +15,7 @@ public interface IndexStore extends AutoCloseable {
     record ArtifactWork(String path,String gav,String kind) { }
     record ResolvedRelationship(Map<String,Object> source,Map<String,Object> target,String kind) { }
     record SymbolicReference(String sourceScip,String targetBinaryKey,String kind) { }
+    record SourceRelationship(String sourceScip,String targetScip,String kind) { }
     record ArtifactInput(ArtifactContext context,ArtifactIndexFormat.Key key,long size,long mtime) {
         public ArtifactInput {
             Objects.requireNonNull(context);Objects.requireNonNull(key);
@@ -25,9 +26,17 @@ public interface IndexStore extends AutoCloseable {
     String backend();
     ArtifactRecord artifact(Path path)throws Exception;
     void publishPath(Path path,long artifactId,long size,long mtime)throws Exception;
-    long publishBinary(ArtifactInput input,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception;
+    long publishArtifact(ArtifactInput input,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences,
+                         Map<String,Map<String,Object>> sourceData)throws Exception;
+    default long publishBinary(ArtifactInput input,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{
+        return publishArtifact(input,facts,classReferences,Map.of());
+    }
     void publishCode(long artifactId,ArtifactContext context,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception;
     void publishClassReferences(long artifactId,Set<String> classReferences)throws Exception;
+    void publishSourceFile(long artifactId,Path file,List<Map<String,Object>> symbols,int tier,
+                           List<SourceRelationship> relationships)throws Exception;
+    long publishDocumentation(long binaryArtifactId,ArtifactInput sourceInput,
+                              Map<String,Map<String,Object>> members,int unmatchedMembers)throws Exception;
     void resolveGlobalRelationships()throws Exception;
 
     Map<String,Long> counts()throws Exception;

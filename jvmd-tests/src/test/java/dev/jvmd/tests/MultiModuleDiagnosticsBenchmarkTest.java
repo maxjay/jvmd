@@ -45,7 +45,7 @@ class MultiModuleDiagnosticsBenchmarkTest {
             assertThat(opened.path("modules").asInt()).isGreaterThanOrEqualTo(3);
             assertThat(opened.path("classpath_entries").asInt()).isGreaterThan(0);
 
-            var resolverBefore=daemon.request("daemon.status",Map.of()).path("resolver");
+            var resolverBefore=daemon.request("daemon.status",Map.of()).path("result").path("resolver");
             long resolvesBefore=resolverBefore.path("resolve_calls").asLong();
             var analyzerBefore=daemon.request("session.status",Map.of("session",session)).path("result").path("analyzer");
             long queriesBefore=analyzerBefore.path("queries").asLong();
@@ -73,7 +73,7 @@ class MultiModuleDiagnosticsBenchmarkTest {
             assertThat(warmStatus.path("diagnostics").path("last").path("files_reanalysed").asInt()).isZero();
             assertThat(warmStatus.path("diagnostics").path("last").path("files_valid").asInt()).isEqualTo(128);
 
-            var resolverAfter=daemon.request("daemon.status",Map.of()).path("resolver");
+            var resolverAfter=daemon.request("daemon.status",Map.of()).path("result").path("resolver");
             assertThat(resolverAfter.path("resolve_calls").asLong()-resolvesBefore)
                     .as("one Maven workspace validation per diag.get")
                     .isEqualTo(2L);

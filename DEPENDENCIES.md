@@ -10,7 +10,8 @@ Prebuilt distributions bundle Node.js 24.21.0 alongside the linked Temurin runti
 | Dependency | Pin | Reason |
 |---|---|---|
 | jackson-databind (with core/annotations) | 2.22.2 | JSON-RPC and config; native record support. Section 12.2. |
-| sqlite-jdbc | 3.53.4.0 | One WAL/FTS5 index. Section 12.2. |
+| sqlite-jdbc | 3.53.4.0 | SQLite comparison and rollback backend. |
+| rocksdbjni | 10.10.1.1 | Immutable external SST generations; Java/native versions pinned together. Shared native cache and memtable accounting. |
 | maven-resolver-supplier and transport-http | 1.9.27 | Embedded Maven 3 resolution; no custom mediation. Section 12.2. |
 | maven-model-builder, maven-settings-builder, maven-resolver-provider | 3.9.16 | Maven's own effective models, profiles, settings, and artifact descriptors. Required by 4.3; avoids the prohibition on custom POM parsing. |
 | maven-core | 3.9.16 | Reuse public ProjectModelResolver and SettingsUtils for parent/BOM and profile semantics. No Maven container or custom POM resolver. |
@@ -64,3 +65,10 @@ The runtime compiler's fast path uses public [JavaCompiler](https://docs.oracle.
 - `build-helper-maven-plugin` **3.6.1** (build only): compiles one graph/cache/overlay implementation against each resolver's own API dependencies. [MojoHaus source](https://github.com/mojohaus/build-helper-maven-plugin/tree/build-helper-maven-plugin-3.6.1).
 
 - Native Maven 4 bundle: `maven-impl`, `maven-model` and `maven-settings` **4.0.0-rc-6**, Resolver **2.0.21**, and `maven-resolver-transport-jdk` **2.0.21**. Maven 4's own DI bridge and `MavenSessionBuilderSupplier` bootstrap its native `org.apache.maven.impl.model.DefaultModelBuilder`; the older compatibility supplier is deliberately not a dependency. Model/settings wrappers only adapt already-built native results to the shared graph code. [Pinned Maven source](https://github.com/apache/maven/tree/maven-4.0.0-rc-6), [pinned Resolver source](https://github.com/apache/maven-resolver/tree/maven-resolver-2.0.21). Maven 4 is currently a release candidate; selection is explicit through `maven_major: 4`. The CI comparison uses the same official Maven binary and verifies its published SHA-512.
+
+RocksDB's Apache 2.0 license and LevelDB notices from the pinned upstream
+[v10.10.1 sources](https://github.com/facebook/rocksdb/tree/v10.10.1) are retained in
+`jvmd-dist/licenses/rocksdb` and copied into `legal/jvmd/rocksdb` in each distribution.
+The JNI artifact includes Linux x64/arm64 and macOS x64/arm64 libraries. The existing
+release smoke test now publishes, reads and reopens an SST through ServiceLoader
+from the relocated runtime on every release-matrix platform. WSL uses the Linux archive.

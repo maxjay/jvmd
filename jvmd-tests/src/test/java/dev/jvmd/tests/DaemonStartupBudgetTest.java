@@ -53,7 +53,8 @@ class DaemonStartupBudgetTest {
                 long before = System.nanoTime();
                 Framing.write(out, Json.MAPPER.writeValueAsBytes(request));
                 var reply = Json.MAPPER.readTree(Framing.read(in));
-                assertThat(reply.path("result").path("result").path("symbols").size()).isEqualTo(20);
+                assertThat(reply.path("result").path("result").path("symbols").size())
+                        .withFailMessage("overview attempt %s returned: %s",i,reply.toPrettyString()).isEqualTo(20);
                 if (i >= 0) times[i] = (System.nanoTime() - before) / 1e6;
             }
             java.util.Arrays.sort(times);

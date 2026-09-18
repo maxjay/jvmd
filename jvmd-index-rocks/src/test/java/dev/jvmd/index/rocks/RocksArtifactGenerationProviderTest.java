@@ -58,6 +58,10 @@ class RocksArtifactGenerationProviderTest {
             var exact=sink.shadowFind("workspace","Type",false,10,java.util.Set.of("class")).orElseThrow();
             assertThat(exact).hasSize(1);
             assertThat(exact.getFirst().get("scip")).isEqualTo(new ArtifactContext("fixture:dep:1","jar",jar.toAbsolutePath().toString()).scip(symbol));
+            assertThat(sink.shadowById("workspace",((Number)exact.getFirst().get("id")).longValue()))
+                    .contains(exact.getFirst());
+            assertThat(sink.shadowById("workspace",0)).isEmpty();
+            assertThat(sink.shadowById("workspace",2L<<32)).isEmpty();
 
             var substring=sink.shadowFind("workspace","ype",true,10,java.util.Set.of()).orElseThrow();
             assertThat(substring).hasSize(1);
@@ -126,6 +130,7 @@ class RocksArtifactGenerationProviderTest {
 
             var row=sink.shadowFind("workspace","Type",false,10,java.util.Set.of()).orElseThrow().getFirst();
             assertThat(row).containsEntry("doc","Dependency docs").containsEntry("line",4);
+            assertThat(sink.shadowById("workspace",((Number)row.get("id")).longValue())).contains(row);
         }
     }
 

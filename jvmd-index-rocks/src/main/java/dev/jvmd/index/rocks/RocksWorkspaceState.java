@@ -134,8 +134,7 @@ public final class RocksWorkspaceState implements AutoCloseable {
     private Map<Path,FileValue> collect(ModuleInput input)throws Exception{
         var candidates=new LinkedHashSet<Path>();
         for(Path root:input.sourceRoots())if(Files.isDirectory(root)){
-            try(var walk=Files.walk(root)){walk.filter(Files::isRegularFile).filter(path->path.toString().endsWith(".java"))
-                    .map(path->path.toAbsolutePath().normalize()).forEach(candidates::add);}
+            for(Path path:FileInventory.matching(root,".java"))candidates.add(path.toAbsolutePath().normalize());
         }
         candidates.addAll(input.overlays().keySet());
         var result=new TreeMap<Path,FileValue>();

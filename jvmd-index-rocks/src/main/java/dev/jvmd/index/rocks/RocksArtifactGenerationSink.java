@@ -224,26 +224,40 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
         var result=new ArrayList<Map<String,Object>>();
         for(var value:values){
             if(!kinds.isEmpty()&&!kinds.contains(value.symbol().kind()))continue;
-            var row=new LinkedHashMap<String,Object>();
-            int classpathIndex=configured.classpath().indexOf(value.entry());
-            long cursor=RocksWorkspaceResolver.cursor(classpathIndex,value.symbol().id());
-            row.put("id",cursor);row.put("artifact_id",(long)classpathIndex+1);
-            row.put("owner_id",value.symbol().ownerId()<0?null:RocksWorkspaceResolver.cursor(classpathIndex,value.symbol().ownerId()));
-            row.put("flags",value.symbol().flags());row.put("line",null);
-            row.put("source_start",-1);row.put("source_end",-1);row.put("body_start",-1);row.put("body_end",-1);
-            row.put("scip",value.scip());row.put("kind",value.symbol().kind());row.put("name",value.symbol().name());
-            row.put("name_path",value.namePath());row.put("signature",value.symbol().signature());
-            row.put("erased_descriptor",value.symbol().descriptor());row.put("source_file",null);row.put("doc",null);
-            row.put("fqn",value.symbol().fqn());row.put("binary_key",value.symbol().key());row.put("class_entry",value.symbol().entry());
-            row.put("gav",value.entry().context().gav());row.put("artifact_path",value.entry().context().path());
-            row.put("artifact_kind",value.entry().context().kind());row.put("parameters",dev.jvmd.core.Json.MAPPER.valueToTree(value.symbol().parameters()));
-            row.put("metadata",dev.jvmd.core.Json.MAPPER.readTree(value.symbol().metadataJson()));row.put("tier",2);
-            row.putAll(value.sourceData());
+            var row=symbolRow(configured,value);
             result.add(Collections.unmodifiableMap(row));if(result.size()>=limit)break;
         }
         return Optional.of(List.copyOf(result));
     }
 
+
+    @Override public Optional<Map<String,Object>> shadowById(String workspace,long id)throws Exception{
+        var configured=workspaces.get(workspace);if(configured==null)return Optional.empty();
+        int position=(int)(id>>>32)-1,localId=(int)id;
+        if(position<0||position>=configured.classpath().size()||localId<0)return Optional.empty();
+        var entry=configured.classpath().get(position);
+        var value=workspaceResolver.resolvedSymbol(configured,new RocksWorkspaceResolver.ResolvedSymbol(entry.artifactCacheKey(),localId,position));
+        return value.isEmpty()?Optional.empty():Optional.of(symbolRow(configured,value.get()));
+    }
+    private static Map<String,Object> symbolRow(RocksWorkspaceResolver.Workspace configured,RocksWorkspaceResolver.WorkspaceSymbol value)throws Exception{
+        var row=new LinkedHashMap<String,Object>();
+        int classpathIndex=configured.classpath().indexOf(value.entry());
+        long cursor=RocksWorkspaceResolver.cursor(classpathIndex,value.symbol().id());
+        row.put("id",cursor);row.put("artifact_id",(long)classpathIndex+1);
+        row.put("owner_id",value.symbol().ownerId()<0?null:RocksWorkspaceResolver.cursor(classpathIndex,value.symbol().ownerId()));
+        row.put("flags",value.symbol().flags());row.put("line",null);
+        row.put("source_start",-1);row.put("source_end",-1);row.put("body_start",-1);row.put("body_end",-1);
+        row.put("scip",value.scip());row.put("kind",value.symbol().kind());row.put("name",value.symbol().name());
+        row.put("name_path",value.namePath());row.put("signature",value.symbol().signature());
+        row.put("erased_descriptor",value.symbol().descriptor());row.put("source_file",null);row.put("doc",null);
+        row.put("fqn",value.symbol().fqn());row.put("binary_key",value.symbol().key());row.put("class_entry",value.symbol().entry());
+        row.put("gav",value.entry().context().gav());row.put("artifact_path",value.entry().context().path());
+        row.put("artifact_kind",value.entry().context().kind());row.put("parameters",dev.jvmd.core.Json.MAPPER.valueToTree(value.symbol().parameters()));
+        row.put("metadata",dev.jvmd.core.Json.MAPPER.readTree(value.symbol().metadataJson()));row.put("tier",2);
+        row.putAll(value.sourceData());
+        if(row.get("parameters") instanceof Collection<?> parameters)row.put("parameters",dev.jvmd.core.Json.MAPPER.valueToTree(parameters));
+        return Collections.unmodifiableMap(row);
+    }
 
     @Override public Optional<Set<String>> shadowRelationships(String workspace,Collection<String> scips,boolean outgoing,Set<String> kinds,int limit)throws Exception{
         var configured=workspaces.get(workspace);if(configured==null)return Optional.empty();

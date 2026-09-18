@@ -27,6 +27,7 @@ public interface ArtifactGenerationSink extends AutoCloseable {
     default void publishSourceState(SourceIndexPublisher.Delta delta)throws Exception{ }
     default void configureModuleState(ModuleStateInput input)throws Exception{ }
     default void configureWorkspace(String workspace,List<IndexStore.WorkspaceEntry> paths,List<Map.Entry<String,String>> dependencies)throws Exception{ }
+    default Optional<Map<String,Object>> shadowById(String workspace,long id)throws Exception{return Optional.empty();}
     default OptionalLong shadowCursor(String workspace,String scip)throws Exception{return OptionalLong.empty();}
     default Optional<List<Map<String,Object>>> shadowFind(String workspace,String query,boolean substring,int limit,long after,Set<String> kinds)throws Exception{return Optional.empty();}
     default Optional<List<Map<String,Object>>> shadowFind(String workspace,String query,boolean substring,int limit,Set<String> kinds)throws Exception{

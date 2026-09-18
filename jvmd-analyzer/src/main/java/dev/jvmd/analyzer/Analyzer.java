@@ -67,16 +67,14 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         for(var path:context.classpath()){
             value.append("\0").append(path);
             if(Files.isRegularFile(path))value.append(':').append(inputFiles.hash(path));
-            else if(Files.isDirectory(path))try(var entries=Files.walk(path)){
-                for(Path file:entries.filter(p->p.toString().endsWith(".class")&&Files.isRegularFile(p)).sorted().toList())value.append("\0").append(file).append(':').append(inputFiles.hash(file));
+            else if(Files.isDirectory(path)){
+                for(Path file:FileInventory.matching(path,".class"))value.append("\0").append(file).append(':').append(inputFiles.hash(file));
             }else value.append(":missing");
         }
         // New names can resolve old failures without a previously known dependency edge.
         for(var root:context.sources()){
             value.append("\0root:").append(root);
-            if(Files.isDirectory(root))try(var entries=Files.walk(root)){
-                for(Path file:entries.filter(p->p.toString().endsWith(".java")&&Files.isRegularFile(p)).sorted().toList())value.append("\0").append(file);
-            }
+            if(Files.isDirectory(root))for(Path file:FileInventory.matching(root,".java"))value.append("\0").append(file);
         }
         documents.paths().stream().filter(p->!Files.isRegularFile(p)&&context.sources().stream().anyMatch(p::startsWith)).sorted().forEach(p->value.append("\0buffer:").append(p));
         return Hashing.sha256(value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -84,9 +82,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
 
     private Map<Path,String> sourceIdentities()throws Exception{
         var result=new TreeMap<Path,String>();
-        for(Path root:context.sources())if(Files.isDirectory(root))try(var paths=Files.walk(root)){
-            for(Path file:paths.filter(p->p.toString().endsWith(".java")&&Files.isRegularFile(p)).toList())result.put(file.toAbsolutePath().normalize(),documents.sourceHash(file));
-        }
+        for(Path root:context.sources())if(Files.isDirectory(root))
+            for(Path file:FileInventory.matching(root,".java"))result.put(file.toAbsolutePath().normalize(),documents.sourceHash(file));
         for(Path file:documents.paths())if(context.sources().stream().anyMatch(file::startsWith))result.put(file,documents.sourceHash(file));
         return Map.copyOf(result);
     }

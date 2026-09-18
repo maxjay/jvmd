@@ -567,7 +567,7 @@ public final class Application implements AutoCloseable {
         var dependencies=overlay(session,graph).dependencies(graph,module.gav(),false);for(var dependency:dependencies)compileRuntimeModule(session,graph,dependency,finished,visiting);
         if(!module.packaging().equals("pom")&&overlay(session,graph).requiresSource(module)){
             var roots=module.sources().stream().filter(path->!module.processing().enabled()||!path.contains("/generated-sources")).map(Path::of).toList();var files=new ArrayList<Path>();
-            for(Path root:roots)if(Files.isDirectory(root))try(var paths=Files.walk(root)){paths.filter(Files::isRegularFile).filter(path->path.toString().endsWith(".java")).sorted().forEach(files::add);}
+            for(Path root:roots)if(Files.isDirectory(root))files.addAll(FileInventory.matching(root,".java"));
             if(!files.isEmpty()){
                 var classpath=new LinkedHashSet<Path>();classpath.add(Path.of(module.classes()));graph.classpaths().getOrDefault(module.gav()+":main",List.of()).forEach(path->classpath.add(Path.of(path)));dependencies.forEach(m->classpath.add(Path.of(m.classes())));
                 var compiled=dev.jvmd.runtime.RuntimeCompiler.compile(config.jdkHome(),Path.of(module.directory()),files,List.copyOf(classpath),roots,runtimeCompilerOptions(module),java.time.Duration.ofSeconds(60));dev.jvmd.runtime.RuntimeCompiler.publish(compiled,Path.of(module.classes()));

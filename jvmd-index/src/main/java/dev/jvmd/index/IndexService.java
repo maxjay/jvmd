@@ -342,7 +342,11 @@ public final class IndexService implements AutoCloseable {
     public Map<String,Object> byId(long id)throws Exception{return byId(id,null);}
     public Map<String,Object> byId(long id,String workspace)throws Exception{
         long started=System.nanoTime();queryCalls.incrementAndGet();
-        try{return store.byId(id,workspace);}
+        try{
+            if(workspace!=null&&id>=(1L<<32)&&System.getProperty("jvmd.index.read.backend","shadow").equals("rocksdb-sst"))
+                return generationSink.shadowById(workspace,id).orElse(null);
+            return store.byId(id,workspace);
+        }
         finally{queryNanos.addAndGet(System.nanoTime()-started);}
     }
     synchronized long indexJdk(Path file,String module,Path sourceZip)throws Exception{

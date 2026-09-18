@@ -17,7 +17,8 @@ public final class AnnotationProcessing implements AutoCloseable {
     public record Output(String fingerprint,List<Path> sourceRoots,List<Path> classpath,Set<Path> binarySources,
                          List<String> warnings,int exitCode,boolean timedOut,long elapsedMillis,String log) { }
     private final Config config;
-    private final Map<String,Output> cache=new LinkedHashMap<>();
+    private record CachedOutput(String inputFingerprint,Output output) { }
+    private final Map<String,CachedOutput> cache=new LinkedHashMap<>();
     private record Hashed(Map<String,Object> stamp,String hash) { }
     private final Map<Path,Hashed> hashes=new HashMap<>();
     private long runs,hits,bytesHashed;
@@ -35,8 +36,8 @@ public final class AnnotationProcessing implements AutoCloseable {
         // Lombok's own configuration can change generated signatures without a source edit.
         for(Path path=request.directory();path!=null;path=path.getParent()){Path file=path.resolve("lombok.config");if(Files.isRegularFile(file))fingerprint.append(file).append(contentHash(file));}
         String hash=Hashing.sha256(fingerprint.toString().getBytes(StandardCharsets.UTF_8));
-        var prior=cache.get(request.key());
-        if(prior!=null&&prior.fingerprint().equals(hash)&&prior.sourceRoots().stream().allMatch(Files::isDirectory)){hits++;return prior;}
+        var priorEntry=cache.get(request.key());var prior=priorEntry==null?null:priorEntry.output();
+        if(priorEntry!=null&&priorEntry.inputFingerprint().equals(hash)&&available(prior)){hits++;return prior;}
         long started=System.nanoTime();var warnings=new ArrayList<String>();
         if(request.lombok())warnings.add("lombok_reduced_fidelity: generated members use external class files; their source bodies and generated member positions are unavailable");
         Path workspace=config.stateDir().resolve("apt").resolve(Hashing.sha256(request.key().getBytes(StandardCharsets.UTF_8)));
@@ -55,11 +56,17 @@ public final class AnnotationProcessing implements AutoCloseable {
             }
             String output=Files.exists(log)?Files.readString(log):"";
             if(exit!=0||timedOut)warnings.add((timedOut?"annotation_processing_timeout":"annotation_processing_failed")+": exit="+exit+"; "+output);
-            var result=new Output(hash,List.of(generated),exit==0&&request.lombok()?List.of(classes):List.of(),Set.copyOf(binarySources),
+            String semantic=exit==0&&!timedOut?outputFingerprint(generated,classes,request.lombok()):hash;
+            var result=new Output(semantic,List.of(generated),exit==0&&request.lombok()?List.of(classes):List.of(),Set.copyOf(binarySources),
                     List.copyOf(warnings),exit,timedOut,TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started),output);
-            cache.put(request.key(),result);
-            // Keep only the current generation for a module. Never delete project-owned output.
-            if(prior!=null)for(Path source:prior.sourceRoots())deleteTree(source.getParent());
+            // If a rerun produces the same detached output, retain the old paths as well as the
+            // semantic fingerprint. Downstream compiler contexts therefore remain stable.
+            if(prior!=null&&prior.fingerprint().equals(semantic)&&available(prior)){
+                deleteTree(work);
+                result=new Output(semantic,prior.sourceRoots(),prior.classpath(),Set.copyOf(binarySources),
+                        List.copyOf(warnings),exit,timedOut,TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started),output);
+            }else if(prior!=null)for(Path source:prior.sourceRoots())deleteTree(source.getParent());
+            cache.put(request.key(),new CachedOutput(hash,result));
             return result;
         }catch(Exception e){deleteTree(work);throw e;}
     }
@@ -69,6 +76,22 @@ public final class AnnotationProcessing implements AutoCloseable {
         catch(UnsupportedOperationException e){bytesHashed+=Files.size(path);return Hashing.sha256(path);}
         var previous=hashes.get(path);if(previous!=null&&previous.stamp().equals(stamp))return previous.hash();
         String hash=Hashing.sha256(path);bytesHashed+=Files.size(path);hashes.put(path,new Hashed(stamp,hash));return hash;
+    }
+    private static boolean available(Output output){
+        return output!=null&&output.sourceRoots().stream().allMatch(Files::isDirectory)&&output.classpath().stream().allMatch(Files::isDirectory);
+    }
+    private String outputFingerprint(Path generated,Path classes,boolean includeClasses)throws Exception{
+        var fingerprint=new StringBuilder("processor-output-v1");
+        appendOutput(fingerprint,generated);
+        if(includeClasses)appendOutput(fingerprint,classes);
+        return Hashing.sha256(fingerprint.toString().getBytes(StandardCharsets.UTF_8));
+    }
+    private void appendOutput(StringBuilder fingerprint,Path root)throws Exception{
+        if(!Files.isDirectory(root))return;
+        try(var files=Files.walk(root)){
+            for(Path file:files.filter(Files::isRegularFile).sorted().toList())
+                fingerprint.append('\0').append(root.relativize(file)).append(':').append(contentHash(file));
+        }
     }
     private record Exit(int exitCode,boolean timedOut) { }
     private Exit invoke(Request request,List<Path> inputs,Path generated,Path classes,Path work,Path log,String mode,Duration timeout)throws Exception {
@@ -112,7 +135,7 @@ public final class AnnotationProcessing implements AutoCloseable {
     private static void kill(Process process){var children=process.descendants().toList();children.reversed().forEach(ProcessHandle::destroyForcibly);process.destroyForcibly();}
     private static void deleteTree(Path root)throws IOException{if(Files.exists(root))try(var paths=Files.walk(root)){for(Path path:paths.sorted(Comparator.reverseOrder()).toList())Files.deleteIfExists(path);}}
     public synchronized Map<String,Object> status(){
-        return Map.of("runs",runs,"cache_hits",hits,"bytes_hashed",bytesHashed,"modules",cache.entrySet().stream().map(e->Map.of("module",e.getKey(),"exit_code",e.getValue().exitCode(),"timed_out",e.getValue().timedOut(),"elapsed_ms",e.getValue().elapsedMillis(),"warnings",e.getValue().warnings())).toList());
+        return Map.of("runs",runs,"cache_hits",hits,"bytes_hashed",bytesHashed,"modules",cache.entrySet().stream().map(e->Map.of("module",e.getKey(),"exit_code",e.getValue().output().exitCode(),"timed_out",e.getValue().output().timedOut(),"elapsed_ms",e.getValue().output().elapsedMillis(),"warnings",e.getValue().output().warnings())).toList());
     }
     @Override public void close(){var process=active;if(process!=null)kill(process);}
 }

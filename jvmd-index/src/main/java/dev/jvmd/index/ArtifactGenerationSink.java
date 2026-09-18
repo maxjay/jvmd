@@ -12,7 +12,11 @@ public interface ArtifactGenerationSink extends AutoCloseable {
     default boolean needsDocumentation(String binaryCacheKey)throws Exception{return false;}
     default void publishDocumentation(String binaryCacheKey,IndexStore.ArtifactInput sourceInput,Map<String,Map<String,Object>> members,int unmatchedMembers)throws Exception{ }
     default void configureWorkspace(String workspace,List<IndexStore.WorkspaceEntry> paths,List<Map.Entry<String,String>> dependencies)throws Exception{ }
-    default Optional<List<Map<String,Object>>> shadowFind(String workspace,String query,boolean substring,int limit,Set<String> kinds)throws Exception{return Optional.empty();}
+    default OptionalLong shadowCursor(String workspace,String scip)throws Exception{return OptionalLong.empty();}
+    default Optional<List<Map<String,Object>>> shadowFind(String workspace,String query,boolean substring,int limit,long after,Set<String> kinds)throws Exception{return Optional.empty();}
+    default Optional<List<Map<String,Object>>> shadowFind(String workspace,String query,boolean substring,int limit,Set<String> kinds)throws Exception{
+        return shadowFind(workspace,query,substring,limit,0L,kinds);
+    }
     default Optional<Set<String>> shadowRelationships(String workspace,Collection<String> scips,boolean outgoing,Set<String> kinds,int limit)throws Exception{return Optional.empty();}
     default Map<String,Object> status(){return Map.of("backend","none");}
     @Override default void close()throws Exception { }

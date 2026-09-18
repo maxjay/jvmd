@@ -124,15 +124,21 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
         workspaces.put(workspace,new RocksWorkspaceResolver.Workspace(List.copyOf(classpath),fingerprint));
     }
 
-    @Override public Optional<List<Map<String,Object>>> shadowFind(String workspace,String query,boolean substring,int limit,Set<String> kinds)throws Exception{
+    @Override public OptionalLong shadowCursor(String workspace,String scip)throws Exception{
+        var configured=workspaces.get(workspace);return configured==null?OptionalLong.empty():workspaceResolver.cursorByScip(configured,scip);
+    }
+
+    @Override public Optional<List<Map<String,Object>>> shadowFind(String workspace,String query,boolean substring,int limit,long after,Set<String> kinds)throws Exception{
         var configured=workspaces.get(workspace);if(configured==null)return Optional.empty();
         List<RocksWorkspaceResolver.WorkspaceSymbol> values=substring
-                ?workspaceResolver.findSubstring(configured,query,limit)
-                :workspaceResolver.findExact(configured,query,limit);
+                ?workspaceResolver.findSubstring(configured,query,limit,after)
+                :workspaceResolver.findExact(configured,query,limit,after);
         var result=new ArrayList<Map<String,Object>>();
         for(var value:values){
             if(!kinds.isEmpty()&&!kinds.contains(value.symbol().kind()))continue;
             var row=new LinkedHashMap<String,Object>();
+            int classpathIndex=indexOf(configured,value.entry().artifactCacheKey());
+            row.put("id",RocksWorkspaceResolver.cursor(classpathIndex,value.symbol().id()));
             row.put("scip",value.scip());row.put("kind",value.symbol().kind());row.put("name",value.symbol().name());
             row.put("name_path",value.namePath());row.put("binary_key",value.symbol().key());
             row.put("gav",value.entry().context().gav());row.put("artifact_path",value.entry().context().path());

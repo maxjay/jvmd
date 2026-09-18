@@ -251,15 +251,23 @@ public final class IndexService implements AutoCloseable {
         long started=System.nanoTime();queryCalls.incrementAndGet();
         try{
             var authoritative=store.find(query,workspace,substring,limit,after,kinds);
-            if(workspace==null||after!=0){shadowSkipped.incrementAndGet();return authoritative;}
-            var shadow=generationSink.shadowFind(workspace,query,substring,limit,kinds);
+            if(workspace==null){shadowSkipped.incrementAndGet();return authoritative;}
+            long shadowAfter=0L;
+            if(after!=0){
+                var boundary=store.byId(after,workspace);
+                if(boundary==null){shadowSkipped.incrementAndGet();return authoritative;}
+                var translated=generationSink.shadowCursor(workspace,Objects.toString(boundary.get("scip"),""));
+                if(translated.isEmpty()){shadowSkipped.incrementAndGet();return authoritative;}
+                shadowAfter=translated.getAsLong();
+            }
+            var shadow=generationSink.shadowFind(workspace,query,substring,limit,shadowAfter,kinds);
             if(shadow.isEmpty()){shadowSkipped.incrementAndGet();return authoritative;}
             shadowComparisons.incrementAndGet();
-            var expected=authoritative.stream().map(value->Objects.toString(value.get("scip"),"")).filter(value->!value.isBlank()).toList();
-            var actual=shadow.get().stream().map(value->Objects.toString(value.get("scip"),"")).filter(value->!value.isBlank()).toList();
+            var expected=authoritative.stream().map(value->Objects.toString(value.get("scip"),"")).filter(value->!value.isBlank()).collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            var actual=shadow.get().stream().map(value->Objects.toString(value.get("scip"),"")).filter(value->!value.isBlank()).collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
             if(!expected.equals(actual)){
                 shadowMismatches.incrementAndGet();
-                warn("rocks_shadow_mismatch: workspace="+workspace+" query="+query+" expected="+expected.size()+" actual="+actual.size());
+                warn("rocks_shadow_mismatch: workspace="+workspace+" query="+query+" after="+after+" expected="+expected.size()+" actual="+actual.size());
             }
             return authoritative;
         }finally{queryNanos.addAndGet(System.nanoTime()-started);}

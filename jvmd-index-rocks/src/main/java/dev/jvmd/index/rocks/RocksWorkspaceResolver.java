@@ -60,6 +60,23 @@ public final class RocksWorkspaceResolver implements AutoCloseable {
         cache=RocksDB.open(options,path.toString());
     }
 
+
+    public OptionalLong cursorByScip(Workspace workspace,String scip)throws Exception{
+        var value=byScip(workspace,scip);if(value.isEmpty())return OptionalLong.empty();
+        int classpathIndex=indexOf(workspace,value.get().entry());if(classpathIndex<0)return OptionalLong.empty();
+        return OptionalLong.of(cursor(classpathIndex,value.get().symbol().id()));
+    }
+
+    public static long cursor(int classpathIndex,int localId){
+        if(classpathIndex<0||localId<0)throw new IllegalArgumentException("cursor");
+        return ((long)(classpathIndex+1)<<32)|(localId&0xffff_ffffL);
+    }
+
+    private static int indexOf(Workspace workspace,Entry entry){
+        for(int i=0;i<workspace.classpath().size();i++)if(workspace.classpath().get(i).equals(entry))return i;
+        return -1;
+    }
+
     public synchronized Optional<ResolvedSymbol> resolveFirst(Workspace workspace,String binaryKey)throws Exception{
         String workspaceId=workspace.identity();byte[] cacheKey=cacheKey(workspaceId,binaryKey),stored=cache.get(cacheKey);
         if(stored!=null){
@@ -148,41 +165,51 @@ public final class RocksWorkspaceResolver implements AutoCloseable {
 
 
     public List<WorkspaceSymbol> findExact(Workspace workspace,String query,int limit)throws Exception{
+        return findExact(workspace,query,limit,0L);
+    }
+    public List<WorkspaceSymbol> findExact(Workspace workspace,String query,int limit,long after)throws Exception{
         if(limit<=0||query.isBlank())return List.of();
-        var result=new LinkedHashMap<String,WorkspaceSymbol>();
-        var byScip=byScip(workspace,query);byScip.ifPresent(value->result.put(value.scip(),value));
-        for(var value:findName(workspace,query,false,limit))result.putIfAbsent(value.scip(),value);
-        for(var entry:workspace.classpath()){
-            if(result.size()>=limit)break;
+        var result=new TreeMap<Long,WorkspaceSymbol>();
+        var direct=byScip(workspace,query);
+        if(direct.isPresent()){
+            int i=indexOf(workspace,direct.get().entry());long cursor=cursor(i,direct.get().symbol().id());
+            if(cursor>after)result.put(cursor,direct.get());
+        }
+        for(var value:findName(workspace,query,false,limit,after)){
+            int i=indexOf(workspace,value.entry());result.putIfAbsent(cursor(i,value.symbol().id()),value);
+        }
+        for(int i=0;i<workspace.classpath().size();i++){
+            var entry=workspace.classpath().get(i);if(cursor(i,Integer.MAX_VALUE)<=after)continue;
             Integer binary=artifacts.binaryId(entry.artifactCacheKey(),query);
             if(binary!=null){
-                var data=artifacts.artifact(entry.artifactCacheKey());
-                if(data!=null&&binary>=0&&binary<data.symbols().size()){
-                    var symbol=data.symbols().get(binary);
-                    if(symbol.id()==binary){
-                        var value=workspaceSymbol(entry,symbol);result.putIfAbsent(value.scip(),value);
-                    }
+                long cursor=cursor(i,binary);
+                if(cursor>after){
+                    var data=artifacts.artifact(entry.artifactCacheKey());
+                    if(data!=null&&binary>=0&&binary<data.symbols().size()&&data.symbols().get(binary).id()==binary)
+                        result.putIfAbsent(cursor,workspaceSymbol(entry,data.symbols().get(binary)));
                 }
             }
-            var ids=artifacts.pathIds(entry.artifactCacheKey(),query,Math.max(limit-result.size(),1));
-            var data=artifacts.artifact(entry.artifactCacheKey());
-            if(data==null)continue;
+            var ids=artifacts.pathIds(entry.artifactCacheKey(),query,Math.max(limit,1));
+            var data=artifacts.artifact(entry.artifactCacheKey());if(data==null)continue;
             for(int id:ids){
-                if(result.size()>=limit)break;
-                if(id<0||id>=data.symbols().size())continue;
+                long cursor=cursor(i,id);if(cursor<=after||id<0||id>=data.symbols().size())continue;
                 var symbol=data.symbols().get(id);
                 if(symbol.id()!=id||!ArtifactContext.namePath(symbol).equals(query))continue;
-                var value=workspaceSymbol(entry,symbol);result.putIfAbsent(value.scip(),value);
+                result.putIfAbsent(cursor,workspaceSymbol(entry,symbol));
             }
         }
-        return List.copyOf(result.values()).subList(0,Math.min(limit,result.size()));
+        return result.values().stream().limit(limit).toList();
     }
 
     public List<WorkspaceSymbol> findName(Workspace workspace,String query,boolean prefix,int limit)throws Exception{
+        return findName(workspace,query,prefix,limit,0L);
+    }
+    public List<WorkspaceSymbol> findName(Workspace workspace,String query,boolean prefix,int limit,long after)throws Exception{
         if(limit<=0)return List.of();var result=new ArrayList<WorkspaceSymbol>();
-        for(var entry:workspace.classpath()){
+        for(int i=0;i<workspace.classpath().size();i++){
+            var entry=workspace.classpath().get(i);if(cursor(i,Integer.MAX_VALUE)<=after)continue;
             var ids=artifacts.nameIds(entry.artifactCacheKey(),query,Math.max(limit-result.size(),1));
-            addSymbols(result,entry,ids,symbol->prefix?symbol.name().startsWith(query):symbol.name().equals(query),limit);
+            addSymbols(result,workspace,i,entry,ids,symbol->prefix?symbol.name().startsWith(query):symbol.name().equals(query),limit,after);
             if(result.size()>=limit)break;
         }
         return List.copyOf(result);
@@ -190,23 +217,28 @@ public final class RocksWorkspaceResolver implements AutoCloseable {
 
     public List<WorkspaceSymbol> findPathPrefix(Workspace workspace,String pathPrefix,int limit)throws Exception{
         if(limit<=0)return List.of();var result=new ArrayList<WorkspaceSymbol>();
-        for(var entry:workspace.classpath()){
+        for(int i=0;i<workspace.classpath().size();i++){
+            var entry=workspace.classpath().get(i);
             var ids=artifacts.pathIds(entry.artifactCacheKey(),pathPrefix,Math.max(limit-result.size(),1));
-            addSymbols(result,entry,ids,symbol->ArtifactContext.namePath(symbol).startsWith(pathPrefix),limit);
+            addSymbols(result,workspace,i,entry,ids,symbol->ArtifactContext.namePath(symbol).startsWith(pathPrefix),limit,0L);
             if(result.size()>=limit)break;
         }
         return List.copyOf(result);
     }
 
     public List<WorkspaceSymbol> findSubstring(Workspace workspace,String query,int limit)throws Exception{
+        return findSubstring(workspace,query,limit,0L);
+    }
+    public List<WorkspaceSymbol> findSubstring(Workspace workspace,String query,int limit,long after)throws Exception{
         if(limit<=0||query.isBlank())return List.of();
         String normalized=query.toLowerCase(Locale.ROOT);var result=new ArrayList<WorkspaceSymbol>();
-        for(var entry:workspace.classpath()){
+        for(int i=0;i<workspace.classpath().size();i++){
+            var entry=workspace.classpath().get(i);if(cursor(i,Integer.MAX_VALUE)<=after)continue;
             var ids=artifacts.substringIds(entry.artifactCacheKey(),normalized,Math.max((limit-result.size())*8,32));
-            addSymbols(result,entry,ids,symbol->{
+            addSymbols(result,workspace,i,entry,ids,symbol->{
                 String name=symbol.name().toLowerCase(Locale.ROOT),path=ArtifactContext.namePath(symbol).toLowerCase(Locale.ROOT);
                 return name.contains(normalized)||path.contains(normalized);
-            },limit);
+            },limit,after);
             if(result.size()>=limit)break;
         }
         return List.copyOf(result);
@@ -221,11 +253,12 @@ public final class RocksWorkspaceResolver implements AutoCloseable {
         return Optional.empty();
     }
 
-    private void addSymbols(List<WorkspaceSymbol> output,Entry entry,List<Integer> ids,Predicate<ArtifactIndexFormat.SymbolRecord> predicate,int limit)throws Exception{
+    private void addSymbols(List<WorkspaceSymbol> output,Workspace workspace,int classpathIndex,Entry entry,List<Integer> ids,
+                            Predicate<ArtifactIndexFormat.SymbolRecord> predicate,int limit,long after)throws Exception{
         if(ids.isEmpty())return;var data=artifacts.artifact(entry.artifactCacheKey());if(data==null)return;
         var seen=new HashSet<Integer>();
         for(int id:ids){
-            if(output.size()>=limit)break;if(!seen.add(id)||id<0||id>=data.symbols().size())continue;
+            if(output.size()>=limit)break;if(!seen.add(id)||id<0||id>=data.symbols().size()||cursor(classpathIndex,id)<=after)continue;
             var symbol=data.symbols().get(id);if(symbol.id()!=id||!predicate.test(symbol))continue;
             output.add(workspaceSymbol(entry,symbol));
         }

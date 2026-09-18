@@ -628,6 +628,58 @@ public final class SqliteIndexStore implements IndexStore {
         return owner+"/"+symbol.name();
     }
 
+
+    @Override public void publishSourceFile(long artifact,Path file,List<Map<String,Object>> symbols,int tier,List<SourceRelationship> edges)throws Exception{
+        database.write(c->{
+            String source=file.toAbsolutePath().normalize().toString();
+            try(var remove=c.prepareStatement("DELETE FROM artifact_edges WHERE src_artifact=? AND src IN (SELECT symbol_id FROM artifact_symbols WHERE artifact_id=? AND source_file=?)")){
+                remove.setLong(1,artifact);remove.setLong(2,artifact);remove.setString(3,source);remove.executeUpdate();
+            }
+            try(var remove=c.prepareStatement("DELETE FROM signature_targets WHERE artifact_id=? AND src IN (SELECT symbol_id FROM artifact_symbols WHERE artifact_id=? AND source_file=?)")){
+                remove.setLong(1,artifact);remove.setLong(2,artifact);remove.setString(3,source);remove.executeUpdate();
+            }
+            try(var remove=c.prepareStatement("DELETE FROM artifact_symbols WHERE artifact_id=? AND source_file=?")){
+                remove.setLong(1,artifact);remove.setString(2,source);remove.executeUpdate();
+            }
+            var allowed=Set.of("package","class","interface","enum","record","annotation","method","ctor","field","enumconst");
+            try(var insert=c.prepareStatement("INSERT INTO symbols(scip,artifact_id,kind,name,signature,erased_descriptor,binary_key,fqn,name_path,parameters,metadata) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(scip) DO NOTHING");
+                var lookup=c.prepareStatement("SELECT id FROM symbols WHERE scip=?");
+                var associate=c.prepareStatement("INSERT OR REPLACE INTO artifact_symbols VALUES(?,?,?,?)")){
+                for(var symbol:symbols){
+                    if(symbol.get("scip")==null||!allowed.contains(symbol.get("kind"))||!source.equals(symbol.get("source_file")))continue;
+                    String scip=symbol.get("scip").toString(),fqn=Objects.toString(symbol.get("fqn"),Objects.toString(symbol.get("name_path"),""));
+                    String binary=Objects.toString(symbol.get("binary_key"),Set.of("class","interface","enum","record","annotation").contains(symbol.get("kind"))
+                            ?fqn:fqn+"#"+("ctor".equals(symbol.get("kind"))?"<init>":symbol.get("name"))+
+                            ("method".equals(symbol.get("kind"))||"ctor".equals(symbol.get("kind"))?Objects.toString(symbol.get("erased_descriptor"),""):""));
+                    insert.setString(1,scip);insert.setLong(2,artifact);insert.setString(3,symbol.get("kind").toString());insert.setString(4,Objects.toString(symbol.get("name"),""));
+                    insert.setString(5,(String)symbol.get("signature"));insert.setString(6,(String)symbol.get("erased_descriptor"));insert.setString(7,binary);
+                    insert.setString(8,fqn);insert.setString(9,Objects.toString(symbol.get("name_path"),scip));
+                    insert.setString(10,Json.MAPPER.writeValueAsString(symbol.getOrDefault("parameters",List.of())));insert.setString(11,"{}");insert.executeUpdate();
+                    lookup.setString(1,scip);long id;try(var r=lookup.executeQuery()){if(!r.next())throw new SQLException("source symbol insert missing");id=r.getLong(1);}
+                    var data=new LinkedHashMap<>(symbol);data.put("tier",tier);
+                    associate.setLong(1,artifact);associate.setLong(2,id);associate.setString(3,Json.MAPPER.writeValueAsString(data));associate.setString(4,source);associate.addBatch();
+                }associate.executeBatch();
+            }
+            try(var cleanup=c.prepareStatement("DELETE FROM symbols WHERE artifact_id=? AND NOT EXISTS(SELECT 1 FROM artifact_symbols a WHERE a.symbol_id=symbols.id)")){
+                cleanup.setLong(1,artifact);cleanup.executeUpdate();
+            }
+            try(var link=c.prepareStatement("INSERT OR IGNORE INTO edges SELECT a.id,b.id,? FROM symbols a,symbols b WHERE a.scip=? AND b.scip=?")){
+                for(var edge:edges){link.setString(1,edge.kind());link.setString(2,edge.sourceScip());link.setString(3,edge.targetScip());link.addBatch();}link.executeBatch();
+            }
+            try(var link=c.prepareStatement("INSERT OR IGNORE INTO artifact_edges SELECT ?,a.id,v.artifact_id,b.id,? FROM symbols a JOIN artifact_symbols own ON own.symbol_id=a.id AND own.artifact_id=? JOIN symbols b ON b.scip=? JOIN artifact_symbols v ON v.symbol_id=b.id WHERE a.scip=?")){
+                for(var edge:edges){
+                    link.setLong(1,artifact);link.setString(2,edge.kind());link.setLong(3,artifact);
+                    link.setString(4,edge.targetScip());link.setString(5,edge.sourceScip());link.addBatch();
+                }link.executeBatch();
+            }
+            try(var names=c.prepareStatement("DELETE FROM simple_names WHERE artifact_id=?")){names.setLong(1,artifact);names.executeUpdate();}
+            try(var names=c.prepareStatement("INSERT INTO simple_names SELECT s.name,s.fqn,? FROM symbols s JOIN artifact_symbols a ON a.symbol_id=s.id WHERE a.artifact_id=? AND s.kind IN ('class','interface','record','enum','annotation')")){
+                names.setLong(1,artifact);names.setLong(2,artifact);names.executeUpdate();
+            }
+            return null;
+        });
+    }
+
     @Override public Map<String,Long> counts()throws Exception{return database.counts();}
     @Override public Map<String,Object> status(){var result=new LinkedHashMap<String,Object>(database.metrics());result.put("backend",backend());return Map.copyOf(result);}
 

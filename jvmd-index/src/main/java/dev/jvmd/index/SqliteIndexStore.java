@@ -141,7 +141,8 @@ public final class SqliteIndexStore implements IndexStore {
                         if(!row.next())continue;
                         var data=row.getString(1)==null?Json.MAPPER.createObjectNode():(com.fasterxml.jackson.databind.node.ObjectNode)Json.MAPPER.readTree(row.getString(1));
                         var member=entry.getValue();
-                        for(var item:member.entrySet())data.set(item.getKey(),Json.MAPPER.valueToTree(item.getValue()));
+                        for(var item:member.entrySet())if(!item.getKey().equals("parameters"))
+                            data.set(item.getKey(),Json.MAPPER.valueToTree(item.getValue()));
                         var metadata=data.has("metadata")?data.get("metadata"):Json.MAPPER.readTree(row.getString(4));
                         @SuppressWarnings("unchecked") var parameters=(List<String>)member.getOrDefault("parameters",List.of());
                         if(!parameters.isEmpty()&&!metadata.path("parameter_names_from_class").asBoolean()){

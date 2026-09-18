@@ -270,24 +270,18 @@ public final class IndexService implements AutoCloseable {
         });storageNanos.addAndGet(System.nanoTime()-storageStarted);activeArtifacts.remove(location(sources));return sourceResult;
     }
     void ensureSignatureEdges(String workspace)throws Exception {
-        var pending=database.read(c->{var paths=new ArrayList<String[]>();try(var q=c.prepareStatement("SELECT a.path,a.gav,a.kind FROM artifacts a WHERE a.has_signature_edges=0 AND a.kind<>'sources'"+(workspace==null?"":" AND (a.gav LIKE 'jdk:%' OR EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id))"))){if(workspace!=null)q.setString(1,workspace);try(var r=q.executeQuery()){while(r.next())paths.add(new String[]{r.getString(1),r.getString(2),r.getString(3)});}}return paths;});
         boolean changed=false;
-        for(var item:pending){
-            Path path=item[0].startsWith("jrt:")?Path.of(java.net.URI.create(item[0])):Path.of(item[0]);
+        for(var item:store.pendingSignatureArtifacts(workspace)){
+            Path path=item.path().startsWith("jrt:")?Path.of(java.net.URI.create(item.path())):Path.of(item.path());
             if(!Files.exists(path))continue;
-            if(item[1].startsWith("jdk:"))indexJdk(path,item[1].split(":")[1],Path.of(System.getProperty("java.home"),"lib/src.zip"));
-            else if(item[2].equals("local"))locals.refresh(path);
-            else indexJar(path,item[1],item[2]);
+            if(item.gav().startsWith("jdk:"))indexJdk(path,item.gav().split(":")[1],Path.of(System.getProperty("java.home"),"lib/src.zip"));
+            else if(item.kind().equals("local"))locals.refresh(path);
+            else indexJar(path,item.gav(),item.kind());
             changed=true;
         }
         if(changed)linkEdges();
     }
-    public void linkEdges()throws Exception{database.write(c->{try(var s=c.createStatement()){
-        s.executeUpdate("INSERT OR IGNORE INTO edges SELECT t.src,s.id,t.kind FROM edge_targets t JOIN symbols s ON s.binary_key=t.target");
-        s.executeUpdate("INSERT OR IGNORE INTO artifact_edges SELECT t.artifact_id,t.src,v.artifact_id,s.id,t.kind FROM signature_targets t JOIN symbols s ON s.binary_key=t.target JOIN artifact_symbols v ON v.symbol_id=s.id");
-        s.executeUpdate("INSERT OR IGNORE INTO artifact_edges SELECT h.src_artifact,child.id,h.dst_artifact,parent.id,'overrides' FROM artifact_edges h JOIN symbols child ON child.owner_id=h.src JOIN artifact_symbols cv ON cv.symbol_id=child.id AND cv.artifact_id=h.src_artifact JOIN symbols parent ON parent.owner_id=h.dst AND parent.name=child.name JOIN artifact_symbols pv ON pv.symbol_id=parent.id AND pv.artifact_id=h.dst_artifact WHERE h.kind IN ('extends','implements') AND child.kind='method' AND parent.kind='method' AND substr(COALESCE(json_extract(cv.data,'$.erased_descriptor'),child.erased_descriptor),1,instr(COALESCE(json_extract(cv.data,'$.erased_descriptor'),child.erased_descriptor),')'))=substr(COALESCE(json_extract(pv.data,'$.erased_descriptor'),parent.erased_descriptor),1,instr(COALESCE(json_extract(pv.data,'$.erased_descriptor'),parent.erased_descriptor),')')) AND (COALESCE(json_extract(cv.data,'$.flags'),child.flags) & 8)=0 AND (COALESCE(json_extract(pv.data,'$.flags'),parent.flags) & 10)=0");
-        s.executeUpdate("INSERT OR IGNORE INTO edges SELECT child.id,parent.id,'overrides' FROM edges hierarchy CROSS JOIN symbols child ON child.owner_id=hierarchy.src CROSS JOIN symbols parent ON parent.owner_id=hierarchy.dst AND parent.name=child.name AND substr(parent.erased_descriptor,1,instr(parent.erased_descriptor,')'))=substr(child.erased_descriptor,1,instr(child.erased_descriptor,')')) WHERE hierarchy.kind IN ('extends','implements') AND child.kind='method' AND parent.kind='method' AND (child.flags & 8)=0 AND (parent.flags & 10)=0");
-    }return null;});}
+    public void linkEdges()throws Exception{store.resolveGlobalRelationships();}
     public List<String> loadWorkspace(String workspace,List<WorkspaceArtifact> paths,List<Map.Entry<String,String>> dependencies)throws Exception{
         long started=System.nanoTime();workspaceResolutionCalls.incrementAndGet();
         try{

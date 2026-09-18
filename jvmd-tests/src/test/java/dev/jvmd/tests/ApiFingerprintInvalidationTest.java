@@ -99,6 +99,56 @@ class ApiFingerprintInvalidationTest {
         }
     }
 
+
+    @Test void privateImplementationChangeKeepsDependantsWarm()throws Exception{
+        Path api=root.resolve("Api.java"),use=root.resolve("Use.java");
+        String original="class Api { private int secret(){return 1;} int value(){return 1;} }";
+        String useText="class Use { int n=new Api().value(); }";
+        Files.writeString(api,original);Files.writeString(use,useText);var documents=new Documents();documents.open(api,original,1);
+        try(var analyzer=analyzer(documents)){
+            assertThat(diagnostics(analyzer,api,original)).isEmpty();assertThat(diagnostics(analyzer,use,useText)).isEmpty();long before=number(analyzer,"queries");
+            String changed="class Api { private String secret(){return \"changed\";} int value(){return 1;} }";
+            documents.change(api,2,List.of(new Documents.Change(null,changed)));analyzer.documents(documents);analyzer.changed(api);
+            assertThat(diagnostics(analyzer,api,changed)).isEmpty();
+            long after=number(analyzer,"queries");assertThat(after).isEqualTo(before+1);
+            assertThat(number(analyzer,"api_fingerprint_unchanged")).isEqualTo(1L);
+            assertThat(diagnostics(analyzer,use,useText)).isEmpty();
+            assertThat(number(analyzer,"queries")).as("private change dependant attribution").isEqualTo(after);
+        }
+    }
+
+    @Test void packageRenameInvalidatesOldUsersAndReconsidersUnresolvedNewUsers()throws Exception{
+        Path api=root.resolve("Api.java"),oldUse=root.resolve("OldUse.java"),newUse=root.resolve("NewUse.java");
+        String original="package p; public class Api {}";
+        String oldText="package q; import p.Api; class OldUse { Api value; }";
+        String newText="package q; import r.Api; class NewUse { Api value; }";
+        Files.writeString(api,original);Files.writeString(oldUse,oldText);Files.writeString(newUse,newText);
+        var documents=new Documents();documents.open(api,original,1);
+        try(var analyzer=analyzer(documents)){
+            assertThat(diagnostics(analyzer,api,original)).isEmpty();
+            assertThat(diagnostics(analyzer,oldUse,oldText)).isEmpty();
+            assertThat(diagnostics(analyzer,newUse,newText)).anyMatch(problem->problem.code().contains("cant.resolve"));
+            String changed="package r; public class Api {}";
+            documents.change(api,2,List.of(new Documents.Change(null,changed)));analyzer.documents(documents);analyzer.changed(api);
+            assertThat(diagnostics(analyzer,api,changed)).isEmpty();
+            assertThat(diagnostics(analyzer,oldUse,oldText)).anyMatch(problem->problem.code().contains("cant.resolve"));
+            assertThat(diagnostics(analyzer,newUse,newText)).isEmpty();
+        }
+    }
+
+    @Test void newSourceReconsidersPreviouslyUnresolvedDiagnostics()throws Exception{
+        Path use=root.resolve("Use.java"),added=root.resolve("Missing.java");
+        String useText="class Use { Missing value; }";
+        Files.writeString(use,useText);var documents=new Documents();
+        try(var analyzer=analyzer(documents)){
+            assertThat(diagnostics(analyzer,use,useText)).anyMatch(problem->problem.code().contains("cant.resolve"));
+            String addedText="class Missing {}";Files.writeString(added,addedText);
+            analyzer.changed(added);
+            assertThat(diagnostics(analyzer,added,addedText)).isEmpty();
+            assertThat(diagnostics(analyzer,use,useText)).isEmpty();
+        }
+    }
+
     private Analyzer analyzer(Documents documents)throws Exception{
         var analyzer=new Analyzer();analyzer.configure(new Analyzer.Context("test:app:1","25",List.of(),List.of(root),"ctx",Map.of(root.toUri().toString(),"test:app:1")),null,256L*1024*1024);analyzer.documents(documents);return analyzer;
     }

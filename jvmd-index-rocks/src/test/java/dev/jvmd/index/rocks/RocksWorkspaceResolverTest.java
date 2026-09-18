@@ -33,7 +33,7 @@ class RocksWorkspaceResolverTest {
     }
 
     @Test void workspaceSearchUsesContextAndExplicitNamePathSubstringIndexes()throws Exception{
-        var depOne=facts('f',"dep.Type",List.of());var depTwo=facts('g',"dep.Type",List.of());
+        var depOne=facts('f',"dep.Type",List.of());var depTwo=facts('9',"dep.Type",List.of());
         try(var artifacts=new RocksArtifactRepository(temp.resolve("search-artifacts"))){
             artifacts.publish(depOne,Set.of());artifacts.publish(depTwo,Set.of());
             try(var resolver=new RocksWorkspaceResolver(temp.resolve("search-resolution"),artifacts)){

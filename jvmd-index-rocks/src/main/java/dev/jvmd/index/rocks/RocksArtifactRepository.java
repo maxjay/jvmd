@@ -21,6 +21,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
     public record Publication(String cacheKey,boolean reused,long symbols,long relationships,long classReferences,long storageBytes) { }
 
     private static final byte[] EMPTY=new byte[0];
+    private record SstEntry(byte[] key,byte[] value) { }
     static {RocksDB.loadLibrary();}
 
     private final Path root;
@@ -156,42 +157,36 @@ public final class RocksArtifactRepository implements AutoCloseable {
     }
 
     private void writeSst(Path path,String cacheKey,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{
-        try(var env=new EnvOptions();var writer=new SstFileWriter(env,options)){
-            writer.open(path.toString());
-            put(writer,key(cacheKey,"0|manifest"),manifest(facts,classReferences));
-            put(writer,key(cacheKey,"1|artifact"),ArtifactIndexFormat.encode(facts));
+        var entries=new ArrayList<SstEntry>();
+        entries.add(new SstEntry(key(cacheKey,"0|manifest"),manifest(facts,classReferences)));
+        entries.add(new SstEntry(key(cacheKey,"1|artifact"),ArtifactIndexFormat.encode(facts)));
 
-            var byBinary=new ArrayList<>(facts.symbols());
-            byBinary.sort(Comparator.comparing(ArtifactIndexFormat.SymbolRecord::key).thenComparingInt(ArtifactIndexFormat.SymbolRecord::id));
-            for(var symbol:byBinary)put(writer,key(cacheKey,"2|binary|"+symbol.key()),intBytes(symbol.id()));
-
-            var byName=new ArrayList<>(facts.symbols());
-            byName.sort(Comparator.comparing(ArtifactIndexFormat.SymbolRecord::name).thenComparingInt(ArtifactIndexFormat.SymbolRecord::id));
-            for(var symbol:byName)put(writer,key(cacheKey,"3|name|"+symbol.name()+"|"+hex8(symbol.id())),EMPTY);
-
-            var outgoing=new ArrayList<>(facts.relationships());
-            outgoing.sort(Comparator.comparingInt(ArtifactIndexFormat.Relationship::sourceId)
-                    .thenComparing(ArtifactIndexFormat.Relationship::target).thenComparing(ArtifactIndexFormat.Relationship::kind));
-            for(var edge:outgoing)put(writer,key(cacheKey,"4|out|"+hex8(edge.sourceId())+"|"+edge.target()+"|"+edge.kind()),EMPTY);
-
-            var reverse=new ArrayList<>(facts.relationships());
-            reverse.sort(Comparator.comparing(ArtifactIndexFormat.Relationship::target)
-                    .thenComparing(ArtifactIndexFormat.Relationship::kind).thenComparingInt(ArtifactIndexFormat.Relationship::sourceId));
-            for(var edge:reverse)put(writer,key(cacheKey,"5|reverse|"+edge.target()+"|"+edge.kind()+"|"+hex8(edge.sourceId())),EMPTY);
-
-            var refs=new ArrayList<>(classReferences);Collections.sort(refs);
-            for(String reference:refs)put(writer,key(cacheKey,"6|class|"+reference),EMPTY);
-
-            var byPath=new ArrayList<>(facts.symbols());
-            byPath.sort(Comparator.comparing(ArtifactContext::namePath).thenComparingInt(ArtifactIndexFormat.SymbolRecord::id));
-            for(var symbol:byPath)put(writer,key(cacheKey,"7|path|"+ArtifactContext.namePath(symbol)+"|"+hex8(symbol.id())),EMPTY);
+        for(var symbol:facts.symbols()){
+            entries.add(new SstEntry(key(cacheKey,"2|binary|"+symbol.key()),intBytes(symbol.id())));
+            entries.add(new SstEntry(key(cacheKey,"3|name|"+symbol.name()+"|"+hex8(symbol.id())),EMPTY));
+            entries.add(new SstEntry(key(cacheKey,"7|path|"+ArtifactContext.namePath(symbol)+"|"+hex8(symbol.id())),EMPTY));
 
             var grams=new TreeSet<String>();
-            for(var symbol:facts.symbols()){
-                String name=symbol.name().toLowerCase(Locale.ROOT),pathValue=ArtifactContext.namePath(symbol).toLowerCase(Locale.ROOT);
-                addGrams(grams,name,symbol.id());addGrams(grams,pathValue,symbol.id());
-            }
-            for(String gram:grams)put(writer,key(cacheKey,"8|gram|"+gram),EMPTY);
+            String name=symbol.name().toLowerCase(Locale.ROOT);
+            String pathValue=ArtifactContext.namePath(symbol).toLowerCase(Locale.ROOT);
+            addGrams(grams,name,symbol.id());addGrams(grams,pathValue,symbol.id());
+            for(String gram:grams)entries.add(new SstEntry(key(cacheKey,"8|gram|"+gram),EMPTY));
+        }
+
+        for(var edge:facts.relationships()){
+            entries.add(new SstEntry(key(cacheKey,"4|out|"+hex8(edge.sourceId())+"|"+edge.target()+"|"+edge.kind()),EMPTY));
+            entries.add(new SstEntry(key(cacheKey,"5|reverse|"+edge.target()+"|"+edge.kind()+"|"+hex8(edge.sourceId())),EMPTY));
+        }
+        for(String reference:classReferences)entries.add(new SstEntry(key(cacheKey,"6|class|"+reference),EMPTY));
+
+        entries.sort((left,right)->Arrays.compareUnsigned(left.key(),right.key()));
+        for(int i=1;i<entries.size();i++)
+            if(Arrays.equals(entries.get(i-1).key(),entries.get(i).key()))
+                throw new IOException("Duplicate artifact index key: "+new String(entries.get(i).key(),StandardCharsets.UTF_8));
+
+        try(var env=new EnvOptions();var writer=new SstFileWriter(env,options)){
+            writer.open(path.toString());
+            for(var entry:entries)writer.put(entry.key(),entry.value());
             writer.finish();
         }
     }

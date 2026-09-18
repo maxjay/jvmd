@@ -80,6 +80,44 @@ public final class RocksWorkspaceResolver implements AutoCloseable {
         return List.copyOf(result);
     }
 
+
+    public Optional<WorkspaceSymbol> resolvedSymbol(Workspace workspace,ResolvedSymbol resolved)throws Exception{
+        if(resolved.classpathIndex()<0||resolved.classpathIndex()>=workspace.classpath().size())return Optional.empty();
+        var entry=workspace.classpath().get(resolved.classpathIndex());
+        if(!entry.artifactCacheKey().equals(resolved.artifactCacheKey()))return Optional.empty();
+        var data=artifacts.artifact(resolved.artifactCacheKey());
+        if(data==null||resolved.localId()<0||resolved.localId()>=data.symbols().size())return Optional.empty();
+        var symbol=data.symbols().get(resolved.localId());if(symbol.id()!=resolved.localId())return Optional.empty();
+        return Optional.of(workspaceSymbol(entry,symbol));
+    }
+
+    public List<ResolvedRelationship> incoming(Workspace workspace,String targetBinaryKey,Set<String> kinds,int limit)throws Exception{
+        if(limit<=0)return List.of();
+        var target=resolveFirst(workspace,targetBinaryKey);if(target.isEmpty())return List.of();
+        var result=new ArrayList<ResolvedRelationship>();
+        for(var entry:workspace.classpath()){
+            if(result.size()>=limit)break;
+            var generationKeys=new ArrayList<String>();generationKeys.add(entry.artifactCacheKey());
+            var signature=artifacts.artifact(entry.artifactCacheKey());
+            if(signature!=null){
+                var codeKey=new ArtifactIndexFormat.Key(signature.key().binarySha256(),signature.key().formatVersion(),
+                        signature.key().indexerVersion(),signature.key().runtimeFeature(),"code").cacheKey();
+                if(artifacts.contains(codeKey))generationKeys.add(codeKey);
+            }
+            var seen=new LinkedHashSet<String>();
+            for(String generation:generationKeys){
+                for(var relationship:artifacts.incoming(generation,targetBinaryKey,kinds,limit-result.size())){
+                    String dedupe=relationship.sourceId()+"|"+relationship.kind();
+                    if(!seen.add(dedupe))continue;
+                    result.add(new ResolvedRelationship(entry.artifactCacheKey(),relationship.sourceId(),
+                            relationship.kind(),targetBinaryKey,target.get()));
+                    if(result.size()>=limit)break;
+                }
+            }
+        }
+        return List.copyOf(result);
+    }
+
     public List<ResolvedRelationship> outgoing(Workspace workspace,String sourceArtifactCacheKey,int sourceLocalId,
                                                 Set<String> kinds,int limit)throws Exception{
         if(workspace.classpath().stream().noneMatch(entry->entry.artifactCacheKey().equals(sourceArtifactCacheKey)))

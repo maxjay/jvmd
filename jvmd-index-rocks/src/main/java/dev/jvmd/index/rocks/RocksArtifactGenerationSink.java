@@ -128,6 +128,41 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
         return Optional.of(List.copyOf(result));
     }
 
+
+    @Override public Optional<Set<String>> shadowRelationships(String workspace,Collection<String> scips,boolean outgoing,Set<String> kinds,int limit)throws Exception{
+        var configured=workspaces.get(workspace);if(configured==null)return Optional.empty();
+        var edges=new LinkedHashSet<String>();
+        for(String scip:scips){
+            if(edges.size()>=limit)break;
+            var selected=workspaceResolver.byScip(configured,scip);if(selected.isEmpty())continue;
+            var source=selected.get();
+            if(outgoing){
+                var rows=workspaceResolver.outgoing(configured,source.entry().artifactCacheKey(),source.symbol().id(),kinds,limit-edges.size());
+                for(var row:rows){
+                    var target=workspaceResolver.resolvedSymbol(configured,row.target());if(target.isEmpty())continue;
+                    edges.add(source.scip()+"|"+row.kind()+"|"+target.get().scip());
+                    if(edges.size()>=limit)break;
+                }
+            }else{
+                var rows=workspaceResolver.incoming(configured,source.symbol().key(),kinds,limit-edges.size());
+                for(var row:rows){
+                    var from=workspaceResolver.resolvedSymbol(configured,
+                            new RocksWorkspaceResolver.ResolvedSymbol(row.sourceArtifactCacheKey(),row.sourceLocalId(),
+                                    indexOf(configured,row.sourceArtifactCacheKey())));
+                    if(from.isEmpty())continue;
+                    edges.add(from.get().scip()+"|"+row.kind()+"|"+source.scip());
+                    if(edges.size()>=limit)break;
+                }
+            }
+        }
+        return Optional.of(Set.copyOf(edges));
+    }
+
+    private static int indexOf(RocksWorkspaceResolver.Workspace workspace,String artifactCacheKey){
+        for(int i=0;i<workspace.classpath().size();i++)if(workspace.classpath().get(i).artifactCacheKey().equals(artifactCacheKey))return i;
+        return -1;
+    }
+
     @Override public Map<String,Object> status(){
         var result=new LinkedHashMap<String,Object>();
         result.put("backend","rocksdb-sst");result.put("published",published.get());result.put("reused",reused.get());

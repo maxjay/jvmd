@@ -115,6 +115,24 @@ public final class RocksArtifactRepository implements AutoCloseable {
         return idsByPrefix(cacheKey,"8|gram|"+gram+"|",limit);
     }
 
+
+    public List<ArtifactIndexFormat.Relationship> incoming(String cacheKey,String target,Set<String> kinds,int limit){
+        byte[] prefix=key(cacheKey,"5|reverse|"+target+"|");var result=new ArrayList<ArtifactIndexFormat.Relationship>();
+        try(var read=new ReadOptions();var iterator=db.newIterator(read)){
+            for(iterator.seek(prefix);iterator.isValid()&&result.size()<limit;iterator.next()){
+                byte[] current=iterator.key();if(!startsWith(current,prefix))break;
+                String text=new String(current,StandardCharsets.UTF_8);
+                int last=text.lastIndexOf('|');if(last<=0)continue;
+                int previous=text.lastIndexOf('|',last-1);if(previous<=0)continue;
+                String kind=text.substring(previous+1,last);
+                if(!kinds.isEmpty()&&!kinds.contains(kind))continue;
+                int source=(int)Long.parseLong(text.substring(last+1),16);
+                result.add(new ArtifactIndexFormat.Relationship(source,target,kind));
+            }
+        }
+        return List.copyOf(result);
+    }
+
     public List<ArtifactIndexFormat.Relationship> outgoing(String cacheKey,int sourceId,Set<String> kinds,int limit){
         byte[] prefix=key(cacheKey,"4|out|"+hex8(sourceId)+"|");var result=new ArrayList<ArtifactIndexFormat.Relationship>();
         try(var read=new ReadOptions();var iterator=db.newIterator(read)){

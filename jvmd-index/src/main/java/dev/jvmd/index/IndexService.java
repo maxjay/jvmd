@@ -257,6 +257,25 @@ public final class IndexService implements AutoCloseable {
             return authoritative;
         }finally{queryNanos.addAndGet(System.nanoTime()-started);}
     }
+
+    void validateRelationshipShadow(String workspace,Collection<String> scips,boolean outgoing,Set<String> kinds,
+                                    List<IndexStore.ResolvedRelationship> authoritative)throws Exception{
+        if(workspace==null){shadowSkipped.incrementAndGet();return;}
+        var shadow=generationSink.shadowRelationships(workspace,scips,outgoing,kinds,Math.max(256,authoritative.size()+16));
+        if(shadow.isEmpty()){shadowSkipped.incrementAndGet();return;}
+        shadowComparisons.incrementAndGet();
+        var expected=new LinkedHashSet<String>();
+        for(var row:authoritative){
+            String source=Objects.toString(row.source().get("scip"),""),target=Objects.toString(row.target().get("scip"),"");
+            if(!source.isBlank()&&!target.isBlank())expected.add(source+"|"+row.kind()+"|"+target);
+        }
+        if(!expected.equals(shadow.get())){
+            shadowMismatches.incrementAndGet();
+            warn("rocks_shadow_relationship_mismatch: workspace="+workspace+" outgoing="+outgoing+
+                    " expected="+expected.size()+" actual="+shadow.get().size());
+        }
+    }
+
     public List<Map<String,Object>> descendants(String path,String workspace,int depth,int limit,long after,Set<String> kinds)throws Exception{
         long started=System.nanoTime();queryCalls.incrementAndGet();
         try{return store.descendants(path,workspace,depth,limit,after,kinds);}

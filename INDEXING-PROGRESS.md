@@ -29,7 +29,7 @@ These numbers are evidence to reproduce, not acceptance measurements.
 - [~] **04 — Artifact identity and compact binary record format.** Versioned GAV-independent detached facts with artifact-local ids are implemented; source-doc and production compact-record refinements remain.
 - [x] **05 — RocksDB external-SST vs minimal immutable-file prototype comparison.** Measurement branch `benchmark/index-storage` selected RocksDB SST ingestion: comparable median publish time, ~83% lower stored bytes and ~66% lower steady-state write bytes in the 800k-fact CI comparison.
 - [~] **06 — Bounded parallel artifact ingestion.** Repository scanning now supports an injected artifact-generation sink. The Rocks sink builds distinct SSTs concurrently using caller scan workers, serializes only ingestion, and enforces an estimated-byte semaphore budget. Production runtime wiring and real-repository tuning remain.
-- [~] **07 — Atomic artifact generations.** One content-addressed artifact is built as one external SST containing manifest + indexes and ingested as a single publication; crash/failure matrix and generation reclamation remain.
+- [~] **07 — Atomic artifact generations.** One content-addressed artifact is built as one external SST containing manifest + indexes and ingested as a single publication. Reopen persistence, concurrent same-key idempotence, orphan staging cleanup, and manifest/payload verification are covered; generation reclamation and broader failure injection remain.
 - [ ] **08 — Workspace-specific symbolic relationship resolution.**
 - [ ] **09 — Required search behavior.**
 - [ ] **10 — Incremental artifact discovery/reuse.**

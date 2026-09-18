@@ -59,7 +59,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
                         try(var ingest=new IngestExternalFileOptions().setMoveFiles(true)){
                             db.ingestExternalFile(List.of(sst.toString()),ingest);
                         }
-                        if(!contains(cacheKey))throw new IOException("RocksDB publication completed without manifest: "+cacheKey);
+                        if(!verify(cacheKey))throw new IOException("RocksDB publication verification failed: "+cacheKey);
                         published.incrementAndGet();
                     }
                     return result(cacheKey,false,facts,classReferences);
@@ -78,6 +78,22 @@ public final class RocksArtifactRepository implements AutoCloseable {
     }
 
     public boolean contains(String cacheKey)throws Exception{return db.get(key(cacheKey,"0|manifest"))!=null;}
+
+    public boolean verify(String cacheKey)throws Exception{
+        byte[] manifestBytes=db.get(key(cacheKey,"0|manifest")),artifactBytes=db.get(key(cacheKey,"1|artifact"));
+        if(manifestBytes==null||artifactBytes==null)return false;
+        var manifest=parseManifest(manifestBytes);
+        var data=ArtifactIndexFormat.decode(artifactBytes);
+        if(!cacheKey.equals(data.key().cacheKey()))return false;
+        if(!Objects.equals(manifest.get("format"),Integer.toString(data.key().formatVersion())))return false;
+        if(!Objects.equals(manifest.get("indexer"),data.key().indexerVersion()))return false;
+        if(!Objects.equals(manifest.get("runtime"),Integer.toString(data.key().runtimeFeature())))return false;
+        if(!Objects.equals(manifest.get("mode"),data.key().mode()))return false;
+        if(!Objects.equals(manifest.get("symbols"),Integer.toString(data.symbols().size())))return false;
+        if(!Objects.equals(manifest.get("relationships"),Integer.toString(data.relationships().size())))return false;
+        long classReferences=countPrefix(key(cacheKey,"6|class|"));
+        return Objects.equals(manifest.get("class_references"),Long.toString(classReferences));
+    }
 
     public ArtifactIndexFormat.ArtifactData artifact(String cacheKey)throws Exception{
         byte[] encoded=db.get(key(cacheKey,"1|artifact"));
@@ -145,6 +161,27 @@ public final class RocksArtifactRepository implements AutoCloseable {
             for(String reference:refs)put(writer,key(cacheKey,"6|class|"+reference),EMPTY);
             writer.finish();
         }
+    }
+
+    private long countPrefix(byte[] prefix){
+        long count=0;
+        try(var read=new ReadOptions();var iterator=db.newIterator(read)){
+            for(iterator.seek(prefix);iterator.isValid();iterator.next()){
+                if(!startsWith(iterator.key(),prefix))break;
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static Map<String,String> parseManifest(byte[] bytes)throws IOException{
+        var result=new LinkedHashMap<String,String>();
+        for(String line:new String(bytes,StandardCharsets.UTF_8).split("\\R")){
+            if(line.isBlank())continue;
+            int split=line.indexOf('=');if(split<=0)throw new IOException("Invalid artifact manifest");
+            if(result.put(line.substring(0,split),line.substring(split+1))!=null)throw new IOException("Duplicate artifact manifest field");
+        }
+        return Map.copyOf(result);
     }
 
     private static byte[] manifest(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences){

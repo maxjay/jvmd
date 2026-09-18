@@ -60,6 +60,32 @@ class RocksArtifactRepositoryTest {
         }
     }
 
+    @Test void generationSurvivesReopenAndReusesWithoutWrites()throws Exception{
+        Path root=temp.resolve("reopen");var data=facts(1000,2000);String cacheKey=data.key().cacheKey();long stored;
+        try(var first=new RocksArtifactRepository(root)){
+            first.publish(data,Set.of("dep.Type12"));assertThat(first.verify(cacheKey)).isTrue();stored=first.storageBytes();
+        }
+        try(var reopened=new RocksArtifactRepository(root)){
+            assertThat(reopened.verify(cacheKey)).isTrue();
+            assertThat(reopened.artifact(cacheKey)).isEqualTo(data);
+            assertThat(reopened.publish(data,Set.of("dep.Type12")).reused()).isTrue();
+            assertThat(reopened.storageBytes()).isEqualTo(stored);
+        }
+    }
+
+    @Test void concurrentSameGenerationPublishesExactlyOnce()throws Exception{
+        Path root=temp.resolve("same-key");var data=facts(2000,4000);
+        try(var store=new RocksArtifactRepository(root);var executor=java.util.concurrent.Executors.newFixedThreadPool(4)){
+            var futures=new ArrayList<java.util.concurrent.Future<RocksArtifactRepository.Publication>>();
+            for(int i=0;i<4;i++)futures.add(executor.submit(()->store.publish(data,Set.of("dep.Type12"))));
+            var values=new ArrayList<RocksArtifactRepository.Publication>();for(var future:futures)values.add(future.get());
+            assertThat(values).filteredOn(value->!value.reused()).hasSize(1);
+            assertThat(values).filteredOn(RocksArtifactRepository.Publication::reused).hasSize(3);
+            assertThat(store.verify(data.key().cacheKey())).isTrue();
+            assertThat(((Number)store.status().get("published")).longValue()).isEqualTo(1L);
+        }
+    }
+
     private static ArtifactIndexFormat.ArtifactData facts(int symbols,int relationships){
         return facts(symbols,relationships,'a');
     }

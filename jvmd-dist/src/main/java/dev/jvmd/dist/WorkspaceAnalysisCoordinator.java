@@ -8,15 +8,23 @@ import java.util.*;
 /** Workspace diagnostics maintain file states; requests merge only currently valid results. */
 public final class WorkspaceAnalysisCoordinator {
     @FunctionalInterface public interface Provider { Analyzer forFile(Path file)throws Exception; }
+    @FunctionalInterface public interface ExternalDiagnostics { ExternalResult forFile(Path file)throws Exception; }
+    public record ExternalResult(List<CompilerPool.Problem> diagnostics,String provenance) {
+        public ExternalResult { diagnostics=List.copyOf(diagnostics); }
+    }
     private final Documents documents;
     private final Provider analyzers;
     private final Runnable yield;
+    private final ExternalDiagnostics external;
     private final Map<Path,String> observed=new HashMap<>();
     private Set<Path> inventory=Set.of();
     private Map<String,Object> last=Map.of();
     private long generation,requests,totalAnalyses,totalBatches;
-    public WorkspaceAnalysisCoordinator(Documents documents,Provider analyzers){this(documents,analyzers,()->{});}
-    public WorkspaceAnalysisCoordinator(Documents documents,Provider analyzers,Runnable yield){this.documents=documents;this.analyzers=analyzers;this.yield=yield;}
+    public WorkspaceAnalysisCoordinator(Documents documents,Provider analyzers){this(documents,analyzers,()->{},_->null);}
+    public WorkspaceAnalysisCoordinator(Documents documents,Provider analyzers,Runnable yield){this(documents,analyzers,yield,_->null);}
+    public WorkspaceAnalysisCoordinator(Documents documents,Provider analyzers,Runnable yield,ExternalDiagnostics external){
+        this.documents=documents;this.analyzers=analyzers;this.yield=yield;this.external=external;
+    }
 
     public Envelope get(List<Path> requested,boolean wholeWorkspace,int offset,int limit,List<String> initialWarnings)throws Exception{
         long started=System.nanoTime();requests++;long documentGeneration=documents.generation();
@@ -82,7 +90,7 @@ public final class WorkspaceAnalysisCoordinator {
             }
         }
         double analysisMs=millis(analysisStart);long mergeStart=System.nanoTime();
-        var diagnostics=new ArrayList<CompilerPool.Problem>();int tier=2,superseded=0;
+        var diagnostics=new ArrayList<CompilerPool.Problem>();int tier=2,superseded=0,highFidelityFiles=0;
         for(Path file:files){
             // Filesystem changes are independent of the session executor; never relabel old results.
             if(!identities.get(file).equals(documents.sourceHash(file))){
@@ -90,7 +98,10 @@ public final class WorkspaceAnalysisCoordinator {
             }
             var value=values.get(file);if(value==null)continue;
             observed.put(file,identities.get(file));tier=Math.min(tier,value.tier());warnings.addAll(value.warnings());
-            for(Object item:(List<?>)((Map<?,?>)value.result()).get("diagnostics"))diagnostics.add((CompilerPool.Problem)item);
+            var highFidelity=external.forFile(file);
+            if(highFidelity!=null){
+                highFidelityFiles++;warnings.add("diagnostic_fidelity="+highFidelity.provenance());diagnostics.addAll(highFidelity.diagnostics());
+            }else for(Object item:(List<?>)((Map<?,?>)value.result()).get("diagnostics"))diagnostics.add((CompilerPool.Problem)item);
         }
         diagnostics.sort(Comparator.comparing((CompilerPool.Problem p)->Objects.toString(p.file(),""))
                 .thenComparingLong(CompilerPool.Problem::line).thenComparingLong(CompilerPool.Problem::character)
@@ -102,7 +113,7 @@ public final class WorkspaceAnalysisCoordinator {
         var metrics=new LinkedHashMap<String,Object>();metrics.put("total_ms",millis(started));metrics.put("context_prepare_ms",prepareMs);metrics.put("source_validation_ms",validationMs);
         metrics.put("analysis_ms",analysisMs);metrics.put("snapshot_merge_ms",mergeMs);metrics.put("pagination_ms",millis(pageStart));
         metrics.put("files_total",files.size());metrics.put("files_valid",reused);metrics.put("files_reanalysed",analysed);metrics.put("modules_total",grouped.size());metrics.put("modules_batch_analysed",batches);
-        metrics.put("modules_incrementally_analysed",incrementalModules);metrics.put("superseded",superseded);last=Map.copyOf(metrics);
+        metrics.put("modules_incrementally_analysed",incrementalModules);metrics.put("superseded",superseded);metrics.put("high_fidelity_files",highFidelityFiles);last=Map.copyOf(metrics);
         return new Envelope(tier,"live",more,more?Integer.toString(to):null,List.copyOf(warnings),Map.of("diagnostics",page));
     }
     private static double millis(long start){return (System.nanoTime()-start)/1e6;}

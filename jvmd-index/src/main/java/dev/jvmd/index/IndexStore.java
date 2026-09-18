@@ -12,6 +12,7 @@ public interface IndexStore extends AutoCloseable {
                           boolean hasDocs,boolean hasCodeEdges,boolean hasSignatureEdges) { }
     record WorkspaceEntry(String path,String scope) { }
     record ArtifactCandidate(long id,String path,String gav,boolean hasClassRefs,boolean hasCodeEdges) { }
+    record ArtifactWork(String path,String gav,String kind) { }
     record ResolvedRelationship(Map<String,Object> source,Map<String,Object> target,String kind) { }
     record SymbolicReference(String sourceScip,String targetBinaryKey,String kind) { }
     record SourceRelationship(String sourceScip,String targetScip,String kind) { }
@@ -39,6 +40,7 @@ public interface IndexStore extends AutoCloseable {
     Map<String,Object> byId(long id,String workspace)throws Exception;
     Map<String,Object> byScip(String scip,String workspace)throws Exception;
     List<ArtifactCandidate> binaryArtifacts(String workspace)throws Exception;
+    List<ArtifactWork> pendingSignatureArtifacts(String workspace)throws Exception;
     List<ArtifactCandidate> artifactsOwning(Collection<String> scips,String workspace)throws Exception;
     List<ArtifactCandidate> artifactsReferencing(Collection<String> fqns,String workspace)throws Exception;
     List<ResolvedRelationship> relationships(Collection<String> scips,boolean outgoing,Set<String> kinds,String workspace)throws Exception;

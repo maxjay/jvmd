@@ -25,7 +25,8 @@ public final class IndexService implements AutoCloseable {
     private final ScheduledExecutorService scanner=Executors.newSingleThreadScheduledExecutor(Thread.ofVirtual().name("jvmd-index-scan").factory());
     private final AtomicLong scanned=new AtomicLong(),indexed=new AtomicLong(),reused=new AtomicLong(),hashed=new AtomicLong(),faults=new AtomicLong();
     private final AtomicLong scans=new AtomicLong(),scanNanos=new AtomicLong(),discoveryNanos=new AtomicLong(),hashNanos=new AtomicLong(),
-            parseNanos=new AtomicLong(),storageNanos=new AtomicLong(),docsNanos=new AtomicLong(),linkNanos=new AtomicLong(),
+            parseNanos=new AtomicLong(),prepareNanos=new AtomicLong(),storageNanos=new AtomicLong(),symbolWriteNanos=new AtomicLong(),
+            relationshipWriteNanos=new AtomicLong(),classReferenceWriteNanos=new AtomicLong(),docsNanos=new AtomicLong(),linkNanos=new AtomicLong(),
             queryCalls=new AtomicLong(),queryNanos=new AtomicLong(),workspaceResolutionCalls=new AtomicLong(),workspaceResolutionNanos=new AtomicLong();
     private final ConcurrentHashMap<String,String> activeArtifacts=new ConcurrentHashMap<>();
     private final ConcurrentLinkedDeque<String> warnings=new ConcurrentLinkedDeque<>();
@@ -64,7 +65,9 @@ public final class IndexService implements AutoCloseable {
         result.put("active_artifacts",Map.copyOf(activeArtifacts));result.put("store",store.status());
         var timings=new LinkedHashMap<String,Object>();
         timings.put("scans",scans.get());timings.put("scan_ms",millis(scanNanos.get()));timings.put("discovery_ms",millis(discoveryNanos.get()));
-        timings.put("hash_ms",millis(hashNanos.get()));timings.put("parse_ms",millis(parseNanos.get()));timings.put("storage_ms",millis(storageNanos.get()));
+        timings.put("hash_ms",millis(hashNanos.get()));timings.put("parse_ms",millis(parseNanos.get()));timings.put("prepare_ms",millis(prepareNanos.get()));
+        timings.put("storage_ms",millis(storageNanos.get()));timings.put("symbol_write_ms",millis(symbolWriteNanos.get()));
+        timings.put("relationship_write_ms",millis(relationshipWriteNanos.get()));timings.put("class_reference_write_ms",millis(classReferenceWriteNanos.get()));
         timings.put("docs_ms",millis(docsNanos.get()));timings.put("link_ms",millis(linkNanos.get()));
         timings.put("query_calls",queryCalls.get());timings.put("query_ms",millis(queryNanos.get()));
         timings.put("workspace_resolution_calls",workspaceResolutionCalls.get());timings.put("workspace_resolution_ms",millis(workspaceResolutionNanos.get()));
@@ -102,7 +105,10 @@ public final class IndexService implements AutoCloseable {
     }
     private void storeContent(Connection c,long artifact,String gav,String kind,BinaryReader.Content content,Map<String,Map<String,Object>> sourceData)throws Exception{
         var keys=ids(c,artifact);
+        long prepareStarted=System.nanoTime();
         var identities=content.symbols().stream().collect(java.util.stream.Collectors.groupingBy(symbol->scip(gav,symbol),java.util.stream.Collectors.counting()));
+        prepareNanos.addAndGet(System.nanoTime()-prepareStarted);
+        long symbolsStarted=System.nanoTime();
         String insert="INSERT INTO symbols(scip,artifact_id,kind,name,signature,erased_descriptor,flags,binary_key,fqn,name_path,class_entry,parameters,metadata) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(scip) DO NOTHING RETURNING id";
         try(var s=c.prepareStatement(insert);var lookup=c.prepareStatement("SELECT id,artifact_id FROM symbols WHERE scip=?");var associate=c.prepareStatement("INSERT OR REPLACE INTO artifact_symbols(artifact_id,symbol_id,data,source_file) VALUES(?,?,?,?)")){
             for(var symbol:content.symbols()){
@@ -124,9 +130,15 @@ public final class IndexService implements AutoCloseable {
                 if(symbol.key().equals(symbol.fqn())){names.setString(1,symbol.name());names.setString(2,symbol.fqn());names.setLong(3,artifact);names.addBatch();}
             }owners.executeBatch();names.executeBatch();
         }
+        symbolWriteNanos.addAndGet(System.nanoTime()-symbolsStarted);
+        long relationshipsStarted=System.nanoTime();
         try(var edges=c.prepareStatement("INSERT OR IGNORE INTO edge_targets VALUES(?,?,?)")){for(var edge:content.edges())if(keys.containsKey(edge.src())){edges.setLong(1,keys.get(edge.src()));edges.setString(2,edge.target());edges.setString(3,edge.kind());edges.addBatch();}edges.executeBatch();}
         storeSignatureTargets(c,artifact,content.edges(),keys);
-        if(!content.models().isEmpty())storeClassReferences(c,artifact,content.models().values());
+        relationshipWriteNanos.addAndGet(System.nanoTime()-relationshipsStarted);
+        if(!content.models().isEmpty()){
+            long classRefsStarted=System.nanoTime();storeClassReferences(c,artifact,content.models().values());
+            classReferenceWriteNanos.addAndGet(System.nanoTime()-classRefsStarted);
+        }
     }
     private static void storeSignatureTargets(Connection c,long artifact,List<BinaryReader.Edge> edges,Map<String,Long> keys)throws Exception {
         try(var insert=c.prepareStatement("INSERT OR IGNORE INTO signature_targets VALUES(?,?,?,?)")) {
@@ -145,12 +157,13 @@ public final class IndexService implements AutoCloseable {
             var known=ids(c,artifact);
             var missing=content.symbols().stream().filter(symbol->!known.containsKey(symbol.key())).toList();
             if(!missing.isEmpty())storeContent(c,artifact,gav,"jar",new BinaryReader.Content(missing,content.edges(),content.models(),content.warnings()),Map.of());
-            var keys=ids(c,artifact);
+            var keys=ids(c,artifact);long relationshipsStarted=System.nanoTime();
             try(var remove=c.prepareStatement("DELETE FROM code_targets WHERE artifact_id=?")){remove.setLong(1,artifact);remove.executeUpdate();}
             try(var insert=c.prepareStatement("INSERT OR IGNORE INTO code_targets VALUES(?,?,?,?)")){
                 for(var edge:edges)if(keys.containsKey(edge.src())){insert.setLong(1,artifact);insert.setLong(2,keys.get(edge.src()));insert.setString(3,edge.target());insert.setString(4,edge.kind());insert.addBatch();}insert.executeBatch();
             }
-            storeClassReferences(c,artifact,content.models().values());
+            relationshipWriteNanos.addAndGet(System.nanoTime()-relationshipsStarted);
+            long classRefsStarted=System.nanoTime();storeClassReferences(c,artifact,content.models().values());classReferenceWriteNanos.addAndGet(System.nanoTime()-classRefsStarted);
             try(var update=c.prepareStatement("UPDATE artifacts SET has_code_edges=1 WHERE id=?")){update.setLong(1,artifact);update.executeUpdate();}
             return null;
         });indexed.incrementAndGet();

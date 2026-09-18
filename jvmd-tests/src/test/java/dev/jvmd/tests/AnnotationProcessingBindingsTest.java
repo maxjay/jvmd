@@ -50,6 +50,13 @@ class AnnotationProcessingBindingsTest {
             var broken=TestSupport.request(app.dispatcher(),"diag.get",Map.of("session",session,"paths",List.of(use.toString()))).path("result");
             assertThat(broken.path("warnings").toString()).contains("diagnostic_fidelity=full_lombok_external");
             assertThat(broken.path("result").path("diagnostics").toString()).contains("compiler.err.").contains("external-javac");
+            var verifiedBroken=new Verifier(config).verify(root,Json.MAPPER.createObjectNode(),Duration.ofMinutes(2));
+            assertThat(verifiedBroken.exitCode()).isNotZero();
+            var liveAgreement=new LinkedHashSet<String>();for(var problem:broken.path("result").path("diagnostics"))
+                if(problem.path("kind").asText().equals("ERROR"))liveAgreement.add(problem.path("code").asText()+"@"+problem.path("file").asText()+":"+problem.path("line").asLong()+":"+problem.path("character").asLong());
+            var verifiedAgreement=verifiedBroken.diagnostics().stream().filter(problem->problem.kind().equals("ERROR")&&problem.file().equals(use.toUri().toString()))
+                    .map(problem->problem.code()+"@"+problem.file()+":"+problem.line()+":"+problem.character()).collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            assertThat(liveAgreement).as("external Lombok diagnostics agree with the pinned real build").isEqualTo(verifiedAgreement).isNotEmpty();
         }
     }
     private static void assertClean(Application app,String session,List<Path> paths){

@@ -11,6 +11,10 @@ public interface IndexStore extends AutoCloseable {
     record ArtifactRecord(long id,String gav,String kind,String sha256,String path,long size,long mtime,
                           boolean hasDocs,boolean hasCodeEdges,boolean hasSignatureEdges) { }
     record WorkspaceEntry(String path,String scope) { }
+    record ArtifactCandidate(long id,String path,String gav,boolean hasClassRefs,boolean hasCodeEdges) { }
+    record ArtifactWork(String path,String gav,String kind) { }
+    record ResolvedRelationship(Map<String,Object> source,Map<String,Object> target,String kind) { }
+    record SymbolicReference(String sourceScip,String targetBinaryKey,String kind) { }
     record ArtifactInput(ArtifactContext context,ArtifactIndexFormat.Key key,long size,long mtime) {
         public ArtifactInput {
             Objects.requireNonNull(context);Objects.requireNonNull(key);
@@ -23,6 +27,8 @@ public interface IndexStore extends AutoCloseable {
     void publishPath(Path path,long artifactId,long size,long mtime)throws Exception;
     long publishBinary(ArtifactInput input,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception;
     void publishCode(long artifactId,ArtifactContext context,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception;
+    void publishClassReferences(long artifactId,Set<String> classReferences)throws Exception;
+    void resolveGlobalRelationships()throws Exception;
 
     Map<String,Long> counts()throws Exception;
     Map<String,Object> status();
@@ -30,4 +36,16 @@ public interface IndexStore extends AutoCloseable {
     List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds)throws Exception;
     List<Map<String,Object>> descendants(String path,String workspace,int depth,int limit,long after,Set<String> kinds)throws Exception;
     Map<String,Object> byId(long id,String workspace)throws Exception;
+    Map<String,Object> byScip(String scip,String workspace)throws Exception;
+    List<ArtifactCandidate> binaryArtifacts(String workspace)throws Exception;
+    List<ArtifactWork> pendingSignatureArtifacts(String workspace)throws Exception;
+    List<ArtifactCandidate> artifactsOwning(Collection<String> scips,String workspace)throws Exception;
+    List<ArtifactCandidate> artifactsReferencing(Collection<String> fqns,String workspace)throws Exception;
+    List<ResolvedRelationship> relationships(Collection<String> scips,boolean outgoing,Set<String> kinds,String workspace)throws Exception;
+    List<SymbolicReference> codeReferences(Collection<String> frontier,boolean outgoing,Set<String> kinds,String workspace)throws Exception;
+    List<Map<String,Object>> symbolsByBinaryKey(String binaryKey,String workspace)throws Exception;
+    List<Map<String,Object>> relationshipClosure(String rootScip,int depth,Set<String> kinds,String workspace,int limit,int offset)throws Exception;
+    Set<String> unresolvedSignatureTargets(String rootScip,int depth,Set<String> kinds,String workspace,int limit)throws Exception;
+    List<Map<String,Object>> overrideParents(String scip,String workspace,int limit)throws Exception;
+    List<Path> localWorkspaceArtifacts(String workspace)throws Exception;
 }

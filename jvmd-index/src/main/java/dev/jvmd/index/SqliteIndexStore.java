@@ -58,6 +58,19 @@ public final class SqliteIndexStore implements IndexStore {
         });
     }
 
+    @Override public void publishClassReferences(long artifactId,Set<String> classReferences)throws Exception{
+        database.write(c->{storeClassReferences(c,artifactId,classReferences);return null;});
+    }
+
+    @Override public void resolveGlobalRelationships()throws Exception{
+        database.write(c->{try(var s=c.createStatement()){
+            s.executeUpdate("INSERT OR IGNORE INTO edges SELECT t.src,s.id,t.kind FROM edge_targets t JOIN symbols s ON s.binary_key=t.target");
+            s.executeUpdate("INSERT OR IGNORE INTO artifact_edges SELECT t.artifact_id,t.src,v.artifact_id,s.id,t.kind FROM signature_targets t JOIN symbols s ON s.binary_key=t.target JOIN artifact_symbols v ON v.symbol_id=s.id");
+            s.executeUpdate("INSERT OR IGNORE INTO artifact_edges SELECT h.src_artifact,child.id,h.dst_artifact,parent.id,'overrides' FROM artifact_edges h JOIN symbols child ON child.owner_id=h.src JOIN artifact_symbols cv ON cv.symbol_id=child.id AND cv.artifact_id=h.src_artifact JOIN symbols parent ON parent.owner_id=h.dst AND parent.name=child.name JOIN artifact_symbols pv ON pv.symbol_id=parent.id AND pv.artifact_id=h.dst_artifact WHERE h.kind IN ('extends','implements') AND child.kind='method' AND parent.kind='method' AND substr(COALESCE(json_extract(cv.data,'$.erased_descriptor'),child.erased_descriptor),1,instr(COALESCE(json_extract(cv.data,'$.erased_descriptor'),child.erased_descriptor),')'))=substr(COALESCE(json_extract(pv.data,'$.erased_descriptor'),parent.erased_descriptor),1,instr(COALESCE(json_extract(pv.data,'$.erased_descriptor'),parent.erased_descriptor),')')) AND (COALESCE(json_extract(cv.data,'$.flags'),child.flags) & 8)=0 AND (COALESCE(json_extract(pv.data,'$.flags'),parent.flags) & 10)=0");
+            s.executeUpdate("INSERT OR IGNORE INTO edges SELECT child.id,parent.id,'overrides' FROM edges hierarchy CROSS JOIN symbols child ON child.owner_id=hierarchy.src CROSS JOIN symbols parent ON parent.owner_id=hierarchy.dst AND parent.name=child.name AND substr(parent.erased_descriptor,1,instr(parent.erased_descriptor,')'))=substr(child.erased_descriptor,1,instr(child.erased_descriptor,')')) WHERE hierarchy.kind IN ('extends','implements') AND child.kind='method' AND parent.kind='method' AND (child.flags & 8)=0 AND (parent.flags & 10)=0");
+        }return null;});
+    }
+
     private long putArtifact(Connection c,ArtifactInput input)throws Exception{
         String path=input.context().path();Long old=null;
         try(var s=c.prepareStatement("SELECT artifact_id FROM artifact_paths WHERE path=?")){
@@ -265,6 +278,176 @@ public final class SqliteIndexStore implements IndexStore {
                 try(var result=q.executeQuery()){return result.next()?symbol(result):null;}
             }
         });
+    }
+
+    private static String placeholders(int count){return String.join(",",Collections.nCopies(count,"?"));}
+    private static String membership(String alias,String workspace){
+        return workspace==null?"":" AND EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id="+alias+".id)";
+    }
+
+    @Override public Map<String,Object> byScip(String scip,String workspace)throws Exception{
+        return database.read(c->{Long id=idByScip(c,scip,workspace);return id==null?null:byIdOn(c,id,workspace);});
+    }
+
+    @Override public List<ArtifactCandidate> binaryArtifacts(String workspace)throws Exception{
+        return database.read(c->{var result=new ArrayList<ArtifactCandidate>();
+            String sql="SELECT a.id,a.path,a.gav,a.has_class_refs,a.has_code_edges FROM artifacts a WHERE a.kind='jar' AND a.path NOT LIKE 'jrt:%'"+membership("a",workspace)+" ORDER BY a.id";
+            try(var q=c.prepareStatement(sql)){if(workspace!=null)q.setString(1,workspace);
+                try(var r=q.executeQuery()){while(r.next())result.add(new ArtifactCandidate(r.getLong(1),r.getString(2),r.getString(3),r.getBoolean(4),r.getBoolean(5)));}
+            }
+            return List.copyOf(result);
+        });
+    }
+
+    @Override public List<ArtifactWork> pendingSignatureArtifacts(String workspace)throws Exception{
+        return database.read(c->{var result=new ArrayList<ArtifactWork>();
+            String sql="SELECT a.path,a.gav,a.kind FROM artifacts a WHERE a.has_signature_edges=0 AND a.kind<>'sources'"+
+                    (workspace==null?"":" AND (a.gav LIKE 'jdk:%' OR EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id))")+" ORDER BY a.id";
+            try(var q=c.prepareStatement(sql)){if(workspace!=null)q.setString(1,workspace);
+                try(var r=q.executeQuery()){while(r.next())result.add(new ArtifactWork(r.getString(1),r.getString(2),r.getString(3)));}
+            }
+            return List.copyOf(result);
+        });
+    }
+
+    @Override public List<ArtifactCandidate> artifactsOwning(Collection<String> scips,String workspace)throws Exception{
+        if(scips.isEmpty())return List.of();
+        return database.read(c->{var result=new ArrayList<ArtifactCandidate>();
+            String sql=EdgeScope.CONTEXT+"SELECT DISTINCT a.id,a.path,a.gav,a.has_class_refs,a.has_code_edges FROM artifacts a JOIN artifact_symbols v ON v.artifact_id=a.id JOIN symbols s ON s.id=v.symbol_id WHERE a.kind='jar' AND a.path NOT LIKE 'jrt:%' AND s.scip IN ("+placeholders(scips.size())+") AND "+EdgeScope.chosen("s.id","a.id")+" ORDER BY a.id";
+            try(var q=c.prepareStatement(sql)){
+                int i=1;q.setString(i++,workspace);for(String scip:scips)q.setString(i++,scip);
+                try(var r=q.executeQuery()){while(r.next())result.add(new ArtifactCandidate(r.getLong(1),r.getString(2),r.getString(3),r.getBoolean(4),r.getBoolean(5)));}
+            }
+            return List.copyOf(result);
+        });
+    }
+
+    @Override public List<ArtifactCandidate> artifactsReferencing(Collection<String> fqns,String workspace)throws Exception{
+        if(fqns.isEmpty())return List.of();
+        return database.read(c->{var result=new ArrayList<ArtifactCandidate>();
+            String sql="SELECT DISTINCT a.id,a.path,a.gav,a.has_class_refs,a.has_code_edges FROM artifacts a JOIN artifact_class_refs r ON r.artifact_id=a.id WHERE a.kind='jar' AND r.target IN ("+placeholders(fqns.size())+")"+membership("a",workspace)+" ORDER BY a.id";
+            try(var q=c.prepareStatement(sql)){
+                int i=1;for(String fqn:fqns)q.setString(i++,fqn);if(workspace!=null)q.setString(i,workspace);
+                try(var r=q.executeQuery()){while(r.next())result.add(new ArtifactCandidate(r.getLong(1),r.getString(2),r.getString(3),r.getBoolean(4),r.getBoolean(5)));}
+            }
+            return List.copyOf(result);
+        });
+    }
+
+    @Override public List<ResolvedRelationship> relationships(Collection<String> scips,boolean outgoing,Set<String> kinds,String workspace)throws Exception{
+        if(scips.isEmpty())return List.of();
+        return database.read(c->{
+            String side=outgoing?"src":"dst";
+            String kindClause=kinds.isEmpty()?"":" AND e.kind IN ("+placeholders(kinds.size())+")";
+            String sql=EdgeScope.CONTEXT+"SELECT DISTINCT e.src,e.dst,e.kind FROM artifact_edges e JOIN symbols selected ON selected.id=e."+side+
+                    " WHERE selected.scip IN ("+placeholders(scips.size())+")"+kindClause+" AND "+EdgeScope.edge("e")+" ORDER BY e.src,e.dst,e.kind";
+            var rows=new ArrayList<long[]>();var rowKinds=new ArrayList<String>();
+            try(var q=c.prepareStatement(sql)){
+                int i=1;q.setString(i++,workspace);for(String scip:scips)q.setString(i++,scip);for(String kind:kinds)q.setString(i++,kind);
+                try(var r=q.executeQuery()){while(r.next()){rows.add(new long[]{r.getLong(1),r.getLong(2)});rowKinds.add(r.getString(3));}}
+            }
+            var result=new ArrayList<ResolvedRelationship>();
+            for(int i=0;i<rows.size();i++){
+                var pair=rows.get(i);var source=byIdOn(c,pair[0],workspace);var target=byIdOn(c,pair[1],workspace);
+                if(source!=null&&target!=null)result.add(new ResolvedRelationship(source,target,rowKinds.get(i)));
+            }
+            return List.copyOf(result);
+        });
+    }
+
+    @Override public List<SymbolicReference> codeReferences(Collection<String> frontier,boolean outgoing,Set<String> kinds,String workspace)throws Exception{
+        if(frontier.isEmpty())return List.of();
+        return database.read(c->{var result=new ArrayList<SymbolicReference>();
+            String predicate=outgoing?"s.scip":"t.target";
+            String kindClause=kinds.isEmpty()?"":" AND t.kind IN ("+placeholders(kinds.size())+")";
+            String sql=EdgeScope.CONTEXT+"SELECT DISTINCT s.scip,t.target,t.kind FROM code_targets t JOIN symbols s ON s.id=t.src WHERE "+predicate+
+                    " IN ("+placeholders(frontier.size())+")"+kindClause+" AND "+EdgeScope.chosen("t.src","t.artifact_id")+" ORDER BY s.scip,t.target,t.kind";
+            try(var q=c.prepareStatement(sql)){
+                int i=1;q.setString(i++,workspace);for(String value:frontier)q.setString(i++,value);for(String kind:kinds)q.setString(i++,kind);
+                try(var r=q.executeQuery()){while(r.next())result.add(new SymbolicReference(r.getString(1),r.getString(2),r.getString(3)));}
+            }
+            return List.copyOf(result);
+        });
+    }
+
+    @Override public List<Map<String,Object>> symbolsByBinaryKey(String binaryKey,String workspace)throws Exception{
+        return database.read(c->{
+            var ids=new ArrayList<Long>();
+            try(var q=c.prepareStatement("SELECT DISTINCT s.id FROM symbols s JOIN artifact_symbols v ON v.symbol_id=s.id WHERE COALESCE(json_extract(v.data,'$.binary_key'),s.binary_key)=? ORDER BY s.id")){
+                q.setString(1,binaryKey);try(var r=q.executeQuery()){while(r.next())ids.add(r.getLong(1));}
+            }
+            var result=new ArrayList<Map<String,Object>>();
+            for(long id:ids){var symbol=byIdOn(c,id,workspace);if(symbol!=null)result.add(symbol);}
+            return List.copyOf(result);
+        });
+    }
+
+    @Override public List<Map<String,Object>> relationshipClosure(String rootScip,int depth,Set<String> kinds,String workspace,int limit,int offset)throws Exception{
+        if(depth<=0||kinds.isEmpty()||limit<=0)return List.of();
+        return database.read(c->{
+            Long root=idByScip(c,rootScip,workspace);if(root==null)return List.<Map<String,Object>>of();
+            String in=placeholders(kinds.size());
+            String reach=EdgeScope.CONTEXT.stripTrailing()+", reach(id,d) AS (SELECT ?,0 UNION SELECT e.dst,r.d+1 FROM artifact_edges e JOIN reach r ON e.src=r.id WHERE r.d<? AND e.kind IN ("+in+") AND "+EdgeScope.edge("e")+") ";
+            var ids=new ArrayList<Long>();
+            try(var q=c.prepareStatement(reach+"SELECT id,min(d) distance FROM reach GROUP BY id HAVING min(d)>0 ORDER BY distance,id LIMIT ? OFFSET ?")){
+                int i=1;q.setString(i++,workspace);q.setLong(i++,root);q.setInt(i++,depth);for(String kind:kinds)q.setString(i++,kind);q.setInt(i++,limit);q.setInt(i,offset);
+                try(var r=q.executeQuery()){while(r.next())ids.add(r.getLong(1));}
+            }
+            var result=new ArrayList<Map<String,Object>>();for(long id:ids){var symbol=byIdOn(c,id,workspace);if(symbol!=null)result.add(symbol);}
+            return List.copyOf(result);
+        });
+    }
+
+    @Override public Set<String> unresolvedSignatureTargets(String rootScip,int depth,Set<String> kinds,String workspace,int limit)throws Exception{
+        if(depth<=0||kinds.isEmpty()||limit<=0)return Set.of();
+        return database.read(c->{
+            Long root=idByScip(c,rootScip,workspace);if(root==null)return Set.<String>of();
+            String in=placeholders(kinds.size());
+            String reach=EdgeScope.CONTEXT.stripTrailing()+", reach(id,d) AS (SELECT ?,0 UNION SELECT e.dst,r.d+1 FROM artifact_edges e JOIN reach r ON e.src=r.id WHERE r.d<? AND e.kind IN ("+in+") AND "+EdgeScope.edge("e")+") ";
+            var result=new LinkedHashSet<String>();
+            try(var q=c.prepareStatement(reach+"SELECT DISTINCT t.target FROM reach r JOIN signature_targets t ON t.src=r.id WHERE r.d<? AND t.kind IN ("+in+") AND "+EdgeScope.chosen("t.src","t.artifact_id")+" AND NOT EXISTS(SELECT 1 FROM symbols s WHERE s.binary_key=t.target) LIMIT ?")){
+                int i=1;q.setString(i++,workspace);q.setLong(i++,root);q.setInt(i++,depth);for(String kind:kinds)q.setString(i++,kind);
+                q.setInt(i++,depth);for(String kind:kinds)q.setString(i++,kind);q.setInt(i,limit);
+                try(var r=q.executeQuery()){while(r.next())result.add(r.getString(1));}
+            }
+            return Set.copyOf(result);
+        });
+    }
+
+    @Override public List<Map<String,Object>> overrideParents(String scip,String workspace,int limit)throws Exception{
+        if(limit<=0)return List.of();
+        return database.read(c->{
+            Long root=idByScip(c,scip,workspace);if(root==null)return List.<Map<String,Object>>of();
+            var ids=new ArrayList<Long>();
+            try(var q=c.prepareStatement(EdgeScope.CONTEXT+"SELECT e.dst FROM artifact_edges e WHERE e.src=? AND e.kind='overrides' AND "+EdgeScope.edge("e")+" ORDER BY e.dst LIMIT ?")){
+                q.setString(1,workspace);q.setLong(2,root);q.setInt(3,limit);try(var r=q.executeQuery()){while(r.next())ids.add(r.getLong(1));}
+            }
+            var result=new ArrayList<Map<String,Object>>();for(long id:ids){var symbol=byIdOn(c,id,workspace);if(symbol!=null)result.add(symbol);}
+            return List.copyOf(result);
+        });
+    }
+
+    @Override public List<Path> localWorkspaceArtifacts(String workspace)throws Exception{
+        return database.read(c->{var result=new ArrayList<Path>();
+            try(var q=c.prepareStatement("SELECT a.path FROM workspace_artifacts w JOIN artifacts a ON a.id=w.artifact_id WHERE w.workspace_id=? AND a.kind='local' ORDER BY a.path")){
+                q.setString(1,workspace);try(var r=q.executeQuery()){while(r.next())result.add(Path.of(r.getString(1)));}
+            }
+            return List.copyOf(result);
+        });
+    }
+
+    private Long idByScip(Connection c,String scip,String workspace)throws Exception{
+        String filter=workspace==null?"":" AND (a.gav LIKE 'jdk:%' OR EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id))";
+        try(var q=c.prepareStatement("SELECT s.id FROM symbols s JOIN artifact_symbols v ON v.symbol_id=s.id JOIN artifacts a ON a.id=v.artifact_id WHERE s.scip=?"+filter+" ORDER BY CASE a.kind WHEN 'local' THEN 0 ELSE 1 END,a.id LIMIT 1")){
+            q.setString(1,scip);if(workspace!=null)q.setString(2,workspace);try(var r=q.executeQuery()){return r.next()?r.getLong(1):null;}
+        }
+    }
+
+    private Map<String,Object> byIdOn(Connection c,long id,String workspace)throws Exception{
+        String filter=workspace==null?"":" AND (a.gav LIKE 'jdk:%' OR EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id))";
+        try(var q=c.prepareStatement("SELECT s.*,a.id AS selected_artifact,a.gav,a.path AS artifact_path,a.kind AS artifact_kind,v.data AS variant_data FROM symbols s JOIN artifact_symbols v ON v.symbol_id=s.id JOIN artifacts a ON a.id=v.artifact_id WHERE s.id=?"+filter+" ORDER BY CASE a.kind WHEN 'local' THEN 0 ELSE 1 END,a.id LIMIT 1")){
+            q.setLong(1,id);if(workspace!=null)q.setString(2,workspace);try(var r=q.executeQuery()){return r.next()?symbol(r):null;}
+        }
     }
 
     private static Map<String,Object> symbol(ResultSet r)throws Exception{

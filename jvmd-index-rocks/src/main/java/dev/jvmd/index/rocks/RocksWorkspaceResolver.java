@@ -85,7 +85,16 @@ public final class RocksWorkspaceResolver implements AutoCloseable {
         if(workspace.classpath().stream().noneMatch(entry->entry.artifactCacheKey().equals(sourceArtifactCacheKey)))
             throw new IllegalArgumentException("Source artifact is not in workspace");
         var result=new ArrayList<ResolvedRelationship>();
-        for(var relationship:artifacts.outgoing(sourceArtifactCacheKey,sourceLocalId,kinds,limit)){
+        var relationships=new LinkedHashSet<ArtifactIndexFormat.Relationship>();
+        relationships.addAll(artifacts.outgoing(sourceArtifactCacheKey,sourceLocalId,kinds,limit));
+        var signature=artifacts.artifact(sourceArtifactCacheKey);
+        if(signature!=null&&result.size()<limit){
+            var codeKey=new ArtifactIndexFormat.Key(signature.key().binarySha256(),signature.key().formatVersion(),
+                    signature.key().indexerVersion(),signature.key().runtimeFeature(),"code").cacheKey();
+            if(artifacts.contains(codeKey))relationships.addAll(artifacts.outgoing(codeKey,sourceLocalId,kinds,limit));
+        }
+        for(var relationship:relationships){
+            if(result.size()>=limit)break;
             var target=resolveFirst(workspace,relationship.target());
             if(target.isEmpty())continue;
             result.add(new ResolvedRelationship(sourceArtifactCacheKey,sourceLocalId,relationship.kind(),relationship.target(),target.get()));

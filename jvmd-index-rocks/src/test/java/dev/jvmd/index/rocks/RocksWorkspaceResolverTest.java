@@ -92,4 +92,28 @@ class RocksWorkspaceResolverTest {
                 null,1,binaryKey.replace('.','/')+".class",List.of(),"{}");
         return new ArtifactIndexFormat.ArtifactData(key,List.of(symbol),relationships);
     }
+
+    @Test void outgoingOverlaysLazyCodeGenerationOnSignatureGeneration()throws Exception{
+        try(var artifacts=new RocksArtifactRepository(temp.resolve("code-artifacts"));
+            var resolver=new RocksWorkspaceResolver(temp.resolve("code-resolution"),artifacts)){
+            var signature=facts('a',"source.Type",List.of());
+            var target=facts('b',"target.Type",List.of());
+            artifacts.publish(signature,Set.of());artifacts.publish(target,Set.of());
+
+            var codeKey=new ArtifactIndexFormat.Key(signature.key().binarySha256(),signature.key().formatVersion(),
+                    signature.key().indexerVersion(),signature.key().runtimeFeature(),"code");
+            var code=new ArtifactIndexFormat.ArtifactData(codeKey,signature.symbols(),
+                    List.of(new ArtifactIndexFormat.Relationship(0,"target.Type","calls")));
+            artifacts.publish(code,Set.of("target.Type"));
+
+            var sourceEntry=entry(signature,"source:artifact:1");
+            var targetEntry=entry(target,"target:artifact:1");
+            var workspace=new RocksWorkspaceResolver.Workspace(List.of(sourceEntry,targetEntry),"compiler");
+            var outgoing=resolver.outgoing(workspace,signature.key().cacheKey(),0,Set.of("calls"),10);
+            assertThat(outgoing).hasSize(1);
+            assertThat(outgoing.getFirst().symbolicTarget()).isEqualTo("target.Type");
+            assertThat(outgoing.getFirst().target().artifactCacheKey()).isEqualTo(target.key().cacheKey());
+        }
+    }
+
 }

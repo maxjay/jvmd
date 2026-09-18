@@ -46,6 +46,63 @@ class ApiFingerprintInvalidationTest {
         }
     }
 
+    @Test void superclassChangeInvalidatesUsers()throws Exception{
+        Path first=root.resolve("First.java"),second=root.resolve("Second.java"),api=root.resolve("Api.java"),use=root.resolve("Use.java");
+        Files.writeString(first,"class First { int value(){return 1;} }");Files.writeString(second,"class Second { String value(){return \"x\";} }");
+        String original="class Api extends First {}",useText="class Use { int n=new Api().value(); }";
+        Files.writeString(api,original);Files.writeString(use,useText);var documents=new Documents();documents.open(api,original,1);
+        try(var analyzer=analyzer(documents)){
+            assertThat(diagnostics(analyzer,api,original)).isEmpty();assertThat(diagnostics(analyzer,use,useText)).isEmpty();long before=number(analyzer,"queries");
+            String changed="class Api extends Second {}";documents.change(api,2,List.of(new Documents.Change(null,changed)));analyzer.documents(documents);analyzer.changed(api);
+            assertThat(diagnostics(analyzer,api,changed)).isEmpty();assertThat(number(analyzer,"api_fingerprint_changes")).isEqualTo(1L);
+            assertThat(diagnostics(analyzer,use,useText)).anyMatch(problem->problem.code().startsWith("compiler.err.prob.found.req"));
+            assertThat(number(analyzer,"queries")).isEqualTo(before+2);
+        }
+    }
+
+    @Test void interfaceMethodChangeInvalidatesImplementations()throws Exception{
+        Path contract=root.resolve("Contract.java"),impl=root.resolve("Impl.java");
+        String original="interface Contract { int value(); }",implementation="class Impl implements Contract { public int value(){return 1;} }";
+        Files.writeString(contract,original);Files.writeString(impl,implementation);var documents=new Documents();documents.open(contract,original,1);
+        try(var analyzer=analyzer(documents)){
+            assertThat(diagnostics(analyzer,contract,original)).isEmpty();assertThat(diagnostics(analyzer,impl,implementation)).isEmpty();
+            String changed="interface Contract { String value(); }";documents.change(contract,2,List.of(new Documents.Change(null,changed)));analyzer.documents(documents);analyzer.changed(contract);
+            assertThat(diagnostics(analyzer,contract,changed)).isEmpty();
+            assertThat(diagnostics(analyzer,impl,implementation)).anyMatch(problem->problem.kind().equals("ERROR"));
+        }
+    }
+
+    @Test void addedOverloadsInvalidatePreviouslyResolvedCalls()throws Exception{
+        Path api=root.resolve("Api.java"),use=root.resolve("Use.java");
+        String original="class Api { static int pick(Object value){return 1;} }",useText="class Use { int n=Api.pick(null); }";
+        Files.writeString(api,original);Files.writeString(use,useText);var documents=new Documents();documents.open(api,original,1);
+        try(var analyzer=analyzer(documents)){
+            assertThat(diagnostics(analyzer,api,original)).isEmpty();assertThat(diagnostics(analyzer,use,useText)).isEmpty();
+            String changed="class Api { static int pick(Object value){return 1;} static int pick(String value){return 2;} static int pick(Integer value){return 3;} }";
+            documents.change(api,2,List.of(new Documents.Change(null,changed)));analyzer.documents(documents);analyzer.changed(api);
+            assertThat(diagnostics(analyzer,api,changed)).isEmpty();
+            assertThat(diagnostics(analyzer,use,useText)).anyMatch(problem->problem.code().contains("ref.ambiguous"));
+        }
+    }
+
+    @Test void staticImportTargetChangeInvalidatesTheImporter()throws Exception{
+        Path pkg=Files.createDirectories(root.resolve("p")),api=pkg.resolve("Ops.java"),use=pkg.resolve("Use.java");
+        String original="package p; public class Ops { public static int value(){return 1;} }";
+        String useText="package p; import static p.Ops.value; class Use { int n=value(); }";
+        Files.writeString(api,original);Files.writeString(use,useText);var documents=new Documents();documents.open(api,original,1);
+        try(var analyzer=analyzer(documents)){
+            assertThat(diagnostics(analyzer,api,original)).isEmpty();assertThat(diagnostics(analyzer,use,useText)).isEmpty();
+            String changed="package p; public class Ops { public static int answer(){return 1;} }";
+            documents.change(api,2,List.of(new Documents.Change(null,changed)));analyzer.documents(documents);analyzer.changed(api);
+            assertThat(diagnostics(analyzer,api,changed)).isEmpty();
+            assertThat(diagnostics(analyzer,use,useText)).anyMatch(problem->problem.code().contains("cant.resolve"));
+        }
+    }
+
+    private Analyzer analyzer(Documents documents)throws Exception{
+        var analyzer=new Analyzer();analyzer.configure(new Analyzer.Context("test:app:1","25",List.of(),List.of(root),"ctx",Map.of(root.toUri().toString(),"test:app:1")),null,256L*1024*1024);analyzer.documents(documents);return analyzer;
+    }
+
     @SuppressWarnings("unchecked")
     private static List<CompilerPool.Problem> diagnostics(Analyzer analyzer,Path file,String text)throws Exception{
         var envelope=analyzer.diagnostics(file,text);return (List<CompilerPool.Problem>)((Map<String,Object>)envelope.result()).get("diagnostics");

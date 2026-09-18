@@ -33,7 +33,7 @@ public final class SqliteIndexStore implements IndexStore {
         return database.write(c->{
             long artifact=putArtifact(c,input);
             var ids=existingSymbolIds(c,artifact,facts);
-            if(ids.isEmpty())ids=upsertSymbols(c,artifact,input.context(),facts,sourceData);
+            if(ids.isEmpty()||!sourceData.isEmpty())ids=upsertSymbols(c,artifact,input.context(),facts,sourceData);
             storeSignatureRelationships(c,artifact,facts.relationships(),ids);
             storeClassReferences(c,artifact,facts.classReferences());
             try(var update=c.prepareStatement("UPDATE artifacts SET has_signature_edges=1,has_class_refs=1 WHERE id=?")){

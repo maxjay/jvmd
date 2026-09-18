@@ -17,11 +17,16 @@ class MultiModuleDiagnosticsBenchmarkTest {
         Path reactor=MavenFixtures.project(root,
                 "<packaging>pom</packaging><modules><module>core</module><module>app</module></modules>"
                 +"<properties><maven.compiler.release>25</maven.compiler.release></properties>");
-        Path core=MavenFixtures.project(reactor.resolve("core"),
-                "<properties><maven.compiler.release>25</maven.compiler.release></properties>");
-        Path app=MavenFixtures.project(reactor.resolve("app"),
+        Files.writeString(reactor.resolve("pom.xml"),MavenFixtures.pom("fixture","parent","1",
+                "<packaging>pom</packaging><modules><module>core</module><module>app</module></modules>"
+                +"<properties><maven.compiler.release>25</maven.compiler.release></properties>"));
+        Path core=Files.createDirectories(reactor.resolve("core"));
+        Files.writeString(core.resolve("pom.xml"),MavenFixtures.pom("fixture","core","1",
+                "<properties><maven.compiler.release>25</maven.compiler.release></properties>"));
+        Path app=Files.createDirectories(reactor.resolve("app"));
+        Files.writeString(app.resolve("pom.xml"),MavenFixtures.pom("fixture","app","1",
                 "<properties><maven.compiler.release>25</maven.compiler.release></properties>"
-                +"<dependencies>"+MavenFixtures.dependency("core","1")+"</dependencies>");
+                +"<dependencies>"+MavenFixtures.dependency("core","1")+"</dependencies>"));
 
         Path coreSources=Files.createDirectories(core.resolve("src/main/java/fixture/core"));
         Path appSources=Files.createDirectories(app.resolve("src/main/java/fixture/app"));

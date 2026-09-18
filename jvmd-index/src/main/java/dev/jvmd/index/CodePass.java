@@ -82,8 +82,7 @@ public final class CodePass {
 
         for(var row:raw){
             String target=row.targetBinaryKey();
-            var source=index.find(row.sourceScip(),workspace,false,2,0).stream()
-                    .filter(symbol->row.sourceScip().equals(symbol.get("scip"))).findFirst().orElse(null);
+            var source=index.store().byScip(row.sourceScip(),workspace);
             if(source==null)continue;
             List<Map<String,Object>> targets;
             if(known.containsKey(target))targets=List.of(known.get(target));

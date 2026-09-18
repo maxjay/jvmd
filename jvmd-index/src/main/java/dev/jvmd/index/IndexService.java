@@ -114,57 +114,8 @@ public final class IndexService implements AutoCloseable {
             storageNanos.addAndGet(System.nanoTime()-storageStarted);indexed.incrementAndGet();return id;
         }finally{activeArtifacts.remove(location(tracked));}
     }
-    private void storeContent(Connection c,long artifact,String gav,String kind,BinaryReader.Content content,Map<String,Map<String,Object>> sourceData)throws Exception{
-        var keys=ids(c,artifact);
-        long prepareStarted=System.nanoTime();
-        var identities=content.symbols().stream().collect(java.util.stream.Collectors.groupingBy(symbol->scip(gav,symbol),java.util.stream.Collectors.counting()));
-        prepareNanos.addAndGet(System.nanoTime()-prepareStarted);
-        long symbolsStarted=System.nanoTime();
-        String insert="INSERT INTO symbols(scip,artifact_id,kind,name,signature,erased_descriptor,flags,binary_key,fqn,name_path,class_entry,parameters,metadata) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(scip) DO NOTHING RETURNING id";
-        try(var s=c.prepareStatement(insert);var lookup=c.prepareStatement("SELECT id,artifact_id FROM symbols WHERE scip=?");var associate=c.prepareStatement("INSERT OR REPLACE INTO artifact_symbols(artifact_id,symbol_id,data,source_file) VALUES(?,?,?,?)")){
-            for(var symbol:content.symbols()){
-                String identity=scip(gav,symbol);
-                if(identities.get(identity)>1&&(symbol.kind().equals("method")||symbol.kind().equals("ctor")))identity=identity.substring(0,identity.length()-2)+";return="+Signatures.qualified(java.lang.constant.MethodTypeDesc.ofDescriptor(symbol.descriptor()).returnType())+").";
-                s.setString(1,identity);s.setLong(2,artifact);s.setString(3,symbol.kind());s.setString(4,symbol.name());s.setString(5,symbol.signature());s.setString(6,symbol.descriptor());s.setInt(7,symbol.flags());s.setString(8,symbol.key());s.setString(9,symbol.fqn());s.setString(10,namePath(symbol));s.setString(11,symbol.entry());s.setString(12,Json.MAPPER.writeValueAsString(symbol.parameters()));s.setString(13,Json.MAPPER.writeValueAsString(symbol.metadata()));
-                long id,primary;try(var r=s.executeQuery()){if(r.next()){id=r.getLong(1);primary=artifact;}else{lookup.setString(1,identity);try(var found=lookup.executeQuery()){found.next();id=found.getLong(1);primary=found.getLong(2);}}}keys.put(symbol.key(),id);
-                Map<String,Object> data=null;
-                if(kind.equals("local")||primary!=artifact||!sourceData.isEmpty()){
-                    data=new LinkedHashMap<>();data.put("scip",identity);data.put("name",symbol.name());data.put("kind",symbol.kind());data.put("signature",symbol.signature());data.put("erased_descriptor",symbol.descriptor());data.put("flags",symbol.flags());data.put("binary_key",symbol.key());data.put("fqn",symbol.fqn());data.put("name_path",namePath(symbol));data.put("class_entry",symbol.entry());data.put("parameters",symbol.parameters());data.put("metadata",symbol.metadata());data.put("source_file",null);data.put("doc",null);data.put("line",null);data.put("source_start",-1);data.put("source_end",-1);data.put("body_start",-1);data.put("body_end",-1);data.put("tier",2);
-                    data.putAll(sourceData.getOrDefault(symbol.key(),Map.of()));
-                }
-                associate.setLong(1,artifact);associate.setLong(2,id);associate.setString(3,data==null?null:Json.MAPPER.writeValueAsString(data));associate.setString(4,data==null?null:(String)data.get("source_file"));associate.addBatch();
-            }associate.executeBatch();
-        }
-        try(var owners=c.prepareStatement("UPDATE symbols SET owner_id=? WHERE id=? AND artifact_id=?");var names=c.prepareStatement("INSERT INTO simple_names VALUES(?,?,?)")){
-            for(var symbol:content.symbols()){
-                if(symbol.owner()!=null&&keys.containsKey(symbol.owner())){owners.setLong(1,keys.get(symbol.owner()));owners.setLong(2,keys.get(symbol.key()));owners.setLong(3,artifact);owners.addBatch();}
-                if(symbol.key().equals(symbol.fqn())){names.setString(1,symbol.name());names.setString(2,symbol.fqn());names.setLong(3,artifact);names.addBatch();}
-            }owners.executeBatch();names.executeBatch();
-        }
-        symbolWriteNanos.addAndGet(System.nanoTime()-symbolsStarted);
-        long relationshipsStarted=System.nanoTime();
-        try(var edges=c.prepareStatement("INSERT OR IGNORE INTO edge_targets VALUES(?,?,?)")){for(var edge:content.edges())if(keys.containsKey(edge.src())){edges.setLong(1,keys.get(edge.src()));edges.setString(2,edge.target());edges.setString(3,edge.kind());edges.addBatch();}edges.executeBatch();}
-        storeSignatureTargets(c,artifact,content.edges(),keys);
-        relationshipWriteNanos.addAndGet(System.nanoTime()-relationshipsStarted);
-        if(!content.models().isEmpty()){
-            long classRefsStarted=System.nanoTime();storeClassReferences(c,artifact,content.models().values());
-            classReferenceWriteNanos.addAndGet(System.nanoTime()-classRefsStarted);
-        }
-    }
-    private static void storeSignatureTargets(Connection c,long artifact,List<BinaryReader.Edge> edges,Map<String,Long> keys)throws Exception {
-        try(var insert=c.prepareStatement("INSERT OR IGNORE INTO signature_targets VALUES(?,?,?,?)")) {
-            for(var edge:edges)if(keys.containsKey(edge.src())){insert.setLong(1,artifact);insert.setLong(2,keys.get(edge.src()));insert.setString(3,edge.target());insert.setString(4,edge.kind());insert.addBatch();}
-            insert.executeBatch();
-        }
-        try(var update=c.prepareStatement("UPDATE artifacts SET has_signature_edges=1 WHERE id=?")){update.setLong(1,artifact);update.executeUpdate();}
-    }
     void storeClassReferences(long artifact,Collection<java.lang.classfile.ClassModel> classes)throws Exception{
         long started=System.nanoTime();store.publishClassReferences(artifact,CodeReader.classReferences(classes));classReferenceWriteNanos.addAndGet(System.nanoTime()-started);
-    }
-    static void storeClassReferences(Connection c,long artifact,Collection<java.lang.classfile.ClassModel> classes)throws Exception{
-        try(var clear=c.prepareStatement("DELETE FROM artifact_class_refs WHERE artifact_id=?")){clear.setLong(1,artifact);clear.executeUpdate();}
-        try(var insert=c.prepareStatement("INSERT OR IGNORE INTO artifact_class_refs VALUES(?,?)")){for(String target:CodeReader.classReferences(classes)){insert.setLong(1,artifact);insert.setString(2,target);insert.addBatch();}insert.executeBatch();}
-        try(var update=c.prepareStatement("UPDATE artifacts SET has_class_refs=1 WHERE id=?")){update.setLong(1,artifact);update.executeUpdate();}
     }
     synchronized void storeCode(long artifact,String gav,String hash,Path path,BinaryReader.Content content,List<BinaryReader.Edge> edges)throws Exception{
         long prepareStarted=System.nanoTime();

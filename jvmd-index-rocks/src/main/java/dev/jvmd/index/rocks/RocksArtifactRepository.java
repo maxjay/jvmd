@@ -1,6 +1,6 @@
 package dev.jvmd.index.rocks;
 
-import dev.jvmd.index.ArtifactIndexFormat;
+import dev.jvmd.index.*;
 import java.io.*;
 import java.nio.*;
 import java.nio.channels.FileChannel;
@@ -107,6 +107,12 @@ public final class RocksArtifactRepository implements AutoCloseable {
 
     public List<Integer> nameIds(String cacheKey,String namePrefix,int limit){return idsByPrefix(cacheKey,"3|name|"+namePrefix,limit);}
     public List<Integer> reverseSources(String cacheKey,String target,String kind,int limit){return idsByPrefix(cacheKey,"5|reverse|"+target+"|"+kind+"|",limit);}
+    public List<Integer> pathIds(String cacheKey,String pathPrefix,int limit){return idsByPrefix(cacheKey,"7|path|"+pathPrefix,limit);}
+    public List<Integer> substringIds(String cacheKey,String query,int limit){
+        String normalized=query.toLowerCase(Locale.ROOT);if(normalized.isBlank())return List.of();
+        String gram=normalized.substring(0,Math.min(3,normalized.length()));
+        return idsByPrefix(cacheKey,"8|gram|"+gram+"|",limit);
+    }
 
     public List<ArtifactIndexFormat.Relationship> outgoing(String cacheKey,int sourceId,Set<String> kinds,int limit){
         byte[] prefix=key(cacheKey,"4|out|"+hex8(sourceId)+"|");var result=new ArrayList<ArtifactIndexFormat.Relationship>();
@@ -175,6 +181,17 @@ public final class RocksArtifactRepository implements AutoCloseable {
 
             var refs=new ArrayList<>(classReferences);Collections.sort(refs);
             for(String reference:refs)put(writer,key(cacheKey,"6|class|"+reference),EMPTY);
+
+            var byPath=new ArrayList<>(facts.symbols());
+            byPath.sort(Comparator.comparing(ArtifactContext::namePath).thenComparingInt(ArtifactIndexFormat.SymbolRecord::id));
+            for(var symbol:byPath)put(writer,key(cacheKey,"7|path|"+ArtifactContext.namePath(symbol)+"|"+hex8(symbol.id())),EMPTY);
+
+            var grams=new TreeSet<String>();
+            for(var symbol:facts.symbols()){
+                String name=symbol.name().toLowerCase(Locale.ROOT),pathValue=ArtifactContext.namePath(symbol).toLowerCase(Locale.ROOT);
+                addGrams(grams,name,symbol.id());addGrams(grams,pathValue,symbol.id());
+            }
+            for(String gram:grams)put(writer,key(cacheKey,"8|gram|"+gram),EMPTY);
             writer.finish();
         }
     }
@@ -198,6 +215,14 @@ public final class RocksArtifactRepository implements AutoCloseable {
             if(result.put(line.substring(0,split),line.substring(split+1))!=null)throw new IOException("Duplicate artifact manifest field");
         }
         return Map.copyOf(result);
+    }
+
+    private static void addGrams(Set<String> output,String value,int id){
+        String suffix="|"+hex8(id);
+        for(int length=1;length<=3;length++){
+            if(value.length()<length)break;
+            for(int i=0;i<=value.length()-length;i++)output.add(value.substring(i,i+length)+suffix);
+        }
     }
 
     private static byte[] manifest(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences){

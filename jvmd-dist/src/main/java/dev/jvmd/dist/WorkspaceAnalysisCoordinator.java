@@ -88,8 +88,9 @@ public final class WorkspaceAnalysisCoordinator {
             if(!stale.isEmpty())plans.add(new Plan(engine,List.copyOf(stale),entry.getValue().size(),stale.size()>=16&&stale.size()*4>=entry.getValue().size()));
         }
 
-        boolean isolated=plans.size()>1&&plans.stream().map(Plan::engine).allMatch(DiagnosticEngine::isolated)
-                &&Collections.newSetFromMap(new IdentityHashMap<DiagnosticEngine,Boolean>()).addAll(plans.stream().map(Plan::engine).toList());
+        var uniqueEngines=Collections.newSetFromMap(new IdentityHashMap<DiagnosticEngine,Boolean>());
+        uniqueEngines.addAll(plans.stream().map(Plan::engine).toList());
+        boolean isolated=plans.size()>1&&uniqueEngines.size()==plans.size()&&plans.stream().map(Plan::engine).allMatch(DiagnosticEngine::isolated);
         int actorsUsed=isolated?Math.min(parallelism,plans.size()):1;
         var superseded=new AtomicBoolean(false);
         if(actorsUsed>1){

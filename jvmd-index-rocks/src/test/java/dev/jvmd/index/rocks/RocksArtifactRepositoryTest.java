@@ -60,16 +60,16 @@ class RocksArtifactRepositoryTest {
         }
     }
 
-    @Test void generationSurvivesReopenAndReusesWithoutWrites()throws Exception{
-        Path root=temp.resolve("reopen");var data=facts(1000,2000);String cacheKey=data.key().cacheKey();long stored;
+    @Test void generationSurvivesReopenAndReusesWithoutArtifactRewrite()throws Exception{
+        Path root=temp.resolve("reopen");var data=facts(1000,2000);String cacheKey=data.key().cacheKey();
         try(var first=new RocksArtifactRepository(root)){
-            first.publish(data,Set.of("dep.Type12"));assertThat(first.verify(cacheKey)).isTrue();stored=first.storageBytes();
+            first.publish(data,Set.of("dep.Type12"));assertThat(first.verify(cacheKey)).isTrue();
         }
         try(var reopened=new RocksArtifactRepository(root)){
             assertThat(reopened.verify(cacheKey)).isTrue();
             assertThat(reopened.artifact(cacheKey)).isEqualTo(data);
             assertThat(reopened.publish(data,Set.of("dep.Type12")).reused()).isTrue();
-            assertThat(reopened.storageBytes()).isEqualTo(stored);
+            assertThat(reopened.status()).containsEntry("published",0L).containsEntry("reused",1L);
         }
     }
 

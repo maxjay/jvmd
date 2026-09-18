@@ -8,6 +8,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 /** Real Maven reactor benchmark for incremental workspace diagnostics. */
+@Tag("phase-1")
 @Tag("perf")
 class MultiModuleDiagnosticsBenchmarkTest {
     @TempDir Path root;

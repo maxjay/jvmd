@@ -151,11 +151,15 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
         private volatile long documentsGeneration=-1,budget=-1;
         private volatile IndexService index;
         private volatile Path persistence;
-        private boolean actorClosed;
+        private volatile Thread owner;
+        private volatile boolean actorClosed;
 
         private Actor(String key)throws Exception{
             this.key=key;
-            executor=Executors.newSingleThreadExecutor(Thread.ofPlatform().name("jvmd-module-"+Integer.toHexString(key.hashCode())).factory());
+            var factory=(ThreadFactory)work->Thread.ofPlatform().name("jvmd-module-"+Integer.toHexString(key.hashCode())).unstarted(()->{
+                owner=Thread.currentThread();work.run();
+            });
+            executor=Executors.newSingleThreadExecutor(factory);
             analyzer=call(Analyzer::new);handle=new Handle(this);
         }
         private String contextKey(){return generation==null?key:generation;}
@@ -168,6 +172,7 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
         }
         private <T> T call(Callable<T> work)throws Exception{
             if(actorClosed)throw new IllegalStateException("Module analyzer actor is closed");
+            if(Thread.currentThread()==owner)return work.call();
             var inherited=RequestScope.current();
             Future<T> future=executor.submit(()->{
                 long started=cpuTime();
@@ -182,7 +187,12 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
             }
         }
         private long cpuNanos(){return cpuNanos.sum();}
-        private Map<String,Object> status()throws Exception{return call(analyzer::status);}
+        private Map<String,Object> status()throws Exception{
+            var result=new LinkedHashMap<String,Object>(call(analyzer::status));var thread=owner;
+            result.put("actor_key",key);result.put("actor_thread",thread==null?"":thread.getName());
+            result.put("actor_virtual",thread!=null&&thread.isVirtual());result.put("actor_alive",thread!=null&&thread.isAlive());
+            result.put("actor_cpu_ms",Math.round(cpuNanos()/1000.0)/1000.0);return Map.copyOf(result);
+        }
         private void localChanged(Path path,String hash)throws Exception{call(()->{analyzer.changed(path,hash);return null;});}
         private void localResolvedApi(Path path,String fingerprint)throws Exception{call(()->{analyzer.resolvedApi(path,fingerprint);return null;});}
         private void localNamespaceChanged()throws Exception{call(()->{analyzer.namespaceChanged();return null;});}

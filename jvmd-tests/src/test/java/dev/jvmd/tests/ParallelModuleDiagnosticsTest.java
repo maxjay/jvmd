@@ -106,10 +106,14 @@ class ParallelModuleDiagnosticsTest {
             @SuppressWarnings("unchecked")
             var actors=(Map<String,Object>)registry.status().get("actors");
             assertThat(actors).hasSize(2);
+            var actorThreads=new HashSet<String>();
             for(Object value:actors.values()){
                 @SuppressWarnings("unchecked") var status=(Map<String,Object>)value;
                 assertThat(((Number)status.getOrDefault("faults",0L)).longValue()).isZero();
+                assertThat(status.get("actor_virtual")).isEqualTo(false);
+                actorThreads.add(Objects.toString(status.get("actor_thread")));
             }
+            assertThat(actorThreads).hasSize(2);
         }
     }
 
@@ -146,10 +150,15 @@ class ParallelModuleDiagnosticsTest {
             assertThat(warmMetrics.get("files_reanalysed")).isEqualTo(0);
             assertThat(problems(warm)).containsExactlyElementsOf(problems(cold));
             @SuppressWarnings("unchecked") var actorDetail=(Map<String,Object>)registry.status().get("actors");
+            var actorThreads=new HashSet<String>();
             for(Object value:actorDetail.values()){
                 @SuppressWarnings("unchecked") var status=(Map<String,Object>)value;
                 assertThat(((Number)status.getOrDefault("faults",0L)).longValue()).isZero();
+                assertThat(status.get("actor_virtual")).isEqualTo(false);
+                assertThat(status.get("actor_alive")).isEqualTo(true);
+                actorThreads.add(Objects.toString(status.get("actor_thread")));
             }
+            assertThat(actorThreads).hasSize(4);
             return new Run(actors,coldMs,warmMs,coldQueries,warmQueries,
                     ((Number)coldMetrics.get("peak_heap_bytes")).longValue(),
                     ((Number)coldMetrics.get("gc_collections")).longValue(),

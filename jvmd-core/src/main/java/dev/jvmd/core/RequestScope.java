@@ -1,14 +1,13 @@
 package dev.jvmd.core;
 
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 
 /** Per-RPC execution identity and request-stable memoization that can cross isolated module actors. */
 public final class RequestScope {
     @FunctionalInterface public interface ThrowingSupplier<T>{T get()throws Exception;}
     private static final Object NULL=new Object();
-    public record Context(long id,String method,ConcurrentMap<Object,Object> values){}
+    public record Context(long id,String method,ConcurrentMap<Object,CompletableFuture<Object>> values){}
     private static final AtomicLong sequence=new AtomicLong();
     private static final ThreadLocal<Context> current=new ThreadLocal<>();
     private RequestScope(){}
@@ -19,22 +18,45 @@ public final class RequestScope {
         current.set(context);
         try{return supplier.get();}finally{current.remove();}
     }
+
     /** Propagate one request identity into an isolated module actor without sharing compiler state. */
     public static <T> T with(Context context,ThrowingSupplier<T> supplier)throws Exception{
         if(context==null)return supplier.get();
         var previous=current.get();current.set(context);
         try{return supplier.get();}finally{if(previous==null)current.remove();else current.set(previous);}
     }
+
+    /**
+     * Compute a request-stable value exactly once per key, even when isolated module actors
+     * reach the same preparation concurrently. Failed computations are not cached.
+     */
     @SuppressWarnings("unchecked")
     public static <T> T memo(Object key,ThrowingSupplier<T> supplier)throws Exception{
         var context=current.get();if(context==null)return supplier.get();
-        Object cached=context.values().get(key);
-        if(cached!=null)return cached==NULL?null:(T)cached;
-        T value=supplier.get();Object stored=value==null?NULL:value;
-        Object prior=context.values().putIfAbsent(key,stored);
-        Object result=prior==null?stored:prior;
-        return result==NULL?null:(T)result;
+        var promise=new CompletableFuture<Object>();
+        var existing=context.values().putIfAbsent(key,promise);
+        if(existing==null){
+            try{
+                T value=supplier.get();promise.complete(value==null?NULL:value);return value;
+            }catch(Throwable error){
+                context.values().remove(key,promise);promise.completeExceptionally(error);
+                if(error instanceof Exception exception)throw exception;
+                if(error instanceof Error fatal)throw fatal;
+                throw new IllegalStateException(error);
+            }
+        }
+        try{
+            Object value=existing.get();return value==NULL?null:(T)value;
+        }catch(InterruptedException interrupted){
+            Thread.currentThread().interrupt();throw interrupted;
+        }catch(ExecutionException error){
+            var cause=error.getCause();
+            if(cause instanceof Exception exception)throw exception;
+            if(cause instanceof Error fatal)throw fatal;
+            throw new IllegalStateException(cause);
+        }
     }
+
     public static Context current(){return current.get();}
     public static long id(){var value=current.get();return value==null?0:value.id();}
     public static String method(){var value=current.get();return value==null?null:value.method();}

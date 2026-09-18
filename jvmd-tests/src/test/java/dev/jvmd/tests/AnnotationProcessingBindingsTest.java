@@ -39,13 +39,17 @@ class AnnotationProcessingBindingsTest {
         var config=AnnotationFixtures.config(root);
         try(var app=new Application(config)){
             String session=TestSupport.open(app,root);assertClean(app,session,List.of(use,provider));
+            var highFidelity=TestSupport.request(app.dispatcher(),"diag.get",Map.of("session",session,"paths",List.of(use.toString(),provider.toString()))).path("result");
+            assertThat(highFidelity.path("warnings").toString()).contains("diagnostic_fidelity=full_lombok_external");
+            assertThat(highFidelity.path("result").path("diagnostics").isEmpty()).isTrue();
             String content=Files.readString(use);var position=new SourceText(content).position(content.indexOf("getName"));
             var answer=TestSupport.request(app.dispatcher(),"symbol.atPosition",Map.of("session",session,"path",use.toString(),"line",position.line(),"character",position.character())).path("result");
             assertThat(answer.path("tier").asInt()).isEqualTo(2);assertThat(answer.path("result").path("scip").asText()).endsWith("Provider#getName().");assertThat(answer.path("warnings").toString()).contains("lombok_reduced_fidelity");
             var verified=new Verifier(config).verify(root,Json.MAPPER.createObjectNode(),Duration.ofMinutes(2));assertThat(verified.exitCode()).withFailMessage(verified.output()).isZero();
             var time=Files.getLastModifiedTime(provider);Files.writeString(provider,Files.readString(provider).replace("String name=\"Ada\"","int name=123456789"));Files.setLastModifiedTime(provider,time);
             var broken=TestSupport.request(app.dispatcher(),"diag.get",Map.of("session",session,"paths",List.of(use.toString()))).path("result");
-            assertThat(broken.path("result").path("diagnostics").toString()).contains("compiler.err.");
+            assertThat(broken.path("warnings").toString()).contains("diagnostic_fidelity=full_lombok_external");
+            assertThat(broken.path("result").path("diagnostics").toString()).contains("compiler.err.").contains("external-javac");
         }
     }
     private static void assertClean(Application app,String session,List<Path> paths){

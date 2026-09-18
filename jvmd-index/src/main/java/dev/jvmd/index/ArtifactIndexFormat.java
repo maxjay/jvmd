@@ -37,8 +37,13 @@ public final class ArtifactIndexFormat {
         public SymbolRecord{parameters=List.copyOf(parameters);}
     }
     public record Relationship(int sourceId,String target,String kind) { }
-    public record ArtifactData(Key key,List<SymbolRecord> symbols,List<Relationship> relationships) {
-        public ArtifactData{symbols=List.copyOf(symbols);relationships=List.copyOf(relationships);}
+    public record ArtifactData(Key key,List<SymbolRecord> symbols,List<Relationship> relationships,Set<String> classReferences) {
+        public ArtifactData{
+            symbols=List.copyOf(symbols);relationships=List.copyOf(relationships);classReferences=Set.copyOf(classReferences);
+        }
+        public ArtifactData(Key key,List<SymbolRecord> symbols,List<Relationship> relationships){
+            this(key,symbols,relationships,Set.of());
+        }
     }
 
     private ArtifactIndexFormat(){}
@@ -76,7 +81,8 @@ public final class ArtifactIndexFormat {
         }
         var sorted=new ArrayList<>(relationships);
         sorted.sort(Comparator.comparingInt(Relationship::sourceId).thenComparing(Relationship::target).thenComparing(Relationship::kind));
-        return new ArtifactData(key,List.copyOf(symbols),List.copyOf(sorted));
+        var classReferences=content.models().isEmpty()?Set.<String>of():CodeReader.classReferences(content.models().values());
+        return new ArtifactData(key,List.copyOf(symbols),List.copyOf(sorted),classReferences);
     }
 
     public static byte[] encode(ArtifactData data)throws Exception{
@@ -104,6 +110,8 @@ public final class ArtifactIndexFormat {
             }
             out.writeInt(data.relationships().size());
             for(var edge:data.relationships()){out.writeInt(edge.sourceId());out.writeInt(id(ids,edge.target()));out.writeInt(id(ids,edge.kind()));}
+            var classReferences=new ArrayList<>(data.classReferences());Collections.sort(classReferences);
+            out.writeInt(classReferences.size());for(String reference:classReferences)writeString(out,reference);
         }
         byte[] body=bytes.toByteArray(),checksum=MessageDigest.getInstance("SHA-256").digest(body);
         var result=new ByteArrayOutputStream(MAGIC.length+checksum.length+body.length);
@@ -137,8 +145,10 @@ public final class ArtifactIndexFormat {
                 int source=in.readInt();if(source<0||source>=symbolCount)throw new IOException("Invalid relationship source");
                 relations.add(new Relationship(source,value(strings,in.readInt()),value(strings,in.readInt())));
             }
+            int classRefCount=bounded(in.readInt(),MAX_RELATIONSHIPS,"class reference count");var classReferences=new LinkedHashSet<String>();
+            for(int i=0;i<classRefCount;i++)classReferences.add(readString(in));
             if(in.available()!=0)throw new IOException("Trailing artifact index bytes");
-            return new ArtifactData(key,List.copyOf(symbols),List.copyOf(relations));
+            return new ArtifactData(key,List.copyOf(symbols),List.copyOf(relations),Set.copyOf(classReferences));
         }
     }
 

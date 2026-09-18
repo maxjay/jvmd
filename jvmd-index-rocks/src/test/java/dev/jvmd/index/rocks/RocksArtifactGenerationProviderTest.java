@@ -37,4 +37,32 @@ class RocksArtifactGenerationProviderTest {
         }
     }
 
+    @Test void shadowSearchUsesInventoryBackedWorkspaceAndStableScipIdentity()throws Exception{
+        Path root=temp.resolve("shadow");
+        Path jar=Files.writeString(temp.resolve("dep.jar"),"fixture");
+        var key=new ArtifactIndexFormat.Key("b".repeat(64),ArtifactIndexFormat.FORMAT_VERSION,
+                ArtifactIndexFormat.INDEXER_VERSION,Runtime.version().feature(),"signatures");
+        var symbol=new ArtifactIndexFormat.SymbolRecord(0,-1,"dep.Type","dep.Type","Type","class",
+                "class dep.Type",null,1,"dep/Type.class",java.util.List.of(),"{}");
+        var facts=new ArtifactIndexFormat.ArtifactData(key,java.util.List.of(symbol),java.util.List.of());
+
+        try(var sink=new RocksArtifactGenerationSink(root,8L*1024*1024)){
+            sink.publish(facts,java.util.Set.of());
+            long scan=sink.beginScan();
+            var input=new IndexStore.ArtifactInput(new ArtifactContext("fixture:dep:1","jar",jar.toAbsolutePath().toString()),
+                    key,Files.size(jar),Files.getLastModifiedTime(jar).toMillis()*1_000_000L);
+            sink.observe(scan,input);
+            sink.completeScan(scan);
+            sink.configureWorkspace("workspace",java.util.List.of(new IndexStore.WorkspaceEntry(jar.toString(),"compile")),java.util.List.of());
+
+            var exact=sink.shadowFind("workspace","Type",false,10,java.util.Set.of("class")).orElseThrow();
+            assertThat(exact).hasSize(1);
+            assertThat(exact.getFirst().get("scip")).isEqualTo(new ArtifactContext("fixture:dep:1","jar",jar.toAbsolutePath().toString()).scip(symbol));
+
+            var substring=sink.shadowFind("workspace","ype",true,10,java.util.Set.of()).orElseThrow();
+            assertThat(substring).hasSize(1);
+            assertThat(sink.status()).containsEntry("shadow_workspaces",1);
+        }
+    }
+
 }

@@ -44,6 +44,10 @@ class RocksWorkspaceResolverTest {
                         .containsExactly(one.context().scip(depOne.symbols().getFirst()),two.context().scip(depTwo.symbols().getFirst()));
                 assertThat(resolver.findPathPrefix(workspace,"dep.Type",10)).hasSize(2);
                 assertThat(resolver.findSubstring(workspace,"ype",10)).hasSize(2);
+                assertThat(resolver.findExact(workspace,"Type",10)).extracting(RocksWorkspaceResolver.WorkspaceSymbol::scip)
+                        .containsExactly(one.context().scip(depOne.symbols().getFirst()),two.context().scip(depTwo.symbols().getFirst()));
+                assertThat(resolver.findExact(workspace,"dep.Type",10)).hasSize(2);
+                assertThat(resolver.findExact(workspace,one.context().scip(depOne.symbols().getFirst()),10)).hasSize(1);
                 String second=two.context().scip(depTwo.symbols().getFirst());
                 assertThat(resolver.byScip(workspace,second)).get().extracting(RocksWorkspaceResolver.WorkspaceSymbol::scip).isEqualTo(second);
             }

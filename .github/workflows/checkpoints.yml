@@ -121,6 +121,7 @@ jobs:
           path: |
             jvmd-tests/target/surefire-reports/
             jvmd-tests/target/*perf.json
+            jvmd-tests/target/index-rebuild-baseline.json
             jvmd-tests/target/agreement.json
             jvmd-tests/target/sweep.json
             jvmd-tests/target/agent-session.json

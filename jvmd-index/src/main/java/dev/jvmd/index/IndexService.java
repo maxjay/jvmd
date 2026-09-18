@@ -44,7 +44,12 @@ public final class IndexService implements AutoCloseable {
     public IndexDatabase database(){return database;}
     public IndexStore store(){return store;}
     public long generation(){return indexed.get();}
-    public void start(){scanner.scheduleWithFixedDelay(()->{try{scan();}catch(Exception e){warn("index_scan_fault: "+e);}},0,60,TimeUnit.SECONDS);}
+    public void start(){
+        long initialDelaySeconds=Long.getLong("jvmd.index.scan.initial_delay_seconds",2L);
+        if(initialDelaySeconds<0)throw new IllegalArgumentException("jvmd.index.scan.initial_delay_seconds must be non-negative");
+        scanner.scheduleWithFixedDelay(()->{try{scan();}catch(Exception e){warn("index_scan_fault: "+e);}},
+                initialDelaySeconds,60,TimeUnit.SECONDS);
+    }
     public synchronized void scan() throws Exception {
         if(closed||!Files.isDirectory(repository))return;
         long start=System.nanoTime();scans.incrementAndGet();phase="discovering";

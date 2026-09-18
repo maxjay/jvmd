@@ -108,6 +108,22 @@ public final class RocksArtifactRepository implements AutoCloseable {
     public List<Integer> nameIds(String cacheKey,String namePrefix,int limit){return idsByPrefix(cacheKey,"3|name|"+namePrefix,limit);}
     public List<Integer> reverseSources(String cacheKey,String target,String kind,int limit){return idsByPrefix(cacheKey,"5|reverse|"+target+"|"+kind+"|",limit);}
 
+    public List<ArtifactIndexFormat.Relationship> outgoing(String cacheKey,int sourceId,Set<String> kinds,int limit){
+        byte[] prefix=key(cacheKey,"4|out|"+hex8(sourceId)+"|");var result=new ArrayList<ArtifactIndexFormat.Relationship>();
+        try(var read=new ReadOptions();var iterator=db.newIterator(read)){
+            for(iterator.seek(prefix);iterator.isValid()&&result.size()<limit;iterator.next()){
+                byte[] current=iterator.key();if(!startsWith(current,prefix))break;
+                String suffix=new String(current,StandardCharsets.UTF_8).substring(cacheKey.length()+1);
+                int afterSource=suffix.indexOf('|',suffix.indexOf('|',suffix.indexOf('|')+1)+1)+1;
+                int last=suffix.lastIndexOf('|');
+                if(afterSource<=0||last<=afterSource)continue;
+                String target=suffix.substring(afterSource,last),kind=suffix.substring(last+1);
+                if(kinds.isEmpty()||kinds.contains(kind))result.add(new ArtifactIndexFormat.Relationship(sourceId,target,kind));
+            }
+        }
+        return List.copyOf(result);
+    }
+
     public Map<String,Object> status()throws Exception{
         return Map.of(
                 "published",published.get(),"reused",reused.get(),

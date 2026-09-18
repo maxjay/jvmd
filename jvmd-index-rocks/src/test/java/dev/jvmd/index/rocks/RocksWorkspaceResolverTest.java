@@ -83,6 +83,48 @@ class RocksWorkspaceResolverTest {
         }
     }
 
+    @Test void paginationAndFiltersDoNotTruncateCandidatePostings()throws Exception{
+        var symbols=new ArrayList<ArtifactIndexFormat.SymbolRecord>();
+        for(int i=0;i<180;i++){
+            String owner="fixture.Type"+String.format("%03d",i);
+            String name=i==179?"needleFinal":"needleNoise";
+            symbols.add(new ArtifactIndexFormat.SymbolRecord(i,-1,owner,owner,name,i==179?"interface":"class",
+                    "class "+owner,null,1,owner.replace('.','/')+".class",List.of(),"{}"));
+        }
+        var facts=new ArtifactIndexFormat.ArtifactData(ArtifactIndexFormat.key("1".repeat(64),"signatures"),symbols,List.of());
+        try(var artifacts=new RocksArtifactRepository(temp.resolve("pages"));
+            var resolver=new RocksWorkspaceResolver(temp.resolve("pages-cache"),artifacts)){
+            artifacts.publish(facts,Set.of());
+            var workspace=new RocksWorkspaceResolver.Workspace(List.of(entry(facts,"fixture:pages:1")),"compiler");
+            var first=resolver.findName(workspace,"needleNoise",false,7);
+            assertThat(first).hasSize(7);
+            long cursor=RocksWorkspaceResolver.cursor(0,first.getLast().symbol().id());
+            assertThat(resolver.findName(workspace,"needleNoise",false,7,cursor))
+                    .extracting(value->value.symbol().id()).containsExactly(7,8,9,10,11,12,13);
+            assertThat(resolver.findSubstring(workspace,"needleFinal",1)).singleElement()
+                    .extracting(value->value.symbol().id()).isEqualTo(179);
+            assertThat(resolver.findSubstring(workspace,"needle",1,0,Set.of("interface"))).singleElement()
+                    .extracting(value->value.symbol().id()).isEqualTo(179);
+            assertThat(resolver.findExact(workspace,"needleNoise",3,RocksWorkspaceResolver.cursor(0,170),Set.of("class")))
+                    .extracting(value->value.symbol().id()).containsExactly(171,172,173);
+        }
+    }
+
+    @Test void sourceOverlaysPermitMissingDocumentationAndLocations()throws Exception{
+        var facts=facts('f',"fixture.Type",List.of());
+        try(var artifacts=new RocksArtifactRepository(temp.resolve("nullable-docs"));
+            var inventory=new RocksArtifactInventory(temp.resolve("nullable-inventory"));
+            var resolver=new RocksWorkspaceResolver(temp.resolve("nullable-cache"),artifacts,inventory)){
+            artifacts.publish(facts,Set.of());
+            var data=new LinkedHashMap<String,Object>();data.put("doc",null);data.put("line",12);
+            String docs=artifacts.publishDocumentation(facts.key().cacheKey(),ArtifactIndexFormat.key("2".repeat(64),"sources"),
+                    Map.of("fixture.Type",data),0);
+            inventory.setDocumentation(facts.key().cacheKey(),docs);
+            var workspace=new RocksWorkspaceResolver.Workspace(List.of(entry(facts,"fixture:docs:1")),"compiler");
+            assertThat(resolver.findExact(workspace,"Type",1).getFirst().sourceData()).containsEntry("doc",null).containsEntry("line",12);
+        }
+    }
+
     private static RocksWorkspaceResolver.Entry entry(ArtifactIndexFormat.ArtifactData data,String gav){
         String artifact=gav.split(":")[1];
         return new RocksWorkspaceResolver.Entry(data.key().cacheKey(),new ArtifactContext(gav,"jar","/repo/"+artifact+".jar"),"compile","module-a","");

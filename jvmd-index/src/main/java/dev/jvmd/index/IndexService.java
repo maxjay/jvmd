@@ -114,6 +114,7 @@ public final class IndexService implements AutoCloseable {
             var previous=artifact(path);
             var stamp=Files.readAttributes(path,java.nio.file.attribute.BasicFileAttributes.class);long size=stamp.size(),mtime=stamp.lastModifiedTime().to(TimeUnit.NANOSECONDS);
             if(previous!=null&&previous.hasSignatureEdges()&&!gav.contains("SNAPSHOT")&&!kind.equals("local")&&previous.size()==size&&previous.mtime()==mtime){
+                ensureGeneration(path,kind,ArtifactIndexFormat.key(previous.sha256(),"signatures"));
                 if(inventoryGeneration>0){
                     var key=ArtifactIndexFormat.key(previous.sha256(),"signatures");
                     generationSink.observe(inventoryGeneration,new IndexStore.ArtifactInput(new ArtifactContext(gav,kind,location(path)),key,size,mtime));
@@ -122,6 +123,7 @@ public final class IndexService implements AutoCloseable {
             }
             active(path,"hash");long hashStarted=System.nanoTime();verifyChecksum(path);String hash=Files.isDirectory(path)?directoryHash(path):Hashing.sha256(path);hashNanos.addAndGet(System.nanoTime()-hashStarted);hashed.incrementAndGet();
             if(previous!=null&&previous.hasSignatureEdges()&&previous.sha256().equals(hash)){
+                ensureGeneration(path,kind,ArtifactIndexFormat.key(hash,kind.equals("local")?"local-signatures":"signatures"));
                 store.publishPath(path,previous.id(),size,mtime);
                 if(inventoryGeneration>0){
                     var key=ArtifactIndexFormat.key(hash,kind.equals("local")?"local-signatures":"signatures");
@@ -139,6 +141,15 @@ public final class IndexService implements AutoCloseable {
             long id=store.publishBinary(input,facts,classReferences);
             storageNanos.addAndGet(System.nanoTime()-storageStarted);indexed.incrementAndGet();return id;
         }finally{activeArtifacts.remove(location(tracked));}
+    }
+    private void ensureGeneration(Path path,String kind,ArtifactIndexFormat.Key key)throws Exception{
+        if(generationSink.contains(key))return;
+        active(path,"generation-backfill");long started=System.nanoTime();
+        var content=new BinaryReader().read(path,kind.equals("local"));
+        parseNanos.addAndGet(System.nanoTime()-started);content.warnings().forEach(this::warn);
+        started=System.nanoTime();
+        generationSink.publish(ArtifactIndexFormat.from(content,key),CodeReader.classReferences(content.models().values()));
+        storageNanos.addAndGet(System.nanoTime()-started);indexed.incrementAndGet();
     }
     synchronized void storeCode(long artifact,String gav,String hash,Path path,BinaryReader.Content content,List<BinaryReader.Edge> edges)throws Exception{
         var key=ArtifactIndexFormat.key(hash,"code");

@@ -1,12 +1,29 @@
 package dev.jvmd.index.rocks;
 
 import java.nio.file.*;
+import java.util.List;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 class RocksArtifactInventoryTest {
     @TempDir Path temp;
+
+    @Test void deletingSeveralAliasesDecrementsTheWholeBatch()throws Exception{
+        try(var inventory=new RocksArtifactInventory(temp.resolve("multi-delete"))){
+            long generation=inventory.beginScan();
+            var stamp=new RocksArtifactInventory.Stamp(1,1,1,"");
+            for(String name:List.of("a.jar","b.jar","c.jar"))
+                inventory.observe(generation,temp.resolve(name),"fixture:"+name+":1","jar","a".repeat(64),"b".repeat(64),stamp);
+            inventory.completeScan(generation);
+            long next=inventory.beginScan();
+            inventory.observe(next,temp.resolve("c.jar"),"fixture:c.jar:1","jar","a".repeat(64),"b".repeat(64),stamp);
+            assertThat(inventory.completeScan(next)).isEmpty();
+            assertThat(inventory.refcount("a".repeat(64))).isEqualTo(1);
+            assertThat(inventory.completeScan(inventory.beginScan())).containsExactly("a".repeat(64));
+            assertThat(inventory.refcount("a".repeat(64))).isZero();
+        }
+    }
 
     @Test void tracksReuseDeletionRenameAndContentReplacement()throws Exception{
         Path a=Files.writeString(temp.resolve("a.jar"),"a"),b=Files.writeString(temp.resolve("b.jar"),"b"),c=temp.resolve("c.jar");

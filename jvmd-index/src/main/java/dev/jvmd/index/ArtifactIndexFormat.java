@@ -12,7 +12,7 @@ import java.util.*;
  */
 public final class ArtifactIndexFormat {
     public static final int FORMAT_VERSION=1;
-    public static final String INDEXER_VERSION="jvmd-index-v1";
+    public static final String INDEXER_VERSION="jvmd-index-v2";
     private static final byte[] MAGIC="JVIDX001".getBytes(StandardCharsets.US_ASCII);
     private static final int MAX_STRINGS=5_000_000,MAX_SYMBOLS=5_000_000,MAX_RELATIONSHIPS=20_000_000,MAX_STRING_BYTES=32*1024*1024;
 
@@ -108,6 +108,32 @@ public final class ArtifactIndexFormat {
         byte[] body=bytes.toByteArray(),checksum=MessageDigest.getInstance("SHA-256").digest(body);
         var result=new ByteArrayOutputStream(MAGIC.length+checksum.length+body.length);
         result.write(MAGIC);result.write(checksum);result.write(body);return result.toByteArray();
+    }
+
+    /** Individually addressable records keep a single lookup independent of artifact size. */
+    public static byte[] encodeSymbol(SymbolRecord symbol)throws IOException{
+        var bytes=new ByteArrayOutputStream();
+        try(var out=new DataOutputStream(bytes)){
+            out.writeInt(symbol.id());out.writeInt(symbol.ownerId());out.writeInt(symbol.flags());
+            for(String value:new String[]{symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),symbol.signature(),
+                    symbol.descriptor(),symbol.entry(),symbol.metadataJson()}){
+                out.writeBoolean(value!=null);if(value!=null)writeString(out,value);
+            }
+            out.writeInt(symbol.parameters().size());for(String value:symbol.parameters())writeString(out,value);
+        }
+        return bytes.toByteArray();
+    }
+
+    public static SymbolRecord decodeSymbol(byte[] bytes)throws IOException{
+        try(var in=new DataInputStream(new ByteArrayInputStream(bytes))){
+            int id=in.readInt(),owner=in.readInt(),flags=in.readInt();var fields=new String[8];
+            for(int i=0;i<fields.length;i++)fields[i]=in.readBoolean()?readString(in):null;
+            int count=bounded(in.readInt(),1_000_000,"parameter count");var parameters=new ArrayList<String>(count);
+            for(int i=0;i<count;i++)parameters.add(readString(in));
+            if(id<0||owner< -1||in.available()!=0||fields[0]==null||fields[1]==null||fields[2]==null||fields[3]==null||fields[7]==null)
+                throw new IOException("Invalid symbol record");
+            return new SymbolRecord(id,owner,fields[0],fields[1],fields[2],fields[3],fields[4],fields[5],flags,fields[6],parameters,fields[7]);
+        }
     }
 
     public static ArtifactData decode(byte[] encoded)throws Exception{

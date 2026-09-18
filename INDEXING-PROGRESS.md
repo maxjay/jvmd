@@ -97,3 +97,13 @@ That path remains the control backend until the storage prototype checkpoint sel
 - Do not move expensive global linking into first-query latency and call ingestion faster.
 - Do not mark the real acceptance gate complete from generated fixtures alone.
 - Public SCIP identities and API/query behavior must not depend on backend-local IDs.
+
+### Checkpoint 4 — search correctness and cache backfill
+- Fixed pagination within an artifact: cursor and kind filtering happen before the page limit, including substring false positives and name-prefix collisions.
+- Added individual binary symbol records and SCIP-suffix postings. Workspace search and relationship materialization no longer decode an entire artifact per returned symbol.
+- Fixed source overlays with nullable documentation/location values, and alias-specific cursor selection when identical content has multiple coordinates.
+- Incremented the indexer identity to `jvmd-index-v2`; a reused SQLite artifact now backfills a missing immutable generation without replacing its SQLite symbols.
+- A partially indexed workspace falls back as a whole rather than returning incomplete Rocks search results.
+- Fixed batched alias removal reference counts. Candidate validation is retained for initial activation rather than decoding every artifact on every unchanged scan.
+- Validation: all 31 Rocks repository, workspace, inventory, migration and invalidation tests pass on the pinned JDK. Added deterministic pagination/filter/null-overlay and multiple-alias deletion regressions.
+- The backend remains a migration with SQLite writes. This checkpoint does not claim the final performance or corpus acceptance gate.

@@ -11,6 +11,21 @@ import static org.assertj.core.api.Assertions.*;
 class RocksArtifactSinkIntegrationTest {
     @TempDir Path temp;
 
+    @Test void existingSqliteCacheBackfillsANewGenerationWithoutRewritingSqliteSymbols()throws Exception{
+        Path repository=temp.resolve("upgrade-repository"),database=temp.resolve("upgrade.db");
+        IndexFixtures.jar(repository.resolve("fixture/sample/1"),"sample-1",IndexFixtures.generic(),false);
+        long symbolId;
+        try(var index=new IndexService(database,repository)){
+            index.scan();symbolId=((Number)index.find("transform",null,false,10,0).getFirst().get("id")).longValue();
+        }
+        var sink=new RocksArtifactGenerationSink(temp.resolve("upgrade-rocks"),8L*1024*1024);
+        try(var index=new IndexService(database,repository,sink)){
+            index.scan();assertThat(sink.status()).containsEntry("published",1L).containsEntry("inventory_entries",1);
+            assertThat(((Number)index.find("transform",null,false,10,0).getFirst().get("id")).longValue()).isEqualTo(symbolId);
+            index.scan();assertThat(sink.status()).containsEntry("published",1L);
+        }
+    }
+
     @Test void repositoryScanCanDualPublishWithoutChangingSqliteSemantics()throws Exception{
         Path repository=temp.resolve("repository");
         Path jar=IndexFixtures.jar(repository.resolve("fixture/sample/1"),"sample-1",IndexFixtures.generic(),false);

@@ -16,6 +16,7 @@ public interface ArtifactGenerationSink extends AutoCloseable {
         }
     }
     void publish(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception;
+    default boolean contains(ArtifactIndexFormat.Key key)throws Exception{return true;}
     default long beginScan()throws Exception{return 0L;}
     default void observe(long scanGeneration,IndexStore.ArtifactInput input)throws Exception{ }
     default Set<String> completeScan(long scanGeneration)throws Exception{return Set.of();}

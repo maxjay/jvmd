@@ -56,6 +56,8 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
         }
     }
 
+    @Override public boolean contains(ArtifactIndexFormat.Key key)throws Exception{return repository.contains(key.cacheKey());}
+
     @Override public long beginScan()throws Exception{return inventory.beginScan();}
 
     @Override public void observe(long scanGeneration,IndexStore.ArtifactInput input)throws Exception{
@@ -70,8 +72,10 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
         if(scanGeneration<=0)return Set.of();
         Set<String> unreferenced=inventory.completeScan(scanGeneration);
         if(migration!=null&&candidateGeneration!=null){
-            validateCandidate();
-            migration.markValidated(candidateGeneration);
+            if(!migration.validated(candidateGeneration)){
+                validateCandidate();
+                migration.markValidated(candidateGeneration);
+            }
             migration.activate(candidateGeneration);
             migration.pruneObsolete();
         }
@@ -151,8 +155,11 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
             String normalized;
             try{normalized=Path.of(item.path()).toAbsolutePath().normalize().toString();}
             catch(Exception ignored){continue;}
-            var inventoryEntry=inventoryByPath.get(normalized);if(inventoryEntry==null)continue;
-            if(!repository.contains(inventoryEntry.cacheKey()))continue;
+            var inventoryEntry=inventoryByPath.get(normalized);
+            // A partial classpath is not a usable read backend. Keep the complete SQLite view.
+            if(inventoryEntry==null||!repository.contains(inventoryEntry.cacheKey())){
+                workspaces.remove(workspace);return;
+            }
             var context=new ArtifactContext(inventoryEntry.gav(),inventoryEntry.kind(),inventoryEntry.path());
             classpath.add(new RocksWorkspaceResolver.Entry(inventoryEntry.cacheKey(),context,item.scope(),"",""));
         }
@@ -167,13 +174,13 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
     @Override public Optional<List<Map<String,Object>>> shadowFind(String workspace,String query,boolean substring,int limit,long after,Set<String> kinds)throws Exception{
         var configured=workspaces.get(workspace);if(configured==null)return Optional.empty();
         List<RocksWorkspaceResolver.WorkspaceSymbol> values=substring
-                ?workspaceResolver.findSubstring(configured,query,limit,after)
-                :workspaceResolver.findExact(configured,query,limit,after);
+                ?workspaceResolver.findSubstring(configured,query,limit,after,kinds)
+                :workspaceResolver.findExact(configured,query,limit,after,kinds);
         var result=new ArrayList<Map<String,Object>>();
         for(var value:values){
             if(!kinds.isEmpty()&&!kinds.contains(value.symbol().kind()))continue;
             var row=new LinkedHashMap<String,Object>();
-            int classpathIndex=indexOf(configured,value.entry().artifactCacheKey());
+            int classpathIndex=configured.classpath().indexOf(value.entry());
             long cursor=RocksWorkspaceResolver.cursor(classpathIndex,value.symbol().id());
             row.put("id",cursor);row.put("artifact_id",(long)classpathIndex+1);
             row.put("owner_id",value.symbol().ownerId()<0?null:RocksWorkspaceResolver.cursor(classpathIndex,value.symbol().ownerId()));
@@ -184,7 +191,7 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
             row.put("erased_descriptor",value.symbol().descriptor());row.put("source_file",null);row.put("doc",null);
             row.put("fqn",value.symbol().fqn());row.put("binary_key",value.symbol().key());row.put("class_entry",value.symbol().entry());
             row.put("gav",value.entry().context().gav());row.put("artifact_path",value.entry().context().path());
-            row.put("artifact_kind",value.entry().context().kind());row.put("parameters",value.symbol().parameters());
+            row.put("artifact_kind",value.entry().context().kind());row.put("parameters",dev.jvmd.core.Json.MAPPER.valueToTree(value.symbol().parameters()));
             row.put("metadata",dev.jvmd.core.Json.MAPPER.readTree(value.symbol().metadataJson()));row.put("tier",2);
             row.putAll(value.sourceData());
             result.add(Collections.unmodifiableMap(row));if(result.size()>=limit)break;

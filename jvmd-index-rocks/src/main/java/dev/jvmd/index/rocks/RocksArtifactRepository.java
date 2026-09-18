@@ -10,6 +10,7 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
+import java.util.function.Predicate;
 import org.rocksdb.*;
 
 /**
@@ -151,6 +152,46 @@ public final class RocksArtifactRepository implements AutoCloseable {
         return encoded==null?null:ArtifactIndexFormat.decode(encoded);
     }
 
+    public ArtifactIndexFormat.Key artifactKey(String cacheKey)throws Exception{
+        byte[] value=db.get(key(cacheKey,"0|manifest"));if(value==null)return null;
+        var fields=parseManifest(value);
+        return new ArtifactIndexFormat.Key(fields.get("binary_sha"),Integer.parseInt(fields.get("format")),
+                fields.get("indexer"),Integer.parseInt(fields.get("runtime")),fields.get("mode"));
+    }
+
+    public ArtifactIndexFormat.SymbolRecord symbol(String cacheKey,int id)throws Exception{
+        byte[] value=db.get(key(cacheKey,"1|symbol|"+hex8(id)));
+        if(value==null)return null;
+        var result=ArtifactIndexFormat.decodeSymbol(value);
+        if(result.id()!=id)throw new IOException("Symbol id mismatch");
+        return result;
+    }
+
+    /** Filter before pagination, with bounded top-k memory even for large prefix postings. */
+    public List<ArtifactIndexFormat.SymbolRecord> select(String cacheKey,String postingPrefix,int after,int limit,
+                                                        Predicate<ArtifactIndexFormat.SymbolRecord> filter)throws Exception{
+        if(limit<=0)return List.of();
+        var selected=new TreeMap<Integer,ArtifactIndexFormat.SymbolRecord>();
+        byte[] prefix=key(cacheKey,postingPrefix);
+        try(var iterator=db.newIterator()){
+            for(iterator.seek(prefix);iterator.isValid()&&startsWith(iterator.key(),prefix);iterator.next()){
+                String text=new String(iterator.key(),StandardCharsets.UTF_8);
+                int id=(int)Long.parseLong(text.substring(text.lastIndexOf('|')+1),16);
+                if(id<=after||selected.containsKey(id)||(selected.size()==limit&&id>=selected.lastKey()))continue;
+                var symbol=symbol(cacheKey,id);
+                if(symbol==null)throw new IOException("Posting references missing symbol: "+id);
+                if(!filter.test(symbol))continue;
+                selected.put(id,symbol);if(selected.size()>limit)selected.pollLastEntry();
+            }
+            iterator.status();
+        }
+        return List.copyOf(selected.values());
+    }
+
+    public static String scipSuffix(ArtifactIndexFormat.SymbolRecord symbol){
+        return new ArtifactContext("index:artifact:0","jar","index").scip(symbol).substring("maven index/artifact 0 ".length());
+    }
+
     public Integer binaryId(String cacheKey,String binaryKey)throws Exception{
         byte[] value=db.get(key(cacheKey,"2|binary|"+binaryKey));
         return value==null?null:ByteBuffer.wrap(value).getInt();
@@ -230,7 +271,9 @@ public final class RocksArtifactRepository implements AutoCloseable {
         entries.add(new SstEntry(key(cacheKey,"1|artifact"),ArtifactIndexFormat.encode(facts)));
 
         for(var symbol:facts.symbols()){
+            entries.add(new SstEntry(key(cacheKey,"1|symbol|"+hex8(symbol.id())),ArtifactIndexFormat.encodeSymbol(symbol)));
             entries.add(new SstEntry(key(cacheKey,"2|binary|"+symbol.key()),intBytes(symbol.id())));
+            entries.add(new SstEntry(key(cacheKey,"2|scip|"+scipSuffix(symbol)+"|"+hex8(symbol.id())),EMPTY));
             entries.add(new SstEntry(key(cacheKey,"3|name|"+symbol.name()+"|"+hex8(symbol.id())),EMPTY));
             entries.add(new SstEntry(key(cacheKey,"7|path|"+ArtifactContext.namePath(symbol)+"|"+hex8(symbol.id())),EMPTY));
 
@@ -290,7 +333,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
 
     private static byte[] manifest(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences){
         String value="format="+facts.key().formatVersion()+"\nindexer="+facts.key().indexerVersion()+
-                "\nruntime="+facts.key().runtimeFeature()+"\nmode="+facts.key().mode()+
+                "\nruntime="+facts.key().runtimeFeature()+"\nmode="+facts.key().mode()+"\nbinary_sha="+facts.key().binarySha256()+
                 "\nsymbols="+facts.symbols().size()+"\nrelationships="+facts.relationships().size()+
                 "\nclass_references="+classReferences.size()+"\n";
         return value.getBytes(StandardCharsets.UTF_8);

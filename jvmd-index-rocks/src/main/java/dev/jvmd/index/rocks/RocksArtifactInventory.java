@@ -78,10 +78,14 @@ public final class RocksArtifactInventory implements AutoCloseable {
         }
         var candidates=new LinkedHashSet<String>();
         try(var batch=new WriteBatch();var write=new WriteOptions()){
+            var removedCounts=new HashMap<String,Long>();
             for(var item:stale){
-                batch.delete(item.getKey());long next=refcount(item.getValue().cacheKey())-1;
-                if(next<=0){batch.delete(refKey(item.getValue().cacheKey()));candidates.add(item.getValue().cacheKey());}
-                else batch.put(refKey(item.getValue().cacheKey()),longBytes(next));
+                batch.delete(item.getKey());removedCounts.merge(item.getValue().cacheKey(),1L,Long::sum);
+            }
+            for(var removed:removedCounts.entrySet()){
+                long next=refcount(removed.getKey())-removed.getValue();
+                if(next<=0){batch.delete(refKey(removed.getKey()));candidates.add(removed.getKey());}
+                else batch.put(refKey(removed.getKey()),longBytes(next));
             }
             db.write(write,batch);
         }

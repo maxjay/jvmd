@@ -17,7 +17,8 @@ class IndexRebuildBaselineTest {
         Path repository=Files.createDirectories(temp.resolve("repository"));
         for(int i=0;i<6;i++){
             Path version=repository.resolve("fixture/sample"+i+"/1");
-            IndexFixtures.jar(version,"sample"+i+"-1",IndexFixtures.generic(),false);
+            String source=IndexFixtures.generic().replace("private String hidden;","private String hidden; public int marker"+i+";");
+            IndexFixtures.jar(version,"sample"+i+"-1",source,false);
         }
 
         var manifest=manifest(repository);

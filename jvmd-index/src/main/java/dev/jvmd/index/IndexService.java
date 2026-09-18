@@ -191,7 +191,7 @@ public final class IndexService implements AutoCloseable {
                 var data=new LinkedHashMap<String,Object>();
                 data.put("doc",member.doc());data.put("source_file","jar:"+sources.toUri()+"!/"+member.file());data.put("line",member.line());
                 data.put("source_start",member.start());data.put("source_end",member.end());data.put("body_start",member.bodyStart());data.put("body_end",member.bodyEnd());
-                data.put("parameters",member.parameters());members.put(key,Map.copyOf(data));
+                data.put("parameters",member.parameters());members.put(key,Collections.unmodifiableMap(data));
             }
             var key=ArtifactIndexFormat.key(hash,"sources");
             var context=new ArtifactIndexFormat.Context(gav(sources),"sources",location(sources));
@@ -260,7 +260,7 @@ public final class IndexService implements AutoCloseable {
                         var data=new LinkedHashMap<String,Object>();
                         data.put("doc",member.doc());data.put("source_file","jar:"+sourceZip.toUri()+"!/"+entry);data.put("line",member.line());
                         data.put("source_start",member.start());data.put("source_end",member.end());data.put("body_start",member.bodyStart());data.put("body_end",member.bodyEnd());
-                        data.put("parameters",member.parameters());sourceData.put(localKey,Map.copyOf(data));
+                        data.put("parameters",member.parameters());sourceData.put(localKey,Collections.unmodifiableMap(data));
                     }
                 }
             }

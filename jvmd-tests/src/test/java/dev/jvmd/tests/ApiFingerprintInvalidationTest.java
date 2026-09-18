@@ -117,20 +117,20 @@ class ApiFingerprintInvalidationTest {
         }
     }
 
-    @Test void packageRenameInvalidatesOldUsersAndReconsidersUnresolvedNewUsers()throws Exception{
-        Path api=root.resolve("Api.java"),oldUse=root.resolve("OldUse.java"),newUse=root.resolve("NewUse.java");
+    @Test void packageMoveInvalidatesOldUsersAndReconsidersUnresolvedNewUsers()throws Exception{
+        Path p=Files.createDirectories(root.resolve("p")),r=Files.createDirectories(root.resolve("r")),q=Files.createDirectories(root.resolve("q"));
+        Path api=p.resolve("Api.java"),moved=r.resolve("Api.java"),oldUse=q.resolve("OldUse.java"),newUse=q.resolve("NewUse.java");
         String original="package p; public class Api {}";
         String oldText="package q; import p.Api; class OldUse { Api value; }";
         String newText="package q; import r.Api; class NewUse { Api value; }";
         Files.writeString(api,original);Files.writeString(oldUse,oldText);Files.writeString(newUse,newText);
-        var documents=new Documents();documents.open(api,original,1);
-        try(var analyzer=analyzer(documents)){
+        try(var analyzer=analyzer(new Documents())){
             assertThat(diagnostics(analyzer,api,original)).isEmpty();
             assertThat(diagnostics(analyzer,oldUse,oldText)).isEmpty();
             assertThat(diagnostics(analyzer,newUse,newText)).anyMatch(problem->problem.code().contains("cant.resolve"));
             String changed="package r; public class Api {}";
-            documents.change(api,2,List.of(new Documents.Change(null,changed)));analyzer.documents(documents);analyzer.changed(api);
-            assertThat(diagnostics(analyzer,api,changed)).isEmpty();
+            Files.writeString(moved,changed);Files.delete(api);analyzer.namespaceChanged();
+            assertThat(diagnostics(analyzer,moved,changed)).isEmpty();
             assertThat(diagnostics(analyzer,oldUse,oldText)).anyMatch(problem->problem.code().contains("cant.resolve"));
             assertThat(diagnostics(analyzer,newUse,newText)).isEmpty();
         }

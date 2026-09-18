@@ -59,8 +59,10 @@ public final class AnnotationProcessing implements AutoCloseable {
             }
             String output=Files.exists(log)?Files.readString(log):"";
             if(exit!=0||timedOut)warnings.add((timedOut?"annotation_processing_timeout":"annotation_processing_failed")+": exit="+exit+"; "+output);
-            var diagnostics=fullLombok?diagnostics(request.directory(),output):List.<Problem>of();
-            String fidelity=fullLombok?"full_lombok_external":request.lombok()?"reduced_lombok":"processor";
+            var parsed=fullLombok?diagnostics(inputs,request.directory(),output):new ParsedDiagnostics(List.of(),true);
+            var diagnostics=parsed.problems();
+            String fidelity=fullLombok&&parsed.complete()?"full_lombok_external":request.lombok()?"reduced_lombok":"processor";
+            if(fullLombok&&!parsed.complete())warnings.add("lombok_external_diagnostics_ambiguous: falling back to resident per-file diagnostics");
             if(request.lombok())warnings.add("lombok_diagnostic_fidelity="+fidelity);
             String semantic=exit==0&&!timedOut?outputFingerprint(generated,classes,request.lombok()):hash;
             var result=new Output(semantic,List.of(generated),exit==0&&request.lombok()?List.of(classes):List.of(),Set.copyOf(binarySources),
@@ -84,16 +86,31 @@ public final class AnnotationProcessing implements AutoCloseable {
         String hash=Hashing.sha256(path);bytesHashed+=Files.size(path);hashes.put(path,new Hashed(stamp,hash));return hash;
     }
     private static final java.util.regex.Pattern DRAW_DIAGNOSTIC=java.util.regex.Pattern.compile("^(.+\\.java):(\\d+):(\\d+): (compiler\\.(?:err|warn|note)\\.[^: ]+)(?:: (.*))?$");
-    private static List<Problem> diagnostics(Path directory,String output){
-        var diagnostics=new ArrayList<Problem>();
+    private record ParsedDiagnostics(List<Problem> problems,boolean complete){ParsedDiagnostics{problems=List.copyOf(problems);}}
+    private static ParsedDiagnostics diagnostics(List<Path> inputs,Path directory,String output){
+        var diagnostics=new ArrayList<Problem>();boolean complete=true;
+        var normalized=inputs.stream().map(p->p.toAbsolutePath().normalize()).toList();
         for(String line:output.split("\\R")){
             var match=DRAW_DIAGNOSTIC.matcher(line.trim());if(!match.matches())continue;
-            Path file=Path.of(match.group(1));if(!file.isAbsolute())file=directory.resolve(file);file=file.toAbsolutePath().normalize();
+            Path emitted=Path.of(match.group(1)),file=null;
+            if(emitted.isAbsolute()){
+                Path candidate=emitted.toAbsolutePath().normalize();if(normalized.contains(candidate))file=candidate;
+            }else{
+                Path relative=emitted.normalize();
+                var matches=normalized.stream().filter(candidate->candidate.endsWith(relative)).toList();
+                if(matches.size()!=1&&relative.getNameCount()==1)matches=normalized.stream().filter(candidate->candidate.getFileName().equals(relative.getFileName())).toList();
+                if(matches.size()==1)file=matches.getFirst();
+                else{
+                    Path candidate=directory.resolve(relative).toAbsolutePath().normalize();
+                    if(normalized.contains(candidate))file=candidate;
+                }
+            }
+            if(file==null){complete=false;continue;}
             String code=match.group(4),kind=code.startsWith("compiler.err.")?"ERROR":code.startsWith("compiler.warn.")?"WARNING":"NOTE";
             String message=match.group(5)==null?code:match.group(5);
             diagnostics.add(new Problem(code,kind,file.toUri().toString(),Long.parseLong(match.group(2)),Math.max(0,Long.parseLong(match.group(3))-1),message));
         }
-        return List.copyOf(diagnostics);
+        return new ParsedDiagnostics(diagnostics,complete);
     }
     private static boolean available(Output output){
         return output!=null&&output.sourceRoots().stream().allMatch(Files::isDirectory)&&output.classpath().stream().allMatch(Files::isDirectory);

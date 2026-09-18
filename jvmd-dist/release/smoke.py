@@ -145,6 +145,7 @@ def main():
         check_launcher_paths(image, work)
         # Exercise JNI from the relocated runtime, including a state path containing spaces.
         native_index = subprocess.check_output([str(image / "bin/java"),
+            "-XX:AOTCache=" + str(image / "lib/jvmd/jvmd.aot"), "-XX:AOTMode=on",
             "-cp", str(image / "lib/jvmd/*"), "dev.jvmd.dist.IndexSmoke",
             str(work / "native index state")], text=True)
         assert json.loads(native_index.strip())["reopen"] is True

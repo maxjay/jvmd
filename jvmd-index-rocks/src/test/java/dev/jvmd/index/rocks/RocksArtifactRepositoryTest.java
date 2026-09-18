@@ -10,6 +10,24 @@ import static org.assertj.core.api.Assertions.*;
 class RocksArtifactRepositoryTest {
     @TempDir Path temp;
 
+    @Test void packedPostingsPreserveBlockBoundariesFilteringAndReverseEdges()throws Exception{
+        var original=facts(1100,0);
+        var edges=new ArrayList<ArtifactIndexFormat.Relationship>();
+        for(int i=0;i<1100;i++)edges.add(new ArtifactIndexFormat.Relationship(i,"dep.Shared","calls"));
+        var data=new ArtifactIndexFormat.ArtifactData(original.key(),original.symbols(),List.copyOf(edges));
+        Path root=temp.resolve("packed");String key=data.key().cacheKey();
+        try(var store=new RocksArtifactRepository(root)){store.publish(data,Set.of("dep.Shared"));}
+        try(var store=new RocksArtifactRepository(root)){
+            assertThat(store.verify(key)).isTrue();assertThat(store.artifact(key)).isEqualTo(data);
+            assertThat(store.substringIds(key,"method",2000)).containsExactlyElementsOf(java.util.stream.IntStream.range(0,1100).boxed().toList());
+            assertThat(store.reverseSources(key,"dep.Shared","calls",2000)).containsExactlyElementsOf(java.util.stream.IntStream.range(0,1100).boxed().toList());
+            assertThat(store.incoming(key,"dep.Shared",Set.of("calls"),2000)).containsExactlyElementsOf(edges);
+            assertThat(store.incoming(key,"dep.Shared",Set.of("calls"),257)).hasSize(257);
+            assertThat(store.select(key,"8|gram|met|",254,4,s->s.id()%2==0)).extracting(ArtifactIndexFormat.SymbolRecord::id).containsExactly(256,258,260,262);
+        }
+        try(var files=Files.list(root.resolve("staging"))){assertThat(files.toList()).isEmpty();}
+    }
+
     @Test void atomicallyPublishesAndReusesImmutableGeneration()throws Exception{
         var data=facts(5000,10000);
         String cacheKey=data.key().cacheKey();

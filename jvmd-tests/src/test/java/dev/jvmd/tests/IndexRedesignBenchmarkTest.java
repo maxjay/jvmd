@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.*;
 /** Forked, reproducible production-path measurements; never a production execution deadline. */
 @Tag("perf") @Tag("phase-3")
 public class IndexRedesignBenchmarkTest {
-    @Test void compareSqliteAndProductionMigrationInFreshProcesses()throws Exception{
+    @Test void compareIsolatedProductionBackendsInFreshProcesses()throws Exception{
         Path output=TestSupport.repo().resolve("jvmd-tests/target/index-redesign-benchmark");Files.createDirectories(output);
         Path runRoot=Files.createTempDirectory(output,"run-");
         String configured=System.getProperty("jvmd.benchmark.repository");
@@ -31,7 +31,7 @@ public class IndexRedesignBenchmarkTest {
         String query=System.getProperty("jvmd.benchmark.query",synthetic?"marker0":"String");
         for(int repetition=0;repetition<repetitions;repetition++){
             // Alternate order to avoid consistently favouring the backend measured second.
-            var modes=repetition%2==0?List.of("sqlite","shadow"):List.of("shadow","sqlite");
+            var modes=repetition%2==0?List.of("sqlite","rocksdb-sst"):List.of("rocksdb-sst","sqlite");
             for(String mode:modes){
                 Path state=runRoot.resolve(mode+"-"+repetition);
                 results.add(fork(output,state,repository,mode,"fresh-"+repetition,query));
@@ -44,12 +44,12 @@ public class IndexRedesignBenchmarkTest {
         }
         if(synthetic){
             fixture(repository,0,classes,fields,1);
-            for(String mode:List.of("sqlite","shadow"))results.add(fork(output,runRoot.resolve(mode+"-0"),repository,mode,"one-jar-update",query));
+            for(String mode:List.of("sqlite","rocksdb-sst"))results.add(fork(output,runRoot.resolve(mode+"-0"),repository,mode,"one-jar-update",query));
         }
         var report=new LinkedHashMap<String,Object>();report.put("synthetic",synthetic);report.put("repository",repository.toString());
         report.put("repository_manifest",manifest);report.put("runs",results);report.put("summary",summary(results));
-        report.put("scope","Complete SQLite versus production dual-write migration; not a Rocks-only backend acceptance claim. Fresh application indexes; OS cache is not flushed.");
-        report.put("missing_acceptance",List.of("Rocks-only production backend","861-JAR corporate run unless explicitly supplied","one-file body/API edit matrix","all native platforms"));
+        report.put("scope","Independent complete SQLite and RocksDB IndexStore processes; Rocks opens no SQLite database. Fresh application indexes; OS cache is not flushed.");
+        report.put("missing_acceptance",List.of("861-JAR corporate run unless explicitly supplied","one-file body/API edit matrix","all native platforms"));
         Json.MAPPER.writerWithDefaultPrettyPrinter().writeValue(output.resolve("report.json").toFile(),report);
         System.out.println("index-redesign-summary "+Json.MAPPER.writeValueAsString(report.get("summary")));
     }
@@ -70,13 +70,13 @@ public class IndexRedesignBenchmarkTest {
     public static final class Worker {
         public static void main(String[] args)throws Exception{
             Path state=Path.of(args[0]),repository=Path.of(args[1]),output=Path.of(args[3]);String mode=args[2],query=args[4];
-            System.setProperty("jvmd.index.read.backend",mode);
+            System.setProperty("jvmd.index.read.backend","sqlite");
             long writesBefore=processMetric("/proc/self/io","write_bytes:"),cpuBefore=cpu(),started=System.nanoTime();
             for(var pool:ManagementFactory.getMemoryPoolMXBeans())if(pool.getType()==MemoryType.HEAP)pool.resetPeakUsage();
             var result=new LinkedHashMap<String,Object>();var latency=new ArrayList<Double>();
             long queryable,seedDone;Map<String,Object> status;
             var sink=mode.equals("sqlite")?ArtifactGenerationSink.none():new RocksArtifactGenerationSink(state.resolve("rocks"),Long.getLong("jvmd.index.generation_budget_mb",128L)*1024*1024);
-            try(var index=new IndexService(state.resolve("index.db"),repository,sink)){
+            try(var index=new IndexService(mode.equals("sqlite")?new SqliteIndexStore(state.resolve("index.db")):sink.openStore(),repository,sink)){
                 index.scan();seedDone=System.nanoTime();
                 List<IndexService.WorkspaceArtifact> paths;
                 try(var files=Files.walk(repository)){paths=files.filter(Files::isRegularFile).filter(path->path.toString().endsWith(".jar")&&!path.toString().endsWith("-sources.jar")&&!path.toString().endsWith("-javadoc.jar"))
@@ -88,6 +88,10 @@ public class IndexRedesignBenchmarkTest {
                 status=index.status();
                 if(((Number)status.get("faults")).longValue()!=0)throw new IllegalStateException("Index faults: "+status.get("warnings"));
             }
+            if(mode.equals("rocksdb-sst")&&Files.exists(state.resolve("index.db")))throw new IllegalStateException("Rocks run opened a SQL database");
+            if(mode.equals("rocksdb-sst"))try(var files=Files.list(state.resolve("rocks/staging"))){
+                if(files.findAny().isPresent())throw new IllegalStateException("Unfinished sort files after index close");
+            }
             long finished=System.nanoTime(),writeBytes=processMetric("/proc/self/io","write_bytes:");
             Collections.sort(latency);result.put("seed_ms",(seedDone-started)/1e6);result.put("workspace_ready_ms",(queryable-started)/1e6);
             result.put("elapsed_through_close_ms",(finished-started)/1e6);result.put("cpu_ms",(cpu()-cpuBefore)/1e6);
@@ -98,6 +102,10 @@ public class IndexRedesignBenchmarkTest {
             result.put("query_p50_ms",latency.get(15));result.put("query_p95_ms",latency.get(29));result.put("status",status);
             result.put("jdk",System.getProperty("java.runtime.version"));result.put("processors",Runtime.getRuntime().availableProcessors());
             result.put("filesystem",Files.getFileStore(state).type());result.put("revision",System.getenv().getOrDefault("GITHUB_SHA",revision()));
+            var implementation=new TreeMap<String,String>();
+            for(String name:List.of("dev/jvmd/index/IndexService","dev/jvmd/index/ArtifactIndexFormat","dev/jvmd/index/rocks/RocksIndexStore","dev/jvmd/index/rocks/SstSorter","dev/jvmd/index/rocks/RocksArtifactRepository"))
+                try(var bytes=Worker.class.getResourceAsStream("/"+name+".class")){implementation.put(name,Hashing.sha256(Objects.requireNonNull(bytes).readAllBytes()));}
+            result.put("implementation_sha256",implementation);
             long size;try(var files=Files.walk(state)){size=files.filter(Files::isRegularFile).filter(path->!path.toString().endsWith(".log")&&!path.toString().endsWith(".json")).mapToLong(path->{try{return Files.size(path);}catch(Exception e){throw new IllegalStateException(e);}}).sum();}
             result.put("final_index_bytes",size);Json.MAPPER.writerWithDefaultPrettyPrinter().writeValue(output.toFile(),result);
         }
@@ -130,7 +138,7 @@ public class IndexRedesignBenchmarkTest {
     }
     private static Map<String,Object> summary(List<Map<String,Object>> runs){
         var result=new LinkedHashMap<String,Object>();
-        for(String mode:List.of("sqlite","shadow")){
+        for(String mode:List.of("sqlite","rocksdb-sst")){
             var selected=runs.stream().filter(run->mode.equals(run.get("mode"))&&run.get("scenario").toString().startsWith("fresh-")).toList();
             var metrics=new LinkedHashMap<String,Object>();
             for(String name:List.of("seed_ms","elapsed_through_close_ms","write_bytes","query_p95_ms","peak_rss_bytes","final_index_bytes")){

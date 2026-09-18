@@ -13,7 +13,7 @@ class SignatureClosureTest {
     @TempDir Path root;
     @Test void followsSignaturesWithJdkDocsAndResumesWithoutDuplicates()throws Exception{
         Path jar=IndexFixtures.jar(root,"sample",IndexFixtures.generic(),true);
-        try(var index=new IndexService(root.resolve("index.db"),root)){
+        try(var index=new IndexService(new SqliteIndexStore(root.resolve("index.db")),root,ArtifactGenerationSink.none())){
             index.indexJar(jar,"fixture:sample:1","jar");index.indexSources(root.resolve("sample-sources.jar"));index.linkEdges();
             var symbol=index.find("transform",null,false,10,0).getFirst();long id=((Number)symbol.get("id")).longValue();
             // A self-cycle must not duplicate the root or prevent pagination.

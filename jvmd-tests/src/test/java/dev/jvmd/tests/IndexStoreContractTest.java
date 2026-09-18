@@ -15,7 +15,7 @@ class IndexStoreContractTest {
     @Test void sqliteImplementsArtifactWorkspaceAndQueryContract()throws Exception{
         Path a=IndexFixtures.jar(temp.resolve("a"),"a",IndexFixtures.generic().replace("private String hidden;","private String hidden; public int markerA;"),false);
         Path b=IndexFixtures.jar(temp.resolve("b"),"b",IndexFixtures.generic().replace("private String hidden;","private String hidden; public int markerB;"),false);
-        try(var index=new IndexService(temp.resolve("index.db"),temp)){
+        try(var index=new IndexService(new SqliteIndexStore(temp.resolve("index.db")),temp,ArtifactGenerationSink.none())){
             index.indexJar(a,"fixture:a:1","jar");
             index.indexJar(b,"fixture:b:1","jar");
             var store=index.store();
@@ -58,7 +58,7 @@ class IndexStoreContractTest {
             }
         };
         String previous=System.getProperty("jvmd.index.read.backend");
-        try(var index=new IndexService(temp.resolve("mode.db"),temp,sink)){
+        try(var index=new IndexService(new SqliteIndexStore(temp.resolve("mode.db")),temp,sink)){
             index.indexJar(jar,"fixture:mode:1","jar");
             index.loadWorkspace("mode-workspace",List.of(new IndexService.WorkspaceArtifact(jar.toString(),"compile")),List.of());
 

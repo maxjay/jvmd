@@ -36,13 +36,24 @@ public final class IndexService implements AutoCloseable {
     private volatile long total;
     private volatile boolean closed;
     public IndexService(Path database,Path repository) throws Exception {
-        this(database,repository,ArtifactGenerationSink.none());
+        this(database,repository,System.getProperty("jvmd.index.store.backend","rocksdb-sst").equals("rocksdb-sst")?
+                ArtifactGenerationSink.open("rocksdb-sst",database.resolveSibling(database.getFileName().toString().equals("index.db")?"index-v2":database.getFileName()+".rocks"),128L*1024*1024):ArtifactGenerationSink.none());
     }
     public IndexService(Path database,Path repository,ArtifactGenerationSink generationSink) throws Exception {
-        this.sqliteStore=new SqliteIndexStore(database);this.store=sqliteStore;this.database=sqliteStore.database();
+        this(openStore(database,generationSink),repository,generationSink);
+    }
+    private static IndexStore openStore(Path path,ArtifactGenerationSink generations)throws Exception{
+        try{return switch(System.getProperty("jvmd.index.store.backend","rocksdb-sst")){
+            case "rocksdb-sst"->generations.openStore();case "sqlite"->new SqliteIndexStore(path);
+            default->throw new IllegalArgumentException("Unknown jvmd.index.store.backend");
+        };}catch(Exception|LinkageError error){try{generations.close();}catch(Exception close){error.addSuppressed(close);}throw error;}
+    }
+    public IndexService(IndexStore store,Path repository,ArtifactGenerationSink generationSink)throws Exception{
+        this.store=Objects.requireNonNull(store);this.sqliteStore=store instanceof SqliteIndexStore value?value:null;
+        this.database=sqliteStore==null?null:sqliteStore.database();
         this.repository=repository.toAbsolutePath().normalize();this.generationSink=Objects.requireNonNull(generationSink);
     }
-    public IndexDatabase database(){return database;}
+    public IndexDatabase database(){if(database==null)throw new UnsupportedOperationException("The active backend is not SQLite");return database;}
     public IndexStore store(){return store;}
     public long generation(){return indexed.get();}
     public void start(){
@@ -88,7 +99,7 @@ public final class IndexService implements AutoCloseable {
         result.put("phase",phase);result.put("total",total);result.put("scanned",scanned.get());result.put("indexed",indexed.get());
         result.put("reused",reused.get());result.put("hashes",hashed.get());result.put("faults",faults.get());result.put("warnings",List.copyOf(warnings));
         result.put("active_artifacts",Map.copyOf(activeArtifacts));result.put("store",store.status());result.put("generation_sink",generationSink.status());
-        result.put("read_backend",System.getProperty("jvmd.index.read.backend","shadow"));
+        result.put("read_backend",store.backend().equals("sqlite")?System.getProperty("jvmd.index.read.backend","shadow"):store.backend());
         var timings=new LinkedHashMap<String,Object>();
         timings.put("scans",scans.get());timings.put("scan_ms",millis(scanNanos.get()));timings.put("discovery_ms",millis(discoveryNanos.get()));
         timings.put("hash_ms",millis(hashNanos.get()));timings.put("parse_ms",millis(parseNanos.get()));timings.put("storage_ms",millis(storageNanos.get()));
@@ -279,6 +290,7 @@ public final class IndexService implements AutoCloseable {
     public List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds)throws Exception{
         long started=System.nanoTime();queryCalls.incrementAndGet();
         try{
+            if(!store.backend().equals("sqlite"))return store.find(query,workspace,substring,limit,after,kinds);
             String mode=System.getProperty("jvmd.index.read.backend","shadow");
             if(!Set.of("sqlite","shadow","rocksdb-sst").contains(mode))
                 throw new IllegalStateException("Unknown jvmd.index.read.backend: "+mode);
@@ -318,6 +330,7 @@ public final class IndexService implements AutoCloseable {
 
     void validateRelationshipShadow(String workspace,Collection<String> scips,boolean outgoing,Set<String> kinds,
                                     List<IndexStore.ResolvedRelationship> authoritative)throws Exception{
+        if(!store.backend().equals("sqlite"))return;
         if(workspace==null){shadowSkipped.incrementAndGet();return;}
         var shadow=generationSink.shadowRelationships(workspace,scips,outgoing,kinds,Math.max(256,authoritative.size()+16));
         if(shadow.isEmpty()){shadowSkipped.incrementAndGet();return;}
@@ -343,7 +356,7 @@ public final class IndexService implements AutoCloseable {
     public Map<String,Object> byId(long id,String workspace)throws Exception{
         long started=System.nanoTime();queryCalls.incrementAndGet();
         try{
-            if(workspace!=null&&id>=(1L<<32)&&System.getProperty("jvmd.index.read.backend","shadow").equals("rocksdb-sst"))
+            if(store.backend().equals("sqlite")&&workspace!=null&&id>=(1L<<32)&&System.getProperty("jvmd.index.read.backend","shadow").equals("rocksdb-sst"))
                 return generationSink.shadowById(workspace,id).orElse(null);
             return store.byId(id,workspace);
         }
@@ -390,6 +403,6 @@ public final class IndexService implements AutoCloseable {
         if(!readers.awaitTermination(60,TimeUnit.SECONDS)){readers.shutdownNow();
             if(!readers.awaitTermination(5,TimeUnit.SECONDS))throw new IllegalStateException("Index workers did not stop; native handles remain open");}
         if(!scanner.awaitTermination(5,TimeUnit.SECONDS))throw new IllegalStateException("Index scanner did not stop; native handles remain open");
-        try{generationSink.close();}finally{store.close();}
+        store.close();generationSink.close();
     }
 }

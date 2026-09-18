@@ -124,7 +124,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
         var manifest=parseManifest(value);
         if(!"documentation".equals(manifest.get("kind"))||!binaryCacheKey.equals(manifest.get("binary"))||!sourceSha.equals(manifest.get("source_sha")))return false;
         var digest=java.security.MessageDigest.getInstance("SHA-256");byte[] prefix=key(docsKey,"9|member|");long count=0;
-        try(var iterator=db.newIterator()){
+        try(var read=new ReadOptions().setFillCache(false);var iterator=db.newIterator(read)){
             for(iterator.seek(prefix);iterator.isValid()&&startsWith(iterator.key(),prefix);iterator.next()){
                 SstSorter.hash(digest,iterator.key(),iterator.value());count++;
             }
@@ -147,7 +147,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
         if(identity==null||!identity.cacheKey().equals(cacheKey))return false;
         var digest=java.security.MessageDigest.getInstance("SHA-256");
         long symbols=0,relationships=0,references=0;byte[] prefix=key(cacheKey,"");
-        try(var iterator=db.newIterator()){
+        try(var read=new ReadOptions().setFillCache(false);var iterator=db.newIterator(read)){
             for(iterator.seek(prefix);iterator.isValid()&&startsWith(iterator.key(),prefix);iterator.next()){
                 byte[] current=iterator.key();String suffix=new String(current,StandardCharsets.UTF_8).substring(cacheKey.length()+1);
                 if(suffix.equals("z|manifest"))continue;
@@ -203,18 +203,23 @@ public final class RocksArtifactRepository implements AutoCloseable {
     /** Filter before pagination, with bounded top-k memory even for large prefix postings. */
     public List<ArtifactIndexFormat.SymbolRecord> select(String cacheKey,String postingPrefix,int after,int limit,
                                                         Predicate<ArtifactIndexFormat.SymbolRecord> filter)throws Exception{
+        return selectRanked(cacheKey,postingPrefix,after,limit,filter,symbol->symbol.id());
+    }
+    public List<ArtifactIndexFormat.SymbolRecord> selectRanked(String cacheKey,String postingPrefix,long after,int limit,
+            Predicate<ArtifactIndexFormat.SymbolRecord> filter,java.util.function.ToLongFunction<ArtifactIndexFormat.SymbolRecord> rank)throws Exception{
         if(limit<=0)return List.of();
-        var selected=new TreeMap<Integer,ArtifactIndexFormat.SymbolRecord>();
+        var selected=new TreeMap<Long,ArtifactIndexFormat.SymbolRecord>();
         byte[] prefix=key(cacheKey,postingPrefix);
         try(var iterator=db.newIterator()){
             for(iterator.seek(prefix);iterator.isValid()&&startsWith(iterator.key(),prefix);iterator.next()){
-                String text=new String(iterator.key(),StandardCharsets.UTF_8);
-                int id=(int)Long.parseLong(text.substring(text.lastIndexOf('|')+1),16);
-                if(id<=after||selected.containsKey(id)||(selected.size()==limit&&id>=selected.lastKey()))continue;
+                for(int id:postingIds(iterator.key(),iterator.value())){
                 var symbol=symbol(cacheKey,id);
                 if(symbol==null)throw new IOException("Posting references missing symbol: "+id);
+                long order=rank.applyAsLong(symbol);
+                if(order<=after||selected.containsKey(order)||(selected.size()==limit&&order>=selected.lastKey()))continue;
                 if(!filter.test(symbol))continue;
-                selected.put(id,symbol);if(selected.size()>limit)selected.pollLastEntry();
+                selected.put(order,symbol);if(selected.size()>limit)selected.pollLastEntry();
+                }
             }
             iterator.status();
         }
@@ -229,6 +234,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
         byte[] value=db.get(key(cacheKey,"2|binary|"+binaryKey));
         return value==null?null:ByteBuffer.wrap(value).getInt();
     }
+    public boolean referencesClass(String cacheKey,String fqn)throws Exception{return db.get(key(cacheKey,"6|class|"+fqn))!=null;}
 
     public List<Integer> nameIds(String cacheKey,String namePrefix,int limit){return idsByPrefix(cacheKey,"3|name|"+namePrefix,limit);}
     public List<Integer> reverseSources(String cacheKey,String target,String kind,int limit){return idsByPrefix(cacheKey,"5|reverse|"+target+"|"+kind+"|",limit);}
@@ -250,8 +256,9 @@ public final class RocksArtifactRepository implements AutoCloseable {
                 int previous=text.lastIndexOf('|',last-1);if(previous<=0)continue;
                 String kind=text.substring(previous+1,last);
                 if(!kinds.isEmpty()&&!kinds.contains(kind))continue;
-                int source=(int)Long.parseLong(text.substring(last+1),16);
-                result.add(new ArtifactIndexFormat.Relationship(source,target,kind));
+                for(int source:postingIds(current,iterator.value())){
+                    result.add(new ArtifactIndexFormat.Relationship(source,target,kind));if(result.size()==limit)break;
+                }
             }
         }
         return List.copyOf(result);
@@ -296,11 +303,29 @@ public final class RocksArtifactRepository implements AutoCloseable {
         try(var read=new ReadOptions();var iterator=db.newIterator(read)){
             for(iterator.seek(prefix);iterator.isValid()&&result.size()<limit;iterator.next()){
                 byte[] current=iterator.key();if(!startsWith(current,prefix))break;
-                String text=new String(current,StandardCharsets.UTF_8);
-                int split=text.lastIndexOf('|');if(split>=0)result.add((int)Long.parseLong(text.substring(split+1),16));
+                for(int id:postingIds(current,iterator.value())){result.add(id);if(result.size()==limit)break;}
             }
         }
         return List.copyOf(result);
+    }
+
+    private static int[] postingIds(byte[] key,byte[] value){
+        String text=new String(key,StandardCharsets.UTF_8);
+        int maximum=(int)Long.parseLong(text.substring(text.lastIndexOf('|')+1),16);
+        if(key[65]=='1'||value.length==0)return new int[]{maximum};
+        if(value.length<2||value[0]!=0x7f)throw new IllegalStateException("Invalid posting encoding");
+        int[] ids=new int[256];int count=0,previous=0,delta=0,shift=0;
+        for(int i=1;i<value.length;i++){
+            int part=Byte.toUnsignedInt(value[i]);
+            if(shift>28||(shift==28&&(part&0xf0)!=0))throw new IllegalStateException("Posting ID overflow");
+            delta|=(part&0x7f)<<shift;
+            if((part&0x80)!=0){shift+=7;continue;}
+            long next=Integer.toUnsignedLong(previous)+Integer.toUnsignedLong(delta);
+            if(count==256||next>Integer.MAX_VALUE||(count>0&&delta==0))throw new IllegalStateException("Invalid posting order");
+            ids[count++]=(int)next;previous=(int)next;delta=0;shift=0;
+        }
+        if(shift!=0||count==0||previous!=maximum)throw new IllegalStateException("Truncated posting block");
+        return Arrays.copyOf(ids,count);
     }
 
     private void writeSst(Path path,String cacheKey,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{

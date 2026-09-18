@@ -5,6 +5,7 @@ import java.nio.file.*;
 import java.util.*;
 import java.security.MessageDigest;
 import java.nio.ByteBuffer;
+import java.util.zip.*;
 import org.rocksdb.SstFileWriter;
 
 /** Bounded external merge sort. All temporary runs remain outside the published namespace. */
@@ -33,11 +34,12 @@ final class SstSorter implements AutoCloseable {
     long spillBytes(){return spillBytes;}
     String writeTo(SstFileWriter writer)throws Exception{
         var digest=MessageDigest.getInstance("SHA-256");
-        Consumer write=entry->{hash(digest,entry.key(),entry.value());writer.put(entry.key(),entry.value());};
+        var postings=new PostingWriter(writer,digest);
+        Consumer write=postings::accept;
         if(runs.isEmpty()){
             buffered.sort(ORDER);byte[] previous=null;
             for(var entry:buffered){check(previous,entry.key());write.accept(entry);previous=entry.key();}
-            return HexFormat.of().formatHex(digest.digest());
+            postings.flush();return HexFormat.of().formatHex(digest.digest());
         }
         spill();
         while(runs.size()>FAN_IN){
@@ -51,6 +53,7 @@ final class SstSorter implements AutoCloseable {
             runs=next;
         }
         merge(runs,write);
+        postings.flush();
         return HexFormat.of().formatHex(digest.digest());
     }
     static void hash(MessageDigest digest,byte[] key,byte[] value){
@@ -66,7 +69,32 @@ final class SstSorter implements AutoCloseable {
         Path path=Files.createTempFile(directory,"sort-",".run.tmp");temporary.add(path);return path;
     }
     private static DataOutputStream output(Path path)throws IOException{
-        return new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(path),65536));
+        var compressed=new GZIPOutputStream(Files.newOutputStream(path),65536){{def.setLevel(Deflater.BEST_SPEED);}};
+        return new DataOutputStream(new BufferedOutputStream(compressed,65536));
+    }
+    /** Bound each posting block to 256 sorted IDs. The key carries the block's maximum ID. */
+    private static final class PostingWriter {
+        private final SstFileWriter writer;private final MessageDigest digest;
+        private final ByteArrayOutputStream ids=new ByteArrayOutputStream(1024);
+        private byte[] last;private int count,previous;
+        PostingWriter(SstFileWriter writer,MessageDigest digest){this.writer=writer;this.digest=digest;}
+        void accept(Entry entry)throws Exception{
+            byte[] key=entry.key();
+            boolean posting=entry.value().length==0&&key.length>76&&key[64]=='|'&&
+                    (key[65]=='3'||key[65]=='5'||key[65]=='7'||key[65]=='8'||(key[65]=='2'&&key[67]=='s'));
+            if(!posting){flush();put(key,entry.value());return;}
+            int prefixLength=key.length-8;
+            if(last!=null&&(count==256||last.length!=key.length||Arrays.mismatch(last,0,prefixLength,key,0,prefixLength)>=0))flush();
+            int id=0;for(int i=prefixLength;i<key.length;i++)id=(id<<4)|Character.digit(key[i],16);
+            if(count==0)ids.write(0x7f);
+            int delta=id-previous;
+            do{int part=delta&0x7f;delta>>>=7;ids.write(part|(delta==0?0:0x80));}while(delta!=0);
+            count++;previous=id;last=key;
+        }
+        void flush()throws Exception{
+            if(last==null)return;put(last,ids.toByteArray());last=null;count=0;previous=0;ids.reset();
+        }
+        private void put(byte[] key,byte[] value)throws Exception{hash(digest,key,value);writer.put(key,value);}
     }
     @FunctionalInterface private interface Consumer {void accept(Entry entry)throws Exception;}
     private static void merge(List<Path> paths,Consumer consumer)throws Exception{
@@ -90,7 +118,7 @@ final class SstSorter implements AutoCloseable {
     private static final class Run implements AutoCloseable {
         private final DataInputStream input;private Entry current;
         Run(Path path)throws IOException{
-            input=new DataInputStream(new BufferedInputStream(Files.newInputStream(path),65536));
+            input=new DataInputStream(new BufferedInputStream(new GZIPInputStream(Files.newInputStream(path),65536),65536));
             try{advance();}catch(IOException e){input.close();throw e;}
         }
         void advance()throws IOException{

@@ -10,7 +10,7 @@ class IndexSearchTest {
  @TempDir Path temp;
  @Test void findsTrigramsAndShortNamesWithoutTreatingInputAsSql()throws Exception{
   Path jar=IndexFixtures.jar(temp,"sample",IndexFixtures.generic(),false);
-  try(var index=new IndexService(temp.resolve("index.db"),temp)){index.indexJar(jar,"fixture:sample:1","jar");
+  try(var index=new IndexService(new SqliteIndexStore(temp.resolve("index.db")),temp,ArtifactGenerationSink.none())){index.indexJar(jar,"fixture:sample:1","jar");
    assertThat(index.find("ansf",null,true,10,0)).anyMatch(s->s.get("name").equals("transform"));
    assertThat(index.find("Sa",null,true,10,0)).isNotEmpty();assertThat(index.find("%' OR 1=1 --",null,true,10,0)).isEmpty();
    assertThat(index.database().counts().get("simple_names")).isEqualTo(2L);

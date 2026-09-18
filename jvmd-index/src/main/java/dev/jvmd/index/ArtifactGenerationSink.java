@@ -16,6 +16,8 @@ public interface ArtifactGenerationSink extends AutoCloseable {
         }
     }
     default AutoCloseable acquireArtifact(Path path)throws Exception{return ()->{};}
+    /** Open the authoritative store sharing this generation's native resources. */
+    default IndexStore openStore()throws Exception{throw new UnsupportedOperationException("No authoritative index store for this provider");}
     void publish(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception;
     default boolean contains(ArtifactIndexFormat.Key key)throws Exception{return true;}
     default long beginScan()throws Exception{return 0L;}

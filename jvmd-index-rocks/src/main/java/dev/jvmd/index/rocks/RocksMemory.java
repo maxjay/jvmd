@@ -19,7 +19,9 @@ final class RocksMemory implements AutoCloseable {
         return new Options().setCreateIfMissing(true).setMaxOpenFiles(openFiles).setMaxBackgroundJobs(2)
                 .setWriteBufferSize(Math.min(4L*1024*1024,budget/8)).setMaxWriteBufferNumber(2)
                 .setWriteBufferManager(buffers)
-                .setTableFormatConfig(new BlockBasedTableConfig().setBlockCache(cache).setCacheIndexAndFilterBlocks(true));
+                .setTableFormatConfig(new BlockBasedTableConfig().setBlockCache(cache).setCacheIndexAndFilterBlocks(true)
+                        .setIndexType(IndexType.kTwoLevelIndexSearch).setPartitionFilters(true).setMetadataBlockSize(4096)
+                        .setCacheIndexAndFilterBlocksWithHighPriority(true).setPinTopLevelIndexAndFilter(true));
     }
     Map<String,Object> status(){return Map.of("cache_and_memtable_budget_bytes",budget,
             "cache_usage_bytes",cache.getUsage(),"cache_pinned_bytes",cache.getPinnedUsage());}

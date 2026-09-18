@@ -2,11 +2,12 @@
 
 The implementation is on `indexing/immutable-artifacts`; checkpoint history is in
 [INDEXING-PROGRESS.md](../INDEXING-PROGRESS.md). **The replacement is not complete.**
-SQLite still serves the full `IndexStore` contract and receives artifact writes.
-Rocks is a production-integrated generation store, semantic-state store and search
-comparison path. Removing SQLite ingestion requires a complete replacement store
-and agreement for all consumers, including local sources, JDK enrichment,
-hierarchy/overrides, lazy bytecode references and documentation.
+The default `rocksdb-sst` backend now implements the complete `IndexStore` contract
+without opening SQLite: binary artifacts, documentation, per-file source facts,
+workspace membership, hierarchy, lazy bytecode references and JDK enrichment.
+SQLite remains an explicitly selected comparison/rollback backend. Deterministic
+integration fixtures pass; the full performance/corpus/platform acceptance gate
+is still open. The historical dual-write reports below are not replacement results.
 
 ## Measured decision and current performance
 
@@ -29,8 +30,8 @@ the migration also includes Rocks sorting, publication and SQLite writes.
 | Query p95 | 2.59 ms (1.97–3.34) | 5.36 ms (3.98–5.53) |
 | Peak process RSS | 140.0 MB (137.5–140.5) | 253.8 MB (252.3–255.6) |
 
-These measurements fail the proposed 3× seed, 50% write reduction and query p95
-acceptance targets. They identify dual writing as remaining production work;
+These historical dual-write measurements fail the proposed 3× seed, 50% write reduction and query p95
+acceptance targets. Dual writing has since been removed from the default store;
 changing targets or dropping correctness checks would not solve it. This is a
 small generated fixture on Linux/overlayfs with warm OS caches, not WSL or the
 861-JAR corporate repository. Retain the SQLite rollback until acceptance passes.
@@ -43,6 +44,10 @@ Use the pinned JDK 25 and the repository's Maven build:
 mvn -B -DskipTests install
 mvn -B -pl jvmd-tests test -Dtest=IndexRedesignBenchmarkTest -DexcludedGroups=
 ```
+
+The harness now compares isolated full SQLite and full Rocks stores, asserts that
+Rocks opens no SQLite file, and checks that staging is empty after close. It records
+compiled implementation hashes as well as the Git revision.
 
 The parent launches a fresh `-Xmx1024m` JVM for every sample, alternates backend
 order, records CPU, peak heap pool usage, Linux peak RSS, process-attributed write
@@ -70,31 +75,35 @@ The original baseline revision remains available on `benchmark/index-storage`.
 ## Data and publication
 
 Artifact identity includes full binary SHA-256, record format, indexer identity
-(`jvmd-index-v3`), JDK feature/multi-release selection and indexing mode. GAV/path
+(`jvmd-index-v5`), JDK feature/multi-release selection and indexing mode. GAV/path
 context determines external SCIP identities separately. Typed symbol records,
 binary/SCIP/name/path/substring postings and forward/reverse symbolic references
-are sorted in bounded runs and imported as one SST. The manifest is in the same
-SST and contains counts and a checksum over every record and secondary posting.
-Queries load individual records. Whole-artifact reconstruction is an oracle operation.
+are sorted in bounded compressed runs and imported as one SST. Secondary postings
+use blocks of at most 256 delta-encoded local IDs. The manifest is in the same SST
+and contains counts and a checksum over every record and secondary posting.
+Queries load individual records; whole-artifact reconstruction is an oracle operation.
 Documentation has a separate binary-plus-source-content key and verified member
-checksum. Return-type/SCIP ambiguity and source alias context still need the full
-production oracle before authoritative cutover.
+checksum. Metadata in a separate Rocks database atomically selects each path's
+binary, code and documentation generations; source facts are stored per file.
 
-Generations are below `state/index-v2/generations/format-1-jdk25-jvmd-index-v3`.
+Generations are below `state/index-v2/generations/format-1-jdk25-jvmd-index-v5`.
 A candidate is checked against its inventory before `active.manifest` switches;
 `previous` retains the earlier format generation. Incomplete SSTs/sort runs never
 have a published manifest. Startup removes staging remnants after obtaining the
-Rocks database lock. New formats backfill from existing SQLite entries without
-replacing their SQLite symbol IDs.
+Rocks database lock. A format change rebuilds disposable index data; the prior
+SQLite index is retained for explicit rollback. Readers hold the store metadata
+monitor while selecting/querying generations; production reclamation remains
+conservative until broader reader-pin/failure-injection acceptance is complete.
 
 ## Controls and diagnostics
 
 | JVM property | Default | Meaning |
 | --- | --- | --- |
-| `jvmd.index.generation.backend` | `auto` | `rocksdb-sst`, auto provider discovery, or `none` to stop generating Rocks data |
-| `jvmd.index.read.backend` | `shadow` | SQLite answers plus comparison; `sqlite` disables search comparison; `rocksdb-sst` is an experimental complete-workspace search path |
+| `jvmd.index.store.backend` | `rocksdb-sst` | Full production store; `sqlite` explicitly selects the legacy comparison backend |
+| `jvmd.index.generation.backend` | `auto` | Rocks provider discovery; `none` is valid with the SQLite store only |
+| `jvmd.index.read.backend` | `shadow` | Legacy SQLite comparison setting; the Rocks store always serves its own reads |
 | `jvmd.index.generation_budget_mb` | heap-derived, 8–128 MiB | Weighted admission estimate held from parsing through publication |
-| `jvmd.index.native_budget_mb` | 64 MiB | Shared strict block cache and write-buffer accounting across five Rocks databases |
+| `jvmd.index.native_budget_mb` | 64 MiB | Shared strict block cache and write-buffer accounting across six Rocks databases |
 | `jvmd.index.sort_buffer_bytes` | 4 MiB | Per-builder sorted-run buffer; minimum 64 KiB; a single larger record is processed alone |
 | `jvmd.index.scan.initial_delay_seconds` | 2 | Delay before the first repository crawl |
 
@@ -108,7 +117,10 @@ scan elapsed time, SQL queue/execution times and actual global `link_passes`.
 `generation_sink.repository` adds sort spill/peak bytes, SST bytes, pending/running
 compactions, memtable/table-reader memory and write stalls. `native_memory` reports
 shared cache budget/use/pins. `shadow_validation` records comparisons/mismatches.
-A partial Rocks workspace falls back to the complete SQLite view.
+The production Rocks store does not fall back to SQLite. Missing membership is
+reported through the existing workspace contract. Source caches have a separate
+16 MiB estimated retention budget; loading a single source module is not a hard
+heap bound.
 
 Source deltas update one persisted file and its Merkle ancestor lists. Reconciliation
 still scans the filesystem for external creates/deletes; timestamps do not prove
@@ -120,7 +132,8 @@ snapshot files tolerate disappearance while retaining other I/O errors.
 ## Recovery and packaging
 
 For immediate rollback, restart with
-`-Djvmd.index.generation.backend=none -Djvmd.index.read.backend=sqlite`.
+`-Djvmd.index.store.backend=sqlite -Djvmd.index.generation.backend=none
+-Djvmd.index.read.backend=sqlite`.
 Keep `index.db` and the previous generation while validating. After an interrupted
 build, restart normally: absent manifests rebuild and staged files are discarded.
 On low disk space publication fails without making the unfinished artifact visible;
@@ -136,10 +149,8 @@ installer continues to use the Linux distribution and its existing checks.
 
 ## Remaining acceptance work
 
-- Implement a full Rocks `IndexStore`, remove production JAR SQL ingestion and
-  replace all hierarchy/documentation/local-source consumers with complete equivalents.
 - Validate deterministic search ordering, all pages, overrides, source/JDK overlays,
-  ambiguous identities and aliases before relying on authoritative Rocks reads.
+  ambiguous identities and aliases across the complete corpus and concurrent-ingestion matrix.
 - Finish generation pinning/rollback integration for all production readers and
   publication-boundary fault injection, including process termination and disk full.
 - Run unchanged/restart/replacement, body/API edit and concurrent-query matrices

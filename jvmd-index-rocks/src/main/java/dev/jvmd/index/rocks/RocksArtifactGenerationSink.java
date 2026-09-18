@@ -22,6 +22,8 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
     private final java.util.concurrent.ConcurrentHashMap<String,ModuleStateInput> moduleInputs=new java.util.concurrent.ConcurrentHashMap<>();
     private volatile Map<String,Object> lastSemanticResult=Map.of(),lastWorkspaceState=Map.of();
     private final RocksMemory memory;
+    private final Path root;
+    private boolean storeOpened;
     private final ThreadLocal<Boolean> artifactPermit=ThreadLocal.withInitial(()->false);
     private final Semaphore budget;
     private final int totalUnits;
@@ -33,6 +35,7 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
     }
 
     RocksArtifactGenerationSink(Path root,long maxEstimatedBytes,RocksMigrationManager migration,String candidateGeneration)throws Exception{
+        this.root=root;
         if(maxEstimatedBytes<UNIT)throw new IllegalArgumentException("maxEstimatedBytes must be at least 1 MiB");
         long nativeMb=Long.getLong("jvmd.index.native_budget_mb",64L);
         this.memory=new RocksMemory(Math.multiplyExact(nativeMb,UNIT));
@@ -87,6 +90,10 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
     }
 
     @Override public boolean contains(ArtifactIndexFormat.Key key)throws Exception{return repository.contains(key.cacheKey());}
+    @Override public synchronized IndexStore openStore()throws Exception{
+        if(storeOpened)throw new IllegalStateException("An authoritative store is already open");
+        var store=new RocksIndexStore(root.resolve("store"),repository,memory);storeOpened=true;return store;
+    }
 
     @Override public long beginScan()throws Exception{return inventory.beginScan();}
 

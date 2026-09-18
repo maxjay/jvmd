@@ -21,7 +21,7 @@ class RocksSqliteAgreementTest {
         Path b=IndexFixtures.jar(repo.resolve("fixture/b/1"),"b-1",
                 IndexFixtures.generic().replace("private String hidden;","private String hidden; public int markerB;"),false);
 
-        try(var sqlite=new IndexService(temp.resolve("index.db"),repo);
+        try(var sqlite=new IndexService(new SqliteIndexStore(temp.resolve("index.db")),repo,ArtifactGenerationSink.none());
             var artifacts=new RocksArtifactRepository(temp.resolve("rocks-artifacts"));
             var resolver=new RocksWorkspaceResolver(temp.resolve("rocks-resolution"),artifacts)){
             var entries=new ArrayList<RocksWorkspaceResolver.Entry>();

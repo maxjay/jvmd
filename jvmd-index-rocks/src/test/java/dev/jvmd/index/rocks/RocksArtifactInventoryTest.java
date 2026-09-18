@@ -10,7 +10,8 @@ class RocksArtifactInventoryTest {
 
     @Test void tracksReuseDeletionRenameAndContentReplacement()throws Exception{
         Path a=Files.writeString(temp.resolve("a.jar"),"a"),b=Files.writeString(temp.resolve("b.jar"),"b"),c=temp.resolve("c.jar");
-        var aStamp=RocksArtifactInventory.Stamp.read(a),bStamp=RocksArtifactInventory.Stamp.read(b);
+        var aStamp=RocksArtifactInventory.Stamp.read(a);
+        var bStamp=RocksArtifactInventory.Stamp.read(b);
         String one="1".repeat(64),two="2".repeat(64),shaOne="a".repeat(64),shaTwo="b".repeat(64);
         Path root=temp.resolve("inventory");
         try(var inventory=new RocksArtifactInventory(root)){

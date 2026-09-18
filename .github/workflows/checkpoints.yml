@@ -132,7 +132,9 @@ jobs:
   corpus:
     concurrency:
       group: corpus-tests-${{ github.ref }}
-      cancel-in-progress: true
+      # Corpus agreement is deliberately long-running. Do not kill a valid run merely
+      # because a newer commit lands; later runs queue behind it instead.
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:

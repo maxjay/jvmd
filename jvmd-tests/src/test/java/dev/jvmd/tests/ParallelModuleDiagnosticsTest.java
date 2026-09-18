@@ -28,7 +28,7 @@ class ParallelModuleDiagnosticsTest {
                 files.add(file);owner.put(file.toAbsolutePath().normalize(),module);
             }
         }
-        var one=run(1,files,owner,moduleRoots),two=run(2,files,owner,moduleRoots),four=run(4,files,owner,moduleRoots);
+        var one=run(1,files,owner,moduleRoots);\n        var two=run(2,files,owner,moduleRoots);\n        var four=run(4,files,owner,moduleRoots);
         assertThat(two.diagnostics()).containsExactlyElementsOf(one.diagnostics());
         assertThat(four.diagnostics()).containsExactlyElementsOf(one.diagnostics());
         for(var result:List.of(one,two,four)){

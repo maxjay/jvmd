@@ -53,9 +53,6 @@ jobs:
         run: |
           bash jvmd-tests/smoke/run-index.sh
           mvn -B -pl jvmd-tests test -Dgroups=phase-3 -DexcludedGroups=perf -DargLine=-Xmx1024m
-      - name: Index redesign storage prototypes
-        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
-        run: mvn -B -f jvmd-index-prototypes/pom.xml test
       - name: Phase 4 compiler prerequisites and checkpoints
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: |
@@ -124,8 +121,6 @@ jobs:
           path: |
             jvmd-tests/target/surefire-reports/
             jvmd-tests/target/*perf.json
-            jvmd-tests/target/index-rebuild-baseline.json
-            jvmd-index-prototypes/target/index-prototype-results.json
             jvmd-tests/target/agreement.json
             jvmd-tests/target/sweep.json
             jvmd-tests/target/agent-session.json

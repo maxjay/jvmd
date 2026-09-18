@@ -733,6 +733,16 @@ public final class SqliteIndexStore implements IndexStore {
         return ids;
     }
 
+
+    @Override public void resolveGlobalRelationships()throws Exception{
+        database.write(c->{try(var s=c.createStatement()){
+            s.executeUpdate("INSERT OR IGNORE INTO edges SELECT t.src,s.id,t.kind FROM edge_targets t JOIN symbols s ON s.binary_key=t.target");
+            s.executeUpdate("INSERT OR IGNORE INTO artifact_edges SELECT t.artifact_id,t.src,v.artifact_id,s.id,t.kind FROM signature_targets t JOIN symbols s ON s.binary_key=t.target JOIN artifact_symbols v ON v.symbol_id=s.id");
+            s.executeUpdate("INSERT OR IGNORE INTO artifact_edges SELECT h.src_artifact,child.id,h.dst_artifact,parent.id,'overrides' FROM artifact_edges h JOIN symbols child ON child.owner_id=h.src JOIN artifact_symbols cv ON cv.symbol_id=child.id AND cv.artifact_id=h.src_artifact JOIN symbols parent ON parent.owner_id=h.dst AND parent.name=child.name JOIN artifact_symbols pv ON pv.symbol_id=parent.id AND pv.artifact_id=h.dst_artifact WHERE h.kind IN ('extends','implements') AND child.kind='method' AND parent.kind='method' AND substr(COALESCE(json_extract(cv.data,'$.erased_descriptor'),child.erased_descriptor),1,instr(COALESCE(json_extract(cv.data,'$.erased_descriptor'),child.erased_descriptor),')'))=substr(COALESCE(json_extract(pv.data,'$.erased_descriptor'),parent.erased_descriptor),1,instr(COALESCE(json_extract(pv.data,'$.erased_descriptor'),parent.erased_descriptor),')')) AND (COALESCE(json_extract(cv.data,'$.flags'),child.flags) & 8)=0 AND (COALESCE(json_extract(pv.data,'$.flags'),parent.flags) & 10)=0");
+            s.executeUpdate("INSERT OR IGNORE INTO edges SELECT child.id,parent.id,'overrides' FROM edges hierarchy CROSS JOIN symbols child ON child.owner_id=hierarchy.src CROSS JOIN symbols parent ON parent.owner_id=hierarchy.dst AND parent.name=child.name AND substr(parent.erased_descriptor,1,instr(parent.erased_descriptor,')'))=substr(child.erased_descriptor,1,instr(child.erased_descriptor,')')) WHERE hierarchy.kind IN ('extends','implements') AND child.kind='method' AND parent.kind='method' AND (child.flags & 8)=0 AND (parent.flags & 10)=0");
+        }return null;});
+    }
+
     @Override public Map<String,Long> counts()throws Exception{return database.counts();}
     @Override public Map<String,Object> status(){var result=new LinkedHashMap<String,Object>(database.metrics());result.put("backend",backend());return Map.copyOf(result);}
 

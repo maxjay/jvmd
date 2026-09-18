@@ -35,6 +35,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     private final Map<Path,Stamp> classFiles=new HashMap<>();
     private final WatchService classWatcher;
     private final Map<WatchKey,Path> watchDirectories=new HashMap<>();
+    private final Set<Path> watchedPaths=new HashSet<>();
     private boolean watcherReliable=true;
     private long watchEvents,fullClassScans;
     private final LinkedHashMap<ByteKey,byte[]> bytes=new LinkedHashMap<>(64,.75f,true);
@@ -54,7 +55,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         directories=paths.stream().filter(p->!p.toString().endsWith(".jar")).toList();
         WatchService watcher=null;try{watcher=FileSystems.getDefault().newWatchService();}catch(IOException|UnsupportedOperationException ignored){watcherReliable=false;}
         classWatcher=watcher;
-        if(classWatcher!=null)for(Path directory:directories)if(Files.isDirectory(directory))registerTree(directory);else watcherReliable=false;
+        if(classWatcher!=null)for(Path directory:directories)if(Files.isDirectory(directory))registerTree(directory);
         // Directory inputs and source roots keep javac's own file-manager behavior.
         delegate.setLocationFromPaths(StandardLocation.CLASS_PATH,directories.stream().filter(Files::isDirectory).toList());
         delegate.setLocationFromPaths(StandardLocation.SOURCE_PATH,sources.stream().filter(Files::isDirectory).toList());
@@ -130,7 +131,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
                 if(event.kind()==StandardWatchEventKinds.ENTRY_CREATE&&Files.isDirectory(candidate))registerTree(candidate);
                 if(changed==null)changed=candidate;
             }
-            if(!key.reset()){watchDirectories.remove(key);watcherReliable=false;if(changed==null)changed=directory;}
+            if(!key.reset()){watchDirectories.remove(key);if(directory!=null)watchedPaths.remove(directory);watcherReliable=false;if(changed==null)changed=directory;}
         }
         return changed;
     }
@@ -138,9 +139,9 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         if(classWatcher==null)return;
         try(var paths=Files.walk(root)){
             for(Path directory:paths.filter(Files::isDirectory).toList()){
-                boolean known=watchDirectories.containsValue(directory.toAbsolutePath().normalize());if(known)continue;
+                directory=directory.toAbsolutePath().normalize();if(!watchedPaths.add(directory))continue;
                 var key=directory.register(classWatcher,StandardWatchEventKinds.ENTRY_CREATE,StandardWatchEventKinds.ENTRY_MODIFY,StandardWatchEventKinds.ENTRY_DELETE);
-                watchDirectories.put(key,directory.toAbsolutePath().normalize());
+                watchDirectories.put(key,directory);
             }
         }catch(IOException|UnsupportedOperationException error){watcherReliable=false;}
     }
@@ -266,7 +267,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         try{super.close();}finally{
             catalogs.clear();classFiles.clear();bytes.clear();byteSize=0;
             if(classWatcher!=null)classWatcher.close();
-            watchDirectories.clear();
+            watchDirectories.clear();watchedPaths.clear();
             if(moduleOutput!=null)try(var files=Files.walk(moduleOutput)){for(Path file:files.sorted(Comparator.reverseOrder()).toList())Files.delete(file);}
         }
     }

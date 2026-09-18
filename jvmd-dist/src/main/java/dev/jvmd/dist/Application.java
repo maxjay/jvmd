@@ -3,6 +3,7 @@ package dev.jvmd.dist;
 import dev.jvmd.analyzer.Parser;
 import dev.jvmd.analyzer.Analyzer;
 import dev.jvmd.analyzer.Bindings;
+import dev.jvmd.analyzer.DiagnosticEngine;
 import java.util.*;
 import dev.jvmd.core.*;
 import dev.jvmd.resolver.MavenResolver;

@@ -22,5 +22,22 @@ class SourceIndexPublisherTest {
         }
         assertThat(versions).containsExactly("first","third");
     }
+
+    @Test void identicalDeltaQueuedDuringAnInFlightWriteIsNotWrittenAgain()throws Exception{
+        var entered=new CountDownLatch(1);var release=new CountDownLatch(1);
+        var versions=new CopyOnWriteArrayList<String>();
+        var publisher=new SourceIndexPublisher(delta->{entered.countDown();release.await();versions.add(delta.sourceHash());},4096);
+        try{
+            publisher.enqueue(delta("same"));assertThat(entered.await(5,TimeUnit.SECONDS)).isTrue();
+            publisher.enqueue(delta("same"));
+            assertThat(publisher.status()).containsEntry("queued_files",1);
+        }finally{
+            release.countDown();
+            publisher.close();
+        }
+        assertThat(versions).containsExactly("same");
+        assertThat(publisher.status()).containsEntry("writes",1L).containsEntry("skipped",1L);
+    }
+
     private static SourceIndexPublisher.Delta delta(String hash){return new SourceIndexPublisher.Delta(Path.of("A.java"),hash,hash,List.of(),2,List.of(),256);}
 }

@@ -30,6 +30,12 @@ class IncrementalDiagnosticsStoreTest {
             assertThat(second.path("result").path("diagnostics"))
                     .withFailMessage("warm diag.get returned: %s",second.toPrettyString())
                     .isEqualTo(first.path("result").path("diagnostics"));
+            for(int attempt=0;attempt<4;attempt++){
+                var retry=daemon.request("diag.get",Map.of("session",session,"limit",1000));
+                assertThat(retry.path("result").path("diagnostics"))
+                        .withFailMessage("warm diag.get attempt %s returned: %s",attempt+2,retry.toPrettyString())
+                        .isEqualTo(first.path("result").path("diagnostics"));
+            }
             var repeated=daemon.request("session.status",Map.of("session",session)).path("result").path("analyzer");
             assertThat(repeated.path("queries").asLong()).as("unchanged javac queries").isEqualTo(warmQueries);
             assertThat(repeated.path("diagnostic_files_analysed").asLong()).as("unchanged files reanalysed").isEqualTo(warmAnalysed);

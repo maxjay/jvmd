@@ -25,18 +25,18 @@ These numbers are evidence to reproduce, not acceptance measurements.
 
 - [~] **01 — Reproducible baseline.** Branch/base captured. Existing SQLite remains the control. Implementing checked-in environment/phase/storage/query measurement harness next. The real 861-JAR corporate repository remains a local benchmark.
 - [ ] **02 — Operation-level measurements.** Discovery, hash, parse, preparation/dedupe, queue wait, storage, publication and resolution timings.
-- [~] **03 — `IndexStore` backend contract and correctness oracle.** Read-side contract plus binary/code publication are behind the store boundary; SQLite remains the correctness oracle while remaining write/read paths migrate.
+- [~] **03 — `IndexStore` backend contract and correctness oracle.** All production reads and writes now cross `IndexStore`; SQLite implements the full semantic contract and the expanded fast gate covers search, workspace isolation, local modules, source docs, inheritance, hierarchy and lazy references. Raw database access remains only as a temporary low-level test seam pending the full-suite gate.
 - [~] **04 — Artifact identity and compact binary record format.** Versioned GAV-independent detached facts with artifact-local ids are implemented; source-doc and production compact-record refinements remain.
 - [x] **05 — RocksDB external-SST vs minimal immutable-file prototype comparison.** Measurement branch `benchmark/index-storage` selected RocksDB SST ingestion: comparable median publish time, ~83% lower stored bytes and ~66% lower steady-state write bytes in the 800k-fact CI comparison.
 - [~] **06 — Bounded parallel artifact ingestion.** Repository scanning now supports an injected artifact-generation sink. The Rocks sink builds distinct SSTs concurrently using caller scan workers, serializes only ingestion, and enforces an estimated-byte semaphore budget. Production runtime wiring and real-repository tuning remain.
 - [~] **07 — Atomic artifact generations.** One content-addressed artifact is built as one external SST containing manifest + indexes and ingested as a single publication. Reopen persistence, concurrent same-key idempotence, orphan staging cleanup, and manifest/payload verification are covered; generation reclamation and broader failure injection remain.
 - [~] **08 — Workspace-specific symbolic relationship resolution.** Rocks now resolves artifact-local symbolic targets against an ordered workspace identity (classpath order + scope + module + source-overlay fingerprint + compiler fingerprint) and persists that cache by the complete workspace hash. Global cross-version linking is not used on this path; production API integration remains.
 - [~] **09 — Required search behavior.** The Rocks artifact layout now has explicit binary, name, name-path and 1–3 gram substring indexes. Workspace search returns context-derived SCIP identities in classpath order; production API/pagination equivalence and scale measurements remain.
-- [~] **10 — Incremental artifact discovery/reuse.** A persistent Rocks inventory now records normalized path, GAV/kind, file stamp, content/generation key and binary hash with generation-based deletion detection and refcounts. SNAPSHOT callers can force rehash; scanner integration and safe artifact-generation reclamation remain.
+- [~] **10 — Incremental artifact discovery/reuse.** The persistent Rocks inventory is now integrated with production repository scans: unchanged JARs are observed without parse/rewrite, changed/new JARs publish then observe, successful scans reconcile deletions, and failed skeleton scans deliberately skip deletion reconciliation. SNAPSHOT rehash behavior is preserved. Reader-pinned generation reclamation remains.
 - [~] **11 — Per-file workspace state and Merkle fingerprints.** Persistent Rocks workspace state stores per-file content identities plus deterministic bottom-up directory/module Merkle fingerprints. Unsaved overlays replace disk content for the leaf hash; compiler options, processors, generated-output fingerprints, ordered classpath and JDK fingerprint participate in module identity. Unchanged updates issue zero state writes; production source-index integration remains.
 - [~] **12 — Narrow semantic invalidation.** Persistent Rocks semantic state consumes the analyzer's detached content/API fingerprints and dependency edges: body-only changes stay local; API changes fan through reverse dependencies; cycles terminate; unresolved targets are conservatively matched against changed exports; compiler/context fingerprint changes invalidate the module. Wiring analyzer-produced fingerprints into the production Rocks workspace remains.
-- [ ] **13 — Production backend migration.**
-- [ ] **14 — Packaging and operational limits.**
+- [~] **13 — Production backend migration.** Rocks generation is wired into the production composition root through ServiceLoader with an immediate `jvmd.index.generation.backend=none` rollback. All production index consumers now use the backend contract; SQLite remains the returned-result oracle while the versioned Rocks candidate/active-manifest cutover is implemented.
+- [~] **14 — Packaging and operational limits.** RocksJNI is pinned and included through `jvmd-index-rocks`; production startup exercises provider loading with a bounded generation-memory budget. Distribution/AOT/native-loading CI and license/operational documentation still need the final gate.
 - [ ] **15 — Performance/correctness acceptance gate.**
 - [ ] **16 — Documentation/handover.**
 
@@ -65,6 +65,14 @@ The merged `main` path currently:
 That path remains the control backend until the storage prototype checkpoint selects a replacement.
 
 ## Checkpoint history
+
+### Checkpoint 3 — full store boundary and production scan inventory
+- All production read consumers (hierarchy, documentation, lazy references, workspace membership, pending-signature discovery) route through `IndexStore`.
+- Binary, lazy-code, local-module, per-file source, source-documentation and JDK-enrichment writes route through `IndexStore`; `IndexService` contains no direct database reads/writes.
+- Expanded fast gate passes Rocks storage/workspace tests plus SQLite contract, local module, source documentation, inherit-doc, hierarchy, signature closure and lazy-reference integration.
+- Production repository scans drive the Rocks inventory lifecycle. A scan only reconciles deletions after every binary skeleton task succeeds.
+- Regression coverage proves unchanged scans do not republish immutable generations, deleted artifacts leave the inventory on a complete scan, and a failed scan preserves prior inventory state.
+- The remaining `IndexService.database()` escape hatch exists only for a handful of low-level tests and is not used by production code.
 
 ### Checkpoint 2 — backend selection and first production generation store
 - Measurement branch: `benchmark/index-storage`.

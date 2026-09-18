@@ -41,8 +41,31 @@ class RocksArtifactRepositoryTest {
         }
     }
 
+    @Test void distinctArtifactsBuildInParallelWithinBoundedSinkBudget()throws Exception{
+        long budget=4L*1024*1024;
+        try(var sink=new RocksArtifactGenerationSink(temp.resolve("bounded"),budget);
+            var executor=java.util.concurrent.Executors.newFixedThreadPool(4)){
+            var futures=new ArrayList<java.util.concurrent.Future<?>>();
+            for(int i=0;i<4;i++){
+                final int n=i;
+                futures.add(executor.submit(()->{
+                    try{sink.publish(facts(2500,5000,(char)('b'+n)),Set.of("dep.Type12"));}
+                    catch(Exception e){throw new RuntimeException(e);}
+                }));
+            }
+            for(var future:futures)future.get();
+            var status=sink.status();
+            assertThat(((Number)status.get("published")).longValue()).isEqualTo(4L);
+            assertThat(((Number)status.get("peak_estimated_bytes_in_flight")).longValue()).isLessThanOrEqualTo(budget);
+        }
+    }
+
     private static ArtifactIndexFormat.ArtifactData facts(int symbols,int relationships){
-        var key=new ArtifactIndexFormat.Key("a".repeat(64),ArtifactIndexFormat.FORMAT_VERSION,
+        return facts(symbols,relationships,'a');
+    }
+
+    private static ArtifactIndexFormat.ArtifactData facts(int symbols,int relationships,char hashChar){
+        var key=new ArtifactIndexFormat.Key(String.valueOf(hashChar).repeat(64),ArtifactIndexFormat.FORMAT_VERSION,
                 ArtifactIndexFormat.INDEXER_VERSION,Runtime.version().feature(),"signatures");
         var values=new ArrayList<ArtifactIndexFormat.SymbolRecord>();
         for(int i=0;i<symbols;i++)values.add(new ArtifactIndexFormat.SymbolRecord(

@@ -7,14 +7,15 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.*;
 import org.rocksdb.*;
 
 /**
  * Immutable, content-addressed artifact generations backed by externally built RocksDB SST files.
  *
- * The cache key is the first component of every Rocks key, so one artifact occupies a contiguous
- * non-overlapping key range. The manifest and all indexes are ingested in the same SST, making a
- * generation visible as one publication operation.
+ * Different cache keys build SSTs concurrently. Ingestion is serialized, and publication of the
+ * manifest plus all artifact-local indexes occurs in the same SST.
  */
 public final class RocksArtifactRepository implements AutoCloseable {
     public record Publication(String cacheKey,boolean reused,long symbols,long relationships,long classReferences,long storageBytes) { }
@@ -27,6 +28,10 @@ public final class RocksArtifactRepository implements AutoCloseable {
     private final Path staging;
     private final Options options;
     private final RocksDB db;
+    private final ConcurrentHashMap<String,Object> artifactLocks=new ConcurrentHashMap<>();
+    private final Object ingestLock=new Object();
+    private final AtomicLong published=new AtomicLong(),reused=new AtomicLong();
+    private final AtomicInteger buildsInFlight=new AtomicInteger(),peakBuilds=new AtomicInteger();
 
     public RocksArtifactRepository(Path root)throws Exception{
         this.root=root.toAbsolutePath().normalize();
@@ -38,22 +43,38 @@ public final class RocksArtifactRepository implements AutoCloseable {
         this.db=RocksDB.open(options,dbPath.toString());
     }
 
-    public synchronized Publication publish(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{
+    public Publication publish(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{
         String cacheKey=facts.key().cacheKey();
-        if(contains(cacheKey))return new Publication(cacheKey,true,facts.symbols().size(),facts.relationships().size(),classReferences.size(),storageBytes());
-
-        Path sst=staging.resolve(cacheKey+"-"+UUID.randomUUID()+".sst.tmp");
+        Object artifactLock=artifactLocks.computeIfAbsent(cacheKey,ignored->new Object());
         try{
-            writeSst(sst,cacheKey,facts,classReferences);
-            try(var file=FileChannel.open(sst,StandardOpenOption.WRITE)){file.force(true);}
-            try(var ingest=new IngestExternalFileOptions().setMoveFiles(true)){
-                db.ingestExternalFile(List.of(sst.toString()),ingest);
+            synchronized(artifactLock){
+                if(contains(cacheKey)){reused.incrementAndGet();return result(cacheKey,true,facts,classReferences);}
+                Path sst=staging.resolve(cacheKey+"-"+UUID.randomUUID()+".sst.tmp");
+                int active=buildsInFlight.incrementAndGet();peakBuilds.accumulateAndGet(active,Math::max);
+                try{
+                    writeSst(sst,cacheKey,facts,classReferences);
+                    try(var file=FileChannel.open(sst,StandardOpenOption.WRITE)){file.force(true);}
+                    synchronized(ingestLock){
+                        if(contains(cacheKey)){reused.incrementAndGet();return result(cacheKey,true,facts,classReferences);}
+                        try(var ingest=new IngestExternalFileOptions().setMoveFiles(true)){
+                            db.ingestExternalFile(List.of(sst.toString()),ingest);
+                        }
+                        if(!contains(cacheKey))throw new IOException("RocksDB publication completed without manifest: "+cacheKey);
+                        published.incrementAndGet();
+                    }
+                    return result(cacheKey,false,facts,classReferences);
+                }finally{
+                    buildsInFlight.decrementAndGet();
+                    Files.deleteIfExists(sst);
+                }
             }
-            if(!contains(cacheKey))throw new IOException("RocksDB publication completed without manifest: "+cacheKey);
-            return new Publication(cacheKey,false,facts.symbols().size(),facts.relationships().size(),classReferences.size(),storageBytes());
         }finally{
-            Files.deleteIfExists(sst);
+            artifactLocks.remove(cacheKey,artifactLock);
         }
+    }
+
+    private Publication result(String cacheKey,boolean wasReused,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{
+        return new Publication(cacheKey,wasReused,facts.symbols().size(),facts.relationships().size(),classReferences.size(),storageBytes());
     }
 
     public boolean contains(String cacheKey)throws Exception{return db.get(key(cacheKey,"0|manifest"))!=null;}
@@ -68,12 +89,14 @@ public final class RocksArtifactRepository implements AutoCloseable {
         return value==null?null:ByteBuffer.wrap(value).getInt();
     }
 
-    public List<Integer> nameIds(String cacheKey,String namePrefix,int limit){
-        return idsByPrefix(cacheKey,"3|name|"+namePrefix,limit);
-    }
+    public List<Integer> nameIds(String cacheKey,String namePrefix,int limit){return idsByPrefix(cacheKey,"3|name|"+namePrefix,limit);}
+    public List<Integer> reverseSources(String cacheKey,String target,String kind,int limit){return idsByPrefix(cacheKey,"5|reverse|"+target+"|"+kind+"|",limit);}
 
-    public List<Integer> reverseSources(String cacheKey,String target,String kind,int limit){
-        return idsByPrefix(cacheKey,"5|reverse|"+target+"|"+kind+"|",limit);
+    public Map<String,Object> status()throws Exception{
+        return Map.of(
+                "published",published.get(),"reused",reused.get(),
+                "builds_in_flight",buildsInFlight.get(),"peak_parallel_builds",peakBuilds.get(),
+                "artifact_locks",artifactLocks.size(),"storage_bytes",storageBytes());
     }
 
     public long storageBytes()throws Exception{
@@ -110,14 +133,12 @@ public final class RocksArtifactRepository implements AutoCloseable {
 
             var outgoing=new ArrayList<>(facts.relationships());
             outgoing.sort(Comparator.comparingInt(ArtifactIndexFormat.Relationship::sourceId)
-                    .thenComparing(ArtifactIndexFormat.Relationship::target)
-                    .thenComparing(ArtifactIndexFormat.Relationship::kind));
+                    .thenComparing(ArtifactIndexFormat.Relationship::target).thenComparing(ArtifactIndexFormat.Relationship::kind));
             for(var edge:outgoing)put(writer,key(cacheKey,"4|out|"+hex8(edge.sourceId())+"|"+edge.target()+"|"+edge.kind()),EMPTY);
 
             var reverse=new ArrayList<>(facts.relationships());
             reverse.sort(Comparator.comparing(ArtifactIndexFormat.Relationship::target)
-                    .thenComparing(ArtifactIndexFormat.Relationship::kind)
-                    .thenComparingInt(ArtifactIndexFormat.Relationship::sourceId));
+                    .thenComparing(ArtifactIndexFormat.Relationship::kind).thenComparingInt(ArtifactIndexFormat.Relationship::sourceId));
             for(var edge:reverse)put(writer,key(cacheKey,"5|reverse|"+edge.target()+"|"+edge.kind()+"|"+hex8(edge.sourceId())),EMPTY);
 
             var refs=new ArrayList<>(classReferences);Collections.sort(refs);

@@ -28,7 +28,7 @@ These numbers are evidence to reproduce, not acceptance measurements.
 - [~] **03 — `IndexStore` backend contract and correctness oracle.** Read-side contract plus binary/code publication are behind the store boundary; SQLite remains the correctness oracle while remaining write/read paths migrate.
 - [~] **04 — Artifact identity and compact binary record format.** Versioned GAV-independent detached facts with artifact-local ids are implemented; source-doc and production compact-record refinements remain.
 - [x] **05 — RocksDB external-SST vs minimal immutable-file prototype comparison.** Measurement branch `benchmark/index-storage` selected RocksDB SST ingestion: comparable median publish time, ~83% lower stored bytes and ~66% lower steady-state write bytes in the 800k-fact CI comparison.
-- [~] **06 — Bounded parallel artifact ingestion.** Selected RocksDB backend now has a production artifact-generation module; scanner/coordinator integration and explicit memory/worker bounds remain.
+- [~] **06 — Bounded parallel artifact ingestion.** Repository scanning now supports an injected artifact-generation sink. The Rocks sink builds distinct SSTs concurrently using caller scan workers, serializes only ingestion, and enforces an estimated-byte semaphore budget. Production runtime wiring and real-repository tuning remain.
 - [~] **07 — Atomic artifact generations.** One content-addressed artifact is built as one external SST containing manifest + indexes and ingested as a single publication; crash/failure matrix and generation reclamation remain.
 - [ ] **08 — Workspace-specific symbolic relationship resolution.**
 - [ ] **09 — Required search behavior.**

@@ -17,6 +17,7 @@ public final class IndexService implements AutoCloseable {
     private final SqliteIndexStore sqliteStore;
     private final IndexStore store;
     private final IndexDatabase database;
+    private final ArtifactGenerationSink generationSink;
     private final Path repository;
     private final SourceIndexPublisher sourcePublisher=new SourceIndexPublisher(delta->recordSource(delta.file(),delta.sourceHash(),delta.symbols(),delta.tier(),delta.edges()),32L*1024*1024);
     public void publishSource(SourceIndexPublisher.Delta delta){sourcePublisher.enqueue(delta);}
@@ -33,8 +34,11 @@ public final class IndexService implements AutoCloseable {
     private volatile long total;
     private volatile boolean closed;
     public IndexService(Path database,Path repository) throws Exception {
+        this(database,repository,ArtifactGenerationSink.none());
+    }
+    public IndexService(Path database,Path repository,ArtifactGenerationSink generationSink) throws Exception {
         this.sqliteStore=new SqliteIndexStore(database);this.store=sqliteStore;this.database=sqliteStore.database();
-        this.repository=repository.toAbsolutePath().normalize();
+        this.repository=repository.toAbsolutePath().normalize();this.generationSink=Objects.requireNonNull(generationSink);
     }
     public IndexDatabase database(){return database;}
     public IndexStore store(){return store;}
@@ -61,7 +65,7 @@ public final class IndexService implements AutoCloseable {
         var result=new LinkedHashMap<String,Object>();result.putAll(store.counts());result.put("source_publisher",sourcePublisher.status());
         result.put("phase",phase);result.put("total",total);result.put("scanned",scanned.get());result.put("indexed",indexed.get());
         result.put("reused",reused.get());result.put("hashes",hashed.get());result.put("faults",faults.get());result.put("warnings",List.copyOf(warnings));
-        result.put("active_artifacts",Map.copyOf(activeArtifacts));result.put("store",store.status());
+        result.put("active_artifacts",Map.copyOf(activeArtifacts));result.put("store",store.status());result.put("generation_sink",generationSink.status());
         var timings=new LinkedHashMap<String,Object>();
         timings.put("scans",scans.get());timings.put("scan_ms",millis(scanNanos.get()));timings.put("discovery_ms",millis(discoveryNanos.get()));
         timings.put("hash_ms",millis(hashNanos.get()));timings.put("parse_ms",millis(parseNanos.get()));timings.put("storage_ms",millis(storageNanos.get()));
@@ -95,7 +99,9 @@ public final class IndexService implements AutoCloseable {
             active(path,"storage");long storageStarted=System.nanoTime();
             var key=ArtifactIndexFormat.key(hash,kind.equals("local")?"local-signatures":"signatures");
             var input=new IndexStore.ArtifactInput(new ArtifactContext(gav,kind,location(path)),key,size,mtime);
-            long id=store.publishBinary(input,ArtifactIndexFormat.from(content,key),CodeReader.classReferences(content.models().values()));
+            var facts=ArtifactIndexFormat.from(content,key);var classReferences=CodeReader.classReferences(content.models().values());
+            generationSink.publish(facts,classReferences);
+            long id=store.publishBinary(input,facts,classReferences);
             storageNanos.addAndGet(System.nanoTime()-storageStarted);indexed.incrementAndGet();return id;
         }finally{activeArtifacts.remove(location(tracked));}
     }
@@ -336,5 +342,5 @@ public final class IndexService implements AutoCloseable {
     static Map<String,Object> symbol(ResultSet r)throws Exception{var s=new LinkedHashMap<String,Object>();for(String field:List.of("id","artifact_id","owner_id","flags","line","source_start","source_end","body_start","body_end"))s.put(field,r.getObject(field));for(String field:List.of("scip","kind","name","name_path","signature","erased_descriptor","source_file","doc","fqn","binary_key","class_entry","gav","artifact_path","artifact_kind"))s.put(field,r.getString(field));s.put("parameters",Json.MAPPER.readTree(r.getString("parameters")));s.put("metadata",Json.MAPPER.readTree(r.getString("metadata")));String variant=r.getString("variant_data");if(variant!=null)s.putAll(Json.MAPPER.readValue(variant,new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>(){}));s.put("id",r.getLong("id"));s.put("artifact_id",r.getLong("selected_artifact"));s.put("gav",r.getString("gav"));s.put("artifact_path",r.getString("artifact_path"));s.put("artifact_kind",r.getString("artifact_kind"));return s;}
     public static String namePath(BinaryReader.Symbol s){String owner=s.fqn().replace('$','/');if(s.key().equals(s.fqn()))return owner;if(s.kind().equals("method")||s.kind().equals("ctor")){var type=java.lang.constant.MethodTypeDesc.ofDescriptor(s.descriptor());return owner+"/"+s.name()+"("+String.join(",",Arrays.stream(type.parameterArray()).map(p->p.displayName().replace('$','.')).toList())+")";}return owner+"/"+s.name();}
     public static String scip(String gav,BinaryReader.Symbol s){String[] parts=gav.split(":",3);String prefix="maven "+parts[0]+"/"+parts[1]+" "+parts[2]+" ";String owner=s.fqn().replace('.','/').replace('$','#')+"#";if(s.key().equals(s.fqn()))return prefix+owner;if(s.kind().equals("method")||s.kind().equals("ctor")){var type=java.lang.constant.MethodTypeDesc.ofDescriptor(s.descriptor());return prefix+owner+(s.kind().equals("ctor")?"<init>":s.name())+"("+String.join(",",Arrays.stream(type.parameterArray()).map(Signatures::qualified).toList())+").";}return prefix+owner+s.name()+".";}
-    @Override public void close()throws Exception {closed=true;sourcePublisher.close();scanner.shutdownNow();readers.shutdown();if(!readers.awaitTermination(60,TimeUnit.SECONDS))readers.shutdownNow();store.close();}
+    @Override public void close()throws Exception {closed=true;sourcePublisher.close();scanner.shutdownNow();readers.shutdown();if(!readers.awaitTermination(60,TimeUnit.SECONDS))readers.shutdownNow();try{generationSink.close();}finally{store.close();}}
 }

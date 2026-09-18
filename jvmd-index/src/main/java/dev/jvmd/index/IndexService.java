@@ -316,28 +316,34 @@ public final class IndexService implements AutoCloseable {
     }
     synchronized long indexJdk(Path file,String module,Path sourceZip)throws Exception{
         var old=artifact(file);if(old!=null&&old.hasDocs()&&old.hasSignatureEdges())return old.id();
-        String gav="jdk:"+module+":"+Runtime.version().feature();var content=new BinaryReader().read(file,false);var sourceData=new HashMap<String,Map<String,Object>>();
+        String gav="jdk:"+module+":"+Runtime.version().feature();long parseStarted=System.nanoTime();
+        var content=new BinaryReader().read(file,false);parseNanos.addAndGet(System.nanoTime()-parseStarted);
+        var sourceData=new HashMap<String,Map<String,Object>>();
         if(Files.isRegularFile(sourceZip)){
-            String relative=file.toString().substring(("/modules/"+module+"/").length());String entry=module+"/"+relative.substring(0,relative.length()-6).split("\\$",2)[0]+".java";
-            try(var zip=new java.util.zip.ZipFile(sourceZip.toFile())){var source=zip.getEntry(entry);if(source!=null){
-                String text;try(var input=zip.getInputStream(source)){text=new String(input.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);}
-                for(var member:new SourceJoin().join(content.models(),Map.of(entry,text)).members()){
-                    String key=member.descriptor()==null?member.owner():member.descriptor().equals("field")?member.owner()+"#"+member.name():member.owner()+"#"+member.name()+member.descriptor();
-                    var data=new LinkedHashMap<String,Object>();data.put("doc",member.doc());data.put("source_file","jar:"+sourceZip.toUri()+"!/"+entry);data.put("line",member.line());data.put("source_start",member.start());data.put("source_end",member.end());data.put("body_start",member.bodyStart());data.put("body_end",member.bodyEnd());data.put("parameters",member.parameters());sourceData.put(key,data);
+            String relative=file.toString().substring(("/modules/"+module+"/").length());
+            String entry=module+"/"+relative.substring(0,relative.length()-6).split("\\$",2)[0]+".java";
+            try(var zip=new java.util.zip.ZipFile(sourceZip.toFile())){
+                var source=zip.getEntry(entry);if(source!=null){
+                    String text;try(var input=zip.getInputStream(source)){text=new String(input.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);}
+                    for(var member:new SourceJoin().join(content.models(),Map.of(entry,text)).members()){
+                        String localKey=member.descriptor()==null?member.owner():member.descriptor().equals("field")
+                                ?member.owner()+"#"+member.name():member.owner()+"#"+member.name()+member.descriptor();
+                        var data=new LinkedHashMap<String,Object>();
+                        data.put("doc",member.doc());data.put("source_file","jar:"+sourceZip.toUri()+"!/"+entry);data.put("line",member.line());
+                        data.put("source_start",member.start());data.put("source_end",member.end());data.put("body_start",member.bodyStart());data.put("body_end",member.bodyEnd());
+                        data.put("parameters",member.parameters());sourceData.put(localKey,Map.copyOf(data));
+                    }
                 }
-            }}
-        }
-        String hash=Hashing.sha256(file);long id=database.write(c->{long artifact=putArtifact(c,file,gav,"jar",hash,Files.size(file),0);
-            storeSignatureTargets(c,artifact,content.edges(),ids(c,artifact));
-            if(ids(c,artifact).isEmpty())storeContent(c,artifact,gav,"jar",content,sourceData);
-            else if(!sourceData.isEmpty()){
-                // A previous image may have had signatures but no src.zip.
-                try(var clear=c.prepareStatement("DELETE FROM artifact_symbols WHERE artifact_id=?")){clear.setLong(1,artifact);clear.executeUpdate();}
-                storeContent(c,artifact,gav,"jar",content,sourceData);
             }
-            if(!sourceData.isEmpty())try(var update=c.prepareStatement("UPDATE artifacts SET has_docs=1 WHERE id=?")){update.setLong(1,artifact);update.executeUpdate();}
-            return artifact;
-        });indexed.incrementAndGet();return id;
+        }
+        long hashStarted=System.nanoTime();String hash=Hashing.sha256(file);hashNanos.addAndGet(System.nanoTime()-hashStarted);
+        long prepareStarted=System.nanoTime();
+        var key=ArtifactIndexFormat.key(hash,"jdk-signatures");
+        var context=new ArtifactIndexFormat.Context(gav,"jar",location(file));
+        var facts=ArtifactIndexFormat.from(content,key);prepareNanos.addAndGet(System.nanoTime()-prepareStarted);
+        long storageStarted=System.nanoTime();
+        long id=store.publishArtifact(new IndexStore.ArtifactInput(context,key,Files.size(file),0),facts,Map.copyOf(sourceData));
+        storageNanos.addAndGet(System.nanoTime()-storageStarted);indexed.incrementAndGet();return id;
     }
     static Map<String,Object> symbol(ResultSet r)throws Exception{var s=new LinkedHashMap<String,Object>();for(String field:List.of("id","artifact_id","owner_id","flags","line","source_start","source_end","body_start","body_end"))s.put(field,r.getObject(field));for(String field:List.of("scip","kind","name","name_path","signature","erased_descriptor","source_file","doc","fqn","binary_key","class_entry","gav","artifact_path","artifact_kind"))s.put(field,r.getString(field));s.put("parameters",Json.MAPPER.readTree(r.getString("parameters")));s.put("metadata",Json.MAPPER.readTree(r.getString("metadata")));String variant=r.getString("variant_data");if(variant!=null)s.putAll(Json.MAPPER.readValue(variant,new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>(){}));s.put("id",r.getLong("id"));s.put("artifact_id",r.getLong("selected_artifact"));s.put("gav",r.getString("gav"));s.put("artifact_path",r.getString("artifact_path"));s.put("artifact_kind",r.getString("artifact_kind"));return s;}
     public static String namePath(BinaryReader.Symbol s){String owner=s.fqn().replace('$','/');if(s.key().equals(s.fqn()))return owner;if(s.kind().equals("method")||s.kind().equals("ctor")){var type=java.lang.constant.MethodTypeDesc.ofDescriptor(s.descriptor());return owner+"/"+s.name()+"("+String.join(",",Arrays.stream(type.parameterArray()).map(p->p.displayName().replace('$','.')).toList())+")";}return owner+"/"+s.name();}

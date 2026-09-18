@@ -50,9 +50,11 @@ class IndexStoreContractTest {
             @Override public void publish(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences){ }
             @Override public Optional<List<Map<String,Object>>> shadowFind(String workspace,String query,boolean substring,int limit,long after,Set<String> kinds){
                 if(!"mode-workspace".equals(workspace))return Optional.empty();
-                return Optional.of(List.of(Map.of("id",42L,"scip","rocks-sentinel","kind","method","name","transform",
-                        "name_path","rocks/sentinel","binary_key","rocks#sentinel","gav","rocks:sentinel:1",
-                        "artifact_path","/rocks/sentinel.jar","artifact_kind","jar","parameters",List.of(),"metadata",Map.of())));
+                var row=new LinkedHashMap<String,Object>();
+                row.put("id",42L);row.put("scip","rocks-sentinel");row.put("kind","method");row.put("name","transform");
+                row.put("name_path","rocks/sentinel");row.put("binary_key","rocks#sentinel");row.put("gav","rocks:sentinel:1");
+                row.put("artifact_path","/rocks/sentinel.jar");row.put("artifact_kind","jar");row.put("parameters",List.of());row.put("metadata",Map.of());
+                return Optional.of(List.of(Map.copyOf(row)));
             }
         };
         String previous=System.getProperty("jvmd.index.read.backend");

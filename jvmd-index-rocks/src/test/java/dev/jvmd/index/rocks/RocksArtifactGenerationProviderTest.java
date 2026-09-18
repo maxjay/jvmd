@@ -65,4 +65,40 @@ class RocksArtifactGenerationProviderTest {
         }
     }
 
+    @Test void shadowRelationshipsReturnStableScipEdges()throws Exception{
+        Path root=temp.resolve("shadow-relationships");
+        Path sourceJar=Files.writeString(temp.resolve("source.jar"),"source");
+        Path targetJar=Files.writeString(temp.resolve("target.jar"),"target");
+        var sourceKey=new ArtifactIndexFormat.Key("c".repeat(64),ArtifactIndexFormat.FORMAT_VERSION,
+                ArtifactIndexFormat.INDEXER_VERSION,Runtime.version().feature(),"signatures");
+        var targetKey=new ArtifactIndexFormat.Key("d".repeat(64),ArtifactIndexFormat.FORMAT_VERSION,
+                ArtifactIndexFormat.INDEXER_VERSION,Runtime.version().feature(),"signatures");
+        var sourceSymbol=new ArtifactIndexFormat.SymbolRecord(0,-1,"source.Type","source.Type","Type","class",
+                "class source.Type",null,1,"source/Type.class",java.util.List.of(),"{}");
+        var targetSymbol=new ArtifactIndexFormat.SymbolRecord(0,-1,"target.Type","target.Type","Type","class",
+                "class target.Type",null,1,"target/Type.class",java.util.List.of(),"{}");
+        var sourceFacts=new ArtifactIndexFormat.ArtifactData(sourceKey,java.util.List.of(sourceSymbol),
+                java.util.List.of(new ArtifactIndexFormat.Relationship(0,"target.Type","extends")));
+        var targetFacts=new ArtifactIndexFormat.ArtifactData(targetKey,java.util.List.of(targetSymbol),java.util.List.of());
+
+        try(var sink=new RocksArtifactGenerationSink(root,8L*1024*1024)){
+            sink.publish(sourceFacts,java.util.Set.of("target.Type"));sink.publish(targetFacts,java.util.Set.of());
+            long scan=sink.beginScan();
+            var sourceContext=new ArtifactContext("fixture:source:1","jar",sourceJar.toAbsolutePath().toString());
+            var targetContext=new ArtifactContext("fixture:target:1","jar",targetJar.toAbsolutePath().toString());
+            sink.observe(scan,new IndexStore.ArtifactInput(sourceContext,sourceKey,Files.size(sourceJar),1));
+            sink.observe(scan,new IndexStore.ArtifactInput(targetContext,targetKey,Files.size(targetJar),1));
+            sink.completeScan(scan);
+            sink.configureWorkspace("workspace",java.util.List.of(
+                    new IndexStore.WorkspaceEntry(sourceJar.toString(),"compile"),
+                    new IndexStore.WorkspaceEntry(targetJar.toString(),"compile")),java.util.List.of());
+
+            String sourceScip=sourceContext.scip(sourceSymbol),targetScip=targetContext.scip(targetSymbol);
+            assertThat(sink.shadowRelationships("workspace",java.util.List.of(sourceScip),true,java.util.Set.of("extends"),10).orElseThrow())
+                    .containsExactly(sourceScip+"|extends|"+targetScip);
+            assertThat(sink.shadowRelationships("workspace",java.util.List.of(targetScip),false,java.util.Set.of("extends"),10).orElseThrow())
+                    .containsExactly(sourceScip+"|extends|"+targetScip);
+        }
+    }
+
 }

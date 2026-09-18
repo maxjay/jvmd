@@ -120,4 +120,31 @@ class RocksWorkspaceResolverTest {
         }
     }
 
+    @Test void incomingResolutionHonoursWorkspaceOrderAndCodeOverlay()throws Exception{
+        try(var artifacts=new RocksArtifactRepository(temp.resolve("incoming-artifacts"));
+            var resolver=new RocksWorkspaceResolver(temp.resolve("incoming-resolution"),artifacts)){
+            var source=facts('1',"source.Type",List.of());
+            var target=facts('2',"target.Type",List.of());
+            artifacts.publish(source,Set.of());artifacts.publish(target,Set.of());
+
+            var codeKey=new ArtifactIndexFormat.Key(source.key().binarySha256(),source.key().formatVersion(),
+                    source.key().indexerVersion(),source.key().runtimeFeature(),"code");
+            var code=new ArtifactIndexFormat.ArtifactData(codeKey,source.symbols(),
+                    List.of(new ArtifactIndexFormat.Relationship(0,"target.Type","calls")));
+            artifacts.publish(code,Set.of("target.Type"));
+
+            var sourceEntry=entry(source,"source:artifact:1");
+            var targetEntry=entry(target,"target:artifact:1");
+            var workspace=new RocksWorkspaceResolver.Workspace(List.of(sourceEntry,targetEntry),"compiler");
+
+            var incoming=resolver.incoming(workspace,"target.Type",Set.of("calls"),10);
+            assertThat(incoming).hasSize(1);
+            assertThat(incoming.getFirst().sourceArtifactCacheKey()).isEqualTo(source.key().cacheKey());
+            assertThat(incoming.getFirst().sourceLocalId()).isZero();
+            assertThat(resolver.resolvedSymbol(workspace,incoming.getFirst().target())).get()
+                    .extracting(RocksWorkspaceResolver.WorkspaceSymbol::scip)
+                    .isEqualTo(targetEntry.context().scip(target.symbols().getFirst()));
+        }
+    }
+
 }

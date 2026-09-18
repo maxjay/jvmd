@@ -51,9 +51,17 @@ public final class IndexService implements AutoCloseable {
         List<Path> jars;try(var files=Files.walk(repository)){jars=files.filter(Files::isRegularFile).filter(p->p.toString().endsWith(".jar")&&!p.getFileName().toString().endsWith("-javadoc.jar")).sorted().toList();}
         discoveryNanos.addAndGet(System.nanoTime()-discoveryStarted);
         total=jars.size();scanned.set(0);phase="skeletons";
+        long inventoryGeneration=generationSink.beginScan();
+        var skeletonComplete=new AtomicBoolean(true);
         var jobs=new ArrayList<Future<?>>();
-        for(var jar:jars)if(!jar.getFileName().toString().endsWith("-sources.jar"))jobs.add(readers.submit(()->{try{indexJar(jar,gav(jar),"jar");}catch(Exception|LinkageError e){warn("artifact_fault: "+jar+": "+e);}finally{scanned.incrementAndGet();}}));
-        for(var job:jobs)job.get();jobs.clear();phase="docs";long docsStarted=System.nanoTime();
+        for(var jar:jars)if(!jar.getFileName().toString().endsWith("-sources.jar"))jobs.add(readers.submit(()->{
+            try{indexJar(jar,gav(jar),"jar",inventoryGeneration);}
+            catch(Exception|LinkageError e){skeletonComplete.set(false);warn("artifact_fault: "+jar+": "+e);}
+            finally{scanned.incrementAndGet();}
+        }));
+        for(var job:jobs)job.get();
+        if(skeletonComplete.get())generationSink.completeScan(inventoryGeneration);
+        jobs.clear();phase="docs";long docsStarted=System.nanoTime();
         for(var jar:jars)if(jar.getFileName().toString().endsWith("-sources.jar"))jobs.add(readers.submit(()->{try{indexSources(jar);}catch(Exception|LinkageError e){warn("source_fault: "+jar+": "+e);}finally{scanned.incrementAndGet();}}));
         for(var job:jobs)job.get();docsNanos.addAndGet(System.nanoTime()-docsStarted);
         phase="linking";long linkStarted=System.nanoTime();linkEdges();linkNanos.addAndGet(System.nanoTime()-linkStarted);phase="ready";
@@ -87,20 +95,35 @@ public final class IndexService implements AutoCloseable {
         var value=store.artifact(path);return value==null?null:new Artifact(value.id(),value.gav(),value.kind(),value.sha256(),value.path(),
                 value.size(),value.mtime(),value.hasDocs(),value.hasCodeEdges(),value.hasSignatureEdges());
     }
-    public long indexJar(Path path,String gav,String kind) throws Exception {
+    public long indexJar(Path path,String gav,String kind) throws Exception{return indexJar(path,gav,kind,0L);}
+    private long indexJar(Path path,String gav,String kind,long inventoryGeneration) throws Exception {
         path=path.toAbsolutePath().normalize();Path tracked=path;active(path,"stat");
         try{
             var previous=artifact(path);
             var stamp=Files.readAttributes(path,java.nio.file.attribute.BasicFileAttributes.class);long size=stamp.size(),mtime=stamp.lastModifiedTime().to(TimeUnit.NANOSECONDS);
-            if(previous!=null&&previous.hasSignatureEdges()&&!gav.contains("SNAPSHOT")&&!kind.equals("local")&&previous.size()==size&&previous.mtime()==mtime){reused.incrementAndGet();return previous.id();}
+            if(previous!=null&&previous.hasSignatureEdges()&&!gav.contains("SNAPSHOT")&&!kind.equals("local")&&previous.size()==size&&previous.mtime()==mtime){
+                if(inventoryGeneration>0){
+                    var key=ArtifactIndexFormat.key(previous.sha256(),"signatures");
+                    generationSink.observe(inventoryGeneration,new IndexStore.ArtifactInput(new ArtifactContext(gav,kind,location(path)),key,size,mtime));
+                }
+                reused.incrementAndGet();return previous.id();
+            }
             active(path,"hash");long hashStarted=System.nanoTime();verifyChecksum(path);String hash=Files.isDirectory(path)?directoryHash(path):Hashing.sha256(path);hashNanos.addAndGet(System.nanoTime()-hashStarted);hashed.incrementAndGet();
-            if(previous!=null&&previous.hasSignatureEdges()&&previous.sha256().equals(hash)){store.publishPath(path,previous.id(),size,mtime);reused.incrementAndGet();return previous.id();}
+            if(previous!=null&&previous.hasSignatureEdges()&&previous.sha256().equals(hash)){
+                store.publishPath(path,previous.id(),size,mtime);
+                if(inventoryGeneration>0){
+                    var key=ArtifactIndexFormat.key(hash,kind.equals("local")?"local-signatures":"signatures");
+                    generationSink.observe(inventoryGeneration,new IndexStore.ArtifactInput(new ArtifactContext(gav,kind,location(path)),key,size,mtime));
+                }
+                reused.incrementAndGet();return previous.id();
+            }
             active(path,"parse");long parseStarted=System.nanoTime();var content=new BinaryReader().read(path,kind.equals("local"));parseNanos.addAndGet(System.nanoTime()-parseStarted);content.warnings().forEach(this::warn);
             active(path,"storage");long storageStarted=System.nanoTime();
             var key=ArtifactIndexFormat.key(hash,kind.equals("local")?"local-signatures":"signatures");
             var input=new IndexStore.ArtifactInput(new ArtifactContext(gav,kind,location(path)),key,size,mtime);
             var facts=ArtifactIndexFormat.from(content,key);var classReferences=CodeReader.classReferences(content.models().values());
             generationSink.publish(facts,classReferences);
+            if(inventoryGeneration>0)generationSink.observe(inventoryGeneration,input);
             long id=store.publishBinary(input,facts,classReferences);
             storageNanos.addAndGet(System.nanoTime()-storageStarted);indexed.incrementAndGet();return id;
         }finally{activeArtifacts.remove(location(tracked));}

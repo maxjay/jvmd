@@ -6,6 +6,9 @@ import java.util.*;
 /** Optional destination for immutable artifact generations prepared during repository indexing. */
 public interface ArtifactGenerationSink extends AutoCloseable {
     void publish(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception;
+    default long beginScan()throws Exception{return 0L;}
+    default void observe(long scanGeneration,IndexStore.ArtifactInput input)throws Exception{ }
+    default Set<String> completeScan(long scanGeneration)throws Exception{return Set.of();}
     default Map<String,Object> status(){return Map.of("backend","none");}
     @Override default void close()throws Exception { }
 

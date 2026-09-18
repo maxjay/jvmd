@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.*;
 public final class RocksArtifactGenerationSink implements ArtifactGenerationSink {
     private static final long UNIT=1024L*1024L;
     private final RocksArtifactRepository repository;
+    private final RocksArtifactInventory inventory;
     private final Semaphore budget;
     private final int totalUnits;
     private final AtomicLong published=new AtomicLong(),reused=new AtomicLong(),waitNanos=new AtomicLong();
@@ -18,6 +19,7 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
     public RocksArtifactGenerationSink(Path root,long maxEstimatedBytes)throws Exception{
         if(maxEstimatedBytes<UNIT)throw new IllegalArgumentException("maxEstimatedBytes must be at least 1 MiB");
         this.repository=new RocksArtifactRepository(root);
+        this.inventory=new RocksArtifactInventory(root.resolve("inventory"));
         this.totalUnits=(int)Math.min(Integer.MAX_VALUE,Math.max(1,(maxEstimatedBytes+UNIT-1)/UNIT));
         this.budget=new Semaphore(totalUnits,true);
     }
@@ -37,12 +39,30 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
         }
     }
 
+    @Override public long beginScan()throws Exception{return inventory.beginScan();}
+
+    @Override public void observe(long scanGeneration,IndexStore.ArtifactInput input)throws Exception{
+        if(scanGeneration<=0||!input.context().kind().equals("jar"))return;
+        Path path=Path.of(input.context().path());
+        if(!Files.isRegularFile(path))return;
+        inventory.observe(scanGeneration,path,input.context().gav(),input.context().kind(),
+                input.key().cacheKey(),input.key().binarySha256(),RocksArtifactInventory.Stamp.read(path));
+    }
+
+    @Override public Set<String> completeScan(long scanGeneration)throws Exception{
+        if(scanGeneration<=0)return Set.of();
+        return inventory.completeScan(scanGeneration);
+    }
+
     @Override public Map<String,Object> status(){
         var result=new LinkedHashMap<String,Object>();
         result.put("backend","rocksdb-sst");result.put("published",published.get());result.put("reused",reused.get());
         result.put("budget_bytes",(long)totalUnits*UNIT);result.put("estimated_bytes_in_flight",(long)unitsInFlight.get()*UNIT);
         result.put("peak_estimated_bytes_in_flight",(long)peakUnits.get()*UNIT);result.put("budget_wait_ms",Math.round(waitNanos.get()/1000.0)/1000.0);
-        try{result.put("repository",repository.status());}catch(Exception e){result.put("repository_error",e.toString());}
+        try{
+            result.put("repository",repository.status());
+            result.put("inventory_entries",inventory.entries().size());
+        }catch(Exception e){result.put("repository_error",e.toString());}
         return Map.copyOf(result);
     }
 
@@ -50,5 +70,5 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
         return UNIT+facts.symbols().size()*192L+facts.relationships().size()*96L+classReferences.size()*64L;
     }
 
-    @Override public void close(){repository.close();}
+    @Override public void close(){try{inventory.close();}finally{repository.close();}}
 }

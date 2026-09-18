@@ -680,6 +680,59 @@ public final class SqliteIndexStore implements IndexStore {
         });
     }
 
+
+    @Override public long publishDocumentation(long binaryArtifactId,ArtifactInput sourceInput,
+                                               Map<String,Map<String,Object>> members,int unmatchedMembers)throws Exception{
+        return database.write(c->{
+            long sourceId=putArtifact(c,sourceInput);
+            var keys=binaryKeyIds(c,binaryArtifactId);
+            try(var update=c.prepareStatement("UPDATE artifact_symbols SET data=?,source_file=? WHERE artifact_id=? AND symbol_id=?");
+                var lookup=c.prepareStatement("SELECT v.data,s.signature,s.parameters,s.metadata FROM artifact_symbols v JOIN symbols s ON s.id=v.symbol_id WHERE v.artifact_id=? AND v.symbol_id=?")){
+                for(var entry:members.entrySet()){
+                    Long id=keys.get(entry.getKey());if(id==null)continue;
+                    lookup.setLong(1,binaryArtifactId);lookup.setLong(2,id);
+                    try(var row=lookup.executeQuery()){
+                        if(!row.next())continue;
+                        var data=row.getString(1)==null?Json.MAPPER.createObjectNode():(com.fasterxml.jackson.databind.node.ObjectNode)Json.MAPPER.readTree(row.getString(1));
+                        var member=entry.getValue();
+                        for(var item:member.entrySet())data.set(item.getKey(),Json.MAPPER.valueToTree(item.getValue()));
+                        var metadata=data.has("metadata")?data.get("metadata"):Json.MAPPER.readTree(row.getString(4));
+                        @SuppressWarnings("unchecked") var parameters=(List<String>)member.getOrDefault("parameters",List.of());
+                        if(!parameters.isEmpty()&&!metadata.path("parameter_names_from_class").asBoolean()){
+                            var original=data.has("parameters")?data.get("parameters"):Json.MAPPER.readTree(row.getString(3));
+                            String signature=data.path("signature").asText(row.getString(2));
+                            for(int i=0;i<Math.min(parameters.size(),original.size());i++)
+                                signature=signature.replaceAll("\\b"+java.util.regex.Pattern.quote(original.get(i).asText())+"\\b",java.util.regex.Matcher.quoteReplacement(parameters.get(i)));
+                            data.put("signature",signature);data.set("parameters",Json.MAPPER.valueToTree(parameters));
+                        }
+                        String sourceFile=Objects.toString(member.get("source_file"),null);
+                        update.setString(1,Json.MAPPER.writeValueAsString(data));update.setString(2,sourceFile);
+                        update.setLong(3,binaryArtifactId);update.setLong(4,id);update.addBatch();
+                    }
+                }
+                update.executeBatch();
+            }
+            try(var s=c.prepareStatement("UPDATE artifacts SET has_docs=1 WHERE id=? OR id=?")){
+                s.setLong(1,binaryArtifactId);s.setLong(2,sourceId);s.executeUpdate();
+            }
+            try(var s=c.prepareStatement("INSERT OR REPLACE INTO source_artifacts VALUES(?,?)")){
+                s.setLong(1,binaryArtifactId);s.setLong(2,sourceId);s.executeUpdate();
+            }
+            try(var s=c.prepareStatement("INSERT INTO counters VALUES('unmatched_source_members',?) ON CONFLICT(name) DO UPDATE SET value=value+excluded.value")){
+                s.setInt(1,unmatchedMembers);s.executeUpdate();
+            }
+            return sourceId;
+        });
+    }
+
+    private static Map<String,Long> binaryKeyIds(Connection c,long artifact)throws Exception{
+        var ids=new HashMap<String,Long>();
+        try(var s=c.prepareStatement("SELECT s.id,COALESCE(json_extract(a.data,'$.binary_key'),s.binary_key) FROM artifact_symbols a JOIN symbols s ON s.id=a.symbol_id WHERE a.artifact_id=?")){
+            s.setLong(1,artifact);try(var r=s.executeQuery()){while(r.next())ids.put(r.getString(2),r.getLong(1));}
+        }
+        return ids;
+    }
+
     @Override public Map<String,Long> counts()throws Exception{return database.counts();}
     @Override public Map<String,Object> status(){var result=new LinkedHashMap<String,Object>(database.metrics());result.put("backend",backend());return Map.copyOf(result);}
 

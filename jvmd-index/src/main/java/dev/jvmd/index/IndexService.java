@@ -147,6 +147,9 @@ public final class IndexService implements AutoCloseable {
         }
         try(var update=c.prepareStatement("UPDATE artifacts SET has_signature_edges=1 WHERE id=?")){update.setLong(1,artifact);update.executeUpdate();}
     }
+    void storeClassReferences(long artifact,Collection<java.lang.classfile.ClassModel> classes)throws Exception{
+        long started=System.nanoTime();database.write(c->{storeClassReferences(c,artifact,classes);return null;});classReferenceWriteNanos.addAndGet(System.nanoTime()-started);
+    }
     static void storeClassReferences(Connection c,long artifact,Collection<java.lang.classfile.ClassModel> classes)throws Exception{
         try(var clear=c.prepareStatement("DELETE FROM artifact_class_refs WHERE artifact_id=?")){clear.setLong(1,artifact);clear.executeUpdate();}
         try(var insert=c.prepareStatement("INSERT OR IGNORE INTO artifact_class_refs VALUES(?,?)")){for(String target:CodeReader.classReferences(classes)){insert.setLong(1,artifact);insert.setString(2,target);insert.addBatch();}insert.executeBatch();}

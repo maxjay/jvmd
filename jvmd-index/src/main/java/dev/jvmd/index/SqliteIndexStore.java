@@ -32,7 +32,8 @@ public final class SqliteIndexStore implements IndexStore {
         if(!facts.key().equals(input.key()))throw new IllegalArgumentException("Artifact facts/key mismatch");
         return database.write(c->{
             long artifact=putArtifact(c,input);
-            var ids=upsertSymbols(c,artifact,input.context(),facts,sourceData);
+            var ids=existingSymbolIds(c,artifact,facts);
+            if(ids.isEmpty())ids=upsertSymbols(c,artifact,input.context(),facts,sourceData);
             storeSignatureRelationships(c,artifact,facts.relationships(),ids);
             storeClassReferences(c,artifact,facts.classReferences());
             try(var update=c.prepareStatement("UPDATE artifacts SET has_signature_edges=1,has_class_refs=1 WHERE id=?")){
@@ -100,6 +101,17 @@ public final class SqliteIndexStore implements IndexStore {
         try(var s=c.prepareStatement("UPDATE symbols SET artifact_id=(SELECT min(a.artifact_id) FROM artifact_symbols a WHERE a.symbol_id=symbols.id AND a.artifact_id<>?) WHERE artifact_id=? AND EXISTS(SELECT 1 FROM artifact_symbols a WHERE a.symbol_id=symbols.id AND a.artifact_id<>?)")){
             s.setLong(1,artifact);s.setLong(2,artifact);s.setLong(3,artifact);s.executeUpdate();
         }
+    }
+
+
+    private static Map<Integer,Long> existingSymbolIds(Connection c,long artifact,ArtifactIndexFormat.ArtifactData facts)throws Exception{
+        var byKey=new HashMap<String,Long>();
+        try(var q=c.prepareStatement("SELECT s.id,COALESCE(json_extract(a.data,'$.binary_key'),s.binary_key) FROM artifact_symbols a JOIN symbols s ON s.id=a.symbol_id WHERE a.artifact_id=?")){
+            q.setLong(1,artifact);try(var r=q.executeQuery()){while(r.next())byKey.put(r.getString(2),r.getLong(1));}
+        }
+        if(byKey.isEmpty())return Map.of();
+        var result=new HashMap<Integer,Long>();for(var symbol:facts.symbols()){Long id=byKey.get(symbol.key());if(id!=null)result.put(symbol.id(),id);}
+        return result;
     }
 
     private static Map<Integer,Long> upsertSymbols(Connection c,long artifact,ArtifactIndexFormat.Context context,

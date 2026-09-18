@@ -184,12 +184,14 @@ public final class IndexService implements AutoCloseable {
     public long refreshLocal(Path directory)throws Exception{return locals.refresh(directory);}
     public void refreshLocalWorkspace(String workspace)throws Exception{locals.refreshWorkspace(workspace);}
     long replaceLocal(LocalModule module,String hash,long size,long mtime,BinaryReader.Content content,Map<String,Map<String,Object>> sourceData)throws Exception{
-        long id=database.write(c->{
-            long artifact=putArtifact(c,module.directory(),module.gav(),"local",hash,size,mtime);
-            if(ids(c,artifact).isEmpty())storeContent(c,artifact,module.gav(),"local",content,sourceData);
-            else storeSignatureTargets(c,artifact,content.edges(),ids(c,artifact));
-            return artifact;
-        });indexed.incrementAndGet();return id;
+        long prepareStarted=System.nanoTime();
+        var key=ArtifactIndexFormat.key(hash,"local-signatures");
+        var context=new ArtifactIndexFormat.Context(module.gav(),"local",location(module.directory()));
+        var facts=ArtifactIndexFormat.from(content,key);
+        prepareNanos.addAndGet(System.nanoTime()-prepareStarted);
+        long storageStarted=System.nanoTime();
+        long id=store.publishArtifact(new IndexStore.ArtifactInput(context,key,size,mtime),facts,sourceData);
+        storageNanos.addAndGet(System.nanoTime()-storageStarted);indexed.incrementAndGet();return id;
     }
     /** Implements 4.4: detached source relationships, never compiler-owned trees. */
     public record SourceEdge(String src,String dst,String kind) { }

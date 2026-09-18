@@ -43,4 +43,34 @@ class IndexStoreContractTest {
             assertThat(store.status()).containsEntry("backend","sqlite");
         }
     }
+    @Test void readBackendCanCutOverToRocksAndRollBackToSqlite()throws Exception{
+        Path jar=IndexFixtures.jar(temp.resolve("mode"),"mode",
+                IndexFixtures.generic().replace("private String hidden;","private String hidden; public int markerMode;"),false);
+        var sink=new ArtifactGenerationSink(){
+            @Override public void publish(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences){ }
+            @Override public Optional<List<Map<String,Object>>> shadowFind(String workspace,String query,boolean substring,int limit,long after,Set<String> kinds){
+                if(!"mode-workspace".equals(workspace))return Optional.empty();
+                return Optional.of(List.of(Map.of("id",42L,"scip","rocks-sentinel","kind","method","name","transform",
+                        "name_path","rocks/sentinel","binary_key","rocks#sentinel","gav","rocks:sentinel:1",
+                        "artifact_path","/rocks/sentinel.jar","artifact_kind","jar","parameters",List.of(),"metadata",Map.of())));
+            }
+        };
+        String previous=System.getProperty("jvmd.index.read.backend");
+        try(var index=new IndexService(temp.resolve("mode.db"),temp,sink)){
+            index.indexJar(jar,"fixture:mode:1","jar");
+            index.loadWorkspace("mode-workspace",List.of(new IndexService.WorkspaceArtifact(jar.toString(),"compile")),List.of());
+
+            System.setProperty("jvmd.index.read.backend","rocksdb-sst");
+            assertThat(index.find("transform","mode-workspace",false,20,0,Set.of("method")))
+                    .extracting(row->row.get("scip")).containsExactly("rocks-sentinel");
+
+            System.setProperty("jvmd.index.read.backend","sqlite");
+            assertThat(index.find("transform","mode-workspace",false,20,0,Set.of("method")))
+                    .extracting(row->row.get("scip").toString()).allMatch(value->value.startsWith("maven fixture/mode"));
+        }finally{
+            if(previous==null)System.clearProperty("jvmd.index.read.backend");
+            else System.setProperty("jvmd.index.read.backend",previous);
+        }
+    }
+
 }

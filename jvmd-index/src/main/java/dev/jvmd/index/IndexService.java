@@ -90,14 +90,13 @@ public final class IndexService implements AutoCloseable {
             var stamp=Files.readAttributes(path,java.nio.file.attribute.BasicFileAttributes.class);long size=stamp.size(),mtime=stamp.lastModifiedTime().to(TimeUnit.NANOSECONDS);
             if(previous!=null&&previous.hasSignatureEdges()&&!gav.contains("SNAPSHOT")&&!kind.equals("local")&&previous.size()==size&&previous.mtime()==mtime){reused.incrementAndGet();return previous.id();}
             active(path,"hash");long hashStarted=System.nanoTime();verifyChecksum(path);String hash=Files.isDirectory(path)?directoryHash(path):Hashing.sha256(path);hashNanos.addAndGet(System.nanoTime()-hashStarted);hashed.incrementAndGet();
-            if(previous!=null&&previous.hasSignatureEdges()&&previous.sha256().equals(hash)){recordPath(path,previous.id(),size,mtime);reused.incrementAndGet();return previous.id();}
+            if(previous!=null&&previous.hasSignatureEdges()&&previous.sha256().equals(hash)){store.publishPath(path,previous.id(),size,mtime);reused.incrementAndGet();return previous.id();}
             active(path,"parse");long parseStarted=System.nanoTime();var content=new BinaryReader().read(path,kind.equals("local"));parseNanos.addAndGet(System.nanoTime()-parseStarted);content.warnings().forEach(this::warn);
-            Path file=path;active(path,"storage");long storageStarted=System.nanoTime();
-            long id=database.write(c->{long artifact=putArtifact(c,file,gav,kind,hash,size,mtime);
-                if(ids(c,artifact).isEmpty())storeContent(c,artifact,gav,kind,content,Map.of());
-                else storeSignatureTargets(c,artifact,content.edges(),ids(c,artifact));
-                return artifact;
-            });storageNanos.addAndGet(System.nanoTime()-storageStarted);indexed.incrementAndGet();return id;
+            active(path,"storage");long storageStarted=System.nanoTime();
+            var key=ArtifactIndexFormat.key(hash,kind.equals("local")?"local-signatures":"signatures");
+            var input=new IndexStore.ArtifactInput(new ArtifactContext(gav,kind,location(path)),key,size,mtime);
+            long id=store.publishBinary(input,ArtifactIndexFormat.from(content,key),CodeReader.classReferences(content.models().values()));
+            storageNanos.addAndGet(System.nanoTime()-storageStarted);indexed.incrementAndGet();return id;
         }finally{activeArtifacts.remove(location(tracked));}
     }
     private void storeContent(Connection c,long artifact,String gav,String kind,BinaryReader.Content content,Map<String,Map<String,Object>> sourceData)throws Exception{

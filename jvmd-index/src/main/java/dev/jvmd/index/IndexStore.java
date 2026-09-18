@@ -11,9 +11,18 @@ public interface IndexStore extends AutoCloseable {
     record ArtifactRecord(long id,String gav,String kind,String sha256,String path,long size,long mtime,
                           boolean hasDocs,boolean hasCodeEdges,boolean hasSignatureEdges) { }
     record WorkspaceEntry(String path,String scope) { }
+    record ArtifactInput(ArtifactContext context,ArtifactIndexFormat.Key key,long size,long mtime) {
+        public ArtifactInput {
+            Objects.requireNonNull(context);Objects.requireNonNull(key);
+            if(size<0)throw new IllegalArgumentException("size");
+        }
+    }
 
     String backend();
     ArtifactRecord artifact(Path path)throws Exception;
+    void publishPath(Path path,long artifactId,long size,long mtime)throws Exception;
+    long publishBinary(ArtifactInput input,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception;
+
     Map<String,Long> counts()throws Exception;
     Map<String,Object> status();
     List<String> loadWorkspace(String workspace,List<WorkspaceEntry> paths,List<Map.Entry<String,String>> dependencies)throws Exception;

@@ -22,6 +22,160 @@ public final class SqliteIndexStore implements IndexStore {
         }});
     }
 
+    @Override public void publishPath(Path path,long artifactId,long size,long mtime)throws Exception{
+        database.write(c->{putPath(c,location(path),artifactId,size,mtime);return null;});
+    }
+
+    @Override public long publishBinary(ArtifactInput input,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{
+        if(!facts.key().equals(input.key()))throw new IllegalArgumentException("Artifact facts/key mismatch");
+        return database.write(c->{
+            long artifact=putArtifact(c,input);
+            var existing=ids(c,artifact);
+            if(existing.isEmpty())storeFacts(c,artifact,input.context(),facts);
+            else storeSignatureTargets(c,artifact,facts.relationships(),localIds(facts,existing));
+            storeClassReferences(c,artifact,classReferences);
+            return artifact;
+        });
+    }
+
+    private long putArtifact(Connection c,ArtifactInput input)throws Exception{
+        String path=input.context().path();Long old=null;
+        try(var s=c.prepareStatement("SELECT artifact_id FROM artifact_paths WHERE path=?")){
+            s.setString(1,path);try(var r=s.executeQuery()){if(r.next())old=r.getLong(1);}
+        }
+        long id;
+        try(var s=c.prepareStatement("INSERT INTO artifacts(gav,kind,sha256,path,size,mtime,indexed_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(sha256) DO NOTHING")){
+            s.setString(1,input.context().gav());s.setString(2,input.context().kind());s.setString(3,input.key().binarySha256());
+            s.setString(4,path);s.setLong(5,input.size());s.setLong(6,input.mtime());s.setLong(7,System.currentTimeMillis());s.executeUpdate();
+        }
+        try(var s=c.prepareStatement("SELECT id FROM artifacts WHERE sha256=?")){
+            s.setString(1,input.key().binarySha256());try(var r=s.executeQuery()){if(!r.next())throw new SQLException("artifact insert missing");id=r.getLong(1);}
+        }
+        putPath(c,path,id,input.size(),input.mtime());
+        if(old!=null&&old!=id){
+            try(var copy=c.prepareStatement("INSERT OR IGNORE INTO workspace_artifacts SELECT workspace_id,?,scope FROM workspace_artifacts WHERE artifact_id=?")){
+                copy.setLong(1,id);copy.setLong(2,old);copy.executeUpdate();
+            }
+            boolean unused;try(var q=c.prepareStatement("SELECT count(*) FROM artifact_paths WHERE artifact_id=?")){
+                q.setLong(1,old);try(var r=q.executeQuery()){r.next();unused=r.getLong(1)==0;}
+            }
+            if(unused){preserveSharedSymbols(c,old);try(var q=c.prepareStatement("DELETE FROM artifacts WHERE id=?")){q.setLong(1,old);q.executeUpdate();}}
+        }
+        return id;
+    }
+
+    private static void putPath(Connection c,String path,long id,long size,long mtime)throws Exception{
+        try(var s=c.prepareStatement("INSERT OR REPLACE INTO artifact_paths VALUES(?,?,?,?)")){
+            s.setString(1,path);s.setLong(2,id);s.setLong(3,size);s.setLong(4,mtime);s.executeUpdate();
+        }
+    }
+
+    private static void preserveSharedSymbols(Connection c,long artifact)throws Exception{
+        try(var s=c.prepareStatement("UPDATE symbols SET artifact_id=(SELECT min(a.artifact_id) FROM artifact_symbols a WHERE a.symbol_id=symbols.id AND a.artifact_id<>?) WHERE artifact_id=? AND EXISTS(SELECT 1 FROM artifact_symbols a WHERE a.symbol_id=symbols.id AND a.artifact_id<>?)")){
+            s.setLong(1,artifact);s.setLong(2,artifact);s.setLong(3,artifact);s.executeUpdate();
+        }
+    }
+
+    private static void storeFacts(Connection c,long artifact,ArtifactContext context,ArtifactIndexFormat.ArtifactData facts)throws Exception{
+        var identityCounts=new HashMap<String,Integer>();
+        for(var symbol:facts.symbols())identityCounts.merge(context.scip(symbol),1,Integer::sum);
+        var ids=new HashMap<Integer,Long>();
+
+        String insert="INSERT INTO symbols(scip,artifact_id,kind,name,signature,erased_descriptor,flags,binary_key,fqn,name_path,class_entry,parameters,metadata) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(scip) DO NOTHING RETURNING id";
+        try(var s=c.prepareStatement(insert);
+            var lookup=c.prepareStatement("SELECT id,artifact_id FROM symbols WHERE scip=?");
+            var associate=c.prepareStatement("INSERT OR REPLACE INTO artifact_symbols(artifact_id,symbol_id,data,source_file) VALUES(?,?,?,?)")){
+            for(var symbol:facts.symbols()){
+                String identity=context.scip(symbol);
+                if(identityCounts.getOrDefault(identity,0)>1&&(symbol.kind().equals("method")||symbol.kind().equals("ctor"))){
+                    var type=java.lang.constant.MethodTypeDesc.ofDescriptor(symbol.descriptor());
+                    identity=identity.substring(0,identity.length()-2)+";return="+Signatures.qualified(type.returnType())+").";
+                }
+                s.setString(1,identity);s.setLong(2,artifact);s.setString(3,symbol.kind());s.setString(4,symbol.name());
+                s.setString(5,symbol.signature());s.setString(6,symbol.descriptor());s.setInt(7,symbol.flags());s.setString(8,symbol.key());
+                s.setString(9,symbol.fqn());s.setString(10,ArtifactContext.namePath(symbol));s.setString(11,symbol.entry());
+                s.setString(12,Json.MAPPER.writeValueAsString(symbol.parameters()));s.setString(13,symbol.metadataJson());
+
+                long id,primary;
+                try(var r=s.executeQuery()){
+                    if(r.next()){id=r.getLong(1);primary=artifact;}
+                    else{
+                        lookup.setString(1,identity);
+                        try(var found=lookup.executeQuery()){if(!found.next())throw new SQLException("symbol upsert missing");id=found.getLong(1);primary=found.getLong(2);}
+                    }
+                }
+                ids.put(symbol.id(),id);
+
+                Map<String,Object> data=null;
+                if(context.kind().equals("local")||primary!=artifact){
+                    data=new LinkedHashMap<>();
+                    data.put("scip",identity);data.put("name",symbol.name());data.put("kind",symbol.kind());
+                    data.put("signature",symbol.signature());data.put("erased_descriptor",symbol.descriptor());data.put("flags",symbol.flags());
+                    data.put("binary_key",symbol.key());data.put("fqn",symbol.fqn());data.put("name_path",ArtifactContext.namePath(symbol));
+                    data.put("class_entry",symbol.entry());data.put("parameters",symbol.parameters());
+                    data.put("metadata",Json.MAPPER.readTree(symbol.metadataJson()));
+                    data.put("source_file",null);data.put("doc",null);data.put("line",null);
+                    data.put("source_start",-1);data.put("source_end",-1);data.put("body_start",-1);data.put("body_end",-1);data.put("tier",2);
+                }
+                associate.setLong(1,artifact);associate.setLong(2,id);
+                associate.setString(3,data==null?null:Json.MAPPER.writeValueAsString(data));associate.setString(4,null);associate.addBatch();
+            }
+            associate.executeBatch();
+        }
+
+        try(var owners=c.prepareStatement("UPDATE symbols SET owner_id=? WHERE id=? AND artifact_id=?");
+            var names=c.prepareStatement("INSERT INTO simple_names VALUES(?,?,?)")){
+            for(var symbol:facts.symbols()){
+                if(symbol.ownerId()>=0&&ids.containsKey(symbol.ownerId())){
+                    owners.setLong(1,ids.get(symbol.ownerId()));owners.setLong(2,ids.get(symbol.id()));owners.setLong(3,artifact);owners.addBatch();
+                }
+                if(symbol.key().equals(symbol.fqn())){
+                    names.setString(1,symbol.name());names.setString(2,symbol.fqn());names.setLong(3,artifact);names.addBatch();
+                }
+            }
+            owners.executeBatch();names.executeBatch();
+        }
+
+        storeSignatureTargets(c,artifact,facts.relationships(),ids);
+    }
+
+    private static Map<String,Long> ids(Connection c,long artifact)throws Exception{
+        var ids=new HashMap<String,Long>();
+        try(var s=c.prepareStatement("SELECT s.id,COALESCE(json_extract(a.data,'$.binary_key'),s.binary_key) FROM artifact_symbols a JOIN symbols s ON s.id=a.symbol_id WHERE a.artifact_id=?")){
+            s.setLong(1,artifact);try(var r=s.executeQuery()){while(r.next())ids.put(r.getString(2),r.getLong(1));}
+        }
+        return ids;
+    }
+
+    private static Map<Integer,Long> localIds(ArtifactIndexFormat.ArtifactData facts,Map<String,Long> existing){
+        var ids=new HashMap<Integer,Long>();
+        for(var symbol:facts.symbols()){Long id=existing.get(symbol.key());if(id!=null)ids.put(symbol.id(),id);}
+        return ids;
+    }
+
+    private static void storeSignatureTargets(Connection c,long artifact,List<ArtifactIndexFormat.Relationship> relationships,Map<Integer,Long> ids)throws Exception{
+        try(var edgeTargets=c.prepareStatement("INSERT OR IGNORE INTO edge_targets VALUES(?,?,?)");
+            var signature=c.prepareStatement("INSERT OR IGNORE INTO signature_targets VALUES(?,?,?,?)")){
+            for(var edge:relationships){
+                Long src=ids.get(edge.sourceId());if(src==null)continue;
+                edgeTargets.setLong(1,src);edgeTargets.setString(2,edge.target());edgeTargets.setString(3,edge.kind());edgeTargets.addBatch();
+                signature.setLong(1,artifact);signature.setLong(2,src);signature.setString(3,edge.target());signature.setString(4,edge.kind());signature.addBatch();
+            }
+            edgeTargets.executeBatch();signature.executeBatch();
+        }
+        try(var update=c.prepareStatement("UPDATE artifacts SET has_signature_edges=1 WHERE id=?")){update.setLong(1,artifact);update.executeUpdate();}
+    }
+
+    private static void storeClassReferences(Connection c,long artifact,Set<String> references)throws Exception{
+        if(references.isEmpty())return;
+        try(var clear=c.prepareStatement("DELETE FROM artifact_class_refs WHERE artifact_id=?")){clear.setLong(1,artifact);clear.executeUpdate();}
+        try(var insert=c.prepareStatement("INSERT OR IGNORE INTO artifact_class_refs VALUES(?,?)")){
+            for(String target:references){insert.setLong(1,artifact);insert.setString(2,target);insert.addBatch();}
+            insert.executeBatch();
+        }
+        try(var update=c.prepareStatement("UPDATE artifacts SET has_class_refs=1 WHERE id=?")){update.setLong(1,artifact);update.executeUpdate();}
+    }
+
     @Override public Map<String,Long> counts()throws Exception{return database.counts();}
     @Override public Map<String,Object> status(){var result=new LinkedHashMap<String,Object>(database.metrics());result.put("backend",backend());return Map.copyOf(result);}
 
@@ -46,7 +200,7 @@ public final class SqliteIndexStore implements IndexStore {
     }
 
     @Override public List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds)throws Exception{
-        return findMatching(query,workspace,substring,limit,after,kinds,_->true);
+        return findMatching(query,workspace,substring,limit,after,kinds,ignored->true);
     }
 
     @Override public List<Map<String,Object>> descendants(String path,String workspace,int depth,int limit,long after,Set<String> kinds)throws Exception{

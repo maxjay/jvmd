@@ -232,43 +232,48 @@ public final class IndexService implements AutoCloseable {
     }
     public static String directoryHash(Path root)throws Exception{var digest=java.security.MessageDigest.getInstance("SHA-256");try(var files=Files.walk(root)){for(var p:files.filter(Files::isRegularFile).sorted().toList()){digest.update(root.relativize(p).toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));digest.update(Hashing.sha256(p).getBytes(java.nio.charset.StandardCharsets.US_ASCII));}}return java.util.HexFormat.of().formatHex(digest.digest());}
     public long indexSources(Path sources)throws Exception {
-        sources=sources.toAbsolutePath().normalize();Path binary=sources.resolveSibling(sources.getFileName().toString().replaceFirst("-sources\\.jar$",".jar"));
-        if(!Files.isRegularFile(binary)){warn("sources_without_binary: "+sources);return -1;}
-        var artifact=artifact(binary);if(artifact==null){indexJar(binary,gav(binary),"jar");artifact=artifact(binary);}
-        var old=artifact(sources);var stamp=Files.readAttributes(sources,java.nio.file.attribute.BasicFileAttributes.class);long size=stamp.size(),mtime=stamp.lastModifiedTime().to(TimeUnit.NANOSECONDS);
-        if(old!=null&&artifact.hasDocs()&&!old.gav().contains("SNAPSHOT")&&old.size()==size&&old.mtime()==mtime){reused.incrementAndGet();return old.id();}
-        active(sources,"hash");long hashStarted=System.nanoTime();verifyChecksum(sources);String hash=Hashing.sha256(sources);hashNanos.addAndGet(System.nanoTime()-hashStarted);hashed.incrementAndGet();
-        active(sources,"source-parse");long parseStarted=System.nanoTime();
-        var text=new LinkedHashMap<String,String>();try(var jar=new JarFile(sources.toFile(),false,JarFile.OPEN_READ,Runtime.version())){for(var entry:jar.versionedStream().filter(e->e.getName().endsWith(".java")&&!e.getName().startsWith("META-INF/")).toList()){try(var stream=jar.getInputStream(entry)){text.put(entry.getName(),new String(stream.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8));}}}
-        var content=new BinaryReader().read(binary,false);var join=new SourceJoin().join(content.models(),text);parseNanos.addAndGet(System.nanoTime()-parseStarted);long binaryId=artifact.id();Path sourceFile=sources;
-        active(sources,"source-storage");long storageStarted=System.nanoTime();
-        long sourceResult=database.write(c->{long sourceId=putArtifact(c,sourceFile,gav(sourceFile),"sources",hash,size,mtime);var keys=ids(c,binaryId);
-            try(var update=c.prepareStatement("UPDATE artifact_symbols SET data=?,source_file=? WHERE artifact_id=? AND symbol_id=?");
-                var lookup=c.prepareStatement("SELECT v.data,s.signature,s.parameters,s.metadata FROM artifact_symbols v JOIN symbols s ON s.id=v.symbol_id WHERE v.artifact_id=? AND v.symbol_id=?")){
-                for(var member:join.members()){
-                    String key=member.descriptor()==null?member.owner():member.descriptor().equals("field")?member.owner()+"#"+member.name():member.owner()+"#"+member.name()+member.descriptor();Long id=keys.get(key);if(id==null)continue;
-                    lookup.setLong(1,binaryId);lookup.setLong(2,id);
-                    try(var row=lookup.executeQuery()){
-                        if(!row.next())continue;
-                        var data=row.getString(1)==null?Json.MAPPER.createObjectNode():(com.fasterxml.jackson.databind.node.ObjectNode)Json.MAPPER.readTree(row.getString(1));
-                        String location="jar:"+sourceFile.toUri()+"!/"+member.file();
-                        data.put("doc",member.doc());data.put("source_file",location);data.put("line",member.line());data.put("source_start",member.start());data.put("source_end",member.end());data.put("body_start",member.bodyStart());data.put("body_end",member.bodyEnd());
-                        var metadata=data.has("metadata")?data.get("metadata"):Json.MAPPER.readTree(row.getString(4));
-                        if(!member.parameters().isEmpty()&&!metadata.path("parameter_names_from_class").asBoolean()){
-                            var original=data.has("parameters")?data.get("parameters"):Json.MAPPER.readTree(row.getString(3));String signature=data.path("signature").asText(row.getString(2));
-                            for(int i=0;i<Math.min(member.parameters().size(),original.size());i++)signature=signature.replaceAll("\\b"+java.util.regex.Pattern.quote(original.get(i).asText())+"\\b",java.util.regex.Matcher.quoteReplacement(member.parameters().get(i)));
-                            data.put("signature",signature);data.set("parameters",Json.MAPPER.valueToTree(member.parameters()));
-                        }
-                        update.setString(1,Json.MAPPER.writeValueAsString(data));update.setString(2,location);update.setLong(3,binaryId);update.setLong(4,id);update.addBatch();
-                    }
-                }update.executeBatch();
+        sources=sources.toAbsolutePath().normalize();Path tracked=sources;
+        try{
+            Path binary=sources.resolveSibling(sources.getFileName().toString().replaceFirst("-sources\\.jar$",".jar"));
+            if(!Files.isRegularFile(binary)){warn("sources_without_binary: "+sources);return -1;}
+            var artifact=artifact(binary);if(artifact==null){indexJar(binary,gav(binary),"jar");artifact=artifact(binary);}
+            var old=artifact(sources);var stamp=Files.readAttributes(sources,java.nio.file.attribute.BasicFileAttributes.class);
+            long size=stamp.size(),mtime=stamp.lastModifiedTime().to(TimeUnit.NANOSECONDS);
+            if(old!=null&&artifact.hasDocs()&&!old.gav().contains("SNAPSHOT")&&old.size()==size&&old.mtime()==mtime){reused.incrementAndGet();return old.id();}
+
+            active(sources,"hash");long hashStarted=System.nanoTime();verifyChecksum(sources);String hash=Hashing.sha256(sources);
+            hashNanos.addAndGet(System.nanoTime()-hashStarted);hashed.incrementAndGet();
+
+            active(sources,"source-parse");long parseStarted=System.nanoTime();
+            var text=new LinkedHashMap<String,String>();
+            try(var jar=new JarFile(sources.toFile(),false,JarFile.OPEN_READ,Runtime.version())){
+                for(var entry:jar.versionedStream().filter(e->e.getName().endsWith(".java")&&!e.getName().startsWith("META-INF/")).toList())
+                    try(var stream=jar.getInputStream(entry)){text.put(entry.getName(),new String(stream.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8));}
             }
-            try(var s=c.prepareStatement("UPDATE artifacts SET has_docs=1 WHERE id=? OR id=?")){s.setLong(1,binaryId);s.setLong(2,sourceId);s.executeUpdate();}
-            try(var s=c.prepareStatement("INSERT OR REPLACE INTO source_artifacts VALUES(?,?)")){s.setLong(1,binaryId);s.setLong(2,sourceId);s.executeUpdate();}
-            try(var s=c.prepareStatement("INSERT INTO counters VALUES('unmatched_source_members',?) ON CONFLICT(name) DO UPDATE SET value=value+excluded.value")){s.setInt(1,join.unmatched().size());s.executeUpdate();}
-            return sourceId;
-        });storageNanos.addAndGet(System.nanoTime()-storageStarted);activeArtifacts.remove(location(sources));return sourceResult;
+            var content=new BinaryReader().read(binary,false);var join=new SourceJoin().join(content.models(),text);
+            parseNanos.addAndGet(System.nanoTime()-parseStarted);
+
+            active(sources,"source-prepare");long prepareStarted=System.nanoTime();
+            var members=new LinkedHashMap<String,Map<String,Object>>();
+            for(var member:join.members()){
+                String key=member.descriptor()==null?member.owner():member.descriptor().equals("field")
+                        ?member.owner()+"#"+member.name():member.owner()+"#"+member.name()+member.descriptor();
+                var data=new LinkedHashMap<String,Object>();
+                data.put("doc",member.doc());data.put("source_file","jar:"+sources.toUri()+"!/"+member.file());data.put("line",member.line());
+                data.put("source_start",member.start());data.put("source_end",member.end());data.put("body_start",member.bodyStart());data.put("body_end",member.bodyEnd());
+                data.put("parameters",member.parameters());members.put(key,Map.copyOf(data));
+            }
+            var key=ArtifactIndexFormat.key(hash,"sources");
+            var context=new ArtifactIndexFormat.Context(gav(sources),"sources",location(sources));
+            var input=new IndexStore.ArtifactInput(context,key,size,mtime);
+            prepareNanos.addAndGet(System.nanoTime()-prepareStarted);
+
+            active(sources,"source-storage");long storageStarted=System.nanoTime();
+            long sourceId=store.publishDocumentation(artifact.id(),input,Map.copyOf(members),join.unmatched().size());
+            storageNanos.addAndGet(System.nanoTime()-storageStarted);return sourceId;
+        }finally{activeArtifacts.remove(location(tracked));}
     }
+
     void ensureSignatureEdges(String workspace)throws Exception {
         var pending=database.read(c->{var paths=new ArrayList<String[]>();try(var q=c.prepareStatement("SELECT a.path,a.gav,a.kind FROM artifacts a WHERE a.has_signature_edges=0 AND a.kind<>'sources'"+(workspace==null?"":" AND (a.gav LIKE 'jdk:%' OR EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id))"))){if(workspace!=null)q.setString(1,workspace);try(var r=q.executeQuery()){while(r.next())paths.add(new String[]{r.getString(1),r.getString(2),r.getString(3)});}}return paths;});
         boolean changed=false;

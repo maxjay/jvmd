@@ -50,6 +50,10 @@ class AnnotationProcessingBindingsTest {
             var broken=TestSupport.request(app.dispatcher(),"diag.get",Map.of("session",session,"paths",List.of(use.toString()))).path("result");
             assertThat(broken.path("warnings").toString()).contains("diagnostic_fidelity=full_lombok_external");
             assertThat(broken.path("result").path("diagnostics").toString()).contains("compiler.err.").contains("external-javac");
+            // The live path above deliberately proves content hashing beats a preserved mtime. Maven's
+            // own incremental compiler is timestamp-based, so make the separate verified build observe
+            // the edit rather than reusing target/classes from the previous verification.
+            Files.setLastModifiedTime(provider,java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis()+2000));
             var verifiedBroken=new Verifier(config).verify(root,Json.MAPPER.createObjectNode(),Duration.ofMinutes(2));
             assertThat(verifiedBroken.exitCode()).isNotZero();
             var liveAgreement=new LinkedHashSet<String>();for(var problem:broken.path("result").path("diagnostics"))

@@ -30,6 +30,7 @@ public interface IndexStore extends AutoCloseable {
     void publishSourceFile(long artifactId,Path file,List<Map<String,Object>> symbols,int tier,List<SourceRelationship> relationships)throws Exception;
     long publishDocumentation(long binaryArtifactId,ArtifactInput sourceInput,Map<String,Map<String,Object>> members,int unmatchedMembers)throws Exception;
     void publishPath(Path path,long artifactId,long size,long mtime)throws Exception;
+    void resolveGlobalRelationships()throws Exception;
     Map<String,Long> counts()throws Exception;
     Map<String,Object> status();
     List<String> loadWorkspace(String workspace,List<WorkspaceEntry> paths,List<Map.Entry<String,String>> dependencies)throws Exception;

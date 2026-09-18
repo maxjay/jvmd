@@ -13,8 +13,8 @@ class IndexStoreContractTest {
     @TempDir Path temp;
 
     @Test void sqliteImplementsArtifactWorkspaceAndQueryContract()throws Exception{
-        Path a=IndexFixtures.jar(temp.resolve("a"),"a",IndexFixtures.generic(),false);
-        Path b=IndexFixtures.jar(temp.resolve("b"),"b",IndexFixtures.generic(),false);
+        Path a=IndexFixtures.jar(temp.resolve("a"),"a",IndexFixtures.generic().replace("private String hidden;","private String hidden; public int markerA;"),false);
+        Path b=IndexFixtures.jar(temp.resolve("b"),"b",IndexFixtures.generic().replace("private String hidden;","private String hidden; public int markerB;"),false);
         try(var index=new IndexService(temp.resolve("index.db"),temp)){
             index.indexJar(a,"fixture:a:1","jar");
             index.indexJar(b,"fixture:b:1","jar");
@@ -39,7 +39,7 @@ class IndexStoreContractTest {
 
             long id=((Number)selected.getFirst().get("id")).longValue();
             assertThat(store.byId(id,"one").get("scip")).isEqualTo(selected.getFirst().get("scip"));
-            assertThat(store.descendants("fixture/Sample","one",2,50,0,Set.of())).isNotEmpty();
+            assertThat(store.descendants("fixture.Sample","one",2,50,0,Set.of())).isNotEmpty();
             assertThat(store.status()).containsEntry("backend","sqlite");
         }
     }

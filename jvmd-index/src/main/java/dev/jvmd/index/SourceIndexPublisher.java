@@ -24,7 +24,9 @@ public final class SourceIndexPublisher implements AutoCloseable {
 
     public synchronized void enqueue(Delta delta){
         if(closing)return;
-        if(delta.semanticHash().equals(published.get(delta.file()))&&!pending.containsKey(delta.file())){skipped.increment();return;}
+        var queued=pending.get(delta.file());
+        if(queued!=null&&queued.semanticHash().equals(delta.semanticHash())){skipped.increment();return;}
+        if(delta.semanticHash().equals(published.get(delta.file()))&&queued==null){skipped.increment();return;}
         var old=pending.remove(delta.file());if(old!=null){bytes-=old.bytes();coalesced.increment();}
         if(delta.bytes()>budget){dropped.increment();return;}
         while(bytes+delta.bytes()>budget&&!pending.isEmpty()){
@@ -41,6 +43,7 @@ public final class SourceIndexPublisher implements AutoCloseable {
                 while(pending.isEmpty()&&!closing)try{wait();}catch(InterruptedException interrupted){return;}
                 if(pending.isEmpty())return;
                 delta=pending.remove(pending.keySet().iterator().next());bytes-=delta.bytes();
+                if(delta.semanticHash().equals(published.get(delta.file()))){skipped.increment();continue;}
             }
             try{
                 sink.publish(delta);writes.increment();

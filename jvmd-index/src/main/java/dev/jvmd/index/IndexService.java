@@ -14,6 +14,8 @@ public final class IndexService implements AutoCloseable {
     public record Artifact(long id,String gav,String kind,String sha256,String path,long size,long mtime,boolean hasDocs,boolean hasCodeEdges,boolean hasSignatureEdges) { }
     /** Implements 4.4: one workspace's filtered artifact membership. */
     public record WorkspaceArtifact(String path,String scope) { }
+    private final SqliteIndexStore sqliteStore;
+    private final IndexStore store;
     private final IndexDatabase database;
     private final Path repository;
     private final SourceIndexPublisher sourcePublisher=new SourceIndexPublisher(delta->recordSource(delta.file(),delta.sourceHash(),delta.symbols(),delta.tier(),delta.edges()),32L*1024*1024);
@@ -30,8 +32,12 @@ public final class IndexService implements AutoCloseable {
     private volatile String phase="idle";
     private volatile long total;
     private volatile boolean closed;
-    public IndexService(Path database,Path repository) throws Exception {this.database=new IndexDatabase(database);this.repository=repository.toAbsolutePath().normalize();}
+    public IndexService(Path database,Path repository) throws Exception {
+        this.sqliteStore=new SqliteIndexStore(database);this.store=sqliteStore;this.database=sqliteStore.database();
+        this.repository=repository.toAbsolutePath().normalize();
+    }
     public IndexDatabase database(){return database;}
+    public IndexStore store(){return store;}
     public long generation(){return indexed.get();}
     public void start(){scanner.scheduleWithFixedDelay(()->{try{scan();}catch(Exception e){warn("index_scan_fault: "+e);}},0,60,TimeUnit.SECONDS);}
     public synchronized void scan() throws Exception {
@@ -52,10 +58,10 @@ public final class IndexService implements AutoCloseable {
     }
     private void warn(String warning){faults.incrementAndGet();warnings.add(warning);while(warnings.size()>50)warnings.poll();System.getLogger("dev.jvmd.index").log(System.Logger.Level.WARNING,warning);}
     public Map<String,Object> status() throws Exception {
-        var result=new LinkedHashMap<String,Object>();result.putAll(database.counts());result.put("source_publisher",sourcePublisher.status());
+        var result=new LinkedHashMap<String,Object>();result.putAll(store.counts());result.put("source_publisher",sourcePublisher.status());
         result.put("phase",phase);result.put("total",total);result.put("scanned",scanned.get());result.put("indexed",indexed.get());
         result.put("reused",reused.get());result.put("hashes",hashed.get());result.put("faults",faults.get());result.put("warnings",List.copyOf(warnings));
-        result.put("active_artifacts",Map.copyOf(activeArtifacts));result.put("database",database.metrics());
+        result.put("active_artifacts",Map.copyOf(activeArtifacts));result.put("store",store.status());
         var timings=new LinkedHashMap<String,Object>();
         timings.put("scans",scans.get());timings.put("scan_ms",millis(scanNanos.get()));timings.put("discovery_ms",millis(discoveryNanos.get()));
         timings.put("hash_ms",millis(hashNanos.get()));timings.put("parse_ms",millis(parseNanos.get()));timings.put("storage_ms",millis(storageNanos.get()));
@@ -73,7 +79,10 @@ public final class IndexService implements AutoCloseable {
         return relative.subpath(0,n-3).toString().replace(java.io.File.separatorChar,'.')+":"+relative.getName(n-3)+":"+relative.getName(n-2);
     }
     private static String location(Path path){return path.getFileSystem().provider().getScheme().equals("file")?path.toAbsolutePath().normalize().toString():path.toUri().toString();}
-    public Artifact artifact(Path path) throws Exception {return database.read(c->{try(var s=c.prepareStatement("SELECT a.*,p.size AS actual_size,p.mtime AS actual_mtime FROM artifact_paths p JOIN artifacts a ON a.id=p.artifact_id WHERE p.path=?")){s.setString(1,location(path));try(var r=s.executeQuery()){return r.next()?new Artifact(r.getLong("id"),r.getString("gav"),r.getString("kind"),r.getString("sha256"),location(path),r.getLong("actual_size"),r.getLong("actual_mtime"),r.getInt("has_docs")!=0,r.getInt("has_code_edges")!=0,r.getInt("has_signature_edges")!=0):null;}}});}
+    public Artifact artifact(Path path) throws Exception {
+        var value=store.artifact(path);return value==null?null:new Artifact(value.id(),value.gav(),value.kind(),value.sha256(),value.path(),
+                value.size(),value.mtime(),value.hasDocs(),value.hasCodeEdges(),value.hasSignatureEdges());
+    }
     public long indexJar(Path path,String gav,String kind) throws Exception {
         path=path.toAbsolutePath().normalize();Path tracked=path;active(path,"stat");
         try{
@@ -285,48 +294,29 @@ public final class IndexService implements AutoCloseable {
     }return null;});}
     public List<String> loadWorkspace(String workspace,List<WorkspaceArtifact> paths,List<Map.Entry<String,String>> dependencies)throws Exception{
         long started=System.nanoTime();workspaceResolutionCalls.incrementAndGet();
-        try{return database.write(c->{try(var s=c.prepareStatement("DELETE FROM workspace_artifacts WHERE workspace_id=?")){s.setString(1,workspace);s.executeUpdate();}
-            try(var s=c.prepareStatement("INSERT OR IGNORE INTO workspace_artifacts SELECT ?,artifact_id,? FROM artifact_paths WHERE path=?")){for(var item:paths){s.setString(1,workspace);s.setString(2,item.scope());s.setString(3,Path.of(item.path()).toAbsolutePath().normalize().toString());s.addBatch();}s.executeBatch();}
-            try(var s=c.prepareStatement("INSERT OR IGNORE INTO edges SELECT -a.id,-b.id,'depends_on' FROM artifacts a,artifacts b WHERE a.gav=? AND b.gav=?")){for(var edge:dependencies){s.setString(1,edge.getKey());s.setString(2,edge.getValue());s.addBatch();}s.executeBatch();}
-            var warnings=new ArrayList<String>();
-            try(var s=c.prepareStatement("SELECT s.fqn,group_concat(a.gav||' ['||a.path||']','; ') FROM simple_names s JOIN artifacts a ON a.id=s.artifact_id JOIN workspace_artifacts w ON w.artifact_id=a.id WHERE w.workspace_id=? GROUP BY s.fqn HAVING count(DISTINCT a.id)>1")){s.setString(1,workspace);try(var r=s.executeQuery()){while(r.next())warnings.add("duplicate_class: "+r.getString(1)+": "+r.getString(2));}}
-            try(var s=c.prepareStatement("SELECT substr(s.fqn,1,length(s.fqn)-length(s.simple)-1) AS package,group_concat(DISTINCT a.gav) FROM simple_names s JOIN artifacts a ON a.id=s.artifact_id JOIN workspace_artifacts w ON w.artifact_id=a.id WHERE w.workspace_id=? GROUP BY package HAVING count(DISTINCT a.id)>1")){s.setString(1,workspace);try(var r=s.executeQuery()){while(r.next())warnings.add("split_package: "+r.getString(1)+": "+r.getString(2));}}
-            return warnings;
-        });}finally{workspaceResolutionNanos.addAndGet(System.nanoTime()-started);}
+        try{
+            var selected=paths.stream().map(item->new IndexStore.WorkspaceEntry(item.path(),item.scope())).toList();
+            return store.loadWorkspace(workspace,selected,dependencies);
+        }finally{workspaceResolutionNanos.addAndGet(System.nanoTime()-started);}
     }
-    public List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after)throws Exception{return find(query,workspace,substring,limit,after,Set.of());}
+    public List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after)throws Exception{
+        return find(query,workspace,substring,limit,after,Set.of());
+    }
     public List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds)throws Exception{
-        return findMatching(query,workspace,substring,limit,after,kinds,_->true);
+        long started=System.nanoTime();queryCalls.incrementAndGet();
+        try{return store.find(query,workspace,substring,limit,after,kinds);}
+        finally{queryNanos.addAndGet(System.nanoTime()-started);}
     }
-    public List<Map<String,Object>> descendants(String path,String workspace,int depth,int limit,long after,Set<String> kinds)throws Exception {
-        int parentDepth=(int)path.chars().filter(c->c=='/').count();
-        return findMatching(path+"/",workspace,true,limit,after,kinds,symbol->{
-            String candidate=Objects.toString(symbol.get("name_path"),"");
-            return candidate.startsWith(path+"/")&&candidate.chars().filter(c->c=='/').count()-parentDepth<=depth;
-        });
-    }
-    private List<Map<String,Object>> findMatching(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds,java.util.function.Predicate<Map<String,Object>> filter)throws Exception{
-        var name=substring?null:dev.jvmd.core.NamePath.parse(query);long started=System.nanoTime();queryCalls.incrementAndGet();
-        try{return database.read(c->{
-            String match=substring?"(s.name LIKE ? ESCAPE '\\' OR s.name_path LIKE ? ESCAPE '\\')":"(s.name=? OR s.scip=? OR s.binary_key=?)";
-            String sql="SELECT * FROM (SELECT s.*,a.id AS selected_artifact,a.gav,a.path AS artifact_path,a.kind AS artifact_kind,v.data AS variant_data,ROW_NUMBER() OVER(PARTITION BY s.id ORDER BY CASE a.kind WHEN 'local' THEN 0 ELSE 1 END,a.id) AS preference FROM symbols s JOIN artifact_symbols v ON v.symbol_id=s.id JOIN artifacts a ON a.id=v.artifact_id WHERE s.id>? AND "+match+(workspace==null?"":" AND EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id)")+") WHERE preference=1 ORDER BY id";
-            var result=new ArrayList<Map<String,Object>>();
-            try(var statement=c.prepareStatement(sql)){
-                int i=1;statement.setLong(i++,after);
-                if(substring){String pattern="%"+query.replace("\\","\\\\").replace("%","\\%").replace("_","\\_")+"%";statement.setString(i++,pattern);statement.setString(i++,pattern);}
-                else{statement.setString(i++,name.leaf());statement.setString(i++,query);statement.setString(i++,query);}
-                if(workspace!=null)statement.setString(i,workspace);
-                try(var rows=statement.executeQuery()){while(rows.next()&&result.size()<limit){var value=symbol(rows);if(!kinds.isEmpty()&&!kinds.contains(value.get("kind")))continue;if((substring||name.matches(value)||query.equals(value.get("binary_key")))&&filter.test(value))result.add(value);}}
-            }return result;
-        });}finally{queryNanos.addAndGet(System.nanoTime()-started);}
+    public List<Map<String,Object>> descendants(String path,String workspace,int depth,int limit,long after,Set<String> kinds)throws Exception{
+        long started=System.nanoTime();queryCalls.incrementAndGet();
+        try{return store.descendants(path,workspace,depth,limit,after,kinds);}
+        finally{queryNanos.addAndGet(System.nanoTime()-started);}
     }
     public Map<String,Object> byId(long id)throws Exception{return byId(id,null);}
     public Map<String,Object> byId(long id,String workspace)throws Exception{
-        return database.read(c->{String filter=workspace==null?"":" AND (a.gav LIKE 'jdk:%' OR EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id))";
-            try(var q=c.prepareStatement("SELECT s.*,a.id AS selected_artifact,a.gav,a.path AS artifact_path,a.kind AS artifact_kind,v.data AS variant_data FROM symbols s JOIN artifact_symbols v ON v.symbol_id=s.id JOIN artifacts a ON a.id=v.artifact_id WHERE s.id=?"+filter+" ORDER BY CASE a.kind WHEN 'local' THEN 0 ELSE 1 END,a.id LIMIT 1")){
-                q.setLong(1,id);if(workspace!=null)q.setString(2,workspace);try(var result=q.executeQuery()){return result.next()?symbol(result):null;}
-            }
-        });
+        long started=System.nanoTime();queryCalls.incrementAndGet();
+        try{return store.byId(id,workspace);}
+        finally{queryNanos.addAndGet(System.nanoTime()-started);}
     }
     synchronized long indexJdk(Path file,String module,Path sourceZip)throws Exception{
         var old=artifact(file);if(old!=null&&old.hasDocs()&&old.hasSignatureEdges())return old.id();
@@ -356,5 +346,5 @@ public final class IndexService implements AutoCloseable {
     static Map<String,Object> symbol(ResultSet r)throws Exception{var s=new LinkedHashMap<String,Object>();for(String field:List.of("id","artifact_id","owner_id","flags","line","source_start","source_end","body_start","body_end"))s.put(field,r.getObject(field));for(String field:List.of("scip","kind","name","name_path","signature","erased_descriptor","source_file","doc","fqn","binary_key","class_entry","gav","artifact_path","artifact_kind"))s.put(field,r.getString(field));s.put("parameters",Json.MAPPER.readTree(r.getString("parameters")));s.put("metadata",Json.MAPPER.readTree(r.getString("metadata")));String variant=r.getString("variant_data");if(variant!=null)s.putAll(Json.MAPPER.readValue(variant,new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>(){}));s.put("id",r.getLong("id"));s.put("artifact_id",r.getLong("selected_artifact"));s.put("gav",r.getString("gav"));s.put("artifact_path",r.getString("artifact_path"));s.put("artifact_kind",r.getString("artifact_kind"));return s;}
     public static String namePath(BinaryReader.Symbol s){String owner=s.fqn().replace('$','/');if(s.key().equals(s.fqn()))return owner;if(s.kind().equals("method")||s.kind().equals("ctor")){var type=java.lang.constant.MethodTypeDesc.ofDescriptor(s.descriptor());return owner+"/"+s.name()+"("+String.join(",",Arrays.stream(type.parameterArray()).map(p->p.displayName().replace('$','.')).toList())+")";}return owner+"/"+s.name();}
     public static String scip(String gav,BinaryReader.Symbol s){String[] parts=gav.split(":",3);String prefix="maven "+parts[0]+"/"+parts[1]+" "+parts[2]+" ";String owner=s.fqn().replace('.','/').replace('$','#')+"#";if(s.key().equals(s.fqn()))return prefix+owner;if(s.kind().equals("method")||s.kind().equals("ctor")){var type=java.lang.constant.MethodTypeDesc.ofDescriptor(s.descriptor());return prefix+owner+(s.kind().equals("ctor")?"<init>":s.name())+"("+String.join(",",Arrays.stream(type.parameterArray()).map(Signatures::qualified).toList())+").";}return prefix+owner+s.name()+".";}
-    @Override public void close()throws Exception {closed=true;sourcePublisher.close();scanner.shutdownNow();readers.shutdown();if(!readers.awaitTermination(60,TimeUnit.SECONDS))readers.shutdownNow();database.close();}
+    @Override public void close()throws Exception {closed=true;sourcePublisher.close();scanner.shutdownNow();readers.shutdown();if(!readers.awaitTermination(60,TimeUnit.SECONDS))readers.shutdownNow();store.close();}
 }

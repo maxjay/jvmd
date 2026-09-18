@@ -27,6 +27,151 @@ public final class ArtifactIndexFormat {
             return Hashing.sha256(canonical.getBytes(StandardCharsets.UTF_8));
         }
     }
+    public record Context(String gav,String kind,String path) {
+        public Context { Objects.requireNonNull(gav);Objects.requireNonNull(kind);Objects.requireNonNull(path); }
+        public String externalScip(SymbolRecord symbol){
+            String[] parts=gav.split(":",3);if(parts.length!=3)throw new IllegalArgumentException("gav");
+            String prefix="maven "+parts[0]+"/"+parts[1]+" "+parts[2]+" ";
+            String owner=symbol.fqn().replace('.','/').replace('
+                               String descriptor,int flags,String entry,List<String> parameters,String metadataJson) {
+        public SymbolRecord{parameters=List.copyOf(parameters);}
+    }
+    public record Relationship(int sourceId,String target,String kind) { }
+    public record ArtifactData(Key key,List<SymbolRecord> symbols,List<Relationship> relationships) {
+        public ArtifactData{symbols=List.copyOf(symbols);relationships=List.copyOf(relationships);}
+    }
+
+    private ArtifactIndexFormat(){}
+
+    public static Key key(String binaryHash,String mode){
+        return new Key(binaryHash,FORMAT_VERSION,INDEXER_VERSION,Runtime.version().feature(),mode);
+    }
+
+    public static String documentationKey(Key binary,String sourceSha256){
+        if(sourceSha256==null||!sourceSha256.matches("[0-9a-f]{64}"))throw new IllegalArgumentException("sourceSha256");
+        return Hashing.sha256((binary.cacheKey()+"\0"+sourceSha256).getBytes(StandardCharsets.UTF_8));
+    }
+
+    public static ArtifactData from(BinaryReader.Content content,Key key)throws Exception{
+        var ordered=new ArrayList<>(content.symbols());
+        ordered.sort(Comparator.comparing(BinaryReader.Symbol::key)
+                .thenComparing(BinaryReader.Symbol::kind)
+                .thenComparing(symbol->Objects.toString(symbol.signature(),""))
+                .thenComparing(symbol->Objects.toString(symbol.descriptor(),"")));
+        var ids=new LinkedHashMap<String,Integer>();
+        for(int i=0;i<ordered.size();i++){
+            String symbolKey=ordered.get(i).key();
+            if(ids.putIfAbsent(symbolKey,i)!=null)throw new IllegalArgumentException("Duplicate artifact-local symbol key: "+symbolKey);
+        }
+        var symbols=new ArrayList<SymbolRecord>();
+        for(int i=0;i<ordered.size();i++){
+            var symbol=ordered.get(i);int owner=symbol.owner()==null?-1:ids.getOrDefault(symbol.owner(),-1);
+            symbols.add(new SymbolRecord(i,owner,symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),symbol.signature(),
+                    symbol.descriptor(),symbol.flags(),symbol.entry(),symbol.parameters(),canonicalJson(symbol.metadata())));
+        }
+        var relationships=new LinkedHashSet<Relationship>();
+        for(var edge:content.edges()){
+            Integer source=ids.get(edge.src());if(source==null)throw new IllegalArgumentException("Unknown relationship source: "+edge.src());
+            relationships.add(new Relationship(source,edge.target(),edge.kind()));
+        }
+        var sorted=new ArrayList<>(relationships);
+        sorted.sort(Comparator.comparingInt(Relationship::sourceId).thenComparing(Relationship::target).thenComparing(Relationship::kind));
+        return new ArtifactData(key,List.copyOf(symbols),List.copyOf(sorted));
+    }
+
+    public static byte[] encode(ArtifactData data)throws Exception{
+        if(data.key().formatVersion()!=FORMAT_VERSION)throw new IllegalArgumentException("Unsupported format version: "+data.key().formatVersion());
+        var strings=new TreeSet<String>();
+        for(var symbol:data.symbols()){
+            Collections.addAll(strings,symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),symbol.signature(),symbol.descriptor(),symbol.entry(),symbol.metadataJson());
+            strings.addAll(symbol.parameters());
+        }
+        for(var edge:data.relationships()){strings.add(edge.target());strings.add(edge.kind());}
+        strings.remove(null);
+        var table=new ArrayList<>(strings);var ids=new HashMap<String,Integer>();for(int i=0;i<table.size();i++)ids.put(table.get(i),i);
+
+        var bytes=new ByteArrayOutputStream();
+        try(var out=new DataOutputStream(bytes)){
+            out.writeInt(data.key().formatVersion());writeString(out,data.key().binarySha256());writeString(out,data.key().indexerVersion());
+            out.writeInt(data.key().runtimeFeature());writeString(out,data.key().mode());
+            out.writeInt(table.size());for(String value:table)writeString(out,value);
+            out.writeInt(data.symbols().size());
+            for(var symbol:data.symbols()){
+                out.writeInt(symbol.id());out.writeInt(symbol.ownerId());out.writeInt(symbol.flags());
+                out.writeInt(id(ids,symbol.key()));out.writeInt(id(ids,symbol.fqn()));out.writeInt(id(ids,symbol.name()));out.writeInt(id(ids,symbol.kind()));
+                out.writeInt(id(ids,symbol.signature()));out.writeInt(id(ids,symbol.descriptor()));out.writeInt(id(ids,symbol.entry()));out.writeInt(id(ids,symbol.metadataJson()));
+                out.writeInt(symbol.parameters().size());for(String parameter:symbol.parameters())out.writeInt(id(ids,parameter));
+            }
+            out.writeInt(data.relationships().size());
+            for(var edge:data.relationships()){out.writeInt(edge.sourceId());out.writeInt(id(ids,edge.target()));out.writeInt(id(ids,edge.kind()));}
+        }
+        byte[] body=bytes.toByteArray(),checksum=MessageDigest.getInstance("SHA-256").digest(body);
+        var result=new ByteArrayOutputStream(MAGIC.length+checksum.length+body.length);
+        result.write(MAGIC);result.write(checksum);result.write(body);return result.toByteArray();
+    }
+
+    public static ArtifactData decode(byte[] encoded)throws Exception{
+        if(encoded.length<MAGIC.length+32+4)throw new IOException("Truncated artifact index");
+        for(int i=0;i<MAGIC.length;i++)if(encoded[i]!=MAGIC[i])throw new IOException("Invalid artifact index magic");
+        byte[] expected=Arrays.copyOfRange(encoded,MAGIC.length,MAGIC.length+32);
+        byte[] body=Arrays.copyOfRange(encoded,MAGIC.length+32,encoded.length);
+        if(!MessageDigest.isEqual(expected,MessageDigest.getInstance("SHA-256").digest(body)))throw new IOException("Artifact index checksum mismatch");
+        try(var in=new DataInputStream(new ByteArrayInputStream(body))){
+            int version=in.readInt();if(version!=FORMAT_VERSION)throw new IOException("Unsupported artifact index version: "+version);
+            String binaryHash=readString(in),indexer=readString(in);int runtime=in.readInt();String mode=readString(in);
+            var key=new Key(binaryHash,version,indexer,runtime,mode);
+            int stringCount=bounded(in.readInt(),MAX_STRINGS,"string count");var strings=new ArrayList<String>(stringCount);
+            for(int i=0;i<stringCount;i++)strings.add(readString(in));
+            int symbolCount=bounded(in.readInt(),MAX_SYMBOLS,"symbol count");var symbols=new ArrayList<SymbolRecord>(symbolCount);
+            for(int i=0;i<symbolCount;i++){
+                int id=in.readInt(),owner=in.readInt(),flags=in.readInt();
+                String localKey=value(strings,in.readInt()),fqn=value(strings,in.readInt()),name=value(strings,in.readInt()),kind=value(strings,in.readInt());
+                String signature=valueOrNull(strings,in.readInt()),descriptor=valueOrNull(strings,in.readInt()),entry=valueOrNull(strings,in.readInt()),metadata=value(strings,in.readInt());
+                int parameterCount=bounded(in.readInt(),1_000_000,"parameter count");var parameters=new ArrayList<String>(parameterCount);
+                for(int p=0;p<parameterCount;p++)parameters.add(value(strings,in.readInt()));
+                if(id!=i)throw new IOException("Non-canonical local symbol id");
+                symbols.add(new SymbolRecord(id,owner,localKey,fqn,name,kind,signature,descriptor,flags,entry,List.copyOf(parameters),metadata));
+            }
+            int relationCount=bounded(in.readInt(),MAX_RELATIONSHIPS,"relationship count");var relations=new ArrayList<Relationship>(relationCount);
+            for(int i=0;i<relationCount;i++){
+                int source=in.readInt();if(source<0||source>=symbolCount)throw new IOException("Invalid relationship source");
+                relations.add(new Relationship(source,value(strings,in.readInt()),value(strings,in.readInt())));
+            }
+            if(in.available()!=0)throw new IOException("Trailing artifact index bytes");
+            return new ArtifactData(key,List.copyOf(symbols),List.copyOf(relations));
+        }
+    }
+
+    private static int id(Map<String,Integer> table,String value){return value==null?-1:table.get(value);}
+    private static String value(List<String> table,int id)throws IOException{if(id<0||id>=table.size())throw new IOException("Invalid string id");return table.get(id);}
+    private static String valueOrNull(List<String> table,int id)throws IOException{return id<0?null:value(table,id);}
+    private static int bounded(int value,int max,String label)throws IOException{if(value<0||value>max)throw new IOException("Invalid "+label+": "+value);return value;}
+    private static void writeString(DataOutputStream out,String value)throws IOException{
+        byte[] bytes=value.getBytes(StandardCharsets.UTF_8);if(bytes.length>MAX_STRING_BYTES)throw new IOException("String too large");
+        out.writeInt(bytes.length);out.write(bytes);
+    }
+    private static String readString(DataInputStream in)throws IOException{
+        int length=bounded(in.readInt(),MAX_STRING_BYTES,"string length");byte[] bytes=in.readNBytes(length);
+        if(bytes.length!=length)throw new EOFException("Truncated string");return new String(bytes,StandardCharsets.UTF_8);
+    }
+    private static String canonicalJson(Object value)throws Exception{return Json.MAPPER.writeValueAsString(canonical(value));}
+    private static Object canonical(Object value){
+        if(value instanceof Map<?,?> map){var result=new TreeMap<String,Object>();map.forEach((key,item)->result.put(String.valueOf(key),canonical(item)));return result;}
+        if(value instanceof Collection<?> list)return list.stream().map(ArtifactIndexFormat::canonical).toList();
+        return value;
+    }
+}
+,'#')+"#";
+            if(symbol.key().equals(symbol.fqn()))return prefix+owner;
+            if(symbol.kind().equals("method")||symbol.kind().equals("ctor")){
+                var type=java.lang.constant.MethodTypeDesc.ofDescriptor(symbol.descriptor());
+                return prefix+owner+(symbol.kind().equals("ctor")?"<init>":symbol.name())+"("+
+                        String.join(",",Arrays.stream(type.parameterArray()).map(Signatures::qualified).toList())+").";
+            }
+            return prefix+owner+symbol.name()+".";
+        }
+    }
+
     public record SymbolRecord(int id,int ownerId,String key,String fqn,String name,String kind,String signature,
                                String descriptor,int flags,String entry,List<String> parameters,String metadataJson) {
         public SymbolRecord{parameters=List.copyOf(parameters);}

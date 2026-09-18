@@ -1,7 +1,7 @@
 # Immutable artifact index migration
 
 The implementation is on `indexing/immutable-artifacts`; checkpoint history is in
-[INDEXING-PROGRESS.md](../INDEXING-PROGRESS.md). **The replacement is not complete.**
+[INDEXING-PROGRESS.md](../INDEXING-PROGRESS.md). **Acceptance remains incomplete.**
 The default `rocksdb-sst` backend now implements the complete `IndexStore` contract
 without opening SQLite: binary artifacts, documentation, per-file source facts,
 workspace membership, hierarchy, lazy bytecode references and JDK enrichment.
@@ -16,25 +16,38 @@ an immutable sorted-file prototype on 800,000 pre-parsed facts: comparable media
 publication time, about 83% less final storage and 66% less steady-state write traffic.
 Those numbers compare the two prototypes; they are not SQLite-to-production gains.
 
-The [retained production-path report](performance/2026-09-18-index-migration.json)
+The [isolated production-store report](performance/2026-09-19-rocks-isolated-40000.json)
 contains three fresh JVM runs per backend, three unchanged restarts per backend,
-and one-JAR replacement. The generated repository has 8 JARs, 64 classes and 2,240
-symbols. Both paths include indexing, workspace selection, queries and shutdown;
-the migration also includes Rocks sorting, publication and SQLite writes.
+and one-JAR replacement. The generated fixture has one JAR, 100 classes and 40,000
+symbols. Rocks opens no SQLite database. Sorting, indexes, publication, queries,
+workspace selection and shutdown are included. This measures local commit
+`ae1ab71` (GitHub `9bb689d9`); class hashes are retained. The subsequent return-type
+identity correction does not occur in this fixture, but is not part of that run.
 
-| Fresh-run measurement | SQLite control median (range) | Dual-write migration median (range) |
+| Fresh-run measurement | SQLite median (range) | RocksDB median (range) |
 | --- | --- | --- |
-| Seed | 1.424 s (1.411–1.469) | 2.212 s (2.116–2.481) |
-| Through queries and close | 1.525 s (1.518–1.598) | 2.442 s (2.267–2.735) |
-| Process write traffic | 8.85 MB (8.81–8.86) | 25.24 MB (24.76–25.28) |
-| Query p95 | 2.59 ms (1.97–3.34) | 5.36 ms (3.98–5.53) |
-| Peak process RSS | 140.0 MB (137.5–140.5) | 253.8 MB (252.3–255.6) |
+| Seed | 6.404 s (6.263–6.760) | 9.558 s (9.472–9.579) |
+| Through queries and close | 6.688 s (6.570–7.030) | 10.199 s (10.163–10.268) |
+| Process write traffic | 74.47 MB (74.47–74.48) | 38.98 MB (38.97–39.12) |
+| Query p95 | 18.57 ms (16.58–19.47) | 13.22 ms (13.09–17.01) |
+| Final index size | 38.18 MB | 4.09 MB |
+| Peak process RSS | 270.8 MB (269.0–277.3) | 347.2 MB (335.9–425.1) |
 
-These historical dual-write measurements fail the proposed 3× seed, 50% write reduction and query p95
-acceptance targets. Dual writing has since been removed from the default store;
-changing targets or dropping correctness checks would not solve it. This is a
-small generated fixture on Linux/overlayfs with warm OS caches, not WSL or the
-861-JAR corporate repository. Retain the SQLite rollback until acceptance passes.
+Rocks queries are 28.8% faster here, process writes are 47.7% lower, and the final
+index is 89.3% smaller. Seeding is 49.2% slower and RSS is higher. The proposed 3×
+seed and 50% write-reduction targets have **not** passed. All six unchanged restarts
+perform zero artifact rebuilds/global link passes. A one-JAR replacement rebuilds
+one artifact; Rocks runs no global link pass. Body/API editing and queries during
+ingestion still require the controlled matrix.
+
+The [old dual-write report](performance/2026-09-18-index-migration.json) and
+[first independent small](performance/2026-09-19-rocks-initial-small.json) and
+[40,000-symbol](performance/2026-09-19-rocks-initial-40000.json) experiments are retained
+as historical evidence. The initial large run wrote 583 MB; compact postings and
+compressed sort runs reduced that to 39 MB. Earlier workspace-path final-size
+figures were affected by staging files returning after deletion. The controlled
+follow-up checks that staging is empty after close. These generated Linux samples
+are not the durable WSL or real 861-JAR corporate acceptance run.
 
 ## Run the benchmark
 
@@ -83,18 +96,20 @@ The original baseline revision remains available on `benchmark/index-storage`.
 ## Data and publication
 
 Artifact identity includes full binary SHA-256, record format, indexer identity
-(`jvmd-index-v5`), JDK feature/multi-release selection and indexing mode. GAV/path
+(`jvmd-index-v6`), JDK feature/multi-release selection and indexing mode. GAV/path
 context determines external SCIP identities separately. Typed symbol records,
 binary/SCIP/name/path/substring postings and forward/reverse symbolic references
 are sorted in bounded compressed runs and imported as one SST. Secondary postings
 use blocks of at most 256 delta-encoded local IDs. The manifest is in the same SST
 and contains counts and a checksum over every record and secondary posting.
 Queries load individual records; whole-artifact reconstruction is an oracle operation.
+JVM return-only overload collisions carry the same return-type-disambiguated
+SCIP identity as the SQLite oracle, including direct lookup and pagination.
 Documentation has a separate binary-plus-source-content key and verified member
 checksum. Metadata in a separate Rocks database atomically selects each path's
 binary, code and documentation generations; source facts are stored per file.
 
-Generations are below `state/index-v2/generations/format-1-jdk25-jvmd-index-v5`.
+Generations are below `state/index-v2/generations/format-1-jdk25-jvmd-index-v6`.
 A candidate is checked against its inventory before `active.manifest` switches;
 `previous` retains the earlier format generation. Incomplete SSTs/sort runs never
 have a published manifest. Startup removes staging remnants after obtaining the
@@ -163,6 +178,9 @@ installer continues to use the Linux distribution and its existing checks.
   publication-boundary fault injection, including process termination and disk full.
 - Run unchanged/restart/replacement, body/API edit and concurrent-query matrices
   against the same baseline, retain the real 861-JAR run, and pass the 0.97 corpus floor.
-- Record successful native release-matrix jobs and total heap/native/RSS evidence.
+- Repeat total heap/native/RSS acceptance on the target corpus. The full-store
+  implementation passed all four native platform packaging/AOT/relocation jobs
+  and the Windows installer check in [run 35406797784](https://github.com/maxjay/jvmd/actions/runs/35406797784).
+  WSL-specific filesystem measurements and final-revision CI remain separate gates.
 
 The migration remains a draft until those gates pass.

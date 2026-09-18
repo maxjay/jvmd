@@ -12,7 +12,7 @@ import java.util.*;
  */
 public final class ArtifactIndexFormat {
     public static final int FORMAT_VERSION=1;
-    public static final String INDEXER_VERSION="jvmd-index-v5";
+    public static final String INDEXER_VERSION="jvmd-index-v6";
     private static final byte[] MAGIC="JVIDX001".getBytes(StandardCharsets.US_ASCII);
     private static final int MAX_STRINGS=5_000_000,MAX_SYMBOLS=5_000_000,MAX_RELATIONSHIPS=20_000_000,MAX_STRING_BYTES=32*1024*1024;
 
@@ -61,11 +61,19 @@ public final class ArtifactIndexFormat {
             String symbolKey=ordered.get(i).key();
             if(ids.putIfAbsent(symbolKey,i)!=null)throw new IllegalArgumentException("Duplicate artifact-local symbol key: "+symbolKey);
         }
+        var callableIdentities=new HashMap<String,Integer>();
+        for(var symbol:ordered)if(symbol.kind().equals("method")||symbol.kind().equals("ctor"))
+            callableIdentities.merge(callableIdentity(symbol),1,Integer::sum);
         var symbols=new ArrayList<SymbolRecord>();
         for(int i=0;i<ordered.size();i++){
             var symbol=ordered.get(i);int owner=symbol.owner()==null?-1:ids.getOrDefault(symbol.owner(),-1);
+            Map<String,Object> metadata=symbol.metadata();
+            if((symbol.kind().equals("method")||symbol.kind().equals("ctor"))&&callableIdentities.get(callableIdentity(symbol))>1){
+                metadata=new LinkedHashMap<>(metadata);
+                metadata.put("scip_return_disambiguated",true);
+            }
             symbols.add(new SymbolRecord(i,owner,symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),symbol.signature(),
-                    symbol.descriptor(),symbol.flags(),symbol.entry(),symbol.parameters(),canonicalJson(symbol.metadata())));
+                    symbol.descriptor(),symbol.flags(),symbol.entry(),symbol.parameters(),canonicalJson(metadata)));
         }
         var relationships=new LinkedHashSet<Relationship>();
         for(var edge:relationshipFacts){
@@ -75,6 +83,11 @@ public final class ArtifactIndexFormat {
         var sorted=new ArrayList<>(relationships);
         sorted.sort(Comparator.comparingInt(Relationship::sourceId).thenComparing(Relationship::target).thenComparing(Relationship::kind));
         return new ArtifactData(key,List.copyOf(symbols),List.copyOf(sorted));
+    }
+
+    private static String callableIdentity(BinaryReader.Symbol symbol){
+        String descriptor=symbol.descriptor();
+        return symbol.fqn()+"\0"+symbol.kind()+"\0"+symbol.name()+"\0"+descriptor.substring(0,descriptor.indexOf(')')+1);
     }
 
     public static byte[] encode(ArtifactData data)throws Exception{

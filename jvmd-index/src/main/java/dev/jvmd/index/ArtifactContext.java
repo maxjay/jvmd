@@ -18,8 +18,10 @@ public record ArtifactContext(String gav,String kind,String path) {
         if(symbol.key().equals(symbol.fqn()))return prefix+owner;
         if(symbol.kind().equals("method")||symbol.kind().equals("ctor")){
             var type=MethodTypeDesc.ofDescriptor(symbol.descriptor());
+            String returnIdentity=symbol.metadataJson().contains("\"scip_return_disambiguated\":true")?
+                    ";return="+Signatures.qualified(type.returnType()):"";
             return prefix+owner+(symbol.kind().equals("ctor")?"<init>":symbol.name())+"("+
-                    String.join(",",Arrays.stream(type.parameterArray()).map(Signatures::qualified).toList())+").";
+                    String.join(",",Arrays.stream(type.parameterArray()).map(Signatures::qualified).toList())+returnIdentity+").";
         }
         return prefix+owner+symbol.name()+".";
     }

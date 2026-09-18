@@ -27,7 +27,8 @@ public final class IndexService implements AutoCloseable {
     private final AtomicLong scanned=new AtomicLong(),indexed=new AtomicLong(),reused=new AtomicLong(),hashed=new AtomicLong(),faults=new AtomicLong();
     private final AtomicLong scans=new AtomicLong(),scanNanos=new AtomicLong(),discoveryNanos=new AtomicLong(),hashNanos=new AtomicLong(),
             parseNanos=new AtomicLong(),storageNanos=new AtomicLong(),docsNanos=new AtomicLong(),linkNanos=new AtomicLong(),
-            queryCalls=new AtomicLong(),queryNanos=new AtomicLong(),workspaceResolutionCalls=new AtomicLong(),workspaceResolutionNanos=new AtomicLong();
+            queryCalls=new AtomicLong(),queryNanos=new AtomicLong(),workspaceResolutionCalls=new AtomicLong(),workspaceResolutionNanos=new AtomicLong(),
+            shadowComparisons=new AtomicLong(),shadowMismatches=new AtomicLong(),shadowSkipped=new AtomicLong();
     private final ConcurrentHashMap<String,String> activeArtifacts=new ConcurrentHashMap<>();
     private final ConcurrentLinkedDeque<String> warnings=new ConcurrentLinkedDeque<>();
     private volatile String phase="idle";
@@ -81,6 +82,7 @@ public final class IndexService implements AutoCloseable {
         timings.put("query_calls",queryCalls.get());timings.put("query_ms",millis(queryNanos.get()));
         timings.put("workspace_resolution_calls",workspaceResolutionCalls.get());timings.put("workspace_resolution_ms",millis(workspaceResolutionNanos.get()));
         result.put("timings",Map.copyOf(timings));
+        result.put("shadow_validation",Map.of("comparisons",shadowComparisons.get(),"mismatches",shadowMismatches.get(),"skipped",shadowSkipped.get()));
         return result;
     }
     private static double millis(long nanos){return Math.round(nanos/1000.0)/1000.0;}
@@ -230,7 +232,9 @@ public final class IndexService implements AutoCloseable {
         long started=System.nanoTime();workspaceResolutionCalls.incrementAndGet();
         try{
             var selected=paths.stream().map(item->new IndexStore.WorkspaceEntry(item.path(),item.scope())).toList();
-            return store.loadWorkspace(workspace,selected,dependencies);
+            var warnings=store.loadWorkspace(workspace,selected,dependencies);
+            generationSink.configureWorkspace(workspace,selected,dependencies);
+            return warnings;
         }finally{workspaceResolutionNanos.addAndGet(System.nanoTime()-started);}
     }
     public List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after)throws Exception{
@@ -238,8 +242,20 @@ public final class IndexService implements AutoCloseable {
     }
     public List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds)throws Exception{
         long started=System.nanoTime();queryCalls.incrementAndGet();
-        try{return store.find(query,workspace,substring,limit,after,kinds);}
-        finally{queryNanos.addAndGet(System.nanoTime()-started);}
+        try{
+            var authoritative=store.find(query,workspace,substring,limit,after,kinds);
+            if(workspace==null||after!=0){shadowSkipped.incrementAndGet();return authoritative;}
+            var shadow=generationSink.shadowFind(workspace,query,substring,limit,kinds);
+            if(shadow.isEmpty()){shadowSkipped.incrementAndGet();return authoritative;}
+            shadowComparisons.incrementAndGet();
+            var expected=authoritative.stream().map(value->Objects.toString(value.get("scip"),"")).filter(value->!value.isBlank()).toList();
+            var actual=shadow.get().stream().map(value->Objects.toString(value.get("scip"),"")).filter(value->!value.isBlank()).toList();
+            if(!expected.equals(actual)){
+                shadowMismatches.incrementAndGet();
+                warn("rocks_shadow_mismatch: workspace="+workspace+" query="+query+" expected="+expected.size()+" actual="+actual.size());
+            }
+            return authoritative;
+        }finally{queryNanos.addAndGet(System.nanoTime()-started);}
     }
     public List<Map<String,Object>> descendants(String path,String workspace,int depth,int limit,long after,Set<String> kinds)throws Exception{
         long started=System.nanoTime();queryCalls.incrementAndGet();

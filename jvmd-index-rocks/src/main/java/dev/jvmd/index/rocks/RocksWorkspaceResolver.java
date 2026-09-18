@@ -102,6 +102,38 @@ public final class RocksWorkspaceResolver implements AutoCloseable {
         return List.copyOf(result);
     }
 
+
+    public List<WorkspaceSymbol> findExact(Workspace workspace,String query,int limit)throws Exception{
+        if(limit<=0||query.isBlank())return List.of();
+        var result=new LinkedHashMap<String,WorkspaceSymbol>();
+        var byScip=byScip(workspace,query);byScip.ifPresent(value->result.put(value.scip(),value));
+        for(var value:findName(workspace,query,false,limit))result.putIfAbsent(value.scip(),value);
+        for(var entry:workspace.classpath()){
+            if(result.size()>=limit)break;
+            Integer binary=artifacts.binaryId(entry.artifactCacheKey(),query);
+            if(binary!=null){
+                var data=artifacts.artifact(entry.artifactCacheKey());
+                if(data!=null&&binary>=0&&binary<data.symbols().size()){
+                    var symbol=data.symbols().get(binary);
+                    if(symbol.id()==binary){
+                        var value=workspaceSymbol(entry,symbol);result.putIfAbsent(value.scip(),value);
+                    }
+                }
+            }
+            var ids=artifacts.pathIds(entry.artifactCacheKey(),query,Math.max(limit-result.size(),1));
+            var data=artifacts.artifact(entry.artifactCacheKey());
+            if(data==null)continue;
+            for(int id:ids){
+                if(result.size()>=limit)break;
+                if(id<0||id>=data.symbols().size())continue;
+                var symbol=data.symbols().get(id);
+                if(symbol.id()!=id||!ArtifactContext.namePath(symbol).equals(query))continue;
+                var value=workspaceSymbol(entry,symbol);result.putIfAbsent(value.scip(),value);
+            }
+        }
+        return List.copyOf(result.values()).subList(0,Math.min(limit,result.size()));
+    }
+
     public List<WorkspaceSymbol> findName(Workspace workspace,String query,boolean prefix,int limit)throws Exception{
         if(limit<=0)return List.of();var result=new ArrayList<WorkspaceSymbol>();
         for(var entry:workspace.classpath()){

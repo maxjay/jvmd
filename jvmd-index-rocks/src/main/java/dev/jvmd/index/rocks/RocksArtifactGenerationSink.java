@@ -13,6 +13,8 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
     private final RocksArtifactInventory inventory;
     private final RocksMigrationManager migration;
     private final String candidateGeneration;
+    private final RocksWorkspaceResolver workspaceResolver;
+    private final java.util.concurrent.ConcurrentHashMap<String,RocksWorkspaceResolver.Workspace> workspaces=new java.util.concurrent.ConcurrentHashMap<>();
     private final Semaphore budget;
     private final int totalUnits;
     private final AtomicLong published=new AtomicLong(),reused=new AtomicLong(),waitNanos=new AtomicLong(),validationFailures=new AtomicLong();
@@ -26,6 +28,7 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
         if(maxEstimatedBytes<UNIT)throw new IllegalArgumentException("maxEstimatedBytes must be at least 1 MiB");
         this.repository=new RocksArtifactRepository(root);
         this.inventory=new RocksArtifactInventory(root.resolve("inventory"));
+        this.workspaceResolver=new RocksWorkspaceResolver(root.resolve("workspace-resolution"),repository);
         this.migration=migration;this.candidateGeneration=candidateGeneration;
         this.totalUnits=(int)Math.min(Integer.MAX_VALUE,Math.max(1,(maxEstimatedBytes+UNIT-1)/UNIT));
         this.budget=new Semaphore(totalUnits,true);
@@ -90,10 +93,46 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
         }
     }
 
+
+    @Override public void configureWorkspace(String workspace,List<IndexStore.WorkspaceEntry> paths,List<Map.Entry<String,String>> dependencies)throws Exception{
+        var inventoryByPath=new HashMap<String,RocksArtifactInventory.Entry>();
+        for(var entry:inventory.entries())inventoryByPath.put(Path.of(entry.path()).toAbsolutePath().normalize().toString(),entry);
+        var classpath=new ArrayList<RocksWorkspaceResolver.Entry>();
+        for(var item:paths){
+            String normalized;
+            try{normalized=Path.of(item.path()).toAbsolutePath().normalize().toString();}
+            catch(Exception ignored){continue;}
+            var inventoryEntry=inventoryByPath.get(normalized);if(inventoryEntry==null)continue;
+            if(!repository.contains(inventoryEntry.cacheKey()))continue;
+            var context=new ArtifactContext(inventoryEntry.gav(),inventoryEntry.kind(),inventoryEntry.path());
+            classpath.add(new RocksWorkspaceResolver.Entry(inventoryEntry.cacheKey(),context,item.scope(),"",""));
+        }
+        String fingerprint=dev.jvmd.core.Hashing.sha256(dependencies.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        workspaces.put(workspace,new RocksWorkspaceResolver.Workspace(List.copyOf(classpath),fingerprint));
+    }
+
+    @Override public Optional<List<Map<String,Object>>> shadowFind(String workspace,String query,boolean substring,int limit,Set<String> kinds)throws Exception{
+        var configured=workspaces.get(workspace);if(configured==null)return Optional.empty();
+        List<RocksWorkspaceResolver.WorkspaceSymbol> values=substring
+                ?workspaceResolver.findSubstring(configured,query,limit)
+                :workspaceResolver.findExact(configured,query,limit);
+        var result=new ArrayList<Map<String,Object>>();
+        for(var value:values){
+            if(!kinds.isEmpty()&&!kinds.contains(value.symbol().kind()))continue;
+            var row=new LinkedHashMap<String,Object>();
+            row.put("scip",value.scip());row.put("kind",value.symbol().kind());row.put("name",value.symbol().name());
+            row.put("name_path",value.namePath());row.put("binary_key",value.symbol().key());
+            row.put("gav",value.entry().context().gav());row.put("artifact_path",value.entry().context().path());
+            result.add(Map.copyOf(row));if(result.size()>=limit)break;
+        }
+        return Optional.of(List.copyOf(result));
+    }
+
     @Override public Map<String,Object> status(){
         var result=new LinkedHashMap<String,Object>();
         result.put("backend","rocksdb-sst");result.put("published",published.get());result.put("reused",reused.get());
-        result.put("validation_failures",validationFailures.get());
+        result.put("validation_failures",validationFailures.get());result.put("shadow_workspaces",workspaces.size());
+        result.put("workspace_resolution",workspaceResolver.status());
         result.put("budget_bytes",(long)totalUnits*UNIT);result.put("estimated_bytes_in_flight",(long)unitsInFlight.get()*UNIT);
         result.put("peak_estimated_bytes_in_flight",(long)peakUnits.get()*UNIT);result.put("budget_wait_ms",Math.round(waitNanos.get()/1000.0)/1000.0);
         try{
@@ -113,5 +152,8 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
         return UNIT+facts.symbols().size()*192L+facts.relationships().size()*96L+classReferences.size()*64L;
     }
 
-    @Override public void close(){try{inventory.close();}finally{repository.close();}}
+    @Override public void close(){
+        try{workspaceResolver.close();}
+        finally{try{inventory.close();}finally{repository.close();}}
+    }
 }

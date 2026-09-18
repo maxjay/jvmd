@@ -9,6 +9,8 @@ public interface ArtifactGenerationSink extends AutoCloseable {
     default long beginScan()throws Exception{return 0L;}
     default void observe(long scanGeneration,IndexStore.ArtifactInput input)throws Exception{ }
     default Set<String> completeScan(long scanGeneration)throws Exception{return Set.of();}
+    default void configureWorkspace(String workspace,List<IndexStore.WorkspaceEntry> paths,List<Map.Entry<String,String>> dependencies)throws Exception{ }
+    default Optional<List<Map<String,Object>>> shadowFind(String workspace,String query,boolean substring,int limit,Set<String> kinds)throws Exception{return Optional.empty();}
     default Map<String,Object> status(){return Map.of("backend","none");}
     @Override default void close()throws Exception { }
 

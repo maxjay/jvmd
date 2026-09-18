@@ -78,6 +78,10 @@ public final class SqliteIndexStore implements IndexStore {
         });
     }
 
+    @Override public Map<String,Object> byScip(String scip,String workspace)throws Exception{
+        return database.read(c->{Long id=idByScip(c,scip,workspace);return id==null?null:byIdOn(c,id,workspace);});
+    }
+
     @Override public Map<String,Object> byId(long id,String workspace)throws Exception{
         return database.read(c->{
             String filter=workspace==null?"":" AND (a.gav LIKE 'jdk:%' OR EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id))";

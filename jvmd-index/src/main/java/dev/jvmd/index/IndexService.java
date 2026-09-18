@@ -154,27 +154,6 @@ public final class IndexService implements AutoCloseable {
         long storageStarted=System.nanoTime();store.publishSourceFile(artifact,file,symbols,tier,detached);
         storageNanos.addAndGet(System.nanoTime()-storageStarted);
     }
-    private static void preserveSharedSymbols(Connection c,long artifact)throws Exception{
-        try(var s=c.prepareStatement("UPDATE symbols SET artifact_id=(SELECT min(a.artifact_id) FROM artifact_symbols a WHERE a.symbol_id=symbols.id AND a.artifact_id<>?) WHERE artifact_id=? AND EXISTS(SELECT 1 FROM artifact_symbols a WHERE a.symbol_id=symbols.id AND a.artifact_id<>?)")){
-            s.setLong(1,artifact);s.setLong(2,artifact);s.setLong(3,artifact);s.executeUpdate();
-        }
-    }
-    private long putArtifact(Connection c,Path path,String gav,String kind,String hash,long size,long mtime) throws Exception {
-        // Preserve a content identity shared by multiple paths; remove a replaced path's old identity only when unused.
-        Long old=null;try(var s=c.prepareStatement("SELECT artifact_id FROM artifact_paths WHERE path=?")){s.setString(1,location(path));try(var r=s.executeQuery()){if(r.next())old=r.getLong(1);}}
-        long id;try(var s=c.prepareStatement("INSERT INTO artifacts(gav,kind,sha256,path,size,mtime,indexed_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(sha256) DO NOTHING",Statement.RETURN_GENERATED_KEYS)){s.setString(1,gav);s.setString(2,kind);s.setString(3,hash);s.setString(4,location(path));s.setLong(5,size);s.setLong(6,mtime);s.setLong(7,System.currentTimeMillis());s.executeUpdate();}
-        try(var s=c.prepareStatement("SELECT id FROM artifacts WHERE sha256=?")){s.setString(1,hash);try(var r=s.executeQuery()){r.next();id=r.getLong(1);}}
-        putPath(c,path,id,size,mtime);
-        if(old!=null&&old!=id){
-            try(var copy=c.prepareStatement("INSERT OR IGNORE INTO workspace_artifacts SELECT workspace_id,?,scope FROM workspace_artifacts WHERE artifact_id=?")){copy.setLong(1,id);copy.setLong(2,old);copy.executeUpdate();}
-            boolean unused;try(var q=c.prepareStatement("SELECT count(*) FROM artifact_paths WHERE artifact_id=?")){q.setLong(1,old);try(var r=q.executeQuery()){r.next();unused=r.getLong(1)==0;}}
-            if(unused){preserveSharedSymbols(c,old);try(var q=c.prepareStatement("DELETE FROM artifacts WHERE id=?")){q.setLong(1,old);q.executeUpdate();}}
-        }
-        return id;
-    }
-    private void recordPath(Path p,long id,long size,long mtime)throws Exception{database.write(c->{putPath(c,p,id,size,mtime);return null;});}
-    private static void putPath(Connection c,Path p,long id,long size,long mtime)throws Exception{try(var s=c.prepareStatement("INSERT OR REPLACE INTO artifact_paths VALUES(?,?,?,?)")){s.setString(1,location(p));s.setLong(2,id);s.setLong(3,size);s.setLong(4,mtime);s.executeUpdate();}}
-    private static Map<String,Long> ids(Connection c,long artifact)throws Exception{var ids=new HashMap<String,Long>();try(var s=c.prepareStatement("SELECT s.id,COALESCE(json_extract(a.data,'$.binary_key'),s.binary_key) FROM artifact_symbols a JOIN symbols s ON s.id=a.symbol_id WHERE a.artifact_id=?")){s.setLong(1,artifact);try(var r=s.executeQuery()){while(r.next())ids.put(r.getString(2),r.getLong(1));}}return ids;}
     private static void verifyChecksum(Path path)throws Exception {
         Path checksum=path.resolveSibling(path.getFileName()+".sha1");if(!Files.isRegularFile(checksum))return;
         String expected=Files.readString(checksum).trim().split("\\s+")[0].toLowerCase(Locale.ROOT);

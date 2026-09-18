@@ -18,7 +18,7 @@ Every current-state claim below is `[x]` when a named regression or CI run prove
 - [x] **Phase 7 — Adaptive cold/warm selection (§67).** The coordinator batches when at least 16 files and 25% of a module are stale; smaller changes take the incremental path. Superseded work is rejected at source-generation boundaries.
 - [x] **Phase 8 — Persistent diagnostic cache (§68).** Checksummed immutable snapshot objects and atomic manifests restore unchanged diagnostics across daemon restart. Corrupt or stale state is a cache miss; unsaved dependency state is authoritative.
 - [x] **Phase 9 — High-fidelity Lombok diagnostics (§69).** Saved Lombok sources can use isolated external javac diagnostics and are checked against a real build. Generated-member body/source-position navigation remains unavailable and is explicitly warned.
-- [~] **Phase 10 — Parallel module actors (§70).** Implementation complete; final CI is pending. Each module actor owns a platform thread, Analyzer and CompilerPool. Cold module groups run with a bounded cap of `min(configured, 4)` (production default `min(CPUs/2, 4)`), while detached API fingerprints preserve cross-module conditional invalidation. The phase-10 benchmark compares 1/2/4 actors and records wall clock, actor CPU, peak heap, GC and correctness.
+- [x] **Phase 10 — Parallel module actors (§70).** Each module actor owns a dedicated non-virtual platform thread, `Analyzer` and `CompilerPool`; only detached values cross the actor boundary. Cold module groups run with a bounded cap of `min(configured, 4)` (production default `min(CPUs/2, 4)`). Cross-module API identities preserve conditional invalidation. The 1/2/4-actor benchmark records wall clock, actor CPU, peak heap, GC and correctness, and a separate regression proves body-only versus API-changing invalidation across actor boundaries.
 
 ## Acceptance invariant
 
@@ -94,11 +94,16 @@ The checked-in benchmarks are architectural regression evidence: they prove the 
 - [x] high-fidelity Lombok diagnostics against a real build
 - [x] A→B→A compiler/focused-cache retention
 - [x] asynchronous source-index publication and in-flight dedupe
+- [x] 1/2/4 isolated module actor correctness and resource measurements
+- [x] distinct non-virtual platform thread ownership per module actor
+- [x] cross-module body-only edit keeps dependant cached
+- [x] cross-module API change invalidates/reanalyses dependant
+- [x] concurrent request memo supplier executes exactly once
 
 ## Next actions
 
-1. Get the final checkpoint + corpus CI run green on the hardening/documentation commit.
-2. Review the 1/2/4-actor evidence after CI and keep the bounded production default only if heap/GC remain acceptable.
+1. Let the final checkpoint and corpus actions complete; no more implementation commits are planned.
+2. Review the final CI result. The checked-in 1/2/4 evidence currently supports the bounded automatic actor count: four actors materially reduced wall time without meaningful heap/GC growth.
 3. Once CI is green, this branch is ready for review; do not merge it implicitly.
 
 ## Checkpoint history
@@ -150,7 +155,7 @@ The checked-in benchmarks are architectural regression evidence: they prove the 
 
 - `Dependencies` remains the reverse dependency graph rather than a new `SemanticDependencyGraph`.
 - The existing 32-entry focused cache stays for interactive compiler results; `DiagnosticStore` is separate and per-file.
-- `CompilerPool` thread ownership is unchanged; nothing is parallelized (§29).
+- `CompilerPool` thread ownership is unchanged. Parallelism exists only across isolated module actors; a shared `Analyzer`/`CompilerPool` is never parallelized (§29–§30).
 - Request-level Maven reuse was implemented below `Application.analyzer(...)` through an RPC scope, so existing callers and semantics stay intact — this is why gap 6 is open by choice rather than oversight.
 - `WorkspaceBindings` remains for operations needing a coherent workspace binding graph (§77).
 
@@ -276,3 +281,27 @@ Implementation commit: this checkpoint.
 - Corpus CI timeout is raised from 30 to 90 minutes. Run `35342914541` proved the prior
   cancellation was the 30-minute job timeout: the final log line was
   `The operation was canceled.` at approximately 30 minutes, with no test failure.
+
+
+## 2026-09-18 — Checkpoint 10: Phase 10 hardening and CI hygiene
+
+Implementation/hardening commits: `16c4a859`, `cbbb71ca`, `e6b74336`, `74371d0d`, `f4e8eb61`, `b799c500`, `64e95f1`, plus this documentation checkpoint.
+
+Phase 10 validation:
+- `ParallelModuleDiagnosticsTest` passed on the Phase 4 checkpoint run at `f4e8eb61`.
+- Four independent 64-source modules produced identical diagnostics at actor caps 1, 2 and 4.
+- Cold wall time measured **587.4 / 339.2 / 265.1 ms** for 1 / 2 / 4 actor caps.
+- Warm wall time measured **78.9 / 45.5 / 40.5 ms** with zero additional warm javac queries.
+- Peak heap measured **321.9 / 302.0 / 325.1 MB** and GC collections were **1 / 1 / 1**.
+- Four actors were about **2.2× faster** than the single-actor cap (`0.451×` wall-clock ratio) with essentially unchanged peak heap (`1.010×`).
+- Every configuration used exactly four cold javac batch queries (one per module), zero additional warm javac queries and zero compiler faults.
+- A cross-module regression proves that a body-only API-module edit reanalyses only that source, while a signature/API change invalidates and reanalyses its dependant in another actor.
+- Actor status exposes the owning thread; tests require distinct **non-virtual platform threads**.
+- `RequestScope.memo` now uses a shared per-key future so concurrent actors execute request-stable preparation suppliers exactly once rather than racing duplicate work and deduplicating afterward.
+- `ModuleArchitectureTest` retains the exact module dependency guard and now includes the intentional `java.management` dependency used for Phase 10 CPU/heap/GC observability.
+
+Corpus CI behavior:
+- The old job had `timeout-minutes: 30`, and run `35342914541` reached approximately that limit with no test failure before GitHub reported cancellation.
+- Corpus timeout is now **90 minutes**.
+- Corpus `cancel-in-progress` is now **false**. A running corpus job is no longer killed by a newer commit. GitHub may still discard an older *pending* job when another pending job for the same concurrency group replaces it; that avoids wasting runners and does not interrupt an executing corpus.
+- After this checkpoint no more branch writes are planned until the final actions have completed.

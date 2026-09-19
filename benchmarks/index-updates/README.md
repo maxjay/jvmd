@@ -137,3 +137,26 @@ This runs one fresh 380,000-symbol JFR worker per implementation serially, expor
 allocation/CPU/GC samples, and records commands and hashes. Allocation weights are
 sample estimates, not retained heap. Use unprofiled repetitions for speed claims.
 The `classpaths.json` input must come from a trusted local benchmark run.
+
+## Post-merge allocation and bounded-page investigation
+
+The [post-merge report](../../docs/performance/2026-09-19-compact-grams-and-pages.md)
+compares merged main `dce59413` with compact grams, streaming merge postings and
+ID-based rejection of candidates outside a result page. It includes unchanged
+workloads and the observed full-result query tradeoffs.
+
+`dependencies.py` accepts the same `--baseline`, `--current`, `--java-home`,
+`--dependencies`, `--root` and `--runs` inputs as the query performance harness.
+It indexes the five pinned public dependency JARs themselves and compares a fixed
+query mix after fresh seed and persisted reopen.
+
+`pages.py --benchmark-root /path/to/query-performance-output --java-home /path/to/jdk
+--root /new/output --runs 5 --samples 5` reuses that run's exact compiled classes.
+Each worker opens a private copy of the baseline's one-JAR persisted state,
+compares complete 20-row pages at early/middle positions, and records symbol-read
+counters when available. This prevents fresh-build artifact-ID differences from
+being mistaken for a query correctness difference. Page timing excludes index
+startup and reference-result hashing. Use only trusted local benchmark roots.
+
+Run all timing and profiling processes serially. `profile-seed.py` remains a
+separate diagnostic allocation/CPU measurement, not a latency gate.

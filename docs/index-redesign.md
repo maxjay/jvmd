@@ -1,6 +1,6 @@
 # Immutable artifact index migration
 
-The implementation is on `indexing/immutable-artifacts`; checkpoint history is in
+The immutable artifact migration was merged in PR #5; checkpoint history is in
 [INDEXING-PROGRESS.md](../INDEXING-PROGRESS.md). **Acceptance remains incomplete.**
 The default `rocksdb-sst` backend now implements the complete `IndexStore` contract
 without opening SQLite: binary artifacts, documentation, per-file source facts,
@@ -11,6 +11,15 @@ and platform acceptance remains open. The historical dual-write reports below ar
 not replacement results.
 
 ## Measured decision and current performance
+
+The latest [post-merge performance report](performance/2026-09-19-compact-grams-and-pages.md)
+compares merged main `dce59413` with `c0739d14`. Complete 20-row substring pages fall
+from 1,290 to 7.7 ms in the generated large-JAR fixture by rejecting unusable IDs
+before symbol decoding. Seed medians improve modestly (9.048 to 8.530 s for one
+JAR), with roughly 30% less sampled allocation. Full-result queries and real-JAR
+seeding remain mixed or unchanged; the report retains those results and the
+scope limitations. Formats, source/alias semantics and enriched-ID ranking remain
+compatible. This follow-up is on `perf/compact-grams-merge`.
 
 The latest [seed allocation follow-up](performance/2026-09-19-seed-optimization.md)
 measures production `0c8b5a50` against the already query-optimized Rocks branch.

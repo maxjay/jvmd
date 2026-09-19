@@ -10,6 +10,27 @@ import static org.assertj.core.api.Assertions.*;
 class RocksArtifactRepositoryTest {
     @TempDir Path temp;
 
+    @Test void admittedPublisherDoesNotQueueBehindAWorkerWaitingForItsCapacity()throws Exception{
+        var acquired=new java.util.concurrent.CountDownLatch(1);var publish=new java.util.concurrent.CountDownLatch(1);
+        try(var sink=new RocksArtifactGenerationSink(temp.resolve("fair-admission"),1024*1024)){
+            var executor=java.util.concurrent.Executors.newFixedThreadPool(2);
+            try{
+                var owner=executor.submit(()->{
+                    try(var permit=sink.acquireArtifact(temp.resolve("owner.jar"))){acquired.countDown();publish.await();sink.publish(facts(10,0),Set.of());}
+                    return null;
+                });
+                assertThat(acquired.await(5,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                var waiter=executor.submit(()->{try(var permit=sink.acquireArtifact(temp.resolve("waiter.jar"))){return true;}});
+                long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+                while(((Number)sink.status().get("admission_waiters")).intValue()==0&&System.nanoTime()<deadline)Thread.sleep(1);
+                assertThat(sink.status()).containsEntry("admission_waiters",1);
+                publish.countDown();owner.get(5,java.util.concurrent.TimeUnit.SECONDS);
+                assertThat(waiter.get(5,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                assertThat(sink.status()).containsEntry("estimated_bytes_in_flight",0L).containsEntry("published",1L);
+            }finally{publish.countDown();executor.shutdownNow();assertThat(executor.awaitTermination(5,java.util.concurrent.TimeUnit.SECONDS)).isTrue();}
+        }
+    }
+
     @Test void prefixGramReusePreservesEverySubstringIncludingOwnerBoundariesAndUnicode()throws Exception{
         var symbols=new ArrayList<ArtifactIndexFormat.SymbolRecord>();
         for(String owner:List.of("ABab.Owner","ABab.Owner","other.İType$Nested","Plain")){

@@ -50,6 +50,9 @@ findings rather than silently removing that scenario. Replacement and restart
 queries are checked explicitly. Peak RSS for update workers is a process lifetime
 peak that also includes fixture mutations; use seed workers for isolated RSS comparison.
 
+Scan, workspace-load and query write traffic are recorded separately; end-to-end
+write totals include temporary query files as well as index publication.
+
 Outputs include raw worker JSON/logs, source revisions, compiled class hashes,
 dependency/harness hashes, fixture manifests, operation counters and summaries.
 

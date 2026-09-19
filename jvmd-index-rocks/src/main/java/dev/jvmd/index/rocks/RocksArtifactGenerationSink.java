@@ -77,7 +77,9 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
     @Override public void publish(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{
         int units=artifactPermit.get()?0:(int)Math.min(totalUnits,Math.max(1,(estimatedBytes(facts,classReferences)+UNIT-1)/UNIT));
         long waiting=System.nanoTime();
-        try{budget.acquire(units);}
+        // A fair Semaphore can queue even acquire(0) behind another waiter. An admitted
+        // artifact must publish and release its existing capacity before that waiter proceeds.
+        try{if(units>0)budget.acquire(units);}
         catch(InterruptedException e){Thread.currentThread().interrupt();throw e;}
         waitNanos.addAndGet(System.nanoTime()-waiting);
         int active=unitsInFlight.addAndGet(units);peakUnits.accumulateAndGet(active,Math::max);
@@ -311,6 +313,7 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
                 "directory_writes",workspaceDirectoryWrites.get(),"metadata_writes",workspaceMetadataWrites.get(),"last",lastWorkspaceState));
         result.put("budget_bytes",(long)totalUnits*UNIT);result.put("estimated_bytes_in_flight",(long)unitsInFlight.get()*UNIT);
         result.put("peak_estimated_bytes_in_flight",(long)peakUnits.get()*UNIT);result.put("budget_wait_ms",Math.round(waitNanos.get()/1000.0)/1000.0);
+        result.put("admission_waiters",budget.getQueueLength());
         try{
             result.put("repository",repository.status());
             result.put("inventory_entries",inventory.entries().size());

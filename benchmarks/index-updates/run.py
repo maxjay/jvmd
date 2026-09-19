@@ -64,7 +64,7 @@ def summarize(runs):
     for key, rows in groups.items():
         metrics = {}
         for field in ["scan_ms", "open_and_scan_ms", "workspace_ready_ms", "elapsed_through_close_ms",
-                      "write_bytes", "write_bytes_through_close", "query_p95_ms", "first_query_ms", "all_types_queryable_ms", "type_query_p95_ms",
+                      "write_bytes", "scan_write_bytes", "workspace_write_bytes", "query_write_bytes", "write_bytes_through_close", "query_p95_ms", "first_query_ms", "all_types_queryable_ms", "type_query_p95_ms",
                       "indexed_delta", "hashes_delta", "reused_delta", "cpu_ms"]:
             values = [r[field] for r in rows if field in r]
             if values:

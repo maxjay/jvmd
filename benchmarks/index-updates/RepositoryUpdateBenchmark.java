@@ -81,8 +81,10 @@ public final class RepositoryUpdateBenchmark {
     }
     private static Map<String,Object> measure(IndexService index,String scenario,Map<String,Object> before,long started,long writes,long cpu)throws Exception{
         long scanStarted=System.nanoTime();index.scan();long scanDone=System.nanoTime();
+        long scanWrites=metric("/proc/self/io","write_bytes:");double scanCpuMs=(cpu()-cpu)/1e6;
         var paths=jars().stream().map(path->new IndexService.WorkspaceArtifact(path.toString(),"compile")).toList();
         index.loadWorkspace("benchmark",paths,List.of());long ready=System.nanoTime();
+        long workspaceWrites=metric("/proc/self/io","write_bytes:");
         var types=index.find("Type","benchmark",true,10000,0,Set.of("class"));long allTypesReady=System.nanoTime();
         int expectedTypes=paths.size()*classes;if(types.size()!=expectedTypes)throw new IllegalStateException("Incomplete type index: "+types.size()+" / "+expectedTypes);
         var typeLatency=new ArrayList<Double>();
@@ -103,6 +105,8 @@ public final class RepositoryUpdateBenchmark {
         Collections.sort(typeLatency);result.put("all_types_queryable_ms",(allTypesReady-started)/1e6);result.put("all_types_count",types.size());
         result.put("type_query_p95_ms",typeLatency.get(29));result.put("type_query_p50_ms",typeLatency.get(15));result.put("type_query_results",paths.size());
         result.put("through_queries_ms",(done-started)/1e6);result.put("write_bytes",written-writes);result.put("cpu_ms",cpuMs);
+        result.put("scan_write_bytes",scanWrites-writes);result.put("workspace_write_bytes",workspaceWrites-scanWrites);
+        result.put("query_write_bytes",written-workspaceWrites);result.put("scan_cpu_ms",scanCpuMs);
         result.put("query_p50_ms",latency.get(15));result.put("query_p95_ms",latency.get(29));result.put("query_results",first.size());
         for(String key:List.of("indexed","hashes","reused","faults"))result.put(key+"_delta",number(after,key)-number(before,key));
         result.put("work_delta",numericDelta(before,after));result.put("status",after);

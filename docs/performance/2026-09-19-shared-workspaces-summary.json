@@ -278,7 +278,8 @@
     "platform_ci": "https://github.com/maxjay/jvmd/actions/runs/35465315463",
     "platform_ci_state": "All four native package/AOT/relocation jobs and Windows installer passed",
     "checkpoint_ci": "https://github.com/maxjay/jvmd/actions/runs/35465315484",
-    "checkpoint_ci_state": "Queued behind existing corpus workflow at last check"
+    "checkpoint_ci_state": "The measured-production checkpoint exposed concurrent removal during Application.sourceFiles discovery; a follow-up reuses FileInventory.matching and reruns the unchanged regression gate.",
+    "followup_not_benchmarked": "Application.sourceFiles now tolerates concurrently removed unrelated files. Local timing rerun blocked by environment disconnection."
   },
   "evidence_limitation": "The execution environment disconnected after all runs, checks and the 3,000,744-byte raw-results gzip archive were completed locally, before the bundle and harness could be uploaded. This JSON preserves aggregates observed directly in tool output; it is not a substitute for the unavailable full raw reports. No unseen sample values have been reconstructed."
 }

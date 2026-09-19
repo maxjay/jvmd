@@ -214,7 +214,8 @@ public final class Application implements AutoCloseable {
     private List<Path> sourceFiles(Session session)throws Exception{
         var graph=(Resolution)session.state("resolution");var roots=new LinkedHashSet<Path>();var files=new LinkedHashSet<Path>();
         if(graph==null)roots.addAll(workspace(session).roots());else for(var module:graph.modules()){module.sources().forEach(p->roots.add(Path.of(p)));module.testSources().forEach(p->roots.add(Path.of(p)));}
-        for(Path root:roots)if(Files.isDirectory(root))try(var paths=Files.find(root,Integer.MAX_VALUE,(path,attributes)->path.toString().endsWith(".java")&&(attributes.isRegularFile()||attributes.isSymbolicLink()&&Files.isRegularFile(path)))){paths.sorted().forEach(files::add);}
+        // Background snapshot writers can rename unrelated temporary files during discovery.
+        for(Path root:roots)if(Files.isDirectory(root))files.addAll(FileInventory.matching(root,".java"));
         documents(session).paths().stream().filter(workspace(session)::contains).sorted().forEach(files::add);
         return List.copyOf(files);
     }

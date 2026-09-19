@@ -12,6 +12,15 @@ import static org.assertj.core.api.Assertions.*;
 @Tag("phase-4")
 class ReleasePlatformReuseTest {
     @TempDir Path root;
+    @Test void aCheckedCallbackFailureDiscardsItsReleasePlatform()throws Exception{
+        Path file=root.resolve("Example.java");String text="class Example {}";Files.writeString(file,text);
+        try(var pool=new CompilerPool()){
+            pool.configure("example","25",List.of(),List.of(root),null,512L*1024*1024);
+            assertThatThrownBy(()->pool.query(file,text,2,(task,units,tier)->{throw new java.io.IOException("callback failure");})).isInstanceOf(java.io.IOException.class);
+            for(int i=0;i<2;i++)assertThat(pool.query(file,text,2,(task,units,tier)->units.size()).warnings()).isEmpty();
+            assertThat(pool.status()).containsEntry("faults",0L).containsEntry("release_platform_initializations",2L).containsEntry("release_platform_reuses",1L);
+        }
+    }
     @Test void reusedPlatformsAgreeWithFreshJavacAcrossReleasesAndSourceChanges()throws Exception{
         Path file=root.resolve("Example.java");
         try(var pool=new CompilerPool()){

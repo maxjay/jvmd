@@ -23,6 +23,7 @@ public final class CompilerPool implements AutoCloseable {
     public CompilerPool(){this(()->java.lang.management.ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed());}
     public CompilerPool(java.util.function.LongSupplier heapUsage){this.heapUsage=heapUsage;}
     private JavacTaskPool pool=new JavacTaskPool(1);
+    private final ReleasePlatformCache releasePlatform=new ReleasePlatformCache();
     private IndexedFileManager manager;
     private String generation,release;
     private List<String> compilerOptions=List.of();
@@ -39,6 +40,7 @@ public final class CompilerPool implements AutoCloseable {
         try{
             this.budget=Math.max(1,budget);
             if(Objects.equals(this.generation,generation)&&Objects.equals(this.release,release)&&this.compilerOptions.equals(options)&&manager!=null)return;
+            releasePlatform.close();
             if(manager!=null){manager.close();recycles++;}
             this.generation=generation;this.release=release;this.compilerOptions=List.copyOf(options);pool=new JavacTaskPool(1);baseline=heap();validatedRequestId=-1;
             manager=new IndexedFileManager(ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8),classpath,sources,index,Math.min(32L*1024*1024,Math.max(1024*1024,budget/8)));
@@ -85,7 +87,9 @@ public final class CompilerPool implements AutoCloseable {
                     recycle();classpathValidations++;manager.validateClasspath();
                 }
             }finally{classpathValidationNanos+=System.nanoTime()-validationStarted;}
+            releasePlatform.prepare(options);
             T value=pool.getTask(new java.io.StringWriter(),manager,diagnostics,options,null,sources.stream().map(input->manager.source(input.file(),input.text())).toList(),task->{
+                releasePlatform.capture(((JavacTaskImpl)task).getContext(),options);
                 var units=new ArrayList<CompilationUnitTree>();var parsed=new ArrayList<CompilationUnitTree>();
                 task.addTaskListener(new com.sun.source.util.TaskListener(){
                     @Override public void finished(com.sun.source.util.TaskEvent event){
@@ -127,7 +131,7 @@ public final class CompilerPool implements AutoCloseable {
     }
     private static final class QueryFailure extends RuntimeException {QueryFailure(Exception cause){super(cause);}}
     private long heap(){return heapUsage.getAsLong();}
-    public void recycle(){checkThread();pool=new JavacTaskPool(1);if(manager!=null)manager.invalidate();baseline=heap();recycles++;validatedRequestId=-1;}
+    public void recycle(){checkThread();releasePlatform.close();pool=new JavacTaskPool(1);if(manager!=null)manager.invalidate();baseline=heap();recycles++;validatedRequestId=-1;}
     /** JavacTaskPool clears source symbols after each task; refresh source discovery without dropping binary state. */
     public void sourcesChanged(){checkThread();if(manager!=null){manager.sourcesChanged();refreshSourceModules();}validatedRequestId=-1;}
     private void refreshSourceModules(){
@@ -141,8 +145,9 @@ public final class CompilerPool implements AutoCloseable {
         status.put("queries",queries);status.put("batch_queries",batchQueries);status.put("batch_files",batchFiles);status.put("query_ms",nanosToMillis(queryNanos));
         status.put("configure_calls",configureCalls);status.put("configure_ms",nanosToMillis(configureNanos));
         status.put("classpath_validations",classpathValidations);status.put("classpath_validation_ms",nanosToMillis(classpathValidationNanos));
+        status.put("release_platform_initializations",releasePlatform.initializations());status.put("release_platform_reuses",releasePlatform.reuses());
         status.put("recycles",recycles);status.put("faults",faults);status.put("heap_growth_bytes",Math.max(0,heap()-baseline));status.put("heap_budget_bytes",budget);if(manager!=null)status.putAll(manager.status());var output=new java.io.ByteArrayOutputStream();pool.printStatistics(new java.io.PrintStream(output));status.put("pool_statistics",output.toString(java.nio.charset.StandardCharsets.UTF_8));return status;
     }
     private static double nanosToMillis(long nanos){return Math.round(nanos/1000.0)/1000.0;}
-    @Override public void close()throws Exception{checkThread();if(manager!=null)manager.close();pool=new JavacTaskPool(1);validatedRequestId=-1;}
+    @Override public void close()throws Exception{checkThread();releasePlatform.close();if(manager!=null)manager.close();pool=new JavacTaskPool(1);validatedRequestId=-1;}
 }

@@ -41,7 +41,7 @@ def main():
                     elif server=='jvmd':client.call('jvmd/openWorkspace',{'root':str(workspace)})
                     if i==0 or server=='jvmd':
                         client.call('initialize',{'processId':os.getpid(),'rootUri':workspace.as_uri(),'workspaceFolders':[{'uri':workspace.as_uri(),'name':workspace.name}],
-                                                  'capabilities':CAPABILITIES,'initializationOptions':{'settings':SETTINGS}})
+                                                  'capabilities':CAPABILITIES,'initializationOptions':{'settings':SETTINGS,'extendedClientCapabilities':{'classFileContentsSupport':True}}})
                         client.notify('initialized');client.notify('workspace/didChangeConfiguration',{'settings':SETTINGS})
                     else:client.notify('workspace/didChangeWorkspaceFolders',{'event':{'added':[{'uri':workspace.as_uri(),'name':workspace.name}],'removed':[]}})
                     if server!='jvmd':

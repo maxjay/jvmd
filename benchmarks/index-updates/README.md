@@ -1,5 +1,9 @@
 # Main, Maven updates, source Merkle state and JDTLS
 
+The [2026-09-19 comparison and raw reports](../../docs/performance/2026-09-19-final-comparison.md)
+record three repetitions against actual main and pinned JDTLS, including the
+memory/query tradeoffs and the distinct source-Merkle experiment.
+
 These are distinct measurements. Maven discovery uses `IndexService.scan()` and
 the artifact inventory; it does not call `RocksWorkspaceState`. Source Merkle
 updates are measured separately against full source reconciliation. No Maven

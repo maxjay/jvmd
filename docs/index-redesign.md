@@ -6,17 +6,32 @@ The default `rocksdb-sst` backend now implements the complete `IndexStore` contr
 without opening SQLite: binary artifacts, documentation, per-file source facts,
 workspace membership, hierarchy, lazy bytecode references and JDK enrichment.
 SQLite remains an explicitly selected comparison/rollback backend. Deterministic
-integration fixtures pass; the full performance/corpus/platform acceptance gate
-is still open. The historical dual-write reports below are not replacement results.
+integration fixtures and the corrected full checkpoint job pass; broader performance
+and platform acceptance remains open. The historical dual-write reports below are
+not replacement results.
 
 ## Measured decision and current performance
+
+The latest [actual-main, Maven-update, source-Merkle and JDTLS comparison](performance/2026-09-19-final-comparison.md)
+uses main `e651e9f8` and Rocks `cd4e703a`, with three repetitions on the same
+AMD EPYC machine. Fresh open-and-scan medians are 33.481/9.722 s for one JAR
+and 25.586/3.236 s for 128 JARs (main/Rocks). These generated samples exceed
+the proposed 3x seed target; they do not establish the real-repository target.
+Replacing one release JAR takes 1,324/214 ms. Maven gains come from artifact
+inventory/reuse and avoiding global relinking, not from source Merkle roots.
+The report includes higher Rocks RSS in this run, separate scan/query writes,
+JDTLS type-readiness results and a main deletion-correctness finding.
+
+The measurements below are earlier comparisons against this branch's selected
+SQLite backend on a different Intel host. Retain them as optimization history;
+do not combine their absolute timings with the actual-main experiment.
 
 The separate `benchmark/index-storage` branch selected Rocks external SSTs over
 an immutable sorted-file prototype on 800,000 pre-parsed facts: comparable median
 publication time, about 83% less final storage and 66% less steady-state write traffic.
 Those numbers compare the two prototypes; they are not SQLite-to-production gains.
 
-The final full-provider reports for [40,000 symbols](performance/2026-09-19-rocks-final-40000.json)
+The earlier full-provider reports for [40,000 symbols](performance/2026-09-19-rocks-final-40000.json)
 and [380,000 symbols](performance/2026-09-19-rocks-final-380000.json) include three
 fresh JVM runs, three unchanged restarts per backend and one-JAR replacement. The
 large generated fixture has one JAR and 950 classes. Measurements include production
@@ -34,7 +49,7 @@ compiled implementation hashes retained.
 | Peak process RSS | 960.9 MB (959.4–1055.7) | 899.2 MB (859.6–925.7) |
 
 This is **2.75x faster seeding and 87.5% fewer writes**; elapsed time through queries
-and close improves 2.70x. The proposed 3x seed target remains open. First-query
+and close improves 2.70x. That experiment did not meet the proposed 3x seed target. First-query
 ranges overlap (SQLite 119–177 ms, Rocks 116–159 ms); no first-query improvement is
 claimed. All six unchanged restarts perform zero artifact rebuilds/global links.
 A one-JAR replacement takes SQLite/Rocks 78.65/19.41 s, rebuilding exactly one
@@ -234,7 +249,14 @@ installer continues to use the Linux distribution and its existing checks.
   [run 35410294089](https://github.com/maxjay/jvmd/actions/runs/35410294089).
   The earlier full checkpoint/corpus run on `aafafc53` also
   [passed](https://github.com/maxjay/jvmd/actions/runs/35403345660), including a
-  106,407/106,515 identifier sweep (99.8986%). The optimized code still needs its
-  own checkpoint/corpus result. WSL-specific filesystem measurements remain open.
+  106,407/106,515 identifier sweep (99.8986%). Optimized code `5325806e`
+  subsequently passed the corpus job in
+  [run 35410771797](https://github.com/maxjay/jvmd/actions/runs/35410771797).
+  The admission fix `cd4e703a` passed the complete checkpoint job in
+  [run 35442230037](https://github.com/maxjay/jvmd/actions/runs/35442230037)
+  and all four native packaging jobs plus the Windows installer in
+  [run 35442229949](https://github.com/maxjay/jvmd/actions/runs/35442229949).
+  Its serialized corpus rerun is pending. WSL-specific filesystem measurements remain open.
 
-The migration remains a draft until those gates pass.
+The PR is ready for review at the user's request. The remaining acceptance items
+above stay open; review readiness does not assert that those measurements passed.

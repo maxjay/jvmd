@@ -275,11 +275,12 @@
   "validation": {
     "focused_tests": 21,
     "focused_tests_passed": 21,
-    "platform_ci": "https://github.com/maxjay/jvmd/actions/runs/35465315463",
+    "platform_ci": "https://github.com/maxjay/jvmd/actions/runs/35466342198",
     "platform_ci_state": "All four native package/AOT/relocation jobs and Windows installer passed",
-    "checkpoint_ci": "https://github.com/maxjay/jvmd/actions/runs/35465315484",
-    "checkpoint_ci_state": "The measured-production checkpoint exposed concurrent removal during Application.sourceFiles discovery; a follow-up reuses FileInventory.matching and reruns the unchanged regression gate.",
-    "followup_not_benchmarked": "Application.sourceFiles now tolerates concurrently removed unrelated files. Local timing rerun blocked by environment disconnection."
+    "checkpoint_ci": "https://github.com/maxjay/jvmd/actions/runs/35466342195",
+    "checkpoint_ci_state": "Checkpoint job completed successfully, including compiler gate; separate corpus job pending at final validation.",
+    "followup_not_benchmarked": "Application.sourceFiles now tolerates concurrently removed unrelated files. Local timing rerun blocked by environment disconnection.",
+    "source_discovery_fix": "ad8181acd8e86264c430609b083612f322c2672a"
   },
   "evidence_limitation": "The execution environment disconnected after all runs, checks and the 3,000,744-byte raw-results gzip archive were completed locally, before the bundle and harness could be uploaded. This JSON preserves aggregates observed directly in tool output; it is not a substitute for the unavailable full raw reports. No unseen sample values have been reconstructed."
 }

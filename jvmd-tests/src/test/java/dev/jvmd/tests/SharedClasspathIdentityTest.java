@@ -12,11 +12,11 @@ import static org.assertj.core.api.Assertions.*;
 class SharedClasspathIdentityTest {
     @TempDir Path root;
     @Test void independentWorkspacesShareJarHashesAndStillDetectReplacement()throws Exception{
-        Path jar=IndexFixtures.jar(root.resolve("repository"),"api","package lib; public class Api { public int value(){return 1;} }",true);
+        Path jar=IndexFixtures.jar(root.resolve("repository"),"api","package lib; public class Sample { public int value(){return 1;} }",true);
         var shared=new FileStateRegistry();
         try(var first=new Analyzer(shared);var second=new Analyzer(shared)){
             Path one=Files.createDirectories(root.resolve("one")),two=Files.createDirectories(root.resolve("two"));
-            String text="class Use { int call(){return new lib.Api().value();} }";
+            String text="class Use { int call(){return new lib.Sample().value();} }";
             Path a=one.resolve("Use.java"),b=two.resolve("Use.java");Files.writeString(a,text);Files.writeString(b,text);
             first.configure(new Analyzer.Context("test:one:1","25",List.of(jar),List.of(one),"one",Map.of()),null,256L*1024*1024);
             second.configure(new Analyzer.Context("test:two:1","25",List.of(jar),List.of(two),"two",Map.of()),null,256L*1024*1024);
@@ -24,7 +24,7 @@ class SharedClasspathIdentityTest {
             assertThat(second.bindings(b,text,null).diagnostics()).isEmpty();
             if(Files.getFileStore(jar).supportsFileAttributeView("unix"))assertThat(shared.status()).containsEntry("hashes",1L).containsEntry("bytes_hashed",Files.size(jar));
             var modified=Files.getLastModifiedTime(jar);
-            Path changed=IndexFixtures.jar(root.resolve("replacement"),"api","package lib; public class Api { public int other(){return 1;} }",true);
+            Path changed=IndexFixtures.jar(root.resolve("replacement"),"api","package lib; public class Sample { public int other(){return 1;} }",true);
             Files.copy(changed,jar,StandardCopyOption.REPLACE_EXISTING);Files.setLastModifiedTime(jar,modified);
             assertThat(first.bindings(a,text,null).diagnostics()).anyMatch(d->d.code().contains("cant.resolve"));
             assertThat(second.bindings(b,text,null).diagnostics()).anyMatch(d->d.code().contains("cant.resolve"));

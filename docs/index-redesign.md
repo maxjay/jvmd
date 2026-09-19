@@ -100,7 +100,10 @@ Artifact identity includes full binary SHA-256, record format, indexer identity
 context determines external SCIP identities separately. Typed symbol records,
 binary/SCIP/name/path/substring postings and forward/reverse symbolic references
 are sorted in bounded compressed runs and imported as one SST. Secondary postings
-use blocks of at most 256 delta-encoded local IDs. The manifest is in the same SST
+use blocks of at most 256 delta-encoded local IDs, including temporary runs.
+Substring IDs accumulate into bounded blocks before sorting. Merge passes copy
+disjoint ranges intact and expand overlapping ranges while preserving ordering
+and duplicate detection. The manifest is in the same SST
 and contains counts and a checksum over every record and secondary posting.
 Queries load individual records; whole-artifact reconstruction is an oracle operation.
 JVM return-only overload collisions carry the same return-type-disambiguated
@@ -127,7 +130,7 @@ conservative until broader reader-pin/failure-injection acceptance is complete.
 | `jvmd.index.read.backend` | `shadow` | Legacy SQLite comparison setting; the Rocks store always serves its own reads |
 | `jvmd.index.generation_budget_mb` | heap-derived, 8–128 MiB | Weighted admission estimate held from parsing through publication |
 | `jvmd.index.native_budget_mb` | 64 MiB | Shared strict block cache and write-buffer accounting across six Rocks databases |
-| `jvmd.index.sort_buffer_bytes` | 4 MiB | Per-builder sorted-run buffer; minimum 64 KiB; a single larger record is processed alone |
+| `jvmd.index.sort_buffer_bytes` | 4 MiB | Per-builder sort and gram-accumulator budget; minimum 64 KiB; a single larger record is processed alone |
 | `jvmd.index.scan.initial_delay_seconds` | 2 | Delay before the first repository crawl |
 
 Native cache accounting is not total process memory. Heap models, sort buffers,
@@ -137,7 +140,11 @@ there is no claim that their actual heap model is bounded by that estimate.
 
 `daemon.status` reports active artifact operations, overlapping worker durations,
 scan elapsed time, SQL queue/execution times and actual global `link_passes`.
-`generation_sink.repository` adds sort spill/peak bytes, SST bytes, pending/running
+`generation_sink.repository` adds `record_prepare_ms`, `sort_spill_ms`,
+`sort_merge_and_sst_ms`, `file_sync_ms`, `sst_ingest_ms` and
+`publication_verify_ms`. These are cumulative worker durations; they can overlap
+across parallel artifacts. It also reports logical gram occurrences, compact
+posting blocks, sorter input/run records, sort spill/peak bytes, SST bytes, pending/running
 compactions, memtable/table-reader memory and write stalls. `native_memory` reports
 shared cache budget/use/pins. `shadow_validation` records comparisons/mismatches.
 The production Rocks store does not fall back to SQLite. Missing membership is

@@ -28,6 +28,20 @@ class RocksArtifactRepositoryTest {
         try(var files=Files.list(root.resolve("staging"))){assertThat(files.toList()).isEmpty();}
     }
 
+    @Test void overlappingPackedRunsMergeInOrderAcrossMultiplePasses()throws Exception{
+        String prior=System.getProperty("jvmd.index.sort_buffer_bytes");System.setProperty("jvmd.index.sort_buffer_bytes","65536");
+        try{
+            var original=facts(5000,0);var shuffled=new ArrayList<>(original.symbols());Collections.shuffle(shuffled,new Random(17));
+            var data=new ArtifactIndexFormat.ArtifactData(original.key(),shuffled,List.of());String key=data.key().cacheKey();
+            try(var store=new RocksArtifactRepository(temp.resolve("interleaved"))){
+                store.publish(data,Set.of());assertThat(store.verify(key)).isTrue();
+                assertThat(store.substringIds(key,"method",6000)).containsExactlyElementsOf(java.util.stream.IntStream.range(0,5000).boxed().toList());
+                assertThat(store.select(key,"8|gram|met|",254,4,s->s.id()%2==0)).extracting(ArtifactIndexFormat.SymbolRecord::id).containsExactly(256,258,260,262);
+                assertThat(((Number)store.status().get("sort_peak_bytes")).longValue()).isLessThanOrEqualTo(65536L);
+            }
+        }finally{if(prior==null)System.clearProperty("jvmd.index.sort_buffer_bytes");else System.setProperty("jvmd.index.sort_buffer_bytes",prior);}
+    }
+
     @Test void atomicallyPublishesAndReusesImmutableGeneration()throws Exception{
         var data=facts(5000,10000);
         String cacheKey=data.key().cacheKey();

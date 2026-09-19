@@ -10,10 +10,9 @@ final class GramPostings {
     private static final class Block {final int[] ids=new int[256];int size;}
     private final LinkedHashMap<String,Block> blocks=new LinkedHashMap<>(16,.75f,true);
     private final SstSorter sorter;
-    private final String namespace;
     private final long budget;
     private long peakBytes,occurrences,flushed;
-    GramPostings(SstSorter sorter,String namespace,long budget){this.sorter=sorter;this.namespace=namespace;this.budget=budget;}
+    GramPostings(SstSorter sorter,long budget){this.sorter=sorter;this.budget=budget;}
     void add(String gram,int id)throws Exception{
         occurrences++;
         var block=blocks.get(gram);
@@ -33,7 +32,7 @@ final class GramPostings {
             do{int part=delta&127;delta>>>=7;encoded.write(part|(delta==0?0:128));}while(delta!=0);
         }
         String last=Integer.toHexString(previous);
-        sorter.add((namespace+"|8|gram|"+gram+"|"+"0".repeat(8-last.length())+last).getBytes(StandardCharsets.UTF_8),encoded.toByteArray());
+        sorter.add(("8|gram|"+gram+"|"+"0".repeat(8-last.length())+last).getBytes(StandardCharsets.UTF_8),encoded.toByteArray());
         flushed++;block.size=0;
     }
     long peakBytes(){return peakBytes;}

@@ -117,11 +117,11 @@ public final class RocksArtifactRepository implements AutoCloseable {
                 if(verifyDocumentation(docsKey,binaryCacheKey,sourceKey.binarySha256()))return docsKey;
                 Path sst=staging.resolve(docsKey+"-"+UUID.randomUUID()+".docs.sst.tmp");
                 try{
-                    try(var entries=new SstSorter(staging,sortBufferBytes)){
+                    try(var entries=new SstSorter(staging,sortBufferBytes,docsKey)){
                     String manifest="kind=documentation\nbinary="+binaryCacheKey+"\nsource_sha="+sourceKey.binarySha256()+
                             "\nmembers="+members.size()+"\nunmatched="+unmatchedMembers+"\n";
                     for(var entry:new TreeMap<>(members).entrySet())
-                        entries.add(key(docsKey,"9|member|"+entry.getKey()),Json.MAPPER.writeValueAsBytes(entry.getValue()));
+                        entries.add(relativeKey("9|member|"+entry.getKey()),Json.MAPPER.writeValueAsBytes(entry.getValue()));
                     try(var env=new EnvOptions();var writer=new SstFileWriter(env,options)){
                         writer.open(sst.toString());String checksum=entries.writeTo(writer);
                         writer.put(key(docsKey,"z|manifest"),(manifest+"sha256="+checksum+"\n").getBytes(StandardCharsets.UTF_8));writer.finish();
@@ -375,8 +375,8 @@ public final class RocksArtifactRepository implements AutoCloseable {
     private long writeSst(Path path,String cacheKey,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{
         long preparationStarted=System.nanoTime();
         long gramBudget=sortBufferBytes>=262144?Math.min(1024*1024,sortBufferBytes/4):0;
-        try(var entries=new SstSorter(staging,sortBufferBytes-gramBudget)){
-        var gramsIndex=gramBudget==0?null:new GramPostings(entries,cacheKey,gramBudget);
+        try(var entries=new SstSorter(staging,sortBufferBytes-gramBudget,cacheKey)){
+        var gramsIndex=gramBudget==0?null:new GramPostings(entries,gramBudget);
         List<ArtifactIndexFormat.SymbolRecord> symbols=facts.symbols();
         for(int i=1;i<symbols.size();i++)if(symbols.get(i-1).id()>=symbols.get(i).id()){
             symbols=new ArrayList<>(symbols);symbols.sort(Comparator.comparingInt(ArtifactIndexFormat.SymbolRecord::id));break;
@@ -386,15 +386,16 @@ public final class RocksArtifactRepository implements AutoCloseable {
 
         for(var symbol:symbols){
             if(symbol.id()!=previousId+1||symbol.ownerId()>=symbols.size()||symbol.ownerId()<-1)throw new IOException("Invalid artifact symbol ID or owner");previousId=symbol.id();
-            if(TYPES.contains(symbol.kind()))entries.add(key(cacheKey,"0|type|"+symbol.fqn()+"|"+hex8(symbol.id())),EMPTY);
+            String symbolId=hex8(symbol.id());
+            if(TYPES.contains(symbol.kind()))entries.add(relativeKey("0|type|"+symbol.fqn()+"|"+symbolId),EMPTY);
             byte[] encoded=ArtifactIndexFormat.encodeSymbol(symbol);
             if(!ArtifactIndexFormat.validateSymbol(encoded,symbol.id(),symbols.size()))throw new IOException("Invalid artifact symbol");
-            entries.add(key(cacheKey,"1|symbol|"+hex8(symbol.id())),encoded);
-            entries.add(key(cacheKey,"2|binary|"+symbol.key()),intBytes(symbol.id()));
-            entries.add(key(cacheKey,"2|scip|"+scipSuffix(symbol)+"|"+hex8(symbol.id())),EMPTY);
-            entries.add(key(cacheKey,"3|name|"+symbol.name()+"|"+hex8(symbol.id())),EMPTY);
+            entries.add(relativeKey("1|symbol|"+symbolId),encoded);
+            entries.add(relativeKey("2|binary|"+symbol.key()),intBytes(symbol.id()));
+            entries.add(relativeKey("2|scip|"+scipSuffix(symbol)+"|"+symbolId),EMPTY);
+            entries.add(relativeKey("3|name|"+symbol.name()+"|"+symbolId),EMPTY);
             String namePath=ArtifactContext.namePath(symbol);
-            entries.add(key(cacheKey,"7|path|"+namePath+"|"+hex8(symbol.id())),EMPTY);
+            entries.add(relativeKey("7|path|"+namePath+"|"+symbolId),EMPTY);
 
             var grams=new HashSet<String>();
             String name=symbol.name().toLowerCase(Locale.ROOT);
@@ -404,18 +405,18 @@ public final class RocksArtifactRepository implements AutoCloseable {
             // two preceding characters in the tail so every boundary-crossing trigram survives.
             if(!prefix.equals(lastPrefix)){prefixGrams=new HashSet<>();addGrams(prefixGrams,prefix);lastPrefix=prefix;}
             addGrams(grams,pathValue.substring(Math.max(0,boundary-2)));if(!pathValue.contains(name))addGrams(grams,name);
-            for(String gram:prefixGrams)addGram(entries,gramsIndex,cacheKey,gram,symbol.id());
-            for(String gram:grams)if(!prefixGrams.contains(gram))addGram(entries,gramsIndex,cacheKey,gram,symbol.id());
+            for(String gram:prefixGrams)addGram(entries,gramsIndex,gram,symbol.id());
+            for(String gram:grams)if(!prefixGrams.contains(gram))addGram(entries,gramsIndex,gram,symbol.id());
         }
         if(gramsIndex!=null)gramsIndex.finish();
 
         for(int ordinal=0;ordinal<facts.relationships().size();ordinal++){
             var edge=facts.relationships().get(ordinal);
             if(edge.sourceId()<0||edge.sourceId()>=symbols.size()||edge.target()==null||edge.kind()==null)throw new IOException("Invalid artifact relationship");
-            entries.add(key(cacheKey,"4|out|"+hex8(edge.sourceId())+"|"+edge.target()+"|"+edge.kind()),intBytes(ordinal));
-            entries.add(key(cacheKey,"5|reverse|"+edge.target()+"|"+edge.kind()+"|"+hex8(edge.sourceId())),EMPTY);
+            entries.add(relativeKey("4|out|"+hex8(edge.sourceId())+"|"+edge.target()+"|"+edge.kind()),intBytes(ordinal));
+            entries.add(relativeKey("5|reverse|"+edge.target()+"|"+edge.kind()+"|"+hex8(edge.sourceId())),EMPTY);
         }
-        for(String reference:classReferences)entries.add(key(cacheKey,"6|class|"+reference),EMPTY);
+        for(String reference:classReferences)entries.add(relativeKey("6|class|"+reference),EMPTY);
 
         prepareNanos.addAndGet(System.nanoTime()-preparationStarted-entries.spillNanos());
         long writeStarted=System.nanoTime(),previousSpill=entries.spillNanos();
@@ -459,8 +460,8 @@ public final class RocksArtifactRepository implements AutoCloseable {
         }
     }
 
-    private static void addGram(SstSorter entries,GramPostings index,String cacheKey,String gram,int id)throws Exception{
-        if(index!=null)index.add(gram,id);else entries.add(key(cacheKey,"8|gram|"+gram+"|"+hex8(id)),EMPTY);
+    private static void addGram(SstSorter entries,GramPostings index,String gram,int id)throws Exception{
+        if(index!=null)index.add(gram,id);else entries.add(relativeKey("8|gram|"+gram+"|"+hex8(id)),EMPTY);
     }
 
     private static byte[] manifest(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences,String checksum){
@@ -471,6 +472,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
         return value.getBytes(StandardCharsets.UTF_8);
     }
 
+    private static byte[] relativeKey(String suffix){return suffix.getBytes(StandardCharsets.UTF_8);}
     private static byte[] key(String cacheKey,String suffix){return (cacheKey+"|"+suffix).getBytes(StandardCharsets.UTF_8);}
     private static byte[] intBytes(int value){return ByteBuffer.allocate(Integer.BYTES).putInt(value).array();}
     private static String hex8(int value){String raw=Integer.toHexString(value);return "0".repeat(8-raw.length())+raw;}

@@ -4,7 +4,7 @@ import java.io.*;
 import java.nio.file.*;
 import java.util.*;
 import java.security.MessageDigest;
-import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.zip.*;
 import org.rocksdb.SstFileWriter;
 
@@ -18,19 +18,20 @@ final class SstSorter implements AutoCloseable {
     private final List<Entry> buffered=new ArrayList<>();
     private final Set<Path> temporary=new LinkedHashSet<>();
     private List<Path> runs=new ArrayList<>();
-    private byte[] namespace;
+    private final byte[] namespace;
     private long bytes,peakBytes,spillBytes,spillNanos,inputRecords,runRecords,writtenRecords;
 
-    SstSorter(Path directory,long budget){
+    SstSorter(Path directory,long budget,String cacheKey){
         if(budget<65536)throw new IllegalArgumentException("sort budget must be at least 64 KiB");
+        if(cacheKey.length()!=64||!cacheKey.chars().allMatch(c->c>='0'&&c<='9'||c>='a'&&c<='f'))
+            throw new IllegalArgumentException("Invalid artifact namespace");
+        namespace=(cacheKey+"|").getBytes(StandardCharsets.US_ASCII);
         this.directory=directory;this.budget=budget;
     }
+    /** Keys are relative to this sorter's single immutable artifact namespace. */
     void add(byte[] key,byte[] value)throws Exception{
-        if(key.length<66||key[64]!='|')throw new IOException("Invalid artifact namespace");
-        if(namespace==null)namespace=Arrays.copyOf(key,65);
-        else if(Arrays.mismatch(namespace,0,65,key,0,65)>=0)throw new IOException("Mixed artifact namespaces");
-        // A sort contains exactly one artifact. Keep its repeated SHA out of every spill row.
-        var entry=new Entry(Arrays.copyOfRange(key,65,key.length),value);
+        if(key.length==0)throw new IOException("Empty artifact index key");
+        var entry=new Entry(key,value);
         inputRecords++;
         if(!buffered.isEmpty()&&bytes+entry.bytes()>budget)spill();
         buffered.add(entry);bytes+=entry.bytes();peakBytes=Math.max(peakBytes,bytes);
@@ -44,10 +45,11 @@ final class SstSorter implements AutoCloseable {
     long writtenRecords(){return writtenRecords;}
     String writeTo(SstFileWriter writer)throws Exception{
         var digest=MessageDigest.getInstance("SHA-256");
+        byte[] lengths=new byte[8];
         var postings=new PostingWriter(entry->{
             byte[] full=Arrays.copyOf(namespace,namespace.length+entry.key().length);
             System.arraycopy(entry.key(),0,full,namespace.length,entry.key().length);
-            hash(digest,full,entry.value());writer.put(full,entry.value());writtenRecords++;
+            hash(digest,full,entry.value(),lengths);writer.put(full,entry.value());writtenRecords++;
         });
         Consumer write=postings::accept;
         if(runs.isEmpty()){
@@ -73,7 +75,11 @@ final class SstSorter implements AutoCloseable {
         return HexFormat.of().formatHex(digest.digest());
     }
     static void hash(MessageDigest digest,byte[] key,byte[] value){
-        digest.update(ByteBuffer.allocate(8).putInt(key.length).putInt(value.length).array());
+        hash(digest,key,value,new byte[8]);
+    }
+    private static void hash(MessageDigest digest,byte[] key,byte[] value,byte[] lengths){
+        for(int i=0;i<4;i++){lengths[i]=(byte)(key.length>>>(24-i*8));lengths[i+4]=(byte)(value.length>>>(24-i*8));}
+        digest.update(lengths);
         digest.update(key);digest.update(value);
     }
     private void spill()throws Exception{
@@ -122,14 +128,19 @@ final class SstSorter implements AutoCloseable {
             for(Path path:paths){var run=new Run(path);inputs.add(run);if(run.current!=null)queue.add(run);}
             byte[] previous=null;
             while(!queue.isEmpty()){
-                var run=queue.remove();var entry=run.current;check(previous,entry.key());
-                // A packed range can pass through intact when no other run interleaves it.
-                // Overlapping ranges still expand one ID at a time, retaining duplicate checks.
-                if(run.postingIds!=null&&run.postingOffset==1&&
-                        (queue.isEmpty()||Arrays.compareUnsigned(run.postingKey,queue.peek().current.key())<0)){
-                    entry=new Entry(run.postingKey,run.postingValue);run.postingOffset=run.postingIds.length;
-                }
-                consumer.accept(entry);previous=entry.key();run.advance();if(run.current!=null)queue.add(run);
+                var run=queue.remove();
+                do{
+                    var entry=run.current;check(previous,entry.key());
+                    // A packed range can pass through intact when no other run interleaves it.
+                    // Overlapping ranges still expand one ID at a time, retaining duplicate checks.
+                    if(run.postingIds!=null&&run.postingOffset==1&&
+                            (queue.isEmpty()||Arrays.compareUnsigned(run.postingKey,queue.peek().current.key())<0)){
+                        entry=new Entry(run.postingKey,run.postingValue);run.postingOffset=run.postingIds.length;
+                    }
+                    consumer.accept(entry);previous=entry.key();run.advance();
+                // A run often owns the next range outright; do not requeue each row in it.
+                }while(run.current!=null&&(queue.isEmpty()||ORDER.compare(run.current,queue.peek().current)<0));
+                if(run.current!=null)queue.add(run);
             }
         }finally{for(var run:inputs)run.close();}
     }
@@ -180,8 +191,11 @@ final class SstSorter implements AutoCloseable {
             }else current=new Entry(key,value);
         }
         private void nextPosting(){
-            byte[] key=postingKey.clone();int id=postingIds[postingOffset++];
-            for(int i=key.length-1;i>=key.length-8;i--){key[i]=HEX[id&15];id>>>=4;}
+            int id=postingIds[postingOffset++];
+            // The final ID already has the original key. In particular singleton blocks
+            // need no expanded-key allocation, even when they interleave another run.
+            byte[] key=postingOffset==postingIds.length?postingKey:postingKey.clone();
+            if(key!=postingKey)for(int i=key.length-1;i>=key.length-8;i--){key[i]=HEX[id&15];id>>>=4;}
             current=new Entry(key,EMPTY);
         }
         private boolean available()throws IOException{

@@ -9,6 +9,7 @@ import java.util.*;
 public final class WorkspaceBindings implements AutoCloseable {
     /** Implements 4.2: attribution remains on the caller's session executor. */
     @FunctionalInterface public interface Loader { CompilerPool.Outcome<Bindings.Snapshot> load(Path file,String text)throws Exception; }
+    @FunctionalInterface public interface BatchLoader { Map<Path,CompilerPool.Outcome<Bindings.Snapshot>> load(Map<Path,String> sources)throws Exception; }
     /** Implements 4.2: re-enumerate sources to detect namespace changes during attribution. */
     @FunctionalInterface public interface SourceFiles { List<Path> files()throws Exception; }
     /** Implements 4.8: one immutable source graph shared by navigation, references and semantic edits. */
@@ -66,14 +67,23 @@ public final class WorkspaceBindings implements AutoCloseable {
         hits++;return snapshot;
     }
     public Snapshot get(SourceFiles sources,List<Path> classpath,Documents documents,String generation,long byteBudget,Loader loader)throws Exception {
+        return getBatch(sources,classpath,documents,generation,byteBudget,files->{
+            var results=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();
+            for(var entry:files.entrySet())results.put(entry.getKey(),loader.load(entry.getKey(),entry.getValue()));
+            return results;
+        });
+    }
+    public Snapshot getBatch(SourceFiles sources,List<Path> classpath,Documents documents,String generation,long byteBudget,BatchLoader loader)throws Exception {
         var files=sources.files();var current=inputs(files,classpath,documents,generation);
         if(snapshot!=null&&current.equals(inputs)){hits++;return snapshot;}
         snapshot=null;inputs=null;serializedBytes=0;builds++;
         var symbols=new LinkedHashMap<String,Map<String,Object>>();var declarations=new LinkedHashMap<String,Map<String,Object>>();
         var edges=new LinkedHashSet<Bindings.Edge>();var occurrences=new ArrayList<Bindings.Occurrence>();
         var diagnostics=new ArrayList<CompilerPool.Problem>();var warnings=new LinkedHashSet<String>();int tier=2;
+        var texts=new LinkedHashMap<Path,String>();for(Path file:files)texts.put(file,documents.text(file));
+        var loaded=loader.load(Collections.unmodifiableMap(texts));
         for(Path file:files){
-            var result=loader.load(file,documents.text(file));tier=Math.min(tier,result.tier());warnings.addAll(result.warnings());diagnostics.addAll(result.diagnostics());
+            var result=Objects.requireNonNull(loaded.get(file),"Missing file in binding batch: "+file);tier=Math.min(tier,result.tier());warnings.addAll(result.warnings());diagnostics.addAll(result.diagnostics());
             if(result.result()==null){tier=Math.min(tier,1);warnings.add("incomplete_workspace_bindings: "+file);continue;}
             var graph=result.result();symbols.putAll(graph.symbols());edges.addAll(graph.edges());occurrences.addAll(graph.occurrences());
             for(var occurrence:graph.occurrences())if(occurrence.role().equals("declaration")&&Path.of(occurrence.file()).equals(file)){

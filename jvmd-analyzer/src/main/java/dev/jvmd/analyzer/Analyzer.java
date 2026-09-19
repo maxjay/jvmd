@@ -275,10 +275,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return cached==null?diagnostics(path,documents.text(path)):cached;
     }
     /** One javac task, followed by per-file detached states; no compiler objects escape. */
-    public Map<Path,Envelope> diagnosticsBatch(Map<Path,String> sources)throws Exception{
+    public Map<Path,CompilerPool.Outcome<Bindings.Snapshot>> bindingsBatch(Map<Path,String> sources)throws Exception{
         if(sources.isEmpty())return Map.of();
         var inputs=new ArrayList<CompilerPool.SourceInput>();
-        for(var entry:sources.entrySet()){touch(entry.getKey(),entry.getValue());inputs.add(new CompilerPool.SourceInput(entry.getKey(),entry.getValue()));}
+        for(var entry:sources.entrySet()){reconcileSemanticRevision(entry.getKey());touch(entry.getKey(),entry.getValue());inputs.add(new CompilerPool.SourceInput(entry.getKey(),entry.getValue()));}
         String stamp=classpathStamp();var inputHashes=sourceIdentities();
         var result=compiler.batchQuery(inputs,2,(task,units,tier)->{
             var snapshots=new LinkedHashMap<Path,Bindings.Snapshot>();
@@ -288,12 +288,12 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             }
             return snapshots;
         });
-        bindingComputations+=sources.size();diagnosticFilesAnalysed+=sources.size();
+        bindingComputations+=sources.size();
         if(!inputHashes.equals(sourceIdentities())){
-            var superseded=new LinkedHashMap<Path,Envelope>();for(Path file:sources.keySet())superseded.put(file,Envelope.of(1,"live",Map.of("diagnostics",List.of())).warn("diagnostics_superseded: source changed during analysis"));return superseded;
+            var superseded=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();for(Path file:sources.keySet())superseded.put(file,new CompilerPool.Outcome<>(1,null,List.of(),List.of("diagnostics_superseded: source changed during analysis")));return superseded;
         }
         diagnosticStore.inputHashes(inputHashes);
-        var values=new LinkedHashMap<Path,Envelope>();
+        var values=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();
         // Resolve every API first: invalidation from a later file must not erase an earlier fresh result.
         if(result.result()!=null&&result.warnings().isEmpty())for(var entry:result.result().entrySet()){
             dependencies.record(entry.getKey(),entry.getValue().dependencies());resolveApiChange(entry.getKey(),ApiFingerprint.of(entry.getValue(),entry.getKey()));
@@ -301,13 +301,22 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         for(var input:inputs){
             Path file=input.file();String hash=Hashing.sha256(input.text().getBytes(java.nio.charset.StandardCharsets.UTF_8));
             var problems=result.diagnostics().stream().filter(p->sameFile(p.file(),file)).toList();
-            var envelope=new Envelope(result.tier(),"live",false,null,warnings(result.warnings()),Map.of("diagnostics",problems));values.put(file,envelope);
+            var envelope=new Envelope(result.tier(),"live",false,null,warnings(result.warnings()),Map.of("diagnostics",problems));
             var snapshot=result.result()==null?null:result.result().get(file);
+            var outcome=new CompilerPool.Outcome<>(result.tier(),snapshot,problems,result.warnings());values.put(file,outcome);
             if(snapshot!=null&&result.warnings().isEmpty()){
+                focused.put(file+":"+hash+":"+stamp+":full",new Cached(file,hash,stamp,0,input.text().length(),List.of(),outcome));
+                while(focused.size()>32)focused.remove(focused.keySet().iterator().next());
                 diagnosticStore.put(file,hash,context.generation(),stamp,envelope,apiFingerprints.get(file),snapshot.dependencies());
                 publishSource(file,hash,stamp,snapshot,result.tier());
             }
         }
+        return values;
+    }
+    public Map<Path,Envelope> diagnosticsBatch(Map<Path,String> sources)throws Exception{
+        var results=bindingsBatch(sources);diagnosticFilesAnalysed+=sources.size();
+        var values=new LinkedHashMap<Path,Envelope>();
+        results.forEach((file,result)->values.put(file,new Envelope(result.tier(),"live",false,null,warnings(result.warnings()),Map.of("diagnostics",result.diagnostics()))));
         return values;
     }
     private static boolean sameFile(String source,Path file){

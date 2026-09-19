@@ -3,6 +3,7 @@ package dev.jvmd.dist;
 import dev.jvmd.analyzer.Parser;
 import dev.jvmd.analyzer.Analyzer;
 import dev.jvmd.analyzer.Bindings;
+import dev.jvmd.analyzer.CompilerPool;
 import dev.jvmd.analyzer.DiagnosticEngine;
 import java.util.*;
 import dev.jvmd.core.*;
@@ -60,9 +61,20 @@ public final class Application implements AutoCloseable {
         dispatcher.register("symbol.find",(s,p)->{
             if(p.has("path")){Path path=sourcePath(s,Dispatcher.required(p,"path"));return analyzer(s,path).atPosition(path,documents(s).text(path),Dispatcher.bounded(p,"line",0,Integer.MAX_VALUE),Dispatcher.bounded(p,"character",0,Integer.MAX_VALUE));}
             String ref=Dispatcher.required(p,"name_path"),scope=p.path("scope").asText("workspace");if(!Set.of("workspace","deps","all").contains(scope))throw RpcException.invalid("Unknown symbol scope");
-            int limit=Dispatcher.limit(p,50,200),offset=cursor(p);boolean substring=p.path("substring").asBoolean();
+            int limit=Dispatcher.limit(p,50,200);boolean substring=p.path("substring").asBoolean();
             IndexService searchIndex=null;if(!scope.equals("workspace")){searchIndex=index();prepareIndex(s,searchIndex);}
             var kinds=new HashSet<String>();p.path("kinds").forEach(k->kinds.add(k.asText()));int depth=Dispatcher.bounded(p,"depth",0,10);
+            String continuation=p.path("cursor").asText("0");
+            if(scope.equals("deps")&&depth==0&&(continuation.equals("0")||continuation.startsWith("index:"))){
+                long after=0;
+                if(!continuation.equals("0"))try{after=Long.parseLong(continuation.substring(6));if(after<=0)throw new NumberFormatException();}
+                catch(NumberFormatException invalid){throw RpcException.invalid("Invalid index cursor");}
+                var found=searchIndex.find(ref,s.state("resolution")==null?null:s.id(),substring,limit+1,after,kinds);
+                boolean more=found.size()>limit;int end=Math.min(limit,found.size());var rows=new ArrayList<Map<String,Object>>();
+                for(var symbol:found.subList(0,end))rows.add(findResult(symbol,p.path("include_body").asBoolean()));
+                return new Envelope(2,"index",more,more?"index:"+found.get(end-1).get("id"):null,s.warnings(),Map.of("matches",List.copyOf(rows)));
+            }
+            int offset=cursor(p);
             var matches=new LinkedHashMap<String,Map<String,Object>>();
             int needed=Math.addExact(Math.addExact(offset,limit),1);
             if(!scope.equals("deps"))for(var parent:workspaceFind(s,ref,substring)) {
@@ -72,20 +84,20 @@ public final class Application implements AutoCloseable {
             if(!scope.equals("workspace")&&matches.size()<needed) {
                 long after=0;
                 while(matches.size()<needed) {
-                    var parents=searchIndex.find(ref,s.state("resolution")==null?null:s.id(),substring,128,after,depth>0?Set.of():kinds);
+                    int batch=Math.min(128,needed-matches.size());
+                    var parents=searchIndex.find(ref,s.state("resolution")==null?null:s.id(),substring,batch,after,depth>0?Set.of():kinds);
                     if(parents.isEmpty())break;
                     for(var parent:parents) {
                         after=((Number)parent.get("id")).longValue();
                         expandFind(s,parent,scope,searchIndex,depth,kinds,needed,matches);
                         if(matches.size()>=needed)break;
                     }
-                    if(parents.size()<128)break;
+                    if(parents.size()<batch)break;
                 }
             }
             var all=new ArrayList<Map<String,Object>>();
             for(var symbol:matches.values())if(kinds.isEmpty()||kinds.contains(symbol.get("kind"))){
-                var value=new LinkedHashMap<>(symbol);value.put("doc",dev.jvmd.index.DocMarkdown.summary((String)symbol.get("doc")));
-                if(p.path("include_body").asBoolean()&&all.size()>=offset&&all.size()<offset+limit)value=new LinkedHashMap<>(dev.jvmd.index.Documentation.withBody(value));all.add(value);
+                all.add(findResult(symbol,p.path("include_body").asBoolean()&&all.size()>=offset&&all.size()<offset+limit));
             }
             return page(scope.equals("deps")?2:1,scope.equals("deps")?"index":"live","matches",all,offset,limit,s.warnings());
         });
@@ -189,6 +201,10 @@ public final class Application implements AutoCloseable {
     private static int cursor(com.fasterxml.jackson.databind.JsonNode params){
         try{int value=Integer.parseInt(params.path("cursor").asText("0"));if(value<0)throw new NumberFormatException();return value;}catch(NumberFormatException e){throw RpcException.invalid("Invalid cursor");}
     }
+    private static Map<String,Object> findResult(Map<String,Object> symbol,boolean body)throws Exception{
+        var value=new LinkedHashMap<>(symbol);value.put("doc",dev.jvmd.index.DocMarkdown.summary((String)symbol.get("doc")));
+        return body?new LinkedHashMap<>(dev.jvmd.index.Documentation.withBody(value)):value;
+    }
     private static Envelope page(int tier,String source,String key,List<?> values,int offset,int limit,List<String> warnings){
         int from=Math.min(offset,values.size()),to=Math.min(values.size(),from+limit);boolean more=to<values.size();return new Envelope(tier,source,more,more?Integer.toString(to):null,warnings,Map.of(key,List.copyOf(values.subList(from,to))));
     }
@@ -210,8 +226,24 @@ public final class Application implements AutoCloseable {
             }
         }}
         var cache=session.state("workspace_bindings",WorkspaceBindings::new);String generation=graph==null?"plain":graph.fingerprint();
-        return load?cache.get(()->sourceFiles(session),List.copyOf(classpath),documents(session),generation,(long)config.heapCeilingMb()*1024*1024/Math.max(1,sessions.list().size())/4,
-                (file,text)->analyzer(session,file).bindings(file,text,null)):cache.peek(sourceFiles(session),List.copyOf(classpath),documents(session),generation);
+        if(!load)return cache.peek(sourceFiles(session),List.copyOf(classpath),documents(session),generation);
+        Resolution currentGraph=graph;
+        return cache.getBatch(()->sourceFiles(session),List.copyOf(classpath),documents(session),generation,(long)config.heapCeilingMb()*1024*1024/Math.max(1,sessions.list().size())/4,files->{
+            var groups=new LinkedHashMap<String,LinkedHashMap<Path,String>>();
+            for(var entry:files.entrySet())groups.computeIfAbsent(WorkspaceContextManager.key(entry.getKey(),currentGraph),_->new LinkedHashMap<>()).put(entry.getKey(),entry.getValue());
+            var results=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();
+            for(var group:groups.values()){
+                var batch=new LinkedHashMap<Path,String>();long characters=0;
+                for(var entry:group.entrySet()){
+                    if(!batch.isEmpty()&&(batch.size()>=32||characters+entry.getValue().length()>1024*1024)){
+                        results.putAll(analyzer(session,batch.keySet().iterator().next()).bindingsBatch(batch));batch.clear();characters=0;
+                    }
+                    batch.put(entry.getKey(),entry.getValue());characters+=entry.getValue().length();
+                }
+                if(!batch.isEmpty())results.putAll(analyzer(session,batch.keySet().iterator().next()).bindingsBatch(batch));
+            }
+            return results;
+        });
     }
     @SuppressWarnings("unchecked")
     private Envelope overview(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
@@ -624,6 +656,14 @@ public final class Application implements AutoCloseable {
         }
         String generation=graph.fingerprint()+":"+database.generation();
         if(generation.equals(session.state("index_generation")))return;
+
+        // A resolved workspace can introduce artifacts after the background repository scan.
+        // Publish those signatures before exposing the workspace; unchanged releases reuse
+        // their existing generations and SNAPSHOTs retain the normal content check.
+        for(var node:graph.nodes())if(node.path()!=null&&node.winner()==null&&node.extension().equals("jar")){
+            Path path=Path.of(node.path());if(Files.isRegularFile(path))database.indexJar(path,node.gav(),"jar");
+        }
+        generation=graph.fingerprint()+":"+database.generation();
 
         var openDocuments=documents(session).snapshots();
         String jdkFingerprint=Runtime.version()+"|"+config.jdkHome().toAbsolutePath().normalize();

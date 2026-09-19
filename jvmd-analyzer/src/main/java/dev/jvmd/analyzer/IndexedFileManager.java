@@ -28,6 +28,8 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     private Location wrap(Location location){return location==null||location instanceof ModuleLocation?location:wrappedLocations.computeIfAbsent(location,ModuleLocation::new);}
     private static Location delegate(Location location){return location instanceof ModuleLocation module?module.delegate():location;}
     private Map<Path,String> moduleDescriptors;
+    private long sourceModuleGeneration;
+    long sourceModuleGeneration(){return sourceModuleGeneration;}
     private Path moduleOutput;
     private Map<Path,String> documents=Map.of();
     public void documents(Map<Path,String> values){documents=Map.copyOf(values);try{configureModules();}catch(IOException e){throw new UncheckedIOException(e);}}
@@ -97,6 +99,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
             }
         }
         moduleDescriptors=Map.copyOf(descriptors);
+        sourceModuleGeneration++;
     }
     private static int commonPrefix(Path first,Path second){
         int length=0;while(length<Math.min(first.getNameCount(),second.getNameCount())&&first.getName(length).equals(second.getName(length)))length++;return length;

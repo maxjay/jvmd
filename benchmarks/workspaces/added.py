@@ -60,8 +60,16 @@ def main():
                         if i==0:original_session=session
                         identities,search=core_search(client,session)
                     else:
-                        rows,search=client.call('workspace/symbol',{'query':'Type0'})
-                        identities=sorted(row['containerName']+'.'+row['name'] for row in rows if row['name']=='Type0')
+                        began=time.perf_counter();attempts=[]
+                        while True:
+                            rows,search=client.call('workspace/symbol',{'query':'Type0'})
+                            identities=sorted(row['containerName']+'.'+row['name'] for row in rows if row['name']=='Type0')
+                            attempts.append({'request_ms':search,'identities':identities})
+                            if len(identities)==(129 if i==2 else 128):break
+                            if time.perf_counter()-began>30:raise AssertionError(('dependency search remained incomplete',attempts))
+                            time.sleep(.05)
+                        entry['search_attempts']=attempts
+                        if len(attempts)>1:search=(time.perf_counter()-began)*1000
                     expected=sorted([f'fixture.a{n}.Type0' for n in range(128)]+(['fixture.added.Type0'] if i==2 else []))
                     assert identities==expected,(server,i,identities)
                     entry.update(search_ms=search,identities=identities);entries.append(entry)

@@ -29,6 +29,7 @@ public final class CompilerPool implements AutoCloseable {
     private long batchQueries,batchFiles;
     private long budget,baseline,recycles,faults,queries,queryNanos,configureCalls,configureNanos,classpathValidations,classpathValidationNanos;
     private long validatedRequestId=-1;
+    private long sourceModuleGeneration;
     private boolean validatedRequestResult;
     public void configure(String generation,String release,List<Path> classpath,List<Path> sources,IndexService index,long budget)throws Exception {
         configure(generation,release,classpath,sources,index,budget,List.of("--release",release));
@@ -41,9 +42,10 @@ public final class CompilerPool implements AutoCloseable {
             if(manager!=null){manager.close();recycles++;}
             this.generation=generation;this.release=release;this.compilerOptions=List.copyOf(options);pool=new JavacTaskPool(1);baseline=heap();validatedRequestId=-1;
             manager=new IndexedFileManager(ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8),classpath,sources,index,Math.min(32L*1024*1024,Math.max(1024*1024,budget/8)));
+            sourceModuleGeneration=manager.sourceModuleGeneration();
         }finally{configureNanos+=System.nanoTime()-started;}
     }
-    public void documents(Map<Path,String> documents){checkThread();manager.documents(documents);}
+    public void documents(Map<Path,String> documents){checkThread();manager.documents(documents);refreshSourceModules();}
     public void binarySources(Set<Path> sources){checkThread();manager.binarySources(sources);}
     public boolean cacheValid(){
         checkThread();long request=RequestScope.id();if(request!=0&&request==validatedRequestId)return validatedRequestResult;
@@ -127,7 +129,13 @@ public final class CompilerPool implements AutoCloseable {
     private long heap(){return heapUsage.getAsLong();}
     public void recycle(){checkThread();pool=new JavacTaskPool(1);if(manager!=null)manager.invalidate();baseline=heap();recycles++;validatedRequestId=-1;}
     /** JavacTaskPool clears source symbols after each task; refresh source discovery without dropping binary state. */
-    public void sourcesChanged(){checkThread();if(manager!=null)manager.sourcesChanged();validatedRequestId=-1;}
+    public void sourcesChanged(){checkThread();if(manager!=null){manager.sourcesChanged();refreshSourceModules();}validatedRequestId=-1;}
+    private void refreshSourceModules(){
+        if(sourceModuleGeneration!=manager.sourceModuleGeneration()){
+            // Module symbols retain readability/export state beyond JavacTaskPool's source cleanup.
+            recycle();sourceModuleGeneration=manager.sourceModuleGeneration();
+        }
+    }
     public Map<String,Object> status(){
         checkThread();var status=new LinkedHashMap<String,Object>();
         status.put("queries",queries);status.put("batch_queries",batchQueries);status.put("batch_files",batchFiles);status.put("query_ms",nanosToMillis(queryNanos));

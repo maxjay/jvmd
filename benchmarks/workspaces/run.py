@@ -16,16 +16,18 @@ class Client:
         self.command, self.root = command, root
         self.log = (root/'stderr.log').open('w')
         self.raw = (root/'messages.jsonl').open('w')
+        self.records = []
         self.lock = threading.Lock(); self.condition = threading.Condition(); self.next = 0
         self.responses = {}; self.notifications = []; self.failure = None
         self.started = time.perf_counter()
         self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log)
         (root/'command.json').write_text(json.dumps(command, indent=2)+'\n')
-        threading.Thread(target=self.read, daemon=True).start()
+        self.reader = threading.Thread(target=self.read, daemon=True); self.reader.start()
 
     def record(self, direction, message):
         with self.lock:
-            self.raw.write(json.dumps({'elapsed_ms': (time.perf_counter()-self.started)*1000, 'direction': direction, 'message': message})+'\n'); self.raw.flush()
+            line = json.dumps({'elapsed_ms': (time.perf_counter()-self.started)*1000, 'direction': direction, 'message': message})+'\n'
+            self.records.append(line); self.raw.write(line); self.raw.flush()
 
     def send(self, message):
         data = json.dumps(message).encode()
@@ -97,7 +99,11 @@ class Client:
             if self.process.returncode != 0: raise RuntimeError(('server exit', self.process.returncode))
         finally:
             if self.process.poll() is None: self.process.kill(); self.process.wait()
+            self.reader.join(timeout=5)
             self.log.close(); self.raw.close()
+            # Rewrite a closed, complete snapshot after draining stdout. This also makes
+            # restored environments independent of partially synchronized open log files.
+            (self.root/'messages.jsonl').write_text(''.join(self.records))
 
 def position(text, offset):
     # Fixtures are ASCII: Python character offsets equal LSP UTF-16 offsets.
@@ -240,9 +246,17 @@ def run(a, server, iteration, build):
                 entry['search_ms'] = (time.perf_counter()-started)*1000
                 identities = sorted(r['fqn'] for r in rows if r['fqn'] == a.dependency_type or a.query == 'Type0')
             else:
-                rows, entry['search_ms'] = client.call('workspace/symbol', {'query': a.jdtls_query})
-                identities = sorted((r.get('containerName', '')+'.'+r['name']).strip('.') for r in rows if r['name'] == a.query)
-                if a.query != 'Type0': identities = [name for name in identities if name == a.dependency_type]
+                began = time.perf_counter(); attempts = []
+                while True:
+                    rows, elapsed = client.call('workspace/symbol', {'query': a.jdtls_query})
+                    identities = sorted((r.get('containerName', '')+'.'+r['name']).strip('.') for r in rows if r['name'] == a.query)
+                    if a.query != 'Type0': identities = [name for name in identities if name == a.dependency_type]
+                    attempts.append({'request_ms': elapsed, 'matching_identities': identities})
+                    if len(identities) == a.expected_results and len(set(identities)) == a.expected_results: break
+                    if time.perf_counter()-began > 30: raise AssertionError(('dependency search remained incomplete', attempts))
+                    time.sleep(.05)
+                entry['search_attempts'] = attempts
+                entry['search_ms'] = elapsed if len(attempts) == 1 else (time.perf_counter()-began)*1000
             assert len(identities) == a.expected_results and len(set(identities)) == a.expected_results, identities
             entry['dependency_identities'] = identities; results.append(entry)
             (run_root/'report.json').write_text(json.dumps({'server': server, 'iteration': iteration, 'build_revision': build['revision'], 'workspaces': results, 'complete': False}, indent=2)+'\n')

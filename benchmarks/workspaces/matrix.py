@@ -16,9 +16,9 @@ for repetition in range(a.runs):
     for fixture in fixtures:
         for mode in modes:
             label = f'{fixture}-{mode}-{repetition}'; output = a.root/label
-            command = [sys.executable, str(Path(__file__).with_name('run.py')), '--repo', str(a.repo.resolve()), '--build', str((a.before if mode == 'before' else a.after).resolve()),
+            command = [sys.executable, str(Path(__file__).with_name('run.py')), '--repo', str(a.repo.resolve()), '--build', str((a.before if mode in ('before', 'main') else a.after).resolve()),
                        '--java-home', str(a.java_home.resolve()), '--jdtls', str(a.jdtls.resolve()), '--resolvers', str(a.resolvers.resolve()),
-                       '--repository', str((a.fixtures/fixture).resolve()), '--root', str(output.resolve()), '--runs', '1', '--servers', 'jvmd' if mode in ('before', 'after') else mode,
+                       '--repository', str((a.fixtures/fixture).resolve()), '--root', str(output.resolve()), '--runs', '1', '--servers', 'jvmd' if mode in ('before', 'after', 'main') else mode,
                        '--sources', str(a.sources), '--workspaces', str(a.workspaces), '--samples', str(a.samples), '--edits', str(a.edits)]
             if fixture != 'real': command += ['--dependency-type', 'fixture.a0.Type0', '--binary-expression', 'marker0', '--binary-member', 'marker0', '--query', 'Type0', '--jdtls-query', 'Type0', '--expected-results', str(1 if fixture == 'single' else 128)]
             commands.append({'label': label, 'command': command})

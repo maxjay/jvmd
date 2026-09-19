@@ -25,7 +25,8 @@ class SourceEditBinaryCacheTest {
             documents.change(file,2,List.of(new Documents.Change(null,edited)));analyzer.documents(documents);analyzer.changed(file,documents.hash(file));
             assertThat(analyzer.bindings(file,edited,null).diagnostics()).isEmpty();
             assertThat(analyzer.status()).containsEntry("class_byte_loads",loads);
-            assertThat((long)analyzer.status().get("class_byte_hits")).isPositive();
+            assertThat(analyzer.status()).containsEntry("class_byte_hits",0L);
+            assertThat(analyzer.status().get("pool_statistics").toString()).contains("1 reused Contexts");
 
             var modified=Files.getLastModifiedTime(jar);
             Path replacement=IndexFixtures.jar(root.resolve("replacement"),"api","package lib; public class Sample { public String value(){return \"changed\";} }",true);

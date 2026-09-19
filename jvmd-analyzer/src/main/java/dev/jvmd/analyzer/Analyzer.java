@@ -67,16 +67,14 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         for(var path:context.classpath()){
             value.append("\0").append(path);
             if(Files.isRegularFile(path))value.append(':').append(inputFiles.hash(path));
-            else if(Files.isDirectory(path))try(var entries=Files.walk(path)){
-                for(Path file:entries.filter(p->p.toString().endsWith(".class")&&Files.isRegularFile(p)).sorted().toList())value.append("\0").append(file).append(':').append(inputFiles.hash(file));
+            else if(Files.isDirectory(path)){
+                for(Path file:FileInventory.matching(path,".class"))value.append("\0").append(file).append(':').append(inputFiles.hash(file));
             }else value.append(":missing");
         }
         // New names can resolve old failures without a previously known dependency edge.
         for(var root:context.sources()){
             value.append("\0root:").append(root);
-            if(Files.isDirectory(root))try(var entries=Files.walk(root)){
-                for(Path file:entries.filter(p->p.toString().endsWith(".java")&&Files.isRegularFile(p)).sorted().toList())value.append("\0").append(file);
-            }
+            if(Files.isDirectory(root))for(Path file:FileInventory.matching(root,".java"))value.append("\0").append(file);
         }
         documents.paths().stream().filter(p->!Files.isRegularFile(p)&&context.sources().stream().anyMatch(p::startsWith)).sorted().forEach(p->value.append("\0buffer:").append(p));
         return Hashing.sha256(value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -84,9 +82,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
 
     private Map<Path,String> sourceIdentities()throws Exception{
         var result=new TreeMap<Path,String>();
-        for(Path root:context.sources())if(Files.isDirectory(root))try(var paths=Files.walk(root)){
-            for(Path file:paths.filter(p->p.toString().endsWith(".java")&&Files.isRegularFile(p)).toList())result.put(file.toAbsolutePath().normalize(),documents.sourceHash(file));
-        }
+        for(Path root:context.sources())if(Files.isDirectory(root))
+            for(Path file:FileInventory.matching(root,".java"))result.put(file.toAbsolutePath().normalize(),documents.sourceHash(file));
         for(Path file:documents.paths())if(context.sources().stream().anyMatch(file::startsWith))result.put(file,documents.sourceHash(file));
         return Map.copyOf(result);
     }
@@ -177,6 +174,12 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private void invalidateConditionalIfUnresolved(Path path){
         path=path.toAbsolutePath().normalize();var origins=conditionalByFile.get(path);if(origins!=null&&origins.stream().anyMatch(pendingApi::containsKey))diagnosticStore.invalidate(Set.of(path));
     }
+    private final Map<Path,Long> persistedSemanticRevisions=new HashMap<>();
+    private void reconcileSemanticRevision(Path path)throws Exception{
+        if(index==null)return;path=path.toAbsolutePath().normalize();long current=index.semanticRevision(path);
+        Long previous=persistedSemanticRevisions.put(path,current);
+        if((previous==null&&current!=0)||(previous!=null&&previous.longValue()!=current))invalidate(Set.of(path));
+    }
     public String contextKey(){return context.generation();}
     /** Detached API identity used by module actors to propagate cross-module conditional invalidation. */
     public String apiFingerprint(Path path){
@@ -197,7 +200,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     public void namespaceChanged(){diagnosticStore.clear();for(var caches:modules.values()){caches.outlines.clear();caches.focused.clear();}apiFingerprints.clear();pendingApi.clear();conditionalByFile.clear();for(var pool:compilerPools.values())pool.recycle();}
     public CompilerPool.Outcome<Bindings.Snapshot> bindings(Path path,String text,Integer cursor)throws Exception{
-        path=path.toAbsolutePath().normalize();touch(path,text);
+        path=path.toAbsolutePath().normalize();reconcileSemanticRevision(path);touch(path,text);
         String hash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)),stamp=classpathStamp();
         for(var entry:new ArrayList<>(focused.entrySet())){
             var cached=entry.getValue();
@@ -224,9 +227,28 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         long started=System.nanoTime();
         var symbols=List.copyOf(snapshot.symbols().values());
         var edges=snapshot.edges().stream().map(e->new IndexService.SourceEdge(e.src(),e.dst(),e.kind())).toList();
-        String semantic=Hashing.sha256((hash+":"+apiFingerprints.get(file)+":"+stamp).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String api=apiFingerprints.get(file);
+        String semantic=Hashing.sha256((hash+":"+api+":"+stamp).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var exports=new LinkedHashSet<String>();
+        String source=file.toAbsolutePath().normalize().toString();
+        for(var symbol:symbols){
+            if(!source.equals(Objects.toString(symbol.get("source_file"),"")))continue;
+            String kind=Objects.toString(symbol.get("kind"),"");
+            if(kind.equals("local")||kind.equals("parameter"))continue;
+            if(symbol.get("modifiers") instanceof Collection<?> modifiers&&modifiers.contains("private"))continue;
+            for(String field:List.of("scip","fqn","binary_key","name_path")){
+                String value=Objects.toString(symbol.get(field),"");if(!value.isBlank())exports.add(value);
+            }
+        }
+        var known=new HashSet<String>(snapshot.symbols().keySet());
+        for(var symbol:symbols)for(String field:List.of("scip","binary_key","fqn")){
+            String value=Objects.toString(symbol.get(field),"");if(!value.isBlank())known.add(value);
+        }
+        var unresolved=new LinkedHashSet<String>();
+        for(var edge:snapshot.edges())if(!known.contains(edge.dst()))unresolved.add(edge.dst());
         long bytes=512L+2L*Json.MAPPER.writeValueAsBytes(symbols).length+edges.size()*192L;
-        index.publishSource(new SourceIndexPublisher.Delta(file,hash,semantic,symbols,tier,edges,bytes));
+        index.publishSource(new SourceIndexPublisher.Delta(file,hash,semantic,symbols,tier,edges,bytes,
+                context.gav(),api,stamp,snapshot.dependencies(),Set.copyOf(exports),Set.copyOf(unresolved)));
         indexWriteNanos+=System.nanoTime()-started;
     }
     public Envelope atPosition(Path path,String text,int line,int character)throws Exception{
@@ -237,7 +259,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     /** Validate identity before reading source text: warm diagnostics need no source bytes. */
     public Envelope cachedDiagnostics(Path path,Documents documents)throws Exception{
         path=path.toAbsolutePath().normalize();String hash=documents.sourceHash(path);
-        touchHash(path,hash);invalidateConditionalIfUnresolved(path);
+        reconcileSemanticRevision(path);touchHash(path,hash);invalidateConditionalIfUnresolved(path);
         var cached=diagnosticStore.get(path,hash,context.generation(),classpathStamp());
         if(cached!=null){
             diagnosticFilesReused++;
@@ -294,7 +316,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         catch(Exception invalid){return false;}
     }
     public Envelope diagnostics(Path path,String text)throws Exception{
-        path=path.toAbsolutePath().normalize();touch(path,text);invalidateConditionalIfUnresolved(path);
+        path=path.toAbsolutePath().normalize();reconcileSemanticRevision(path);touch(path,text);invalidateConditionalIfUnresolved(path);
         String sourceHash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)),stamp=classpathStamp(),generation=context.generation();
         var cached=diagnosticStore.get(path,sourceHash,generation,stamp);
         if(cached!=null){diagnosticFilesReused++;return cached;}

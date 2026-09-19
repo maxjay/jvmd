@@ -53,6 +53,9 @@ jobs:
         run: |
           bash jvmd-tests/smoke/run-index.sh
           mvn -B -pl jvmd-tests test -Dgroups=phase-3 -DexcludedGroups=perf -DargLine=-Xmx1024m
+      - name: RocksDB immutable artifact generations
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        run: mvn -B -pl jvmd-index-rocks test
       - name: Phase 4 compiler prerequisites and checkpoints
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: |

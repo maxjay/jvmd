@@ -9,6 +9,7 @@ import dev.jvmd.core.*;
 import dev.jvmd.resolver.MavenResolver;
 import dev.jvmd.resolver.Resolution;
 import dev.jvmd.index.IndexService;
+import dev.jvmd.index.ArtifactGenerationSink;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -566,7 +567,7 @@ public final class Application implements AutoCloseable {
         var dependencies=overlay(session,graph).dependencies(graph,module.gav(),false);for(var dependency:dependencies)compileRuntimeModule(session,graph,dependency,finished,visiting);
         if(!module.packaging().equals("pom")&&overlay(session,graph).requiresSource(module)){
             var roots=module.sources().stream().filter(path->!module.processing().enabled()||!path.contains("/generated-sources")).map(Path::of).toList();var files=new ArrayList<Path>();
-            for(Path root:roots)if(Files.isDirectory(root))try(var paths=Files.walk(root)){paths.filter(Files::isRegularFile).filter(path->path.toString().endsWith(".java")).sorted().forEach(files::add);}
+            for(Path root:roots)if(Files.isDirectory(root))files.addAll(FileInventory.matching(root,".java"));
             if(!files.isEmpty()){
                 var classpath=new LinkedHashSet<Path>();classpath.add(Path.of(module.classes()));graph.classpaths().getOrDefault(module.gav()+":main",List.of()).forEach(path->classpath.add(Path.of(path)));dependencies.forEach(m->classpath.add(Path.of(m.classes())));
                 var compiled=dev.jvmd.runtime.RuntimeCompiler.compile(config.jdkHome(),Path.of(module.directory()),files,List.copyOf(classpath),roots,runtimeCompilerOptions(module),java.time.Duration.ofSeconds(60));dev.jvmd.runtime.RuntimeCompiler.publish(compiled,Path.of(module.classes()));
@@ -599,8 +600,19 @@ public final class Application implements AutoCloseable {
     private synchronized void initializeIndex(boolean scan) {
         if(index!=null)return;
         index=java.util.concurrent.CompletableFuture.supplyAsync(()->{
-            try {var service=new IndexService(config.stateDir().resolve("index.db"),config.m2Repo());if(scan)service.start();return service;}
-            catch(Exception e){throw new java.util.concurrent.CompletionException(e);}
+            ArtifactGenerationSink generations=null;
+            try {
+                long defaultBudgetMb=Math.max(8L,Math.min(128L,config.heapCeilingMb()/8L));
+                long budgetMb=Long.getLong("jvmd.index.generation_budget_mb",defaultBudgetMb);
+                if(budgetMb<1)throw new IllegalArgumentException("jvmd.index.generation_budget_mb must be positive");
+                generations=ArtifactGenerationSink.open(config.stateDir().resolve("index-v2"),Math.multiplyExact(budgetMb,1024L*1024L));
+                var service=new IndexService(config.stateDir().resolve("index.db"),config.m2Repo(),generations);
+                if(scan)service.start();
+                return service;
+            } catch(Exception e){
+                if(generations!=null)try{generations.close();}catch(Exception close){e.addSuppressed(close);}
+                throw new java.util.concurrent.CompletionException(e);
+            }
         }, task -> Thread.ofVirtual().name("jvmd-index-start").start(task));
     }
     private IndexService index() { initializeIndex(false); return index.join(); }
@@ -612,6 +624,14 @@ public final class Application implements AutoCloseable {
         }
         String generation=graph.fingerprint()+":"+database.generation();
         if(generation.equals(session.state("index_generation")))return;
+
+        var openDocuments=documents(session).snapshots();
+        String jdkFingerprint=Runtime.version()+"|"+config.jdkHome().toAbsolutePath().normalize();
+        for(var module:graph.modules()){
+            configureModuleIndexState(database,module,false,graph,openDocuments,jdkFingerprint);
+            configureModuleIndexState(database,module,true,graph,openDocuments,jdkFingerprint);
+        }
+
         var paths=new ArrayList<>(graph.nodes().stream().filter(n->n.path()!=null&&n.winner()==null).map(n->new IndexService.WorkspaceArtifact(n.path(),n.scope())).toList());
         for(var module:graph.modules())paths.add(new IndexService.WorkspaceArtifact(module.directory(),"local"));
         var byId=graph.nodes().stream().collect(java.util.stream.Collectors.toMap(Resolution.Node::id,Resolution.Node::gav));
@@ -644,6 +664,33 @@ public final class Application implements AutoCloseable {
                 java.util.Map.of("nodes", slice(nodes,offset,limit), "edges", slice(edges,offset,limit),
                         "fingerprint", graph.fingerprint(), "cached", graph.cached()));
     }
+
+    private void configureModuleIndexState(IndexService database,Resolution.Module module,boolean test,Resolution graph,
+                                           Map<Path,String> openDocuments,String jdkFingerprint)throws Exception{
+        var roots=(test?module.testSources():module.sources()).stream().map(Path::of).map(path->path.toAbsolutePath().normalize()).toList();
+        if(roots.isEmpty())return;
+        var overlays=new LinkedHashMap<Path,String>();
+        openDocuments.forEach((path,text)->{if(roots.stream().anyMatch(path::startsWith))overlays.put(path,text);});
+        var processing=test?module.testProcessing():module.processing();
+        var processors=new ArrayList<String>();processors.addAll(processing.path());processors.addAll(processing.names());
+        if(processing.lombok())processors.add("lombok");
+        var generated=new LinkedHashMap<String,String>();
+        if(processing.generatedDirectory()!=null&&!processing.generatedDirectory().isBlank()){
+            Path directory=Path.of(processing.generatedDirectory()).toAbsolutePath().normalize();
+            generated.put(directory.toString(),fingerprintDirectory(directory));
+        }
+        String key=module.gav()+(test?":test":":main");
+        var classpath=graph.classpaths().getOrDefault(key,List.of());
+        var options=test?module.testCompilerOptions():module.compilerOptions();
+        database.configureModuleState(new ArtifactGenerationSink.ModuleStateInput(module.directory()+"|"+key,roots,Map.copyOf(overlays),options,
+                List.copyOf(processors),Map.copyOf(generated),classpath,jdkFingerprint+"|release="+module.release()));
+    }
+
+    private static String fingerprintDirectory(Path directory)throws Exception{
+        if(!Files.isDirectory(directory))return "missing";
+        return IndexService.directoryHash(directory);
+    }
+
     @Override public void close() throws Exception {
         try { sessions.close(); } finally {
             try { if (resolver != null) resolver.close(); }

@@ -31,7 +31,8 @@ class LazyCodeReferencesTest {
             var out=code.expand(List.of(call),true,Set.of("reads","writes"),"active");assertThat(out.edges()).extracting(IndexService.SourceEdge::kind).contains("reads","writes");
             var creation=code.expand(index.find("Caller/create()",null,false,10,0),true,Set.of("instantiates"),"active");assertThat(creation.edges()).extracting(IndexService.SourceEdge::kind).containsExactly("instantiates");
             var casts=code.expand(index.find("Caller/cast(Object)",null,false,10,0),true,Set.of("reads"),"active");assertThat(casts.edges().toString()).contains("Api#");
-            assertThat(index.database().<Boolean>read(c->{try(var s=c.createStatement();var r=s.executeQuery("PRAGMA foreign_key_check")){return r.next();}})).isFalse();
+            // The SQL control additionally checks its physical foreign keys.
+            if(index.store().backend().equals("sqlite"))assertThat(index.database().<Boolean>read(c->{try(var s=c.createStatement();var r=s.executeQuery("PRAGMA foreign_key_check")){return r.next();}})).isFalse();
         }
     }
     private Path compile()throws Exception{

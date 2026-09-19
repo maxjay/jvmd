@@ -1,0 +1,478 @@
+package dev.jvmd.index.rocks;
+
+import dev.jvmd.core.*;
+import dev.jvmd.index.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.util.*;
+import java.util.function.Predicate;
+import org.rocksdb.*;
+
+/**
+ * Authoritative index: immutable binary facts plus atomic path and per-file source manifests.
+ * No SQL database is opened. Numeric handles are opaque; SCIP remains the external identity.
+ * A query holds the metadata monitor, so publication cannot change its selected generations.
+ */
+public final class RocksIndexStore implements IndexStore {
+    public record StoredArtifact(long id,ArtifactInput input,String docsKey,String codeKey,long symbols,long edges,
+                                 boolean classReferences,long sourceRevision,long simpleNames) { }
+    public record SourceFile(String file,String hash,List<Map<String,Object>> symbols,List<SourceRelationship> edges) { }
+    private final RocksArtifactRepository repository;
+    private final Options options;
+    private final RocksDB state;
+    private final WriteOptions durable=new WriteOptions().setSync(true);
+    private final NavigableMap<Long,StoredArtifact> artifacts=new TreeMap<>();
+    private final Map<String,Long> paths=new HashMap<>();
+    private final Map<String,List<WorkspaceEntry>> workspaces=new HashMap<>();
+    private final LinkedHashMap<Long,List<SourceFile>> sourceCache=new LinkedHashMap<>(16,.75f,true);
+    private final Map<Long,Long> sourceCacheWeights=new HashMap<>();
+    private final long sourceCacheBudget=16L*1024*1024;
+    private long sourceCacheBytes;
+    private final Map<Long,Long> unmatched=new HashMap<>();
+    private long nextArtifact=1,nextSource=0x80000000L;
+    private long metadataWrites,sourceWrites;
+    private boolean closing,closed;
+    private int builds;
+    private static final Set<String> TYPES=Set.of("class","interface","enum","record","annotation");
+    private static final Set<String> SOURCE_KINDS=Set.of("package","class","interface","enum","record","annotation","method","ctor","field","enumconst");
+
+    RocksIndexStore(Path root,RocksArtifactRepository repository,RocksMemory memory)throws Exception{
+        this.repository=repository;Files.createDirectories(root);options=memory.options(64);
+        state=RocksDB.open(options,root.toString());
+        try{
+            for(byte[] value:values("A|")){
+                var artifact=Json.MAPPER.readValue(value,StoredArtifact.class);
+                if(!repository.contains(artifact.input().key().cacheKey())&&!artifact.input().context().kind().equals("sources"))
+                    throw new IllegalStateException("Artifact manifest references absent generation: "+artifact.id());
+                artifacts.put(artifact.id(),artifact);paths.put(artifact.input().context().path(),artifact.id());
+                nextArtifact=Math.max(nextArtifact,artifact.id()+1);
+                byte[] count=state.get(bytes("U|"+key(artifact.id())));if(count!=null)unmatched.put(artifact.id(),Long.parseLong(new String(count,StandardCharsets.UTF_8)));
+            }
+            byte[] sequence=state.get(bytes("next-source"));if(sequence!=null)nextSource=Long.parseLong(new String(sequence,StandardCharsets.UTF_8));
+            sequence=state.get(bytes("next-artifact"));if(sequence!=null)nextArtifact=Math.max(nextArtifact,Long.parseLong(new String(sequence,StandardCharsets.UTF_8)));
+        }catch(Exception error){state.close();options.close();durable.close();throw error;}
+    }
+    @Override public String backend(){return "rocksdb-sst";}
+    private static byte[] bytes(String value){return value.getBytes(StandardCharsets.UTF_8);}
+    private static String key(long id){return String.format(Locale.ROOT,"%016x",id);}
+    private static String location(Path path){return path.getFileSystem().provider().getScheme().equals("file")?path.toAbsolutePath().normalize().toString():path.toUri().toString();}
+    private List<byte[]> values(String prefix)throws Exception{
+        var result=new ArrayList<byte[]>();byte[] start=bytes(prefix);
+        try(var iterator=state.newIterator()){
+            for(iterator.seek(start);iterator.isValid()&&new String(iterator.key(),StandardCharsets.UTF_8).startsWith(prefix);iterator.next())result.add(iterator.value());
+            iterator.status();
+        }return result;
+    }
+    private void save(WriteBatch batch,StoredArtifact artifact)throws Exception{
+        batch.put(bytes("A|"+key(artifact.id())),Json.MAPPER.writeValueAsBytes(artifact));batch.put(bytes("next-artifact"),bytes(Long.toString(nextArtifact)));
+    }
+    private void installed(StoredArtifact artifact){artifacts.put(artifact.id(),artifact);paths.put(artifact.input().context().path(),artifact.id());metadataWrites++;}
+    private StoredArtifact required(long id){ensureOpen();var value=artifacts.get(id);if(value==null)throw new IllegalArgumentException("Unknown artifact: "+id);return value;}
+    private void ensureOpen(){if(closed)throw new IllegalStateException("Index store is closed");}
+    private synchronized AutoCloseable admitBuild(){
+        ensureOpen();if(closing)throw new IllegalStateException("Index store is closing");builds++;
+        return ()->{synchronized(this){builds--;notifyAll();}};
+    }
+    private static ArtifactRecord record(StoredArtifact value){var input=value.input();return new ArtifactRecord(value.id(),input.context().gav(),input.context().kind(),input.key().binarySha256(),input.context().path(),input.size(),input.mtime(),value.docsKey()!=null,value.codeKey()!=null,!input.context().kind().equals("sources"));}
+    @Override public synchronized ArtifactRecord artifact(Path path){Long id=paths.get(location(path));return id==null?null:record(required(id));}
+    @Override public synchronized void publishPath(Path path,long id,long size,long mtime)throws Exception{
+        var previous=required(id);String pathString=location(path);
+        // Aliases keep independent context handles while sharing immutable content.
+        Long alias=paths.get(pathString);
+        long selected=pathString.equals(previous.input().context().path())?id:alias==null?nextArtifact++:alias;
+        var context=new ArtifactContext(previous.input().context().gav(),previous.input().context().kind(),pathString);
+        var value=new StoredArtifact(selected,new ArtifactInput(context,previous.input().key(),size,mtime),previous.docsKey(),previous.codeKey(),previous.symbols(),previous.edges(),previous.classReferences(),previous.sourceRevision(),previous.simpleNames());
+        try(var batch=new WriteBatch()){save(batch,value);state.write(durable,batch);}installed(value);
+    }
+    @Override public long publishArtifact(ArtifactInput input,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences,Map<String,Map<String,Object>> sourceData)throws Exception{
+        try(var permit=admitBuild()){return publishArtifactData(input,facts,classReferences,sourceData);}
+    }
+    private long publishArtifactData(ArtifactInput input,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences,Map<String,Map<String,Object>> sourceData)throws Exception{
+        if(!input.key().equals(facts.key()))throw new IllegalArgumentException("Artifact facts/key mismatch");
+        repository.publish(facts,classReferences);
+        String docs=null;
+        if(!sourceData.isEmpty()){
+            String hash=Hashing.sha256(Json.MAPPER.writeValueAsBytes(new TreeMap<>(sourceData)));
+            docs=repository.publishDocumentation(input.key().cacheKey(),ArtifactIndexFormat.key(hash,"sources"),sourceData,0);
+        }
+        synchronized(this){
+            Long existing=paths.get(input.context().path());long id=existing==null?nextArtifact++:existing;
+            var previous=artifacts.get(id);
+            boolean same=previous!=null&&previous.input().key().equals(input.key());
+            var value=new StoredArtifact(id,input,docs,same?previous.codeKey():null,facts.symbols().size(),facts.relationships().size(),!classReferences.isEmpty(),previous==null?0:previous.sourceRevision(),facts.symbols().stream().filter(symbol->TYPES.contains(symbol.kind())).count());
+            try(var batch=new WriteBatch()){
+                // Preserve unchanged source files when another file changes the module fingerprint.
+                if(input.context().kind().equals("local"))for(var file:sources(id)){
+                    Path path=Path.of(file.file());
+                    if(!Files.isRegularFile(path)||!Hashing.sha256(path).equals(file.hash()))batch.delete(sourceKey(id,file.file()));
+                }
+                save(batch,value);state.write(durable,batch);
+            }
+            evictSources(id);installed(value);return id;
+        }
+    }
+    @Override public void publishCode(long id,ArtifactContext context,ArtifactIndexFormat.ArtifactData facts,Set<String> references)throws Exception{
+        try(var permit=admitBuild()){publishCodeData(id,context,facts,references);}
+    }
+    private void publishCodeData(long id,ArtifactContext context,ArtifactIndexFormat.ArtifactData facts,Set<String> references)throws Exception{
+        repository.publish(facts,references);
+        synchronized(this){var old=required(id);
+            if(!old.input().key().binarySha256().equals(facts.key().binarySha256()))throw new IllegalStateException("Binary changed during code indexing");
+            var value=new StoredArtifact(id,old.input(),old.docsKey(),facts.key().cacheKey(),facts.symbols().size(),old.edges(),old.classReferences()||!references.isEmpty(),old.sourceRevision(),old.simpleNames());
+            try(var batch=new WriteBatch()){save(batch,value);state.write(durable,batch);}installed(value);
+        }
+    }
+    @Override public synchronized void publishClassReferences(long id,Set<String> references)throws Exception{
+        // Older formats may lack the class-reference facts; store a small independent supplement.
+        var old=required(id);var value=new StoredArtifact(id,old.input(),old.docsKey(),old.codeKey(),old.symbols(),old.edges(),true,old.sourceRevision(),old.simpleNames());
+        try(var batch=new WriteBatch()){
+            for(String target:references)batch.put(bytes("C|"+key(id)+"|"+target),new byte[0]);
+            save(batch,value);state.write(durable,batch);
+        }installed(value);
+    }
+    private static byte[] sourceKey(long id,String file){return bytes("S|"+key(id)+"|"+Hashing.sha256(bytes(file)));}
+    private List<SourceFile> sources(long id)throws Exception{
+        var cached=sourceCache.get(id);if(cached!=null)return cached;
+        var result=new ArrayList<SourceFile>();long weight=0;
+        for(byte[] value:values("S|"+key(id)+"|")){result.add(Json.MAPPER.readValue(value,SourceFile.class));weight+=value.length*4L+256;}
+        result.sort(Comparator.comparing(SourceFile::file));var stored=List.copyOf(result);
+        if(weight<=sourceCacheBudget){
+            while(sourceCacheBytes+weight>sourceCacheBudget&&!sourceCache.isEmpty())evictSources(sourceCache.firstEntry().getKey());
+            sourceCache.put(id,stored);sourceCacheWeights.put(id,weight);sourceCacheBytes+=weight;
+        }return stored;
+    }
+    private void evictSources(long id){sourceCache.remove(id);sourceCacheBytes-=sourceCacheWeights.getOrDefault(id,0L);sourceCacheWeights.remove(id);}
+    private static String binaryKey(Map<String,Object> symbol){
+        if(symbol.get("binary_key")!=null)return symbol.get("binary_key").toString();
+        String fqn=Objects.toString(symbol.get("fqn"),Objects.toString(symbol.get("name_path"),""));
+        if(TYPES.contains(symbol.get("kind")))return fqn;
+        return fqn+"#"+("ctor".equals(symbol.get("kind"))?"<init>":symbol.get("name"))+
+                (Set.of("method","ctor").contains(symbol.get("kind"))?Objects.toString(symbol.get("erased_descriptor"),""):"");
+    }
+    @Override public synchronized void publishSourceFile(long id,Path file,List<Map<String,Object>> symbols,int tier,List<SourceRelationship> relationships)throws Exception{
+        var old=required(id);String path=location(file);var rows=new ArrayList<Map<String,Object>>();
+        for(var symbol:symbols){
+            if(symbol.get("scip")==null||!SOURCE_KINDS.contains(symbol.get("kind"))||!path.equals(symbol.get("source_file")))continue;
+            if(nextSource>0xffffffffL)throw new IllegalStateException("Source symbol handle space exhausted");
+            var row=new LinkedHashMap<String,Object>(symbol);row.put("id",(id<<32)|nextSource++);row.put("artifact_id",id);row.put("tier",tier);
+            row.put("binary_key",binaryKey(symbol));row.putIfAbsent("metadata",Map.of());rows.add(row);
+        }
+        var source=new SourceFile(path,Hashing.sha256(file),List.copyOf(rows),List.copyOf(relationships));
+        var value=new StoredArtifact(id,old.input(),old.docsKey(),old.codeKey(),old.symbols(),old.edges(),old.classReferences(),old.sourceRevision()+1,old.simpleNames());
+        try(var batch=new WriteBatch()){
+            batch.put(sourceKey(id,path),Json.MAPPER.writeValueAsBytes(source));batch.put(bytes("next-source"),bytes(Long.toString(nextSource)));
+            save(batch,value);state.write(durable,batch);
+        }
+        evictSources(id);installed(value);sourceWrites++;
+    }
+    @Override public long publishDocumentation(long binaryId,ArtifactInput input,Map<String,Map<String,Object>> members,int unmatched)throws Exception{
+        try(var permit=admitBuild()){return publishDocumentationData(binaryId,input,members,unmatched);}
+    }
+    private long publishDocumentationData(long binaryId,ArtifactInput input,Map<String,Map<String,Object>> members,int unmatched)throws Exception{
+        StoredArtifact binary; synchronized(this){binary=required(binaryId);}
+        String docs=repository.publishDocumentation(binary.input().key().cacheKey(),input.key(),members,unmatched);
+        synchronized(this){
+            if(!required(binaryId).input().key().equals(binary.input().key()))throw new IllegalStateException("Binary changed during documentation indexing");
+            Long existing=paths.get(input.context().path());long id=existing==null?nextArtifact++:existing;
+            var source=new StoredArtifact(id,input,docs,null,0,0,false,0,0);
+            var updated=new StoredArtifact(binaryId,binary.input(),docs,binary.codeKey(),binary.symbols(),binary.edges(),binary.classReferences(),binary.sourceRevision(),binary.simpleNames());
+            try(var batch=new WriteBatch()){save(batch,source);save(batch,updated);batch.put(bytes("U|"+key(id)),bytes(Integer.toString(unmatched)));state.write(durable,batch);}
+            this.unmatched.put(id,(long)unmatched);installed(source);installed(updated);return id;
+        }
+    }
+    @Override public void resolveGlobalRelationships(){/* Targets remain symbolic until a workspace query. */}
+    @Override public synchronized boolean reconcilePaths(Path root,Set<Path> present)throws Exception{
+        var removed=new ArrayList<StoredArtifact>();Path normalized=root.toAbsolutePath().normalize();
+        for(var value:artifacts.values()){
+            var context=value.input().context();if(!Set.of("jar","sources").contains(context.kind())||context.path().startsWith("jrt:"))continue;
+            Path path=Path.of(context.path());if(path.startsWith(normalized)&&!present.contains(path))removed.add(value);
+        }
+        if(removed.isEmpty())return false;
+        try(var batch=new WriteBatch()){for(var value:removed)batch.delete(bytes("A|"+key(value.id())));state.write(durable,batch);}
+        for(var value:removed){artifacts.remove(value.id());paths.remove(value.input().context().path());evictSources(value.id());unmatched.remove(value.id());}metadataWrites+=removed.size();return true;
+    }
+    @Override public synchronized Map<String,Long> counts(){return Map.of("artifacts",(long)artifacts.size(),"symbols",artifacts.values().stream().mapToLong(StoredArtifact::symbols).sum(),"edges",artifacts.values().stream().mapToLong(StoredArtifact::edges).sum(),"simple_names",artifacts.values().stream().mapToLong(StoredArtifact::simpleNames).sum(),"unmatched_source_members",unmatched.values().stream().mapToLong(Long::longValue).sum());}
+    @Override public synchronized Map<String,Object> status(){return Map.of("backend",backend(),"link_passes",0L,"metadata_writes",metadataWrites,"source_file_writes",sourceWrites,"source_cache_budget_bytes",sourceCacheBudget,"source_cache_estimated_bytes",sourceCacheBytes);}
+
+    private List<StoredArtifact> selected(String workspace,boolean jdk){
+        ensureOpen();
+        var selected=new LinkedHashMap<Long,StoredArtifact>();
+        if(workspace==null)artifacts.values().stream().filter(a->!a.input().context().kind().equals("sources"))
+                .sorted(Comparator.comparingInt(a->a.input().context().kind().equals("local")?0:1)).forEach(a->selected.put(a.id(),a));
+        else{
+            // Local declarations take precedence over installed copies with identical coordinates.
+            var entries=workspaces.getOrDefault(workspace,List.of());
+            for(boolean local:List.of(true,false))for(var entry:entries){
+                Long id=paths.get(entry.path());if(id==null)continue;var value=artifacts.get(id);
+                if(value!=null&&value.input().context().kind().equals("local")==local)selected.put(id,value);
+            }
+            if(jdk)for(var value:artifacts.values())if(value.input().context().gav().startsWith("jdk:"))selected.putIfAbsent(value.id(),value);
+        }
+        return List.copyOf(selected.values());
+    }
+    @Override public synchronized List<String> loadWorkspace(String workspace,List<WorkspaceEntry> entries,List<Map.Entry<String,String>> dependencies)throws Exception{
+        workspaces.put(workspace,entries.stream().map(e->new WorkspaceEntry(Path.of(e.path()).toAbsolutePath().normalize().toString(),e.scope())).toList());
+        var classes=new TreeMap<String,Set<String>>();var packages=new TreeMap<String,Set<String>>();
+        for(var artifact:selected(workspace,false))for(var symbol:repository.select(symbolsKey(artifact),"0|type|",-1,Integer.MAX_VALUE,s->TYPES.contains(s.kind()))){
+            var context=artifact.input().context();String label=context.gav()+" ["+context.path()+"]";
+            classes.computeIfAbsent(symbol.fqn(),ignored->new LinkedHashSet<>()).add(label);
+            int dot=symbol.fqn().lastIndexOf('.');String pkg=dot<0?"":symbol.fqn().substring(0,dot);
+            packages.computeIfAbsent(pkg,ignored->new LinkedHashSet<>()).add(label);
+        }
+        var warnings=new ArrayList<String>();classes.forEach((name,owners)->{if(owners.size()>1)warnings.add("duplicate_class: "+name+": "+String.join("; ",owners));});
+        packages.forEach((name,owners)->{if(owners.size()>1)warnings.add("split_package: "+name+": "+String.join("; ",owners));});return warnings;
+    }
+
+    private static String symbolsKey(StoredArtifact artifact){return artifact.codeKey()==null?artifact.input().key().cacheKey():artifact.codeKey();}
+    private long symbolId(StoredArtifact artifact,ArtifactIndexFormat.SymbolRecord symbol)throws Exception{
+        if(artifact.codeKey()==null)return (artifact.id()<<32)|Integer.toUnsignedLong(symbol.id());
+        Integer original=repository.binaryId(artifact.input().key().cacheKey(),symbol.key());
+        return (artifact.id()<<32)|(original==null?0x40000000L|Integer.toUnsignedLong(symbol.id()):Integer.toUnsignedLong(original));
+    }
+    private Map<String,Object> row(StoredArtifact artifact,ArtifactIndexFormat.SymbolRecord symbol)throws Exception{
+        var context=artifact.input().context();var result=new LinkedHashMap<String,Object>();
+        result.put("id",symbolId(artifact,symbol));result.put("artifact_id",artifact.id());
+        result.put("owner_id",symbol.ownerId()<0?null:artifact.codeKey()==null?(artifact.id()<<32)|Integer.toUnsignedLong(symbol.ownerId()):symbolId(artifact,repository.symbol(symbolsKey(artifact),symbol.ownerId())));result.put("flags",symbol.flags());result.put("line",null);
+        for(String name:List.of("source_start","source_end","body_start","body_end"))result.put(name,-1);
+        result.put("scip",context.scip(symbol));result.put("kind",symbol.kind());result.put("name",symbol.name());result.put("name_path",ArtifactContext.namePath(symbol));
+        result.put("signature",symbol.signature());result.put("erased_descriptor",symbol.descriptor());result.put("source_file",null);result.put("doc",null);
+        result.put("fqn",symbol.fqn());result.put("binary_key",symbol.key());result.put("class_entry",symbol.entry());result.put("parameters",Json.MAPPER.valueToTree(symbol.parameters()));
+        result.put("metadata",Json.MAPPER.readTree(symbol.metadataJson()));result.put("tier",2);
+        if(artifact.docsKey()!=null){
+            var overlay=new LinkedHashMap<>(repository.documentation(artifact.docsKey(),symbol.key()));
+            Object names=overlay.remove("parameters");
+            if(names instanceof List<?> parameters&&!parameters.isEmpty()&&!Json.MAPPER.readTree(symbol.metadataJson()).path("parameter_names_from_class").asBoolean()){
+                String signature=Objects.toString(symbol.signature(),"");
+                for(int i=0;i<Math.min(parameters.size(),symbol.parameters().size());i++)signature=signature.replaceAll("\\b"+java.util.regex.Pattern.quote(symbol.parameters().get(i))+"\\b",java.util.regex.Matcher.quoteReplacement(parameters.get(i).toString()));
+                result.put("signature",signature);result.put("parameters",Json.MAPPER.valueToTree(parameters));
+            }
+            result.putAll(overlay);
+        }
+        return contextual(artifact,result);
+    }
+    private static Map<String,Object> contextual(StoredArtifact artifact,Map<String,Object> value){
+        var result=new LinkedHashMap<>(value);var context=artifact.input().context();
+        result.put("artifact_id",artifact.id());result.put("gav",context.gav());result.put("artifact_path",context.path());result.put("artifact_kind",context.kind());
+        result.put("parameters",Json.MAPPER.valueToTree(result.getOrDefault("parameters",List.of())));
+        result.put("metadata",Json.MAPPER.valueToTree(result.getOrDefault("metadata",Map.of())));return result;
+    }
+    private static Map<String,Object> searchFields(StoredArtifact artifact,ArtifactIndexFormat.SymbolRecord symbol){
+        var result=new HashMap<String,Object>();result.put("scip",artifact.input().context().scip(symbol));result.put("kind",symbol.kind());
+        result.put("name",symbol.name());result.put("name_path",ArtifactContext.namePath(symbol));result.put("binary_key",symbol.key());result.put("erased_descriptor",symbol.descriptor());return result;
+    }
+    private Map<String,Object> sourceByScip(StoredArtifact artifact,String scip)throws Exception{
+        for(var file:sources(artifact.id()))for(var symbol:file.symbols())if(scip.equals(symbol.get("scip")))return contextual(artifact,symbol);return null;
+    }
+    private boolean preferred(StoredArtifact artifact,String scip,List<StoredArtifact> selected)throws Exception{
+        for(var earlier:selected){
+            if(earlier.id()==artifact.id())break;
+            if(!earlier.input().context().gav().equals(artifact.input().context().gav()))continue;
+            if(sourceByScip(earlier,scip)!=null)return false;
+            int suffix=scip.indexOf(' ',scip.indexOf(' ',scip.indexOf(' ')+1)+1)+1;
+            if(!repository.select(symbolsKey(earlier),"2|scip|"+scip.substring(suffix)+"|",-1,1,s->earlier.input().context().scip(s).equals(scip)).isEmpty())return false;
+        }return true;
+    }
+    @Override public synchronized Map<String,Object> byScip(String scip,String workspace)throws Exception{
+        for(var artifact:selected(workspace,true)){
+            var source=sourceByScip(artifact,scip);if(source!=null)return source;
+            var context=artifact.input().context();String[] gav=context.gav().split(":",3);String prefix="maven "+gav[0]+"/"+gav[1]+" "+gav[2]+" ";
+            if(!scip.startsWith(prefix))continue;
+            var found=repository.select(symbolsKey(artifact),"2|scip|"+scip.substring(prefix.length())+"|",-1,1,s->context.scip(s).equals(scip));
+            if(!found.isEmpty())return row(artifact,found.getFirst());
+        }return null;
+    }
+    @Override public synchronized Map<String,Object> byId(long id,String workspace)throws Exception{
+        long artifactId=id>>>32;var artifact=artifacts.get(artifactId);if(artifact==null||selected(workspace,true).stream().noneMatch(a->a.id()==artifactId))return null;
+        if((id&0x80000000L)!=0){for(var file:sources(artifactId))for(var symbol:file.symbols())if(((Number)symbol.get("id")).longValue()==id)return contextual(artifact,symbol);return null;}
+        String generation=(id&0x40000000L)!=0?artifact.codeKey():artifact.input().key().cacheKey();if(generation==null)return null;
+        var symbol=repository.symbol(generation,(int)(id&0x3fffffffL));if(symbol==null)return null;
+        if(artifact.codeKey()!=null){Integer enriched=repository.binaryId(artifact.codeKey(),symbol.key());if(enriched!=null)symbol=repository.symbol(artifact.codeKey(),enriched);}
+        var source=sourceByScip(artifact,artifact.input().context().scip(symbol));return source==null?row(artifact,symbol):source;
+    }
+    @Override public synchronized List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds)throws Exception{
+        return findMatching(query,workspace,substring,limit,after,kinds,ignored->true);
+    }
+    @Override public synchronized List<Map<String,Object>> descendants(String path,String workspace,int depth,int limit,long after,Set<String> kinds)throws Exception{
+        long parentDepth=path.chars().filter(c->c=='/').count();
+        return findMatching(path+"/",workspace,true,limit,after,kinds,s->{String candidate=Objects.toString(s.get("name_path"),"");return candidate.startsWith(path+"/")&&candidate.chars().filter(c->c=='/').count()-parentDepth<=depth;});
+    }
+    private List<Map<String,Object>> findMatching(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds,Predicate<Map<String,Object>> filter)throws Exception{
+        if(limit<=0)return List.of();NamePath name=null;if(!substring)try{name=NamePath.parse(query);}catch(RpcException ignored){}
+        final NamePath parsed=name;String lower=query.toLowerCase(Locale.ROOT);
+        Predicate<Map<String,Object>> match=s->(kinds.isEmpty()||kinds.contains(s.get("kind")))&&filter.test(s)&&
+                (substring?(Objects.toString(s.get("name"),"").toLowerCase(Locale.ROOT).contains(lower)||Objects.toString(s.get("name_path"),"").toLowerCase(Locale.ROOT).contains(lower)):
+                        query.equals(s.get("binary_key"))||query.equals(s.get("scip"))||(parsed!=null&&parsed.matches(s)));
+        var found=new TreeMap<Long,Map<String,Object>>();var seen=new HashSet<String>();
+        var selectedArtifacts=selected(workspace,false);
+        for(var artifact:selectedArtifacts){
+            var sourceScips=new HashSet<String>();for(var file:sources(artifact.id()))for(var symbol:file.symbols()){
+                String scip=symbol.get("scip").toString();sourceScips.add(scip);var value=contextual(artifact,symbol);
+                if(seen.add(scip)&&preferred(artifact,scip,selectedArtifacts)&&match.test(value))offer(found,value,after,limit);
+            }
+            if(after>>>32>artifact.id())continue;
+            var prefixes=new LinkedHashSet<String>();
+            if(substring){
+                boolean typesOnly=!kinds.isEmpty()&&TYPES.containsAll(kinds);
+                String posting=lower.isBlank()?"1|symbol|":"8|gram|"+lower.substring(0,Math.min(3,lower.length()))+"|";
+                // Common owner-name grams can contain every member in a JAR. Compare
+                // posting cardinality without loading symbols; retain selective grams
+                // for rare names instead of always walking all type declarations.
+                if(typesOnly&&(lower.isBlank()||repository.postingCountExceeds(symbolsKey(artifact),posting,artifact.simpleNames())))posting="0|type|";
+                prefixes.add(posting);
+            }
+            else{
+                if(parsed!=null&&!parsed.identity())prefixes.add("3|name|"+parsed.leaf()+"|");
+                String[] gav=artifact.input().context().gav().split(":",3);String prefix="maven "+gav[0]+"/"+gav[1]+" "+gav[2]+" ";
+                if(query.startsWith(prefix))prefixes.add("2|scip|"+query.substring(prefix.length())+"|");
+            }
+            var candidates=new TreeMap<Integer,ArtifactIndexFormat.SymbolRecord>();
+            for(String prefix:prefixes)for(var symbol:repository.selectRanked(symbolsKey(artifact),prefix,after,limit,s->{try{if(!kinds.isEmpty()&&!kinds.contains(s.kind()))return false;String scip=artifact.input().context().scip(s);return !sourceScips.contains(scip)&&!seen.contains(scip)&&preferred(artifact,scip,selectedArtifacts)&&match.test(searchFields(artifact,s));}catch(Exception e){throw new IllegalStateException(e);}},s->{try{return symbolId(artifact,s);}catch(Exception e){throw new IllegalStateException(e);}}))candidates.put(symbol.id(),symbol);
+            Integer direct=substring?null:repository.binaryId(symbolsKey(artifact),query);if(direct!=null)candidates.put(direct,repository.symbol(symbolsKey(artifact),direct));
+            for(var symbol:candidates.values()){
+                var value=row(artifact,symbol);String scip=value.get("scip").toString();
+                if(!sourceScips.contains(scip)&&seen.add(scip)&&preferred(artifact,scip,selectedArtifacts)&&match.test(value))offer(found,value,after,limit);
+            }
+        }return List.copyOf(found.values());
+    }
+    private static void offer(TreeMap<Long,Map<String,Object>> selected,Map<String,Object> value,long after,int limit){
+        long id=((Number)value.get("id")).longValue();if(id<=after)return;selected.put(id,value);if(selected.size()>limit)selected.pollLastEntry();
+    }
+
+    private Map<String,Object> direct(StoredArtifact artifact,String binaryKey)throws Exception{
+        for(var file:sources(artifact.id()))for(var symbol:file.symbols())if(binaryKey.equals(symbol.get("binary_key")))return contextual(artifact,symbol);
+        Integer id=repository.binaryId(symbolsKey(artifact),binaryKey);
+        return id==null?null:row(artifact,repository.symbol(symbolsKey(artifact),id));
+    }
+    private Map<String,Object> resolve(String target,String workspace,Set<String> visited)throws Exception{
+        if(target.startsWith("maven ")||target.startsWith("local "))return byScip(target,workspace);
+        if(!visited.add(target))return null;int member=target.indexOf('#');String owner=member<0?target:target.substring(0,member);
+        for(var artifact:selected(workspace,true)){
+            var type=direct(artifact,owner);if(type==null)continue;
+            var value=member<0?type:direct(artifact,target);if(value!=null)return value;
+            if(target.substring(member+1).startsWith("<init>("))return null;
+            for(var edge:raw(type,Set.of("extends","implements"),false)){
+                var parent=resolve(edge.targetBinaryKey(),workspace,new HashSet<>());if(parent==null)continue;
+                var inherited=resolve(parent.get("binary_key")+target.substring(member),workspace,visited);
+                if(inherited!=null&&(flags(inherited)&2)==0&&accessible(inherited,owner))return inherited;
+            }return null;
+        }return null;
+    }
+    private static int flags(Map<String,Object> symbol){
+        if(symbol.get("flags") instanceof Number value)return value.intValue();
+        int result=0;Object modifiers=symbol.get("modifiers");if(modifiers instanceof Collection<?> values){
+            if(values.contains("public"))result|=1;if(values.contains("private"))result|=2;if(values.contains("protected"))result|=4;if(values.contains("static"))result|=8;
+        }return result;
+    }
+    private static boolean accessible(Map<String,Object> parent,String childOwner){
+        if((flags(parent)&5)!=0)return true;String owner=Objects.toString(parent.get("fqn"),"");
+        return owner.substring(0,Math.max(0,owner.lastIndexOf('.'))).equals(childOwner.substring(0,Math.max(0,childOwner.lastIndexOf('.'))));
+    }
+    private List<SymbolicReference> raw(Map<String,Object> symbol,Set<String> kinds,boolean code)throws Exception{
+        var result=new LinkedHashSet<SymbolicReference>();long artifactId=((Number)symbol.get("artifact_id")).longValue();var artifact=required(artifactId);
+        String scip=symbol.get("scip").toString();boolean source=false;
+        for(var file:sources(artifactId))if(file.symbols().stream().anyMatch(s->scip.equals(s.get("scip")))){
+            source=true;for(var edge:file.edges())if(edge.sourceScip().equals(scip)&&(kinds.isEmpty()||kinds.contains(edge.kind())))result.add(new SymbolicReference(scip,edge.targetScip(),edge.kind()));
+        }
+        if(source)return List.copyOf(result);
+        String generation=code?artifact.codeKey():artifact.input().key().cacheKey();if(generation==null)return List.of();
+        Integer local=repository.binaryId(generation,symbol.get("binary_key").toString());if(local==null)return List.of();
+        for(var edge:repository.outgoing(generation,local,kinds,Integer.MAX_VALUE))result.add(new SymbolicReference(scip,edge.target(),edge.kind()));
+        return List.copyOf(result);
+    }
+    @Override public synchronized List<Map<String,Object>> symbolsByBinaryKey(String binaryKey,String workspace)throws Exception{
+        var result=new LinkedHashMap<String,Map<String,Object>>();for(var artifact:selected(workspace,true)){
+            var value=direct(artifact,binaryKey);if(value!=null)result.putIfAbsent(value.get("scip").toString(),value);
+        }return List.copyOf(result.values());
+    }
+    private static ArtifactCandidate candidate(StoredArtifact a){return new ArtifactCandidate(a.id(),a.input().context().path(),a.input().context().gav(),a.classReferences(),a.codeKey()!=null);}
+    @Override public synchronized List<ArtifactCandidate> binaryArtifacts(String workspace){return selected(workspace,false).stream().filter(a->a.input().context().kind().equals("jar")&&!a.input().context().path().startsWith("jrt:")).map(RocksIndexStore::candidate).toList();}
+    @Override public List<ArtifactWork> pendingSignatureArtifacts(String workspace){return List.of();}
+    @Override public synchronized List<ArtifactCandidate> artifactsOwning(Collection<String> scips,String workspace)throws Exception{
+        var result=new TreeMap<Long,ArtifactCandidate>();for(String scip:scips){var symbol=byScip(scip,workspace);if(symbol==null)continue;var artifact=required(((Number)symbol.get("artifact_id")).longValue());
+            if(artifact.input().context().kind().equals("jar")&&!artifact.input().context().path().startsWith("jrt:"))result.put(artifact.id(),candidate(artifact));
+        }return List.copyOf(result.values());
+    }
+    @Override public synchronized List<ArtifactCandidate> artifactsReferencing(Collection<String> fqns,String workspace)throws Exception{
+        var result=new ArrayList<ArtifactCandidate>();for(var artifact:selected(workspace,false)){
+            if(!artifact.input().context().kind().equals("jar"))continue;
+            for(String fqn:fqns)if(repository.referencesClass(artifact.input().key().cacheKey(),fqn)||state.get(bytes("C|"+key(artifact.id())+"|"+fqn))!=null){result.add(candidate(artifact));break;}
+        }return List.copyOf(result);
+    }
+    @Override public synchronized List<SymbolicReference> codeReferences(Collection<String> frontier,boolean outgoing,Set<String> kinds,String workspace)throws Exception{
+        var result=new LinkedHashSet<SymbolicReference>();
+        if(outgoing){for(String scip:frontier){var source=byScip(scip,workspace);if(source!=null)result.addAll(raw(source,kinds,true));}}
+        else for(var artifact:selected(workspace,true)){
+            if(artifact.codeKey()!=null)for(String target:frontier)for(var edge:repository.incoming(artifact.codeKey(),target,kinds,Integer.MAX_VALUE)){
+                var symbol=repository.symbol(artifact.codeKey(),edge.sourceId());var source=byScip(artifact.input().context().scip(symbol),workspace);
+                if(source!=null&&((Number)source.get("artifact_id")).longValue()==artifact.id())result.add(new SymbolicReference(source.get("scip").toString(),target,edge.kind()));
+            }
+        }
+        return result.stream().sorted(Comparator.comparing(SymbolicReference::sourceScip).thenComparing(SymbolicReference::targetBinaryKey).thenComparing(SymbolicReference::kind)).toList();
+    }
+    @Override public synchronized List<ResolvedRelationship> relationships(Collection<String> scips,boolean outgoing,Set<String> kinds,String workspace)throws Exception{
+        var result=new LinkedHashMap<String,ResolvedRelationship>();
+        if(outgoing){
+            for(String scip:scips){var source=byScip(scip,workspace);if(source==null)continue;
+                for(var edge:raw(source,kinds,false)){var target=resolve(edge.targetBinaryKey(),workspace,new HashSet<>());if(target!=null)add(result,source,target,edge.kind());}
+                if(kinds.isEmpty()||kinds.contains("overrides"))for(var parent:overrideParents(scip,workspace,Integer.MAX_VALUE))add(result,source,parent,"overrides");
+            }
+        }else{
+            for(String scip:scips){var target=byScip(scip,workspace);if(target==null)continue;String binary=target.get("binary_key").toString();
+                for(var artifact:selected(workspace,true)){
+                    for(var edge:repository.incoming(artifact.input().key().cacheKey(),binary,kinds,Integer.MAX_VALUE)){
+                        var symbol=repository.symbol(artifact.input().key().cacheKey(),edge.sourceId());var source=byScip(artifact.input().context().scip(symbol),workspace);
+                        var resolved=resolve(edge.target(),workspace,new HashSet<>());
+                        if(source!=null&&((Number)source.get("artifact_id")).longValue()==artifact.id()&&resolved!=null&&scip.equals(resolved.get("scip")))add(result,source,target,edge.kind());
+                    }
+                    for(var file:sources(artifact.id()))for(var edge:file.edges())if(edge.targetScip().equals(scip)&&(kinds.isEmpty()||kinds.contains(edge.kind()))){var source=byScip(edge.sourceScip(),workspace);if(source!=null)add(result,source,target,edge.kind());}
+                    if((kinds.isEmpty()||kinds.contains("overrides"))&&"method".equals(target.get("kind"))){
+                        for(var candidate:find(target.get("name").toString(),workspace,false,Integer.MAX_VALUE,0,Set.of("method")))
+                            for(var parent:overrideParents(candidate.get("scip").toString(),workspace,Integer.MAX_VALUE))if(scip.equals(parent.get("scip")))add(result,candidate,target,"overrides");
+                    }
+                }
+            }
+        }
+        return result.values().stream().sorted(Comparator.comparingLong((ResolvedRelationship r)->((Number)r.source().get("id")).longValue()).thenComparingLong(r->((Number)r.target().get("id")).longValue()).thenComparing(ResolvedRelationship::kind)).toList();
+    }
+    private static void add(Map<String,ResolvedRelationship> result,Map<String,Object> source,Map<String,Object> target,String kind){result.putIfAbsent(source.get("scip")+"|"+kind+"|"+target.get("scip"),new ResolvedRelationship(source,target,kind));}
+    @Override public synchronized List<Map<String,Object>> relationshipClosure(String scip,int depth,Set<String> kinds,String workspace,int limit,int offset)throws Exception{
+        if(depth<=0||kinds.isEmpty()||limit<=0)return List.of();var visited=new HashSet<String>();visited.add(scip);var frontier=List.of(scip);var all=new ArrayList<Map<String,Object>>();
+        for(int level=0;level<depth&&!frontier.isEmpty()&&all.size()<limit+(long)offset;level++){
+            var next=new TreeMap<Long,Map<String,Object>>();for(var edge:relationships(frontier,true,kinds,workspace))if(visited.add(edge.target().get("scip").toString()))next.put(((Number)edge.target().get("id")).longValue(),edge.target());
+            all.addAll(next.values());frontier=next.values().stream().map(s->s.get("scip").toString()).toList();
+        }return all.stream().skip(Math.max(0,offset)).limit(limit).toList();
+    }
+    @Override public synchronized Set<String> unresolvedSignatureTargets(String scip,int depth,Set<String> kinds,String workspace,int limit)throws Exception{
+        if(depth<=0||kinds.isEmpty()||limit<=0)return Set.of();var result=new LinkedHashSet<String>();var visited=new HashSet<String>();var frontier=List.of(scip);
+        for(int level=0;level<depth&&!frontier.isEmpty();level++){
+            var next=new ArrayList<String>();for(String value:frontier){if(!visited.add(value))continue;var source=byScip(value,workspace);if(source==null)continue;
+                for(var edge:raw(source,kinds,false)){var target=resolve(edge.targetBinaryKey(),workspace,new HashSet<>());
+                    if(target==null){result.add(edge.targetBinaryKey());if(result.size()==limit)return result;}else next.add(target.get("scip").toString());
+                }
+            }frontier=next;
+        }return result;
+    }
+    @Override public synchronized List<Map<String,Object>> overrideParents(String scip,String workspace,int limit)throws Exception{
+        if(limit<=0)return List.of();var child=byScip(scip,workspace);if(child==null||!"method".equals(child.get("kind"))||(flags(child)&10)!=0)return List.of();
+        String descriptor=Objects.toString(child.get("erased_descriptor"),"");int end=descriptor.indexOf(')');if(end<0)return List.of();String parameters=descriptor.substring(0,end+1);
+        String owner=Objects.toString(child.get("fqn"),"");var ownerSymbol=resolve(owner,workspace,new HashSet<>());if(ownerSymbol==null)return List.of();
+        var result=new LinkedHashMap<String,Map<String,Object>>();var visited=new HashSet<String>();var queue=new ArrayDeque<Map<String,Object>>();queue.add(ownerSymbol);
+        while(!queue.isEmpty()&&result.size()<limit){var current=queue.removeFirst();if(!visited.add(current.get("scip").toString()))continue;
+            for(var edge:raw(current,Set.of("extends","implements"),false)){
+                var parent=resolve(edge.targetBinaryKey(),workspace,new HashSet<>());if(parent==null)continue;queue.add(parent);
+                for(var method:find(child.get("name").toString(),workspace,false,Integer.MAX_VALUE,0,Set.of("method"))){
+                    String parentDescriptor=Objects.toString(method.get("erased_descriptor"),"");
+                    if(Objects.equals(method.get("fqn"),parent.get("fqn"))&&parentDescriptor.startsWith(parameters)&&(flags(method)&10)==0&&accessible(method,owner)){
+                        result.putIfAbsent(method.get("scip").toString(),method);if(result.size()==limit)break;
+                    }
+                }
+            }
+        }return List.copyOf(result.values());
+    }
+    @Override public synchronized List<Path> localWorkspaceArtifacts(String workspace){return selected(workspace,false).stream().filter(a->a.input().context().kind().equals("local")).map(a->Path.of(a.input().context().path())).sorted().toList();}
+    @Override public synchronized void close()throws Exception{
+        if(closed)return;closing=true;long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(60);
+        while(builds>0){long remaining=deadline-System.nanoTime();if(remaining<=0)throw new IllegalStateException("Artifact publishers did not stop; native handles remain open");java.util.concurrent.TimeUnit.NANOSECONDS.timedWait(this,remaining);}
+        closed=true;state.close();options.close();durable.close();sourceCache.clear();sourceCacheWeights.clear();sourceCacheBytes=0;
+    }
+}

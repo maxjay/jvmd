@@ -1,0 +1,25 @@
+{
+  "earlier_revision": "aafafc5325ea48b814365369c9d0c7bd08ca4f1c",
+  "checkpoints_run": "https://github.com/maxjay/jvmd/actions/runs/35403345660",
+  "checkpoints_conclusion": "success",
+  "corpus_conclusion": "success",
+  "identifier_sweep": {
+    "matched": 106407,
+    "total": 106515,
+    "rate": 0.9989860583016477
+  },
+  "corpus_artifact": "https://github.com/maxjay/jvmd/actions/runs/35403345660/artifacts/10573251304",
+  "scope": "Earlier branch revision only. The optimized implementation must pass its own CI gates; this does not replace the unavailable corporate repository performance run.",
+  "optimized_code_revision": "7b5e800d2293c3a761461e8ce12051a2e82127d3",
+  "optimized_code_local_revision": "cf1728eac4928c1dd39f2b229032c8acf8d77411",
+  "optimized_distributions_run": "https://github.com/maxjay/jvmd/actions/runs/35410294089",
+  "optimized_distributions_jobs": {
+    "linux-x64": "success",
+    "linux-arm64": "success",
+    "macos-x64": "success",
+    "macos-arm64": "success",
+    "windows-installer": "success"
+  },
+  "optimized_checkpoints_run": "https://github.com/maxjay/jvmd/actions/runs/35410294101",
+  "optimized_checkpoints_status_when_recorded": "pending"
+}

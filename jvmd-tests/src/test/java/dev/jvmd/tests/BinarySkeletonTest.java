@@ -24,6 +24,13 @@ class BinarySkeletonTest {
    .withMethodBody("value",java.lang.constant.MethodTypeDesc.ofDescriptor("()Ljava/lang/Object;"),9,c->c.aconst_null().areturn())
    .withMethodBody("value",java.lang.constant.MethodTypeDesc.ofDescriptor("()V"),9,c->c.return_()));
   Path jar=temp.resolve("returns.jar");try(var output=new java.util.jar.JarOutputStream(Files.newOutputStream(jar))){output.putNextEntry(new java.util.jar.JarEntry("fixture/ReturnOverload.class"));output.write(bytes);output.closeEntry();}
-  try(var index=new IndexService(temp.resolve("index.db"),temp)){index.indexJar(jar,"fixture:returns:1","jar");var methods=index.find("value",null,false,10,0);assertThat(methods).hasSize(2);assertThat(methods.stream().map(m->m.get("scip"))).doesNotHaveDuplicates();}
+  try(var index=new IndexService(temp.resolve("index.db"),temp);
+      var control=new IndexService(new SqliteIndexStore(temp.resolve("control.db")),temp,ArtifactGenerationSink.none())){
+   index.indexJar(jar,"fixture:returns:1","jar");control.indexJar(jar,"fixture:returns:1","jar");
+   var methods=index.find("value",null,false,10,0);assertThat(methods).hasSize(2);assertThat(methods.stream().map(m->m.get("scip"))).doesNotHaveDuplicates();
+   assertThat(methods).extracting(m->m.get("scip")).containsExactlyInAnyOrderElementsOf(control.find("value",null,false,10,0).stream().map(m->m.get("scip")).toList());
+   long after=((Number)methods.getFirst().get("id")).longValue();assertThat(index.find("value",null,false,1,after)).extracting(m->m.get("scip")).containsExactly(methods.getLast().get("scip"));
+   for(var method:methods)assertThat(index.store().byScip(method.get("scip").toString(),null).get("binary_key")).isEqualTo(method.get("binary_key"));
+  }
  }
 }

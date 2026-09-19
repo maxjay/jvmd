@@ -73,8 +73,7 @@ final class LocalArtifacts {
         state.artifact=index.replaceLocal(module,fingerprint,size,mtime,new BinaryReader.Content(List.copyOf(symbols.values()),List.copyOf(edges),Map.of(),List.copyOf(warnings)),sourceData);state.observed=Map.copyOf(observed);return state.artifact;
     }
     void refreshWorkspace(String workspace)throws Exception{
-        var paths=index.database().read(c->{var result=new ArrayList<Path>();try(var q=c.prepareStatement("SELECT a.path FROM workspace_artifacts w JOIN artifacts a ON a.id=w.artifact_id WHERE w.workspace_id=? AND a.kind='local'")){q.setString(1,workspace);try(var r=q.executeQuery()){while(r.next())result.add(Path.of(r.getString(1)));}}return result;});
-        for(Path path:paths)refresh(path);
+        for(Path path:index.store().localWorkspaceArtifacts(workspace))refresh(path);
     }
     void recordSource(Path file,String contentHash,List<Map<String,Object>> symbols,int tier,List<IndexService.SourceEdge> edges)throws Exception{
         var state=modules.values().stream().filter(s->s.module.sources().stream().anyMatch(file::startsWith)).max(Comparator.comparingInt(s->s.module.directory().getNameCount())).orElse(null);

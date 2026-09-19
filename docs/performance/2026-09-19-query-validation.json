@@ -1,0 +1,449 @@
+{
+  "baseline": {
+    "local_commit": "9dda2e535ad7c6b9cf567144390f2cda73fd68d5",
+    "github_commit": "deefc256463829b4649aa956142dd7587ade3922",
+    "tree": "16be11420d4da41fc2417dfc9d180a92c24b66b4"
+  },
+  "optimized": {
+    "local_commit": "ebbe326b2df6c96b72f1bac992aa68c857daa00a",
+    "github_commit": "3871bc83da43ee890f9d4fe0b242e437aaf8b673",
+    "tree": "cc17acb015c07217ad77e9b187c0f48f5e10a4b2"
+  },
+  "tests": {
+    "selected": 73,
+    "passed": 73,
+    "failed": 0,
+    "storage": 45,
+    "integration": 28,
+    "launcher_note": "Direct classpath build with pinned JDK and dependencies. Initial direct launcher omitted the POM's compiler exports, causing four IllegalAccessErrors; all 73 pass with the normal exports. Test assertions were not weakened."
+  },
+  "workflows": [
+    {
+      "id": 35445446148,
+      "url": "https://github.com/maxjay/jvmd/actions/runs/35445446148",
+      "jobs": [
+        {
+          "id": 105903463292,
+          "name": "corpus",
+          "status": "pending",
+          "conclusion": null,
+          "run_id": 35445446148,
+          "logs_url": null,
+          "steps": null
+        },
+        {
+          "id": 105903463417,
+          "name": "checkpoints",
+          "status": "completed",
+          "conclusion": "success",
+          "run_id": 35445446148,
+          "logs_url": null,
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2
+            },
+            {
+              "name": "Install checksum-pinned Temurin 25.0.4.1+1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3
+            },
+            {
+              "name": "Compile and package",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4
+            },
+            {
+              "name": "Assemble runtime and train AOT",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5
+            },
+            {
+              "name": "Phase 1 checkpoints including performance budgets",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6
+            },
+            {
+              "name": "Install pinned Maven 4 for native resolver agreement",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7
+            },
+            {
+              "name": "Phase 2 checkpoints",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8
+            },
+            {
+              "name": "Phase 3 index prerequisites and complete repository gate",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9
+            },
+            {
+              "name": "RocksDB immutable artifact generations",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 10
+            },
+            {
+              "name": "Phase 4 compiler prerequisites and checkpoints",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 11
+            },
+            {
+              "name": "Phase 5 external annotation processing",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 12
+            },
+            {
+              "name": "Phase 6 prerequisite - unbuilt WorkspaceReader smoke",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 13
+            },
+            {
+              "name": "Phase 6 repository overlays and cross-root debugging",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 14
+            },
+            {
+              "name": "Phase 7 documentation round trip and budget",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15
+            },
+            {
+              "name": "Runtime inspection and evaluation checkpoints",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 16
+            },
+            {
+              "name": "Install pinned JBR for enhanced hot swap",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17
+            },
+            {
+              "name": "Install checksum-pinned HotswapAgent fixture",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 18
+            },
+            {
+              "name": "Enhanced hot swap on JBR and stock fallback",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 19
+            },
+            {
+              "name": "Install pinned Node.js for the stdio shim",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 20
+            },
+            {
+              "name": "Stdio framing and MCP transport tests",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 21
+            },
+            {
+              "name": "Agent surface checkpoints",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 22
+            },
+            {
+              "name": "LSP facade and document synchronization",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 23
+            },
+            {
+              "name": "Run actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 24
+            },
+            {
+              "name": "Post Install pinned Node.js for the stdio shim",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 47
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 48
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 49
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 35445446248,
+      "url": "https://github.com/maxjay/jvmd/actions/runs/35445446248",
+      "jobs": [
+        {
+          "id": 105903463777,
+          "name": "windows-installer",
+          "status": "completed",
+          "conclusion": "success",
+          "run_id": 35445446248,
+          "logs_url": null,
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2
+            },
+            {
+              "name": "Check the Windows PowerShell installer",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7
+            }
+          ]
+        },
+        {
+          "id": 105903463826,
+          "name": "build (macos-x64, macos-15-intel)",
+          "status": "completed",
+          "conclusion": "success",
+          "run_id": 35445446248,
+          "logs_url": null,
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2
+            },
+            {
+              "name": "Build, train, package, and test the relocated archive",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3
+            },
+            {
+              "name": "Save platform archive and verification evidence",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9
+            }
+          ]
+        },
+        {
+          "id": 105903463838,
+          "name": "build (linux-x64, ubuntu-22.04)",
+          "status": "completed",
+          "conclusion": "success",
+          "run_id": 35445446248,
+          "logs_url": null,
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2
+            },
+            {
+              "name": "Build, train, package, and test the relocated archive",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3
+            },
+            {
+              "name": "Save platform archive and verification evidence",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9
+            }
+          ]
+        },
+        {
+          "id": 105903463867,
+          "name": "build (linux-arm64, ubuntu-22.04-arm)",
+          "status": "completed",
+          "conclusion": "success",
+          "run_id": 35445446248,
+          "logs_url": null,
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2
+            },
+            {
+              "name": "Build, train, package, and test the relocated archive",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3
+            },
+            {
+              "name": "Save platform archive and verification evidence",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9
+            }
+          ]
+        },
+        {
+          "id": 105903463892,
+          "name": "build (macos-arm64, macos-14)",
+          "status": "completed",
+          "conclusion": "success",
+          "run_id": 35445446248,
+          "logs_url": null,
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2
+            },
+            {
+              "name": "Build, train, package, and test the relocated archive",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3
+            },
+            {
+              "name": "Save platform archive and verification evidence",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9
+            }
+          ]
+        },
+        {
+          "id": 105903820543,
+          "name": "publish",
+          "status": "completed",
+          "conclusion": "skipped",
+          "run_id": 35445446248,
+          "logs_url": null,
+          "steps": null
+        }
+      ]
+    }
+  ],
+  "scope": "The measured optimization commit passed the complete checkpoint job and all platform packaging jobs. Its serialized corpus job remains pending. The final evidence-only head triggers independent CI."
+}

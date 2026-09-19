@@ -4,6 +4,9 @@ on:
     paths:
       - '.github/workflows/releases.yml'
       - 'jvmd-dist/**'
+      - 'jvmd-index-rocks/**'
+      - 'jvmd-index/**'
+      - 'pom.xml'
       - 'shim/**'
       - 'docs/install.md'
   push:

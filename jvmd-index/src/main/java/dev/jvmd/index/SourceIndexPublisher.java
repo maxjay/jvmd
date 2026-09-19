@@ -7,8 +7,25 @@ import java.util.concurrent.atomic.LongAdder;
 /** A bounded, coalescing queue of detached facts. Compiler responses never wait for the writer. */
 public final class SourceIndexPublisher implements AutoCloseable {
     public record Delta(Path file,String sourceHash,String semanticHash,List<Map<String,Object>> symbols,
-                        int tier,List<IndexService.SourceEdge> edges,long bytes){
-        public Delta {file=file.toAbsolutePath().normalize();symbols=List.copyOf(symbols);edges=List.copyOf(edges);}
+                        int tier,List<IndexService.SourceEdge> edges,long bytes,
+                        String moduleId,String apiFingerprint,String contextFingerprint,Set<Path> dependencies,
+                        Set<String> exportedNames,Set<String> unresolvedTargets){
+        public Delta {
+            file=file.toAbsolutePath().normalize();symbols=List.copyOf(symbols);edges=List.copyOf(edges);
+            moduleId=moduleId==null?"":moduleId;apiFingerprint=apiFingerprint==null?"":apiFingerprint;
+            contextFingerprint=contextFingerprint==null?"":contextFingerprint;
+            dependencies=dependencies==null?Set.of():dependencies.stream().map(path->path.toAbsolutePath().normalize())
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
+            exportedNames=exportedNames==null?Set.of():Set.copyOf(exportedNames);
+            unresolvedTargets=unresolvedTargets==null?Set.of():Set.copyOf(unresolvedTargets);
+        }
+        public Delta(Path file,String sourceHash,String semanticHash,List<Map<String,Object>> symbols,
+                     int tier,List<IndexService.SourceEdge> edges,long bytes){
+            this(file,sourceHash,semanticHash,symbols,tier,edges,bytes,"","","",Set.of(),Set.of(),Set.of());
+        }
+        public boolean hasSemanticState(){
+            return !moduleId.isBlank()&&!apiFingerprint.isBlank()&&!contextFingerprint.isBlank();
+        }
     }
     @FunctionalInterface public interface Sink {void publish(Delta delta)throws Exception;}
     private final Sink sink;
@@ -59,6 +76,10 @@ public final class SourceIndexPublisher implements AutoCloseable {
     @Override public void close()throws InterruptedException{
         Thread thread;
         synchronized(this){closing=true;notifyAll();thread=worker;}
-        if(thread!=null){thread.join(5000);if(thread.isAlive())thread.interrupt();}
+        if(thread!=null){
+            thread.join(60000);
+            if(thread.isAlive()){thread.interrupt();thread.join(5000);}
+            if(thread.isAlive())throw new IllegalStateException("Source publisher did not stop; index handles remain open");
+        }
     }
 }

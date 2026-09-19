@@ -16,37 +16,60 @@ an immutable sorted-file prototype on 800,000 pre-parsed facts: comparable media
 publication time, about 83% less final storage and 66% less steady-state write traffic.
 Those numbers compare the two prototypes; they are not SQLite-to-production gains.
 
-The full-provider reports for [40,000 symbols](performance/2026-09-19-rocks-provider-40000.json)
-and [380,000 symbols](performance/2026-09-19-rocks-provider-380000.json) include three
+The final full-provider reports for [40,000 symbols](performance/2026-09-19-rocks-final-40000.json)
+and [380,000 symbols](performance/2026-09-19-rocks-final-380000.json) include three
 fresh JVM runs, three unchanged restarts per backend and one-JAR replacement. The
 large generated fixture has one JAR and 950 classes. Measurements include production
 candidate validation/activation, workspace loading, queries and shutdown. Rocks opens
-no SQLite database. These reports measure local `53a693c` (GitHub `36b08133`), before
-the latest fixed-buffer/native-verification optimization; compiled hashes are retained.
+no SQLite database. These reports measure local `cf1728e` (GitHub `7b5e800d`), with
+compiled implementation hashes retained.
 
 | 380,000-symbol fresh run | SQLite median (range) | RocksDB median (range) |
 | --- | --- | --- |
-| Seed | 55.077 s (54.713–55.202) | 26.113 s (25.539–26.709) |
-| Through queries and close | 56.262 s | 26.944 s |
-| Process write traffic | 696.20 MB | 86.73 MB |
-| Query p95 | 64.41 ms (51.36–98.25) | 39.56 ms (28.88–42.51) |
-| Final index size | 371.93 MB | 37.71 MB |
-| Peak process RSS | 985.8 MB | 861.1 MB |
+| Seed | 53.225 s (52.244–54.707) | 19.349 s (18.887–19.797) |
+| Through queries and close | 54.547 s (53.472–55.931) | 20.205 s (19.694–20.589) |
+| Process write traffic | 696.21 MB (696.16–700.72) | 86.68 MB (86.65–86.77) |
+| Query p95 | 60.96 ms (57.22–68.01) | 32.64 ms (31.35–33.01) |
+| Final index size | 371.92 MB | 37.71 MB |
+| Peak process RSS | 960.9 MB (959.4–1055.7) | 899.2 MB (859.6–925.7) |
 
-This is **2.11x faster seeding and 87.5% fewer writes**, still short of the proposed
-3x seed target. First-query ranges overlap (SQLite 115–134 ms, Rocks 123–147 ms);
-no first-query improvement is claimed. All six unchanged restarts perform zero
-artifact rebuilds/global links. One-JAR replacement takes SQLite/Rocks 78.61/26.89 s,
-with exactly one artifact rebuilt; Rocks performs no global link pass. The smaller
-fixture reports SQLite/Rocks seed 6.215/4.504 s and writes 74.49/21.56 MB.
+This is **2.75x faster seeding and 87.5% fewer writes**; elapsed time through queries
+and close improves 2.70x. The proposed 3x seed target remains open. First-query
+ranges overlap (SQLite 119–177 ms, Rocks 116–159 ms); no first-query improvement is
+claimed. All six unchanged restarts perform zero artifact rebuilds/global links.
+A one-JAR replacement takes SQLite/Rocks 78.65/19.41 s, rebuilding exactly one
+artifact; Rocks performs no global link pass.
+Body/API edits and concurrent queries still require the controlled performance matrix.
+
+The 40,000-symbol medians are SQLite/Rocks seed 6.474/4.154 s (1.56x), writes
+74.47/21.75 MB (70.8% less), and query p95 19.49/16.78 ms. Peak RSS is higher for
+Rocks on that smaller fixture: 369.1 MB versus 266.6 MB. The large-fixture memory
+improvement does not establish a universal memory bound.
 
 The [JFR sample summary](performance/2026-09-19-seed-profile.json) identified temporary
-sort I/O as a dominant CPU cost, rather than native ingestion. In the large run,
-Rocks spent 5.35 s preparing records, 2.75 s spilling sorted runs, 8.85 s merging and
-writing the SST, and 4.44 s re-reading it for verification; native ingestion took
-11 ms. Bounded early gram accumulation reduced 25.9 million logical gram postings
-to 103,293 blocks. The latest changes use fixed run buffers and verify finished SSTs
-natively before publication; final three-run evidence is recorded separately.
+sort I/O as a dominant CPU cost, rather than native ingestion. Bounded early gram
+accumulation reduces 25.9 million logical gram postings to 103,293 blocks. The latest
+changes reuse the current class-prefix grams, use fixed run buffers and verify
+finished SSTs natively before publication. Median large-run attribution is:
+
+| Rocks seed operation | Time |
+| --- | --- |
+| Record preparation | 4.648 s |
+| Initial sorting and spill | 2.345 s |
+| Merge and SST construction | 7.311 s |
+| Native SST checksum/count verification | 0.035 s |
+| File sync | 0.0014 s |
+| Native ingestion | 0.0028 s |
+
+These storage timers exclude parsing/discovery and are cumulative worker durations,
+not a partition of total process CPU. Preparing and merging sorted records remains
+the largest cost. File-sync timing comes from this container's volatile overlayfs;
+no durability-speed claim follows from it.
+
+The preceding full-provider [small](performance/2026-09-19-rocks-provider-40000.json)
+and [large](performance/2026-09-19-rocks-provider-380000.json) reports measured
+`53a693c`/`36b08133`: Rocks large seed was 26.113 s and post-ingest verification
+4.44 s in one sample. They remain useful attribution evidence.
 
 The [old dual-write report](performance/2026-09-18-index-migration.json),
 [first independent small](performance/2026-09-19-rocks-initial-small.json),
@@ -207,7 +230,11 @@ installer continues to use the Linux distribution and its existing checks.
   against the same baseline, retain the real 861-JAR run, and pass the 0.97 corpus floor.
 - Repeat total heap/native/RSS acceptance on the target corpus. The full-store
   implementation passed all four native platform packaging/AOT/relocation jobs
-  and the Windows installer check in [run 35406797784](https://github.com/maxjay/jvmd/actions/runs/35406797784).
-  WSL-specific filesystem measurements and final-revision CI remain separate gates.
+  and the Windows installer check on optimized code `7b5e800d` in
+  [run 35410294089](https://github.com/maxjay/jvmd/actions/runs/35410294089).
+  The earlier full checkpoint/corpus run on `aafafc53` also
+  [passed](https://github.com/maxjay/jvmd/actions/runs/35403345660), including a
+  106,407/106,515 identifier sweep (99.8986%). The optimized code still needs its
+  own checkpoint/corpus result. WSL-specific filesystem measurements remain open.
 
 The migration remains a draft until those gates pass.

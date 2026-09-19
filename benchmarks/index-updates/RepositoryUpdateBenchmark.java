@@ -70,7 +70,7 @@ public final class RepositoryUpdateBenchmark {
         report.put("final_index_bytes",size(state));report.put("jdk",System.getProperty("java.runtime.version"));
         report.put("processors",Runtime.getRuntime().availableProcessors());report.put("filesystem",Files.getFileStore(state).type());
         var hashes=new TreeMap<String,String>();
-        for(String name:List.of("dev/jvmd/index/IndexService","dev/jvmd/index/IndexDatabase","dev/jvmd/index/BinaryReader","dev/jvmd/index/rocks/RocksArtifactRepository","dev/jvmd/index/rocks/RocksIndexStore","dev/jvmd/index/rocks/PostingCodec","dev/jvmd/index/rocks/SstSorter","dev/jvmd/index/rocks/GramPostings"))
+        for(String name:List.of("dev/jvmd/index/IndexService","dev/jvmd/index/IndexDatabase","dev/jvmd/index/BinaryReader","dev/jvmd/index/rocks/RocksArtifactRepository","dev/jvmd/index/rocks/RocksIndexStore","dev/jvmd/index/rocks/PostingCodec","dev/jvmd/index/rocks/SstSorter","dev/jvmd/index/rocks/GramPostings","dev/jvmd/index/rocks/GramSet","dev/jvmd/index/rocks/PostingCodec$Cursor","dev/jvmd/index/rocks/SstSorter$PostingWriter"))
             try(var input=RepositoryUpdateBenchmark.class.getResourceAsStream("/"+name+".class")){if(input!=null)hashes.put(name,Hashing.sha256(input.readAllBytes()));}
         report.put("implementation_sha256",hashes);save(output,report);
     }

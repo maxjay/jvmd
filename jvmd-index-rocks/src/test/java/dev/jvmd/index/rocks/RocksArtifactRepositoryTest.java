@@ -10,6 +10,27 @@ import static org.assertj.core.api.Assertions.*;
 class RocksArtifactRepositoryTest {
     @TempDir Path temp;
 
+    @Test void boundedPagesRejectUnusableIdsBeforeDecodingButPreserveCustomRanks()throws Exception{
+        var data=facts(5000,0);String key=data.key().cacheKey();
+        try(var store=new RocksArtifactRepository(temp.resolve("bounded-page"))){
+            store.publish(data,Set.of());
+            for(String prefix:List.of("8|gram|met|","1|symbol|")){
+                long before=((Number)store.status().get("query_symbol_reads")).longValue();
+                long candidates=((Number)store.status().get("query_posting_candidates")).longValue();
+                assertThat(store.select(key,prefix,4979,20,s->true)).extracting(ArtifactIndexFormat.SymbolRecord::id)
+                        .containsExactlyElementsOf(java.util.stream.IntStream.range(4980,5000).boxed().toList());
+                assertThat(((Number)store.status().get("query_symbol_reads")).longValue()-before).isEqualTo(20);
+                if(prefix.equals("1|symbol|"))assertThat(((Number)store.status().get("query_posting_candidates")).longValue()-candidates).isEqualTo(20);
+            }
+            assertThat(store.select(key,"1|symbol|",Integer.MAX_VALUE,20,s->true)).isEmpty();
+            assertThat(store.select(key,"1|symbol|",-1,20,s->s.id()%2==0)).extracting(ArtifactIndexFormat.SymbolRecord::id)
+                    .containsExactlyElementsOf(java.util.stream.IntStream.range(0,20).map(i->i*2).boxed().toList());
+            assertThat(store.selectRanked(key,"1|symbol|",0,20,s->true,s->5000-s.id()))
+                    .extracting(ArtifactIndexFormat.SymbolRecord::id)
+                    .containsExactlyElementsOf(java.util.stream.IntStream.range(0,20).map(i->4999-i).boxed().toList());
+        }
+    }
+
     @Test void postingCountsChooseSelectiveListsWithoutMaterializingSymbols()throws Exception{
         var data=facts(1100,0);String key=data.key().cacheKey();
         try(var store=new RocksArtifactRepository(temp.resolve("posting-counts"))){

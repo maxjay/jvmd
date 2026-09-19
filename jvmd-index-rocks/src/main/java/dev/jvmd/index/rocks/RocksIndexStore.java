@@ -326,7 +326,15 @@ public final class RocksIndexStore implements IndexStore {
                 if(query.startsWith(prefix))prefixes.add("2|scip|"+query.substring(prefix.length())+"|");
             }
             var candidates=new TreeMap<Integer,ArtifactIndexFormat.SymbolRecord>();
-            for(String prefix:prefixes)for(var symbol:repository.selectRanked(symbolsKey(artifact),prefix,after,limit,s->{try{if(!kinds.isEmpty()&&!kinds.contains(s.kind()))return false;String scip=artifact.input().context().scip(s);return !sourceScips.contains(scip)&&!seen.contains(scip)&&preferred(artifact,scip,selectedArtifacts)&&match.test(searchFields(artifact,s));}catch(Exception e){throw new IllegalStateException(e);}},s->{try{return symbolId(artifact,s);}catch(Exception e){throw new IllegalStateException(e);}}))candidates.put(symbol.id(),symbol);
+            Predicate<ArtifactIndexFormat.SymbolRecord> accepts=s->{try{if(!kinds.isEmpty()&&!kinds.contains(s.kind()))return false;String scip=artifact.input().context().scip(s);return !sourceScips.contains(scip)&&!seen.contains(scip)&&preferred(artifact,scip,selectedArtifacts)&&match.test(searchFields(artifact,s));}catch(Exception e){throw new IllegalStateException(e);}};
+            for(String prefix:prefixes){
+                // Code-enriched generations can remap IDs to original signatures; their
+                // rank still needs the decoded symbol. Plain signatures can reject IDs first.
+                var matches=artifact.codeKey()==null?
+                        repository.selectLocalIds(symbolsKey(artifact),prefix,artifact.id()<<32,after,limit,accepts):
+                        repository.selectRanked(symbolsKey(artifact),prefix,after,limit,accepts,s->{try{return symbolId(artifact,s);}catch(Exception e){throw new IllegalStateException(e);}});
+                for(var symbol:matches)candidates.put(symbol.id(),symbol);
+            }
             Integer direct=substring?null:repository.binaryId(symbolsKey(artifact),query);if(direct!=null)candidates.put(direct,repository.symbol(symbolsKey(artifact),direct));
             for(var symbol:candidates.values()){
                 var value=row(artifact,symbol);String scip=value.get("scip").toString();

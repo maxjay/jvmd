@@ -126,6 +126,8 @@ public final class CompilerPool implements AutoCloseable {
     private static final class QueryFailure extends RuntimeException {QueryFailure(Exception cause){super(cause);}}
     private long heap(){return heapUsage.getAsLong();}
     public void recycle(){checkThread();pool=new JavacTaskPool(1);if(manager!=null)manager.invalidate();baseline=heap();recycles++;validatedRequestId=-1;}
+    /** Source edits invalidate javac symbols, but do not change validated dependency bytes. */
+    public void sourcesChanged(){checkThread();pool=new JavacTaskPool(1);if(manager!=null)manager.sourcesChanged();baseline=heap();recycles++;validatedRequestId=-1;}
     public Map<String,Object> status(){
         checkThread();var status=new LinkedHashMap<String,Object>();
         status.put("queries",queries);status.put("batch_queries",batchQueries);status.put("batch_files",batchFiles);status.put("query_ms",nanosToMillis(queryNanos));

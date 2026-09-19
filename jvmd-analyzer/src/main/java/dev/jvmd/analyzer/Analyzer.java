@@ -158,7 +158,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             var caches=entry.getValue();
             caches.focused.entrySet().removeIf(e->changed.contains(e.getValue().file()));
             caches.outlines.entrySet().removeIf(e->changed.stream().anyMatch(path->e.getKey().startsWith(path+":")));
-            if(!Collections.disjoint(caches.files,changed))compilerPools.get(entry.getKey()).recycle();
+            if(!Collections.disjoint(caches.files,changed))compilerPools.get(entry.getKey()).sourcesChanged();
         }
     }
     private void invalidate(Set<Path> changed){diagnosticStore.invalidate(changed);invalidateCompilerCaches(changed);}

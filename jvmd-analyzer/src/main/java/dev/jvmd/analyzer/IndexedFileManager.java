@@ -262,7 +262,8 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     @Override public ClassLoader getClassLoader(Location location){return super.getClassLoader(delegate(location));}
     @Override public <S> ServiceLoader<S> getServiceLoader(Location location,Class<S> service)throws IOException{return super.getServiceLoader(delegate(location),service);}
     @Override public boolean hasLocation(Location location){if(location==StandardLocation.MODULE_SOURCE_PATH)return !moduleSources.isEmpty();return location==StandardLocation.CLASS_PATH||location==StandardLocation.SOURCE_PATH&&moduleSources.isEmpty()&&!documents.isEmpty()||super.hasLocation(delegate(location));}
-    public void invalidate(){catalogs.clear();classFiles.clear();bytes.clear();byteSize=0;try{fileManager.flush();configureModules();}catch(IOException e){throw new UncheckedIOException(e);}}
+    public void sourcesChanged(){try{fileManager.flush();configureModules();}catch(IOException e){throw new UncheckedIOException(e);}}
+    public void invalidate(){catalogs.clear();classFiles.clear();bytes.clear();byteSize=0;sourcesChanged();}
     @Override public void close()throws IOException{
         try{super.close();}finally{
             catalogs.clear();classFiles.clear();bytes.clear();byteSize=0;

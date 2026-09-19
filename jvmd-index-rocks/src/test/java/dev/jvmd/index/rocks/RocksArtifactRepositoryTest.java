@@ -10,6 +10,61 @@ import static org.assertj.core.api.Assertions.*;
 class RocksArtifactRepositoryTest {
     @TempDir Path temp;
 
+    @Test void prefixGramReusePreservesEverySubstringIncludingOwnerBoundariesAndUnicode()throws Exception{
+        var symbols=new ArrayList<ArtifactIndexFormat.SymbolRecord>();
+        for(String owner:List.of("ABab.Owner","ABab.Owner","other.İType$Nested","Plain")){
+            int id=symbols.size();String name=id==3?"Plain":"fieldİ"+id;
+            symbols.add(new ArtifactIndexFormat.SymbolRecord(id,-1,id==3?owner:owner+"#"+name,owner,name,id==3?"class":"field",
+                    name,"I",1,"Type.class",List.of(),"{}"));
+        }
+        var expected=new TreeMap<String,List<Integer>>();
+        for(var symbol:symbols){
+            String path=dev.jvmd.index.ArtifactContext.namePath(symbol).toLowerCase(Locale.ROOT),name=symbol.name().toLowerCase(Locale.ROOT);
+            var grams=new HashSet<String>();
+            for(String text:List.of(path,name))for(int length=1;length<=3;length++)
+                for(int i=0;i+length<=text.length();i++)grams.add(text.substring(i,i+length));
+            for(String gram:grams)expected.computeIfAbsent(gram,ignored->new ArrayList<>()).add(symbol.id());
+        }
+        var data=new ArtifactIndexFormat.ArtifactData(facts(0,0).key(),symbols,List.of());
+        try(var store=new RocksArtifactRepository(temp.resolve("gram-boundaries"))){
+            store.publish(data,Set.of());
+            for(var entry:expected.entrySet())assertThat(store.substringIds(data.key().cacheKey(),entry.getKey(),100))
+                    .as("gram %s",entry.getKey()).containsExactlyElementsOf(entry.getValue());
+            assertThat(store.verify(data.key().cacheKey())).isTrue();
+        }
+    }
+
+    @Test void stagedNativeVerificationRejectsWrongCountsAndCorruptedData()throws Exception{
+        org.rocksdb.RocksDB.loadLibrary();Path staged=temp.resolve("candidate.sst");
+        try(var options=new org.rocksdb.Options().setCompressionType(org.rocksdb.CompressionType.NO_COMPRESSION)){
+            try(var env=new org.rocksdb.EnvOptions();var writer=new org.rocksdb.SstFileWriter(env,options)){
+                writer.open(staged.toString());writer.put("record".getBytes(),new byte[8192]);writer.finish();
+            }
+            RocksArtifactRepository.verifyStagedSst(staged,1,options);
+            assertThatThrownBy(()->RocksArtifactRepository.verifyStagedSst(staged,2,options))
+                    .isInstanceOf(java.io.IOException.class).hasMessageContaining("record counts");
+            byte[] bytes=Files.readAllBytes(staged);bytes[128]^=1;Files.write(staged,bytes);
+            assertThatThrownBy(()->RocksArtifactRepository.verifyStagedSst(staged,1,options))
+                    .isInstanceOf(org.rocksdb.RocksDBException.class);
+        }
+    }
+
+    @Test void invalidSchemaAndEdgeNeverPublishAManifest()throws Exception{
+        var original=facts(1,0);var symbol=original.symbols().getFirst();
+        var malformed=new ArtifactIndexFormat.SymbolRecord(0,-1,symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),
+                symbol.signature(),symbol.descriptor(),symbol.flags(),symbol.entry(),symbol.parameters(),null);
+        var badSchema=new ArtifactIndexFormat.ArtifactData(original.key(),List.of(malformed),List.of());
+        var badEdge=new ArtifactIndexFormat.ArtifactData(original.key(),original.symbols(),List.of(new ArtifactIndexFormat.Relationship(1,"dep.Type","calls")));
+        try(var store=new RocksArtifactRepository(temp.resolve("invalid-records"))){
+            for(var invalid:List.of(badSchema,badEdge)){
+                assertThatThrownBy(()->store.publish(invalid,Set.of())).isInstanceOf(java.io.IOException.class);
+                assertThat(store.contains(original.key().cacheKey())).isFalse();
+            }
+            assertThat(store.publish(original,Set.of()).reused()).isFalse();
+            assertThat(store.verify(original.key().cacheKey())).isTrue();
+        }
+    }
+
     @Test void packedPostingsPreserveBlockBoundariesFilteringAndReverseEdges()throws Exception{
         var original=facts(1100,0);
         var edges=new ArrayList<ArtifactIndexFormat.Relationship>();

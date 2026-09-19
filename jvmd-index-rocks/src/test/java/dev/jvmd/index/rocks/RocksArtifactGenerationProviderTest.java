@@ -21,12 +21,12 @@ class RocksArtifactGenerationProviderTest {
                 sink.publish(facts,java.util.Set.of());long scan=sink.beginScan();sink.observe(scan,input);
                 if(!reopen){
                     sink.completeScan(scan);
-                    assertThat(repositoryStatus(sink)).containsEntry("verification_passes",1L).containsEntry("activation_verification_reuses",1L).containsEntry("oracle_materializations",0L);
+                    assertThat(repositoryStatus(sink)).containsEntry("native_publication_verifications",1L).containsEntry("verification_passes",0L).containsEntry("activation_verification_reuses",1L).containsEntry("oracle_materializations",0L);
                 }
             }
             if(reopen)try(var sink=ArtifactGenerationSink.open("rocksdb-sst",root,8L*1024*1024)){
                 long scan=sink.beginScan();sink.observe(scan,input);sink.completeScan(scan);
-                assertThat(repositoryStatus(sink)).containsEntry("verification_passes",1L).containsEntry("activation_verification_reuses",0L).containsEntry("oracle_materializations",0L);
+                assertThat(repositoryStatus(sink)).containsEntry("native_publication_verifications",0L).containsEntry("verification_passes",1L).containsEntry("activation_verification_reuses",0L).containsEntry("oracle_materializations",0L);
             }
             assertThat(new RocksMigrationManager(root).manifest().active()).isNotEmpty();
         }

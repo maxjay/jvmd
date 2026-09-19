@@ -12,6 +12,21 @@ import static org.assertj.core.api.Assertions.*;
 class ArtifactIndexFormatTest {
     @TempDir Path temp;
 
+    @Test void streamingSymbolValidationPreservesBoundsNullabilityAndTruncationChecks()throws Exception{
+        var symbol=new ArtifactIndexFormat.SymbolRecord(0,-1,"fixture.Type","fixture.Type","Type","class","class Type",null,1,null,List.of("value"),"{}");
+        byte[] encoded=ArtifactIndexFormat.encodeSymbol(symbol);
+        assertThat(ArtifactIndexFormat.validateSymbol(encoded,0,1)).isTrue();
+        assertThat(ArtifactIndexFormat.validateSymbol(encoded,1,2)).isFalse();
+        for(int length=0;length<encoded.length;length++){
+            byte[] truncated=Arrays.copyOf(encoded,length);
+            assertThatThrownBy(()->ArtifactIndexFormat.validateSymbol(truncated,0,1)).isInstanceOf(java.io.IOException.class);
+        }
+        byte[] trailing=Arrays.copyOf(encoded,encoded.length+1);
+        assertThatThrownBy(()->ArtifactIndexFormat.validateSymbol(trailing,0,1)).isInstanceOf(java.io.IOException.class);
+        var missing=new ArtifactIndexFormat.SymbolRecord(0,-1,null,"fixture.Type","Type","class",null,null,1,null,List.of(),"{}");
+        assertThatThrownBy(()->ArtifactIndexFormat.validateSymbol(ArtifactIndexFormat.encodeSymbol(missing),0,1)).isInstanceOf(java.io.IOException.class);
+    }
+
     @Test void roundTripIsDeterministicCompactAndContextIndependent()throws Exception{
         Path jar=IndexFixtures.jar(temp,"sample",IndexFixtures.generic(),false);
         var content=new BinaryReader().read(jar,false);

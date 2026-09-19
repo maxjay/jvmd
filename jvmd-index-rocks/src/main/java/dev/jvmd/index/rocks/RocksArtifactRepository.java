@@ -33,7 +33,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
     private final RocksDB db;
     private final ConcurrentHashMap<String,Object> artifactLocks=new ConcurrentHashMap<>();
     private final Set<String> verifiedPublications=ConcurrentHashMap.newKeySet();
-    private final AtomicLong verificationPasses=new AtomicLong(),activationVerificationReuses=new AtomicLong(),oracleMaterializations=new AtomicLong();
+    private final AtomicLong verificationPasses=new AtomicLong(),nativePublicationVerifications=new AtomicLong(),activationVerificationReuses=new AtomicLong(),oracleMaterializations=new AtomicLong();
     private final Object ingestLock=new Object();
     private final AtomicLong published=new AtomicLong(),reused=new AtomicLong();
     private final AtomicLong sortPeakBytes=new AtomicLong(),sortSpillBytes=new AtomicLong();
@@ -64,10 +64,15 @@ public final class RocksArtifactRepository implements AutoCloseable {
                 Path sst=staging.resolve(cacheKey+"-"+UUID.randomUUID()+".sst.tmp");
                 int active=buildsInFlight.incrementAndGet();peakBuilds.accumulateAndGet(active,Math::max);
                 try{
-                    writeSst(sst,cacheKey,facts,classReferences);
+                    long expectedEntries=writeSst(sst,cacheKey,facts,classReferences);
                     long started=System.nanoTime();
                     try(var file=FileChannel.open(sst,StandardOpenOption.WRITE)){file.force(true);}
                     syncNanos.addAndGet(System.nanoTime()-started);
+                    // Validate the finished file while it is still invisible. The builder checked
+                    // record schemas and hashed every sorted row; native verification reads every
+                    // SST block and compares its checksum without returning all rows through JNI.
+                    started=System.nanoTime();verifyStagedSst(sst,expectedEntries,options);
+                    nativePublicationVerifications.incrementAndGet();verifyNanos.addAndGet(System.nanoTime()-started);
                     synchronized(ingestLock){
                         if(contains(cacheKey)){reused.incrementAndGet();return result(cacheKey,true,facts,classReferences);}
                         try(var ingest=new IngestExternalFileOptions().setMoveFiles(true)){
@@ -75,10 +80,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
                             db.ingestExternalFile(List.of(sst.toString()),ingest);
                             ingestNanos.addAndGet(System.nanoTime()-started);
                         }
-                        started=System.nanoTime();
-                        if(!verify(cacheKey))throw new IOException("RocksDB publication verification failed: "+cacheKey);
                         verifiedPublications.add(cacheKey);
-                        verifyNanos.addAndGet(System.nanoTime()-started);
                         published.incrementAndGet();
                     }
                     return result(cacheKey,false,facts,classReferences);
@@ -89,6 +91,14 @@ public final class RocksArtifactRepository implements AutoCloseable {
             }
         }finally{
             artifactLocks.remove(cacheKey,artifactLock);
+        }
+    }
+
+    static void verifyStagedSst(Path path,long expectedEntries,Options options)throws Exception{
+        try(var reader=new SstFileReader(options)){
+            reader.open(path.toString());reader.verifyChecksum();var properties=reader.getTableProperties();
+            if(properties.getNumEntries()!=expectedEntries||properties.getNumDeletions()!=0||properties.getNumRangeDeletions()!=0)
+                throw new IOException("Invalid staged SST record counts");
         }
     }
 
@@ -168,18 +178,18 @@ public final class RocksArtifactRepository implements AutoCloseable {
         var digest=java.security.MessageDigest.getInstance("SHA-256");
         long symbols=0,relationships=0,references=0;byte[] prefix=key(cacheKey,"");
         long expectedSymbols=Long.parseLong(manifest.get("symbols"));
+        byte[] manifestKey=key(cacheKey,"z|manifest");
         try(var read=new ReadOptions().setFillCache(false);var iterator=db.newIterator(read)){
-            for(iterator.seek(prefix);iterator.isValid()&&startsWith(iterator.key(),prefix);iterator.next()){
-                byte[] current=iterator.key();String suffix=new String(current,StandardCharsets.UTF_8).substring(cacheKey.length()+1);
-                if(suffix.equals("z|manifest"))continue;
+            for(iterator.seek(prefix);iterator.isValid();iterator.next()){
+                byte[] current=iterator.key();if(!startsWith(current,prefix))break;
+                if(Arrays.equals(current,manifestKey))continue;
                 byte[] value=iterator.value();SstSorter.hash(digest,current,value);
-                if(suffix.startsWith("1|symbol|")){
-                    var symbol=ArtifactIndexFormat.decodeSymbol(value);
-                    if(symbol.id()!=symbols||PostingCodec.lastId(current)!=symbols||symbol.ownerId()>=expectedSymbols||symbol.ownerId()<-1)return false;
+                if(suffixStartsWith(current,prefix.length,"1|symbol|")){
+                    if(PostingCodec.lastId(current)!=symbols||!ArtifactIndexFormat.validateSymbol(value,symbols,expectedSymbols))return false;
                     symbols++;
                 }
-                else if(suffix.startsWith("4|out|"))relationships++;
-                else if(suffix.startsWith("6|class|"))references++;
+                else if(suffixStartsWith(current,prefix.length,"4|out|"))relationships++;
+                else if(suffixStartsWith(current,prefix.length,"6|class|"))references++;
             }
             iterator.status();
         }
@@ -187,6 +197,10 @@ public final class RocksArtifactRepository implements AutoCloseable {
                 &&Objects.equals(manifest.get("symbols"),Long.toString(symbols))
                 &&Objects.equals(manifest.get("relationships"),Long.toString(relationships))
                 &&Objects.equals(manifest.get("class_references"),Long.toString(references));
+    }
+    private static boolean suffixStartsWith(byte[] key,int offset,String ascii){
+        if(key.length-offset<ascii.length())return false;
+        for(int i=0;i<ascii.length();i++)if(key[offset+i]!=ascii.charAt(i))return false;return true;
     }
 
     /** Materialization is reserved for the correctness oracle; queries read individual records. */
@@ -317,7 +331,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
         result.put("sst_ingest_ms",ingestNanos.get()/1e6);result.put("publication_verify_ms",verifyNanos.get()/1e6);
         result.put("sort_input_records",sortInputRecords.get());result.put("sort_run_records",sortRunRecords.get());
         result.put("gram_occurrences",gramOccurrences.get());result.put("gram_posting_blocks",gramBlocks.get());
-        result.put("verification_passes",verificationPasses.get());result.put("activation_verification_reuses",activationVerificationReuses.get());result.put("oracle_materializations",oracleMaterializations.get());
+        result.put("verification_passes",verificationPasses.get());result.put("native_publication_verifications",nativePublicationVerifications.get());result.put("activation_verification_reuses",activationVerificationReuses.get());result.put("oracle_materializations",oracleMaterializations.get());
         for(String property:List.of("estimate-pending-compaction-bytes","num-running-compactions","num-running-flushes",
                 "actual-delayed-write-rate","is-write-stopped","estimate-table-readers-mem","cur-size-all-mem-tables"))
             result.put(property.replace('-','_'),db.getLongProperty("rocksdb."+property));
@@ -345,7 +359,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
         return key[65]=='1'?new int[]{PostingCodec.lastId(key)}:PostingCodec.decode(key,value);
     }
 
-    private void writeSst(Path path,String cacheKey,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{
+    private long writeSst(Path path,String cacheKey,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{
         long preparationStarted=System.nanoTime();
         long gramBudget=sortBufferBytes>=262144?Math.min(1024*1024,sortBufferBytes/4):0;
         try(var entries=new SstSorter(staging,sortBufferBytes-gramBudget)){
@@ -355,29 +369,36 @@ public final class RocksArtifactRepository implements AutoCloseable {
             symbols=new ArrayList<>(symbols);symbols.sort(Comparator.comparingInt(ArtifactIndexFormat.SymbolRecord::id));break;
         }
         int previousId=-1;
+        String lastPrefix="";Set<String> prefixGrams=Set.of();
 
         for(var symbol:symbols){
             if(symbol.id()!=previousId+1||symbol.ownerId()>=symbols.size()||symbol.ownerId()<-1)throw new IOException("Invalid artifact symbol ID or owner");previousId=symbol.id();
             if(TYPES.contains(symbol.kind()))entries.add(key(cacheKey,"0|type|"+symbol.fqn()+"|"+hex8(symbol.id())),EMPTY);
-            entries.add(key(cacheKey,"1|symbol|"+hex8(symbol.id())),ArtifactIndexFormat.encodeSymbol(symbol));
+            byte[] encoded=ArtifactIndexFormat.encodeSymbol(symbol);
+            if(!ArtifactIndexFormat.validateSymbol(encoded,symbol.id(),symbols.size()))throw new IOException("Invalid artifact symbol");
+            entries.add(key(cacheKey,"1|symbol|"+hex8(symbol.id())),encoded);
             entries.add(key(cacheKey,"2|binary|"+symbol.key()),intBytes(symbol.id()));
             entries.add(key(cacheKey,"2|scip|"+scipSuffix(symbol)+"|"+hex8(symbol.id())),EMPTY);
             entries.add(key(cacheKey,"3|name|"+symbol.name()+"|"+hex8(symbol.id())),EMPTY);
-            entries.add(key(cacheKey,"7|path|"+ArtifactContext.namePath(symbol)+"|"+hex8(symbol.id())),EMPTY);
+            String namePath=ArtifactContext.namePath(symbol);
+            entries.add(key(cacheKey,"7|path|"+namePath+"|"+hex8(symbol.id())),EMPTY);
 
             var grams=new HashSet<String>();
             String name=symbol.name().toLowerCase(Locale.ROOT);
-            String pathValue=ArtifactContext.namePath(symbol).toLowerCase(Locale.ROOT);
-            addGrams(grams,pathValue);if(!pathValue.contains(name))addGrams(grams,name);
-            for(String gram:grams){
-                if(gramsIndex!=null)gramsIndex.add(gram,symbol.id());
-                else entries.add(key(cacheKey,"8|gram|"+gram+"|"+hex8(symbol.id())),EMPTY);
-            }
+            String pathValue=namePath.toLowerCase(Locale.ROOT);
+            int boundary=pathValue.lastIndexOf('/')+1;String prefix=pathValue.substring(0,boundary);
+            // Retain only the current owner prefix, not a growing per-artifact cache. Include
+            // two preceding characters in the tail so every boundary-crossing trigram survives.
+            if(!prefix.equals(lastPrefix)){prefixGrams=new HashSet<>();addGrams(prefixGrams,prefix);lastPrefix=prefix;}
+            addGrams(grams,pathValue.substring(Math.max(0,boundary-2)));if(!pathValue.contains(name))addGrams(grams,name);
+            for(String gram:prefixGrams)addGram(entries,gramsIndex,cacheKey,gram,symbol.id());
+            for(String gram:grams)if(!prefixGrams.contains(gram))addGram(entries,gramsIndex,cacheKey,gram,symbol.id());
         }
         if(gramsIndex!=null)gramsIndex.finish();
 
         for(int ordinal=0;ordinal<facts.relationships().size();ordinal++){
             var edge=facts.relationships().get(ordinal);
+            if(edge.sourceId()<0||edge.sourceId()>=symbols.size()||edge.target()==null||edge.kind()==null)throw new IOException("Invalid artifact relationship");
             entries.add(key(cacheKey,"4|out|"+hex8(edge.sourceId())+"|"+edge.target()+"|"+edge.kind()),intBytes(ordinal));
             entries.add(key(cacheKey,"5|reverse|"+edge.target()+"|"+edge.kind()+"|"+hex8(edge.sourceId())),EMPTY);
         }
@@ -393,6 +414,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
         spillNanos.addAndGet(entries.spillNanos());sortInputRecords.addAndGet(entries.inputRecords());sortRunRecords.addAndGet(entries.runRecords());
         sortPeakBytes.accumulateAndGet(entries.peakBytes()+(gramsIndex==null?0:gramsIndex.peakBytes()),Math::max);sortSpillBytes.addAndGet(entries.spillBytes());
         if(gramsIndex!=null){gramOccurrences.addAndGet(gramsIndex.occurrences());gramBlocks.addAndGet(gramsIndex.flushed());}
+        return entries.writtenRecords()+1; // Includes the manifest in the same atomic ingestion.
         }
     }
 
@@ -422,6 +444,10 @@ public final class RocksArtifactRepository implements AutoCloseable {
             if(value.length()<length)break;
             for(int i=0;i<=value.length()-length;i++)output.add(value.substring(i,i+length));
         }
+    }
+
+    private static void addGram(SstSorter entries,GramPostings index,String cacheKey,String gram,int id)throws Exception{
+        if(index!=null)index.add(gram,id);else entries.add(key(cacheKey,"8|gram|"+gram+"|"+hex8(id)),EMPTY);
     }
 
     private static byte[] manifest(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences,String checksum){

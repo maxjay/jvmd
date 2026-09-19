@@ -16,38 +16,47 @@ an immutable sorted-file prototype on 800,000 pre-parsed facts: comparable media
 publication time, about 83% less final storage and 66% less steady-state write traffic.
 Those numbers compare the two prototypes; they are not SQLite-to-production gains.
 
-The [isolated production-store report](performance/2026-09-19-rocks-isolated-40000.json)
-contains three fresh JVM runs per backend, three unchanged restarts per backend,
-and one-JAR replacement. The generated fixture has one JAR, 100 classes and 40,000
-symbols. Rocks opens no SQLite database. Sorting, indexes, publication, queries,
-workspace selection and shutdown are included. This measures local commit
-`ae1ab71` (GitHub `9bb689d9`); class hashes are retained. The subsequent return-type
-identity correction does not occur in this fixture, but is not part of that run.
+The full-provider reports for [40,000 symbols](performance/2026-09-19-rocks-provider-40000.json)
+and [380,000 symbols](performance/2026-09-19-rocks-provider-380000.json) include three
+fresh JVM runs, three unchanged restarts per backend and one-JAR replacement. The
+large generated fixture has one JAR and 950 classes. Measurements include production
+candidate validation/activation, workspace loading, queries and shutdown. Rocks opens
+no SQLite database. These reports measure local `53a693c` (GitHub `36b08133`), before
+the latest fixed-buffer/native-verification optimization; compiled hashes are retained.
 
-| Fresh-run measurement | SQLite median (range) | RocksDB median (range) |
+| 380,000-symbol fresh run | SQLite median (range) | RocksDB median (range) |
 | --- | --- | --- |
-| Seed | 6.404 s (6.263–6.760) | 9.558 s (9.472–9.579) |
-| Through queries and close | 6.688 s (6.570–7.030) | 10.199 s (10.163–10.268) |
-| Process write traffic | 74.47 MB (74.47–74.48) | 38.98 MB (38.97–39.12) |
-| Query p95 | 18.57 ms (16.58–19.47) | 13.22 ms (13.09–17.01) |
-| Final index size | 38.18 MB | 4.09 MB |
-| Peak process RSS | 270.8 MB (269.0–277.3) | 347.2 MB (335.9–425.1) |
+| Seed | 55.077 s (54.713–55.202) | 26.113 s (25.539–26.709) |
+| Through queries and close | 56.262 s | 26.944 s |
+| Process write traffic | 696.20 MB | 86.73 MB |
+| Query p95 | 64.41 ms (51.36–98.25) | 39.56 ms (28.88–42.51) |
+| Final index size | 371.93 MB | 37.71 MB |
+| Peak process RSS | 985.8 MB | 861.1 MB |
 
-Rocks queries are 28.8% faster here, process writes are 47.7% lower, and the final
-index is 89.3% smaller. Seeding is 49.2% slower and RSS is higher. The proposed 3×
-seed and 50% write-reduction targets have **not** passed. All six unchanged restarts
-perform zero artifact rebuilds/global link passes. A one-JAR replacement rebuilds
-one artifact; Rocks runs no global link pass. Body/API editing and queries during
-ingestion still require the controlled matrix.
+This is **2.11x faster seeding and 87.5% fewer writes**, still short of the proposed
+3x seed target. First-query ranges overlap (SQLite 115–134 ms, Rocks 123–147 ms);
+no first-query improvement is claimed. All six unchanged restarts perform zero
+artifact rebuilds/global links. One-JAR replacement takes SQLite/Rocks 78.61/26.89 s,
+with exactly one artifact rebuilt; Rocks performs no global link pass. The smaller
+fixture reports SQLite/Rocks seed 6.215/4.504 s and writes 74.49/21.56 MB.
 
-The [old dual-write report](performance/2026-09-18-index-migration.json) and
-[first independent small](performance/2026-09-19-rocks-initial-small.json) and
-[40,000-symbol](performance/2026-09-19-rocks-initial-40000.json) experiments are retained
-as historical evidence. The initial large run wrote 583 MB; compact postings and
-compressed sort runs reduced that to 39 MB. Earlier workspace-path final-size
-figures were affected by staging files returning after deletion. The controlled
-follow-up checks that staging is empty after close. These generated Linux samples
-are not the durable WSL or real 861-JAR corporate acceptance run.
+The [JFR sample summary](performance/2026-09-19-seed-profile.json) identified temporary
+sort I/O as a dominant CPU cost, rather than native ingestion. In the large run,
+Rocks spent 5.35 s preparing records, 2.75 s spilling sorted runs, 8.85 s merging and
+writing the SST, and 4.44 s re-reading it for verification; native ingestion took
+11 ms. Bounded early gram accumulation reduced 25.9 million logical gram postings
+to 103,293 blocks. The latest changes use fixed run buffers and verify finished SSTs
+natively before publication; final three-run evidence is recorded separately.
+
+The [old dual-write report](performance/2026-09-18-index-migration.json),
+[first independent small](performance/2026-09-19-rocks-initial-small.json),
+[initial 40,000-symbol](performance/2026-09-19-rocks-initial-40000.json),
+[compressed-run](performance/2026-09-19-rocks-isolated-40000.json), and
+[early-posting](performance/2026-09-19-rocks-posting-40000.json) reports remain historical
+evidence. Those direct-store experiments omitted provider activation. Earlier
+workspace-path final-size figures were affected by staging files returning after
+deletion; follow-up runs use `/tmp` for both backends and assert empty staging after
+close. These generated Linux samples are not the durable WSL or real 861-JAR run.
 
 ## Run the benchmark
 
@@ -117,9 +126,13 @@ binary, code and documentation generations; source facts are stored per file.
 
 Generations are below `state/index-v2/generations/format-1-jdk25-jvmd-index-v7`.
 A candidate is checked against its inventory before `active.manifest` switches.
-New immutable publications reuse their verified checksum/schema proof within the
-same owner; reopened unvalidated candidates receive a streaming verification.
-Validation never reconstructs the whole artifact or traverses every symbol.
+The builder validates symbol schemas/IDs and relationship sources and computes the
+manifest SHA-256 while writing sorted records. Before ingestion, `SstFileReader`
+verifies every SST block checksum and checks the file entry count, including the
+manifest. These native block checksums are distinct from the application SHA-256.
+New publications reuse that proof within the same owner; reopened unvalidated
+candidates receive a full streaming application SHA-256/schema verification.
+Validation never reconstructs a whole-artifact model or performs per-symbol edge queries.
 The `previous` manifest retains the earlier format generation. Incomplete SSTs/sort runs never
 have a published manifest. Startup removes staging remnants after obtaining the
 Rocks database lock. A format change rebuilds disposable index data; the prior
@@ -150,7 +163,8 @@ scan elapsed time, SQL queue/execution times and actual global `link_passes`.
 `sort_merge_and_sst_ms`, `file_sync_ms`, `sst_ingest_ms` and
 `publication_verify_ms`. These are cumulative worker durations; they can overlap
 across parallel artifacts. It also reports logical gram occurrences, compact
-posting blocks, sorter input/run records, sort spill/peak bytes, SST bytes, pending/running
+posting blocks, sorter input/run records, sort spill/peak bytes, native publication
+checks, full verification passes, activation-proof reuse, SST bytes, pending/running
 compactions, memtable/table-reader memory and write stalls. `native_memory` reports
 shared cache budget/use/pins. `shadow_validation` records comparisons/mismatches.
 The production Rocks store does not fall back to SQLite. Missing membership is

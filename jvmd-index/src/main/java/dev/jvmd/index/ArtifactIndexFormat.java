@@ -149,6 +149,28 @@ public final class ArtifactIndexFormat {
         }
     }
 
+    /** Validate the same record shape without allocating decoded strings or a symbol model. */
+    public static boolean validateSymbol(byte[] bytes,long expectedId,long symbolCount)throws IOException{
+        var input=java.nio.ByteBuffer.wrap(bytes);
+        try{
+            int id=input.getInt(),owner=input.getInt();input.getInt();
+            if(id<0||owner< -1)throw new IOException("Invalid symbol record");
+            for(int field=0;field<8;field++){
+                if(input.get()!=0)skipString(input);
+                else if(field<4||field==7)throw new IOException("Invalid symbol record");
+            }
+            int count=bounded(input.getInt(),1_000_000,"parameter count");
+            for(int i=0;i<count;i++)skipString(input);
+            if(input.hasRemaining())throw new IOException("Invalid symbol record");
+            return id==expectedId&&owner<symbolCount;
+        }catch(java.nio.BufferUnderflowException truncated){throw new EOFException("Truncated symbol record");}
+    }
+    private static void skipString(java.nio.ByteBuffer input)throws IOException{
+        int size=bounded(input.getInt(),MAX_STRING_BYTES,"string size");
+        if(size>input.remaining())throw new EOFException("Truncated symbol record");
+        input.position(input.position()+size);
+    }
+
     public static ArtifactData decode(byte[] encoded)throws Exception{
         if(encoded.length<MAGIC.length+32+4)throw new IOException("Truncated artifact index");
         for(int i=0;i<MAGIC.length;i++)if(encoded[i]!=MAGIC[i])throw new IOException("Invalid artifact index magic");

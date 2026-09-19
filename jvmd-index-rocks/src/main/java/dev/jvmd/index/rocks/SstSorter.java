@@ -19,7 +19,7 @@ final class SstSorter implements AutoCloseable {
     private final Set<Path> temporary=new LinkedHashSet<>();
     private List<Path> runs=new ArrayList<>();
     private byte[] namespace;
-    private long bytes,peakBytes,spillBytes,spillNanos,inputRecords,runRecords;
+    private long bytes,peakBytes,spillBytes,spillNanos,inputRecords,runRecords,writtenRecords;
 
     SstSorter(Path directory,long budget){
         if(budget<65536)throw new IllegalArgumentException("sort budget must be at least 64 KiB");
@@ -41,12 +41,13 @@ final class SstSorter implements AutoCloseable {
     long spillNanos(){return spillNanos;}
     long inputRecords(){return inputRecords;}
     long runRecords(){return runRecords;}
+    long writtenRecords(){return writtenRecords;}
     String writeTo(SstFileWriter writer)throws Exception{
         var digest=MessageDigest.getInstance("SHA-256");
         var postings=new PostingWriter(entry->{
             byte[] full=Arrays.copyOf(namespace,namespace.length+entry.key().length);
             System.arraycopy(entry.key(),0,full,namespace.length,entry.key().length);
-            hash(digest,full,entry.value());writer.put(full,entry.value());
+            hash(digest,full,entry.value());writer.put(full,entry.value());writtenRecords++;
         });
         Consumer write=postings::accept;
         if(runs.isEmpty()){
@@ -87,10 +88,7 @@ final class SstSorter implements AutoCloseable {
     private Path newRun()throws IOException{
         Path path=Files.createTempFile(directory,"sort-",".run.tmp");temporary.add(path);return path;
     }
-    private static DataOutputStream output(Path path)throws IOException{
-        var compressed=new GZIPOutputStream(Files.newOutputStream(path),65536){{def.setLevel(Deflater.BEST_SPEED);}};
-        return new DataOutputStream(new BufferedOutputStream(compressed,65536));
-    }
+    private static RunOutput output(Path path)throws IOException{return new RunOutput(path);}
     /** Bound each posting block to 256 sorted IDs. The key carries the block's maximum ID. */
     private static final class PostingWriter {
         private final Consumer consumer;
@@ -138,27 +136,44 @@ final class SstSorter implements AutoCloseable {
     private static void check(byte[] previous,byte[] current)throws IOException{
         if(previous!=null&&Arrays.compareUnsigned(previous,current)>=0)throw new IOException("Duplicate or unsorted artifact index key");
     }
-    private static void write(DataOutputStream out,Entry entry)throws IOException{
+    private static void write(RunOutput out,Entry entry)throws IOException{
         out.writeInt(entry.key().length);out.writeInt(entry.value().length);out.write(entry.key());out.write(entry.value());
     }
+    /** Runs are confined to one builder; fixed buffers avoid per-field synchronized stream calls. */
+    private static final class RunOutput implements AutoCloseable {
+        private final OutputStream output;private final byte[] buffer=new byte[65536];private int position;
+        RunOutput(Path path)throws IOException{output=new GZIPOutputStream(Files.newOutputStream(path),65536){{def.setLevel(Deflater.BEST_SPEED);}};}
+        void writeInt(int value)throws IOException{
+            if(buffer.length-position<4)flush();
+            buffer[position++]=(byte)(value>>>24);buffer[position++]=(byte)(value>>>16);
+            buffer[position++]=(byte)(value>>>8);buffer[position++]=(byte)value;
+        }
+        void write(byte[] value)throws IOException{
+            int offset=0;
+            while(offset<value.length){
+                if(position==buffer.length)flush();int count=Math.min(buffer.length-position,value.length-offset);
+                System.arraycopy(value,offset,buffer,position,count);position+=count;offset+=count;
+            }
+        }
+        private void flush()throws IOException{if(position>0){output.write(buffer,0,position);position=0;}}
+        @Override public void close()throws IOException{try{flush();}finally{output.close();}}
+    }
     private static final class Run implements AutoCloseable {
-        private final DataInputStream input;private Entry current;
+        private final InputStream input;private final byte[] buffer=new byte[65536];private int position,available;private Entry current;
         private byte[] postingKey,postingValue;private int[] postingIds;private int postingOffset;
         private static final byte[] EMPTY=new byte[0];
         private static final byte[] HEX="0123456789abcdef".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
         Run(Path path)throws IOException{
-            input=new DataInputStream(new BufferedInputStream(new GZIPInputStream(Files.newInputStream(path),65536),65536));
+            input=new GZIPInputStream(Files.newInputStream(path),65536);
             try{advance();}catch(IOException e){input.close();throw e;}
         }
         void advance()throws IOException{
             if(postingIds!=null&&postingOffset<postingIds.length){nextPosting();return;}
             postingIds=null;postingKey=null;postingValue=null;
-            int first=input.read();if(first<0){current=null;return;}
-            int keyLength=(first<<24)|(input.readUnsignedByte()<<16)|(input.readUnsignedByte()<<8)|input.readUnsignedByte();
-            int valueLength=input.readInt();
+            if(!available()){current=null;return;}
+            int keyLength=readInt(),valueLength=readInt();
             if(keyLength<1||valueLength<0)throw new IOException("Corrupt sort run");
-            byte[] key=input.readNBytes(keyLength),value=input.readNBytes(valueLength);
-            if(key.length!=keyLength||value.length!=valueLength)throw new EOFException("Truncated sort run");
+            byte[] key=readBytes(keyLength),value=readBytes(valueLength);
             if(isPosting(key)&&value.length>0){
                 try{postingIds=PostingCodec.decode(key,value);}catch(IllegalStateException invalid){throw new IOException("Corrupt sort posting",invalid);}
                 postingKey=key;postingValue=value;postingOffset=0;nextPosting();
@@ -168,6 +183,24 @@ final class SstSorter implements AutoCloseable {
             byte[] key=postingKey.clone();int id=postingIds[postingOffset++];
             for(int i=key.length-1;i>=key.length-8;i--){key[i]=HEX[id&15];id>>>=4;}
             current=new Entry(key,EMPTY);
+        }
+        private boolean available()throws IOException{
+            if(position<available)return true;
+            do{available=input.read(buffer);}while(available==0);position=0;return available>0;
+        }
+        private int readInt()throws IOException{
+            if(available-position>=4){
+                int value=(Byte.toUnsignedInt(buffer[position])<<24)|(Byte.toUnsignedInt(buffer[position+1])<<16)|
+                        (Byte.toUnsignedInt(buffer[position+2])<<8)|Byte.toUnsignedInt(buffer[position+3]);position+=4;return value;
+            }
+            int value=0;for(int i=0;i<4;i++){if(!available())throw new EOFException("Truncated sort run");value=(value<<8)|Byte.toUnsignedInt(buffer[position++]);}return value;
+        }
+        private byte[] readBytes(int length)throws IOException{
+            if(length==0)return EMPTY;byte[] value=new byte[length];int offset=0;
+            while(offset<length){
+                if(!available())throw new EOFException("Truncated sort run");int count=Math.min(available-position,length-offset);
+                System.arraycopy(buffer,position,value,offset,count);position+=count;offset+=count;
+            }return value;
         }
         @Override public void close()throws IOException{input.close();}
     }

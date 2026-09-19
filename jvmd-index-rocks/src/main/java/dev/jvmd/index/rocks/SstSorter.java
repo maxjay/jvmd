@@ -138,7 +138,7 @@ final class SstSorter implements AutoCloseable {
                         entry=new Entry(run.postingKey,run.postingValue);run.postingOffset=run.postingIds.length;
                     }
                     consumer.accept(entry);previous=entry.key();run.advance();
-                // A run often owns the next range outright; do not requeue each row in it.
+                    // A run often owns the next range outright; do not requeue each row in it.
                 }while(run.current!=null&&(queue.isEmpty()||ORDER.compare(run.current,queue.peek().current)<0));
                 if(run.current!=null)queue.add(run);
             }

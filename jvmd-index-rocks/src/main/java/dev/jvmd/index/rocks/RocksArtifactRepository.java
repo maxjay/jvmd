@@ -382,7 +382,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
             symbols=new ArrayList<>(symbols);symbols.sort(Comparator.comparingInt(ArtifactIndexFormat.SymbolRecord::id));break;
         }
         int previousId=-1;
-        String lastPrefix="";Set<String> prefixGrams=Set.of();
+        String lastPrefix="";var prefixGrams=new HashSet<String>();var grams=new HashSet<String>();
 
         for(var symbol:symbols){
             if(symbol.id()!=previousId+1||symbol.ownerId()>=symbols.size()||symbol.ownerId()<-1)throw new IOException("Invalid artifact symbol ID or owner");previousId=symbol.id();
@@ -397,13 +397,13 @@ public final class RocksArtifactRepository implements AutoCloseable {
             String namePath=ArtifactContext.namePath(symbol);
             entries.add(relativeKey("7|path|"+namePath+"|"+symbolId),EMPTY);
 
-            var grams=new HashSet<String>();
+            grams.clear();
             String name=symbol.name().toLowerCase(Locale.ROOT);
             String pathValue=namePath.toLowerCase(Locale.ROOT);
             int boundary=pathValue.lastIndexOf('/')+1;String prefix=pathValue.substring(0,boundary);
             // Retain only the current owner prefix, not a growing per-artifact cache. Include
             // two preceding characters in the tail so every boundary-crossing trigram survives.
-            if(!prefix.equals(lastPrefix)){prefixGrams=new HashSet<>();addGrams(prefixGrams,prefix);lastPrefix=prefix;}
+            if(!prefix.equals(lastPrefix)){prefixGrams.clear();addGrams(prefixGrams,prefix);lastPrefix=prefix;}
             addGrams(grams,pathValue.substring(Math.max(0,boundary-2)));if(!pathValue.contains(name))addGrams(grams,name);
             for(String gram:prefixGrams)addGram(entries,gramsIndex,gram,symbol.id());
             for(String gram:grams)if(!prefixGrams.contains(gram))addGram(entries,gramsIndex,gram,symbol.id());

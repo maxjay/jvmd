@@ -61,7 +61,10 @@ def main():
     parser.add_argument("--java-home", type=Path, required=True)
     parser.add_argument("--dependencies", type=Path, required=True)
     parser.add_argument("--root", type=Path, required=True)
+    parser.add_argument("--runs", type=int, default=3)
     args = parser.parse_args()
+    if args.runs < 1:
+        parser.error("--runs must be positive")
     args.root.mkdir(parents=True, exist_ok=False)
     dep_root = args.root / "dependencies"
     dep_root.mkdir()
@@ -79,7 +82,7 @@ def main():
               "environment": {"cpu_max": Path("/sys/fs/cgroup/cpu.max").read_text().strip(),
                               "memory_max": Path("/sys/fs/cgroup/memory.max").read_text().strip(),
                               "cpu_model": next(x.split(":", 1)[1].strip() for x in Path("/proc/cpuinfo").read_text().splitlines() if x.startswith("model name"))},
-              "scope": "Both implementations use Rocks. Fresh states, then unchanged reopened states. Serial 1GiB JVMs, alternating backend order, three repetitions. Process readiness includes JVM launch, unlike the inner service timer. Three broad warm queries follow 31 exact type and 32 field queries; no OS-cache flush.",
+              "scope": f"Both implementations use Rocks. Fresh states, then unchanged reopened states. Serial 1GiB JVMs, alternating backend order, {args.runs} repetitions. Process readiness includes JVM launch, unlike the inner service timer. Three broad warm queries follow 31 exact type and 32 field queries; no OS-cache flush.",
               "fixtures": {}, "runs": []}
     (args.root / "classpaths.json").write_text(json.dumps(cps, indent=2))
     for fixture, artifacts, classes, fields in [("single-380000", 1, 950, 397), ("m2-128", 128, 8, 368)]:
@@ -90,7 +93,7 @@ def main():
         launch(args.java_home, cps["baseline"], "dev.jvmd.bench.RepositoryUpdateBenchmark",
                ["fixture", repository, root / "unused", manifest, artifacts, classes, fields, str(artifacts > 1).lower()], root / "fixture.log")
         report["fixtures"][fixture] = json.loads(manifest.read_text())
-        for repetition in range(3):
+        for repetition in range(args.runs):
             for mode in (["baseline", "optimized"] if repetition % 2 == 0 else ["optimized", "baseline"]):
                 run_root = root / f"{mode}-{repetition}"
                 run_root.mkdir()

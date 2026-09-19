@@ -1,5 +1,9 @@
 # Query planning, persisted startup and warm queries — 2026-09-19
 
+This records the query-planning checkpoint. The subsequent
+[seed allocation follow-up](2026-09-19-seed-optimization.md) contains the latest
+seed and JDTLS measurements; the experiments below remain their original snapshot.
+
 Upfront indexing is intended to make repeated queries and updates cheap. The old
 Rocks type search still decoded 380,000 records to return 950 classes because
 member paths shared the queried type-name gram. That work repeated after warm-up.

@@ -12,6 +12,15 @@ not replacement results.
 
 ## Measured decision and current performance
 
+The latest [seed allocation follow-up](performance/2026-09-19-seed-optimization.md)
+measures production `0c8b5a50` against the already query-optimized Rocks branch.
+Five paired repetitions reduce large-JAR service open plus scan from 10.253 to
+9.366 s (8.7%); the 128-JAR seed is effectively unchanged. A separate JFR estimates
+21% less allocation churn, with mixed peak RSS. The persisted format and memory
+budgets are unchanged; both revisions reopen each other's fixture indexes without
+rebuilding. The report includes a refreshed final JDTLS comparison and separates
+those cross-server scopes from the controlled before/after experiment.
+
 The [query-planning follow-up](performance/2026-09-19-query-optimization.md)
 measures optimized code `3871bc83` against the preceding Rocks implementation.
 Broad warm type searches fall from 1,705/1,771 ms to 9/18 ms across the two

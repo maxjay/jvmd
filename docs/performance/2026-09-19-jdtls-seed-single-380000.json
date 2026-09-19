@@ -1,0 +1,165 @@
+{
+  "distribution_sha256": "338e7e73d61836651ba2453919a0d34fa763eb4e7c03342092309bffb8934c64",
+  "core_bundle": "org.eclipse.jdt.ls.core_1.61.0.202609031315.jar",
+  "harness_sha256": "e2ca86fc720fcf022df00db02bf702d0d0fa9bc31dc2c375962759a81494253f",
+  "repository_manifest": [
+    {
+      "path": "fixture/generated0/1/generated0-1.jar",
+      "sha256": "1bd3b9700da838c0bb6b313f1ffd7c11a45171f39b088c2f1af658399a8ac6ba"
+    }
+  ],
+  "heap_limit_bytes": 1073741824,
+  "java_home": "/tmp/jvmd-update-toolchain/jdk-25.0.4.1+1",
+  "runs": [
+    {
+      "scenario": "fresh",
+      "initialize_response_ms": 2728.231789000347,
+      "all_types_queryable_ms": 7924.960177000685,
+      "type_query_p50_ms": 17.60534599998209,
+      "type_query_p95_ms": 26.22910799982492,
+      "all_types_count": 950,
+      "type_query_results": 1,
+      "warm_broad_type_query_samples_ms": [
+        211.96720099942468,
+        235.0014639996516,
+        237.77177299962204
+      ],
+      "warm_broad_type_query_p50_ms": 235.0014639996516,
+      "through_queries_ms": 9220.341447000465,
+      "elapsed_through_close_ms": 10584.212980000302,
+      "cpu_ms": 27796.425,
+      "peak_rss_bytes": 946892800,
+      "write_bytes_through_close": 58994688,
+      "readiness_probes": 1,
+      "state_bytes": 46648660,
+      "final_index_and_configuration_bytes": 58305028,
+      "scope": "JDTLS LSP startup/import/JDK indexing and dependency type search. JVMD comparison is its index-service API, not full LSP startup. Binary field/method search and global Maven crawling are not equivalent operations.",
+      "repetition": 0
+    },
+    {
+      "scenario": "restart",
+      "initialize_response_ms": 2474.405103999743,
+      "all_types_queryable_ms": 3836.675157999707,
+      "type_query_p50_ms": 18.785512998874765,
+      "type_query_p95_ms": 29.300989999683225,
+      "all_types_count": 950,
+      "type_query_results": 1,
+      "warm_broad_type_query_samples_ms": [
+        201.71526900048775,
+        191.64473300043028,
+        181.17525600064255
+      ],
+      "warm_broad_type_query_p50_ms": 191.64473300043028,
+      "through_queries_ms": 5081.87925799939,
+      "elapsed_through_close_ms": 6256.502452999484,
+      "cpu_ms": 14543.354,
+      "peak_rss_bytes": 650969088,
+      "write_bytes_through_close": 540672,
+      "readiness_probes": 1,
+      "state_bytes": 46654758,
+      "final_index_and_configuration_bytes": 58311126,
+      "scope": "JDTLS LSP startup/import/JDK indexing and dependency type search. JVMD comparison is its index-service API, not full LSP startup. Binary field/method search and global Maven crawling are not equivalent operations.",
+      "repetition": 0
+    },
+    {
+      "scenario": "fresh",
+      "initialize_response_ms": 2662.4121080003533,
+      "all_types_queryable_ms": 8209.101270000247,
+      "type_query_p50_ms": 20.79697899898747,
+      "type_query_p95_ms": 34.28771700055222,
+      "all_types_count": 950,
+      "type_query_results": 1,
+      "warm_broad_type_query_samples_ms": [
+        222.08967299957294,
+        236.7169320004905,
+        220.27387699927203
+      ],
+      "warm_broad_type_query_p50_ms": 222.08967299957294,
+      "through_queries_ms": 9618.62500299867,
+      "elapsed_through_close_ms": 10615.476925999246,
+      "cpu_ms": 27430.97,
+      "peak_rss_bytes": 956342272,
+      "write_bytes_through_close": 59011072,
+      "readiness_probes": 1,
+      "state_bytes": 46650569,
+      "final_index_and_configuration_bytes": 58306937,
+      "scope": "JDTLS LSP startup/import/JDK indexing and dependency type search. JVMD comparison is its index-service API, not full LSP startup. Binary field/method search and global Maven crawling are not equivalent operations.",
+      "repetition": 1
+    },
+    {
+      "scenario": "restart",
+      "initialize_response_ms": 2435.1152009985526,
+      "all_types_queryable_ms": 3834.986846999527,
+      "type_query_p50_ms": 19.019346000277437,
+      "type_query_p95_ms": 36.36655899936159,
+      "all_types_count": 950,
+      "type_query_results": 1,
+      "warm_broad_type_query_samples_ms": [
+        224.52252699986275,
+        233.73150599945802,
+        217.77640899927064
+      ],
+      "warm_broad_type_query_p50_ms": 224.52252699986275,
+      "through_queries_ms": 5170.330509999985,
+      "elapsed_through_close_ms": 6345.274653998786,
+      "cpu_ms": 14961.903999999999,
+      "peak_rss_bytes": 612966400,
+      "write_bytes_through_close": 536576,
+      "readiness_probes": 1,
+      "state_bytes": 46656667,
+      "final_index_and_configuration_bytes": 58313035,
+      "scope": "JDTLS LSP startup/import/JDK indexing and dependency type search. JVMD comparison is its index-service API, not full LSP startup. Binary field/method search and global Maven crawling are not equivalent operations.",
+      "repetition": 1
+    },
+    {
+      "scenario": "fresh",
+      "initialize_response_ms": 2580.6697829993936,
+      "all_types_queryable_ms": 7921.045877999859,
+      "type_query_p50_ms": 18.187511999713024,
+      "type_query_p95_ms": 29.443798999636783,
+      "all_types_count": 950,
+      "type_query_results": 1,
+      "warm_broad_type_query_samples_ms": [
+        229.6973069987871,
+        193.38430399875506,
+        204.14982100010093
+      ],
+      "warm_broad_type_query_p50_ms": 204.14982100010093,
+      "through_queries_ms": 9179.031644000133,
+      "elapsed_through_close_ms": 10175.430405999577,
+      "cpu_ms": 25421.748,
+      "peak_rss_bytes": 990023680,
+      "write_bytes_through_close": 58994688,
+      "readiness_probes": 1,
+      "state_bytes": 46650569,
+      "final_index_and_configuration_bytes": 58306937,
+      "scope": "JDTLS LSP startup/import/JDK indexing and dependency type search. JVMD comparison is its index-service API, not full LSP startup. Binary field/method search and global Maven crawling are not equivalent operations.",
+      "repetition": 2
+    },
+    {
+      "scenario": "restart",
+      "initialize_response_ms": 2252.4944420001702,
+      "all_types_queryable_ms": 3602.515251001023,
+      "type_query_p50_ms": 19.255630000770907,
+      "type_query_p95_ms": 29.73799099891039,
+      "all_types_count": 950,
+      "type_query_results": 1,
+      "warm_broad_type_query_samples_ms": [
+        341.6871000008541,
+        216.34093099964957,
+        198.7673410003481
+      ],
+      "warm_broad_type_query_p50_ms": 216.34093099964957,
+      "through_queries_ms": 5040.377383000305,
+      "elapsed_through_close_ms": 6239.110816000903,
+      "cpu_ms": 14439.689,
+      "peak_rss_bytes": 719650816,
+      "write_bytes_through_close": 536576,
+      "readiness_probes": 1,
+      "state_bytes": 46656667,
+      "final_index_and_configuration_bytes": 58313035,
+      "scope": "JDTLS LSP startup/import/JDK indexing and dependency type search. JVMD comparison is its index-service API, not full LSP startup. Binary field/method search and global Maven crawling are not equivalent operations.",
+      "repetition": 2
+    }
+  ]
+}

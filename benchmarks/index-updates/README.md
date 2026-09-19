@@ -5,6 +5,9 @@ record three repetitions against actual main and pinned JDTLS, including the
 memory/query tradeoffs and the distinct source-Merkle experiment.
 The [query optimization follow-up](../../docs/performance/2026-09-19-query-optimization.md)
 separates cold indexing, persisted restart and warm queries, including JVM launch.
+The [seed allocation follow-up](../../docs/performance/2026-09-19-seed-optimization.md)
+adds five-repetition seed comparisons, bidirectional persisted-index checks, JFR
+allocation evidence and a refreshed JDTLS comparison.
 
 These are distinct measurements. Maven discovery uses `IndexService.scan()` and
 the artifact inventory; it does not call `RocksWorkspaceState`. Source Merkle
@@ -116,3 +119,21 @@ available for phase attribution. Each worker also records three broad warm type
 queries after the existing repeated exact-type and field queries. Result identities
 must agree across implementations and restart. Repeat `jdtls.py` with
 `--warm-type-queries 3` to measure broad warm queries on the same fixtures.
+
+## Seed allocation profiling
+
+Pass `--runs 5` to `query-performance.py` for the five-repetition seed experiment.
+Both production checkouts must be committed. Once the unprofiled run completes,
+use its exact compiled classes and fixture for a separate diagnostic profile:
+
+```sh
+python benchmarks/index-updates/profile-seed.py \
+  --benchmark-root /tmp/jvmd-query-performance \
+  --java-home /path/to/jdk-25.0.4.1+1 \
+  --root /tmp/jvmd-seed-profile
+```
+
+This runs one fresh 380,000-symbol JFR worker per implementation serially, exports
+allocation/CPU/GC samples, and records commands and hashes. Allocation weights are
+sample estimates, not retained heap. Use unprofiled repetitions for speed claims.
+The `classpaths.json` input must come from a trusted local benchmark run.

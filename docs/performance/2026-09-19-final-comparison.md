@@ -131,8 +131,11 @@ Maven/Gradle import and automatic builds are disabled. The client waits until LS
 queries returning one class per artifact. Restart keeps the JDTLS workspace.
 
 JVMD calls its index-service API; JDTLS uses LSP and includes Eclipse/project/JDK
-startup. JVMD additionally indexes binary fields, methods and relationships.
-This is a comparison of the observed dependency-type task under those startup
+startup. JDT also indexes binary fields, methods and references; the two systems
+retain different representations and query capabilities. The original JVMD timer
+starts inside its JVM, while JDTLS includes process launch. The follow-up query
+comparison records parent-process readiness for both. This is a comparison of
+the observed dependency-type task under those startup
 scopes, not equivalent total work or a general language-server ranking. JDTLS
 Maven-folder updates, binary field queries and whole-repository crawling are not
 measured here.
@@ -190,4 +193,3 @@ actual-main builds, fixture generation, source Merkle and JDTLS commands.
 - [JDTLS 128-JAR raw report](2026-09-19-jdtls-m2-128.json)
 - [Revision mapping and CI snapshots](2026-09-19-update-ci-evidence.json)
 - [Deadlock regression evidence](2026-09-19-admission-regression.json)
-

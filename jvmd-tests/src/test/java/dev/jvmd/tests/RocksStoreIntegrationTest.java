@@ -53,15 +53,16 @@ class RocksStoreIntegrationTest {
                 index.indexJar(jar,"fixture:api:1","jar");index.indexSources(jar.resolveSibling("fixture-sources.jar"));
                 index.loadWorkspace("w",List.of(new IndexService.WorkspaceArtifact(jar.toString(),"compile")),List.of());
             }
-            for(String query:List.of("transform","Sample/transform(T,U)","Sample/Nested","Sa","ansf","%' OR 1=1 --")){
-                boolean substring=Set.of("Sa","ansf","%' OR 1=1 --").contains(query);
-                var control=sqlite.find(query,"w",substring,100,0);var found=new ArrayList<Map<String,Object>>();long after=0;
+            for(String query:List.of("transform","Sample/transform(T,U)","Sample/Nested","Sa","Nested","","missingRareType","ansf","%' OR 1=1 --"))
+            for(Set<String> kinds:List.of(Set.<String>of(),Set.of("class"),Set.of("interface"),Set.of("class","method"),Set.of("class","interface","enum","record","annotation"))){
+                boolean substring=Set.of("Sa","Nested","","missingRareType","ansf","%' OR 1=1 --").contains(query);
+                var control=sqlite.find(query,"w",substring,100,0,kinds);var found=new ArrayList<Map<String,Object>>();long after=0;
                 for(int page=0;page<100;page++){
-                    var values=rocks.find(query,"w",substring,1,after);if(values.isEmpty())break;
+                    var values=rocks.find(query,"w",substring,1,after,kinds);if(values.isEmpty())break;
                     var value=values.getFirst();found.add(value);after=((Number)value.get("id")).longValue();
                     assertThat(rocks.byId(after,"w").get("scip")).isEqualTo(value.get("scip"));
                 }
-                assertThat(canonical(found)).as(query).containsExactlyInAnyOrderElementsOf(canonical(control));
+                assertThat(canonical(found)).as(query+" "+kinds).containsExactlyInAnyOrderElementsOf(canonical(control));
             }
         }
         assertThat(root.resolve("index.db")).doesNotExist();

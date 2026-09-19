@@ -89,3 +89,28 @@ the generated class names, but transport and server duties differ. JDTLS's type
 search is not an equivalent test of JVMD's binary field/method search, symbolic
 relationship store or global `.m2` inventory. Report these limitations alongside
 the numbers; do not describe the result as a general language-server ranking.
+
+## Cold, reopened and warm query optimization
+
+JDT also indexes binary methods, fields and references upfront. Its workspace
+type-search handler waits for indexing readiness. Do not describe this comparison
+as preindexed JVMD versus an unindexed JDTLS.
+
+For a before/after comparison of two Rocks revisions, check out the baseline
+in a separate worktree and run:
+
+```sh
+python benchmarks/index-updates/query-performance.py \
+  --baseline /path/to/baseline --current "$PWD" \
+  --java-home /path/to/jdk-25.0.4.1+1 \
+  --dependencies /path/to/release/lib/jvmd \
+  --root /tmp/jvmd-query-performance
+```
+
+This runs three fresh and three persisted-state reopen workers for each revision
+and fixture. It records the parent process's time from launch until an explicit
+all-types-ready marker, including JVM launch. The inner service timer remains
+available for phase attribution. Each worker also records three broad warm type
+queries after the existing repeated exact-type and field queries. Result identities
+must agree across implementations and restart. Repeat `jdtls.py` with
+`--warm-type-queries 3` to measure broad warm queries on the same fixtures.

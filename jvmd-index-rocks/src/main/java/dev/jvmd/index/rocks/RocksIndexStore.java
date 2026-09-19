@@ -311,14 +311,22 @@ public final class RocksIndexStore implements IndexStore {
             }
             if(after>>>32>artifact.id())continue;
             var prefixes=new LinkedHashSet<String>();
-            if(substring){if(lower.isBlank())prefixes.add("1|symbol|");else prefixes.add("8|gram|"+lower.substring(0,Math.min(3,lower.length()))+"|");}
+            if(substring){
+                boolean typesOnly=!kinds.isEmpty()&&TYPES.containsAll(kinds);
+                String posting=lower.isBlank()?"1|symbol|":"8|gram|"+lower.substring(0,Math.min(3,lower.length()))+"|";
+                // Common owner-name grams can contain every member in a JAR. Compare
+                // posting cardinality without loading symbols; retain selective grams
+                // for rare names instead of always walking all type declarations.
+                if(typesOnly&&(lower.isBlank()||repository.postingCountExceeds(symbolsKey(artifact),posting,artifact.simpleNames())))posting="0|type|";
+                prefixes.add(posting);
+            }
             else{
                 if(parsed!=null&&!parsed.identity())prefixes.add("3|name|"+parsed.leaf()+"|");
                 String[] gav=artifact.input().context().gav().split(":",3);String prefix="maven "+gav[0]+"/"+gav[1]+" "+gav[2]+" ";
                 if(query.startsWith(prefix))prefixes.add("2|scip|"+query.substring(prefix.length())+"|");
             }
             var candidates=new TreeMap<Integer,ArtifactIndexFormat.SymbolRecord>();
-            for(String prefix:prefixes)for(var symbol:repository.selectRanked(symbolsKey(artifact),prefix,after,limit,s->{try{String scip=artifact.input().context().scip(s);return !sourceScips.contains(scip)&&!seen.contains(scip)&&preferred(artifact,scip,selectedArtifacts)&&match.test(searchFields(artifact,s));}catch(Exception e){throw new IllegalStateException(e);}},s->{try{return symbolId(artifact,s);}catch(Exception e){throw new IllegalStateException(e);}}))candidates.put(symbol.id(),symbol);
+            for(String prefix:prefixes)for(var symbol:repository.selectRanked(symbolsKey(artifact),prefix,after,limit,s->{try{if(!kinds.isEmpty()&&!kinds.contains(s.kind()))return false;String scip=artifact.input().context().scip(s);return !sourceScips.contains(scip)&&!seen.contains(scip)&&preferred(artifact,scip,selectedArtifacts)&&match.test(searchFields(artifact,s));}catch(Exception e){throw new IllegalStateException(e);}},s->{try{return symbolId(artifact,s);}catch(Exception e){throw new IllegalStateException(e);}}))candidates.put(symbol.id(),symbol);
             Integer direct=substring?null:repository.binaryId(symbolsKey(artifact),query);if(direct!=null)candidates.put(direct,repository.symbol(symbolsKey(artifact),direct));
             for(var symbol:candidates.values()){
                 var value=row(artifact,symbol);String scip=value.get("scip").toString();

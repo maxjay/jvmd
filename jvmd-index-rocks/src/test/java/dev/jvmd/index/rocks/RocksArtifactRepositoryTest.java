@@ -10,6 +10,36 @@ import static org.assertj.core.api.Assertions.*;
 class RocksArtifactRepositoryTest {
     @TempDir Path temp;
 
+    @Test void postingCountsChooseSelectiveListsWithoutMaterializingSymbols()throws Exception{
+        var data=facts(1100,0);String key=data.key().cacheKey();
+        try(var store=new RocksArtifactRepository(temp.resolve("posting-counts"))){
+            store.publish(data,Set.of());
+            assertThat(store.postingCountExceeds(key,"8|gram|met|",1099)).isTrue();
+            assertThat(store.postingCountExceeds(key,"8|gram|met|",1100)).isFalse();
+            assertThat(store.postingCountExceeds(key,"3|name|method1099|",0)).isTrue();
+            assertThat(store.postingCountExceeds(key,"3|name|method1099|",1)).isFalse();
+            assertThat(store.postingCountExceeds(key,"8|gram|xyz|",0)).isFalse();
+            assertThat(store.status()).containsEntry("oracle_materializations",0L);
+        }
+    }
+
+    @Test void compactPostingDecoderPreservesVariableWidthsAndRejectsMalformedBlocks(){
+        byte[] zero="00000000".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] wide="00000080".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(PostingCodec.decode(zero,new byte[]{0x7f,0})).containsExactly(0);
+        assertThat(PostingCodec.decode(wide,new byte[]{0x7f,(byte)0x80,1})).containsExactly(128);
+        assertThat(PostingCodec.decode(wide,new byte[]{0x7f,0,(byte)0x80,1})).containsExactly(0,128);
+        byte[] full=new byte[257];Arrays.fill(full,(byte)1);full[0]=0x7f;full[1]=0;
+        assertThat(PostingCodec.decode("000000ff".getBytes(java.nio.charset.StandardCharsets.UTF_8),full))
+                .containsExactly(java.util.stream.IntStream.range(0,256).toArray());
+        for(byte[] malformed:List.of(new byte[]{0x7f},new byte[]{0x7f,(byte)0x80},new byte[]{0x7f,0,0},
+                new byte[]{0x7f,(byte)0xff,(byte)0xff,(byte)0xff,(byte)0xff,0x10},new byte[]{0x7f,1}))
+            assertThatThrownBy(()->PostingCodec.decode(zero,malformed)).isInstanceOf(IllegalStateException.class);
+        byte[] tooMany=Arrays.copyOf(full,258);tooMany[257]=1;
+        assertThatThrownBy(()->PostingCodec.decode("00000100".getBytes(java.nio.charset.StandardCharsets.UTF_8),tooMany))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
     @Test void admittedPublisherDoesNotQueueBehindAWorkerWaitingForItsCapacity()throws Exception{
         var acquired=new java.util.concurrent.CountDownLatch(1);var publish=new java.util.concurrent.CountDownLatch(1);
         try(var sink=new RocksArtifactGenerationSink(temp.resolve("fair-admission"),1024*1024)){

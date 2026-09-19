@@ -240,6 +240,19 @@ public final class RocksArtifactRepository implements AutoCloseable {
         return result;
     }
 
+    /** Compare candidate counts without loading symbols; stop as soon as the alternative wins. */
+    boolean postingCountExceeds(String cacheKey,String postingPrefix,long maximum)throws Exception{
+        byte[] prefix=key(cacheKey,postingPrefix);long count=0;
+        try(var iterator=db.newIterator()){
+            for(iterator.seek(prefix);iterator.isValid()&&startsWith(iterator.key(),prefix);iterator.next()){
+                count+=postingIds(iterator.key(),iterator.value()).length;
+                if(count>maximum)return true;
+            }
+            iterator.status();
+        }
+        return false;
+    }
+
     /** Filter before pagination, with bounded top-k memory even for large prefix postings. */
     public List<ArtifactIndexFormat.SymbolRecord> select(String cacheKey,String postingPrefix,int after,int limit,
                                                         Predicate<ArtifactIndexFormat.SymbolRecord> filter)throws Exception{

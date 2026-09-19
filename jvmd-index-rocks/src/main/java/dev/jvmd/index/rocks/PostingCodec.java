@@ -17,7 +17,9 @@ final class PostingCodec {
         int maximum=lastId(key);
         if(value.length==0)return new int[]{maximum};
         if(value.length<2||value[0]!=0x7f)throw new IllegalStateException("Invalid posting encoding");
-        int[] ids=new int[256];int count=0,previous=0,delta=0,shift=0;
+        // Each ID needs at least one byte. Singleton/small blocks dominate several
+        // posting namespaces; allocating 256 IDs for every one creates merge churn.
+        int[] ids=new int[Math.min(256,value.length-1)];int count=0,previous=0,delta=0,shift=0;
         for(int i=1;i<value.length;i++){
             int part=Byte.toUnsignedInt(value[i]);
             if(shift>28||(shift==28&&(part&0xf0)!=0))throw new IllegalStateException("Posting ID overflow");
@@ -28,6 +30,6 @@ final class PostingCodec {
             ids[count++]=(int)next;previous=(int)next;delta=0;shift=0;
         }
         if(shift!=0||count==0||previous!=maximum)throw new IllegalStateException("Truncated posting block");
-        return Arrays.copyOf(ids,count);
+        return count==ids.length?ids:Arrays.copyOf(ids,count);
     }
 }

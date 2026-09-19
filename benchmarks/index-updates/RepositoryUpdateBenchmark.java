@@ -29,7 +29,7 @@ public final class RepositoryUpdateBenchmark {
         long started=System.nanoTime(),initialWrites=metric("/proc/self/io","write_bytes:"),initialCpu=cpu();
         long beforeCloseWrites=0,closeStarted=0;
         try(var index=new IndexService(state.resolve("index.db"),repository)){
-            results.add(measure(index,operation.equals("seed")?"fresh_seed":operation.equals("updates")?"restart_unchanged":"restart_after_updates",
+            results.add(measure(index,operation.equals("seed")?"fresh_seed":Set.of("updates","reopen").contains(operation)?"restart_unchanged":"restart_after_updates",
                     Map.of(),started,initialWrites,initialCpu));
             if(operation.equals("updates")){
                 measure(index,results,"warm_unchanged");
@@ -70,7 +70,7 @@ public final class RepositoryUpdateBenchmark {
         report.put("final_index_bytes",size(state));report.put("jdk",System.getProperty("java.runtime.version"));
         report.put("processors",Runtime.getRuntime().availableProcessors());report.put("filesystem",Files.getFileStore(state).type());
         var hashes=new TreeMap<String,String>();
-        for(String name:List.of("dev/jvmd/index/IndexService","dev/jvmd/index/IndexDatabase","dev/jvmd/index/BinaryReader","dev/jvmd/index/rocks/RocksArtifactRepository"))
+        for(String name:List.of("dev/jvmd/index/IndexService","dev/jvmd/index/IndexDatabase","dev/jvmd/index/BinaryReader","dev/jvmd/index/rocks/RocksArtifactRepository","dev/jvmd/index/rocks/RocksIndexStore","dev/jvmd/index/rocks/PostingCodec"))
             try(var input=RepositoryUpdateBenchmark.class.getResourceAsStream("/"+name+".class")){if(input!=null)hashes.put(name,Hashing.sha256(input.readAllBytes()));}
         report.put("implementation_sha256",hashes);save(output,report);
     }
@@ -87,6 +87,7 @@ public final class RepositoryUpdateBenchmark {
         long workspaceWrites=metric("/proc/self/io","write_bytes:");
         var types=index.find("Type","benchmark",true,10000,0,Set.of("class"));long allTypesReady=System.nanoTime();
         int expectedTypes=paths.size()*classes;if(types.size()!=expectedTypes)throw new IllegalStateException("Incomplete type index: "+types.size()+" / "+expectedTypes);
+        if(Boolean.getBoolean("jvmd.benchmark.ready_marker")){System.out.println("JVMD_BENCHMARK_ALL_TYPES_READY");System.out.flush();}
         var typeLatency=new ArrayList<Double>();
         for(int i=0;i<31;i++){
             long queryStarted=System.nanoTime();var matches=index.find("Type0","benchmark",false,10000,0,Set.of("class"));typeLatency.add((System.nanoTime()-queryStarted)/1e6);
@@ -97,6 +98,11 @@ public final class RepositoryUpdateBenchmark {
         if(first.size()!=classes)throw new IllegalStateException("Wrong marker query count: "+first.size());
         var latency=new ArrayList<Double>();
         for(int i=0;i<31;i++){long queryStarted=System.nanoTime();index.find("marker0","benchmark",false,10000,0);latency.add((System.nanoTime()-queryStarted)/1e6);}
+        var broadLatency=new ArrayList<Double>();
+        for(int i=0;i<Integer.getInteger("jvmd.benchmark.warm_type_queries",0);i++){
+            long queryStarted=System.nanoTime();var matches=index.find("Type","benchmark",true,10000,0,Set.of("class"));broadLatency.add((System.nanoTime()-queryStarted)/1e6);
+            if(!matches.equals(types))throw new IllegalStateException("Warm type search changed results");
+        }
         long done=System.nanoTime(),written=metric("/proc/self/io","write_bytes:");double cpuMs=(cpu()-cpu)/1e6;
         Map<String,Object> after=index.status();if(number(after,"faults")!=0)throw new IllegalStateException("Index faults: "+after.get("warnings"));
         Collections.sort(latency);var result=new LinkedHashMap<String,Object>();result.put("scenario",scenario);
@@ -104,6 +110,9 @@ public final class RepositoryUpdateBenchmark {
         result.put("workspace_ready_ms",(ready-started)/1e6);result.put("first_query_ms",(queried-fieldStarted)/1e6);
         Collections.sort(typeLatency);result.put("all_types_queryable_ms",(allTypesReady-started)/1e6);result.put("all_types_count",types.size());
         result.put("type_query_p95_ms",typeLatency.get(29));result.put("type_query_p50_ms",typeLatency.get(15));result.put("type_query_results",paths.size());
+        result.put("all_types_query_ms",(allTypesReady-ready)/1e6);
+        result.put("all_types_scip_sha256",Hashing.sha256(Json.MAPPER.writeValueAsBytes(types.stream().map(s->s.get("scip").toString()).sorted().toList())));
+        if(!broadLatency.isEmpty()){result.put("warm_broad_type_query_samples_ms",List.copyOf(broadLatency));Collections.sort(broadLatency);result.put("warm_broad_type_query_p50_ms",broadLatency.get(broadLatency.size()/2));}
         result.put("through_queries_ms",(done-started)/1e6);result.put("write_bytes",written-writes);result.put("cpu_ms",cpuMs);
         result.put("scan_write_bytes",scanWrites-writes);result.put("workspace_write_bytes",workspaceWrites-scanWrites);
         result.put("query_write_bytes",written-workspaceWrites);result.put("scan_cpu_ms",scanCpuMs);

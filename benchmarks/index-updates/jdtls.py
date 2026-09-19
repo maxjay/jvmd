@@ -165,6 +165,13 @@ def measure(args, root, workspace, expected, scenario):
                 times.append((time.perf_counter() - before) * 1000)
                 if len(matches) != args.artifacts:
                     raise RuntimeError(f"Wrong JDTLS exact type count: {len(matches)} / {args.artifacts}")
+            broad_times = []
+            for _ in range(args.warm_type_queries):
+                before = time.perf_counter()
+                broad = client.request("workspace/symbol", {"query": "fixture.*"})
+                broad_times.append((time.perf_counter() - before) * 1000)
+                if sorted(json.dumps(x, sort_keys=True) for x in broad) != sorted(json.dumps(x, sort_keys=True) for x in symbols):
+                    raise RuntimeError("Warm JDTLS type search changed results")
             queried = time.perf_counter()
             usage = client.stop()
             finished = time.perf_counter()
@@ -175,6 +182,8 @@ def measure(args, root, workspace, expected, scenario):
     return {"scenario": scenario, "initialize_response_ms": (initialized-started)*1000,
             "all_types_queryable_ms": (ready-started)*1000, "type_query_p50_ms": statistics.median(times),
             "type_query_p95_ms": sorted(times)[29], "all_types_count": len(symbols), "type_query_results": len(matches),
+            "warm_broad_type_query_samples_ms": broad_times,
+            "warm_broad_type_query_p50_ms": statistics.median(broad_times) if broad_times else None,
             "through_queries_ms": (queried-started)*1000, "elapsed_through_close_ms": (finished-started)*1000,
             "cpu_ms": (usage.ru_utime+usage.ru_stime)*1000, "peak_rss_bytes": usage.ru_maxrss*1024,
             "write_bytes_through_close": usage.ru_oublock*512, "readiness_probes": probes,
@@ -193,6 +202,7 @@ def main():
     parser.add_argument("--artifacts", type=int, required=True)
     parser.add_argument("--classes", type=int, required=True)
     parser.add_argument("--runs", type=int, default=3)
+    parser.add_argument("--warm-type-queries", type=int, default=0, help="Additional broad type queries after the 31 exact queries")
     args = parser.parse_args()
     args.root.mkdir(parents=True, exist_ok=False)
     results = []

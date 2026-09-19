@@ -34,6 +34,9 @@ public final class WorkspaceBindings implements AutoCloseable {
     private record Inputs(String generation,Map<Path,String> hashes,List<Path> files,List<Path> classpath) { }
     private record Stamp(Map<String,Object> attributes,String hash) { }
     private final LinkedHashMap<Path,Stamp> hashes=new LinkedHashMap<>(256,.75f,true);
+    private final FileStateRegistry classpathFiles;
+    public WorkspaceBindings(){this(new FileStateRegistry());}
+    public WorkspaceBindings(FileStateRegistry classpathFiles){this.classpathFiles=Objects.requireNonNull(classpathFiles);}
     private Inputs inputs;
     private Snapshot snapshot;
     private long hits,builds,serializedBytes;
@@ -56,8 +59,8 @@ public final class WorkspaceBindings implements AutoCloseable {
         for(Path file:files){String memory=documents.hash(file);values.put(file,memory==null?hash(file):memory);}
         for(Path path:classpath){
             if(Files.isDirectory(path))try(var children=Files.find(path,Integer.MAX_VALUE,(file,attributes)->(file.toString().endsWith(".class")||file.toString().endsWith(".jar"))&&(attributes.isRegularFile()||attributes.isSymbolicLink()&&Files.isRegularFile(file)))){
-                for(Path file:children.sorted().toList())values.put(file,hash(file));
-            }else values.put(path,hash(path));
+                for(Path file:children.sorted().toList())values.put(file,classpathFiles.hash(file));
+            }else values.put(path,classpathFiles.hash(path));
         }
         return new Inputs(generation,Map.copyOf(values),List.copyOf(files),List.copyOf(classpath));
     }

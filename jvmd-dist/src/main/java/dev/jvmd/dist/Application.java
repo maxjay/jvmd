@@ -19,6 +19,7 @@ public final class Application implements AutoCloseable {
     private final Sessions sessions = new Sessions();
     private final Dispatcher dispatcher = new Dispatcher(sessions, new Metrics());
     private final Config config;
+    private final FileStateRegistry classpathFiles=new FileStateRegistry();
     private volatile MavenResolver resolver;
     private volatile dev.jvmd.runtime.JavaRuntime.Selection debuggeeRuntime;
     private volatile java.util.concurrent.CompletableFuture<IndexService> index;
@@ -31,6 +32,7 @@ public final class Application implements AutoCloseable {
         });
         dispatcher.status("aot_cache", () -> AotStatus.runtime(Path.of(System.getProperty("jvmd.aot.log", config.stateDir().resolve("aot.log").toString()))));
         dispatcher.status("resolver", () -> resolver == null ? java.util.Map.of("maven_major", config.mavenMajor(), "initialized", false) : resolver.status());
+        dispatcher.status("classpath_files",classpathFiles::status);
         dispatcher.register("session.open", (_, p) -> {
             var session = sessions.open(Path.of(Dispatcher.required(p, "root")));
             var manifest=p.get("manifest");
@@ -116,6 +118,7 @@ public final class Application implements AutoCloseable {
         dispatcher.register("symbol.hierarchy",(s,p)->relationships(s,p,true));
         dispatcher.register("session.status", (s, _) -> {
             var graph=(Resolution)s.state("resolution");var result=new LinkedHashMap<String,Object>();
+            result.put("shared_classpath_files",classpathFiles.status());
             result.put("diagnostics",s.state("diagnostics")==null?Map.of("initialized",false):diagnostics(s).status());result.put("file_states",documents(s).fileStates().status());result.put("analysis_contexts",s.state("analysis_contexts")==null?Map.of():((WorkspaceContextManager)s.state("analysis_contexts")).status());
             result.put("workspace_bindings",s.state("workspace_bindings")==null?Map.of("initialized",false):((WorkspaceBindings)s.state("workspace_bindings")).status());result.put("documents",documents(s).status());result.put("session",s.id());result.put("root",s.root().toString());result.put("classpath_state",graph==null?"unresolved":"resolved");result.put("classpath_entries",graph==null?0:graph.classpath().size());result.put("overlay",graph==null?Map.of():overlay(s,graph).status());result.put("metrics",dispatcher.status().get("metrics"));result.put("annotation_processing",s.state("processors")==null?Map.of("initialized",false):((AnnotationProcessing)s.state("processors")).status());
             var actorRegistry=(ModuleAnalyzerRegistry)s.state("diagnostic_actors");var interactiveAnalyzer=(Analyzer)s.state("analyzer");
@@ -141,7 +144,7 @@ public final class Application implements AutoCloseable {
         var actors=diagnosticActors(session);
         return session.state("diagnostics",()->new WorkspaceAnalysisCoordinator(documents(session),file->diagnosticAnalyzer(session,file),session::yieldInteractive,file->externalDiagnostics(session,file),actors.parallelism()));
     }
-    private ModuleAnalyzerRegistry diagnosticActors(Session session){return session.state("diagnostic_actors",ModuleAnalyzerRegistry::new);}
+    private ModuleAnalyzerRegistry diagnosticActors(Session session){return session.state("diagnostic_actors",()->new ModuleAnalyzerRegistry(classpathFiles));}
     private DiagnosticEngine diagnosticAnalyzer(Session session,Path path)throws Exception{
         var graph=RequestScope.memo(List.of(session,"analysis-resolution"),()->session.state("resolution")==null?null:refresh(session));
         var contexts=session.state("analysis_contexts",WorkspaceContextManager::new);
@@ -225,7 +228,7 @@ public final class Application implements AutoCloseable {
                 if(session.state("apt:"+module.gav()+(test?":test":":main")) instanceof AnnotationProcessing.Output output)classpath.addAll(output.classpath());
             }
         }}
-        var cache=session.state("workspace_bindings",WorkspaceBindings::new);String generation=graph==null?"plain":graph.fingerprint();
+        var cache=session.state("workspace_bindings",()->new WorkspaceBindings(classpathFiles));String generation=graph==null?"plain":graph.fingerprint();
         if(!load)return cache.peek(sourceFiles(session),List.copyOf(classpath),documents(session),generation);
         Resolution currentGraph=graph;
         return cache.getBatch(()->sourceFiles(session),List.copyOf(classpath),documents(session),generation,(long)config.heapCeilingMb()*1024*1024/Math.max(1,sessions.list().size())/4,files->{
@@ -500,7 +503,7 @@ public final class Application implements AutoCloseable {
         var graph=RequestScope.memo(List.of(session,"analysis-resolution"),()->session.state("resolution")==null?null:refresh(session));
         var contexts=session.state("analysis_contexts",WorkspaceContextManager::new);
         var context=contexts.context(path,graph,file->createAnalyzerContext(session,file,graph));
-        var analyzer=session.state("analyzer",Analyzer::new);
+        var analyzer=session.state("analyzer",()->new Analyzer(classpathFiles));
         var availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
         analyzer.configure(context,availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));
         analyzer.documents(documents(session));

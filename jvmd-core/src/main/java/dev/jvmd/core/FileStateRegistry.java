@@ -21,8 +21,17 @@ public final class FileStateRegistry {
         }
         // Do not associate bytes read during a concurrent write with a later file stamp.
         for (int attempt = 0; attempt < 3; attempt++) {
-            byte[] content = Files.readAllBytes(file);
-            String hash = Hashing.sha256(content); hashes++; bytes += content.length;
+            // Classpath entries can include large native-library JARs. Hash with a
+            // bounded buffer rather than retaining a whole JAR for each identity check.
+            java.security.MessageDigest digest;
+            try { digest = java.security.MessageDigest.getInstance("SHA-256"); }
+            catch (java.security.NoSuchAlgorithmException impossible) { throw new AssertionError(impossible); }
+            try (var input = Files.newInputStream(file)) {
+                long length = before == null ? Files.size(file) : ((Number) before.size()).longValue();
+                byte[] buffer = new byte[(int) Math.max(1, Math.min(65536, length))];
+                for (int n; (n = input.read(buffer)) != -1;) { digest.update(buffer, 0, n); bytes += n; }
+            }
+            String hash = HexFormat.of().formatHex(digest.digest()); hashes++;
             Stamp after = stamp(file);
             if (before == null || before.equals(after)) {
                 files.put(file, new Entry(after, hash));

@@ -25,7 +25,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     private final Map<String,ModuleCaches> modules=new LinkedHashMap<>();
     private long classpathFingerprints;
-    private final FileStateRegistry inputFiles=new FileStateRegistry();
+    private final FileStateRegistry inputFiles;
+    public Analyzer(){this(new FileStateRegistry());}
+    /** Share only validated content identities; compiler objects remain analyzer-owned. */
+    public Analyzer(FileStateRegistry inputFiles){this.inputFiles=Objects.requireNonNull(inputFiles);}
     private Documents documents=new Documents();
 
     private final Focusing focusing=new Focusing();

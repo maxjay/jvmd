@@ -58,7 +58,10 @@ mvn -B -DskipTests install
 mvn -B -pl jvmd-tests test -Dtest=IndexRedesignBenchmarkTest -DexcludedGroups=
 ```
 
-The harness now compares isolated full SQLite and full Rocks stores, asserts that
+The harness now compares isolated SQLite and Rocks stores through the production
+ServiceLoader provider, including candidate validation and activation. Earlier
+reports used a direct sink and omitted provider activation; their scope is
+store-level performance. The harness asserts that
 Rocks opens no SQLite file, and checks that staging is empty after close. It records
 compiled implementation hashes as well as the Git revision.
 
@@ -96,7 +99,7 @@ The original baseline revision remains available on `benchmark/index-storage`.
 ## Data and publication
 
 Artifact identity includes full binary SHA-256, record format, indexer identity
-(`jvmd-index-v6`), JDK feature/multi-release selection and indexing mode. GAV/path
+(`jvmd-index-v7`), JDK feature/multi-release selection and indexing mode. GAV/path
 context determines external SCIP identities separately. Typed symbol records,
 binary/SCIP/name/path/substring postings and forward/reverse symbolic references
 are sorted in bounded compressed runs and imported as one SST. Secondary postings
@@ -112,9 +115,12 @@ Documentation has a separate binary-plus-source-content key and verified member
 checksum. Metadata in a separate Rocks database atomically selects each path's
 binary, code and documentation generations; source facts are stored per file.
 
-Generations are below `state/index-v2/generations/format-1-jdk25-jvmd-index-v6`.
-A candidate is checked against its inventory before `active.manifest` switches;
-`previous` retains the earlier format generation. Incomplete SSTs/sort runs never
+Generations are below `state/index-v2/generations/format-1-jdk25-jvmd-index-v7`.
+A candidate is checked against its inventory before `active.manifest` switches.
+New immutable publications reuse their verified checksum/schema proof within the
+same owner; reopened unvalidated candidates receive a streaming verification.
+Validation never reconstructs the whole artifact or traverses every symbol.
+The `previous` manifest retains the earlier format generation. Incomplete SSTs/sort runs never
 have a published manifest. Startup removes staging remnants after obtaining the
 Rocks database lock. A format change rebuilds disposable index data; the prior
 SQLite index is retained for explicit rollback. Readers hold the store metadata

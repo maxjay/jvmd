@@ -213,7 +213,7 @@ public final class RocksIndexStore implements IndexStore {
     @Override public synchronized List<String> loadWorkspace(String workspace,List<WorkspaceEntry> entries,List<Map.Entry<String,String>> dependencies)throws Exception{
         workspaces.put(workspace,entries.stream().map(e->new WorkspaceEntry(Path.of(e.path()).toAbsolutePath().normalize().toString(),e.scope())).toList());
         var classes=new TreeMap<String,Set<String>>();var packages=new TreeMap<String,Set<String>>();
-        for(var artifact:selected(workspace,false))for(var symbol:repository.select(symbolsKey(artifact),"1|symbol|",-1,Integer.MAX_VALUE,s->TYPES.contains(s.kind()))){
+        for(var artifact:selected(workspace,false))for(var symbol:repository.select(symbolsKey(artifact),"0|type|",-1,Integer.MAX_VALUE,s->TYPES.contains(s.kind()))){
             var context=artifact.input().context();String label=context.gav()+" ["+context.path()+"]";
             classes.computeIfAbsent(symbol.fqn(),ignored->new LinkedHashSet<>()).add(label);
             int dot=symbol.fqn().lastIndexOf('.');String pkg=dot<0?"":symbol.fqn().substring(0,dot);

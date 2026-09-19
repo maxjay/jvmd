@@ -49,7 +49,7 @@ public class IndexRedesignBenchmarkTest {
         }
         var report=new LinkedHashMap<String,Object>();report.put("synthetic",synthetic);report.put("repository",repository.toString());
         report.put("repository_manifest",manifest);report.put("runs",results);report.put("summary",summary(results));
-        report.put("scope","Independent complete SQLite and RocksDB IndexStore processes; Rocks opens no SQLite database. Fresh application indexes; OS cache is not flushed.");
+        report.put("scope","Independent SQLite and RocksDB processes using the production Rocks provider, including candidate validation/activation. Rocks opens no SQLite database. Fresh application indexes; OS cache is not flushed.");
         report.put("missing_acceptance",List.of("861-JAR corporate run unless explicitly supplied","one-file body/API edit matrix","all native platforms"));
         Json.MAPPER.writerWithDefaultPrettyPrinter().writeValue(output.resolve("report.json").toFile(),report);
         System.out.println("index-redesign-summary "+Json.MAPPER.writeValueAsString(report.get("summary")));
@@ -82,7 +82,7 @@ public class IndexRedesignBenchmarkTest {
             for(var pool:ManagementFactory.getMemoryPoolMXBeans())if(pool.getType()==MemoryType.HEAP)pool.resetPeakUsage();
             var result=new LinkedHashMap<String,Object>();var latency=new ArrayList<Double>();
             long queryable,seedDone;Map<String,Object> status;
-            var sink=mode.equals("sqlite")?ArtifactGenerationSink.none():new RocksArtifactGenerationSink(state.resolve("rocks"),Long.getLong("jvmd.index.generation_budget_mb",128L)*1024*1024);
+            var sink=mode.equals("sqlite")?ArtifactGenerationSink.none():ArtifactGenerationSink.open("rocksdb-sst",state.resolve("rocks"),Long.getLong("jvmd.index.generation_budget_mb",128L)*1024*1024);
             try(var index=new IndexService(mode.equals("sqlite")?new SqliteIndexStore(state.resolve("index.db")):sink.openStore(),repository,sink)){
                 index.scan();seedDone=System.nanoTime();
                 List<IndexService.WorkspaceArtifact> paths;
@@ -96,8 +96,9 @@ public class IndexRedesignBenchmarkTest {
                 if(((Number)status.get("faults")).longValue()!=0)throw new IllegalStateException("Index faults: "+status.get("warnings"));
             }
             if(mode.equals("rocksdb-sst")&&Files.exists(state.resolve("index.db")))throw new IllegalStateException("Rocks run opened a SQL database");
-            if(mode.equals("rocksdb-sst"))try(var files=Files.list(state.resolve("rocks/staging"))){
-                if(files.findAny().isPresent())throw new IllegalStateException("Unfinished sort files after index close");
+            if(mode.equals("rocksdb-sst"))try(var files=Files.walk(state.resolve("rocks"))){
+                for(Path directory:files.filter(Files::isDirectory).filter(path->path.getFileName().toString().equals("staging")).toList())
+                    try(var staged=Files.list(directory)){if(staged.findAny().isPresent())throw new IllegalStateException("Unfinished sort files after index close");}
             }
             long finished=System.nanoTime(),writeBytes=processMetric("/proc/self/io","write_bytes:");
             Collections.sort(latency);result.put("seed_ms",(seedDone-started)/1e6);result.put("workspace_ready_ms",(queryable-started)/1e6);
@@ -110,7 +111,7 @@ public class IndexRedesignBenchmarkTest {
             result.put("jdk",System.getProperty("java.runtime.version"));result.put("processors",Runtime.getRuntime().availableProcessors());
             result.put("filesystem",Files.getFileStore(state).type());result.put("revision",System.getenv().getOrDefault("GITHUB_SHA",revision()));
             var implementation=new TreeMap<String,String>();
-            for(String name:List.of("dev/jvmd/index/IndexService","dev/jvmd/index/ArtifactIndexFormat","dev/jvmd/index/rocks/RocksIndexStore","dev/jvmd/index/rocks/SstSorter","dev/jvmd/index/rocks/RocksArtifactRepository"))
+            for(String name:List.of("dev/jvmd/index/IndexService","dev/jvmd/index/ArtifactIndexFormat","dev/jvmd/index/rocks/RocksIndexStore","dev/jvmd/index/rocks/SstSorter","dev/jvmd/index/rocks/RocksArtifactRepository","dev/jvmd/index/rocks/RocksArtifactGenerationSink","dev/jvmd/index/rocks/GramPostings","dev/jvmd/index/rocks/PostingCodec"))
                 try(var bytes=Worker.class.getResourceAsStream("/"+name+".class")){implementation.put(name,Hashing.sha256(Objects.requireNonNull(bytes).readAllBytes()));}
             result.put("implementation_sha256",implementation);
             long size;try(var files=Files.walk(state)){size=files.filter(Files::isRegularFile).filter(path->!path.toString().endsWith(".log")&&!path.toString().endsWith(".json")).mapToLong(path->{try{return Files.size(path);}catch(Exception e){throw new IllegalStateException(e);}}).sum();}

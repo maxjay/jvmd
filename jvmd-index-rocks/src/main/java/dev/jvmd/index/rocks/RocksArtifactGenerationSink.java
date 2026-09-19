@@ -125,10 +125,10 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
         for(var entry:inventory.entries()){
             if(!seen.add(entry.cacheKey()))continue;
             try{
-                if(!repository.verify(entry.cacheKey()))failures.add(entry.path()+": verification failed");
+                if(!repository.verifyForActivation(entry.cacheKey()))failures.add(entry.path()+": verification failed");
                 else{
-                    var facts=repository.artifact(entry.cacheKey());
-                    if(facts==null||!facts.key().binarySha256().equals(entry.binarySha256()))
+                    var identity=repository.artifactKey(entry.cacheKey());
+                    if(identity==null||!identity.binarySha256().equals(entry.binarySha256()))
                         failures.add(entry.path()+": binary identity mismatch");
                 }
             }catch(Exception e){

@@ -23,6 +23,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
     public record Publication(String cacheKey,boolean reused,long symbols,long relationships,long classReferences,long storageBytes) { }
 
     private static final byte[] EMPTY=new byte[0];
+    private static final Set<String> TYPES=Set.of("class","interface","enum","record","annotation");
     static {RocksDB.loadLibrary();}
 
     private final Path root;
@@ -31,6 +32,8 @@ public final class RocksArtifactRepository implements AutoCloseable {
     private final Options options;
     private final RocksDB db;
     private final ConcurrentHashMap<String,Object> artifactLocks=new ConcurrentHashMap<>();
+    private final Set<String> verifiedPublications=ConcurrentHashMap.newKeySet();
+    private final AtomicLong verificationPasses=new AtomicLong(),activationVerificationReuses=new AtomicLong(),oracleMaterializations=new AtomicLong();
     private final Object ingestLock=new Object();
     private final AtomicLong published=new AtomicLong(),reused=new AtomicLong();
     private final AtomicLong sortPeakBytes=new AtomicLong(),sortSpillBytes=new AtomicLong();
@@ -74,6 +77,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
                         }
                         started=System.nanoTime();
                         if(!verify(cacheKey))throw new IOException("RocksDB publication verification failed: "+cacheKey);
+                        verifiedPublications.add(cacheKey);
                         verifyNanos.addAndGet(System.nanoTime()-started);
                         published.incrementAndGet();
                     }
@@ -150,18 +154,30 @@ public final class RocksArtifactRepository implements AutoCloseable {
 
     public boolean contains(String cacheKey)throws Exception{return db.get(key(cacheKey,"z|manifest"))!=null;}
 
+    /** Immutable SSTs verified by this owner need no second scan during candidate activation. */
+    boolean verifyForActivation(String cacheKey)throws Exception{
+        if(verifiedPublications.contains(cacheKey)){activationVerificationReuses.incrementAndGet();return true;}
+        return verify(cacheKey);
+    }
+
     public boolean verify(String cacheKey)throws Exception{
+        verificationPasses.incrementAndGet();
         byte[] manifestBytes=db.get(key(cacheKey,"z|manifest"));if(manifestBytes==null)return false;
         var manifest=parseManifest(manifestBytes);var identity=artifactKey(cacheKey);
         if(identity==null||!identity.cacheKey().equals(cacheKey))return false;
         var digest=java.security.MessageDigest.getInstance("SHA-256");
         long symbols=0,relationships=0,references=0;byte[] prefix=key(cacheKey,"");
+        long expectedSymbols=Long.parseLong(manifest.get("symbols"));
         try(var read=new ReadOptions().setFillCache(false);var iterator=db.newIterator(read)){
             for(iterator.seek(prefix);iterator.isValid()&&startsWith(iterator.key(),prefix);iterator.next()){
                 byte[] current=iterator.key();String suffix=new String(current,StandardCharsets.UTF_8).substring(cacheKey.length()+1);
                 if(suffix.equals("z|manifest"))continue;
-                SstSorter.hash(digest,current,iterator.value());
-                if(suffix.startsWith("1|symbol|"))symbols++;
+                byte[] value=iterator.value();SstSorter.hash(digest,current,value);
+                if(suffix.startsWith("1|symbol|")){
+                    var symbol=ArtifactIndexFormat.decodeSymbol(value);
+                    if(symbol.id()!=symbols||PostingCodec.lastId(current)!=symbols||symbol.ownerId()>=expectedSymbols||symbol.ownerId()<-1)return false;
+                    symbols++;
+                }
                 else if(suffix.startsWith("4|out|"))relationships++;
                 else if(suffix.startsWith("6|class|"))references++;
             }
@@ -175,6 +191,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
 
     /** Materialization is reserved for the correctness oracle; queries read individual records. */
     public ArtifactIndexFormat.ArtifactData artifact(String cacheKey)throws Exception{
+        oracleMaterializations.incrementAndGet();
         var identity=artifactKey(cacheKey);if(identity==null)return null;
         var symbols=new ArrayList<ArtifactIndexFormat.SymbolRecord>();var relationships=new ArrayList<ArtifactIndexFormat.Relationship>();
         byte[] prefix=key(cacheKey,"1|symbol|");
@@ -300,6 +317,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
         result.put("sst_ingest_ms",ingestNanos.get()/1e6);result.put("publication_verify_ms",verifyNanos.get()/1e6);
         result.put("sort_input_records",sortInputRecords.get());result.put("sort_run_records",sortRunRecords.get());
         result.put("gram_occurrences",gramOccurrences.get());result.put("gram_posting_blocks",gramBlocks.get());
+        result.put("verification_passes",verificationPasses.get());result.put("activation_verification_reuses",activationVerificationReuses.get());result.put("oracle_materializations",oracleMaterializations.get());
         for(String property:List.of("estimate-pending-compaction-bytes","num-running-compactions","num-running-flushes",
                 "actual-delayed-write-rate","is-write-stopped","estimate-table-readers-mem","cur-size-all-mem-tables"))
             result.put(property.replace('-','_'),db.getLongProperty("rocksdb."+property));
@@ -339,7 +357,8 @@ public final class RocksArtifactRepository implements AutoCloseable {
         int previousId=-1;
 
         for(var symbol:symbols){
-            if(symbol.id()<=previousId)throw new IOException("Duplicate or invalid artifact symbol ID");previousId=symbol.id();
+            if(symbol.id()!=previousId+1||symbol.ownerId()>=symbols.size()||symbol.ownerId()<-1)throw new IOException("Invalid artifact symbol ID or owner");previousId=symbol.id();
+            if(TYPES.contains(symbol.kind()))entries.add(key(cacheKey,"0|type|"+symbol.fqn()+"|"+hex8(symbol.id())),EMPTY);
             entries.add(key(cacheKey,"1|symbol|"+hex8(symbol.id())),ArtifactIndexFormat.encodeSymbol(symbol));
             entries.add(key(cacheKey,"2|binary|"+symbol.key()),intBytes(symbol.id()));
             entries.add(key(cacheKey,"2|scip|"+scipSuffix(symbol)+"|"+hex8(symbol.id())),EMPTY);

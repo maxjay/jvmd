@@ -9,6 +9,32 @@ import static org.assertj.core.api.Assertions.*;
 class RocksArtifactGenerationProviderTest {
     @TempDir Path temp;
 
+    @Test void candidateValidationStreamsOnReopenAndReusesOwnedPublicationProof()throws Exception{
+        var key=ArtifactIndexFormat.key("a".repeat(64),"signatures");
+        var symbol=new ArtifactIndexFormat.SymbolRecord(0,-1,"dep.Type","dep.Type","Type","class","class dep.Type",null,1,"dep/Type.class",java.util.List.of(),"{}");
+        var facts=new ArtifactIndexFormat.ArtifactData(key,java.util.List.of(symbol),java.util.List.of());
+        Path jar=Files.writeString(temp.resolve("candidate.jar"),"fixture");
+        var input=new IndexStore.ArtifactInput(new ArtifactContext("fixture:dep:1","jar",jar.toString()),key,Files.size(jar),1);
+        for(boolean reopen:java.util.List.of(false,true)){
+            Path root=temp.resolve(reopen?"reopened":"owned");
+            try(var sink=ArtifactGenerationSink.open("rocksdb-sst",root,8L*1024*1024)){
+                sink.publish(facts,java.util.Set.of());long scan=sink.beginScan();sink.observe(scan,input);
+                if(!reopen){
+                    sink.completeScan(scan);
+                    assertThat(repositoryStatus(sink)).containsEntry("verification_passes",1L).containsEntry("activation_verification_reuses",1L).containsEntry("oracle_materializations",0L);
+                }
+            }
+            if(reopen)try(var sink=ArtifactGenerationSink.open("rocksdb-sst",root,8L*1024*1024)){
+                long scan=sink.beginScan();sink.observe(scan,input);sink.completeScan(scan);
+                assertThat(repositoryStatus(sink)).containsEntry("verification_passes",1L).containsEntry("activation_verification_reuses",0L).containsEntry("oracle_materializations",0L);
+            }
+            assertThat(new RocksMigrationManager(root).manifest().active()).isNotEmpty();
+        }
+    }
+    @SuppressWarnings("unchecked") private static java.util.Map<String,Object> repositoryStatus(ArtifactGenerationSink sink){
+        return (java.util.Map<String,Object>)sink.status().get("repository");
+    }
+
     @Test void serviceLoaderSelectsRocksAndSupportsExplicitRollback()throws Exception{
         try(var sink=ArtifactGenerationSink.open("rocksdb-sst",temp.resolve("rocks"),8L*1024*1024)){
             assertThat(sink.status()).containsEntry("backend","rocksdb-sst");

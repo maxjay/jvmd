@@ -1,5 +1,9 @@
 # Actual main, Maven updates, source Merkle state and JDTLS — 2026-09-19
 
+The subsequent [query-planning and warm-query report](2026-09-19-query-optimization.md)
+measures a newer implementation and includes JVM launch on both sides. The
+numbers below remain the original measured-revision comparison.
+
 RocksDB improves fresh seeding and Maven updates on both generated fixtures. Source
 Merkle updates also avoid almost all reconciliation work when the changed file is
 known. These are separate mechanisms: Maven scans do not call source Merkle state.

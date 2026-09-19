@@ -3,6 +3,8 @@
 The [2026-09-19 comparison and raw reports](../../docs/performance/2026-09-19-final-comparison.md)
 record three repetitions against actual main and pinned JDTLS, including the
 memory/query tradeoffs and the distinct source-Merkle experiment.
+The [query optimization follow-up](../../docs/performance/2026-09-19-query-optimization.md)
+separates cold indexing, persisted restart and warm queries, including JVM launch.
 
 These are distinct measurements. Maven discovery uses `IndexService.scan()` and
 the artifact inventory; it does not call `RocksWorkspaceState`. Source Merkle

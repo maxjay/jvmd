@@ -12,6 +12,15 @@ not replacement results.
 
 ## Measured decision and current performance
 
+The [query-planning follow-up](performance/2026-09-19-query-optimization.md)
+measures optimized code `3871bc83` against the preceding Rocks implementation.
+Broad warm type searches fall from 1,705/1,771 ms to 9/18 ms across the two
+fixtures; persisted restart-to-query readiness falls to 0.561/0.775 s including
+JVM launch. JDTLS also preindexes methods, fields and references, so upfront work
+alone does not establish a unique JVMD advantage. The report includes corrected
+timing boundaries, JDTLS warm queries, mixed exact-query results, and overlapping
+seed ranges; no additional seed-speed improvement is claimed.
+
 The latest [actual-main, Maven-update, source-Merkle and JDTLS comparison](performance/2026-09-19-final-comparison.md)
 uses main `e651e9f8` and Rocks `cd4e703a`, with three repetitions on the same
 AMD EPYC machine. Fresh open-and-scan medians are 33.481/9.722 s for one JAR

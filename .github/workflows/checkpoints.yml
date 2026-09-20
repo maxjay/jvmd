@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -133,6 +135,9 @@ jobs:
             jvmd-tests/target/daemon-perf-output.log
             jvmd-dist/target/training-state/*.log
   corpus:
+    # Keep the full corpus as a merge/review gate, not a tax on every development commit.
+    # Draft PR synchronize events still run the fast checkpoint job above.
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.action != 'synchronize' && github.event.pull_request.draft == false) }}
     concurrency:
       group: corpus-tests-${{ github.ref }}
       # Corpus agreement is deliberately long-running. Do not kill a valid run merely

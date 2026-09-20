@@ -391,7 +391,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             completionComputations++;phaseStarted=System.nanoTime();compiler.sourcesChanged();sourceRefreshNanos=System.nanoTime()-phaseStarted;
             phaseStarted=System.nanoTime();var focus=focusing.focus(path,patched,focusCursor);focusNanos=System.nanoTime()-phaseStarted;
             phaseStarted=System.nanoTime();
-            outcome=compiler.query(path,focus.source(),2,(task,units,tier)->EditorQueries.completion(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),prefix,profile));
+            outcome=compiler.attributedQuery(path,focus.source(),(task,units,tier)->EditorQueries.completion(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),prefix,profile));
             queryNanos=System.nanoTime()-phaseStarted;
             // Keep one detached result per module. A broader prefix recomputes candidates;
             // narrowing filters the already sorted rows without retaining javac objects.

@@ -125,7 +125,7 @@ public final class Application implements AutoCloseable {
             var graph=(Resolution)s.state("resolution");var result=new LinkedHashMap<String,Object>();
             result.put("shared_classpath_files",classpathFiles.status());
             result.put("diagnostics",s.state("diagnostics")==null?Map.of("initialized",false):diagnostics(s).status());result.put("file_states",documents(s).fileStates().status());result.put("analysis_contexts",s.state("analysis_contexts")==null?Map.of():((WorkspaceContextManager)s.state("analysis_contexts")).status());
-            result.put("workspace_bindings",s.state("workspace_bindings")==null?Map.of("initialized",false):((WorkspaceBindings)s.state("workspace_bindings")).status());result.put("workspace_source_journal",s.state("workspace_source_journal") instanceof SourceChangeJournal journal?journal.status():Map.of("initialized",false));result.put("documents",documents(s).status());result.put("session",s.id());result.put("root",s.root().toString());result.put("classpath_state",graph==null?"unresolved":"resolved");result.put("classpath_entries",graph==null?0:graph.classpath().size());result.put("overlay",graph==null?Map.of():overlay(s,graph).status());result.put("metrics",dispatcher.status().get("metrics"));result.put("annotation_processing",s.state("processors")==null?Map.of("initialized",false):((AnnotationProcessing)s.state("processors")).status());
+            result.put("workspace_bindings",s.state("workspace_bindings")==null?Map.of("initialized",false):((WorkspaceBindings)s.state("workspace_bindings")).status());result.put("documents",documents(s).status());result.put("session",s.id());result.put("root",s.root().toString());result.put("classpath_state",graph==null?"unresolved":"resolved");result.put("classpath_entries",graph==null?0:graph.classpath().size());result.put("overlay",graph==null?Map.of():overlay(s,graph).status());result.put("metrics",dispatcher.status().get("metrics"));result.put("annotation_processing",s.state("processors")==null?Map.of("initialized",false):((AnnotationProcessing)s.state("processors")).status());
             var actorRegistry=(ModuleAnalyzerRegistry)s.state("diagnostic_actors");var interactiveAnalyzer=(Analyzer)s.state("analyzer");
             result.put("analyzer",actorRegistry!=null?actorRegistry.analyzerStatus(interactiveAnalyzer==null?Map.of():interactiveAnalyzer.status()):interactiveAnalyzer==null?Map.of("initialized",false):interactiveAnalyzer.status());
             result.put("module_actors",actorRegistry==null?Map.of("initialized",false):actorRegistry.status());result.put("runs",s.state("runs")==null?List.of():runs(s).status());result.put("index",index==null?Map.of("phase","disabled"):index.isDone()&&!index.isCompletedExceptionally()?index.join().status():Map.of("phase","starting"));result.put("capabilities",Map.of("analysis_tiers",List.of(0,1,2),"mcp_tools",14,"runtime",true));
@@ -300,22 +300,12 @@ public final class Application implements AutoCloseable {
         documents(session).paths().stream().filter(workspace(session)::contains).sorted().forEach(files::add);
         return List.copyOf(files);
     }
-    private SourceChangeJournal workspaceSourceJournal(Session session,Resolution graph){
-        if(graph!=null)return null;
-        return session.state("workspace_source_journal",()->SourceChangeJournal.open(workspace(session).roots()));
-    }
     private WorkspaceBindings.ValidationToken workspaceBindingValidation(Session session,Resolution graph,String generation)throws Exception{
-        if(graph==null){
-            var journal=workspaceSourceJournal(session,null);var current=journal==null?null:journal.snapshot();
-            if(current!=null&&current.reliable())
-                return new WorkspaceBindings.ValidationToken(generation,documents(session).generation(),Map.of("plain-native-journal",current.generation()),Map.of());
-            return null;
-        }
         if(!(session.state("workspace_binding_contexts") instanceof WorkspaceBindingContexts contexts)||!contexts.generation().equals(generation)||contexts.contexts().isEmpty())return null;
         var analyzer=(Analyzer)session.state("analyzer");if(analyzer==null)return null;
         var sources=analyzer.workspaceSourceGenerations(contexts.contexts());if(sources==null)return null;
         var merkle=new TreeMap<String,String>();
-        if(index!=null&&index.isDone()&&!index.isCompletedExceptionally()){
+        if(graph!=null&&index!=null&&index.isDone()&&!index.isCompletedExceptionally()){
             var database=index.join();
             for(var module:graph.modules())for(boolean test:List.of(false,true)){
                 var roots=test?module.testSources():module.sources();if(roots.isEmpty())continue;
@@ -335,7 +325,6 @@ public final class Application implements AutoCloseable {
                 if(session.state("apt:"+module.gav()+(test?":test":":main")) instanceof AnnotationProcessing.Output output)classpath.addAll(output.classpath());
             }
         }}
-        if(graph==null)workspaceSourceJournal(session,null); // establish the journal before the first full source snapshot
         var cache=session.state("workspace_bindings",()->new WorkspaceBindings(classpathFiles));String generation=graph==null?"plain":graph.fingerprint();
         Resolution currentGraph=graph;
         var validation=(WorkspaceBindings.Validation)()->workspaceBindingValidation(session,currentGraph,generation);

@@ -12,6 +12,10 @@ public final class WorkspaceBindings implements AutoCloseable {
     @FunctionalInterface public interface BatchLoader { Map<Path,CompilerPool.Outcome<Bindings.Snapshot>> load(Map<Path,String> sources)throws Exception; }
     /** Implements 4.2: re-enumerate sources to detect namespace changes during attribution. */
     @FunctionalInterface public interface SourceFiles { List<Path> files()throws Exception; }
+    @FunctionalInterface public interface Validation { ValidationToken current()throws Exception; }
+    public record ValidationToken(String generation,long documentsGeneration,Map<String,Long> sourceGenerations,Map<String,String> merkleFingerprints) {
+        public ValidationToken { sourceGenerations=Map.copyOf(sourceGenerations);merkleFingerprints=Map.copyOf(merkleFingerprints); }
+    }
     /** Implements 4.8: one immutable source graph shared by navigation, references and semantic edits. */
     public record Snapshot(Map<String,Map<String,Object>> symbols,Map<String,Map<String,Object>> declarations,
                            List<Bindings.Edge> edges,List<Bindings.Occurrence> occurrences,
@@ -41,7 +45,8 @@ public final class WorkspaceBindings implements AutoCloseable {
     public WorkspaceBindings(FileStateRegistry classpathFiles){this.classpathFiles=Objects.requireNonNull(classpathFiles);}
     private Inputs inputs;
     private Snapshot snapshot;
-    private long hits,builds,serializedBytes,fullBuilds,incrementalBuilds,filesReanalysed,filesReused,apiInvalidations;
+    private ValidationToken validationToken;
+    private long hits,builds,serializedBytes,fullBuilds,incrementalBuilds,filesReanalysed,filesReused,apiInvalidations,fastValidationHits,fullValidations;
     private int lastReanalysedFiles;
     private String hash(Path file)throws Exception {
         Map<String,Object> attributes=null;
@@ -76,13 +81,21 @@ public final class WorkspaceBindings implements AutoCloseable {
                 &&first.sourceHashes().keySet().equals(second.sourceHashes().keySet());
     }
     public Snapshot peek(List<Path> files,List<Path> classpath,Documents documents,String generation)throws Exception {
-        if(snapshot==null)return null;
+        if(snapshot==null)return null;fullValidations++;
         var current=inputs(files,classpath,documents,generation);
-        if(!current.equals(inputs)){snapshot=null;serializedBytes=0;return null;}
+        if(!current.equals(inputs)){snapshot=null;validationToken=null;serializedBytes=0;return null;}
         hits++;return snapshot;
     }
+    public Snapshot peek(SourceFiles sources,List<Path> classpath,Documents documents,String generation,Validation validation)throws Exception {
+        if(snapshot==null)return null;
+        var token=validation==null?null:validation.current();
+        if(token!=null&&token.equals(validationToken)){hits++;fastValidationHits++;return snapshot;}
+        fullValidations++;var current=inputs(sources.files(),classpath,documents,generation);
+        if(!current.equals(inputs)){snapshot=null;validationToken=null;serializedBytes=0;return null;}
+        hits++;validationToken=validation==null?null:validation.current();return snapshot;
+    }
     public Snapshot get(SourceFiles sources,List<Path> classpath,Documents documents,String generation,long byteBudget,Loader loader)throws Exception {
-        return getBatch(sources,classpath,documents,generation,byteBudget,files->{
+        return getBatch(sources,classpath,documents,generation,byteBudget,null,files->{
             var results=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();
             for(var entry:files.entrySet())results.put(entry.getKey(),loader.load(entry.getKey(),entry.getValue()));
             return results;
@@ -150,8 +163,17 @@ public final class WorkspaceBindings implements AutoCloseable {
         return new Snapshot(Collections.unmodifiableMap(symbols),Collections.unmodifiableMap(declarations),edgeList,List.copyOf(occurrences),List.copyOf(diagnostics),tier,List.copyOf(warnings),frozen(outgoing),frozen(incoming),frozen(edgeOccurrences));
     }
     public Snapshot getBatch(SourceFiles sources,List<Path> classpath,Documents documents,String generation,long byteBudget,BatchLoader loader)throws Exception {
-        var current=inputs(sources.files(),classpath,documents,generation);
-        if(snapshot!=null&&current.equals(inputs)){hits++;lastReanalysedFiles=0;filesReused+=current.files().size();return snapshot;}
+        return getBatch(sources,classpath,documents,generation,byteBudget,null,loader);
+    }
+    public Snapshot getBatch(SourceFiles sources,List<Path> classpath,Documents documents,String generation,long byteBudget,Validation validation,BatchLoader loader)throws Exception {
+        var token=validation==null?null:validation.current();
+        if(snapshot!=null&&token!=null&&token.equals(validationToken)){
+            hits++;fastValidationHits++;lastReanalysedFiles=0;filesReused+=inputs==null?0:inputs.files().size();return snapshot;
+        }
+        fullValidations++;var current=inputs(sources.files(),classpath,documents,generation);
+        if(snapshot!=null&&current.equals(inputs)){
+            hits++;lastReanalysedFiles=0;filesReused+=current.files().size();validationToken=validation==null?null:validation.current();return snapshot;
+        }
 
         var priorInputs=inputs;var priorFragments=new LinkedHashMap<>(fragments);
         boolean full=!sameContext(priorInputs,current)||priorFragments.size()!=current.files().size();
@@ -185,9 +207,9 @@ public final class WorkspaceBindings implements AutoCloseable {
             long size=Json.MAPPER.writeValueAsBytes(result).length;
             long estimated=Math.multiplyExact(size,2L)+96L*result.edges().size()+40L*result.occurrences().size();
             if(estimated<=Math.min(128L*1024*1024,Math.max(0,byteBudget))){
-                snapshot=result;inputs=current;fragments.clear();fragments.putAll(working);serializedBytes=size;
-            }else{inputs=null;fragments.clear();}
-        }else{inputs=null;fragments.clear();}
+                snapshot=result;inputs=current;fragments.clear();fragments.putAll(working);serializedBytes=size;validationToken=validation==null?null:validation.current();
+            }else{inputs=null;validationToken=null;fragments.clear();}
+        }else{inputs=null;validationToken=null;fragments.clear();}
         return result;
     }
     public Map<String,Object> status(){
@@ -197,7 +219,8 @@ public final class WorkspaceBindings implements AutoCloseable {
         result.put("full_builds",fullBuilds);result.put("incremental_builds",incrementalBuilds);
         result.put("files_reanalysed",filesReanalysed);result.put("files_reused",filesReused);
         result.put("last_reanalysed_files",lastReanalysedFiles);result.put("api_invalidations",apiInvalidations);
+        result.put("fast_validation_hits",fastValidationHits);result.put("full_validations",fullValidations);result.put("fast_validation_ready",validationToken!=null);
         return Collections.unmodifiableMap(result);
     }
-    @Override public void close(){snapshot=null;inputs=null;fragments.clear();hashes.clear();serializedBytes=0;}
+    @Override public void close(){snapshot=null;inputs=null;validationToken=null;fragments.clear();hashes.clear();serializedBytes=0;}
 }

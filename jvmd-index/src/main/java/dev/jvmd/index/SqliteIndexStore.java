@@ -409,6 +409,26 @@ public final class SqliteIndexStore implements IndexStore {
         return findMatching(query,workspace,substring,limit,after,kinds,ignored->true);
     }
 
+    @Override public List<Map<String,Object>> findNamePrefix(String prefix,String workspace,int limit,Set<String> kinds)throws Exception{
+        if(limit<=0)return List.of();
+        return database.read(c->{
+            String sql="SELECT * FROM (SELECT s.*,a.id AS selected_artifact,a.gav,a.path AS artifact_path,a.kind AS artifact_kind,v.data AS variant_data,"+
+                    "ROW_NUMBER() OVER(PARTITION BY s.id ORDER BY CASE a.kind WHEN 'local' THEN 0 ELSE 1 END,a.id) AS preference "+
+                    "FROM symbols s JOIN artifact_symbols v ON v.symbol_id=s.id JOIN artifacts a ON a.id=v.artifact_id "+
+                    "WHERE substr(s.name,1,?)=?"+(workspace==null?"":" AND EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id)")+
+                    ") WHERE preference=1 ORDER BY id";
+            var result=new ArrayList<Map<String,Object>>();
+            try(var statement=c.prepareStatement(sql)){
+                int i=1;statement.setInt(i++,prefix.length());statement.setString(i++,prefix);if(workspace!=null)statement.setString(i,workspace);
+                try(var rows=statement.executeQuery()){while(rows.next()&&result.size()<limit){
+                    var value=symbol(rows);if(!kinds.isEmpty()&&!kinds.contains(value.get("kind")))continue;
+                    if(Objects.toString(value.get("name"),"").startsWith(prefix))result.add(value);
+                }}
+            }
+            return result;
+        });
+    }
+
     @Override public List<Map<String,Object>> descendants(String path,String workspace,int depth,int limit,long after,Set<String> kinds)throws Exception{
         int parentDepth=(int)path.chars().filter(c->c=='/').count();
         return findMatching(path+"/",workspace,true,limit,after,kinds,symbol->{

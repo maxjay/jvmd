@@ -60,6 +60,17 @@ class CompletionPrefixCacheTest {
             assertThat(analyzer.status().get("completion_computations")).isEqualTo(3L);
         }
     }
+    @Test void timestampPreservingClosedSourceEditsInvalidateWatcherBackedCandidates()throws Exception{
+        Path api=Files.writeString(root.resolve("Api.java"),"class Api { int getPets(){return 1;} }");
+        Path file=Files.writeString(root.resolve("Use.java"),text("get"));
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);
+            assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("label").toString()).contains("int");
+            var time=Files.getLastModifiedTime(api);Files.writeString(api,"class Api { String getPets(){return \"x\";} }");Files.setLastModifiedTime(api,time);
+            assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("label").toString()).contains("java.lang.String");
+            assertThat(analyzer.status()).containsEntry("source_watch_reliable",1L).containsEntry("completion_computations",2L);
+        }
+    }
     @Test void changedReleaseAndNewSourceNamesCannotReuseOldCandidates()throws Exception{
         String source="class Use { Object call(String api){return api.strip();} }";
         Path file=Files.writeString(root.resolve("Use.java"),source);

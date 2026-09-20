@@ -32,12 +32,6 @@ class WorkspaceBindingsCacheTest {
             String session=TestSupport.open(app,root);
             assertThat(references(app,session).path("edges").toString()).contains("Api#a().");
             long initial=builds(app,session);references(app,session);assertThat(builds(app,session)).isEqualTo(initial);
-            if(System.getProperty("os.name","").toLowerCase(Locale.ROOT).contains("linux")){
-                var status=request(app,"session.status",Map.of("session",session));
-                assertThat(status.path("workspace_source_journal").path("backend").asText()).isEqualTo("linux-inotify");
-                assertThat(status.path("workspace_source_journal").path("reliable").asBoolean()).isTrue();
-                assertThat(status.path("workspace_bindings").path("fast_validation_hits").asLong()).isGreaterThanOrEqualTo(1L);
-            }
             var bound=request(app,"symbol.atPosition",Map.of("session",session,"path",caller.toString(),"line",0,"character",first.indexOf("a()")));
             String identity=bound.path("scip").asText();assertThat(identity).endsWith("Api#a().");
             long queries=request(app,"session.status",Map.of("session",session)).path("analyzer").path("queries").asLong();

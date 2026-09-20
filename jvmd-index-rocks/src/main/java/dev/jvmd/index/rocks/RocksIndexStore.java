@@ -292,6 +292,34 @@ public final class RocksIndexStore implements IndexStore {
     @Override public synchronized List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds)throws Exception{
         return findMatching(query,workspace,substring,limit,after,kinds,ignored->true);
     }
+    @Override public synchronized List<Map<String,Object>> findNamePrefix(String prefix,String workspace,int limit,Set<String> kinds)throws Exception{
+        if(limit<=0)return List.of();
+        var found=new TreeMap<Long,Map<String,Object>>();var seen=new HashSet<String>();var selectedArtifacts=selected(workspace,false);
+        for(var artifact:selectedArtifacts){
+            var sourceScips=new HashSet<String>();
+            for(var file:sources(artifact.id()))for(var symbol:file.symbols()){
+                String scip=symbol.get("scip").toString();sourceScips.add(scip);var value=contextual(artifact,symbol);
+                if(seen.add(scip)&&preferred(artifact,scip,selectedArtifacts)&&(kinds.isEmpty()||kinds.contains(value.get("kind")))
+                        &&Objects.toString(value.get("name"),"").startsWith(prefix))offer(found,value,0,limit);
+            }
+            String posting="3|name|"+prefix;
+            Predicate<ArtifactIndexFormat.SymbolRecord> accepts=s->{try{
+                if(!kinds.isEmpty()&&!kinds.contains(s.kind())||!s.name().startsWith(prefix))return false;
+                String scip=artifact.input().context().scip(s);
+                return !sourceScips.contains(scip)&&!seen.contains(scip)&&preferred(artifact,scip,selectedArtifacts);
+            }catch(Exception e){throw new IllegalStateException(e);}};
+            var matches=artifact.codeKey()==null?
+                    repository.selectLocalIds(symbolsKey(artifact),posting,artifact.id()<<32,0,limit,accepts):
+                    repository.selectRanked(symbolsKey(artifact),posting,0,limit,accepts,s->{try{return symbolId(artifact,s);}catch(Exception e){throw new IllegalStateException(e);}});
+            for(var symbol:matches){
+                var value=row(artifact,symbol);String scip=value.get("scip").toString();
+                if(!sourceScips.contains(scip)&&seen.add(scip)&&preferred(artifact,scip,selectedArtifacts)
+                        &&(kinds.isEmpty()||kinds.contains(value.get("kind")))&&Objects.toString(value.get("name"),"").startsWith(prefix))
+                    offer(found,value,0,limit);
+            }
+        }
+        return List.copyOf(found.values());
+    }
     @Override public synchronized List<Map<String,Object>> descendants(String path,String workspace,int depth,int limit,long after,Set<String> kinds)throws Exception{
         long parentDepth=path.chars().filter(c->c=='/').count();
         return findMatching(path+"/",workspace,true,limit,after,kinds,s->{String candidate=Objects.toString(s.get("name_path"),"");return candidate.startsWith(path+"/")&&candidate.chars().filter(c->c=='/').count()-parentDepth<=depth;});

@@ -3,7 +3,7 @@
 import argparse, hashlib, json, os, shutil, subprocess
 from pathlib import Path
 
-EXPORTS = [f'--add-exports=jdk.compiler/com.sun.tools.javac.{p}=ALL-UNNAMED' for p in ('api', 'util', 'code', 'comp', 'main', 'platform')]
+EXPORTS = [f'--add-exports=jdk.compiler/com.sun.tools.javac.{p}=ALL-UNNAMED' for p in ('api', 'util', 'code', 'main', 'platform')]
 MODULES = ['jvmd-core', 'jvmd-index', 'jvmd-index-rocks', 'jvmd-resolver', 'jvmd-analyzer', 'jvmd-runtime', 'jvmd-mcp', 'jvmd-lsp', 'jvmd-dist']
 
 def sha(path):

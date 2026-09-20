@@ -4,11 +4,69 @@ Baseline: `ae23fd1f44573bd3427c0e77f967150173669a2f` on `perf/compact-grams-merg
 Implementation branch: `architecture/semantic-state`.
 Evidence and decisions: append to `SEMANTIC-STATE-PROGRESS.md`; never rewrite old entries.
 
+## Current status and next work
+
+**Consolidation and performance acceptance are incomplete.** The earlier A–D completion
+record established implementation/correctness evidence, not an accepted architectural or
+performance result. The gates reopened below supersede that status without erasing the evidence.
+The required execution order is R0–R6 below, before expanding the architecture. PR #8 stays a draft.
+
 ## Objective
 
-One explicit model for source revisions and semantic result validity, with typed declaration
-contracts and incremental navigation indexes. Preserve javac as the semantic authority and
-the existing RocksDB artifact backend. Keep protocols compatible.
+Reduce repeated observation, validation, semantic capture and publication by assigning each
+fact and computation an explicit owner. Consumers reuse results for a validated revision.
+Typed contracts, interning and persistent indexes are candidate means to that end, not success
+criteria by themselves. Preserve javac, the Rocks artifact backend and protocol correctness.
+
+## Required recovery sequence
+
+- [x] R0. Pin the comparison points and hold further architectural expansion. Original baseline:
+  `ae23fd1f44573bd3427c0e77f967150173669a2f`; implemented draft source:
+  `56a9506a33af1290578fe46025aa348ae8be7bfd`. Preserve correctness fixes, tests and raw results.
+  Do not revert the whole branch or promote it based on the existing unpaired measurements.
+- [ ] R1. Trace cold, unchanged, body-edit and API-edit requests through the actual code.
+  Produce an ownership/work ledger: fact or computation, current owners/call sites, consumers,
+  freshness guarantees, invocation count, and proposed work to remove. Include Documents,
+  FileStateRegistry/SourceSnapshots, watcher epochs, Analyzer/Dependencies/DiagnosticStore,
+  WorkspaceBindings, and Rocks workspace/semantic state. Distinguish necessary publication
+  fences and context-specific validation from redundant work. Mark cost explanations as
+  hypotheses until measured; a shared helper is not proof that a computation happens once.
+- [ ] R2. Establish controlled paired measurements before changing production behaviour.
+  Use the same pinned JDK, dependencies, fixtures, heap and cache state; separate cold JVM,
+  cold workspace and warmed queries. Alternate revision order across independent JVM pairs,
+  with at least 10 pairs initially and additional samples only if uncertainty affects a decision.
+  Retain all results and environment details. Include the existing synthetic workloads and
+  representative real source projects; measure precise-root reuse and coarse-root reconciliation
+  separately. Collect phase time, operation counts, allocation and retained heap with a profiling
+  run separate from unprofiled timing. Report variability and paired differences, not just medians
+  from unrelated runs. Declare workload budgets and material-regression criteria before fixes.
+- [ ] R3. Isolate the correctness floor from optional representation changes in disposable
+  comparison builds. Preserve local/private/inherited API correctness, publication fences,
+  dependency replacement and metadata invalidation. Measure the minimum correct implementation,
+  then isolate contract duplication, interning, snapshot bookkeeping, persistent construction
+  and size accounting one at a time. Validate comparison builds against the same correctness
+  cases; faster stale answers are not a performance target. Attribute necessary correctness
+  costs separately from avoidable overhead. No experiment silently replaces the working branch.
+- [ ] R4. Specify the smallest complete consolidation from R1–R3 evidence before coding it.
+  Name the authoritative source observation/revision owner and its consumer protocol. Define
+  exactly which source identities and semantic outputs can be reused, and across which contexts.
+  Specify how events, buffers, unknown history and publication revalidation enter that owner.
+  List each redundant map, capture/hash, traversal, serialization or invalidation decision to
+  retire, with its replacement consumer path. Keep distinct source/API/reference identities;
+  do not put every query behind one workspace hash. Do not promise scan-free external-edit
+  detection on coarse roots without sufficient evidence. Required fences are not optional overhead.
+- [ ] R5. Implement and measure one complete replacement at a time. Each coherent commit
+  names the old path removed, the invariant preserved and the expected avoided work. Preserve
+  protocol shape by deriving compatibility views from authoritative data where appropriate.
+  Run focused correctness tests and the affected paired workload. Keep a structural change only
+  when its measured CPU/memory tradeoff meets the declared acceptance criteria; simplify or
+  remove optional machinery that fails. A persistent structure or interner is not mandatory.
+- [ ] R6. Re-run the full workload matrix and required CI on the selected implementation.
+  Confirm the intended reductions in observed work as well as latency and memory. Check old
+  snapshots, buffers, external edits, negative lookup recovery and cold-analysis agreement.
+  Reconcile the ownership ledger with the final code; record every remaining duplicate path
+  and its reason. Close consolidation/performance acceptance only when all declared gates pass;
+  an unresolved material regression keeps the PR a draft.
 
 ## Good rules — required invariants
 
@@ -30,6 +88,12 @@ the existing RocksDB artifact backend. Keep protocols compatible.
 - Persistent updates preserve old reader snapshots; update only affected navigation postings.
 - Measure hashing, enumeration, attribution and index maintenance separately. Record baseline
   and after results for the same fixture, plus correctness agreement and memory bounds.
+- Every new abstraction must identify the existing representation or repeated computation it
+  replaces. A correctness obligation may add unavoidable work; record and measure it separately.
+- Reuse observations within a valid revision and semantic context. Revalidate at the required
+  boundary; never substitute a cached observation for an unobserved filesystem change.
+- Record implementation, correctness validation and performance acceptance separately. Passing
+  CI or reducing posting counts alone cannot close architectural/performance acceptance.
 - Tick a gate only after its stated validation passes. Commit coherent steps and update the log.
 
 ## Bad rules — prohibited shortcuts
@@ -46,13 +110,23 @@ the existing RocksDB artifact backend. Keep protocols compatible.
 - Do not replace the parser/database, add native watchers, or implement cryptographic
   accumulators without a measured need and a separately reviewed design.
 - Do not claim broad JDTLS superiority or extrapolate small synthetic timings to real projects.
+- Do not equate common data structures with unified ownership, or pointer reuse with avoided
+  object construction. Measure the actual operations eliminated.
+- Do not introduce another cache/epoch/identity store to hide duplicated work before identifying
+  its owner. Do not retain two authoritative representations indefinitely as a migration shortcut.
+- Do not bundle independent optimizations into one before/after result, cherry-pick a faster run,
+  or retroactively loosen acceptance criteria to accommodate the observed regression.
 
-## Implementation gates
+## Implementation and acceptance gates
+
+Checked items retain their demonstrated, narrowly stated results. Reopened items require the
+additional evidence below. Follow R0–R6 in order; these sections are not a parallel work queue.
 
 ### A. Identity and publication foundations
 
 - [x] A0. Pin the baseline; create this checklist and the append-only progress log.
-- [x] A1. Restore the pinned JDK/build environment; record a reproducible baseline.
+- [ ] A1. Restore the pinned JDK/build environment; record a reproducible baseline.
+  Reopened: the toolchain and original samples exist, but controlled paired evidence is pending R2.
 - [x] A2. Introduce a typed immutable declaration-contract model captured from elements.
   Use it for shared API fingerprints; version persisted identities affected by the change.
 - [x] A3. Prove local rename, local/anonymous/private nested implementation changes and
@@ -63,8 +137,10 @@ the existing RocksDB artifact backend. Keep protocols compatible.
 
 ### B. Source revisions and dependencies
 
-- [x] B1. Consolidate workspace source identity/inventory snapshots and changed-file deltas
+- [ ] B1. Consolidate workspace source identity/inventory snapshots and changed-file deltas
   behind one revision owner, reusing Documents/FileStateRegistry rather than duplicate stamps.
+  Reopened: the current service owns successive requested views, while consumers still repeat
+  validation. Acceptance requires the ownership ledger and complete consumer migration in R4–R6.
 - [x] B2. Preserve buffers, additions/deletions, timestamp-preserving external edits and
   conservative coarse-root behavior; state precise watcher consistency limits.
 - [x] B3. Give complete and partial dependency recording different contracts; replace old
@@ -78,33 +154,45 @@ the existing RocksDB artifact backend. Keep protocols compatible.
   symbol ownership. Test replacement/removal and old-reader isolation.
 - [x] C2. Update WorkspaceBindings by fragment deltas: symbols, declaration precedence,
   name lookup, edge directions, occurrences, diagnostics and warnings.
-- [x] C3. Replace whole-aggregate JSON sizing with per-fragment retained accounting;
+- [ ] C3. Replace whole-aggregate JSON sizing with per-fragment retained accounting;
   expose maintenance counters and keep the configured memory admission limit.
-- [x] C4. Run references/hierarchy/rename regressions and before/after benchmarks. Body
+  Reopened: fragment accounting and counters exist; allocation cost and the retained estimate
+  still need measurement against heap, including old readers. Do not retain JSON sizing by default.
+- [ ] C4. Run references/hierarchy/rename regressions and before/after benchmarks. Body
   edits must avoid rebuilding unrelated postings; API edits must preserve correctness.
+  Reopened: correctness/posting counts pass; cold, warm, body and API workload acceptance requires
+  the controlled comparisons and declared budgets in R2/R6, not merely having benchmark files.
 
 ### D. Consolidation and delivery
 
-- [x] D1. Apply bounded canonical reuse to typed contracts; collision-safe structural
+- [ ] D1. Evaluate bounded canonical reuse of typed contracts; collision-safe structural
   equality, context/owner separation and eviction must preserve correctness.
+  Reopened: correctness tests pass, but retained-memory savings must justify lookup/construction
+  costs. Remove optional interning if the R3 comparison does not support retaining it.
 - [x] D2. Document publication/persistence boundaries and schema versions. Reconcile the
   obsolete SQLite-only design with the shipped artifact backend and new semantic model.
-- [x] D3. Run focused tests and relevant compiler/navigation/index gates; record actual
+- [ ] D3. Run focused tests and relevant compiler/navigation/index gates; record actual
   results, costs, failures, open risks and any remaining work without silently closing it.
+  Reopened as final acceptance: previous CI success remains valid for its exact source commit;
+  acceptance of the consolidation additionally requires R6 and E1–E3.
 - [x] D4. Commit and push the work; open a draft PR against the optimisation branch and
   record its validation state. Do not merge automatically.
 
-### E. Performance acceptance discovered during implementation
+### E. Performance and consolidation acceptance
 
-These remain open even when the correctness/build gates pass. PR #8 stays a draft.
+These are prerequisites for accepting this change, not optional work after declaring it complete.
+Their execution is covered by R1–R6 above. PR #8 stays a draft.
 
 - [ ] E1. Run paired measurements on representative projects; separate coarse and precise-root
   validation, cold attribution, API changes and posting maintenance. Address or explicitly accept
-  the measured cold/warm/API regressions; the small synthetic body-edit win is insufficient.
+  the measured cold/warm/API regressions under predeclared criteria; the synthetic body-edit win
+  is insufficient. Do not silently accept a tradeoff on the user's behalf merely to close the gate.
 - [ ] E2. Measure allocation and retained heap, including active readers and the contract interner;
   validate the fragment admission estimate against those measurements.
-- [ ] E3. Decide the next consolidation slice from that evidence. Global semantic query validity,
-  persisted Rocks invalidation and per-view source observations are not yet one durable DAG.
+- [ ] E3. Demonstrate the completed consolidation against the ownership ledger: consumers use
+  the intended authoritative results and the named redundant work is removed. Document remaining
+  boundaries, including persisted Rocks invalidation. A durable global DAG is a separate decision;
+  choosing another future slice alone does not satisfy this acceptance gate.
 
 ## Deliberately separate research decisions
 

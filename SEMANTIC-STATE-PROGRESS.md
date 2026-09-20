@@ -109,3 +109,28 @@ Each entry records the change, validation, limitations and next work. Historical
   The PR remains a draft and has not been merged: https://github.com/maxjay/jvmd/pull/8 .
 - Next concrete work is measurement against representative workspaces with those gates preserved;
   parser/database replacement and durable cross-store roots remain separate design decisions.
+
+## 2026-09-20 — 007: acceptance reopened; diagnosis and replacement now come first
+
+- The user challenged the performance regressions and the claim that the architecture had been
+  consolidated. That challenge is valid: shared types/helpers and successful correctness tests
+  do not establish one owner for computation or eliminate repeated work across consumers.
+- Superseding entry 006's overall completion status: the implementation and recorded CI evidence
+  remain, but consolidation/performance acceptance is incomplete. No production code was changed
+  or reverted during this checklist revision. Original baseline remains `ae23fd1f`; draft source
+  comparison point remains `56a9506a`.
+- Added required recovery sequence R0–R6: pin evidence; trace ownership/repeated work; establish
+  controlled paired timing/allocation/heap measurements; isolate the minimum correctness fixes;
+  design the smallest complete replacement with an explicit removal list; implement/measure
+  each replacement separately; validate the final matrix and ownership ledger.
+- Reopened A1, B1, C3, C4, D1 and D3 with explicit missing acceptance evidence. Narrowly completed
+  correctness/implementation items retain their checks. E1–E3 are now prerequisite acceptance
+  gates, including actual removal of redundant work, rather than a promise of another future slice.
+- Required each abstraction to name the work it retires. Persistent maps and interning are
+  optional implementation choices whose CPU/memory tradeoffs must earn their place. Mandatory
+  correctness fences and conservative filesystem reconciliation must not be removed for timings.
+- Concrete extra operations identified earlier remain cost hypotheses, not isolated explanations
+  of the reported slowdown percentages. Existing three-sample unpaired timings do not settle
+  causality. No new performance measurement is claimed by this documentation change.
+- Next action: R1's call-path/ownership ledger, followed by R2's controlled comparisons before
+  production refactoring. PR #8 remains a draft.

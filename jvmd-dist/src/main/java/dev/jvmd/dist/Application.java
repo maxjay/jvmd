@@ -487,11 +487,13 @@ public final class Application implements AutoCloseable {
     private Envelope renameSymbol(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
         String newName=Dispatcher.required(params,"new_name");
         if(!javax.lang.model.SourceVersion.isIdentifier(newName)||javax.lang.model.SourceVersion.isKeyword(newName)||Set.of("var","yield","record","sealed","permits").contains(newName))throw RpcException.invalid("new_name must be a Java identifier");
-        var description=describe(session,Dispatcher.required(params,"ref"));
+        // Rename needs a complete workspace graph anyway. Build/refresh it once, then resolve
+        // the target from the same validated snapshot instead of scanning every source first.
+        var snapshot=workspaceBindings(session,true);
+        var description=describe(session,Dispatcher.required(params,"ref"),snapshot);
         if(!(description.result() instanceof Map<?,?> target)||target.get("scip")==null)return description;
         editable(session,target);
         if(newName.equals(target.get("name")))return Envelope.of(2,"live",Map.of("applied",false,"changes",List.of(),"diagnostics",List.of(),"verified",false));
-        var snapshot=workspaceBindings(session,true);
         if(snapshot.tier()<2||!snapshot.warnings().isEmpty()||snapshot.diagnostics().stream().anyMatch(d->d.kind().equals("ERROR")))throw new RpcException(-32003,"unsupported_capability",Map.of("capability","rename","reason","Resolve compiler errors before renaming","diagnostics",snapshot.diagnostics()));
         var symbols=snapshot.symbols();var occurrences=snapshot.occurrences();var edges=snapshot.edges();
         String key=target.get("scip").toString();var family=new LinkedHashSet<String>();family.add(key);boolean type=Set.of("class","interface","enum","annotation","record").contains(target.get("kind"));

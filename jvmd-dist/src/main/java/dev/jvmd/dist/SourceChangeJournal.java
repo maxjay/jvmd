@@ -134,8 +134,12 @@ final class SourceChangeJournal implements AutoCloseable {
                     Path candidate=directory==null||leaf.isEmpty()?directory:directory.resolve(leaf).toAbsolutePath().normalize();
                     boolean isDirectory=(mask&IN_ISDIR)!=0;
                     if(isDirectory&&(mask&(IN_CREATE|IN_MOVED_TO))!=0&&candidate!=null&&Files.isDirectory(candidate)){
-                        try{registerTree(candidate);}catch(Exception failure){reliable=false;generation++;}
-                        generation++;
+                        boolean containsJava=false;
+                        try{
+                            registerTree(candidate);
+                            containsJava=!dev.jvmd.core.FileInventory.matching(candidate,".java",1).isEmpty();
+                        }catch(Exception failure){reliable=false;generation++;}
+                        if(containsJava)generation++;
                     }else if(isDirectory&&(mask&(IN_DELETE|IN_MOVED_FROM|IN_DELETE_SELF|IN_MOVE_SELF))!=0)generation++;
                     else if(candidate!=null&&candidate.toString().endsWith(".java")
                             &&(mask&(IN_MODIFY|IN_ATTRIB|IN_CLOSE_WRITE|IN_MOVED_FROM|IN_MOVED_TO|IN_CREATE|IN_DELETE))!=0)generation++;

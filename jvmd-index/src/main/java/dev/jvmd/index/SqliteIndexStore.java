@@ -415,7 +415,7 @@ public final class SqliteIndexStore implements IndexStore {
             String sql="SELECT * FROM (SELECT s.*,a.id AS selected_artifact,a.gav,a.path AS artifact_path,a.kind AS artifact_kind,v.data AS variant_data,"+
                     "ROW_NUMBER() OVER(PARTITION BY s.id ORDER BY CASE a.kind WHEN 'local' THEN 0 ELSE 1 END,a.id) AS preference "+
                     "FROM symbols s JOIN artifact_symbols v ON v.symbol_id=s.id JOIN artifacts a ON a.id=v.artifact_id "+
-                    "WHERE substr(s.name,1,?)=?"+(workspace==null?"":" AND EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id)")+
+                    "WHERE substr(s.name,1,?)=?"+(workspace==null?"":" AND (a.gav LIKE 'jdk:%' OR EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id))")+
                     ") WHERE preference=1 ORDER BY id";
             var result=new ArrayList<Map<String,Object>>();
             try(var statement=c.prepareStatement(sql)){

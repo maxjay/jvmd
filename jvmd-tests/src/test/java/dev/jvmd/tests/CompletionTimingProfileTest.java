@@ -18,6 +18,7 @@ class CompletionTimingProfileTest {
         scenarios.add(runScenario(temp.resolve("sources-24"),24));
         scenarios.add(runScenario(temp.resolve("sources-128"),128));
         scenarios.add(runScenario(temp.resolve("sources-300"),300));
+        scenarios.add(runPackagedScenario(temp.resolve("sources-300-packaged"),300,30));
         var output=TestSupport.repo().resolve("jvmd-tests/target/completion-perf.json");
         Files.createDirectories(output.getParent());
         Json.MAPPER.writerWithDefaultPrettyPrinter().writeValue(output.toFile(),Map.of("scenarios",scenarios));
@@ -75,6 +76,50 @@ class CompletionTimingProfileTest {
         }
         return Map.of("sources",sourceCount,"samples",samples);
     }
+
+    private static Map<String,Object> runPackagedScenario(Path root,int sourceCount,int packages)throws Exception{
+        Files.createDirectories(root);
+        Path target=Files.createDirectories(root.resolve("fixture/target"));
+        Files.writeString(target.resolve("Api.java"),"""
+                package fixture.target;
+                class Api {
+                    /** Returns the current pets visible to the caller. */
+                    int getPets(){return 1;}
+                    /** Returns the number of pets currently available. */
+                    int getPetCount(){return 2;}
+                    int other(){return 3;}
+                }
+                """);
+        int helpers=sourceCount-2;
+        for(int i=0;i<helpers;i++){
+            int bucket=i%packages;Path directory=Files.createDirectories(root.resolve("fixture/p"+bucket));
+            Files.writeString(directory.resolve("Helper"+i+".java"),"package fixture.p"+bucket+"; class Helper"+i+" { int value(){return "+i+";} }\n");
+        }
+        Path use=target.resolve("Use.java");Files.writeString(use,packagedText("ge"));
+        var documents=new Documents();documents.open(use,packagedText("ge"),1);
+        var samples=new ArrayList<Map<String,Object>>();
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(new Analyzer.Context("fixture:completion-packaged:"+sourceCount,"25",List.of(),List.of(root),"completion-packaged-"+sourceCount,Map.of()),null,256L*1024*1024);
+            analyzer.documents(documents);int version=1;
+            for(String prefix:List.of("ge","get","getP","g")){
+                String source=packagedText(prefix);
+                if(version>1){documents.change(use,version,List.of(new Documents.Change(null,source)));analyzer.changed(use,documents.hash(use));analyzer.documents(documents);}
+                var answer=analyzer.completion(use,source,0,source.indexOf("api."+prefix)+4+prefix.length(),100,0);
+                assertThat(answer.warnings()).isEmpty();var status=analyzer.status();
+                @SuppressWarnings("unchecked") var timing=new LinkedHashMap<String,Object>((Map<String,Object>)status.get("completion_last_timing_ms"));
+                var sample=new LinkedHashMap<String,Object>();
+                sample.put("prefix",prefix);sample.put("cache_hit",status.get("completion_last_cache_hit"));
+                sample.put("completion_requests",status.get("completion_requests"));sample.put("completion_computations",status.get("completion_computations"));sample.put("completion_cache_hits",status.get("completion_cache_hits"));
+                sample.put("source_catalog_builds",status.get("source_catalog_builds"));sample.put("source_catalog_files",status.get("source_catalog_files"));
+                sample.put("source_list_calls",status.get("source_list_calls"));sample.put("source_list_entries",status.get("source_list_entries"));sample.put("source_watch_events",status.get("source_watch_events"));
+                sample.put("timing_ms",timing);samples.add(sample);version++;
+            }
+            assertThat(analyzer.status()).containsEntry("completion_computations",2L).containsEntry("completion_cache_hits",2L);
+        }
+        return Map.of("sources",sourceCount,"packages",packages+1,"layout","distributed","samples",samples);
+    }
+
+    private static String packagedText(String prefix){return "package fixture.target; class Use { Object call(Api api){return api."+prefix+"();} }";}
 
     private static String text(String prefix){return "class Use { Object call(Api api){return api."+prefix+"();} }";}
 }

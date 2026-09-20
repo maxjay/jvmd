@@ -45,18 +45,19 @@ class WorkspaceBindingsWarmValidationBenchmarkTest {
                 assertThat(response.has("error")).as(response.toString()).isFalse();
             }
             var after=status(app,session);Arrays.sort(samples);
-            return Map.of(
-                    "files",files,
-                    "resolved",resolved,
-                    "samples",samples.length,
-                    "median_ms",percentile(samples,.50),
-                    "p95_ms",percentile(samples,.95),
-                    "binding_computations_delta",number(after,"analyzer","binding_computations")-number(before,"analyzer","binding_computations"),
-                    "javac_queries_delta",number(after,"analyzer","queries")-number(before,"analyzer","queries"),
-                    "workspace_builds_delta",number(after,"workspace_bindings","builds")-number(before,"workspace_bindings","builds"),
-                    "workspace_cache_hits_delta",number(after,"workspace_bindings","cache_hits")-number(before,"workspace_bindings","cache_hits"),
-                    "fast_validation_hits_delta",number(after,"workspace_bindings","fast_validation_hits")-number(before,"workspace_bindings","fast_validation_hits"),
-                    "full_validations_delta",number(after,"workspace_bindings","full_validations")-number(before,"workspace_bindings","full_validations"));
+            var result=new LinkedHashMap<String,Object>();
+            result.put("files",files);
+            result.put("resolved",resolved);
+            result.put("samples",samples.length);
+            result.put("median_ms",percentile(samples,.50));
+            result.put("p95_ms",percentile(samples,.95));
+            result.put("binding_computations_delta",number(after,"analyzer","binding_computations")-number(before,"analyzer","binding_computations"));
+            result.put("javac_queries_delta",number(after,"analyzer","queries")-number(before,"analyzer","queries"));
+            result.put("workspace_builds_delta",number(after,"workspace_bindings","builds")-number(before,"workspace_bindings","builds"));
+            result.put("workspace_cache_hits_delta",number(after,"workspace_bindings","cache_hits")-number(before,"workspace_bindings","cache_hits"));
+            result.put("fast_validation_hits_delta",number(after,"workspace_bindings","fast_validation_hits")-number(before,"workspace_bindings","fast_validation_hits"));
+            result.put("full_validations_delta",number(after,"workspace_bindings","full_validations")-number(before,"workspace_bindings","full_validations"));
+            return Collections.unmodifiableMap(result);
         }
     }
 

@@ -374,7 +374,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     public Envelope completion(Path path,String text,int line,int character,int limit,int offset)throws Exception{
         long requestStarted=System.nanoTime(),keyNanos=0,sourceRefreshNanos=0,focusNanos=0,queryNanos=0,cacheAdmissionNanos=0,filterNanos=0;
-        var profile=new EditorQueries.CompletionTiming();var compilerPhases=Map.<String,Double>of();boolean cacheHit=false;
+        var profile=new EditorQueries.CompletionTiming();boolean cacheHit=false;
         path=path.toAbsolutePath().normalize();
         int cursor=Documents.offset(text,new Documents.Position(line,character)),start=cursor,end=cursor;
         while(start>0&&Character.isJavaIdentifierPart(text.codePointBefore(start)))start-=Character.charCount(text.codePointBefore(start));
@@ -392,7 +392,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             phaseStarted=System.nanoTime();var focus=focusing.focus(path,patched,focusCursor);focusNanos=System.nanoTime()-phaseStarted;
             phaseStarted=System.nanoTime();
             outcome=compiler.query(path,focus.source(),2,(task,units,tier)->EditorQueries.completion(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),prefix,profile));
-            queryNanos=System.nanoTime()-phaseStarted;compilerPhases=compiler.lastPhaseTimingMs();
+            queryNanos=System.nanoTime()-phaseStarted;
             // Keep one detached result per module. A broader prefix recomputes candidates;
             // narrowing filters the already sorted rows without retaining javac objects.
             phaseStarted=System.nanoTime();
@@ -408,11 +408,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         completionCandidatesSeen+=profile.candidates();completionRowsMaterialized+=profile.rows();completionDocLookups+=profile.docs();completionLastCacheHit=cacheHit;
         completionLastTimingMs=Map.ofEntries(
                 Map.entry("key",millis(keyNanos)),Map.entry("source_refresh",millis(sourceRefreshNanos)),Map.entry("focus",millis(focusNanos)),
-                Map.entry("compiler_query",millis(queryNanos)),Map.entry("compiler_prepare",compilerPhases.getOrDefault("prepare",0d)),
-                Map.entry("compiler_parse",compilerPhases.getOrDefault("parse",0d)),Map.entry("compiler_enter",compilerPhases.getOrDefault("enter",0d)),
-                Map.entry("compiler_flow",compilerPhases.getOrDefault("flow",0d)),Map.entry("compiler_callback",compilerPhases.getOrDefault("callback",0d)),
-                Map.entry("compiler_task_overhead",compilerPhases.getOrDefault("task_overhead",0d)),
-                Map.entry("editor_total",millis(profile.totalNanos())),Map.entry("candidate_discovery",millis(profile.candidateNanos())),
+                Map.entry("compiler_query",millis(queryNanos)),Map.entry("editor_total",millis(profile.totalNanos())),Map.entry("candidate_discovery",millis(profile.candidateNanos())),
                 Map.entry("row_materialization",millis(profile.rowNanos())),Map.entry("documentation",millis(profile.docNanos())),Map.entry("sort",millis(profile.sortNanos())),
                 Map.entry("cache_admission",millis(cacheAdmissionNanos)),Map.entry("filter",millis(filterNanos)),Map.entry("total",millis(totalNanos)));
         return new Envelope(outcome.tier(),"live",to<values.size(),to<values.size()?Integer.toString(to):null,warnings(outcome.warnings()),Map.of("items",values.subList(from,to),"range",new SourceText(text).range(start,end)));

@@ -188,7 +188,7 @@ public final class Application implements AutoCloseable {
             if(needsImport(fqn,packageName,imported))row.put("import",fqn);
             types.putIfAbsent(fqn,Collections.unmodifiableMap(row));
         }
-        var typeRows=new ArrayList<>(types.values());typeRows.sort(Comparator.comparing(row->Objects.toString(row.get("name"),"")).thenComparing(row->Objects.toString(row.get("fqn"),"")));
+        var typeRows=new ArrayList<Map<String,Object>>(types.values());typeRows.sort(Comparator.comparing((Map<String,Object> row)->Objects.toString(row.get("name"),"")).thenComparing(row->Objects.toString(row.get("fqn"),"")));
         var all=new ArrayList<Map<String,Object>>(liveItems.size()+typeRows.size());all.addAll(liveItems);all.addAll(typeRows);
         int from=Math.min(offset,all.size()),to=Math.min(all.size(),from+limit);boolean more=to<all.size();
         return new Envelope(live.tier(),"live",more,more?Integer.toString(to):null,live.warnings(),

@@ -58,7 +58,7 @@ The main acceptance goal is achieved: a one-file body edit changes WorkspaceBind
 The remaining warm cost is mostly input validation and aggregate reconstruction. Source discovery/content validation still enumerates the workspace to identify dirty files. The existing Merkle/source-generation state is the natural next layer if we want unchanged validation to become independent of workspace size.
 
 
-## Warm validation / Merkle follow-up — 3b and 3c complete
+## Warm validation / Merkle follow-up
 
 The incremental fragment change removed workspace-wide javac attribution after edits, but the first warm-validation benchmark still showed source-validation cost scaling with the number of files even when no compiler work ran:
 
@@ -67,50 +67,19 @@ The incremental fragment change removed workspace-wide javac attribution after e
 | plain/coarse | 128 | 4.704 ms | 5.299 ms | 0 / 0 |
 | plain/coarse | 512 | 15.730 ms | 19.067 ms | 0 / 0 |
 
-### 3b — resolved/Maven workspaces
+JVMD already persisted deterministic per-file/directory/module Merkle state in RocksDB. Resolved module contexts also already had reliable source watcher epochs. WorkspaceBindings now combines the resolver generation, document generation, participating compiler source epochs, and persisted module Merkle roots into one detached validation token. The Merkle root may become available after the cold snapshot while the index finishes starting; WorkspaceBindings adopts that newly available root without rereading all sources when every already-authoritative live epoch is unchanged. Adoption is monotonic: any Merkle root that was previously present must remain present and identical, otherwise validation falls back conservatively.
 
-JVMD already persisted deterministic per-file/directory/module Merkle state in RocksDB, while resolved analyzer contexts exposed authoritative source-change epochs. WorkspaceBindings combines resolver generation, document generation, participating compiler source epochs, and persisted module Merkle roots into one detached validation token.
-
-A warm request can therefore prove that the entire prior semantic snapshot is still valid without rereading source files. The Merkle root may appear after the cold snapshot while indexing finishes; WorkspaceBindings adopts that newly available root only when every already-authoritative live epoch is unchanged. Once present, a root may not disappear or change without forcing conservative validation.
-
-The relationship path was also tightened so one request reuses a single validated WorkspaceBindings snapshot rather than validating it again through name-path resolution.
-
-### 3c — plain/coarse workspaces
-
-Plain workspaces do not have a resolver/module source topology that can safely drive the analyzer watcher. Treating Java `WatchService` delivery as authoritative was experimentally rejected: an immediate timestamp-preserving closed-file edit could race the asynchronous delivery path and serve stale semantics.
-
-On Linux, plain workspaces now establish a native inotify journal **before** their first full WorkspaceBindings snapshot. Validation synchronously drains the kernel queue itself, so it does not depend on a background watcher thread having processed an event. Java source create/delete/move/write/attribute events advance a detached generation. Queue overflow, native faults, or unsupported operating systems mark the journal unreliable and fall back to the existing exhaustive validation path.
-
-This gives Merkle-style validation the missing authoritative external-change signal without weakening the preserved-mtime/edit correctness boundary.
-
-### Final warm-validation benchmark — eb2bd852
-
-The same 20-request benchmark on the final safe implementation:
+The same 20-request benchmark after the Merkle validation path:
 
 | workspace | files | median | p95 | fast validations | full validations | javac / bindings |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| plain/coarse | 128 | **0.636 ms** | **1.135 ms** | **20/20** | **0** | **0 / 0** |
-| plain/coarse | 512 | **0.599 ms** | **1.008 ms** | **20/20** | **0** | **0 / 0** |
-| resolved/Maven | 128 | **1.793 ms** | **2.510 ms** | **20/20** | **0** | **0 / 0** |
-| resolved/Maven | 512 | **1.574 ms** | **2.314 ms** | **20/20** | **0** | **0 / 0** |
+| resolved/Maven | 128 | **0.962 ms** | **1.767 ms** | **20/20** | **0** | **0 / 0** |
+| resolved/Maven | 512 | **0.834 ms** | **0.942 ms** | **20/20** | **0** | **0 / 0** |
+| plain/coarse | 128 | 1.281 ms | 2.207 ms | 0/20 | 20 | 0 / 0 |
+| plain/coarse | 512 | 3.661 ms | 4.761 ms | 0/20 | 20 | 0 / 0 |
 
-Compared with the original plain-workspace baseline, unchanged validation improved from **4.704 ms to 0.636 ms at 128 files (86.5%)** and from **15.730 ms to 0.599 ms at 512 files (96.2%)**. More importantly, the warm path no longer grows with the fixture size: all four final scenarios use 20/20 fast validations, zero full source validations, zero javac queries, and zero binding computations.
+The resolved path is therefore effectively flat with workspace size for unchanged relationship queries. A separate cleanup also removed a duplicate validation inside name-path description: one references request now validates WorkspaceBindings once rather than validating again through `workspaceFind`.
 
-The 128-file incremental benchmark on the same final head still preserves the fragment-level edit behavior:
+Plain/coarse roots intentionally remain conservative. Their compiler root can contain arbitrary nested namespace layouts, and an external closed-file edit cannot be discovered from a stale Merkle root alone: some authoritative change signal still has to observe the filesystem. An earlier attempt to use the recursive source watcher for coarse roots was reverted because it weakened that correctness boundary. The next safe improvement for that path would require a race-safe change journal or equivalent filesystem generation source; it should not be achieved by treating persisted Merkle state as self-updating.
 
-| operation | state | final request ms | binding computations | javac queries |
-| --- | --- | ---: | ---: | ---: |
-| references | warm | **1.563** | 0 | 0 |
-| references | body edit | **32.676** | **1** | **1** |
-| references | API edit | **64.347** | **17** | **2** |
-| rename | warm | **1.547** | 0 | 0 |
-| rename | body edit | **24.446** | **1** | **1** |
-| rename | API edit | **48.463** | **17** | **2** |
-
-This completes the WorkspaceBindings checklist:
-
-- **3:** per-file incremental semantic fragments — complete;
-- **3b:** authoritative Merkle/source-generation validation for resolved workspaces — complete;
-- **3c:** race-safe external-change generation for plain/coarse workspaces on Linux, with conservative fallback elsewhere — complete.
-
-The remaining limitation is deliberately platform-specific rather than semantic: non-Linux plain/coarse workspaces fall back to exhaustive validation until an equally authoritative native journal backend is implemented. Correctness is preserved on every platform.
+This end-to-end result is consistent with the earlier source-Merkle microbenchmark: a known-file update was about 0.56 ms at both 1,000 and 10,000 files, versus 18.5 ms and 108.7 ms for full reconciliation respectively. Merkle state is most valuable when JVMD already knows the changed leaf; it reduces the update to that leaf plus its ancestor chain rather than rescanning the tree.

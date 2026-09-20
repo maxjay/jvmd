@@ -92,6 +92,26 @@ class WorkspaceBindingsCacheTest {
             assertThat(status.path("last_reanalysed_files").asLong()).isEqualTo(2L);
         }
     }
+    @Test void resolvedWorkspaceAdoptsMerkleStateWithoutWarmSourceRescan()throws Exception{
+        Path project=MavenFixtures.project(root.resolve("merkle-project"),
+                "<properties><maven.compiler.release>25</maven.compiler.release></properties>");
+        Path src=Files.createDirectories(project.resolve("src/main/java"));
+        Files.writeString(src.resolve("Api.java"),"class Api { static int value(){return 1;} }");
+        Files.writeString(src.resolve("User.java"),"class User { int read(){return Api.value();} }");
+        try(var app=new Application(TestSupport.config(root,Duration.ofHours(4)))){
+            String session=TestSupport.open(app,project);
+            var cold=request(app,"symbol.references",Map.of("session",session,"ref","Api/value()","direction","in"));
+            assertThat(cold.path("edges").toString()).contains("User#read().");
+            var before=request(app,"session.status",Map.of("session",session)).path("workspace_bindings");
+            long full=before.path("full_validations").asLong(),fast=before.path("fast_validation_hits").asLong();
+            var warm=request(app,"symbol.references",Map.of("session",session,"ref","Api/value()","direction","in"));
+            assertThat(warm.path("edges").toString()).contains("User#read().");
+            var after=request(app,"session.status",Map.of("session",session)).path("workspace_bindings");
+            assertThat(after.path("full_validations").asLong()).isEqualTo(full);
+            assertThat(after.path("fast_validation_hits").asLong()).isEqualTo(fast+1);
+            assertThat(after.path("last_reanalysed_files").asLong()).isZero();
+        }
+    }
     @Test void replacedBinaryAndFailedLookupRecoveryAreObserved()throws Exception{
         Path source=Files.createDirectories(root.resolve("source")),binary=Files.createDirectories(root.resolve("binary"));
         Path api=root.resolve("Api.java"),caller=source.resolve("Caller.java");

@@ -78,6 +78,20 @@ class WorkspaceBindingsCacheTest {
             assertThat(changed.path("api_invalidations").asLong()).isGreaterThanOrEqualTo(1L);
         }
     }
+    @Test void apiAdditionsReanalysePriorErrorsWithoutOldDependencyEdges()throws Exception{
+        Path api=root.resolve("Api.java"),broken=root.resolve("Broken.java");
+        Files.writeString(api,"class Api {}");
+        Files.writeString(broken,"class Broken { Missing value; }");
+        try(var app=new Application(TestSupport.config(root,Duration.ofHours(4)))){
+            String session=TestSupport.open(app,root);
+            request(app,"symbol.references",Map.of("session",session,"ref","Api","direction","in"));
+            Files.writeString(api,"class Api {} class Missing {}");
+            var resolved=request(app,"symbol.references",Map.of("session",session,"ref","Missing","direction","in"));
+            assertThat(resolved.path("edges").toString()).contains("Broken#value.");
+            var status=request(app,"session.status",Map.of("session",session)).path("workspace_bindings");
+            assertThat(status.path("last_reanalysed_files").asLong()).isEqualTo(2L);
+        }
+    }
     @Test void replacedBinaryAndFailedLookupRecoveryAreObserved()throws Exception{
         Path source=Files.createDirectories(root.resolve("source")),binary=Files.createDirectories(root.resolve("binary"));
         Path api=root.resolve("Api.java"),caller=source.resolve("Caller.java");

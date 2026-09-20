@@ -15,8 +15,11 @@ The required execution order is R0–R6 below, before expanding the architecture
 
 Reduce repeated observation, validation, semantic capture and publication by assigning each
 fact and computation an explicit owner. Consumers reuse results for a validated revision.
-Typed contracts, interning and persistent indexes are candidate means to that end, not success
-criteria by themselves. Preserve javac, the Rocks artifact backend and protocol correctness.
+The completed consolidation must reduce maintained production code and architectural complexity
+relative to the original baseline through removal of duplicated responsibilities and work.
+Implement composable semantic Merkle identities as part of that consolidation. Particular map
+implementations and interning policies remain choices to justify through measurement.
+Preserve javac, the Rocks artifact backend, readable structure and protocol correctness.
 
 ## Required recovery sequence
 
@@ -31,6 +34,8 @@ criteria by themselves. Preserve javac, the Rocks artifact backend and protocol 
   WorkspaceBindings, and Rocks workspace/semantic state. Distinguish necessary publication
   fences and context-specific validation from redundant work. Mark cost explanations as
   hypotheses until measured; a shared helper is not proof that a computation happens once.
+  Record duplicated representations, independent validity decisions and invalidation paths;
+  establish a consistently formatted production-code baseline for the simplification audit.
 - [ ] R2. Establish controlled paired measurements before changing production behaviour.
   Use the same pinned JDK, dependencies, fixtures, heap and cache state; separate cold JVM,
   cold workspace and warmed queries. Alternate revision order across independent JVM pairs,
@@ -55,6 +60,9 @@ criteria by themselves. Preserve javac, the Rocks artifact backend and protocol 
   retire, with its replacement consumer path. Keep distinct source/API/reference identities;
   do not put every query behind one workspace hash. Do not promise scan-free external-edit
   detection on coarse roots without sufficient evidence. Required fences are not optional overhead.
+  Specify the semantic Merkle ownership DAG and consumer changes below. Reuse the existing
+  filesystem Merkle observations where their guarantees apply; retire superseded fingerprint
+  and invalidation paths instead of installing another authoritative system beside them.
 - [ ] R5. Implement and measure one complete replacement at a time. Each coherent commit
   names the old path removed, the invariant preserved and the expected avoided work. Preserve
   protocol shape by deriving compatibility views from authoritative data where appropriate.
@@ -67,6 +75,40 @@ criteria by themselves. Preserve javac, the Rocks artifact backend and protocol 
   Reconcile the ownership ledger with the final code; record every remaining duplicate path
   and its reason. Close consolidation/performance acceptance only when all declared gates pass;
   an unresolved material regression keeps the PR a draft.
+  Include E4's readable-code/complexity audit and E5's semantic Merkle behaviour. A lower line
+  count alone, or a root hash with unchanged scans behind it, cannot satisfy acceptance.
+
+## Required semantic Merkle design
+
+This is a required architectural outcome, implemented through the measured replacement sequence
+above. The current typed fingerprints and persistent AVL maps do not yet satisfy it.
+
+- Compose deterministic, versioned identities from semantic children: declarations/types into
+  file API roots, then module and workspace API roots. Keep source text, API meaning, reference
+  relationships, documentation and positions distinguishable so each consumer uses the identity
+  relevant to its result. Compiler context and other recorded inputs must also remain valid.
+- Use acyclic ownership for Merkle composition. Represent cyclic references/dependencies by
+  stable symbol IDs and separate edge collections. Define canonical encoding, child ordering,
+  schema/domain separation, and ordered classpath identity explicitly. Hashes must not depend
+  on incidental insertion history or persistent-tree balancing.
+- Compute a changed leaf/contract once per valid observation and reuse unchanged child identities.
+  Update affected ownership paths rather than serializing or walking the full semantic aggregate
+  to rediscover its root. Immutable semantic nodes and bounded structural sharing must support
+  that reuse; any interner must justify its construction, lookup and retained-memory costs.
+- An API-equal body edit must stop API propagation while still updating its references and
+  source locations. Unrelated module roots remain reusable. A changed API invalidates the
+  recorded consumers with conservative handling of incomplete/negative read sets. Equal roots
+  do not establish the absence of an unobserved external edit or a changed compiler context.
+- Integrate navigation/index publication with these identities through an explicit mapping of
+  authoritative facts, derived indexes and reader snapshots. Identify the old per-layer hashing
+  and invalidation code removed. Do not describe the existing AVL root as content-addressed,
+  or replace Rocks with a custom Merkle B-tree merely to claim a unified index.
+
+Acceptance requires executable behaviour and reduced work, not a diagram: equal semantic inputs
+produce equal roots across construction histories; body edits preserve API roots but refresh
+references/locations; API edits reach the right consumers; unrelated subtrees are reused; unknown
+history and context changes invalidate safely. Verify full-output agreement with clean analysis,
+old-reader isolation, and counters showing the scans/hashes/publications actually avoided.
 
 ## Good rules — required invariants
 
@@ -94,6 +136,11 @@ criteria by themselves. Preserve javac, the Rocks artifact backend and protocol 
   boundary; never substitute a cached observation for an unobserved filesystem change.
 - Record implementation, correctness validation and performance acceptance separately. Passing
   CI or reducing posting counts alone cannot close architectural/performance acceptance.
+- Simplify by giving code clear responsibilities and removing repeated logic/state. Preserve
+  descriptive names, normal formatting, explicit invariants and understandable control flow.
+- Compare maintained production code across all affected modules with the same formatting and
+  counting rules; count new helpers too. Report tests/docs/generated code separately. Keep their
+  coverage and explanatory value; their line count is not a target for reduction.
 - Tick a gate only after its stated validation passes. Commit coherent steps and update the log.
 
 ## Bad rules — prohibited shortcuts
@@ -116,6 +163,12 @@ criteria by themselves. Preserve javac, the Rocks artifact backend and protocol 
   its owner. Do not retain two authoritative representations indefinitely as a migration shortcut.
 - Do not bundle independent optimizations into one before/after result, cherry-pick a faster run,
   or retroactively loosen acceptance criteria to accommodate the observed regression.
+- Do not game line counts with abbreviated names, semicolon-packed statements, removed whitespace
+  or comments, code golf, or by moving equivalent complexity into generated code or dependencies.
+- Do not remove correctness checks, public behaviour, diagnostic clarity or test coverage to make
+  the code smaller. Do not build a generic framework whose adapters preserve all the old machinery.
+- Do not call a single hash over a fully rebuilt aggregate an incremental semantic Merkle DAG.
+  Changing terminology or adding root hashes without retiring repeated work is not consolidation.
 
 ## Implementation and acceptance gates
 
@@ -174,7 +227,7 @@ additional evidence below. Follow R0–R6 in order; these sections are not a par
 - [ ] D3. Run focused tests and relevant compiler/navigation/index gates; record actual
   results, costs, failures, open risks and any remaining work without silently closing it.
   Reopened as final acceptance: previous CI success remains valid for its exact source commit;
-  acceptance of the consolidation additionally requires R6 and E1–E3.
+  acceptance of the consolidation additionally requires R6 and E1–E5.
 - [x] D4. Commit and push the work; open a draft PR against the optimisation branch and
   record its validation state. Do not merge automatically.
 
@@ -193,6 +246,17 @@ Their execution is covered by R1–R6 above. PR #8 stays a draft.
   the intended authoritative results and the named redundant work is removed. Document remaining
   boundaries, including persisted Rocks invalidation. A durable global DAG is a separate decision;
   choosing another future slice alone does not satisfy this acceptance gate.
+- [ ] E4. Demonstrate a net reduction in maintained handwritten production code and architectural
+  complexity relative to `ae23fd1f`. Apply the same formatter/counting rules to comparison copies,
+  without reformatting unrelated repository files just to change the numbers. Show which duplicated
+  implementations, representations and independent validity decisions disappeared and which useful
+  responsibilities remain. Count all new helpers; disclose any complexity shifted to dependencies
+  or generation. Inspect readability and maintainability alongside the counts. If the target is
+  unmet, report it as unmet; do not compress code or weaken behaviour to tick the box.
+- [ ] E5. Implement and validate the semantic Merkle design above as part of the replacement.
+  Show deterministic composable roots, local updates, actual propagation stopping and reused
+  subtrees, with the retired code paths identified. Measure total work and end-to-end costs;
+  API correctness, compiler context validity, reference freshness and fallback guarantees all remain.
 
 ## Deliberately separate research decisions
 
@@ -200,3 +264,5 @@ Green/incremental parsing, replacement authenticated storage engines, algebraic 
 and content-defined chunking are deferred pending workload evidence. Durable cross-store
 workspace snapshots require an explicit reader/reclamation protocol before advertising restart
 reuse of a complete live workspace. This checklist does not relabel existing stores as that protocol.
+The in-process semantic Merkle ownership DAG and its integration with current consumers are in
+scope above; the separate research decisions do not defer that required consolidation.

@@ -134,3 +134,26 @@ Each entry records the change, validation, limitations and next work. Historical
   causality. No new performance measurement is claimed by this documentation change.
 - Next action: R1's call-path/ownership ledger, followed by R2's controlled comparisons before
   production refactoring. PR #8 remains a draft.
+
+## 2026-09-20 — 008: readable simplification and semantic Merkle integration required
+
+- The user requires lower overall code size/complexity through good structure and elimination of
+  repeated responsibilities, explicitly rejecting shorter names, compressed formatting or other
+  line-count shortcuts. Made this an acceptance requirement, not a cosmetic cleanup task.
+- Added E4: compare consistently formatted handwritten production code across all affected modules
+  against `ae23fd1f`, count new helpers, and identify the duplicated representations/logic/validity
+  decisions actually removed. Readability, public behaviour, safety checks, diagnostics and test
+  coverage stay intact. Moving equivalent complexity into generation/dependencies is not removal.
+- Added E5 and the required semantic Merkle design: deterministic/versioned ownership roots from
+  declaration/type contracts through file, module and workspace API identities; separate source,
+  reference, documentation and location validity; reuse unchanged subtrees and stop API propagation
+  at unchanged roots while retaining consumer/context/fallback correctness.
+- Required canonical encoding and ordering, separate cyclic reference edges, and evidence of
+  avoided scans/hashes/publications. Current typed fingerprints and AVL snapshots do not meet this
+  target by themselves. The existing filesystem Merkle guarantees must be incorporated explicitly.
+- R4 must now name the Merkle composition and the old hash/invalidation paths it replaces; R6
+  includes the E4/E5 audits. Green parsing, custom storage and durable cross-store publication stay
+  separate decisions; this does not defer the required in-process semantic Merkle consolidation.
+- This update changes requirements/documentation only. No code reduction, performance gain or
+  semantic DAG implementation is claimed. The next implementation work still begins with R1/R2
+  ownership tracing and controlled measurement, then the smallest complete measured replacement.

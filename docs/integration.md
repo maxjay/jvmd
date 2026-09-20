@@ -111,7 +111,7 @@ Only workspace `file:` documents are accepted as query inputs. All positions and
 
 The server advertises incremental synchronization (`change: 2`) and UTF-16. Diagnostics debounce for 200 ms and discard superseded document versions. Honor their version on the client too.
 
-Formatting, code actions, workspace symbol search, pull diagnostics, and dynamic registration are not advertised. `$/cancelRequest` is accepted but currently does not cancel work; discard obsolete replies and avoid flooding the queue.
+Formatting, code actions, workspace symbol search, pull diagnostics, and dynamic registration are not advertised. `$/cancelRequest` cancels queued editor work and suppresses an obsolete in-flight completion result. Completion requests are latest-wins per document: queued requests superseded by newer keystrokes return LSP `RequestCancelled` (`-32800`) without reaching the daemon; an already-running javac query is allowed to finish safely, but its stale result is discarded.
 
 Request `partialResultToken` for large definitions, references, document symbols, and semantic tokens. Consume the `$/progress` batches before the final result. Without partial results, oversized responses can fail with `-32005`; completion instead returns a bounded, incomplete list. Dependency definitions can point at `jar:` URIs; opening those requires an archive/source provider in your host.
 

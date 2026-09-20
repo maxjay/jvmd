@@ -22,7 +22,8 @@ public final class WorkspaceBindings implements AutoCloseable {
                            List<CompilerPool.Problem> diagnostics,int tier,List<String> warnings,
                            @com.fasterxml.jackson.annotation.JsonIgnore Map<String,List<Integer>> outgoing,
                            @com.fasterxml.jackson.annotation.JsonIgnore Map<String,List<Integer>> incoming,
-                           @com.fasterxml.jackson.annotation.JsonIgnore Map<Bindings.Edge,List<Integer>> edgeOccurrences) {
+                           @com.fasterxml.jackson.annotation.JsonIgnore Map<Bindings.Edge,List<Integer>> edgeOccurrences,
+                           @com.fasterxml.jackson.annotation.JsonIgnore Map<String,List<String>> nameLookup) {
         public List<Bindings.Edge> adjacent(Set<String> frontier,boolean forward){
             var selected=new TreeSet<Integer>();var index=forward?outgoing:incoming;for(String symbol:frontier)selected.addAll(index.getOrDefault(symbol,List.of()));
             return selected.stream().map(edges::get).toList();
@@ -30,6 +31,10 @@ public final class WorkspaceBindings implements AutoCloseable {
         public List<Bindings.Occurrence> references(Set<Bindings.Edge> selected){
             var positions=new TreeSet<Integer>();for(var edge:selected)positions.addAll(edgeOccurrences.getOrDefault(edge,List.of()));
             return positions.stream().map(occurrences::get).toList();
+        }
+        public List<Map<String,Object>> lookup(String ref){
+            var identities=nameLookup.get(ref);if(identities==null)return List.of();
+            return identities.stream().map(symbols::get).filter(Objects::nonNull).toList();
         }
     }
     private static <K> Map<K,List<Integer>> frozen(Map<K,List<Integer>> values){
@@ -156,11 +161,19 @@ public final class WorkspaceBindings implements AutoCloseable {
         }
         if(!consistent){warnings.add("workspace_changed_during_query: retry for a consistent graph");tier=Math.min(tier,1);}
         symbols.putAll(declarations);
+        var lookupSets=new LinkedHashMap<String,LinkedHashSet<String>>();
+        for(var entry:symbols.entrySet()){
+            var symbol=entry.getValue();
+            for(String field:List.of("name_path","qualified_name_path","name","fqn")){
+                String value=Objects.toString(symbol.get(field),"");if(!value.isBlank())lookupSets.computeIfAbsent(value,ignored->new LinkedHashSet<>()).add(entry.getKey());
+            }
+        }
+        var nameLookup=new LinkedHashMap<String,List<String>>();lookupSets.forEach((key,value)->nameLookup.put(key,List.copyOf(value)));
         var edgeList=List.copyOf(edges);var outgoing=new LinkedHashMap<String,List<Integer>>();var incoming=new LinkedHashMap<String,List<Integer>>();
         for(int index=0;index<edgeList.size();index++){var edge=edgeList.get(index);outgoing.computeIfAbsent(edge.src(),key->new ArrayList<>()).add(index);incoming.computeIfAbsent(edge.dst(),key->new ArrayList<>()).add(index);}
         var edgeOccurrences=new LinkedHashMap<Bindings.Edge,List<Integer>>();
         for(int index=0;index<occurrences.size();index++){var occurrence=occurrences.get(index);if(occurrence.container()!=null)edgeOccurrences.computeIfAbsent(new Bindings.Edge(occurrence.container(),occurrence.scip(),occurrence.role()),key->new ArrayList<>()).add(index);}
-        return new Snapshot(Collections.unmodifiableMap(symbols),Collections.unmodifiableMap(declarations),edgeList,List.copyOf(occurrences),List.copyOf(diagnostics),tier,List.copyOf(warnings),frozen(outgoing),frozen(incoming),frozen(edgeOccurrences));
+        return new Snapshot(Collections.unmodifiableMap(symbols),Collections.unmodifiableMap(declarations),edgeList,List.copyOf(occurrences),List.copyOf(diagnostics),tier,List.copyOf(warnings),frozen(outgoing),frozen(incoming),frozen(edgeOccurrences),Collections.unmodifiableMap(nameLookup));
     }
     public Snapshot getBatch(SourceFiles sources,List<Path> classpath,Documents documents,String generation,long byteBudget,BatchLoader loader)throws Exception {
         return getBatch(sources,classpath,documents,generation,byteBudget,null,loader);

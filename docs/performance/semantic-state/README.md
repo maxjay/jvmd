@@ -102,3 +102,6 @@ consumer invalidation after an inherited member changes return type.
 | 512 | 825.94 | 9.68 | 34.64 | 92.42 |
 
 Raw final evidence: [final.json](final.json). Earlier measurements remain above as history.
+The final run serialized 9,289 bytes for the body fragment and 137,178 for the API update.
+These sizes include temporary absolute paths, so their small difference from earlier runs
+does not establish reduced data-structure allocation.

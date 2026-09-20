@@ -89,7 +89,7 @@ the existing RocksDB artifact backend. Keep protocols compatible.
   equality, context/owner separation and eviction must preserve correctness.
 - [x] D2. Document publication/persistence boundaries and schema versions. Reconcile the
   obsolete SQLite-only design with the shipped artifact backend and new semantic model.
-- [ ] D3. Run focused tests and relevant compiler/navigation/index gates; record actual
+- [x] D3. Run focused tests and relevant compiler/navigation/index gates; record actual
   results, costs, failures, open risks and any remaining work without silently closing it.
 - [x] D4. Commit and push the work; open a draft PR against the optimisation branch and
   record its validation state. Do not merge automatically.

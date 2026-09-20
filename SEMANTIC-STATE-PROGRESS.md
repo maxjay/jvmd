@@ -91,3 +91,21 @@ Each entry records the change, validation, limitations and next work. Historical
 - Follow-up `e6302ae4` passed every test step in Checkpoints run 35535326180; artifact upload was
   completing at observation. Initial commit also passed all four Linux/macOS distribution builds
   and the Windows installer check. The inheritance correction requires its own CI run next.
+
+## 2026-09-20 — 006: final implementation validated and delivered as a draft
+
+- Exact final source commit: `56a9506a33af1290578fe46025aa348ae8be7bfd`.
+- Checkpoints run 35535719185 completed successfully, including the standalone semantic suite,
+  Maven build, AOT assembly, resolver, index/Rocks, compiler, processing, overlays, documentation,
+  runtime/hot swap, protocol/rename and LSP/editor gates:
+  https://github.com/maxjay/jvmd/actions/runs/35535719185 .
+- Distribution run 35535719182 passed Linux x64/arm64, macOS x64/arm64 and the Windows installer
+  check; release publishing was skipped as expected for a PR:
+  https://github.com/maxjay/jvmd/actions/runs/35535719182 .
+- Closed D3. All implementation gates A–D are complete. The final evidence update changes only
+  documentation/checklist state; the source validated above is unchanged.
+- E1–E3 remain open: representative paired performance, allocation/retained-heap validation and
+  the next consolidation decision. Current synthetic results do not establish an overall speedup.
+  The PR remains a draft and has not been merged: https://github.com/maxjay/jvmd/pull/8 .
+- Next concrete work is measurement against representative workspaces with those gates preserved;
+  parser/database replacement and durable cross-store roots remain separate design decisions.

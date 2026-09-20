@@ -1,0 +1,551 @@
+{
+  "local_rename_api_equal" : true,
+  "publication_race_stale_reuse" : false,
+  "workloads" : [ {
+    "samples" : [ {
+      "ms" : 1206.575379,
+      "phase" : "cold",
+      "status" : {
+        "navigation_file_updates" : 128,
+        "fragment_bytes_serialized" : 729034,
+        "estimated_retained_bytes" : 3313704,
+        "builds" : 1,
+        "cache_hits" : 0,
+        "serialized_bytes" : 729034,
+        "cached_files" : 128,
+        "fragment_files" : 128,
+        "full_builds" : 1,
+        "incremental_builds" : 0,
+        "files_reanalysed" : 128,
+        "files_reused" : 0,
+        "last_reanalysed_files" : 128,
+        "api_invalidations" : 0,
+        "fast_validation_hits" : 0,
+        "full_validations" : 1,
+        "fast_validation_ready" : false
+      }
+    }, {
+      "ms" : 6.838363,
+      "phase" : "warm",
+      "status" : {
+        "navigation_file_updates" : 128,
+        "fragment_bytes_serialized" : 729034,
+        "estimated_retained_bytes" : 3313704,
+        "builds" : 1,
+        "cache_hits" : 1,
+        "serialized_bytes" : 729034,
+        "cached_files" : 128,
+        "fragment_files" : 128,
+        "full_builds" : 1,
+        "incremental_builds" : 0,
+        "files_reanalysed" : 128,
+        "files_reused" : 128,
+        "last_reanalysed_files" : 0,
+        "api_invalidations" : 0,
+        "fast_validation_hits" : 0,
+        "full_validations" : 2,
+        "fast_validation_ready" : false
+      }
+    }, {
+      "ms" : 43.7036,
+      "phase" : "body",
+      "status" : {
+        "navigation_file_updates" : 129,
+        "fragment_bytes_serialized" : 738343,
+        "estimated_retained_bytes" : 3318876,
+        "builds" : 2,
+        "cache_hits" : 1,
+        "serialized_bytes" : 730231,
+        "cached_files" : 128,
+        "fragment_files" : 128,
+        "full_builds" : 1,
+        "incremental_builds" : 1,
+        "files_reanalysed" : 129,
+        "files_reused" : 255,
+        "last_reanalysed_files" : 1,
+        "api_invalidations" : 0,
+        "fast_validation_hits" : 0,
+        "full_validations" : 3,
+        "fast_validation_ready" : false
+      }
+    }, {
+      "ms" : 74.444767,
+      "phase" : "api",
+      "status" : {
+        "navigation_file_updates" : 146,
+        "fragment_bytes_serialized" : 875806,
+        "estimated_retained_bytes" : 3319868,
+        "builds" : 3,
+        "cache_hits" : 1,
+        "serialized_bytes" : 730479,
+        "cached_files" : 128,
+        "fragment_files" : 128,
+        "full_builds" : 1,
+        "incremental_builds" : 2,
+        "files_reanalysed" : 146,
+        "files_reused" : 366,
+        "last_reanalysed_files" : 17,
+        "api_invalidations" : 1,
+        "fast_validation_hits" : 0,
+        "full_validations" : 4,
+        "fast_validation_ready" : false
+      }
+    } ],
+    "files" : 128
+  }, {
+    "samples" : [ {
+      "ms" : 534.838634,
+      "phase" : "cold",
+      "status" : {
+        "navigation_file_updates" : 128,
+        "fragment_bytes_serialized" : 729034,
+        "estimated_retained_bytes" : 3313704,
+        "builds" : 1,
+        "cache_hits" : 0,
+        "serialized_bytes" : 729034,
+        "cached_files" : 128,
+        "fragment_files" : 128,
+        "full_builds" : 1,
+        "incremental_builds" : 0,
+        "files_reanalysed" : 128,
+        "files_reused" : 0,
+        "last_reanalysed_files" : 128,
+        "api_invalidations" : 0,
+        "fast_validation_hits" : 0,
+        "full_validations" : 1,
+        "fast_validation_ready" : false
+      }
+    }, {
+      "ms" : 4.422149,
+      "phase" : "warm",
+      "status" : {
+        "navigation_file_updates" : 128,
+        "fragment_bytes_serialized" : 729034,
+        "estimated_retained_bytes" : 3313704,
+        "builds" : 1,
+        "cache_hits" : 1,
+        "serialized_bytes" : 729034,
+        "cached_files" : 128,
+        "fragment_files" : 128,
+        "full_builds" : 1,
+        "incremental_builds" : 0,
+        "files_reanalysed" : 128,
+        "files_reused" : 128,
+        "last_reanalysed_files" : 0,
+        "api_invalidations" : 0,
+        "fast_validation_hits" : 0,
+        "full_validations" : 2,
+        "fast_validation_ready" : false
+      }
+    }, {
+      "ms" : 24.89238,
+      "phase" : "body",
+      "status" : {
+        "navigation_file_updates" : 129,
+        "fragment_bytes_serialized" : 738343,
+        "estimated_retained_bytes" : 3318876,
+        "builds" : 2,
+        "cache_hits" : 1,
+        "serialized_bytes" : 730231,
+        "cached_files" : 128,
+        "fragment_files" : 128,
+        "full_builds" : 1,
+        "incremental_builds" : 1,
+        "files_reanalysed" : 129,
+        "files_reused" : 255,
+        "last_reanalysed_files" : 1,
+        "api_invalidations" : 0,
+        "fast_validation_hits" : 0,
+        "full_validations" : 3,
+        "fast_validation_ready" : false
+      }
+    }, {
+      "ms" : 67.115232,
+      "phase" : "api",
+      "status" : {
+        "navigation_file_updates" : 146,
+        "fragment_bytes_serialized" : 875806,
+        "estimated_retained_bytes" : 3319868,
+        "builds" : 3,
+        "cache_hits" : 1,
+        "serialized_bytes" : 730479,
+        "cached_files" : 128,
+        "fragment_files" : 128,
+        "full_builds" : 1,
+        "incremental_builds" : 2,
+        "files_reanalysed" : 146,
+        "files_reused" : 366,
+        "last_reanalysed_files" : 17,
+        "api_invalidations" : 1,
+        "fast_validation_hits" : 0,
+        "full_validations" : 4,
+        "fast_validation_ready" : false
+      }
+    } ],
+    "files" : 128
+  }, {
+    "samples" : [ {
+      "ms" : 309.178393,
+      "phase" : "cold",
+      "status" : {
+        "navigation_file_updates" : 128,
+        "fragment_bytes_serialized" : 729034,
+        "estimated_retained_bytes" : 3313704,
+        "builds" : 1,
+        "cache_hits" : 0,
+        "serialized_bytes" : 729034,
+        "cached_files" : 128,
+        "fragment_files" : 128,
+        "full_builds" : 1,
+        "incremental_builds" : 0,
+        "files_reanalysed" : 128,
+        "files_reused" : 0,
+        "last_reanalysed_files" : 128,
+        "api_invalidations" : 0,
+        "fast_validation_hits" : 0,
+        "full_validations" : 1,
+        "fast_validation_ready" : false
+      }
+    }, {
+      "ms" : 3.514393,
+      "phase" : "warm",
+      "status" : {
+        "navigation_file_updates" : 128,
+        "fragment_bytes_serialized" : 729034,
+        "estimated_retained_bytes" : 3313704,
+        "builds" : 1,
+        "cache_hits" : 1,
+        "serialized_bytes" : 729034,
+        "cached_files" : 128,
+        "fragment_files" : 128,
+        "full_builds" : 1,
+        "incremental_builds" : 0,
+        "files_reanalysed" : 128,
+        "files_reused" : 128,
+        "last_reanalysed_files" : 0,
+        "api_invalidations" : 0,
+        "fast_validation_hits" : 0,
+        "full_validations" : 2,
+        "fast_validation_ready" : false
+      }
+    }, {
+      "ms" : 32.791014,
+      "phase" : "body",
+      "status" : {
+        "navigation_file_updates" : 129,
+        "fragment_bytes_serialized" : 738343,
+        "estimated_retained_bytes" : 3318876,
+        "builds" : 2,
+        "cache_hits" : 1,
+        "serialized_bytes" : 730231,
+        "cached_files" : 128,
+        "fragment_files" : 128,
+        "full_builds" : 1,
+        "incremental_builds" : 1,
+        "files_reanalysed" : 129,
+        "files_reused" : 255,
+        "last_reanalysed_files" : 1,
+        "api_invalidations" : 0,
+        "fast_validation_hits" : 0,
+        "full_validations" : 3,
+        "fast_validation_ready" : false
+      }
+    }, {
+      "ms" : 70.214926,
+      "phase" : "api",
+      "status" : {
+        "navigation_file_updates" : 146,
+        "fragment_bytes_serialized" : 875806,
+        "estimated_retained_bytes" : 3319868,
+        "builds" : 3,
+        "cache_hits" : 1,
+        "serialized_bytes" : 730479,
+        "cached_files" : 128,
+        "fragment_files" : 128,
+        "full_builds" : 1,
+        "incremental_builds" : 2,
+        "files_reanalysed" : 146,
+        "files_reused" : 366,
+        "last_reanalysed_files" : 17,
+        "api_invalidations" : 1,
+        "fast_validation_hits" : 0,
+        "full_validations" : 4,
+        "fast_validation_ready" : false
+      }
+    } ],
+    "files" : 128
+  }, {
+    "samples" : [ {
+      "ms" : 1216.972873,
+      "phase" : "cold",
+      "status" : {
+        "navigation_file_updates" : 512,
+        "fragment_bytes_serialized" : 2791882,
+        "estimated_retained_bytes" : 12695592,
+        "builds" : 1,
+        "cache_hits" : 0,
+        "serialized_bytes" : 2791882,
+        "cached_files" : 512,
+        "fragment_files" : 512,
+        "full_builds" : 1,
+        "incremental_builds" : 0,
+        "files_reanalysed" : 512,
+        "files_reused" : 0,
+        "last_reanalysed_files" : 512,
+        "api_invalidations" : 0,
+        "fast_validation_hits" : 0,
+        "full_validations" : 1,
+        "fast_validation_ready" : false
+      }
+    }, {
+      "ms" : 5.462789,
+      "phase" : "warm",
+      "status" : {
+        "navigation_file_updates" : 512,
+        "fragment_bytes_serialized" : 2791882,
+        "estimated_retained_bytes" : 12695592,
+        "builds" : 1,
+        "cache_hits" : 1,
+        "serialized_bytes" : 2791882,
+        "cached_files" : 512,
+        "fragment_files" : 512,
+        "full_builds" : 1,
+        "incremental_builds" : 0,
+        "files_reanalysed" : 512,
+        "files_reused" : 512,
+        "last_reanalysed_files" : 0,
+        "api_invalidations" : 0,
+        "fast_validation_hits" : 0,
+        "full_validations" : 2,
+        "fast_validation_ready" : false
+      }
+    }, {
+      "ms" : 39.0842,
+      "phase" : "body",
+      "status" : {
+        "navigation_file_updates" : 513,
+        "fragment_bytes_serialized" : 2801191,
+        "estimated_retained_bytes" : 12700764,
+        "builds" : 2,
+        "cache_hits" : 1,
+        "serialized_bytes" : 2793079,
+        "cached_files" : 512,
+        "fragment_files" : 512,
+        "full_builds" : 1,
+        "incremental_builds" : 1,
+        "files_reanalysed" : 513,
+        "files_reused" : 1023,
+        "last_reanalysed_files" : 1,
+        "api_invalidations" : 0,
+        "fast_validation_hits" : 0,
+        "full_validations" : 3,
+        "fast_validation_ready" : false
+      }
+    }, {
+      "ms" : 86.113501,
+      "phase" : "api",
+      "status" : {
+        "navigation_file_updates" : 530,
+        "fragment_bytes_serialized" : 2938654,
+        "estimated_retained_bytes" : 12701756,
+        "builds" : 3,
+        "cache_hits" : 1,
+        "serialized_bytes" : 2793327,
+        "cached_files" : 512,
+        "fragment_files" : 512,
+        "full_builds" : 1,
+        "incremental_builds" : 2,
+        "files_reanalysed" : 530,
+        "files_reused" : 1518,
+        "last_reanalysed_files" : 17,
+        "api_invalidations" : 1,
+        "fast_validation_hits" : 0,
+        "full_validations" : 4,
+        "fast_validation_ready" : false
+      }
+    } ],
+    "files" : 512
+  }, {
+    "samples" : [ {
+      "ms" : 1213.663505,
+      "phase" : "cold",
+      "status" : {
+        "navigation_file_updates" : 512,
+        "fragment_bytes_serialized" : 2791882,
+        "estimated_retained_bytes" : 12695592,
+        "builds" : 1,
+        "cache_hits" : 0,
+        "serialized_bytes" : 2791882,
+        "cached_files" : 512,
+        "fragment_files" : 512,
+        "full_builds" : 1,
+        "incremental_builds" : 0,
+        "files_reanalysed" : 512,
+        "files_reused" : 0,
+        "last_reanalysed_files" : 512,
+        "api_invalidations" : 0,
+        "fast_validation_hits" : 0,
+        "full_validations" : 1,
+        "fast_validation_ready" : false
+      }
+    }, {
+      "ms" : 16.587617,
+      "phase" : "warm",
+      "status" : {
+        "navigation_file_updates" : 512,
+        "fragment_bytes_serialized" : 2791882,
+        "estimated_retained_bytes" : 12695592,
+        "builds" : 1,
+        "cache_hits" : 1,
+        "serialized_bytes" : 2791882,
+        "cached_files" : 512,
+        "fragment_files" : 512,
+        "full_builds" : 1,
+        "incremental_builds" : 0,
+        "files_reanalysed" : 512,
+        "files_reused" : 512,
+        "last_reanalysed_files" : 0,
+        "api_invalidations" : 0,
+        "fast_validation_hits" : 0,
+        "full_validations" : 2,
+        "fast_validation_ready" : false
+      }
+    }, {
+      "ms" : 52.333232,
+      "phase" : "body",
+      "status" : {
+        "navigation_file_updates" : 513,
+        "fragment_bytes_serialized" : 2801191,
+        "estimated_retained_bytes" : 12700764,
+        "builds" : 2,
+        "cache_hits" : 1,
+        "serialized_bytes" : 2793079,
+        "cached_files" : 512,
+        "fragment_files" : 512,
+        "full_builds" : 1,
+        "incremental_builds" : 1,
+        "files_reanalysed" : 513,
+        "files_reused" : 1023,
+        "last_reanalysed_files" : 1,
+        "api_invalidations" : 0,
+        "fast_validation_hits" : 0,
+        "full_validations" : 3,
+        "fast_validation_ready" : false
+      }
+    }, {
+      "ms" : 95.131016,
+      "phase" : "api",
+      "status" : {
+        "navigation_file_updates" : 530,
+        "fragment_bytes_serialized" : 2938654,
+        "estimated_retained_bytes" : 12701756,
+        "builds" : 3,
+        "cache_hits" : 1,
+        "serialized_bytes" : 2793327,
+        "cached_files" : 512,
+        "fragment_files" : 512,
+        "full_builds" : 1,
+        "incremental_builds" : 2,
+        "files_reanalysed" : 530,
+        "files_reused" : 1518,
+        "last_reanalysed_files" : 17,
+        "api_invalidations" : 1,
+        "fast_validation_hits" : 0,
+        "full_validations" : 4,
+        "fast_validation_ready" : false
+      }
+    } ],
+    "files" : 512
+  }, {
+    "samples" : [ {
+      "ms" : 1415.506787,
+      "phase" : "cold",
+      "status" : {
+        "navigation_file_updates" : 512,
+        "fragment_bytes_serialized" : 2791882,
+        "estimated_retained_bytes" : 12695592,
+        "builds" : 1,
+        "cache_hits" : 0,
+        "serialized_bytes" : 2791882,
+        "cached_files" : 512,
+        "fragment_files" : 512,
+        "full_builds" : 1,
+        "incremental_builds" : 0,
+        "files_reanalysed" : 512,
+        "files_reused" : 0,
+        "last_reanalysed_files" : 512,
+        "api_invalidations" : 0,
+        "fast_validation_hits" : 0,
+        "full_validations" : 1,
+        "fast_validation_ready" : false
+      }
+    }, {
+      "ms" : 22.288588,
+      "phase" : "warm",
+      "status" : {
+        "navigation_file_updates" : 512,
+        "fragment_bytes_serialized" : 2791882,
+        "estimated_retained_bytes" : 12695592,
+        "builds" : 1,
+        "cache_hits" : 1,
+        "serialized_bytes" : 2791882,
+        "cached_files" : 512,
+        "fragment_files" : 512,
+        "full_builds" : 1,
+        "incremental_builds" : 0,
+        "files_reanalysed" : 512,
+        "files_reused" : 512,
+        "last_reanalysed_files" : 0,
+        "api_invalidations" : 0,
+        "fast_validation_hits" : 0,
+        "full_validations" : 2,
+        "fast_validation_ready" : false
+      }
+    }, {
+      "ms" : 37.590176,
+      "phase" : "body",
+      "status" : {
+        "navigation_file_updates" : 513,
+        "fragment_bytes_serialized" : 2801191,
+        "estimated_retained_bytes" : 12700764,
+        "builds" : 2,
+        "cache_hits" : 1,
+        "serialized_bytes" : 2793079,
+        "cached_files" : 512,
+        "fragment_files" : 512,
+        "full_builds" : 1,
+        "incremental_builds" : 1,
+        "files_reanalysed" : 513,
+        "files_reused" : 1023,
+        "last_reanalysed_files" : 1,
+        "api_invalidations" : 0,
+        "fast_validation_hits" : 0,
+        "full_validations" : 3,
+        "fast_validation_ready" : false
+      }
+    }, {
+      "ms" : 124.555636,
+      "phase" : "api",
+      "status" : {
+        "navigation_file_updates" : 530,
+        "fragment_bytes_serialized" : 2938654,
+        "estimated_retained_bytes" : 12701756,
+        "builds" : 3,
+        "cache_hits" : 1,
+        "serialized_bytes" : 2793327,
+        "cached_files" : 512,
+        "fragment_files" : 512,
+        "full_builds" : 1,
+        "incremental_builds" : 2,
+        "files_reanalysed" : 530,
+        "files_reused" : 1518,
+        "last_reanalysed_files" : 17,
+        "api_invalidations" : 1,
+        "fast_validation_hits" : 0,
+        "full_validations" : 4,
+        "fast_validation_ready" : false
+      }
+    } ],
+    "files" : 512
+  } ]
+}

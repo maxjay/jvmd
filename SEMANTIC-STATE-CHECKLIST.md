@@ -51,40 +51,40 @@ the existing RocksDB artifact backend. Keep protocols compatible.
 ### A. Identity and publication foundations
 
 - [x] A0. Pin the baseline; create this checklist and the append-only progress log.
-- [ ] A1. Restore the pinned JDK/build environment; record a reproducible baseline.
-- [ ] A2. Introduce a typed immutable declaration-contract model captured from elements.
+- [x] A1. Restore the pinned JDK/build environment; record a reproducible baseline.
+- [x] A2. Introduce a typed immutable declaration-contract model captured from elements.
   Use it for shared API fingerprints; version persisted identities affected by the change.
-- [ ] A3. Prove local rename, local/anonymous/private nested implementation changes and
+- [x] A3. Prove local rename, local/anonymous/private nested implementation changes and
   position shifts do not change exported contract identity; prove externally relevant
   changes still invalidate consumers. Keep navigation/documentation outputs current.
-- [ ] A4. Add revision-fenced WorkspaceBindings publication and deterministic interleaving
+- [x] A4. Add revision-fenced WorkspaceBindings publication and deterministic interleaving
   tests, including fast-token adoption and changes during full validation.
 
 ### B. Source revisions and dependencies
 
-- [ ] B1. Consolidate workspace source identity/inventory snapshots and changed-file deltas
+- [x] B1. Consolidate workspace source identity/inventory snapshots and changed-file deltas
   behind one revision owner, reusing Documents/FileStateRegistry rather than duplicate stamps.
-- [ ] B2. Preserve buffers, additions/deletions, timestamp-preserving external edits and
+- [x] B2. Preserve buffers, additions/deletions, timestamp-preserving external edits and
   conservative coarse-root behavior; state precise watcher consistency limits.
-- [ ] B3. Give complete and partial dependency recording different contracts; replace old
+- [x] B3. Give complete and partial dependency recording different contracts; replace old
   reverse edges after full analysis and reuse the shared graph operation in navigation.
-- [ ] B4. Validate source/namespace/context changes and negative-lookup fallback against
+- [x] B4. Validate source/namespace/context changes and negative-lookup fallback against
   clean analysis. Do not claim member-level lookup precision until captured explicitly.
 
 ### C. Incremental navigation snapshots
 
-- [ ] C1. Add immutable persistent maps/postings with bounded structural sharing and stable
+- [x] C1. Add immutable persistent maps/postings with bounded structural sharing and stable
   symbol ownership. Test replacement/removal and old-reader isolation.
-- [ ] C2. Update WorkspaceBindings by fragment deltas: symbols, declaration precedence,
+- [x] C2. Update WorkspaceBindings by fragment deltas: symbols, declaration precedence,
   name lookup, edge directions, occurrences, diagnostics and warnings.
-- [ ] C3. Replace whole-aggregate JSON sizing with per-fragment retained accounting;
+- [x] C3. Replace whole-aggregate JSON sizing with per-fragment retained accounting;
   expose maintenance counters and keep the configured memory admission limit.
-- [ ] C4. Run references/hierarchy/rename regressions and before/after benchmarks. Body
+- [x] C4. Run references/hierarchy/rename regressions and before/after benchmarks. Body
   edits must avoid rebuilding unrelated postings; API edits must preserve correctness.
 
 ### D. Consolidation and delivery
 
-- [ ] D1. Apply bounded canonical reuse to typed contracts; collision-safe structural
+- [x] D1. Apply bounded canonical reuse to typed contracts; collision-safe structural
   equality, context/owner separation and eviction must preserve correctness.
 - [ ] D2. Document publication/persistence boundaries and schema versions. Reconcile the
   obsolete SQLite-only design with the shipped artifact backend and new semantic model.

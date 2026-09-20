@@ -8,21 +8,17 @@ import javax.lang.model.element.*;
 
 /** Stable declaration fingerprint intentionally excluding bodies, positions, docs, and local implementation detail. */
 public final class ApiFingerprint {
-    private static final Set<String> EXCLUDED_KINDS=Set.of("local","parameter");
-    private static final List<String> FIELDS=List.of("scip","name","name_path","kind","signature","modifiers","type_parameters","erased_descriptor","declaring","fqn","gav","api");
     private ApiFingerprint(){}
 
     public static String of(Bindings.Snapshot snapshot,Path source){
-        String file=source.toAbsolutePath().normalize().toString();var declarations=new ArrayList<Map<String,Object>>();
-        for(var symbol:snapshot.symbols().values()){
-            Object sourceFile=symbol.get("source_file");if(sourceFile==null)continue;
-            Path candidate;try{candidate=Path.of(sourceFile.toString()).toAbsolutePath().normalize();}catch(Exception ignored){continue;}
-            if(!candidate.toString().equals(file)||EXCLUDED_KINDS.contains(Objects.toString(symbol.get("kind"),"")))continue;
-            if(symbol.get("modifiers") instanceof Collection<?> modifiers&&modifiers.contains("private"))continue;
-            var declaration=new TreeMap<String,Object>();for(String field:FIELDS)if(symbol.containsKey(field))declaration.put(field,symbol.get(field));declarations.add(declaration);
-        }
-        declarations.sort(Comparator.comparing(value->Objects.toString(value.get("scip"),Objects.toString(value.get("name_path"),""))));
-        try{return Hashing.sha256(Json.MAPPER.writeValueAsBytes(declarations));}catch(Exception e){throw new IllegalStateException("Cannot fingerprint source declarations",e);}
+        String file=source.toAbsolutePath().normalize().toString();
+        var declarations=new TreeMap<String,DeclarationContract>();
+        snapshot.contracts().forEach((symbol,contract)->{
+            var row=snapshot.symbols().get(symbol);if(row==null)return;
+            Object location=row.get("source_file");if(location!=null&&Path.of(location.toString()).toAbsolutePath().normalize().toString().equals(file))declarations.put(symbol,contract);
+        });
+        try{return Hashing.sha256(Json.MAPPER.writeValueAsBytes(List.of(DeclarationContract.SCHEMA,declarations)));}
+        catch(Exception e){throw new IllegalStateException("Cannot fingerprint source declarations",e);}
     }
 
     /** Detach all declaration inputs while the compiler owns the element. */

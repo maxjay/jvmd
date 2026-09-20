@@ -27,6 +27,8 @@ jobs:
       - name: Compile and package
         id: compile
         run: mvn -B -DskipTests install
+      - name: Semantic identity, publication and persistent navigation
+        run: bash benchmarks/semantic-state/run.sh
       - name: Assemble runtime and train AOT
         run: |
           bash jvmd-dist/assemble.sh

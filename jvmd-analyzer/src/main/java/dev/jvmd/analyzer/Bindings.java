@@ -17,9 +17,14 @@ public final class Bindings {
     /** Implements 4.9: a single-static-import can name multiple overloaded methods. */
     public record ImportSite(int start,int end,String qualifier) { }
     /** Implements 4.4: resolved structural and source-code relationships. */
-    public record Edge(String src,String dst,String kind) { }
+    public record Edge(String src,String dst,String kind) implements Comparable<Edge> {
+        @Override public int compareTo(Edge other){int c=src.compareTo(other.src);if(c==0)c=dst.compareTo(other.dst);return c==0?kind.compareTo(other.kind):c;}
+    }
     /** Implements 4.2: detached declarations, references and source dependencies. */
-    public record Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies) {
+    public record Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies,
+                           @com.fasterxml.jackson.annotation.JsonIgnore Map<String,DeclarationContract> contracts) {
+        public Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies){this(symbols,occurrences,edges,dependencies,Map.of());}
+        public Snapshot { contracts=Map.copyOf(contracts); }
         public Map<String,Object> at(int offset){
             var occurrence=occurrences.stream().filter(o->o.start()<=offset&&offset<o.end()).min(Comparator.comparingInt(o->o.end()-o.start())).orElse(null);if(occurrence==null)return null;
             if(occurrence.importSite()!=null){
@@ -38,6 +43,7 @@ public final class Bindings {
     }
     public static Snapshot capture(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,Path requested,SourceText original,boolean bodies,Focusing.Span focus){
         var trees=Trees.instance(task);var docs=DocTrees.instance(task);var symbols=new LinkedHashMap<String,Map<String,Object>>();var occurrences=new LinkedHashMap<String,Occurrence>();var edges=new LinkedHashSet<Edge>();var dependencies=new LinkedHashSet<Path>();
+        var contracts=new LinkedHashMap<String,DeclarationContract>();
         var texts=new HashMap<String,SourceText>();texts.put(requested.toUri().toString(),original);
         class Capture {
             SourceText source(CompilationUnitTree unit){return texts.computeIfAbsent(unit.getSourceFile().toUri().toString(),key->{try{return new SourceText(unit.getSourceFile().getCharContent(true).toString());}catch(Exception e){return new SourceText("");}});}
@@ -60,6 +66,7 @@ public final class Bindings {
                 var row=new LinkedHashMap<String,Object>();row.put("scip",scip);row.put("name",identity.displayName(element));try{row.put("name_path",identity.namePath(element));}catch(IllegalArgumentException unresolved){row.put("name_path",identity.displayName(element));row.put("signature_complete",false);}row.put("kind",SymbolIdentity.kind(element));row.put("signature",identity.signature(element));row.put("gav",identity.gav(element));row.put("artifact",identity.gav(element));row.put("resolved",true);row.put("modifiers",element.getModifiers().stream().map(Object::toString).sorted().toList());
                 var declaring=identity.declaring(element);row.put("declaring",declaring==null?null:declaring.getQualifiedName().toString());row.put("fqn",declaring==null?null:identity.binaryName(declaring));
                 row.put("api",ApiFingerprint.declaration(element));
+                var contract=DeclarationContract.capture(element,scip);if(contract!=null)contracts.put(scip,contract);
                 row.put("parameters",element instanceof ExecutableElement m?m.getParameters().stream().map(p->p.getSimpleName().toString()).toList():List.of());
                 row.put("type_parameters",element instanceof Parameterizable generic?generic.getTypeParameters().stream().map(Object::toString).toList():List.of());
                 try{row.put("erased_descriptor",element instanceof ExecutableElement method?identity.descriptor(method):element instanceof VariableElement variable?identity.descriptor(variable.asType()):null);}catch(IllegalArgumentException unresolved){row.put("erased_descriptor",null);row.put("signature_complete",false);}
@@ -161,6 +168,6 @@ public final class Bindings {
                 if(role.equals("writes")&&(parent instanceof CompoundAssignmentTree||parent instanceof UnaryTree)){String target=capture.symbol(e);if(container!=null&&target!=null)edges.add(new Edge(container,target,"reads"));}
             }
         }.scan(unit,null);
-        return new Snapshot(Collections.unmodifiableMap(symbols),List.copyOf(occurrences.values()),List.copyOf(edges),Set.copyOf(dependencies));
+        return new Snapshot(Collections.unmodifiableMap(symbols),List.copyOf(occurrences.values()),List.copyOf(edges),Set.copyOf(dependencies),contracts);
     }
 }

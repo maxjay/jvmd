@@ -13,3 +13,40 @@ Each entry records the change, validation, limitations and next work. Historical
 - Validation environment: the prior extracted JDK 25 module image is incomplete. Checking its
   retained archive before restoring a separate toolchain. No source changes have been made yet.
 - Completed: A0. Next: A1 baseline and A2 typed contracts.
+
+## 2026-09-20 — 002: reproduced baseline defects and measured navigation
+
+- The checksum-pinned JDK archive is intact. Restoring its full module image immediately before
+  validation permits compilation; the workspace retained an incomplete extracted module image.
+- Compiled all 130 production source files directly with javac 25 and existing packaged dependencies.
+  Maven dependency retrieval is blocked by the current network environment; CI remains the Maven gate.
+- Added a standalone production-path probe and retained `docs/performance/semantic-state/before.json`.
+- Baseline reproduces both defects: `local_rename_api_equal=false` and
+  `publication_race_stale_reuse=true`. These are now execution findings, not only source concerns.
+- Measured cold/warm/body/API navigation at 128 and 512 files, three runs each. No JFR, AOT or
+  claims about real-project performance. The probe checks the expected incoming reference.
+- Implementing typed declaration contracts and revision fences next; gates remain unticked until
+  the updated probe and targeted regressions pass.
+
+## 2026-09-20 — 003: typed contracts and persistent navigation implemented
+
+- Typed declaration contracts now drive API identity; diagnostics identity/schema advance to v3.
+  Bounded structural interning retains at most 8,192 contracts. It never trusts hash equality alone.
+- Source inventory/identities now use Documents-owned SourceSnapshots and FileStateRegistry.
+  Its sequence/deltas describe successive requested views, not an authoritative filesystem epoch.
+  Existing precise-root watcher epochs remain the fast-validation evidence; coarse roots still scan.
+- Shared DependencyGraph operations distinguish complete replacement from partial accumulation.
+  Analyzer and navigation use it; persisted Rocks semantic invalidation is still a separate wrapper.
+- Published navigation uses persistent AVL maps and per-file postings. API-equal edits still update
+  references, locations and docs. Budget admission uses incremental per-fragment size estimates.
+- All production classes compile directly with javac 25. Standalone regressions passed 5,140 checks:
+  typed contracts, persistent map oracle/old versions, interner collisions, dependency replacement,
+  cold/warm/peek publication races, additive Merkle adoption, classpath order, memory admission,
+  preserved timestamps, buffer changes, hierarchy, rename, deletion and negative lookup recovery.
+  Recovery output exactly matches a separate application's cold attribution.
+- Before/after probe passed. Body edits update 1 file; API edits update 17 (declaration + 16 consumers).
+  At 512 files the body-edit median changed from 56.13 to 39.08 ms, but cold from 599.32 to 1216.97 ms,
+  warm from 4.42 to 16.59 ms, and API edits from 63.14 to 95.13 ms. Three samples, synthetic fixture.
+  These regressions are open performance work, not a successful overall speed claim.
+- Completed local gates A1–A4, B1–B4, C1–C4, D1. Maven/CI and persistence/design documentation
+  remain open. Added a portable standalone runner and a required checkpoint step for those checks.

@@ -16,6 +16,8 @@ public final class Documents {
     private static final long MAX_BYTES=64L*1024*1024;
     private final Map<Path,Document> documents=new LinkedHashMap<>();
     private final FileStateRegistry files=new FileStateRegistry();
+    private final SourceSnapshots sources=new SourceSnapshots(this);
+    public SourceSnapshots sources(){return sources;}
     private long bytes,generation;
     private static Path key(Path path){return path.toAbsolutePath().normalize();}
     public synchronized void open(Path file,String text,int version){if(contains(file))throw RpcException.invalid("Document is already open");set(key(file),text,version);}

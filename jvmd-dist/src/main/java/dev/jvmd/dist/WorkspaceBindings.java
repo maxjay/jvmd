@@ -166,7 +166,7 @@ public final class WorkspaceBindings implements AutoCloseable {
         var first=load(dirty,current,documents,loader);working.putAll(first);
         var apiChanged=new LinkedHashSet<Path>();
         if(!full)for(Path file:dirty){
-            var before=priorFragments.get(file),after=first.get(file);
+            var before=priorFragments.get(file);var after=first.get(file);
             if(before==null||after==null||!Objects.equals(before.apiFingerprint(),after.apiFingerprint()))apiChanged.add(file);
         }
         if(!apiChanged.isEmpty()){

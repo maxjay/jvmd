@@ -66,7 +66,27 @@ profiling must be a separate campaign (`--profile --pairs 1`); profiled timings
 cannot enter the latency comparison. JFR files may contain environment details;
 publish only selected CPU/allocation event exports when needed.
 
-## Rules fixed before production changes
+## Primary objective for subsequent experiments
+
+The user explicitly prioritised latency after reviewing the first trial. Subsequent
+optimization proposals must select an end-to-end latency workload as their primary
+outcome before production edits and meet the speed criterion below. Allocation and
+code-size reductions are supporting outcomes, not substitutes for latency improvement.
+
+Profile source observation, compilation, aggregation/serialization and response work
+on that request path before choosing a replacement. Lead reports with every latency
+scenario, including rename and the real module; report allocation and code changes
+afterward. Show medians, variability and descriptive sample p95. The current sample
+count does not establish production tail latency.
+
+Declare justified no-regression budgets separately for startup, warm queries and edits
+before the next trial. Do not carry the first trial's blanket 1 ms floor into warm-query
+acceptance: a sub-millisecond increase can still matter on a low-latency path. Unresolved
+latency acceptance keeps the candidate unaccepted even when allocation improves.
+
+The first trial's recorded criteria, samples and rejection remain unchanged below.
+
+## Rules fixed before the first production trial
 
 - Use at least ten independent JVM pairs. Reduce repeated requests within each
   JVM to a median first; those requests are not independent statistical samples.

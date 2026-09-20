@@ -6,16 +6,26 @@ and its evidence remain on `archive/semantic-state-first-attempt` (`9611f45`).
 All implementation ticks below refer to that archived attempt, not this restart.
 The quality rules and E1–E5 remain requirements for the completed architecture.
 
+Latency is the primary optimization objective for subsequent work. Lower allocation
+and fewer production lines support that goal; neither can substitute for a demonstrated
+end-to-end latency improvement. Profile the slow request path before choosing the next
+replacement. Declare separate regression budgets for startup, warm navigation and edits;
+do not hide a warm-query regression behind the first trial's blanket 1 ms floor.
+
 - [x] S0. Preserve the old attempt and restore the exact requested baseline.
 - [x] S1. Commit a reusable benchmark suite and predefined acceptance criteria before
   production edits. Record toolchain, source/dependency hashes, fixture and raw samples.
 - [x] S2. Run the untouched baseline, trace ownership/duplicate work, and record the
   proposed replacement and falsifiable expected benefit before implementing it.
+  For the next iteration, select an end-to-end latency workload as the primary target
+  and record its phase costs and per-path regression budgets before production edits.
 - [ ] S3. Change one coherent responsibility; preserve correctness, descriptive names
   and readable structure. Remove the old path and measure production-code impact.
 - [x] S4. Run the identical suite after the change, including serial alternating
   baseline/candidate JVM pairs. Report all scenario medians, variability, allocation,
   work counts and failures. Reject or revise an unproven/regressing change.
+  Lead reports with latency, including cold/warm queries, body/API edits and rename.
+  Include descriptive sample p95; establish sufficient sampling before claiming tail gains.
 - [x] S5. Publish the evidence and actual progress. Keep unimplemented semantic Merkle
   composition, consumer migration and total simplification requirements open.
 

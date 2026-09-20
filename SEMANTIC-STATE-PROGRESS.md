@@ -251,3 +251,21 @@ Each entry records the change, validation, limitations and next work. Historical
   experiment; S3 and E1–E5 remain open. Production code reduction on the restarted
   working branch is zero because the unaccepted change was removed. The semantic
   Merkle DAG is not implemented by this restart. PR #8 remains a draft.
+
+## 2026-09-20 — 014: latency is the primary objective
+
+- The user emphasised latency after the allocation-focused first trial. Updated the
+  checklist and benchmark contract so the next primary outcome must be end-to-end
+  latency, selected and profiled before implementation. Allocation/code reduction
+  alone cannot qualify an optimization for acceptance.
+- The archived trial's latency was mixed: 128-file body/API medians rose from
+  22.70/50.17 ms to 24.44/53.77 ms; 512-file medians fell from 43.35/65.37 ms to
+  41.17/63.59 ms. The 512-file warm path had a paired improvement interval below zero,
+  but most apparent gains were inconclusive and other paths allowed regressions.
+  There is no accepted latency improvement on the working branch.
+- Require latency-first reports, all cold/warm/edit/rename scenarios, variability and
+  descriptive sample p95. Tail-latency claims need suitable additional coverage.
+  Set per-path regression budgets before the next trial; do not reuse the first
+  trial's blanket 1 ms floor to excuse regressions in already-fast warm requests.
+- Historical criteria and results are preserved. This is a requirement update only;
+  production remains at ae23fd1f and semantic Merkle implementation remains open.

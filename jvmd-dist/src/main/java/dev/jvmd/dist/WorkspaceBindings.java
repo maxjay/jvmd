@@ -20,10 +20,15 @@ public final class WorkspaceBindings implements AutoCloseable {
          * unchanged, adopting a newly available persisted Merkle root does not require rereading
          * every source. Once both sides have Merkle roots, they must agree exactly.
          */
-        boolean fastCompatible(ValidationToken other){
-            if(other==null||!Objects.equals(generation,other.generation)||documentsGeneration!=other.documentsGeneration
-                    ||!sourceGenerations.equals(other.sourceGenerations))return false;
-            return merkleFingerprints.equals(other.merkleFingerprints)||merkleFingerprints.isEmpty()||other.merkleFingerprints.isEmpty();
+        boolean fastCompatible(ValidationToken prior){
+            if(prior==null||!Objects.equals(generation,prior.generation)||documentsGeneration!=prior.documentsGeneration
+                    ||!sourceGenerations.equals(prior.sourceGenerations))return false;
+            // Persisted Merkle state may appear lazily after a cold snapshot. Treat that as
+            // additive evidence only: every previously authoritative root must still exist and
+            // match. A disappearing or changed root always falls back to full validation.
+            for(var entry:prior.merkleFingerprints.entrySet())
+                if(!Objects.equals(merkleFingerprints.get(entry.getKey()),entry.getValue()))return false;
+            return true;
         }
     }
     /** Implements 4.8: one immutable source graph shared by navigation, references and semantic edits. */

@@ -85,6 +85,20 @@ The median difference was only about 4%, while aggregate compiler time was effec
 
 Decision: **keep the normal FLOW path**. The ATTR-only implementation and its extra export were removed.
 
+## Normal javac phase split
+
+Temporary probes split the normal completion query into release preparation, parse, ENTER, analyze(FLOW), callback, and task overhead. They were removed after collecting the measurements so the production path keeps only the lower-overhead completion timings above. The probe build also coincided with repeatable strict-AOT cache rejection in CI, so retaining those probes was not justified.
+
+Warm broadening misses showed:
+
+| sources | compiler query ms | parse ms | ENTER ms | analyze(FLOW) ms | callback ms | task overhead ms |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 24 | 5.101 | 0.457 | 2.166 | 0.749 | 1.057 | 0.450 |
+| 128 | 5.837 | 0.343 | 3.220 | 0.631 | 1.034 | 0.387 |
+| 300 | 7.777 | 0.533 | 4.976 | 0.702 | 0.926 | 0.380 |
+
+The first miss in a fresh compiler context is more expensive, but has the same shape: ENTER and task setup dominate, while FLOW remains small.
+
 ## Next target
 
-After source-key optimization, warm completion misses are dominated by the compiler query rather than cache validation, focusing, or docs. The next useful measurement is to split the normal javac query into parse / enter / analyze(FLOW) / callback/setup phases before attempting another compiler-path optimization.
+The next target is **ENTER**, not FLOW or documentation. In particular, `IndexedFileManager.list(... SOURCE_PATH ...)` still delegates to the standard file manager on every source-package lookup. The existing reliable source-watch generation can safely key a bounded source-package listing cache, with the current uncached path retained whenever source watching is coarse or unreliable. Measure ENTER again after that change before considering deeper javac-state reuse.

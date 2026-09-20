@@ -328,6 +328,12 @@ public final class IndexService implements AutoCloseable {
         }finally{queryNanos.addAndGet(System.nanoTime()-started);}
     }
 
+    public List<Map<String,Object>> findNamePrefix(String prefix,String workspace,int limit,Set<String> kinds)throws Exception{
+        long started=System.nanoTime();queryCalls.incrementAndGet();
+        try{return store.findNamePrefix(prefix,workspace,limit,kinds);}
+        finally{queryNanos.addAndGet(System.nanoTime()-started);}
+    }
+
     void validateRelationshipShadow(String workspace,Collection<String> scips,boolean outgoing,Set<String> kinds,
                                     List<IndexStore.ResolvedRelationship> authoritative)throws Exception{
         if(!store.backend().equals("sqlite"))return;

@@ -99,6 +99,27 @@ Warm broadening misses showed:
 
 The first miss in a fresh compiler context is more expensive, but has the same shape: ENTER and task setup dominate, while FLOW remains small.
 
+## Source package catalog and package cardinality
+
+The branch already has a watcher-backed source package catalog. On reliable precise source roots it inventories source paths once and serves later `SOURCE_PATH` package listings from that catalog; coarse/unreliable roots retain the standard-file-manager fallback. The completion fixture showed exactly one catalog build and zero watcher events across each four-request sequence.
+
+The apparent ENTER scaling in the original fixture was largely a **package-cardinality** effect because every generated source lived in the default package:
+
+| layout | sources | warm `g` compiler query ms | source entries returned per warm package listing |
+| --- | ---: | ---: | ---: |
+| default package | 24 | 3.266 | 24 |
+| default package | 128 | 3.931 | 128 |
+| default package | 300 | 5.672 | 300 |
+| 31 packages | 300 | 2.973 | 2 |
+
+The distributed 300-source fixture has the same total workspace size but only `Api` and `Use` in the target package. Its narrowing hits remained about 0.08–0.10 ms total and its warm broadening miss was about 3.14 ms total.
+
+This means the remaining ENTER cost is not evidence of a workspace-wide filesystem scan. Javac still has to complete the relevant package and its source symbols, so unusually large packages naturally cost more.
+
+The source-catalog refactor also exposed a correctness bug in the conservative path: open documents were overlaid only when the fast catalog was active. Coarse/plain workspaces therefore missed unsaved changes and new unsaved source files. The overlay is now applied after both the indexed and fallback listings, with a focused regression in `IndexedFileManagerTest`.
+
 ## Next target
 
-The next target is **ENTER**, not FLOW or documentation. In particular, `IndexedFileManager.list(... SOURCE_PATH ...)` still delegates to the standard file manager on every source-package lookup. The existing reliable source-watch generation can safely key a bounded source-package listing cache, with the current uncached path retained whenever source watching is coarse or unreliable. Measure ENTER again after that change before considering deeper javac-state reuse.
+Do **not** deepen javac internals just to optimize the synthetic 300-class default package. Warm completion in a normally partitioned 300-source workspace is already around 3 ms on a cache miss and under 0.1 ms on narrowing hits.
+
+The next completion work should target a user-visible structural gap rather than another sub-millisecond compiler experiment: request cancellation/coalescing for stale keystrokes, followed by completion-list semantics such as unimported-type/index-backed suggestions. Revisit ENTER only if real-project traces show large-package completion dominating latency.

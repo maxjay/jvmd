@@ -199,6 +199,22 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if((previous==null&&current!=0)||(previous!=null&&previous.longValue()!=current))invalidate(Set.of(path));
     }
     public String contextKey(){return context.generation();}
+    /**
+     * Cheap workspace validity epochs for compiler contexts that participated in a detached
+     * WorkspaceBindings snapshot. Classpath validation remains content-safe; source validation
+     * uses the same watcher generation as completion. Null requests conservative full validation.
+     */
+    public Map<String,Long> workspaceSourceGenerations(Set<String> generations){
+        if(generations==null||generations.isEmpty())return null;
+        var result=new TreeMap<String,Long>();
+        for(String generation:generations){
+            var pool=compilerPools.get(generation);
+            if(pool==null||!pool.cacheValid())return null;
+            long source=pool.sourceStateGeneration();if(source<0)return null;
+            result.put(generation,source);
+        }
+        return Map.copyOf(result);
+    }
     /** Detached API identity used by module actors to propagate cross-module conditional invalidation. */
     public String apiFingerprint(Path path){
         path=path.toAbsolutePath().normalize();var value=apiFingerprints.get(path);

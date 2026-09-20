@@ -22,6 +22,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         final LinkedHashMap<String,Envelope> outlines=new LinkedHashMap<>(16,.75f,true);
         final LinkedHashMap<String,Cached> focused=new LinkedHashMap<>(32,.75f,true);
         final Set<Path> files=new HashSet<>();
+        CompletionCached completion;
     }
     private final Map<String,ModuleCaches> modules=new LinkedHashMap<>();
     private long classpathFingerprints;
@@ -35,6 +36,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private final DiagnosticStore diagnosticStore=new DiagnosticStore();
     private LinkedHashMap<String,Envelope> outlines=new LinkedHashMap<>(16,.75f,true);
     private record Cached(Path file,String hash,String stamp,int start,int end,List<Focusing.Span> excluded,CompilerPool.Outcome<Bindings.Snapshot> result) { }
+    private record CompletionCached(String key,String prefix,CompilerPool.Outcome<List<Map<String,Object>>> result) { }
     private record Outline(List<Map<String,Object>> symbols,Set<Path> dependencies) { }
     private record PendingApi(String previous,Set<Path> affected) { PendingApi { affected=Set.copyOf(affected); } }
     private LinkedHashMap<String,Cached> focused=new LinkedHashMap<>(32,.75f,true);
@@ -44,6 +46,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private final Map<Path,PendingApi> pendingApi=new HashMap<>();
     private final Map<Path,Set<Path>> conditionalByFile=new HashMap<>();
     private long cacheHits,bindingComputations,diagnosticFilesAnalysed,diagnosticFilesReused,indexWrites,indexWriteNanos,apiFingerprintChanges,apiFingerprintUnchanged;
+    private long completionCacheHits,completionComputations;
     private Context context;
     private IndexService index;
     private DiagnosticSnapshots snapshots;
@@ -205,7 +208,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         focused.entrySet().removeIf(e->e.getValue().result().diagnostics().stream().anyMatch(d->d.kind().equals("ERROR")));
         outlines.entrySet().removeIf(e->Json.MAPPER.valueToTree(e.getValue().result()).path("diagnostics").findValuesAsText("kind").contains("ERROR"));
     }
-    public void namespaceChanged(){diagnosticStore.clear();for(var caches:modules.values()){caches.outlines.clear();caches.focused.clear();}apiFingerprints.clear();pendingApi.clear();conditionalByFile.clear();for(var pool:compilerPools.values())pool.recycle();}
+    public void namespaceChanged(){diagnosticStore.clear();for(var caches:modules.values()){caches.outlines.clear();caches.focused.clear();caches.completion=null;}apiFingerprints.clear();pendingApi.clear();conditionalByFile.clear();for(var pool:compilerPools.values())pool.recycle();}
     public CompilerPool.Outcome<Bindings.Snapshot> bindings(Path path,String text,Integer cursor)throws Exception{
         path=path.toAbsolutePath().normalize();reconcileSemanticRevision(path);touch(path,text);
         String hash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)),stamp=classpathStamp();
@@ -355,14 +358,46 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return envelope;
     }
     public Envelope completion(Path path,String text,int line,int character,int limit,int offset)throws Exception{
+        path=path.toAbsolutePath().normalize();
         int cursor=Documents.offset(text,new Documents.Position(line,character)),start=cursor,end=cursor;
         while(start>0&&Character.isJavaIdentifierPart(text.codePointBefore(start)))start-=Character.charCount(text.codePointBefore(start));
         while(end<text.length()&&Character.isJavaIdentifierPart(text.codePointAt(end)))end+=Character.charCount(text.codePointAt(end));
         String prefix=text.substring(start,cursor),patched=text.substring(0,start)+EditorQueries.MARKER+text.substring(end);int focusCursor=start;
-        touch(path,text);var focus=focusing.focus(path,patched,focusCursor);
-        var outcome=compiler.query(path,focus.source(),2,(task,units,tier)->EditorQueries.completion(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),prefix));
-        var values=outcome.result()==null?List.<Map<String,Object>>of():outcome.result();int from=Math.min(offset,values.size()),to=Math.min(values.size(),from+limit);
+        touch(path,text);
+        var caches=modules.get(context.generation());String key=completionKey(path,patched,start);
+        var cached=caches.completion;CompilerPool.Outcome<List<Map<String,Object>>> outcome;
+        if(key!=null&&cached!=null&&key.equals(cached.key())&&prefix.startsWith(cached.prefix())){
+            completionCacheHits++;outcome=cached.result();
+        }else{
+            // Completion may discover sources with no reverse-dependency edge yet.
+            // Refresh javac's disk content cache before reading those declarations.
+            completionComputations++;compiler.sourcesChanged();var focus=focusing.focus(path,patched,focusCursor);
+            outcome=compiler.query(path,focus.source(),2,(task,units,tier)->EditorQueries.completion(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),prefix));
+            // Keep one detached result per module. A broader prefix recomputes candidates;
+            // narrowing filters the already sorted rows without retaining javac objects.
+            caches.completion=key!=null&&outcome.tier()==2&&outcome.warnings().isEmpty()&&outcome.result()!=null&&outcome.result().size()<=256
+                    &&Json.MAPPER.writeValueAsBytes(outcome.result()).length<=256*1024?new CompletionCached(key,prefix,new CompilerPool.Outcome<>(2,outcome.result(),List.of(),List.of())):null;
+        }
+        var values=outcome.result()==null?List.<Map<String,Object>>of():outcome.result().stream().filter(row->row.get("name").toString().startsWith(prefix)).toList();int from=Math.min(offset,values.size()),to=Math.min(values.size(),from+limit);
         return new Envelope(outcome.tier(),"live",to<values.size(),to<values.size()?Integer.toString(to):null,warnings(outcome.warnings()),Map.of("items",values.subList(from,to),"range",new SourceText(text).range(start,end)));
+    }
+    private String completionKey(Path file,String patched,int start)throws Exception{
+        if(patched.length()>256*1024)return null;
+        var sources=new TreeSet<Path>();
+        for(Path root:context.sources()){
+            if(Files.isDirectory(root))sources.addAll(FileInventory.matching(root,".java",257));
+            if(sources.size()>256)return null;
+        }
+        documents.paths().stream().filter(path->context.sources().stream().anyMatch(path::startsWith)).forEach(sources::add);
+        if(sources.size()>256)return null;
+        var stamp=new StringBuilder(context.toString()).append('\0').append(file).append(':').append(start).append(':').append(Hashing.sha256(patched.getBytes(java.nio.charset.StandardCharsets.UTF_8))).append(':').append(classpathStamp());
+        // Completion can discover members with no prior reverse-dependency edge. Validate
+        // every source in this bounded context, including unsaved declarations and new names.
+        for(Path source:sources)if(!source.equals(file)){
+            String hash=documents.hash(source);if(hash==null)hash=inputFiles.hash(source);
+            stamp.append('\0').append(source).append(':').append(hash);
+        }
+        return Hashing.sha256(stamp.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
     public Envelope signatureHelp(Path path,String text,int line,int character)throws Exception{
         int cursor=Documents.offset(text,new Documents.Position(line,character));touch(path,text);var focus=focusing.focus(path,text,cursor);
@@ -392,6 +427,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     public Map<String,Object> status(){
         var result=new LinkedHashMap<String,Object>(compiler.status());if(snapshots!=null)result.put("persistent_snapshots",snapshots.status());result.putAll(focusing.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("binding_computations",bindingComputations);result.put("classpath_fingerprints",classpathFingerprints);result.put("diagnostic_store",diagnosticStore.status());result.put("diagnostic_files_analysed",diagnosticFilesAnalysed);result.put("diagnostic_files_reused",diagnosticFilesReused);result.put("index_record_source_calls",indexWrites);result.put("index_record_source_ms",0.0);result.put("index_publish_enqueue_ms",Math.round(indexWriteNanos/1000.0)/1000.0);if(index!=null)result.put("source_publisher",index.sourcePublisherStatus());result.put("api_fingerprint_changes",apiFingerprintChanges);result.put("api_fingerprint_unchanged",apiFingerprintUnchanged);result.put("pending_api_files",pendingApi.size());result.put("conditional_files",conditionalByFile.size());result.put("dependencies",dependencies.status());
+        result.put("completion_cache_hits",completionCacheHits);result.put("completion_computations",completionComputations);
         var modules=new LinkedHashMap<String,Object>();for(var entry:compilerPools.entrySet())modules.put(entry.getKey(),entry.getValue().status());result.put("module_compilers",modules);return result;
     }
     @Override public void close()throws Exception{if(snapshots!=null)snapshots.close();diagnosticStore.clear();outlines.clear();focused.clear();focusing.clear();sourceTexts.clear();apiFingerprints.clear();pendingApi.clear();conditionalByFile.clear();for(var pool:compilerPools.values())pool.close();compilerPools.clear();modules.clear();compiler=null;}

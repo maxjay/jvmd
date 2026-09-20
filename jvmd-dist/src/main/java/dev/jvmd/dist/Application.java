@@ -23,6 +23,8 @@ public final class Application implements AutoCloseable {
     private volatile MavenResolver resolver;
     private volatile dev.jvmd.runtime.JavaRuntime.Selection debuggeeRuntime;
     private volatile java.util.concurrent.CompletableFuture<IndexService> index;
+    private static final Set<String> COMPLETION_TYPE_KINDS=Set.of("class","interface","enum","record","annotation");
+    private record TypeCompletionCache(String generation,String prefix,List<Map<String,Object>> rows,boolean complete) { }
     public Application(Config config) {
         this.config = config;
         if (config.indexOnStart()) initializeIndex(true);
@@ -103,7 +105,7 @@ public final class Application implements AutoCloseable {
             }
             return page(scope.equals("deps")?2:1,scope.equals("deps")?"index":"live","matches",all,offset,limit,s.warnings());
         });
-        dispatcher.register("symbol.completion",(s,p)->{Path path=sourcePath(s,Dispatcher.required(p,"path"));return analyzer(s,path).completion(path,documents(s).text(path),Dispatcher.bounded(p,"line",0,Integer.MAX_VALUE),Dispatcher.bounded(p,"character",0,Integer.MAX_VALUE),Dispatcher.limit(p,100,1000),cursor(p));});
+        dispatcher.register("symbol.completion",this::completion);
         dispatcher.register("symbol.signatureHelp",(s,p)->{Path path=sourcePath(s,Dispatcher.required(p,"path"));return analyzer(s,path).signatureHelp(path,documents(s).text(path),Dispatcher.bounded(p,"line",0,Integer.MAX_VALUE),Dispatcher.bounded(p,"character",0,Integer.MAX_VALUE));});
         dispatcher.register("symbol.semanticTokens",(s,p)->{Path path=sourcePath(s,Dispatcher.required(p,"path"));return analyzer(s,path).semanticTokens(path,documents(s).text(path),Dispatcher.limit(p,2000,10000),cursor(p));});
         dispatcher.register("symbol.occurrences",this::occurrences);
@@ -140,6 +142,73 @@ public final class Application implements AutoCloseable {
             return diagnostics(s).get(files,whole,cursor(p),Dispatcher.limit(p,200,1000),s.warnings());
         });
     }
+    @SuppressWarnings("unchecked")
+    private Envelope completion(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
+        Path path=sourcePath(session,Dispatcher.required(params,"path"));String text=documents(session).text(path);
+        int line=Dispatcher.bounded(params,"line",0,Integer.MAX_VALUE),character=Dispatcher.bounded(params,"character",0,Integer.MAX_VALUE);
+        int limit=Dispatcher.limit(params,100,1000),offset=cursor(params),cursorOffset=Documents.offset(text,new Documents.Position(line,character));
+        int start=cursorOffset;while(start>0&&Character.isJavaIdentifierPart(text.codePointBefore(start)))start-=Character.charCount(text.codePointBefore(start));
+        String prefix=text.substring(start,cursorOffset);
+        int previous=start-1;while(previous>=0&&Character.isWhitespace(text.charAt(previous)))previous--;
+        boolean qualified=previous>=0&&text.charAt(previous)=='.';
+        if(prefix.length()<2||qualified||session.state("resolution")==null)
+            return analyzer(session,path).completion(path,text,line,character,limit,offset);
+
+        // One full live page lets us merge and paginate deterministically. Extremely broad
+        // live scopes retain the old behavior rather than silently dropping live candidates.
+        var live=analyzer(session,path).completion(path,text,line,character,1000,0);
+        if(live.truncated())return analyzer(session,path).completion(path,text,line,character,limit,offset);
+        var liveResult=(Map<String,Object>)live.result();
+        var liveItems=(List<Map<String,Object>>)liveResult.getOrDefault("items",List.of());
+
+        IndexService searchIndex=index();bindIndex(session,searchIndex);
+        String generation=Objects.toString(session.state("index_generation"),"");
+        var cached=(TypeCompletionCache)session.state("completion_type_cache");
+        List<Map<String,Object>> indexed;
+        if(cached!=null&&cached.complete()&&cached.generation().equals(generation)&&prefix.startsWith(cached.prefix())){
+            indexed=cached.rows().stream().filter(row->Objects.toString(row.get("name"),"").startsWith(prefix)).toList();
+        }else{
+            var found=searchIndex.findNamePrefix(prefix,session.id(),257,COMPLETION_TYPE_KINDS);
+            boolean complete=found.size()<257;indexed=List.copyOf(found.subList(0,Math.min(256,found.size())));
+            session.put("completion_type_cache",new TypeCompletionCache(generation,prefix,indexed,complete));
+        }
+
+        String packageName=sourcePackage(text);var imported=sourceImports(text);
+        var liveNames=new HashSet<String>();for(var row:liveItems)liveNames.add(Objects.toString(row.get("name"),""));
+        var types=new LinkedHashMap<String,Map<String,Object>>();
+        for(var symbol:indexed){
+            String name=Objects.toString(symbol.get("name"),""),fqn=Objects.toString(symbol.get("fqn"),"").replace('$','.');
+            if(name.isBlank()||fqn.isBlank()||liveNames.contains(name)||!name.startsWith(prefix))continue;
+            int split=fqn.lastIndexOf('.');String candidatePackage=split<0?"":fqn.substring(0,split);
+            int flags=symbol.get("flags") instanceof Number value?value.intValue():0;
+            if(!candidatePackage.equals(packageName)&&(flags&1)==0)continue;
+            var row=new LinkedHashMap<String,Object>();
+            for(String key:List.of("scip","name","name_path","kind","signature","fqn"))if(symbol.get(key)!=null)row.put(key,symbol.get(key));
+            row.put("label",fqn);row.put("doc",dev.jvmd.index.DocMarkdown.summary((String)symbol.get("doc")));
+            if(needsImport(fqn,packageName,imported))row.put("import",fqn);
+            types.putIfAbsent(fqn,Collections.unmodifiableMap(row));
+        }
+        var typeRows=new ArrayList<>(types.values());typeRows.sort(Comparator.comparing(row->Objects.toString(row.get("name"),"")).thenComparing(row->Objects.toString(row.get("fqn"),"")));
+        var all=new ArrayList<Map<String,Object>>(liveItems.size()+typeRows.size());all.addAll(liveItems);all.addAll(typeRows);
+        int from=Math.min(offset,all.size()),to=Math.min(all.size(),from+limit);boolean more=to<all.size();
+        return new Envelope(live.tier(),"live",more,more?Integer.toString(to):null,live.warnings(),
+                Map.of("items",List.copyOf(all.subList(from,to)),"range",liveResult.get("range")));
+    }
+
+    private static String sourcePackage(String text){
+        var match=java.util.regex.Pattern.compile("(?m)^\\s*package\\s+([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)\\s*;").matcher(text);
+        return match.find()?match.group(1):"";
+    }
+    private static Set<String> sourceImports(String text){
+        var result=new HashSet<String>();
+        var match=java.util.regex.Pattern.compile("(?m)^\\s*import\\s+(?!static\\s+)([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$*][\\w$*]*)*)\\s*;").matcher(text);
+        while(match.find())result.add(match.group(1));return Set.copyOf(result);
+    }
+    private static boolean needsImport(String fqn,String packageName,Set<String> imports){
+        int split=fqn.lastIndexOf('.');String candidatePackage=split<0?"":fqn.substring(0,split);
+        return !candidatePackage.equals(packageName)&&!candidatePackage.equals("java.lang")&&!imports.contains(fqn)&&!imports.contains(candidatePackage+".*");
+    }
+
     private WorkspaceAnalysisCoordinator diagnostics(Session session){
         var actors=diagnosticActors(session);
         return session.state("diagnostics",()->new WorkspaceAnalysisCoordinator(documents(session),file->diagnosticAnalyzer(session,file),session::yieldInteractive,file->externalDiagnostics(session,file),actors.parallelism()));

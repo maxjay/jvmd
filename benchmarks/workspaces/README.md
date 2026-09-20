@@ -133,8 +133,10 @@ shutdown. Historical-release agreement and API-change tests cover this boundary.
 over three repetitions and using the real-library and 128-JAR fixtures. It sends
 actual document changes for each character of `twice` and `getFactory`/`marker0`.
 Each of eight chains changes surrounding source first, so first-character misses
-are measured separately from prefix growth. Backspacing to an empty token must
-still return the target. JVMD replacement ranges and prefix filtering are checked
+are measured separately from prefix growth. Chains start at two characters;
+backspacing to one character must still return the target. Empty-token behavior
+is covered by the cache regression test, because JDTLS's ranked incomplete page
+may omit the target on an empty large receiver. JVMD replacement ranges and prefix filtering are checked
 on every response. Full protocol traces, individual samples and cache counters
 are retained. Use the same path arguments as `matrix.py`, with a fresh `--root`.
 

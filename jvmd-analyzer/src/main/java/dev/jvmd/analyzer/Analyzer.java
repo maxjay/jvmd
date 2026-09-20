@@ -430,5 +430,5 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         result.put("completion_cache_hits",completionCacheHits);result.put("completion_computations",completionComputations);
         var modules=new LinkedHashMap<String,Object>();for(var entry:compilerPools.entrySet())modules.put(entry.getKey(),entry.getValue().status());result.put("module_compilers",modules);return result;
     }
-    @Override public void close()throws Exception{if(snapshots!=null)snapshots.close();diagnosticStore.clear();outlines.clear();focused.clear();focusing.clear();sourceTexts.clear();apiFingerprints.clear();pendingApi.clear();conditionalByFile.clear();for(var pool:compilerPools.values())pool.close();compilerPools.clear();modules.clear();compiler=null;}
+    @Override public void close()throws Exception{if(snapshots!=null)snapshots.close();diagnosticStore.clear();outlines.clear();focused.clear();focusing.close();sourceTexts.clear();apiFingerprints.clear();pendingApi.clear();conditionalByFile.clear();for(var pool:compilerPools.values())pool.close();compilerPools.clear();modules.clear();compiler=null;}
 }

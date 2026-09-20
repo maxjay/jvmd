@@ -38,7 +38,10 @@ def worker(a,mode,repetition):
                 # Each chain changes surrounding source to force its first miss.
                 template=original+'// prefix cycle '+str(cycle)+' '+kind+'\n';start_offset=template.index(member)
                 samples=[]
-                for typed in [member[:i] for i in range(1,len(member)+1)]+['']:
+                # Start at two characters, then backspace beyond that cached prefix.
+                # An empty ObjectMapper selector can omit the target from JDTLS's
+                # incomplete/ranked page, so it is not a like-for-like target check.
+                for typed in [member[:i] for i in range(2,len(member)+1)]+[member[:1]]:
                     text=template[:start_offset]+typed+template[start_offset+len(member):];version+=1
                     began=time.perf_counter();client.notify('textDocument/didChange',{'textDocument':{'uri':file.as_uri(),'version':version},'contentChanges':[{'text':text}]})
                     value,request_ms=client.call('textDocument/completion',{'textDocument':{'uri':file.as_uri()},'position':position(text,start_offset+len(typed))})

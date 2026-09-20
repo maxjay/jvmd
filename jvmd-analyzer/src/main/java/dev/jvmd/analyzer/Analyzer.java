@@ -46,7 +46,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private final Map<Path,PendingApi> pendingApi=new HashMap<>();
     private final Map<Path,Set<Path>> conditionalByFile=new HashMap<>();
     private long cacheHits,bindingComputations,diagnosticFilesAnalysed,diagnosticFilesReused,indexWrites,indexWriteNanos,apiFingerprintChanges,apiFingerprintUnchanged;
-    private long completionCacheHits,completionComputations;
+    private long completionCacheHits,completionComputations,completionRequests;
+    private long completionKeyNanos,completionSourceRefreshNanos,completionFocusNanos,completionQueryNanos,completionEditorNanos,
+            completionCandidateNanos,completionRowNanos,completionDocNanos,completionSortNanos,completionCacheAdmissionNanos,
+            completionFilterNanos,completionTotalNanos,completionCandidatesSeen,completionRowsMaterialized,completionDocLookups;
+    private Map<String,Double> completionLastTimingMs=Map.of();private boolean completionLastCacheHit;
     private Context context;
     private IndexService index;
     private DiagnosticSnapshots snapshots;
@@ -368,29 +372,47 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return envelope;
     }
     public Envelope completion(Path path,String text,int line,int character,int limit,int offset)throws Exception{
+        long requestStarted=System.nanoTime(),keyNanos=0,sourceRefreshNanos=0,focusNanos=0,queryNanos=0,cacheAdmissionNanos=0,filterNanos=0;
+        var profile=new EditorQueries.CompletionTiming();boolean cacheHit=false;
         path=path.toAbsolutePath().normalize();
         int cursor=Documents.offset(text,new Documents.Position(line,character)),start=cursor,end=cursor;
         while(start>0&&Character.isJavaIdentifierPart(text.codePointBefore(start)))start-=Character.charCount(text.codePointBefore(start));
         while(end<text.length()&&Character.isJavaIdentifierPart(text.codePointAt(end)))end+=Character.charCount(text.codePointAt(end));
         String prefix=text.substring(start,cursor),patched=text.substring(0,start)+EditorQueries.MARKER+text.substring(end);int focusCursor=start;
         touch(path,text);
-        var caches=modules.get(context.generation());String key=completionKey(path,patched,start);
+        var caches=modules.get(context.generation());long phaseStarted=System.nanoTime();String key=completionKey(path,patched,start);keyNanos=System.nanoTime()-phaseStarted;
         var cached=caches.completion;CompilerPool.Outcome<List<Map<String,Object>>> outcome;
         if(key!=null&&cached!=null&&key.equals(cached.key())&&prefix.startsWith(cached.prefix())){
-            completionCacheHits++;outcome=cached.result();
+            completionCacheHits++;cacheHit=true;outcome=cached.result();
         }else{
             // Completion may discover sources with no reverse-dependency edge yet.
             // Refresh javac's disk content cache before reading those declarations.
-            completionComputations++;compiler.sourcesChanged();var focus=focusing.focus(path,patched,focusCursor);
-            outcome=compiler.query(path,focus.source(),2,(task,units,tier)->EditorQueries.completion(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),prefix));
+            completionComputations++;phaseStarted=System.nanoTime();compiler.sourcesChanged();sourceRefreshNanos=System.nanoTime()-phaseStarted;
+            phaseStarted=System.nanoTime();var focus=focusing.focus(path,patched,focusCursor);focusNanos=System.nanoTime()-phaseStarted;
+            phaseStarted=System.nanoTime();
+            outcome=compiler.query(path,focus.source(),2,(task,units,tier)->EditorQueries.completion(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),prefix,profile));
+            queryNanos=System.nanoTime()-phaseStarted;
             // Keep one detached result per module. A broader prefix recomputes candidates;
             // narrowing filters the already sorted rows without retaining javac objects.
+            phaseStarted=System.nanoTime();
             caches.completion=key!=null&&outcome.tier()==2&&outcome.warnings().isEmpty()&&outcome.result()!=null&&outcome.result().size()<=256
                     &&Json.MAPPER.writeValueAsBytes(outcome.result()).length<=256*1024?new CompletionCached(key,prefix,new CompilerPool.Outcome<>(2,outcome.result(),List.of(),List.of())):null;
+            cacheAdmissionNanos=System.nanoTime()-phaseStarted;
         }
-        var values=outcome.result()==null?List.<Map<String,Object>>of():outcome.result().stream().filter(row->row.get("name").toString().startsWith(prefix)).toList();int from=Math.min(offset,values.size()),to=Math.min(values.size(),from+limit);
+        phaseStarted=System.nanoTime();var values=outcome.result()==null?List.<Map<String,Object>>of():outcome.result().stream().filter(row->row.get("name").toString().startsWith(prefix)).toList();int from=Math.min(offset,values.size()),to=Math.min(values.size(),from+limit);filterNanos=System.nanoTime()-phaseStarted;
+        long totalNanos=System.nanoTime()-requestStarted;
+        completionRequests++;completionKeyNanos+=keyNanos;completionSourceRefreshNanos+=sourceRefreshNanos;completionFocusNanos+=focusNanos;completionQueryNanos+=queryNanos;
+        completionEditorNanos+=profile.totalNanos();completionCandidateNanos+=profile.candidateNanos();completionRowNanos+=profile.rowNanos();completionDocNanos+=profile.docNanos();
+        completionSortNanos+=profile.sortNanos();completionCacheAdmissionNanos+=cacheAdmissionNanos;completionFilterNanos+=filterNanos;completionTotalNanos+=totalNanos;
+        completionCandidatesSeen+=profile.candidates();completionRowsMaterialized+=profile.rows();completionDocLookups+=profile.docs();completionLastCacheHit=cacheHit;
+        completionLastTimingMs=Map.ofEntries(
+                Map.entry("key",millis(keyNanos)),Map.entry("source_refresh",millis(sourceRefreshNanos)),Map.entry("focus",millis(focusNanos)),
+                Map.entry("compiler_query",millis(queryNanos)),Map.entry("editor_total",millis(profile.totalNanos())),Map.entry("candidate_discovery",millis(profile.candidateNanos())),
+                Map.entry("row_materialization",millis(profile.rowNanos())),Map.entry("documentation",millis(profile.docNanos())),Map.entry("sort",millis(profile.sortNanos())),
+                Map.entry("cache_admission",millis(cacheAdmissionNanos)),Map.entry("filter",millis(filterNanos)),Map.entry("total",millis(totalNanos)));
         return new Envelope(outcome.tier(),"live",to<values.size(),to<values.size()?Integer.toString(to):null,warnings(outcome.warnings()),Map.of("items",values.subList(from,to),"range",new SourceText(text).range(start,end)));
     }
+    private static double millis(long nanos){return Math.round(nanos/1000.0)/1000.0;}
     private String completionKey(Path file,String patched,int start)throws Exception{
         if(patched.length()>256*1024)return null;
         var sources=new TreeSet<Path>();
@@ -439,7 +461,14 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     public Map<String,Object> status(){
         var result=new LinkedHashMap<String,Object>(compiler.status());if(snapshots!=null)result.put("persistent_snapshots",snapshots.status());result.putAll(focusing.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("binding_computations",bindingComputations);result.put("classpath_fingerprints",classpathFingerprints);result.put("diagnostic_store",diagnosticStore.status());result.put("diagnostic_files_analysed",diagnosticFilesAnalysed);result.put("diagnostic_files_reused",diagnosticFilesReused);result.put("index_record_source_calls",indexWrites);result.put("index_record_source_ms",0.0);result.put("index_publish_enqueue_ms",Math.round(indexWriteNanos/1000.0)/1000.0);if(index!=null)result.put("source_publisher",index.sourcePublisherStatus());result.put("api_fingerprint_changes",apiFingerprintChanges);result.put("api_fingerprint_unchanged",apiFingerprintUnchanged);result.put("pending_api_files",pendingApi.size());result.put("conditional_files",conditionalByFile.size());result.put("dependencies",dependencies.status());
-        result.put("completion_cache_hits",completionCacheHits);result.put("completion_computations",completionComputations);
+        result.put("completion_cache_hits",completionCacheHits);result.put("completion_computations",completionComputations);result.put("completion_requests",completionRequests);
+        result.put("completion_candidates_seen",completionCandidatesSeen);result.put("completion_rows_materialized",completionRowsMaterialized);result.put("completion_doc_lookups",completionDocLookups);
+        result.put("completion_last_cache_hit",completionLastCacheHit);result.put("completion_last_timing_ms",completionLastTimingMs);
+        result.put("completion_timing_ms",Map.ofEntries(
+                Map.entry("key",millis(completionKeyNanos)),Map.entry("source_refresh",millis(completionSourceRefreshNanos)),Map.entry("focus",millis(completionFocusNanos)),
+                Map.entry("compiler_query",millis(completionQueryNanos)),Map.entry("editor_total",millis(completionEditorNanos)),Map.entry("candidate_discovery",millis(completionCandidateNanos)),
+                Map.entry("row_materialization",millis(completionRowNanos)),Map.entry("documentation",millis(completionDocNanos)),Map.entry("sort",millis(completionSortNanos)),
+                Map.entry("cache_admission",millis(completionCacheAdmissionNanos)),Map.entry("filter",millis(completionFilterNanos)),Map.entry("total",millis(completionTotalNanos))));
         var modules=new LinkedHashMap<String,Object>();for(var entry:compilerPools.entrySet())modules.put(entry.getKey(),entry.getValue().status());result.put("module_compilers",modules);return result;
     }
     @Override public void close()throws Exception{if(snapshots!=null)snapshots.close();diagnosticStore.clear();outlines.clear();focused.clear();focusing.close();sourceTexts.clear();apiFingerprints.clear();pendingApi.clear();conditionalByFile.clear();for(var pool:compilerPools.values())pool.close();compilerPools.clear();modules.clear();compiler=null;}

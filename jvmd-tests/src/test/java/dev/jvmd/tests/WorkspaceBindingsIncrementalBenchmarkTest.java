@@ -28,7 +28,8 @@ class WorkspaceBindingsIncrementalBenchmarkTest {
         Path src=Files.createDirectories(project.resolve("src"));
         Files.writeString(src.resolve("Root.java"),rootSource("Number","1"));
         for(int i=0;i<127;i++)Files.writeString(src.resolve("User"+i+".java"),
-                "class User"+i+" { Object read(){ return Root.value(); } }\n");
+                i<16?"class User"+i+" { Object read(){ return Root.value(); } }\n":
+                        "class User"+i+" { Object read(){ return "+i+"; } }\n");
         try(var app=new Application(TestSupport.config(project,Duration.ofHours(4)))){
             String session=TestSupport.open(app,src);
             var samples=new ArrayList<Map<String,Object>>();

@@ -27,23 +27,27 @@ public final class CompilerPool implements AutoCloseable {
     private IndexedFileManager manager;
     private String generation,release;
     private List<String> compilerOptions=List.of();
+    private boolean preciseSourceRoots=true;
     private long batchQueries,batchFiles;
     private long budget,baseline,recycles,faults,queries,queryNanos,configureCalls,configureNanos,classpathValidations,classpathValidationNanos;
     private long validatedRequestId=-1;
     private long sourceModuleGeneration;
     private boolean validatedRequestResult;
     public void configure(String generation,String release,List<Path> classpath,List<Path> sources,IndexService index,long budget)throws Exception {
-        configure(generation,release,classpath,sources,index,budget,List.of("--release",release));
+        configure(generation,release,classpath,sources,index,budget,List.of("--release",release),true);
     }
     public void configure(String generation,String release,List<Path> classpath,List<Path> sources,IndexService index,long budget,List<String> options)throws Exception{
+        configure(generation,release,classpath,sources,index,budget,options,true);
+    }
+    public void configure(String generation,String release,List<Path> classpath,List<Path> sources,IndexService index,long budget,List<String> options,boolean preciseSourceRoots)throws Exception{
         checkThread();long started=System.nanoTime();configureCalls++;
         try{
             this.budget=Math.max(1,budget);
-            if(Objects.equals(this.generation,generation)&&Objects.equals(this.release,release)&&this.compilerOptions.equals(options)&&manager!=null)return;
+            if(Objects.equals(this.generation,generation)&&Objects.equals(this.release,release)&&this.compilerOptions.equals(options)&&this.preciseSourceRoots==preciseSourceRoots&&manager!=null)return;
             releasePlatform.close();
             if(manager!=null){manager.close();recycles++;}
-            this.generation=generation;this.release=release;this.compilerOptions=List.copyOf(options);pool=new JavacTaskPool(1);baseline=heap();validatedRequestId=-1;
-            manager=new IndexedFileManager(ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8),classpath,sources,index,Math.min(32L*1024*1024,Math.max(1024*1024,budget/8)));
+            this.generation=generation;this.release=release;this.compilerOptions=List.copyOf(options);this.preciseSourceRoots=preciseSourceRoots;pool=new JavacTaskPool(1);baseline=heap();validatedRequestId=-1;
+            manager=new IndexedFileManager(ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8),classpath,sources,index,Math.min(32L*1024*1024,Math.max(1024*1024,budget/8)),preciseSourceRoots);
             sourceModuleGeneration=manager.sourceModuleGeneration();
         }finally{configureNanos+=System.nanoTime()-started;}
     }

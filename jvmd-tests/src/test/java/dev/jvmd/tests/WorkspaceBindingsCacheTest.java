@@ -87,7 +87,7 @@ class WorkspaceBindingsCacheTest {
             request(app,"symbol.references",Map.of("session",session,"ref","Api","direction","in"));
             Files.writeString(api,"class Api {} class Missing {}");
             var resolved=request(app,"symbol.references",Map.of("session",session,"ref","Missing","direction","in"));
-            assertThat(resolved.path("edges").toString()).contains("Broken#value.");
+            assertThat(resolved.path("edges").toString()).contains("Broken#").contains("Missing#");
             var status=request(app,"session.status",Map.of("session",session)).path("workspace_bindings");
             assertThat(status.path("last_reanalysed_files").asLong()).isEqualTo(2L);
         }

@@ -55,6 +55,10 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     }
     public IndexedFileManager(StandardJavaFileManager delegate,List<Path> classpath,List<Path> sources,
                               IndexService index,long byteLimit)throws Exception {
+        this(delegate,classpath,sources,index,byteLimit,true);
+    }
+    public IndexedFileManager(StandardJavaFileManager delegate,List<Path> classpath,List<Path> sources,
+                              IndexService index,long byteLimit,boolean preciseSourceRoots)throws Exception {
         super(delegate);this.byteLimit=byteLimit;this.sourceRoots=sources.stream().map(p->p.toAbsolutePath().normalize()).sorted(Comparator.comparingInt((Path p)->p.getNameCount()).reversed()).toList();
         var paths=new ArrayList<Path>();
         for(var path:classpath){path=path.toAbsolutePath().normalize();var artifact=index==null?null:index.artifact(path);paths.add(artifact==null?path:Path.of(artifact.path()));}
@@ -63,7 +67,10 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         WatchService watcher=null;try{watcher=FileSystems.getDefault().newWatchService();}catch(IOException|UnsupportedOperationException ignored){watcherReliable=false;}
         classWatcher=watcher;
         if(classWatcher!=null)for(Path directory:directories)if(Files.isDirectory(directory))registerTree(directory);
-        WatchService sourcesWatcher=null;try{sourcesWatcher=FileSystems.getDefault().newWatchService();}catch(IOException|UnsupportedOperationException ignored){sourceWatcherReliable=false;}
+        WatchService sourcesWatcher=null;
+        if(preciseSourceRoots){
+            try{sourcesWatcher=FileSystems.getDefault().newWatchService();}catch(IOException|UnsupportedOperationException ignored){sourceWatcherReliable=false;}
+        }else sourceWatcherReliable=false;
         sourceWatcher=sourcesWatcher;
         if(sourceWatcher!=null)for(Path root:sourceRoots)if(Files.isDirectory(root))registerSourceTree(root);
         // Directory inputs and source roots keep javac's own file-manager behavior.

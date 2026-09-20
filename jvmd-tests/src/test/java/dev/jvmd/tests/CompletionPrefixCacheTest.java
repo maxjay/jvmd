@@ -86,6 +86,18 @@ class CompletionPrefixCacheTest {
             assertThat(analyzer.status().get("completion_computations")).isEqualTo(4L);
         }
     }
+    @Test void coarseWorkspaceRootsUseConservativeSourceValidationWithoutWatchingTheWholeWorkspace()throws Exception{
+        Files.writeString(root.resolve("Api.java"),"class Api { int getPets(){return 1;} }");
+        Path file=Files.writeString(root.resolve("Use.java"),text("g"));var documents=new Documents();documents.open(file,text("g"),1);
+        var context=new Analyzer.Context("fixture:coarse:1","25",List.of(),List.of(root),"coarse",Map.of(),List.of("--release","25"),Set.of(),List.of(),List.of(root),false);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context,null,256L*1024*1024);analyzer.documents(documents);
+            assertThat(complete(analyzer,file,text("g"),"g").path("items").findValuesAsText("name")).contains("getPets");
+            documents.change(file,2,List.of(new Documents.Change(null,text("ge"))));analyzer.changed(file,documents.hash(file));analyzer.documents(documents);
+            assertThat(complete(analyzer,file,text("ge"),"ge").path("items").findValuesAsText("name")).contains("getPets");
+            assertThat(analyzer.status()).containsEntry("source_watch_reliable",0L).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",1L);
+        }
+    }
     @Test void largeSourceContextsReuseCompletionCandidatesWithoutScanningEverySource()throws Exception{
         Files.writeString(root.resolve("Api.java"),"class Api { int getPets(){return 1;} int getPetCount(){return 2;} }");
         for(int i=0;i<300;i++)Files.writeString(root.resolve("Helper"+i+".java"),"class Helper"+i+" { int value(){return "+i+";} }");

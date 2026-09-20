@@ -32,7 +32,15 @@ class CompletionPrefixCacheTest {
                 }
                 assertThat(result.path("range").path("end").path("character").asInt()-result.path("range").path("start").path("character").asInt()).isEqualTo(prefix.length());
             }
-            assertThat(analyzer.status()).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",6L).containsEntry("queries",1L).containsEntry("focus_layout_parses",1L);
+            var status=analyzer.status();
+            assertThat(status).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",6L).containsEntry("completion_requests",7L).containsEntry("queries",1L).containsEntry("focus_layout_parses",1L);
+            assertThat(status).containsKeys("completion_timing_ms","completion_last_timing_ms","completion_candidates_seen","completion_rows_materialized","completion_doc_lookups");
+            @SuppressWarnings("unchecked") var timings=(Map<String,Double>)status.get("completion_timing_ms");
+            assertThat(timings).containsKeys("key","source_refresh","focus","compiler_query","editor_total","candidate_discovery","row_materialization","documentation","sort","cache_admission","filter","total");
+            assertThat(timings.get("total")).isGreaterThan(0d);
+            assertThat((Long)status.get("completion_candidates_seen")).isGreaterThan(0L);
+            assertThat((Long)status.get("completion_rows_materialized")).isGreaterThan(0L);
+            assertThat((Long)status.get("completion_doc_lookups")).isGreaterThan(0L);
             // Backspacing past the cached prefix must recompute rather than lose candidates.
             String wider=text("");documents.change(file,++version,List.of(new Documents.Change(null,wider)));analyzer.changed(file,documents.hash(file));analyzer.documents(documents);
             assertThat(complete(analyzer,file,wider,"").path("items").findValuesAsText("name")).contains("other");

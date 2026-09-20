@@ -33,6 +33,14 @@ def worker(a,mode,repetition):
                 r,_=client.call('jvmd/request',{'method':'daemon.status'});session=r['result']['sessions'][0]['session']
             r,_=client.call('jvmd/request',{'method':'session.status','params':{'session':session}});return r['result']
         result['before']=status()
+        def completion_profile():
+            if mode=='jdtls':return None
+            analyzer=status().get('analyzer',{})
+            return {k:analyzer.get(k) for k in [
+                'completion_requests','completion_computations','completion_cache_hits','completion_last_cache_hit',
+                'completion_candidates_seen','completion_rows_materialized','completion_doc_lookups',
+                'completion_last_timing_ms','completion_timing_ms'
+            ]}
         for cycle in range(a.cycles):
             for kind,member in [('source','twice'),('binary',binary)]:
                 # Each chain changes surrounding source to force its first miss.
@@ -52,7 +60,9 @@ def worker(a,mode,repetition):
                         expected={'start':position(text,start_offset),'end':position(text,start_offset+len(typed))}
                         assert all(i['textEdit']['range']==expected for i in matches),(expected,matches)
                         assert all(i['textEdit']['newText'].startswith(typed) for i in items),(typed,items)
-                    samples.append({'prefix':typed,'change_to_response_ms':elapsed,'request_ms':request_ms,'items':len(items),'matches':matches})
+                    sample={'prefix':typed,'change_to_response_ms':elapsed,'request_ms':request_ms,'items':len(items),'matches':matches}
+                    if mode!='jdtls':sample['completion_profile']=completion_profile()
+                    samples.append(sample)
                 result['chains'].append({'cycle':cycle,'kind':kind,'samples':samples})
         result['after']=status();result['complete']=True
         (root/'report.json').write_text(json.dumps(result,indent=2)+'\n')

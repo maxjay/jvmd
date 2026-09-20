@@ -178,12 +178,25 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     }
     private void registerSourceTree(Path root){
         if(sourceWatcher==null)return;
-        try(var paths=Files.walk(root)){
-            for(Path directory:paths.filter(Files::isDirectory).toList()){
-                directory=directory.toAbsolutePath().normalize();if(!watchedSourcePaths.add(directory))continue;
-                var key=directory.register(sourceWatcher,StandardWatchEventKinds.ENTRY_CREATE,StandardWatchEventKinds.ENTRY_MODIFY,StandardWatchEventKinds.ENTRY_DELETE);
-                sourceWatchDirectories.put(key,directory);
-            }
+        try{
+            Files.walkFileTree(root,new SimpleFileVisitor<>(){
+                @Override public FileVisitResult preVisitDirectory(Path directory,java.nio.file.attribute.BasicFileAttributes attributes)throws IOException{
+                    directory=directory.toAbsolutePath().normalize();if(!watchedSourcePaths.add(directory))return FileVisitResult.CONTINUE;
+                    try{
+                        var key=directory.register(sourceWatcher,StandardWatchEventKinds.ENTRY_CREATE,StandardWatchEventKinds.ENTRY_MODIFY,StandardWatchEventKinds.ENTRY_DELETE);
+                        sourceWatchDirectories.put(key,directory);
+                    }catch(NoSuchFileException removed){watchedSourcePaths.remove(directory);}
+                    return FileVisitResult.CONTINUE;
+                }
+                @Override public FileVisitResult visitFileFailed(Path path,IOException error)throws IOException{
+                    if(error instanceof NoSuchFileException)return FileVisitResult.CONTINUE;
+                    throw error;
+                }
+                @Override public FileVisitResult postVisitDirectory(Path path,IOException error)throws IOException{
+                    if(error!=null&&!(error instanceof NoSuchFileException))throw error;
+                    return FileVisitResult.CONTINUE;
+                }
+            });
         }catch(IOException|UnsupportedOperationException error){sourceWatcherReliable=false;}
     }
     private void track(JavaFileObject file)throws IOException {

@@ -15,6 +15,16 @@ public final class WorkspaceBindings implements AutoCloseable {
     @FunctionalInterface public interface Validation { ValidationToken current()throws Exception; }
     public record ValidationToken(String generation,long documentsGeneration,Map<String,Long> sourceGenerations,Map<String,String> merkleFingerprints) {
         public ValidationToken { sourceGenerations=Map.copyOf(sourceGenerations);merkleFingerprints=Map.copyOf(merkleFingerprints); }
+        /**
+         * Merkle state is optional while the index starts. If all authoritative live epochs are
+         * unchanged, adopting a newly available persisted Merkle root does not require rereading
+         * every source. Once both sides have Merkle roots, they must agree exactly.
+         */
+        boolean fastCompatible(ValidationToken other){
+            if(other==null||!Objects.equals(generation,other.generation)||documentsGeneration!=other.documentsGeneration
+                    ||!sourceGenerations.equals(other.sourceGenerations))return false;
+            return merkleFingerprints.equals(other.merkleFingerprints)||merkleFingerprints.isEmpty()||other.merkleFingerprints.isEmpty();
+        }
     }
     /** Implements 4.8: one immutable source graph shared by navigation, references and semantic edits. */
     public record Snapshot(Map<String,Map<String,Object>> symbols,Map<String,Map<String,Object>> declarations,
@@ -94,7 +104,7 @@ public final class WorkspaceBindings implements AutoCloseable {
     public Snapshot peek(SourceFiles sources,List<Path> classpath,Documents documents,String generation,Validation validation)throws Exception {
         if(snapshot==null)return null;
         var token=validation==null?null:validation.current();
-        if(token!=null&&token.equals(validationToken)){hits++;fastValidationHits++;return snapshot;}
+        if(token!=null&&token.fastCompatible(validationToken)){hits++;fastValidationHits++;validationToken=token;return snapshot;}
         fullValidations++;var current=inputs(sources.files(),classpath,documents,generation);
         if(!current.equals(inputs)){snapshot=null;validationToken=null;serializedBytes=0;return null;}
         hits++;validationToken=validation==null?null:validation.current();return snapshot;
@@ -180,8 +190,8 @@ public final class WorkspaceBindings implements AutoCloseable {
     }
     public Snapshot getBatch(SourceFiles sources,List<Path> classpath,Documents documents,String generation,long byteBudget,Validation validation,BatchLoader loader)throws Exception {
         var token=validation==null?null:validation.current();
-        if(snapshot!=null&&token!=null&&token.equals(validationToken)){
-            hits++;fastValidationHits++;lastReanalysedFiles=0;filesReused+=inputs==null?0:inputs.files().size();return snapshot;
+        if(snapshot!=null&&token!=null&&token.fastCompatible(validationToken)){
+            hits++;fastValidationHits++;validationToken=token;lastReanalysedFiles=0;filesReused+=inputs==null?0:inputs.files().size();return snapshot;
         }
         fullValidations++;var current=inputs(sources.files(),classpath,documents,generation);
         if(snapshot!=null&&current.equals(inputs)){

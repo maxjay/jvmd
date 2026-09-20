@@ -54,6 +54,17 @@ public final class LspFacade {
     }
     private static int symbolKind(String kind){return switch(kind){case "package"->4;case "class","annotation"->5;case "method"->6;case "field"->8;case "ctor"->9;case "enum"->10;case "interface"->11;case "enumconst"->22;case "record"->23;case "type_parameter"->26;default->13;};}
     private static int completionKind(String kind){return switch(kind){case "method"->2;case "ctor"->4;case "field"->5;case "class","record","annotation"->7;case "interface"->8;case "package"->9;case "enum"->13;case "enumconst"->20;case "type_parameter"->25;default->6;};}
+    private static Map<String,Object> importEdit(String source,String fqn){
+        int offset=0;String text="import "+fqn+";\n\n";
+        var firstImport=java.util.regex.Pattern.compile("(?m)^\\s*import\\s+").matcher(source);
+        if(firstImport.find()){offset=firstImport.start();text="import "+fqn+";\n";}
+        else{
+            var packageStatement=java.util.regex.Pattern.compile("(?m)^\\s*package\\s+[A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*\\s*;").matcher(source);
+            if(packageStatement.find()){offset=packageStatement.end();text="\n\nimport "+fqn+";";}
+        }
+        var position=Documents.position(source,offset);
+        return Map.of("range",Map.of("start",position,"end",position),"newText",text);
+    }
     public static Envelope request(Dispatcher dispatcher,Session session,Documents documents,JsonNode request)throws Exception{
         String method=Dispatcher.required(request,"method");JsonNode nativeParams=request.path("params");var query=new Query(dispatcher,session);
         if(method.equals("initialize"))return query.finish(Json.MAPPER.valueToTree(Map.of("capabilities",capabilities(),"serverInfo",Map.of("name","jvmd","version","0.1.0"))));
@@ -82,6 +93,7 @@ public final class LspFacade {
             for(var symbol:completion.path("items")){
                 var item=Json.MAPPER.createObjectNode().put("label",symbol.path("name").asText()).put("detail",symbol.path("label").asText()).put("kind",completionKind(symbol.path("kind").asText()));
                 item.set("textEdit",Json.MAPPER.valueToTree(Map.of("range",completion.path("range"),"newText",symbol.path("name").asText())));item.set("data",Json.MAPPER.valueToTree(Map.of("scip",symbol.path("scip").asText())));
+                if(symbol.hasNonNull("import"))item.set("additionalTextEdits",Json.MAPPER.valueToTree(List.of(importEdit(documents.text(file),symbol.path("import").asText()))));
                 if(symbol.hasNonNull("doc")&&!symbol.path("doc").asText().isEmpty())item.set("documentation",Json.MAPPER.valueToTree(Map.of("kind","markdown","value",symbol.path("doc").asText())));items.add(item);
             }return query.finish(Json.MAPPER.valueToTree(Map.of("isIncomplete",answer.truncated(),"items",items)));
         }

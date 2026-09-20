@@ -87,3 +87,18 @@ checks and conservative fallback while doing that work.
 
 Raw evidence: [baseline](before.json), [first implementation](after.json),
 [profiled follow-up](profiled.json). Runner: [run.sh](../../../benchmarks/semantic-state/run.sh).
+
+## Final inheritance-corrected implementation
+
+The final capture includes private ancestors whose members escape through accessible subtypes,
+with contract schema v2 and diagnostic schema v4. The same probe passes again; `final.json`
+retains the new phase counters and all samples. The non-paired measurement limitations above
+still apply. The final local regression runner passes 5,150 assertions, including actual
+consumer invalidation after an inherited member changes return type.
+
+| Files | Cold | Warm | Body edit | API edit |
+| --- | ---: | ---: | ---: | ---: |
+| 128 | 297.81 | 7.66 | 15.94 | 45.63 |
+| 512 | 825.94 | 9.68 | 34.64 | 92.42 |
+
+Raw final evidence: [final.json](final.json). Earlier measurements remain above as history.

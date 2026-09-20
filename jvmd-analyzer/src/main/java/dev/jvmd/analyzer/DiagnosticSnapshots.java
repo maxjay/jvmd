@@ -33,7 +33,7 @@ public final class DiagnosticSnapshots implements AutoCloseable {
             byte[] bytes=Files.readAllBytes(path);
             if(!Hashing.sha256(bytes).equals(object)){corrupt++;return null;}
             var data=Json.MAPPER.readTree(bytes);
-            if(data.path("schema").asInt()!=3||!key.file().toString().equals(data.path("file").asText())
+            if(data.path("schema").asInt()!=4||!key.file().toString().equals(data.path("file").asText())
                     ||!key.sourceHash().equals(data.path("source_hash").asText())
                     ||!key.contextFingerprint().equals(data.path("context").asText())
                     ||!key.classpathFingerprint().equals(data.path("classpath").asText())){misses++;return null;}
@@ -61,7 +61,7 @@ public final class DiagnosticSnapshots implements AutoCloseable {
                 if(!sources.hash(dependency).equals(hash))return;
                 dependencies.put(dependency.toString(),hash);
             }
-            var data=new LinkedHashMap<String,Object>();data.put("schema",3);data.put("file",key.file().toString());data.put("source_hash",key.sourceHash());
+            var data=new LinkedHashMap<String,Object>();data.put("schema",4);data.put("file",key.file().toString());data.put("source_hash",key.sourceHash());
             data.put("context",key.contextFingerprint());data.put("classpath",key.classpathFingerprint());data.put("api",state.apiFingerprint());
             data.put("dependencies",dependencies);data.put("tier",state.diagnostics().tier());data.put("warnings",state.diagnostics().warnings());
             data.put("diagnostics",((Map<?,?>)state.diagnostics().result()).get("diagnostics"));

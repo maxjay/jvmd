@@ -71,3 +71,23 @@ Each entry records the change, validation, limitations and next work. Historical
   current navigation is structurally shared, not Merkle-addressed or durably cross-store atomic.
 - Completed D2 and D4. D3 awaits CI for the follow-up code; the preceding implementation's complete
   checkpoint success must not be represented as validation of this later commit.
+
+## 2026-09-20 — 005: inherited private ownership corrected before acceptance
+
+- A targeted compiler experiment found that a private nested superclass can expose public
+  members through a public subtype. Its return-type change broke a consumer while leaving
+  the initial typed fingerprint unchanged. Corrected the contract rule before merge.
+- Captured hidden ancestor contracts and their non-private members/accessibly inherited nested
+  types when reached from accessible declarations. Unexposed private/local implementation stays
+  excluded. Added both identity assertions and actual dependent-diagnostic invalidation coverage.
+- Contract schema is now `declaration-contract-v2`; diagnostic context/schema advance to v4 so
+  snapshots from the interim draft cannot restore the old unsound identity.
+- All 105 production source classes compile locally and the standalone suite passes 5,150 checks.
+  The final production probe passes; retained `final.json` and appended its measurements to the
+  performance report. This is correctness evidence, not closure of the open performance gates.
+- Correction to entry 002: direct baseline compilation covered 99 production `dev/...` Java
+  sources, not 130. Six production classes were added. Maven CI additionally compiles module
+  descriptors, providers and tests; its results are recorded separately.
+- Follow-up `e6302ae4` passed every test step in Checkpoints run 35535326180; artifact upload was
+  completing at observation. Initial commit also passed all four Linux/macOS distribution builds
+  and the Windows installer check. The inheritance correction requires its own CI run next.

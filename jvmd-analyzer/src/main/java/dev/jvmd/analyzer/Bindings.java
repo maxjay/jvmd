@@ -46,6 +46,28 @@ public final class Bindings {
         var contracts=new LinkedHashMap<String,DeclarationContract>();
         var texts=new HashMap<String,SourceText>();texts.put(requested.toUri().toString(),original);
         class Capture {
+            final Set<Element> hiddenAncestors=new HashSet<>(),exposedMembers=new HashSet<>();
+            void exposed(Element element){
+                if(!exposedMembers.add(element))return;
+                String sourceFile=identity.sourceFile(element);
+                if(sourceFile==null||!Path.of(sourceFile).toAbsolutePath().normalize().equals(requested.toAbsolutePath().normalize()))return;
+                String id=symbol(element);if(id!=null)contracts.put(id,DeclarationContract.captureExposed(element,id));
+                if(element instanceof TypeElement type){
+                    inheritedContracts(type);
+                    for(Element member:type.getEnclosedElements())if(!member.getModifiers().contains(Modifier.PRIVATE)&&member.getKind()!=ElementKind.CONSTRUCTOR
+                            &&(member instanceof TypeElement||member instanceof ExecutableElement||member.getKind().isField()))exposed(member);
+                }
+            }
+            void inheritedContracts(TypeElement type){
+                var queue=new ArrayDeque<TypeMirror>(task.getTypes().directSupertypes(type.asType()));
+                while(!queue.isEmpty()){
+                    TypeMirror parent=queue.removeFirst();Element element=task.getTypes().asElement(parent);
+                    if(!(element instanceof TypeElement ancestor)||!hiddenAncestors.add(ancestor))continue;
+                    // An inaccessible owner can still expose inherited members through this type.
+                    if(!DeclarationContract.exported(ancestor))exposed(ancestor);
+                    queue.addAll(task.getTypes().directSupertypes(parent));
+                }
+            }
             SourceText source(CompilationUnitTree unit){return texts.computeIfAbsent(unit.getSourceFile().toUri().toString(),key->{try{return new SourceText(unit.getSourceFile().getCharContent(true).toString());}catch(Exception e){return new SourceText("");}});}
             int start(CompilationUnitTree unit,Tree tree){return (int)trees.getSourcePositions().getStartPosition(unit,tree);}
             int end(CompilationUnitTree unit,Tree tree){return (int)trees.getSourcePositions().getEndPosition(unit,tree);}
@@ -152,7 +174,7 @@ public final class Bindings {
                 }
                 return super.visitImport(tree,parent);
             }
-            @Override public Void visitClass(ClassTree tree,String parent){var e=element();String scip=capture.symbol(e);if(e!=null){capture.occurrence(getCurrentPath(),e,identity.displayName(e),true,"declaration",parent);capture.structure(e);}return super.visitClass(tree,scip);}
+            @Override public Void visitClass(ClassTree tree,String parent){var e=element();String scip=capture.symbol(e);if(e!=null){capture.occurrence(getCurrentPath(),e,identity.displayName(e),true,"declaration",parent);capture.structure(e);if(e instanceof TypeElement type&&DeclarationContract.exported(type))capture.inheritedContracts(type);}return super.visitClass(tree,scip);}
             @Override public Void visitMethod(MethodTree tree,String parent){var e=element();
                 int begin=capture.start(unit,tree),end=capture.end(unit,tree);
                 if(focus!=null&&(end<=focus.start()||begin>=focus.end())){capture.signatureDependencies(e);return null;}

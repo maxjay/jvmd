@@ -74,7 +74,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private String computeClasspathStamp()throws Exception{
         classpathFingerprints++;
         if(!compiler.cacheValid()){outlines.clear();focused.clear();}
-        var value=new StringBuilder("diagnostics-v3:").append(Runtime.version()).append(':').append(System.getProperty("java.home")).append(':').append(context.generation()).append(':').append(context.compilerOptions());
+        var value=new StringBuilder("diagnostics-v4:").append(Runtime.version()).append(':').append(System.getProperty("java.home")).append(':').append(context.generation()).append(':').append(context.compilerOptions());
         appendClasspathContents(value);
         // New names can resolve old failures without a previously known dependency edge.
         for(var root:context.sources()){

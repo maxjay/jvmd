@@ -757,7 +757,8 @@ jvmd/
   jvmd-core/              socket server, JSON-RPC, envelope, sessions, dispatcher, config, status
   jvmd-analyzer/          javac integration. The ONLY module with --add-exports for jdk.compiler
   jvmd-resolver/          maven-resolver bootstrap, WorkspaceReader, resolution cache
-  jvmd-index/             java.lang.classfile passes, SQLite schema, queries, FTS
+  jvmd-index/             IndexStore contract, class-file passes, queries, SQLite comparison provider
+  jvmd-index-rocks/       default immutable artifact provider and workspace source state
   jvmd-runtime/           JDI client, debug ops, launch, hotswap, JFR wrappers
   jvmd-mcp/               MCP tool definitions, each a thin mapping onto a core method
   jvmd-lsp/               LSP facade, nine methods
@@ -781,7 +782,8 @@ with the date. Do not add anything else without an entry stating why.
 | `org.apache.maven.resolver:maven-resolver-supplier` | resolver | 1.9.x if `maven_major=3`, 2.0.x if `maven_major=4`; matches the user's Maven |
 | `org.apache.maven.resolver:maven-resolver-transport-http` | resolver | 1.9.x only, when `maven_major=3`. Brings Apache HttpClient 4; accepted. `transport-jdk` does not exist on the 1.9 line |
 | `org.apache.maven.resolver:maven-resolver-transport-jdk` | resolver | 2.0.x only, when `maven_major=4` |
-| `org.xerial:sqlite-jdbc` | index | latest; must bundle FTS5 with the trigram tokenizer, verify with `PRAGMA compile_options` |
+| `org.rocksdb:rocksdbjni` | index-rocks | Pinned in the parent POM; default immutable artifact and workspace provider |
+| `org.xerial:sqlite-jdbc` | index | Explicit comparison provider; bundles FTS5 with the trigram tokenizer |
 | `com.fasterxml.jackson.core:jackson-databind` | core | latest 2.x; plus `jackson-module-parameter-names` or records support |
 | `org.junit.jupiter:junit-jupiter` | tests | 5.x |
 | `org.assertj:assertj-core` | tests | latest |

@@ -34,7 +34,9 @@ public class SemanticStateRegression {
             List.of("class Api { int f(){return 1;} }","class Api { private int f(){return 1;} }"),
             List.of("@interface Api { int value() default 1; }","@interface Api { int value() default 2; }"),
             List.of("record Api(int x) {}","record Api(long x) {}"),
-            List.of("class Api {}","class Api extends java.util.ArrayList<String> {}")
+            List.of("class Api {}","class Api extends java.util.ArrayList<String> {}"),
+            List.of("class Api { private static class Hidden { public int value(){return 1;} } public static class Visible extends Hidden {} }","class Api { private static class Hidden { public String value(){return \"x\";} } public static class Visible extends Hidden {} }"),
+            List.of("class Api { private static class Hidden { public static class Nested { public int value(){return 1;} } } public static class Visible extends Hidden {} }","class Api { private static class Hidden { public static class Nested { public String value(){return \"x\";} } } public static class Visible extends Hidden {} }")
         );
         for(var pair:changed)check(!ApiFingerprint.of(capture(root,pair.get(0)),file).equals(ApiFingerprint.of(capture(root,pair.get(1)),file)),"Contract change missed: "+pair);
         var first=capture(root,"class Api { int f(){return 1;} }");var second=capture(root,"/** moved */ class Api { int f(){return 2;} }");
@@ -167,9 +169,24 @@ public class SemanticStateRegression {
             check(((Number)cache.status().get("last_reanalysed_files")).intValue()==2,"Metadata failed to refresh consumers");
         }
     }
+    static void hiddenInheritance(Path root)throws Exception{
+        Path api=root.resolve("Api.java"),user=root.resolve("User.java");
+        String initial="class Api { private static class Hidden { public int value(){return 1;} } public static class Visible extends Hidden {} }";
+        Files.writeString(api,initial);Files.writeString(user,"class User { int read(){return new Api.Visible().value();} }");
+        var documents=new Documents();
+        try(var analyzer=new Analyzer();var cache=new WorkspaceBindings()){
+            analyzer.configure(new Analyzer.Context("test:app:1","25",List.of(),List.of(root),"hidden",Map.of(root.toUri().toString(),"test:app:1")),null,128L*1024*1024);analyzer.documents(documents);
+            WorkspaceBindings.SourceFiles files=()->documents.sources().inventory(List.of(root));
+            check(cache.getBatch(files,List.of(),documents,"hidden",64L*1024*1024,analyzer::bindingsBatch).diagnostics().isEmpty(),"Valid inherited member rejected");
+            Files.writeString(api,initial.replace("public int value(){return 1;}","public String value(){return \"x\";}"));
+            var updated=cache.getBatch(files,List.of(),documents,"hidden",64L*1024*1024,analyzer::bindingsBatch);
+            check(updated.diagnostics().stream().anyMatch(p->p.kind().equals("ERROR")&&p.file().endsWith("User.java")),"Exposed hidden member failed to invalidate consumer");
+            check(((Number)cache.status().get("last_reanalysed_files")).intValue()==2,"Inherited contract change skipped consumers");
+        }
+    }
     public static void main(String[] args)throws Exception{
         Path root=Files.createTempDirectory("jvmd-semantic-regression-");
-        maps();identity(Files.createDirectory(root.resolve("identity")));sources(Files.createDirectory(root.resolve("sources")));navigation(Files.createDirectory(root.resolve("navigation")));publication(Files.createDirectory(root.resolve("publication")));protocol(Files.createDirectory(root.resolve("protocol")));metadata(Files.createDirectory(root.resolve("metadata")));
+        maps();identity(Files.createDirectory(root.resolve("identity")));sources(Files.createDirectory(root.resolve("sources")));navigation(Files.createDirectory(root.resolve("navigation")));publication(Files.createDirectory(root.resolve("publication")));protocol(Files.createDirectory(root.resolve("protocol")));metadata(Files.createDirectory(root.resolve("metadata")));hiddenInheritance(Files.createDirectory(root.resolve("hidden")));
         System.out.println("Semantic state regression checks passed: "+checks);
     }
 }

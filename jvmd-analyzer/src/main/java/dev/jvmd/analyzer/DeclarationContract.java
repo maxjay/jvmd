@@ -9,7 +9,7 @@ public record DeclarationContract(String symbol,String kind,String type,List<Str
         List<String> interfaces,List<String> permits,List<Component> components,
         List<String> thrownTypes,List<Parameter> parameters,String receiver,boolean varargs,String defaultValue) {
     private static final dev.jvmd.core.BoundedInterner<DeclarationContract> INTERNER=new dev.jvmd.core.BoundedInterner<>(8192);
-    public static final String SCHEMA="declaration-contract-v1";
+    public static final String SCHEMA="declaration-contract-v2";
     public record Parameter(String type,List<String> annotations) {
         public Parameter { annotations=List.copyOf(annotations); }
     }
@@ -21,7 +21,7 @@ public record DeclarationContract(String symbol,String kind,String type,List<Str
         interfaces=List.copyOf(interfaces);permits=List.copyOf(permits);components=List.copyOf(components);
         thrownTypes=List.copyOf(thrownTypes);parameters=List.copyOf(parameters);
     }
-    /** Package/protected contracts matter too; local/private ownership never escapes its file. */
+    /** Directly accessible ownership. Hidden ancestors exposed by inheritance are captured separately. */
     static boolean exported(Element element){
         if(!(element instanceof TypeElement||element instanceof ExecutableElement||element.getKind().isField()))return false;
         for(Element owner=element;owner!=null;owner=owner.getEnclosingElement()){
@@ -34,6 +34,10 @@ public record DeclarationContract(String symbol,String kind,String type,List<Str
     private static List<String> annotations(Element e){return e.getAnnotationMirrors().stream().map(Object::toString).sorted().toList();}
     static DeclarationContract capture(Element element,String symbol){
         if(!exported(element))return null;
+        return captureExposed(element,symbol);
+    }
+    /** Also used for otherwise hidden types/members exposed by an accessible subtype. */
+    static DeclarationContract captureExposed(Element element,String symbol){
         var type=element instanceof TypeElement t?t:null;var method=element instanceof ExecutableElement m?m:null;
         return INTERNER.intern(new DeclarationContract(symbol,element.getKind().name(),element.asType().toString(),
                 element.getModifiers().stream().map(Object::toString).sorted().toList(),annotations(element),

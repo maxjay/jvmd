@@ -16,7 +16,8 @@ the existing RocksDB artifact backend. Keep protocols compatible.
   publication; never attach a newer epoch to an older result.
 - Keep semantic contracts separate from documentation, display names and source locations.
 - Include accessible declarations, constants, bounds, annotations, inheritance and defaults
-  in contract identity; exclude local/private implementation details deliberately.
+  in contract identity; exclude unexposed local/private implementation details deliberately.
+  Private ownership alone does not make an inherited member unobservable to consumers.
 - Preserve ordered classpath, compiler/JDK, module visibility and processor context identity.
 - Share detached immutable data only. Keep javac-owned objects confined to compiler tasks.
 - Complete dependency capture replaces old edges; partial capture may conservatively merge.

@@ -39,9 +39,12 @@ one prior view. Fast workspace validation continues to use existing compiler sou
 Contracts contain symbol ownership, element kind/type, modifiers, declaration annotations,
 constant values, generic bounds, superclass/interfaces, permitted subclasses, record
 components, thrown types, parameter types/annotations, receiver, varargs and annotation defaults.
-Capture deliberately excludes locals, parameters as declarations, anonymous/local types,
-private declarations and descendants of private ownership. Package and protected declarations
-remain because they affect Java consumers.
+Capture deliberately excludes locals, parameters as declarations, anonymous/local types and
+unexposed private implementation. Package and protected declarations remain because they affect
+Java consumers. A private superclass can expose non-private members through an accessible
+subclass: those hidden ancestors, inherited members and accessible nested types must participate
+in the owning file's contract. Capturing hidden ancestors conservatively can invalidate on a
+member masked by an override; that is preferable to missing a consumer-visible change.
 
 `package-info.java` and `module-info.java` are context inputs. Their content hashes participate
 in diagnostic context identity, and changing either forces a full navigation rebuild. Explicit
@@ -50,7 +53,7 @@ package-annotation or module-visibility invalidation.
 
 Documentation, offsets and ordinary parameter display names are absent. The existing `api`
 presentation row remains for compatibility; it is no longer the hash input. The hash encodes
-`declaration-contract-v1` and a symbol-sorted map of typed contracts. Generic parameter naming
+`declaration-contract-v2` and a symbol-sorted map of typed contracts. Generic parameter naming
 and javac's detached type spellings can still cause conservative invalidation; this is not a
 proof of equivalence under every Java refactoring.
 
@@ -136,8 +139,9 @@ not a wire-format promise that every layer performs only changed-file work.
 
 ## Persistence and migration
 
-Diagnostic cache context identity advances from `diagnostics-v2` to `diagnostics-v3`;
-`DiagnosticSnapshots` schema advances from 2 to 3. Old diagnostic snapshots miss and are
+Diagnostic cache context identity advances from `diagnostics-v2` to `diagnostics-v4`;
+`DiagnosticSnapshots` schema advances from 2 to 4. The interim v3/v1-contract draft preceded
+the hidden-inheritance correction and is also invalidated. Old diagnostic snapshots miss and are
 recomputed. Persisted semantic API values become different through the versioned contract hash,
 causing conservative invalidation as files are observed. Rocks record encoding and artifact
 generation format are unchanged. No in-place rewrite of a user's artifact database is needed.

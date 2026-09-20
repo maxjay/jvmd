@@ -51,7 +51,9 @@ class WorkspaceBindingsWarmValidationBenchmarkTest {
                     "binding_computations_delta",number(after,"analyzer","binding_computations")-number(before,"analyzer","binding_computations"),
                     "javac_queries_delta",number(after,"analyzer","queries")-number(before,"analyzer","queries"),
                     "workspace_builds_delta",number(after,"workspace_bindings","builds")-number(before,"workspace_bindings","builds"),
-                    "workspace_cache_hits_delta",number(after,"workspace_bindings","cache_hits")-number(before,"workspace_bindings","cache_hits"));
+                    "workspace_cache_hits_delta",number(after,"workspace_bindings","cache_hits")-number(before,"workspace_bindings","cache_hits"),
+                    "fast_validation_hits_delta",number(after,"workspace_bindings","fast_validation_hits")-number(before,"workspace_bindings","fast_validation_hits"),
+                    "full_validations_delta",number(after,"workspace_bindings","full_validations")-number(before,"workspace_bindings","full_validations"));
         }
     }
 

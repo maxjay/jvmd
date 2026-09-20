@@ -22,6 +22,7 @@ public final class IndexService implements AutoCloseable {
     private final SourceIndexPublisher sourcePublisher=new SourceIndexPublisher(this::recordSource,32L*1024*1024);
     public void publishSource(SourceIndexPublisher.Delta delta){sourcePublisher.enqueue(delta);}
     public long semanticRevision(Path file)throws Exception{return generationSink.semanticRevision(file);}
+    public String moduleStateFingerprint(String moduleId)throws Exception{return generationSink.moduleStateFingerprint(moduleId);}
     public Map<String,Object> sourcePublisherStatus(){return sourcePublisher.status();}
     private final ExecutorService readers=Executors.newFixedThreadPool(Math.max(1,Math.min(4,Runtime.getRuntime().availableProcessors())),Thread.ofVirtual().name("jvmd-index-reader-",0).factory());
     private final ScheduledExecutorService scanner=Executors.newSingleThreadScheduledExecutor(Thread.ofVirtual().name("jvmd-index-scan").factory());

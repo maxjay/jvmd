@@ -180,6 +180,7 @@ public final class Application implements AutoCloseable {
             String name=Objects.toString(symbol.get("name"),""),fqn=Objects.toString(symbol.get("fqn"),"").replace('$','.');
             if(name.isBlank()||fqn.isBlank()||liveNames.contains(name)||!name.startsWith(prefix))continue;
             int split=fqn.lastIndexOf('.');String candidatePackage=split<0?"":fqn.substring(0,split);
+            if(candidatePackage.isEmpty()&&!packageName.isEmpty())continue;
             int flags=symbol.get("flags") instanceof Number value?value.intValue():0;
             if(!candidatePackage.equals(packageName)&&(flags&1)==0)continue;
             var row=new LinkedHashMap<String,Object>();

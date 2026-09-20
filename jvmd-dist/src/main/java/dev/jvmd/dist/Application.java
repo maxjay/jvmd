@@ -181,8 +181,9 @@ public final class Application implements AutoCloseable {
             if(name.isBlank()||fqn.isBlank()||liveNames.contains(name)||!name.startsWith(prefix))continue;
             int split=fqn.lastIndexOf('.');String candidatePackage=split<0?"":fqn.substring(0,split);
             if(candidatePackage.isEmpty()&&!packageName.isEmpty())continue;
-            int flags=symbol.get("flags") instanceof Number value?value.intValue():0;
-            if(!candidatePackage.equals(packageName)&&(flags&1)==0)continue;
+            boolean publicType=symbol.get("flags") instanceof Number value?(value.intValue()&1)!=0:
+                    symbol.get("modifiers") instanceof Collection<?> modifiers&&modifiers.contains("public");
+            if(!candidatePackage.equals(packageName)&&!publicType)continue;
             var row=new LinkedHashMap<String,Object>();
             for(String key:List.of("scip","name","name_path","kind","signature","fqn"))if(symbol.get(key)!=null)row.put(key,symbol.get(key));
             row.put("label",fqn);row.put("doc",dev.jvmd.index.DocMarkdown.summary((String)symbol.get("doc")));

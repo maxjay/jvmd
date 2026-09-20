@@ -396,7 +396,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             // Keep one detached result per module. A broader prefix recomputes candidates;
             // narrowing filters the already sorted rows without retaining javac objects.
             phaseStarted=System.nanoTime();
-            caches.completion=key!=null&&outcome.tier()==2&&outcome.warnings().isEmpty()&&outcome.result()!=null&&outcome.result().size()<=256
+            // Empty results can mean the receiver is unresolved. Do not cache them: a newly
+            // created source may make that receiver resolvable before a WatchService event arrives.
+            caches.completion=key!=null&&outcome.tier()==2&&outcome.warnings().isEmpty()&&outcome.result()!=null&&!outcome.result().isEmpty()&&outcome.result().size()<=256
                     &&Json.MAPPER.writeValueAsBytes(outcome.result()).length<=256*1024?new CompletionCached(key,prefix,new CompilerPool.Outcome<>(2,outcome.result(),List.of(),List.of())):null;
             cacheAdmissionNanos=System.nanoTime()-phaseStarted;
         }

@@ -86,6 +86,18 @@ class CompletionPrefixCacheTest {
             assertThat(analyzer.status().get("completion_computations")).isEqualTo(4L);
         }
     }
+    @Test void nonSourceFilesystemChurnDoesNotInvalidateWatcherBackedCandidates()throws Exception{
+        Files.writeString(root.resolve("Api.java"),"class Api { int getPets(){return 1;} }");
+        Path file=Files.writeString(root.resolve("Use.java"),text("g"));var documents=new Documents();documents.open(file,text("g"),1);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);analyzer.documents(documents);
+            assertThat(complete(analyzer,file,text("g"),"g").path("items").findValuesAsText("name")).contains("getPets");
+            Files.writeString(root.resolve("state.tmp"),"not source");
+            documents.change(file,2,List.of(new Documents.Change(null,text("ge"))));analyzer.changed(file,documents.hash(file));analyzer.documents(documents);
+            assertThat(complete(analyzer,file,text("ge"),"ge").path("items").findValuesAsText("name")).contains("getPets");
+            assertThat(analyzer.status()).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",1L);
+        }
+    }
     @Test void coarseWorkspaceRootsUseConservativeSourceValidationWithoutWatchingTheWholeWorkspace()throws Exception{
         Files.writeString(root.resolve("Api.java"),"class Api { int getPets(){return 1;} }");
         Path file=Files.writeString(root.resolve("Use.java"),text("g"));var documents=new Documents();documents.open(file,text("g"),1);

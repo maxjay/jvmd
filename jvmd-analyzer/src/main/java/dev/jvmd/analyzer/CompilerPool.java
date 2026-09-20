@@ -30,8 +30,6 @@ public final class CompilerPool implements AutoCloseable {
     private boolean preciseSourceRoots=true;
     private long batchQueries,batchFiles;
     private long budget,baseline,recycles,faults,queries,queryNanos,configureCalls,configureNanos,classpathValidations,classpathValidationNanos;
-    private long prepareNanos,taskNanos,parseNanos,enterNanos,flowNanos,callbackNanos;
-    private Map<String,Double> lastPhaseTimingMs=Map.of();
     private long validatedRequestId=-1;
     private long sourceModuleGeneration;
     private boolean validatedRequestResult;
@@ -77,8 +75,7 @@ public final class CompilerPool implements AutoCloseable {
         checkThread();if(manager==null)throw new IllegalStateException("Compiler classpath not configured");
         if(tier<0||tier>2)throw new IllegalArgumentException("tier");
         if(heap()-baseline>budget)recycle();
-        long queryStarted=System.nanoTime(),requestPrepareNanos=0,requestTaskNanos=0;
-        long[] phases=new long[4]; // parse, enter, FLOW, callback
+        long queryStarted=System.nanoTime();
         var diagnostics=new DiagnosticCollector<JavaFileObject>();var warnings=new ArrayList<String>();int[] actual={tier};boolean[] fault={false},implicitSource={false};queries++;
         var options=new ArrayList<String>(compilerOptions);
         for(String option:options)if(option.startsWith("-proc")||option.startsWith("-processor")||option.startsWith("--processor")||option.startsWith("-Xplugin"))throw new IllegalArgumentException("Compiler extensions run only in the external processor process: "+option);
@@ -94,8 +91,7 @@ public final class CompilerPool implements AutoCloseable {
                     recycle();classpathValidations++;manager.validateClasspath();
                 }
             }finally{classpathValidationNanos+=System.nanoTime()-validationStarted;}
-            long prepareStarted=System.nanoTime();releasePlatform.prepare(options);requestPrepareNanos=System.nanoTime()-prepareStarted;
-            long taskStarted=System.nanoTime();
+            releasePlatform.prepare(options);
             T value=pool.getTask(new java.io.StringWriter(),manager,diagnostics,options,null,sources.stream().map(input->manager.source(input.file(),input.text())).toList(),task->{
                 releasePlatform.capture(((JavacTaskImpl)task).getContext(),options);
                 var units=new ArrayList<CompilationUnitTree>();var parsed=new ArrayList<CompilationUnitTree>();
@@ -105,39 +101,20 @@ public final class CompilerPool implements AutoCloseable {
                     }
                 });
                 try {
-                    long phaseStarted=System.nanoTime();try{task.parse().forEach(units::add);}finally{phases[0]+=System.nanoTime()-phaseStarted;}
-                    if(tier>=1){
-                        phaseStarted=System.nanoTime();var entered=((JavacTaskImpl)task).enter();phases[1]+=System.nanoTime()-phaseStarted;
-                        if(tier==2){phaseStarted=System.nanoTime();try{((JavacTaskImpl)task).analyze(entered);}finally{phases[2]+=System.nanoTime()-phaseStarted;}}
-                    }
+                    task.parse().forEach(units::add);
+                    if(tier>=1){var entered=((JavacTaskImpl)task).enter();if(tier==2)((JavacTaskImpl)task).analyze(entered);}
                 }catch(AssertionError|RuntimeException e){System.getLogger("jvmd.analyzer").log(System.Logger.Level.ERROR,"Compilation fault in "+path,e);actual[0]=Math.min(1,tier);fault[0]=true;faults++;warnings.add("analyzer_fault: "+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()));}
                 catch(java.io.IOException e){throw new java.io.UncheckedIOException(e);}
-                try{
-                    long callbackStarted=System.nanoTime();
-                    try{return query.read(task,List.copyOf(units),actual[0]);}
-                    finally{phases[3]+=System.nanoTime()-callbackStarted;}
-                }
+                try{return query.read(task,List.copyOf(units),actual[0]);}
                 catch(RuntimeException|Error e){throw e;}catch(Exception e){throw new QueryFailure(e);}
                 finally{resetSourcePackages(task,parsed);}
             });
-            requestTaskNanos=System.nanoTime()-taskStarted;
             int level=actual[0];var problems=diagnostics.getDiagnostics().stream().map(d->new Problem("live",level,d.getCode(),d.getKind().name(),d.getSource()==null?path.toString():d.getSource().toUri().toString(),d.getLineNumber(),Math.max(0,d.getColumnNumber()-1),d.getStartPosition(),d.getEndPosition(),d.getMessage(Locale.ROOT))).toList();
             return new Outcome<>(level,value,problems,List.copyOf(warnings));
         }catch(QueryFailure e){releasePlatform.close();throw (Exception)e.getCause();}
         catch(AssertionError|RuntimeException e){System.getLogger("jvmd.analyzer").log(System.Logger.Level.ERROR,"Compiler query fault in "+path,e);fault[0]=true;faults++;return new Outcome<>(Math.min(1,tier),null,List.of(),List.of("analyzer_fault: "+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage())));}
-        finally{
-            long total=System.nanoTime()-queryStarted;queryNanos+=total;prepareNanos+=requestPrepareNanos;taskNanos+=requestTaskNanos;
-            parseNanos+=phases[0];enterNanos+=phases[1];flowNanos+=phases[2];callbackNanos+=phases[3];
-            long overhead=Math.max(0,requestTaskNanos-phases[0]-phases[1]-phases[2]-phases[3]);
-            lastPhaseTimingMs=Map.ofEntries(
-                    Map.entry("prepare",nanosToMillis(requestPrepareNanos)),Map.entry("task",nanosToMillis(requestTaskNanos)),
-                    Map.entry("parse",nanosToMillis(phases[0])),Map.entry("enter",nanosToMillis(phases[1])),
-                    Map.entry("flow",nanosToMillis(phases[2])),Map.entry("callback",nanosToMillis(phases[3])),
-                    Map.entry("task_overhead",nanosToMillis(overhead)),Map.entry("total",nanosToMillis(total)));
-            if(fault[0])recycle();
-        }
+        finally{queryNanos+=System.nanoTime()-queryStarted;if(fault[0])recycle();}
     }
-    public Map<String,Double> lastPhaseTimingMs(){checkThread();return lastPhaseTimingMs;}
 
     private static void resetSourcePackages(JavacTask task,List<CompilationUnitTree> units){
         // JavacTaskPool removes source classes from Symtab, but retains their package scope.
@@ -175,11 +152,6 @@ public final class CompilerPool implements AutoCloseable {
         status.put("queries",queries);status.put("batch_queries",batchQueries);status.put("batch_files",batchFiles);status.put("query_ms",nanosToMillis(queryNanos));
         status.put("configure_calls",configureCalls);status.put("configure_ms",nanosToMillis(configureNanos));
         status.put("classpath_validations",classpathValidations);status.put("classpath_validation_ms",nanosToMillis(classpathValidationNanos));
-        status.put("compiler_phase_ms",Map.ofEntries(
-                Map.entry("prepare",nanosToMillis(prepareNanos)),Map.entry("task",nanosToMillis(taskNanos)),
-                Map.entry("parse",nanosToMillis(parseNanos)),Map.entry("enter",nanosToMillis(enterNanos)),
-                Map.entry("flow",nanosToMillis(flowNanos)),Map.entry("callback",nanosToMillis(callbackNanos))));
-        status.put("compiler_last_phase_ms",lastPhaseTimingMs);
         status.put("release_platform_initializations",releasePlatform.initializations());status.put("release_platform_reuses",releasePlatform.reuses());
         status.put("recycles",recycles);status.put("faults",faults);status.put("heap_growth_bytes",Math.max(0,heap()-baseline));status.put("heap_budget_bytes",budget);if(manager!=null)status.putAll(manager.status());var output=new java.io.ByteArrayOutputStream();pool.printStatistics(new java.io.PrintStream(output));status.put("pool_statistics",output.toString(java.nio.charset.StandardCharsets.UTF_8));return status;
     }

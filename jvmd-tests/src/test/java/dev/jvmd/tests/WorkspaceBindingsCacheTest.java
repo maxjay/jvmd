@@ -57,6 +57,27 @@ class WorkspaceBindingsCacheTest {
             assertThat(request(app,"symbol.references",Map.of("session",session,"ref","Caller/call()","direction","in")).path("edges").toString()).doesNotContain("Additional#");
         }
     }
+    @Test void incrementalFragmentsReanalyseOnlyBodyEditsAndApiDependants()throws Exception{
+        Path api=root.resolve("Api.java"),user=root.resolve("User.java"),other=root.resolve("Other.java");
+        Files.writeString(api,"class Api { static Number value(){return 1;} }");
+        Files.writeString(user,"class User { Object read(){return Api.value();} }");
+        Files.writeString(other,"class Other { int read(){return 1;} }");
+        try(var app=new Application(TestSupport.config(root,Duration.ofHours(4)))){
+            String session=TestSupport.open(app,root);
+            var initial=request(app,"symbol.references",Map.of("session",session,"ref","Api/value()","direction","in"));
+            assertThat(initial.path("edges").toString()).contains("User#read().");
+            Files.writeString(other,"class Other { int read(){int x=1; return x;} }");
+            request(app,"symbol.references",Map.of("session",session,"ref","Api/value()","direction","in"));
+            var body=request(app,"session.status",Map.of("session",session)).path("workspace_bindings");
+            assertThat(body.path("last_reanalysed_files").asLong()).isEqualTo(1L);
+            assertThat(body.path("incremental_builds").asLong()).isGreaterThanOrEqualTo(1L);
+            Files.writeString(api,"class Api { static Integer value(){return 2;} }");
+            request(app,"symbol.references",Map.of("session",session,"ref","Api/value()","direction","in"));
+            var changed=request(app,"session.status",Map.of("session",session)).path("workspace_bindings");
+            assertThat(changed.path("last_reanalysed_files").asLong()).isEqualTo(2L);
+            assertThat(changed.path("api_invalidations").asLong()).isGreaterThanOrEqualTo(1L);
+        }
+    }
     @Test void replacedBinaryAndFailedLookupRecoveryAreObserved()throws Exception{
         Path source=Files.createDirectories(root.resolve("source")),binary=Files.createDirectories(root.resolve("binary"));
         Path api=root.resolve("Api.java"),caller=source.resolve("Caller.java");

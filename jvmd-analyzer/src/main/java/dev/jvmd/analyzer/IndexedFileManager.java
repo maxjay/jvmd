@@ -326,10 +326,12 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
                 }
                 for(var entry:indexed)if(!binarySources.contains(entry.file())||documents.containsKey(entry.file()))
                     sources.put(entry.binary(),new SourceFile(entry.file(),entry.binary(),documents.get(entry.file())));
-                if(kinds.contains(JavaFileObject.Kind.SOURCE))for(var entry:documents.entrySet()){
-                    String binary=sourceName(entry.getKey(),sourceInputs);if(binary==null)continue;int dot=binary.lastIndexOf('.');String pkg=dot<0?"":binary.substring(0,dot);
-                    if(pkg.equals(packageName)||recurse&&(packageName.isEmpty()||pkg.startsWith(packageName+".")))sources.put(binary,new SourceFile(entry.getKey(),binary,entry.getValue()));
-                }
+            }
+            // Open buffers must overlay both the watcher-backed catalog and the conservative
+            // standard-file-manager path. Coarse roots intentionally disable the catalog.
+            if(kinds.contains(JavaFileObject.Kind.SOURCE))for(var entry:documents.entrySet()){
+                String binary=sourceName(entry.getKey(),sourceInputs);if(binary==null)continue;int dot=binary.lastIndexOf('.');String pkg=dot<0?"":binary.substring(0,dot);
+                if(pkg.equals(packageName)||recurse&&(packageName.isEmpty()||pkg.startsWith(packageName+".")))sources.put(binary,new SourceFile(entry.getKey(),binary,entry.getValue()));
             }
             sourceListEntries+=sources.size();return sources.values();
         }

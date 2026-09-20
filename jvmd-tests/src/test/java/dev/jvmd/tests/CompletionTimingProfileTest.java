@@ -58,6 +58,11 @@ class CompletionTimingProfileTest {
                         "candidates_seen",status.get("completion_candidates_seen"),
                         "rows_materialized",status.get("completion_rows_materialized"),
                         "doc_lookups",status.get("completion_doc_lookups"),
+                        "source_catalog_builds",status.get("source_catalog_builds"),
+                        "source_catalog_files",status.get("source_catalog_files"),
+                        "source_list_calls",status.get("source_list_calls"),
+                        "source_list_entries",status.get("source_list_entries"),
+                        "source_watch_events",status.get("source_watch_events"),
                         "timing_ms",timing
                 )));
                 version++;

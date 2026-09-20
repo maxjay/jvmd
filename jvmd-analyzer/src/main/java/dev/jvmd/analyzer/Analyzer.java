@@ -70,13 +70,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         classpathFingerprints++;
         if(!compiler.cacheValid()){outlines.clear();focused.clear();}
         var value=new StringBuilder("diagnostics-v2:").append(Runtime.version()).append(':').append(System.getProperty("java.home")).append(':').append(context.generation()).append(':').append(context.compilerOptions());
-        for(var path:context.classpath()){
-            value.append("\0").append(path);
-            if(Files.isRegularFile(path))value.append(':').append(inputFiles.hash(path));
-            else if(Files.isDirectory(path)){
-                for(Path file:FileInventory.matching(path,".class"))value.append("\0").append(file).append(':').append(inputFiles.hash(file));
-            }else value.append(":missing");
-        }
+        appendClasspathContents(value);
         // New names can resolve old failures without a previously known dependency edge.
         for(var root:context.sources()){
             value.append("\0root:").append(root);
@@ -84,6 +78,15 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         documents.paths().stream().filter(p->!Files.isRegularFile(p)&&context.sources().stream().anyMatch(p::startsWith)).sorted().forEach(p->value.append("\0buffer:").append(p));
         return Hashing.sha256(value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+    private void appendClasspathContents(StringBuilder value)throws Exception{
+        for(var path:context.classpath()){
+            value.append("\0").append(path);
+            if(Files.isRegularFile(path))value.append(':').append(inputFiles.hash(path));
+            else if(Files.isDirectory(path)){
+                for(Path file:FileInventory.matching(path,".class"))value.append("\0").append(file).append(':').append(inputFiles.hash(file));
+            }else value.append(":missing");
+        }
     }
 
     private Map<Path,String> sourceIdentities()throws Exception{
@@ -390,12 +393,14 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         documents.paths().stream().filter(path->context.sources().stream().anyMatch(path::startsWith)).forEach(sources::add);
         if(sources.size()>256)return null;
-        var stamp=new StringBuilder(context.toString()).append('\0').append(file).append(':').append(start).append(':').append(Hashing.sha256(patched.getBytes(java.nio.charset.StandardCharsets.UTF_8))).append(':').append(classpathStamp());
+        var stamp=new StringBuilder(context.toString()).append('\0').append(file).append(':').append(start).append(':').append(Hashing.sha256(patched.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        // Detached hits need content identities, not a second compiler-manager check or
+        // source inventory. A miss still validates the manager immediately before javac.
+        appendClasspathContents(stamp);
         // Completion can discover members with no prior reverse-dependency edge. Validate
         // every source in this bounded context, including unsaved declarations and new names.
         for(Path source:sources)if(!source.equals(file)){
-            String hash=documents.hash(source);if(hash==null)hash=inputFiles.hash(source);
-            stamp.append('\0').append(source).append(':').append(hash);
+            stamp.append('\0').append(source).append(':').append(documents.sourceHash(source));
         }
         return Hashing.sha256(stamp.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }

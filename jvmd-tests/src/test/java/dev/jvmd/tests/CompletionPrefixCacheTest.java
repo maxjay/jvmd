@@ -67,4 +67,23 @@ class CompletionPrefixCacheTest {
             assertThat(analyzer.status().get("completion_computations")).isEqualTo(4L);
         }
     }
+    @Test void detachedHitsStillDetectTimestampPreservingJarReplacementAndDeletion()throws Exception{
+        Path jar=IndexFixtures.jar(root.resolve("repository"),"api","package lib; public class Sample { public int getPets(){return 1;} }",true);
+        Path sources=Files.createDirectories(root.resolve("sources"));String source="class Use { Object call(lib.Sample api){return api.getPets();} }";
+        Path file=Files.writeString(sources.resolve("Use.java"),source);var identities=new FileStateRegistry();
+        try(var analyzer=new Analyzer(identities)){
+            analyzer.configure(new Analyzer.Context("fixture:prefix:1","25",List.of(jar),List.of(sources),"jar",Map.of()),null,256L*1024*1024);
+            assertThat(complete(analyzer,file,source,"get").path("items").findValuesAsText("name")).contains("getPets");
+            assertThat(complete(analyzer,file,source,"getP").path("items").findValuesAsText("name")).contains("getPets");
+            assertThat(analyzer.status()).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",1L);
+            var time=Files.getLastModifiedTime(jar);
+            Path replacement=IndexFixtures.jar(root.resolve("replacement"),"api","package lib; public class Sample { public String getElse(){return \"new\";} }",true);
+            Files.copy(replacement,jar,StandardCopyOption.REPLACE_EXISTING);Files.setLastModifiedTime(jar,time);
+            assertThat(complete(analyzer,file,source,"get").path("items").findValuesAsText("name")).contains("getElse").doesNotContain("getPets");
+            Files.delete(jar);
+            var deleted=analyzer.completion(file,source,0,source.indexOf("api.get")+7,100,0);
+            assertThat(deleted.warnings()).anyMatch(w->w.startsWith("analyzer_fault:"));
+            assertThat(Json.MAPPER.valueToTree(deleted.result()).path("items").isEmpty()).isTrue();
+        }
+    }
 }

@@ -16,4 +16,13 @@ class IndexSearchTest {
    assertThat(index.database().counts().get("simple_names")).isEqualTo(2L);
   }
  }
+ @Test void typePrefixLookupIsCaseSensitiveAndDoesNotRequireSubstringSearch()throws Exception{
+  Path jar=IndexFixtures.jar(temp.resolve("prefix"),"sample-prefix",IndexFixtures.generic(),false);
+  try(var index=new IndexService(new SqliteIndexStore(temp.resolve("prefix.db")),temp,ArtifactGenerationSink.none())){
+   index.indexJar(jar,"fixture:sample:1","jar");
+   assertThat(index.findNamePrefix("Sa",null,10,Set.of("class")).stream().map(s->s.get("name"))).contains("Sample");
+   assertThat(index.findNamePrefix("am",null,10,Set.of("class")).stream().map(s->s.get("name"))).doesNotContain("Sample");
+   assertThat(index.findNamePrefix("sa",null,10,Set.of("class")).stream().map(s->s.get("name"))).doesNotContain("Sample");
+  }
+ }
 }

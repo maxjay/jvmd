@@ -15,20 +15,22 @@ class WorkspaceBindingsWarmValidationBenchmarkTest {
 
     @Test void measuresUnchangedWorkspaceBindingValidationCost()throws Exception{
         var scenarios=new ArrayList<Map<String,Object>>();
-        for(int files:List.of(128,512))scenarios.add(run(root.resolve("f"+files),files));
+        for(boolean resolved:List.of(false,true))for(int files:List.of(128,512))
+            scenarios.add(run(root.resolve((resolved?"maven":"plain")+"-"+files),files,resolved));
         var out=Map.of("feature","workspace-bindings-warm-validation","scenarios",scenarios);
         Path report=TestSupport.repo().resolve("jvmd-tests/target/workspace-bindings-warm-validation-perf.json");
         Files.createDirectories(report.getParent());Json.MAPPER.writerWithDefaultPrettyPrinter().writeValue(report.toFile(),out);
         System.out.println("workspace-bindings-warm-validation-perf "+Json.MAPPER.writeValueAsString(out));
     }
 
-    private Map<String,Object> run(Path project,int files)throws Exception{
-        Path src=Files.createDirectories(project.resolve("src"));
+    private Map<String,Object> run(Path project,int files,boolean resolved)throws Exception{
+        if(resolved)MavenFixtures.project(project,"<properties><maven.compiler.release>25</maven.compiler.release></properties>");
+        Path src=Files.createDirectories(resolved?project.resolve("src/main/java"):project.resolve("src"));
         Files.writeString(src.resolve("Root.java"),"class Root { static int value(){ return 1; } }\n");
         for(int i=1;i<files;i++)Files.writeString(src.resolve("Other"+i+".java"),
                 "class Other"+i+" { int value(){ return "+i+"; } }\n");
         try(var app=new Application(TestSupport.config(project,Duration.ofHours(4)))){
-            String session=TestSupport.open(app,src);
+            String session=TestSupport.open(app,resolved?project:src);
             var cold=TestSupport.request(app.dispatcher(),"symbol.references",
                     Map.of("session",session,"ref","Root/value()","direction","in","limit",1000));
             assertThat(cold.has("error")).as(cold.toString()).isFalse();
@@ -45,6 +47,7 @@ class WorkspaceBindingsWarmValidationBenchmarkTest {
             var after=status(app,session);Arrays.sort(samples);
             return Map.of(
                     "files",files,
+                    "resolved",resolved,
                     "samples",samples.length,
                     "median_ms",percentile(samples,.50),
                     "p95_ms",percentile(samples,.95),

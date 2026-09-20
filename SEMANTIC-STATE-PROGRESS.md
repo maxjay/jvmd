@@ -50,3 +50,24 @@ Each entry records the change, validation, limitations and next work. Historical
   These regressions are open performance work, not a successful overall speed claim.
 - Completed local gates A1–A4, B1–B4, C1–C4, D1. Maven/CI and persistence/design documentation
   remain open. Added a portable standalone runner and a required checkpoint step for those checks.
+
+## 2026-09-20 — 004: remote checkpoints pass; costs and boundaries documented
+
+- Published draft PR #8 against `perf/compact-grams-merge`:
+  https://github.com/maxjay/jvmd/pull/8 . Initial implementation is remote `46b947ec`.
+- Checkpoints run 35534874482 completed successfully: Maven compile/package, standalone semantic
+  regressions, runtime/AOT assembly, resolver, index/Rocks, compiler, processing, overlays,
+  documentation, runtime/hot swap, protocol/rename and LSP/editor gates all passed.
+- Added phase timing counters. The loader dominates the profiled cold/API cost; navigation
+  maintenance for the 512-file body edit is below 1 ms. Source validation is still proportional
+  to workspace size on coarse roots. Repeated timings vary materially; all raw runs are retained.
+- Avoided constructing contracts for other fragments' reference copies. Normalized inventory roots.
+  Added explicit conservative package/module metadata invalidation and a package-annotation test.
+- Follow-up production compilation and 5,141 standalone checks pass locally. (Restricting contracts
+  to owned declarations changes the number of interner assertions; prior counts are historical.)
+- Added `docs/semantic-state.md` and the performance report. Amended `docs/design.md` to identify
+  Rocks as the shipped default and the old SQLite physical schema as historical/provider-specific.
+- Added open E1–E3 performance/heap/consolidation gates. Source observations are view-specific;
+  current navigation is structurally shared, not Merkle-addressed or durably cross-store atomic.
+- Completed D2 and D4. D3 awaits CI for the follow-up code; the preceding implementation's complete
+  checkpoint success must not be represented as validation of this later commit.

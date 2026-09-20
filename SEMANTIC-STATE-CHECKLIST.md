@@ -86,12 +86,24 @@ the existing RocksDB artifact backend. Keep protocols compatible.
 
 - [x] D1. Apply bounded canonical reuse to typed contracts; collision-safe structural
   equality, context/owner separation and eviction must preserve correctness.
-- [ ] D2. Document publication/persistence boundaries and schema versions. Reconcile the
+- [x] D2. Document publication/persistence boundaries and schema versions. Reconcile the
   obsolete SQLite-only design with the shipped artifact backend and new semantic model.
 - [ ] D3. Run focused tests and relevant compiler/navigation/index gates; record actual
   results, costs, failures, open risks and any remaining work without silently closing it.
-- [ ] D4. Commit and push the work; open a draft PR against the optimisation branch and
+- [x] D4. Commit and push the work; open a draft PR against the optimisation branch and
   record its validation state. Do not merge automatically.
+
+### E. Performance acceptance discovered during implementation
+
+These remain open even when the correctness/build gates pass. PR #8 stays a draft.
+
+- [ ] E1. Run paired measurements on representative projects; separate coarse and precise-root
+  validation, cold attribution, API changes and posting maintenance. Address or explicitly accept
+  the measured cold/warm/API regressions; the small synthetic body-edit win is insufficient.
+- [ ] E2. Measure allocation and retained heap, including active readers and the contract interner;
+  validate the fragment admission estimate against those measurements.
+- [ ] E3. Decide the next consolidation slice from that evidence. Global semantic query validity,
+  persisted Rocks invalidation and per-view source observations are not yet one durable DAG.
 
 ## Deliberately separate research decisions
 

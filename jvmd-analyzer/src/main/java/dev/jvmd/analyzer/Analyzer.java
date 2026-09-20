@@ -79,9 +79,13 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         // New names can resolve old failures without a previously known dependency edge.
         for(var root:context.sources()){
             value.append("\0root:").append(root);
-            if(Files.isDirectory(root))for(Path file:FileInventory.matching(root,".java"))value.append("\0").append(file);
+            if(Files.isDirectory(root))for(Path file:FileInventory.matching(root,".java")){
+                value.append("\0").append(file);if(ApiFingerprint.contextSource(file))value.append(':').append(documents.sourceHash(file));
+            }
         }
-        documents.paths().stream().filter(p->!Files.isRegularFile(p)&&context.sources().stream().anyMatch(p::startsWith)).sorted().forEach(p->value.append("\0buffer:").append(p));
+        for(Path file:documents.paths().stream().filter(p->!Files.isRegularFile(p)&&context.sources().stream().anyMatch(p::startsWith)).sorted().toList()){
+            value.append("\0buffer:").append(file);if(ApiFingerprint.contextSource(file))value.append(':').append(documents.sourceHash(file));
+        }
         return Hashing.sha256(value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
     private void appendClasspathContents(StringBuilder value)throws Exception{
@@ -168,7 +172,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             caches.outlines.entrySet().removeIf(e->changed.stream().anyMatch(path->e.getKey().startsWith(path+":")));
             if(!Collections.disjoint(caches.files,changed)){
                 var pool=compilerPools.get(entry.getKey());
-                if(changed.stream().anyMatch(path->path.getFileName().toString().equals("package-info.java")))pool.recycle();
+                if(changed.stream().anyMatch(ApiFingerprint::contextSource))pool.recycle();
                 else pool.sourcesChanged();
             }
         }
@@ -221,9 +225,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     public void resolvedApi(Path path,String fingerprint){if(fingerprint!=null)resolveApiChange(path.toAbsolutePath().normalize(),fingerprint);}
     public Set<Path> pendingPrerequisites(Path file){return conditionalByFile.getOrDefault(file.toAbsolutePath().normalize(),Set.of());}
     public void changed(Path path,String hash){
+        if(ApiFingerprint.contextSource(path)){namespaceChanged();return;}
         path=path.toAbsolutePath().normalize();conditionallyInvalidate(path,dependencies.changed(path,hash));
     }
     public void changed(Path path){
+        if(ApiFingerprint.contextSource(path)){namespaceChanged();return;}
         path=path.toAbsolutePath().normalize();conditionallyInvalidate(path,dependencies.changed(path));
         // An unresolved lookup has no declaration edge; an API change will invalidate unresolved diagnostic states after attribution.
         focused.entrySet().removeIf(e->e.getValue().result().diagnostics().stream().anyMatch(d->d.kind().equals("ERROR")));

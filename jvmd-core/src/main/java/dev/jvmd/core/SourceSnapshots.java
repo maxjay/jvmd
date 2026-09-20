@@ -13,9 +13,9 @@ public final class SourceSnapshots {
     private long revision,captures,enumerations;
     SourceSnapshots(Documents documents){this.documents=documents;}
     public synchronized List<Path> inventory(Collection<Path> roots)throws java.io.IOException{
-        enumerations++;var files=new TreeSet<Path>();
-        for(Path root:roots)if(Files.isDirectory(root))files.addAll(FileInventory.matching(root,".java"));
-        for(Path file:documents.paths())if(roots.stream().anyMatch(r->file.startsWith(r.toAbsolutePath().normalize())))files.add(file);
+        enumerations++;var files=new TreeSet<Path>();var normalized=roots.stream().map(p->p.toAbsolutePath().normalize()).distinct().toList();
+        for(Path root:normalized)if(Files.isDirectory(root))files.addAll(FileInventory.matching(root,".java"));
+        for(Path file:documents.paths())if(normalized.stream().anyMatch(file::startsWith))files.add(file);
         return List.copyOf(files);
     }
     /** Captures the requested view. Deltas describe the last capture, not an unbounded event history. */

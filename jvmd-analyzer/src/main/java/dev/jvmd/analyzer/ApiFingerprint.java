@@ -9,6 +9,10 @@ import javax.lang.model.element.*;
 /** Stable declaration fingerprint intentionally excluding bodies, positions, docs, and local implementation detail. */
 public final class ApiFingerprint {
     private ApiFingerprint(){}
+    /** Package annotations and module visibility are context inputs, not member contracts. */
+    public static boolean contextSource(Path file){
+        String name=file.getFileName().toString();return name.equals("module-info.java")||name.equals("package-info.java");
+    }
 
     public static String of(Bindings.Snapshot snapshot,Path source){
         String file=source.toAbsolutePath().normalize().toString();

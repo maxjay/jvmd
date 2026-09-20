@@ -49,12 +49,18 @@ public final class WorkspaceBindings implements AutoCloseable {
     private final DependencyGraph<Path> dependencyGraph=new DependencyGraph<>();
     private NavigationIndex navigation=new NavigationIndex();
     private long estimatedBytes,fragmentBytesSerialized,navigationFileUpdates;
+    private long enumerationNanos,inputNanos,attributionNanos,serializationNanos,apiNanos,navigationNanos;
     private Inputs inputs;
     private Snapshot snapshot;
     private ValidationToken validationToken;
     private long hits,builds,serializedBytes,fullBuilds,incrementalBuilds,filesReanalysed,filesReused,apiInvalidations,fastValidationHits,fullValidations;
     private int lastReanalysedFiles;
+    private Inputs observe(SourceFiles sources,List<Path> classpath,Documents documents,String generation)throws Exception{
+        long started=System.nanoTime();var files=sources.files();enumerationNanos+=System.nanoTime()-started;
+        return inputs(files,classpath,documents,generation);
+    }
     private Inputs inputs(List<Path> files,List<Path> classpath,Documents documents,String generation)throws Exception {
+        long started=System.nanoTime();try{
         var normalizedFiles=files.stream().map(path->path.toAbsolutePath().normalize()).distinct().toList();
         var sourceValues=documents.sources().capture(normalizedFiles).hashes();
         var classpathValues=new LinkedHashMap<Path,String>();var normalizedClasspath=new ArrayList<Path>();
@@ -65,6 +71,7 @@ public final class WorkspaceBindings implements AutoCloseable {
             }else classpathValues.put(path,classpathFiles.hash(path));
         }
         return new Inputs(generation,Map.copyOf(sourceValues),Map.copyOf(classpathValues),List.copyOf(normalizedFiles),List.copyOf(normalizedClasspath));
+        }finally{inputNanos+=System.nanoTime()-started;}
     }
     private static boolean sameContext(Inputs first,Inputs second){
         return first!=null&&second!=null&&Objects.equals(first.generation(),second.generation())
@@ -84,7 +91,7 @@ public final class WorkspaceBindings implements AutoCloseable {
         if(snapshot==null)return null;
         var token=validation==null?null:validation.current();
         if(token!=null&&token.fastCompatible(validationToken)){hits++;fastValidationHits++;validationToken=token;return snapshot;}
-        fullValidations++;var current=inputs(sources.files(),classpath,documents,generation);
+        fullValidations++;var current=observe(sources,classpath,documents,generation);
         if(!current.equals(inputs)){snapshot=null;validationToken=null;return null;}
         var after=validation==null?null:validation.current();
         if(!stable(token,after)){snapshot=null;validationToken=null;return null;}
@@ -113,14 +120,15 @@ public final class WorkspaceBindings implements AutoCloseable {
         if(files.isEmpty())return Map.of();
         var texts=new LinkedHashMap<Path,String>();
         for(Path file:current.files())if(files.contains(file))texts.put(file,documents.text(file));
-        var loaded=loader.load(Collections.unmodifiableMap(texts));
+        long started=System.nanoTime();var loaded=loader.load(Collections.unmodifiableMap(texts));attributionNanos+=System.nanoTime()-started;
         var result=new LinkedHashMap<Path,Fragment>();
         for(Path file:texts.keySet()){
             var outcome=Objects.requireNonNull(loaded.get(file),"Missing file in binding batch: "+file);
-            long bytes=Json.MAPPER.writeValueAsBytes(outcome).length;fragmentBytesSerialized+=bytes;
+            started=System.nanoTime();long bytes=Json.MAPPER.writeValueAsBytes(outcome).length;serializationNanos+=System.nanoTime()-started;fragmentBytesSerialized+=bytes;
             long estimated=4L*bytes+512L;
             if(outcome.result()!=null)estimated+=256L*outcome.result().symbols().size()+256L*outcome.result().edges().size()+128L*outcome.result().occurrences().size();
-            result.put(file,new Fragment(current.sourceHashes().get(file),outcome,api(file,outcome),bytes,estimated));
+            started=System.nanoTime();String fingerprint=api(file,outcome);apiNanos+=System.nanoTime()-started;
+            result.put(file,new Fragment(current.sourceHashes().get(file),outcome,fingerprint,bytes,estimated));
         }
         return result;
     }
@@ -137,7 +145,7 @@ public final class WorkspaceBindings implements AutoCloseable {
         if(snapshot!=null&&token!=null&&token.fastCompatible(validationToken)){
             hits++;fastValidationHits++;validationToken=token;lastReanalysedFiles=0;filesReused+=inputs==null?0:inputs.files().size();return snapshot;
         }
-        fullValidations++;var current=inputs(sources.files(),classpath,documents,generation);
+        fullValidations++;var current=observe(sources,classpath,documents,generation);
         if(snapshot!=null&&current.equals(inputs)){
             var checked=validation==null?null:validation.current();
             if(stable(token,checked)){hits++;lastReanalysedFiles=0;filesReused+=current.files().size();validationToken=checked;return snapshot;}
@@ -147,6 +155,7 @@ public final class WorkspaceBindings implements AutoCloseable {
 
         var priorInputs=inputs;var priorFragments=new LinkedHashMap<>(fragments);
         boolean full=!sameContext(priorInputs,current)||priorFragments.size()!=current.files().size();
+        if(!full)full=current.sourceHashes().entrySet().stream().anyMatch(e->ApiFingerprint.contextSource(e.getKey())&&!Objects.equals(e.getValue(),priorInputs.sourceHashes().get(e.getKey())));
         var dirty=new LinkedHashSet<Path>();
         if(full)dirty.addAll(current.files());
         else for(Path file:current.files())if(!Objects.equals(priorInputs.sourceHashes().get(file),current.sourceHashes().get(file)))dirty.add(file);
@@ -173,7 +182,8 @@ public final class WorkspaceBindings implements AutoCloseable {
 
         lastReanalysedFiles=dirty.size();filesReanalysed+=dirty.size();filesReused+=Math.max(0,current.files().size()-dirty.size());
         var publicationStart=validation==null?null:validation.current();
-        var after=inputs(sources.files(),classpath,documents,generation);boolean consistent=current.equals(after);
+        var after=observe(sources,classpath,documents,generation);boolean consistent=current.equals(after);
+        long maintenanceStart=System.nanoTime();
         var nextNavigation=full?new NavigationIndex():navigation;
         for(Path file:dirty){
             var old=priorFragments.get(file);var updated=working.get(file);
@@ -182,6 +192,7 @@ public final class WorkspaceBindings implements AutoCloseable {
             workingEstimate+=updated.estimatedBytes()-(old==null?0:old.estimatedBytes());
         }
         navigationFileUpdates+=dirty.size();
+        navigationNanos+=System.nanoTime()-maintenanceStart;
         var publicationEnd=validation==null?null:validation.current();consistent&=stable(publicationStart,publicationEnd);
         var result=aggregate(nextNavigation,consistent);
         if(consistent&&result.tier()==2&&result.warnings().stream().noneMatch(w->w.startsWith("analyzer_fault"))){
@@ -196,6 +207,9 @@ public final class WorkspaceBindings implements AutoCloseable {
     }
     public Map<String,Object> status(){
         var result=new LinkedHashMap<String,Object>();
+        result.put("source_enumeration_ms",enumerationNanos/1e6);result.put("input_validation_ms",inputNanos/1e6);
+        result.put("attribution_ms",attributionNanos/1e6);result.put("fragment_serialization_ms",serializationNanos/1e6);
+        result.put("api_fingerprint_ms",apiNanos/1e6);result.put("navigation_maintenance_ms",navigationNanos/1e6);
         result.put("navigation_file_updates",navigationFileUpdates);result.put("fragment_bytes_serialized",fragmentBytesSerialized);result.put("estimated_retained_bytes",estimatedBytes);
         result.put("builds",builds);result.put("cache_hits",hits);result.put("serialized_bytes",serializedBytes);
         result.put("cached_files",inputs==null?0:inputs.files().size());result.put("fragment_files",fragments.size());

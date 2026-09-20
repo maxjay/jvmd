@@ -152,9 +152,24 @@ public class SemanticStateRegression {
             }
         }
     }
+    static void metadata(Path root)throws Exception{
+        Path metadata=root.resolve("package-info.java"),user=root.resolve("User.java");
+        Files.writeString(metadata,"package sample;");Files.writeString(user,"package sample; class User {}");
+        var documents=new Documents();
+        try(var analyzer=new Analyzer();var cache=new WorkspaceBindings()){
+            analyzer.configure(new Analyzer.Context("test:app:1","25",List.of(),List.of(root),"metadata",Map.of(root.toUri().toString(),"test:app:1")),null,128L*1024*1024);analyzer.documents(documents);
+            WorkspaceBindings.SourceFiles files=()->documents.sources().inventory(List.of(root));
+            cache.getBatch(files,List.of(),documents,"metadata",64L*1024*1024,analyzer::bindingsBatch);
+            Files.writeString(metadata,"@Deprecated package sample;");
+            var updated=cache.getBatch(files,List.of(),documents,"metadata",64L*1024*1024,analyzer::bindingsBatch);
+            check(updated.tier()==2&&updated.diagnostics().isEmpty(),"Metadata attribution failed");
+            check(((Number)cache.status().get("full_builds")).intValue()==2,"Package annotation reused member-only contracts");
+            check(((Number)cache.status().get("last_reanalysed_files")).intValue()==2,"Metadata failed to refresh consumers");
+        }
+    }
     public static void main(String[] args)throws Exception{
         Path root=Files.createTempDirectory("jvmd-semantic-regression-");
-        maps();identity(Files.createDirectory(root.resolve("identity")));sources(Files.createDirectory(root.resolve("sources")));navigation(Files.createDirectory(root.resolve("navigation")));publication(Files.createDirectory(root.resolve("publication")));protocol(Files.createDirectory(root.resolve("protocol")));
+        maps();identity(Files.createDirectory(root.resolve("identity")));sources(Files.createDirectory(root.resolve("sources")));navigation(Files.createDirectory(root.resolve("navigation")));publication(Files.createDirectory(root.resolve("publication")));protocol(Files.createDirectory(root.resolve("protocol")));metadata(Files.createDirectory(root.resolve("metadata")));
         System.out.println("Semantic state regression checks passed: "+checks);
     }
 }

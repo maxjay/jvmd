@@ -25,6 +25,9 @@ public final class Application implements AutoCloseable {
     private volatile java.util.concurrent.CompletableFuture<IndexService> index;
     private static final Set<String> COMPLETION_TYPE_KINDS=Set.of("class","interface","enum","record","annotation");
     private record TypeCompletionCache(String generation,String prefix,List<Map<String,Object>> rows,boolean complete) { }
+    private record WorkspaceBindingContexts(String generation,Set<String> contexts) {
+        WorkspaceBindingContexts { contexts=Set.copyOf(contexts); }
+    }
     public Application(Config config) {
         this.config = config;
         if (config.indexOnStart()) initializeIndex(true);
@@ -297,6 +300,21 @@ public final class Application implements AutoCloseable {
         documents(session).paths().stream().filter(workspace(session)::contains).sorted().forEach(files::add);
         return List.copyOf(files);
     }
+    private WorkspaceBindings.ValidationToken workspaceBindingValidation(Session session,Resolution graph,String generation)throws Exception{
+        if(!(session.state("workspace_binding_contexts") instanceof WorkspaceBindingContexts contexts)||!contexts.generation().equals(generation)||contexts.contexts().isEmpty())return null;
+        var analyzer=(Analyzer)session.state("analyzer");if(analyzer==null)return null;
+        var sources=analyzer.workspaceSourceGenerations(contexts.contexts());if(sources==null)return null;
+        var merkle=new TreeMap<String,String>();
+        if(graph!=null&&index!=null&&index.isDone()&&!index.isCompletedExceptionally()){
+            var database=index.join();
+            for(var module:graph.modules())for(boolean test:List.of(false,true)){
+                var roots=test?module.testSources():module.sources();if(roots.isEmpty())continue;
+                String key=module.gav()+(test?":test":":main"),moduleId=module.directory()+"|"+key;
+                String fingerprint=database.moduleStateFingerprint(moduleId);if(fingerprint!=null)merkle.put(moduleId,fingerprint);
+            }
+        }
+        return new WorkspaceBindings.ValidationToken(generation,documents(session).generation(),sources,Map.copyOf(merkle));
+    }
     private WorkspaceBindings.Snapshot workspaceBindings(Session session,boolean load)throws Exception{
         var graph=(Resolution)session.state("resolution");if(graph!=null)graph=refresh(session);
         var classpath=new LinkedHashSet<Path>();
@@ -308,22 +326,26 @@ public final class Application implements AutoCloseable {
             }
         }}
         var cache=session.state("workspace_bindings",()->new WorkspaceBindings(classpathFiles));String generation=graph==null?"plain":graph.fingerprint();
-        if(!load)return cache.peek(sourceFiles(session),List.copyOf(classpath),documents(session),generation);
         Resolution currentGraph=graph;
-        return cache.getBatch(()->sourceFiles(session),List.copyOf(classpath),documents(session),generation,(long)config.heapCeilingMb()*1024*1024/Math.max(1,sessions.list().size())/4,files->{
+        var validation=(WorkspaceBindings.Validation)()->workspaceBindingValidation(session,currentGraph,generation);
+        if(!load)return cache.peek(()->sourceFiles(session),List.copyOf(classpath),documents(session),generation,validation);
+        return cache.getBatch(()->sourceFiles(session),List.copyOf(classpath),documents(session),generation,(long)config.heapCeilingMb()*1024*1024/Math.max(1,sessions.list().size())/4,validation,files->{
             var groups=new LinkedHashMap<String,LinkedHashMap<Path,String>>();
             for(var entry:files.entrySet())groups.computeIfAbsent(WorkspaceContextManager.key(entry.getKey(),currentGraph),_->new LinkedHashMap<>()).put(entry.getKey(),entry.getValue());
+            var active=new LinkedHashSet<String>();
+            if(session.state("workspace_binding_contexts") instanceof WorkspaceBindingContexts prior&&prior.generation().equals(generation))active.addAll(prior.contexts());
             var results=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();
             for(var group:groups.values()){
                 var batch=new LinkedHashMap<Path,String>();long characters=0;
                 for(var entry:group.entrySet()){
                     if(!batch.isEmpty()&&(batch.size()>=32||characters+entry.getValue().length()>1024*1024)){
-                        results.putAll(analyzer(session,batch.keySet().iterator().next()).bindingsBatch(batch));batch.clear();characters=0;
+                        var worker=analyzer(session,batch.keySet().iterator().next());active.add(worker.contextKey());results.putAll(worker.bindingsBatch(batch));batch.clear();characters=0;
                     }
                     batch.put(entry.getKey(),entry.getValue());characters+=entry.getValue().length();
                 }
-                if(!batch.isEmpty())results.putAll(analyzer(session,batch.keySet().iterator().next()).bindingsBatch(batch));
+                if(!batch.isEmpty()){var worker=analyzer(session,batch.keySet().iterator().next());active.add(worker.contextKey());results.putAll(worker.bindingsBatch(batch));}
             }
+            session.put("workspace_binding_contexts",new WorkspaceBindingContexts(generation,Set.copyOf(active)));
             return results;
         });
     }

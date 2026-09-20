@@ -28,7 +28,7 @@ public final class CompilerPool implements AutoCloseable {
     private String generation,release;
     private List<String> compilerOptions=List.of();
     private boolean preciseSourceRoots=true;
-    private long batchQueries,batchFiles,attributeOnlyQueries;
+    private long batchQueries,batchFiles;
     private long budget,baseline,recycles,faults,queries,queryNanos,configureCalls,configureNanos,classpathValidations,classpathValidationNanos;
     private long validatedRequestId=-1;
     private long sourceModuleGeneration;
@@ -64,17 +64,13 @@ public final class CompilerPool implements AutoCloseable {
     private void checkThread(){if(Thread.currentThread()!=owner||owner.isVirtual())throw new IllegalStateException("Compiler access must stay on its session platform executor");}
     public record SourceInput(Path file,String text){public SourceInput{file=file.toAbsolutePath().normalize();}}
     public <T> Outcome<T> query(Path path,String source,int tier,Query<T> query)throws Exception {
-        return execute(List.of(new SourceInput(path,source)),tier,true,query);
-    }
-    /** Tier-2 attribution for editor completion without FLOW's definite-assignment/unreachable checks. */
-    public <T> Outcome<T> attributedQuery(Path path,String source,Query<T> query)throws Exception {
-        attributeOnlyQueries++;return execute(List.of(new SourceInput(path,source)),2,false,query);
+        return execute(List.of(new SourceInput(path,source)),tier,query);
     }
     public <T> Outcome<T> batchQuery(List<SourceInput> sources,int tier,Query<T> query)throws Exception {
         checkThread();if(sources.isEmpty())throw new IllegalArgumentException("Empty source batch");
-        batchQueries++;batchFiles+=sources.size();return execute(List.copyOf(sources),tier,true,query);
+        batchQueries++;batchFiles+=sources.size();return execute(List.copyOf(sources),tier,query);
     }
-    private <T> Outcome<T> execute(List<SourceInput> sources,int tier,boolean runFlow,Query<T> query)throws Exception {
+    private <T> Outcome<T> execute(List<SourceInput> sources,int tier,Query<T> query)throws Exception {
         Path path=sources.getFirst().file();
         checkThread();if(manager==null)throw new IllegalStateException("Compiler classpath not configured");
         if(tier<0||tier>2)throw new IllegalArgumentException("tier");
@@ -108,13 +104,7 @@ public final class CompilerPool implements AutoCloseable {
                     task.parse().forEach(units::add);
                     if(tier>=1){
                         var entered=((JavacTaskImpl)task).enter();
-                        if(tier==2){
-                            if(runFlow)((JavacTaskImpl)task).analyze(entered);
-                            else{
-                                var javac=com.sun.tools.javac.main.JavaCompiler.instance(((JavacTaskImpl)task).getContext());
-                                javac.attribute(javac.todo);
-                            }
-                        }
+                        if(tier==2)((JavacTaskImpl)task).analyze(entered);
                     }
                 }catch(AssertionError|RuntimeException e){System.getLogger("jvmd.analyzer").log(System.Logger.Level.ERROR,"Compilation fault in "+path,e);actual[0]=Math.min(1,tier);fault[0]=true;faults++;warnings.add("analyzer_fault: "+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()));}
                 catch(java.io.IOException e){throw new java.io.UncheckedIOException(e);}
@@ -161,7 +151,7 @@ public final class CompilerPool implements AutoCloseable {
     }
     public Map<String,Object> status(){
         checkThread();var status=new LinkedHashMap<String,Object>();
-        status.put("queries",queries);status.put("batch_queries",batchQueries);status.put("batch_files",batchFiles);status.put("attribute_only_queries",attributeOnlyQueries);status.put("query_ms",nanosToMillis(queryNanos));
+        status.put("queries",queries);status.put("batch_queries",batchQueries);status.put("batch_files",batchFiles);status.put("query_ms",nanosToMillis(queryNanos));
         status.put("configure_calls",configureCalls);status.put("configure_ms",nanosToMillis(configureNanos));
         status.put("classpath_validations",classpathValidations);status.put("classpath_validation_ms",nanosToMillis(classpathValidationNanos));
         status.put("release_platform_initializations",releasePlatform.initializations());status.put("release_platform_reuses",releasePlatform.reuses());

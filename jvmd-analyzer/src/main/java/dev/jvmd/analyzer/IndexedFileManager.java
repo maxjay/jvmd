@@ -72,10 +72,11 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         WatchService watcher=null;try{watcher=FileSystems.getDefault().newWatchService();}catch(IOException|UnsupportedOperationException ignored){watcherReliable=false;}
         classWatcher=watcher;
         if(classWatcher!=null)for(Path directory:directories)if(Files.isDirectory(directory))registerTree(directory);
+        // Source-root precision controls package-catalog use, not change detection. Even a
+        // coarse/plain workspace root can be watched recursively and provide a cheap invalidation
+        // epoch; javac listing still falls back to the standard file manager unless roots are precise.
         WatchService sourcesWatcher=null;
-        if(preciseSourceRoots){
-            try{sourcesWatcher=FileSystems.getDefault().newWatchService();}catch(IOException|UnsupportedOperationException ignored){sourceWatcherReliable=false;}
-        }else sourceWatcherReliable=false;
+        try{sourcesWatcher=FileSystems.getDefault().newWatchService();}catch(IOException|UnsupportedOperationException ignored){sourceWatcherReliable=false;}
         sourceWatcher=sourcesWatcher;
         if(sourceWatcher!=null)for(Path root:sourceRoots)if(Files.isDirectory(root))registerSourceTree(root);
         // Directory inputs and source roots keep javac's own file-manager behavior.

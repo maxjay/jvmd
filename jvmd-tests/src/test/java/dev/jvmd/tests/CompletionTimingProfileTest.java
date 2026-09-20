@@ -17,6 +17,7 @@ class CompletionTimingProfileTest {
         var scenarios=new ArrayList<Map<String,Object>>();
         scenarios.add(runScenario(temp.resolve("sources-24"),24));
         scenarios.add(runScenario(temp.resolve("sources-128"),128));
+        scenarios.add(runScenario(temp.resolve("sources-300"),300));
         var output=TestSupport.repo().resolve("jvmd-tests/target/completion-perf.json");
         Files.createDirectories(output.getParent());
         Json.MAPPER.writerWithDefaultPrettyPrinter().writeValue(output.toFile(),Map.of("scenarios",scenarios));

@@ -423,7 +423,8 @@ public final class Application implements AutoCloseable {
     private Envelope describe(Session session,String ref,WorkspaceBindings.Snapshot validated)throws Exception{
         if(validated!=null){
             var symbol=validated.symbols().get(ref);if(symbol!=null)return new Envelope(validated.tier(),"live",false,null,validated.warnings(),symbol);
-            var direct=validated.lookup(ref);if(direct.size()==1)return new Envelope(validated.tier(),"live",false,null,validated.warnings(),direct.getFirst());
+            var direct=validated.lookup(ref).stream().filter(candidate->Analyzer.matches(candidate,ref,false)).toList();
+            if(direct.size()==1)return new Envelope(validated.tier(),"live",false,null,validated.warnings(),direct.getFirst());
         }
         var analyzer=(Analyzer)session.state("analyzer");
         if((ref.startsWith("maven ")||ref.startsWith("local "))&&analyzer!=null){

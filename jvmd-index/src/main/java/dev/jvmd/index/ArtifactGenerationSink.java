@@ -26,6 +26,8 @@ public interface ArtifactGenerationSink extends AutoCloseable {
     default boolean needsDocumentation(String binaryCacheKey)throws Exception{return false;}
     default void publishDocumentation(String binaryCacheKey,IndexStore.ArtifactInput sourceInput,Map<String,Map<String,Object>> members,int unmatchedMembers)throws Exception{ }
     default long semanticRevision(Path file)throws Exception{return 0L;}
+    /** Persisted module Merkle root when the backend maintains workspace state. */
+    default String moduleStateFingerprint(String moduleId)throws Exception{return null;}
     default void publishSourceState(SourceIndexPublisher.Delta delta)throws Exception{ }
     default void configureModuleState(ModuleStateInput input)throws Exception{ }
     default void configureWorkspace(String workspace,List<IndexStore.WorkspaceEntry> paths,List<Map.Entry<String,String>> dependencies)throws Exception{ }

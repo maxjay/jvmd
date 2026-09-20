@@ -1,0 +1,75 @@
+name: Semantic state benchmarks
+
+on:
+  pull_request:
+    paths:
+      - 'benchmarks/semantic-state/**'
+      - 'jvmd-*/src/main/**'
+      - 'jvmd-resolver/**/src/main/**'
+      - '**/pom.xml'
+      - 'benchmarks/workspaces/compile.py'
+      - '.github/workflows/semantic-state-benchmarks.yml'
+  workflow_dispatch:
+    inputs:
+      before:
+        description: Baseline commit or ref
+        default: ae23fd1f44573bd3427c0e77f967150173669a2f
+        required: true
+      pairs:
+        description: Independent JVM pairs
+        default: '10'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    concurrency:
+      group: semantic-state-benchmarks-${{ github.ref }}
+      cancel-in-progress: true
+    env:
+      BASELINE_REF: ${{ inputs.before || 'ae23fd1f44573bd3427c0e77f967150173669a2f' }}
+      BENCHMARK_PAIRS: ${{ inputs.pairs || '10' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - name: Install checksum-pinned Temurin 25.0.4.1+1
+        shell: bash
+        run: |
+          curl -fsSL --retry 3 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz' -o "$RUNNER_TEMP/temurin25.tar.gz"
+          printf '%s  %s\n' dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e "$RUNNER_TEMP/temurin25.tar.gz" | sha256sum --check -
+          mkdir -p "$RUNNER_TEMP/jvmd-toolchain"
+          tar -xzf "$RUNNER_TEMP/temurin25.tar.gz" -C "$RUNNER_TEMP/jvmd-toolchain"
+          echo "JAVA_HOME=$RUNNER_TEMP/jvmd-toolchain/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/jvmd-toolchain/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
+      - name: Build production dependencies and run identity correctness tests
+        run: |
+          mvn -B -DskipTests install
+          mvn -B -pl jvmd-tests test -Dtest=SharedClasspathIdentityTest,WorkspaceBindingsTest,WorkspaceBindingsCacheTest,ApiFingerprintInvalidationTest,CompletionPrefixCacheTest
+      - name: Compile independent baseline and candidate
+        shell: bash
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/baseline" "$BASELINE_REF"
+          python benchmarks/semantic-state/suite.py build --repo "$RUNNER_TEMP/baseline" --java-home "$JAVA_HOME" --dependencies "$PWD/jvmd-dist/target/lib" --output "$RUNNER_TEMP/before-build"
+          python benchmarks/semantic-state/suite.py build --repo "$PWD" --java-home "$JAVA_HOME" --dependencies "$PWD/jvmd-dist/target/lib" --output "$RUNNER_TEMP/after-build"
+      - name: Compare serial alternating JVM pairs
+        run: |
+          python benchmarks/semantic-state/suite.py run --before "$RUNNER_TEMP/before-build/build.json" --after "$RUNNER_TEMP/after-build/build.json" --fixture "$RUNNER_TEMP/baseline/jvmd-core/src/main/java" --pairs "$BENCHMARK_PAIRS" --output "$RUNNER_TEMP/semantic-state-results"
+      - name: Retain measurements and failure logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: semantic-state-benchmarks
+          path: |
+            ${{ runner.temp }}/semantic-state-results/campaign.json
+            ${{ runner.temp }}/semantic-state-results/summary.json
+            ${{ runner.temp }}/semantic-state-results/*/run.log
+            ${{ runner.temp }}/semantic-state-results/*/command.json
+            ${{ runner.temp }}/before-build/build.json
+            ${{ runner.temp }}/after-build/build.json
+            jvmd-tests/target/surefire-reports/
+          retention-days: 30

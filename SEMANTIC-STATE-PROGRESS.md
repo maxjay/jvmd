@@ -206,3 +206,48 @@ Each entry records the change, validation, limitations and next work. Historical
   existing sourceHash, including one Unix metadata read per normal validation.
 - Preserve before/after read stamps and provider fallback. Semantic Merkle composition,
   coarse enumeration, API projection and publication-fence fixes remain open.
+
+
+## 2026-09-20 — 012: first candidate implemented and measured, acceptance pending
+
+- Candidate deletes WorkspaceBindings' private Stamp record, hash cache, hashing method
+  and eviction path; navigation observes sources through Documents.sourceHash. The
+  shared FileStateRegistry reads Unix file kind and change metadata together while
+  retaining the read-stability check and non-Unix fallback. Production diff: +13/-23
+  lines, net -10; no formatting/name compression or moved production helpers.
+- Added four focused ownership/provider/buffer tests. All 29 tests in the selected
+  identity, navigation, API invalidation and completion classes pass. An initial test
+  setup lacked a valid resolver bundle; restored it from checksum-verified distribution
+  artifact 10612489698 and reran the complete selected set. Failed setup logs remain.
+- Added a dedicated GitHub workflow for repeated paired benchmarks and evidence upload.
+- First ten-pair comparison meets the primary allocation target (~19% less allocated
+  on 128/512-file cold navigation), but latency is mixed. In particular, the 128-file
+  API-edit paired median is +17%, interval roughly +8% to +28%; several other intervals
+  cross the predeclared regression boundary. This is not accepted as an optimization.
+- Running the one predeclared additional ten-pair campaign and a separate after-profile.
+  The original comparison is retained and will be combined, not replaced by a better run.
+
+
+## 2026-09-20 — 013: retain benchmarks, archive the unaccepted candidate
+
+- Combined all 20 alternating JVM pairs (40 JVMs) without discarding the first campaign.
+  The primary 512-file cold allocation changed from 183.20 MB to 148.14 MB, paired
+  median -18.99% with interval [-19.06%, -18.95%]. The 128-file allocation is -19.29%.
+- Latency remains inconclusive against the preregistered regression boundary for several
+  edit paths, including 128-file API edits (medians 50.17 -> 53.77 ms; paired change
+  +11.8%, interval [-2.5%, +18.4%]) and real-module position edits. This is not a claim
+  that every path is slower, nor sufficient evidence to accept the candidate.
+- Preserved the exact candidate production files and four new tests in commit
+  `2a3beb3750b878264c76525f02bd9e35f157b5d0` on `experiment/source-identity-ownership`.
+  Verified the two production files against the build's recorded source hashes first.
+- Restored working-branch production and repository tests to `ae23fd1f`; the candidate's
+  new ownership tests stay with the experiment. All 25 selected baseline tests pass
+  after restoration; all 29 candidate tests had passed. No test was weakened to accept
+  the candidate. The current CI benchmark workflow uses the applicable existing tests.
+- Published the complete scenario table, all baseline/comparison samples, build metadata,
+  profile attributions, commands and test output in `docs/performance/semantic-state-restart`.
+  Before/after medians and paired-ratio statistics are explicitly distinguished.
+- Retain the reusable suite and dedicated GitHub workflow. S4/S5 are complete for this
+  experiment; S3 and E1–E5 remain open. Production code reduction on the restarted
+  working branch is zero because the unaccepted change was removed. The semantic
+  Merkle DAG is not implemented by this restart. PR #8 remains a draft.

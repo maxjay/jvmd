@@ -13,11 +13,16 @@ The quality rules and E1–E5 remain requirements for the completed architecture
   proposed replacement and falsifiable expected benefit before implementing it.
 - [ ] S3. Change one coherent responsibility; preserve correctness, descriptive names
   and readable structure. Remove the old path and measure production-code impact.
-- [ ] S4. Run the identical suite after the change, including serial alternating
+- [x] S4. Run the identical suite after the change, including serial alternating
   baseline/candidate JVM pairs. Report all scenario medians, variability, allocation,
   work counts and failures. Reject or revise an unproven/regressing change.
-- [ ] S5. Publish the evidence and actual progress. Keep unimplemented semantic Merkle
+- [x] S5. Publish the evidence and actual progress. Keep unimplemented semantic Merkle
   composition, consumer migration and total simplification requirements open.
+
+First candidate disposition: `2a3beb3` is preserved on `experiment/source-identity-ownership`.
+Twenty paired runs confirm ~19% lower cold-navigation allocation, but latency acceptance
+remains unresolved. S3 stays open: no production replacement is retained. Current
+production is still `ae23fd1f`. See `docs/performance/semantic-state-restart/README.md`.
 
 Repeat S2–S5 for each subsequent production change. Benchmark preparation is not an
 architecture gain. Each report names the mechanisms and workloads it does not cover.

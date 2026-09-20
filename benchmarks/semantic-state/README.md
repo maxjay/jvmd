@@ -12,6 +12,13 @@ dependencies. The builder excludes packaged `jvmd-*.jar` files so stale producti
 classes cannot fill gaps in either build. It reuses the repository's compilation
 harness and records source, class, dependency and benchmark hashes. No AOT.
 
+The `Semantic state benchmarks` GitHub workflow runs this comparison for relevant
+pull-request changes and supports a chosen baseline/pair count when dispatched.
+It preserves raw measurements and failed-run logs as artifacts. Workflow success
+means correctness and measurement completed; performance acceptance still requires
+reviewing the declared criteria below. It does not silently turn a timing regression
+into a passing optimization.
+
 ```sh
 git worktree add --detach "$BASELINE_REPO" ae23fd1f44573bd3427c0e77f967150173669a2f
 python benchmarks/semantic-state/suite.py build --repo "$BASELINE_REPO" \

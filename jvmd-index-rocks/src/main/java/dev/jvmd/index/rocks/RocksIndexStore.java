@@ -294,7 +294,7 @@ public final class RocksIndexStore implements IndexStore {
     }
     @Override public synchronized List<Map<String,Object>> findNamePrefix(String prefix,String workspace,int limit,Set<String> kinds)throws Exception{
         if(limit<=0)return List.of();
-        var found=new TreeMap<Long,Map<String,Object>>();var seen=new HashSet<String>();var selectedArtifacts=selected(workspace,false);
+        var found=new TreeMap<Long,Map<String,Object>>();var seen=new HashSet<String>();var selectedArtifacts=selected(workspace,true);
         for(var artifact:selectedArtifacts){
             var sourceScips=new HashSet<String>();
             for(var file:sources(artifact.id()))for(var symbol:file.symbols()){

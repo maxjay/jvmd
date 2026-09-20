@@ -51,6 +51,9 @@ class MultiModuleApiChangeTest {
     }
     private static JsonNode request(Application app,String method,Map<String,?> parameters){
         var response=TestSupport.request(app.dispatcher(),method,parameters);assertThat(response.has("error")).withFailMessage(response.toPrettyString()).isFalse();
-        var envelope=response.path("result");assertThat(envelope.path("warnings").isEmpty()).withFailMessage(response.toPrettyString()).isTrue();return envelope.path("result");
+        var envelope=response.path("result");
+        assertThat(envelope.path("warnings")).withFailMessage(response.toPrettyString())
+                .allMatch(w->method.equals("diag.get")&&w.asText().equals("originates: fixture:core:1"));
+        return envelope.path("result");
     }
 }

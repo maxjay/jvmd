@@ -273,15 +273,22 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     public Envelope cachedDiagnostics(Path path,Documents documents)throws Exception{
         path=path.toAbsolutePath().normalize();String hash=documents.sourceHash(path);
         reconcileSemanticRevision(path);touchHash(path,hash);invalidateConditionalIfUnresolved(path);
-        var cached=diagnosticStore.get(path,hash,context.generation(),classpathStamp());
+        var cached=restoreDiagnostics(path,hash,classpathStamp());
         if(cached!=null){
             diagnosticFilesReused++;
-            if(!apiFingerprints.containsKey(path)){
-                var state=diagnosticStore.state(path,hash,context.generation(),classpathStamp());
-                if(state!=null){apiFingerprints.put(path,state.apiFingerprint());dependencies.record(path,state.dependencies());}
-            }
         }
         return cached;
+    }
+    private Envelope restoreDiagnostics(Path path,String hash,String stamp)throws Exception{
+        var state=diagnosticStore.state(path,hash,context.generation(),stamp);
+        if(state==null)return null;
+        // A disk snapshot can be valid again after an API is reverted. Resolve the
+        // pending change using that snapshot, not the previous in-memory fingerprint.
+        if(!apiFingerprints.containsKey(path)||pendingApi.containsKey(path)){
+            dependencies.record(path,state.dependencies());
+            resolveApiChange(path,state.apiFingerprint());
+        }
+        return state.diagnostics();
     }
     public Envelope diagnostics(Path path,Documents documents)throws Exception{
         var cached=cachedDiagnostics(path,documents);
@@ -340,7 +347,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     public Envelope diagnostics(Path path,String text)throws Exception{
         path=path.toAbsolutePath().normalize();reconcileSemanticRevision(path);touch(path,text);invalidateConditionalIfUnresolved(path);
         String sourceHash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)),stamp=classpathStamp(),generation=context.generation();
-        var cached=diagnosticStore.get(path,sourceHash,generation,stamp);
+        var cached=restoreDiagnostics(path,sourceHash,stamp);
         if(cached!=null){diagnosticFilesReused++;return cached;}
         long computations=bindingComputations;
         var outcome=bindings(path,text,null);

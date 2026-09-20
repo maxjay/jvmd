@@ -189,3 +189,20 @@ Each entry records the change, validation, limitations and next work. Historical
   setup produced a usable performance sample. Raw pilot/setup directories are retained.
 - The README fixes ten-pair sampling, primary-workload selection, gain/regression rules
   and uncertainty reporting before changes. Next: ten-run baseline and separate profile.
+
+
+## 2026-09-20 — 011: baseline measured; first replacement selected
+
+- Completed ten untouched-baseline JVM runs plus a separate JFR profile. All suite
+  correctness checks pass. Raw inputs/samples are in `baseline.json.gz`; summary
+  and selected profile attribution are in `docs/performance/semantic-state-restart`.
+- Baseline 512-file medians: cold 623.45 ms / 182.22 MB allocated, warm 4.08 ms,
+  body edit 47.25 ms, API edit 68.25 ms. These are this suite's values; they are not
+  interchangeable with the archived three-run experiment.
+- Profile and code inspection identify duplicate source observation in WorkspaceBindings.
+  Recorded the ownership ledger and replacement proposal before touching production.
+- Primary target is >=10% lower 512-file cold-request allocation, with its paired
+  interval below zero. Replace navigation's separate stamp/hash cache with Documents'
+  existing sourceHash, including one Unix metadata read per normal validation.
+- Preserve before/after read stamps and provider fallback. Semantic Merkle composition,
+  coarse enumeration, API projection and publication-fence fixes remain open.

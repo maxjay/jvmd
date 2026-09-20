@@ -9,7 +9,7 @@ The quality rules and E1–E5 remain requirements for the completed architecture
 - [x] S0. Preserve the old attempt and restore the exact requested baseline.
 - [x] S1. Commit a reusable benchmark suite and predefined acceptance criteria before
   production edits. Record toolchain, source/dependency hashes, fixture and raw samples.
-- [ ] S2. Run the untouched baseline, trace ownership/duplicate work, and record the
+- [x] S2. Run the untouched baseline, trace ownership/duplicate work, and record the
   proposed replacement and falsifiable expected benefit before implementing it.
 - [ ] S3. Change one coherent responsibility; preserve correctness, descriptive names
   and readable structure. Remove the old path and measure production-code impact.

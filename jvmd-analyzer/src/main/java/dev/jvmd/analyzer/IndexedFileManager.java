@@ -177,10 +177,18 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
                 if(directory==null||!(event.context() instanceof Path relative))continue;
                 Path candidate=directory.resolve(relative).toAbsolutePath().normalize();
                 boolean directoryCreate=event.kind()==StandardWatchEventKinds.ENTRY_CREATE&&Files.isDirectory(candidate);
-                if(directoryCreate)registerSourceTree(candidate);
-                if(directoryCreate||event.kind()!=StandardWatchEventKinds.ENTRY_MODIFY||candidate.toString().endsWith(".java"))sourceStateGeneration++;
+                if(directoryCreate){
+                    registerSourceTree(candidate);
+                    try{if(!dev.jvmd.core.FileInventory.matching(candidate,".java",1).isEmpty())sourceStateGeneration++;}
+                    catch(IOException error){sourceWatcherReliable=false;sourceStateGeneration++;}
+                }else if(candidate.toString().endsWith(".java"))sourceStateGeneration++;
+                else if(event.kind()==StandardWatchEventKinds.ENTRY_DELETE&&watchedSourcePaths.contains(candidate))sourceStateGeneration++;
             }
-            if(!key.reset()){sourceWatchDirectories.remove(key);if(directory!=null)watchedSourcePaths.remove(directory);sourceWatcherReliable=false;sourceStateGeneration++;}
+            if(!key.reset()){
+                sourceWatchDirectories.remove(key);if(directory!=null)watchedSourcePaths.remove(directory);
+                if(directory!=null&&Files.exists(directory))sourceWatcherReliable=false;
+                sourceStateGeneration++;
+            }
         }
     }
     private void registerSourceTree(Path root){

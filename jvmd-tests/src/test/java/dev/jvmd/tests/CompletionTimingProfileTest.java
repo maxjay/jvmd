@@ -49,22 +49,22 @@ class CompletionTimingProfileTest {
                 assertThat(answer.warnings()).isEmpty();
                 var status=analyzer.status();
                 @SuppressWarnings("unchecked") var timing=new LinkedHashMap<String,Object>((Map<String,Object>)status.get("completion_last_timing_ms"));
-                samples.add(new LinkedHashMap<>(Map.of(
-                        "prefix",prefix,
-                        "cache_hit",status.get("completion_last_cache_hit"),
-                        "completion_requests",status.get("completion_requests"),
-                        "completion_computations",status.get("completion_computations"),
-                        "completion_cache_hits",status.get("completion_cache_hits"),
-                        "candidates_seen",status.get("completion_candidates_seen"),
-                        "rows_materialized",status.get("completion_rows_materialized"),
-                        "doc_lookups",status.get("completion_doc_lookups"),
-                        "source_catalog_builds",status.get("source_catalog_builds"),
-                        "source_catalog_files",status.get("source_catalog_files"),
-                        "source_list_calls",status.get("source_list_calls"),
-                        "source_list_entries",status.get("source_list_entries"),
-                        "source_watch_events",status.get("source_watch_events"),
-                        "timing_ms",timing
-                )));
+                var sample=new LinkedHashMap<String,Object>();
+                sample.put("prefix",prefix);
+                sample.put("cache_hit",status.get("completion_last_cache_hit"));
+                sample.put("completion_requests",status.get("completion_requests"));
+                sample.put("completion_computations",status.get("completion_computations"));
+                sample.put("completion_cache_hits",status.get("completion_cache_hits"));
+                sample.put("candidates_seen",status.get("completion_candidates_seen"));
+                sample.put("rows_materialized",status.get("completion_rows_materialized"));
+                sample.put("doc_lookups",status.get("completion_doc_lookups"));
+                sample.put("source_catalog_builds",status.get("source_catalog_builds"));
+                sample.put("source_catalog_files",status.get("source_catalog_files"));
+                sample.put("source_list_calls",status.get("source_list_calls"));
+                sample.put("source_list_entries",status.get("source_list_entries"));
+                sample.put("source_watch_events",status.get("source_watch_events"));
+                sample.put("timing_ms",timing);
+                samples.add(sample);
                 version++;
             }
             assertThat(samples.get(0).get("cache_hit")).isEqualTo(false);

@@ -81,13 +81,13 @@ class WorkspaceBindingsCacheTest {
     @Test void apiAdditionsReanalysePriorErrorsWithoutOldDependencyEdges()throws Exception{
         Path api=root.resolve("Api.java"),broken=root.resolve("Broken.java");
         Files.writeString(api,"class Api {}");
-        Files.writeString(broken,"class Broken { Missing value; }");
+        Files.writeString(broken,"class Broken { Api.Missing value; }");
         try(var app=new Application(TestSupport.config(root,Duration.ofHours(4)))){
             String session=TestSupport.open(app,root);
             request(app,"symbol.references",Map.of("session",session,"ref","Api","direction","in"));
-            Files.writeString(api,"class Api {} class Missing {}");
-            var resolved=request(app,"symbol.references",Map.of("session",session,"ref","Missing","direction","in","kinds",List.of("return_type")));
-            assertThat(resolved.path("edges").toString()).contains("Broken#value.").contains("Missing#");
+            Files.writeString(api,"class Api { static class Missing {} }");
+            var resolved=request(app,"symbol.references",Map.of("session",session,"ref","Api/Missing","direction","in","kinds",List.of("return_type")));
+            assertThat(resolved.path("edges").toString()).contains("Broken#value.").contains("Api#Missing");
             var status=request(app,"session.status",Map.of("session",session)).path("workspace_bindings");
             assertThat(status.path("last_reanalysed_files").asLong()).isEqualTo(2L);
         }

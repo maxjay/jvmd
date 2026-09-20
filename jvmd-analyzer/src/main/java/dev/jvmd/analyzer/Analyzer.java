@@ -415,21 +415,28 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private static double millis(long nanos){return Math.round(nanos/1000.0)/1000.0;}
     private String completionKey(Path file,String patched,int start)throws Exception{
         if(patched.length()>256*1024)return null;
-        var sources=new TreeSet<Path>();
-        for(Path root:context.sources()){
-            if(Files.isDirectory(root))sources.addAll(FileInventory.matching(root,".java",257));
-            if(sources.size()>256)return null;
-        }
-        documents.paths().stream().filter(path->context.sources().stream().anyMatch(path::startsWith)).forEach(sources::add);
-        if(sources.size()>256)return null;
         var stamp=new StringBuilder(context.toString()).append('\0').append(file).append(':').append(start).append(':').append(Hashing.sha256(patched.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        // Detached hits need content identities, not a second compiler-manager check or
-        // source inventory. A miss still validates the manager immediately before javac.
+        // Classpath identities remain content-safe, including timestamp-preserving JAR replacement.
         appendClasspathContents(stamp);
-        // Completion can discover members with no prior reverse-dependency edge. Validate
-        // every source in this bounded context, including unsaved declarations and new names.
-        for(Path source:sources)if(!source.equals(file)){
-            stamp.append('\0').append(source).append(':').append(documents.sourceHash(source));
+        long sourceState=compiler.sourceStateGeneration();
+        if(sourceState>=0){
+            // Normal path: the source watcher makes disk changes O(events), while open buffers
+            // are already bounded and carry their own content hashes. Exclude the active file:
+            // its token-stripped patched source is deliberately stable across prefix narrowing.
+            stamp.append("\0source-state:").append(sourceState);
+            for(Path source:documents.paths().stream().filter(path->context.sources().stream().anyMatch(path::startsWith)).sorted().toList())
+                if(!source.equals(file))stamp.append('\0').append(source).append(':').append(documents.hash(source));
+        }else{
+            // WatchService may be unavailable or overflow on some filesystems. Preserve the old
+            // exhaustive validation there rather than trading correctness for a cache hit.
+            var sources=new TreeSet<Path>();
+            for(Path root:context.sources()){
+                if(Files.isDirectory(root))sources.addAll(FileInventory.matching(root,".java",257));
+                if(sources.size()>256)return null;
+            }
+            documents.paths().stream().filter(path->context.sources().stream().anyMatch(path::startsWith)).forEach(sources::add);
+            if(sources.size()>256)return null;
+            for(Path source:sources)if(!source.equals(file))stamp.append('\0').append(source).append(':').append(documents.sourceHash(source));
         }
         return Hashing.sha256(stamp.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }

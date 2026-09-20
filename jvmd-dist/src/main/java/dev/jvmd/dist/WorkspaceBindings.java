@@ -106,7 +106,8 @@ public final class WorkspaceBindings implements AutoCloseable {
         var selected=new LinkedHashSet<Path>();var queue=new ArrayDeque<Path>();
         roots.forEach(path->queue.add(path.toAbsolutePath().normalize()));
         // API additions can resolve a previously unresolved symbol with no old dependency edge.
-        for(var entry:prior.entrySet())if(hasErrors(entry.getValue())&&currentFiles.contains(entry.getKey()))queue.add(entry.getKey());
+        // Reanalyse the errored fragment itself, then propagate through any dependants it owns.
+        for(var entry:prior.entrySet())if(hasErrors(entry.getValue())&&currentFiles.contains(entry.getKey())&&selected.add(entry.getKey()))queue.add(entry.getKey());
         while(!queue.isEmpty()){
             Path changed=queue.removeFirst();
             for(Path dependant:reverse.getOrDefault(changed,Set.of()))if(currentFiles.contains(dependant)&&selected.add(dependant))queue.addLast(dependant);

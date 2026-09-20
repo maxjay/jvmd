@@ -399,6 +399,7 @@ public final class Application implements AutoCloseable {
     private List<Map<String,Object>> workspaceFind(Session session,String ref,boolean substring)throws Exception{
         var found=new LinkedHashMap<String,Map<String,Object>>();
         if(session.state("workspace_bindings")!=null){var cached=workspaceBindings(session,false);if(cached!=null&&cached.diagnostics().stream().noneMatch(d->d.kind().equals("ERROR"))){
+            if(!substring){var direct=cached.lookup(ref);if(!direct.isEmpty())return direct.stream().filter(symbol->Analyzer.matches(symbol,ref,false)).toList();}
             var candidates=ref.contains(")/")?cached.symbols():cached.declarations();
             return candidates.values().stream().filter(symbol->Analyzer.matches(symbol,ref,substring)).toList();
         }}
@@ -420,7 +421,10 @@ public final class Application implements AutoCloseable {
         return describe(session,ref,null);
     }
     private Envelope describe(Session session,String ref,WorkspaceBindings.Snapshot validated)throws Exception{
-        if(validated!=null){var symbol=validated.symbols().get(ref);if(symbol!=null)return new Envelope(validated.tier(),"live",false,null,validated.warnings(),symbol);}
+        if(validated!=null){
+            var symbol=validated.symbols().get(ref);if(symbol!=null)return new Envelope(validated.tier(),"live",false,null,validated.warnings(),symbol);
+            var direct=validated.lookup(ref);if(direct.size()==1)return new Envelope(validated.tier(),"live",false,null,validated.warnings(),direct.getFirst());
+        }
         var analyzer=(Analyzer)session.state("analyzer");
         if((ref.startsWith("maven ")||ref.startsWith("local "))&&analyzer!=null){
             var known=analyzer.known(ref);if(known.size()==1){var symbol=known.getFirst();var file=symbol.get("source_file");

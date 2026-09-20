@@ -293,9 +293,12 @@ public final class Application implements AutoCloseable {
         int from=Math.min(offset,values.size()),to=Math.min(values.size(),from+limit);boolean more=to<values.size();return new Envelope(tier,source,more,more?Integer.toString(to):null,warnings,Map.of(key,List.copyOf(values.subList(from,to))));
     }
     private List<Path> sourceFiles(Session session)throws Exception{
-        var graph=(Resolution)session.state("resolution");var roots=new LinkedHashSet<Path>();
+        var graph=(Resolution)session.state("resolution");var roots=new LinkedHashSet<Path>();var files=new LinkedHashSet<Path>();
         if(graph==null)roots.addAll(workspace(session).roots());else for(var module:graph.modules()){module.sources().forEach(p->roots.add(Path.of(p)));module.testSources().forEach(p->roots.add(Path.of(p)));}
-        return documents(session).sources().inventory(roots);
+        // Background snapshot writers can rename unrelated temporary files during discovery.
+        for(Path root:roots)if(Files.isDirectory(root))files.addAll(FileInventory.matching(root,".java"));
+        documents(session).paths().stream().filter(workspace(session)::contains).sorted().forEach(files::add);
+        return List.copyOf(files);
     }
     private WorkspaceBindings.ValidationToken workspaceBindingValidation(Session session,Resolution graph,String generation)throws Exception{
         if(!(session.state("workspace_binding_contexts") instanceof WorkspaceBindingContexts contexts)||!contexts.generation().equals(generation)||contexts.contexts().isEmpty())return null;

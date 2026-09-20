@@ -17,14 +17,9 @@ public final class Bindings {
     /** Implements 4.9: a single-static-import can name multiple overloaded methods. */
     public record ImportSite(int start,int end,String qualifier) { }
     /** Implements 4.4: resolved structural and source-code relationships. */
-    public record Edge(String src,String dst,String kind) implements Comparable<Edge> {
-        @Override public int compareTo(Edge other){int c=src.compareTo(other.src);if(c==0)c=dst.compareTo(other.dst);return c==0?kind.compareTo(other.kind):c;}
-    }
+    public record Edge(String src,String dst,String kind) { }
     /** Implements 4.2: detached declarations, references and source dependencies. */
-    public record Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies,
-                           @com.fasterxml.jackson.annotation.JsonIgnore Map<String,DeclarationContract> contracts) {
-        public Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies){this(symbols,occurrences,edges,dependencies,Map.of());}
-        public Snapshot { contracts=Map.copyOf(contracts); }
+    public record Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies) {
         public Map<String,Object> at(int offset){
             var occurrence=occurrences.stream().filter(o->o.start()<=offset&&offset<o.end()).min(Comparator.comparingInt(o->o.end()-o.start())).orElse(null);if(occurrence==null)return null;
             if(occurrence.importSite()!=null){
@@ -43,31 +38,8 @@ public final class Bindings {
     }
     public static Snapshot capture(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,Path requested,SourceText original,boolean bodies,Focusing.Span focus){
         var trees=Trees.instance(task);var docs=DocTrees.instance(task);var symbols=new LinkedHashMap<String,Map<String,Object>>();var occurrences=new LinkedHashMap<String,Occurrence>();var edges=new LinkedHashSet<Edge>();var dependencies=new LinkedHashSet<Path>();
-        var contracts=new LinkedHashMap<String,DeclarationContract>();
         var texts=new HashMap<String,SourceText>();texts.put(requested.toUri().toString(),original);
         class Capture {
-            final Set<Element> hiddenAncestors=new HashSet<>(),exposedMembers=new HashSet<>();
-            void exposed(Element element){
-                if(!exposedMembers.add(element))return;
-                String sourceFile=identity.sourceFile(element);
-                if(sourceFile==null||!Path.of(sourceFile).toAbsolutePath().normalize().equals(requested.toAbsolutePath().normalize()))return;
-                String id=symbol(element);if(id!=null)contracts.put(id,DeclarationContract.captureExposed(element,id));
-                if(element instanceof TypeElement type){
-                    inheritedContracts(type);
-                    for(Element member:type.getEnclosedElements())if(!member.getModifiers().contains(Modifier.PRIVATE)&&member.getKind()!=ElementKind.CONSTRUCTOR
-                            &&(member instanceof TypeElement||member instanceof ExecutableElement||member.getKind().isField()))exposed(member);
-                }
-            }
-            void inheritedContracts(TypeElement type){
-                var queue=new ArrayDeque<TypeMirror>(task.getTypes().directSupertypes(type.asType()));
-                while(!queue.isEmpty()){
-                    TypeMirror parent=queue.removeFirst();Element element=task.getTypes().asElement(parent);
-                    if(!(element instanceof TypeElement ancestor)||!hiddenAncestors.add(ancestor))continue;
-                    // An inaccessible owner can still expose inherited members through this type.
-                    if(!DeclarationContract.exported(ancestor))exposed(ancestor);
-                    queue.addAll(task.getTypes().directSupertypes(parent));
-                }
-            }
             SourceText source(CompilationUnitTree unit){return texts.computeIfAbsent(unit.getSourceFile().toUri().toString(),key->{try{return new SourceText(unit.getSourceFile().getCharContent(true).toString());}catch(Exception e){return new SourceText("");}});}
             int start(CompilationUnitTree unit,Tree tree){return (int)trees.getSourcePositions().getStartPosition(unit,tree);}
             int end(CompilationUnitTree unit,Tree tree){return (int)trees.getSourcePositions().getEndPosition(unit,tree);}
@@ -93,11 +65,6 @@ public final class Bindings {
                 try{row.put("erased_descriptor",element instanceof ExecutableElement method?identity.descriptor(method):element instanceof VariableElement variable?identity.descriptor(variable.asType()):null);}catch(IllegalArgumentException unresolved){row.put("erased_descriptor",null);row.put("signature_complete",false);}
                 if(element.getEnclosingElement() instanceof ExecutableElement)try{row.put("qualified_name_path",identity.qualifiedNamePath(element));}catch(IllegalArgumentException unresolved){}
                 var path=identity.path(element);String sourceFile=identity.sourceFile(element);if(sourceFile!=null)dependencies.add(Path.of(sourceFile));row.put("file",sourceFile);row.put("source_file",sourceFile);
-                // A fragment owns contracts only for its source; reference copies still carry
-                // presentation data, but must not repeatedly construct other files' contracts.
-                if(sourceFile!=null&&Path.of(sourceFile).toAbsolutePath().normalize().equals(requested.toAbsolutePath().normalize())){
-                    var contract=DeclarationContract.capture(element,scip);if(contract!=null)contracts.put(scip,contract);
-                }
                 if(path!=null){var unit=path.getCompilationUnit();var text=source(unit);int begin=start(unit,path.getLeaf()),finish=end(unit,path.getLeaf());var token=declaration(path,element);
                     row.put("start",begin);row.put("end",finish);row.put("source_start",begin);row.put("source_end",finish);row.put("range",text.range(begin,finish));
                     if(token!=null){row.put("name_start",token.start());row.put("name_end",token.end());row.put("name_range",text.range(token.start(),token.end()));row.put("line",text.position(token.start()).line()+1);row.put("character",text.position(token.start()).character());}
@@ -174,7 +141,7 @@ public final class Bindings {
                 }
                 return super.visitImport(tree,parent);
             }
-            @Override public Void visitClass(ClassTree tree,String parent){var e=element();String scip=capture.symbol(e);if(e!=null){capture.occurrence(getCurrentPath(),e,identity.displayName(e),true,"declaration",parent);capture.structure(e);if(e instanceof TypeElement type&&DeclarationContract.exported(type))capture.inheritedContracts(type);}return super.visitClass(tree,scip);}
+            @Override public Void visitClass(ClassTree tree,String parent){var e=element();String scip=capture.symbol(e);if(e!=null){capture.occurrence(getCurrentPath(),e,identity.displayName(e),true,"declaration",parent);capture.structure(e);}return super.visitClass(tree,scip);}
             @Override public Void visitMethod(MethodTree tree,String parent){var e=element();
                 int begin=capture.start(unit,tree),end=capture.end(unit,tree);
                 if(focus!=null&&(end<=focus.start()||begin>=focus.end())){capture.signatureDependencies(e);return null;}
@@ -194,6 +161,6 @@ public final class Bindings {
                 if(role.equals("writes")&&(parent instanceof CompoundAssignmentTree||parent instanceof UnaryTree)){String target=capture.symbol(e);if(container!=null&&target!=null)edges.add(new Edge(container,target,"reads"));}
             }
         }.scan(unit,null);
-        return new Snapshot(Collections.unmodifiableMap(symbols),List.copyOf(occurrences.values()),List.copyOf(edges),Set.copyOf(dependencies),contracts);
+        return new Snapshot(Collections.unmodifiableMap(symbols),List.copyOf(occurrences.values()),List.copyOf(edges),Set.copyOf(dependencies));
     }
 }

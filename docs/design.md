@@ -4,13 +4,6 @@ Technical specification, revision 7. Incorporates `SMOKE.md` outcomes of 2026-09
 first implementation cycle. Revision 6 defined the identifier sweep twice, inconsistently, in
 sections 5 and 12.4; that is fixed here and the four-probe reading is authoritative.
 
-**Storage and semantic-state amendment, 2026-09-20.** The shipped default index is now
-RocksDB with immutable artifact generations; SQLite is an explicit comparison/rollback backend.
-[Index redesign](index-redesign.md) supersedes the original SQLite-only physical-storage
-requirements below. [Semantic state](semantic-state.md) specifies declaration contracts,
-source observations, persistent navigation, publication fences and diagnostic schema migration.
-The old SQL schema is retained as historical logical context, not as the default backend mandate.
-
 **Scope.** One user and one machine per daemon instance. The user-approved distribution extension
 of 2026-09-15 adds prebuilt Linux/macOS archives and Windows installation through WSL 2. Each
 installation remains a local, single-user daemon; this does not introduce a hosted service.
@@ -58,13 +51,11 @@ Rationale: Maven's semantics (profiles, interpolation, BOM ordering, relocations
 consumer POMs) are fiddly rather than hard, and any divergence breaks D5.
 Anti: do not parse POMs yourself. Do not shell out to `mvn` for resolution.
 
-**D4. One machine-scoped IndexStore; immutable artifact generations by default.**
-Rationale: reuse repository artifact facts across workspaces. The default `rocksdb-sst` provider
-publishes validated immutable generations, with workspace source facts maintained separately.
-SQLite remains an explicitly selected comparison/rollback provider. Validity depends on artifact
-and context identities; indexed results are not permanently current after their inputs change.
-Anti: do not copy the entire dependency index per workspace or confuse a persisted source root
-with the identity of an unsaved editor buffer. See [index redesign](index-redesign.md).
+**D4. One SQLite file is the index. All of `~/.m2` is indexed eagerly, once.**
+Rationale: single user, finite repository, about a minute for the skeleton pass. Afterwards every
+dependency symbol is tier 2 forever and project open does no indexing.
+Anti: do not index lazily. Do not use per-artifact database files. Do not build a per-workspace
+copy of the index.
 
 **D5. Diagnostics are dual-source and every response is tiered.**
 Rationale: `live` (javac, tolerant, sometimes incomplete) and `verified` (`mvn test-compile`,
@@ -90,7 +81,7 @@ Anti: do not make LSP the core. Do not require SCIP IDs as input. Do not return 
 | Class-file reading | `java.lang.classfile`, JDK 24 | Standard API, lazy by design |
 | Dependency resolution | `maven-resolver-supplier`, version matched to the user's Maven major | `RepositorySystemSupplier` exists to bootstrap without Sisu DI, since 1.9.15. Resolver 2.x and its model builder track Maven 4; Maven 3.9 uses resolver 1.9.x. Mismatch silently breaks `live` equals `verified` |
 | HTTP transport | `transport-http` on 1.9.x, `transport-jdk` on 2.0.x | `transport-jdk` first shipped in resolver 2.0; the 1.9 line has no JDK transport |
-| Index driver | `org.rocksdb:rocksdbjni`; `org.xerial:sqlite-jdbc` for comparison | Default immutable artifact provider; explicit SQLite fallback |
+| Index driver | `org.xerial:sqlite-jdbc` | Bundles native libs and FTS5 with trigram |
 | JSON | Jackson with the records module | Already required; config uses it |
 | LSP | hand-rolled, nine methods | LSP4J is disproportionate for nine methods |
 | Local substitution | `org.eclipse.aether.repository.WorkspaceReader` | Its Javadoc: "a repository backed by the IDE workspace" |
@@ -98,7 +89,7 @@ Anti: do not make LSP the core. Do not require SCIP IDs as input. Do not return 
 | Debug reference | `microsoft/java-debug` core | Standalone DAP over JDI; read, do not depend |
 | Enhanced hot swap | JetBrains Runtime, `-XX:+AllowEnhancedClassRedefinition` | Documented on `jbr21` through `jbr25`. Reachable through JDI `redefineClasses` |
 | Daemon startup | JDK 25 AOT cache, JEP 514 | `-XX:AOTCacheOutput` to train, `-XX:AOTCache` to run |
-| Index storage | `IndexStore`, default `rocksdb-sst` | Artifact generation publication and workspace overlays; see index redesign |
+| Index storage | SQLite, WAL, FTS5 | Recursive CTEs for transitive queries |
 | Framework reload | HotswapAgent | Not verified against current JBR |
 | Maven BSP | none usable | `bsp-capstone/maven-bsp` last commit September 2022 |
 | Semantic engine fallback | `org.eclipse.jdt:ecj` | Named only. Not on the classpath |
@@ -116,7 +107,7 @@ opencode (TypeScript)
 jvmd  (JSON-RPC 2.0, Content-Length framing, unix socket)
   +-- Session manager    one session per workspace root, N sessions
   +-- Resolver           maven-resolver, offline-first, WorkspaceReader
-  +-- Index              IndexStore, default Rocks artifacts plus workspace source facts
+  +-- Index              SQLite, all of ~/.m2 plus workspace symbols
   +-- Analyzer           javac, JavacTaskPool per session, single-threaded per session
   +-- Runtime            JDI client, one per debug session
   +-- Verifier           mvn test-compile runner
@@ -243,10 +234,8 @@ from the index's `fqn -> artifact` map.
 
 ### 4.4 Index
 
-Current physical storage and publication are specified in [index redesign](index-redesign.md).
-The following SQL describes the original SQLite provider and logical relationships. It does
-not require the default Rocks provider to open SQLite, use SQL joins, or use a single database
-file. Live semantic publication follows [semantic state](semantic-state.md).
+One SQLite file at `~/.cache/jvmd/index.db`. WAL. `synchronous=NORMAL`. `mmap_size` set to the
+file size. One writer thread. One transaction per artifact.
 
 **Schema:**
 
@@ -757,8 +746,7 @@ jvmd/
   jvmd-core/              socket server, JSON-RPC, envelope, sessions, dispatcher, config, status
   jvmd-analyzer/          javac integration. The ONLY module with --add-exports for jdk.compiler
   jvmd-resolver/          maven-resolver bootstrap, WorkspaceReader, resolution cache
-  jvmd-index/             IndexStore contract, class-file passes, queries, SQLite comparison provider
-  jvmd-index-rocks/       default immutable artifact provider and workspace source state
+  jvmd-index/             java.lang.classfile passes, SQLite schema, queries, FTS
   jvmd-runtime/           JDI client, debug ops, launch, hotswap, JFR wrappers
   jvmd-mcp/               MCP tool definitions, each a thin mapping onto a core method
   jvmd-lsp/               LSP facade, nine methods
@@ -782,8 +770,7 @@ with the date. Do not add anything else without an entry stating why.
 | `org.apache.maven.resolver:maven-resolver-supplier` | resolver | 1.9.x if `maven_major=3`, 2.0.x if `maven_major=4`; matches the user's Maven |
 | `org.apache.maven.resolver:maven-resolver-transport-http` | resolver | 1.9.x only, when `maven_major=3`. Brings Apache HttpClient 4; accepted. `transport-jdk` does not exist on the 1.9 line |
 | `org.apache.maven.resolver:maven-resolver-transport-jdk` | resolver | 2.0.x only, when `maven_major=4` |
-| `org.rocksdb:rocksdbjni` | index-rocks | Pinned in the parent POM; default immutable artifact and workspace provider |
-| `org.xerial:sqlite-jdbc` | index | Explicit comparison provider; bundles FTS5 with the trigram tokenizer |
+| `org.xerial:sqlite-jdbc` | index | latest; must bundle FTS5 with the trigram tokenizer, verify with `PRAGMA compile_options` |
 | `com.fasterxml.jackson.core:jackson-databind` | core | latest 2.x; plus `jackson-module-parameter-names` or records support |
 | `org.junit.jupiter:junit-jupiter` | tests | 5.x |
 | `org.assertj:assertj-core` | tests | latest |

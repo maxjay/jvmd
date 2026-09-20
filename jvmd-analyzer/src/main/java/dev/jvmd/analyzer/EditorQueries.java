@@ -10,6 +10,13 @@ import javax.lang.model.type.*;
 /** Implements 4.9: detached scope completions and invocation signatures from public javac APIs. */
 public final class EditorQueries {
     public static final String MARKER="__jvmd_completion__";
+    public static final class CompletionTiming {
+        private long candidateNanos,rowNanos,docNanos,sortNanos,totalNanos;
+        private int candidates,rows,docs;
+        long candidateNanos(){return candidateNanos;} long rowNanos(){return rowNanos;} long docNanos(){return docNanos;}
+        long sortNanos(){return sortNanos;} long totalNanos(){return totalNanos;}
+        int candidates(){return candidates;} int rows(){return rows;} int docs(){return docs;}
+    }
     private EditorQueries() { }
     private static TreePath marker(JavacTask task,List<CompilationUnitTree> units){
         TreePath[] result={null};
@@ -23,7 +30,8 @@ public final class EditorQueries {
         if(element instanceof TypeElement type)return trees.isAccessible(scope,type);
         return !(element.getEnclosingElement() instanceof TypeElement)||owner!=null&&trees.isAccessible(scope,element,owner);
     }
-    private static Map<String,Object> row(JavacTask task,SymbolIdentity identity,Element element,DeclaredType receiver){
+    private static Map<String,Object> row(JavacTask task,SymbolIdentity identity,Element element,DeclaredType receiver){return row(task,identity,element,receiver,null);}
+    private static Map<String,Object> row(JavacTask task,SymbolIdentity identity,Element element,DeclaredType receiver,CompletionTiming timing){
         var value=new LinkedHashMap<String,Object>();value.put("scip",identity.scip(element));value.put("name",identity.displayName(element));value.put("name_path",identity.namePath(element));value.put("kind",SymbolIdentity.kind(element));value.put("signature",identity.signature(element));
         value.put("modifiers",element.getModifiers().stream().map(Object::toString).sorted().toList());
         TypeMirror member=element.asType();if(receiver!=null&&element.getEnclosingElement() instanceof TypeElement)member=task.getTypes().asMemberOf(receiver,element);
@@ -36,10 +44,17 @@ public final class EditorQueries {
             }label.append(')');if(method.getKind()!=ElementKind.CONSTRUCTOR)label.append(": ").append(executable.getReturnType());
             value.put("label",label.toString());value.put("parameters",parameters);
         }else value.put("label",identity.displayName(element)+": "+member);
-        value.put("doc",DocMarkdown.summary(task.getElements().getDocComment(element)));return value;
+        long docsStarted=System.nanoTime();value.put("doc",DocMarkdown.summary(task.getElements().getDocComment(element)));
+        if(timing!=null){timing.docNanos+=System.nanoTime()-docsStarted;timing.docs++;}return value;
     }
-    public static List<Map<String,Object>> completion(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String prefix){
-        var path=marker(task,units);if(path==null)return List.of();var trees=Trees.instance(task);var scope=trees.getScope(path);if(scope==null)return List.of();
+    public static List<Map<String,Object>> completion(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String prefix){return completion(task,units,identity,prefix,null);}
+    public static List<Map<String,Object>> completion(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String prefix,CompletionTiming timing){
+        long totalStarted=System.nanoTime();
+        try{
+        long candidatesStarted=System.nanoTime();var path=marker(task,units);
+        if(path==null){if(timing!=null)timing.candidateNanos+=System.nanoTime()-candidatesStarted;return List.of();}
+        var trees=Trees.instance(task);var scope=trees.getScope(path);
+        if(scope==null){if(timing!=null)timing.candidateNanos+=System.nanoTime()-candidatesStarted;return List.of();}
         var candidates=new LinkedHashSet<Element>();DeclaredType receiver=null;boolean staticOnly=false;
         if(path.getLeaf() instanceof MemberSelectTree selected){
             var qualifier=new TreePath(path,selected.getExpression());var type=trees.getTypeMirror(qualifier);var selectedElement=trees.getElement(qualifier);
@@ -50,6 +65,7 @@ public final class EditorQueries {
             if(scope.getEnclosingClass()!=null){receiver=(DeclaredType)scope.getEnclosingClass().asType();candidates.addAll(task.getElements().getAllMembers(scope.getEnclosingClass()));}
             staticOnly=scope.getEnclosingMethod()!=null&&scope.getEnclosingMethod().getModifiers().contains(Modifier.STATIC);
         }
+        if(timing!=null){timing.candidateNanos+=System.nanoTime()-candidatesStarted;timing.candidates+=candidates.size();}
         var result=new LinkedHashMap<String,Map<String,Object>>();
         for(var element:candidates){
             String name=identity.displayName(element);if(!name.startsWith(prefix)||name.equals(MARKER)||name.equals("this")||name.equals("super")||element.getKind()==ElementKind.CONSTRUCTOR||element.getKind()==ElementKind.PACKAGE||element.getKind()==ElementKind.MODULE)continue;
@@ -57,9 +73,14 @@ public final class EditorQueries {
             DeclaredType owner=element.getEnclosingElement() instanceof TypeElement type?(DeclaredType)type.asType():null;
             DeclaredType accessOwner=receiver!=null&&owner!=null&&task.getTypes().isSubtype(task.getTypes().erasure(receiver),task.getTypes().erasure(owner))?receiver:owner;
             if(!accessible(trees,scope,element,accessOwner))continue;
-            try{var value=row(task,identity,element,receiver!=null&&element.getEnclosingElement() instanceof TypeElement ownerType&&task.getTypes().isSubtype(task.getTypes().erasure(receiver),task.getTypes().erasure(ownerType.asType()))?receiver:null);result.putIfAbsent(value.get("scip").toString(),value);}catch(IllegalArgumentException unresolved){/* Incomplete error types do not have a stable identity. */}
+            long rowStarted=System.nanoTime();
+            try{var value=row(task,identity,element,receiver!=null&&element.getEnclosingElement() instanceof TypeElement ownerType&&task.getTypes().isSubtype(task.getTypes().erasure(receiver),task.getTypes().erasure(ownerType.asType()))?receiver:null,timing);result.putIfAbsent(value.get("scip").toString(),value);if(timing!=null)timing.rows++;}
+            catch(IllegalArgumentException unresolved){/* Incomplete error types do not have a stable identity. */}
+            finally{if(timing!=null)timing.rowNanos+=System.nanoTime()-rowStarted;}
         }
-        return result.values().stream().sorted(Comparator.comparing(r->r.get("label").toString())).toList();
+        long sortStarted=System.nanoTime();var sorted=result.values().stream().sorted(Comparator.comparing(r->r.get("label").toString())).toList();
+        if(timing!=null)timing.sortNanos+=System.nanoTime()-sortStarted;return sorted;
+        }finally{if(timing!=null)timing.totalNanos+=System.nanoTime()-totalStarted;}
     }
     public static Map<String,Object> signatures(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,int cursor){
         var trees=Trees.instance(task);TreePath[] selected={null};long[] width={Long.MAX_VALUE};

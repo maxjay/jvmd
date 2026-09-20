@@ -161,16 +161,23 @@ public final class Application implements AutoCloseable {
         var liveResult=(Map<String,Object>)live.result();
         var liveItems=(List<Map<String,Object>>)liveResult.getOrDefault("items",List.of());
 
-        IndexService searchIndex=index();bindIndex(session,searchIndex);
-        String generation=Objects.toString(session.state("index_generation"),"");
-        var cached=(TypeCompletionCache)session.state("completion_type_cache");
         List<Map<String,Object>> indexed;
-        if(cached!=null&&cached.complete()&&cached.generation().equals(generation)&&prefix.startsWith(cached.prefix())){
-            indexed=cached.rows().stream().filter(row->Objects.toString(row.get("name"),"").startsWith(prefix)).toList();
-        }else{
-            var found=searchIndex.findNamePrefix(prefix,session.id(),257,COMPLETION_TYPE_KINDS);
-            boolean complete=found.size()<257;indexed=List.copyOf(found.subList(0,Math.min(256,found.size())));
-            session.put("completion_type_cache",new TypeCompletionCache(generation,prefix,indexed,complete));
+        try{
+            IndexService searchIndex=index();bindIndex(session,searchIndex);
+            String generation=Objects.toString(session.state("index_generation"),"");
+            var cached=(TypeCompletionCache)session.state("completion_type_cache");
+            if(cached!=null&&cached.complete()&&cached.generation().equals(generation)&&prefix.startsWith(cached.prefix())){
+                indexed=cached.rows().stream().filter(row->Objects.toString(row.get("name"),"").startsWith(prefix)).toList();
+            }else{
+                var found=searchIndex.findNamePrefix(prefix,session.id(),257,COMPLETION_TYPE_KINDS);
+                boolean complete=found.size()<257;indexed=List.copyOf(found.subList(0,Math.min(256,found.size())));
+                session.put("completion_type_cache",new TypeCompletionCache(generation,prefix,indexed,complete));
+            }
+        }catch(Exception indexFailure){
+            int from=Math.min(offset,liveItems.size()),to=Math.min(liveItems.size(),from+limit);boolean more=to<liveItems.size();
+            var warnings=new ArrayList<>(live.warnings());warnings.add("index_completion_fault: "+indexFailure.getClass().getSimpleName()+": "+Objects.toString(indexFailure.getMessage(),""));
+            return new Envelope(live.tier(),"live",more,more?Integer.toString(to):null,warnings,
+                    Map.of("items",List.copyOf(liveItems.subList(from,to)),"range",liveResult.get("range")));
         }
 
         String packageName=sourcePackage(text);var imported=sourceImports(text);

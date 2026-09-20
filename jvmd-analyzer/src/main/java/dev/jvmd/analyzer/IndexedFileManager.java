@@ -294,12 +294,16 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         @Override public long getLastModified(){return catalog.stamp().modified()/1_000_000;}
         @Override public String getName(){return catalog.path()+"!/"+entry.path();}
     }
-    private static final class SourceFile extends SimpleJavaFileObject {
-        final String binary,text;final Path file;
-        SourceFile(Path file,String binary,String text){super(file.toUri(),Kind.SOURCE);this.file=file;this.binary=binary;this.text=text;}
+    private final class SourceFile extends SimpleJavaFileObject {
+        final String binary,text;final Path file;final long generation;
+        SourceFile(Path file,String binary,String text){super(file.toUri(),Kind.SOURCE);this.file=file;this.binary=binary;this.text=text;this.generation=sourceStateGeneration;}
         @Override public CharSequence getCharContent(boolean ignoreEncodingErrors)throws IOException{return text==null?Files.readString(file):text;}
         @Override public InputStream openInputStream()throws IOException{return text==null?Files.newInputStream(file):new ByteArrayInputStream(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
-        @Override public long getLastModified(){if(text!=null)return Long.MAX_VALUE;try{return Files.getLastModifiedTime(file).toMillis();}catch(IOException ignored){return 0L;}}
+        @Override public long getLastModified(){
+            if(text!=null)return Long.MAX_VALUE;
+            try{long modified=Files.getLastModifiedTime(file).toMillis();return modified>Long.MAX_VALUE-generation?Long.MAX_VALUE:modified+generation;}
+            catch(IOException ignored){return generation;}
+        }
     }
     public JavaFileObject source(Path file,String text){
         file=file.toAbsolutePath().normalize();String binary=sourceName(file);

@@ -36,7 +36,9 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     private Path moduleOutput;
     private Map<Path,String> documents=Map.of();
     private CompilerInputs.Snapshot expectedInputs;
-    void expectedInputs(CompilerInputs.Snapshot inputs){expectedInputs=inputs;}
+    private boolean inputsSuperseded;
+    void expectedInputs(CompilerInputs.Snapshot inputs){expectedInputs=inputs;inputsSuperseded=false;}
+    boolean inputsSuperseded(){return inputsSuperseded;}
     public void documents(Map<Path,String> values){documents=Map.copyOf(values);try{configureModules();}catch(IOException e){throw new UncheckedIOException(e);}}
     private final Map<Path,Catalog> catalogs=new HashMap<>();
     private final FileStateRegistry files;
@@ -203,7 +205,9 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         final String binary,text;final Path file;final long generation;
         SourceFile(Path file,String binary,String text){super(file.toUri(),Kind.SOURCE);this.file=file;this.binary=binary;this.text=text;this.generation=sourceStateGeneration;}
         @Override public CharSequence getCharContent(boolean ignoreEncodingErrors)throws IOException{if(text!=null)return text;
-            String value=Files.readString(file);return expectedInputs==null?value:expectedInputs.checkText(file,value);}
+            String value=Files.readString(file);
+            try{return expectedInputs==null?value:expectedInputs.checkText(file,value);}
+            catch(CompilerInputs.Superseded changed){inputsSuperseded=true;throw changed;}}
         @Override public InputStream openInputStream()throws IOException{return new ByteArrayInputStream(getCharContent(false).toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));}
         @Override public long getLastModified(){
             if(text!=null)return Long.MAX_VALUE;
@@ -228,7 +232,10 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
             sourceListCalls++;var sources=new LinkedHashMap<String,JavaFileObject>();
             List<SourceEntry> indexed=kinds.contains(JavaFileObject.Kind.SOURCE)?sourceEntries(sourceInputs,packageName,recurse):List.of();
             if(indexed==null){
-                for(var file:super.list(delegate(location),packageName,kinds,recurse))if(!preferBinary(file))sources.put(super.inferBinaryName(delegate(location),file),file);
+                for(var file:super.list(delegate(location),packageName,kinds,recurse))if(!preferBinary(file)){
+                    String binary=super.inferBinaryName(delegate(location),file);
+                    sources.put(binary,file.getKind()==JavaFileObject.Kind.SOURCE&&file.toUri().getScheme().equals("file")?new SourceFile(Path.of(file.toUri()),binary,null):file);
+                }
             }else{
                 if(kinds.size()>1){
                     var delegated=EnumSet.copyOf(kinds);delegated.remove(JavaFileObject.Kind.SOURCE);

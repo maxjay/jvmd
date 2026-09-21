@@ -123,7 +123,7 @@ public final class CompilerPool implements AutoCloseable {
                 finally{resetSourcePackages(task,parsed);}
             });
             int level=actual[0];var problems=diagnostics.getDiagnostics().stream().map(d->new Problem("live",level,d.getCode(),d.getKind().name(),d.getSource()==null?path.toString():d.getSource().toUri().toString(),d.getLineNumber(),Math.max(0,d.getColumnNumber()-1),d.getStartPosition(),d.getEndPosition(),d.getMessage(Locale.ROOT))).toList();
-            if(!observed.equals(inputSnapshot()))return new Outcome<>(1,null,List.of(),List.of("diagnostics_superseded: inputs changed during analysis"));
+            if(manager.inputsSuperseded()||!observed.equals(inputSnapshot()))return new Outcome<>(1,null,List.of(),List.of("diagnostics_superseded: inputs changed during analysis"));
             return new Outcome<>(level,value,problems,List.copyOf(warnings));
         }catch(QueryFailure e){releasePlatform.close();throw (Exception)e.getCause();}
         catch(AssertionError|RuntimeException e){System.getLogger("jvmd.analyzer").log(System.Logger.Level.ERROR,"Compiler query fault in "+path,e);fault[0]=true;faults++;return new Outcome<>(Math.min(1,tier),null,List.of(),List.of("analyzer_fault: "+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage())));}

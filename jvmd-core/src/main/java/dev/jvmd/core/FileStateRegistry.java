@@ -64,7 +64,6 @@ public final class FileStateRegistry {
     private static final class Directory {
         Map<String,Object> stamp;
         List<Path> children=List.of(), members=List.of();
-        Set<Path> leaves=Set.of();
         final Map<Path,Directory> directories=new HashMap<>();
     }
     private final Map<InventoryKey,Directory> inventories=new HashMap<>();
@@ -101,13 +100,11 @@ public final class FileStateRegistry {
             }
             state.stamp=before;
             state.directories.keySet().retainAll(state.children);
-            var leaves=new HashSet<Path>();
             for(Path child:state.children){
                 metadataChecks++;
                 if(Files.isDirectory(child,LinkOption.NOFOLLOW_LINKS))state.directories.computeIfAbsent(child,ignored->new Directory());
-                else {state.directories.remove(child);leaves.add(child);}
+                else state.directories.remove(child);
             }
-            state.leaves=Set.copyOf(leaves);
         }
         List<Path> values=null;
         int offset=0;

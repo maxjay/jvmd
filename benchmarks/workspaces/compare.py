@@ -31,14 +31,18 @@ def compare(summary, candidate, baseline, selected=None):
 
 
 def markdown(result):
+    previous_pr = result.get('previous_pr')
+    improvement_header = f'Improvement vs PR #{previous_pr}' if previous_pr else 'Improvement vs previous PR'
     lines = ['# JVMD / JDTLS LSP benchmark', '',
-             '| Fixture | Metric | Unit | JVMD | JDTLS | JVMD / JDTLS |',
-             '|---|---|---|---:|---:|---:|']
+             f'| Fixture | Metric | Unit | JVMD | JDTLS | JVMD / JDTLS | {improvement_header} |',
+             '|---|---|---|---:|---:|---:|---:|']
     for fixture, metrics in result['fixtures'].items():
         for name, values in metrics.items():
             ratio = values['jvmd_over_jdtls']
             ratio_text = 'n/a' if ratio is None else f'{ratio:.3f}'
-            lines.append(f"| {fixture} | {name} | {values['unit']} | {values['jvmd']:.3f} | {values['jdtls']:.3f} | {ratio_text} |")
+            improvement = values.get('improvement_over_previous_pr')
+            improvement_text = 'n/a' if improvement is None else f'{improvement:+.1f}%'
+            lines.append(f"| {fixture} | {name} | {values['unit']} | {values['jvmd']:.3f} | {values['jdtls']:.3f} | {ratio_text} | {improvement_text} |")
     lines += ['', result['interpretation']]
     return '\n'.join(lines)+'\n'
 

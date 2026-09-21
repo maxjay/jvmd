@@ -86,3 +86,40 @@ A duplicate branch-baseline Checkpoints/Corpus run was also launched before prod
 - [ ] 6 — focused before/after latency + allocation/heap evidence
 - [ ] 7 — 1 GiB corpus passes without heap increase
 - [ ] 8 — final LOC/complexity/deletion report and PR handoff
+
+
+## Checkpoint 1 — incremental invalidation postings
+
+Production commit: `0fad49d0ac814c056ea3ae66f0a2908a06a03b6e`.
+
+Implemented persisted pair-key reverse-dependency and unresolved-name postings. Ordinary one-file
+observation now reads the changed contribution and traverses only affected postings; module scans are
+limited to one-time postings migration and genuine context-wide invalidation.
+
+Validation on this commit:
+- compile/package and AOT: pass;
+- phase 1/2/3: pass;
+- `jvmd-index-rocks` complete test suite: pass;
+- phase 4 compiler/navigation gate: pass;
+- Distributions: pass on Linux x64/arm64, macOS x64/arm64, and Windows installer.
+
+Candidate Corpus `35620443427` still fails at `-Xmx1024m`. The failure moved the investigation
+downstream and exposed the next direct cause:
+
+```
+RocksIndexStore.values
+  -> sources
+  -> sourceByScip
+  -> byScip
+  -> artifactsOwning
+  -> CodePass.expand
+  -> symbol.references
+```
+
+Immediately before request faults RocksDB reports:
+`Insert failed due to LRU cache being full.`
+
+The local-source backend currently answers an exact SCIP lookup by reading/deserializing every
+persisted `SourceFile` JSON blob for the artifact. The next checkpoint therefore replaces exact
+source lookups with direct persisted locators. The 64 MiB native-cache budget and 1 GiB Java heap
+remain unchanged.

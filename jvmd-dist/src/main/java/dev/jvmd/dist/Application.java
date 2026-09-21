@@ -271,18 +271,20 @@ public final class Application implements AutoCloseable {
     }
     private WorkspaceBindings.Snapshot workspaceBindings(Session session,boolean load)throws Exception{
         var graph=(Resolution)session.state("resolution");if(graph!=null)graph=refresh(session);
-        var classpath=new LinkedHashSet<Path>();
-        if(graph!=null){graph.classpath().forEach(path->classpath.add(Path.of(path)));for(var module:graph.modules()){
-            classpath.add(Path.of(module.classes()));classpath.add(Path.of(module.testClasses()));
-            for(boolean test:List.of(false,true)){
-                (test?module.testProcessing():module.processing()).path().forEach(path->classpath.add(Path.of(path)));
-                if(session.state("apt:"+module.gav()+(test?":test":":main")) instanceof AnnotationProcessing.Output output)classpath.addAll(output.classpath());
-            }
-        }}
-        var cache=session.state("workspace_bindings",()->new WorkspaceBindings(classpathFiles));String generation=graph==null?"plain":graph.fingerprint();
+        var cache=session.state("workspace_bindings",()->new WorkspaceBindings(classpathFiles));
         Resolution currentGraph=graph;
-        if(!load)return cache.peek(()->sourceFiles(session),List.copyOf(classpath),documents(session),generation);
-        return cache.getBatch(()->sourceFiles(session),List.copyOf(classpath),documents(session),generation,(long)config.heapCeilingMb()*1024*1024/Math.max(1,sessions.list().size())/4,files->{
+        WorkspaceBindings.InputSource inputSource=()->{
+            var groups=new LinkedHashMap<String,Set<Path>>();
+            for(Path file:sourceFiles(session))groups.computeIfAbsent(WorkspaceContextManager.key(file,currentGraph),_->new LinkedHashSet<>()).add(file);
+            var inputs=new LinkedHashMap<String,WorkspaceBindings.ModuleInputs>();
+            for(var group:groups.entrySet()){
+                var worker=analyzer(session,group.getValue().iterator().next());
+                inputs.put(group.getKey(),new WorkspaceBindings.ModuleInputs(worker.inputSnapshot(),group.getValue()));
+            }
+            return inputs;
+        };
+        if(!load)return cache.peek(inputSource);
+        return cache.getBatch(inputSource,documents(session),(long)config.heapCeilingMb()*1024*1024/Math.max(1,sessions.list().size())/4,files->{
             var groups=new LinkedHashMap<String,LinkedHashMap<Path,String>>();
             for(var entry:files.entrySet())groups.computeIfAbsent(WorkspaceContextManager.key(entry.getKey(),currentGraph),_->new LinkedHashMap<>()).put(entry.getKey(),entry.getValue());
             var results=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();

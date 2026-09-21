@@ -19,12 +19,24 @@ public final class Documents {
     public Documents(){this(FileStateRegistry.shared());}
     public Documents(FileStateRegistry files){this.files=Objects.requireNonNull(files);}
     private long bytes,generation;
+    /** A module-owned subscription, weakly retained here; no closed-document history is stored. */
+    static final class Transitions {
+        List<Path> roots=List.of();Set<Path> files=Set.of();long version;
+        boolean relevant(Path file){return files.contains(file)||roots.stream().anyMatch(file::startsWith);}
+    }
+    private final Map<Transitions,Boolean> transitions=new WeakHashMap<>();
+    synchronized Transitions track(Transitions existing,List<Path> roots,Set<Path> files){
+        var tracked=existing==null?new Transitions():existing;
+        tracked.roots=roots;tracked.files=files;transitions.put(tracked,Boolean.TRUE);return tracked;
+    }
+    synchronized long transitionVersion(Transitions tracked){return tracked.version;}
+    private void transitioned(Path file){generation++;for(var tracked:transitions.keySet())if(tracked.relevant(file))tracked.version++;}
     private static Path key(Path path){return path.toAbsolutePath().normalize();}
     public synchronized void open(Path file,String text,int version){if(contains(file))throw RpcException.invalid("Document is already open");set(key(file),text,version);}
     private void set(Path file,String text,int version){
         Objects.requireNonNull(text);var old=documents.get(file);long total=bytes+2L*text.length()-(old==null?0:2L*old.text().length());
         if(total>MAX_BYTES||old==null&&documents.size()>=256)throw RpcException.invalid("Open document memory budget exceeded");
-        documents.put(file,new Document(text,version,Hashing.sha256(text.getBytes(StandardCharsets.UTF_8))));bytes=total;generation++;
+        documents.put(file,new Document(text,version,Hashing.sha256(text.getBytes(StandardCharsets.UTF_8))));bytes=total;transitioned(file);
     }
     public synchronized void change(Path file,int version,List<Change> changes){
         file=key(file);var old=documents.get(file);if(old==null)throw RpcException.invalid("Document is not open: "+file);
@@ -35,7 +47,7 @@ public final class Documents {
             else{if(change.range().start()==null||change.range().end()==null)throw RpcException.invalid("Change range needs start and end");int start=offset(text,change.range().start()),end=offset(text,change.range().end());if(end<start)throw RpcException.invalid("Inverted document range");text=text.substring(0,start)+change.text()+text.substring(end);}
         }set(file,text,version);
     }
-    public synchronized void close(Path file){var previous=documents.remove(key(file));if(previous!=null){bytes-=2L*previous.text().length();generation++;}}
+    public synchronized void close(Path file){var previous=documents.remove(key(file));if(previous!=null){bytes-=2L*previous.text().length();transitioned(key(file));}}
     public synchronized String text(Path file)throws Exception{var document=documents.get(key(file));return document==null?Files.readString(file):document.text();}
     public synchronized String hash(Path file){var document=documents.get(key(file));return document==null?null:document.hash();}
     public synchronized String sourceHash(Path file)throws java.io.IOException{var hash=hash(file);return hash==null?files.hash(file):hash;}

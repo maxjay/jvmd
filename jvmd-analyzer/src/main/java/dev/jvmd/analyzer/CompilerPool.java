@@ -22,6 +22,7 @@ public final class CompilerPool implements AutoCloseable {
     private final java.util.function.LongSupplier heapUsage;
     private dev.jvmd.core.FileStateRegistry inputFiles=dev.jvmd.core.FileStateRegistry.shared();
     private CompilerInputs inputs=new CompilerInputs(inputFiles);
+    private CompilerInputs.Configuration inputConfiguration;
     private Documents liveDocuments=new Documents(inputFiles);
     public CompilerPool(dev.jvmd.core.FileStateRegistry files){this();inputFiles=files;inputs=new CompilerInputs(files);liveDocuments=new Documents(files);}
     public CompilerPool(){this(()->java.lang.management.ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed());}
@@ -29,6 +30,8 @@ public final class CompilerPool implements AutoCloseable {
     private JavacTaskPool pool=new JavacTaskPool(1);
     private final ReleasePlatformCache releasePlatform=new ReleasePlatformCache();
     private IndexedFileManager manager;
+    private IndexService configuredIndex;
+    private Set<Path> configuredBinarySources=Set.of();
     private String generation,release;
     private List<String> compilerOptions=List.of();
     private boolean preciseSourceRoots=true;
@@ -51,25 +54,26 @@ public final class CompilerPool implements AutoCloseable {
             if(Objects.equals(this.generation,generation)&&Objects.equals(this.release,release)&&this.compilerOptions.equals(options)&&this.preciseSourceRoots==preciseSourceRoots&&configuredClasspath.equals(classpath)&&configuredSources.equals(sources)&&manager!=null)return;
             releasePlatform.close();
             if(manager!=null){manager.close();recycles++;}
-            configuredClasspath=List.copyOf(classpath);configuredSources=List.copyOf(sources);
+            configuredIndex=index;configuredClasspath=List.copyOf(classpath);configuredSources=List.copyOf(sources);
             this.generation=generation;this.release=release;this.compilerOptions=List.copyOf(options);this.preciseSourceRoots=preciseSourceRoots;pool=new JavacTaskPool(1);baseline=heap();validatedRequestId=-1;
             manager=new IndexedFileManager(ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8),classpath,sources,index,Math.min(32L*1024*1024,Math.max(1024*1024,budget/8)),preciseSourceRoots,inputFiles);
+            inputConfiguration=new CompilerInputs.Configuration(generation,configuredSources,configuredClasspath,compilerOptions);
             sourceModuleGeneration=manager.sourceModuleGeneration();
         }finally{configureNanos+=System.nanoTime()-started;}
     }
     public void documents(Documents documents){checkThread();liveDocuments=documents;manager.documents(documents.snapshots());refreshSourceModules();}
     public CompilerInputs.Snapshot inputSnapshot()throws java.io.IOException {
-        checkThread();return inputs.capture(new CompilerInputs.Configuration(generation,configuredSources,configuredClasspath,compilerOptions),liveDocuments);
+        checkThread();return inputs.capture(inputConfiguration,liveDocuments);
     }
     public void documents(Map<Path,String> documents){
         checkThread();var buffers=new Documents(inputFiles);documents.forEach((file,text)->buffers.open(file,text,1));documents(buffers);
     }
-    public void binarySources(Set<Path> sources){checkThread();manager.binarySources(sources);}
-    public boolean cacheValid(){
+    public void binarySources(Set<Path> sources){checkThread();configuredBinarySources=Set.copyOf(sources);manager.binarySources(sources);}
+    public boolean cacheValid()throws Exception{
         checkThread();long request=RequestScope.id();if(request!=0&&request==validatedRequestId)return validatedRequestResult;
         long started=System.nanoTime();classpathValidations++;
         boolean valid;
-        try{manager.validateClasspath();valid=true;}catch(RuntimeException e){recycle();valid=false;}
+        try{manager.validateClasspath(inputSnapshot().environment());valid=true;}catch(java.io.IOException|RuntimeException e){resetEnvironment();valid=false;}
         finally{classpathValidationNanos+=System.nanoTime()-started;}
         if(request!=0){validatedRequestId=request;validatedRequestResult=valid;}return valid;
     }
@@ -96,12 +100,12 @@ public final class CompilerPool implements AutoCloseable {
         try {
             long validationStarted=System.nanoTime();classpathValidations++;
             try{
-                try{manager.validateClasspath();}
+                try{manager.validateClasspath(observed.environment());}
                 catch(java.io.UncheckedIOException changed){
                     // A filesystem watch event can arrive after classpathStamp() validated but before
                     // this query starts. No javac state has been touched yet, so recycle the caches and
                     // revalidate once instead of degrading a legitimate classpath replacement to a fault.
-                    recycle();classpathValidations++;manager.validateClasspath();
+                    resetEnvironment();manager.expectedInputs(observed);classpathValidations++;manager.validateClasspath(observed.environment());
                 }
             }finally{classpathValidationNanos+=System.nanoTime()-validationStarted;}
             releasePlatform.prepare(options);
@@ -150,6 +154,13 @@ public final class CompilerPool implements AutoCloseable {
     }
     private static final class QueryFailure extends RuntimeException {QueryFailure(Exception cause){super(cause);}}
     private long heap(){return heapUsage.getAsLong();}
+    private void resetEnvironment()throws Exception {
+        recycle();manager.close();
+        manager=new IndexedFileManager(ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8),configuredClasspath,configuredSources,configuredIndex,
+                Math.min(32L*1024*1024,Math.max(1024*1024,budget/8)),preciseSourceRoots,inputFiles);
+        manager.documents(liveDocuments.snapshots());manager.binarySources(configuredBinarySources);
+        sourceModuleGeneration=manager.sourceModuleGeneration();
+    }
     public void recycle(){checkThread();releasePlatform.close();pool=new JavacTaskPool(1);if(manager!=null)manager.invalidate();baseline=heap();recycles++;validatedRequestId=-1;}
     /** JavacTaskPool clears source symbols after each task; refresh source discovery without dropping binary state. */
     public void invalidateSourceInventory(){checkThread();if(manager!=null)manager.invalidateSourceInventory();}

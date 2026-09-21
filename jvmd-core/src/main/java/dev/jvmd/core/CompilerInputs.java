@@ -45,7 +45,11 @@ public final class CompilerInputs {
     private Snapshot snapshot;
     private Map<Path,String> environmentFiles=Map.of();
     private long observations,rebuilds,validationNanos,observation;
-    private final Map<Path,Object> evidence=new HashMap<>();
+    // Disk environment and overlaid source are distinct roles even at the same path.
+    private final Map<Path,Object> sourceEvidence=new HashMap<>(),environmentEvidence=new HashMap<>();
+    private Documents trackedDocuments;
+    private Documents.Transitions transitions;
+    private long transitionVersion;
     private List<List<Path>> inventories=List.of();
     private List<Path> discovered=List.of();
     private Set<Path> candidates=Set.of(), overlayPaths=Set.of();
@@ -73,6 +77,10 @@ public final class CompilerInputs {
                 for(Path file:open)if(config.roots().isEmpty()||config.roots().stream().anyMatch(file::startsWith))paths.add(file);
                 candidates=Collections.unmodifiableSet(paths);priorDisk=List.copyOf(diskFiles);overlayPaths=open;
             }
+            if(trackedDocuments!=documents){transitions=null;trackedDocuments=documents;observation++;}
+            transitions=documents.track(transitions,config.roots(),candidates);
+            long version=documents.transitionVersion(transitions);
+            if(version!=transitionVersion){observation++;transitionVersion=version;}
             Map<Path,String> prior=snapshot==null?Map.of():snapshot.sources();
             Map<Path,String> sources=observe(candidates,prior,documents);
             var environment=environment(config);
@@ -131,6 +139,8 @@ public final class CompilerInputs {
         }
     }
     private Map<Path,String> observe(Set<Path> paths,Map<Path,String> prior,Documents documents)throws IOException {
+        var evidence=documents==null?environmentEvidence:sourceEvidence;
+        evidence.keySet().retainAll(paths);
         Map<Path,String> updated=null;
         for(Path file:paths){
             String hash=documents==null?null:documents.hash(file);if(hash==null)hash=files.hash(file);

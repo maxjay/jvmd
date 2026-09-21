@@ -42,7 +42,6 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     public void documents(Map<Path,String> values){documents=Map.copyOf(values);try{configureModules();}catch(IOException e){throw new UncheckedIOException(e);}}
     private final Map<Path,Catalog> catalogs=new HashMap<>();
     private final FileStateRegistry files;
-    private final CompilerInputs environmentInputs;
     private CompilerInputs.EnvironmentIdentity acceptedEnvironment;
     private long environmentChanges,sourceStateGeneration;
     private List<Path> sourceInventory=List.of();
@@ -72,7 +71,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         for(var path:classpath){path=path.toAbsolutePath().normalize();var artifact=index==null?null:index.artifact(path);paths.add(artifact==null?path:Path.of(artifact.path()));}
         this.classpath=List.copyOf(paths);
         directories=paths.stream().filter(p->!p.toString().endsWith(".jar")).toList();
-        this.files=files;environmentInputs=new CompilerInputs(files);
+        this.files=files;
         // Directory inputs and source roots keep javac's own file-manager behavior.
         delegate.setLocationFromPaths(StandardLocation.CLASS_PATH,directories.stream().filter(Files::isDirectory).toList());
         delegate.setLocationFromPaths(StandardLocation.SOURCE_PATH,sources.stream().filter(Files::isDirectory).toList());
@@ -120,11 +119,10 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         int length=0;while(length<Math.min(first.getNameCount(),second.getNameCount())&&first.getName(length).equals(second.getName(length)))length++;return length;
     }
     private List<Path> classInputs(){return modulePaths.isEmpty()?classpath:classpath.stream().filter(path->modulePaths.values().stream().noneMatch(paths->paths.contains(path))).toList();}
-    public void validateClasspath(){
+    public void validateClasspath(CompilerInputs.EnvironmentIdentity current){
         try {
             for(Path path:classpath)if(path.toString().endsWith(".jar")&&!Files.isRegularFile(path))throw new IOException("Missing classpath archive: "+path);
             for(var catalog:catalogs.values())if(!catalog.stamp().equals(stamp(catalog.path())))throw new IOException("Loaded classpath changed: "+catalog.path());
-            var current=environmentInputs.environment(new CompilerInputs.Configuration("file-manager",List.of(),classpath,List.of()));
             if(acceptedEnvironment!=null&&!current.equals(acceptedEnvironment)){
                 environmentChanges++;throw new IOException("classpath changed during analysis");
             }

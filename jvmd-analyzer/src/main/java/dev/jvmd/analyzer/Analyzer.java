@@ -64,7 +64,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     public void documents(Documents documents){this.documents=documents;if(snapshots!=null)snapshots.documents(documents);compiler.documents(documents);dependencies.documentHash(documents::hash);dependencies.fileStates(documents.fileStates());}
     private List<String> warnings(List<String> query){if(context.warnings().isEmpty())return query;var all=new LinkedHashSet<String>(context.warnings());all.addAll(query);return List.copyOf(all);}
     private String coordinates(String file){return context.coordinates().entrySet().stream().filter(e->file.startsWith(e.getKey())).max(Comparator.comparingInt(e->e.getKey().length())).map(Map.Entry::getValue).orElse(null);}
-    private CompilerInputs.Snapshot inputSnapshot()throws Exception {
+    public CompilerInputs.Snapshot inputSnapshot()throws Exception {
         return compiler.inputSnapshot();
     }
     private String classpathStamp()throws Exception{return computeClasspathStamp();}

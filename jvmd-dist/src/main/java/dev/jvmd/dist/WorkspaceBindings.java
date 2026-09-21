@@ -53,23 +53,55 @@ public final class WorkspaceBindings implements AutoCloseable {
     private BindingFacts facts;
     private BindingFacts facts()throws Exception{if(facts==null)facts=new BindingFacts();return facts;}
     private final SemanticUpdatePolicy.Live semantic=new SemanticUpdatePolicy.Live();
-    private CompilerInputs.Snapshot inputs;
+    /** Facts retain their owning module and that module's complete captured compiler inputs. */
+    public record ModuleInputs(CompilerInputs.Snapshot snapshot,Set<Path> owners){
+        public ModuleInputs{owners=Set.copyOf(owners);}
+    }
+    @FunctionalInterface public interface InputSource { Map<String,ModuleInputs> capture()throws Exception; }
+    private record Inputs(Map<String,ModuleInputs> modules,Map<Path,String> sources,Map<Path,String> owners){
+        boolean sameInputs(Inputs other){
+            return other!=null&&owners.equals(other.owners)&&modules.keySet().equals(other.modules.keySet())
+                    &&modules.entrySet().stream().allMatch(e->e.getValue().snapshot().sameInputs(other.modules.get(e.getKey()).snapshot()));
+        }
+        String text(Path file,Documents documents)throws Exception{return modules.get(owners.get(file)).snapshot().text(file,documents);}
+        boolean contextChanged(Path file,Inputs prior){
+            String owner=owners.get(file);var before=prior.modules.get(owner);var after=modules.get(owner);
+            return !Objects.equals(owner,prior.owners.get(file))||before==null
+                    ||!before.snapshot().environment().equals(after.snapshot().environment())
+                    ||!before.snapshot().membership().equals(after.snapshot().membership());
+        }
+    }
+    private Inputs inputs,observedInputs;
+    private Inputs capture(InputSource source)throws Exception{
+        var modules=source.capture();
+        if(observedInputs!=null&&observedInputs.modules().equals(modules))return observedInputs;
+        var hashes=new LinkedHashMap<Path,String>();var owners=new LinkedHashMap<Path,String>();
+        for(var entry:modules.entrySet())for(Path file:entry.getValue().owners()){
+            String hash=entry.getValue().snapshot().sources().get(file);
+            if(hash==null)continue;
+            if(owners.put(file,entry.getKey())!=null)throw new IllegalArgumentException("Multiple fact owners: "+file);
+            hashes.put(file,hash);
+        }
+        return observedInputs=new Inputs(Map.copyOf(modules),Collections.unmodifiableMap(hashes),Map.copyOf(owners));
+    }
     /** Cache-owned metadata; native read leases belong exclusively to callers. */
     private record Revision(List<CompilerPool.Problem> diagnostics,int tier,List<String> warnings,Object identity) { }
     private Revision snapshot;
     private Snapshot acquire(Revision revision)throws Exception{return new Snapshot(facts().view(),revision.identity(),revision.diagnostics(),revision.tier(),revision.warnings());}
     private long hits,builds,fullBuilds,incrementalBuilds,filesReanalysed,filesReused,apiInvalidations,fastValidationHits,fullValidations;
     private int lastReanalysedFiles;
-    private CompilerInputs.Snapshot inputs(List<Path> files,List<Path> classpath,Documents documents,String generation)throws Exception {
-        return observations.capture(new CompilerInputs.Configuration(generation,List.of(),classpath,List.of()),documents,files);
+    private InputSource detachedInputs(SourceFiles sources,List<Path> classpath,Documents documents,String generation){
+        // Explicit inventory API for detached fact loaders without a configured compiler.
+        var config=new CompilerInputs.Configuration(generation,List.of(),classpath,List.of());
+        return ()->{var snapshot=observations.capture(config,documents,sources.files());return Map.of(generation,new ModuleInputs(snapshot,snapshot.sources().keySet()));};
     }
-    private static boolean sameContext(CompilerInputs.Snapshot first,CompilerInputs.Snapshot second){
-        return first!=null&&first.environment().equals(second.environment());
+    public Snapshot peek(InputSource source)throws Exception {
+        if(snapshot==null)return null;
+        if(!capture(source).sameInputs(inputs)){fullValidations++;return null;}
+        hits++;fastValidationHits++;return acquire(snapshot);
     }
     public Snapshot peek(List<Path> files,List<Path> classpath,Documents documents,String generation)throws Exception {
-        if(snapshot==null)return null;
-        if(!inputs(files,classpath,documents,generation).sameInputs(inputs)){fullValidations++;return null;}
-        hits++;fastValidationHits++;return acquire(snapshot);
+        return peek(detachedInputs(()->files,classpath,documents,generation));
     }
     public Snapshot peek(SourceFiles sources,List<Path> classpath,Documents documents,String generation)throws Exception {
         return peek(sources.files(),classpath,documents,generation);
@@ -81,7 +113,7 @@ public final class WorkspaceBindings implements AutoCloseable {
             return results;
         });
     }
-    private Map<Path,Fragment> load(Set<Path> files,CompilerInputs.Snapshot current,Documents documents,BatchLoader loader,org.rocksdb.WriteBatch batch)throws Exception{
+    private Map<Path,Fragment> load(Set<Path> files,Inputs current,Documents documents,BatchLoader loader,org.rocksdb.WriteBatch batch)throws Exception{
         if(files.isEmpty())return Map.of();
         var texts=new LinkedHashMap<Path,String>();
         for(Path file:current.sources().keySet())if(files.contains(file))texts.put(file,current.text(file,documents));
@@ -94,7 +126,7 @@ public final class WorkspaceBindings implements AutoCloseable {
         }
         return result;
     }
-    private Revision readView(CompilerInputs.Snapshot current,Map<Path,Fragment> values,boolean consistent)throws Exception{
+    private Revision readView(Inputs current,Map<Path,Fragment> values,boolean consistent)throws Exception{
         var diagnostics=new ArrayList<CompilerPool.Problem>();var warnings=new LinkedHashSet<String>();int tier=2;
         for(Path file:current.sources().keySet()){
             var fragment=values.get(file);if(fragment==null){tier=1;warnings.add("incomplete_workspace_bindings: "+file);continue;}
@@ -104,8 +136,11 @@ public final class WorkspaceBindings implements AutoCloseable {
         return new Revision(List.copyOf(diagnostics),tier,List.copyOf(warnings),new Object());
     }
     public Snapshot getBatch(SourceFiles sources,List<Path> classpath,Documents documents,String generation,long byteBudget,BatchLoader loader)throws Exception {
+        return getBatch(detachedInputs(sources,classpath,documents,generation),documents,byteBudget,loader);
+    }
+    public Snapshot getBatch(InputSource source,Documents documents,long byteBudget,BatchLoader loader)throws Exception {
         facts().budget(byteBudget);
-        var current=inputs(sources.files(),classpath,documents,generation);
+        var current=capture(source);
         if(snapshot!=null&&current.sameInputs(inputs)){
             hits++;fastValidationHits++;lastReanalysedFiles=0;filesReused+=current.sources().size();return acquire(snapshot);
         }
@@ -113,10 +148,10 @@ public final class WorkspaceBindings implements AutoCloseable {
         fullValidations++;
         try(var batch=facts().transaction()){
         var priorInputs=inputs;var priorFragments=new LinkedHashMap<>(fragments);
-        boolean full=!sameContext(priorInputs,current);
+        boolean full=priorInputs==null;
         var dirty=new LinkedHashSet<Path>();
         if(full)dirty.addAll(current.sources().keySet());
-        else for(Path file:current.sources().keySet())if(!Objects.equals(priorInputs.sources().get(file),current.sources().get(file)))dirty.add(file);
+        else for(Path file:current.sources().keySet())if(current.contextChanged(file,priorInputs)||!Objects.equals(priorInputs.sources().get(file),current.sources().get(file)))dirty.add(file);
 
         builds++;
         if(full){fullBuilds++;for(Path file:priorFragments.keySet())facts().remove(batch,file);priorFragments.clear();semantic.clear();}
@@ -141,7 +176,7 @@ public final class WorkspaceBindings implements AutoCloseable {
         }
 
         lastReanalysedFiles=dirty.size();filesReanalysed+=dirty.size();filesReused+=Math.max(0,current.sources().keySet().size()-dirty.size());
-        var after=inputs(sources.files(),classpath,documents,generation);boolean consistent=current.equals(after);
+        var after=capture(source);boolean consistent=current.equals(after);
         if(!consistent)throw new CompilerInputs.Superseded("workspace_changed_during_query: retry for a consistent graph");
         if(working.values().stream().anyMatch(f->f.contribution()==null)){
             semantic.clear();for(var fragment:fragments.values())if(fragment.contribution()!=null)semantic.resolve(fragment.contribution());
@@ -172,5 +207,5 @@ public final class WorkspaceBindings implements AutoCloseable {
         result.put("fast_validation_hits",fastValidationHits);result.put("full_validations",fullValidations);result.put("fast_validation_ready",inputs!=null);result.put("input_validation",observations.status());
         return Collections.unmodifiableMap(result);
     }
-    @Override public void close()throws Exception{snapshot=null;inputs=null;fragments.clear();semantic.clear();if(facts!=null){facts.close();facts=null;}}
+    @Override public void close()throws Exception{snapshot=null;inputs=null;observedInputs=null;fragments.clear();semantic.clear();if(facts!=null){facts.close();facts=null;}}
 }

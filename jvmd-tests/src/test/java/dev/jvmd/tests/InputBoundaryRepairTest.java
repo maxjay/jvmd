@@ -26,19 +26,50 @@ class InputBoundaryRepairTest {
         var observation=new CompilerInputs(files);var config=new CompilerInputs.Configuration("module",List.of(src),List.of(),options);
         try(var analyzer=new Analyzer(files);var navigation=new WorkspaceBindings(files)){
             analyzer.configure(context,null,128L*1024*1024);analyzer.documents(docs);
-            WorkspaceBindings.Loader loader=(path,text)->analyzer.bindings(path,text,null);
+            WorkspaceBindings.InputSource inputSource=()->Map.of("module",new WorkspaceBindings.ModuleInputs(analyzer.inputSnapshot(),Set.of(file)));
+            WorkspaceBindings.BatchLoader loader=analyzer::bindingsBatch;
             var beforeEnvironment=observation.capture(config,docs).environment();
-            try(var before=navigation.get(()->List.of(file),List.of(),docs,"module",0,loader)){
+            try(var before=navigation.getBatch(inputSource,docs,0,loader)){
                 assertThat(before.tier()).isEqualTo(2);assertThat(before.warnings()).isEmpty();assertThat(before.diagnostics()).isEmpty();
                 patch(patchSrc,classes,true);
                 assertThat(observation.capture(config,docs).environment()).isNotEqualTo(beforeEnvironment);
-                try(var after=navigation.get(()->List.of(file),List.of(),docs,"module",0,loader);var fresh=new Analyzer(files)){
+                try(var after=navigation.getBatch(inputSource,docs,0,loader);var fresh=new Analyzer(files)){
                     assertThat(after.revision()).isNotSameAs(before.revision());
                     fresh.configure(context,null,128L*1024*1024);fresh.documents(docs);
                     var expected=fresh.bindings(file,docs.text(file),null);
                     assertThat(after.warnings()).isEmpty();
                     assertThat(after.diagnostics()).extracting(CompilerPool.Problem::code).contains("compiler.err.prob.found.req");
                     assertThat(after.diagnostics()).extracting(CompilerPool.Problem::code).containsExactlyElementsOf(expected.diagnostics().stream().map(CompilerPool.Problem::code).toList());
+                }
+            }
+        }
+    }
+    @Test void navigationKeepsModuleEnvironmentsOrderedAndInvalidatesOnlyTheirOwners()throws Exception {
+        Path left=Files.createDirectory(root.resolve("left")),right=Files.createDirectory(root.resolve("right"));
+        Path a=Files.writeString(left.resolve("A.java"),"class A { int n=new fixture.Sample().value(); }"),b=Files.writeString(right.resolve("B.java"),"class B {}");
+        Path first=IndexFixtures.jar(root,"int-api","package fixture; public class Sample { public int value(){return 1;} }",true);
+        Path second=IndexFixtures.jar(root,"string-api","package fixture; public class Sample { public String value(){return \"x\";} }",true);
+        var files=new FileStateRegistry();var docs=new Documents(files);
+        try(var leftAnalyzer=new Analyzer(files);var rightAnalyzer=new Analyzer(files);var navigation=new WorkspaceBindings(files)){
+            leftAnalyzer.configure(new Analyzer.Context("test:left:1","25",List.of(first,second),List.of(left),"left",Map.of()),null,128L*1024*1024);leftAnalyzer.documents(docs);
+            rightAnalyzer.configure(new Analyzer.Context("test:right:1","25",List.of(),List.of(right),"right",Map.of()),null,128L*1024*1024);rightAnalyzer.documents(docs);
+            WorkspaceBindings.InputSource source=()->Map.of("left",new WorkspaceBindings.ModuleInputs(leftAnalyzer.inputSnapshot(),Set.of(a)),"right",new WorkspaceBindings.ModuleInputs(rightAnalyzer.inputSnapshot(),Set.of(b)));
+            int[] loads={0,0};
+            WorkspaceBindings.BatchLoader loader=texts->{
+                var results=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();
+                for(var entry:texts.entrySet()){
+                    boolean isLeft=entry.getKey().equals(a);loads[isLeft?0:1]++;
+                    results.put(entry.getKey(),(isLeft?leftAnalyzer:rightAnalyzer).bindings(entry.getKey(),entry.getValue(),null));
+                }
+                return results;
+            };
+            try(var before=navigation.getBatch(source,docs,0,loader)){
+                assertThat(before.warnings()).isEmpty();assertThat(before.diagnostics()).isEmpty();assertThat(loads).containsExactly(1,1);
+                leftAnalyzer.configure(new Analyzer.Context("test:left:1","25",List.of(second,first),List.of(left),"left",Map.of()),null,128L*1024*1024);leftAnalyzer.documents(docs);
+                try(var after=navigation.getBatch(source,docs,0,loader)){
+                    assertThat(after.revision()).isNotSameAs(before.revision());assertThat(after.warnings()).isEmpty();
+                    assertThat(after.diagnostics()).extracting(CompilerPool.Problem::code).contains("compiler.err.prob.found.req");
+                    assertThat(loads).containsExactly(2,1);
                 }
             }
         }

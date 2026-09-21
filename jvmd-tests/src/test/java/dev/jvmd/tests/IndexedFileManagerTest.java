@@ -20,7 +20,7 @@ class IndexedFileManagerTest {
    var timestamp=Files.getLastModifiedTime(jar);
    IndexFixtures.jar(temp,"replace","package fixture; public class Sample { public String value(){return \"changed\";} }",true);
    Files.setLastModifiedTime(jar,timestamp);
-   assertThatThrownBy(manager::validateClasspath).isInstanceOf(java.io.UncheckedIOException.class);
+   assertThatThrownBy(()->manager.validateClasspath(new dev.jvmd.core.CompilerInputs.EnvironmentIdentity("fixture"))).isInstanceOf(java.io.UncheckedIOException.class);
   }
  }
  @Test void completesPrivateSupportTypesAndDoesNotHideDeletedJars()throws Exception{

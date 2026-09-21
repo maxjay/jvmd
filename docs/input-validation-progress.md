@@ -123,3 +123,15 @@ in scratch and will be committed with final evidence. Normal validation command:
 - [ ] Repair role evidence and scoped, bounded-lifetime overlay transitions.
 - [ ] Measure and remove redundant observations inside logical operations.
 - [ ] Publish correctness, performance evidence and exact tested trees on PR #21.
+
+Correctness checkpoint: all three original assertions failed on 0347d7a (3 failures,
+0 errors). Repaired tests now pass, plus real-javac ordered-classpath/two-module
+coverage. Navigation consumes the same per-module compiler snapshots that produce
+its facts; changed environments invalidate their owner files rather than an
+unordered whole-workspace classpath union. File-manager validation receives that
+complete environment instead of constructing a reduced one. Environment replacement
+also recreates javac's delegate, whose patch-module options otherwise survived a
+pool recycle and caused duplicate-patch errors on the now-required rebuild.
+Source and environment evidence have separate roles. Documents keeps weak,
+module-owned transition subscriptions, not a closed-file history; only relevant
+transitions advance their monotonic version. Content equality still permits reuse.

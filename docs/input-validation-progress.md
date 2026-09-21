@@ -102,3 +102,24 @@ Review verification completed: 135 phase 3/4 tests passed. Three alternating
 component repetitions retain zero warm enumeration/hash/map-rebuild work; body/API
 queries stay 1/2. Updated raw evidence and honest timing/cost scope are in
 `docs/performance/input-validation/review` and the report's review appendix.
+
+Bounded finish baseline (before production edits): PR head
+0347d7ab58a9c176ac3be027d36c0f2a72209459, tree
+b2e3127b4a7102d0f8a79415d753ace3c5d723e5; main 6129dbf.
+Compared reviewed c3ccd8cf through current head: four prior inline repairs retained;
+#17/#18 ownership/policy/read-lease code remains integrated. Reproducer bundle read
+and converted to InputBoundaryRepairTest (phase-4). Baseline toolchain remains
+Temurin 25.0.4.1+1, Maven 3.9.16, Node 24.19.0; heap -Xmx1g. Existing
+benchmarks/input-validation/{prepare,run,summarize}.py and workspaces/{compile,matrix,verify,summarize}.py
+are used unchanged initially. Baseline commands/results are under finish-before-*
+in scratch and will be committed with final evidence. Normal validation command:
+/tmp/jvmd-mvn -o -B -pl jvmd-tests -am -Dgroups=phase-3,phase-4
+-Djvmd.resolvers=/workspace/scratch/7a99f3b47779/jvmd/jvmd-resolver/maven3/target
+-DargLine=-Xmx1g test. Focused baseline uses -Dtest=InputBoundaryRepairTest
+-Dsurefire.failIfNoSpecifiedTests=false instead of groups.
+
+- [ ] Demonstrate the three new regressions on this baseline.
+- [ ] Repair shared effective environments and per-module fact association.
+- [ ] Repair role evidence and scoped, bounded-lifetime overlay transitions.
+- [ ] Measure and remove redundant observations inside logical operations.
+- [ ] Publish correctness, performance evidence and exact tested trees on PR #21.

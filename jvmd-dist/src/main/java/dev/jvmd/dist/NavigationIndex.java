@@ -76,6 +76,7 @@ final class NavigationIndex {
 
   private static <K extends Comparable<? super K>, V> PersistentMap<K, List<V>> chunk(
       PersistentMap<K, List<V>> map, K key, List<V> values) {
+    if (values.equals(map.get(key))) return map;
     return values.isEmpty() ? map.without(key) : map.with(key, List.copyOf(values));
   }
 
@@ -134,6 +135,32 @@ final class NavigationIndex {
     return result;
   }
 
+  private static Set<String> declarations(Bindings.Snapshot graph, Path file) {
+    var result = new HashSet<String>();
+    if (graph != null)
+      for (var occurrence : graph.occurrences()) {
+        var row = graph.symbols().get(occurrence.scip());
+        if (occurrence.role().equals("declaration")
+            && Path.of(occurrence.file()).toAbsolutePath().normalize().equals(file)
+            && row != null
+            && !Set.of(
+                    "local_variable",
+                    "parameter",
+                    "exception_parameter",
+                    "binding_variable",
+                    "resource_variable",
+                    "type_parameter")
+                .contains(row.get("kind"))) result.add(occurrence.scip());
+      }
+    return result;
+  }
+
+  private static <K> Set<K> keys(Map<K, ?> before, Map<K, ?> after) {
+    var keys = new LinkedHashSet<K>(before.keySet());
+    keys.addAll(after.keySet());
+    return keys;
+  }
+
   NavigationIndex replace(
       Path file,
       CompilerPool.Outcome<Bindings.Snapshot> before,
@@ -142,48 +169,37 @@ final class NavigationIndex {
     next.updates++;
     var old = before == null ? null : before.result();
     var now = after == null ? null : after.result();
-    var touched = new LinkedHashSet<String>();
-    if (old != null) {
-      for (String id : old.symbols().keySet()) {
-        next.owners = contribution(next.owners, id, new Owner(file, false), null);
-        next.owners = contribution(next.owners, id, new Owner(file, true), null);
-        touched.add(id);
-      }
-      for (var edge : old.edges()) next.edge(file, edge, false);
-      for (var edge : grouped(old.occurrences()).keySet())
-        next.references = contribution(next.references, edge, file, null);
+    var oldSymbols = old == null ? Map.<String, Map<String, Object>>of() : old.symbols();
+    var newSymbols = now == null ? Map.<String, Map<String, Object>>of() : now.symbols();
+    var oldDeclarations = declarations(old, file);
+    var newDeclarations = declarations(now, file);
+    for (String id : keys(oldSymbols, newSymbols)) {
+      var previous = oldSymbols.get(id);
+      var current = newSymbols.get(id);
+      boolean wasDeclaration = oldDeclarations.contains(id),
+          isDeclaration = newDeclarations.contains(id);
+      if (Objects.equals(previous, current) && wasDeclaration == isDeclaration) continue;
+      if (previous != null)
+        next.owners = contribution(next.owners, id, new Owner(file, wasDeclaration), null);
+      if (current != null)
+        next.owners = contribution(next.owners, id, new Owner(file, isDeclaration), current);
+      next.select(id);
     }
-    if (now != null) {
-      var ownDeclarations = new HashSet<String>();
-      for (var occurrence : now.occurrences())
-        if (occurrence.role().equals("declaration")
-            && Path.of(occurrence.file()).toAbsolutePath().normalize().equals(file)) {
-          var row = now.symbols().get(occurrence.scip());
-          if (row != null
-              && !Set.of(
-                      "local_variable",
-                      "parameter",
-                      "exception_parameter",
-                      "binding_variable",
-                      "resource_variable",
-                      "type_parameter")
-                  .contains(row.get("kind"))) ownDeclarations.add(occurrence.scip());
-        }
-      for (var entry : now.symbols().entrySet()) {
-        next.owners =
-            contribution(
-                next.owners,
-                entry.getKey(),
-                new Owner(file, ownDeclarations.contains(entry.getKey())),
-                entry.getValue());
-        touched.add(entry.getKey());
-      }
-      for (var edge : now.edges()) next.edge(file, edge, true);
-      for (var entry : grouped(now.occurrences()).entrySet())
+    var oldEdges = old == null ? Set.<Bindings.Edge>of() : new HashSet<>(old.edges());
+    var newEdges = now == null ? Set.<Bindings.Edge>of() : new HashSet<>(now.edges());
+    for (var edge : oldEdges) if (!newEdges.contains(edge)) next.edge(file, edge, false);
+    for (var edge : newEdges) if (!oldEdges.contains(edge)) next.edge(file, edge, true);
+    var oldReferences =
+        old == null ? Map.<String, List<Bindings.Occurrence>>of() : grouped(old.occurrences());
+    var newReferences =
+        now == null ? Map.<String, List<Bindings.Occurrence>>of() : grouped(now.occurrences());
+    for (String id : keys(oldReferences, newReferences)) {
+      var previous = oldReferences.get(id);
+      var current = newReferences.get(id);
+      if (!Objects.equals(previous, current))
         next.references =
-            contribution(next.references, entry.getKey(), file, List.copyOf(entry.getValue()));
+            contribution(next.references, id, file, current == null ? null : List.copyOf(current));
     }
-    for (String id : touched) next.select(id);
     var occurrenceList = now == null ? List.<Bindings.Occurrence>of() : now.occurrences();
     next.occurrenceCount +=
         occurrenceList.size() - next.occurrences.getOrDefault(file, List.of()).size();

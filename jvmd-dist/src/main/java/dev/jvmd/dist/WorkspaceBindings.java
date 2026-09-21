@@ -407,18 +407,21 @@ public final class WorkspaceBindings implements AutoCloseable {
         if (!Objects.equals(priorInputs.sourceHashes().get(file), current.sourceHashes().get(file)))
           dirty.add(file);
 
-    long workingEstimate = full ? 0 : estimatedBytes;
+    long workingEstimate = estimatedBytes;
     builds++;
     snapshot = null;
-    if (full) {
-      fullBuilds++;
-      fragments = PersistentMap.empty();
-      priorFragments = PersistentMap.empty();
-    } else incrementalBuilds++;
+    if (full) fullBuilds++;
+    else incrementalBuilds++;
 
     var working = priorFragments;
+    var nextApi = navigation.apiRoot();
+    var removed = new LinkedHashSet<>(priorFragments.keySet());
+    removed.removeAll(current.sourceHashes().keySet());
+    for (Path file : removed) {
+      nextApi = SemanticApi.replaceFile(nextApi, file, priorFragments.get(file).api(), null);
+      working = working.without(file);
+    }
     var first = load(dirty, current, documents, loader);
-    var nextApi = full ? SemanticNode.empty("workspace-api") : navigation.apiRoot();
     for (var entry : first.entrySet()) {
       working = working.with(entry.getKey(), entry.getValue());
       var prior = priorFragments.get(entry.getKey());
@@ -461,7 +464,12 @@ public final class WorkspaceBindings implements AutoCloseable {
     var after = observe(sources, classpath, documents, generation);
     boolean consistent = current.equals(after);
     long maintenanceStart = System.nanoTime();
-    var nextNavigation = full ? new NavigationIndex() : navigation;
+    var nextNavigation = navigation;
+    for (Path file : removed) {
+      var old = priorFragments.get(file);
+      nextNavigation = nextNavigation.replace(file, old.outcome(), null);
+      workingEstimate -= old.estimatedBytes();
+    }
     for (Path file : dirty) {
       var old = priorFragments.get(file);
       var updated = working.get(file);
@@ -469,7 +477,7 @@ public final class WorkspaceBindings implements AutoCloseable {
           nextNavigation.replace(file, old == null ? null : old.outcome(), updated.outcome());
       workingEstimate += updated.estimatedBytes() - (old == null ? 0 : old.estimatedBytes());
     }
-    navigationFileUpdates += dirty.size();
+    navigationFileUpdates += dirty.size() + removed.size();
     navigationNanos += System.nanoTime() - maintenanceStart;
     var publicationEnd = validation == null ? null : validation.current();
     consistent &= stable(publicationStart, publicationEnd);

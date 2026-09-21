@@ -1,14 +1,16 @@
 package dev.jvmd.analyzer;
 
+import com.fasterxml.jackson.annotation.*;
 import java.util.*;
 import javax.lang.model.element.*;
 
 /**
  * Detached declaration meaning; source positions, documentation and parameter names are separate.
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record DeclarationContract(
-    String kind,
-    List<String> modifiers,
+    @JsonIgnore String kind,
+    @JsonIgnore List<String> modifiers,
     String type,
     List<String> annotations,
     String constant,
@@ -16,21 +18,25 @@ public record DeclarationContract(
     String superclass,
     List<String> interfaces,
     List<String> permits,
-    List<String> record_components,
-    @com.fasterxml.jackson.annotation.JsonProperty("throws") List<String> thrownTypes,
+    @JsonProperty("record_components") List<String> recordComponents,
+    @JsonProperty("throws") List<String> thrownTypes,
     List<String> parameters,
-    String receiver,
-    boolean varargs,
-    @com.fasterxml.jackson.annotation.JsonProperty("default") String defaultValue) {
+    @JsonIgnore String receiver,
+    Boolean varargs,
+    @JsonProperty("default") String defaultValue) {
   public DeclarationContract {
     modifiers = List.copyOf(modifiers);
     annotations = List.copyOf(annotations);
-    bounds = List.copyOf(bounds);
-    interfaces = List.copyOf(interfaces);
-    permits = List.copyOf(permits);
-    record_components = List.copyOf(record_components);
-    thrownTypes = List.copyOf(thrownTypes);
-    parameters = List.copyOf(parameters);
+    bounds = immutable(bounds);
+    interfaces = immutable(interfaces);
+    permits = immutable(permits);
+    recordComponents = immutable(recordComponents);
+    thrownTypes = immutable(thrownTypes);
+    parameters = immutable(parameters);
+  }
+
+  private static List<String> immutable(List<String> values) {
+    return values == null ? null : List.copyOf(values);
   }
 
   static boolean exported(Element element) {
@@ -62,27 +68,27 @@ public record DeclarationContract(
             ? value.getTypeParameters().stream()
                 .map(p -> p.getSimpleName() + ":" + p.getBounds())
                 .toList()
-            : List.of(),
-        type == null ? "" : type.getSuperclass().toString(),
-        type == null ? List.of() : type.getInterfaces().stream().map(Object::toString).toList(),
+            : null,
+        type == null ? null : type.getSuperclass().toString(),
+        type == null ? null : type.getInterfaces().stream().map(Object::toString).toList(),
         type == null
-            ? List.of()
+            ? null
             : type.getPermittedSubclasses().stream().map(Object::toString).sorted().toList(),
         type == null
-            ? List.of()
+            ? null
             : type.getRecordComponents().stream()
                 .map(p -> p.getSimpleName() + ":" + p.asType() + ":" + annotations(p))
                 .toList(),
         method == null
-            ? List.of()
+            ? null
             : method.getThrownTypes().stream().map(Object::toString).sorted().toList(),
         method == null
-            ? List.of()
+            ? null
             : method.getParameters().stream().map(p -> p.asType() + ":" + annotations(p)).toList(),
-        method == null ? "" : method.getReceiverType().toString(),
-        method != null && method.isVarArgs(),
+        method == null ? null : method.getReceiverType().toString(),
+        method == null ? null : method.isVarArgs(),
         method == null || method.getDefaultValue() == null
-            ? ""
+            ? null
             : method.getDefaultValue().toString());
   }
 
@@ -99,22 +105,22 @@ public record DeclarationContract(
                 type,
                 constant == null ? "absent" : "present",
                 constant == null ? "" : constant,
-                superclass,
-                receiver,
-                Boolean.toString(varargs),
-                defaultValue));
+                Objects.toString(superclass, ""),
+                Objects.toString(receiver, ""),
+                Objects.toString(varargs, ""),
+                Objects.toString(defaultValue, "")));
     for (var sequence :
-        List.of(
+        Arrays.asList(
             modifiers,
             annotations,
             bounds,
             interfaces,
             permits,
-            record_components,
+            recordComponents,
             thrownTypes,
             parameters)) {
-      fields.add(Integer.toString(sequence.size()));
-      fields.addAll(sequence);
+      fields.add(sequence == null ? "-1" : Integer.toString(sequence.size()));
+      if (sequence != null) fields.addAll(sequence);
     }
     return fields;
   }

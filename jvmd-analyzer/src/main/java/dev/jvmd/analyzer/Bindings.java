@@ -105,9 +105,9 @@ public final class Bindings {
                 if(element==null||element.asType().getKind()==TypeKind.ERROR)return null;
                 final String scip;try{scip=identity.scip(element);}catch(IllegalArgumentException unresolved){return null;}
                 if(symbols.containsKey(scip))return scip;
-                var row=new LinkedHashMap<String,Object>();row.put("scip",scip);row.put("name",identity.displayName(element));try{row.put("name_path",identity.namePath(element));}catch(IllegalArgumentException unresolved){row.put("name_path",identity.displayName(element));row.put("signature_complete",false);}row.put("kind",SymbolIdentity.kind(element));row.put("signature",identity.signature(element));row.put("gav",identity.gav(element));row.put("artifact",identity.gav(element));row.put("resolved",true);row.put("modifiers",element.getModifiers().stream().map(Object::toString).sorted().toList());
-                var declaring=identity.declaring(element);row.put("declaring",declaring==null?null:declaring.getQualifiedName().toString());row.put("fqn",declaring==null?null:identity.binaryName(declaring));
                 var contract=DeclarationContract.capture(element);
+                var row=new LinkedHashMap<String,Object>();row.put("scip",scip);row.put("name",identity.displayName(element));try{row.put("name_path",identity.namePath(element));}catch(IllegalArgumentException unresolved){row.put("name_path",identity.displayName(element));row.put("signature_complete",false);}row.put("kind",SymbolIdentity.kind(element));row.put("signature",identity.signature(element));row.put("gav",identity.gav(element));row.put("artifact",identity.gav(element));row.put("resolved",true);row.put("modifiers",contract.modifiers());
+                var declaring=identity.declaring(element);row.put("declaring",declaring==null?null:declaring.getQualifiedName().toString());row.put("fqn",declaring==null?null:identity.binaryName(declaring));
                 row.put("api",contract);
                 if(DeclarationContract.exported(element))contract(element,scip,contract);
                 row.put("parameters",element instanceof ExecutableElement m?m.getParameters().stream().map(p->p.getSimpleName().toString()).toList():List.of());

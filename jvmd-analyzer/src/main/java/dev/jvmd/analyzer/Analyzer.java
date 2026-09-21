@@ -43,11 +43,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private LinkedHashMap<String,Cached> focused=new LinkedHashMap<>(32,.75f,true);
     private final Dependencies dependencies=new Dependencies();
     private final LinkedHashMap<String,SourceText> sourceTexts=new LinkedHashMap<>(16,.75f,true);
-    private record ApiState(String persisted,SemanticApi captured) {
-        String fingerprint(){return captured==null?persisted:captured.fingerprint();}
+    private record ApiState(String fingerprint,java.lang.ref.WeakReference<SemanticApi> captured) {
+        ApiState(SemanticApi api){this(api.fingerprint(),new java.lang.ref.WeakReference<>(api));}
     }
     private final Map<Path,ApiState> apis=new HashMap<>();
-    private SemanticApi priorApi(Path file){var state=apis.get(file.toAbsolutePath().normalize());return state==null?null:state.captured();}
+    private SemanticApi priorApi(Path file){var state=apis.get(file.toAbsolutePath().normalize());return state==null||state.captured()==null?null:state.captured().get();}
     private String rememberedApi(Path file){var state=apis.get(file.toAbsolutePath().normalize());return state==null?null:state.fingerprint();}
     private final Map<Path,PendingApi> pendingApi=new HashMap<>();
     private final Map<Path,Set<Path>> conditionalByFile=new HashMap<>();
@@ -188,7 +188,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         invalidateCompilerCaches(affected);
     }
     private void resolveApiChange(Path path,String fingerprint){resolveApiChange(path,new ApiState(fingerprint,null));}
-    private void resolveApiChange(Path path,SemanticApi api){resolveApiChange(path,new ApiState(null,api));}
+    private void resolveApiChange(Path path,SemanticApi api){resolveApiChange(path,new ApiState(api));}
     private void resolveApiChange(Path path,ApiState state){
         path=path.toAbsolutePath().normalize();apis.put(path,state);String fingerprint=state.fingerprint();
         var pending=pendingApi.remove(path);if(pending==null)return;
@@ -321,9 +321,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         String stamp=classpathStamp();var inputHashes=sourceIdentities();
         var result=compiler.batchQuery(inputs,2,(task,units,tier)->{
             var snapshots=new LinkedHashMap<Path,Bindings.Snapshot>();
+            var identity=new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources());
             for(var unit:units){
                 Path file=Path.of(unit.getSourceFile().toUri()).toAbsolutePath().normalize();String text=sources.get(file);
-                if(text!=null)snapshots.put(file,Bindings.capture(task,List.of(unit),new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),file,new SourceText(text),true,null,priorApi(file)));
+                if(text!=null)snapshots.put(file,Bindings.capture(task,List.of(unit),identity,file,new SourceText(text),true,null,priorApi(file)));
             }
             return snapshots;
         });

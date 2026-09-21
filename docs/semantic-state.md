@@ -19,7 +19,9 @@ boundaries. Incremental hashing does not remove the cost of maintaining the memb
 
 The initial engine is deterministic Merkle composition with immutable nodes and structural sharing.
 Equal inputs produce equal identities regardless of insertion/deletion history. No global interner.
-Reuse is bounded by retained snapshots and existing cache admission. Every API consumer reads the
+Reuse follows retained snapshots and existing cache admission. Analyzer keeps only a weak link
+to a previous captured API alongside its existing fingerprint history, so that history cannot
+retain detached graphs after their snapshot owner releases them. Every API consumer reads the
 captured file identity; none reconstructs it from symbol rows. The persisted fingerprint includes
 the new scheme version, and old diagnostic snapshot schemas miss safely.
 

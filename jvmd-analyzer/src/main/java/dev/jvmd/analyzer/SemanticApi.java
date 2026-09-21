@@ -45,6 +45,9 @@ public record SemanticApi(
       Set<String> names,
       SemanticApi prior) {
     if (prior == null || !prior.module.equals(module)) prior = EMPTY;
+    if (declarations.equals(prior.declarations)
+        && owners.equals(prior.owners)
+        && names.equals(prior.exportedNames)) return prior;
     var children = new HashMap<String, List<String>>();
     for (String symbol : declarations.keySet()) {
       String owner = owners.get(symbol);

@@ -336,3 +336,46 @@ Each entry records the change, validation, limitations and next work. Historical
   unmet despite removed projections/aggregation. No line-count acceptance is claimed.
 - Started the complete ten-pair baseline/candidate campaign. Production source/build hashes
   are retained; numerical performance acceptance remains pending.
+
+## 2026-09-21 — 019: first complete comparison; revise broad invalidation costs
+
+- Completed ten alternating baseline/candidate-5 pairs (20 independent JVMs), all benchmark
+  output checks passed. Primary 512-file body-edit latency medians: 51.302 -> 23.031 ms;
+  paired median -55.8%, 95% interval [-60.7%, -48.6%]. Allocation: 17.98 -> 7.71 MB (-57.1%).
+- 512-file API edit: 76.199 -> 59.612 ms, paired -23.1%; warm navigation 4.476 -> 3.731 ms;
+  rename 5.177 -> 4.020 ms. Real-source location edit: 58.670 -> 8.785 ms.
+- Full acceptance fails: 65-file lifecycle cold/API/buffer/context paths have regressions
+  or unresolved intervals. Documentation_position is also an API reversal in this fixture
+  (it restores Number after the prior Integer edit); it must not be reported as a pure doc edit.
+- Inspection found navigation removing/reinserting all contributions of reanalysed files,
+  even when edges/occurrences/symbol rows were equal. Replacing this with per-contribution
+  deltas; keep candidate-5 raw evidence. Module-root equality and file membership gates remain.
+- Three separate forced-GC before/after pairs completed. Publish all live-heap measurements
+  separately from latency, with full-JVM scope and estimate limitations.
+- Pushed measured implementation as 1eac607 (tree matches local 5e329d3), preceded by a23d5c5
+  benchmark contract. PR remains draft; code-reduction and full performance acceptance open.
+
+## 2026-09-21 — 020: retain structure through revalidation; fix graph lifetime
+
+- Candidate-7 passed 54 focused tests; candidate-8 and candidate-9 pass 55. Added
+  exact sparse API response assertions, context revalidation reuse, and deleted-file
+  removal with old-reader isolation. No public response fields added for internal identity.
+- Candidate-6/7/8 each completed ten alternating pairs with all output assertions intact.
+  Preserve all campaigns; none passes full performance acceptance. Candidate-7 512-file
+  body edits: 43.932 -> 22.352 ms; API edits: 68.884 -> 48.997 ms. Its lifecycle cold:
+  53.606 -> 74.756 ms, buffer API: 28.828 -> 33.234 ms. Regressions remain visible.
+- Candidate-8 reuses prior navigation and semantic roots even when namespace/context
+  changes require complete attribution. Deleted files remove their contributions explicitly.
+  A full compiler revalidation does not require throwing away immutable result structure.
+- Diagnostic phase trace shows remaining broad-edit time mostly inside analysis/capture,
+  plus roughly 3–5 ms of navigation maintenance in the sampled run. It is not a statistical
+  attribution or proof of a single cause. Profiled/diagnostic timings stay out of comparisons.
+- Candidate-9 shares task-owned SymbolIdentity across a compiler batch and compares captured
+  declaration contracts before reconstructing ownership paths. Analyzer fingerprint history
+  now has weak reuse links: it cannot independently retain the full detached graphs after
+  admitted snapshots release them. Fingerprint history remains available for correctness.
+- Same-formatter production audit: 5,404 baseline lines vs 6,304 candidate lines, net +900.
+  This fails the requested overall reduction. Removed duplicate work does not excuse this
+  failed gate; no unrelated deletion, shorthand or formatting trick is counted as progress.
+- Candidate-9 complete paired campaign started. Earlier published 1eac607 passed Checkpoints,
+  Distributions and Semantic state benchmarks; that does not certify these follow-up edits.

@@ -146,6 +146,36 @@ class SemanticMerkleTest {
   }
 
   @Test
+  void typedContractsPreserveSparseProtocolFields() throws Exception {
+    Path file = root.resolve("Api.java");
+    try (var analyzer = analyzer(root, Map.of())) {
+      var graph = capture(analyzer, file, "class Api { int field; int value(){return 1;} }");
+      for (var row : graph.symbols().values()) {
+        if (!file.toString().equals(row.get("source_file"))) continue;
+        var api = Json.MAPPER.valueToTree(row).path("api");
+        var names = new HashSet<String>();
+        api.fieldNames().forEachRemaining(names::add);
+        if ("class".equals(row.get("kind")))
+          assertThat(names)
+              .containsExactlyInAnyOrder(
+                  "type",
+                  "annotations",
+                  "bounds",
+                  "superclass",
+                  "interfaces",
+                  "permits",
+                  "record_components");
+        if ("method".equals(row.get("kind")))
+          assertThat(names)
+              .containsExactlyInAnyOrder(
+                  "type", "annotations", "bounds", "throws", "parameters", "varargs");
+        if ("field".equals(row.get("kind")))
+          assertThat(names).containsExactlyInAnyOrder("type", "annotations");
+      }
+    }
+  }
+
+  @Test
   void moduleAndWorkspaceRootsStopOnBodyEditsAndOldNavigationIsIsolated() throws Exception {
     Path firstRoot = Files.createDirectories(root.resolve("first"));
     Path secondRoot = Files.createDirectories(root.resolve("second"));
@@ -193,6 +223,16 @@ class SemanticMerkleTest {
       assertThat(changed.apiRoot().identity()).isNotEqualTo(body.apiRoot().identity());
       assertThat(changed.apiRoot().children().get("test:second:1"))
           .isSameAs(body.apiRoot().children().get("test:second:1"));
+      var contextChanged =
+          cache.getBatch(
+              files,
+              List.of(),
+              documents,
+              "new-context",
+              64L * 1024 * 1024,
+              analyzer::bindingsBatch);
+      assertThat(contextChanged.apiRoot()).isSameAs(changed.apiRoot());
+      assertThat(cache.status()).containsEntry("last_reanalysed_files", 2);
       try (var clean = new WorkspaceBindings()) {
         var rebuilt =
             clean.getBatch(
@@ -201,6 +241,39 @@ class SemanticMerkleTest {
         assertThat((com.fasterxml.jackson.databind.JsonNode) Json.MAPPER.valueToTree(changed))
             .isEqualTo(Json.MAPPER.valueToTree(rebuilt));
       }
+    }
+  }
+
+  @Test
+  void deletionRemovesNavigationAndApiMembership() throws Exception {
+    Path first = root.resolve("First.java"), second = root.resolve("Second.java");
+    Files.writeString(first, "class First {}");
+    Files.writeString(second, "class Second {}");
+    var documents = new Documents();
+    try (var analyzer = analyzer(root, Map.of());
+        var cache = new WorkspaceBindings()) {
+      analyzer.documents(documents);
+      var before =
+          cache.getBatch(
+              () -> List.of(first, second),
+              List.of(),
+              documents,
+              "ctx",
+              64L * 1024 * 1024,
+              analyzer::bindingsBatch);
+      Files.delete(second);
+      var after =
+          cache.getBatch(
+              () -> List.of(first),
+              List.of(),
+              documents,
+              "ctx",
+              64L * 1024 * 1024,
+              analyzer::bindingsBatch);
+      assertThat(after.lookup("Second")).isEmpty();
+      assertThat(after.apiRoot().identity()).isNotEqualTo(before.apiRoot().identity());
+      assertThat(before.lookup("Second")).isNotEmpty();
+      assertThat(cache.status()).containsEntry("fragment_files", 1);
     }
   }
 

@@ -1,0 +1,223 @@
+{
+  "commands": [
+    {
+      "label": "baseline",
+      "run": 0,
+      "command": [
+        "/tmp/jvmd-tools/jdk-25.0.4.1+1/bin/java",
+        "-Xmx1g",
+        "--enable-native-access=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.platform=ALL-UNNAMED",
+        "-cp",
+        "/workspace/scratch/f5e97ff5a9b9/paired-base-final/classes:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/jackson-annotations-2.22.jar:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/jackson-core-2.22.2.jar:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/jackson-databind-2.22.2.jar:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/rocksdbjni-10.10.1.1.jar",
+        "Validation",
+        "/workspace/scratch/f5e97ff5a9b9/review-input-results/fixture"
+      ]
+    },
+    {
+      "label": "baseline",
+      "run": 0,
+      "command": [
+        "/tmp/jvmd-tools/jdk-25.0.4.1+1/bin/java",
+        "-Xmx1g",
+        "--enable-native-access=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.platform=ALL-UNNAMED",
+        "-cp",
+        "/workspace/scratch/f5e97ff5a9b9/paired-base-final/classes:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/jackson-annotations-2.22.jar:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/jackson-core-2.22.2.jar:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/jackson-databind-2.22.2.jar:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/rocksdbjni-10.10.1.1.jar",
+        "Diagnostics",
+        "/workspace/scratch/f5e97ff5a9b9/review-input-results/fixture"
+      ]
+    },
+    {
+      "label": "candidate",
+      "run": 0,
+      "command": [
+        "/tmp/jvmd-tools/jdk-25.0.4.1+1/bin/java",
+        "-Xmx1g",
+        "--enable-native-access=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.platform=ALL-UNNAMED",
+        "-cp",
+        "../review-input-build/classes:../baseline-runtime/lib/jackson-annotations-2.22.jar:../baseline-runtime/lib/jackson-core-2.22.2.jar:../baseline-runtime/lib/jackson-databind-2.22.2.jar:../baseline-runtime/lib/rocksdbjni-10.10.1.1.jar",
+        "Validation",
+        "/workspace/scratch/f5e97ff5a9b9/review-input-results/fixture"
+      ]
+    },
+    {
+      "label": "candidate",
+      "run": 0,
+      "command": [
+        "/tmp/jvmd-tools/jdk-25.0.4.1+1/bin/java",
+        "-Xmx1g",
+        "--enable-native-access=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.platform=ALL-UNNAMED",
+        "-cp",
+        "../review-input-build/classes:../baseline-runtime/lib/jackson-annotations-2.22.jar:../baseline-runtime/lib/jackson-core-2.22.2.jar:../baseline-runtime/lib/jackson-databind-2.22.2.jar:../baseline-runtime/lib/rocksdbjni-10.10.1.1.jar",
+        "Diagnostics",
+        "/workspace/scratch/f5e97ff5a9b9/review-input-results/fixture"
+      ]
+    },
+    {
+      "label": "candidate",
+      "run": 1,
+      "command": [
+        "/tmp/jvmd-tools/jdk-25.0.4.1+1/bin/java",
+        "-Xmx1g",
+        "--enable-native-access=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.platform=ALL-UNNAMED",
+        "-cp",
+        "../review-input-build/classes:../baseline-runtime/lib/jackson-annotations-2.22.jar:../baseline-runtime/lib/jackson-core-2.22.2.jar:../baseline-runtime/lib/jackson-databind-2.22.2.jar:../baseline-runtime/lib/rocksdbjni-10.10.1.1.jar",
+        "Validation",
+        "/workspace/scratch/f5e97ff5a9b9/review-input-results/fixture"
+      ]
+    },
+    {
+      "label": "candidate",
+      "run": 1,
+      "command": [
+        "/tmp/jvmd-tools/jdk-25.0.4.1+1/bin/java",
+        "-Xmx1g",
+        "--enable-native-access=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.platform=ALL-UNNAMED",
+        "-cp",
+        "../review-input-build/classes:../baseline-runtime/lib/jackson-annotations-2.22.jar:../baseline-runtime/lib/jackson-core-2.22.2.jar:../baseline-runtime/lib/jackson-databind-2.22.2.jar:../baseline-runtime/lib/rocksdbjni-10.10.1.1.jar",
+        "Diagnostics",
+        "/workspace/scratch/f5e97ff5a9b9/review-input-results/fixture"
+      ]
+    },
+    {
+      "label": "baseline",
+      "run": 1,
+      "command": [
+        "/tmp/jvmd-tools/jdk-25.0.4.1+1/bin/java",
+        "-Xmx1g",
+        "--enable-native-access=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.platform=ALL-UNNAMED",
+        "-cp",
+        "/workspace/scratch/f5e97ff5a9b9/paired-base-final/classes:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/jackson-annotations-2.22.jar:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/jackson-core-2.22.2.jar:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/jackson-databind-2.22.2.jar:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/rocksdbjni-10.10.1.1.jar",
+        "Validation",
+        "/workspace/scratch/f5e97ff5a9b9/review-input-results/fixture"
+      ]
+    },
+    {
+      "label": "baseline",
+      "run": 1,
+      "command": [
+        "/tmp/jvmd-tools/jdk-25.0.4.1+1/bin/java",
+        "-Xmx1g",
+        "--enable-native-access=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.platform=ALL-UNNAMED",
+        "-cp",
+        "/workspace/scratch/f5e97ff5a9b9/paired-base-final/classes:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/jackson-annotations-2.22.jar:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/jackson-core-2.22.2.jar:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/jackson-databind-2.22.2.jar:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/rocksdbjni-10.10.1.1.jar",
+        "Diagnostics",
+        "/workspace/scratch/f5e97ff5a9b9/review-input-results/fixture"
+      ]
+    },
+    {
+      "label": "baseline",
+      "run": 2,
+      "command": [
+        "/tmp/jvmd-tools/jdk-25.0.4.1+1/bin/java",
+        "-Xmx1g",
+        "--enable-native-access=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.platform=ALL-UNNAMED",
+        "-cp",
+        "/workspace/scratch/f5e97ff5a9b9/paired-base-final/classes:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/jackson-annotations-2.22.jar:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/jackson-core-2.22.2.jar:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/jackson-databind-2.22.2.jar:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/rocksdbjni-10.10.1.1.jar",
+        "Validation",
+        "/workspace/scratch/f5e97ff5a9b9/review-input-results/fixture"
+      ]
+    },
+    {
+      "label": "baseline",
+      "run": 2,
+      "command": [
+        "/tmp/jvmd-tools/jdk-25.0.4.1+1/bin/java",
+        "-Xmx1g",
+        "--enable-native-access=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.platform=ALL-UNNAMED",
+        "-cp",
+        "/workspace/scratch/f5e97ff5a9b9/paired-base-final/classes:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/jackson-annotations-2.22.jar:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/jackson-core-2.22.2.jar:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/jackson-databind-2.22.2.jar:/workspace/scratch/f5e97ff5a9b9/baseline-runtime/lib/rocksdbjni-10.10.1.1.jar",
+        "Diagnostics",
+        "/workspace/scratch/f5e97ff5a9b9/review-input-results/fixture"
+      ]
+    },
+    {
+      "label": "candidate",
+      "run": 2,
+      "command": [
+        "/tmp/jvmd-tools/jdk-25.0.4.1+1/bin/java",
+        "-Xmx1g",
+        "--enable-native-access=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.platform=ALL-UNNAMED",
+        "-cp",
+        "../review-input-build/classes:../baseline-runtime/lib/jackson-annotations-2.22.jar:../baseline-runtime/lib/jackson-core-2.22.2.jar:../baseline-runtime/lib/jackson-databind-2.22.2.jar:../baseline-runtime/lib/rocksdbjni-10.10.1.1.jar",
+        "Validation",
+        "/workspace/scratch/f5e97ff5a9b9/review-input-results/fixture"
+      ]
+    },
+    {
+      "label": "candidate",
+      "run": 2,
+      "command": [
+        "/tmp/jvmd-tools/jdk-25.0.4.1+1/bin/java",
+        "-Xmx1g",
+        "--enable-native-access=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.platform=ALL-UNNAMED",
+        "-cp",
+        "../review-input-build/classes:../baseline-runtime/lib/jackson-annotations-2.22.jar:../baseline-runtime/lib/jackson-core-2.22.2.jar:../baseline-runtime/lib/jackson-databind-2.22.2.jar:../baseline-runtime/lib/rocksdbjni-10.10.1.1.jar",
+        "Diagnostics",
+        "/workspace/scratch/f5e97ff5a9b9/review-input-results/fixture"
+      ]
+    }
+  ],
+  "machine": "Linux-6.18.44-x86_64-with-glibc2.39",
+  "baseline": "9ac81c4bdded8de18537569debf02e789c24fe27",
+  "candidate": "e86d311205c29daecc6a4f94da3ecde5f67d090e"
+}

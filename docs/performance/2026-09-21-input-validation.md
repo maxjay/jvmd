@@ -249,3 +249,29 @@ Delivery follow-up: [PR #21](https://github.com/maxjay/jvmd/pull/21) is open.
 Main advanced with reporting-only #20 (`6129dbf`); the branch includes that merge.
 Reporting tests were rerun after merging it; measured production is unchanged.
 Remote Checkpoints, Distributions and Merge Review are pending at this checkpoint.
+
+## Review repair validation (supersedes the delivery head above)
+
+Measured repair production: local `e86d311`, published
+`09f69d9ab478067f3533e5f1655ce3e9c1134084` (identical source tree).
+All four review findings are addressed: environment inventories follow compiler
+directory links with cycle rejection, additional javac input paths are observed,
+unused directory inventories have a 128-entry LRU bound, and CI baseline builds
+use baseline dependencies. Source traversal still defaults to no-follow. Eviction
+is observable and forces reconciliation on reuse without clearing semantic state.
+The bound limits retained root/suffix/follow-mode trees, not their byte size.
+Compiler module-source patterns conservatively observe the containing tree.
+
+135 phase 3/4 tests passed, including three new regression tests. Three serial
+alternating component repetitions against the original baseline still show zero
+warm source/classpath enumerations, files hashed and identity-map rebuilds.
+Validation p50: 1.919 → 1.692 ms; p95: 2.915 → 2.868 ms. Real diagnostics p50:
+0.876 → 1.031 ms. Body/API javac counts remain 1/2 in both revisions. These new
+timings supersede the earlier component timing sample; the existing historical
+records remain intact. End-to-end latency has not been rerun locally for these
+repairs; the new CI benchmark will supply its own evidence.
+
+[Repair raw measurements and test log](input-validation/review). The overall
+production Java diff is now +487/-417, net +70; the earlier +25 refers to the
+pre-review delivery. The prior head passed Checkpoints, Distributions and Merge
+Review, including hosted JDTLS correctness. New-head CI is pending publication.

@@ -97,3 +97,8 @@ compilation now uses the base checkout's own runtime dependencies and manifests
 record their hashes. Regression and benchmark verification follows this checkpoint.
 Prior head c3ccd8cf passed all three GitHub workflows (Checkpoints, Distributions,
 and Merge Review), including the hosted JDTLS comparison.
+
+Review verification completed: 135 phase 3/4 tests passed. Three alternating
+component repetitions retain zero warm enumeration/hash/map-rebuild work; body/API
+queries stay 1/2. Updated raw evidence and honest timing/cost scope are in
+`docs/performance/input-validation/review` and the report's review appendix.

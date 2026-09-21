@@ -124,6 +124,9 @@ consolidation, not a latency claim.
 - `9b2af2fb` — move focused invalidation tests onto the canonical contribution.
 - `dad30cc8` — remove duplicate semantic mutation/compatibility surfaces.
 - `c3e23e9e` — require complete semantic publications and remove partial sentinel state.
+- `6411bdf2` — record before/after benchmark and validation evidence.
+- `887ad015` — delete superseded progress/design/smoke/performance narrative documents and clean surviving user-facing links.
+- `f67e282a` — remove the last stale benchmark-report references and repair the benchmark README prose.
 
 ## Acceptance
 
@@ -137,3 +140,4 @@ consolidation, not a latency claim.
 - [x] Production Java LOC decreased.
 - [x] Remaining module-wide derived-index rebuild is explicitly left for a separately benchmarked task.
 - [x] Superseded implementation/progress/design/performance narrative documents removed; surviving docs are user/installation/integration/dependency or executable benchmark documentation.
+- [x] Final Markdown tree contains 9 files and zero references to the deleted documents.

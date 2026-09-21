@@ -31,6 +31,25 @@ class DependencyFindPaginationTest {
             assertThat(status.path("hashes").asLong()).isEqualTo(1);
         }
     }
+    @Test void referencedDependencyRemainsInCombinedSearchAfterBindingsWarmup()throws Exception {
+        var config=TestSupport.config(root,Duration.ofHours(4));
+        Path jar=IndexFixtures.jar(config.m2Repo().resolve("fixture/library/1"),"library-1","package fixture; public class Sample { public int value(){return 1;} }",true);
+        Files.writeString(jar.resolveSibling("library-1.pom"),pom("fixture","library",""));
+        try(var index=new IndexService(config.stateDir().resolve("index.db"),config.m2Repo())){index.indexJar(jar,"fixture:library:1","jar");}
+        Path workspace=Files.createDirectories(root.resolve("workspace"));Files.writeString(workspace.resolve("pom.xml"),pom("workspace","app","library"));
+        Path sources=Files.createDirectories(workspace.resolve("src/main/java"));
+        Files.writeString(sources.resolve("Caller.java"),"class Caller { int call(){return new fixture.Sample().value();} }");
+        try(var app=new Application(config)){
+            String session=TestSupport.open(app,workspace);
+            var before=query(app,Map.of("session",session,"scope","all","name_path","fixture.Sample")).path("result").path("matches");
+            assertThat(before).hasSize(1);
+            var warm=TestSupport.complete(app.dispatcher(),"symbol.references",Map.of("session",session,"ref","Caller/call()","direction","out"));
+            assertThat(warm.has("error")).as(warm.toString()).isFalse();
+            assertThat(warm.path("result").path("result").path("edges").toString()).contains("Sample#value().");
+            var after=query(app,Map.of("session",session,"scope","all","name_path","fixture.Sample")).path("result").path("matches");
+            assertThat(after).hasSize(1);assertThat(after).isEqualTo(before);
+        }
+    }
     private static String pom(String group,String name,String... dependencies){
         var xml=new StringBuilder("<project><modelVersion>4.0.0</modelVersion><groupId>").append(group).append("</groupId><artifactId>").append(name).append("</artifactId><version>1</version><dependencies>");
         for(String dependency:dependencies)if(!dependency.isBlank())xml.append("<dependency><groupId>fixture</groupId><artifactId>").append(dependency).append("</artifactId><version>1</version></dependency>");

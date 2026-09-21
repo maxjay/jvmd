@@ -73,13 +73,11 @@ public final class Application implements AutoCloseable {
             int limit=Dispatcher.limit(p,50,200);boolean substring=p.path("substring").asBoolean();
             IndexService searchIndex=null;if(!scope.equals("workspace")){searchIndex=index();prepareIndex(s,searchIndex);}
             var kinds=new HashSet<String>();p.path("kinds").forEach(k->kinds.add(k.asText()));int depth=Dispatcher.bounded(p,"depth",0,10);
-            SymbolReadView live=null;
-            if(!scope.equals("deps")){
-                var cached=s.state("workspace_bindings")==null?null:workspaceBindings(s,false);
-                live=cached!=null&&cached.diagnostics().stream().noneMatch(d->d.kind().equals("ERROR"))?cached:WorkspaceReadView.outlines((query,partial)->workspaceFind(s,query,partial));
+            try(var cached=scope.equals("deps")||s.state("workspace_bindings")==null?null:workspaceBindings(s,false)){
+                SymbolReadView live=scope.equals("deps")?null:cached!=null&&cached.diagnostics().stream().noneMatch(d->d.kind().equals("ERROR"))?cached:WorkspaceReadView.outlines((query,partial)->workspaceFind(s,query,partial));
+                var view=new WorkspaceReadView(live,searchIndex==null?null:searchIndex.store().readView(s.state("resolution")==null?null:s.id()));
+                return view.find(ref,scope,substring,depth,kinds,limit,p.path("cursor").asText("0"),p.path("include_body").asBoolean(),s.warnings(),Application::findResult);
             }
-            var view=new WorkspaceReadView(live,searchIndex==null?null:searchIndex.store().readView(s.state("resolution")==null?null:s.id()));
-            return view.find(ref,scope,substring,depth,kinds,limit,p.path("cursor").asText("0"),p.path("include_body").asBoolean(),s.warnings(),Application::findResult);
         });
         dispatcher.register("symbol.completion",this::completion);
         dispatcher.register("symbol.signatureHelp",(s,p)->{Path path=sourcePath(s,Dispatcher.required(p,"path"));return analyzer(s,path).signatureHelp(path,documents(s).text(path),Dispatcher.bounded(p,"line",0,Integer.MAX_VALUE),Dispatcher.bounded(p,"character",0,Integer.MAX_VALUE));});
@@ -344,7 +342,7 @@ public final class Application implements AutoCloseable {
         }return page(tier,"live","symbols",symbols,offset,limit,List.copyOf(warnings));
     }
     private List<Map<String,Object>> workspaceFind(Session session,String ref,boolean substring)throws Exception{
-        if(session.state("workspace_bindings")!=null){var cached=workspaceBindings(session,false);
+        if(session.state("workspace_bindings")!=null)try(var cached=workspaceBindings(session,false)){
             if(cached!=null&&cached.diagnostics().stream().noneMatch(d->d.kind().equals("ERROR")))return cached.find(ref,substring,Set.of(),Integer.MAX_VALUE,null).symbols();
         }
         var found=new LinkedHashMap<String,Map<String,Object>>();
@@ -374,9 +372,11 @@ public final class Application implements AutoCloseable {
         if((ref.startsWith("maven ")||ref.startsWith("local "))&&analyzer!=null){
             var known=analyzer.known(ref);if(known.size()==1){var symbol=known.getFirst();var file=symbol.get("source_file");
                 if(file!=null&&session.state("workspace_bindings")!=null){
-                    var workspace=workspaceBindings(session,false);var cached=workspace==null?null:workspace.symbol(ref);
-                    if(cached!=null&&Objects.equals(cached.get("source_file"),file)&&cached.get("name_start") instanceof Number)
-                        return new Envelope(workspace.tier(),"live",false,null,workspace.warnings(),cached);
+                    try(var workspace=workspaceBindings(session,false)){
+                        var cached=workspace==null?null:workspace.symbol(ref);
+                        if(cached!=null&&Objects.equals(cached.get("source_file"),file)&&cached.get("name_start") instanceof Number)
+                            return new Envelope(workspace.tier(),"live",false,null,workspace.warnings(),cached);
+                    }
                 }
                 if(file!=null&&(Files.isRegularFile(Path.of(file.toString()))||documents(session).contains(Path.of(file.toString())))&&symbol.get("name_start") instanceof Number position){
                     Path path=Path.of(file.toString());
@@ -460,33 +460,34 @@ public final class Application implements AutoCloseable {
         if(!javax.lang.model.SourceVersion.isIdentifier(newName)||javax.lang.model.SourceVersion.isKeyword(newName)||Set.of("var","yield","record","sealed","permits").contains(newName))throw RpcException.invalid("new_name must be a Java identifier");
         // Rename needs a complete workspace graph anyway. Build/refresh it once, then resolve
         // the target from the same validated snapshot instead of scanning every source first.
-        var snapshot=workspaceBindings(session,true);
-        var description=describe(session,Dispatcher.required(params,"ref"),snapshot);
-        if(!(description.result() instanceof Map<?,?> target)||target.get("scip")==null)return description;
-        editable(session,target);
-        if(newName.equals(target.get("name")))return Envelope.of(2,"live",Map.of("applied",false,"changes",List.of(),"diagnostics",List.of(),"verified",false));
-        if(snapshot.tier()<2||!snapshot.warnings().isEmpty()||snapshot.diagnostics().stream().anyMatch(d->d.kind().equals("ERROR")))throw new RpcException(-32003,"unsupported_capability",Map.of("capability","rename","reason","Resolve compiler errors before renaming","diagnostics",snapshot.diagnostics()));
-        var symbols=snapshot.symbols();var occurrences=snapshot.occurrences();var edges=snapshot.edges();
-        String key=target.get("scip").toString();var family=new LinkedHashSet<String>();family.add(key);boolean type=Set.of("class","interface","enum","annotation","record").contains(target.get("kind"));
-        if(target.get("kind").equals("ctor"))throw RpcException.invalid("Rename the declaring type to rename its constructors");
-        if(type)for(var symbol:symbols.values())if("ctor".equals(symbol.get("kind"))&&Objects.equals(symbol.get("fqn"),target.get("fqn")))family.add(symbol.get("scip").toString());
-        if(target.get("kind").equals("method")){
-            boolean changed;do{changed=false;for(var edge:edges)if(edge.kind().equals("overrides")&&(family.contains(edge.src())||family.contains(edge.dst()))){changed|=family.add(edge.src());changed|=family.add(edge.dst());}}while(changed);
-            for(String member:family){var symbol=symbols.get(member);if(symbol==null)throw RpcException.invalid("Override declaration is unavailable: "+member);editable(session,symbol);}
+        try(var snapshot=workspaceBindings(session,true)){
+            var description=describe(session,Dispatcher.required(params,"ref"),snapshot);
+            if(!(description.result() instanceof Map<?,?> target)||target.get("scip")==null)return description;
+            editable(session,target);
+            if(newName.equals(target.get("name")))return Envelope.of(2,"live",Map.of("applied",false,"changes",List.of(),"diagnostics",List.of(),"verified",false));
+            if(snapshot.tier()<2||!snapshot.warnings().isEmpty()||snapshot.diagnostics().stream().anyMatch(d->d.kind().equals("ERROR")))throw new RpcException(-32003,"unsupported_capability",Map.of("capability","rename","reason","Resolve compiler errors before renaming","diagnostics",snapshot.diagnostics()));
+            var symbols=snapshot.symbols();var occurrences=snapshot.occurrences();var edges=snapshot.edges();
+            String key=target.get("scip").toString();var family=new LinkedHashSet<String>();family.add(key);boolean type=Set.of("class","interface","enum","annotation","record").contains(target.get("kind"));
+            if(target.get("kind").equals("ctor"))throw RpcException.invalid("Rename the declaring type to rename its constructors");
+            if(type)for(var symbol:symbols.values())if("ctor".equals(symbol.get("kind"))&&Objects.equals(symbol.get("fqn"),target.get("fqn")))family.add(symbol.get("scip").toString());
+            if(target.get("kind").equals("method")){
+                boolean changed;do{changed=false;for(var edge:edges)if(edge.kind().equals("overrides")&&(family.contains(edge.src())||family.contains(edge.dst()))){changed|=family.add(edge.src());changed|=family.add(edge.dst());}}while(changed);
+                for(String member:family){var symbol=symbols.get(member);if(symbol==null)throw RpcException.invalid("Override declaration is unavailable: "+member);editable(session,symbol);}
+            }
+            var edits=new LinkedHashMap<String,TextEdits.Edit>();var renames=new LinkedHashMap<Path,Path>();
+            var imported=new HashMap<String,Set<String>>();for(var occurrence:occurrences)if(occurrence.importSite()!=null)imported.computeIfAbsent(occurrence.file()+":"+occurrence.start(),_->new HashSet<>()).add(occurrence.scip());
+            for(var occurrence:occurrences)if(family.contains(occurrence.scip())){
+                Path file=sourcePath(session,occurrence.file());var site=occurrence.importSite();
+                boolean remaining=site!=null&&!family.containsAll(imported.get(occurrence.file()+":"+occurrence.start()));
+                if(remaining){
+                    String text=documents(session).text(file),newline=text.contains("\r\n")?"\r\n":"\n";
+                    edits.putIfAbsent(file+":import:"+site.start(),new TextEdits.Edit(file,site.end(),site.end(),newline+"import static "+site.qualifier()+"."+newName+";"+newline));
+                }else edits.putIfAbsent(file+":"+occurrence.start(),new TextEdits.Edit(file,occurrence.start(),occurrence.end(),newName));
+            }
+            if(edits.isEmpty())throw RpcException.invalid("No resolved source occurrences for the rename");
+            if(type){Path file=editable(session,target);String old=target.get("name").toString();if(!target.get("name_path").toString().contains("/")&&file.getFileName().toString().equals(old+".java")&&!newName.equals(old))renames.put(file,file.resolveSibling(newName+".java"));}
+            return finishEdit(session,TextEdits.prepare(List.copyOf(edits.values()),renames,documents(session).snapshots()),params.path("dry_run").asBoolean());
         }
-        var edits=new LinkedHashMap<String,TextEdits.Edit>();var renames=new LinkedHashMap<Path,Path>();
-        var imported=new HashMap<String,Set<String>>();for(var occurrence:occurrences)if(occurrence.importSite()!=null)imported.computeIfAbsent(occurrence.file()+":"+occurrence.start(),_->new HashSet<>()).add(occurrence.scip());
-        for(var occurrence:occurrences)if(family.contains(occurrence.scip())){
-            Path file=sourcePath(session,occurrence.file());var site=occurrence.importSite();
-            boolean remaining=site!=null&&!family.containsAll(imported.get(occurrence.file()+":"+occurrence.start()));
-            if(remaining){
-                String text=documents(session).text(file),newline=text.contains("\r\n")?"\r\n":"\n";
-                edits.putIfAbsent(file+":import:"+site.start(),new TextEdits.Edit(file,site.end(),site.end(),newline+"import static "+site.qualifier()+"."+newName+";"+newline));
-            }else edits.putIfAbsent(file+":"+occurrence.start(),new TextEdits.Edit(file,occurrence.start(),occurrence.end(),newName));
-        }
-        if(edits.isEmpty())throw RpcException.invalid("No resolved source occurrences for the rename");
-        if(type){Path file=editable(session,target);String old=target.get("name").toString();if(!target.get("name_path").toString().contains("/")&&file.getFileName().toString().equals(old+".java")&&!newName.equals(old))renames.put(file,file.resolveSibling(newName+".java"));}
-        return finishEdit(session,TextEdits.prepare(List.copyOf(edits.values()),renames,documents(session).snapshots()),params.path("dry_run").asBoolean());
     }
     @SuppressWarnings("unchecked")
     private Envelope finishEdit(Session session,TextEdits.Plan plan,boolean dryRun)throws Exception{
@@ -514,41 +515,43 @@ public final class Application implements AutoCloseable {
         return new Envelope(tier,"live",false,null,List.copyOf(warnings),Map.of("applied",true,"changes",plan.edits(),"changed_files",plan.files().stream().map(Path::toString).toList(),"members",members,"diagnostics",diagnostics,"verified",false));
     }
     private Envelope occurrences(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
-        String ref=Dispatcher.required(params,"ref");var snapshot=workspaceBindings(session,true);var description=describe(session,ref,snapshot);if(!(description.result() instanceof Map<?,?> symbol)||symbol.get("scip")==null)return description;
-        var found=snapshot.occurrences(symbol.get("scip").toString()).stream().filter(o->(params.path("include_declaration").asBoolean()||!o.role().equals("declaration"))).toList();
-        return page(snapshot.tier(),"live","occurrences",found,cursor(params),Dispatcher.limit(params,1000,10000),snapshot.warnings());
+        String ref=Dispatcher.required(params,"ref");try(var snapshot=workspaceBindings(session,true)){var description=describe(session,ref,snapshot);if(!(description.result() instanceof Map<?,?> symbol)||symbol.get("scip")==null)return description;
+            var found=snapshot.occurrences(symbol.get("scip").toString()).stream().filter(o->(params.path("include_declaration").asBoolean()||!o.role().equals("declaration"))).toList();
+            return page(snapshot.tier(),"live","occurrences",found,cursor(params),Dispatcher.limit(params,1000,10000),snapshot.warnings());
+        }
     }
     private Envelope relationships(Session session,com.fasterxml.jackson.databind.JsonNode params,boolean hierarchy)throws Exception{
-        String ref=Dispatcher.required(params,"ref");var snapshot=workspaceBindings(session,true);var description=describe(session,ref,snapshot);
-        if(!(description.result() instanceof Map<?,?> symbol)||symbol.get("scip")==null)return description;
-        String key=symbol.get("scip").toString();String direction=params.path("direction").asText(hierarchy?"up":"in");
-        if(!(hierarchy?Set.of("up","down"):Set.of("in","out")).contains(direction))throw RpcException.invalid("Unknown relationship direction");
-        boolean outgoing=direction.equals("out")||direction.equals("up");
-        int depth=Dispatcher.bounded(params,"depth",hierarchy?3:1,20),limit=Dispatcher.limit(params,100,1000),offset=cursor(params),tier=2;
-        var allowed=new HashSet<String>();params.path("kinds").forEach(k->allowed.add(k.asText()));if(hierarchy)allowed.addAll(Set.of("extends","implements","overrides"));else if(allowed.isEmpty())allowed.addAll(Set.of("calls","reads","writes","instantiates"));
-        tier=Math.min(tier,snapshot.tier());
-        var symbols=new LinkedHashMap<String,Map<String,Object>>();var warnings=new LinkedHashSet<>(snapshot.warnings());
-        var root=new LinkedHashMap<String,Object>();for(var entry:symbol.entrySet())root.put(entry.getKey().toString(),entry.getValue());symbols.put(key,Objects.requireNonNullElse(snapshot.symbol(key),root));
-        var database=index();bindIndex(session,database);
-        if(!(session.state("indexed_workspace_bindings") instanceof java.lang.ref.WeakReference<?> prior)||prior.get()!=snapshot){prepareIndex(session,database);session.put("indexed_workspace_bindings",new java.lang.ref.WeakReference<>(snapshot));}
-        var code=session.state("code_pass",()->new dev.jvmd.index.CodePass(database));
-        var reached=new LinkedHashSet<String>();reached.add(key);var selected=new LinkedHashSet<Bindings.Edge>();var frontier=new LinkedHashSet<String>();frontier.add(key);
-        for(int d=0;d<depth;d++){
-            var edges=new LinkedHashSet<>(snapshot.adjacent(frontier,outgoing));
-            var inputs=frontier.stream().map(symbols::get).filter(Objects::nonNull).toList();String filter=session.state("resolution")==null?null:session.id();
-            var expansion=hierarchy?code.hierarchy(inputs,outgoing,filter):code.expand(inputs,outgoing,allowed,filter);
-            for(var node:expansion.symbols()){String identity=node.get("scip").toString();symbols.putIfAbsent(identity,Objects.requireNonNullElse(snapshot.symbol(identity),node));}
-            for(var edge:expansion.edges())edges.add(new Bindings.Edge(edge.src(),edge.dst(),edge.kind()));warnings.addAll(expansion.warnings());
-            var next=new LinkedHashSet<String>();
-            for(var edge:edges)if(allowed.contains(edge.kind())&&frontier.contains(outgoing?edge.src():edge.dst())){
-                selected.add(edge);String target=outgoing?edge.dst():edge.src();var node=snapshot.symbol(target);if(node!=null)symbols.putIfAbsent(target,node);
-                if(!reached.contains(target))next.add(target);
+        String ref=Dispatcher.required(params,"ref");try(var snapshot=workspaceBindings(session,true)){var description=describe(session,ref,snapshot);
+            if(!(description.result() instanceof Map<?,?> symbol)||symbol.get("scip")==null)return description;
+            String key=symbol.get("scip").toString();String direction=params.path("direction").asText(hierarchy?"up":"in");
+            if(!(hierarchy?Set.of("up","down"):Set.of("in","out")).contains(direction))throw RpcException.invalid("Unknown relationship direction");
+            boolean outgoing=direction.equals("out")||direction.equals("up");
+            int depth=Dispatcher.bounded(params,"depth",hierarchy?3:1,20),limit=Dispatcher.limit(params,100,1000),offset=cursor(params),tier=2;
+            var allowed=new HashSet<String>();params.path("kinds").forEach(k->allowed.add(k.asText()));if(hierarchy)allowed.addAll(Set.of("extends","implements","overrides"));else if(allowed.isEmpty())allowed.addAll(Set.of("calls","reads","writes","instantiates"));
+            tier=Math.min(tier,snapshot.tier());
+            var symbols=new LinkedHashMap<String,Map<String,Object>>();var warnings=new LinkedHashSet<>(snapshot.warnings());
+            var root=new LinkedHashMap<String,Object>();for(var entry:symbol.entrySet())root.put(entry.getKey().toString(),entry.getValue());symbols.put(key,Objects.requireNonNullElse(snapshot.symbol(key),root));
+            var database=index();bindIndex(session,database);
+            if(session.state("indexed_workspace_bindings")!=snapshot.revision()){prepareIndex(session,database);session.put("indexed_workspace_bindings",snapshot.revision());}
+            var code=session.state("code_pass",()->new dev.jvmd.index.CodePass(database));
+            var reached=new LinkedHashSet<String>();reached.add(key);var selected=new LinkedHashSet<Bindings.Edge>();var frontier=new LinkedHashSet<String>();frontier.add(key);
+            for(int d=0;d<depth;d++){
+                var edges=new LinkedHashSet<>(snapshot.adjacent(frontier,outgoing));
+                var inputs=frontier.stream().map(symbols::get).filter(Objects::nonNull).toList();String filter=session.state("resolution")==null?null:session.id();
+                var expansion=hierarchy?code.hierarchy(inputs,outgoing,filter):code.expand(inputs,outgoing,allowed,filter);
+                for(var node:expansion.symbols()){String identity=node.get("scip").toString();symbols.putIfAbsent(identity,Objects.requireNonNullElse(snapshot.symbol(identity),node));}
+                for(var edge:expansion.edges())edges.add(new Bindings.Edge(edge.src(),edge.dst(),edge.kind()));warnings.addAll(expansion.warnings());
+                var next=new LinkedHashSet<String>();
+                for(var edge:edges)if(allowed.contains(edge.kind())&&frontier.contains(outgoing?edge.src():edge.dst())){
+                    selected.add(edge);String target=outgoing?edge.dst():edge.src();var node=snapshot.symbol(target);if(node!=null)symbols.putIfAbsent(target,node);
+                    if(!reached.contains(target))next.add(target);
+                }
+                if(next.isEmpty())break;reached.addAll(next);frontier=next;
             }
-            if(next.isEmpty())break;reached.addAll(next);frontier=next;
+            var edgeList=List.copyOf(selected);var matches=snapshot.references(selected);
+            var nodes=reached.stream().map(symbols::get).filter(Objects::nonNull).toList();int max=Math.max(edgeList.size(),Math.max(matches.size(),nodes.size())),to=Math.min(max,offset+limit);boolean more=to<max;
+            return new Envelope(tier,"live",more,more?Integer.toString(to):null,List.copyOf(warnings),Map.of("symbols",slice(nodes,offset,limit),"edges",slice(edgeList,offset,limit),"references",slice(matches,offset,limit)));
         }
-        var edgeList=List.copyOf(selected);var matches=snapshot.references(selected);
-        var nodes=reached.stream().map(symbols::get).filter(Objects::nonNull).toList();int max=Math.max(edgeList.size(),Math.max(matches.size(),nodes.size())),to=Math.min(max,offset+limit);boolean more=to<max;
-        return new Envelope(tier,"live",more,more?Integer.toString(to):null,List.copyOf(warnings),Map.of("symbols",slice(nodes,offset,limit),"edges",slice(edgeList,offset,limit),"references",slice(matches,offset,limit)));
     }
     private static <T> List<T> slice(List<T> list,int offset,int limit){return List.copyOf(list.subList(Math.min(offset,list.size()),Math.min(list.size(),offset+limit)));}
     private Analyzer analyzer(Session session,Path path)throws Exception{

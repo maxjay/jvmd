@@ -17,6 +17,7 @@ final class WorkspaceReadView {
             private Map<String,Map<String,Object>> declarations()throws Exception {
                 if(declarations==null){declarations=new LinkedHashMap<>();for(var row:finder.find("",true))declarations.put(row.get("scip").toString(),row);}return declarations;
             }
+            public boolean declares(String scip)throws Exception{return declarations().containsKey(scip);}
             public Map<String,Object> byScip(String scip)throws Exception {return declarations().get(scip);}
             private List<Map<String,Object>> matching(String query,boolean substring)throws Exception {
                 if(query.contains(")/"))return finder.find(query,substring);
@@ -68,7 +69,7 @@ final class WorkspaceReadView {
     private void offer(Map<String,Object> symbol,Set<String> kinds,LinkedHashMap<String,Map<String,Object>> matches,boolean dependency)throws Exception {
         String scip=symbol.get("scip").toString();
         // A live declaration also shadows a dependency when an earlier page did not match its old name.
-        if(dependency&&live!=null){var local=live.byScip(scip);if(local!=null)return;}
+        if(dependency&&live!=null&&live.declares(scip))return;
         if(kinds.isEmpty()||kinds.contains(symbol.get("kind")))matches.putIfAbsent(scip,symbol);
     }
 }

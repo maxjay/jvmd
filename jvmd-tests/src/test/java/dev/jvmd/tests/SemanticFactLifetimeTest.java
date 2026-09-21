@@ -23,7 +23,7 @@ class SemanticFactLifetimeTest {
             var old=cache.get(()->files,List.of(),documents,"1",0,loader);assertThat(loaded).hasSize(3);loaded.clear();
             var method=old.lookup("Use/value()").getFirst().get("scip").toString();
             assertThat(old.adjacent(Set.of(method),true)).anyMatch(e->e.dst().endsWith("Api#a()."));
-            var warm=cache.get(()->files,List.of(),documents,"1",0,loader);assertThat(warm).isSameAs(old);assertThat(loaded).isEmpty();
+            var warm=cache.get(()->files,List.of(),documents,"1",0,loader);assertThat(warm).isNotSameAs(old);assertThat(warm.revision()).isSameAs(old.revision());assertThat(loaded).isEmpty();
             Files.writeString(use,"class Use { int value(){return Api.b();} }");
             var changed=cache.get(()->files,List.of(),documents,"1",0,loader);assertThat(loaded).containsExactly(use);loaded.clear();
             assertThat(changed.adjacent(Set.of(method),true)).anyMatch(e->e.dst().endsWith("Api#b().")).noneMatch(e->e.dst().endsWith("Api#a()."));
@@ -43,6 +43,54 @@ class SemanticFactLifetimeTest {
                 for(var symbol:page.symbols())found.add(symbol.get("name").toString());cursor=page.cursor();assertThat(++pages).isLessThanOrEqualTo(7);
             }while(cursor!=null);
             assertThat(found).containsExactlyInAnyOrderElementsOf(java.util.stream.IntStream.range(0,20).mapToObj(i->"Type"+i).toList());
+        }
+    }
+    @Test void abortedFullRebuildRetainsCommittedOwnersForRetry()throws Exception {
+        Path a=root.resolve("A.java"),b=root.resolve("B.java");
+        Files.writeString(a,"class A {}");Files.writeString(b,"class B {}");
+        var files=new ArrayList<>(List.of(a,b));var documents=new Documents();
+        try(var analyzer=new Analyzer();var cache=new WorkspaceBindings()){
+            analyzer.configure(new Analyzer.Context("test:app:1","25",List.of(),List.of(root),"1",Map.of(root.toUri().toString(),"test:app:1")),null,64L*1024*1024);
+            WorkspaceBindings.Loader loader=(path,text)->analyzer.bindings(path,text,null);
+            try(var old=cache.get(()->files,List.of(),documents,"1",0,loader)){
+                String removed=old.find("B",false,Set.of(),10,null).symbols().getFirst().get("scip").toString();
+                Files.delete(b);files.remove(b);
+                assertThatThrownBy(()->cache.get(()->files,List.of(),documents,"2",0,(path,text)->{throw new java.io.IOException("loader failed");})).isInstanceOf(java.io.IOException.class);
+                assertThat(cache.status()).containsEntry("fragment_files",2);
+                try(var retry=cache.get(()->files,List.of(),documents,"2",0,loader)){
+                    assertThat(retry.symbol(removed)).isNull();
+                    assertThat(retry.find("B",false,Set.of(),10,null).symbols()).isEmpty();
+                    assertThat(retry.find("A",false,Set.of(),10,null).symbols()).hasSize(1);
+                    assertThat(old.symbol(removed)).isNotNull();
+                    assertThat(cache.status()).containsEntry("fragment_files",1);
+                }
+            }
+        }
+    }
+    @Test void closingCallerLeaseAllowsIndependentReuseThroughEveryCacheHitPath()throws Exception {
+        Path file=root.resolve("A.java");Files.writeString(file,"class A {}");var documents=new Documents();int[] loads={0};
+        try(var analyzer=new Analyzer();var cache=new WorkspaceBindings()){
+            analyzer.configure(new Analyzer.Context("test:app:1","25",List.of(),List.of(root),"1",Map.of(root.toUri().toString(),"test:app:1")),null,64L*1024*1024);
+            WorkspaceBindings.BatchLoader loader=sources->{loads[0]++;var results=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();for(var entry:sources.entrySet())results.put(entry.getKey(),analyzer.bindings(entry.getKey(),entry.getValue(),null));return results;};
+            WorkspaceBindings.Validation validation=()->new WorkspaceBindings.ValidationToken("1",0,Map.of(),Map.of());
+            var first=cache.getBatch(()->List.of(file),List.of(),documents,"1",0,validation,loader);
+            Object revision=first.revision();first.close();first.close();
+            assertThatThrownBy(()->first.find("A",false,Set.of(),10,null)).isInstanceOf(IllegalStateException.class);
+            try(var fast=cache.getBatch(()->List.of(file),List.of(),documents,"1",0,validation,loader)){
+                try(var checked=cache.getBatch(()->List.of(file),List.of(),documents,"1",0,loader)){
+                    assertThat(checked.revision()).isSameAs(revision);
+                    assertThat(checked.find("A",false,Set.of(),10,null).symbols()).hasSize(1);
+                }
+                assertThat(fast.find("A",false,Set.of(),10,null).symbols()).hasSize(1);
+            }
+            try(var checked=cache.peek(List.of(file),List.of(),documents,"1")){
+                assertThat(checked.find("A",false,Set.of(),10,null).symbols()).hasSize(1);
+            }
+            try(var fast=cache.peek(()->List.of(file),List.of(),documents,"1",validation)){
+                assertThat(fast.find("A",false,Set.of(),10,null).symbols()).hasSize(1);
+                assertThat(fast.revision()).isSameAs(revision);
+            }
+            assertThat(loads[0]).isEqualTo(1);
         }
     }
     @Test void incompleteObservationIsRetriedInsteadOfBecomingAuthoritative()throws Exception {

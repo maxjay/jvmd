@@ -65,7 +65,7 @@ final class BindingFacts implements AutoCloseable {
     }
     private static String edgeKey(Bindings.Edge edge){return KeyedFacts.part(edge.src())+"/"+KeyedFacts.part(edge.dst())+"/"+KeyedFacts.part(edge.kind());}
     Map<String,Object> status(){return Map.of("decoded_budget_bytes",budget,"decoded_estimated_bytes",bytes,"fact_decodes",reads,"fact_revision",revision);}
-    View view(){var lease=new Lease(db.getSnapshot());leases.add(lease);return new View(lease,revision);}
+    synchronized View view(){var lease=new Lease(db.getSnapshot());leases.add(lease);return new View(lease,revision);}
     private final class Lease implements Runnable {
         private final org.rocksdb.Snapshot snapshot;
         private final ReadOptions read;
@@ -88,6 +88,9 @@ final class BindingFacts implements AutoCloseable {
         private void check(){if(lease.closed)throw new IllegalStateException("Binding read view is closed");}
         private <T> List<T> select(String posting,Class<T> type)throws Exception {
             synchronized(BindingFacts.this){check();var result=new ArrayList<T>();facts.select(lease.read,posting,false,(id,value)->{result.add(decode(id,value,type));return true;});return List.copyOf(result);}
+        }
+        boolean declares(String scip)throws Exception {
+            synchronized(BindingFacts.this){check();boolean[] found={false};facts.selectKeys(lease.read,"declaration/"+KeyedFacts.part(scip),false,id->{found[0]=true;return false;});return found[0];}
         }
         private String primary(String scip)throws Exception {
             String[] result={null};facts.selectKeys(lease.read,"declaration/"+KeyedFacts.part(scip),false,id->{result[0]=id;return false;});

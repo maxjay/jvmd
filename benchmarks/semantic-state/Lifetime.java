@@ -19,7 +19,7 @@ public class Lifetime {
                 var symbol=Map.<String,Object>of("scip",scip,"name",name,"kind","class","name_path",name,"file",file.toString(),"fqn",name);
                 return new CompilerPool.Outcome<>(2,new Bindings.Snapshot(Map.of(scip,symbol),List.of(),List.of(),Set.of()),List.of(),List.of());
             };
-            for(int i=0;i<31;i++){long start=System.nanoTime();var view=cache.get(()->files,List.of(),docs,"test",budget,loader);if(symbol(view,"local Type63")==null)throw new AssertionError();times.add((System.nanoTime()-start)/1e6);}
+            for(int i=0;i<31;i++){long start=System.nanoTime();var view=cache.get(()->files,List.of(),docs,"test",budget,loader);try{if(symbol(view,"local Type63")==null)throw new AssertionError();}finally{if((Object)view instanceof AutoCloseable lease)lease.close();}times.add((System.nanoTime()-start)/1e6);}
             System.out.println(Json.MAPPER.writeValueAsString(Map.of("budget",budget,"loads",loads[0],"milliseconds",times,"status",cache.status())));
         }finally{try(var walk=Files.walk(root)){for(var p:walk.sorted(Comparator.reverseOrder()).toList())Files.delete(p);}}
     }

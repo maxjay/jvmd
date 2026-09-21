@@ -228,3 +228,25 @@ space increase; see the report for costs, limitations, tests and reproduction.
 
 Evidence: `docs/performance/2026-09-21-semantic-state.md` and `docs/performance/semantic-state/`.
 Harness: `benchmarks/semantic-state/`. Full PR CI is separate from the local targeted checks.
+
+### Review follow-up — declaration ownership, transactional owners, and read leases
+
+Combined search now masks dependency results only when the live view owns a declaration, using
+`declaration/<scip>` postings. A real JAR/application regression warms bindings through a call to
+a dependency class and verifies combined search still returns that class exactly once.
+
+Full rebuilds retain the committed owner inventory until the fact batch commits. Replacement
+metadata is published immediately after commit, before view construction or validation can fail.
+The regression changes context, removes a file, throws from the loader, and successfully retries;
+removed-file facts disappear from the new view while the old pinned view remains readable.
+
+The cache retains revision metadata; each `get`/`peek` returns an independent caller-owned lease.
+Application closes its leases and uses a separate revision identity for index reuse. Tests cover
+close/reacquire through both validation paths and both peek APIs, overlapping leases, idempotent
+close, and reuse without another loader call at zero decoded budget. The benchmark harness also
+closes leases when the tested revision supports them.
+
+Validation: **45 tests, zero failures/errors/skips** across fact lifetime, source overlays, index
+contracts, pagination, navigation, rename, and semantic protocol coverage. Temporarily restoring
+the two original correctness defects made both new regressions fail. Existing performance samples
+remain attributed to their recorded revision; they are not measurements of this follow-up.

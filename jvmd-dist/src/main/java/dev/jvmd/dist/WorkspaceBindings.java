@@ -32,13 +32,17 @@ public final class WorkspaceBindings implements AutoCloseable {
             return true;
         }
     }
-    /** A pinned fact revision. Whole-graph materialization is explicit and used only by edits. */
+    /** A caller-owned lease on a pinned fact revision. Closing it never closes another caller's view. */
     public static final class Snapshot implements AutoCloseable,SymbolReadView {
         private final BindingFacts.View view;
+        private final Object revision;
         private final List<CompilerPool.Problem> diagnostics;
         private final int tier;
         private final List<String> warnings;
-        Snapshot(BindingFacts.View view,List<CompilerPool.Problem> diagnostics,int tier,List<String> warnings){this.view=view;this.diagnostics=List.copyOf(diagnostics);this.tier=tier;this.warnings=List.copyOf(warnings);}
+        Snapshot(BindingFacts.View view,Object revision,List<CompilerPool.Problem> diagnostics,int tier,List<String> warnings){this.view=view;this.revision=revision;this.diagnostics=List.copyOf(diagnostics);this.tier=tier;this.warnings=List.copyOf(warnings);}
+        /** Stable identity shared by leases on the same cached revision. */
+        public Object revision(){return revision;}
+        @Override public boolean declares(String scip)throws Exception{return view.declares(scip);}
         @Override public Map<String,Object> byScip(String scip)throws Exception{return view.symbol(scip);}
         public Map<String,Object> symbol(String scip)throws Exception{return view.symbol(scip);}
         public Map<String,Map<String,Object>> symbols()throws Exception{return view.symbols(false);}
@@ -71,7 +75,10 @@ public final class WorkspaceBindings implements AutoCloseable {
     private BindingFacts facts()throws Exception{if(facts==null)facts=new BindingFacts();return facts;}
     private final SemanticUpdatePolicy.Live semantic=new SemanticUpdatePolicy.Live();
     private Inputs inputs;
-    private Snapshot snapshot;
+    /** Cache-owned metadata; native read leases belong exclusively to callers. */
+    private record Revision(List<CompilerPool.Problem> diagnostics,int tier,List<String> warnings,Object identity) { }
+    private Revision snapshot;
+    private Snapshot acquire(Revision revision)throws Exception{return new Snapshot(facts().view(),revision.identity(),revision.diagnostics(),revision.tier(),revision.warnings());}
     private ValidationToken validationToken;
     private long hits,builds,fullBuilds,incrementalBuilds,filesReanalysed,filesReused,apiInvalidations,fastValidationHits,fullValidations;
     private int lastReanalysedFiles;
@@ -110,15 +117,15 @@ public final class WorkspaceBindings implements AutoCloseable {
         if(snapshot==null)return null;fullValidations++;
         var current=inputs(files,classpath,documents,generation);
         if(!current.equals(inputs)){snapshot=null;validationToken=null;return null;}
-        hits++;return snapshot;
+        hits++;return acquire(snapshot);
     }
     public Snapshot peek(SourceFiles sources,List<Path> classpath,Documents documents,String generation,Validation validation)throws Exception {
         if(snapshot==null)return null;
         var token=validation==null?null:validation.current();
-        if(token!=null&&token.fastCompatible(validationToken)){hits++;fastValidationHits++;validationToken=token;return snapshot;}
+        if(token!=null&&token.fastCompatible(validationToken)){hits++;fastValidationHits++;validationToken=token;return acquire(snapshot);}
         fullValidations++;var current=inputs(sources.files(),classpath,documents,generation);
         if(!current.equals(inputs)){snapshot=null;validationToken=null;return null;}
-        hits++;validationToken=validation==null?null:validation.current();return snapshot;
+        hits++;validationToken=validation==null?null:validation.current();return acquire(snapshot);
     }
     public Snapshot get(SourceFiles sources,List<Path> classpath,Documents documents,String generation,long byteBudget,Loader loader)throws Exception {
         return getBatch(sources,classpath,documents,generation,byteBudget,null,files->{
@@ -140,14 +147,14 @@ public final class WorkspaceBindings implements AutoCloseable {
         }
         return result;
     }
-    private Snapshot readView(Inputs current,Map<Path,Fragment> values,boolean consistent)throws Exception{
+    private Revision readView(Inputs current,Map<Path,Fragment> values,boolean consistent)throws Exception{
         var diagnostics=new ArrayList<CompilerPool.Problem>();var warnings=new LinkedHashSet<String>();int tier=2;
         for(Path file:current.files()){
             var fragment=values.get(file);if(fragment==null){tier=1;warnings.add("incomplete_workspace_bindings: "+file);continue;}
             tier=Math.min(tier,fragment.tier());warnings.addAll(fragment.warnings());diagnostics.addAll(fragment.diagnostics());
         }
         if(!consistent){warnings.add("workspace_changed_during_query: retry for a consistent graph");tier=Math.min(tier,1);}
-        return new Snapshot(facts().view(),diagnostics,tier,List.copyOf(warnings));
+        return new Revision(List.copyOf(diagnostics),tier,List.copyOf(warnings),new Object());
     }
     public Snapshot getBatch(SourceFiles sources,List<Path> classpath,Documents documents,String generation,long byteBudget,BatchLoader loader)throws Exception {
         return getBatch(sources,classpath,documents,generation,byteBudget,null,loader);
@@ -156,11 +163,11 @@ public final class WorkspaceBindings implements AutoCloseable {
         facts().budget(byteBudget);
         var token=validation==null?null:validation.current();
         if(snapshot!=null&&token!=null&&token.fastCompatible(validationToken)){
-            hits++;fastValidationHits++;validationToken=token;lastReanalysedFiles=0;filesReused+=inputs==null?0:inputs.files().size();return snapshot;
+            hits++;fastValidationHits++;validationToken=token;lastReanalysedFiles=0;filesReused+=inputs==null?0:inputs.files().size();return acquire(snapshot);
         }
         fullValidations++;var current=inputs(sources.files(),classpath,documents,generation);
         if(snapshot!=null&&current.equals(inputs)){
-            hits++;lastReanalysedFiles=0;filesReused+=current.files().size();validationToken=validation==null?null:validation.current();return snapshot;
+            hits++;lastReanalysedFiles=0;filesReused+=current.files().size();validationToken=validation==null?null:validation.current();return acquire(snapshot);
         }
 
         try(var batch=facts().transaction()){
@@ -171,7 +178,7 @@ public final class WorkspaceBindings implements AutoCloseable {
         else for(Path file:current.files())if(!Objects.equals(priorInputs.sourceHashes().get(file),current.sourceHashes().get(file)))dirty.add(file);
 
         builds++;snapshot=null;
-        if(full){fullBuilds++;for(Path file:priorFragments.keySet())facts().remove(batch,file);fragments.clear();priorFragments.clear();semantic.clear();}
+        if(full){fullBuilds++;for(Path file:priorFragments.keySet())facts().remove(batch,file);priorFragments.clear();semantic.clear();}
         else incrementalBuilds++;
 
         var removedDependants=new LinkedHashSet<Path>();
@@ -195,12 +202,14 @@ public final class WorkspaceBindings implements AutoCloseable {
         lastReanalysedFiles=dirty.size();filesReanalysed+=dirty.size();filesReused+=Math.max(0,current.files().size()-dirty.size());
         var after=inputs(sources.files(),classpath,documents,generation);boolean consistent=current.equals(after);
         facts().commit(batch);
+        // Publish the owner inventory only after commit, before any fallible view/validation work.
+        fragments.clear();fragments.putAll(working);
         var result=readView(current,working,consistent);
         // Authoritative observations survive decoded cache eviction, including source diagnostics.
         if(consistent&&working.values().stream().allMatch(f->f.contribution()!=null)){
-            snapshot=result;inputs=current;fragments.clear();fragments.putAll(working);validationToken=validation==null?null:validation.current();
-        }else{inputs=null;validationToken=null;fragments.clear();fragments.putAll(working);semantic.clear();}
-        return result;
+            snapshot=result;inputs=current;validationToken=validation==null?null:validation.current();
+        }else{inputs=null;validationToken=null;semantic.clear();}
+        return acquire(result);
         }catch(Exception failure){inputs=null;validationToken=null;snapshot=null;semantic.clear();throw failure;}
     }
     public Map<String,Object> status(){

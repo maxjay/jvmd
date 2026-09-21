@@ -63,7 +63,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     }
     public IndexedFileManager(StandardJavaFileManager delegate,List<Path> classpath,List<Path> sources,
                               IndexService index,long byteLimit,boolean preciseSourceRoots)throws Exception {
-        this(delegate,classpath,sources,index,byteLimit,preciseSourceRoots,new FileStateRegistry());
+        this(delegate,classpath,sources,index,byteLimit,preciseSourceRoots,FileStateRegistry.shared());
     }
     public IndexedFileManager(StandardJavaFileManager delegate,List<Path> classpath,List<Path> sources,
                               IndexService index,long byteLimit,boolean preciseSourceRoots,FileStateRegistry files)throws Exception {

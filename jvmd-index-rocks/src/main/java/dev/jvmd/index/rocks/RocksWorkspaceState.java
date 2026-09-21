@@ -33,7 +33,7 @@ public final class RocksWorkspaceState implements AutoCloseable {
     static {RocksDB.loadLibrary();}
     private final Options options;
     private final RocksDB db;
-    private final FileStateRegistry files=new FileStateRegistry();
+    private final FileStateRegistry files=FileStateRegistry.shared();
     private final Map<String,CompilerInputs> observations=new HashMap<>();
 
     public RocksWorkspaceState(Path root)throws Exception{this(root,null);}

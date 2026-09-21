@@ -48,7 +48,7 @@ public final class WorkspaceBindings implements AutoCloseable {
     private record Fragment(int tier,List<CompilerPool.Problem> diagnostics,List<String> warnings,FileSemanticContribution contribution) { }
     private final LinkedHashMap<Path,Fragment> fragments=new LinkedHashMap<>();
     private final CompilerInputs observations;
-    public WorkspaceBindings(){this(new FileStateRegistry());}
+    public WorkspaceBindings(){this(FileStateRegistry.shared());}
     public WorkspaceBindings(FileStateRegistry files){observations=new CompilerInputs(files);}
     private BindingFacts facts;
     private BindingFacts facts()throws Exception{if(facts==null)facts=new BindingFacts();return facts;}

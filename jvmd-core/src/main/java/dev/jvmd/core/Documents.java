@@ -16,7 +16,7 @@ public final class Documents {
     private static final long MAX_BYTES=64L*1024*1024;
     private final Map<Path,Document> documents=new LinkedHashMap<>();
     private final FileStateRegistry files;
-    public Documents(){this(new FileStateRegistry());}
+    public Documents(){this(FileStateRegistry.shared());}
     public Documents(FileStateRegistry files){this.files=Objects.requireNonNull(files);}
     private long bytes,generation;
     private static Path key(Path path){return path.toAbsolutePath().normalize();}

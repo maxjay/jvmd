@@ -21,7 +21,7 @@ public final class Application implements AutoCloseable {
     private final Sessions sessions = new Sessions();
     private final Dispatcher dispatcher = new Dispatcher(sessions, new Metrics());
     private final Config config;
-    private final FileStateRegistry classpathFiles=new FileStateRegistry();
+    private final FileStateRegistry classpathFiles=FileStateRegistry.shared();
     private volatile MavenResolver resolver;
     private volatile dev.jvmd.runtime.JavaRuntime.Selection debuggeeRuntime;
     private volatile java.util.concurrent.CompletableFuture<IndexService> index;

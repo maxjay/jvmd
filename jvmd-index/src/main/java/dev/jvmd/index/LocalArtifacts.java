@@ -14,7 +14,7 @@ final class LocalArtifacts {
     }
     private final IndexService index;
     private final Map<Path,State> modules=new java.util.concurrent.ConcurrentHashMap<>();
-    private final FileStateRegistry files=new FileStateRegistry();
+    private final FileStateRegistry files=FileStateRegistry.shared();
     private final Documents disk=new Documents();
     LocalArtifacts(IndexService index){this.index=index;}
     boolean register(IndexService.LocalModule module){

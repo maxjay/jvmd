@@ -20,7 +20,7 @@ public final class CompilerPool implements AutoCloseable {
     public record Outcome<T>(int tier,T result,List<Problem> diagnostics,List<String> warnings) { }
     private final Thread owner=Thread.currentThread();
     private final java.util.function.LongSupplier heapUsage;
-    private dev.jvmd.core.FileStateRegistry inputFiles=new dev.jvmd.core.FileStateRegistry();
+    private dev.jvmd.core.FileStateRegistry inputFiles=dev.jvmd.core.FileStateRegistry.shared();
     private CompilerInputs inputs=new CompilerInputs(inputFiles);
     private Documents liveDocuments=new Documents(inputFiles);
     public CompilerPool(dev.jvmd.core.FileStateRegistry files){this();inputFiles=files;inputs=new CompilerInputs(files);liveDocuments=new Documents(files);}

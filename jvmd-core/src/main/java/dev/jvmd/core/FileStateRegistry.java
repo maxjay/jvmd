@@ -6,6 +6,9 @@ import java.util.*;
 
 /** Content identities with a Unix change-time/inode fast path and a conservative fallback. */
 public final class FileStateRegistry {
+    private static final FileStateRegistry SHARED=new FileStateRegistry();
+    /** Process-wide disk observations only; overlays and accepted analysis never live here. */
+    public static FileStateRegistry shared(){return SHARED;}
     private record Stamp(Object size, Object modified, Object changed, Object inode,boolean regular) { }
     private record Entry(Stamp stamp, String hash) { }
     private final Map<Path, Entry> files = new LinkedHashMap<>(256, .75f, true);

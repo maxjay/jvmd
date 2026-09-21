@@ -6,13 +6,14 @@ This file is the current implementation checklist for task 4; earlier progress e
 remain historical evidence, not competing instructions.
 
 - [x] Identify merged predecessors and exact baseline before production edits.
-- [ ] Verify the three #18 regressions on the baseline.
-- [ ] Record baseline validation and end-to-end evidence.
-- [ ] Implement the shared observation/snapshot contract.
-- [ ] Cut consumers over and delete replaced paths.
-- [ ] Cover races, overlays, membership, environment, reconciliation and eviction.
-- [ ] Run serial alternating measurements and existing correctness suite.
-- [ ] Record additions/deletions, limitations, tested head and open PR.
+- [x] Verify the three #18 regressions on the baseline.
+- [x] Record baseline validation and end-to-end evidence.
+- [x] Implement the shared observation/snapshot contract.
+- [x] Cut consumers over and delete replaced paths.
+- [x] Cover races, overlays, membership, environment, reconciliation and eviction.
+- [x] Run serial alternating measurements and existing correctness suite.
+- [x] Record additions/deletions, limitations and tested head.
+- [ ] Open PR and record remote CI state.
 
 ## Ownership inventory from production callers
 
@@ -65,3 +66,17 @@ unchanged fallback hash must not manufacture a new in-flight observation on ever
 Implicit javac source reads now verify their actual text against the captured input snapshot.
 This avoids accepting bytes from an intervening version even when timestamp evidence is
 unavailable. The last run is superseded by the final validation below.
+
+
+Final measured checkpoint (supersedes preliminary guidance above): production head
+`5fae72760a4486e9b914c821aa6cdd25aa7b5212`, published tree-equivalent head
+`9f14f41d2cd1bf0672927059a10d3fbea2e0c4b8`. Baseline 123 tests and candidate 132
+phase 3/4 tests passed; final 9 input and 3 Rocks tests passed. The existing LSP
+matrix verified 504 responses / 3,120 ranges. Three alternating paired repetitions
+and raw source/dependency fingerprints are committed with the delivery report.
+Warm input validation p50: 2.423 → 2.109 ms; 40 warm observations perform zero
+source/classpath enumerations, hashes and map rebuilds. Real diagnostics p50 and
+allocation regress; end-to-end measured work +7.1%, restart +8.3%. Production diff
+is +442/-417 (net +25), not shrinkage. See
+[the current report](performance/2026-09-21-input-validation.md) for full evidence,
+reproduction and limitations. Production is frozen after this measured checkpoint.

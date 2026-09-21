@@ -59,6 +59,10 @@ class CompilerInputsTest {
         var base=CompilerInputs.environment("module",List.of(root),List.of(),List.of("processor"),Map.of("generated","1"),List.of(a.toString()),"jdk",Map.of());
         var changed=CompilerInputs.environment("module",List.of(root),List.of(),List.of("processor","-Aoption=true"),Map.of("generated","2"),List.of(a.toString()),"jdk",Map.of());
         assertThat(changed).isNotEqualTo(base);
+        assertThat(CompilerInputs.environment("module",List.of(root),List.of(),List.of("other-processor"),Map.of("generated","1"),List.of(a.toString()),"jdk",Map.of())).isNotEqualTo(base);
+        assertThat(CompilerInputs.environment("module",List.of(root),List.of(),List.of("processor"),Map.of("generated","2"),List.of(a.toString()),"jdk",Map.of())).isNotEqualTo(base);
+        assertThat(CompilerInputs.environment("module",List.of(root),List.of("-g"),List.of("processor"),Map.of("generated","1"),List.of(a.toString()),"jdk",Map.of())).isNotEqualTo(base);
+        assertThat(CompilerInputs.environment("module",List.of(root),List.of(),List.of("processor"),Map.of("generated","1"),List.of(a.toString()),"other-jdk",Map.of())).isNotEqualTo(base);
     }
     @Test void mutationDuringNavigationDoesNotCommitAndFailedRetryKeepsOwnerInventory()throws Exception {
         Path a=Files.writeString(root.resolve("A.java"),"class A {}");var docs=new Documents();var files=new ArrayList<>(List.of(a));

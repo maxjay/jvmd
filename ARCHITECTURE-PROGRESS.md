@@ -64,3 +64,49 @@ Do not use other checklist/progress files on this branch.
 **Decision after run**
 - If actual retained heap is far below the ~312 MiB estimate, fix retained-size accounting/admission before representation surgery.
 - If actual retained state is genuinely large, begin Phase B against the measured dominant fact classes rather than increasing production limits.
+
+
+## 003 — A0 complete: admission estimate is the first architectural failure
+
+**Run**
+- Semantic memory diagnostics run: `35609895303`.
+- Candidate job: `106366256667`.
+- Baseline job: `106366256947`.
+- Environment: Ubuntu 24.04, Temurin 25.0.4.1+1, `-Xmx1024m`.
+
+**Candidate with diagnostic 512 MiB admission**
+- First build/reference: 24,032.6 ms.
+- Forced-GC live heap after first build: 405,227,064 bytes.
+- Retained semantic estimate: 328,149,490 bytes.
+- Cached files/fragments: 279 / 279.
+- Discards: 0.
+- Query 2: 13.512 ms, 53,688 request-thread allocated bytes, 1 cache hit, 0 files reanalysed.
+- Query 3: 12.636 ms, 53,712 request-thread allocated bytes, 2 cache hits, 0 files reanalysed.
+- Rocks native cache usage remains stable at ~49.0 MB with ~1.42 MB pinned.
+
+**Baseline with original admission/discard behaviour**
+- First build/reference: 24,026.4 ms.
+- Forced-GC live heap after first query: 334,030,752 bytes.
+- Cached files/fragments: 0 / 0.
+- Query 2: 6,950.8 ms; second full build; 544 cumulative files reanalysed.
+- Query 3: 5,735.3 ms; third full build; 816 cumulative files reanalysed.
+
+**Interpretation**
+- Retaining the candidate workspace adds roughly 71,196,312 bytes (~67.9 MiB) of live Java heap over the
+  discarded-state baseline at the first forced-GC checkpoint, despite the candidate estimator claiming
+  ~312.9 MiB. The revisions differ by seven source files and other branch changes, so this is an
+  approximate retained-state delta rather than an exact object-graph retained size.
+- The current estimate therefore overstates observed incremental live heap by roughly 4.6x at this
+  workspace size.
+- The 128 MiB admission policy is rejecting semantic state that fits comfortably inside the intended
+  semantic-state budget in the observed 1 GiB process.
+- That rejection changes unchanged reference latency from ~13 ms to multi-second full-workspace rebuilds.
+  This is the first production architecture problem to fix.
+- Thread allocation values measure the requesting thread only; they are useful for the warm request path
+  but are not a complete measure of cross-thread javac rebuild allocation.
+
+**Decision**
+- A0 is complete.
+- A1 begins with admission/accounting and canonical-state survival, not representation compaction.
+- Phase B remains necessary after A1 because ~68 MiB for a 279-file semantic workspace is still material,
+  but it is no longer the blocker for achieving real warm behaviour.

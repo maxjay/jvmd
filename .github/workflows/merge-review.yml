@@ -43,30 +43,7 @@ jobs:
           # them here, and use all available cores for the production reactor.
           mvn -B -T1C -Dmaven.test.skip=true -pl jvmd-dist,jvmd-resolver/maven3,jvmd-resolver/maven4 -am install
           bash jvmd-dist/assemble.sh
-          # The relocated JVM benchmark suite exercises strict-AOT startup exactly as before.
-          bash jvmd-dist/train-aot.sh
           wait "$jdtls_download"
-      - name: Install pinned Maven 4 for resolver benchmark evidence
-        shell: bash
-        run: |
-          archive="$RUNNER_TEMP/apache-maven-4.0.0-rc-6-bin.tar.gz"
-          url='https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/4.0.0-rc-6/apache-maven-4.0.0-rc-6-bin.tar.gz'
-          curl -fsSL --retry 3 "$url" -o "$archive"
-          curl -fsSL --retry 3 "$url.sha512" -o "$archive.sha512"
-          read -r digest _ < "$archive.sha512" || [[ -n "$digest" ]]
-          [[ "$digest" =~ ^[[:xdigit:]]{128}$ ]]
-          printf '%s  %s\n' "$digest" "$archive" | sha512sum --check -
-          tar -xzf "$archive" -C "$RUNNER_TEMP"
-          echo "JVMD_MAVEN4_HOME=$RUNNER_TEMP/apache-maven-4.0.0-rc-6" >> "$GITHUB_ENV"
-      - name: Run relocated JVM performance evidence
-        shell: bash
-        run: |
-          # These are the exact former *BudgetTest/*BenchmarkTest methods, not substitutes.
-          # Their correctness assertions remain active; timing/memory targets are observations.
-          bash jvmd-tests/smoke/run-resolver.sh
-          bash jvmd-tests/smoke/run-index.sh
-          mvn -B -pl jvmd-tests test -Pbenchmarks -Dgroups=perf -DexcludedGroups=corpus
-          printf '## Relocated JVM performance suite\n\n14 benchmark classes passed their functional checks; timing and memory JSON are in the evidence artifact.\n' >> "$GITHUB_STEP_SUMMARY"
       - name: Install pinned Node.js for the TypeScript LSP bridge
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
@@ -118,10 +95,6 @@ jobs:
             ${{ runner.temp }}/allocation-results/**/report.json
             ${{ runner.temp }}/allocation-results/**/messages.jsonl
             ${{ runner.temp }}/allocation-results/**/resources.json
-            jvmd-tests/target/*perf.json
-            jvmd-tests/target/index-redesign-benchmark/**
-            jvmd-tests/target/surefire-reports/**
-            jvmd-tests/target/daemon-perf-output.log
       - name: Publish merge evidence on the PR
         if: ${{ success() }}
         shell: bash
@@ -141,8 +114,6 @@ jobs:
           {
             echo '<!-- jvmd-merge-review -->'
             echo '## JVMD / JDTLS merge evidence'
-            echo
-            echo '**JVM performance suite:** 14 relocated benchmark classes passed functional verification. Their timing and memory measurements are included in the downloadable evidence.'
             echo
             cat "$RUNNER_TEMP/comparison.md"
             echo

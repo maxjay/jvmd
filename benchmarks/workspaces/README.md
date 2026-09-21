@@ -256,10 +256,16 @@ The result cache is deliberately bounded: one candidate set per module, at most
 continue through normal javac analysis. Source identities, unsaved declarations,
 classpath identities and compiler context must all agree before reuse.
 
-### Relocated JVM microbenchmarks
+### Performance ownership
 
-The workspace comparison complements, rather than replaces, the exact JVM performance suite in
-[`../performance`](../performance/README.md). Merge Review runs those relocated JUnit benchmark
-methods first, with their original correctness assertions enabled and timing/resource targets recorded as observations, and includes their
-JSON and Surefire reports in `merge-review-evidence`. They no longer exist under the ordinary
-`jvmd-tests/src/test/java` tree and therefore cannot make the checkpoint pipeline timing-sensitive.
+Performance evidence lives in this benchmark harness, not in `jvmd-tests` and not behind JUnit
+`perf` tags. The merge-review matrix exercises the assembled JVMD server through the editor bridge
+in a long-lived process: it primes each operation once, records subsequent warm hover, completion,
+signature-help, definition, references, rename-preview and document-symbol requests, applies
+unsaved typing edits, and measures error/restore diagnostics. It also restarts against persisted
+state and repeats the same oracle-checked workload under JFR for sampled allocation, CPU, RSS and
+I/O measurements.
+
+Component index measurements remain in `benchmarks/index-updates`. Ordinary JUnit sources contain
+only deterministic correctness tests; adding a timing assertion or a `perf` tag there is not the
+mechanism for benchmark coverage.

@@ -14,7 +14,7 @@
     <jackson.version>2.22.2</jackson.version><sqlite.version>3.53.4.0</sqlite.version><rocksdb.version>10.10.1.1</rocksdb.version>
     <resolver.version>1.9.27</resolver.version><maven.version>3.9.16</maven.version>
     <junit.version>5.14.4</junit.version><assertj.version>3.27.7</assertj.version>
-    <argLine></argLine><excludedGroups>perf,corpus</excludedGroups>
+    <argLine></argLine><excludedGroups>corpus</excludedGroups>
   </properties>
   <dependencyManagement><dependencies>
     <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>${jackson.version}</version></dependency>

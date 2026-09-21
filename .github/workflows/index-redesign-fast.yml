@@ -32,13 +32,3 @@ jobs:
           mvn -B -pl jvmd-tests test
           -Dtest=IndexSchemaTest,BinarySkeletonTest,MultiReleaseIndexTest,IndexInvalidationTest,IndexStoreContractTest,ArtifactIndexFormatTest,RocksArtifactSinkIntegrationTest,EagerRepositoryIndexTest,IndexSearchTest,WorkspaceIndexLoadTest,ArtifactSignatureVariantTest,LocalModuleIndexTest,SourceDocumentationJoinTest,InheritDocTest,DependencyHierarchyTest,LazyCodeReferencesTest,SignatureClosureTest,RocksSqliteAgreementTest,RocksStoreIntegrationTest,ReverseDependencyInvalidationTest,PersistentDiagnosticsTest,RuntimeCompilerIsolationTest
           -DexcludedGroups=
-      - name: Forked production migration benchmark
-        # Each backend runs in a separate process; Rocks must not open SQLite.
-        run: mvn -B -pl jvmd-tests test -Dtest=IndexRedesignBenchmarkTest -DexcludedGroups=
-      - name: Retain benchmark measurements
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: index-redesign-benchmark
-          path: jvmd-tests/target/index-redesign-benchmark/**/*.json
-          if-no-files-found: warn

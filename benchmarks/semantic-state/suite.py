@@ -61,12 +61,14 @@ def verify_build(info):
         raise ValueError("Benchmark harness changed since build")
 
 
-def worker(build_info, output, fixture, profile=False):
+def worker(build_info, output, fixture, profile=False, retained=False):
     output.mkdir()
     command = [build_info["java"], "-Xms256m", "-Xmx1g", "-XX:+UseG1GC",
                "--enable-native-access=ALL-UNNAMED", *EXPORTS]
     if profile:
         command += [f"-XX:StartFlightRecording=filename={output / 'profile.jfr'},settings=profile,dumponexit=true"]
+    if retained:
+        command += ["-Djvmd.benchmark.retained=true"]
     command += ["-cp", build_info["classpath"], "NavigationBenchmark", str(output / "workspace"),
                 str(output / "samples.json"), str(fixture), os.pathsep.join(build_info["dependencies"])]
     write(output / "command.json", command)
@@ -136,18 +138,18 @@ def campaign(args):
     fixture = args.fixture.resolve()
     metadata = {"builds": builds, "fixture": {str(p.relative_to(fixture)): digest(p)
                 for p in sorted(fixture.rglob("*.java"))}, "platform": platform.platform(),
-                "cpu_count": os.cpu_count(), "pairs": args.pairs, "profiled": args.profile,
+                "cpu_count": os.cpu_count(), "pairs": args.pairs, "profiled": args.profile, "retained_heap": args.retained,
                 "harness_sha256": digest(Path(__file__)), "runs": []}
     write(args.output / "campaign.json", metadata)
     for pair in range(args.pairs):
         order = list(builds) if pair % 2 == 0 else list(reversed(builds))
         for variant in order:
             print(f"pair {pair + 1}/{args.pairs}: {variant}", flush=True)
-            result = worker(builds[variant], args.output / f"{pair:02d}-{variant}", fixture, args.profile)
+            result = worker(builds[variant], args.output / f"{pair:02d}-{variant}", fixture, args.profile, args.retained)
             result.update(pair=pair, variant=variant)
             metadata["runs"].append(result)
             write(args.output / "campaign.json", metadata)
-    if not args.profile:
+    if not args.profile and not args.retained:
         write(args.output / "summary.json", summarize(metadata["runs"]))
     print(args.output / "campaign.json", flush=True)
 
@@ -164,6 +166,7 @@ def main():
     runner.add_argument("--after", type=Path)
     runner.add_argument("--pairs", type=int, default=10)
     runner.add_argument("--profile", action="store_true")
+    runner.add_argument("--retained", action="store_true")
     args = parser.parse_args()
     if args.command == "build":
         build(args)

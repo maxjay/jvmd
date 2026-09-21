@@ -269,3 +269,17 @@ Each entry records the change, validation, limitations and next work. Historical
   trial's blanket 1 ms floor to excuse regressions in already-fast warm requests.
 - Historical criteria and results are preserved. This is a requirement update only;
   production remains at ae23fd1f and semantic Merkle implementation remains open.
+
+## 2026-09-20 — 015: complete semantic replacement and accumulator extension boundary
+
+- User confirmed shared semantic Merkle architecture and requested extensibility for future
+  algebraic fingerprints, plus a full before/implementation/after benchmark sequence.
+- Replaced overlapping active checklists with one eight-step checklist. Historical evidence
+  remains unchanged. Production is still exactly ae23fd1f; no accepted DAG implementation.
+- Recorded domain/schema/algorithm identity, ordered versus keyed unordered collections,
+  key-bound contributions and old/new replacement semantics. Accumulator cryptography remains
+  a future implementation choice; the semantic consumers will not depend on a SHA string.
+- Added two-module lifecycle, diagnostic, buffer, file add/delete, context and old-reader
+  scenarios to the reusable suite, and a separate retained-live-heap campaign. Fixed latency
+  and allocation targets plus per-path regression budgets before production edits.
+- Building and measuring the expanded untouched baseline next.

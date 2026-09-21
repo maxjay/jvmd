@@ -115,3 +115,14 @@ The first trial's recorded criteria, samples and rejection remain unchanged belo
 contains the comparison. Reports must include slower/inconclusive cases as well
 as gains. A failed correctness run is a failed candidate, never a timing sample
 to silently discard.
+
+## Complete semantic DAG campaign
+
+The active second-campaign contract is `docs/semantic-state.md`; the first trial's rules and
+results above are historical. `LifecycleBenchmark` adds two source roots/modules, cross-module
+API/body/doc-position changes, diagnostics, buffers, additions/deletions, context revisions,
+old-reader isolation and complete-output comparison. `--retained` runs a separate forced-GC
+live-heap experiment with 13 reader snapshots, then releases old readers. Such runs never
+produce the normal latency summary. They measure JVM live heap, not an object-exact retained
+size of just the semantic graph. Production API identity and incremental-work assertions are
+covered by repository tests; the same benchmark sources compile against the exact baseline.

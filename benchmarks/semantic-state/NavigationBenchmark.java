@@ -11,7 +11,7 @@ import java.util.*;
 /** Real compiler and dispatcher workloads. Assertions run outside the timed requests. */
 public final class NavigationBenchmark {
     private static final ThreadMXBean THREADS = (ThreadMXBean) ManagementFactory.getThreadMXBean();
-    private static final List<Map<String, Object>> samples = new ArrayList<>();
+    static final List<Map<String, Object>> samples = new ArrayList<>();
 
     @FunctionalInterface
     interface Request { Object run() throws Exception; }
@@ -197,10 +197,13 @@ public final class NavigationBenchmark {
         List<Path> dependencies = Arrays.stream(args[3].split(java.io.File.pathSeparator)).map(Path::of).toList();
         realModule(root.resolve("real"), Path.of(args[2]), dependencies);
         validation(root.resolve("validation"));
+        LifecycleBenchmark.run(root.resolve("lifecycle"));
         var report = new LinkedHashMap<String, Object>();
         report.put("samples", samples);
         report.put("java_version", System.getProperty("java.runtime.version"));
         report.put("jvm_arguments", ManagementFactory.getRuntimeMXBean().getInputArguments());
+        if (Boolean.getBoolean("jvmd.benchmark.retained"))
+            report.put("retained_heap", LifecycleBenchmark.retained(root.resolve("retained")));
         for (String line : Files.readAllLines(Path.of("/proc/self/status"))) {
             if (line.startsWith("VmHWM:")) report.put("peak_rss_kib", Long.parseLong(line.trim().split("\\s+")[1]));
         }

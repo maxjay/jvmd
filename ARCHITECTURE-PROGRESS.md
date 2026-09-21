@@ -110,3 +110,32 @@ Do not use other checklist/progress files on this branch.
 - A1 begins with admission/accounting and canonical-state survival, not representation compaction.
 - Phase B remains necessary after A1 because ~68 MiB for a 279-file semantic workspace is still material,
   but it is no longer the blocker for achieving real warm behaviour.
+
+
+## 004 — A1 admission accounting implementation
+
+**Before**
+- Production retained-state estimate on the 279-file candidate: ~328.1 MB.
+- Production admission limit: 128 MiB.
+- Result: every unchanged query discarded the complete semantic workspace and reanalysed 279 files.
+- Diagnostic admitted state proved true warm references at 13.512 ms / 12.636 ms with zero further file analysis.
+- Approximate forced-GC incremental live heap versus the discarded baseline: ~67.9 MiB.
+
+**Implementation**
+- `6fd3d9aa` — replace the arbitrary retained-state weights with `hotspot-compressed-oops-v1`,
+  an object-layout-based conservative model. The production 128 MiB limit is unchanged.
+- Model explicitly prices edges, occurrences, diagnostics, dependencies, API declarations/exports,
+  symbol-row containers/entries, strings, collections and other row values.
+- The diagnostic admission override remains available only as an explicit system property; normal
+  production behaviour does not use it.
+- `680fb85b` — remove the 512 MiB diagnostic override from the focused CI probe. The next run tests
+  the production admission path exactly.
+
+**Acceptance**
+- Query 1 may build the workspace.
+- Query 2 and 3 must be cache hits at the normal 128 MiB limit.
+- `files_reanalysed` must remain at 279 after query 1.
+- No discard may occur.
+- The new estimated retained bytes must remain below 128 MiB while preserving a meaningful safety
+  margin over the ~67.9 MiB observed incremental live-heap delta.
+- Checkpoints and semantic benchmark workflows must remain green.

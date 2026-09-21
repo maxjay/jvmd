@@ -64,17 +64,20 @@ class ModularAnalysisTest {
                 var result=pool.query(main,text,2,(task,units,tier)->units.size());
                 assertThat(result.tier()).isEqualTo(2);assertThat(result.warnings()).isEmpty();assertThat(result.diagnostics()).noneMatch(p->p.kind().equals("ERROR"));
             }
-            pool.recycle();pool.documents(Map.of(api,"package api; public class Api { public static String value(){return \"changed\";} }"));
+            pool.documents(Map.of(api,"package api; public class Api { public static String value(){return \"changed\";} }"));pool.sourcesChanged();
             var changed=pool.query(main,text,2,(task,units,tier)->units.size());
             assertThat(changed.warnings()).isEmpty();assertThat(changed.diagnostics()).anyMatch(p->p.kind().equals("ERROR")&&p.code().equals("compiler.err.prob.found.req"));
-            pool.recycle();pool.documents(Map.of());
+            pool.documents(Map.of());pool.sourcesChanged();
             var forbidden=pool.query(main,"package app; class Main { internal.Hidden hidden; }",2,(task,units,tier)->units.size());
             assertThat(forbidden.warnings()).isEmpty();
             var expected=nativeErrors(main,"package app; class Main { internal.Hidden hidden; }",application,library);
             assertThat(expected).isNotEmpty();assertThat(forbidden.diagnostics().stream().filter(p->p.kind().equals("ERROR")).map(CompilerPool.Problem::code).toList()).containsExactlyElementsOf(expected);
-            pool.recycle();pool.documents(Map.of(library.resolve("module-info.java"),"module fixture.library { exports api; exports internal; }"));
+            pool.documents(Map.of(library.resolve("module-info.java"),"module fixture.library { exports api; exports internal; }"));pool.sourcesChanged();
             var exported=pool.query(main,"package app; class Main { internal.Hidden hidden; }",2,(task,units,tier)->units.size());
             assertThat(exported.warnings()).isEmpty();assertThat(exported.diagnostics()).noneMatch(p->p.kind().equals("ERROR"));
+            pool.documents(Map.of());pool.sourcesChanged();
+            var hiddenAgain=pool.query(main,"package app; class Main { internal.Hidden hidden; }",2,(task,units,tier)->units.size());
+            assertThat(hiddenAgain.warnings()).isEmpty();assertThat(hiddenAgain.diagnostics().stream().filter(p->p.kind().equals("ERROR")).map(CompilerPool.Problem::code).toList()).containsExactlyElementsOf(expected);
             assertThat(pool.status().get("faults")).isEqualTo(0L);
         }
         try(var files=Files.walk(root)){assertThat(files.filter(p->p.toString().endsWith(".class")).toList()).isEmpty();}

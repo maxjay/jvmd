@@ -1,6 +1,7 @@
 package dev.jvmd.tests;
 import dev.jvmd.index.*;
 import java.nio.file.*;
+import java.util.Set;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
@@ -14,6 +15,15 @@ class IndexSearchTest {
    assertThat(index.find("ansf",null,true,10,0)).anyMatch(s->s.get("name").equals("transform"));
    assertThat(index.find("Sa",null,true,10,0)).isNotEmpty();assertThat(index.find("%' OR 1=1 --",null,true,10,0)).isEmpty();
    assertThat(index.database().counts().get("simple_names")).isEqualTo(2L);
+  }
+ }
+ @Test void typePrefixLookupIsCaseSensitiveAndDoesNotRequireSubstringSearch()throws Exception{
+  Path jar=IndexFixtures.jar(temp.resolve("prefix"),"sample-prefix",IndexFixtures.generic(),false);
+  try(var index=new IndexService(new SqliteIndexStore(temp.resolve("prefix.db")),temp,ArtifactGenerationSink.none())){
+   index.indexJar(jar,"fixture:sample:1","jar");
+   assertThat(index.findNamePrefix("Sa",null,10,Set.of("class")).stream().map(s->s.get("name"))).contains("Sample");
+   assertThat(index.findNamePrefix("am",null,10,Set.of("class")).stream().map(s->s.get("name"))).doesNotContain("Sample");
+   assertThat(index.findNamePrefix("sa",null,10,Set.of("class")).stream().map(s->s.get("name"))).doesNotContain("Sample");
   }
  }
 }

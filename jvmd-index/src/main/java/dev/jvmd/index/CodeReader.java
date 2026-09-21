@@ -19,7 +19,13 @@ public final class CodeReader {
         for(var type:classes){
             String owner=type.thisClass().asInternalName().replace('/','.');
             for(var method:type.methods()){
-                String source=owner+"#"+method.methodName().stringValue()+method.methodType().stringValue();
+                // Bridge methods are excluded from BinaryReader's symbol table. Their
+                // generated forwarding bodies do not introduce a distinct source symbol.
+                if((method.flags().flagsMask()&ClassFile.ACC_BRIDGE)!=0)continue;
+                // Static initialization belongs to the declaring type, as it does in
+                // source bindings; <clinit> is not a callable Java declaration.
+                String source=method.methodName().equalsString("<clinit>")?owner:
+                        owner+"#"+method.methodName().stringValue()+method.methodType().stringValue();
                 if(method.code().isEmpty())continue;
                 for(var instruction:method.code().get()){
                     if(instruction instanceof InvokeInstruction invoke)add(result,source,owner,invoke.owner().asInternalName().replace('/','.')+"#"+invoke.name().stringValue()+invoke.type().stringValue(),"calls");

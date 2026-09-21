@@ -13,6 +13,22 @@ import static org.assertj.core.api.Assertions.*;
 @Tag("phase-8")
 class LazyCodeReferencesTest {
     @TempDir Path root;
+    @Test void staticInitializersAndBridgesDoNotBreakDependencyReferencePublication()throws Exception{
+        Path classes=compile(),api=jar(classes,"a"),caller=jar(classes,"b");
+        try(var index=new IndexService(root.resolve("index.db"),root.resolve("repository"))){
+            index.indexJar(api,"fixture:api:1","jar");index.indexJar(caller,"fixture:caller:1","jar");
+            var content=new BinaryReader().read(caller,true);
+            var edges=CodeReader.read(content.models().values());
+            assertThat(edges).anyMatch(e->e.src().equals("b.Caller")&&e.target().equals("a.Api#target()I"));
+            assertThat(edges).noneMatch(e->e.src().contains("<clinit>")||e.src().equals("b.Caller#get()Ljava/lang/Object;"));
+            var code=new CodePass(index);
+            var target=index.find("Api/target()",null,false,10,0).getFirst();
+            var incoming=code.expand(List.of(target),false,Set.of("calls"),null);
+            assertThat(incoming.edges()).anyMatch(e->e.src().endsWith("b/Caller#"));
+            assertThat(index.artifact(caller).hasCodeEdges()).isTrue();
+            assertThat(code.expand(List.of(target),false,Set.of("calls"),null).edges()).isEqualTo(incoming.edges());
+        }
+    }
     @Test void callsFieldsAllocationCastsAndDynamicMethodReferencesAreLazyAndScoped()throws Exception{
         Path classes=compile();
         Path api=jar(classes,"a"),caller=jar(classes,"b"),top=jar(classes,"c"),unrelated=jar(classes,"d");
@@ -39,7 +55,7 @@ class LazyCodeReferencesTest {
         Path source=Files.createDirectories(root.resolve("sources")),classes=Files.createDirectories(root.resolve("classes"));var files=new ArrayList<String>();
         Map<String,String> code=Map.of(
             "a/Api.java","package a; public class Api { public int count; public static int target(){return 7;} }",
-            "b/Caller.java","package b; public class Caller { public int call(a.Api api,Object ignored){api.count++;return a.Api.target();} public a.Api create(){return new a.Api();} public a.Api cast(Object input){return (a.Api)input;} public java.util.function.IntSupplier reference(){return a.Api::target;} }",
+            "b/Caller.java","package b; public class Caller implements java.util.function.Supplier<String> { static int initial=a.Api.target(); public String get(){return String.valueOf(a.Api.target());} public int call(a.Api api,Object ignored){api.count++;return a.Api.target();} public a.Api create(){return new a.Api();} public a.Api cast(Object input){return (a.Api)input;} public java.util.function.IntSupplier reference(){return a.Api::target;} }",
             "c/Top.java","package c; public class Top { public int next(b.Caller caller,a.Api api){return caller.call(api,api);} }",
             "d/Other.java","package d; public class Other { public int untouched(){return 1;} }");
         for(var entry:code.entrySet()){Path file=source.resolve(entry.getKey());Files.createDirectories(file.getParent());Files.writeString(file,entry.getValue());files.add(file.toString());}

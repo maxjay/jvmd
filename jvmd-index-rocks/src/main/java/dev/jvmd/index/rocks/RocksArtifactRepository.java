@@ -37,6 +37,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
     private final Object ingestLock=new Object();
     private final AtomicLong published=new AtomicLong(),reused=new AtomicLong();
     private final AtomicLong sortPeakBytes=new AtomicLong(),sortSpillBytes=new AtomicLong();
+    private final AtomicLong queryPostingCandidates=new AtomicLong(),querySymbolReads=new AtomicLong();
     private final AtomicLong prepareNanos=new AtomicLong(),spillNanos=new AtomicLong(),sstNanos=new AtomicLong(),
             syncNanos=new AtomicLong(),ingestNanos=new AtomicLong(),verifyNanos=new AtomicLong(),
             sortInputRecords=new AtomicLong(),sortRunRecords=new AtomicLong(),gramOccurrences=new AtomicLong(),gramBlocks=new AtomicLong();
@@ -256,27 +257,51 @@ public final class RocksArtifactRepository implements AutoCloseable {
     /** Filter before pagination, with bounded top-k memory even for large prefix postings. */
     public List<ArtifactIndexFormat.SymbolRecord> select(String cacheKey,String postingPrefix,int after,int limit,
                                                         Predicate<ArtifactIndexFormat.SymbolRecord> filter)throws Exception{
-        return selectRanked(cacheKey,postingPrefix,after,limit,filter,symbol->symbol.id());
+        return selectLocalIds(cacheKey,postingPrefix,0,after,limit,filter);
     }
     public List<ArtifactIndexFormat.SymbolRecord> selectRanked(String cacheKey,String postingPrefix,long after,int limit,
             Predicate<ArtifactIndexFormat.SymbolRecord> filter,java.util.function.ToLongFunction<ArtifactIndexFormat.SymbolRecord> rank)throws Exception{
+        return selectRanked(cacheKey,postingPrefix,after,limit,filter,rank,0,false);
+    }
+    /** Immutable signature generations rank directly by their local IDs, before decoding facts. */
+    List<ArtifactIndexFormat.SymbolRecord> selectLocalIds(String cacheKey,String postingPrefix,long artifactBase,long after,int limit,
+            Predicate<ArtifactIndexFormat.SymbolRecord> filter)throws Exception{
+        return selectRanked(cacheKey,postingPrefix,after,limit,filter,null,artifactBase,true);
+    }
+    private List<ArtifactIndexFormat.SymbolRecord> selectRanked(String cacheKey,String postingPrefix,long after,int limit,
+            Predicate<ArtifactIndexFormat.SymbolRecord> filter,java.util.function.ToLongFunction<ArtifactIndexFormat.SymbolRecord> rank,
+            long artifactBase,boolean localIds)throws Exception{
         if(limit<=0)return List.of();
         var selected=new TreeMap<Long,ArtifactIndexFormat.SymbolRecord>();
-        byte[] prefix=key(cacheKey,postingPrefix);
+        byte[] prefix=key(cacheKey,postingPrefix);long candidates=0,reads=0;
+        boolean ordered=localIds&&postingPrefix.equals("1|symbol|");
+        byte[] start=prefix;
+        if(ordered&&(after>>>32)==(artifactBase>>>32)){
+            long localAfter=after&0xffffffffL;if(localAfter>=Integer.MAX_VALUE)return List.of();
+            start=key(cacheKey,postingPrefix+hex8((int)(localAfter+1)));
+        }
         try(var iterator=db.newIterator()){
-            for(iterator.seek(prefix);iterator.isValid()&&startsWith(iterator.key(),prefix);iterator.next()){
+            postings:for(iterator.seek(start);iterator.isValid()&&startsWith(iterator.key(),prefix);iterator.next()){
                 for(int id:postingIds(iterator.key(),iterator.value())){
+                candidates++;long order=localIds?artifactBase|Integer.toUnsignedLong(id):0;
+                if(localIds&&!canEnterPage(order,after,limit,selected))continue;
+                reads++;
                 var symbol=symbol(cacheKey,id);
                 if(symbol==null)throw new IOException("Posting references missing symbol: "+id);
-                long order=rank.applyAsLong(symbol);
-                if(order<=after||selected.containsKey(order)||(selected.size()==limit&&order>=selected.lastKey()))continue;
+                if(!localIds){order=rank.applyAsLong(symbol);if(!canEnterPage(order,after,limit,selected))continue;}
                 if(!filter.test(symbol))continue;
                 selected.put(order,symbol);if(selected.size()>limit)selected.pollLastEntry();
+                // Only the symbol namespace is globally ordered by local ID. Gram,
+                // name and type prefixes may span ranges that must still be visited.
+                if(ordered&&selected.size()==limit)break postings;
                 }
             }
             iterator.status();
-        }
+        }finally{queryPostingCandidates.addAndGet(candidates);querySymbolReads.addAndGet(reads);}
         return List.copyOf(selected.values());
+    }
+    private static boolean canEnterPage(long order,long after,int limit,TreeMap<Long,ArtifactIndexFormat.SymbolRecord> selected){
+        return order>after&&(selected.size()<limit||order<selected.lastKey())&&!selected.containsKey(order);
     }
 
     public static String scipSuffix(ArtifactIndexFormat.SymbolRecord symbol){
@@ -344,6 +369,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
         result.put("sst_ingest_ms",ingestNanos.get()/1e6);result.put("publication_verify_ms",verifyNanos.get()/1e6);
         result.put("sort_input_records",sortInputRecords.get());result.put("sort_run_records",sortRunRecords.get());
         result.put("gram_occurrences",gramOccurrences.get());result.put("gram_posting_blocks",gramBlocks.get());
+        result.put("query_posting_candidates",queryPostingCandidates.get());result.put("query_symbol_reads",querySymbolReads.get());
         result.put("verification_passes",verificationPasses.get());result.put("native_publication_verifications",nativePublicationVerifications.get());result.put("activation_verification_reuses",activationVerificationReuses.get());result.put("oracle_materializations",oracleMaterializations.get());
         for(String property:List.of("estimate-pending-compaction-bytes","num-running-compactions","num-running-flushes",
                 "actual-delayed-write-rate","is-write-stopped","estimate-table-readers-mem","cur-size-all-mem-tables"))
@@ -382,7 +408,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
             symbols=new ArrayList<>(symbols);symbols.sort(Comparator.comparingInt(ArtifactIndexFormat.SymbolRecord::id));break;
         }
         int previousId=-1;
-        String lastPrefix="";var prefixGrams=new HashSet<String>();var grams=new HashSet<String>();
+        String lastPrefix="";var prefixGrams=new GramSet();var grams=new GramSet();
 
         for(var symbol:symbols){
             if(symbol.id()!=previousId+1||symbol.ownerId()>=symbols.size()||symbol.ownerId()<-1)throw new IOException("Invalid artifact symbol ID or owner");previousId=symbol.id();
@@ -403,10 +429,10 @@ public final class RocksArtifactRepository implements AutoCloseable {
             int boundary=pathValue.lastIndexOf('/')+1;String prefix=pathValue.substring(0,boundary);
             // Retain only the current owner prefix, not a growing per-artifact cache. Include
             // two preceding characters in the tail so every boundary-crossing trigram survives.
-            if(!prefix.equals(lastPrefix)){prefixGrams.clear();addGrams(prefixGrams,prefix);lastPrefix=prefix;}
-            addGrams(grams,pathValue.substring(Math.max(0,boundary-2)));if(!pathValue.contains(name))addGrams(grams,name);
-            for(String gram:prefixGrams)addGram(entries,gramsIndex,gram,symbol.id());
-            for(String gram:grams)if(!prefixGrams.contains(gram))addGram(entries,gramsIndex,gram,symbol.id());
+            if(!prefix.equals(lastPrefix)){prefixGrams.clear();prefixGrams.add(prefix,0);lastPrefix=prefix;}
+            grams.add(pathValue,Math.max(0,boundary-2));if(!pathValue.contains(name))grams.add(name,0);
+            for(int i=0;i<prefixGrams.size();i++)addGram(entries,gramsIndex,prefixGrams.get(i),symbol.id());
+            for(int i=0;i<grams.size();i++){long gram=grams.get(i);if(!prefixGrams.contains(gram))addGram(entries,gramsIndex,gram,symbol.id());}
         }
         if(gramsIndex!=null)gramsIndex.finish();
 
@@ -453,15 +479,8 @@ public final class RocksArtifactRepository implements AutoCloseable {
         return Map.copyOf(result);
     }
 
-    private static void addGrams(Set<String> output,String value){
-        for(int length=1;length<=3;length++){
-            if(value.length()<length)break;
-            for(int i=0;i<=value.length()-length;i++)output.add(value.substring(i,i+length));
-        }
-    }
-
-    private static void addGram(SstSorter entries,GramPostings index,String gram,int id)throws Exception{
-        if(index!=null)index.add(gram,id);else entries.add(relativeKey("8|gram|"+gram+"|"+hex8(id)),EMPTY);
+    private static void addGram(SstSorter entries,GramPostings index,long gram,int id)throws Exception{
+        if(index!=null)index.add(gram,id);else entries.add(relativeKey("8|gram|"+GramSet.text(gram)+"|"+hex8(id)),EMPTY);
     }
 
     private static byte[] manifest(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences,String checksum){

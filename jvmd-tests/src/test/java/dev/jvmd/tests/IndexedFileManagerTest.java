@@ -37,4 +37,19 @@ class IndexedFileManagerTest {
    }
   }
  }
+
+ @Test void coarseSourceRootsStillOverlayUnsavedAndNewDocuments()throws Exception{
+  Path root=Files.createDirectories(temp.resolve("sources")),a=Files.writeString(root.resolve("A.java"),"class A { static int value(){return 1;} }"),created=root.resolve("Created.java");
+  var compiler=ToolProvider.getSystemJavaCompiler();
+  try(var manager=new IndexedFileManager(compiler.getStandardFileManager(null,null,null),List.of(),List.of(root),null,1024*1024,false)){
+   manager.documents(Map.of(a,"class A { static String value(){return \"new\";} }",created,"class Created { static int answer(){return 42;} }"));
+   var listed=new LinkedHashMap<String,JavaFileObject>();
+   for(var file:manager.list(StandardLocation.SOURCE_PATH,"",Set.of(JavaFileObject.Kind.SOURCE),false))listed.put(manager.inferBinaryName(StandardLocation.SOURCE_PATH,file),file);
+   assertThat(listed).containsKeys("A","Created");
+   assertThat(listed.get("A").getCharContent(true).toString()).contains("String value");
+   assertThat(listed.get("Created").getCharContent(true).toString()).contains("answer");
+   assertThat(Files.exists(created)).isFalse();
+   assertThat(manager.status()).containsEntry("source_watch_reliable",0L);
+  }
+ }
 }

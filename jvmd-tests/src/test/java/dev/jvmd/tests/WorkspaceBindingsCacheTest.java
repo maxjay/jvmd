@@ -57,6 +57,61 @@ class WorkspaceBindingsCacheTest {
             assertThat(request(app,"symbol.references",Map.of("session",session,"ref","Caller/call()","direction","in")).path("edges").toString()).doesNotContain("Additional#");
         }
     }
+    @Test void incrementalFragmentsReanalyseOnlyBodyEditsAndApiDependants()throws Exception{
+        Path api=root.resolve("Api.java"),user=root.resolve("User.java"),other=root.resolve("Other.java");
+        Files.writeString(api,"class Api { static Number value(){return 1;} }");
+        Files.writeString(user,"class User { Object read(){return Api.value();} }");
+        Files.writeString(other,"class Other { int read(){return 1;} }");
+        try(var app=new Application(TestSupport.config(root,Duration.ofHours(4)))){
+            String session=TestSupport.open(app,root);
+            var initial=request(app,"symbol.references",Map.of("session",session,"ref","Api/value()","direction","in"));
+            assertThat(initial.path("edges").toString()).contains("User#read().");
+            Files.writeString(other,"class Other { int read(){int x=1; return x;} }");
+            request(app,"symbol.references",Map.of("session",session,"ref","Api/value()","direction","in"));
+            var body=request(app,"session.status",Map.of("session",session)).path("workspace_bindings");
+            assertThat(body.path("last_reanalysed_files").asLong()).isEqualTo(1L);
+            assertThat(body.path("incremental_builds").asLong()).isGreaterThanOrEqualTo(1L);
+            Files.writeString(api,"class Api { static Integer value(){return 2;} }");
+            request(app,"symbol.references",Map.of("session",session,"ref","Api/value()","direction","in"));
+            var changed=request(app,"session.status",Map.of("session",session)).path("workspace_bindings");
+            assertThat(changed.path("last_reanalysed_files").asLong()).isEqualTo(2L);
+            assertThat(changed.path("api_invalidations").asLong()).isGreaterThanOrEqualTo(1L);
+        }
+    }
+    @Test void apiAdditionsReanalysePriorErrorsWithoutOldDependencyEdges()throws Exception{
+        Path api=root.resolve("Api.java"),broken=root.resolve("Broken.java");
+        Files.writeString(api,"class Api {}");
+        Files.writeString(broken,"class Broken { Api.Missing value; }");
+        try(var app=new Application(TestSupport.config(root,Duration.ofHours(4)))){
+            String session=TestSupport.open(app,root);
+            request(app,"symbol.references",Map.of("session",session,"ref","Api","direction","in"));
+            Files.writeString(api,"class Api { static class Missing {} }");
+            var resolved=request(app,"symbol.references",Map.of("session",session,"ref","Api/Missing","direction","in","kinds",List.of("return_type")));
+            assertThat(resolved.path("edges").toString()).contains("Broken#value.").contains("Api#Missing");
+            var status=request(app,"session.status",Map.of("session",session)).path("workspace_bindings");
+            assertThat(status.path("last_reanalysed_files").asLong()).isEqualTo(2L);
+        }
+    }
+    @Test void resolvedWorkspaceAdoptsMerkleStateWithoutWarmSourceRescan()throws Exception{
+        Path project=MavenFixtures.project(root.resolve("merkle-project"),
+                "<properties><maven.compiler.release>25</maven.compiler.release></properties>");
+        Path src=Files.createDirectories(project.resolve("src/main/java"));
+        Files.writeString(src.resolve("Api.java"),"class Api { static int value(){return 1;} }");
+        Files.writeString(src.resolve("User.java"),"class User { int read(){return Api.value();} }");
+        try(var app=new Application(TestSupport.config(root,Duration.ofHours(4)))){
+            String session=TestSupport.open(app,project);
+            var cold=request(app,"symbol.references",Map.of("session",session,"ref","Api/value()","direction","in"));
+            assertThat(cold.path("edges").toString()).contains("User#read().");
+            var before=request(app,"session.status",Map.of("session",session)).path("workspace_bindings");
+            long full=before.path("full_validations").asLong(),fast=before.path("fast_validation_hits").asLong();
+            var warm=request(app,"symbol.references",Map.of("session",session,"ref","Api/value()","direction","in"));
+            assertThat(warm.path("edges").toString()).contains("User#read().");
+            var after=request(app,"session.status",Map.of("session",session)).path("workspace_bindings");
+            assertThat(after.path("full_validations").asLong()).isEqualTo(full);
+            assertThat(after.path("fast_validation_hits").asLong()).isEqualTo(fast+1);
+            assertThat(after.path("last_reanalysed_files").asLong()).isZero();
+        }
+    }
     @Test void replacedBinaryAndFailedLookupRecoveryAreObserved()throws Exception{
         Path source=Files.createDirectories(root.resolve("source")),binary=Files.createDirectories(root.resolve("binary"));
         Path api=root.resolve("Api.java"),caller=source.resolve("Caller.java");

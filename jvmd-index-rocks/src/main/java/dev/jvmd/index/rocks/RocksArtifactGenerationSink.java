@@ -159,6 +159,7 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
 
 
     @Override public long semanticRevision(Path file)throws Exception{return semanticInvalidation.revision(file);}
+    @Override public String moduleStateFingerprint(String moduleId)throws Exception{return workspaceState.fingerprint(moduleId);}
 
     @Override public void publishSourceState(SourceIndexPublisher.Delta delta)throws Exception{
         if(!delta.hasSemanticState())return;

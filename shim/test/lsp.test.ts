@@ -59,6 +59,53 @@ test("LSP suppresses diagnostics superseded while javac is running",async()=>{
   const change=bridge.handle({jsonrpc:"2.0",method:"textDocument/didChange",params:{textDocument:{uri:"file:///repo/A.java",version:2},contentChanges:[{text:"class A {int n;}"}]}});
   finish(envelope({uri:"file:///repo/A.java",version:1,diagnostics:[{message:"old"}]}));await change;assert.equal(sent.filter(x=>x.method==="textDocument/publishDiagnostics").length,0);await bridge.close();
 });
+test("LSP coalesces stale completion requests before they reach the daemon",async()=>{
+  const sent:any[]=[];let release:(value:any)=>void=()=>{},started:(value?:unknown)=>void=()=>{},completionCalls=0;
+  const firstStarted=new Promise(resolve=>started=resolve);
+  const client:any={call:async(method:string,params:any)=>{
+    if(method==="session.open")return {result:{session:"s1"}};
+    if(method==="lsp.request"&&params.method==="initialize")return envelope({capabilities:{}});
+    if(method==="lsp.request"&&params.method==="textDocument/completion"){
+      completionCalls++;
+      if(completionCalls===1){started();return new Promise(resolve=>release=resolve);}
+      return envelope({isIncomplete:false,items:[{label:"latest"}]});
+    }
+    return envelope({});
+  }};
+  const bridge=new LspBridge(async()=>client,"/repo",message=>sent.push(message));
+  await bridge.handle({jsonrpc:"2.0",id:1,method:"initialize",params:{}});
+  const params=(character:number)=>({textDocument:{uri:"file:///repo/A.java"},position:{line:0,character}});
+  const first=bridge.handle({jsonrpc:"2.0",id:2,method:"textDocument/completion",params:params(1)});
+  await firstStarted;
+  const second=bridge.handle({jsonrpc:"2.0",id:3,method:"textDocument/completion",params:params(2)});
+  const third=bridge.handle({jsonrpc:"2.0",id:4,method:"textDocument/completion",params:params(3)});
+  release(envelope({isIncomplete:false,items:[{label:"stale"}]}));
+  await Promise.all([first,second,third]);
+  assert.equal(completionCalls,2);
+  assert.equal(sent.find(x=>x.id===2).error.code,-32800);
+  assert.equal(sent.find(x=>x.id===3).error.code,-32800);
+  assert.equal(sent.find(x=>x.id===4).result.items[0].label,"latest");
+  await bridge.close();
+});
+test("LSP cancelRequest cancels an in-flight completion response",async()=>{
+  const sent:any[]=[];let release:(value:any)=>void=()=>{},started:(value?:unknown)=>void=()=>{};
+  const firstStarted=new Promise(resolve=>started=resolve);
+  const client:any={call:async(method:string,params:any)=>{
+    if(method==="session.open")return {result:{session:"s1"}};
+    if(method==="lsp.request"&&params.method==="initialize")return envelope({capabilities:{}});
+    if(method==="lsp.request"&&params.method==="textDocument/completion"){started();return new Promise(resolve=>release=resolve);}
+    return envelope({});
+  }};
+  const bridge=new LspBridge(async()=>client,"/repo",message=>sent.push(message));
+  await bridge.handle({jsonrpc:"2.0",id:1,method:"initialize",params:{}});
+  const pending=bridge.handle({jsonrpc:"2.0",id:2,method:"textDocument/completion",params:{textDocument:{uri:"file:///repo/A.java"},position:{line:0,character:1}}});
+  await firstStarted;
+  await bridge.handle({jsonrpc:"2.0",method:"$/cancelRequest",params:{id:2}});
+  release(envelope({isIncomplete:false,items:[{label:"stale"}]}));await pending;
+  assert.equal(sent.find(x=>x.id===2).error.code,-32800);
+  assert.equal(sent.some(x=>x.id===2&&x.result),false);
+  await bridge.close();
+});
 test("LSP reassembles UTF-16 and nested array fragments without duplicating values",async()=>{
   const values=[
     {...envelope({items:[{text:"A😀"}]}),truncated:true,cursor:"budget:x:1"},

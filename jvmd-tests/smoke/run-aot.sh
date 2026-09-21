@@ -9,7 +9,9 @@ mkdir -p "$output_dir/classes"
 vm_options=(
   --add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED
   --add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED
-  --add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED
+  --add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED \
+  --add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED \
+  --add-exports=jdk.compiler/com.sun.tools.javac.platform=ALL-UNNAMED
 )
 "$JVMD_JDK_HOME/bin/java" "${vm_options[@]}" -XX:AOTCacheOutput="$output_dir/fixture.aot" \
     -cp "$output_dir/fixture.jar" dev.jvmd.smoke.AotFixture

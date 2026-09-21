@@ -43,6 +43,15 @@ class RocksStoreIntegrationTest {
             assertThat(index.byId(before).get("scip")).isEqualTo(value.get("scip"));
             var hidden=index.find("hidden",null,false,10,0).getFirst();assertThat(index.byId(((Number)hidden.get("id")).longValue()).get("scip")).isEqualTo(hidden.get("scip"));
             assertThat(new CodePass(index).expand(List.of(hidden),true,Set.of("calls"),null).symbols()).extracting(s->s.get("name")).contains("answer");
+            for(String query:List.of("","Sample")){
+                var all=index.find(query,null,true,100,0);var pages=new ArrayList<Map<String,Object>>();long after=0;
+                for(int page=0;page<all.size()+1;page++){
+                    var values=index.find(query,null,true,1,after);if(values.isEmpty())break;
+                    pages.addAll(values);after=((Number)values.getLast().get("id")).longValue();
+                }
+                assertThat(pages).as("Enriched IDs must retain original signature order: %s",query).isEqualTo(all);
+                assertThat(pages).extracting(s->s.get("name")).contains("hidden","value");
+            }
         }
     }
     @Test void canonicalSearchPagesAgreeWithSqliteAndReopenWithoutRebuilding()throws Exception{

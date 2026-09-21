@@ -7,22 +7,31 @@ import java.util.*;
 import javax.tools.*;
 
 /** Implements 4.2: focused source preserving every UTF-16 offset, line and constructor invocation. */
-public final class Focusing {
+public final class Focusing implements AutoCloseable {
     /** Implements 4.2: detached focus output, suitable for content/member-keyed caching. */
     public record Result(String source,String member,int start,int end,List<Span> replaced) { }
     /** Implements 4.2: original body intervals, with identical offsets in focused source. */
     public record Span(int start,int end) { }
     private record Body(int start,int end,int preserve,String name,int declarationStart,int declarationEnd) { }
     private final LinkedHashMap<String,List<Body>> layouts=new LinkedHashMap<>(16,.75f,true);
+    private com.sun.tools.javac.api.JavacTaskPool parserPool=new com.sun.tools.javac.api.JavacTaskPool(1);
+    private StandardJavaFileManager parserFiles;
     private long parses;
     public Map<String,Object> status(){return Map.of("focus_layout_parses",parses,"focus_layout_cache_entries",layouts.size());}
     public void clear(){layouts.clear();}
+    @Override public void close()throws java.io.IOException{
+        clear();parserPool=new com.sun.tools.javac.api.JavacTaskPool(1);
+        if(parserFiles!=null){parserFiles.close();parserFiles=null;}
+    }
     private List<Body> layout(Path path,String source)throws Exception{
         String key=path+":"+dev.jvmd.core.Hashing.sha256(source.getBytes(java.nio.charset.StandardCharsets.UTF_8));var cached=layouts.get(key);if(cached!=null)return cached;parses++;
-        var compiler=ToolProvider.getSystemJavaCompiler();var bodies=new ArrayList<Body>();
-        try(var manager=compiler.getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8)){
-            var task=(JavacTask)compiler.getTask(null,manager,d->{},List.of("-proc:none","--should-stop=ifError=FLOW"),null,List.of(Parser.source(path.toUri(),source)));
-            for(var unit:task.parse()){
+        var bodies=new ArrayList<Body>();
+        if(parserFiles==null)parserFiles=ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8);
+        // Keep one parse-only context. Only detached body spans escape the callback;
+        // JavacTaskPool clears each task's source trees and diagnostics before reuse.
+        try{
+            parserPool.getTask(null,parserFiles,d->{},List.of("-proc:none","--should-stop=ifError=FLOW"),null,List.of(Parser.source(path.toUri(),source)),task->{
+            try{for(var unit:task.parse()){
                 var positions=Trees.instance(task).getSourcePositions();
                 new TreePathScanner<Void,Void>(){
                     @Override public Void visitMethod(MethodTree method,Void unused){
@@ -39,8 +48,10 @@ public final class Focusing {
                         return super.visitMethod(method,unused);
                     }
                 }.scan(unit,null);
-            }
-        }
+            }}catch(java.io.IOException error){throw new java.io.UncheckedIOException(error);}
+            return null;
+            });
+        }catch(RuntimeException|Error error){close();throw error;}
         var result=List.copyOf(bodies);layouts.put(key,result);while(layouts.size()>16)layouts.remove(layouts.keySet().iterator().next());return result;
     }
     public Result focus(Path path,String source,int cursor)throws Exception{

@@ -46,10 +46,16 @@ final class SstSorter implements AutoCloseable {
     String writeTo(SstFileWriter writer)throws Exception{
         var digest=MessageDigest.getInstance("SHA-256");
         byte[] lengths=new byte[8];
-        var postings=new PostingWriter(entry->{
-            byte[] full=Arrays.copyOf(namespace,namespace.length+entry.key().length);
-            System.arraycopy(entry.key(),0,full,namespace.length,entry.key().length);
-            hash(digest,full,entry.value(),lengths);writer.put(full,entry.value());writtenRecords++;
+        var postings=new PostingWriter(new Consumer(){
+            private byte[] full=new byte[0];
+            @Override public void accept(Entry entry)throws Exception{
+                // Adjacent sorted keys often have the same length. RocksDB consumes
+                // put's byte arrays synchronously, so only a length change needs storage.
+                int length=namespace.length+entry.key().length;
+                if(full.length!=length)full=Arrays.copyOf(namespace,length);
+                System.arraycopy(entry.key(),0,full,namespace.length,entry.key().length);
+                hash(digest,full,entry.value(),lengths);writer.put(full,entry.value());writtenRecords++;
+            }
         });
         Consumer write=postings::accept;
         if(runs.isEmpty()){
@@ -98,9 +104,9 @@ final class SstSorter implements AutoCloseable {
     /** Bound each posting block to 256 sorted IDs. The key carries the block's maximum ID. */
     private static final class PostingWriter {
         private final Consumer consumer;
-        private final ByteArrayOutputStream ids=new ByteArrayOutputStream(1024);
-        private byte[] last;private int count,previous;
-        PostingWriter(Consumer consumer){this.consumer=consumer;}
+        private final byte[] ids=new byte[1+256*5]; // Marker plus at most five bytes per ID.
+        private byte[] last;private int count,previous,position=1;
+        PostingWriter(Consumer consumer){this.consumer=consumer;ids[0]=0x7f;}
         void accept(Entry entry)throws Exception{
             byte[] key=entry.key();
             boolean posting=entry.value().length==0&&isPosting(key);
@@ -108,13 +114,12 @@ final class SstSorter implements AutoCloseable {
             int prefixLength=key.length-8;
             if(last!=null&&(count==256||last.length!=key.length||Arrays.mismatch(last,0,prefixLength,key,0,prefixLength)>=0))flush();
             int id=0;for(int i=prefixLength;i<key.length;i++)id=(id<<4)|Character.digit(key[i],16);
-            if(count==0)ids.write(0x7f);
             int delta=id-previous;
-            do{int part=delta&0x7f;delta>>>=7;ids.write(part|(delta==0?0:0x80));}while(delta!=0);
+            do{int part=delta&0x7f;delta>>>=7;ids[position++]=(byte)(part|(delta==0?0:0x80));}while(delta!=0);
             count++;previous=id;last=key;
         }
         void flush()throws Exception{
-            if(last==null)return;put(last,ids.toByteArray());last=null;count=0;previous=0;ids.reset();
+            if(last==null)return;put(last,Arrays.copyOf(ids,position));last=null;count=0;previous=0;position=1;
         }
         private void put(byte[] key,byte[] value)throws Exception{consumer.accept(new Entry(key,value));}
     }
@@ -133,9 +138,9 @@ final class SstSorter implements AutoCloseable {
                     var entry=run.current;check(previous,entry.key());
                     // A packed range can pass through intact when no other run interleaves it.
                     // Overlapping ranges still expand one ID at a time, retaining duplicate checks.
-                    if(run.postingIds!=null&&run.postingOffset==1&&
+                    if(run.packedPosting&&run.postingOffset==1&&
                             (queue.isEmpty()||Arrays.compareUnsigned(run.postingKey,queue.peek().current.key())<0)){
-                        entry=new Entry(run.postingKey,run.postingValue);run.postingOffset=run.postingIds.length;
+                        entry=new Entry(run.postingKey,run.postingValue);run.postingOffset=run.posting.count();
                     }
                     consumer.accept(entry);previous=entry.key();run.advance();
                     // A run often owns the next range outright; do not requeue each row in it.
@@ -171,7 +176,8 @@ final class SstSorter implements AutoCloseable {
     }
     private static final class Run implements AutoCloseable {
         private final InputStream input;private final byte[] buffer=new byte[65536];private int position,available;private Entry current;
-        private byte[] postingKey,postingValue;private int[] postingIds;private int postingOffset;
+        private byte[] postingKey,postingValue;private boolean packedPosting;private int postingOffset;
+        private final PostingCodec.Cursor posting=new PostingCodec.Cursor();
         private static final byte[] EMPTY=new byte[0];
         private static final byte[] HEX="0123456789abcdef".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
         Run(Path path)throws IOException{
@@ -179,22 +185,23 @@ final class SstSorter implements AutoCloseable {
             try{advance();}catch(IOException e){input.close();throw e;}
         }
         void advance()throws IOException{
-            if(postingIds!=null&&postingOffset<postingIds.length){nextPosting();return;}
-            postingIds=null;postingKey=null;postingValue=null;
+            if(packedPosting&&postingOffset<posting.count()){nextPosting();return;}
+            packedPosting=false;postingKey=null;postingValue=null;
             if(!available()){current=null;return;}
             int keyLength=readInt(),valueLength=readInt();
             if(keyLength<1||valueLength<0)throw new IOException("Corrupt sort run");
             byte[] key=readBytes(keyLength),value=readBytes(valueLength);
             if(isPosting(key)&&value.length>0){
-                try{postingIds=PostingCodec.decode(key,value);}catch(IllegalStateException invalid){throw new IOException("Corrupt sort posting",invalid);}
+                try{posting.reset(key,value);}catch(IllegalStateException invalid){throw new IOException("Corrupt sort posting",invalid);}
+                packedPosting=true;
                 postingKey=key;postingValue=value;postingOffset=0;nextPosting();
             }else current=new Entry(key,value);
         }
         private void nextPosting(){
-            int id=postingIds[postingOffset++];
+            int id=posting.next();postingOffset++;
             // The final ID already has the original key. In particular singleton blocks
             // need no expanded-key allocation, even when they interleave another run.
-            byte[] key=postingOffset==postingIds.length?postingKey:postingKey.clone();
+            byte[] key=postingOffset==posting.count()?postingKey:postingKey.clone();
             if(key!=postingKey)for(int i=key.length-1;i>=key.length-8;i--){key[i]=HEX[id&15];id>>>=4;}
             current=new Entry(key,EMPTY);
         }

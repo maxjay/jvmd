@@ -44,6 +44,8 @@ public interface IndexStore extends AutoCloseable {
     Map<String,Object> status();
     List<String> loadWorkspace(String workspace,List<WorkspaceEntry> paths,List<Map.Entry<String,String>> dependencies)throws Exception;
     List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds)throws Exception;
+    /** Prefix-only simple-name lookup used by editor completion; implementations should avoid substring scans. */
+    List<Map<String,Object>> findNamePrefix(String prefix,String workspace,int limit,Set<String> kinds)throws Exception;
     List<Map<String,Object>> descendants(String path,String workspace,int depth,int limit,long after,Set<String> kinds)throws Exception;
     Map<String,Object> byId(long id,String workspace)throws Exception;
     Map<String,Object> byScip(String scip,String workspace)throws Exception;

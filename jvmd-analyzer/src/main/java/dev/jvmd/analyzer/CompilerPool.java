@@ -23,27 +23,35 @@ public final class CompilerPool implements AutoCloseable {
     public CompilerPool(){this(()->java.lang.management.ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed());}
     public CompilerPool(java.util.function.LongSupplier heapUsage){this.heapUsage=heapUsage;}
     private JavacTaskPool pool=new JavacTaskPool(1);
+    private final ReleasePlatformCache releasePlatform=new ReleasePlatformCache();
     private IndexedFileManager manager;
     private String generation,release;
     private List<String> compilerOptions=List.of();
+    private boolean preciseSourceRoots=true;
     private long batchQueries,batchFiles;
     private long budget,baseline,recycles,faults,queries,queryNanos,configureCalls,configureNanos,classpathValidations,classpathValidationNanos;
     private long validatedRequestId=-1;
+    private long sourceModuleGeneration;
     private boolean validatedRequestResult;
     public void configure(String generation,String release,List<Path> classpath,List<Path> sources,IndexService index,long budget)throws Exception {
-        configure(generation,release,classpath,sources,index,budget,List.of("--release",release));
+        configure(generation,release,classpath,sources,index,budget,List.of("--release",release),true);
     }
     public void configure(String generation,String release,List<Path> classpath,List<Path> sources,IndexService index,long budget,List<String> options)throws Exception{
+        configure(generation,release,classpath,sources,index,budget,options,true);
+    }
+    public void configure(String generation,String release,List<Path> classpath,List<Path> sources,IndexService index,long budget,List<String> options,boolean preciseSourceRoots)throws Exception{
         checkThread();long started=System.nanoTime();configureCalls++;
         try{
             this.budget=Math.max(1,budget);
-            if(Objects.equals(this.generation,generation)&&Objects.equals(this.release,release)&&this.compilerOptions.equals(options)&&manager!=null)return;
+            if(Objects.equals(this.generation,generation)&&Objects.equals(this.release,release)&&this.compilerOptions.equals(options)&&this.preciseSourceRoots==preciseSourceRoots&&manager!=null)return;
+            releasePlatform.close();
             if(manager!=null){manager.close();recycles++;}
-            this.generation=generation;this.release=release;this.compilerOptions=List.copyOf(options);pool=new JavacTaskPool(1);baseline=heap();validatedRequestId=-1;
-            manager=new IndexedFileManager(ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8),classpath,sources,index,Math.min(32L*1024*1024,Math.max(1024*1024,budget/8)));
+            this.generation=generation;this.release=release;this.compilerOptions=List.copyOf(options);this.preciseSourceRoots=preciseSourceRoots;pool=new JavacTaskPool(1);baseline=heap();validatedRequestId=-1;
+            manager=new IndexedFileManager(ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8),classpath,sources,index,Math.min(32L*1024*1024,Math.max(1024*1024,budget/8)),preciseSourceRoots);
+            sourceModuleGeneration=manager.sourceModuleGeneration();
         }finally{configureNanos+=System.nanoTime()-started;}
     }
-    public void documents(Map<Path,String> documents){checkThread();manager.documents(documents);}
+    public void documents(Map<Path,String> documents){checkThread();manager.documents(documents);refreshSourceModules();}
     public void binarySources(Set<Path> sources){checkThread();manager.binarySources(sources);}
     public boolean cacheValid(){
         checkThread();long request=RequestScope.id();if(request!=0&&request==validatedRequestId)return validatedRequestResult;
@@ -83,7 +91,9 @@ public final class CompilerPool implements AutoCloseable {
                     recycle();classpathValidations++;manager.validateClasspath();
                 }
             }finally{classpathValidationNanos+=System.nanoTime()-validationStarted;}
+            releasePlatform.prepare(options);
             T value=pool.getTask(new java.io.StringWriter(),manager,diagnostics,options,null,sources.stream().map(input->manager.source(input.file(),input.text())).toList(),task->{
+                releasePlatform.capture(((JavacTaskImpl)task).getContext(),options);
                 var units=new ArrayList<CompilationUnitTree>();var parsed=new ArrayList<CompilationUnitTree>();
                 task.addTaskListener(new com.sun.source.util.TaskListener(){
                     @Override public void finished(com.sun.source.util.TaskEvent event){
@@ -101,10 +111,11 @@ public final class CompilerPool implements AutoCloseable {
             });
             int level=actual[0];var problems=diagnostics.getDiagnostics().stream().map(d->new Problem("live",level,d.getCode(),d.getKind().name(),d.getSource()==null?path.toString():d.getSource().toUri().toString(),d.getLineNumber(),Math.max(0,d.getColumnNumber()-1),d.getStartPosition(),d.getEndPosition(),d.getMessage(Locale.ROOT))).toList();
             return new Outcome<>(level,value,problems,List.copyOf(warnings));
-        }catch(QueryFailure e){throw (Exception)e.getCause();}
+        }catch(QueryFailure e){releasePlatform.close();throw (Exception)e.getCause();}
         catch(AssertionError|RuntimeException e){System.getLogger("jvmd.analyzer").log(System.Logger.Level.ERROR,"Compiler query fault in "+path,e);fault[0]=true;faults++;return new Outcome<>(Math.min(1,tier),null,List.of(),List.of("analyzer_fault: "+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage())));}
         finally{queryNanos+=System.nanoTime()-queryStarted;if(fault[0])recycle();}
     }
+
     private static void resetSourcePackages(JavacTask task,List<CompilationUnitTree> units){
         // JavacTaskPool removes source classes from Symtab, but retains their package scope.
         // Re-complete only packages touched by this task so subsequent files can load those classes.
@@ -125,14 +136,25 @@ public final class CompilerPool implements AutoCloseable {
     }
     private static final class QueryFailure extends RuntimeException {QueryFailure(Exception cause){super(cause);}}
     private long heap(){return heapUsage.getAsLong();}
-    public void recycle(){checkThread();pool=new JavacTaskPool(1);if(manager!=null)manager.invalidate();baseline=heap();recycles++;validatedRequestId=-1;}
+    public void recycle(){checkThread();releasePlatform.close();pool=new JavacTaskPool(1);if(manager!=null)manager.invalidate();baseline=heap();recycles++;validatedRequestId=-1;}
+    /** JavacTaskPool clears source symbols after each task; refresh source discovery without dropping binary state. */
+    public void sourcesChanged(){checkThread();if(manager!=null){manager.sourcesChanged();refreshSourceModules();}validatedRequestId=-1;}
+    /** Cheap source namespace/content epoch when the platform watcher is reliable; -1 requests conservative validation. */
+    public long sourceStateGeneration(){checkThread();return manager==null?-1L:manager.sourceStateGeneration();}
+    private void refreshSourceModules(){
+        if(sourceModuleGeneration!=manager.sourceModuleGeneration()){
+            // Module symbols retain readability/export state beyond JavacTaskPool's source cleanup.
+            recycle();sourceModuleGeneration=manager.sourceModuleGeneration();
+        }
+    }
     public Map<String,Object> status(){
         checkThread();var status=new LinkedHashMap<String,Object>();
         status.put("queries",queries);status.put("batch_queries",batchQueries);status.put("batch_files",batchFiles);status.put("query_ms",nanosToMillis(queryNanos));
         status.put("configure_calls",configureCalls);status.put("configure_ms",nanosToMillis(configureNanos));
         status.put("classpath_validations",classpathValidations);status.put("classpath_validation_ms",nanosToMillis(classpathValidationNanos));
+        status.put("release_platform_initializations",releasePlatform.initializations());status.put("release_platform_reuses",releasePlatform.reuses());
         status.put("recycles",recycles);status.put("faults",faults);status.put("heap_growth_bytes",Math.max(0,heap()-baseline));status.put("heap_budget_bytes",budget);if(manager!=null)status.putAll(manager.status());var output=new java.io.ByteArrayOutputStream();pool.printStatistics(new java.io.PrintStream(output));status.put("pool_statistics",output.toString(java.nio.charset.StandardCharsets.UTF_8));return status;
     }
     private static double nanosToMillis(long nanos){return Math.round(nanos/1000.0)/1000.0;}
-    @Override public void close()throws Exception{checkThread();if(manager!=null)manager.close();pool=new JavacTaskPool(1);validatedRequestId=-1;}
+    @Override public void close()throws Exception{checkThread();releasePlatform.close();if(manager!=null)manager.close();pool=new JavacTaskPool(1);validatedRequestId=-1;}
 }

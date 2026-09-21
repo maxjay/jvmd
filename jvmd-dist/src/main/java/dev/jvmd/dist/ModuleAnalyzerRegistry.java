@@ -20,10 +20,13 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
     private final Map<Path,String> fingerprints=new HashMap<>();
     private final Set<Path> pendingFingerprintChanges=new HashSet<>();
     private final int parallelism;
+    private final FileStateRegistry classpathFiles;
     private boolean closed;
 
-    public ModuleAnalyzerRegistry(){this(configuredParallelism());}
-    public ModuleAnalyzerRegistry(int parallelism){this.parallelism=Math.max(1,Math.min(4,parallelism));}
+    public ModuleAnalyzerRegistry(){this(configuredParallelism(),new FileStateRegistry());}
+    public ModuleAnalyzerRegistry(int parallelism){this(parallelism,new FileStateRegistry());}
+    public ModuleAnalyzerRegistry(FileStateRegistry classpathFiles){this(configuredParallelism(),classpathFiles);}
+    public ModuleAnalyzerRegistry(int parallelism,FileStateRegistry classpathFiles){this.parallelism=Math.max(1,Math.min(4,parallelism));this.classpathFiles=Objects.requireNonNull(classpathFiles);}
     private static int configuredParallelism(){
         String configured=System.getProperty("jvmd.diagnostics.moduleActors",System.getenv("JVMD_DIAGNOSTIC_MODULE_ACTORS"));
         if(configured!=null&&!configured.isBlank())try{return Math.max(1,Math.min(4,Integer.parseInt(configured)));}catch(NumberFormatException ignored){}
@@ -193,7 +196,7 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
                 owner=Thread.currentThread();work.run();
             });
             executor=Executors.newSingleThreadExecutor(factory);
-            analyzer=call(Analyzer::new);handle=new Handle(this);
+            analyzer=call(()->new Analyzer(classpathFiles));handle=new Handle(this);
         }
         private String contextKey(){return generation==null?key:generation;}
         private void ensureConfigured(Analyzer.Context context,IndexService index,long budget,Documents documents,Path persistence)throws Exception{

@@ -50,18 +50,37 @@ export class LspBridge {
   private timers=new Map<string,ReturnType<typeof setTimeout>>();
   private versions=new Map<string,number>();
   private generations=new Map<string,number>();
+  private completionGenerations=new Map<string,number>();
+  private cancelledRequests=new Set<string|number|null>();
   private rootAliases:{canonical:string;client:string}[]=[];
   private documentUris=new Map<string,string>();
   constructor(getClient:()=>Promise<RpcClient>,root:string,send:(message:Message)=>void,exit:(code:number)=>void=code=>{process.exitCode=code;}){this.getClient=getClient;this.root=root;this.send=send;this.exit=exit;}
   getClient:()=>Promise<RpcClient>;root:string;send:(message:Message)=>void;exit:(code:number)=>void;
   handle(message:Message):Promise<void>{
-    const uri=message.params?.textDocument?.uri;
-    if(uri&&["textDocument/didOpen","textDocument/didChange","textDocument/didClose","textDocument/didSave"].includes(message.method||""))this.generations.set(uri,(this.generations.get(uri)||0)+1);
-    if(message.method==="$/cancelRequest")return Promise.resolve();
-    const work=this.queue.then(()=>this.process(message));this.queue=work.catch(()=>{});return work;
+    const uri=message.params?.textDocument?.uri,method=message.method||"";
+    if(uri&&["textDocument/didOpen","textDocument/didChange","textDocument/didClose","textDocument/didSave"].includes(method)){
+      this.generations.set(uri,(this.generations.get(uri)||0)+1);
+      this.completionGenerations.set(uri,(this.completionGenerations.get(uri)||0)+1);
+    }
+    if(method==="$/cancelRequest"){
+      const id=message.params?.id;if(id!==undefined)this.cancelledRequests.add(id);return Promise.resolve();
+    }
+    let completionGeneration:number|undefined;
+    if(method==="textDocument/completion"&&typeof uri==="string"){
+      completionGeneration=(this.completionGenerations.get(uri)||0)+1;this.completionGenerations.set(uri,completionGeneration);
+    }
+    const work=this.queue.then(()=>this.process(message,uri,completionGeneration));this.queue=work.catch(()=>{});return work;
   }
-  private async process(message:Message) {
+  private stale(id:Message["id"],uri?:string,completionGeneration?:number){
+    return id!==undefined&&this.cancelledRequests.has(id)
+      || uri!==undefined&&completionGeneration!==undefined&&this.completionGenerations.get(uri)!==completionGeneration;
+  }
+  private cancel(id:Message["id"]){
+    if(id!==undefined)this.send({jsonrpc:"2.0",id,error:{code:-32800,message:"Request cancelled"}});
+  }
+  private async process(message:Message,uri?:string,completionGeneration?:number) {
     const id=message.id,method=message.method||"",params=message.params||{};const request=id!==undefined;
+    if(this.stale(id,uri,completionGeneration)){this.cancel(id);if(id!==undefined)this.cancelledRequests.delete(id);return;}
     try{
       if(method==="exit"){await this.close();this.exit(this.stopping?0:1);return;}
       if(method==="initialize"){
@@ -96,11 +115,15 @@ export class LspBridge {
         else throw rpcError(-32601,"Method not found: "+method);return;
       }
       if(!request)return;
-      const response=await collect(client,"lsp.request",{session:this.session,method,params,client:this.capabilities});this.reply(id,method,params,response.result.value,response.firstCursor);
+      const response=await collect(client,"lsp.request",{session:this.session,method,params,client:this.capabilities});
+      if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
+      this.reply(id,method,params,response.result.value,response.firstCursor);
     }catch(error){
       const problem=(error as any).rpc||{code:-32603,message:(error as Error).message};
       if(request)this.send({jsonrpc:"2.0",id,error:problem});
       else this.send({jsonrpc:"2.0",method:"window/logMessage",params:{type:1,message:problem.message}});
+    }finally{
+      if(id!==undefined)this.cancelledRequests.delete(id);
     }
   }
   private reply(id:Message["id"],method:string,params:any,value:any,cursor?:string){

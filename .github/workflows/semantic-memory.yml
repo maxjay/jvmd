@@ -13,8 +13,105 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  focused-state-probe:
+    name: Focused state probe / ${{ matrix.label }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        label: [baseline, candidate]
+
+    steps:
+      - name: Checkout production comparison revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ matrix.label == 'baseline' && 'ae23fd1f44573bd3427c0e77f967150173669a2f' || github.event.pull_request.head.sha || github.sha }}
+
+      - name: Copy identical diagnostic probe from PR head
+        shell: bash
+        run: |
+          probe_sha="${{ github.event.pull_request.head.sha || github.sha }}"
+          git fetch origin "$probe_sha" --depth=1
+          git show "$probe_sha:jvmd-tests/src/test/java/dev/jvmd/tests/SemanticMemoryProbeTest.java" \
+            > jvmd-tests/src/test/java/dev/jvmd/tests/SemanticMemoryProbeTest.java
+          echo "production_sha=$(git rev-parse HEAD)"
+          echo "probe_sha=$probe_sha"
+
+      - name: Install checksum-pinned Temurin 25.0.4.1+1
+        shell: bash
+        run: |
+          curl -fsSL --retry 3 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz' -o "$RUNNER_TEMP/temurin25.tar.gz"
+          printf '%s  %s\n' dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e "$RUNNER_TEMP/temurin25.tar.gz" | sha256sum --check -
+          mkdir -p "$RUNNER_TEMP/jvmd-toolchain"
+          tar -xzf "$RUNNER_TEMP/temurin25.tar.gz" -C "$RUNNER_TEMP/jvmd-toolchain"
+          echo "JAVA_HOME=$RUNNER_TEMP/jvmd-toolchain/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/jvmd-toolchain/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
+
+      - name: Build production dependencies
+        run: mvn -B -DskipTests install
+
+      - name: Run ten-query state probe
+        id: probe
+        shell: bash
+        run: |
+          EVIDENCE="$GITHUB_WORKSPACE/semantic-memory-probe"
+          mkdir -p "$EVIDENCE"
+          {
+            echo "label=${{ matrix.label }}"
+            echo "production_sha=$(git rev-parse HEAD)"
+            echo "probe_sha=${{ github.event.pull_request.head.sha || github.sha }}"
+            echo "java=$(java -version 2>&1 | head -1)"
+          } > "$EVIDENCE/identity.txt"
+          set +e
+          /usr/bin/time -v -o "$EVIDENCE/time.txt" \
+            mvn -B -pl jvmd-tests test \
+              -Dgroups=perf \
+              -Dtest=SemanticMemoryProbeTest \
+              -Djvmd.semantic.memory.probe=true \
+              -Djvmd.semantic.memory.probe.count=10 \
+              "-DargLine=-Xmx1024m -Xlog:gc*:file=$EVIDENCE/gc.log:time,uptime,level,tags" \
+              2>&1 | tee "$EVIDENCE/maven.log"
+          status=${PIPESTATUS[0]}
+          echo "$status" > "$EVIDENCE/exit-code.txt"
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          grep '^semantic-memory-probe ' "$EVIDENCE/maven.log" > "$EVIDENCE/probes.jsonl" || true
+          grep -E "Java heap space|OutOfMemory|LRU cache|BUILD (SUCCESS|FAILURE)|Tests run:" \
+            "$EVIDENCE/maven.log" > "$EVIDENCE/highlights.txt" || true
+          exit 0
+
+      - name: Publish probe summary
+        shell: bash
+        run: |
+          {
+            echo "## ${{ matrix.label }} focused semantic-memory probe"
+            echo
+            echo "- production revision: $(git rev-parse HEAD)"
+            echo "- test exit code: ${{ steps.probe.outputs.exit_code }}"
+            echo
+            echo "### Per-query state"
+            echo "~~~json"
+            cat semantic-memory-probe/probes.jsonl || true
+            echo "~~~"
+            echo
+            echo "### Process resources"
+            echo "~~~text"
+            cat semantic-memory-probe/time.txt || true
+            echo "~~~"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload focused evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: semantic-memory-probe-${{ matrix.label }}-${{ github.run_id }}
+          path: semantic-memory-probe/
+          if-no-files-found: error
+          retention-days: 30
+
   isolated-identifier-sweep:
-    name: Identifier sweep / ${{ matrix.label }}
+    if: github.event_name == 'workflow_dispatch'
+    name: Full identifier sweep / ${{ matrix.label }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
@@ -79,26 +176,6 @@ jobs:
           grep -E "sweep-file|Tests run:|Java heap space|OutOfMemory|LRU cache|BUILD (SUCCESS|FAILURE)" \
             "$EVIDENCE/maven.log" > "$EVIDENCE/highlights.txt" || true
           exit 0
-
-      - name: Publish diagnostic summary
-        shell: bash
-        run: |
-          {
-            echo "## ${{ matrix.label }} IdentifierSweepTest"
-            echo
-            echo "- revision: $(git rev-parse HEAD)"
-            echo "- test exit code: ${{ steps.sweep.outputs.exit_code }}"
-            echo
-            echo "### Process resource summary"
-            echo "~~~text"
-            cat semantic-memory-evidence/time.txt || true
-            echo "~~~"
-            echo
-            echo "### Failure/progress highlights"
-            echo "~~~text"
-            tail -120 semantic-memory-evidence/highlights.txt || true
-            echo "~~~"
-          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload semantic memory evidence
         uses: actions/upload-artifact@v4

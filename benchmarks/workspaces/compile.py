@@ -14,12 +14,15 @@ def main():
     p = argparse.ArgumentParser()
     for name in ('repo', 'java-home', 'dependencies', 'output'):
         p.add_argument('--' + name, type=Path, required=True)
+    p.add_argument('--reuse-production-jars', action='store_true',
+                   help='compile only benchmark adapters and use already-built JVMD JARs from --dependencies')
     a = p.parse_args()
     repo, output = a.repo.resolve(), a.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     classes = output / 'classes'; classes.mkdir()
     jars = sorted(a.dependencies.resolve().glob('*.jar'))
-    sources = sorted(f for m in MODULES for f in (repo/m/'src/main/java').rglob('*.java') if f.name != 'module-info.java')
+    production_sources = sorted(f for m in MODULES for f in (repo/m/'src/main/java').rglob('*.java') if f.name != 'module-info.java')
+    sources = [] if a.reuse_production_jars else production_sources
     harness = Path(__file__).resolve().parent
     sources += list(harness.glob('*.java'))
     sources += [repo/'benchmarks/index-updates/RepositoryUpdateBenchmark.java']
@@ -27,12 +30,14 @@ def main():
                '-encoding', 'UTF-8', '-g', '-parameters', '-cp', os.pathsep.join(map(str, jars)), '-d', str(classes), *map(str, sources)]
     with (output/'compile.log').open('w') as log:
         subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
-    for m in MODULES:
-        resources = repo/m/'src/main/resources'
-        if resources.exists(): shutil.copytree(resources, classes, dirs_exist_ok=True)
+    if not a.reuse_production_jars:
+        for m in MODULES:
+            resources = repo/m/'src/main/resources'
+            if resources.exists(): shutil.copytree(resources, classes, dirs_exist_ok=True)
     git = lambda *args: subprocess.check_output(['git', *args], cwd=repo, text=True).strip()
     report = dict(revision=git('rev-parse', 'HEAD'), tree=git('rev-parse', 'HEAD^{tree}'),
                   dirty=git('status', '--porcelain'), command=command,
+                  production_input='built-jars' if a.reuse_production_jars else 'sources',
                   classpath=os.pathsep.join(map(str, [classes, *jars])), java=str(a.java_home.resolve()/'bin/java'),
                   sources={str(f): sha(f) for f in sources}, dependencies={str(f): sha(f) for f in jars},
                   classes={str(f.relative_to(classes)): sha(f) for f in sorted(classes.rglob('*.class'))})

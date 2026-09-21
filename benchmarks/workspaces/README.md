@@ -81,6 +81,8 @@ python benchmarks/workspaces/verify.py "$BENCH_RESULTS" "$BENCH_VERIFICATION"
 python benchmarks/workspaces/summarize.py "$BENCH_RESULTS" "$BENCH_SUMMARY"
 python benchmarks/workspaces/compare.py "$BENCH_SUMMARY" "$BENCH_COMPARISON" \
   --candidate after --baseline jdtls-shared --markdown "$BENCH_COMPARISON.md"
+node benchmarks/workspaces/dashboard.mjs --comparison "$BENCH_COMPARISON" \
+  --verification "$BENCH_VERIFICATION" --output "$BENCH_DASHBOARD.html"
 python benchmarks/workspaces/added.py --repo "$PWD" \
   --build "$BENCH_BUILD/build.json" --java-home "$BENCH_JDK" \
   --jdtls "$JDTLS_HOME" --resolvers "$JVMD_RESOLVERS" \
@@ -103,6 +105,29 @@ The independent verifier also runs against extracted archives: original absolute
 file URIs are mapped to the included generated workspace sources. Every timed
 editor response must exist in the closed trace, and all definition/reference/rename
 ranges are checked against those sources.
+
+`dashboard.mjs` turns only the independently verified comparison artifacts into a
+small, self-contained HTML report. It has no package dependencies, performs no
+benchmark work itself, and escapes fixture and metric labels before rendering.
+
+The merge-review gate uses `fixture.py --fixture-names review` as its correctness
+corpus instead of cloning a separate source repository. Its checked oracle covers
+512 generated source files and 64 dependency JARs (1,024 binary classes), while the workload checks
+the same hover, completion, signature, navigation, references, rename, symbols,
+unsaved edits, diagnostics, and dependency identities against JVMD and JDTLS.
+Every generated fixture records expected dependency identities in `fixture.json`;
+the matrix consumes that manifest instead of relying on fixture-name conventions.
+The action generates only this corpus and runs servers serially. It does not use a
+short timeout or accept partial results: every worker and the independent verifier
+must complete successfully before the dashboard is produced.
+
+Rewriting the Python coordinator in another language would not materially shorten
+this gate: compilation, JVM startup, indexing, and checked LSP requests dominate
+the run. The fast path instead downloads JDTLS concurrently with a parallel Maven
+build, skips test compilation already covered by the checkpoint action, reuses the
+built JVMD JARs rather than compiling production sources twice, excludes the test
+module from the reactor, avoids unused fixtures, and keeps one complete correctness
+repetition. The full suite remains the place for statistically meaningful performance measurements.
 
 The benchmark harnesses remain the executable source for reproducing workspace comparisons; historical narrative reports were removed during consolidation.
 

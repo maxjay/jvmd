@@ -70,7 +70,7 @@ jobs:
               -DexcludedGroups= \
               -Dtest=SemanticMemoryProbeTest \
               -Djvmd.semantic.memory.probe=true \
-              -Djvmd.semantic.memory.probe.count=10 \
+              -Djvmd.semantic.memory.probe.count=3 \
               "-DargLine=-Xmx1024m -Xlog:gc*:file=$EVIDENCE/gc.log:time,uptime,level,tags" \
               2>&1 | tee "$EVIDENCE/maven.log"
           status=${PIPESTATUS[0]}

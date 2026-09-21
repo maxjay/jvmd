@@ -1,13 +1,6 @@
 # Main, Maven updates, source Merkle state and JDTLS
 
-The [2026-09-19 comparison and raw reports](../../docs/performance/2026-09-19-final-comparison.md)
-record three repetitions against actual main and pinned JDTLS, including the
-memory/query tradeoffs and the distinct source-Merkle experiment.
-The [query optimization follow-up](../../docs/performance/2026-09-19-query-optimization.md)
-separates cold indexing, persisted restart and warm queries, including JVM launch.
-The [seed allocation follow-up](../../docs/performance/2026-09-19-seed-optimization.md)
-adds five-repetition seed comparisons, bidirectional persisted-index checks, JFR
-allocation evidence and a refreshed JDTLS comparison.
+Historical benchmark narrative reports were removed during consolidation. The harness and generated artifacts remain the executable evidence for comparisons against actual main and pinned JDTLS, including memory/query tradeoffs, source-Merkle experiments, persisted restart, warm queries, seed repetitions, and JFR allocation evidence.
 
 These are distinct measurements. Maven discovery uses `IndexService.scan()` and
 the artifact inventory; it does not call `RocksWorkspaceState`. Source Merkle
@@ -140,10 +133,7 @@ The `classpaths.json` input must come from a trusted local benchmark run.
 
 ## Post-merge allocation and bounded-page investigation
 
-The [post-merge report](../../docs/performance/2026-09-19-compact-grams-and-pages.md)
-compares merged main `dce59413` with compact grams, streaming merge postings and
-ID-based rejection of candidates outside a result page. It includes unchanged
-workloads and the observed full-result query tradeoffs.
+This harness can compare merged main `dce59413` with compact grams, streaming merge postings and ID-based rejection of candidates outside a result page, including unchanged workloads and full-result query tradeoffs.
 
 `dependencies.py` accepts the same `--baseline`, `--current`, `--java-home`,
 `--dependencies`, `--root` and `--runs` inputs as the query performance harness.

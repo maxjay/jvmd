@@ -161,32 +161,28 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
     @Override public long semanticRevision(Path file)throws Exception{return semanticInvalidation.revision(file);}
     @Override public String moduleStateFingerprint(String moduleId)throws Exception{return workspaceState.fingerprint(moduleId);}
 
-    @Override public void publishSourceState(SourceIndexPublisher.Delta delta)throws Exception{
-        if(!delta.hasSemanticState())return;
-        var input=new RocksSemanticInvalidation.FileInput(delta.sourceHash(),delta.apiFingerprint(),
-                delta.dependencies(),delta.exportedNames(),delta.unresolvedTargets());
+    @Override public void publishSourceState(FileSemanticContribution contribution,String requestedModuleId,String contextFingerprint)throws Exception{
         String moduleId=moduleInputs.values().stream()
-                .filter(module->module.sourceRoots().stream().anyMatch(delta.file()::startsWith))
-                .sorted(Comparator.comparingInt((ModuleStateInput module)->module.sourceRoots().stream().filter(delta.file()::startsWith).mapToInt(Path::getNameCount).max().orElse(0)).reversed())
-                .map(ModuleStateInput::moduleId).findFirst().orElse(delta.moduleId());
-        var result=semanticInvalidation.observeFile(moduleId,delta.contextFingerprint(),delta.file(),input);
+                .filter(module->module.sourceRoots().stream().anyMatch(contribution.file()::startsWith))
+                .sorted(Comparator.comparingInt((ModuleStateInput module)->module.sourceRoots().stream().filter(contribution.file()::startsWith).mapToInt(Path::getNameCount).max().orElse(0)).reversed())
+                .map(ModuleStateInput::moduleId).findFirst().orElse(requestedModuleId);
+        var result=semanticInvalidation.observeFile(moduleId,contextFingerprint,contribution);
         var module=moduleInputs.get(moduleId);
         if(module!=null){
             var state=workspaceState.observeFile(new RocksWorkspaceState.ModuleInput(module.moduleId(),module.sourceRoots(),module.overlays(),
-                    module.compilerOptions(),module.processors(),module.generatedOutputs(),module.orderedClasspath(),module.jdkFingerprint()),delta.file(),delta.sourceHash());
+                    module.compilerOptions(),module.processors(),module.generatedOutputs(),module.orderedClasspath(),module.jdkFingerprint()),contribution.file(),contribution.sourceHash());
             workspaceStateUpdates.incrementAndGet();workspaceFileWrites.addAndGet(state.fileWrites());
             workspaceDirectoryWrites.addAndGet(state.directoryWrites());workspaceMetadataWrites.addAndGet(state.metadataWrites());
         }
         semanticUpdates.incrementAndGet();semanticReanalyze.addAndGet(result.reanalyze().size());
         semanticApiChanges.addAndGet(result.apiChanged().size());semanticBodyOnly.addAndGet(result.bodyOnly().size());
         lastSemanticResult=Map.of(
-                "module",delta.moduleId(),"file",delta.file().toString(),
+                "module",moduleId,"file",contribution.file().toString(),
                 "reanalyze",result.reanalyze().stream().map(Path::toString).sorted().toList(),
                 "api_changed",result.apiChanged().stream().map(Path::toString).sorted().toList(),
                 "body_only",result.bodyOnly().stream().map(Path::toString).sorted().toList(),
                 "context_changed",result.contextChanged());
     }
-
 
     @Override public void configureModuleState(ArtifactGenerationSink.ModuleStateInput input)throws Exception{
         moduleInputs.put(input.moduleId(),input);

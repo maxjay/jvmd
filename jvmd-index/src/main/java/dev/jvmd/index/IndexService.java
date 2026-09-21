@@ -198,7 +198,7 @@ public final class IndexService implements AutoCloseable {
     public record SourceEdge(String src,String dst,String kind) { }
     private void recordSource(SourceIndexPublisher.Delta delta)throws Exception{
         locals.recordSource(delta.file(),delta.sourceHash(),delta.symbols(),delta.tier(),delta.edges());
-        generationSink.publishSourceState(delta);
+        generationSink.publishSourceState(delta.contribution(),delta.moduleId(),delta.contextFingerprint());
     }
     public void recordSource(Path file,String contentHash,List<Map<String,Object>> symbols,int tier,List<SourceEdge> edges)throws Exception{
         locals.recordSource(file.toAbsolutePath().normalize(),contentHash,symbols,tier,edges);

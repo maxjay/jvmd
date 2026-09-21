@@ -15,7 +15,9 @@ public final class Documents {
     private record Document(String text,int version,String hash) { }
     private static final long MAX_BYTES=64L*1024*1024;
     private final Map<Path,Document> documents=new LinkedHashMap<>();
-    private final FileStateRegistry files=new FileStateRegistry();
+    private final FileStateRegistry files;
+    public Documents(){this(new FileStateRegistry());}
+    public Documents(FileStateRegistry files){this.files=Objects.requireNonNull(files);}
     private long bytes,generation;
     private static Path key(Path path){return path.toAbsolutePath().normalize();}
     public synchronized void open(Path file,String text,int version){if(contains(file))throw RpcException.invalid("Document is already open");set(key(file),text,version);}
@@ -38,13 +40,14 @@ public final class Documents {
     public synchronized String hash(Path file){var document=documents.get(key(file));return document==null?null:document.hash();}
     public synchronized String sourceHash(Path file)throws java.io.IOException{var hash=hash(file);return hash==null?files.hash(file):hash;}
     public FileStateRegistry fileStates(){return files;}
+    public synchronized Object observation(Path file){return documents.get(key(file));}
     public synchronized Integer version(Path file){var document=documents.get(key(file));return document==null?null:document.version();}
     public synchronized boolean contains(Path file){return documents.containsKey(key(file));}
     public synchronized Map<Path,String> snapshots(){var result=new LinkedHashMap<Path,String>();documents.forEach((file,value)->result.put(file,value.text()));return Collections.unmodifiableMap(result);}
     public synchronized Set<Path> paths(){return Set.copyOf(documents.keySet());}
     public synchronized long generation(){return generation;}
     public synchronized boolean dirty(Path root)throws Exception{
-        for(var entry:documents.entrySet())if(entry.getKey().startsWith(root)&&(!Files.isRegularFile(entry.getKey())||!Hashing.sha256(entry.getKey()).equals(entry.getValue().hash())))return true;return false;
+        for(var entry:documents.entrySet())if(entry.getKey().startsWith(root)&&(!Files.isRegularFile(entry.getKey())||!files.hash(entry.getKey()).equals(entry.getValue().hash())))return true;return false;
     }
     public synchronized Map<String,Object> status(){return Map.of("open_documents",documents.size(),"bytes",bytes,"generation",generation);}
     public static Position position(String text,long requested){

@@ -9,10 +9,11 @@ public final class FileStateRegistry {
     private record Stamp(Object size, Object modified, Object changed, Object inode) { }
     private record Entry(Stamp stamp, String hash) { }
     private final Map<Path, Entry> files = new LinkedHashMap<>(256, .75f, true);
-    private long hashes, hits, bytes;
+    private long hashes, hits, bytes, metadataChecks, enumerations;
 
     public synchronized String hash(Path file) throws IOException {
         file = file.toAbsolutePath().normalize();
+        metadataChecks++;
         if (!Files.isRegularFile(file)) { files.remove(file); return "missing"; }
         Stamp before = stamp(file);
         var previous = files.get(file);
@@ -43,7 +44,8 @@ public final class FileStateRegistry {
         throw new IOException("Source changed repeatedly while reading: " + file);
     }
 
-    private static Stamp stamp(Path file) throws IOException {
+    private Stamp stamp(Path file) throws IOException {
+        metadataChecks++;
         try {
             var values = Files.readAttributes(file, "unix:size,lastModifiedTime,ctime,ino");
             return new Stamp(values.get("size"), values.get("lastModifiedTime"), values.get("ctime"), values.get("ino"));
@@ -53,8 +55,67 @@ public final class FileStateRegistry {
         }
     }
 
+    private record InventoryKey(Path root,String suffix) { }
+    private static final class Directory {
+        Map<String,Object> stamp;
+        List<Path> children=List.of(), members=List.of();
+        Set<Path> leaves=Set.of();
+        final Map<Path,Directory> directories=new HashMap<>();
+    }
+    private final Map<InventoryKey,Directory> inventories=new HashMap<>();
+
+    /** Checks every known directory's change time, including missing roots; no watcher delivery assumption. */
+    public synchronized List<Path> inventory(Path root,String suffix)throws IOException {
+        root=root.toAbsolutePath().normalize();
+        return inventory(root,suffix,inventories.computeIfAbsent(new InventoryKey(root,suffix),ignored->new Directory()));
+    }
+    private List<Path> inventory(Path root,String suffix,Directory state)throws IOException {
+        metadataChecks++;
+        Map<String,Object> before;
+        try { before=Files.readAttributes(root,"unix:size,lastModifiedTime,ctime,ino,isDirectory",LinkOption.NOFOLLOW_LINKS); }
+        catch(NoSuchFileException missing){state.stamp=null;state.children=List.of();state.members=List.of();state.directories.clear();return state.members;}
+        catch(UnsupportedOperationException|IllegalArgumentException unsupported){before=null;}
+        if(before!=null&&!Boolean.TRUE.equals(before.get("isDirectory")))return List.of();
+        boolean changed=before==null||!before.equals(state.stamp);
+        if(changed){
+            enumerations++;
+            try(var stream=Files.list(root)){state.children=stream.sorted().toList();}
+            catch(NoSuchFileException missing){state.children=List.of();}
+            // Do not accept an observation if directory membership changed while enumerating it.
+            if(before!=null&&!before.equals(Files.readAttributes(root,"unix:size,lastModifiedTime,ctime,ino,isDirectory",LinkOption.NOFOLLOW_LINKS)))
+                throw new IOException("Directory changed during reconciliation: "+root);
+            state.stamp=before;
+            state.directories.keySet().retainAll(state.children);
+            var leaves=new HashSet<Path>();
+            for(Path child:state.children){
+                metadataChecks++;
+                if(Files.isDirectory(child,LinkOption.NOFOLLOW_LINKS))state.directories.computeIfAbsent(child,ignored->new Directory());
+                else {state.directories.remove(child);leaves.add(child);}
+            }
+            state.leaves=Set.copyOf(leaves);
+        }
+        List<Path> values=null;
+        int offset=0;
+        for(Path child:state.children){
+            List<Path> members;
+            if(state.directories.containsKey(child))
+                members=inventory(child,suffix,state.directories.computeIfAbsent(child,ignored->new Directory()));
+            else members=child.toString().endsWith(suffix)?List.of(child):List.of();
+            for(Path file:members){
+                if(values==null&&(offset>=state.members.size()||!file.equals(state.members.get(offset))))values=new ArrayList<>(state.members.subList(0,offset));
+                if(values!=null)values.add(file);offset++;
+            }
+        }
+        if(values!=null)state.members=List.copyOf(values);
+        else if(offset!=state.members.size())state.members=List.copyOf(state.members.subList(0,offset));
+        return state.members;
+    }
+    /** Startup/configuration uncertainty or overflow discards observations, never accepted semantic state. */
+    public synchronized void reconcile(){files.clear();inventories.clear();}
+
+    public synchronized Object evidence(Path file){return files.get(file.toAbsolutePath().normalize());}
     public synchronized void forget(Path file) { files.remove(file.toAbsolutePath().normalize()); }
     public synchronized Map<String, Object> status() {
-        return Map.of("entries", files.size(), "hashes", hashes, "stat_hits", hits, "bytes_hashed", bytes);
+        return Map.of("entries", files.size(), "hashes", hashes, "stat_hits", hits, "bytes_hashed", bytes, "metadata_checks", metadataChecks, "directory_enumerations", enumerations);
     }
 }

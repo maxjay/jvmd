@@ -38,3 +38,10 @@ protect previously accepted semantics. None is interchangeable with a whole-work
 ownership, commit-before-owner replacement and independent read leases. Baseline regression
 execution started before any production changes. Initial harness deliberately separates
 identity validation from javac and detached navigation-result construction.
+
+Shared contract checkpoint: CompilerInputs now separates source hashes, membership,
+compiler environment and an in-flight observation fence. FileStateRegistry retains
+validated content and directory observations; unsupported metadata forces reconciliation.
+Session Documents retain overlay ownership. The preliminary focused run passed 42 tests
+(39 integration tests plus 3 Rocks workspace tests). Full phase 3/4 exposed two consumer
+regressions and an obsolete hash-count assertion; fixes and the full rerun are in progress.

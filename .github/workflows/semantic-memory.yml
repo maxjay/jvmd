@@ -67,7 +67,7 @@ jobs:
           set +e
           /usr/bin/time -v -o "$EVIDENCE/time.txt" \
             mvn -B -pl jvmd-tests test \
-              -Dgroups=perf \
+              -DexcludedGroups= \
               -Dtest=SemanticMemoryProbeTest \
               -Djvmd.semantic.memory.probe=true \
               -Djvmd.semantic.memory.probe.count=10 \

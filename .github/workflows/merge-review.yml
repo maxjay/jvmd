@@ -121,6 +121,27 @@ jobs:
           python benchmarks/workspaces/summarize.py "$RUNNER_TEMP/allocation-results" "$RUNNER_TEMP/allocation-summary.json"
           python benchmarks/workspaces/compare.py "$RUNNER_TEMP/allocation-summary.json" "$RUNNER_TEMP/allocation-comparison.json" --metrics sampled_allocated_mib peak_rss_mib cpu_seconds --markdown "$RUNNER_TEMP/allocation-comparison.md"
           node benchmarks/workspaces/dashboard.mjs --comparison "$RUNNER_TEMP/comparison.json" --allocation "$RUNNER_TEMP/allocation-comparison.json" --verification "$RUNNER_TEMP/verification.json" --output "$RUNNER_TEMP/dashboard.html"
+      - name: Compare with the previous completed PR
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_PR: ${{ github.event.pull_request.number }}
+        run: |
+          previous_pr="$(gh api 'repos/${{ github.repository }}/pulls?state=closed&sort=updated&direction=desc&per_page=100' \
+            --jq "[.[] | select(.merged_at != null and (.number | tostring) != \"$CURRENT_PR\")] | sort_by(.merged_at) | last | .number // empty")"
+          if [[ -n "$previous_pr" ]]; then
+            gh api "repos/${{ github.repository }}/issues/$previous_pr/comments" --paginate \
+              --jq '[.[] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- jvmd-merge-review -->")))][-1].body // empty' \
+              > "$RUNNER_TEMP/previous-pr-comment.md"
+          fi
+          if [[ -s "$RUNNER_TEMP/previous-pr-comment.md" ]]; then
+            python benchmarks/workspaces/trend.py "$RUNNER_TEMP/comparison.json" "$RUNNER_TEMP/previous-pr-comment.md" \
+              --table 0 --previous-pr "$previous_pr" --markdown "$RUNNER_TEMP/comparison.md"
+            python benchmarks/workspaces/trend.py "$RUNNER_TEMP/allocation-comparison.json" "$RUNNER_TEMP/previous-pr-comment.md" \
+              --table 1 --previous-pr "$previous_pr" --markdown "$RUNNER_TEMP/allocation-comparison.md"
+          else
+            echo 'No benchmark comment was found on a previous completed PR; improvement values are unavailable.'
+          fi
           cat "$RUNNER_TEMP/comparison.md" >> "$GITHUB_STEP_SUMMARY"
           printf '\n## Sampled allocation profile\n\n' >> "$GITHUB_STEP_SUMMARY"
           cat "$RUNNER_TEMP/allocation-comparison.md" >> "$GITHUB_STEP_SUMMARY"

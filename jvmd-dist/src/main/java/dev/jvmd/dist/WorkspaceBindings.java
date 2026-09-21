@@ -325,30 +325,49 @@ public final class WorkspaceBindings implements AutoCloseable {
     return result;
   }
 
+  /**
+   * Retained-heap weight for detached semantic facts on the production HotSpot layout.
+   *
+   * <p>This is intentionally a conservative object-layout model, not serialized size. The previous
+   * model charged 512 bytes per edge/occurrence, 1024 bytes per symbol and 96 bytes per map field or
+   * collection entry; on the real 279-file workspace it priced ~68 MiB of observed incremental live
+   * heap at ~313 MiB and caused the cache to discard on every request.
+   *
+   * <p>The weights below approximate compressed-oop records, LinkedHashMap entries, collection
+   * references and UTF-16 worst-case string payload. Phase A2 validates the slope at multiple
+   * workspace sizes; the 128 MiB production admission limit is unchanged.
+   */
   private static Estimate estimate(CompilerPool.Outcome<Bindings.Snapshot> outcome) {
     var graph = outcome.result();
     if (graph == null)
       return new Estimate(1024, 0, 0, 0, outcome.diagnostics().size(), 0, 0, 0, 0, 0, 0);
+    var api = graph.api();
     long bytes =
-        2048L
-            + 512L * graph.edges().size()
-            + 512L * graph.occurrences().size()
-            + 256L * outcome.diagnostics().size();
+        1536L
+            + 48L * graph.edges().size()
+            + 80L * graph.occurrences().size()
+            + 192L * outcome.diagnostics().size()
+            + 32L * graph.dependencies().size()
+            + 64L * api.declarations().size()
+            + 24L * api.exportedNames().size();
     long rowFields = 0, stringCharacters = 0, collectionEntries = 0;
     for (var row : graph.symbols().values()) {
       rowFields += row.size();
-      bytes += 1024L + 96L * row.size();
+      bytes += 128L + 40L * row.size();
       for (var value : row.values()) {
         if (value instanceof String text) {
           stringCharacters += text.length();
-          bytes += 48L + 2L * text.length();
+          bytes += 24L + 2L * text.length();
         } else if (value instanceof Collection<?> values) {
           collectionEntries += values.size();
-          bytes += 64L + 96L * values.size();
+          bytes += 24L + 8L * values.size();
+        } else if (value instanceof Map<?, ?> values) {
+          bytes += 32L + 16L * values.size();
+        } else if (value != null) {
+          bytes += 16L;
         }
       }
     }
-    var api = graph.api();
     return new Estimate(
         bytes,
         graph.symbols().size(),
@@ -610,6 +629,7 @@ public final class WorkspaceBindings implements AutoCloseable {
     result.put("api_root", navigation.apiRoot().identity().encoded());
     result.put("fragment_bytes_serialized", 0);
     result.put("estimated_retained_bytes", estimatedBytes);
+    result.put("retained_estimate_model", "hotspot-compressed-oops-v1");
     result.put("last_attempted_retained_bytes", lastAttemptedRetainedBytes);
     result.put(
         "last_attempted_shape",

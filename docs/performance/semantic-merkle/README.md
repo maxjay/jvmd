@@ -1,127 +1,79 @@
-# Semantic Merkle checkpoint — implemented, not accepted
+# Semantic Merkle — 32-file warm-navigation follow-up
 
-Baseline: `ae23fd1f44573bd3427c0e77f967150173669a2f`.
-Current measured production: `ad9ce2ab6f08b72b2744884d08331928edc48953`.
-[Draft PR #8](https://github.com/maxjay/jvmd/pull/8) remains unmerged.
+Measured production: [`09326b20e0610000f4373cbc8ce7dd4e4434cd46`](https://github.com/maxjay/jvmd/commit/09326b20e0610000f4373cbc8ce7dd4e4434cd46).
+Original baseline: `ae23fd1f44573bd3427c0e77f967150173669a2f`.
+Preceding production: `ad9ce2ab6f08b72b2744884d08331928edc48953`.
+[PR #8](https://github.com/maxjay/jvmd/pull/8) remains a draft and unmerged.
 
-The latest change consolidates overview into Bindings' declaration capture, removes its
-second compiler-tree traversal, and stops constructing an API Merkle graph that overview
-immediately discarded. Reference lookup now filters before sorting and avoids a temporary
-result/copy. It preserves unresolved declarations, depth, sparse protocol fields, current
-positions and documentation. These are shared-code changes, not shortened formatting.
+The user limited this closing change to 32-file warm navigation. Its response-budget check
+now counts Jackson's UTF-8 output through an output stream, removing the temporary byte
+array previously allocated solely to obtain its length. Jackson still performs encoding;
+this removes buffering and copying, not the serialization traversal. Exact byte limits,
+Unicode escaping, continuation behavior and filesystem validation are preserved. The
+semantic Merkle graph and its future accumulator extension boundary remain intact.
 
-The existing semantic ownership graph and accumulator extension boundary remain intact.
-Declaration/type/file/module/workspace identities compose through immutable keyed nodes;
-API-equal edits still refresh references, diagnostics, positions and documentation. Consumers
-use the captured API identity. Ordered classpaths and other ordered semantic fields remain
-ordered. `SemanticNode.withChild` exposes old/new keyed membership; a future accumulator can
-replace aggregate calculation there with a distinct algorithm/schema identity. There is no
-new parser, global interner, accumulator cryptography or Merkle database in this change.
+## Latency first
 
-## Before/after evidence
+Two separate ten-pair campaigns use the same unchanged 37-scenario harness, pinned JDK,
+dependencies and fixtures. All forty independent workers passed their output assertions.
+Workers run serially in alternating order, without profiling or forced GC. The 32-file
+case measures the first five cached reference requests after one cold request, with the
+same untimed occurrence/status checks between requests. It excludes network transport.
 
-Twenty alternating independent JVM pairs (initial ten plus predeclared confirmation), all
-forty workers passing output assertions, cover 37 scenarios. Pinned Temurin 25.0.4.1+1,
-identical dependencies, fixtures and harness, serial execution, no AOT. The recorded build
-was made in a dirty worktree; every one of its 104 production source hashes was subsequently
-verified against `ad9ce2a`. That verification is retained with the raw manifests.
-
-These are fresh measurements on the recovered host. They cannot be combined with the prior
-host's rounded observations. Changes below are medians of paired ratios, not ratios of the
-separately displayed medians. Intervals are 95% paired-bootstrap intervals.
-
-| Workload | Baseline ms | Current ms | Paired change [95% interval] |
+| Comparison / scenario | Before median ms | After median ms | Paired change [95% interval] |
 | --- | ---: | ---: | ---: |
-| 512-file body edit | 137.455 | 53.439 | −61.7% [−64.5, −56.6] |
-| 512-file API edit | 193.681 | 116.808 | −37.9% [−44.9, −32.9] |
-| 512-file warm navigation | 20.001 | 10.852 | −46.2% [−51.2, −35.7] |
-| Real core source position edit | 123.350 | 20.699 | −84.1% [−85.1, −82.2] |
-| Overview cold, after preceding suite work | 106.547 | 97.506 | −12.9% [−23.2, −2.6] |
-| **32-file warm navigation** | **6.898** | **8.160** | **+22.0% [−7.6, +36.4]** |
-| **512-file cold workspace** | **2035.591** | **2178.496** | **+4.7% [+0.7, +14.7]** |
+| Preceding production → fix, 32-file warm | 7.791 | 6.933 | −16.5% [−21.3, +20.4] |
+| Original baseline → fix, 32-file warm | 7.212 | 7.389 | −3.2% [−19.1, +19.8] |
+| Original baseline → fix, 512-file warm | 17.657 | 10.300 | −43.9% [−50.6, −32.4] |
+| Original baseline → fix, 512-file body edit | 129.402 | 51.470 | −57.5% [−63.1, −51.3] |
+| Original baseline → fix, 512-file API edit | 168.656 | 111.509 | −33.4% [−40.1, −25.2] |
+| Original baseline → fix, 512-file cold | 2036.471 | 2017.013 | +1.2% [−4.7, +11.8] |
 
-The primary latency/allocation targets pass. Overall no-regression acceptance remains open:
-small-query and several lifecycle intervals still permit material regressions. Confirmation
-is complete; additional repetitions are not used to search for favourable results.
+Paired change is the median of within-pair ratios. It can differ in sign from the ratio of
+separately displayed medians. The 32-file median is 11.0% lower than preceding production
+in its comparison and 2.5% above the original baseline in the independent comparison.
+The previous 22% observed regression is no longer present at the point estimate. **The
+wide intervals still allow a material regression: a statistically conclusive latency
+improvement or non-regression is not established.** No extra repetitions were selected
+for favourable results. The larger-workspace edit and warm gains remain clear.
 
-[All 37 latency and allocation scenarios, sample p95 and worker resources](ad9ce2a-measurements.md)
-are reported without omitting slower or inconclusive cases. Sample p95 describes worker
-medians, not production request-tail latency. Socket/LSP transport, Maven resolution and
-JDTLS comparisons are outside these timings.
+All other scenarios remain visible in the full tables. In the comparison with preceding
+production, 32-file rename has a +8.6% paired change [+0.4, +69.3]; it is not hidden or
+claimed fixed. Other broad acceptance uncertainties remain in the historical report.
 
-512-file body-edit allocation is **18.358 → 7.741 MB (−57.7%)**; API-edit allocation is
-**25.019 → 14.294 MB (−42.9%)**. Overview position-edit allocation versus the original baseline
-is **7.968 → 5.101 MB (−36.0%)**. These are decimal MB allocated per request, not retained heap.
+## Allocation, correctness and scope
 
-The separate overview-only campaign compares the preceding published production with this
-consolidation: edit allocation **10.272 → 5.197 MB (−49.4%)**, but first-five cached latency
-**1.281 → 2.048 ms**, paired **+69.4% [+36.4, +115.6]**. That startup-sequence regression is
-retained explicitly. Its cold/edit latency intervals overlap no change. These samples are
-not pooled with the full suite, whose overview workload occurs after other requests.
+| 32-file warm allocation | Before bytes/request | After bytes/request | Paired change |
+| --- | ---: | ---: | ---: |
+| Preceding production → fix | 318,728 | 273,200 | −14.3% |
+| Original baseline → fix | 321,888 | 273,648 | −15.0% |
 
-## Retention and code complexity
+- Exact published build: 33/33 focused tests pass. Six response-budget/MCP tests, including
+  the new 4096/4097-byte ASCII/Unicode/escape boundary test, also pass on the original baseline.
+- All 104 production files and three compilation helpers match the recorded final build.
+- [Checkpoints 35587932473](https://github.com/maxjay/jvmd/actions/runs/35587932473) and
+  [Distributions 35587932467](https://github.com/maxjay/jvmd/actions/runs/35587932467) pass.
+- [Dedicated benchmark CI 35587932643](https://github.com/maxjay/jvmd/actions/runs/35587932643)
+  fails the existing timestamp-preserving source completion precheck (40/41 tests pass),
+  before timing. Its failure extract is retained. Local paired campaigns completed separately.
+- Same-formatter ResponseBudget count: 326 → 346 lines. The counter adds twenty readable
+  lines and no persistent state. The original overall net-code-reduction goal remains unmet.
 
-Three separate forced-GC pairs use 256 files, twelve edits and thirteen reader snapshots:
+The requested implementation/benchmark pass is closed here. Completion validation, initial
+heap attribution and broader code consolidation are deferred; the older global acceptance
+gates remain open. No additional architectural change or merge is implied.
 
-| Whole-JVM live heap | Baseline MiB | Current MiB |
-| --- | ---: | ---: |
-| After initial snapshot | 25.690 | 30.249 |
-| With thirteen readers | 20.162 | 18.583 |
-| After releasing old readers | 17.947 | 18.582 |
+## Reproducible evidence
 
-**Initial heap increases 17.7% and requires attribution.** These are not object-exact graph
-sizes. Other compiler/runtime state can be collected between phases. Lower heap with old
-readers does not waive the initial increase or establish a universal memory improvement.
+- [All 37 scenarios against preceding production](warm-navigation/previous-measurements.md)
+- [All 37 scenarios against the original baseline](warm-navigation/original-measurements.md)
+- [Raw campaigns, commands, logs, tests and diagnostics](warm-navigation/evidence.zip)
+- [Published-source verification](warm-navigation/source-verification.json)
+- [Evidence checksums](warm-navigation/SHA256SUMS.json)
+- [Previous architecture and acceptance checkpoint](historical-ad9ce2a.md)
 
-The same Google Java Format 1.30.0 audit counts all affected handwritten production sources,
-including helpers and deleted classes: original baseline **5,404**, previous candidate
-**6,304**, current **6,234**. This consolidation removes **70** readable lines, but the overall
-change remains **+830 lines (+15.4%)**. The user's net code-reduction requirement is unmet.
-
-## Correctness and the next blocking work
-
-The focused local selection passes **35/35**. The two new overview contract tests also pass
-against the untouched baseline. The broader local selection passes **24/29**: four failures
-are missing runtime/output/network test setup, and one is stale completion after a preserved
-mtime edit. All failure logs remain available.
-
-For `ad9ce2a`, [Checkpoints](https://github.com/maxjay/jvmd/actions/runs/35583766479) and
-[Distributions](https://github.com/maxjay/jvmd/actions/runs/35583766468) passed. The
-[dedicated benchmark workflow](https://github.com/maxjay/jvmd/actions/runs/35583766553)
-failed `CompletionPrefixCacheTest.changedReleaseAndNewSourceNamesCannotReuseOldCandidates:85`;
-its forty other selected tests passed. That failed precheck prevented CI timing measurements.
-A passing run of the intermittent test elsewhere does not establish a fix.
-
-`DelayedCompletionProbe` deliberately withholds watcher delivery after the first query.
-Both the baseline and current production reproduce two distinct failures:
-
-- A changed dependency returns the old completion through a cache hit.
-- A newly created source remains missing even after completion recomputes; its source
-  catalogue is stale. Refusing empty completion-cache admission alone cannot fix this.
-
-This controlled probe establishes a validation failure mechanism, not a latency result or
-proof that every historical failure has one cause. A watcher epoch only describes delivered
-notifications. A semantic root only describes observed semantic inputs. Neither establishes
-that the filesystem has not changed. The next correctness change needs a completion baseline
-and explicit source/namespace input validation, including negative lookups, while preserving
-prefix-reuse latency. No watcher sleeps, retries-until-green or weaker assertions are a fix.
-
-## Reproduction and retained artifacts
-
-Use [the benchmark contract](../../../benchmarks/semantic-state/README.md). Combine the two
-unchanged campaigns with:
-
-```sh
-python benchmarks/semantic-state/report.py \
-  "$INITIAL/campaign.json" "$CONFIRMATION/campaign.json" --output "$REPORT"
-```
-
-The report command rejects incompatible builds/harnesses/fixtures and incomplete pairs.
-[recovery/manifest.json](recovery/manifest.json) records SHA-256 and size for every evidence
-file. The archive includes combined raw samples/builds, worker commands/logs, retained-heap
-samples, per-scenario summaries, source verification, same-formatter counts, correctness
-failures and selected diagnostic outputs. Full JFR recordings are not published.
-
-[Historical candidate 227598c](historical-227598c.md) preserves the previous host's rounded
-observations and its interrupted raw-evidence publication. Newly regenerated campaigns are
-labelled separately; the original missing raw files have not been recovered.
+The archive also retains all eighteen pilot workers and diagnostic stage traces. Neither
+is pooled into the acceptance campaigns. Each campaign contains immutable build manifests,
+per-request samples, allocation, worker resources and harness hashes. Full tables include
+sample p95 of worker medians, which is not a production request-tail estimate. The existing
+`benchmarks/semantic-state/report.py` reproduces either table from its archived campaign.

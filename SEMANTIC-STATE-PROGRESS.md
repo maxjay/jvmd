@@ -463,3 +463,31 @@ Each entry records the change, validation, limitations and next work. Historical
 - [x] Added and ran an isolated delayed-watcher probe on both baseline and candidate. Changed dependency: one computation plus one cache hit returns stale `int` instead of `String`. New source: two computations and zero cache hits still miss the new declaration. The second case is source-catalogue freshness, so merely refusing empty completion-cache admission cannot repair it. This is a controlled reproduction of the mechanism, not a timing benchmark.
 - [x] Published raw combined samples/builds, all worker commands/logs, retained-heap campaign, correctness failures, source verification, same-formatter audit and diagnostic outputs. Original lost raw evidence is not relabelled as recovered; historical rounded results remain separate.
 - [ ] Acceptance remains open: input validation/completion, small-query latency, initial heap attribution, and +830 readable production lines versus the original baseline. Next correctness work must first benchmark completion and capture its actual source/namespace inputs; notification epochs alone do not prove freshness.
+
+## 026 — Close the requested 32-file warm-navigation regression
+
+- User narrowed the remaining work to fixing 32-file warm navigation, benchmarking it, and stopping. Completion freshness, broader memory attribution and overall net line reduction remain recorded limitations, not additional work in this closing change.
+- Before-edit production is `ad9ce2a`; immutable build `consolidated-v1` and original `ae23fd1` build `baseline-v3` are preserved. Existing twenty-pair result: 6.898 → 8.160 ms, paired +22.0% [−7.6, +36.4].
+- [x] Reviewed existing JFR: warm JSON conversion, input validation and reference collection are visible costs; no warm semantic hashing evidence.
+- [ ] Isolate the first-five warm-request cost; remove measured redundant work without weakening source validation or changing the benchmark request sequence.
+- [ ] Run relevant correctness tests and alternating before/after JVM comparisons, retaining larger-workspace edit/navigation guards and all raw evidence.
+- [ ] Publish the fix and measured result; close this requested scope without claiming the older, broader acceptance gates passed.
+
+## 027 — Remove the warm response-sizing byte buffer
+
+- First-five-request diagnostic traces isolate roughly 2–4 ms in the handler and another 2–4 ms in JSON tree conversion and byte-budget enforcement. The prior steady-state JFR and these stage traces are diagnostics, not acceptance samples.
+- Replaced the normal response-budget `writeValueAsBytes(...).length` with a counting output stream. Jackson still generates the exact UTF-8 representation and enforces the same byte limit; the unused whole-response byte array and its copy disappear. No new cache, invalidation rule or semantic-state owner.
+- Six fresh JVMs per variant in a rotating-order pilot: original baseline warm median 8.638 ms / 321,020 bytes; preceding production 6.937 ms / 318,680 bytes; candidate 5.759 ms / 273,200 bytes. Preliminary only; preserve all eighteen workers.
+- 33/33 focused tests pass, including byte-budget continuation/error/MCP contracts and exact 4096/4097-byte boundaries for ASCII, Unicode and escapes; navigation, source edits, API identity and old-reader tests also pass.
+- The final build changes only formatting from the pilot production. Full acceptance now compares ten alternating pairs against ad9ce2a and ten against ae23fd1, with all 37 existing scenarios and unchanged first-five request order. This closing scope requires improved 32-file warm latency versus the preceding production and no material regression versus the original baseline. No optional repeats to select favourable runs.
+
+## 028 — Publish the scoped warm-navigation follow-up and stop
+
+- [x] Published production `09326b20e0610000f4373cbc8ce7dd4e4434cd46`, tree `a59d9c82976b69b110a850558031e50e37b5dd97`. All 104 production files and three build helpers match the final immutable build.
+- [x] Ten paired comparisons against preceding production: 32-file warm median 7.791 → 6.933 ms; paired −16.5% [−21.3, +20.4]. Allocation 318,728 → 273,200 bytes, −14.3%. The earlier pilot is retained separately.
+- [x] Ten paired comparisons against original ae23fd1: 32-file warm 7.212 → 7.389 ms; paired −3.2% [−19.1, +19.8]. Allocation 321,888 → 273,648 bytes, −15.0%. The separately displayed median is 2.5% above original, within the point-estimate budget. Wide intervals still permit material regression; no conclusive latency win/non-regression claim.
+- [x] Forty successful workers cover all 37 scenarios. Original → current 512-file warm 17.657 → 10.300 ms (paired −43.9%); body edits 129.402 → 51.470 ms (−57.5%); API edits 168.656 → 111.509 ms (−33.4%). Full reports retain all cases, including preceding-production → current 32-file rename +8.6% [+0.4, +69.3].
+- [x] Exact final build passes 33/33 focused tests. All six budget/MCP tests also pass against the original baseline. Checkpoints 35587932473 and Distributions 35587932467 pass. Benchmark CI 35587932643 fails the previously reproduced timestamp-preserving completion assertion, 40/41 tests passing, before timing; failure extract retained.
+- [x] Same-formatter response-budget code: 326 → 346 lines. This bounded counter removes allocation and copying, adds no authoritative state, and leaves the broader net-code-reduction goal unmet.
+- [x] Publish both complete campaigns, worker commands/logs, diagnostic/pilot evidence, correctness reports, exact source verification and checksums. Update the checklist to reflect the user's final scope.
+- This closes the requested implementation and measurement pass. Statistical latency certainty, completion freshness, initial heap attribution and broader consolidation remain explicitly unresolved/deferred; no further architectural work is started. PR #8 remains draft and unmerged.

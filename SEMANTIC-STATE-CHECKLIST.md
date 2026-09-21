@@ -67,7 +67,7 @@ with measured end-to-end latency and allocation improvement. No cosmetic line re
 Details and predeclared acceptance: `docs/semantic-state.md` and
 `benchmarks/semantic-state/README.md`. Append progress continuously; commit coherent steps.
 
-## Current result — production ad9ce2a
+## Previous acceptance checkpoint — production ad9ce2a
 
 Implementation steps 1–5 are complete. Acceptance steps 6–8 remain open.
 
@@ -77,18 +77,27 @@ Implementation steps 1–5 are complete. Acceptance steps 6–8 remain open.
 | 7. Performance and memory | 20 paired JVM comparisons, all 37 scenarios; raw samples/logs published; three separate retained-heap pairs | Primary edit latency/allocation pass. Small-query latency and other intervals remain unresolved; isolated cached overview regresses versus prior candidate. Initial heap +17.7% needs attribution. |
 | 8. Consolidation and final acceptance | Removed duplicate overview scanner/encoder and unnecessary API graph construction; same-formatter audit retained | 70 fewer lines than prior candidate, still +830 versus original baseline. Net reduction is unmet. PR remains a draft. |
 
-Next work, in order:
+## Closing scope — requested 32-file warm navigation
 
-1. Establish completion latency/allocation baselines, then repair source/namespace validation
-   with deterministic delayed-notification tests. The new-source failure occurs even on a
-   cache miss, so changing completion-cache admission alone is insufficient.
-2. Attribute initial heap growth and remaining small-query/cold costs before choosing further
-   replacements. Keep all failed/uncertain timing cases visible.
-3. Consolidate remaining duplicated semantic representation/ownership, count all affected
-   readable production code, and benchmark each complete replacement. No formatting tricks.
-4. Re-run required acceptance gates on the resulting exact production revision; publish the
-   evidence and update this checklist before considering readiness.
+The user's final instruction supersedes the earlier work order: fix the 32-file warm
+request, benchmark, then stop. Production is `09326b2`.
 
-Current full report: `docs/performance/semantic-merkle/README.md`.
-Every transition and failure remains in `SEMANTIC-STATE-PROGRESS.md`; older rounded evidence
-is separated from regenerated raw campaigns. No approval or merge is implied.
+- [x] Preserve preceding production and original baseline; diagnose the first five warm requests.
+- [x] Remove the unused encoded response buffer without changing input validation or byte limits.
+- [x] Verify exact published production: 33 focused tests; Checkpoints and Distributions pass.
+- [x] Complete ten alternating pairs against preceding production and ten against the original;
+  all 37 output scenarios pass. Publish all samples, uncertainty, allocation and failure logs.
+- [x] Record the result and stop this requested implementation/benchmark scope.
+
+32-file warm medians: preceding production 7.791 → 6.933 ms; original baseline comparison
+7.212 → 7.389 ms. Allocation falls 14.3% and 15.0%, respectively. The median is now within
+2.5% of the original baseline; confidence intervals remain wide, so statistical latency
+acceptance is still uncertain. The 512-file gains remain. The full report includes the
+slower rename result and the known completion CI failure.
+
+The older gates 6–8 above remain open. Completion validation, initial heap attribution and
+overall net-code reduction are deferred. PR #8 stays a draft; no further work or merge is
+part of this closing scope.
+
+Current report: `docs/performance/semantic-merkle/README.md`.
+Append-only record: `SEMANTIC-STATE-PROGRESS.md`.

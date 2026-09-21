@@ -3,6 +3,9 @@
 `run.py` exercises the production JVMD Application, Dispatcher, framing, RPC client
 and LSP bridge. The only substitute is stdin/stdout for the daemon's Unix socket.
 JDTLS uses its usual stdio endpoint. Neither server uses AOT. Both use a 1 GiB heap.
+The harness is a black-box LSP client: it does not import, link to, instrument, or
+otherwise depend on JDTLS implementation code. JDTLS is only identified by the
+distribution passed with `--jdtls`.
 
 Prerequisites: Python 3.11+, JDK 25, Node 24 with native TypeScript support, a
 JDTLS distribution, built JVMD dependency JARs and Maven resolver bundles.
@@ -50,8 +53,9 @@ pure index-engine comparison.
 Use `--dependency-type fixture.a0.Type0 --binary-expression marker0
 --binary-member marker0 --query Type0 --jdtls-query Type0 --expected-results N`
 for the generated index fixture (check its actual package and member names).
-`--sources 128` scales source discovery and references. `--profile` enables JFR
-for JVMD; keep profiled runs separate from reported unprofiled latency medians.
+`--sources 128` scales source discovery and references. `--profile` enables the
+same JFR settings for JVMD and JDTLS; keep profiled runs separate from reported
+unprofiled latency medians.
 
 `EditorProfile` is a narrower changing-document workload for attributing compiler
 CPU/allocation costs; it is not an end-to-end JVMD/JDTLS comparison. It takes a
@@ -75,6 +79,8 @@ python benchmarks/workspaces/matrix.py --repo "$PWD" \
   --fixtures "$BENCH_FIXTURES" --root "$BENCH_RESULTS"
 python benchmarks/workspaces/verify.py "$BENCH_RESULTS" "$BENCH_VERIFICATION"
 python benchmarks/workspaces/summarize.py "$BENCH_RESULTS" "$BENCH_SUMMARY"
+python benchmarks/workspaces/compare.py "$BENCH_SUMMARY" "$BENCH_COMPARISON" \
+  --candidate after --baseline jdtls-shared --markdown "$BENCH_COMPARISON.md"
 python benchmarks/workspaces/added.py --repo "$PWD" \
   --build "$BENCH_BUILD/build.json" --java-home "$BENCH_JDK" \
   --jdtls "$JDTLS_HOME" --resolvers "$JVMD_RESOLVERS" \
@@ -101,6 +107,78 @@ ranges are checked against those sources.
 The benchmark harnesses remain the executable source for reproducing workspace comparisons; historical narrative reports were removed during consolidation.
 
 Profiles are separate from the unprofiled latency samples. Only selected CPU/allocation JFR event exports should be published, since a raw JFR can also contain initial environment and system properties.
+
+## Full timing and allocation suite from a branch
+
+`compile.py` compiles the checkout supplied by `--repo` and writes its Git revision,
+tree, dirty state, source hashes, dependency hashes, compiler command, and class
+hashes to `build.json`. Thus the candidate need only be the currently checked-out
+branch; no benchmark code is compiled into the shipped server. Use a second clean
+worktree for `--before`, or pass the same build if only JVMD/JDTLS comparison is
+needed.
+
+Run the matrix twice. The first run is the authoritative latency/resource run;
+the second enables JFR and is the allocation/CPU profile. Profiling perturbs
+latency and those timings must not be merged with the first run.
+
+```sh
+# Unprofiled wall-clock latency, peak RSS, CPU, disk I/O, correctness and traces.
+python benchmarks/workspaces/matrix.py --repo "$PWD" \
+  --before "$BENCH_BEFORE/build.json" --after "$BENCH_BUILD/build.json" \
+  --java-home "$BENCH_JDK" --jdtls "$JDTLS_HOME" --resolvers "$JVMD_RESOLVERS" \
+  --fixtures "$BENCH_FIXTURES" --root "$BENCH_RESULTS"
+python benchmarks/workspaces/verify.py "$BENCH_RESULTS" "$BENCH_VERIFICATION"
+python benchmarks/workspaces/summarize.py "$BENCH_RESULTS" "$BENCH_SUMMARY"
+python benchmarks/workspaces/compare.py "$BENCH_SUMMARY" "$BENCH_COMPARISON" \
+  --markdown "$BENCH_COMPARISON.md"
+
+# Separate sampled-allocation run for both servers through the same LSP workload.
+python benchmarks/workspaces/matrix.py --repo "$PWD" \
+  --before "$BENCH_BEFORE/build.json" --after "$BENCH_BUILD/build.json" \
+  --java-home "$BENCH_JDK" --jdtls "$JDTLS_HOME" --resolvers "$JVMD_RESOLVERS" \
+  --fixtures "$BENCH_FIXTURES" --root "$BENCH_PROFILE_RESULTS" --profile
+python benchmarks/workspaces/summarize.py "$BENCH_PROFILE_RESULTS" "$BENCH_PROFILE_SUMMARY"
+python benchmarks/workspaces/compare.py "$BENCH_PROFILE_SUMMARY" "$BENCH_PROFILE_COMPARISON"
+```
+
+Every server process gets an external 20 ms Linux `/proc` sampler. It includes
+descendants (the JVMD Node bridge launches the JVM), and reports peak RSS/processes/
+threads plus observed CPU and disk I/O in `process*/resources.json`. With
+`--profile`, both JVM commands receive the same JFR profile settings. The harness
+publishes allocation weights, sample counts, and the 25 largest allocated classes;
+these are estimates of allocated bytes, not retained heap. Raw recordings stay in
+the result directory. `summarize.py` includes these resource values and
+`compare.py` calculates JVMD/JDTLS ratios without discarding individual workers.
+
+The workload covers cold start/import, a second resident workspace, persisted
+restart, dependency search, first/warm hover, completion, signature help,
+definition, references, rename, document symbols, per-edit typing latency, and
+error/recovery diagnostics. Shared and isolated JDTLS modes separate daemon reuse
+from one-process-per-workspace behavior. The existing `modules.py` workload adds
+saved multi-module API/body changes, while `prefix.py` adds per-character
+completion; run both when investigating those specialized paths.
+
+For the complete run (core matrix, independent verification, summaries,
+JVMD/JDTLS comparisons, a separate allocation matrix, saved multi-module edits,
+and per-character completion), use the orchestration command:
+
+```sh
+python benchmarks/workspaces/suite.py --repo "$PWD" \
+  --before "$BENCH_BEFORE/build.json" --after "$BENCH_BUILD/build.json" \
+  --java-home "$BENCH_JDK" --jdtls "$JDTLS_HOME" --resolvers "$JVMD_RESOLVERS" \
+  --fixtures "$BENCH_FIXTURES" --root "$BENCH_SUITE_RESULTS"
+```
+
+The suite fails on the first invalid response or worker failure and only writes
+`complete.json` after every selected step succeeds. `commands.json` and per-step
+logs make the run replayable. `--skip-profile` and `--skip-specialized` support a
+shorter smoke run without changing the default complete coverage.
+
+Before a long run, validate the reporting code with:
+
+```sh
+python -m unittest benchmarks/workspaces/test_harness.py
+```
 
 `modules.py` exercises four Maven/Eclipse projects (base → core → app, plus an
 independent module), with 32 files per project. It enables JDTLS autobuild and

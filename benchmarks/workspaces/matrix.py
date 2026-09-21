@@ -8,6 +8,7 @@ for name in ('repo', 'before', 'after', 'java-home', 'jdtls', 'resolvers', 'fixt
 p.add_argument('--runs', type=int, default=3); p.add_argument('--sources', type=int, default=24)
 p.add_argument('--workspaces', type=int, default=3); p.add_argument('--samples', type=int, default=5); p.add_argument('--edits', type=int, default=8)
 p.add_argument('--fixture-names', nargs='+', default=['real', 'multi', 'single']); p.add_argument('--modes', nargs='+', default=['before', 'after', 'jdtls-shared', 'jdtls-isolated'])
+p.add_argument('--profile', action='store_true', help='record JFR allocation samples for every JVMD and JDTLS process')
 a = p.parse_args(); a.root.mkdir(parents=True, exist_ok=True)
 commands = []
 for repetition in range(a.runs):
@@ -21,6 +22,7 @@ for repetition in range(a.runs):
                        '--repository', str((a.fixtures/fixture).resolve()), '--root', str(output.resolve()), '--runs', '1', '--servers', 'jvmd' if mode in ('before', 'after', 'main') else mode,
                        '--sources', str(a.sources), '--workspaces', str(a.workspaces), '--samples', str(a.samples), '--edits', str(a.edits)]
             if fixture != 'real': command += ['--dependency-type', 'fixture.a0.Type0', '--binary-expression', 'marker0', '--binary-member', 'marker0', '--query', 'Type0', '--jdtls-query', 'Type0', '--expected-results', str(1 if fixture == 'single' else 128)]
+            if a.profile: command.append('--profile')
             commands.append({'label': label, 'command': command})
             if (output/'complete.json').exists(): continue
             print('START '+label, flush=True)

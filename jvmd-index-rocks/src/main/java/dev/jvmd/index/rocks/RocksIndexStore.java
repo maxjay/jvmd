@@ -16,7 +16,7 @@ import org.rocksdb.*;
 public final class RocksIndexStore implements IndexStore {
     public record StoredArtifact(long id,ArtifactInput input,String docsKey,String codeKey,long symbols,long edges,
                                  boolean classReferences,long sourceRevision,long simpleNames) { }
-    public record SourceFile(String file,String hash,List<Map<String,Object>> symbols,List<SourceRelationship> edges) { }
+    private record LegacySourceFile(String file,String hash,List<Map<String,Object>> symbols,List<SourceRelationship> edges) { }
     private final RocksArtifactRepository repository;
     private final RocksArtifactAdmission admission;
     private final Options options;
@@ -25,10 +25,7 @@ public final class RocksIndexStore implements IndexStore {
     private final NavigableMap<Long,StoredArtifact> artifacts=new TreeMap<>();
     private final Map<String,Long> paths=new HashMap<>();
     private final Map<String,List<WorkspaceEntry>> workspaces=new HashMap<>();
-    private final LinkedHashMap<Long,List<SourceFile>> sourceCache=new LinkedHashMap<>(16,.75f,true);
-    private final Map<Long,Long> sourceCacheWeights=new HashMap<>();
-    private final long sourceCacheBudget=16L*1024*1024;
-    private long sourceCacheBytes;
+    private final SourceOverlay sourceOverlay;
     private final Map<Long,Long> unmatched=new HashMap<>();
     private long nextArtifact=1,nextSource=0x80000000L;
     private long metadataWrites,sourceWrites;
@@ -39,7 +36,7 @@ public final class RocksIndexStore implements IndexStore {
 
     RocksIndexStore(Path root,RocksArtifactRepository repository,RocksMemory memory,RocksArtifactAdmission admission)throws Exception{
         this.repository=repository;this.admission=admission;Files.createDirectories(root);options=memory.options(64);
-        state=RocksDB.open(options,root.toString());
+        state=RocksDB.open(options,root.toString());sourceOverlay=new SourceOverlay(state);
         try{
             for(byte[] value:values("A|")){
                 var artifact=Json.MAPPER.readValue(value,StoredArtifact.class);
@@ -49,9 +46,10 @@ public final class RocksIndexStore implements IndexStore {
                 nextArtifact=Math.max(nextArtifact,artifact.id()+1);
                 byte[] count=state.get(bytes("U|"+key(artifact.id())));if(count!=null)unmatched.put(artifact.id(),Long.parseLong(new String(count,StandardCharsets.UTF_8)));
             }
+            migrateSources();
             byte[] sequence=state.get(bytes("next-source"));if(sequence!=null)nextSource=Long.parseLong(new String(sequence,StandardCharsets.UTF_8));
             sequence=state.get(bytes("next-artifact"));if(sequence!=null)nextArtifact=Math.max(nextArtifact,Long.parseLong(new String(sequence,StandardCharsets.UTF_8)));
-        }catch(Exception error){state.close();options.close();durable.close();throw error;}
+        }catch(Exception error){sourceOverlay.close();state.close();options.close();durable.close();throw error;}
     }
     @Override public String backend(){return "rocksdb-sst";}
     private static byte[] bytes(String value){return value.getBytes(StandardCharsets.UTF_8);}
@@ -103,13 +101,13 @@ public final class RocksIndexStore implements IndexStore {
             var value=new StoredArtifact(id,input,docs,same?previous.codeKey():null,facts.symbols().size(),facts.relationships().size(),!classReferences.isEmpty(),previous==null?0:previous.sourceRevision(),facts.symbols().stream().filter(symbol->TYPES.contains(symbol.kind())).count());
             try(var batch=new WriteBatch()){
                 // Preserve unchanged source files when another file changes the module fingerprint.
-                if(input.context().kind().equals("local"))for(var file:sources(id)){
+                if(input.context().kind().equals("local"))for(var file:sourceOverlay.files(id)){
                     Path path=Path.of(file.file());
-                    if(!Files.isRegularFile(path)||!Hashing.sha256(path).equals(file.hash()))batch.delete(sourceKey(id,file.file()));
+                    if(!Files.isRegularFile(path)||!Hashing.sha256(path).equals(file.hash()))sourceOverlay.remove(batch,id,file.file());
                 }
                 save(batch,value);state.write(durable,batch);
             }
-            evictSources(id);installed(value);return id;
+            installed(value);return id;
         }
     }
     @Override public void publishCode(long id,ArtifactContext context,ArtifactIndexFormat.ArtifactData facts,Set<String> references)throws Exception{
@@ -131,18 +129,19 @@ public final class RocksIndexStore implements IndexStore {
             save(batch,value);state.write(durable,batch);
         }installed(value);
     }
-    private static byte[] sourceKey(long id,String file){return bytes("S|"+key(id)+"|"+Hashing.sha256(bytes(file)));}
-    private List<SourceFile> sources(long id)throws Exception{
-        var cached=sourceCache.get(id);if(cached!=null)return cached;
-        var result=new ArrayList<SourceFile>();long weight=0;
-        for(byte[] value:values("S|"+key(id)+"|")){result.add(Json.MAPPER.readValue(value,SourceFile.class));weight+=value.length*4L+256;}
-        result.sort(Comparator.comparing(SourceFile::file));var stored=List.copyOf(result);
-        if(weight<=sourceCacheBudget){
-            while(sourceCacheBytes+weight>sourceCacheBudget&&!sourceCache.isEmpty())evictSources(sourceCache.firstEntry().getKey());
-            sourceCache.put(id,stored);sourceCacheWeights.put(id,weight);sourceCacheBytes+=weight;
-        }return stored;
+    /** Migrate each legacy owner with its postings in one durable batch; interruption is restartable. */
+    private void migrateSources()throws Exception{
+        try(var iterator=state.newIterator()){
+            for(iterator.seek(bytes("S|"));iterator.isValid()&&new String(iterator.key(),StandardCharsets.UTF_8).startsWith("S|");iterator.next()){
+                String key=new String(iterator.key(),StandardCharsets.UTF_8);long id=Long.parseUnsignedLong(key.substring(2,18),16);
+                var file=Json.MAPPER.readValue(iterator.value(),LegacySourceFile.class);
+                try(var batch=new WriteBatch()){
+                    sourceOverlay.replace(batch,id,new SourceOverlay.FileStamp(file.file(),file.hash()),file.symbols(),file.edges());
+                    batch.delete(iterator.key());state.write(durable,batch);
+                }
+            }iterator.status();
+        }
     }
-    private void evictSources(long id){sourceCache.remove(id);sourceCacheBytes-=sourceCacheWeights.getOrDefault(id,0L);sourceCacheWeights.remove(id);}
     private static String binaryKey(Map<String,Object> symbol){
         if(symbol.get("binary_key")!=null)return symbol.get("binary_key").toString();
         String fqn=Objects.toString(symbol.get("fqn"),Objects.toString(symbol.get("name_path"),""));
@@ -158,13 +157,13 @@ public final class RocksIndexStore implements IndexStore {
             var row=new LinkedHashMap<String,Object>(symbol);row.put("id",(id<<32)|nextSource++);row.put("artifact_id",id);row.put("tier",tier);
             row.put("binary_key",binaryKey(symbol));row.putIfAbsent("metadata",Map.of());rows.add(row);
         }
-        var source=new SourceFile(path,Hashing.sha256(file),List.copyOf(rows),List.copyOf(relationships));
+        var source=new SourceOverlay.FileStamp(path,Hashing.sha256(file));
         var value=new StoredArtifact(id,old.input(),old.docsKey(),old.codeKey(),old.symbols(),old.edges(),old.classReferences(),old.sourceRevision()+1,old.simpleNames());
         try(var batch=new WriteBatch()){
-            batch.put(sourceKey(id,path),Json.MAPPER.writeValueAsBytes(source));batch.put(bytes("next-source"),bytes(Long.toString(nextSource)));
+            sourceOverlay.replace(batch,id,source,rows,relationships);batch.put(bytes("next-source"),bytes(Long.toString(nextSource)));
             save(batch,value);state.write(durable,batch);
         }
-        evictSources(id);installed(value);sourceWrites++;
+        installed(value);sourceWrites++;
     }
     @Override public long publishDocumentation(long binaryId,ArtifactInput input,Map<String,Map<String,Object>> members,int unmatched)throws Exception{
         try(var permit=admitBuild()){return publishDocumentationData(binaryId,input,members,unmatched);}
@@ -190,10 +189,10 @@ public final class RocksIndexStore implements IndexStore {
         }
         if(removed.isEmpty())return false;
         try(var batch=new WriteBatch()){for(var value:removed)batch.delete(bytes("A|"+key(value.id())));state.write(durable,batch);}
-        for(var value:removed){artifacts.remove(value.id());paths.remove(value.input().context().path());evictSources(value.id());unmatched.remove(value.id());}metadataWrites+=removed.size();return true;
+        for(var value:removed){artifacts.remove(value.id());paths.remove(value.input().context().path());unmatched.remove(value.id());}metadataWrites+=removed.size();return true;
     }
     @Override public synchronized Map<String,Long> counts(){return Map.of("artifacts",(long)artifacts.size(),"symbols",artifacts.values().stream().mapToLong(StoredArtifact::symbols).sum(),"edges",artifacts.values().stream().mapToLong(StoredArtifact::edges).sum(),"simple_names",artifacts.values().stream().mapToLong(StoredArtifact::simpleNames).sum(),"unmatched_source_members",unmatched.values().stream().mapToLong(Long::longValue).sum());}
-    @Override public synchronized Map<String,Object> status(){return Map.of("backend",backend(),"link_passes",0L,"metadata_writes",metadataWrites,"source_file_writes",sourceWrites,"source_cache_budget_bytes",sourceCacheBudget,"source_cache_estimated_bytes",sourceCacheBytes);}
+    @Override public synchronized Map<String,Object> status(){return Map.of("backend",backend(),"link_passes",0L,"metadata_writes",metadataWrites,"source_file_writes",sourceWrites,"source_record_decodes",sourceOverlay.decoded(),"source_cache_estimated_bytes",sourceOverlay.cacheBytes(),"source_cache_budget_bytes",sourceOverlay.cacheBudget());}
 
     private List<StoredArtifact> selected(String workspace,boolean jdk){
         ensureOpen();
@@ -262,7 +261,10 @@ public final class RocksIndexStore implements IndexStore {
         result.put("name",symbol.name());result.put("name_path",ArtifactContext.namePath(symbol));result.put("binary_key",symbol.key());result.put("erased_descriptor",symbol.descriptor());return result;
     }
     private Map<String,Object> sourceByScip(StoredArtifact artifact,String scip)throws Exception{
-        for(var file:sources(artifact.id()))for(var symbol:file.symbols())if(scip.equals(symbol.get("scip")))return contextual(artifact,symbol);return null;
+        var symbol=sourceOverlay.first(artifact.id(),"scip",scip);return symbol==null?null:contextual(artifact,symbol);
+    }
+    private boolean sourcePreferred(StoredArtifact artifact,Map<String,Object> symbol,List<StoredArtifact> selected){
+        try{return preferred(artifact,symbol.get("scip").toString(),selected);}catch(Exception error){throw new IllegalStateException(error);}
     }
     private boolean preferred(StoredArtifact artifact,String scip,List<StoredArtifact> selected)throws Exception{
         for(var earlier:selected){
@@ -284,7 +286,7 @@ public final class RocksIndexStore implements IndexStore {
     }
     @Override public synchronized Map<String,Object> byId(long id,String workspace)throws Exception{
         long artifactId=id>>>32;var artifact=artifacts.get(artifactId);if(artifact==null||selected(workspace,true).stream().noneMatch(a->a.id()==artifactId))return null;
-        if((id&0x80000000L)!=0){for(var file:sources(artifactId))for(var symbol:file.symbols())if(((Number)symbol.get("id")).longValue()==id)return contextual(artifact,symbol);return null;}
+        if((id&0x80000000L)!=0){var symbol=sourceOverlay.byId(artifactId,id);return symbol==null?null:contextual(artifact,symbol);}
         String generation=(id&0x40000000L)!=0?artifact.codeKey():artifact.input().key().cacheKey();if(generation==null)return null;
         var symbol=repository.symbol(generation,(int)(id&0x3fffffffL));if(symbol==null)return null;
         if(artifact.codeKey()!=null){Integer enriched=repository.binaryId(artifact.codeKey(),symbol.key());if(enriched!=null)symbol=repository.symbol(artifact.codeKey(),enriched);}
@@ -297,24 +299,22 @@ public final class RocksIndexStore implements IndexStore {
         if(limit<=0)return List.of();
         var found=new TreeMap<Long,Map<String,Object>>();var seen=new HashSet<String>();var selectedArtifacts=selected(workspace,true);
         for(var artifact:selectedArtifacts){
-            var sourceScips=new HashSet<String>();
-            for(var file:sources(artifact.id()))for(var symbol:file.symbols()){
-                String scip=symbol.get("scip").toString();sourceScips.add(scip);var value=contextual(artifact,symbol);
-                if(seen.add(scip)&&preferred(artifact,scip,selectedArtifacts)&&(kinds.isEmpty()||kinds.contains(value.get("kind")))
-                        &&Objects.toString(value.get("name"),"").startsWith(prefix))offer(found,value,0,limit);
+            for(var symbol:sourceOverlay.select(artifact.id(),prefix,false,true,limit,0,
+                    value->sourcePreferred(artifact,value,selectedArtifacts)&&!seen.contains(value.get("scip").toString())&&(kinds.isEmpty()||kinds.contains(value.get("kind")))&&Objects.toString(value.get("name"),"").startsWith(prefix))){
+                String scip=symbol.get("scip").toString();if(seen.add(scip)&&preferred(artifact,scip,selectedArtifacts))offer(found,contextual(artifact,symbol),0,limit);
             }
             String posting="3|name|"+prefix;
             Predicate<ArtifactIndexFormat.SymbolRecord> accepts=s->{try{
                 if(!kinds.isEmpty()&&!kinds.contains(s.kind())||!s.name().startsWith(prefix))return false;
                 String scip=artifact.input().context().scip(s);
-                return !sourceScips.contains(scip)&&!seen.contains(scip)&&preferred(artifact,scip,selectedArtifacts);
+                return !sourceOverlay.contains(artifact.id(),scip)&&!seen.contains(scip)&&preferred(artifact,scip,selectedArtifacts);
             }catch(Exception e){throw new IllegalStateException(e);}};
             var matches=artifact.codeKey()==null?
                     repository.selectLocalIds(symbolsKey(artifact),posting,artifact.id()<<32,0,limit,accepts):
                     repository.selectRanked(symbolsKey(artifact),posting,0,limit,accepts,s->{try{return symbolId(artifact,s);}catch(Exception e){throw new IllegalStateException(e);}});
             for(var symbol:matches){
                 var value=row(artifact,symbol);String scip=value.get("scip").toString();
-                if(!sourceScips.contains(scip)&&seen.add(scip)&&preferred(artifact,scip,selectedArtifacts)
+                if(!sourceOverlay.contains(artifact.id(),scip)&&seen.add(scip)&&preferred(artifact,scip,selectedArtifacts)
                         &&(kinds.isEmpty()||kinds.contains(value.get("kind")))&&Objects.toString(value.get("name"),"").startsWith(prefix))
                     offer(found,value,0,limit);
             }
@@ -334,9 +334,8 @@ public final class RocksIndexStore implements IndexStore {
         var found=new TreeMap<Long,Map<String,Object>>();var seen=new HashSet<String>();
         var selectedArtifacts=selected(workspace,false);
         for(var artifact:selectedArtifacts){
-            var sourceScips=new HashSet<String>();for(var file:sources(artifact.id()))for(var symbol:file.symbols()){
-                String scip=symbol.get("scip").toString();sourceScips.add(scip);var value=contextual(artifact,symbol);
-                if(seen.add(scip)&&preferred(artifact,scip,selectedArtifacts)&&match.test(value))offer(found,value,after,limit);
+            for(var symbol:sourceOverlay.select(artifact.id(),query,substring,false,limit,after,value->sourcePreferred(artifact,value,selectedArtifacts)&&!seen.contains(value.get("scip").toString())&&match.test(value))){
+                String scip=symbol.get("scip").toString();if(seen.add(scip)&&preferred(artifact,scip,selectedArtifacts))offer(found,contextual(artifact,symbol),after,limit);
             }
             if(after>>>32>artifact.id())continue;
             var prefixes=new LinkedHashSet<String>();
@@ -355,7 +354,7 @@ public final class RocksIndexStore implements IndexStore {
                 if(query.startsWith(prefix))prefixes.add("2|scip|"+query.substring(prefix.length())+"|");
             }
             var candidates=new TreeMap<Integer,ArtifactIndexFormat.SymbolRecord>();
-            Predicate<ArtifactIndexFormat.SymbolRecord> accepts=s->{try{if(!kinds.isEmpty()&&!kinds.contains(s.kind()))return false;String scip=artifact.input().context().scip(s);return !sourceScips.contains(scip)&&!seen.contains(scip)&&preferred(artifact,scip,selectedArtifacts)&&match.test(searchFields(artifact,s));}catch(Exception e){throw new IllegalStateException(e);}};
+            Predicate<ArtifactIndexFormat.SymbolRecord> accepts=s->{try{if(!kinds.isEmpty()&&!kinds.contains(s.kind()))return false;String scip=artifact.input().context().scip(s);return !sourceOverlay.contains(artifact.id(),scip)&&!seen.contains(scip)&&preferred(artifact,scip,selectedArtifacts)&&match.test(searchFields(artifact,s));}catch(Exception e){throw new IllegalStateException(e);}};
             for(String prefix:prefixes){
                 // Code-enriched generations can remap IDs to original signatures; their
                 // rank still needs the decoded symbol. Plain signatures can reject IDs first.
@@ -367,7 +366,7 @@ public final class RocksIndexStore implements IndexStore {
             Integer direct=substring?null:repository.binaryId(symbolsKey(artifact),query);if(direct!=null)candidates.put(direct,repository.symbol(symbolsKey(artifact),direct));
             for(var symbol:candidates.values()){
                 var value=row(artifact,symbol);String scip=value.get("scip").toString();
-                if(!sourceScips.contains(scip)&&seen.add(scip)&&preferred(artifact,scip,selectedArtifacts)&&match.test(value))offer(found,value,after,limit);
+                if(!sourceOverlay.contains(artifact.id(),scip)&&seen.add(scip)&&preferred(artifact,scip,selectedArtifacts)&&match.test(value))offer(found,value,after,limit);
             }
         }return List.copyOf(found.values());
     }
@@ -376,7 +375,7 @@ public final class RocksIndexStore implements IndexStore {
     }
 
     private Map<String,Object> direct(StoredArtifact artifact,String binaryKey)throws Exception{
-        for(var file:sources(artifact.id()))for(var symbol:file.symbols())if(binaryKey.equals(symbol.get("binary_key")))return contextual(artifact,symbol);
+        var source=sourceOverlay.first(artifact.id(),"binary_key",binaryKey);if(source!=null)return contextual(artifact,source);
         Integer id=repository.binaryId(symbolsKey(artifact),binaryKey);
         return id==null?null:row(artifact,repository.symbol(symbolsKey(artifact),id));
     }
@@ -406,11 +405,11 @@ public final class RocksIndexStore implements IndexStore {
     }
     private List<SymbolicReference> raw(Map<String,Object> symbol,Set<String> kinds,boolean code)throws Exception{
         var result=new LinkedHashSet<SymbolicReference>();long artifactId=((Number)symbol.get("artifact_id")).longValue();var artifact=required(artifactId);
-        String scip=symbol.get("scip").toString();boolean source=false;
-        for(var file:sources(artifactId))if(file.symbols().stream().anyMatch(s->scip.equals(s.get("scip")))){
-            source=true;for(var edge:file.edges())if(edge.sourceScip().equals(scip)&&(kinds.isEmpty()||kinds.contains(edge.kind())))result.add(new SymbolicReference(scip,edge.targetScip(),edge.kind()));
+        String scip=symbol.get("scip").toString();
+        if(sourceOverlay.contains(artifactId,scip)){
+            for(var edge:sourceOverlay.edges(artifactId,scip,true,kinds))result.add(new SymbolicReference(scip,edge.targetScip(),edge.kind()));
+            return List.copyOf(result);
         }
-        if(source)return List.copyOf(result);
         String generation=code?artifact.codeKey():artifact.input().key().cacheKey();if(generation==null)return List.of();
         Integer local=repository.binaryId(generation,symbol.get("binary_key").toString());if(local==null)return List.of();
         for(var edge:repository.outgoing(generation,local,kinds,Integer.MAX_VALUE))result.add(new SymbolicReference(scip,edge.target(),edge.kind()));
@@ -441,7 +440,14 @@ public final class RocksIndexStore implements IndexStore {
         else for(var artifact:selected(workspace,true)){
             if(artifact.codeKey()!=null)for(String target:frontier)for(var edge:repository.incoming(artifact.codeKey(),target,kinds,Integer.MAX_VALUE)){
                 var symbol=repository.symbol(artifact.codeKey(),edge.sourceId());var source=byScip(artifact.input().context().scip(symbol),workspace);
-                if(source!=null&&((Number)source.get("artifact_id")).longValue()==artifact.id())result.add(new SymbolicReference(source.get("scip").toString(),target,edge.kind()));
+                if(source!=null&&((Number)source.get("artifact_id")).longValue()==artifact.id()&&!sourceOverlay.contains(artifact.id(),source.get("scip").toString()))result.add(new SymbolicReference(source.get("scip").toString(),target,edge.kind()));
+            }
+        }
+        if(!outgoing)for(String target:frontier){
+            var resolved=resolve(target,workspace,new HashSet<>());if(resolved==null)continue;
+            for(var artifact:selected(workspace,true))for(var edge:sourceOverlay.edges(artifact.id(),resolved.get("scip").toString(),false,kinds)){
+                var source=byScip(edge.sourceScip(),workspace);
+                if(source!=null&&((Number)source.get("artifact_id")).longValue()==artifact.id())result.add(new SymbolicReference(edge.sourceScip(),target,edge.kind()));
             }
         }
         return result.stream().sorted(Comparator.comparing(SymbolicReference::sourceScip).thenComparing(SymbolicReference::targetBinaryKey).thenComparing(SymbolicReference::kind)).toList();
@@ -459,9 +465,9 @@ public final class RocksIndexStore implements IndexStore {
                     for(var edge:repository.incoming(artifact.input().key().cacheKey(),binary,kinds,Integer.MAX_VALUE)){
                         var symbol=repository.symbol(artifact.input().key().cacheKey(),edge.sourceId());var source=byScip(artifact.input().context().scip(symbol),workspace);
                         var resolved=resolve(edge.target(),workspace,new HashSet<>());
-                        if(source!=null&&((Number)source.get("artifact_id")).longValue()==artifact.id()&&resolved!=null&&scip.equals(resolved.get("scip")))add(result,source,target,edge.kind());
+                        if(source!=null&&((Number)source.get("artifact_id")).longValue()==artifact.id()&&!sourceOverlay.contains(artifact.id(),source.get("scip").toString())&&resolved!=null&&scip.equals(resolved.get("scip")))add(result,source,target,edge.kind());
                     }
-                    for(var file:sources(artifact.id()))for(var edge:file.edges())if(edge.targetScip().equals(scip)&&(kinds.isEmpty()||kinds.contains(edge.kind()))){var source=byScip(edge.sourceScip(),workspace);if(source!=null)add(result,source,target,edge.kind());}
+                    for(var edge:sourceOverlay.edges(artifact.id(),scip,false,kinds)){var source=byScip(edge.sourceScip(),workspace);if(source!=null&&((Number)source.get("artifact_id")).longValue()==artifact.id())add(result,source,target,edge.kind());}
                     if((kinds.isEmpty()||kinds.contains("overrides"))&&"method".equals(target.get("kind"))){
                         for(var candidate:find(target.get("name").toString(),workspace,false,Integer.MAX_VALUE,0,Set.of("method")))
                             for(var parent:overrideParents(candidate.get("scip").toString(),workspace,Integer.MAX_VALUE))if(scip.equals(parent.get("scip")))add(result,candidate,target,"overrides");
@@ -510,6 +516,6 @@ public final class RocksIndexStore implements IndexStore {
     @Override public synchronized void close()throws Exception{
         if(closed)return;closing=true;long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(60);
         while(builds>0){long remaining=deadline-System.nanoTime();if(remaining<=0)throw new IllegalStateException("Artifact publishers did not stop; native handles remain open");java.util.concurrent.TimeUnit.NANOSECONDS.timedWait(this,remaining);}
-        closed=true;state.close();options.close();durable.close();sourceCache.clear();sourceCacheWeights.clear();sourceCacheBytes=0;
+        closed=true;sourceOverlay.close();state.close();options.close();durable.close();
     }
 }

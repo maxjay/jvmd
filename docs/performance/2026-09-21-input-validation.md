@@ -86,7 +86,7 @@ source traversal does not start following directory symlinks.
 Baseline phase 3/4: **123 passed**. Measured candidate: **132 passed** with the same
 1 GiB heap. Final focused run: **9 CompilerInputs tests and 3 RocksWorkspaceState
 tests passed**, including the added independent environment assertions. Reporting
-checks: 4 Python harness tests, 2 trend tests and 4 Node dashboard tests passed.
+checks: 4 Python harness tests, 3 trend tests and 4 Node dashboard tests passed.
 Raw Maven logs are committed. Remote CI was not yet complete when this report was
 written; see the PR checks for its actual result. No complete local all-phase build
 or local JDTLS comparison is claimed.
@@ -244,3 +244,8 @@ fingerprints, a global cross-store transaction and universal latency optimizatio
 are outside this consolidation. No new backend, semantic policy, fact format,
 prolly tree or algebraic fingerprint was introduced. The observed cold, allocation
 and editor latency costs remain visible review tradeoffs, not hidden successes.
+
+Delivery follow-up: [PR #21](https://github.com/maxjay/jvmd/pull/21) is open.
+Main advanced with reporting-only #20 (`6129dbf`); the branch includes that merge.
+Reporting tests were rerun after merging it; measured production is unchanged.
+Remote Checkpoints, Distributions and Merge Review are pending at this checkpoint.

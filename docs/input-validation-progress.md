@@ -13,7 +13,7 @@ remain historical evidence, not competing instructions.
 - [x] Cover races, overlays, membership, environment, reconciliation and eviction.
 - [x] Run serial alternating measurements and existing correctness suite.
 - [x] Record additions/deletions, limitations and tested head.
-- [ ] Open PR and record remote CI state.
+- [x] Open PR and record remote CI state.
 
 ## Ownership inventory from production callers
 
@@ -80,3 +80,8 @@ allocation regress; end-to-end measured work +7.1%, restart +8.3%. Production di
 is +442/-417 (net +25), not shrinkage. See
 [the current report](performance/2026-09-21-input-validation.md) for full evidence,
 reproduction and limitations. Production is frozen after this measured checkpoint.
+
+Delivery: [PR #21](https://github.com/maxjay/jvmd/pull/21) is open, unmerged.
+GitHub Checkpoints, Distributions and Merge Review started; results are pending.
+Main advanced during measurement with reporting-only #20 (`6129dbf`); it was
+merged into this branch and reporting tests rerun. Measured production is unchanged.

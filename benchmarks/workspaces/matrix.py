@@ -31,7 +31,11 @@ for repetition in range(a.runs):
             commands.append({'label': label, 'command': command})
             if (output/'complete.json').exists(): continue
             print('START '+label, flush=True)
-            with (a.root/(label+'.log')).open('w') as log: subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
+            log_path = a.root/(label+'.log')
+            with log_path.open('w') as log: result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT)
+            if result.returncode:
+                print(log_path.read_text()[-12000:], file=sys.stderr, flush=True)
+                raise subprocess.CalledProcessError(result.returncode, command)
             print('DONE '+label, flush=True)
             (a.root/'progress.json').write_text(json.dumps(commands, indent=2)+'\n')
 (a.root/'commands.json').write_text(json.dumps(commands, indent=2)+'\n')

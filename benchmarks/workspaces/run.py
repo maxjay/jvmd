@@ -71,14 +71,26 @@ class Client:
 
     def call(self, method, params=None, timeout=180):
         self.next += 1; ident = self.next; started = time.perf_counter()
-        self.send({'jsonrpc': '2.0', 'id': ident, 'method': method, 'params': params or {}})
+        params = dict(params or {})
+        partial_token = None
+        if method in ('textDocument/definition', 'textDocument/references', 'textDocument/documentSymbol'):
+            partial_token = f'benchmark-{ident}'
+            params['partialResultToken'] = partial_token
+        notification_start = len(self.notifications)
+        self.send({'jsonrpc': '2.0', 'id': ident, 'method': method, 'params': params})
         with self.condition:
             if not self.condition.wait_for(lambda: ident in self.responses or self.failure, timeout): raise TimeoutError(method)
             if ident not in self.responses: raise RuntimeError(self.failure)
             response = self.responses.pop(ident)
         elapsed = (time.perf_counter()-started)*1000
         if 'error' in response: raise AssertionError((method, response['error']))
-        return response['result'], elapsed
+        result = response['result']
+        if partial_token is not None:
+            chunks = [message['params']['value'] for message in self.notifications[notification_start:]
+                      if message.get('method') == '$/progress' and message.get('params', {}).get('token') == partial_token]
+            if chunks:
+                result = [item for chunk in chunks for item in chunk] + result
+        return result, elapsed
 
     def diagnostics(self, uri, version, error, since, timeout=90):
         def matching():

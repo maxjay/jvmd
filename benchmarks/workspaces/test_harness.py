@@ -1,14 +1,31 @@
 #!/usr/bin/env python3
 """Fast standard-library tests for benchmark reporting; no language server required."""
 import json, subprocess, sys, tempfile, time, unittest
+import threading
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from compare import compare
 from resources import ProcessMonitor
+from run import Client
 
 
 class HarnessTest(unittest.TestCase):
+    def test_client_reassembles_lsp_partial_results(self):
+        client = Client.__new__(Client)
+        client.next = 0; client.responses = {}; client.notifications = []; client.failure = None
+        client.condition = threading.Condition()
+        def send(message):
+            token = message['params']['partialResultToken']
+            client.notifications.extend([
+                {'method': '$/progress', 'params': {'token': token, 'value': [1, 2]}},
+                {'method': '$/progress', 'params': {'token': token, 'value': [3]}},
+            ])
+            client.responses[message['id']] = {'id': message['id'], 'result': []}
+        client.send = send
+        result, _ = client.call('textDocument/references', {'textDocument': {'uri': 'file:///Test.java'}})
+        self.assertEqual([1, 2, 3], result)
+
     def test_compare_reports_directional_ratio(self):
         summary = {'fixtures': {'small': {'after': {'median': {'hover': 2.0, 'peak_rss_mib': 40.0}},
                                                    'jdtls-shared': {'median': {'hover': 4.0, 'peak_rss_mib': 100.0}}}}}

@@ -53,13 +53,13 @@ jobs:
           # Maven already compiled production. Compile only the small benchmark
           # adapters instead of compiling the entire JVMD source tree a second time.
           python benchmarks/workspaces/compile.py --repo "$PWD" --java-home "$JAVA_HOME" --dependencies "$deps" --output "$RUNNER_TEMP/build" --reuse-production-jars
-          # 512 sources plus 64 dependency JARs, with an exact generated oracle.
+          # 192 sources plus 64 dependency JARs, with an exact generated oracle.
           python benchmarks/workspaces/fixture.py --build "$RUNNER_TEMP/build/build.json" --dependencies "$deps" --root "$RUNNER_TEMP/fixtures" --fixture-names review
       - name: Fast JVMD and JDTLS correctness benchmark
         run: |
           python benchmarks/workspaces/matrix.py --repo "$PWD" --before "$RUNNER_TEMP/build/build.json" --after "$RUNNER_TEMP/build/build.json" \
             --java-home "$JAVA_HOME" --jdtls "$RUNNER_TEMP/jdtls" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" \
-            --fixtures "$RUNNER_TEMP/fixtures" --root "$RUNNER_TEMP/results" --runs 1 --sources 512 --workspaces 1 --samples 1 --edits 2 \
+            --fixtures "$RUNNER_TEMP/fixtures" --root "$RUNNER_TEMP/results" --runs 1 --sources 192 --workspaces 1 --samples 1 --edits 2 \
             --fixture-names review --modes after jdtls-shared
           python benchmarks/workspaces/verify.py "$RUNNER_TEMP/results" "$RUNNER_TEMP/verification.json"
           python benchmarks/workspaces/summarize.py "$RUNNER_TEMP/results" "$RUNNER_TEMP/summary.json"

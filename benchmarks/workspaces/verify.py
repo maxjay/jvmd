@@ -29,16 +29,20 @@ def verify(root):
             identities = workspace['dependency_identities']; old = identity_sets.setdefault(fixture, identities)
             assert identities == old, (report_path, identities, old); counts['dependency_identity_sets'] += 1
         for path in sorted(report_path.parent.glob('process*/messages.jsonl')):
-            pending = {}
+            pending = {}; partials = {}
             for line in path.read_text().splitlines():
                 record = json.loads(line); message = record['message']
                 if record['direction'] == 'send' and 'method' in message and 'id' in message: pending[message['id']] = message
+                elif record['direction'] == 'receive' and message.get('method') == '$/progress':
+                    params = message.get('params', {}); partials.setdefault(params.get('token'), []).extend(params.get('value', []))
                 elif record['direction'] == 'receive' and 'method' not in message and 'id' in message and message['id'] in pending:
                     request = pending.pop(message['id']); method = request['method']
                     if method in ('textDocument/hover','textDocument/completion','textDocument/signatureHelp','textDocument/definition','textDocument/references','textDocument/rename','textDocument/documentSymbol'):
                         assert 'error' not in message, message; counts['editor_responses'] += 1
                     if method not in ('textDocument/references', 'textDocument/rename', 'textDocument/definition'): continue
                     assert 'error' not in message, message; value = message['result']; counts['responses'] += 1
+                    token = request.get('params', {}).get('partialResultToken')
+                    if token in partials and isinstance(value, list): value = partials.pop(token)+value
                     probe = source_path(request['params']['textDocument']['uri'],report_path.parent); expected = set(probe.parent.glob('*.java'))
                     if method == 'textDocument/references': locations = value
                     elif method == 'textDocument/definition':

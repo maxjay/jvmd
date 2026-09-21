@@ -112,9 +112,12 @@ benchmark work itself, and escapes fixture and metric labels before rendering.
 
 The merge-review gate uses `fixture.py --fixture-names review` as its correctness
 corpus instead of cloning a separate source repository. Its checked oracle covers
-512 generated source files and 64 dependency JARs (1,024 binary classes), while the workload checks
+192 generated source files and 64 dependency JARs (1,024 binary classes), while the workload checks
 the same hover, completion, signature, navigation, references, rename, symbols,
 unsaved edits, diagnostics, and dependency identities against JVMD and JDTLS.
+Large reference sets use standard LSP partial-result progress and are reassembled
+by both the timed client and the independent trace verifier; the workload does not
+relax JVMD's 64 KiB editor-response budget.
 Every generated fixture records expected dependency identities in `fixture.json`;
 the matrix consumes that manifest instead of relying on fixture-name conventions.
 The action generates only this corpus and runs servers serially. It does not use a

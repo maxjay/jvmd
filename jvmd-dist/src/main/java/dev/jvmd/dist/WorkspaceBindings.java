@@ -123,6 +123,8 @@ public final class WorkspaceBindings implements AutoCloseable {
   private final DependencyGraph<Path> dependencyGraph = new DependencyGraph<>();
   private NavigationIndex navigation = new NavigationIndex();
   private long estimatedBytes, navigationFileUpdates;
+  private long lastAttemptedRetainedBytes, lastAdmissionLimitBytes, discards;
+  private String lastDiscardReason = "";
   private long enumerationNanos, inputNanos, attributionNanos, navigationNanos;
   private Inputs inputs;
   private Snapshot snapshot;
@@ -497,23 +499,34 @@ public final class WorkspaceBindings implements AutoCloseable {
     var publicationEnd = validation == null ? null : validation.current();
     consistent &= stable(publicationStart, publicationEnd);
     var result = aggregate(nextNavigation, consistent);
-    if (consistent
-        && result.tier() == 2
-        && result.warnings().stream().noneMatch(w -> w.startsWith("analyzer_fault"))) {
-      if (workingEstimate <= Math.min(128L * 1024 * 1024, Math.max(0, byteBudget))) {
-        snapshot = result;
-        inputs = current;
-        fragments = working;
-        estimatedBytes = workingEstimate;
-        validationToken = publicationEnd;
-        navigation = nextNavigation;
-        if (full) dependencyGraph.clear();
-        for (Path file : dirty) {
-          var graph = working.get(file).outcome().result();
-          dependencyGraph.record(file, graph == null ? Set.of() : graph.dependencies(), true);
-        }
-      } else discard();
-    } else discard();
+    long admissionLimit = Math.min(128L * 1024 * 1024, Math.max(0, byteBudget));
+    lastAttemptedRetainedBytes = workingEstimate;
+    lastAdmissionLimitBytes = admissionLimit;
+    boolean analyzerFault =
+        result.warnings().stream().anyMatch(w -> w.startsWith("analyzer_fault"));
+    if (consistent && result.tier() == 2 && !analyzerFault && workingEstimate <= admissionLimit) {
+      snapshot = result;
+      inputs = current;
+      fragments = working;
+      estimatedBytes = workingEstimate;
+      validationToken = publicationEnd;
+      navigation = nextNavigation;
+      lastDiscardReason = "";
+      if (full) dependencyGraph.clear();
+      for (Path file : dirty) {
+        var graph = working.get(file).outcome().result();
+        dependencyGraph.record(file, graph == null ? Set.of() : graph.dependencies(), true);
+      }
+    } else {
+      lastDiscardReason =
+          !consistent
+              ? "inconsistent_publication"
+              : result.tier() != 2
+                  ? "degraded_tier"
+                  : analyzerFault ? "analyzer_fault" : "over_budget";
+      discards++;
+      discard();
+    }
     return result;
   }
 
@@ -528,6 +541,10 @@ public final class WorkspaceBindings implements AutoCloseable {
     result.put("api_root", navigation.apiRoot().identity().encoded());
     result.put("fragment_bytes_serialized", 0);
     result.put("estimated_retained_bytes", estimatedBytes);
+    result.put("last_attempted_retained_bytes", lastAttemptedRetainedBytes);
+    result.put("last_admission_limit_bytes", lastAdmissionLimitBytes);
+    result.put("last_discard_reason", lastDiscardReason);
+    result.put("discards", discards);
     result.put("builds", builds);
     result.put("cache_hits", hits);
     result.put("serialized_bytes", 0);

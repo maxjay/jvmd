@@ -110,6 +110,13 @@ ranges are checked against those sources.
 small, self-contained HTML report. It has no package dependencies, performs no
 benchmark work itself, and escapes fixture and metric labels before rendering.
 
+The merge-review gate uses `fixture.py --fixture-names multi` as its correctness
+corpus instead of cloning a separate source repository. The deterministic fixture
+contains 128 dependency JARs, while the workload generates source files and checks
+the same hover, completion, signature, navigation, references, rename, symbols,
+unsaved edits, diagnostics, and dependency identities against JVMD and JDTLS.
+Selecting fixtures also avoids generating the two large unused fixture variants.
+
 The benchmark harnesses remain the executable source for reproducing workspace comparisons; historical narrative reports were removed during consolidation.
 
 Profiles are separate from the unprofiled latency samples. Only selected CPU/allocation JFR event exports should be published, since a raw JFR can also contain initial environment and system properties.

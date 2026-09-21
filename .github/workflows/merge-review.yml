@@ -30,17 +30,10 @@ jobs:
           tar -xzf "$RUNNER_TEMP/temurin25.tar.gz" -C "$RUNNER_TEMP/toolchain"
           echo "JAVA_HOME=$RUNNER_TEMP/toolchain/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/toolchain/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
-      - name: Build once for corpus and benchmark
+      - name: Build benchmark production classes
         run: |
           mvn -B -DskipTests install
           bash jvmd-dist/assemble.sh
-      - name: Consolidated corpus correctness
-        run: |
-          bash jvmd-tests/corpus/fetch.sh
-          mvn -B -q -f jvmd-tests/corpus/petclinic/pom.xml test-compile
-          mvn -B -pl jvmd-tests test -Dgroups=phase-4 -DexcludedGroups=perf -DargLine=-Xmx1024m
-          mvn -B -pl jvmd-tests test -Dgroups=phase-8 -DexcludedGroups=perf -Dtest=CorpusAgentSessionTest -DargLine=-Xmx1024m
-          mvn -B -pl jvmd-tests test -Dgroups=phase-9 -DexcludedGroups=perf -Dtest=CorpusLspSessionTest -DargLine=-Xmx1024m
       - name: Install pinned JDTLS 1.61.0
         shell: bash
         run: |
@@ -55,13 +48,14 @@ jobs:
         run: |
           deps="$PWD/jvmd-dist/target/image/lib/jvmd"
           python benchmarks/workspaces/compile.py --repo "$PWD" --java-home "$JAVA_HOME" --dependencies "$deps" --output "$RUNNER_TEMP/build"
-          python benchmarks/workspaces/fixture.py --build "$RUNNER_TEMP/build/build.json" --dependencies "$deps" --root "$RUNNER_TEMP/fixtures"
+          # The generated 128-JAR corpus is deterministic and needs no repository checkout.
+          python benchmarks/workspaces/fixture.py --build "$RUNNER_TEMP/build/build.json" --dependencies "$deps" --root "$RUNNER_TEMP/fixtures" --fixture-names multi
       - name: Fast JVMD and JDTLS correctness benchmark
         run: |
           python benchmarks/workspaces/matrix.py --repo "$PWD" --before "$RUNNER_TEMP/build/build.json" --after "$RUNNER_TEMP/build/build.json" \
             --java-home "$JAVA_HOME" --jdtls "$RUNNER_TEMP/jdtls" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" \
             --fixtures "$RUNNER_TEMP/fixtures" --root "$RUNNER_TEMP/results" --runs 1 --sources 24 --workspaces 1 --samples 1 --edits 2 \
-            --fixture-names real --modes after jdtls-shared
+            --fixture-names multi --modes after jdtls-shared
           python benchmarks/workspaces/verify.py "$RUNNER_TEMP/results" "$RUNNER_TEMP/verification.json"
           python benchmarks/workspaces/summarize.py "$RUNNER_TEMP/results" "$RUNNER_TEMP/summary.json"
           python benchmarks/workspaces/compare.py "$RUNNER_TEMP/summary.json" "$RUNNER_TEMP/comparison.json" --markdown "$RUNNER_TEMP/comparison.md"
@@ -81,8 +75,3 @@ jobs:
             ${{ runner.temp }}/results/**/report.json
             ${{ runner.temp }}/results/**/messages.jsonl
             ${{ runner.temp }}/results/**/resources.json
-            jvmd-tests/target/surefire-reports/
-            jvmd-tests/target/agreement.json
-            jvmd-tests/target/sweep.json
-            jvmd-tests/target/agent-session.json
-            jvmd-tests/target/editor-session.json

@@ -9,14 +9,14 @@ Prebuilt distributions bundle Node.js 24.21.0 alongside the linked Temurin runti
 
 | Dependency | Pin | Reason |
 |---|---|---|
-| jackson-databind (with core/annotations) | 2.22.2 | JSON-RPC and config; native record support. Section 12.2. |
+| jackson-databind (with core/annotations) | 2.22.2 | JSON-RPC and config; native record support.. |
 | sqlite-jdbc | 3.53.4.0 | SQLite comparison and rollback backend. |
 | rocksdbjni | 10.10.1.1 | Immutable external SST generations; Java/native versions pinned together. Shared native cache and memtable accounting. |
-| maven-resolver-supplier and transport-http | 1.9.27 | Embedded Maven 3 resolution; no custom mediation. Section 12.2. |
-| maven-model-builder, maven-settings-builder, maven-resolver-provider | 3.9.16 | Maven's own effective models, profiles, settings, and artifact descriptors. Required by 4.3; avoids the prohibition on custom POM parsing. |
+| maven-resolver-supplier and transport-http | 1.9.27 | Embedded Maven 3 resolution; no custom mediation.. |
+| maven-model-builder, maven-settings-builder, maven-resolver-provider | 3.9.16 | Maven's own effective models, profiles, settings, and artifact descriptors. Avoids the prohibition on custom POM parsing. |
 | maven-core | 3.9.16 | Reuse public ProjectModelResolver and SettingsUtils for parent/BOM and profile semantics. No Maven container or custom POM resolver. |
-| junit-jupiter | 5.x (see POM) | Checkpoint gates. Section 12.2. |
-| assertj-core | 3.27.7 | Readable checkpoint assertions. Section 12.2. |
+| junit-jupiter | 5.x (see POM) | Checkpoint gates.. |
+| assertj-core | 3.27.7 | Readable checkpoint assertions.. |
 | maven-compiler-plugin | 3.16.0 | Java 25 compilation with debug metadata. Build only. |
 | maven-surefire-plugin | 3.6.0 | JUnit tags and test execution. Build only. |
 | maven-jar-plugin | 3.4.2 | Jar packaging required by AOT. Build only. |

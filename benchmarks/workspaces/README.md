@@ -98,7 +98,8 @@ file URIs are mapped to the included generated workspace sources. Every timed
 editor response must exist in the closed trace, and all definition/reference/rename
 ranges are checked against those sources.
 
-The September 19 campaign pins Temurin 25.0.4.1+1, JDTLS 1.61.0 and Maven 3.9.9.
+The benchmark harnesses remain the executable source for reproducing workspace comparisons; historical narrative reports were removed during consolidation.
+
 Its [report](../../docs/performance/2026-09-19-editor-reuse.md) links exact build,
 fixture, toolchain and protocol evidence, including unsuccessful attempts.
 Profiles are separate from the reported unprofiled latency samples. Only the

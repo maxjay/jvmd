@@ -112,7 +112,7 @@ Measured on Linux amd64 with AOT enabled in a [passing CI run](https://github.co
 | Documentation, three levels deep · p95 | **8 ms** |
 | Full method-body hot swap · p95 | **58 ms** |
 
-The same run passed **99.878%** of **75,565** identifier checks across Spring PetClinic and jvmd. Results depend on the workload and machine. [Measurements and validation →](PROGRESS.md#completed-implementation-and-revision-7-reconciliation)
+The same run passed **99.878%** of **75,565** identifier checks across Spring PetClinic and jvmd. Results depend on the workload and machine.
 
 ## Go further
 
@@ -120,4 +120,4 @@ The same run passed **99.878%** of **75,565** identifier checks across Spring Pe
 - [Debugging, hot swap & recordings](docs/usage.md#debug-and-hot-swap)
 - [Adapter setup](shim/README.md)
 - [Build a client: integration guide & API](docs/integration.md)
-- [Design](docs/design.md) · [Dependencies](DEPENDENCIES.md) · [Validation history](PROGRESS.md)
+- [Dependencies](DEPENDENCIES.md)

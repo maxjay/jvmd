@@ -425,4 +425,4 @@ Before shipping your integration, exercise these against the exact jvmd distribu
 8. Close one adapter while another continues using the daemon.
 9. For runtime UI: install a breakpoint, observe a stop, inspect locals, resume, and invalidate old frame tokens.
 
-Use [the stdio tests](../jvmd-tests/src/test/java/dev/jvmd/tests/LspStdioTest.java), [MCP tests](../jvmd-tests/src/test/java/dev/jvmd/tests/McpStdioTest.java), and [shim tests](../shim/test) as executable protocol examples. The [design](design.md) explains the internals; this guide is the client implementation contract.
+Use [the stdio tests](../jvmd-tests/src/test/java/dev/jvmd/tests/LspStdioTest.java), [MCP tests](../jvmd-tests/src/test/java/dev/jvmd/tests/McpStdioTest.java), and [shim tests](../shim/test) as executable protocol examples. This guide is the client implementation contract.

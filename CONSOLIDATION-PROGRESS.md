@@ -1,6 +1,6 @@
 # File semantic contribution consolidation
 
-Source of truth: the current implementation task requested in chat. Older architecture/checklist documents are historical context only and do not define this branch's scope.
+Source of truth: this consolidation branch and the current implementation task. Superseded architecture, progress, smoke, index-redesign, and historical performance narrative documents have been removed from this branch.
 
 Base: `03591aeef674b67f131065048a50543d78aca855` (current `main` at branch creation)
 Branch: `refactor/file-semantic-contribution`
@@ -136,3 +136,4 @@ consolidation, not a latency claim.
 - [x] Cross-platform Distributions pass on the production code head.
 - [x] Production Java LOC decreased.
 - [x] Remaining module-wide derived-index rebuild is explicitly left for a separately benchmarked task.
+- [x] Superseded implementation/progress/design/performance narrative documents removed; surviving docs are user/installation/integration/dependency or executable benchmark documentation.

@@ -1,9 +1,9 @@
 # Main, Maven updates, source Merkle state and JDTLS
 
-The [2026-09-19 comparison and raw reports](../../docs/performance/2026-09-19-final-comparison.md)
+Historical benchmark narrative reports were removed during consolidation. The harness and generated artifacts remain the executable evidence.
+
 record three repetitions against actual main and pinned JDTLS, including the
 memory/query tradeoffs and the distinct source-Merkle experiment.
-The [query optimization follow-up](../../docs/performance/2026-09-19-query-optimization.md)
 separates cold indexing, persisted restart and warm queries, including JVM launch.
 The [seed allocation follow-up](../../docs/performance/2026-09-19-seed-optimization.md)
 adds five-repetition seed comparisons, bidirectional persisted-index checks, JFR

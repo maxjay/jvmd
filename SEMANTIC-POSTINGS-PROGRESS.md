@@ -49,17 +49,35 @@ derived acceleration structures, not a second semantic authority.
 
 ## Baseline
 
-Pending baseline run from this branch before production edits.
+Merged main `1b376f3c` has Git tree `a52d020822c0c6be3d878fa831372a413fd7bf94`, exactly
+the same tree measured on PR #9 final head `8003c6c6`. No production edits have been made on this
+branch at baseline capture.
 
-Known merged-PR evidence immediately before merge:
-- Checkpoints: green;
-- Distributions: green;
-- Corpus: repeated OOM under 1 GiB;
-- references degraded from ~3–5 ms warm into repeated ~4–6 s calls before `Java heap space`.
+Validation on that exact tree:
+- Checkpoints run `35615794730`: **success**.
+- Distributions run `35615794619`: **success**.
+- Corpus run `35615841190`, attempt 2: **failure — Java heap space** at `-Xmx1024m`.
+
+Focused 128-file baseline from the same production code:
+- references warm: 2.335 ms, 0 binding computations, 0 javac queries;
+- references body edit: 20.861 ms, 1 binding computation, 1 javac query;
+- references API edit: 39.672 ms, 17 binding computations, 2 javac queries;
+- rename warm: 2.697 ms, 0 binding computations, 0 javac queries;
+- rename body edit: 27.861 ms, 1 binding computation, 1 javac query;
+- rename API edit: 31.352 ms, 17 binding computations, 2 javac queries.
+
+Corpus failure shape on the exact base tree:
+- early repeated `symbol.references`: commonly ~3–5 ms;
+- degradation then includes 1.4 s, 16.0 s, and repeated ~4–6 s references;
+- request faults begin;
+- Surefire fork terminates with `Java heap space`.
+
+A duplicate branch-baseline Checkpoints/Corpus run was also launched before production edits
+(`35619139713` / `35619139734`) for independent confirmation.
 
 ## Planned checkpoints
 
-- [ ] 0 — branch, clean progress record, baseline gates
+- [x] 0 — branch, clean progress record, baseline gates
 - [ ] 1 — instrument semantic invalidation I/O/work counts if current counters are insufficient
 - [ ] 2 — persist direct reverse-dependency postings
 - [ ] 3 — persist unresolved-name waiters / changed-export wakeups

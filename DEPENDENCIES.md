@@ -10,7 +10,7 @@ Prebuilt distributions bundle Node.js 24.21.0 alongside the linked Temurin runti
 | Dependency | Pin | Reason |
 |---|---|---|
 | jackson-databind (with core/annotations) | 2.22.2 | JSON-RPC and config; native record support.. |
-| sqlite-jdbc | 3.53.4.0 | SQLite comparison and rollback backend. |
+| sqlite-jdbc | 3.53.4.0 | Test-only historical query oracle; excluded from production distributions. |
 | rocksdbjni | 10.10.1.1 | Immutable external SST generations; Java/native versions pinned together. Shared native cache and memtable accounting. |
 | maven-resolver-supplier and transport-http | 1.9.27 | Embedded Maven 3 resolution; no custom mediation.. |
 | maven-model-builder, maven-settings-builder, maven-resolver-provider | 3.9.16 | Maven's own effective models, profiles, settings, and artifact descriptors. Avoids the prohibition on custom POM parsing. |

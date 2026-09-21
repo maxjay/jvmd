@@ -24,7 +24,7 @@ public final class SqliteIndexStore implements IndexStore {
             return !row.next()||row.getInt(1)!=0;
         }
     }
-    IndexDatabase database(){return database;}
+    public IndexDatabase database(){return database;}
     @Override public String backend(){return "sqlite";}
     private static String location(Path path){return path.getFileSystem().provider().getScheme().equals("file")?path.toAbsolutePath().normalize().toString():path.toUri().toString();}
 

@@ -10,7 +10,8 @@ import dev.jvmd.core.*;
 import dev.jvmd.resolver.MavenResolver;
 import dev.jvmd.resolver.Resolution;
 import dev.jvmd.index.IndexService;
-import dev.jvmd.index.ArtifactGenerationSink;
+import dev.jvmd.index.IndexStorage;
+import dev.jvmd.index.IndexSemanticState;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -741,17 +742,17 @@ public final class Application implements AutoCloseable {
     private synchronized void initializeIndex(boolean scan) {
         if(index!=null)return;
         index=java.util.concurrent.CompletableFuture.supplyAsync(()->{
-            ArtifactGenerationSink generations=null;
+            IndexStorage storage=null;
             try {
                 long defaultBudgetMb=Math.max(8L,Math.min(128L,config.heapCeilingMb()/8L));
                 long budgetMb=Long.getLong("jvmd.index.generation_budget_mb",defaultBudgetMb);
                 if(budgetMb<1)throw new IllegalArgumentException("jvmd.index.generation_budget_mb must be positive");
-                generations=ArtifactGenerationSink.open(config.stateDir().resolve("index-v2"),Math.multiplyExact(budgetMb,1024L*1024L));
-                var service=new IndexService(config.stateDir().resolve("index.db"),config.m2Repo(),generations);
+                storage=IndexStorage.open(config.stateDir().resolve("index-v2"),Math.multiplyExact(budgetMb,1024L*1024L));
+                var service=new IndexService(storage,config.m2Repo());
                 if(scan)service.start();
                 return service;
             } catch(Exception e){
-                if(generations!=null)try{generations.close();}catch(Exception close){e.addSuppressed(close);}
+                if(storage!=null)try{storage.close();}catch(Exception close){e.addSuppressed(close);}
                 throw new java.util.concurrent.CompletionException(e);
             }
         }, task -> Thread.ofVirtual().name("jvmd-index-start").start(task));
@@ -831,7 +832,7 @@ public final class Application implements AutoCloseable {
         String key=module.gav()+(test?":test":":main");
         var classpath=graph.classpaths().getOrDefault(key,List.of());
         var options=test?module.testCompilerOptions():module.compilerOptions();
-        database.configureModuleState(new ArtifactGenerationSink.ModuleStateInput(module.directory()+"|"+key,roots,Map.copyOf(overlays),options,
+        database.configureModuleState(new IndexSemanticState.ModuleStateInput(module.directory()+"|"+key,roots,Map.copyOf(overlays),options,
                 List.copyOf(processors),Map.copyOf(generated),classpath,jdkFingerprint+"|release="+module.release()));
     }
 

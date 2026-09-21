@@ -13,11 +13,11 @@ class SignatureClosureTest {
     @TempDir Path root;
     @Test void followsSignaturesWithJdkDocsAndResumesWithoutDuplicates()throws Exception{
         Path jar=IndexFixtures.jar(root,"sample",IndexFixtures.generic(),true);
-        try(var index=new IndexService(new SqliteIndexStore(root.resolve("index.db")),root,ArtifactGenerationSink.none())){
+        try(var index=new IndexService(new ReferenceIndexStorage(root.resolve("index.db")),root)){
             index.indexJar(jar,"fixture:sample:1","jar");index.indexSources(root.resolve("sample-sources.jar"));index.linkEdges();
             var symbol=index.find("transform",null,false,10,0).getFirst();long id=((Number)symbol.get("id")).longValue();
             // A self-cycle must not duplicate the root or prevent pagination.
-            index.database().write(c->{try(var q=c.prepareStatement("INSERT OR IGNORE INTO edges VALUES(?,?,'return_type')")){q.setLong(1,id);q.setLong(2,id);q.executeUpdate();}return null;});
+            ((SqliteIndexStore)index.store()).database().write(c->{try(var q=c.prepareStatement("INSERT OR IGNORE INTO edges VALUES(?,?,'return_type')")){q.setLong(1,id);q.setLong(2,id);q.executeUpdate();}return null;});
             var docs=new Documentation(index,Path.of(System.getProperty("java.home")));var identities=new LinkedHashSet<String>();int cursor=0,pages=0;
             while(true){
                 var page=docs.describe(symbol,null,"summary",3,2,cursor);var result=dev.jvmd.core.Json.MAPPER.valueToTree(page.result());var closure=result.path("closure");assertThat(closure.size()).isLessThanOrEqualTo(2);

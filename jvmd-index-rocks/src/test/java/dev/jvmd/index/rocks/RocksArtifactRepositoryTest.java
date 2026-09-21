@@ -1,6 +1,6 @@
 package dev.jvmd.index.rocks;
 
-import dev.jvmd.index.ArtifactIndexFormat;
+import dev.jvmd.index.*;
 import java.nio.file.*;
 import java.util.*;
 import org.junit.jupiter.api.*;
@@ -63,21 +63,22 @@ class RocksArtifactRepositoryTest {
 
     @Test void admittedPublisherDoesNotQueueBehindAWorkerWaitingForItsCapacity()throws Exception{
         var acquired=new java.util.concurrent.CountDownLatch(1);var publish=new java.util.concurrent.CountDownLatch(1);
-        try(var sink=new RocksArtifactGenerationSink(temp.resolve("fair-admission"),1024*1024)){
+        try(var storage=new RocksIndexStorage(temp.resolve("fair-admission"),1024*1024)){
             var executor=java.util.concurrent.Executors.newFixedThreadPool(2);
             try{
                 var owner=executor.submit(()->{
-                    try(var permit=sink.acquireArtifact(temp.resolve("owner.jar"))){acquired.countDown();publish.await();sink.publish(facts(10,0),Set.of());}
+                    try(var permit=storage.admission().acquireArtifact(temp.resolve("owner.jar"))){acquired.countDown();publish.await();publish(storage,facts(10,0),Set.of());}
                     return null;
                 });
                 assertThat(acquired.await(5,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
-                var waiter=executor.submit(()->{try(var permit=sink.acquireArtifact(temp.resolve("waiter.jar"))){return true;}});
+                var waiter=executor.submit(()->{try(var permit=storage.admission().acquireArtifact(temp.resolve("waiter.jar"))){return true;}});
                 long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
-                while(((Number)sink.status().get("admission_waiters")).intValue()==0&&System.nanoTime()<deadline)Thread.sleep(1);
-                assertThat(sink.status()).containsEntry("admission_waiters",1);
+                while(((Number)storage.status().get("admission_waiters")).intValue()==0&&System.nanoTime()<deadline)Thread.sleep(1);
+                assertThat(storage.status()).containsEntry("admission_waiters",1);
                 publish.countDown();owner.get(5,java.util.concurrent.TimeUnit.SECONDS);
                 assertThat(waiter.get(5,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
-                assertThat(sink.status()).containsEntry("estimated_bytes_in_flight",0L).containsEntry("published",1L);
+                assertThat(storage.status()).containsEntry("estimated_bytes_in_flight",0L);
+                assertThat(((Map<?,?>)storage.status().get("repository")).get("published")).isEqualTo(1L);
             }finally{publish.countDown();executor.shutdownNow();assertThat(executor.awaitTermination(5,java.util.concurrent.TimeUnit.SECONDS)).isTrue();}
         }
     }
@@ -200,21 +201,25 @@ class RocksArtifactRepositoryTest {
         }
     }
 
-    @Test void distinctArtifactsBuildInParallelWithinBoundedSinkBudget()throws Exception{
+    private static void publish(IndexStorage storage,ArtifactIndexFormat.ArtifactData facts,Set<String> references)throws Exception{
+        storage.store().publishBinary(new IndexStore.ArtifactInput(new ArtifactContext("fixture:admission:1","jar","/fixture/"+facts.key().cacheKey()+".jar"),facts.key(),0,0),facts,references);
+    }
+
+    @Test void distinctArtifactsBuildInParallelWithinBoundedStorageBudget()throws Exception{
         long budget=4L*1024*1024;
-        try(var sink=new RocksArtifactGenerationSink(temp.resolve("bounded"),budget);
+        try(var storage=new RocksIndexStorage(temp.resolve("bounded"),budget);
             var executor=java.util.concurrent.Executors.newFixedThreadPool(4)){
             var futures=new ArrayList<java.util.concurrent.Future<?>>();
             for(int i=0;i<4;i++){
                 final int n=i;
                 futures.add(executor.submit(()->{
-                    try{sink.publish(facts(2500,5000,(char)('b'+n)),Set.of("dep.Type12"));}
+                    try{publish(storage,facts(2500,5000,(char)('b'+n)),Set.of("dep.Type12"));}
                     catch(Exception e){throw new RuntimeException(e);}
                 }));
             }
             for(var future:futures)future.get();
-            var status=sink.status();
-            assertThat(((Number)status.get("published")).longValue()).isEqualTo(4L);
+            var status=storage.status();
+            assertThat(((Number)((Map<?,?>)status.get("repository")).get("published")).longValue()).isEqualTo(4L);
             assertThat(((Number)status.get("peak_estimated_bytes_in_flight")).longValue()).isLessThanOrEqualTo(budget);
         }
     }

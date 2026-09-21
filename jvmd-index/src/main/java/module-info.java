@@ -3,9 +3,7 @@ module dev.jvmd.index {
     requires transitive dev.jvmd.core;
     requires java.compiler;
     requires jdk.compiler;
-    requires java.sql;
-    requires org.xerial.sqlitejdbc;
     exports dev.jvmd.index;
-    uses dev.jvmd.index.ArtifactGenerationSinkProvider;
+    uses dev.jvmd.index.IndexStorageProvider;
     opens dev.jvmd.index to com.fasterxml.jackson.databind;
 }

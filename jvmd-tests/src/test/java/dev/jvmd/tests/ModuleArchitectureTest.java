@@ -14,7 +14,7 @@ class ModuleArchitectureTest {
     @Test void compiledModuleRequiresMatchTheArchitecture() throws Exception {
         var expected=Map.of(
                 "core",Set.of("java.base","java.management","com.fasterxml.jackson.databind"),
-                "index",Set.of("java.base","dev.jvmd.core","java.compiler","jdk.compiler","java.sql","org.xerial.sqlitejdbc"),
+                "index",Set.of("java.base","dev.jvmd.core","java.compiler","jdk.compiler"),
                 "analyzer",Set.of("java.base","dev.jvmd.core","dev.jvmd.index","java.compiler","jdk.compiler","java.management"),
                 "resolver",Set.of("java.base","dev.jvmd.core"),
                 "runtime",Set.of("java.base","dev.jvmd.core","jdk.jdi","java.compiler","jdk.compiler"),

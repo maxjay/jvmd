@@ -59,3 +59,9 @@ measurements found zero warm directory enumerations, content hashes and identity
 in the candidate; baseline had 120 source and 80 classpath enumerations and 120 identity-map
 rebuilds across 40 paired observations. The stronger initial JDK content check costs ~150 ms
 cold in this fixture. Final evidence must be rerun at the committed consumer head.
+
+Portability follow-up: providers without Unix change-time evidence must rehash, but an
+unchanged fallback hash must not manufacture a new in-flight observation on every read.
+Implicit javac source reads now verify their actual text against the captured input snapshot.
+This avoids accepting bytes from an intervening version even when timestamp evidence is
+unavailable. The last run is superseded by the final validation below.

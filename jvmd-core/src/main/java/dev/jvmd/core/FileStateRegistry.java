@@ -36,6 +36,7 @@ public final class FileStateRegistry {
             String hash = HexFormat.of().formatHex(digest.digest()); hashes++;
             Stamp after = stamp(file);
             if (before == null || before.equals(after)) {
+                if(after==null&&previous!=null&&hash.equals(previous.hash()))return previous.hash();
                 files.put(file, new Entry(after, hash));
                 while (files.size() > 32768) files.remove(files.keySet().iterator().next());
                 return hash;

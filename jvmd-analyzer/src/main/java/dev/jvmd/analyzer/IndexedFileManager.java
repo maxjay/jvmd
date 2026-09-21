@@ -35,6 +35,8 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     long sourceModuleGeneration(){return sourceModuleGeneration;}
     private Path moduleOutput;
     private Map<Path,String> documents=Map.of();
+    private CompilerInputs.Snapshot expectedInputs;
+    void expectedInputs(CompilerInputs.Snapshot inputs){expectedInputs=inputs;}
     public void documents(Map<Path,String> values){documents=Map.copyOf(values);try{configureModules();}catch(IOException e){throw new UncheckedIOException(e);}}
     private final Map<Path,Catalog> catalogs=new HashMap<>();
     private final FileStateRegistry files;
@@ -200,8 +202,9 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     private final class SourceFile extends SimpleJavaFileObject {
         final String binary,text;final Path file;final long generation;
         SourceFile(Path file,String binary,String text){super(file.toUri(),Kind.SOURCE);this.file=file;this.binary=binary;this.text=text;this.generation=sourceStateGeneration;}
-        @Override public CharSequence getCharContent(boolean ignoreEncodingErrors)throws IOException{return text==null?Files.readString(file):text;}
-        @Override public InputStream openInputStream()throws IOException{return text==null?Files.newInputStream(file):new ByteArrayInputStream(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
+        @Override public CharSequence getCharContent(boolean ignoreEncodingErrors)throws IOException{if(text!=null)return text;
+            String value=Files.readString(file);return expectedInputs==null?value:expectedInputs.checkText(file,value);}
+        @Override public InputStream openInputStream()throws IOException{return new ByteArrayInputStream(getCharContent(false).toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));}
         @Override public long getLastModified(){
             if(text!=null)return Long.MAX_VALUE;
             try{long modified=Files.getLastModifiedTime(file).toMillis();return modified>Long.MAX_VALUE-generation?Long.MAX_VALUE:modified+generation;}

@@ -24,7 +24,9 @@ public final class CompilerInputs {
         public SourceIdentity source(Path file){return new SourceIdentity(sources.get(file.toAbsolutePath().normalize()));}
         /** Identify the bytes actually supplied, never a hash reread after compilation. */
         public String text(Path file,Documents documents)throws Exception {
-            String text=documents.text(file);
+            return checkText(file,documents.text(file));
+        }
+        public String checkText(Path file,String text)throws Superseded {
             if(!Objects.equals(sources.get(file.toAbsolutePath().normalize()),Hashing.sha256(text.getBytes(StandardCharsets.UTF_8))))
                 throw new Superseded("Source changed before analysis: "+file);
             return text;

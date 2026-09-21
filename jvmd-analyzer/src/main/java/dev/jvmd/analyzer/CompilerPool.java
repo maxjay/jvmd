@@ -85,7 +85,7 @@ public final class CompilerPool implements AutoCloseable {
     private <T> Outcome<T> execute(List<SourceInput> sources,int tier,Query<T> query)throws Exception {
         Path path=sources.getFirst().file();
         checkThread();if(manager==null)throw new IllegalStateException("Compiler classpath not configured");
-        var observed=inputSnapshot();
+        var observed=inputSnapshot();manager.expectedInputs(observed);
         if(tier<0||tier>2)throw new IllegalArgumentException("tier");
         if(heap()-baseline>budget)recycle();
         long queryStarted=System.nanoTime();

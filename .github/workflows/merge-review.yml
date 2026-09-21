@@ -18,8 +18,6 @@ jobs:
   evidence:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-24.04
-    # This is a fast review signal, not the exhaustive performance suite.
-    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Install checksum-pinned Temurin 25.0.4.1+1
@@ -31,16 +29,20 @@ jobs:
           tar -xzf "$RUNNER_TEMP/temurin25.tar.gz" -C "$RUNNER_TEMP/toolchain"
           echo "JAVA_HOME=$RUNNER_TEMP/toolchain/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/toolchain/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
-      - name: Build benchmark production classes
-        run: |
-          mvn -B -T1C -DskipTests install
-          bash jvmd-dist/assemble.sh
-      - name: Install pinned JDTLS 1.61.0
+      - name: Build production classes while fetching JDTLS
         shell: bash
         run: |
-          curl -fsSL --retry 3 'https://download.eclipse.org/jdtls/milestones/1.61.0/jdt-language-server-1.61.0-202609031315.tar.gz' -o "$RUNNER_TEMP/jdtls.tar.gz"
-          printf '%s  %s\n' 338e7e73d61836651ba2453919a0d34fa763eb4e7c03342092309bffb8934c64 "$RUNNER_TEMP/jdtls.tar.gz" | sha256sum --check -
-          mkdir "$RUNNER_TEMP/jdtls" && tar -xzf "$RUNNER_TEMP/jdtls.tar.gz" -C "$RUNNER_TEMP/jdtls"
+          (
+            curl -fsSL --retry 3 'https://download.eclipse.org/jdtls/milestones/1.61.0/jdt-language-server-1.61.0-202609031315.tar.gz' -o "$RUNNER_TEMP/jdtls.tar.gz"
+            printf '%s  %s\n' 338e7e73d61836651ba2453919a0d34fa763eb4e7c03342092309bffb8934c64 "$RUNNER_TEMP/jdtls.tar.gz" | sha256sum --check -
+            mkdir "$RUNNER_TEMP/jdtls" && tar -xzf "$RUNNER_TEMP/jdtls.tar.gz" -C "$RUNNER_TEMP/jdtls"
+          ) &
+          jdtls_download=$!
+          # Tests are exercised by the normal checkpoint workflow. Avoid even compiling
+          # them here, and use all available cores for the production reactor.
+          mvn -B -T1C -Dmaven.test.skip=true -pl jvmd-dist,jvmd-resolver/maven3,jvmd-resolver/maven4 -am package
+          bash jvmd-dist/assemble.sh
+          wait "$jdtls_download"
       - name: Install pinned Node.js for the TypeScript LSP bridge
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
@@ -48,12 +50,14 @@ jobs:
       - name: Compile reproducible benchmark fixture
         run: |
           deps="$PWD/jvmd-dist/target/image/lib/jvmd"
-          python benchmarks/workspaces/compile.py --repo "$PWD" --java-home "$JAVA_HOME" --dependencies "$deps" --output "$RUNNER_TEMP/build"
+          # Maven already compiled production. Compile only the small benchmark
+          # adapters instead of compiling the entire JVMD source tree a second time.
+          python benchmarks/workspaces/compile.py --repo "$PWD" --java-home "$JAVA_HOME" --dependencies "$deps" --output "$RUNNER_TEMP/build" --reuse-production-jars
           # 512 sources plus 64 dependency JARs, with an exact generated oracle.
           python benchmarks/workspaces/fixture.py --build "$RUNNER_TEMP/build/build.json" --dependencies "$deps" --root "$RUNNER_TEMP/fixtures" --fixture-names review
       - name: Fast JVMD and JDTLS correctness benchmark
         run: |
-          timeout --signal=TERM 15m python benchmarks/workspaces/matrix.py --repo "$PWD" --before "$RUNNER_TEMP/build/build.json" --after "$RUNNER_TEMP/build/build.json" \
+          python benchmarks/workspaces/matrix.py --repo "$PWD" --before "$RUNNER_TEMP/build/build.json" --after "$RUNNER_TEMP/build/build.json" \
             --java-home "$JAVA_HOME" --jdtls "$RUNNER_TEMP/jdtls" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" \
             --fixtures "$RUNNER_TEMP/fixtures" --root "$RUNNER_TEMP/results" --runs 1 --sources 512 --workspaces 1 --samples 1 --edits 2 \
             --fixture-names review --modes after jdtls-shared

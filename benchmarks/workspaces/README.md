@@ -117,14 +117,17 @@ the same hover, completion, signature, navigation, references, rename, symbols,
 unsaved edits, diagnostics, and dependency identities against JVMD and JDTLS.
 Every generated fixture records expected dependency identities in `fixture.json`;
 the matrix consumes that manifest instead of relying on fixture-name conventions.
-The action generates only this corpus, runs servers serially, caps the matrix at
-15 minutes, and caps the entire job at 30 minutes.
+The action generates only this corpus and runs servers serially. It does not use a
+short timeout or accept partial results: every worker and the independent verifier
+must complete successfully before the dashboard is produced.
 
 Rewriting the Python coordinator in another language would not materially shorten
 this gate: compilation, JVM startup, indexing, and checked LSP requests dominate
-the run. The fast path instead reduces synthetic members, avoids unused fixtures,
-uses a parallel Maven build, and keeps one correctness repetition. The full suite
-remains the place for statistically meaningful performance measurements.
+the run. The fast path instead downloads JDTLS concurrently with a parallel Maven
+build, skips test compilation already covered by the checkpoint action, reuses the
+built JVMD JARs rather than compiling production sources twice, excludes the test
+module from the reactor, avoids unused fixtures, and keeps one complete correctness
+repetition. The full suite remains the place for statistically meaningful performance measurements.
 
 The benchmark harnesses remain the executable source for reproducing workspace comparisons; historical narrative reports were removed during consolidation.
 

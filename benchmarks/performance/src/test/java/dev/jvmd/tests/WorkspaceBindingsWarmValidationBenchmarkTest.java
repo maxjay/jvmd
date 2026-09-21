@@ -1,9 +1,7 @@
 package dev.jvmd.tests;
 
 import dev.jvmd.core.Json;
-import dev.jvmd.dist.Application;
 import java.nio.file.*;
-import java.time.Duration;
 import java.util.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
@@ -18,7 +16,7 @@ class WorkspaceBindingsWarmValidationBenchmarkTest {
         var scenarios=new ArrayList<Map<String,Object>>();
         for(boolean resolved:List.of(false,true))for(int files:List.of(128,512))
             scenarios.add(run(root.resolve((resolved?"maven":"plain")+"-"+files),files,resolved));
-        var out=Map.of("feature","workspace-bindings-warm-validation","scenarios",scenarios);
+        var out=Map.of("feature","workspace-bindings-warm-validation","mode","warm-production-daemon","transport","unix-domain-socket","scenarios",scenarios);
         Path report=TestSupport.repo().resolve("jvmd-tests/target/workspace-bindings-warm-validation-perf.json");
         Files.createDirectories(report.getParent());Json.MAPPER.writerWithDefaultPrettyPrinter().writeValue(report.toFile(),out);
         System.out.println("workspace-bindings-warm-validation-perf "+Json.MAPPER.writeValueAsString(out));
@@ -30,22 +28,24 @@ class WorkspaceBindingsWarmValidationBenchmarkTest {
         Files.writeString(src.resolve("Root.java"),"class Root { static int value(){ return 1; } }\n");
         for(int i=1;i<files;i++)Files.writeString(src.resolve("Other"+i+".java"),
                 "class Other"+i+" { int value(){ return "+i+"; } }\n");
-        try(var app=new Application(TestSupport.config(project,Duration.ofHours(4)))){
-            String session=TestSupport.open(app,resolved?project:src);
-            var cold=TestSupport.request(app.dispatcher(),"symbol.references",
+        Path daemonRoot=Files.createDirectories(project.resolve("daemon"));
+        try(var daemon=new AotDaemon(daemonRoot)){
+            Path workspace=resolved?project:src;
+            String session=daemon.request("session.open",Map.of("root",workspace.toString())).path("result").path("session").asText();
+            var cold=daemon.request("symbol.references",
                     Map.of("session",session,"ref","Root/value()","direction","in","limit",1000));
-            assertThat(cold.has("error")).as(cold.toString()).isFalse();
+            assertThat(cold.path("result").isObject()).as(cold.toString()).isTrue();
 
-            var before=status(app,session);
+            var before=status(daemon,session);
             var samples=new double[20];
             for(int i=0;i<samples.length;i++){
                 long started=System.nanoTime();
-                var response=TestSupport.request(app.dispatcher(),"symbol.references",
+                var response=daemon.request("symbol.references",
                         Map.of("session",session,"ref","Root/value()","direction","in","limit",1000));
                 samples[i]=(System.nanoTime()-started)/1_000_000.0;
-                assertThat(response.has("error")).as(response.toString()).isFalse();
+                assertThat(response.path("result").isObject()).as(response.toString()).isTrue();
             }
-            var after=status(app,session);Arrays.sort(samples);
+            var after=status(daemon,session);Arrays.sort(samples);
             var result=new LinkedHashMap<String,Object>();
             result.put("files",files);
             result.put("resolved",resolved);
@@ -65,8 +65,8 @@ class WorkspaceBindingsWarmValidationBenchmarkTest {
     private static double percentile(double[] values,double p){
         int index=(int)Math.ceil(p*values.length)-1;return values[Math.max(0,Math.min(values.length-1,index))];
     }
-    private static com.fasterxml.jackson.databind.JsonNode status(Application app,String session)throws Exception{
-        return TestSupport.request(app.dispatcher(),"session.status",Map.of("session",session)).path("result").path("result");
+    private static com.fasterxml.jackson.databind.JsonNode status(AotDaemon daemon,String session)throws Exception{
+        return daemon.request("session.status",Map.of("session",session)).path("result");
     }
     private static long number(com.fasterxml.jackson.databind.JsonNode node,String section,String field){return node.path(section).path(field).asLong();}
 }

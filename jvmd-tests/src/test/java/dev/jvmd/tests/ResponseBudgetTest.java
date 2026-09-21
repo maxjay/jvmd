@@ -69,5 +69,25 @@ class ResponseBudgetTest {
             assertThat(response.path("cursor").asText()).isEqualTo("native-next");assertThat(calls.get()).isEqualTo(1);
         }
     }
+    @Test
+    void byteBoundaryMatchesJacksonForAsciiUnicodeAndEscapes() throws Exception {
+        for (String text : List.of("plain", "🙂界é", "\"\\\n\t\u0000")) {
+            var response = Json.MAPPER.createObjectNode().put("jsonrpc", "2.0").put("id", 1);
+            response.set("result", Json.MAPPER.valueToTree(Envelope.of(2, "live", Map.of("text", text))));
+            var payload = (com.fasterxml.jackson.databind.node.ObjectNode)
+                    response.path("result").path("result");
+            int padding = 4096 - Json.MAPPER.writeValueAsBytes(response).length;
+            payload.put("text", text + "x".repeat(padding));
+            var params = Json.MAPPER.valueToTree(Map.of("_response_bytes", 4096));
+            var budget = new ResponseBudget();
+            assertThat(Json.MAPPER.writeValueAsBytes(response)).hasSize(4096);
+            assertThat(budget.enforce(response, "probe.boundary", params)).isSameAs(response);
+            payload.put("text", payload.path("text").asText() + "x");
+            assertThat(Json.MAPPER.writeValueAsBytes(response)).hasSize(4097);
+            var page = budget.enforce(response, "probe.boundary", params);
+            assertThat(page.path("result").path("truncated").asBoolean()).isTrue();
+            assertThat(Json.MAPPER.writeValueAsBytes(page).length).isLessThanOrEqualTo(4096);
+        }
+    }
     private static JsonNode request(Dispatcher dispatcher,String method,Map<String,?> args){var request=Json.MAPPER.createObjectNode().put("jsonrpc","2.0").put("id",1).put("method",method);request.set("params",Json.MAPPER.valueToTree(args));return dispatcher.dispatch(request);}
 }

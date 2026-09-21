@@ -31,7 +31,7 @@ public final class ResponseBudget {
     private static ObjectNode envelope(ObjectNode response){return (ObjectNode)(response.has("error")?response.path("error").path("data"):response.path("result"));}
     public ObjectNode enforce(ObjectNode response,String method,JsonNode params)throws Exception{
         int maximum=Dispatcher.bounded(params,"_response_bytes",MAX_BYTES,MAX_BYTES);if(maximum<4096)throw RpcException.invalid("_response_bytes must be at least 4096");
-        if(Json.MAPPER.writeValueAsBytes(response).length<=maximum)return response;
+        if(encodedSize(response)<=maximum)return response;
         int payloadBudget=maximum-2048;
         ObjectNode original=envelope(response);var document=Json.MAPPER.createObjectNode();document.set("payload",original.path("result"));document.set("warnings",original.path("warnings"));
         var pending=new ArrayDeque<JsonNode>();pending.add(document);var fragments=new ArrayList<JsonNode>();long bytes=0;
@@ -58,6 +58,25 @@ public final class ResponseBudget {
             snapshots.put(key,new Snapshot(identity(method,params),List.copyOf(pages),System.nanoTime()+TimeUnit.SECONDS.toNanos(60),bytes));stored+=bytes;
         }
         return pages.getFirst();
+    }
+    /** Count the real UTF-8 output without allocating a throwaway copy of the response. */
+    private static long encodedSize(JsonNode value) throws java.io.IOException {
+        class Counter extends java.io.OutputStream {
+            long bytes;
+
+            @Override
+            public void write(int value) {
+                bytes++;
+            }
+
+            @Override
+            public void write(byte[] values, int offset, int length) {
+                bytes += length;
+            }
+        }
+        var counter = new Counter();
+        Json.MAPPER.writeValue(counter, value);
+        return counter.bytes;
     }
     private static Candidate independentFields(JsonNode node,List<String> path,int budget)throws Exception{
         if(node.isObject()){

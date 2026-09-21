@@ -15,17 +15,18 @@ class ModuleArchitectureTest {
         var expected=Map.of(
                 "core",Set.of("java.base","java.management","com.fasterxml.jackson.databind"),
                 "index",Set.of("java.base","dev.jvmd.core","java.compiler","jdk.compiler"),
+                "index-rocks",Set.of("java.base","dev.jvmd.index","rocksdbjni"),
                 "analyzer",Set.of("java.base","dev.jvmd.core","dev.jvmd.index","java.compiler","jdk.compiler","java.management"),
                 "resolver",Set.of("java.base","dev.jvmd.core"),
                 "runtime",Set.of("java.base","dev.jvmd.core","jdk.jdi","java.compiler","jdk.compiler"),
                 "mcp",Set.of("java.base","dev.jvmd.core"),
                 "lsp",Set.of("java.base","dev.jvmd.core"),
-                "dist",Set.of("java.base","dev.jvmd.core","dev.jvmd.index","dev.jvmd.analyzer","dev.jvmd.resolver","dev.jvmd.runtime","dev.jvmd.mcp","dev.jvmd.lsp","java.compiler","java.management"));
+                "dist",Set.of("java.base","dev.jvmd.core","dev.jvmd.index","dev.jvmd.index.rocks","dev.jvmd.analyzer","dev.jvmd.resolver","dev.jvmd.runtime","dev.jvmd.mcp","dev.jvmd.lsp","java.compiler","java.management"));
         for(var entry:expected.entrySet()) {
             Path classes=TestSupport.repo().resolve("jvmd-"+entry.getKey()+"/target/classes");
             ModuleDescriptor descriptor;
             try(var input=Files.newInputStream(classes.resolve("module-info.class"))) { descriptor=ModuleDescriptor.read(input); }
-            assertThat(descriptor.name()).isEqualTo("dev.jvmd."+entry.getKey());assertThat(descriptor.isAutomatic()).isFalse();assertThat(descriptor.isOpen()).isFalse();
+            assertThat(descriptor.name()).isEqualTo("dev.jvmd."+entry.getKey().replace('-','.'));assertThat(descriptor.isAutomatic()).isFalse();assertThat(descriptor.isOpen()).isFalse();
             assertThat(descriptor.requires()).extracting(ModuleDescriptor.Requires::name).containsExactlyInAnyOrderElementsOf(entry.getValue());
             assertThat(descriptor.opens()).allMatch(open->open.isQualified()&&open.targets().equals(Set.of("com.fasterxml.jackson.databind")));
             if(!entry.getKey().equals("analyzer"))try(var files=Files.walk(classes)) {

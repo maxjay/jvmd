@@ -250,3 +250,20 @@ Validation: **45 tests, zero failures/errors/skips** across fact lifetime, sourc
 contracts, pagination, navigation, rename, and semantic protocol coverage. Temporarily restoring
 the two original correctness defects made both new regressions fail. Existing performance samples
 remain attributed to their recorded revision; they are not measurements of this follow-up.
+
+### Main integration and PR review responses
+
+Merged main `4d90be5` (previous-PR benchmark comparison) into the branch. The Merge Review
+job passed both benchmark stages and failed in the previous-PR comparison stage; the merged
+checkout now contains the `trend.py` script used by that workflow step.
+
+Updated the exact module dependency contract for `dev.jvmd.dist` and added explicit descriptor
+coverage for `dev.jvmd.index.rocks`, including the existing javac-internals boundary checks.
+The other review findings (declaration masking, aborted rebuild ownership, and synchronized
+lease registration) were already fixed in `667d435`.
+
+Validation: ModuleArchitectureTest, SemanticFactLifetimeTest, and DependencyFindPaginationTest
+pass (10 tests); benchmark trend, harness, and dashboard tests pass (10 tests). A broader local
+Phase 1 attempt ran 17 tests, with five environment/prerequisite failures: the runtime image and
+AOT training were not assembled, and this executor rejects Unix sockets. These are not reported
+as passing; CI remains the complete runtime gate.

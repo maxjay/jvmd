@@ -565,6 +565,10 @@ public final class WorkspaceBindings implements AutoCloseable {
     consistent &= stable(publicationStart, publicationEnd);
     var result = aggregate(nextNavigation, consistent);
     long admissionLimit = Math.min(128L * 1024 * 1024, Math.max(0, byteBudget));
+    long diagnosticAdmissionMb =
+        Long.getLong("jvmd.workspace_bindings.diagnostic_admission_mb", 0L);
+    if (diagnosticAdmissionMb > 0)
+      admissionLimit = Math.multiplyExact(diagnosticAdmissionMb, 1024L * 1024L);
     lastAttemptedRetainedBytes = workingEstimate;
     lastAdmissionLimitBytes = admissionLimit;
     boolean analyzerFault =

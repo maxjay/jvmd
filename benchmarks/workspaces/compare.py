@@ -2,6 +2,7 @@
 """Create a compact, machine-readable JVMD versus JDTLS comparison."""
 import argparse, json
 from pathlib import Path
+from urllib.parse import quote
 
 def unit(name):
     if name == 'cpu_seconds': return 's'
@@ -30,6 +31,21 @@ def compare(summary, candidate, baseline, selected=None):
             'fixtures': fixtures}
 
 
+def improvement_markdown(improvement):
+    """Render PR-over-PR movement as a dynamically coloured badge."""
+    if improvement is None:
+        return 'n/a'
+    if abs(improvement) <= 5:
+        colour, meaning = 'yellow', 'within ±5%'
+    elif improvement > 0:
+        colour, meaning = 'brightgreen', 'improvement'
+    else:
+        colour, meaning = 'red', 'regression'
+    percentage = f'{improvement:+.1f}%'
+    badge = quote(percentage, safe='')
+    return f'<img alt="{percentage} ({meaning})" src="https://img.shields.io/badge/-{badge}-{colour}">'
+
+
 def markdown(result):
     previous_pr = result.get('previous_pr')
     improvement_header = f'Improvement vs PR #{previous_pr}' if previous_pr else 'Improvement vs previous PR'
@@ -41,9 +57,9 @@ def markdown(result):
             ratio = values['jvmd_over_jdtls']
             ratio_text = 'n/a' if ratio is None else f'{ratio:.3f}'
             improvement = values.get('improvement_over_previous_pr')
-            improvement_text = 'n/a' if improvement is None else f'{improvement:+.1f}%'
+            improvement_text = improvement_markdown(improvement)
             lines.append(f"| {fixture} | {name} | {values['unit']} | {values['jvmd']:.3f} | {values['jdtls']:.3f} | {ratio_text} | {improvement_text} |")
-    lines += ['', result['interpretation']]
+    lines += ['', 'Green: improvement over 5% · Yellow: within ±5% · Red: regression over 5%', '', result['interpretation']]
     if result.get('semantic_state'):
         lines += ['', semantic_markdown(result['semantic_state'])]
     return '\n'.join(lines)+'\n'

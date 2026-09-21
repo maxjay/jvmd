@@ -17,7 +17,28 @@ class TrendTest(unittest.TestCase):
         self.assertEqual(result['fixtures']['review']['hover']['improvement_over_previous_pr'], 20)
         rendered = markdown(result)
         self.assertIn('Improvement vs PR #41', rendered)
-        self.assertIn('| +20.0% |', rendered)
+        self.assertIn('alt="+20.0% (improvement)"', rendered)
+        self.assertIn('badge/-%2B20.0%25-brightgreen', rendered)
+
+    def test_colour_codes_improvement_with_five_percent_noise_band(self):
+        result = {'fixtures': {'review': {
+            'clear_improvement': {'unit': 'ms', 'jvmd': 8, 'jdtls': 20,
+                                  'jvmd_over_jdtls': .4, 'improvement_over_previous_pr': 5.1},
+            'positive_drift': {'unit': 'ms', 'jvmd': 8, 'jdtls': 20,
+                               'jvmd_over_jdtls': .4, 'improvement_over_previous_pr': 5},
+            'negative_drift': {'unit': 'ms', 'jvmd': 8, 'jdtls': 20,
+                               'jvmd_over_jdtls': .4, 'improvement_over_previous_pr': -5},
+            'clear_regression': {'unit': 'ms', 'jvmd': 8, 'jdtls': 20,
+                                 'jvmd_over_jdtls': .4, 'improvement_over_previous_pr': -5.1},
+        }}, 'interpretation': 'Lower is better.'}
+
+        rendered = markdown(result)
+
+        self.assertIn('badge/-%2B5.1%25-brightgreen', rendered)
+        self.assertIn('badge/-%2B5.0%25-yellow', rendered)
+        self.assertIn('badge/--5.0%25-yellow', rendered)
+        self.assertIn('badge/--5.1%25-red', rendered)
+        self.assertIn('Yellow: within ±5%', rendered)
 
     def test_missing_or_zero_previous_value_is_not_available(self):
         result = {'fixtures': {'review': {

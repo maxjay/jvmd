@@ -464,24 +464,38 @@ public final class WorkspaceBindings implements AutoCloseable {
     var after = observe(sources, classpath, documents, generation);
     boolean consistent = current.equals(after);
     long maintenanceStart = System.nanoTime();
-    var nextNavigation = navigation;
-    for (Path file : removed) {
-      var old = priorFragments.get(file);
-      nextNavigation = nextNavigation.replace(file, old.outcome(), null);
-      workingEstimate -= old.estimatedBytes();
+    NavigationIndex nextNavigation;
+    if (full) {
+      var outcomes = new LinkedHashMap<Path, CompilerPool.Outcome<Bindings.Snapshot>>();
+      workingEstimate = 0;
+      for (Path file : current.files()) {
+        var fragment = working.get(file);
+        if (fragment == null) continue;
+        outcomes.put(file, fragment.outcome());
+        workingEstimate += fragment.estimatedBytes();
+      }
+      nextNavigation = NavigationIndex.rebuild(outcomes, nextApi);
+      navigationFileUpdates += outcomes.size();
+    } else {
+      nextNavigation = navigation;
+      for (Path file : removed) {
+        var old = priorFragments.get(file);
+        nextNavigation = nextNavigation.replace(file, old.outcome(), null);
+        workingEstimate -= old.estimatedBytes();
+      }
+      for (Path file : dirty) {
+        var old = priorFragments.get(file);
+        var updated = working.get(file);
+        nextNavigation =
+            nextNavigation.replace(file, old == null ? null : old.outcome(), updated.outcome());
+        workingEstimate += updated.estimatedBytes() - (old == null ? 0 : old.estimatedBytes());
+      }
+      navigationFileUpdates += dirty.size() + removed.size();
+      nextNavigation = nextNavigation.withApiRoot(nextApi);
     }
-    for (Path file : dirty) {
-      var old = priorFragments.get(file);
-      var updated = working.get(file);
-      nextNavigation =
-          nextNavigation.replace(file, old == null ? null : old.outcome(), updated.outcome());
-      workingEstimate += updated.estimatedBytes() - (old == null ? 0 : old.estimatedBytes());
-    }
-    navigationFileUpdates += dirty.size() + removed.size();
     navigationNanos += System.nanoTime() - maintenanceStart;
     var publicationEnd = validation == null ? null : validation.current();
     consistent &= stable(publicationStart, publicationEnd);
-    nextNavigation = nextNavigation.withApiRoot(nextApi);
     var result = aggregate(nextNavigation, consistent);
     if (consistent
         && result.tier() == 2

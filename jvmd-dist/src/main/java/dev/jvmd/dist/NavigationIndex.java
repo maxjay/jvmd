@@ -67,6 +67,101 @@ final class NavigationIndex {
   }
 
   private static <K extends Comparable<? super K>, O extends Comparable<? super O>, V>
+      PersistentMap<K, PersistentMap<O, V>> freezePostings(
+          Map<K, ? extends Map<O, V>> values) {
+    var frozen = new TreeMap<K, PersistentMap<O, V>>();
+    values.forEach((key, posting) -> frozen.put(key, PersistentMap.copyOf(posting)));
+    return PersistentMap.copyOf(frozen);
+  }
+
+  static NavigationIndex rebuild(
+      Map<Path, CompilerPool.Outcome<Bindings.Snapshot>> values, SemanticNode apiRoot) {
+    var ownerRows = new TreeMap<String, TreeMap<Owner, Map<String, Object>>>();
+    var edgeRows = new TreeMap<Bindings.Edge, TreeMap<Path, Boolean>>();
+    var referenceRows =
+        new TreeMap<String, TreeMap<Path, List<Bindings.Occurrence>>>();
+    var occurrenceRows = new TreeMap<Path, List<Bindings.Occurrence>>();
+    var diagnosticRows = new TreeMap<Path, List<CompilerPool.Problem>>();
+    var warningRows = new TreeMap<Path, List<String>>();
+    var degradedRows = new TreeMap<Path, Integer>();
+    int occurrenceCount = 0, diagnosticCount = 0;
+
+    for (var entry : values.entrySet()) {
+      Path file = entry.getKey();
+      var outcome = entry.getValue();
+      var graph = outcome == null ? null : outcome.result();
+      if (graph != null) {
+        var declared = declarations(graph, file);
+        for (var symbol : graph.symbols().entrySet())
+          ownerRows
+              .computeIfAbsent(symbol.getKey(), _ -> new TreeMap<>())
+              .put(new Owner(file, declared.contains(symbol.getKey())), symbol.getValue());
+        for (var edge : graph.edges())
+          edgeRows.computeIfAbsent(edge, _ -> new TreeMap<>()).put(file, Boolean.TRUE);
+        for (var posting : grouped(graph.occurrences()).entrySet())
+          referenceRows
+              .computeIfAbsent(posting.getKey(), _ -> new TreeMap<>())
+              .put(file, List.copyOf(posting.getValue()));
+        if (!graph.occurrences().isEmpty())
+          occurrenceRows.put(file, List.copyOf(graph.occurrences()));
+        occurrenceCount += graph.occurrences().size();
+      }
+
+      var problems = outcome == null ? List.<CompilerPool.Problem>of() : outcome.diagnostics();
+      if (!problems.isEmpty()) diagnosticRows.put(file, List.copyOf(problems));
+      diagnosticCount += problems.size();
+
+      var messages =
+          outcome == null ? new ArrayList<String>() : new ArrayList<>(outcome.warnings());
+      if (outcome != null && graph == null)
+        messages.add("incomplete_workspace_bindings: " + file);
+      if (!messages.isEmpty()) warningRows.put(file, List.copyOf(messages));
+      if (outcome != null && !(outcome.tier() == 2 && graph != null))
+        degradedRows.put(file, Math.min(1, outcome.tier()));
+    }
+
+    var symbolRows = new TreeMap<String, Map<String, Object>>();
+    var declarationRows = new TreeMap<String, Map<String, Object>>();
+    for (var entry : ownerRows.entrySet()) {
+      var selected = entry.getValue().lastEntry();
+      symbolRows.put(entry.getKey(), selected.getValue());
+      if (selected.getKey().declaration())
+        declarationRows.put(entry.getKey(), selected.getValue());
+    }
+
+    var nameRows = new TreeMap<String, TreeMap<String, Boolean>>();
+    for (var entry : symbolRows.entrySet())
+      for (String name : names(entry.getValue()))
+        nameRows.computeIfAbsent(name, _ -> new TreeMap<>()).put(entry.getKey(), Boolean.TRUE);
+
+    var outgoingRows = new TreeMap<String, TreeMap<Bindings.Edge, Boolean>>();
+    var incomingRows = new TreeMap<String, TreeMap<Bindings.Edge, Boolean>>();
+    for (var edge : edgeRows.keySet()) {
+      outgoingRows.computeIfAbsent(edge.src(), _ -> new TreeMap<>()).put(edge, Boolean.TRUE);
+      incomingRows.computeIfAbsent(edge.dst(), _ -> new TreeMap<>()).put(edge, Boolean.TRUE);
+    }
+
+    var result = new NavigationIndex();
+    result.owners = freezePostings(ownerRows);
+    result.symbols = PersistentMap.copyOf(symbolRows);
+    result.declarations = PersistentMap.copyOf(declarationRows);
+    result.names = freezePostings(nameRows);
+    result.edges = freezePostings(edgeRows);
+    result.outgoing = freezePostings(outgoingRows);
+    result.incoming = freezePostings(incomingRows);
+    result.references = freezePostings(referenceRows);
+    result.occurrences = PersistentMap.copyOf(occurrenceRows);
+    result.diagnostics = PersistentMap.copyOf(diagnosticRows);
+    result.warnings = PersistentMap.copyOf(warningRows);
+    result.degraded = PersistentMap.copyOf(degradedRows);
+    result.occurrenceCount = occurrenceCount;
+    result.diagnosticCount = diagnosticCount;
+    result.updates = values.size();
+    result.apiRoot = Objects.requireNonNull(apiRoot);
+    return result;
+  }
+
+  private static <K extends Comparable<? super K>, O extends Comparable<? super O>, V>
       PersistentMap<K, PersistentMap<O, V>> contribution(
           PersistentMap<K, PersistentMap<O, V>> index, K key, O file, V value) {
     var posting = index.getOrDefault(key, PersistentMap.empty());

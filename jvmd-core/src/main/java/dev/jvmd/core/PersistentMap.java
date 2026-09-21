@@ -30,6 +30,63 @@ public final class PersistentMap<K extends Comparable<? super K>, V> extends Abs
     return new PersistentMap<>(null, Objects.requireNonNull(summary));
   }
 
+  public static <K extends Comparable<? super K>, V> PersistentMap<K, V> copyOf(
+      Map<K, V> values) {
+    Objects.requireNonNull(values);
+    if (values.isEmpty()) return empty();
+    var entries = new ArrayList<Map.Entry<K, V>>(values.size());
+    for (var entry : values.entrySet())
+      entries.add(
+          Map.entry(
+              Objects.requireNonNull(entry.getKey()), Objects.requireNonNull(entry.getValue())));
+    entries.sort(Map.Entry.comparingByKey());
+
+    int count = entries.size();
+    long[] priorities = new long[count];
+    int[] left = new int[count], right = new int[count], stack = new int[count];
+    Arrays.fill(left, -1);
+    Arrays.fill(right, -1);
+    int top = 0;
+    for (int index = 0; index < count; index++) {
+      priorities[index] = java.util.concurrent.ThreadLocalRandom.current().nextLong();
+      int detached = -1;
+      while (top > 0) {
+        int parent = stack[top - 1];
+        if (!higher(
+            priorities[index],
+            entries.get(index).getKey(),
+            priorities[parent],
+            entries.get(parent).getKey())) break;
+        detached = stack[--top];
+      }
+      if (top > 0) right[stack[top - 1]] = index;
+      left[index] = detached;
+      stack[top++] = index;
+    }
+    return new PersistentMap<>(
+        buildPlain(entries, priorities, left, right, stack[0]), null);
+  }
+
+  private static <K extends Comparable<? super K>, V> Node<K, V> buildPlain(
+      List<Map.Entry<K, V>> entries,
+      long[] priorities,
+      int[] left,
+      int[] right,
+      int index) {
+    if (index < 0) return null;
+    var leftNode = buildPlain(entries, priorities, left, right, left[index]);
+    var rightNode = buildPlain(entries, priorities, left, right, right[index]);
+    var entry = entries.get(index);
+    return new Node<>(
+        entry.getKey(),
+        entry.getValue(),
+        priorities[index],
+        leftNode,
+        rightNode,
+        1 + size(leftNode) + size(rightNode),
+        "");
+  }
+
   private static int size(Node<?, ?> node) {
     return node == null ? 0 : node.size;
   }
@@ -53,9 +110,14 @@ public final class PersistentMap<K extends Comparable<? super K>, V> extends Abs
         summary == null ? "" : summary.compose(key, value, summary(left), summary(right)));
   }
 
+  private static <K extends Comparable<? super K>> boolean higher(
+      long firstPriority, K firstKey, long secondPriority, K secondKey) {
+    int order = Long.compareUnsigned(firstPriority, secondPriority);
+    return order > 0 || order == 0 && firstKey.compareTo(secondKey) < 0;
+  }
+
   private boolean above(Node<K, V> first, Node<K, V> second) {
-    int order = Long.compareUnsigned(first.priority, second.priority);
-    return order > 0 || order == 0 && first.key.compareTo(second.key) < 0;
+    return higher(first.priority, first.key, second.priority, second.key);
   }
 
   private Node<K, V> put(Node<K, V> current, K key, V value) {

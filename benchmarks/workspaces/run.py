@@ -211,7 +211,7 @@ def start(a, server, run_root, workspace, state, build):
     java = str(a.java_home/'bin/java')
     recording = run_root/'server.jfr' if a.profile else None
     profile_args = ([f'-XX:StartFlightRecording=filename={recording},settings=profile,dumponexit=true',
-                     '-XX:FlightRecorderOptions=stackdepth=128', '-Xlog:jfr=warning'] if a.profile else [])
+                     '-XX:FlightRecorderOptions=stackdepth=128', '-Xlog:jfr*=off'] if a.profile else [])
     if server == 'jvmd':
         config = run_root/'config.json'; config.write_text(json.dumps({'jdk_home': str(a.java_home), 'm2_repo': str(a.repository), 'heap_ceiling_mb': 1024, 'index_on_start': True}))
         command = [java, '-Xmx1024m', *EXPORTS, '--enable-native-access=ALL-UNNAMED', f'-Djvmd.config={config}', f'-Djvmd.state={state}',

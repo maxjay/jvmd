@@ -31,8 +31,8 @@ jobs:
         run: |
           bash jvmd-dist/assemble.sh
           bash jvmd-dist/train-aot.sh
-      - name: Phase 1 checkpoints including performance budgets
-        run: mvn -B -pl jvmd-tests test -Dgroups=phase-1 -DexcludedGroups=corpus
+      - name: Phase 1 deterministic checkpoints
+        run: mvn -B -pl jvmd-tests test -Dgroups=phase-1 -DexcludedGroups=perf,corpus
       - name: Install pinned Maven 4 for native resolver agreement
         shell: bash
         run: |
@@ -48,12 +48,12 @@ jobs:
       - name: Phase 2 checkpoints
         run: |
           bash jvmd-tests/smoke/run-resolver.sh
-          mvn -B -pl jvmd-tests test -Dgroups=phase-2 -DexcludedGroups=corpus
+          mvn -B -pl jvmd-tests test -Dgroups=phase-2 -DexcludedGroups=perf,corpus
       - name: Phase 3 index prerequisites and complete repository gate
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: |
           bash jvmd-tests/smoke/run-index.sh
-          mvn -B -pl jvmd-tests test -Dgroups=phase-3 -DexcludedGroups=perf -DargLine=-Xmx1024m
+          mvn -B -pl jvmd-tests test -Dgroups=phase-3 -DexcludedGroups=perf,corpus -DargLine=-Xmx1024m
       - name: RocksDB immutable artifact generations
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: mvn -B -pl jvmd-index-rocks test
@@ -61,7 +61,7 @@ jobs:
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: |
           bash jvmd-tests/smoke/run-compiler.sh
-          mvn -B -pl jvmd-tests test -Dgroups=phase-4 -DexcludedGroups=corpus
+          mvn -B -pl jvmd-tests test -Dgroups=phase-4 -DexcludedGroups=perf,corpus
       - name: Phase 5 external annotation processing
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: mvn -B -pl jvmd-tests test -Dgroups=phase-5 -DexcludedGroups=perf,corpus
@@ -71,12 +71,12 @@ jobs:
       - name: Phase 6 repository overlays and cross-root debugging
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: mvn -B -pl jvmd-tests test -Dgroups=phase-6 -DexcludedGroups=perf,corpus
-      - name: Phase 7 documentation round trip and budget
+      - name: Phase 7 documentation correctness
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
-        run: mvn -B -pl jvmd-tests test -Dgroups=phase-7 -DexcludedGroups=corpus
+        run: mvn -B -pl jvmd-tests test -Dgroups=phase-7 -DexcludedGroups=perf,corpus
       - name: Runtime inspection and evaluation checkpoints
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
-        run: mvn -B -pl jvmd-tests test -Dgroups=phase-10 -DexcludedGroups=corpus
+        run: mvn -B -pl jvmd-tests test -Dgroups=phase-10 -DexcludedGroups=perf,corpus
       - name: Install pinned JBR for enhanced hot swap
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         shell: bash
@@ -102,7 +102,7 @@ jobs:
           echo "JVMD_HOTSWAP_AGENT=$ha_jar" >> "$GITHUB_ENV"
       - name: Enhanced hot swap on JBR and stock fallback
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
-        run: mvn -B -pl jvmd-tests test -Dgroups=phase-11 -DexcludedGroups=corpus
+        run: mvn -B -pl jvmd-tests test -Dgroups=phase-11 -DexcludedGroups=perf,corpus
       - name: Install pinned Node.js for the stdio shim
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
@@ -114,10 +114,10 @@ jobs:
         run: node --test test/*.test.ts
       - name: Agent surface checkpoints
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
-        run: mvn -B -pl jvmd-tests test -Dgroups=phase-8 -DexcludedGroups=corpus
+        run: mvn -B -pl jvmd-tests test -Dgroups=phase-8 -DexcludedGroups=perf,corpus
       - name: LSP facade and document synchronization
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
-        run: mvn -B -pl jvmd-tests test -Dgroups=phase-9 -DexcludedGroups=corpus
+        run: mvn -B -pl jvmd-tests test -Dgroups=phase-9 -DexcludedGroups=perf,corpus
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

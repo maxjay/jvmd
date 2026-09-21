@@ -65,8 +65,17 @@ jobs:
           python benchmarks/workspaces/verify.py "$RUNNER_TEMP/results" "$RUNNER_TEMP/verification.json"
           python benchmarks/workspaces/summarize.py "$RUNNER_TEMP/results" "$RUNNER_TEMP/summary.json"
           python benchmarks/workspaces/compare.py "$RUNNER_TEMP/summary.json" "$RUNNER_TEMP/comparison.json" --markdown "$RUNNER_TEMP/comparison.md"
-          node benchmarks/workspaces/dashboard.mjs --comparison "$RUNNER_TEMP/comparison.json" --verification "$RUNNER_TEMP/verification.json" --output "$RUNNER_TEMP/dashboard.html"
+          python benchmarks/workspaces/matrix.py --repo "$PWD" --before "$RUNNER_TEMP/build/build.json" --after "$RUNNER_TEMP/build/build.json" \
+            --java-home "$JAVA_HOME" --jdtls "$RUNNER_TEMP/jdtls" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" \
+            --fixtures "$RUNNER_TEMP/fixtures" --root "$RUNNER_TEMP/allocation-results" --runs 1 --sources 192 --workspaces 1 --samples 1 --edits 2 \
+            --fixture-names review --modes after jdtls-shared --profile
+          python benchmarks/workspaces/verify.py "$RUNNER_TEMP/allocation-results" "$RUNNER_TEMP/allocation-verification.json"
+          python benchmarks/workspaces/summarize.py "$RUNNER_TEMP/allocation-results" "$RUNNER_TEMP/allocation-summary.json"
+          python benchmarks/workspaces/compare.py "$RUNNER_TEMP/allocation-summary.json" "$RUNNER_TEMP/allocation-comparison.json" --metrics sampled_allocated_mib peak_rss_mib cpu_seconds --markdown "$RUNNER_TEMP/allocation-comparison.md"
+          node benchmarks/workspaces/dashboard.mjs --comparison "$RUNNER_TEMP/comparison.json" --allocation "$RUNNER_TEMP/allocation-comparison.json" --verification "$RUNNER_TEMP/verification.json" --output "$RUNNER_TEMP/dashboard.html"
           cat "$RUNNER_TEMP/comparison.md" >> "$GITHUB_STEP_SUMMARY"
+          printf '\n## Sampled allocation profile\n\n' >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/allocation-comparison.md" >> "$GITHUB_STEP_SUMMARY"
       - name: Upload merge evidence and dashboard
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -78,9 +87,14 @@ jobs:
             ${{ runner.temp }}/comparison.*
             ${{ runner.temp }}/summary.json
             ${{ runner.temp }}/verification.json
+            ${{ runner.temp }}/allocation-*.json
+            ${{ runner.temp }}/allocation-*.md
             ${{ runner.temp }}/results/**/report.json
             ${{ runner.temp }}/results/**/messages.jsonl
             ${{ runner.temp }}/results/**/resources.json
+            ${{ runner.temp }}/allocation-results/**/report.json
+            ${{ runner.temp }}/allocation-results/**/messages.jsonl
+            ${{ runner.temp }}/allocation-results/**/resources.json
       - name: Publish merge evidence on the PR
         if: ${{ success() }}
         shell: bash
@@ -102,6 +116,10 @@ jobs:
             echo '## JVMD / JDTLS merge evidence'
             echo
             cat "$RUNNER_TEMP/comparison.md"
+            echo
+            echo '## Sampled allocation profile'
+            echo
+            cat "$RUNNER_TEMP/allocation-comparison.md"
             echo
             printf '[Download the dashboard and independently verified raw evidence](https://github.com/%s/actions/runs/%s)\n' \
               '${{ github.repository }}' '${{ github.run_id }}'

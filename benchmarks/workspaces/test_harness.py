@@ -39,6 +39,8 @@ class HarnessTest(unittest.TestCase):
         result = compare(summary, 'after', 'jdtls-shared')
         self.assertEqual(.5, result['fixtures']['small']['hover']['jvmd_over_jdtls'])
         self.assertEqual(.4, result['fixtures']['small']['peak_rss_mib']['jvmd_over_jdtls'])
+        self.assertEqual('ms', result['fixtures']['small']['hover']['unit'])
+        self.assertEqual('MiB', result['fixtures']['small']['peak_rss_mib']['unit'])
 
     @unittest.skipUnless(Path('/proc/self/stat').exists(), 'Linux /proc required')
     def test_monitor_includes_descendant_memory(self):

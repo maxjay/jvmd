@@ -112,6 +112,11 @@ benchmark work itself, and escapes fixture and metric labels before rendering.
 On pull-request runs, the merge-review workflow also creates or updates one
 `github-actions` comment containing the comparison table and a link to download
 the dashboard, traces, resource samples, and verification artifacts.
+Performance-tagged JUnit tests are excluded from the deterministic checkpoint
+gate. Merge review records their equivalents as observations instead: an
+unprofiled timing/resource matrix plus a separate JFR sampled-allocation matrix.
+The dashboard labels latency in milliseconds, CPU in seconds, and memory,
+allocation, and disk I/O in MiB; sampled allocation is not retained heap.
 
 The merge-review gate uses `fixture.py --fixture-names review` as its correctness
 corpus instead of cloning a separate source repository. Its checked oracle covers

@@ -28,6 +28,13 @@ export function renderDashboard(comparison, verification, allocation = null) {
       `<td>${Number(row.jvmd).toFixed(2)} ${escape(unit)}</td><td>${Number(row.jdtls).toFixed(2)} ${escape(unit)}</td>`+
       `<td class="ratio ${tone}"><span style="width:${width.toFixed(1)}%"></span>${ratioText}</td></tr>`;
   }).join('\n');
+  const semantic = comparison.semantic_state;
+  const semanticSection = semantic ? `<section><h2>JVMD semantic state: base versus candidate</h2>
+<p class="note">${escape(semantic.interpretation)}</p>
+<p class="note">Base <code>${escape(semantic.base_sha)}</code> · candidate <code>${escape(semantic.head_sha)}</code></p>
+<div class="table"><table><thead><tr><th>Metric</th><th>Unit</th><th>Base JVMD</th><th>Candidate JVMD</th><th>After / before</th><th>Repetitions</th></tr></thead><tbody>
+${semantic.rows.map(row => `<tr><td>${escape(row.metric)}</td><td>${escape(row.unit)}</td><td>${Number(row.before).toFixed(3)}</td><td>${Number(row.after).toFixed(3)}</td><td>${row.after_over_before === null ? 'n/a' : Number(row.after_over_before).toFixed(3)}</td><td>${Number(row.repetitions)}</td></tr>`).join('\n')}
+</tbody></table></div></section>` : '';
   const generated = new Date().toISOString();
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -38,6 +45,7 @@ body{margin:0;background:radial-gradient(circle at 15% 0,#172a4a 0,transparent 3
 <section class="cards"><div class="card"><small>Verified responses</small><b>${verified.toLocaleString()}</b></div><div class="card"><small>Validated source ranges</small><b>${ranges.toLocaleString()}</b></div><div class="card"><small>JVMD wins</small><b>${faster} / ${rows.length}</b></div><div class="card"><small>Workers checked</small><b>${Number(verification.workers || 0)}</b></div></section>
 <div class="table"><table><thead><tr><th>Fixture</th><th>Suite</th><th>Metric</th><th>JVMD</th><th>JDTLS</th><th>JVMD / JDTLS</th></tr></thead><tbody>${tableRows}</tbody></table></div>
 <p class="note">Correctness includes complete protocol traces, dependency identity agreement, definitions, references, rename edits, and source ranges. Latency is milliseconds, CPU is seconds, and memory/I/O are MiB. Sampled allocation is estimated allocated bytes, not retained heap.</p>
+${semanticSection}
 <footer>Generated ${escape(generated)} · candidate <code>${escape(comparison.candidate)}</code> · baseline <code>${escape(comparison.baseline)}</code></footer></main></body></html>`;
 }
 

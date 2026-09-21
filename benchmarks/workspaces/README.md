@@ -269,3 +269,32 @@ I/O measurements.
 Component index measurements remain in `benchmarks/index-updates`. Ordinary JUnit sources contain
 only deterministic correctness tests; adding a timing assertion or a `perf` tag there is not the
 mechanism for benchmark coverage.
+
+### Semantic-state component evidence
+
+The merge-review report and dashboard also show a separate **JVMD semantic state: base versus
+candidate** table. These are JVMD-only experiments, so their values are never placed in JDTLS
+columns or included in the LSP win count. The table includes both zero-cache and retained-cache
+workspace queries, source identity/handle/name queries, cold Java allocation, source publication
+and disk allocation. Cold-start regressions remain visible.
+
+CI builds the exact PR base alongside the exact PR head and runs `benchmarks/semantic-state/run.sh`.
+It passes the resulting summary to `compare.py --semantic-state`; the JSON comparison carries that
+section into the HTML dashboard, workflow summary and PR evidence comment. Raw component samples
+are uploaded with the LSP evidence. Manual workflow runs compare with the preceding commit.
+
+Benchmark/report changes on a PR now trigger a fresh report. Ordinary implementation pushes still
+skip this expensive workflow, as before; open/reopen/ready-for-review and manual runs remain available.
+For a local report, generate the supplementary input with:
+
+```sh
+python benchmarks/semantic-state/summarize.py /path/to/component-results semantic-summary.json \
+  --base-sha BASE_COMMIT --head-sha CANDIDATE_COMMIT
+python benchmarks/workspaces/compare.py lsp-summary.json comparison.json \
+  --markdown comparison.md --semantic-state semantic-summary.json
+```
+
+The existing recorded component measurements are rendered at
+[`docs/performance/semantic-state/comparison.md`](../../docs/performance/semantic-state/comparison.md),
+with their original measured revisions. They are historical evidence, not values substituted into
+future CI runs.

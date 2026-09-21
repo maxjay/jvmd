@@ -29,3 +29,17 @@ test('labels timing and sampled allocation with explicit units', () => {
   assert.match(html, /12\.00 MiB/);
   assert.match(html, />allocation</);
 });
+
+test('keeps JVMD component measurements out of the JDTLS win count', () => {
+  const comparison = { candidate: 'after', baseline: 'jdtls-shared', fixtures: {
+    review: { hover: { jvmd: 2, jdtls: 4, jvmd_over_jdtls: .5, unit: 'ms' } }
+  }, semantic_state: { base_sha: 'base', head_sha: 'head', interpretation: '<separate>', rows: [
+    { metric: 'Cold <lookup>', unit: 'ms', before: 10, after: 20, after_over_before: 2, repetitions: 3 }
+  ] }};
+  const html = renderDashboard(comparison, {});
+  assert.match(html, /JVMD wins<\/small><b>1 \/ 1/);
+  assert.match(html, /Base JVMD/);
+  assert.match(html, /Cold &lt;lookup&gt;/);
+  assert.match(html, /2\.000/);
+  assert.match(html, /&lt;separate&gt;/);
+});

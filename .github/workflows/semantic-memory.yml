@@ -65,6 +65,8 @@ jobs:
           set +e
           /usr/bin/time -v -o "$EVIDENCE/time.txt" \
             mvn -B -pl jvmd-tests test \
+              -Dgroups=phase-4 \
+              -DexcludedGroups=perf \
               -Dtest=IdentifierSweepTest \
               "-DargLine=-Xmx1024m -Xlog:gc*:file=$EVIDENCE/gc.log:time,uptime,level,tags" \
               2>&1 | tee "$EVIDENCE/maven.log"

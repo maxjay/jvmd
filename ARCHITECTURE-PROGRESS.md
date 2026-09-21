@@ -39,3 +39,28 @@ Do not use other checklist/progress files on this branch.
 - Add diagnostic-only semantic-state admission override.
 - Build once, retain state, force GC, then measure actual live heap and genuine warm references.
 - Do not modify production admission defaults until this measurement closes A0.
+
+
+## 002 — Phase A0 diagnostic admission experiment started
+
+**Commits**
+- `018cb289` — diagnostic-only `jvmd.workspace_bindings.diagnostic_admission_mb` override. Production admission remains 128 MiB / caller budget when unset.
+- `8ee2a337` — focused probe can force GC after the first semantic build before reporting heap.
+- `9d31934a` — CI runs the focused probe with 512 MiB diagnostic admission, forced GC, 1 GiB JVM and three reference requests.
+
+**Purpose**
+- Distinguish a bad retained-size estimator/admission policy from a genuinely oversized canonical representation.
+- Step 1 measures retained heap after the first admitted build and forced GC.
+- Steps 2–3 measure genuinely warm unchanged references if admission succeeds.
+- Baseline checkout ignores the candidate-only diagnostic admission property, preserving its original behaviour for comparison.
+
+**Acceptance evidence to capture**
+- actual heap used after forced GC;
+- candidate `cached_files`, `fragment_files`, `cache_hits`, `files_reanalysed`;
+- warm reference latency and thread allocation;
+- Rocks native/source-cache state;
+- whether the 1 GiB JVM remains stable while the 279-file state is retained.
+
+**Decision after run**
+- If actual retained heap is far below the ~312 MiB estimate, fix retained-size accounting/admission before representation surgery.
+- If actual retained state is genuinely large, begin Phase B against the measured dominant fact classes rather than increasing production limits.

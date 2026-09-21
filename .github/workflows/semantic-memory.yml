@@ -60,20 +60,21 @@ jobs:
         id: sweep
         shell: bash
         run: |
-          mkdir -p semantic-memory-evidence
+          EVIDENCE="$GITHUB_WORKSPACE/semantic-memory-evidence"
+          mkdir -p "$EVIDENCE"
           set +e
-          /usr/bin/time -v -o semantic-memory-evidence/time.txt \
+          /usr/bin/time -v -o "$EVIDENCE/time.txt" \
             mvn -B -pl jvmd-tests test \
               -Dtest=IdentifierSweepTest \
-              "-DargLine=-Xmx1024m -Xlog:gc*:file=semantic-memory-evidence/gc.log:time,uptime,level,tags -XX:StartFlightRecording=filename=semantic-memory-evidence/sweep.jfr,settings=profile,maxsize=64m,dumponexit=true" \
-              2>&1 | tee semantic-memory-evidence/maven.log
+              "-DargLine=-Xmx1024m -Xlog:gc*:file=$EVIDENCE/gc.log:time,uptime,level,tags -XX:StartFlightRecording=filename=$EVIDENCE/sweep.jfr,settings=profile,maxsize=64m,dumponexit=true" \
+              2>&1 | tee "$EVIDENCE/maven.log"
           status=${PIPESTATUS[0]}
-          echo "$status" | tee semantic-memory-evidence/exit-code.txt
+          echo "$status" | tee "$EVIDENCE/exit-code.txt"
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
           grep -E "sweep-file|Tests run:|Java heap space|OutOfMemory|LRU cache|BUILD (SUCCESS|FAILURE)" \
-            semantic-memory-evidence/maven.log > semantic-memory-evidence/highlights.txt || true
-          if [[ -s semantic-memory-evidence/sweep.jfr ]]; then
-            jfr summary semantic-memory-evidence/sweep.jfr > semantic-memory-evidence/jfr-summary.txt 2>&1 || true
+            "$EVIDENCE/maven.log" > "$EVIDENCE/highlights.txt" || true
+          if [[ -s "$EVIDENCE/sweep.jfr" ]]; then
+            jfr summary "$EVIDENCE/sweep.jfr" > "$EVIDENCE/jfr-summary.txt" 2>&1 || true
           fi
           exit 0
 

@@ -103,7 +103,24 @@ public final class WorkspaceBindings implements AutoCloseable {
       List<Path> files,
       List<Path> classpath) {}
 
-  private record Fragment(CompilerPool.Outcome<Bindings.Snapshot> outcome, long estimatedBytes) {
+  private record Estimate(
+      long bytes,
+      long symbols,
+      long edges,
+      long occurrences,
+      long diagnostics,
+      long dependencies,
+      long apiDeclarations,
+      long exportedNames,
+      long rowFields,
+      long stringCharacters,
+      long collectionEntries) {}
+
+  private record Fragment(CompilerPool.Outcome<Bindings.Snapshot> outcome, Estimate estimate) {
+    long estimatedBytes() {
+      return estimate.bytes();
+    }
+
     SemanticApi api() {
       return outcome.result() == null ? SemanticApi.EMPTY : outcome.result().api();
     }
@@ -124,6 +141,7 @@ public final class WorkspaceBindings implements AutoCloseable {
   private NavigationIndex navigation = new NavigationIndex();
   private long estimatedBytes, navigationFileUpdates;
   private long lastAttemptedRetainedBytes, lastAdmissionLimitBytes, discards;
+  private Estimate lastAttemptedShape = new Estimate(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
   private String lastDiscardReason = "";
   private long enumerationNanos, inputNanos, attributionNanos, navigationNanos;
   private Inputs inputs;
@@ -307,22 +325,42 @@ public final class WorkspaceBindings implements AutoCloseable {
     return result;
   }
 
-  private static long estimate(CompilerPool.Outcome<Bindings.Snapshot> outcome) {
+  private static Estimate estimate(CompilerPool.Outcome<Bindings.Snapshot> outcome) {
     var graph = outcome.result();
-    if (graph == null) return 1024;
+    if (graph == null)
+      return new Estimate(1024, 0, 0, 0, outcome.diagnostics().size(), 0, 0, 0, 0, 0, 0);
     long bytes =
         2048L
             + 512L * graph.edges().size()
             + 512L * graph.occurrences().size()
             + 256L * outcome.diagnostics().size();
+    long rowFields = 0, stringCharacters = 0, collectionEntries = 0;
     for (var row : graph.symbols().values()) {
+      rowFields += row.size();
       bytes += 1024L + 96L * row.size();
       for (var value : row.values()) {
-        if (value instanceof String text) bytes += 48L + 2L * text.length();
-        else if (value instanceof Collection<?> values) bytes += 64L + 96L * values.size();
+        if (value instanceof String text) {
+          stringCharacters += text.length();
+          bytes += 48L + 2L * text.length();
+        } else if (value instanceof Collection<?> values) {
+          collectionEntries += values.size();
+          bytes += 64L + 96L * values.size();
+        }
       }
     }
-    return bytes;
+    var api = graph.api();
+    return new Estimate(
+        bytes,
+        graph.symbols().size(),
+        graph.edges().size(),
+        graph.occurrences().size(),
+        outcome.diagnostics().size(),
+        graph.dependencies().size(),
+        api.declarations().size(),
+        api.exportedNames().size(),
+        rowFields,
+        stringCharacters,
+        collectionEntries);
   }
 
   private static Snapshot aggregate(NavigationIndex graph, boolean consistent) {
@@ -470,12 +508,39 @@ public final class WorkspaceBindings implements AutoCloseable {
     if (full) {
       var outcomes = new LinkedHashMap<Path, CompilerPool.Outcome<Bindings.Snapshot>>();
       workingEstimate = 0;
+      long symbols = 0, edges = 0, occurrences = 0, diagnostics = 0, dependencies = 0;
+      long apiDeclarations = 0, exportedNames = 0, rowFields = 0, stringCharacters = 0;
+      long collectionEntries = 0;
       for (Path file : current.files()) {
         var fragment = working.get(file);
         if (fragment == null) continue;
         outcomes.put(file, fragment.outcome());
-        workingEstimate += fragment.estimatedBytes();
+        var estimate = fragment.estimate();
+        workingEstimate += estimate.bytes();
+        symbols += estimate.symbols();
+        edges += estimate.edges();
+        occurrences += estimate.occurrences();
+        diagnostics += estimate.diagnostics();
+        dependencies += estimate.dependencies();
+        apiDeclarations += estimate.apiDeclarations();
+        exportedNames += estimate.exportedNames();
+        rowFields += estimate.rowFields();
+        stringCharacters += estimate.stringCharacters();
+        collectionEntries += estimate.collectionEntries();
       }
+      lastAttemptedShape =
+          new Estimate(
+              workingEstimate,
+              symbols,
+              edges,
+              occurrences,
+              diagnostics,
+              dependencies,
+              apiDeclarations,
+              exportedNames,
+              rowFields,
+              stringCharacters,
+              collectionEntries);
       nextNavigation = NavigationIndex.rebuild(outcomes, nextApi);
       navigationFileUpdates += outcomes.size();
     } else {
@@ -542,6 +607,19 @@ public final class WorkspaceBindings implements AutoCloseable {
     result.put("fragment_bytes_serialized", 0);
     result.put("estimated_retained_bytes", estimatedBytes);
     result.put("last_attempted_retained_bytes", lastAttemptedRetainedBytes);
+    result.put(
+        "last_attempted_shape",
+        Map.ofEntries(
+            Map.entry("symbols", lastAttemptedShape.symbols()),
+            Map.entry("edges", lastAttemptedShape.edges()),
+            Map.entry("occurrences", lastAttemptedShape.occurrences()),
+            Map.entry("diagnostics", lastAttemptedShape.diagnostics()),
+            Map.entry("dependencies", lastAttemptedShape.dependencies()),
+            Map.entry("api_declarations", lastAttemptedShape.apiDeclarations()),
+            Map.entry("exported_names", lastAttemptedShape.exportedNames()),
+            Map.entry("row_fields", lastAttemptedShape.rowFields()),
+            Map.entry("string_characters", lastAttemptedShape.stringCharacters()),
+            Map.entry("collection_entries", lastAttemptedShape.collectionEntries())));
     result.put("last_admission_limit_bytes", lastAdmissionLimitBytes);
     result.put("last_discard_reason", lastDiscardReason);
     result.put("discards", discards);

@@ -58,13 +58,13 @@ class ArtifactSignatureVariantTest {
     }
     @Test void oldUnattributedEdgesAreRebuiltFromTheActualJarOnLookup() throws Exception {
         Path jar=variant("old","First","Left"),file=root.resolve("old-index.db");
-        try(var index=new IndexService(new SqliteIndexStore(file),root,ArtifactGenerationSink.none())) { index.indexJar(jar,"fixture:api:1","jar");index.linkEdges(); }
+        try(var index=new IndexService(new ReferenceIndexStorage(file),root)) { index.indexJar(jar,"fixture:api:1","jar");index.linkEdges(); }
         // Simulate a populated schema-3 database, whose union edges cannot identify their artifact variant.
         try(var connection=java.sql.DriverManager.getConnection("jdbc:sqlite:"+file);var statement=connection.createStatement()) {
             statement.execute("DROP TABLE artifact_edges");statement.execute("DROP TABLE signature_targets");
             statement.execute("ALTER TABLE artifacts DROP COLUMN has_signature_edges");statement.execute("PRAGMA user_version=3");
         }
-        try(var index=new IndexService(new SqliteIndexStore(file),root,ArtifactGenerationSink.none())) {
+        try(var index=new IndexService(new ReferenceIndexStorage(file),root)) {
             assertThat(index.artifact(jar).hasSignatureEdges()).isFalse();
             var type=index.find("Sample",null,false,10,0).getFirst();
             assertThat(new CodePass(index).hierarchy(List.of(type),true,null).symbols()).extracting(s->s.get("name")).contains("First").doesNotContain("Second");

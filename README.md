@@ -126,3 +126,5 @@ The same run passed **99.878%** of **75,565** identifier checks across Spring Pe
 
 Copyright © 2026 Max. jvmd is available under the [MIT License](LICENSE),
 including for commercial and workplace use.
+
+Storage uses Rocks exclusively. See [storage ownership and cache compatibility](docs/storage.md) for the supported format lifecycle and upgrade behavior.

@@ -55,7 +55,6 @@ public final class CodePass {
         index.ensureSignatureEdges(workspace);index.linkEdges();
         var relationshipKinds=Set.of("extends","implements","overrides");
         var rows=index.store().relationships(identities,outgoing,relationshipKinds,workspace);
-        index.validateRelationshipShadow(workspace,identities,outgoing,relationshipKinds,rows);
         var nodes=new LinkedHashMap<String,Map<String,Object>>();var edges=new ArrayList<IndexService.SourceEdge>();
         for(var row:rows){
             var source=row.source();var destination=row.target();

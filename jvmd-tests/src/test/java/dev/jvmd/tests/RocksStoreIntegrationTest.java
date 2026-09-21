@@ -13,9 +13,6 @@ import static org.assertj.core.api.Assertions.*;
 @Tag("phase-3")
 class RocksStoreIntegrationTest {
     @TempDir Path root;
-    String previous;
-    @BeforeEach void chooseRocks(){previous=System.getProperty("jvmd.index.store.backend");System.setProperty("jvmd.index.store.backend","rocksdb-sst");}
-    @AfterEach void restore(){if(previous==null)System.clearProperty("jvmd.index.store.backend");else System.setProperty("jvmd.index.store.backend",previous);}
     @Test void selectedVariantsKeepHierarchyDocumentationAndCode()throws Exception{
         var fixture=new ArtifactSignatureVariantTest();fixture.root=root;fixture.sameScipUsesOnlyTheSelectedContentVariantsRelationships();assertThat(root.resolve("index.db")).doesNotExist();
     }
@@ -56,7 +53,7 @@ class RocksStoreIntegrationTest {
     }
     @Test void canonicalSearchPagesAgreeWithSqliteAndReopenWithoutRebuilding()throws Exception{
         Path repo=root.resolve("repository"),jar=IndexFixtures.jar(repo,"fixture",IndexFixtures.generic(),false);
-        try(var sqlite=new IndexService(new SqliteIndexStore(root.resolve("control.db")),repo,ArtifactGenerationSink.none());
+        try(var sqlite=new IndexService(new ReferenceIndexStorage(root.resolve("control.db")),repo);
             var rocks=new IndexService(root.resolve("index.db"),repo)){
             for(var index:List.of(sqlite,rocks)){
                 index.indexJar(jar,"fixture:api:1","jar");index.indexSources(jar.resolveSibling("fixture-sources.jar"));

@@ -18,6 +18,7 @@ public final class RocksIndexStore implements IndexStore {
                                  boolean classReferences,long sourceRevision,long simpleNames) { }
     public record SourceFile(String file,String hash,List<Map<String,Object>> symbols,List<SourceRelationship> edges) { }
     private final RocksArtifactRepository repository;
+    private final RocksArtifactAdmission admission;
     private final Options options;
     private final RocksDB state;
     private final WriteOptions durable=new WriteOptions().setSync(true);
@@ -36,8 +37,8 @@ public final class RocksIndexStore implements IndexStore {
     private static final Set<String> TYPES=Set.of("class","interface","enum","record","annotation");
     private static final Set<String> SOURCE_KINDS=Set.of("package","class","interface","enum","record","annotation","method","ctor","field","enumconst");
 
-    RocksIndexStore(Path root,RocksArtifactRepository repository,RocksMemory memory)throws Exception{
-        this.repository=repository;Files.createDirectories(root);options=memory.options(64);
+    RocksIndexStore(Path root,RocksArtifactRepository repository,RocksMemory memory,RocksArtifactAdmission admission)throws Exception{
+        this.repository=repository;this.admission=admission;Files.createDirectories(root);options=memory.options(64);
         state=RocksDB.open(options,root.toString());
         try{
             for(byte[] value:values("A|")){
@@ -85,7 +86,7 @@ public final class RocksIndexStore implements IndexStore {
         try(var batch=new WriteBatch()){save(batch,value);state.write(durable,batch);}installed(value);
     }
     @Override public long publishArtifact(ArtifactInput input,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences,Map<String,Map<String,Object>> sourceData)throws Exception{
-        try(var permit=admitBuild()){return publishArtifactData(input,facts,classReferences,sourceData);}
+        try(var permit=admitBuild();var capacity=admission.acquirePublication(facts,classReferences)){return publishArtifactData(input,facts,classReferences,sourceData);}
     }
     private long publishArtifactData(ArtifactInput input,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences,Map<String,Map<String,Object>> sourceData)throws Exception{
         if(!input.key().equals(facts.key()))throw new IllegalArgumentException("Artifact facts/key mismatch");
@@ -112,7 +113,7 @@ public final class RocksIndexStore implements IndexStore {
         }
     }
     @Override public void publishCode(long id,ArtifactContext context,ArtifactIndexFormat.ArtifactData facts,Set<String> references)throws Exception{
-        try(var permit=admitBuild()){publishCodeData(id,context,facts,references);}
+        try(var permit=admitBuild();var capacity=admission.acquirePublication(facts,references)){publishCodeData(id,context,facts,references);}
     }
     private void publishCodeData(long id,ArtifactContext context,ArtifactIndexFormat.ArtifactData facts,Set<String> references)throws Exception{
         repository.publish(facts,references);

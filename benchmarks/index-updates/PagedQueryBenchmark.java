@@ -40,7 +40,7 @@ public final class PagedQueryBenchmark {
         report.put("queries",queries);Json.MAPPER.writerWithDefaultPrettyPrinter().writeValue(output.toFile(),report);
     }
     private static long reads(IndexService index)throws Exception{
-        var sink=(Map<?,?>)index.status().get("generation_sink");var repository=(Map<?,?>)sink.get("repository");
+        var status=index.status();var storage=(Map<?,?>)status.getOrDefault("storage",status.get("generation_sink"));var repository=(Map<?,?>)storage.get("repository");
         return repository.get("query_symbol_reads") instanceof Number n?n.longValue():-1;
     }
 }

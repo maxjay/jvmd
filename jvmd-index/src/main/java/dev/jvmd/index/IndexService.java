@@ -2,7 +2,6 @@ package dev.jvmd.index;
 
 import dev.jvmd.core.*;
 import java.nio.file.*;
-import java.sql.*;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
@@ -14,47 +13,34 @@ public final class IndexService implements AutoCloseable {
     public record Artifact(long id,String gav,String kind,String sha256,String path,long size,long mtime,boolean hasDocs,boolean hasCodeEdges,boolean hasSignatureEdges) { }
     /** Implements 4.4: one workspace's filtered artifact membership. */
     public record WorkspaceArtifact(String path,String scope) { }
-    private final SqliteIndexStore sqliteStore;
     private final IndexStore store;
-    private final IndexDatabase database;
-    private final ArtifactGenerationSink generationSink;
+    private final IndexStorage storage;
     private final Path repository;
     private final SourceIndexPublisher sourcePublisher=new SourceIndexPublisher(this::recordSource,32L*1024*1024);
     public void publishSource(SourceIndexPublisher.Delta delta){sourcePublisher.enqueue(delta);}
-    public long semanticRevision(Path file)throws Exception{return generationSink.semanticRevision(file);}
-    public String moduleStateFingerprint(String moduleId)throws Exception{return generationSink.moduleStateFingerprint(moduleId);}
+    public long semanticRevision(Path file)throws Exception{return storage.semanticState().semanticRevision(file);}
+    public String moduleStateFingerprint(String moduleId)throws Exception{return storage.semanticState().moduleStateFingerprint(moduleId);}
     public Map<String,Object> sourcePublisherStatus(){return sourcePublisher.status();}
     private final ExecutorService readers=Executors.newFixedThreadPool(Math.max(1,Math.min(4,Runtime.getRuntime().availableProcessors())),Thread.ofVirtual().name("jvmd-index-reader-",0).factory());
     private final ScheduledExecutorService scanner=Executors.newSingleThreadScheduledExecutor(Thread.ofVirtual().name("jvmd-index-scan").factory());
     private final AtomicLong scanned=new AtomicLong(),indexed=new AtomicLong(),reused=new AtomicLong(),hashed=new AtomicLong(),faults=new AtomicLong();
     private final AtomicLong scans=new AtomicLong(),scanNanos=new AtomicLong(),discoveryNanos=new AtomicLong(),hashNanos=new AtomicLong(),
             parseNanos=new AtomicLong(),storageNanos=new AtomicLong(),docsNanos=new AtomicLong(),linkNanos=new AtomicLong(),
-            queryCalls=new AtomicLong(),queryNanos=new AtomicLong(),workspaceResolutionCalls=new AtomicLong(),workspaceResolutionNanos=new AtomicLong(),
-            shadowComparisons=new AtomicLong(),shadowMismatches=new AtomicLong(),shadowSkipped=new AtomicLong();
+            queryCalls=new AtomicLong(),queryNanos=new AtomicLong(),workspaceResolutionCalls=new AtomicLong(),workspaceResolutionNanos=new AtomicLong();
     private final ConcurrentHashMap<String,String> activeArtifacts=new ConcurrentHashMap<>();
     private final ConcurrentLinkedDeque<String> warnings=new ConcurrentLinkedDeque<>();
     private volatile String phase="idle";
     private volatile long total;
     private volatile boolean closed;
+    /** The legacy database path selects the sibling Rocks directory; SQLite files are never opened. */
     public IndexService(Path database,Path repository) throws Exception {
-        this(database,repository,System.getProperty("jvmd.index.store.backend","rocksdb-sst").equals("rocksdb-sst")?
-                ArtifactGenerationSink.open("rocksdb-sst",database.resolveSibling(database.getFileName().toString().equals("index.db")?"index-v2":database.getFileName()+".rocks"),128L*1024*1024):ArtifactGenerationSink.none());
+        this(IndexStorage.open(database.resolveSibling(database.getFileName().toString().equals("index.db")?"index-v2":database.getFileName()+".rocks"),128L*1024*1024),repository);
     }
-    public IndexService(Path database,Path repository,ArtifactGenerationSink generationSink) throws Exception {
-        this(openStore(database,generationSink),repository,generationSink);
+    /** Takes ownership of storage, which closes the store before its shared native resources. */
+    public IndexService(IndexStorage storage,Path repository)throws Exception{
+        this.repository=Objects.requireNonNull(repository).toAbsolutePath().normalize();
+        this.storage=Objects.requireNonNull(storage);this.store=Objects.requireNonNull(storage.store());
     }
-    private static IndexStore openStore(Path path,ArtifactGenerationSink generations)throws Exception{
-        try{return switch(System.getProperty("jvmd.index.store.backend","rocksdb-sst")){
-            case "rocksdb-sst"->generations.openStore();case "sqlite"->new SqliteIndexStore(path);
-            default->throw new IllegalArgumentException("Unknown jvmd.index.store.backend");
-        };}catch(Exception|LinkageError error){try{generations.close();}catch(Exception close){error.addSuppressed(close);}throw error;}
-    }
-    public IndexService(IndexStore store,Path repository,ArtifactGenerationSink generationSink)throws Exception{
-        this.store=Objects.requireNonNull(store);this.sqliteStore=store instanceof SqliteIndexStore value?value:null;
-        this.database=sqliteStore==null?null:sqliteStore.database();
-        this.repository=repository.toAbsolutePath().normalize();this.generationSink=Objects.requireNonNull(generationSink);
-    }
-    public IndexDatabase database(){if(database==null)throw new UnsupportedOperationException("The active backend is not SQLite");return database;}
     public IndexStore store(){return store;}
     public long generation(){return indexed.get();}
     public void start(){
@@ -70,7 +56,7 @@ public final class IndexService implements AutoCloseable {
         List<Path> jars;try(var files=Files.walk(repository)){jars=files.filter(Files::isRegularFile).filter(p->p.toString().endsWith(".jar")&&!p.getFileName().toString().endsWith("-javadoc.jar")).sorted().toList();}
         discoveryNanos.addAndGet(System.nanoTime()-discoveryStarted);
         total=jars.size();scanned.set(0);phase="skeletons";
-        long inventoryGeneration=generationSink.beginScan();
+        long inventoryGeneration=storage.inventory().beginScan();
         var skeletonComplete=new AtomicBoolean(true);
         var jobs=new ArrayList<Future<?>>();
         for(var jar:jars)if(!jar.getFileName().toString().endsWith("-sources.jar"))jobs.add(readers.submit(()->{
@@ -87,7 +73,7 @@ public final class IndexService implements AutoCloseable {
         }));
         for(var job:jobs)job.get();docsNanos.addAndGet(System.nanoTime()-docsStarted);
         if(skeletonComplete.get()&&docsComplete.get()){
-            generationSink.completeScan(inventoryGeneration);
+            storage.inventory().completeScan(inventoryGeneration);
             if(store.reconcilePaths(repository,Set.copyOf(jars)))indexed.incrementAndGet();
         }
         phase="linking";long linkStarted=System.nanoTime();linkEdges();linkNanos.addAndGet(System.nanoTime()-linkStarted);phase="ready";
@@ -99,8 +85,8 @@ public final class IndexService implements AutoCloseable {
         var result=new LinkedHashMap<String,Object>();result.putAll(store.counts());result.put("source_publisher",sourcePublisher.status());
         result.put("phase",phase);result.put("total",total);result.put("scanned",scanned.get());result.put("indexed",indexed.get());
         result.put("reused",reused.get());result.put("hashes",hashed.get());result.put("faults",faults.get());result.put("warnings",List.copyOf(warnings));
-        result.put("active_artifacts",Map.copyOf(activeArtifacts));result.put("store",store.status());result.put("generation_sink",generationSink.status());
-        result.put("read_backend",store.backend().equals("sqlite")?System.getProperty("jvmd.index.read.backend","shadow"):store.backend());
+        result.put("active_artifacts",Map.copyOf(activeArtifacts));result.put("store",store.status());result.put("storage",storage.status());
+        result.put("read_backend",store.backend());
         var timings=new LinkedHashMap<String,Object>();
         timings.put("scans",scans.get());timings.put("scan_ms",millis(scanNanos.get()));timings.put("discovery_ms",millis(discoveryNanos.get()));
         timings.put("hash_ms",millis(hashNanos.get()));timings.put("parse_ms",millis(parseNanos.get()));timings.put("storage_ms",millis(storageNanos.get()));
@@ -108,7 +94,6 @@ public final class IndexService implements AutoCloseable {
         timings.put("query_calls",queryCalls.get());timings.put("query_ms",millis(queryNanos.get()));
         timings.put("workspace_resolution_calls",workspaceResolutionCalls.get());timings.put("workspace_resolution_ms",millis(workspaceResolutionNanos.get()));
         result.put("timings",Map.copyOf(timings));
-        result.put("shadow_validation",Map.of("comparisons",shadowComparisons.get(),"mismatches",shadowMismatches.get(),"skipped",shadowSkipped.get()));
         return result;
     }
     private static double millis(long nanos){return Math.round(nanos/1000.0)/1000.0;}
@@ -126,24 +111,22 @@ public final class IndexService implements AutoCloseable {
     public long indexJar(Path path,String gav,String kind) throws Exception{return indexJar(path,gav,kind,0L);}
     private long indexJar(Path path,String gav,String kind,long inventoryGeneration) throws Exception {
         path=path.toAbsolutePath().normalize();Path tracked=path;active(path,"stat");
-        try(var permit=generationSink.acquireArtifact(path)){
+        try(var permit=storage.admission().acquireArtifact(path)){
             var previous=artifact(path);
             var stamp=Files.readAttributes(path,java.nio.file.attribute.BasicFileAttributes.class);long size=stamp.size(),mtime=stamp.lastModifiedTime().to(TimeUnit.NANOSECONDS);
             if(previous!=null&&previous.hasSignatureEdges()&&!gav.contains("SNAPSHOT")&&!kind.equals("local")&&previous.size()==size&&previous.mtime()==mtime){
-                ensureGeneration(path,kind,ArtifactIndexFormat.key(previous.sha256(),"signatures"));
                 if(inventoryGeneration>0){
                     var key=ArtifactIndexFormat.key(previous.sha256(),"signatures");
-                    generationSink.observe(inventoryGeneration,new IndexStore.ArtifactInput(new ArtifactContext(gav,kind,location(path)),key,size,mtime));
+                    storage.inventory().observe(inventoryGeneration,new IndexStore.ArtifactInput(new ArtifactContext(gav,kind,location(path)),key,size,mtime));
                 }
                 reused.incrementAndGet();return previous.id();
             }
             active(path,"hash");long hashStarted=System.nanoTime();verifyChecksum(path);String hash=Files.isDirectory(path)?directoryHash(path):Hashing.sha256(path);hashNanos.addAndGet(System.nanoTime()-hashStarted);hashed.incrementAndGet();
             if(previous!=null&&previous.hasSignatureEdges()&&previous.sha256().equals(hash)){
-                ensureGeneration(path,kind,ArtifactIndexFormat.key(hash,kind.equals("local")?"local-signatures":"signatures"));
                 store.publishPath(path,previous.id(),size,mtime);
                 if(inventoryGeneration>0){
                     var key=ArtifactIndexFormat.key(hash,kind.equals("local")?"local-signatures":"signatures");
-                    generationSink.observe(inventoryGeneration,new IndexStore.ArtifactInput(new ArtifactContext(gav,kind,location(path)),key,size,mtime));
+                    storage.inventory().observe(inventoryGeneration,new IndexStore.ArtifactInput(new ArtifactContext(gav,kind,location(path)),key,size,mtime));
                 }
                 reused.incrementAndGet();return previous.id();
             }
@@ -152,26 +135,15 @@ public final class IndexService implements AutoCloseable {
             var key=ArtifactIndexFormat.key(hash,kind.equals("local")?"local-signatures":"signatures");
             var input=new IndexStore.ArtifactInput(new ArtifactContext(gav,kind,location(path)),key,size,mtime);
             var facts=ArtifactIndexFormat.from(content,key);var classReferences=CodeReader.classReferences(content.models().values());
-            generationSink.publish(facts,classReferences);
-            if(inventoryGeneration>0)generationSink.observe(inventoryGeneration,input);
             long id=store.publishBinary(input,facts,classReferences);
+            if(inventoryGeneration>0)storage.inventory().observe(inventoryGeneration,input);
             storageNanos.addAndGet(System.nanoTime()-storageStarted);indexed.incrementAndGet();return id;
         }finally{activeArtifacts.remove(location(tracked));}
-    }
-    private void ensureGeneration(Path path,String kind,ArtifactIndexFormat.Key key)throws Exception{
-        if(generationSink.contains(key))return;
-        active(path,"generation-backfill");long started=System.nanoTime();
-        var content=new BinaryReader().read(path,kind.equals("local"));
-        parseNanos.addAndGet(System.nanoTime()-started);content.warnings().forEach(this::warn);
-        started=System.nanoTime();
-        generationSink.publish(ArtifactIndexFormat.from(content,key),CodeReader.classReferences(content.models().values()));
-        storageNanos.addAndGet(System.nanoTime()-started);indexed.incrementAndGet();
     }
     synchronized void storeCode(long artifact,String gav,String hash,Path path,BinaryReader.Content content,List<BinaryReader.Edge> edges)throws Exception{
         var key=ArtifactIndexFormat.key(hash,"code");
         var facts=ArtifactIndexFormat.from(content,key,edges);
         var classReferences=CodeReader.classReferences(content.models().values());
-        generationSink.publish(facts,classReferences);
         store.publishCode(artifact,new ArtifactContext(gav,"jar",location(path)),facts,classReferences);
         indexed.incrementAndGet();
     }
@@ -188,7 +160,6 @@ public final class IndexService implements AutoCloseable {
         var key=ArtifactIndexFormat.key(hash,"local-signatures");
         var facts=ArtifactIndexFormat.from(content,key);
         var classReferences=CodeReader.classReferences(content.models().values());
-        generationSink.publish(facts,classReferences);
         long id=store.publishArtifact(new IndexStore.ArtifactInput(
                 new ArtifactContext(module.gav(),"local",location(module.directory())),key,size,mtime),
                 facts,classReferences,sourceData);
@@ -198,7 +169,7 @@ public final class IndexService implements AutoCloseable {
     public record SourceEdge(String src,String dst,String kind) { }
     private void recordSource(SourceIndexPublisher.Delta delta)throws Exception{
         locals.recordSource(delta.file(),delta.sourceHash(),delta.symbols(),delta.tier(),delta.edges());
-        generationSink.publishSourceState(delta.contribution(),delta.moduleId(),delta.contextFingerprint());
+        storage.semanticState().publishSourceState(delta.contribution(),delta.moduleId(),delta.contextFingerprint());
     }
     public void recordSource(Path file,String contentHash,List<Map<String,Object>> symbols,int tier,List<SourceEdge> edges)throws Exception{
         locals.recordSource(file.toAbsolutePath().normalize(),contentHash,symbols,tier,edges);
@@ -216,15 +187,13 @@ public final class IndexService implements AutoCloseable {
     public static String directoryHash(Path root)throws Exception{var digest=java.security.MessageDigest.getInstance("SHA-256");try(var files=Files.walk(root)){for(var p:files.filter(Files::isRegularFile).sorted().toList()){digest.update(root.relativize(p).toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));digest.update(Hashing.sha256(p).getBytes(java.nio.charset.StandardCharsets.US_ASCII));}}return java.util.HexFormat.of().formatHex(digest.digest());}
     public long indexSources(Path sources)throws Exception {
         sources=sources.toAbsolutePath().normalize();Path tracked=sources;
-        try(var permit=generationSink.acquireArtifact(sources)){
+        try(var permit=storage.admission().acquireArtifact(sources)){
             Path binary=sources.resolveSibling(sources.getFileName().toString().replaceFirst("-sources\\.jar$",".jar"));
             if(!Files.isRegularFile(binary)){warn("sources_without_binary: "+sources);return -1;}
             var artifact=artifact(binary);if(artifact==null){indexJar(binary,gav(binary),"jar");artifact=artifact(binary);}
             var old=artifact(sources);var stamp=Files.readAttributes(sources,java.nio.file.attribute.BasicFileAttributes.class);
             long size=stamp.size(),mtime=stamp.lastModifiedTime().to(TimeUnit.NANOSECONDS);
-            String binaryCacheKey=ArtifactIndexFormat.key(artifact.sha256(),"signatures").cacheKey();
-            if(old!=null&&artifact.hasDocs()&&!old.gav().contains("SNAPSHOT")&&old.size()==size&&old.mtime()==mtime
-                    &&!generationSink.needsDocumentation(binaryCacheKey)){
+            if(old!=null&&artifact.hasDocs()&&!old.gav().contains("SNAPSHOT")&&old.size()==size&&old.mtime()==mtime){
                 reused.incrementAndGet();return old.id();
             }
 
@@ -255,7 +224,6 @@ public final class IndexService implements AutoCloseable {
             var sourceInput=new IndexStore.ArtifactInput(new ArtifactContext(gav(sources),"sources",location(sources)),key,size,mtime);
             active(sources,"source-storage");long storageStarted=System.nanoTime();
             long id=store.publishDocumentation(artifact.id(),sourceInput,Map.copyOf(members),join.unmatched().size());
-            generationSink.publishDocumentation(binaryCacheKey,sourceInput,Map.copyOf(members),join.unmatched().size());
             storageNanos.addAndGet(System.nanoTime()-storageStarted);return id;
         }finally{activeArtifacts.remove(location(tracked));}
     }
@@ -273,15 +241,14 @@ public final class IndexService implements AutoCloseable {
     }
     public void linkEdges()throws Exception{store.resolveGlobalRelationships();}
 
-    public void configureModuleState(ArtifactGenerationSink.ModuleStateInput input)throws Exception{
-        generationSink.configureModuleState(input);
+    public void configureModuleState(IndexSemanticState.ModuleStateInput input)throws Exception{
+        storage.semanticState().configureModuleState(input);
     }
     public List<String> loadWorkspace(String workspace,List<WorkspaceArtifact> paths,List<Map.Entry<String,String>> dependencies)throws Exception{
         long started=System.nanoTime();workspaceResolutionCalls.incrementAndGet();
         try{
             var selected=paths.stream().map(item->new IndexStore.WorkspaceEntry(item.path(),item.scope())).toList();
             var warnings=store.loadWorkspace(workspace,selected,dependencies);
-            generationSink.configureWorkspace(workspace,selected,dependencies);
             return warnings;
         }finally{workspaceResolutionNanos.addAndGet(System.nanoTime()-started);}
     }
@@ -291,41 +258,7 @@ public final class IndexService implements AutoCloseable {
     public List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds)throws Exception{
         long started=System.nanoTime();queryCalls.incrementAndGet();
         try{
-            if(!store.backend().equals("sqlite"))return store.find(query,workspace,substring,limit,after,kinds);
-            String mode=System.getProperty("jvmd.index.read.backend","shadow");
-            if(!Set.of("sqlite","shadow","rocksdb-sst").contains(mode))
-                throw new IllegalStateException("Unknown jvmd.index.read.backend: "+mode);
-
-            if(mode.equals("rocksdb-sst")&&workspace!=null){
-                var rocks=generationSink.shadowFind(workspace,query,substring,limit,after,kinds);
-                if(rocks.isPresent())return rocks.get();
-                shadowSkipped.incrementAndGet();
-            }
-
-            var authoritative=store.find(query,workspace,substring,limit,after,kinds);
-            if(mode.equals("sqlite")||workspace==null)return authoritative;
-
-            long shadowAfter=0L;
-            if(after!=0){
-                var boundary=store.byId(after,workspace);
-                if(boundary==null){shadowSkipped.incrementAndGet();return authoritative;}
-                var translated=generationSink.shadowCursor(workspace,Objects.toString(boundary.get("scip"),""));
-                if(translated.isEmpty()){shadowSkipped.incrementAndGet();return authoritative;}
-                shadowAfter=translated.getAsLong();
-            }
-            var shadow=generationSink.shadowFind(workspace,query,substring,limit,shadowAfter,kinds);
-            if(shadow.isEmpty()){shadowSkipped.incrementAndGet();return authoritative;}
-            shadowComparisons.incrementAndGet();
-            var expected=authoritative.stream().map(value->Objects.toString(value.get("scip"),"")).filter(value->!value.isBlank())
-                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-            var actual=shadow.get().stream().map(value->Objects.toString(value.get("scip"),"")).filter(value->!value.isBlank())
-                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-            if(!expected.equals(actual)){
-                shadowMismatches.incrementAndGet();
-                warn("rocks_shadow_mismatch: workspace="+workspace+" query="+query+" after="+after+
-                        " expected="+expected.size()+" actual="+actual.size());
-            }
-            return authoritative;
+            return store.find(query,workspace,substring,limit,after,kinds);
         }finally{queryNanos.addAndGet(System.nanoTime()-started);}
     }
 
@@ -333,25 +266,6 @@ public final class IndexService implements AutoCloseable {
         long started=System.nanoTime();queryCalls.incrementAndGet();
         try{return store.findNamePrefix(prefix,workspace,limit,kinds);}
         finally{queryNanos.addAndGet(System.nanoTime()-started);}
-    }
-
-    void validateRelationshipShadow(String workspace,Collection<String> scips,boolean outgoing,Set<String> kinds,
-                                    List<IndexStore.ResolvedRelationship> authoritative)throws Exception{
-        if(!store.backend().equals("sqlite"))return;
-        if(workspace==null){shadowSkipped.incrementAndGet();return;}
-        var shadow=generationSink.shadowRelationships(workspace,scips,outgoing,kinds,Math.max(256,authoritative.size()+16));
-        if(shadow.isEmpty()){shadowSkipped.incrementAndGet();return;}
-        shadowComparisons.incrementAndGet();
-        var expected=new LinkedHashSet<String>();
-        for(var row:authoritative){
-            String source=Objects.toString(row.source().get("scip"),""),target=Objects.toString(row.target().get("scip"),"");
-            if(!source.isBlank()&&!target.isBlank())expected.add(source+"|"+row.kind()+"|"+target);
-        }
-        if(!expected.equals(shadow.get())){
-            shadowMismatches.incrementAndGet();
-            warn("rocks_shadow_relationship_mismatch: workspace="+workspace+" outgoing="+outgoing+
-                    " expected="+expected.size()+" actual="+shadow.get().size());
-        }
     }
 
     public List<Map<String,Object>> descendants(String path,String workspace,int depth,int limit,long after,Set<String> kinds)throws Exception{
@@ -363,8 +277,6 @@ public final class IndexService implements AutoCloseable {
     public Map<String,Object> byId(long id,String workspace)throws Exception{
         long started=System.nanoTime();queryCalls.incrementAndGet();
         try{
-            if(store.backend().equals("sqlite")&&workspace!=null&&id>=(1L<<32)&&System.getProperty("jvmd.index.read.backend","shadow").equals("rocksdb-sst"))
-                return generationSink.shadowById(workspace,id).orElse(null);
             return store.byId(id,workspace);
         }
         finally{queryNanos.addAndGet(System.nanoTime()-started);}
@@ -397,12 +309,10 @@ public final class IndexService implements AutoCloseable {
         var key=ArtifactIndexFormat.key(hash,"jdk-signatures");
         var facts=ArtifactIndexFormat.from(content,key);
         var classReferences=CodeReader.classReferences(content.models().values());
-        generationSink.publish(facts,classReferences);
         long id=store.publishArtifact(new IndexStore.ArtifactInput(new ArtifactContext(gav,"jar",location(file)),key,Files.size(file),0),
                 facts,classReferences,Map.copyOf(sourceData));
         indexed.incrementAndGet();return id;
     }
-    static Map<String,Object> symbol(ResultSet r)throws Exception{var s=new LinkedHashMap<String,Object>();for(String field:List.of("id","artifact_id","owner_id","flags","line","source_start","source_end","body_start","body_end"))s.put(field,r.getObject(field));for(String field:List.of("scip","kind","name","name_path","signature","erased_descriptor","source_file","doc","fqn","binary_key","class_entry","gav","artifact_path","artifact_kind"))s.put(field,r.getString(field));s.put("parameters",Json.MAPPER.readTree(r.getString("parameters")));s.put("metadata",Json.MAPPER.readTree(r.getString("metadata")));String variant=r.getString("variant_data");if(variant!=null)s.putAll(Json.MAPPER.readValue(variant,new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>(){}));s.put("id",r.getLong("id"));s.put("artifact_id",r.getLong("selected_artifact"));s.put("gav",r.getString("gav"));s.put("artifact_path",r.getString("artifact_path"));s.put("artifact_kind",r.getString("artifact_kind"));return s;}
     public static String namePath(BinaryReader.Symbol s){String owner=s.fqn().replace('$','/');if(s.key().equals(s.fqn()))return owner;if(s.kind().equals("method")||s.kind().equals("ctor")){var type=java.lang.constant.MethodTypeDesc.ofDescriptor(s.descriptor());return owner+"/"+s.name()+"("+String.join(",",Arrays.stream(type.parameterArray()).map(p->p.displayName().replace('$','.')).toList())+")";}return owner+"/"+s.name();}
     public static String scip(String gav,BinaryReader.Symbol s){String[] parts=gav.split(":",3);String prefix="maven "+parts[0]+"/"+parts[1]+" "+parts[2]+" ";String owner=s.fqn().replace('.','/').replace('$','#')+"#";if(s.key().equals(s.fqn()))return prefix+owner;if(s.kind().equals("method")||s.kind().equals("ctor")){var type=java.lang.constant.MethodTypeDesc.ofDescriptor(s.descriptor());return prefix+owner+(s.kind().equals("ctor")?"<init>":s.name())+"("+String.join(",",Arrays.stream(type.parameterArray()).map(Signatures::qualified).toList())+").";}return prefix+owner+s.name()+".";}
     @Override public void close()throws Exception {
@@ -410,6 +320,6 @@ public final class IndexService implements AutoCloseable {
         if(!readers.awaitTermination(60,TimeUnit.SECONDS)){readers.shutdownNow();
             if(!readers.awaitTermination(5,TimeUnit.SECONDS))throw new IllegalStateException("Index workers did not stop; native handles remain open");}
         if(!scanner.awaitTermination(5,TimeUnit.SECONDS))throw new IllegalStateException("Index scanner did not stop; native handles remain open");
-        store.close();generationSink.close();
+        storage.close();
     }
 }

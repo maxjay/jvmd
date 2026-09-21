@@ -26,10 +26,5 @@ public record FileSemanticContribution(
         exportedNames=exportedNames==null?Set.of():Set.copyOf(exportedNames);
         unresolvedTargets=unresolvedTargets==null?Set.of():Set.copyOf(unresolvedTargets);
     }
-
-    public static FileSemanticContribution indexOnly(Path file,String sourceHash){
-        return new FileSemanticContribution(file,sourceHash,"",Set.of(),Set.of(),Set.of());
-    }
-
     public boolean hasSemanticState(){return !apiFingerprint.isBlank();}
 }

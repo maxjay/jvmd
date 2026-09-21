@@ -57,17 +57,6 @@ public final class RocksSemanticInvalidation implements AutoCloseable {
         var result=update(moduleKey,context,prior,current);invalidate(result.reanalyze());return result;
     }
 
-    public synchronized Result update(String moduleId,String contextFingerprint,Collection<FileSemanticContribution> input)throws Exception{
-        Objects.requireNonNull(moduleId);Objects.requireNonNull(contextFingerprint);
-        var current=new TreeMap<Path,FileSemanticContribution>();
-        for(var contribution:input){
-            var previous=current.put(contribution.file(),contribution);
-            if(previous!=null)throw new IllegalArgumentException("Duplicate semantic contribution: "+contribution.file());
-        }
-        String moduleKey=moduleKey(moduleId);
-        return update(moduleKey,contextFingerprint,load(moduleKey),current);
-    }
-
     private Result update(String moduleKey,String contextFingerprint,Map<Path,FileSemanticContribution> prior,
                           Map<Path,FileSemanticContribution> current)throws Exception{
         String priorContext=textOrNull(db.get(bytes("C|"+moduleKey)));

@@ -39,5 +39,8 @@ class SourceIndexPublisherTest {
         assertThat(publisher.status()).containsEntry("writes",1L).containsEntry("skipped",1L);
     }
 
-    private static SourceIndexPublisher.Delta delta(String hash){return new SourceIndexPublisher.Delta(Path.of("A.java"),hash,hash,List.of(),2,List.of(),256);}
+    private static SourceIndexPublisher.Delta delta(String hash){
+        var contribution=new FileSemanticContribution(Path.of("A.java"),hash,"",Set.of(),Set.of(),Set.of());
+        return new SourceIndexPublisher.Delta(contribution,hash,List.of(),2,List.of(),256,"","");
+    }
 }

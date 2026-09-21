@@ -14,10 +14,6 @@ public final class SourceIndexPublisher implements AutoCloseable {
             symbols=List.copyOf(symbols);edges=List.copyOf(edges);
             moduleId=moduleId==null?"":moduleId;contextFingerprint=contextFingerprint==null?"":contextFingerprint;
         }
-        public Delta(Path file,String sourceHash,String semanticHash,List<Map<String,Object>> symbols,
-                     int tier,List<IndexService.SourceEdge> edges,long bytes){
-            this(FileSemanticContribution.indexOnly(file,sourceHash),semanticHash,symbols,tier,edges,bytes,"","");
-        }
         public Path file(){return contribution.file();}
         public String sourceHash(){return contribution.sourceHash();}
         public boolean hasSemanticState(){

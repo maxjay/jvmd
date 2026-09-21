@@ -158,6 +158,8 @@ class SemanticMemoryProbeTest {
                                 : allocatedAfter - allocatedBefore;
 
                         probes++;
+                        if (probes == 1 && Boolean.getBoolean("jvmd.semantic.memory.force_gc"))
+                            forceGc();
                         emitStatus(
                             app,
                             session,
@@ -176,6 +178,14 @@ class SemanticMemoryProbeTest {
 
         if (probes < limit)
             throw new AssertionError("Only found " + probes + " unique reference probes");
+    }
+
+    private static void forceGc() throws InterruptedException {
+        for (int i = 0; i < 3; i++) {
+            System.gc();
+            System.runFinalization();
+            Thread.sleep(150);
+        }
     }
 
     private static void emitStatus(

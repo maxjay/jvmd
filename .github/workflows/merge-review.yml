@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
   group: merge-review-${{ github.event.pull_request.number || github.ref }}
@@ -80,3 +81,35 @@ jobs:
             ${{ runner.temp }}/results/**/report.json
             ${{ runner.temp }}/results/**/messages.jsonl
             ${{ runner.temp }}/results/**/resources.json
+      - name: Publish merge evidence on the PR
+        if: ${{ success() }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          if [[ -z "$PR_NUMBER" ]]; then
+            PR_NUMBER="$(gh api "repos/${{ github.repository }}/pulls?state=open&head=${{ github.repository_owner }}:$HEAD_BRANCH" --jq '.[0].number // empty')"
+          fi
+          if [[ -z "$PR_NUMBER" ]]; then
+            echo 'No open pull request found for this branch; evidence remains on the workflow run.'
+            exit 0
+          fi
+          body="$RUNNER_TEMP/pr-evidence.md"
+          {
+            echo '<!-- jvmd-merge-review -->'
+            echo '## JVMD / JDTLS merge evidence'
+            echo
+            cat "$RUNNER_TEMP/comparison.md"
+            echo
+            printf '[Download the dashboard and independently verified raw evidence](https://github.com/%s/actions/runs/%s)\n' \
+              '${{ github.repository }}' '${{ github.run_id }}'
+          } > "$body"
+          comments="repos/${{ github.repository }}/issues/$PR_NUMBER/comments"
+          comment_id="$(gh api "$comments" --paginate --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- jvmd-merge-review -->"))) | .id' | tail -1)"
+          if [[ -n "$comment_id" ]]; then
+            gh api --method PATCH "repos/${{ github.repository }}/issues/comments/$comment_id" -F "body=@$body" >/dev/null
+          else
+            gh api --method POST "$comments" -F "body=@$body" >/dev/null
+          fi

@@ -109,6 +109,9 @@ ranges are checked against those sources.
 `dashboard.mjs` turns only the independently verified comparison artifacts into a
 small, self-contained HTML report. It has no package dependencies, performs no
 benchmark work itself, and escapes fixture and metric labels before rendering.
+On pull-request runs, the merge-review workflow also creates or updates one
+`github-actions` comment containing the comparison table and a link to download
+the dashboard, traces, resource samples, and verification artifacts.
 
 The merge-review gate uses `fixture.py --fixture-names review` as its correctness
 corpus instead of cloning a separate source repository. Its checked oracle covers

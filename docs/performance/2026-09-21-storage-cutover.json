@@ -1,0 +1,377 @@
+{
+  "baseline_revision": "06c47be1c755a8f23f88d81f0fe2980813518122",
+  "scope": "Three serial alternating repetitions; 8 JARs x 100 classes x 13 symbols = 10400 symbols. Existing RepositoryUpdateBenchmark, 1 GiB JVM, Temurin 25.0.4.1+1. Direct index API; not an end-to-end editor latency benchmark. Same fixture/path per run, independent persisted state.",
+  "harness_sha256": "4bf19e41722be27424ceee6b6309c5ca67aca2dc04939c20512542ceabea6096",
+  "semantic_hashes_agree": true,
+  "baseline_store_reopens_with_cutover": true,
+  "cutover_revision": "37a5dbc1b620164e5a400f136963457ceac9dbff",
+  "cutover_tree": "70f26ee114641d323cf372e0a3ae19c2477c7200",
+  "environment": {
+    "jdk": "Temurin 25.0.4.1+1",
+    "max_heap_bytes": 1073741824,
+    "cpu_model": "AMD EPYC 9V74 80-Core Processor",
+    "cpu_max": "800000 100000",
+    "memory_max": "21474836480",
+    "os_cache_flushed": false
+  },
+  "fixture": {
+    "artifacts": 8,
+    "symbols": 10400,
+    "manifest": [
+      {
+        "path": "fixture/generated0/1/generated0-1.jar",
+        "size": 35757,
+        "sha256": "dbea8a8e962fbfc62e86c4b67dab23f5b55526781cb8e3c7d23caca66a9df076"
+      },
+      {
+        "path": "fixture/generated1/1/generated1-1.jar",
+        "size": 35512,
+        "sha256": "53f0406af2c6ad34c10b7bbd001761604709a3b60fc8e91e8206a1402f20211e"
+      },
+      {
+        "path": "fixture/generated2/1/generated2-1.jar",
+        "size": 35523,
+        "sha256": "7af65e8c9d42a2290a25663192af2d1e10d64ef973a2d9f9850314c7929498d3"
+      },
+      {
+        "path": "fixture/generated3/1/generated3-1.jar",
+        "size": 35512,
+        "sha256": "e3ee2d15d85d0799f0ccb0740d828723d2c8c345ab76352a8f80e4ad042de0a7"
+      },
+      {
+        "path": "fixture/generated4/1/generated4-1.jar",
+        "size": 35570,
+        "sha256": "a88ea5c92da92e5ba57e906647f79f8693eaebe094ad14dc2bd97a7066c2d845"
+      },
+      {
+        "path": "fixture/generated5/1/generated5-1.jar",
+        "size": 35573,
+        "sha256": "ccdb743d8288f863d15701939873e6bfd3a89d1e39d80e05de5bca4fe6d43159"
+      },
+      {
+        "path": "fixture/generated6/1/generated6-1.jar",
+        "size": 35520,
+        "sha256": "9fffdf94af9642753d5d9418db969753dee6fb09df0c8922d8f545f57129c1e6"
+      },
+      {
+        "path": "fixture/generated7/1-SNAPSHOT/generated7-1-SNAPSHOT.jar",
+        "size": 35452,
+        "sha256": "5d1d1d27e19016ba79e900cc9b762bd074646e0b759777a1d654b3789bb77bb7"
+      }
+    ]
+  },
+  "summary_medians": {
+    "baseline/fresh_seed": {
+      "open_and_scan_ms": 865.046246,
+      "scan_ms": 649.53934,
+      "workspace_ready_ms": 894.06312,
+      "type_query_p50_ms": 1.230433,
+      "type_query_p95_ms": 2.469068,
+      "query_p50_ms": 2.583291,
+      "query_p95_ms": 4.012468,
+      "write_bytes": 17154048
+    },
+    "baseline/restart_unchanged": {
+      "open_and_scan_ms": 481.089168,
+      "scan_ms": 70.783104,
+      "workspace_ready_ms": 516.273484,
+      "type_query_p50_ms": 1.497505,
+      "type_query_p95_ms": 2.528878,
+      "query_p50_ms": 3.594333,
+      "query_p95_ms": 6.870327,
+      "write_bytes": 15724544
+    },
+    "baseline/warm_unchanged": {
+      "open_and_scan_ms": 7.581848,
+      "scan_ms": 7.581127,
+      "workspace_ready_ms": 17.207654,
+      "type_query_p50_ms": 0.675077,
+      "type_query_p95_ms": 0.826134,
+      "query_p50_ms": 1.680631,
+      "query_p95_ms": 2.553926,
+      "write_bytes": 4096
+    },
+    "baseline/metadata_only": {
+      "open_and_scan_ms": 6.114206,
+      "scan_ms": 6.113966,
+      "workspace_ready_ms": 13.705129,
+      "type_query_p50_ms": 0.303717,
+      "type_query_p95_ms": 0.587966,
+      "query_p50_ms": 1.380038,
+      "query_p95_ms": 1.887622,
+      "write_bytes": 4096
+    },
+    "baseline/touch_release_same_content": {
+      "open_and_scan_ms": 5.900865,
+      "scan_ms": 5.900414,
+      "workspace_ready_ms": 13.113559,
+      "type_query_p50_ms": 0.181012,
+      "type_query_p95_ms": 0.31225,
+      "query_p50_ms": 0.773084,
+      "query_p95_ms": 1.06903,
+      "write_bytes": 4096
+    },
+    "baseline/replace_release": {
+      "open_and_scan_ms": 154.782137,
+      "scan_ms": 154.781356,
+      "workspace_ready_ms": 164.680454,
+      "type_query_p50_ms": 0.16592,
+      "type_query_p95_ms": 0.455916,
+      "query_p50_ms": 0.934157,
+      "query_p95_ms": 1.243783,
+      "write_bytes": 172032
+    },
+    "baseline/add_jar": {
+      "open_and_scan_ms": 56.651298,
+      "scan_ms": 56.650457,
+      "workspace_ready_ms": 65.047851,
+      "type_query_p50_ms": 0.376858,
+      "type_query_p95_ms": 0.594715,
+      "query_p50_ms": 1.760752,
+      "query_p95_ms": 2.22467,
+      "write_bytes": 172032
+    },
+    "baseline/delete_jar": {
+      "open_and_scan_ms": 5.442105,
+      "scan_ms": 5.441744,
+      "workspace_ready_ms": 11.964358,
+      "type_query_p50_ms": 0.190106,
+      "type_query_p95_ms": 0.334463,
+      "query_p50_ms": 1.059436,
+      "query_p95_ms": 1.777196,
+      "write_bytes": 0
+    },
+    "baseline/replace_snapshot_preserved_mtime": {
+      "open_and_scan_ms": 46.326166,
+      "scan_ms": 46.325865,
+      "workspace_ready_ms": 53.518187,
+      "type_query_p50_ms": 0.163155,
+      "type_query_p95_ms": 0.428765,
+      "query_p50_ms": 0.81678,
+      "query_p95_ms": 1.162009,
+      "write_bytes": 167936
+    },
+    "baseline/unchanged_after_updates": {
+      "open_and_scan_ms": 4.589431,
+      "scan_ms": 4.588931,
+      "workspace_ready_ms": 10.860524,
+      "type_query_p50_ms": 0.14649,
+      "type_query_p95_ms": 0.274083,
+      "query_p50_ms": 0.719594,
+      "query_p95_ms": 1.455342,
+      "write_bytes": 4096
+    },
+    "baseline/restart_after_updates": {
+      "open_and_scan_ms": 498.832644,
+      "scan_ms": 69.964352,
+      "workspace_ready_ms": 541.254729,
+      "type_query_p50_ms": 1.72668,
+      "type_query_p95_ms": 3.808767,
+      "query_p50_ms": 3.593442,
+      "query_p95_ms": 5.197657,
+      "write_bytes": 15724544
+    },
+    "cutover/fresh_seed": {
+      "open_and_scan_ms": 854.778656,
+      "scan_ms": 665.888779,
+      "workspace_ready_ms": 881.873343,
+      "type_query_p50_ms": 1.290764,
+      "type_query_p95_ms": 2.632264,
+      "query_p50_ms": 2.710171,
+      "query_p95_ms": 4.164551,
+      "write_bytes": 17084416
+    },
+    "cutover/restart_unchanged": {
+      "open_and_scan_ms": 485.428457,
+      "scan_ms": 61.618943,
+      "workspace_ready_ms": 515.889234,
+      "type_query_p50_ms": 1.744367,
+      "type_query_p95_ms": 3.156153,
+      "query_p50_ms": 2.617603,
+      "query_p95_ms": 4.292223,
+      "write_bytes": 15671296
+    },
+    "cutover/warm_unchanged": {
+      "open_and_scan_ms": 6.171184,
+      "scan_ms": 6.171024,
+      "workspace_ready_ms": 15.890439,
+      "type_query_p50_ms": 0.470779,
+      "type_query_p95_ms": 0.745834,
+      "query_p50_ms": 1.987994,
+      "query_p95_ms": 2.793326,
+      "write_bytes": 4096
+    },
+    "cutover/metadata_only": {
+      "open_and_scan_ms": 7.37112,
+      "scan_ms": 7.370719,
+      "workspace_ready_ms": 15.558589,
+      "type_query_p50_ms": 0.320853,
+      "type_query_p95_ms": 0.62417,
+      "query_p50_ms": 1.954834,
+      "query_p95_ms": 2.445273,
+      "write_bytes": 4096
+    },
+    "cutover/touch_release_same_content": {
+      "open_and_scan_ms": 5.051767,
+      "scan_ms": 5.051477,
+      "workspace_ready_ms": 11.545536,
+      "type_query_p50_ms": 0.294314,
+      "type_query_p95_ms": 0.440774,
+      "query_p50_ms": 0.801888,
+      "query_p95_ms": 1.391496,
+      "write_bytes": 4096
+    },
+    "cutover/replace_release": {
+      "open_and_scan_ms": 157.857741,
+      "scan_ms": 157.856929,
+      "workspace_ready_ms": 165.787758,
+      "type_query_p50_ms": 0.180402,
+      "type_query_p95_ms": 0.401124,
+      "query_p50_ms": 0.875689,
+      "query_p95_ms": 1.223362,
+      "write_bytes": 172032
+    },
+    "cutover/add_jar": {
+      "open_and_scan_ms": 64.67142,
+      "scan_ms": 64.67094,
+      "workspace_ready_ms": 73.969734,
+      "type_query_p50_ms": 0.316997,
+      "type_query_p95_ms": 0.415827,
+      "query_p50_ms": 1.462813,
+      "query_p95_ms": 1.926732,
+      "write_bytes": 172032
+    },
+    "cutover/delete_jar": {
+      "open_and_scan_ms": 5.447434,
+      "scan_ms": 5.447154,
+      "workspace_ready_ms": 10.486985,
+      "type_query_p50_ms": 0.188514,
+      "type_query_p95_ms": 0.592152,
+      "query_p50_ms": 0.880867,
+      "query_p95_ms": 1.085134,
+      "write_bytes": 0
+    },
+    "cutover/replace_snapshot_preserved_mtime": {
+      "open_and_scan_ms": 55.153682,
+      "scan_ms": 55.152951,
+      "workspace_ready_ms": 62.311871,
+      "type_query_p50_ms": 0.161363,
+      "type_query_p95_ms": 0.340452,
+      "query_p50_ms": 0.775938,
+      "query_p95_ms": 1.028779,
+      "write_bytes": 167936
+    },
+    "cutover/unchanged_after_updates": {
+      "open_and_scan_ms": 4.303436,
+      "scan_ms": 4.303115,
+      "workspace_ready_ms": 9.838267,
+      "type_query_p50_ms": 0.159751,
+      "type_query_p95_ms": 0.277919,
+      "query_p50_ms": 0.718091,
+      "query_p95_ms": 1.020407,
+      "write_bytes": 4096
+    },
+    "cutover/restart_after_updates": {
+      "open_and_scan_ms": 496.718327,
+      "scan_ms": 65.965107,
+      "workspace_ready_ms": 528.446023,
+      "type_query_p50_ms": 2.028705,
+      "type_query_p95_ms": 3.466541,
+      "query_p50_ms": 2.613567,
+      "query_p95_ms": 6.135399,
+      "write_bytes": 15671296
+    }
+  },
+  "cross_reopen": {
+    "scenario": "restart_unchanged",
+    "open_and_scan_ms": 469.241271,
+    "scan_ms": 62.155125,
+    "workspace_ready_ms": 509.358195,
+    "query_p50_ms": 2.510761,
+    "query_p95_ms": 4.009889,
+    "type_query_p50_ms": 1.508813,
+    "type_query_p95_ms": 2.436299,
+    "write_bytes": 15687680,
+    "all_types_count": 800,
+    "all_types_scip_sha256": "c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f",
+    "indexed_delta": 0,
+    "hashes_delta": 1,
+    "faults_delta": 0
+  },
+  "validation": {
+    "rocks_tests": 40,
+    "integration_tests": 58,
+    "failures": 0,
+    "errors": 0,
+    "production_distribution_without_sqlite": true,
+    "distribution_publish_query_reopen_smoke": true
+  },
+  "samples": [
+    {"mode":"baseline","repetition":0,"operation":"seed","scenario":"fresh_seed","open_and_scan_ms":865.046246,"scan_ms":649.53934,"workspace_ready_ms":894.06312,"query_p50_ms":2.262347,"query_p95_ms":3.928768,"type_query_p50_ms":1.230433,"type_query_p95_ms":2.682951,"write_bytes":17182720,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":8,"hashes_delta":8,"faults_delta":0,"repository_publications":8,"repository_reuses":8},
+    {"mode":"baseline","repetition":0,"operation":"updates","scenario":"restart_unchanged","open_and_scan_ms":483.630569,"scan_ms":81.20103,"workspace_ready_ms":517.52443,"query_p50_ms":4.145792,"query_p95_ms":10.693867,"type_query_p50_ms":1.477786,"type_query_p95_ms":2.528878,"write_bytes":15728640,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"baseline","repetition":0,"operation":"updates","scenario":"warm_unchanged","open_and_scan_ms":10.314291,"scan_ms":10.313951,"workspace_ready_ms":18.096049,"query_p50_ms":1.772368,"query_p95_ms":2.292572,"type_query_p50_ms":0.408726,"type_query_p95_ms":0.589157,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"baseline","repetition":0,"operation":"updates","scenario":"metadata_only","open_and_scan_ms":6.114206,"scan_ms":6.113966,"workspace_ready_ms":14.436558,"query_p50_ms":1.403133,"query_p95_ms":1.887622,"type_query_p50_ms":0.320613,"type_query_p95_ms":0.597309,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"baseline","repetition":0,"operation":"updates","scenario":"touch_release_same_content","open_and_scan_ms":5.900865,"scan_ms":5.900414,"workspace_ready_ms":11.653868,"query_p50_ms":0.773084,"query_p95_ms":1.06903,"type_query_p50_ms":0.181012,"type_query_p95_ms":0.31225,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":2,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"baseline","repetition":0,"operation":"updates","scenario":"replace_release","open_and_scan_ms":153.013943,"scan_ms":153.013062,"workspace_ready_ms":160.111911,"query_p50_ms":0.839875,"query_p95_ms":1.099275,"type_query_p50_ms":0.165179,"type_query_p95_ms":0.311819,"write_bytes":172032,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":1,"hashes_delta":2,"faults_delta":0,"replacement_checks":{"expected_count":100,"current_count":100,"correct":true,"old_count":0},"repository_publications":1,"repository_reuses":1},
+    {"mode":"baseline","repetition":0,"operation":"updates","scenario":"add_jar","open_and_scan_ms":56.651298,"scan_ms":56.650457,"workspace_ready_ms":65.047851,"query_p50_ms":1.782183,"query_p95_ms":4.423251,"type_query_p50_ms":0.376858,"type_query_p95_ms":0.603299,"write_bytes":172032,"all_types_count":900,"all_types_scip_sha256":"f422a9d0cae339cecc122be3a7c9adc92d0c42cd819fc4fbc6837527d219f908","indexed_delta":1,"hashes_delta":2,"faults_delta":0,"repository_publications":2,"repository_reuses":2},
+    {"mode":"baseline","repetition":0,"operation":"updates","scenario":"delete_jar","open_and_scan_ms":5.442105,"scan_ms":5.441744,"workspace_ready_ms":13.399457,"query_p50_ms":1.491235,"query_p95_ms":1.777196,"type_query_p50_ms":0.354644,"type_query_p95_ms":0.416487,"write_bytes":0,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":1,"hashes_delta":1,"faults_delta":0,"deleted_workspace_count":0,"deleted_global_count":0,"deleted_path_still_registered":false,"repository_publications":2,"repository_reuses":2},
+    {"mode":"baseline","repetition":0,"operation":"updates","scenario":"replace_snapshot_preserved_mtime","open_and_scan_ms":59.306621,"scan_ms":59.306161,"workspace_ready_ms":68.274795,"query_p50_ms":0.837991,"query_p95_ms":2.652734,"type_query_p50_ms":0.195414,"type_query_p95_ms":0.428765,"write_bytes":167936,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":1,"hashes_delta":1,"faults_delta":0,"replacement_checks":{"expected_count":100,"current_count":100,"correct":true,"old_count":0},"snapshot_size_preserved":true,"repository_publications":3,"repository_reuses":3},
+    {"mode":"baseline","repetition":0,"operation":"updates","scenario":"unchanged_after_updates","open_and_scan_ms":5.870399,"scan_ms":5.869968,"workspace_ready_ms":10.860524,"query_p50_ms":0.719594,"query_p95_ms":1.200248,"type_query_p50_ms":0.157577,"type_query_p95_ms":0.250707,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":3,"repository_reuses":3},
+    {"mode":"baseline","repetition":0,"operation":"restart","scenario":"restart_after_updates","open_and_scan_ms":498.832644,"scan_ms":69.964352,"workspace_ready_ms":537.676445,"query_p50_ms":3.593442,"query_p95_ms":8.552771,"type_query_p50_ms":1.683906,"type_query_p95_ms":3.808767,"write_bytes":15720448,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"release_checks":{"correct":true,"current_count":100,"expected_count":100,"old_count":0},"snapshot_checks":{"correct":true,"current_count":100,"expected_count":100,"old_count":0},"repository_publications":0,"repository_reuses":0},
+    {"mode":"cutover","repetition":0,"operation":"seed","scenario":"fresh_seed","open_and_scan_ms":854.778656,"scan_ms":660.197357,"workspace_ready_ms":881.873343,"query_p50_ms":2.967699,"query_p95_ms":5.125409,"type_query_p50_ms":1.428852,"type_query_p95_ms":2.830963,"write_bytes":17092608,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":8,"hashes_delta":8,"faults_delta":0,"repository_publications":8,"repository_reuses":0},
+    {"mode":"cutover","repetition":0,"operation":"updates","scenario":"restart_unchanged","open_and_scan_ms":485.428457,"scan_ms":59.868396,"workspace_ready_ms":515.889234,"query_p50_ms":2.617603,"query_p95_ms":3.889908,"type_query_p50_ms":1.759821,"type_query_p95_ms":3.098697,"write_bytes":15675392,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"cutover","repetition":0,"operation":"updates","scenario":"warm_unchanged","open_and_scan_ms":9.33191,"scan_ms":9.331609,"workspace_ready_ms":18.86032,"query_p50_ms":1.9055,"query_p95_ms":2.760438,"type_query_p50_ms":0.793836,"type_query_p95_ms":1.061608,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"cutover","repetition":0,"operation":"updates","scenario":"metadata_only","open_and_scan_ms":8.438188,"scan_ms":8.437868,"workspace_ready_ms":16.793302,"query_p50_ms":1.954834,"query_p95_ms":2.321887,"type_query_p50_ms":0.30503,"type_query_p95_ms":0.525522,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"cutover","repetition":0,"operation":"updates","scenario":"touch_release_same_content","open_and_scan_ms":4.951417,"scan_ms":4.951167,"workspace_ready_ms":9.966721,"query_p50_ms":0.806204,"query_p95_ms":1.601472,"type_query_p50_ms":0.210217,"type_query_p95_ms":0.537239,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":2,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"cutover","repetition":0,"operation":"updates","scenario":"replace_release","open_and_scan_ms":157.857741,"scan_ms":157.856929,"workspace_ready_ms":164.353374,"query_p50_ms":0.882229,"query_p95_ms":1.316764,"type_query_p50_ms":0.180402,"type_query_p95_ms":0.339792,"write_bytes":172032,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":1,"hashes_delta":2,"faults_delta":0,"replacement_checks":{"current_count":100,"expected_count":100,"old_count":0,"correct":true},"repository_publications":1,"repository_reuses":0},
+    {"mode":"cutover","repetition":0,"operation":"updates","scenario":"add_jar","open_and_scan_ms":66.010057,"scan_ms":66.009285,"workspace_ready_ms":74.195955,"query_p50_ms":1.445627,"query_p95_ms":1.697858,"type_query_p50_ms":0.316997,"type_query_p95_ms":0.415827,"write_bytes":172032,"all_types_count":900,"all_types_scip_sha256":"f422a9d0cae339cecc122be3a7c9adc92d0c42cd819fc4fbc6837527d219f908","indexed_delta":1,"hashes_delta":2,"faults_delta":0,"repository_publications":2,"repository_reuses":0},
+    {"mode":"cutover","repetition":0,"operation":"updates","scenario":"delete_jar","open_and_scan_ms":5.05917,"scan_ms":5.058969,"workspace_ready_ms":10.486985,"query_p50_ms":0.860937,"query_p95_ms":0.977762,"type_query_p50_ms":0.188304,"type_query_p95_ms":0.592152,"write_bytes":0,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":1,"hashes_delta":1,"faults_delta":0,"deleted_workspace_count":0,"deleted_global_count":0,"deleted_path_still_registered":false,"repository_publications":2,"repository_reuses":0},
+    {"mode":"cutover","repetition":0,"operation":"updates","scenario":"replace_snapshot_preserved_mtime","open_and_scan_ms":41.530398,"scan_ms":41.529536,"workspace_ready_ms":47.351224,"query_p50_ms":0.701427,"query_p95_ms":0.900185,"type_query_p50_ms":0.162775,"type_query_p95_ms":0.340452,"write_bytes":167936,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":1,"hashes_delta":1,"faults_delta":0,"replacement_checks":{"current_count":100,"expected_count":100,"old_count":0,"correct":true},"snapshot_size_preserved":true,"repository_publications":3,"repository_reuses":0},
+    {"mode":"cutover","repetition":0,"operation":"updates","scenario":"unchanged_after_updates","open_and_scan_ms":4.862462,"scan_ms":4.862142,"workspace_ready_ms":9.838267,"query_p50_ms":0.718091,"query_p95_ms":1.841123,"type_query_p50_ms":0.128343,"type_query_p95_ms":0.184538,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":3,"repository_reuses":0},
+    {"mode":"cutover","repetition":0,"operation":"restart","scenario":"restart_after_updates","open_and_scan_ms":503.603005,"scan_ms":69.268314,"workspace_ready_ms":535.349447,"query_p50_ms":2.613567,"query_p95_ms":5.711041,"type_query_p50_ms":1.82623,"type_query_p95_ms":3.466541,"write_bytes":15671296,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"release_checks":{"correct":true,"current_count":100,"expected_count":100,"old_count":0},"snapshot_checks":{"correct":true,"current_count":100,"expected_count":100,"old_count":0},"repository_publications":0,"repository_reuses":0},
+    {"mode":"cutover","repetition":1,"operation":"seed","scenario":"fresh_seed","open_and_scan_ms":852.728228,"scan_ms":673.602592,"workspace_ready_ms":878.591871,"query_p50_ms":2.228436,"query_p95_ms":4.052693,"type_query_p50_ms":1.119716,"type_query_p95_ms":2.294455,"write_bytes":17063936,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":8,"hashes_delta":8,"faults_delta":0,"repository_publications":8,"repository_reuses":0},
+    {"mode":"cutover","repetition":1,"operation":"updates","scenario":"restart_unchanged","open_and_scan_ms":489.443509,"scan_ms":61.618943,"workspace_ready_ms":521.124062,"query_p50_ms":2.911034,"query_p95_ms":6.594242,"type_query_p50_ms":1.744367,"type_query_p95_ms":3.156153,"write_bytes":15671296,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"cutover","repetition":1,"operation":"updates","scenario":"warm_unchanged","open_and_scan_ms":6.171184,"scan_ms":6.171024,"workspace_ready_ms":12.340926,"query_p50_ms":1.987994,"query_p95_ms":2.984975,"type_query_p50_ms":0.459983,"type_query_p95_ms":0.745834,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"cutover","repetition":1,"operation":"updates","scenario":"metadata_only","open_and_scan_ms":6.726961,"scan_ms":6.726671,"workspace_ready_ms":14.748632,"query_p50_ms":1.989467,"query_p95_ms":2.571793,"type_query_p50_ms":0.320853,"type_query_p95_ms":0.62417,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"cutover","repetition":1,"operation":"updates","scenario":"touch_release_same_content","open_and_scan_ms":6.718378,"scan_ms":6.718008,"workspace_ready_ms":13.347983,"query_p50_ms":0.782258,"query_p95_ms":1.391496,"type_query_p50_ms":0.304448,"type_query_p95_ms":0.440774,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":2,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"cutover","repetition":1,"operation":"updates","scenario":"replace_release","open_and_scan_ms":158.898964,"scan_ms":158.898273,"workspace_ready_ms":166.045387,"query_p50_ms":0.860285,"query_p95_ms":1.054658,"type_query_p50_ms":0.180011,"type_query_p95_ms":0.401124,"write_bytes":176128,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":1,"hashes_delta":2,"faults_delta":0,"replacement_checks":{"expected_count":100,"current_count":100,"correct":true,"old_count":0},"repository_publications":1,"repository_reuses":0},
+    {"mode":"cutover","repetition":1,"operation":"updates","scenario":"add_jar","open_and_scan_ms":64.67142,"scan_ms":64.67094,"workspace_ready_ms":73.969734,"query_p50_ms":1.462813,"query_p95_ms":1.926732,"type_query_p50_ms":0.315355,"type_query_p95_ms":0.410598,"write_bytes":172032,"all_types_count":900,"all_types_scip_sha256":"f422a9d0cae339cecc122be3a7c9adc92d0c42cd819fc4fbc6837527d219f908","indexed_delta":1,"hashes_delta":2,"faults_delta":0,"repository_publications":2,"repository_reuses":0},
+    {"mode":"cutover","repetition":1,"operation":"updates","scenario":"delete_jar","open_and_scan_ms":5.447434,"scan_ms":5.447154,"workspace_ready_ms":10.094433,"query_p50_ms":0.889209,"query_p95_ms":1.085134,"type_query_p50_ms":0.188514,"type_query_p95_ms":0.788578,"write_bytes":0,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":1,"hashes_delta":1,"faults_delta":0,"deleted_workspace_count":0,"deleted_global_count":0,"deleted_path_still_registered":false,"repository_publications":2,"repository_reuses":0},
+    {"mode":"cutover","repetition":1,"operation":"updates","scenario":"replace_snapshot_preserved_mtime","open_and_scan_ms":73.29357,"scan_ms":73.292929,"workspace_ready_ms":79.208637,"query_p50_ms":0.795428,"query_p95_ms":1.052905,"type_query_p50_ms":0.158108,"type_query_p95_ms":0.214242,"write_bytes":167936,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":1,"hashes_delta":1,"faults_delta":0,"replacement_checks":{"expected_count":100,"current_count":100,"correct":true,"old_count":0},"snapshot_size_preserved":true,"repository_publications":3,"repository_reuses":0},
+    {"mode":"cutover","repetition":1,"operation":"updates","scenario":"unchanged_after_updates","open_and_scan_ms":4.211963,"scan_ms":4.211702,"workspace_ready_ms":10.582525,"query_p50_ms":0.723389,"query_p95_ms":1.020407,"type_query_p50_ms":0.179871,"type_query_p95_ms":0.507434,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":3,"repository_reuses":0},
+    {"mode":"cutover","repetition":1,"operation":"restart","scenario":"restart_after_updates","open_and_scan_ms":456.474479,"scan_ms":63.083192,"workspace_ready_ms":488.761299,"query_p50_ms":3.292991,"query_p95_ms":6.264867,"type_query_p50_ms":2.072719,"type_query_p95_ms":3.584271,"write_bytes":15671296,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"release_checks":{"expected_count":100,"old_count":0,"correct":true,"current_count":100},"snapshot_checks":{"expected_count":100,"old_count":0,"correct":true,"current_count":100},"repository_publications":0,"repository_reuses":0},
+    {"mode":"baseline","repetition":1,"operation":"seed","scenario":"fresh_seed","open_and_scan_ms":926.218212,"scan_ms":711.798777,"workspace_ready_ms":950.164163,"query_p50_ms":2.583291,"query_p95_ms":4.012468,"type_query_p50_ms":0.868458,"type_query_p95_ms":1.804918,"write_bytes":17149952,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":8,"hashes_delta":8,"faults_delta":0,"repository_publications":8,"repository_reuses":8},
+    {"mode":"baseline","repetition":1,"operation":"updates","scenario":"restart_unchanged","open_and_scan_ms":453.59447,"scan_ms":69.195697,"workspace_ready_ms":494.806794,"query_p50_ms":3.117175,"query_p95_ms":6.870327,"type_query_p50_ms":1.647381,"type_query_p95_ms":2.418031,"write_bytes":15724544,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"baseline","repetition":1,"operation":"updates","scenario":"warm_unchanged","open_and_scan_ms":7.581848,"scan_ms":7.581127,"workspace_ready_ms":16.862354,"query_p50_ms":1.680551,"query_p95_ms":2.553926,"type_query_p50_ms":0.682198,"type_query_p95_ms":0.826134,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"baseline","repetition":1,"operation":"updates","scenario":"metadata_only","open_and_scan_ms":5.740555,"scan_ms":5.740315,"workspace_ready_ms":13.705129,"query_p50_ms":1.380038,"query_p95_ms":2.023918,"type_query_p50_ms":0.303717,"type_query_p95_ms":0.587966,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"baseline","repetition":1,"operation":"updates","scenario":"touch_release_same_content","open_and_scan_ms":5.162135,"scan_ms":5.161885,"workspace_ready_ms":13.113559,"query_p50_ms":1.191875,"query_p95_ms":1.445708,"type_query_p50_ms":0.32514,"type_query_p95_ms":0.433513,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":2,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"baseline","repetition":1,"operation":"updates","scenario":"replace_release","open_and_scan_ms":169.228343,"scan_ms":169.227512,"workspace_ready_ms":175.600138,"query_p50_ms":0.974908,"query_p95_ms":1.243783,"type_query_p50_ms":0.16592,"type_query_p95_ms":0.455916,"write_bytes":172032,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":1,"hashes_delta":2,"faults_delta":0,"replacement_checks":{"old_count":0,"expected_count":100,"current_count":100,"correct":true},"repository_publications":1,"repository_reuses":1},
+    {"mode":"baseline","repetition":1,"operation":"updates","scenario":"add_jar","open_and_scan_ms":51.668812,"scan_ms":51.668051,"workspace_ready_ms":60.571529,"query_p50_ms":1.760752,"query_p95_ms":2.22467,"type_query_p50_ms":0.489688,"type_query_p95_ms":0.594715,"write_bytes":172032,"all_types_count":900,"all_types_scip_sha256":"f422a9d0cae339cecc122be3a7c9adc92d0c42cd819fc4fbc6837527d219f908","indexed_delta":1,"hashes_delta":2,"faults_delta":0,"repository_publications":2,"repository_reuses":2},
+    {"mode":"baseline","repetition":1,"operation":"updates","scenario":"delete_jar","open_and_scan_ms":5.241214,"scan_ms":5.241003,"workspace_ready_ms":10.755639,"query_p50_ms":0.822449,"query_p95_ms":1.210463,"type_query_p50_ms":0.172841,"type_query_p95_ms":0.334463,"write_bytes":0,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":1,"hashes_delta":1,"faults_delta":0,"deleted_workspace_count":0,"deleted_global_count":0,"deleted_path_still_registered":false,"repository_publications":2,"repository_reuses":2},
+    {"mode":"baseline","repetition":1,"operation":"updates","scenario":"replace_snapshot_preserved_mtime","open_and_scan_ms":46.326166,"scan_ms":46.325865,"workspace_ready_ms":53.518187,"query_p50_ms":0.81678,"query_p95_ms":1.162009,"type_query_p50_ms":0.154893,"type_query_p95_ms":0.46439,"write_bytes":167936,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":1,"hashes_delta":1,"faults_delta":0,"replacement_checks":{"old_count":0,"expected_count":100,"current_count":100,"correct":true},"snapshot_size_preserved":true,"repository_publications":3,"repository_reuses":3},
+    {"mode":"baseline","repetition":1,"operation":"updates","scenario":"unchanged_after_updates","open_and_scan_ms":4.589431,"scan_ms":4.588931,"workspace_ready_ms":12.002935,"query_p50_ms":0.665412,"query_p95_ms":1.455342,"type_query_p50_ms":0.118268,"type_query_p95_ms":0.360738,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":3,"repository_reuses":3},
+    {"mode":"baseline","repetition":1,"operation":"restart","scenario":"restart_after_updates","open_and_scan_ms":495.631201,"scan_ms":88.403553,"workspace_ready_ms":541.254729,"query_p50_ms":3.547162,"query_p95_ms":5.197657,"type_query_p50_ms":1.72668,"type_query_p95_ms":4.253025,"write_bytes":15724544,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"release_checks":{"old_count":0,"expected_count":100,"current_count":100,"correct":true},"snapshot_checks":{"old_count":0,"expected_count":100,"current_count":100,"correct":true},"repository_publications":0,"repository_reuses":0},
+    {"mode":"baseline","repetition":2,"operation":"seed","scenario":"fresh_seed","open_and_scan_ms":802.731806,"scan_ms":594.669224,"workspace_ready_ms":829.32211,"query_p50_ms":2.941991,"query_p95_ms":4.491794,"type_query_p50_ms":1.295091,"type_query_p95_ms":2.469068,"write_bytes":17154048,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":8,"hashes_delta":8,"faults_delta":0,"repository_publications":8,"repository_reuses":8},
+    {"mode":"baseline","repetition":2,"operation":"updates","scenario":"restart_unchanged","open_and_scan_ms":481.089168,"scan_ms":70.783104,"workspace_ready_ms":516.273484,"query_p50_ms":3.594333,"query_p95_ms":6.364074,"type_query_p50_ms":1.497505,"type_query_p95_ms":3.054981,"write_bytes":15724544,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"baseline","repetition":2,"operation":"updates","scenario":"warm_unchanged","open_and_scan_ms":6.856146,"scan_ms":6.855715,"workspace_ready_ms":17.207654,"query_p50_ms":1.680631,"query_p95_ms":2.836481,"type_query_p50_ms":0.675077,"type_query_p95_ms":0.980597,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"baseline","repetition":2,"operation":"updates","scenario":"metadata_only","open_and_scan_ms":6.21824,"scan_ms":6.217909,"workspace_ready_ms":12.709545,"query_p50_ms":1.323803,"query_p95_ms":1.809254,"type_query_p50_ms":0.276767,"type_query_p95_ms":0.396508,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"baseline","repetition":2,"operation":"updates","scenario":"touch_release_same_content","open_and_scan_ms":7.843572,"scan_ms":7.843312,"workspace_ready_ms":13.438708,"query_p50_ms":0.754846,"query_p95_ms":0.893976,"type_query_p50_ms":0.166471,"type_query_p95_ms":0.264038,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":2,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"baseline","repetition":2,"operation":"updates","scenario":"replace_release","open_and_scan_ms":154.782137,"scan_ms":154.781356,"workspace_ready_ms":164.680454,"query_p50_ms":0.934157,"query_p95_ms":1.58016,"type_query_p50_ms":0.372872,"type_query_p95_ms":0.543007,"write_bytes":172032,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":1,"hashes_delta":2,"faults_delta":0,"replacement_checks":{"correct":true,"current_count":100,"expected_count":100,"old_count":0},"repository_publications":1,"repository_reuses":1},
+    {"mode":"baseline","repetition":2,"operation":"updates","scenario":"add_jar","open_and_scan_ms":57.770711,"scan_ms":57.76966,"workspace_ready_ms":66.235268,"query_p50_ms":1.465867,"query_p95_ms":2.014203,"type_query_p50_ms":0.30552,"type_query_p95_ms":0.428054,"write_bytes":172032,"all_types_count":900,"all_types_scip_sha256":"f422a9d0cae339cecc122be3a7c9adc92d0c42cd819fc4fbc6837527d219f908","indexed_delta":1,"hashes_delta":2,"faults_delta":0,"repository_publications":2,"repository_reuses":2},
+    {"mode":"baseline","repetition":2,"operation":"updates","scenario":"delete_jar","open_and_scan_ms":6.311415,"scan_ms":6.311085,"workspace_ready_ms":11.964358,"query_p50_ms":1.059436,"query_p95_ms":2.042316,"type_query_p50_ms":0.190106,"type_query_p95_ms":0.236897,"write_bytes":0,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":1,"hashes_delta":1,"faults_delta":0,"deleted_workspace_count":0,"deleted_global_count":0,"deleted_path_still_registered":false,"repository_publications":2,"repository_reuses":2},
+    {"mode":"baseline","repetition":2,"operation":"updates","scenario":"replace_snapshot_preserved_mtime","open_and_scan_ms":45.279068,"scan_ms":45.278007,"workspace_ready_ms":51.400437,"query_p50_ms":0.762558,"query_p95_ms":1.08238,"type_query_p50_ms":0.163155,"type_query_p95_ms":0.415075,"write_bytes":167936,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":1,"hashes_delta":1,"faults_delta":0,"replacement_checks":{"correct":true,"current_count":100,"expected_count":100,"old_count":0},"snapshot_size_preserved":true,"repository_publications":3,"repository_reuses":3},
+    {"mode":"baseline","repetition":2,"operation":"updates","scenario":"unchanged_after_updates","open_and_scan_ms":3.791605,"scan_ms":3.791195,"workspace_ready_ms":9.059679,"query_p50_ms":0.762228,"query_p95_ms":1.904348,"type_query_p50_ms":0.14649,"type_query_p95_ms":0.274083,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":3,"repository_reuses":3},
+    {"mode":"baseline","repetition":2,"operation":"restart","scenario":"restart_after_updates","open_and_scan_ms":522.561645,"scan_ms":64.283873,"workspace_ready_ms":556.626571,"query_p50_ms":3.761524,"query_p95_ms":5.015583,"type_query_p50_ms":2.042195,"type_query_p95_ms":3.284655,"write_bytes":15724544,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"release_checks":{"old_count":0,"expected_count":100,"current_count":100,"correct":true},"snapshot_checks":{"old_count":0,"expected_count":100,"current_count":100,"correct":true},"repository_publications":0,"repository_reuses":0},
+    {"mode":"cutover","repetition":2,"operation":"seed","scenario":"fresh_seed","open_and_scan_ms":859.117021,"scan_ms":665.888779,"workspace_ready_ms":884.29187,"query_p50_ms":2.710171,"query_p95_ms":4.164551,"type_query_p50_ms":1.290764,"type_query_p95_ms":2.632264,"write_bytes":17084416,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":8,"hashes_delta":8,"faults_delta":0,"repository_publications":8,"repository_reuses":0},
+    {"mode":"cutover","repetition":2,"operation":"updates","scenario":"restart_unchanged","open_and_scan_ms":470.751781,"scan_ms":62.284931,"workspace_ready_ms":498.980579,"query_p50_ms":2.502449,"query_p95_ms":4.292223,"type_query_p50_ms":1.582002,"type_query_p95_ms":3.308552,"write_bytes":15667200,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"cutover","repetition":2,"operation":"updates","scenario":"warm_unchanged","open_and_scan_ms":5.995939,"scan_ms":5.995478,"workspace_ready_ms":15.890439,"query_p50_ms":2.413013,"query_p95_ms":2.793326,"type_query_p50_ms":0.470779,"type_query_p95_ms":0.735818,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"cutover","repetition":2,"operation":"updates","scenario":"metadata_only","open_and_scan_ms":7.37112,"scan_ms":7.370719,"workspace_ready_ms":15.558589,"query_p50_ms":1.436072,"query_p95_ms":2.445273,"type_query_p50_ms":0.492842,"type_query_p95_ms":0.778773,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"cutover","repetition":2,"operation":"updates","scenario":"touch_release_same_content","open_and_scan_ms":5.051767,"scan_ms":5.051477,"workspace_ready_ms":11.545536,"query_p50_ms":0.801888,"query_p95_ms":1.348451,"type_query_p50_ms":0.294314,"type_query_p95_ms":0.428906,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":2,"faults_delta":0,"repository_publications":0,"repository_reuses":0},
+    {"mode":"cutover","repetition":2,"operation":"updates","scenario":"replace_release","open_and_scan_ms":156.513523,"scan_ms":156.512822,"workspace_ready_ms":165.787758,"query_p50_ms":0.875689,"query_p95_ms":1.223362,"type_query_p50_ms":0.195324,"type_query_p95_ms":0.542687,"write_bytes":172032,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":1,"hashes_delta":2,"faults_delta":0,"replacement_checks":{"old_count":0,"expected_count":100,"current_count":100,"correct":true},"repository_publications":1,"repository_reuses":0},
+    {"mode":"cutover","repetition":2,"operation":"updates","scenario":"add_jar","open_and_scan_ms":57.100514,"scan_ms":57.099753,"workspace_ready_ms":67.011438,"query_p50_ms":1.598066,"query_p95_ms":2.159552,"type_query_p50_ms":0.336457,"type_query_p95_ms":0.462927,"write_bytes":172032,"all_types_count":900,"all_types_scip_sha256":"f422a9d0cae339cecc122be3a7c9adc92d0c42cd819fc4fbc6837527d219f908","indexed_delta":1,"hashes_delta":2,"faults_delta":0,"repository_publications":2,"repository_reuses":0},
+    {"mode":"cutover","repetition":2,"operation":"updates","scenario":"delete_jar","open_and_scan_ms":5.610437,"scan_ms":5.610187,"workspace_ready_ms":10.833503,"query_p50_ms":0.880867,"query_p95_ms":1.215571,"type_query_p50_ms":0.218709,"type_query_p95_ms":0.409476,"write_bytes":0,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":1,"hashes_delta":1,"faults_delta":0,"deleted_workspace_count":0,"deleted_global_count":0,"deleted_path_still_registered":false,"repository_publications":2,"repository_reuses":0},
+    {"mode":"cutover","repetition":2,"operation":"updates","scenario":"replace_snapshot_preserved_mtime","open_and_scan_ms":55.153682,"scan_ms":55.152951,"workspace_ready_ms":62.311871,"query_p50_ms":0.775938,"query_p95_ms":1.028779,"type_query_p50_ms":0.161363,"type_query_p95_ms":0.346692,"write_bytes":167936,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":1,"hashes_delta":1,"faults_delta":0,"replacement_checks":{"old_count":0,"expected_count":100,"current_count":100,"correct":true},"snapshot_size_preserved":true,"repository_publications":3,"repository_reuses":0},
+    {"mode":"cutover","repetition":2,"operation":"updates","scenario":"unchanged_after_updates","open_and_scan_ms":4.303436,"scan_ms":4.303115,"workspace_ready_ms":8.785475,"query_p50_ms":0.680395,"query_p95_ms":0.849179,"type_query_p50_ms":0.159751,"type_query_p95_ms":0.277919,"write_bytes":4096,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"repository_publications":3,"repository_reuses":0},
+    {"mode":"cutover","repetition":2,"operation":"restart","scenario":"restart_after_updates","open_and_scan_ms":496.718327,"scan_ms":65.965107,"workspace_ready_ms":528.446023,"query_p50_ms":2.61002,"query_p95_ms":6.135399,"type_query_p50_ms":2.028705,"type_query_p95_ms":3.283365,"write_bytes":15671296,"all_types_count":800,"all_types_scip_sha256":"c0da756e6385b6794ef65799afe854d0332201bddb17accf31ad2b651708ec6f","indexed_delta":0,"hashes_delta":1,"faults_delta":0,"release_checks":{"correct":true,"current_count":100,"expected_count":100,"old_count":0},"snapshot_checks":{"correct":true,"current_count":100,"expected_count":100,"old_count":0},"repository_publications":0,"repository_reuses":0}
+  ]
+}

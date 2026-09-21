@@ -141,3 +141,37 @@ consolidation, not a latency claim.
 - [x] Remaining module-wide derived-index rebuild is explicitly left for a separately benchmarked task.
 - [x] Superseded implementation/progress/design/performance narrative documents removed; surviving docs are user/installation/integration/dependency or executable benchmark documentation.
 - [x] Final Markdown tree contains 9 files and zero references to the deleted documents.
+
+
+## 2026-09-21 — Rocks storage cutover
+
+Completed on `refactor/rocks-storage-cutover`, from main `06c47be1c755a8f23f88d81f0fe2980813518122`.
+
+- [x] Remove runtime SQLite/shadow selection, comparison counters, cursor translation, and SQL row decoding from `IndexService`.
+- [x] Move SQLite, its schemas, and JDBC dependency into the test-only historical reference; switch production contract/search/workspace fixtures to Rocks.
+- [x] Replace the optional generation sink with `IndexStorage` lifecycle ownership and focused inventory, semantic-state, and admission services.
+- [x] Make `RocksIndexStore` the sole content-plus-artifact-manifest publisher; remove duplicate binary/code/local/JDK publication and the second documentation pointer.
+- [x] Remove the unused production shadow workspace resolver. Retain Rocks format validation, activation, previous-generation recovery, pins, and pruning.
+- [x] Build, run 40 Rocks unit tests and 58 selected integration tests, inspect distribution contents, and pass the distribution publication/query/reopen smoke test. No failures remain. An initial navigation failure also occurred on baseline and was resolved by building the missing Maven 3 resolver executable.
+- [x] Run the existing `RepositoryUpdateBenchmark` against baseline and cutover: three serial alternating repetitions, eight JARs, 10,400 symbols, isolated 1 GiB JVMs. Semantic hashes agree throughout. A baseline-written store reopens with the cutover without rebuilding artifacts.
+
+Production Java across index and Rocks modules: **5,141 → 3,895 lines (−1,246)**. Of these, 761 SQLite implementation lines moved to tests. `IndexService`: **415 → 325 lines**. The implementation commit is a net repository reduction of 775 lines, including test/doc changes and treating moved files as moves.
+
+Eight new JARs now cause **8 repository publication calls instead of 16** (baseline: 8 new + 8 reused; cutover: 8 new + 0 reused). This removes overlapping orchestration; it does not claim the old implementation wrote each artifact twice.
+
+Median measurements, in milliseconds:
+
+| Measurement | Baseline | Cutover |
+| --- | ---: | ---: |
+| Fresh open + scan | 865.05 | 854.78 |
+| Warm unchanged scan | 7.58 | 6.17 |
+| Restart open + scan | 481.09 | 485.43 |
+| Replace release scan | 154.78 | 157.86 |
+| Add JAR scan | 56.65 | 64.67 |
+| Delete JAR scan | 5.44 | 5.45 |
+| Warm unchanged type-query p50 | 0.675 | 0.471 |
+| Warm unchanged member-query p50 | 1.681 | 1.988 |
+
+Timing is mixed; these small-fixture measurements support no blanket speedup claim. This is an ownership/deletion change. Full scenario samples, environment, semantic hashes, revisions, and publication counts are in [the benchmark evidence](docs/performance/2026-09-21-storage-cutover.json). Compatibility and status changes are documented in [storage.md](docs/storage.md).
+
+Reproduction uses `benchmarks/index-updates/RepositoryUpdateBenchmark.java` compiled against each revision's core/index/Rocks classes and runtime dependencies (SQLite JDBC only for baseline). Invoke `fixture`, then `seed`, `updates`, and `restart`, each with arguments `<operation> <repository> <state> <output.json> 8 100 10 true`; use `java -Xmx1024m --enable-native-access=ALL-UNNAMED`. Restore the same pristine fixture path and create independent state for each repetition, alternating revision order. For compatibility, run baseline `seed`, then cutover `reopen` against that same repository/state. OS caches were not flushed.

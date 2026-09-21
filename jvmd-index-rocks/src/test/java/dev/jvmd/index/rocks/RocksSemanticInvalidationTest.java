@@ -70,6 +70,53 @@ class RocksSemanticInvalidationTest {
         try(var reopened=new RocksSemanticInvalidation(root)){assertThat(reopened.revision(b)).isEqualTo(2);}
     }
 
+
+    @Test void ordinaryObservationUsesDirectPostingsWithoutModuleScan()throws Exception{
+        Path root=temp.resolve("direct");Path isolated=root.resolve("Isolated.java");
+        try(var state=new RocksSemanticInvalidation(temp.resolve("direct-state"))){
+            state.observeFile("module","ctx",file(isolated,"i1","api-i",Set.of(),Set.of("pkg.Isolated"),Set.of()));
+            for(int i=0;i<100;i++){
+                Path value=root.resolve("F"+i+".java");
+                state.observeFile("module","ctx",file(value,"c"+i,"api-"+i,Set.of(),Set.of("pkg.F"+i),Set.of()));
+            }
+            var before=state.status();
+            var result=state.observeFile("module","ctx",file(isolated,"i2","api-i2",Set.of(),Set.of("pkg.Isolated"),Set.of()));
+            var after=state.status();
+            assertThat(result.reanalyze()).containsExactly(isolated.toAbsolutePath());
+            assertThat(((Number)after.get("module_scans")).longValue()-((Number)before.get("module_scans")).longValue()).isZero();
+            assertThat(((Number)after.get("contribution_reads")).longValue()-((Number)before.get("contribution_reads")).longValue()).isEqualTo(1);
+            assertThat(((Number)after.get("reverse_posting_reads")).longValue()-((Number)before.get("reverse_posting_reads")).longValue()).isEqualTo(1);
+        }
+    }
+
+    @Test void persistedPostingsSurviveRestartWithoutModuleRebuild()throws Exception{
+        Path root=temp.resolve("restart-postings"),a=temp.resolve("restart-A.java"),b=temp.resolve("restart-B.java");
+        try(var state=new RocksSemanticInvalidation(root)){
+            state.observeFile("module","ctx",file(a,"a1","api-a",Set.of(),Set.of("pkg.A"),Set.of()));
+            state.observeFile("module","ctx",file(b,"b1","api-b",Set.of(a),Set.of("pkg.B"),Set.of()));
+        }
+        try(var state=new RocksSemanticInvalidation(root)){
+            var result=state.observeFile("module","ctx",file(a,"a2","api-a2",Set.of(),Set.of("pkg.A"),Set.of()));
+            assertThat(result.reanalyze()).containsExactlyInAnyOrder(a.toAbsolutePath(),b.toAbsolutePath());
+            assertThat(state.status()).containsEntry("module_scans",0L).containsEntry("migration_files",0L);
+        }
+    }
+
+    @Test void unresolvedPrefixRelationsUsePostingsWithoutScanningFiles()throws Exception{
+        Path exported=temp.resolve("Exported.java"),child=temp.resolve("Child.java"),parent=temp.resolve("Parent.java");
+        try(var state=new RocksSemanticInvalidation(temp.resolve("unresolved-postings"))){
+            state.observeFile("module","ctx",file(child,"c1","api-c",Set.of(),Set.of("pkg.Child"),Set.of("pkg.Type.Inner")));
+            state.observeFile("module","ctx",file(parent,"p1","api-p",Set.of(),Set.of("pkg.Parent"),Set.of("pkg.Type")));
+            state.observeFile("module","ctx",file(exported,"e1","api-e",Set.of(),Set.of("pkg.Other"),Set.of()));
+            var before=state.status();
+            var result=state.observeFile("module","ctx",file(exported,"e2","api-e2",Set.of(),Set.of("pkg.Type"),Set.of()));
+            var after=state.status();
+            assertThat(result.reanalyze()).containsExactlyInAnyOrder(exported.toAbsolutePath(),child.toAbsolutePath(),parent.toAbsolutePath());
+            assertThat(((Number)after.get("module_scans")).longValue()-((Number)before.get("module_scans")).longValue()).isZero();
+            assertThat(((Number)after.get("unresolved_posting_reads")).longValue()-((Number)before.get("unresolved_posting_reads")).longValue()).isGreaterThan(0);
+        }
+    }
+
     private static FileSemanticContribution file(Path file,String content,String api,Set<Path> deps,Set<String> exports,Set<String> unresolved){
         return new FileSemanticContribution(file,content,api,deps,exports,unresolved);
     }

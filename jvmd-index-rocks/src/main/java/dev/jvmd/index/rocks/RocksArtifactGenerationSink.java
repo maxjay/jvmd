@@ -304,8 +304,10 @@ public final class RocksArtifactGenerationSink implements ArtifactGenerationSink
         result.put("backend","rocksdb-sst");result.put("published",published.get());result.put("reused",reused.get());
         result.put("validation_failures",validationFailures.get());result.put("shadow_workspaces",workspaces.size());
         result.put("workspace_resolution",workspaceResolver.status());result.put("native_memory",memory.status());
-        result.put("semantic_state",Map.of("updates",semanticUpdates.get(),"reanalyze_total",semanticReanalyze.get(),
-                "api_changes",semanticApiChanges.get(),"body_only",semanticBodyOnly.get(),"last",lastSemanticResult));
+        var semanticState=new LinkedHashMap<String,Object>();semanticState.put("updates",semanticUpdates.get());
+        semanticState.put("reanalyze_total",semanticReanalyze.get());semanticState.put("api_changes",semanticApiChanges.get());
+        semanticState.put("body_only",semanticBodyOnly.get());semanticState.put("last",lastSemanticResult);
+        semanticState.put("postings",semanticInvalidation.status());result.put("semantic_state",Map.copyOf(semanticState));
         result.put("workspace_state",Map.of("updates",workspaceStateUpdates.get(),"file_writes",workspaceFileWrites.get(),
                 "directory_writes",workspaceDirectoryWrites.get(),"metadata_writes",workspaceMetadataWrites.get(),"last",lastWorkspaceState));
         result.put("budget_bytes",(long)totalUnits*UNIT);result.put("estimated_bytes_in_flight",(long)unitsInFlight.get()*UNIT);

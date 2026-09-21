@@ -128,6 +128,15 @@ def position(text, offset):
     # Fixtures are ASCII: Python character offsets equal LSP UTF-16 offsets.
     return {'line': text.count('\n', 0, offset), 'character': offset-text.rfind('\n', 0, offset)-1}
 
+def first_system_value(paths):
+    """Read the first available host metric; cgroup layouts differ across runners."""
+    for path in map(Path, paths):
+        try:
+            return path.read_text().strip()
+        except FileNotFoundError:
+            pass
+    return None
+
 def project(root, number, sources, jars, binary_type, binary_expression):
     root.mkdir(parents=True); package = f'bench.ws{number}'; prefix = f'SymbolRun{number}_'; helper = prefix+'0'
     directory = root/'src/main/java'/package.replace('.', '/'); directory.mkdir(parents=True)
@@ -305,7 +314,9 @@ def main():
     metadata['dependencies'] = {str(f): sha(f) for f in sorted(a.repository.rglob('*.jar'))}; metadata['build'] = build
     metadata['harness'] = {f.name: sha(f) for f in sorted(Path(__file__).parent.iterdir()) if f.is_file()}
     metadata['node'] = subprocess.check_output(['node', '--version'], text=True).strip(); metadata['jdk'] = subprocess.run([str(a.java_home/'bin/java'), '-version'], capture_output=True, text=True).stderr
-    for key, file in [('cpu_quota', '/sys/fs/cgroup/cpu.max'), ('memory_limit', '/sys/fs/cgroup/memory.max')]: metadata[key] = Path(file).read_text().strip()
+    metadata['cpu_quota'] = first_system_value(('/sys/fs/cgroup/cpu.max', '/sys/fs/cgroup/cpu/cpu.cfs_quota_us'))
+    metadata['cpu_period'] = first_system_value(('/sys/fs/cgroup/cpu/cpu.cfs_period_us',))
+    metadata['memory_limit'] = first_system_value(('/sys/fs/cgroup/memory.max', '/sys/fs/cgroup/memory/memory.limit_in_bytes'))
     (a.root/'metadata.json').write_text(json.dumps(metadata, indent=2)+'\n')
     for i in range(a.runs):
         order = a.servers[i % len(a.servers):]+a.servers[:i % len(a.servers)]

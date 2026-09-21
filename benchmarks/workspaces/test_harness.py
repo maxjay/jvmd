@@ -7,10 +7,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from compare import compare
 from resources import ProcessMonitor
-from run import Client
+from run import Client, first_system_value
 
 
 class HarnessTest(unittest.TestCase):
+    def test_optional_system_value_supports_cgroup_v1_and_missing_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory)/'v2'; fallback = Path(directory)/'v1'
+            fallback.write_text('200000\n')
+            self.assertEqual('200000', first_system_value((missing, fallback)))
+            self.assertIsNone(first_system_value((missing,)))
+
     def test_client_reassembles_lsp_partial_results(self):
         client = Client.__new__(Client)
         client.next = 0; client.responses = {}; client.notifications = []; client.failure = None

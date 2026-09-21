@@ -66,16 +66,13 @@ jobs:
           /usr/bin/time -v -o "$EVIDENCE/time.txt" \
             mvn -B -pl jvmd-tests test \
               -Dtest=IdentifierSweepTest \
-              "-DargLine=-Xmx1024m -Xlog:gc*:file=$EVIDENCE/gc.log:time,uptime,level,tags -XX:StartFlightRecording=filename=$EVIDENCE/sweep.jfr,settings=profile,maxsize=64m,dumponexit=true" \
+              "-DargLine=-Xmx1024m -Xlog:gc*:file=$EVIDENCE/gc.log:time,uptime,level,tags" \
               2>&1 | tee "$EVIDENCE/maven.log"
           status=${PIPESTATUS[0]}
           echo "$status" | tee "$EVIDENCE/exit-code.txt"
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
           grep -E "sweep-file|Tests run:|Java heap space|OutOfMemory|LRU cache|BUILD (SUCCESS|FAILURE)" \
             "$EVIDENCE/maven.log" > "$EVIDENCE/highlights.txt" || true
-          if [[ -s "$EVIDENCE/sweep.jfr" ]]; then
-            jfr summary "$EVIDENCE/sweep.jfr" > "$EVIDENCE/jfr-summary.txt" 2>&1 || true
-          fi
           exit 0
 
       - name: Publish diagnostic summary

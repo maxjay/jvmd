@@ -19,12 +19,11 @@ public record FileSemanticContribution(
     public FileSemanticContribution {
         file=Objects.requireNonNull(file).toAbsolutePath().normalize();
         sourceHash=Objects.requireNonNull(sourceHash);
-        apiFingerprint=apiFingerprint==null?"":apiFingerprint;
+        apiFingerprint=Objects.requireNonNull(apiFingerprint);
         dependencies=dependencies==null?Set.of():dependencies.stream()
                 .map(path->path.toAbsolutePath().normalize())
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
         exportedNames=exportedNames==null?Set.of():Set.copyOf(exportedNames);
         unresolvedTargets=unresolvedTargets==null?Set.of():Set.copyOf(unresolvedTargets);
     }
-    public boolean hasSemanticState(){return !apiFingerprint.isBlank();}
 }

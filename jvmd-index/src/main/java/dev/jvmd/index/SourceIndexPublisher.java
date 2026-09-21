@@ -12,13 +12,10 @@ public final class SourceIndexPublisher implements AutoCloseable {
         public Delta {
             contribution=Objects.requireNonNull(contribution);semanticHash=Objects.requireNonNull(semanticHash);
             symbols=List.copyOf(symbols);edges=List.copyOf(edges);
-            moduleId=moduleId==null?"":moduleId;contextFingerprint=contextFingerprint==null?"":contextFingerprint;
+            moduleId=Objects.requireNonNull(moduleId);contextFingerprint=Objects.requireNonNull(contextFingerprint);
         }
         public Path file(){return contribution.file();}
         public String sourceHash(){return contribution.sourceHash();}
-        public boolean hasSemanticState(){
-            return contribution.hasSemanticState()&&!moduleId.isBlank()&&!contextFingerprint.isBlank();
-        }
     }
     @FunctionalInterface public interface Sink {void publish(Delta delta)throws Exception;}
     private final Sink sink;

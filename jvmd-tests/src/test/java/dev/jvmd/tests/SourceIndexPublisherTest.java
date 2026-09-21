@@ -40,7 +40,7 @@ class SourceIndexPublisherTest {
     }
 
     private static SourceIndexPublisher.Delta delta(String hash){
-        var contribution=new FileSemanticContribution(Path.of("A.java"),hash,"",Set.of(),Set.of(),Set.of());
-        return new SourceIndexPublisher.Delta(contribution,hash,List.of(),2,List.of(),256,"","");
+        var contribution=new FileSemanticContribution(Path.of("A.java"),hash,"api",Set.of(),Set.of(),Set.of());
+        return new SourceIndexPublisher.Delta(contribution,hash,List.of(),2,List.of(),256,"module","context");
     }
 }

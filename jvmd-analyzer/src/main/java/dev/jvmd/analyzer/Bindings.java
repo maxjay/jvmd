@@ -17,9 +17,19 @@ public final class Bindings {
     /** Implements 4.9: a single-static-import can name multiple overloaded methods. */
     public record ImportSite(int start,int end,String qualifier) { }
     /** Implements 4.4: resolved structural and source-code relationships. */
-    public record Edge(String src,String dst,String kind) { }
+    public record Edge(String src,String dst,String kind) implements Comparable<Edge> {
+        @Override public int compareTo(Edge other) {
+            int order=src.compareTo(other.src);
+            if(order==0)order=dst.compareTo(other.dst);
+            return order==0?kind.compareTo(other.kind):order;
+        }
+    }
     /** Implements 4.2: detached declarations, references and source dependencies. */
-    public record Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies) {
+    public record Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies,
+                           @com.fasterxml.jackson.annotation.JsonIgnore SemanticApi api) {
+        public Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies) {
+            this(symbols,occurrences,edges,dependencies,SemanticApi.EMPTY);
+        }
         public Map<String,Object> at(int offset){
             var occurrence=occurrences.stream().filter(o->o.start()<=offset&&offset<o.end()).min(Comparator.comparingInt(o->o.end()-o.start())).orElse(null);if(occurrence==null)return null;
             if(occurrence.importSite()!=null){
@@ -37,9 +47,47 @@ public final class Bindings {
         return capture(task,units,identity,requested,original,bodies,null);
     }
     public static Snapshot capture(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,Path requested,SourceText original,boolean bodies,Focusing.Span focus){
+        return capture(task,units,identity,requested,original,bodies,focus,null);
+    }
+    public static Snapshot capture(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,Path requested,SourceText original,boolean bodies,Focusing.Span focus,SemanticApi prior){
+        var contracts=new LinkedHashMap<String,DeclarationContract>();
+        var owners=new LinkedHashMap<String,String>();var exportedNames=new LinkedHashSet<String>();
+        String[] module={""};
         var trees=Trees.instance(task);var docs=DocTrees.instance(task);var symbols=new LinkedHashMap<String,Map<String,Object>>();var occurrences=new LinkedHashMap<String,Occurrence>();var edges=new LinkedHashSet<Edge>();var dependencies=new LinkedHashSet<Path>();
         var texts=new HashMap<String,SourceText>();texts.put(requested.toUri().toString(),original);
         class Capture {
+            final Set<Element> hiddenAncestors=new HashSet<>(),exposedMembers=new HashSet<>();
+            void contract(Element element,String id,DeclarationContract contract) {
+                String sourceFile=identity.sourceFile(element);
+                if(sourceFile==null||!Path.of(sourceFile).toAbsolutePath().normalize().equals(requested.toAbsolutePath().normalize()))return;
+                module[0]=identity.gav(element);
+                contracts.put(id,contract);
+                Element owner=element.getEnclosingElement();
+                owners.put(id,owner instanceof TypeElement?identity.scip(owner):"");
+                exportedNames.add(id);exportedNames.add(identity.namePath(element));
+                TypeElement declaring=identity.declaring(element);
+                if(declaring!=null)exportedNames.add(identity.binaryName(declaring));
+            }
+            void exposed(Element element) {
+                if(!exposedMembers.add(element))return;
+                String id=symbol(element);
+                if(id!=null)contract(element,id,(DeclarationContract)symbols.get(id).get("api"));
+                if(element instanceof TypeElement type) {
+                    inheritedContracts(type);
+                    for(Element member:type.getEnclosedElements())if(!member.getModifiers().contains(Modifier.PRIVATE)
+                            &&member.getKind()!=ElementKind.CONSTRUCTOR
+                            &&(member instanceof TypeElement||member instanceof ExecutableElement||member.getKind().isField()))exposed(member);
+                }
+            }
+            void inheritedContracts(TypeElement type) {
+                var queue=new ArrayDeque<TypeMirror>(task.getTypes().directSupertypes(type.asType()));
+                while(!queue.isEmpty()) {
+                    var parent=queue.removeFirst();var element=task.getTypes().asElement(parent);
+                    if(!(element instanceof TypeElement ancestor)||!hiddenAncestors.add(ancestor))continue;
+                    if(!DeclarationContract.exported(ancestor))exposed(ancestor);
+                    queue.addAll(task.getTypes().directSupertypes(parent));
+                }
+            }
             SourceText source(CompilationUnitTree unit){return texts.computeIfAbsent(unit.getSourceFile().toUri().toString(),key->{try{return new SourceText(unit.getSourceFile().getCharContent(true).toString());}catch(Exception e){return new SourceText("");}});}
             int start(CompilationUnitTree unit,Tree tree){return (int)trees.getSourcePositions().getStartPosition(unit,tree);}
             int end(CompilationUnitTree unit,Tree tree){return (int)trees.getSourcePositions().getEndPosition(unit,tree);}
@@ -59,7 +107,9 @@ public final class Bindings {
                 if(symbols.containsKey(scip))return scip;
                 var row=new LinkedHashMap<String,Object>();row.put("scip",scip);row.put("name",identity.displayName(element));try{row.put("name_path",identity.namePath(element));}catch(IllegalArgumentException unresolved){row.put("name_path",identity.displayName(element));row.put("signature_complete",false);}row.put("kind",SymbolIdentity.kind(element));row.put("signature",identity.signature(element));row.put("gav",identity.gav(element));row.put("artifact",identity.gav(element));row.put("resolved",true);row.put("modifiers",element.getModifiers().stream().map(Object::toString).sorted().toList());
                 var declaring=identity.declaring(element);row.put("declaring",declaring==null?null:declaring.getQualifiedName().toString());row.put("fqn",declaring==null?null:identity.binaryName(declaring));
-                row.put("api",ApiFingerprint.declaration(element));
+                var contract=DeclarationContract.capture(element);
+                row.put("api",contract);
+                if(DeclarationContract.exported(element))contract(element,scip,contract);
                 row.put("parameters",element instanceof ExecutableElement m?m.getParameters().stream().map(p->p.getSimpleName().toString()).toList():List.of());
                 row.put("type_parameters",element instanceof Parameterizable generic?generic.getTypeParameters().stream().map(Object::toString).toList():List.of());
                 try{row.put("erased_descriptor",element instanceof ExecutableElement method?identity.descriptor(method):element instanceof VariableElement variable?identity.descriptor(variable.asType()):null);}catch(IllegalArgumentException unresolved){row.put("erased_descriptor",null);row.put("signature_complete",false);}
@@ -141,7 +191,7 @@ public final class Bindings {
                 }
                 return super.visitImport(tree,parent);
             }
-            @Override public Void visitClass(ClassTree tree,String parent){var e=element();String scip=capture.symbol(e);if(e!=null){capture.occurrence(getCurrentPath(),e,identity.displayName(e),true,"declaration",parent);capture.structure(e);}return super.visitClass(tree,scip);}
+            @Override public Void visitClass(ClassTree tree,String parent){var e=element();String scip=capture.symbol(e);if(e!=null){capture.occurrence(getCurrentPath(),e,identity.displayName(e),true,"declaration",parent);capture.structure(e);if(e instanceof TypeElement type&&DeclarationContract.exported(type))capture.inheritedContracts(type);}return super.visitClass(tree,scip);}
             @Override public Void visitMethod(MethodTree tree,String parent){var e=element();
                 int begin=capture.start(unit,tree),end=capture.end(unit,tree);
                 if(focus!=null&&(end<=focus.start()||begin>=focus.end())){capture.signatureDependencies(e);return null;}
@@ -161,6 +211,6 @@ public final class Bindings {
                 if(role.equals("writes")&&(parent instanceof CompoundAssignmentTree||parent instanceof UnaryTree)){String target=capture.symbol(e);if(container!=null&&target!=null)edges.add(new Edge(container,target,"reads"));}
             }
         }.scan(unit,null);
-        return new Snapshot(Collections.unmodifiableMap(symbols),List.copyOf(occurrences.values()),List.copyOf(edges),Set.copyOf(dependencies));
+        return new Snapshot(Collections.unmodifiableMap(symbols),List.copyOf(occurrences.values()),List.copyOf(edges),Set.copyOf(dependencies),SemanticApi.build(module[0],contracts,owners,exportedNames,prior));
     }
 }

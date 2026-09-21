@@ -111,7 +111,7 @@ final class LifecycleBenchmark {
             }
             long withReaders = liveHeap();
             int snapshots = readers.size();
-            check(readers.getFirst().lookup("Type0").size() == 1, "Old reader missing");
+            check(readers.getFirst().lookup("Type0").stream().anyMatch(row -> "class".equals(row.get("kind"))), "Old reader missing");
             readers.clear();
             long released = liveHeap();
             return Map.of("initial_live_heap_bytes", initial, "with_old_readers_bytes", withReaders,

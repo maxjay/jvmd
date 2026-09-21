@@ -283,3 +283,56 @@ Each entry records the change, validation, limitations and next work. Historical
   scenarios to the reusable suite, and a separate retained-live-heap campaign. Fixed latency
   and allocation targets plus per-path regression budgets before production edits.
 - Building and measuring the expanded untouched baseline next.
+
+## 2026-09-20 — 016: expanded baseline completed before production edits
+
+- All ten baseline JVMs completed the expanded suite with correctness assertions intact.
+- `navigation_512/cold_workspace` baseline median: 673.313 ms.
+- `navigation_512/warm` baseline median: 4.423 ms.
+- `navigation_512/body_edit` baseline median: 43.330 ms.
+- `navigation_512/api_edit` baseline median: 69.191 ms.
+- `lifecycle_65/cross_module_api` baseline median: 31.929 ms.
+- Raw campaign and exact build retained under semantic-dag/baseline; separate profile/live-heap run started.
+- Production remains ae23fd1f at this checkpoint. Begin the complete semantic/consumer replacement.
+
+## 2026-09-21 — 017: semantic capture and incremental consumers implemented; validation in progress
+
+- Removed ApiFingerprint's per-consumer filtering/sorting/JSON projection. Bindings now captures
+  detached DeclarationContract values once and supplies a SemanticApi to Analyzer, navigation
+  and source-index publication. Versioned persisted diagnostic schema to reject old identities.
+- Added canonical keyed Merkle ownership composition with declaration/type, file, module and
+  workspace nodes. Unchanged file APIs reuse prior nodes, and updates share unrelated modules.
+  Domain/schema/algorithm identity plus keyed replacement is the future accumulator boundary.
+- Replaced whole-workspace aggregate construction and JSON admission serialization with
+  persistent navigation contributions and structural size estimates. Shared dependency graph
+  operations now replace complete observations while retaining partial edges conservatively.
+- First functional paired pilot passed the full benchmark output assertions. It is not a
+  statistical acceptance result. Local-edit work fell; full rebuild/query paths still needed
+  attention. Replaced repeated contributor scans with ordered declaration ownership selection
+  and migrated rename/occurrence queries to symbol postings rather than global iteration.
+- First correctness compile hit ambiguous generic AssertJ overloads; corrected explicit types.
+  Next run passed 41/43 tests: one new fixture had incorrect source roots, and an existing
+  multi-module test requires Maven version detection unavailable in this container PATH.
+  Fixing fixture/environment without weakening assertions. Failed logs retained.
+- Separate baseline heap assertion mistakenly required exactly one type-name match (constructors
+  share that name); corrected it to require the class and reran successfully. Latency workload
+  code is unchanged; before-v2 records the corrected harness hash.
+
+## 2026-09-21 — 018: integrated candidate passes focused correctness; paired campaign started
+
+- Candidate-5 passes 53/53 focused tests, including nine new semantic-tree/map/contract tests,
+  API invalidation, references, rename/static imports, persisted diagnostics, module changes,
+  completion, source overlays and index publication. Workspace API root equality now gates
+  reverse navigation propagation; roots are not only status metadata.
+- Navigation queries use symbol postings, and fragment replacement shares the persistent
+  map instead of copying all fragments. Canonical priorities apply to semantic aggregates;
+  navigation maps use random treap priorities because their internal shape is not an identity.
+- Preserved compiler context and publication fences. Fixed an empty-string constant identity
+  distinction found during review. No global interner or new parser/database added.
+- One immediate external-edit completion assertion failed in candidate-4; the unchanged
+  baseline test and candidate-5 full selection passed. WatchService delivery timing is a
+  hypothesis, not an established cause or a claimed fix. Failure evidence remains retained.
+- Initial same-formatter audit is +845 production lines: the total code-reduction gate is
+  unmet despite removed projections/aggregation. No line-count acceptance is claimed.
+- Started the complete ten-pair baseline/candidate campaign. Production source/build hashes
+  are retained; numerical performance acceptance remains pending.

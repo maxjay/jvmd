@@ -520,19 +520,25 @@ public final class Application implements AutoCloseable {
         editable(session,target);
         if(newName.equals(target.get("name")))return Envelope.of(2,"live",Map.of("applied",false,"changes",List.of(),"diagnostics",List.of(),"verified",false));
         if(snapshot.tier()<2||!snapshot.warnings().isEmpty()||snapshot.diagnostics().stream().anyMatch(d->d.kind().equals("ERROR")))throw new RpcException(-32003,"unsupported_capability",Map.of("capability","rename","reason","Resolve compiler errors before renaming","diagnostics",snapshot.diagnostics()));
-        var symbols=snapshot.symbols();var occurrences=snapshot.occurrences();var edges=snapshot.edges();
+        var symbols=snapshot.symbols();
         String key=target.get("scip").toString();var family=new LinkedHashSet<String>();family.add(key);boolean type=Set.of("class","interface","enum","annotation","record").contains(target.get("kind"));
         if(target.get("kind").equals("ctor"))throw RpcException.invalid("Rename the declaring type to rename its constructors");
         if(type)for(var symbol:symbols.values())if("ctor".equals(symbol.get("kind"))&&Objects.equals(symbol.get("fqn"),target.get("fqn")))family.add(symbol.get("scip").toString());
         if(target.get("kind").equals("method")){
-            boolean changed;do{changed=false;for(var edge:edges)if(edge.kind().equals("overrides")&&(family.contains(edge.src())||family.contains(edge.dst()))){changed|=family.add(edge.src());changed|=family.add(edge.dst());}}while(changed);
+            var pending=new ArrayDeque<String>();pending.add(key);
+            while(!pending.isEmpty()){
+                String member=pending.removeFirst();
+                var adjacent=new ArrayList<>(snapshot.adjacent(Set.of(member),true));adjacent.addAll(snapshot.adjacent(Set.of(member),false));
+                for(var edge:adjacent)if(edge.kind().equals("overrides")){
+                    String other=edge.src().equals(member)?edge.dst():edge.src();if(family.add(other))pending.add(other);
+                }
+            }
             for(String member:family){var symbol=symbols.get(member);if(symbol==null)throw RpcException.invalid("Override declaration is unavailable: "+member);editable(session,symbol);}
         }
         var edits=new LinkedHashMap<String,TextEdits.Edit>();var renames=new LinkedHashMap<Path,Path>();
-        var imported=new HashMap<String,Set<String>>();for(var occurrence:occurrences)if(occurrence.importSite()!=null)imported.computeIfAbsent(occurrence.file()+":"+occurrence.start(),_->new HashSet<>()).add(occurrence.scip());
-        for(var occurrence:occurrences)if(family.contains(occurrence.scip())){
+        for(var occurrence:snapshot.occurrences(family)){
             Path file=sourcePath(session,occurrence.file());var site=occurrence.importSite();
-            boolean remaining=site!=null&&!family.containsAll(imported.get(occurrence.file()+":"+occurrence.start()));
+            boolean remaining=site!=null&&!family.containsAll(snapshot.importedSymbols(occurrence.file(),occurrence.start()));
             if(remaining){
                 String text=documents(session).text(file),newline=text.contains("\r\n")?"\r\n":"\n";
                 edits.putIfAbsent(file+":import:"+site.start(),new TextEdits.Edit(file,site.end(),site.end(),newline+"import static "+site.qualifier()+"."+newName+";"+newline));
@@ -569,7 +575,7 @@ public final class Application implements AutoCloseable {
     }
     private Envelope occurrences(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
         String ref=Dispatcher.required(params,"ref");var snapshot=workspaceBindings(session,true);var description=describe(session,ref,snapshot);if(!(description.result() instanceof Map<?,?> symbol)||symbol.get("scip")==null)return description;
-        var found=snapshot.occurrences().stream().filter(o->o.scip().equals(symbol.get("scip"))&&(params.path("include_declaration").asBoolean()||!o.role().equals("declaration"))).toList();
+        var found=snapshot.occurrences(Set.of(symbol.get("scip").toString())).stream().filter(o->(params.path("include_declaration").asBoolean()||!o.role().equals("declaration"))).toList();
         return page(snapshot.tier(),"live","occurrences",found,cursor(params),Dispatcher.limit(params,1000,10000),snapshot.warnings());
     }
     private Envelope relationships(Session session,com.fasterxml.jackson.databind.JsonNode params,boolean hierarchy)throws Exception{

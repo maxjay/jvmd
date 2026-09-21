@@ -18,12 +18,12 @@ with measured end-to-end latency and allocation improvement. No cosmetic line re
 ## Execution
 
 - [x] 1. Preserve previous attempts and restore production to the exact baseline.
-- [ ] 2. Finish the benchmark/correctness matrix, record the immutable baseline and
+- [x] 2. Finish the benchmark/correctness matrix, record the immutable baseline and
   per-path acceptance criteria before production edits. Keep raw samples and failures.
-- [ ] 3. Capture authoritative detached declaration contracts. Compose deterministic,
+- [x] 3. Capture authoritative detached declaration contracts. Compose deterministic,
   versioned Merkle identities with explicit ordered/keyed-set semantics. Remove API
   projection from presentation maps and duplicate per-consumer fingerprinting.
-- [ ] 4. Compose file/module/workspace API roots with structural sharing. Reuse unchanged
+- [x] 4. Compose file/module/workspace API roots with structural sharing. Reuse unchanged
   contracts. Keep text, API, references, positions, docs and compiler context distinct.
   Provide an explicit old/new keyed-contribution boundary for future accumulators.
 - [ ] 5. Migrate navigation and diagnostics/index publication to the shared results.

@@ -4,6 +4,7 @@ import argparse, hashlib, json, os, queue, shutil, statistics, subprocess, threa
 from pathlib import Path
 from xml.sax.saxutils import escape
 from compile import EXPORTS, sha
+from resources import ProcessMonitor, summarize_jfr
 
 CAPABILITIES = {'workspace': {'workspaceFolders': True, 'configuration': True, 'workspaceEdit': {'documentChanges': True}},
                 'textDocument': {'publishDiagnostics': {'versionSupport': True}, 'completion': {'completionItem': {'snippetSupport': True}},
@@ -12,7 +13,7 @@ SETTINGS = {'java': {'autobuild': {'enabled': False}, 'import': {'maven': {'enab
                      'signatureHelp': {'enabled': True}, 'references': {'includeDecompiledSources': False}}}
 
 class Client:
-    def __init__(self, command, root):
+    def __init__(self, command, root, jfr_tool=None, recording=None):
         self.command, self.root = command, root
         self.log = (root/'stderr.log').open('w')
         self.raw = (root/'messages.jsonl').open('w')
@@ -21,6 +22,8 @@ class Client:
         self.responses = {}; self.notifications = []; self.failure = None
         self.started = time.perf_counter()
         self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log)
+        self.monitor = ProcessMonitor(self.process.pid)
+        self.jfr_tool, self.recording = jfr_tool, recording
         (root/'command.json').write_text(json.dumps(command, indent=2)+'\n')
         self.reader = threading.Thread(target=self.read, daemon=True); self.reader.start()
 
@@ -68,14 +71,26 @@ class Client:
 
     def call(self, method, params=None, timeout=180):
         self.next += 1; ident = self.next; started = time.perf_counter()
-        self.send({'jsonrpc': '2.0', 'id': ident, 'method': method, 'params': params or {}})
+        params = dict(params or {})
+        partial_token = None
+        if method in ('textDocument/definition', 'textDocument/references', 'textDocument/documentSymbol'):
+            partial_token = f'benchmark-{ident}'
+            params['partialResultToken'] = partial_token
+        notification_start = len(self.notifications)
+        self.send({'jsonrpc': '2.0', 'id': ident, 'method': method, 'params': params})
         with self.condition:
             if not self.condition.wait_for(lambda: ident in self.responses or self.failure, timeout): raise TimeoutError(method)
             if ident not in self.responses: raise RuntimeError(self.failure)
             response = self.responses.pop(ident)
         elapsed = (time.perf_counter()-started)*1000
         if 'error' in response: raise AssertionError((method, response['error']))
-        return response['result'], elapsed
+        result = response['result']
+        if partial_token is not None:
+            chunks = [message['params']['value'] for message in self.notifications[notification_start:]
+                      if message.get('method') == '$/progress' and message.get('params', {}).get('token') == partial_token]
+            if chunks:
+                result = [item for chunk in chunks for item in chunk] + result
+        return result, elapsed
 
     def diagnostics(self, uri, version, error, since, timeout=90):
         def matching():
@@ -104,10 +119,23 @@ class Client:
             # Rewrite a closed, complete snapshot after draining stdout. This also makes
             # restored environments independent of partially synchronized open log files.
             (self.root/'messages.jsonl').write_text(''.join(self.records))
+            resources = self.monitor.close()
+            if self.recording and self.recording.exists():
+                resources['jfr'] = summarize_jfr(self.jfr_tool, self.recording)
+            (self.root/'resources.json').write_text(json.dumps(resources, indent=2)+'\n')
 
 def position(text, offset):
     # Fixtures are ASCII: Python character offsets equal LSP UTF-16 offsets.
     return {'line': text.count('\n', 0, offset), 'character': offset-text.rfind('\n', 0, offset)-1}
+
+def first_system_value(paths):
+    """Read the first available host metric; cgroup layouts differ across runners."""
+    for path in map(Path, paths):
+        try:
+            return path.read_text().strip()
+        except FileNotFoundError:
+            pass
+    return None
 
 def project(root, number, sources, jars, binary_type, binary_expression):
     root.mkdir(parents=True); package = f'bench.ws{number}'; prefix = f'SymbolRun{number}_'; helper = prefix+'0'
@@ -181,13 +209,17 @@ def editor(client, file, prefix, a):
 def start(a, server, run_root, workspace, state, build):
     run_root.mkdir(parents=True)
     java = str(a.java_home/'bin/java')
+    recording = run_root/'server.jfr' if a.profile else None
+    profile_args = ([f'-XX:StartFlightRecording=filename={recording},settings=profile,dumponexit=true',
+                     '-XX:FlightRecorderOptions=stackdepth=128', '-Xlog:jfr*=off'] if a.profile else [])
     if server == 'jvmd':
         config = run_root/'config.json'; config.write_text(json.dumps({'jdk_home': str(a.java_home), 'm2_repo': str(a.repository), 'heap_ceiling_mb': 1024, 'index_on_start': True}))
         command = [java, '-Xmx1024m', *EXPORTS, '--enable-native-access=ALL-UNNAMED', f'-Djvmd.config={config}', f'-Djvmd.state={state}',
                    f'-Djvmd.resolvers={a.resolvers}', '-Djvmd.index.scan.initial_delay_seconds=0', '-cp', build['classpath'], 'dev.jvmd.benchmark.StdioApplication']
-        if a.profile: command[1:1] = [f'-XX:StartFlightRecording=filename={run_root}/daemon.jfr,settings=profile,dumponexit=true', '-XX:FlightRecorderOptions=stackdepth=128', '-Xlog:jfr=warning']
+        command[1:1] = profile_args
         adapter = run_root/'bridge.json'; adapter.write_text(json.dumps({'repo': str(a.repo), 'root': str(workspace), 'command': command}))
-        client = Client(['node', str(Path(__file__).resolve().parent/'bridge.ts'), str(adapter)], run_root)
+        client = Client(['node', str(Path(__file__).resolve().parent/'bridge.ts'), str(adapter)], run_root,
+                        a.java_home/'bin/jfr', recording)
         deadline = time.monotonic()+180
         while True:
             value, _ = client.call('jvmd/request', {'method': 'daemon.status'}); status = value['result']['index']
@@ -196,11 +228,11 @@ def start(a, server, run_root, workspace, state, build):
             time.sleep(.02)
         return client, (time.perf_counter()-client.started)*1000
     launcher = next((a.jdtls/'plugins').glob('org.eclipse.equinox.launcher_*.jar'))
-    command = [java, '-Xmx1024m', '-Declipse.application=org.eclipse.jdt.ls.core.id1', '-Dosgi.bundles.defaultStartLevel=4',
+    command = [java, *profile_args, '-Xmx1024m', '-Declipse.application=org.eclipse.jdt.ls.core.id1', '-Dosgi.bundles.defaultStartLevel=4',
                '-Declipse.product=org.eclipse.jdt.ls.core.product', '-Dlog.level=WARNING', '--add-modules=ALL-SYSTEM',
                '--add-opens', 'java.base/java.util=ALL-UNNAMED', '--add-opens', 'java.base/java.lang=ALL-UNNAMED',
                '-jar', str(launcher), '-configuration', str(a.jdtls/'config_linux'), '-data', str(state)]
-    return Client(command, run_root), None
+    return Client(command, run_root, a.java_home/'bin/jfr', recording), None
 
 def run(a, server, iteration, build):
     run_root = a.root/f'{server}-{iteration}'; run_root.mkdir(parents=True, exist_ok=False)
@@ -282,7 +314,9 @@ def main():
     metadata['dependencies'] = {str(f): sha(f) for f in sorted(a.repository.rglob('*.jar'))}; metadata['build'] = build
     metadata['harness'] = {f.name: sha(f) for f in sorted(Path(__file__).parent.iterdir()) if f.is_file()}
     metadata['node'] = subprocess.check_output(['node', '--version'], text=True).strip(); metadata['jdk'] = subprocess.run([str(a.java_home/'bin/java'), '-version'], capture_output=True, text=True).stderr
-    for key, file in [('cpu_quota', '/sys/fs/cgroup/cpu.max'), ('memory_limit', '/sys/fs/cgroup/memory.max')]: metadata[key] = Path(file).read_text().strip()
+    metadata['cpu_quota'] = first_system_value(('/sys/fs/cgroup/cpu.max', '/sys/fs/cgroup/cpu/cpu.cfs_quota_us'))
+    metadata['cpu_period'] = first_system_value(('/sys/fs/cgroup/cpu/cpu.cfs_period_us',))
+    metadata['memory_limit'] = first_system_value(('/sys/fs/cgroup/memory.max', '/sys/fs/cgroup/memory/memory.limit_in_bytes'))
     (a.root/'metadata.json').write_text(json.dumps(metadata, indent=2)+'\n')
     for i in range(a.runs):
         order = a.servers[i % len(a.servers):]+a.servers[:i % len(a.servers)]

@@ -121,3 +121,8 @@ The same run passed **99.878%** of **75,565** identifier checks across Spring Pe
 - [Adapter setup](shim/README.md)
 - [Build a client: integration guide & API](docs/integration.md)
 - [Dependencies](DEPENDENCIES.md)
+
+## License
+
+Copyright © 2026 Max. jvmd is available under the [MIT License](LICENSE),
+including for commercial and workplace use.

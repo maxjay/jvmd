@@ -64,14 +64,14 @@ Large-workspace isolated `IdentifierSweepTest`, Temurin 25.0.4.1+1, Ubuntu 24.04
 
 ### A0 — Measure real retained heap, not just the estimate
 
-- [ ] Add a diagnostic-only admission override; production default remains unchanged.
-- [ ] Build the 279-file workspace once.
-- [ ] Retain the candidate semantic state.
-- [ ] Force GC after the first build.
-- [ ] Record actual live heap, committed heap, GC count/time and Rocks native usage.
-- [ ] Run repeated unchanged `symbol.references` requests.
-- [ ] Record per-request latency and thread allocation.
-- [ ] Confirm whether the ~312 MiB estimator materially overstates or understates real retained cost.
+- [x] Add a diagnostic-only admission override; production default remains unchanged.
+- [x] Build the 279-file workspace once.
+- [x] Retain the candidate semantic state.
+- [x] Force GC after the first build.
+- [x] Record actual live heap, committed heap, GC count/time and Rocks native usage.
+- [x] Run repeated unchanged `symbol.references` requests.
+- [x] Record per-request latency and thread allocation.
+- [x] Confirm whether the ~312 MiB estimator materially overstates or understates real retained cost.
 
 **Checkpoint A0:** actual retained-state cost and true warm-query cost are known.
 

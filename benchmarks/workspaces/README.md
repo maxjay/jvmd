@@ -100,11 +100,7 @@ ranges are checked against those sources.
 
 The benchmark harnesses remain the executable source for reproducing workspace comparisons; historical narrative reports were removed during consolidation.
 
-Its [report](../../docs/performance/2026-09-19-editor-reuse.md) links exact build,
-fixture, toolchain and protocol evidence, including unsuccessful attempts.
-Profiles are separate from the reported unprofiled latency samples. Only the
-selected CPU/allocation JFR event export is published, since a raw JFR can also
-contain initial environment and system properties.
+Profiles are separate from the unprofiled latency samples. Only selected CPU/allocation JFR event exports should be published, since a raw JFR can also contain initial environment and system properties.
 
 `modules.py` exercises four Maven/Eclipse projects (base → core → app, plus an
 independent module), with 32 files per project. It enables JDTLS autobuild and

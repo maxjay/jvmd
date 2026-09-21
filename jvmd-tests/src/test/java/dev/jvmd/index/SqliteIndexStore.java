@@ -81,7 +81,7 @@ public final class SqliteIndexStore implements IndexStore {
         database.write(c->{storeClassReferences(c,artifactId,classReferences);return null;});
     }
 
-    @Override public void publishSourceFile(long artifact,Path file,List<Map<String,Object>> symbols,int tier,
+    @Override public void publishSourceFile(long artifact,Path file,String contentHash,List<Map<String,Object>> symbols,int tier,
                                             List<SourceRelationship> relationships)throws Exception{
         database.write(c->{
             markRelationshipsDirty(c);String source=file.toAbsolutePath().normalize().toString();

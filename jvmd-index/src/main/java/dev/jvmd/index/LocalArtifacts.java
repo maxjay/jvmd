@@ -1,34 +1,26 @@
 package dev.jvmd.index;
 
-import dev.jvmd.core.Hashing;
-import java.nio.charset.StandardCharsets;
+import dev.jvmd.core.*;
 import java.nio.file.*;
-import java.security.MessageDigest;
 import java.util.*;
 
 /** Implements 4.4 and 4.5: lazy content invalidation of registered module inputs. */
 final class LocalArtifacts {
-    private static final class State {
+    private final class State {
         final IndexService.LocalModule module;
         Map<Path,String> observed=Map.of();long artifact=-1;
+        final CompilerInputs inputs=new CompilerInputs(files);
         State(IndexService.LocalModule module){this.module=module;}
     }
-    private record Stamp(Object size,Object modified,Object changed,Object inode,String hash) { }
     private final IndexService index;
     private final Map<Path,State> modules=new java.util.concurrent.ConcurrentHashMap<>();
-    private final LinkedHashMap<Path,Stamp> hashes=new LinkedHashMap<>(256,.75f,true);
+    private final FileStateRegistry files=new FileStateRegistry();
+    private final Documents disk=new Documents();
     LocalArtifacts(IndexService index){this.index=index;}
     boolean register(IndexService.LocalModule module){
         var added=new java.util.concurrent.atomic.AtomicBoolean();
         modules.compute(module.directory(),(_,old)->{if(old==null||!old.module.equals(module)){added.set(true);return new State(module);}return old;});
         return added.get();
-    }
-    private synchronized String hash(Path file)throws Exception{
-        Map<String,Object> stat=null;try{stat=Files.readAttributes(file,"unix:size,lastModifiedTime,ctime,ino");}catch(UnsupportedOperationException|IllegalArgumentException ignored){}
-        if(stat!=null){var old=hashes.get(file);if(old!=null&&Objects.equals(old.size(),stat.get("size"))&&Objects.equals(old.modified(),stat.get("lastModifiedTime"))&&Objects.equals(old.changed(),stat.get("ctime"))&&Objects.equals(old.inode(),stat.get("ino")))return old.hash();}
-        String hash=Hashing.sha256(file);
-        if(stat!=null){hashes.put(file,new Stamp(stat.get("size"),stat.get("lastModifiedTime"),stat.get("ctime"),stat.get("ino"),hash));while(hashes.size()>32768)hashes.remove(hashes.keySet().iterator().next());}
-        return hash;
     }
     private static long changed(Path file)throws Exception{
         long modified=Files.getLastModifiedTime(file).to(java.util.concurrent.TimeUnit.NANOSECONDS);
@@ -40,21 +32,23 @@ final class LocalArtifacts {
         synchronized(state){return refresh(state);}
     }
     private long refresh(State state)throws Exception{
-        var module=state.module;var digest=MessageDigest.getInstance("SHA-256");long size=0,mtime=0,newestSource=0,oldestClass=Long.MAX_VALUE;
-        digest.update(("local\0"+module.directory()+"\0"+module.gav()+"\0").getBytes(StandardCharsets.UTF_8));
-        var sourcePaths=new LinkedHashMap<String,Path>();var observed=new HashMap<Path,String>();
+        var module=state.module;long size=0,mtime=0,newestSource=0,oldestClass=Long.MAX_VALUE;
+        var sourcePaths=new LinkedHashMap<String,Path>();
         var roots=new ArrayList<>(module.sources());roots.addAll(module.outputs());
+        var configuration=new CompilerInputs.Configuration("local:"+module.gav(),roots,List.of(),List.of());
+        var inventory=new ArrayList<Path>();for(Path root:roots)inventory.addAll(files.inventory(root,""));
+        var snapshot=state.inputs.capture(configuration,disk,inventory);var observed=snapshot.sources();
+        String fingerprint=CompilerInputs.compose("local-artifact-v2",module.directory(),module.gav(),roots,new TreeMap<>(observed));
+        var previous=index.artifact(module.directory());
+        if(previous!=null&&previous.hasSignatureEdges()&&fingerprint.equals(previous.sha256())){state.observed=observed;state.artifact=previous.id();return previous.id();}
         for(int i=0;i<roots.size();i++){
-            Path root=roots.get(i);digest.update((i+":"+root+"\0").getBytes(StandardCharsets.UTF_8));if(!Files.isDirectory(root))continue;
-            try(var files=Files.walk(root)){
-                for(Path file:files.filter(Files::isRegularFile).sorted().toList()){
-                    String contentHash=hash(file);observed.put(file,contentHash);digest.update((root.relativize(file)+"\0"+contentHash+"\0").getBytes(StandardCharsets.UTF_8));size+=Files.size(file);long modified=Files.getLastModifiedTime(file).to(java.util.concurrent.TimeUnit.NANOSECONDS);mtime=Math.max(mtime,modified);
-                    if(i<module.sources().size()&&file.toString().endsWith(".java")){newestSource=Math.max(newestSource,changed(file));sourcePaths.put(i+"/"+root.relativize(file).toString().replace(java.io.File.separatorChar,'/'),file);}
-                    if(i>=module.sources().size()&&file.toString().endsWith(".class"))oldestClass=Math.min(oldestClass,modified);
-                }
+            Path root=roots.get(i);
+            for(Path file:files.inventory(root,"")){
+                size+=Files.size(file);long modified=Files.getLastModifiedTime(file).to(java.util.concurrent.TimeUnit.NANOSECONDS);mtime=Math.max(mtime,modified);
+                if(i<module.sources().size()&&file.toString().endsWith(".java")){newestSource=Math.max(newestSource,changed(file));sourcePaths.put(i+"/"+root.relativize(file).toString().replace(java.io.File.separatorChar,'/'),file);}
+                if(i>=module.sources().size()&&file.toString().endsWith(".class"))oldestClass=Math.min(oldestClass,modified);
             }
         }
-        String fingerprint=HexFormat.of().formatHex(digest.digest());var previous=index.artifact(module.directory());if(previous!=null&&previous.hasSignatureEdges()&&fingerprint.equals(previous.sha256())){state.observed=Map.copyOf(observed);state.artifact=previous.id();return previous.id();}
         var symbols=new LinkedHashMap<String,BinaryReader.Symbol>();var edges=new LinkedHashSet<BinaryReader.Edge>();var models=new LinkedHashMap<String,java.lang.classfile.ClassModel>();var warnings=new ArrayList<String>();
         // Stale outputs must not reintroduce declarations removed from the source API.
         if(oldestClass!=Long.MAX_VALUE&&oldestClass>=newestSource)for(Path output:module.outputs())if(Files.isDirectory(output)){
@@ -62,7 +56,7 @@ final class LocalArtifacts {
         }
         var sourceData=new HashMap<String,Map<String,Object>>();
         if(!models.isEmpty()&&!sourcePaths.isEmpty()){
-            var text=new LinkedHashMap<String,String>();for(var source:sourcePaths.entrySet())text.put(source.getKey(),Files.readString(source.getValue()));
+            var text=new LinkedHashMap<String,String>();for(var source:sourcePaths.entrySet())text.put(source.getKey(),snapshot.text(source.getValue(),disk));
             var joined=new SourceJoin().join(models,text);
             for(var member:joined.members()){
                 String key=member.descriptor()==null?member.owner():member.descriptor().equals("field")?member.owner()+"#"+member.name():member.owner()+"#"+member.name()+member.descriptor();
@@ -70,7 +64,9 @@ final class LocalArtifacts {
                 var data=new LinkedHashMap<String,Object>();data.put("source_file",file.toString());data.put("file",file.toString());data.put("line",member.line());data.put("doc",member.doc());data.put("source_start",member.start());data.put("source_end",member.end());data.put("body_start",member.bodyStart());data.put("body_end",member.bodyEnd());data.put("parameters",member.parameters());sourceData.put(key,data);
             }
         }
-        state.artifact=index.replaceLocal(module,fingerprint,size,mtime,new BinaryReader.Content(List.copyOf(symbols.values()),List.copyOf(edges),Map.of(),List.copyOf(warnings)),sourceData);state.observed=Map.copyOf(observed);return state.artifact;
+        inventory.clear();for(Path root:roots)inventory.addAll(files.inventory(root,""));
+        if(!snapshot.equals(state.inputs.capture(configuration,disk,inventory)))throw new CompilerInputs.Superseded("Local artifact inputs changed during refresh");
+        state.artifact=index.replaceLocal(module,fingerprint,size,mtime,new BinaryReader.Content(List.copyOf(symbols.values()),List.copyOf(edges),Map.of(),List.copyOf(warnings)),sourceData);state.observed=observed;return state.artifact;
     }
     void refreshWorkspace(String workspace)throws Exception{
         for(Path path:index.store().localWorkspaceArtifacts(workspace))refresh(path);
@@ -78,6 +74,6 @@ final class LocalArtifacts {
     void recordSource(Path file,String contentHash,List<Map<String,Object>> symbols,int tier,List<IndexService.SourceEdge> edges)throws Exception{
         var state=modules.values().stream().filter(s->s.module.sources().stream().anyMatch(file::startsWith)).max(Comparator.comparingInt(s->s.module.directory().getNameCount())).orElse(null);
         if(state==null)return;
-        synchronized(state){if(!Files.isRegularFile(file)||!hash(file).equals(contentHash))return;long artifact=contentHash.equals(state.observed.get(file))&&state.artifact>=0?state.artifact:refresh(state);index.storeSource(artifact,file,symbols,tier,edges);}
+        synchronized(state){if(!Files.isRegularFile(file)||!files.hash(file).equals(contentHash))return;long artifact=contentHash.equals(state.observed.get(file))&&state.artifact>=0?state.artifact:refresh(state);index.storeSource(artifact,file,contentHash,symbols,tier,edges);}
     }
 }

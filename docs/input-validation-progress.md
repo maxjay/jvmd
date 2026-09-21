@@ -45,3 +45,17 @@ validated content and directory observations; unsupported metadata forces reconc
 Session Documents retain overlay ownership. The preliminary focused run passed 42 tests
 (39 integration tests plus 3 Rocks workspace tests). Full phase 3/4 exposed two consumer
 regressions and an obsolete hash-count assertion; fixes and the full rerun are in progress.
+
+Consumer cutover checkpoint: removed WorkspaceBindings' private hash LRU/ValidationToken,
+Analyzer's independently constructed source maps/environment recipes, IndexedFileManager's
+two WatchServices and stamp policy, and LocalArtifacts' hash LRU. CompilerPool now owns the
+module's input snapshot and validates all javac results before returning them. Navigation
+validates before committing its fact batch and retains committed owner metadata on failure.
+Rocks keeps its existing directory Merkle algorithm, using shared input/environment evidence.
+Publication carries the analyzed hash; persisted roots no longer authorize live cache reuse.
+
+The full phase 3/4 run passed before the final metadata-call reduction. Preliminary paired
+measurements found zero warm directory enumerations, content hashes and identity-map rebuilds
+in the candidate; baseline had 120 source and 80 classpath enumerations and 120 identity-map
+rebuilds across 40 paired observations. The stronger initial JDK content check costs ~150 ms
+cold in this fixture. Final evidence must be rerun at the committed consumer head.

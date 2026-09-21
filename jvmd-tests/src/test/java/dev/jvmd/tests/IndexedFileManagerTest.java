@@ -49,7 +49,7 @@ class IndexedFileManagerTest {
    assertThat(listed.get("A").getCharContent(true).toString()).contains("String value");
    assertThat(listed.get("Created").getCharContent(true).toString()).contains("answer");
    assertThat(Files.exists(created)).isFalse();
-   assertThat(manager.status()).containsEntry("source_watch_reliable",0L);
+   assertThat(manager.status()).containsEntry("source_catalog_precise",0L);
   }
  }
 }

@@ -174,9 +174,9 @@ public final class IndexService implements AutoCloseable {
     public void recordSource(Path file,String contentHash,List<Map<String,Object>> symbols,int tier,List<SourceEdge> edges)throws Exception{
         locals.recordSource(file.toAbsolutePath().normalize(),contentHash,symbols,tier,edges);
     }
-    void storeSource(long artifact,Path file,List<Map<String,Object>> symbols,int tier,List<SourceEdge> edges)throws Exception{
+    void storeSource(long artifact,Path file,String contentHash,List<Map<String,Object>> symbols,int tier,List<SourceEdge> edges)throws Exception{
         var detached=edges.stream().map(edge->new IndexStore.SourceRelationship(edge.src(),edge.dst(),edge.kind())).toList();
-        store.publishSourceFile(artifact,file,symbols,tier,detached);
+        store.publishSourceFile(artifact,file,contentHash,symbols,tier,detached);
     }
     private static void verifyChecksum(Path path)throws Exception {
         Path checksum=path.resolveSibling(path.getFileName()+".sha1");if(!Files.isRegularFile(checksum))return;

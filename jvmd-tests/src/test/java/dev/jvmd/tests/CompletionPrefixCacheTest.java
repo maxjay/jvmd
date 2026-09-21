@@ -70,7 +70,7 @@ class CompletionPrefixCacheTest {
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("label").toString()).contains("int");
             var time=Files.getLastModifiedTime(api);Files.writeString(api,"class Api { String getPets(){return \"x\";} }");Files.setLastModifiedTime(api,time);
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("label").toString()).contains("java.lang.String");
-            assertThat(analyzer.status()).containsEntry("source_watch_reliable",1L).containsEntry("completion_computations",2L);
+            assertThat(analyzer.status()).containsEntry("source_catalog_precise",1L).containsEntry("completion_computations",2L);
         }
     }
     @Test void changedReleaseAndNewSourceNamesCannotReuseOldCandidates()throws Exception{
@@ -93,14 +93,7 @@ class CompletionPrefixCacheTest {
         try(var analyzer=new Analyzer()){
             analyzer.configure(context(),null,256L*1024*1024);
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).doesNotContain("getPets");
-            // Suppress delivery while leaving the cached source catalog marked reliable.
-            // This deterministically models a create event arriving after the next query.
-            var compilerField=Analyzer.class.getDeclaredField("compiler");compilerField.setAccessible(true);
-            var managerField=CompilerPool.class.getDeclaredField("manager");managerField.setAccessible(true);
-            var manager=managerField.get(compilerField.get(analyzer));
-            var watchesField=IndexedFileManager.class.getDeclaredField("sourceWatchDirectories");watchesField.setAccessible(true);
-            var watches=(Map<?,?>)watchesField.get(manager);
-            watches.keySet().forEach(key->((WatchKey)key).cancel());
+            // No WatchService participates: discovery must observe directory metadata directly.
             Files.writeString(root.resolve("Api.java"),"class Api { int getPets(){return 1;} }");
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
             assertThat(analyzer.status()).containsEntry("completion_computations",2L);
@@ -128,7 +121,7 @@ class CompletionPrefixCacheTest {
             assertThat(complete(analyzer,file,text("g"),"g").path("items").findValuesAsText("name")).contains("getPets");
             documents.change(file,2,List.of(new Documents.Change(null,text("ge"))));analyzer.changed(file,documents.hash(file));analyzer.documents(documents);
             assertThat(complete(analyzer,file,text("ge"),"ge").path("items").findValuesAsText("name")).contains("getPets");
-            assertThat(analyzer.status()).containsEntry("source_watch_reliable",0L).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",1L);
+            assertThat(analyzer.status()).containsEntry("source_catalog_precise",0L).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",1L);
         }
     }
     @Test void largeSourceContextsReuseCompletionCandidatesWithoutScanningEverySource()throws Exception{
@@ -140,7 +133,7 @@ class CompletionPrefixCacheTest {
             assertThat(complete(analyzer,file,text("g"),"g").path("items").findValuesAsText("name")).contains("getPets");
             documents.change(file,2,List.of(new Documents.Change(null,text("ge"))));analyzer.changed(file,documents.hash(file));analyzer.documents(documents);
             assertThat(complete(analyzer,file,text("ge"),"ge").path("items").findValuesAsText("name")).contains("getPets");
-            assertThat(analyzer.status()).containsEntry("source_watch_reliable",1L).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",1L);
+            assertThat(analyzer.status()).containsEntry("source_catalog_precise",1L).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",1L);
         }
     }
     @Test void detachedHitsStillDetectTimestampPreservingJarReplacementAndDeletion()throws Exception{

@@ -72,11 +72,10 @@ class SemanticFactLifetimeTest {
         try(var analyzer=new Analyzer();var cache=new WorkspaceBindings()){
             analyzer.configure(new Analyzer.Context("test:app:1","25",List.of(),List.of(root),"1",Map.of(root.toUri().toString(),"test:app:1")),null,64L*1024*1024);
             WorkspaceBindings.BatchLoader loader=sources->{loads[0]++;var results=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();for(var entry:sources.entrySet())results.put(entry.getKey(),analyzer.bindings(entry.getKey(),entry.getValue(),null));return results;};
-            WorkspaceBindings.Validation validation=()->new WorkspaceBindings.ValidationToken("1",0,Map.of(),Map.of());
-            var first=cache.getBatch(()->List.of(file),List.of(),documents,"1",0,validation,loader);
+            var first=cache.getBatch(()->List.of(file),List.of(),documents,"1",0,loader);
             Object revision=first.revision();first.close();first.close();
             assertThatThrownBy(()->first.find("A",false,Set.of(),10,null)).isInstanceOf(IllegalStateException.class);
-            try(var fast=cache.getBatch(()->List.of(file),List.of(),documents,"1",0,validation,loader)){
+            try(var fast=cache.getBatch(()->List.of(file),List.of(),documents,"1",0,loader)){
                 try(var checked=cache.getBatch(()->List.of(file),List.of(),documents,"1",0,loader)){
                     assertThat(checked.revision()).isSameAs(revision);
                     assertThat(checked.find("A",false,Set.of(),10,null).symbols()).hasSize(1);
@@ -86,7 +85,7 @@ class SemanticFactLifetimeTest {
             try(var checked=cache.peek(List.of(file),List.of(),documents,"1")){
                 assertThat(checked.find("A",false,Set.of(),10,null).symbols()).hasSize(1);
             }
-            try(var fast=cache.peek(()->List.of(file),List.of(),documents,"1",validation)){
+            try(var fast=cache.peek(()->List.of(file),List.of(),documents,"1")){
                 assertThat(fast.find("A",false,Set.of(),10,null).symbols()).hasSize(1);
                 assertThat(fast.revision()).isSameAs(revision);
             }

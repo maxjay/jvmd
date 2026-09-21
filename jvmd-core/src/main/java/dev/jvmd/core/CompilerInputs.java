@@ -85,7 +85,11 @@ public final class CompilerInputs {
     /** The same environment boundary is usable without rediscovering source inputs. */
     public synchronized EnvironmentIdentity environment(Configuration config)throws IOException {
         var paths=new ArrayList<List<Path>>();
-        var entries=new ArrayList<>(config.classpath());
+        for(Path path:config.classpath()){
+            if(Files.isDirectory(path)){paths.add(files.inventory(path,".class"));paths.add(files.inventory(path,".jar"));}
+            else paths.add(List.of(path));
+        }
+        var entries=new ArrayList<Path>();
         var pathOptions=Set.of("--module-path","-p","--upgrade-module-path","--class-path","-classpath","-cp","--processor-path","-processorpath","--processor-module-path","--patch-module","--system");
         for(int i=0;i<config.options().size();i++){
             String option=config.options().get(i),name=option.contains("=")?option.substring(0,option.indexOf('=')):option;

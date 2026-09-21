@@ -54,7 +54,7 @@ class PersistentDiagnosticsTest {
     @Test void restoredStatesValidateUnsavedDependencyContentAndRehydrateReverseEdges()throws Exception{
         Path api=root.resolve("Api.java"),use=root.resolve("Use.java");String original="class Api { int value(){return 1;} }";
         Files.writeString(api,original);Files.writeString(use,"class Use { int n=new Api().value(); }");
-        try(var analyzer=analyzer(new Documents())){analyzer.diagnostics(api,new Documents());analyzer.diagnostics(use,new Documents());}
+        try(var analyzer=analyzer(new Documents())){assertThat(analyzer.diagnostics(api,new Documents()).warnings()).isEmpty();assertThat(analyzer.diagnostics(use,new Documents()).warnings()).isEmpty();}
         var documents=new Documents();documents.open(api,original,1);
         try(var analyzer=analyzer(documents)){
             analyzer.diagnostics(api,documents);analyzer.diagnostics(use,documents);assertThat(analyzer.status()).containsEntry("queries",0L);

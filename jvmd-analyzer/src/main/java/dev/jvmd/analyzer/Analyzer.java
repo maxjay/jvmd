@@ -30,7 +30,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private final FileStateRegistry inputFiles;
     public Analyzer(){this(new FileStateRegistry());}
     /** Share only validated content identities; compiler objects remain analyzer-owned. */
-    public Analyzer(FileStateRegistry inputFiles){this.inputFiles=Objects.requireNonNull(inputFiles);}
+    public Analyzer(FileStateRegistry inputFiles){this.inputFiles=Objects.requireNonNull(inputFiles);this.documents=new Documents(inputFiles);}
     private Documents documents=new Documents();
 
     private final Focusing focusing=new Focusing();
@@ -57,46 +57,25 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var caches=modules.computeIfAbsent(context.generation(),_->new ModuleCaches());
         outlines=caches.outlines;focused=caches.focused;
         this.context=context;this.index=index;this.budget=budget;diagnosticStore.budget(Math.max(1024*1024,budget/8));
-        compiler=compilerPools.computeIfAbsent(context.generation(),_->new CompilerPool());
+        compiler=compilerPools.computeIfAbsent(context.generation(),_->new CompilerPool(inputFiles));
         compiler.configure(context.generation(),context.release(),context.classpath(),context.sources(),index,budget,context.compilerOptions(),context.preciseSourceRoots());
         compiler.binarySources(context.binarySources());
     }
-    public void documents(Documents documents){this.documents=documents;if(snapshots!=null)snapshots.documents(documents);compiler.documents(documents.snapshots());dependencies.documentHash(documents::hash);dependencies.fileStates(documents.fileStates());}
+    public void documents(Documents documents){this.documents=documents;if(snapshots!=null)snapshots.documents(documents);compiler.documents(documents);dependencies.documentHash(documents::hash);dependencies.fileStates(documents.fileStates());}
     private List<String> warnings(List<String> query){if(context.warnings().isEmpty())return query;var all=new LinkedHashSet<String>(context.warnings());all.addAll(query);return List.copyOf(all);}
     private String coordinates(String file){return context.coordinates().entrySet().stream().filter(e->file.startsWith(e.getKey())).max(Comparator.comparingInt(e->e.getKey().length())).map(Map.Entry::getValue).orElse(null);}
-    private String classpathStamp()throws Exception{
-        return RequestScope.memo(List.of(this,"classpath",context.generation()),this::computeClasspathStamp);
+    private CompilerInputs.Snapshot inputSnapshot()throws Exception {
+        return compiler.inputSnapshot();
     }
-    private String computeClasspathStamp()throws Exception{
+    private String classpathStamp()throws Exception{return computeClasspathStamp();}
+    private String computeClasspathStamp()throws Exception {
         classpathFingerprints++;
         if(!compiler.cacheValid()){outlines.clear();focused.clear();}
-        var value=new StringBuilder("diagnostics-v2:").append(Runtime.version()).append(':').append(System.getProperty("java.home")).append(':').append(context.generation()).append(':').append(context.compilerOptions());
-        appendClasspathContents(value);
-        // New names can resolve old failures without a previously known dependency edge.
-        for(var root:context.sources()){
-            value.append("\0root:").append(root);
-            if(Files.isDirectory(root))for(Path file:FileInventory.matching(root,".java"))value.append("\0").append(file);
-        }
-        documents.paths().stream().filter(p->!Files.isRegularFile(p)&&context.sources().stream().anyMatch(p::startsWith)).sorted().forEach(p->value.append("\0buffer:").append(p));
-        return Hashing.sha256(value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var inputs=inputSnapshot();
+        // Membership affects resolution, but source bodies do not enter this environment key.
+        return inputs.environment().value()+":"+inputs.membership().value();
     }
-    private void appendClasspathContents(StringBuilder value)throws Exception{
-        for(var path:context.classpath()){
-            value.append("\0").append(path);
-            if(Files.isRegularFile(path))value.append(':').append(inputFiles.hash(path));
-            else if(Files.isDirectory(path)){
-                for(Path file:FileInventory.matching(path,".class"))value.append("\0").append(file).append(':').append(inputFiles.hash(file));
-            }else value.append(":missing");
-        }
-    }
-
-    private Map<Path,String> sourceIdentities()throws Exception{
-        var result=new TreeMap<Path,String>();
-        for(Path root:context.sources())if(Files.isDirectory(root))
-            for(Path file:FileInventory.matching(root,".java"))result.put(file.toAbsolutePath().normalize(),documents.sourceHash(file));
-        for(Path file:documents.paths())if(context.sources().stream().anyMatch(file::startsWith))result.put(file,documents.sourceHash(file));
-        return Map.copyOf(result);
-    }
+    private Map<Path,String> sourceIdentities()throws Exception{return inputSnapshot().sources();}
     public Envelope overview(Path path,String text,int depth,int limit,int offset)throws Exception{
         touch(path,text);
         String key=path+":"+Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))+":"+classpathStamp()+":"+depth+":"+limit+":"+offset;
@@ -193,22 +172,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if((previous==null&&current!=0)||(previous!=null&&previous.longValue()!=current))invalidate(Set.of(path));
     }
     public String contextKey(){return context.generation();}
-    /**
-     * Cheap workspace validity epochs for compiler contexts that participated in a detached
-     * WorkspaceBindings snapshot. Classpath validation remains content-safe; source validation
-     * uses the same watcher generation as completion. Null requests conservative full validation.
-     */
-    public Map<String,Long> workspaceSourceGenerations(Set<String> generations){
-        if(generations==null||generations.isEmpty())return null;
-        var result=new TreeMap<String,Long>();
-        for(String generation:generations){
-            var pool=compilerPools.get(generation);
-            if(pool==null||!pool.cacheValid())return null;
-            long source=pool.sourceStateGeneration();if(source<0)return null;
-            result.put(generation,source);
-        }
-        return Map.copyOf(result);
-    }
     /** Detached API identity used by module actors to propagate cross-module conditional invalidation. */
     public String apiFingerprint(Path path){var value=contribution(path);return value==null?null:value.apiFingerprint();}
     public FileSemanticContribution contribution(Path path){return dependencies.semantic().contribution(path);}
@@ -227,7 +190,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     public void namespaceChanged(){diagnosticStore.clear();for(var caches:modules.values()){caches.outlines.clear();caches.focused.clear();caches.completion=null;}dependencies.semantic().clear();for(var pool:compilerPools.values())pool.recycle();}
     public CompilerPool.Outcome<Bindings.Snapshot> bindings(Path path,String text,Integer cursor)throws Exception{
         path=path.toAbsolutePath().normalize();reconcileSemanticRevision(path);touch(path,text);
-        String hash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)),stamp=classpathStamp();
+        String hash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));classpathStamp();
+        var observed=inputSnapshot();String stamp=observed.environment().value()+":"+observed.membership().value();
         for(var entry:new ArrayList<>(focused.entrySet())){
             var cached=entry.getValue();
             if(cached.file().equals(path)&&cached.hash().equals(hash)&&cached.stamp().equals(stamp)
@@ -237,9 +201,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         var focus=cursor==null?null:focusing.focus(path,text,cursor);
         String source=focus==null?text:focus.source();Path file=path;bindingComputations++;
-        var inputHashes=cursor==null?sourceIdentities():Map.<Path,String>of();
+        var inputHashes=observed.sources();
         var outcome=compiler.query(path,source,2,(task,units,tier)->Bindings.capture(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),file,sourceText(file,text),true,focus==null?null:focus.member().equals("declarations")?new Focusing.Span(cursor,cursor+1):new Focusing.Span(focus.start(),focus.end())));
-        if(cursor==null&&!inputHashes.equals(sourceIdentities()))return new CompilerPool.Outcome<>(outcome.tier(),null,List.of(),List.of("diagnostics_superseded: source changed during analysis"));
+        if(!observed.equals(inputSnapshot()))return new CompilerPool.Outcome<>(outcome.tier(),null,List.of(),List.of("diagnostics_superseded: source changed during analysis"));
         diagnosticStore.inputHashes(inputHashes);
         if(outcome.result()!=null&&outcome.warnings().isEmpty()){
             dependencies.recordFocused(path,outcome.result().dependencies());
@@ -290,15 +254,17 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return state.diagnostics();
     }
     public Envelope diagnostics(Path path,Documents documents)throws Exception{
-        var cached=cachedDiagnostics(path,documents);
-        return cached==null?diagnostics(path,documents.text(path)):cached;
+        var observed=inputSnapshot();var cached=cachedDiagnostics(path,documents);
+        var result=cached==null?diagnostics(path,observed.text(path,documents)):cached;
+        if(!observed.equals(inputSnapshot()))return new Envelope(1,"live",false,null,List.of("diagnostics_superseded: inputs changed during analysis"),Map.of("diagnostics",List.of()));
+        return result;
     }
     /** One javac task, followed by per-file detached states; no compiler objects escape. */
     public Map<Path,CompilerPool.Outcome<Bindings.Snapshot>> bindingsBatch(Map<Path,String> sources)throws Exception{
         if(sources.isEmpty())return Map.of();
         var inputs=new ArrayList<CompilerPool.SourceInput>();
         for(var entry:sources.entrySet()){reconcileSemanticRevision(entry.getKey());touch(entry.getKey(),entry.getValue());inputs.add(new CompilerPool.SourceInput(entry.getKey(),entry.getValue()));}
-        String stamp=classpathStamp();var inputHashes=sourceIdentities();
+        classpathStamp();var observed=inputSnapshot();String stamp=observed.environment().value()+":"+observed.membership().value();var inputHashes=observed.sources();
         var result=compiler.batchQuery(inputs,2,(task,units,tier)->{
             var snapshots=new LinkedHashMap<Path,Bindings.Snapshot>();
             for(var unit:units){
@@ -308,7 +274,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             return snapshots;
         });
         bindingComputations+=sources.size();
-        if(!inputHashes.equals(sourceIdentities())){
+        if(!observed.equals(inputSnapshot())){
             var superseded=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();for(Path file:sources.keySet())superseded.put(file,new CompilerPool.Outcome<>(1,null,List.of(),List.of("diagnostics_superseded: source changed during analysis")));return superseded;
         }
         diagnosticStore.inputHashes(inputHashes);
@@ -348,8 +314,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         String sourceHash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)),stamp=classpathStamp(),generation=context.generation();
         var cached=restoreDiagnostics(path,sourceHash,stamp);
         if(cached!=null){diagnosticFilesReused++;return cached;}
+        var observed=inputSnapshot();
         long computations=bindingComputations;
         var outcome=bindings(path,text,null);
+        if(!observed.equals(inputSnapshot()))return new Envelope(1,"live",false,null,List.of("diagnostics_superseded: inputs changed during analysis"),Map.of("diagnostics",List.of()));
         if(bindingComputations>computations)diagnosticFilesAnalysed++;else diagnosticFilesReused++;
         var warnings=new LinkedHashSet<String>(warnings(outcome.warnings()));
         if(outcome.result()!=null)for(var problem:outcome.diagnostics())if(problem.kind().equals("ERROR")){
@@ -416,28 +384,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private String completionKey(Path file,String patched,int start)throws Exception{
         if(patched.length()>256*1024)return null;
         var stamp=new StringBuilder(context.toString()).append('\0').append(file).append(':').append(start).append(':').append(Hashing.sha256(patched.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        // Classpath identities remain content-safe, including timestamp-preserving JAR replacement.
-        appendClasspathContents(stamp);
-        long sourceState=compiler.sourceStateGeneration();
-        if(sourceState>=0){
-            // Normal path: the source watcher makes disk changes O(events), while open buffers
-            // are already bounded and carry their own content hashes. Exclude the active file:
-            // its token-stripped patched source is deliberately stable across prefix narrowing.
-            stamp.append("\0source-state:").append(sourceState);
-            for(Path source:documents.paths().stream().filter(path->context.sources().stream().anyMatch(path::startsWith)).sorted().toList())
-                if(!source.equals(file))stamp.append('\0').append(source).append(':').append(documents.hash(source));
-        }else{
-            // WatchService may be unavailable or overflow on some filesystems. Preserve the old
-            // exhaustive validation there rather than trading correctness for a cache hit.
-            var sources=new TreeSet<Path>();
-            for(Path root:context.sources()){
-                if(Files.isDirectory(root))sources.addAll(FileInventory.matching(root,".java",257));
-                if(sources.size()>256)return null;
-            }
-            documents.paths().stream().filter(path->context.sources().stream().anyMatch(path::startsWith)).forEach(sources::add);
-            if(sources.size()>256)return null;
-            for(Path source:sources)if(!source.equals(file))stamp.append('\0').append(source).append(':').append(documents.sourceHash(source));
-        }
+        var inputs=inputSnapshot();stamp.append(inputs.environment().value()).append(inputs.membership().value());
+        // Exclude only the explicit token-stripped buffer; all other live source inputs matter.
+        for(var entry:inputs.sources().entrySet().stream().sorted(Map.Entry.comparingByKey()).toList())
+            if(!entry.getKey().equals(file))stamp.append('\0').append(entry.getKey()).append(':').append(entry.getValue());
         return Hashing.sha256(stamp.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
     public Envelope signatureHelp(Path path,String text,int line,int character)throws Exception{

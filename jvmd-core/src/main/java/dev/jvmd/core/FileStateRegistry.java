@@ -6,16 +6,17 @@ import java.util.*;
 
 /** Content identities with a Unix change-time/inode fast path and a conservative fallback. */
 public final class FileStateRegistry {
-    private record Stamp(Object size, Object modified, Object changed, Object inode) { }
+    private record Stamp(Object size, Object modified, Object changed, Object inode,boolean regular) { }
     private record Entry(Stamp stamp, String hash) { }
     private final Map<Path, Entry> files = new LinkedHashMap<>(256, .75f, true);
     private long hashes, hits, bytes, metadataChecks, enumerations;
 
     public synchronized String hash(Path file) throws IOException {
         file = file.toAbsolutePath().normalize();
-        metadataChecks++;
-        if (!Files.isRegularFile(file)) { files.remove(file); return "missing"; }
-        Stamp before = stamp(file);
+        Stamp before;
+        try {before=stamp(file);}catch(NoSuchFileException missing){files.remove(file);return "missing";}
+        if(before==null)metadataChecks++;
+        if(before==null?!Files.isRegularFile(file):!before.regular()){files.remove(file);return "missing";}
         var previous = files.get(file);
         if (before != null && previous != null && before.equals(previous.stamp())) {
             hits++; return previous.hash();
@@ -47,8 +48,8 @@ public final class FileStateRegistry {
     private Stamp stamp(Path file) throws IOException {
         metadataChecks++;
         try {
-            var values = Files.readAttributes(file, "unix:size,lastModifiedTime,ctime,ino");
-            return new Stamp(values.get("size"), values.get("lastModifiedTime"), values.get("ctime"), values.get("ino"));
+            var values = Files.readAttributes(file, "unix:size,lastModifiedTime,ctime,ino,isRegularFile");
+            return new Stamp(values.get("size"), values.get("lastModifiedTime"), values.get("ctime"), values.get("ino"),Boolean.TRUE.equals(values.get("isRegularFile")));
         } catch (UnsupportedOperationException | IllegalArgumentException ignored) {
             // A preserved mtime is not enough evidence on a provider without change time.
             return null;

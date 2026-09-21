@@ -20,8 +20,7 @@ class CompilerPoolLifecycleTest {
    assertThat(pool.query(use,text,2,(task,units,tier)->units.size()).diagnostics()).isEmpty();
    for(int i=0;i<10;i++)assertThat(pool.cacheValid()).isTrue();
    var before=pool.status();
-   if(((Number)before.get("classpath_watch_directories")).longValue()>0)
-    assertThat(before).containsEntry("classpath_full_scans",0L);
+   assertThat(before).containsEntry("classpath_changes",0L);
 
    Files.writeString(dependency,"public class Dependency { public String value(){return \"changed\";} }");
    assertThat(javax.tools.ToolProvider.getSystemJavaCompiler().run(null,null,null,"-d",classes.toString(),dependency.toString())).isZero();
@@ -29,7 +28,7 @@ class CompilerPoolLifecycleTest {
    for(int i=0;i<200&&!invalidated;i++){invalidated=!pool.cacheValid();if(!invalidated)Thread.sleep(10);}
    assertThat(invalidated).as("loose classpath mutation observed").isTrue();
    assertThat(pool.query(use,text,2,(task,units,tier)->units.size()).diagnostics()).anyMatch(d->d.code().startsWith("compiler.err.prob.found.req"));
-   assertThat(((Number)pool.status().get("classpath_watch_events")).longValue()).isGreaterThan(0);
+   assertThat(((Number)pool.status().get("classpath_changes")).longValue()).isGreaterThan(0);
   }
  }
  @Test void reusesThenRecyclesForClasspathAndHeapPressure()throws Exception{

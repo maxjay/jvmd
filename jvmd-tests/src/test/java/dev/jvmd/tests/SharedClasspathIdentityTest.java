@@ -21,8 +21,11 @@ class SharedClasspathIdentityTest {
             first.configure(new Analyzer.Context("test:one:1","25",List.of(jar),List.of(one),"one",Map.of()),null,256L*1024*1024);
             second.configure(new Analyzer.Context("test:two:1","25",List.of(jar),List.of(two),"two",Map.of()),null,256L*1024*1024);
             assertThat(first.bindings(a,text,null).diagnostics()).isEmpty();
+            var afterFirst=shared.status();
             assertThat(second.bindings(b,text,null).diagnostics()).isEmpty();
-            if(Files.getFileStore(jar).supportsFileAttributeView("unix"))assertThat(shared.status()).containsEntry("hashes",1L).containsEntry("bytes_hashed",Files.size(jar));
+            if(Files.getFileStore(jar).supportsFileAttributeView("unix"))assertThat(shared.status())
+                    .containsEntry("hashes",((Number)afterFirst.get("hashes")).longValue()+1)
+                    .containsEntry("bytes_hashed",((Number)afterFirst.get("bytes_hashed")).longValue()+Files.size(b));
             var modified=Files.getLastModifiedTime(jar);
             Path changed=IndexFixtures.jar(root.resolve("replacement"),"api","package lib; public class Sample { public int other(){return 1;} }",true);
             Files.copy(changed,jar,StandardCopyOption.REPLACE_EXISTING);Files.setLastModifiedTime(jar,modified);

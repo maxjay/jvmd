@@ -4,7 +4,7 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
 import com.sun.tools.javac.api.JavacTaskImpl;
 import com.sun.tools.javac.api.JavacTaskPool;
-import dev.jvmd.core.RequestScope;
+import dev.jvmd.core.*;
 import dev.jvmd.index.IndexService;
 import java.nio.file.Path;
 import java.util.*;
@@ -20,6 +20,10 @@ public final class CompilerPool implements AutoCloseable {
     public record Outcome<T>(int tier,T result,List<Problem> diagnostics,List<String> warnings) { }
     private final Thread owner=Thread.currentThread();
     private final java.util.function.LongSupplier heapUsage;
+    private dev.jvmd.core.FileStateRegistry inputFiles=new dev.jvmd.core.FileStateRegistry();
+    private CompilerInputs inputs=new CompilerInputs(inputFiles);
+    private Documents liveDocuments=new Documents(inputFiles);
+    public CompilerPool(dev.jvmd.core.FileStateRegistry files){this();inputFiles=files;inputs=new CompilerInputs(files);liveDocuments=new Documents(files);}
     public CompilerPool(){this(()->java.lang.management.ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed());}
     public CompilerPool(java.util.function.LongSupplier heapUsage){this.heapUsage=heapUsage;}
     private JavacTaskPool pool=new JavacTaskPool(1);
@@ -28,6 +32,7 @@ public final class CompilerPool implements AutoCloseable {
     private String generation,release;
     private List<String> compilerOptions=List.of();
     private boolean preciseSourceRoots=true;
+    private List<Path> configuredClasspath=List.of(),configuredSources=List.of();
     private long batchQueries,batchFiles;
     private long budget,baseline,recycles,faults,queries,queryNanos,configureCalls,configureNanos,classpathValidations,classpathValidationNanos;
     private long validatedRequestId=-1;
@@ -43,15 +48,22 @@ public final class CompilerPool implements AutoCloseable {
         checkThread();long started=System.nanoTime();configureCalls++;
         try{
             this.budget=Math.max(1,budget);
-            if(Objects.equals(this.generation,generation)&&Objects.equals(this.release,release)&&this.compilerOptions.equals(options)&&this.preciseSourceRoots==preciseSourceRoots&&manager!=null)return;
+            if(Objects.equals(this.generation,generation)&&Objects.equals(this.release,release)&&this.compilerOptions.equals(options)&&this.preciseSourceRoots==preciseSourceRoots&&configuredClasspath.equals(classpath)&&configuredSources.equals(sources)&&manager!=null)return;
             releasePlatform.close();
             if(manager!=null){manager.close();recycles++;}
+            configuredClasspath=List.copyOf(classpath);configuredSources=List.copyOf(sources);
             this.generation=generation;this.release=release;this.compilerOptions=List.copyOf(options);this.preciseSourceRoots=preciseSourceRoots;pool=new JavacTaskPool(1);baseline=heap();validatedRequestId=-1;
-            manager=new IndexedFileManager(ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8),classpath,sources,index,Math.min(32L*1024*1024,Math.max(1024*1024,budget/8)),preciseSourceRoots);
+            manager=new IndexedFileManager(ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8),classpath,sources,index,Math.min(32L*1024*1024,Math.max(1024*1024,budget/8)),preciseSourceRoots,inputFiles);
             sourceModuleGeneration=manager.sourceModuleGeneration();
         }finally{configureNanos+=System.nanoTime()-started;}
     }
-    public void documents(Map<Path,String> documents){checkThread();manager.documents(documents);refreshSourceModules();}
+    public void documents(Documents documents){checkThread();liveDocuments=documents;manager.documents(documents.snapshots());refreshSourceModules();}
+    public CompilerInputs.Snapshot inputSnapshot()throws java.io.IOException {
+        checkThread();return inputs.capture(new CompilerInputs.Configuration(generation,configuredSources,configuredClasspath,compilerOptions),liveDocuments);
+    }
+    public void documents(Map<Path,String> documents){
+        checkThread();var buffers=new Documents(inputFiles);documents.forEach((file,text)->buffers.open(file,text,1));documents(buffers);
+    }
     public void binarySources(Set<Path> sources){checkThread();manager.binarySources(sources);}
     public boolean cacheValid(){
         checkThread();long request=RequestScope.id();if(request!=0&&request==validatedRequestId)return validatedRequestResult;
@@ -73,6 +85,7 @@ public final class CompilerPool implements AutoCloseable {
     private <T> Outcome<T> execute(List<SourceInput> sources,int tier,Query<T> query)throws Exception {
         Path path=sources.getFirst().file();
         checkThread();if(manager==null)throw new IllegalStateException("Compiler classpath not configured");
+        var observed=inputSnapshot();
         if(tier<0||tier>2)throw new IllegalArgumentException("tier");
         if(heap()-baseline>budget)recycle();
         long queryStarted=System.nanoTime();
@@ -110,6 +123,7 @@ public final class CompilerPool implements AutoCloseable {
                 finally{resetSourcePackages(task,parsed);}
             });
             int level=actual[0];var problems=diagnostics.getDiagnostics().stream().map(d->new Problem("live",level,d.getCode(),d.getKind().name(),d.getSource()==null?path.toString():d.getSource().toUri().toString(),d.getLineNumber(),Math.max(0,d.getColumnNumber()-1),d.getStartPosition(),d.getEndPosition(),d.getMessage(Locale.ROOT))).toList();
+            if(!observed.equals(inputSnapshot()))return new Outcome<>(1,null,List.of(),List.of("diagnostics_superseded: inputs changed during analysis"));
             return new Outcome<>(level,value,problems,List.copyOf(warnings));
         }catch(QueryFailure e){releasePlatform.close();throw (Exception)e.getCause();}
         catch(AssertionError|RuntimeException e){System.getLogger("jvmd.analyzer").log(System.Logger.Level.ERROR,"Compiler query fault in "+path,e);fault[0]=true;faults++;return new Outcome<>(Math.min(1,tier),null,List.of(),List.of("analyzer_fault: "+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage())));}
@@ -150,7 +164,7 @@ public final class CompilerPool implements AutoCloseable {
     }
     public Map<String,Object> status(){
         checkThread();var status=new LinkedHashMap<String,Object>();
-        status.put("queries",queries);status.put("batch_queries",batchQueries);status.put("batch_files",batchFiles);status.put("query_ms",nanosToMillis(queryNanos));
+        status.put("input_validation",inputs.status());status.put("queries",queries);status.put("batch_queries",batchQueries);status.put("batch_files",batchFiles);status.put("query_ms",nanosToMillis(queryNanos));
         status.put("configure_calls",configureCalls);status.put("configure_ms",nanosToMillis(configureNanos));
         status.put("classpath_validations",classpathValidations);status.put("classpath_validation_ms",nanosToMillis(classpathValidationNanos));
         status.put("release_platform_initializations",releasePlatform.initializations());status.put("release_platform_reuses",releasePlatform.reuses());

@@ -28,7 +28,7 @@ public interface ArtifactGenerationSink extends AutoCloseable {
     default long semanticRevision(Path file)throws Exception{return 0L;}
     /** Persisted module Merkle root when the backend maintains workspace state. */
     default String moduleStateFingerprint(String moduleId)throws Exception{return null;}
-    default void publishSourceState(SourceIndexPublisher.Delta delta)throws Exception{ }
+    default void publishSourceState(FileSemanticContribution contribution,String moduleId,String contextFingerprint)throws Exception{ }
     default void configureModuleState(ModuleStateInput input)throws Exception{ }
     default void configureWorkspace(String workspace,List<IndexStore.WorkspaceEntry> paths,List<Map.Entry<String,String>> dependencies)throws Exception{ }
     default Optional<Map<String,Object>> shadowById(String workspace,long id)throws Exception{return Optional.empty();}

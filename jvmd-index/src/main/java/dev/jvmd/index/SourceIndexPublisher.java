@@ -6,25 +6,22 @@ import java.util.concurrent.atomic.LongAdder;
 
 /** A bounded, coalescing queue of detached facts. Compiler responses never wait for the writer. */
 public final class SourceIndexPublisher implements AutoCloseable {
-    public record Delta(Path file,String sourceHash,String semanticHash,List<Map<String,Object>> symbols,
+    public record Delta(FileSemanticContribution contribution,String semanticHash,List<Map<String,Object>> symbols,
                         int tier,List<IndexService.SourceEdge> edges,long bytes,
-                        String moduleId,String apiFingerprint,String contextFingerprint,Set<Path> dependencies,
-                        Set<String> exportedNames,Set<String> unresolvedTargets){
+                        String moduleId,String contextFingerprint){
         public Delta {
-            file=file.toAbsolutePath().normalize();symbols=List.copyOf(symbols);edges=List.copyOf(edges);
-            moduleId=moduleId==null?"":moduleId;apiFingerprint=apiFingerprint==null?"":apiFingerprint;
-            contextFingerprint=contextFingerprint==null?"":contextFingerprint;
-            dependencies=dependencies==null?Set.of():dependencies.stream().map(path->path.toAbsolutePath().normalize())
-                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
-            exportedNames=exportedNames==null?Set.of():Set.copyOf(exportedNames);
-            unresolvedTargets=unresolvedTargets==null?Set.of():Set.copyOf(unresolvedTargets);
+            contribution=Objects.requireNonNull(contribution);semanticHash=Objects.requireNonNull(semanticHash);
+            symbols=List.copyOf(symbols);edges=List.copyOf(edges);
+            moduleId=moduleId==null?"":moduleId;contextFingerprint=contextFingerprint==null?"":contextFingerprint;
         }
         public Delta(Path file,String sourceHash,String semanticHash,List<Map<String,Object>> symbols,
                      int tier,List<IndexService.SourceEdge> edges,long bytes){
-            this(file,sourceHash,semanticHash,symbols,tier,edges,bytes,"","","",Set.of(),Set.of(),Set.of());
+            this(FileSemanticContribution.indexOnly(file,sourceHash),semanticHash,symbols,tier,edges,bytes,"","");
         }
+        public Path file(){return contribution.file();}
+        public String sourceHash(){return contribution.sourceHash();}
         public boolean hasSemanticState(){
-            return !moduleId.isBlank()&&!apiFingerprint.isBlank()&&!contextFingerprint.isBlank();
+            return contribution.hasSemanticState()&&!moduleId.isBlank()&&!contextFingerprint.isBlank();
         }
     }
     @FunctionalInterface public interface Sink {void publish(Delta delta)throws Exception;}

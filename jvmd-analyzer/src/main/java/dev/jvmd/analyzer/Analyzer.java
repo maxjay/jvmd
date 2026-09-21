@@ -281,8 +281,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var unresolved=new LinkedHashSet<String>();
         for(var edge:snapshot.edges())if(!known.contains(edge.dst()))unresolved.add(edge.dst());
         long bytes=512L+2L*Json.MAPPER.writeValueAsBytes(symbols).length+edges.size()*192L;
-        index.publishSource(new SourceIndexPublisher.Delta(file,hash,semantic,symbols,tier,edges,bytes,
-                context.gav(),api,stamp,snapshot.dependencies(),Set.copyOf(exports),Set.copyOf(unresolved)));
+        var contribution=new FileSemanticContribution(file,hash,api,snapshot.dependencies(),exports,unresolved);
+        index.publishSource(new SourceIndexPublisher.Delta(contribution,semantic,symbols,tier,edges,bytes,context.gav(),stamp));
         indexWriteNanos+=System.nanoTime()-started;
     }
     public Envelope atPosition(Path path,String text,int line,int character)throws Exception{

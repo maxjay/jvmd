@@ -121,8 +121,8 @@ relax JVMD's 64 KiB editor-response budget.
 Every generated fixture records expected dependency identities in `fixture.json`;
 the matrix consumes that manifest instead of relying on fixture-name conventions.
 The action generates only this corpus and runs servers serially. It does not use a
-short timeout or accept partial results: every worker and the independent verifier
-must complete successfully before the dashboard is produced.
+short timeout or accept an incomplete run: every protocol chunk, worker, and the
+independent verifier must complete successfully before the dashboard is produced.
 
 Rewriting the Python coordinator in another language would not materially shorten
 this gate: compilation, JVM startup, indexing, and checked LSP requests dominate

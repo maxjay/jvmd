@@ -234,9 +234,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     /** Validate identity before reading source text: warm diagnostics need no source bytes. */
     public Envelope cachedDiagnostics(Path path,Documents documents)throws Exception{
-        path=path.toAbsolutePath().normalize();String hash=documents.sourceHash(path);
+        path=path.toAbsolutePath().normalize();var observed=inputSnapshot();
+        String hash=observed.sources().get(path);if(hash==null)hash=documents.sourceHash(path);
         reconcileSemanticRevision(path);touchHash(path,hash);invalidateConditionalIfUnresolved(path);
-        var cached=restoreDiagnostics(path,hash,classpathStamp());
+        var cached=restoreDiagnostics(path,hash,observed.environment().value()+":"+observed.membership().value());
         if(cached!=null){
             diagnosticFilesReused++;
         }
@@ -254,8 +255,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return state.diagnostics();
     }
     public Envelope diagnostics(Path path,Documents documents)throws Exception{
-        var observed=inputSnapshot();var cached=cachedDiagnostics(path,documents);
-        var result=cached==null?diagnostics(path,observed.text(path,documents)):cached;
+        var cached=cachedDiagnostics(path,documents);if(cached!=null)return cached;
+        var observed=inputSnapshot();var result=diagnostics(path,observed.text(path,documents));
         if(!observed.equals(inputSnapshot()))return new Envelope(1,"live",false,null,List.of("diagnostics_superseded: inputs changed during analysis"),Map.of("diagnostics",List.of()));
         return result;
     }

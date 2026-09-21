@@ -263,20 +263,26 @@ final class NavigationIndex {
   List<Bindings.Occurrence> references(Set<Bindings.Edge> selected) {
     var targets = new LinkedHashSet<String>();
     for (var edge : selected) targets.add(edge.dst());
-    return occurrences(targets).stream()
-        .filter(
-            value ->
-                value.container() != null
-                    && selected.contains(
-                        new Bindings.Edge(value.container(), value.scip(), value.role())))
-        .toList();
+    return occurrences(
+        targets,
+        value ->
+            value.container() != null
+                && selected.contains(
+                    new Bindings.Edge(value.container(), value.scip(), value.role())));
   }
 
   List<Bindings.Occurrence> occurrences(Set<String> targets) {
+    return occurrences(targets, value -> true);
+  }
+
+  private List<Bindings.Occurrence> occurrences(
+      Set<String> targets, java.util.function.Predicate<Bindings.Occurrence> include) {
     var result = new ArrayList<Bindings.Occurrence>();
     for (String target : targets) {
       var posting = references.get(target);
-      if (posting != null) posting.values().forEach(result::addAll);
+      if (posting != null)
+        for (var chunk : posting.values())
+          for (var value : chunk) if (include.test(value)) result.add(value);
     }
     result.sort(
         Comparator.comparing(Bindings.Occurrence::file)

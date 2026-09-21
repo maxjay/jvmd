@@ -126,3 +126,13 @@ live-heap experiment with 13 reader snapshots, then releases old readers. Such r
 produce the normal latency summary. They measure JVM live heap, not an object-exact retained
 size of just the semantic graph. Production API identity and incremental-work assertions are
 covered by repository tests; the same benchmark sources compile against the exact baseline.
+
+## Overview consolidation coverage
+
+`OverviewBenchmark` adds cold, five cached and three documentation/position-edit requests
+for 100 generic methods and a nested type. It asserts current positions, documentation and
+depth filtering. It runs after the existing 34 scenarios, preserving their request sequence.
+`--main OverviewBenchmark` isolates startup plus overview in a separate campaign; those
+numbers must not be pooled with the full application suite. The first five cached requests
+are explicitly startup-sequence measurements, not a claim of steady-state tail latency.
+Unresolved declarations and compact constructors have deterministic contract tests.

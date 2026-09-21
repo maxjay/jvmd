@@ -49,7 +49,7 @@ jobs:
       - name: Build production dependencies and run identity correctness tests
         run: |
           mvn -B -DskipTests install
-          mvn -B -pl jvmd-tests test -Dtest=SemanticMerkleTest,SharedClasspathIdentityTest,WorkspaceBindingsTest,WorkspaceBindingsCacheTest,ApiFingerprintInvalidationTest,CompletionPrefixCacheTest
+          mvn -B -pl jvmd-tests test -Dtest=SemanticMerkleTest,SharedClasspathIdentityTest,WorkspaceBindingsTest,WorkspaceBindingsCacheTest,ApiFingerprintInvalidationTest,CompletionPrefixCacheTest,OverviewCaptureTest,TierOneOverviewTest,CompactConstructorBindingsTest
       - name: Compile independent baseline and candidate
         shell: bash
         run: |

@@ -440,3 +440,13 @@ Each entry records the change, validation, limitations and next work. Historical
 - [x] Isolated warm-reference JFR diagnostic completed. JSON serialization, input validation and reference collection dominate visible work; no evidence that warm API hashing explains the remaining latency. Diagnostic timings are excluded from acceptance.
 - [ ] Consolidate overview declaration capture with Bindings. Preserve depth, unresolved declarations, sparse protocol fields, current docs and positions. Remove the duplicate compiler-tree pass and measure the result.
 - [ ] Overall acceptance remains open: unresolved latency, readable production line increase, and completion CI failure.
+
+## 024 — Consolidate overview capture; latency acceptance still open
+
+- [x] Removed Analyzer's independent declaration scanner, token-location logic and row encoder. Bindings now supplies the overview rows and dependencies in one traversal, using its existing declaration encoder. Overview does not construct an unused declaration-contract/Merkle API graph. Full binding capture retains the shared semantic graph.
+- [x] Reference collection filters selected roles before sorting and makes one immutable result, removing the temporary all-target result and second copy.
+- [x] Added contract tests for source order/depth, unresolved rows, generic identities, sparse JSON fields, compact constructors, and current docs/positions. Both tests pass against the untouched baseline and candidate. Focused candidate selection passes 35/35 after restoring the missing Maven resolver bundles; retain the initial environment failure log.
+- [x] Same-formatter production audit: 6,304 → 6,234 lines, a real 70-line reduction from the published candidate. Still 830 lines above the 5,404-line original baseline; overall reduction requirement remains unmet.
+- [x] Ten alternating overview-only pairs against the preceding published production: position-edit allocation 10.272 → 5.197 MB (−49.4%); cold allocation 38.849 → 33.304 MB (−14.3%). Cold latency 1528.1 → 1362.5 ms, paired −8.6% [−15.2, +1.4]; edits 107.9 → 99.9 ms, paired −8.0% [−29.0, +1.0]. First-five cached latency regresses 1.281 → 2.048 ms, paired +69.4% [+36.4, +115.6]. Do not hide this startup-sequence regression behind allocation gains. These samples are not pooled with the full application suite.
+- [x] Published checkpoint `44e009b` passed Checkpoints, Distributions and Semantic state benchmarks (run 35582414639). Previous completion intermittency is not claimed fixed. CI artifact download returned HTTP 403 locally; no CI raw samples are included in the local bundle.
+- [ ] Full 37-scenario paired baseline comparison and broader consumer correctness remain to be completed for this production change.

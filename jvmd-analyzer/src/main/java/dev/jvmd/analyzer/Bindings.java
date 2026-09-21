@@ -10,207 +10,744 @@ import javax.lang.model.type.*;
 
 /** Implements 4.2: immutable binding snapshots; no compiler-owned object escapes the query. */
 public final class Bindings {
-    /** Implements 4.2 and 4.9: a bound identifier in UTF-16 source coordinates. */
-    public record Occurrence(String scip,String token,String file,int start,int end,SourceText.Range range,String role,String container,ImportSite importSite) {
-        public Occurrence(String scip,String token,String file,int start,int end,SourceText.Range range,String role,String container){this(scip,token,file,start,end,range,role,container,null);}
+  /** Implements 4.2 and 4.9: a bound identifier in UTF-16 source coordinates. */
+  public record Occurrence(
+      String scip,
+      String token,
+      String file,
+      int start,
+      int end,
+      SourceText.Range range,
+      String role,
+      String container,
+      ImportSite importSite) {
+    public Occurrence(
+        String scip,
+        String token,
+        String file,
+        int start,
+        int end,
+        SourceText.Range range,
+        String role,
+        String container) {
+      this(scip, token, file, start, end, range, role, container, null);
     }
-    /** Implements 4.9: a single-static-import can name multiple overloaded methods. */
-    public record ImportSite(int start,int end,String qualifier) { }
-    /** Implements 4.4: resolved structural and source-code relationships. */
-    public record Edge(String src,String dst,String kind) implements Comparable<Edge> {
-        @Override public int compareTo(Edge other) {
-            int order=src.compareTo(other.src);
-            if(order==0)order=dst.compareTo(other.dst);
-            return order==0?kind.compareTo(other.kind):order;
+  }
+
+  /** Implements 4.9: a single-static-import can name multiple overloaded methods. */
+  public record ImportSite(int start, int end, String qualifier) {}
+
+  /** Implements 4.4: resolved structural and source-code relationships. */
+  public record Edge(String src, String dst, String kind) implements Comparable<Edge> {
+    @Override
+    public int compareTo(Edge other) {
+      int order = src.compareTo(other.src);
+      if (order == 0) order = dst.compareTo(other.dst);
+      return order == 0 ? kind.compareTo(other.kind) : order;
+    }
+  }
+
+  /** Implements 4.2: detached declarations, references and source dependencies. */
+  public record Snapshot(
+      Map<String, Map<String, Object>> symbols,
+      List<Occurrence> occurrences,
+      List<Edge> edges,
+      Set<Path> dependencies,
+      @com.fasterxml.jackson.annotation.JsonIgnore SemanticApi api) {
+    public Snapshot(
+        Map<String, Map<String, Object>> symbols,
+        List<Occurrence> occurrences,
+        List<Edge> edges,
+        Set<Path> dependencies) {
+      this(symbols, occurrences, edges, dependencies, SemanticApi.EMPTY);
+    }
+
+    public Map<String, Object> at(int offset) {
+      var occurrence =
+          occurrences.stream()
+              .filter(o -> o.start() <= offset && offset < o.end())
+              .min(Comparator.comparingInt(o -> o.end() - o.start()))
+              .orElse(null);
+      if (occurrence == null) return null;
+      if (occurrence.importSite() != null) {
+        var candidates =
+            occurrences.stream()
+                .filter(
+                    o ->
+                        o.start() == occurrence.start()
+                            && o.end() == occurrence.end()
+                            && o.importSite() != null)
+                .map(o -> symbols.get(o.scip()))
+                .distinct()
+                .toList();
+        if (candidates.size() > 1)
+          return Map.of(
+              "resolved",
+              true,
+              "ambiguous",
+              true,
+              "name",
+              occurrence.token(),
+              "occurrence",
+              occurrence,
+              "candidates",
+              candidates);
+      }
+      var value = new LinkedHashMap<String, Object>(symbols.get(occurrence.scip()));
+      value.put("occurrence", occurrence);
+      return Collections.unmodifiableMap(value);
+    }
+  }
+
+  /** Declaration views and their dependencies, captured in one compiler-tree traversal. */
+  public record Outline(List<Map<String, Object>> symbols, Set<Path> dependencies) {}
+
+  public static Outline outline(
+      JavacTask task,
+      List<CompilationUnitTree> units,
+      SymbolIdentity identity,
+      Path requested,
+      SourceText original,
+      int depth) {
+    var rows = new ArrayList<Map<String, Object>>();
+    var captured =
+        capture(task, units, identity, requested, original, false, null, null, rows, depth);
+    return new Outline(List.copyOf(rows), captured.dependencies());
+  }
+
+  private Bindings() {}
+
+  public static Snapshot capture(
+      JavacTask task,
+      List<CompilationUnitTree> units,
+      SymbolIdentity identity,
+      Path requested,
+      String original,
+      boolean bodies) {
+    return capture(task, units, identity, requested, new SourceText(original), bodies);
+  }
+
+  public static Snapshot capture(
+      JavacTask task,
+      List<CompilationUnitTree> units,
+      SymbolIdentity identity,
+      Path requested,
+      SourceText original,
+      boolean bodies) {
+    return capture(task, units, identity, requested, original, bodies, null);
+  }
+
+  public static Snapshot capture(
+      JavacTask task,
+      List<CompilationUnitTree> units,
+      SymbolIdentity identity,
+      Path requested,
+      SourceText original,
+      boolean bodies,
+      Focusing.Span focus) {
+    return capture(task, units, identity, requested, original, bodies, focus, null);
+  }
+
+  public static Snapshot capture(
+      JavacTask task,
+      List<CompilationUnitTree> units,
+      SymbolIdentity identity,
+      Path requested,
+      SourceText original,
+      boolean bodies,
+      Focusing.Span focus,
+      SemanticApi prior) {
+    return capture(task, units, identity, requested, original, bodies, focus, prior, null, 0);
+  }
+
+  private static Snapshot capture(
+      JavacTask task,
+      List<CompilationUnitTree> units,
+      SymbolIdentity identity,
+      Path requested,
+      SourceText original,
+      boolean bodies,
+      Focusing.Span focus,
+      SemanticApi prior,
+      List<Map<String, Object>> outline,
+      int depth) {
+    var contracts = new LinkedHashMap<String, DeclarationContract>();
+    var owners = new LinkedHashMap<String, String>();
+    var exportedNames = new LinkedHashSet<String>();
+    String[] module = {""};
+    var trees = Trees.instance(task);
+    var docs = DocTrees.instance(task);
+    var symbols = new LinkedHashMap<String, Map<String, Object>>();
+    var occurrences = new LinkedHashMap<String, Occurrence>();
+    var edges = new LinkedHashSet<Edge>();
+    var dependencies = new LinkedHashSet<Path>();
+    var texts = new HashMap<String, SourceText>();
+    texts.put(requested.toUri().toString(), original);
+    class Capture {
+      final Set<Element> hiddenAncestors = new HashSet<>(), exposedMembers = new HashSet<>();
+
+      void contract(Element element, String id, DeclarationContract contract) {
+        String sourceFile = identity.sourceFile(element);
+        if (sourceFile == null
+            || !Path.of(sourceFile)
+                .toAbsolutePath()
+                .normalize()
+                .equals(requested.toAbsolutePath().normalize())) return;
+        module[0] = identity.gav(element);
+        contracts.put(id, contract);
+        Element owner = element.getEnclosingElement();
+        owners.put(id, owner instanceof TypeElement ? identity.scip(owner) : "");
+        exportedNames.add(id);
+        exportedNames.add(identity.namePath(element));
+        TypeElement declaring = identity.declaring(element);
+        if (declaring != null) exportedNames.add(identity.binaryName(declaring));
+      }
+
+      void exposed(Element element) {
+        if (!exposedMembers.add(element)) return;
+        String id = symbol(element);
+        if (id != null) contract(element, id, (DeclarationContract) symbols.get(id).get("api"));
+        if (element instanceof TypeElement type) {
+          inheritedContracts(type);
+          for (Element member : type.getEnclosedElements())
+            if (!member.getModifiers().contains(Modifier.PRIVATE)
+                && member.getKind() != ElementKind.CONSTRUCTOR
+                && (member instanceof TypeElement
+                    || member instanceof ExecutableElement
+                    || member.getKind().isField())) exposed(member);
         }
-    }
-    /** Implements 4.2: detached declarations, references and source dependencies. */
-    public record Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies,
-                           @com.fasterxml.jackson.annotation.JsonIgnore SemanticApi api) {
-        public Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies) {
-            this(symbols,occurrences,edges,dependencies,SemanticApi.EMPTY);
+      }
+
+      void inheritedContracts(TypeElement type) {
+        var queue = new ArrayDeque<TypeMirror>(task.getTypes().directSupertypes(type.asType()));
+        while (!queue.isEmpty()) {
+          var parent = queue.removeFirst();
+          var element = task.getTypes().asElement(parent);
+          if (!(element instanceof TypeElement ancestor) || !hiddenAncestors.add(ancestor))
+            continue;
+          if (!DeclarationContract.exported(ancestor)) exposed(ancestor);
+          queue.addAll(task.getTypes().directSupertypes(parent));
         }
-        public Map<String,Object> at(int offset){
-            var occurrence=occurrences.stream().filter(o->o.start()<=offset&&offset<o.end()).min(Comparator.comparingInt(o->o.end()-o.start())).orElse(null);if(occurrence==null)return null;
-            if(occurrence.importSite()!=null){
-                var candidates=occurrences.stream().filter(o->o.start()==occurrence.start()&&o.end()==occurrence.end()&&o.importSite()!=null).map(o->symbols.get(o.scip())).distinct().toList();
-                if(candidates.size()>1)return Map.of("resolved",true,"ambiguous",true,"name",occurrence.token(),"occurrence",occurrence,"candidates",candidates);
+      }
+
+      SourceText source(CompilationUnitTree unit) {
+        return texts.computeIfAbsent(
+            unit.getSourceFile().toUri().toString(),
+            key -> {
+              try {
+                return new SourceText(unit.getSourceFile().getCharContent(true).toString());
+              } catch (Exception e) {
+                return new SourceText("");
+              }
+            });
+      }
+
+      int start(CompilationUnitTree unit, Tree tree) {
+        return (int) trees.getSourcePositions().getStartPosition(unit, tree);
+      }
+
+      int end(CompilationUnitTree unit, Tree tree) {
+        return (int) trees.getSourcePositions().getEndPosition(unit, tree);
+      }
+
+      SourceText.Token declaration(TreePath path, Element element) {
+        var unit = path.getCompilationUnit();
+        var tree = path.getLeaf();
+        var text = source(unit);
+        int begin = start(unit, tree), finish = end(unit, tree);
+        if (begin < 0 || finish < begin) return null;
+        String name = identity.displayName(element);
+        if (tree instanceof MethodTree method) {
+          int prefix = begin;
+          if (method.getReturnType() != null)
+            prefix = Math.max(prefix, end(unit, method.getReturnType()));
+          for (var parameter : method.getTypeParameters())
+            prefix = Math.max(prefix, end(unit, parameter));
+          for (var token : text.tokens(prefix, finish))
+            if (token.text().equals(name)) {
+              int next = text.nextCode(token.end());
+              if (next < text.text().length()
+                  && (text.text().charAt(next) == '('
+                      || element.getKind() == ElementKind.CONSTRUCTOR
+                          && method.getBody() != null
+                          && next == start(unit, method.getBody())
+                          && text.text().charAt(next) == '{')) return token;
             }
-            var value=new LinkedHashMap<String,Object>(symbols.get(occurrence.scip()));value.put("occurrence",occurrence);return Collections.unmodifiableMap(value);
+        } else if (tree instanceof VariableTree variable)
+          return text.named(
+              name,
+              begin,
+              variable.getInitializer() == null ? finish : start(unit, variable.getInitializer()),
+              true);
+        else if (tree instanceof ClassTree type)
+          return text.named(name, Math.max(begin, end(unit, type.getModifiers())), finish, false);
+        else return text.named(name, begin, finish, false);
+        return null;
+      }
+
+      String symbol(Element element) {
+        if (element == null || outline == null && element.asType().getKind() == TypeKind.ERROR)
+          return null;
+        final String scip;
+        try {
+          scip = identity.scip(element);
+        } catch (IllegalArgumentException unresolved) {
+          return null;
         }
-    }
-    private Bindings() { }
-    public static Snapshot capture(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,Path requested,String original,boolean bodies){
-        return capture(task,units,identity,requested,new SourceText(original),bodies);
-    }
-    public static Snapshot capture(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,Path requested,SourceText original,boolean bodies){
-        return capture(task,units,identity,requested,original,bodies,null);
-    }
-    public static Snapshot capture(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,Path requested,SourceText original,boolean bodies,Focusing.Span focus){
-        return capture(task,units,identity,requested,original,bodies,focus,null);
-    }
-    public static Snapshot capture(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,Path requested,SourceText original,boolean bodies,Focusing.Span focus,SemanticApi prior){
-        var contracts=new LinkedHashMap<String,DeclarationContract>();
-        var owners=new LinkedHashMap<String,String>();var exportedNames=new LinkedHashSet<String>();
-        String[] module={""};
-        var trees=Trees.instance(task);var docs=DocTrees.instance(task);var symbols=new LinkedHashMap<String,Map<String,Object>>();var occurrences=new LinkedHashMap<String,Occurrence>();var edges=new LinkedHashSet<Edge>();var dependencies=new LinkedHashSet<Path>();
-        var texts=new HashMap<String,SourceText>();texts.put(requested.toUri().toString(),original);
-        class Capture {
-            final Set<Element> hiddenAncestors=new HashSet<>(),exposedMembers=new HashSet<>();
-            void contract(Element element,String id,DeclarationContract contract) {
-                String sourceFile=identity.sourceFile(element);
-                if(sourceFile==null||!Path.of(sourceFile).toAbsolutePath().normalize().equals(requested.toAbsolutePath().normalize()))return;
-                module[0]=identity.gav(element);
-                contracts.put(id,contract);
-                Element owner=element.getEnclosingElement();
-                owners.put(id,owner instanceof TypeElement?identity.scip(owner):"");
-                exportedNames.add(id);exportedNames.add(identity.namePath(element));
-                TypeElement declaring=identity.declaring(element);
-                if(declaring!=null)exportedNames.add(identity.binaryName(declaring));
-            }
-            void exposed(Element element) {
-                if(!exposedMembers.add(element))return;
-                String id=symbol(element);
-                if(id!=null)contract(element,id,(DeclarationContract)symbols.get(id).get("api"));
-                if(element instanceof TypeElement type) {
-                    inheritedContracts(type);
-                    for(Element member:type.getEnclosedElements())if(!member.getModifiers().contains(Modifier.PRIVATE)
-                            &&member.getKind()!=ElementKind.CONSTRUCTOR
-                            &&(member instanceof TypeElement||member instanceof ExecutableElement||member.getKind().isField()))exposed(member);
-                }
-            }
-            void inheritedContracts(TypeElement type) {
-                var queue=new ArrayDeque<TypeMirror>(task.getTypes().directSupertypes(type.asType()));
-                while(!queue.isEmpty()) {
-                    var parent=queue.removeFirst();var element=task.getTypes().asElement(parent);
-                    if(!(element instanceof TypeElement ancestor)||!hiddenAncestors.add(ancestor))continue;
-                    if(!DeclarationContract.exported(ancestor))exposed(ancestor);
-                    queue.addAll(task.getTypes().directSupertypes(parent));
-                }
-            }
-            SourceText source(CompilationUnitTree unit){return texts.computeIfAbsent(unit.getSourceFile().toUri().toString(),key->{try{return new SourceText(unit.getSourceFile().getCharContent(true).toString());}catch(Exception e){return new SourceText("");}});}
-            int start(CompilationUnitTree unit,Tree tree){return (int)trees.getSourcePositions().getStartPosition(unit,tree);}
-            int end(CompilationUnitTree unit,Tree tree){return (int)trees.getSourcePositions().getEndPosition(unit,tree);}
-            SourceText.Token declaration(TreePath path,Element element){
-                var unit=path.getCompilationUnit();var tree=path.getLeaf();var text=source(unit);int begin=start(unit,tree),finish=end(unit,tree);if(begin<0||finish<begin)return null;String name=identity.displayName(element);
-                if(tree instanceof MethodTree method){
-                    int prefix=begin;if(method.getReturnType()!=null)prefix=Math.max(prefix,end(unit,method.getReturnType()));for(var parameter:method.getTypeParameters())prefix=Math.max(prefix,end(unit,parameter));
-                    for(var token:text.tokens(prefix,finish))if(token.text().equals(name)){int next=text.nextCode(token.end());if(next<text.text().length()&&(text.text().charAt(next)=='('||element.getKind()==ElementKind.CONSTRUCTOR&&method.getBody()!=null&&next==start(unit,method.getBody())&&text.text().charAt(next)=='{'))return token;}
-                }else if(tree instanceof VariableTree variable)return text.named(name,begin,variable.getInitializer()==null?finish:start(unit,variable.getInitializer()),true);
-                else if(tree instanceof ClassTree type)return text.named(name,Math.max(begin,end(unit,type.getModifiers())),finish,false);
-                else return text.named(name,begin,finish,false);
-                return null;
-            }
-            String symbol(Element element){
-                if(element==null||element.asType().getKind()==TypeKind.ERROR)return null;
-                final String scip;try{scip=identity.scip(element);}catch(IllegalArgumentException unresolved){return null;}
-                if(symbols.containsKey(scip))return scip;
-                var contract=DeclarationContract.capture(element);
-                var row=new LinkedHashMap<String,Object>();row.put("scip",scip);row.put("name",identity.displayName(element));try{row.put("name_path",identity.namePath(element));}catch(IllegalArgumentException unresolved){row.put("name_path",identity.displayName(element));row.put("signature_complete",false);}row.put("kind",SymbolIdentity.kind(element));row.put("signature",identity.signature(element));row.put("gav",identity.gav(element));row.put("artifact",identity.gav(element));row.put("resolved",true);row.put("modifiers",contract.modifiers());
-                var declaring=identity.declaring(element);row.put("declaring",declaring==null?null:declaring.getQualifiedName().toString());row.put("fqn",declaring==null?null:identity.binaryName(declaring));
-                row.put("api",contract);
-                if(DeclarationContract.exported(element))contract(element,scip,contract);
-                row.put("parameters",element instanceof ExecutableElement m?m.getParameters().stream().map(p->p.getSimpleName().toString()).toList():List.of());
-                row.put("type_parameters",element instanceof Parameterizable generic?generic.getTypeParameters().stream().map(Object::toString).toList():List.of());
-                try{row.put("erased_descriptor",element instanceof ExecutableElement method?identity.descriptor(method):element instanceof VariableElement variable?identity.descriptor(variable.asType()):null);}catch(IllegalArgumentException unresolved){row.put("erased_descriptor",null);row.put("signature_complete",false);}
-                if(element.getEnclosingElement() instanceof ExecutableElement)try{row.put("qualified_name_path",identity.qualifiedNamePath(element));}catch(IllegalArgumentException unresolved){}
-                var path=identity.path(element);String sourceFile=identity.sourceFile(element);if(sourceFile!=null)dependencies.add(Path.of(sourceFile));row.put("file",sourceFile);row.put("source_file",sourceFile);
-                if(path!=null){var unit=path.getCompilationUnit();var text=source(unit);int begin=start(unit,path.getLeaf()),finish=end(unit,path.getLeaf());var token=declaration(path,element);
-                    row.put("start",begin);row.put("end",finish);row.put("source_start",begin);row.put("source_end",finish);row.put("range",text.range(begin,finish));
-                    if(token!=null){row.put("name_start",token.start());row.put("name_end",token.end());row.put("name_range",text.range(token.start(),token.end()));row.put("line",text.position(token.start()).line()+1);row.put("character",text.position(token.start()).character());}
-                    if(path.getLeaf() instanceof MethodTree method&&method.getBody()!=null){row.put("body_start",start(unit,method.getBody()));row.put("body_end",end(unit,method.getBody()));}
-                    var comment=docs.getDocCommentTree(path);row.put("doc",comment==null?null:DocMarkdown.render(comment.toString()));
-                }else row.put("doc",null);
-                symbols.put(scip,Collections.unmodifiableMap(row));return scip;
-            }
-            void occurrence(TreePath path,Element element,String name,boolean declaration,String role,String container){
-                String scip=symbol(element);if(scip==null)return;
-                var unit=path.getCompilationUnit();var text=source(unit);int begin=start(unit,path.getLeaf()),finish=end(unit,path.getLeaf());if(begin<0||finish<begin)return;
-                var token=declaration?declaration(path,element):text.named(name,begin,finish,true);if(token==null)return;
-                String file=Path.of(unit.getSourceFile().toUri()).toString();
-                var occurrence=new Occurrence(scip,token.text(),file,token.start(),token.end(),text.range(token.start(),token.end()),role,container);
-                occurrences.putIfAbsent(file+":"+token.start()+":"+scip,occurrence);
-                if(container!=null&&!declaration&&!container.equals(scip))edges.add(new Edge(container,scip,role));
-            }
-            void typeEdges(String owner,TypeMirror type,String kind,Set<String> visited){
-                if(type==null||owner==null)return;String key=type.toString();if(!visited.add(key))return;
-                if(type instanceof ArrayType array)typeEdges(owner,array.getComponentType(),kind,visited);
-                else if(type instanceof DeclaredType declared){String target=symbol(declared.asElement());if(target!=null&&!target.equals(owner))edges.add(new Edge(owner,target,kind));for(var argument:declared.getTypeArguments())typeEdges(owner,argument,kind,visited);}
-                else if(type instanceof TypeVariable variable)typeEdges(owner,variable.getUpperBound(),kind,visited);
-                else if(type instanceof WildcardType wildcard){typeEdges(owner,wildcard.getExtendsBound(),kind,visited);typeEdges(owner,wildcard.getSuperBound(),kind,visited);}
-                else if(type instanceof IntersectionType intersection)for(var bound:intersection.getBounds())typeEdges(owner,bound,kind,visited);
-            }
-            final Set<Object> dependencyTypes=new HashSet<>();
-            void dependencyType(TypeMirror type){
-                if(type==null||type.getKind().isPrimitive()||type.getKind()==TypeKind.VOID||type.getKind()==TypeKind.NONE||type.getKind()==TypeKind.ERROR)return;
-                if(!dependencyTypes.add(type instanceof TypeVariable variable?variable.asElement():type.toString()))return;
-                if(type instanceof ArrayType array)dependencyType(array.getComponentType());
-                else if(type instanceof DeclaredType declared){
-                    String file=identity.sourceFile(declared.asElement());if(file!=null){dependencies.add(Path.of(file));for(var parent:task.getTypes().directSupertypes(type))dependencyType(parent);}
-                    for(var argument:declared.getTypeArguments())dependencyType(argument);
-                }else if(type instanceof TypeVariable variable)dependencyType(variable.getUpperBound());
-                else if(type instanceof WildcardType wildcard){dependencyType(wildcard.getExtendsBound());dependencyType(wildcard.getSuperBound());}
-                else if(type instanceof IntersectionType intersection)for(var bound:intersection.getBounds())dependencyType(bound);
-            }
-            void signatureDependencies(Element element){
-                if(element instanceof ExecutableElement method){dependencyType(method.getReturnType());for(var parameter:method.getParameters())dependencyType(parameter.asType());for(var exception:method.getThrownTypes())dependencyType(exception);for(var parameter:method.getTypeParameters())for(var bound:parameter.getBounds())dependencyType(bound);}
-                if(element!=null)for(var annotation:element.getAnnotationMirrors())dependencyType(annotation.getAnnotationType());
-            }
-            void structure(Element element){
-                String owner=symbol(element);if(owner==null)return;
-                if(element instanceof TypeElement type){typeEdges(owner,type.getSuperclass(),"extends",new HashSet<>());for(var parent:type.getInterfaces())typeEdges(owner,parent,type.getKind().isInterface()?"extends":"implements",new HashSet<>());}
-                if(element instanceof ExecutableElement method){
-                    typeEdges(owner,method.getReturnType(),"return_type",new HashSet<>());for(var parameter:method.getParameters())typeEdges(owner,parameter.asType(),"param_type",new HashSet<>());for(var exception:method.getThrownTypes())typeEdges(owner,exception,"throws",new HashSet<>());
-                    if(method.getEnclosingElement() instanceof TypeElement type&&method.getKind()==ElementKind.METHOD){
-                        var queue=new ArrayDeque<TypeMirror>(task.getTypes().directSupertypes(type.asType()));var seen=new HashSet<String>();
-                        while(!queue.isEmpty()){var parent=queue.removeFirst();if(!seen.add(parent.toString()))continue;var superElement=task.getTypes().asElement(parent);
-                            if(superElement instanceof TypeElement superType)for(var member:superType.getEnclosedElements())if(member instanceof ExecutableElement candidate&&candidate.getSimpleName().contentEquals(method.getSimpleName())&&task.getElements().overrides(method,candidate,type)){String target=symbol(candidate);if(target!=null)edges.add(new Edge(owner,target,"overrides"));}
-                            queue.addAll(task.getTypes().directSupertypes(parent));
-                        }
-                    }
-                }else if(element instanceof VariableElement variable)typeEdges(owner,variable.asType(),"return_type",new HashSet<>());
-                for(var annotation:element.getAnnotationMirrors())typeEdges(owner,annotation.getAnnotationType(),"annotated_by",new HashSet<>());
-            }
+        if (symbols.containsKey(scip)) return scip;
+        symbols.put(scip, Collections.unmodifiableMap(row(element, scip)));
+        return scip;
+      }
+
+      Map<String, Object> row(Element element, String scip) {
+        var row = new LinkedHashMap<String, Object>();
+        row.put("name", identity.displayName(element));
+        try {
+          row.put(
+              "name_path",
+              scip == null ? identity.displayName(element) : identity.namePath(element));
+        } catch (IllegalArgumentException unresolved) {
+          row.put("name_path", identity.displayName(element));
+          if (outline == null) row.put("signature_complete", false);
+          else scip = null;
         }
-        var capture=new Capture();
-        for(var unit:units)new TreePathScanner<Void,String>(){
-            Element element(){var element=trees.getElement(getCurrentPath());if(getCurrentPath().getLeaf() instanceof ClassTree||getCurrentPath().getLeaf() instanceof MethodTree||getCurrentPath().getLeaf() instanceof VariableTree||getCurrentPath().getLeaf() instanceof TypeParameterTree)identity.remember(element,getCurrentPath());return element;}
-            @Override public Void visitImport(ImportTree tree,String parent){
-                if(tree.isStatic()&&tree.getQualifiedIdentifier() instanceof MemberSelectTree selected&&!selected.getIdentifier().contentEquals("*")){
-                    var selectedPath=new TreePath(getCurrentPath(),selected);var owner=trees.getElement(new TreePath(selectedPath,selected.getExpression()));
-                    if(owner instanceof TypeElement type&&type.asType() instanceof DeclaredType declared){
-                        var scope=trees.getScope(getCurrentPath());var text=capture.source(unit);int begin=capture.start(unit,selected),finish=capture.end(unit,selected);
-                        var token=text.named(selected.getIdentifier().toString(),begin,finish,true);
-                        if(token!=null)for(var member:task.getElements().getAllMembers(type))
-                            if(member.getModifiers().contains(Modifier.STATIC)&&member.getSimpleName().contentEquals(selected.getIdentifier())&&trees.isAccessible(scope,member,declared)){
-                                String scip=capture.symbol(member);if(scip==null)continue;String file=Path.of(unit.getSourceFile().toUri()).toString();
-                                var site=new ImportSite(capture.start(unit,tree),capture.end(unit,tree),selected.getExpression().toString());
-                                occurrences.putIfAbsent(file+":"+token.start()+":"+scip,new Occurrence(scip,token.text(),file,token.start(),token.end(),text.range(token.start(),token.end()),"import",null,site));
-                            }
-                    }
-                }
-                return super.visitImport(tree,parent);
+        row.put("kind", SymbolIdentity.kind(element));
+        row.put("signature", identity.signature(element));
+        row.put("gav", identity.gav(element));
+        row.put("resolved", scip != null);
+        row.put("scip", scip);
+        var contract = outline == null ? DeclarationContract.capture(element) : null;
+        row.put(
+            "modifiers",
+            contract == null
+                ? element.getModifiers().stream().map(Object::toString).sorted().toList()
+                : contract.modifiers());
+        var declaring = identity.declaring(element);
+        row.put("declaring", declaring == null ? null : declaring.getQualifiedName().toString());
+        row.put("fqn", declaring == null ? null : identity.binaryName(declaring));
+        if (outline == null) {
+          row.put("api", contract);
+          row.put("artifact", identity.gav(element));
+          if (DeclarationContract.exported(element)) contract(element, scip, contract);
+        }
+        row.put(
+            "parameters",
+            element instanceof ExecutableElement m
+                ? m.getParameters().stream().map(p -> p.getSimpleName().toString()).toList()
+                : List.of());
+        if (outline == null)
+          row.put(
+              "type_parameters",
+              element instanceof Parameterizable generic
+                  ? generic.getTypeParameters().stream().map(Object::toString).toList()
+                  : List.of());
+        try {
+          row.put(
+              "erased_descriptor",
+              element instanceof ExecutableElement method
+                  ? identity.descriptor(method)
+                  : element instanceof VariableElement variable
+                      ? identity.descriptor(variable.asType())
+                      : null);
+        } catch (IllegalArgumentException unresolved) {
+          row.put("erased_descriptor", null);
+          row.put("signature_complete", false);
+        }
+        if (outline == null && element.getEnclosingElement() instanceof ExecutableElement)
+          try {
+            row.put("qualified_name_path", identity.qualifiedNamePath(element));
+          } catch (IllegalArgumentException unresolved) {
+          }
+        var path = identity.path(element);
+        String sourceFile = identity.sourceFile(element);
+        if (sourceFile != null) dependencies.add(Path.of(sourceFile));
+        row.put("file", sourceFile);
+        row.put("source_file", sourceFile);
+        if (path != null) {
+          var unit = path.getCompilationUnit();
+          var text = source(unit);
+          int begin = start(unit, path.getLeaf()), finish = end(unit, path.getLeaf());
+          var token = declaration(path, element);
+          row.put("start", begin);
+          row.put("end", finish);
+          row.put("source_start", begin);
+          row.put("source_end", finish);
+          row.put("range", text.range(begin, finish));
+          if (token != null || outline != null) {
+            int nameStart = token == null ? begin : token.start(),
+                nameEnd = token == null ? begin : token.end();
+            row.put("name_start", nameStart);
+            row.put("name_end", nameEnd);
+            row.put("name_range", text.range(nameStart, nameEnd));
+            row.put("line", text.position(nameStart).line() + 1);
+            row.put("character", text.position(nameStart).character());
+          }
+          if (path.getLeaf() instanceof MethodTree method && method.getBody() != null) {
+            row.put("body_start", start(unit, method.getBody()));
+            row.put("body_end", end(unit, method.getBody()));
+          } else if (outline != null) {
+            row.put("body_start", -1);
+            row.put("body_end", -1);
+          }
+          var comment = docs.getDocCommentTree(path);
+          row.put("doc", comment == null ? null : DocMarkdown.render(comment.toString()));
+        } else row.put("doc", null);
+        return row;
+      }
+
+      void outline(Element element, int level) {
+        if (outline == null || element == null || level > depth) return;
+        var path = identity.path(element);
+        if (path == null) return;
+        int begin = start(path.getCompilationUnit(), path.getLeaf()),
+            finish = end(path.getCompilationUnit(), path.getLeaf());
+        if (begin < 0 || finish < begin) return;
+        String id = symbol(element);
+        var row = new LinkedHashMap<>(id == null ? row(element, null) : symbols.get(id));
+        row.put("file", requested.toString());
+        row.put("source_file", requested.toString());
+        outline.add(Collections.unmodifiableMap(row));
+      }
+
+      void occurrence(
+          TreePath path,
+          Element element,
+          String name,
+          boolean declaration,
+          String role,
+          String container) {
+        String scip = symbol(element);
+        if (scip == null) return;
+        var unit = path.getCompilationUnit();
+        var text = source(unit);
+        int begin = start(unit, path.getLeaf()), finish = end(unit, path.getLeaf());
+        if (begin < 0 || finish < begin) return;
+        var token =
+            declaration ? declaration(path, element) : text.named(name, begin, finish, true);
+        if (token == null) return;
+        String file = Path.of(unit.getSourceFile().toUri()).toString();
+        var occurrence =
+            new Occurrence(
+                scip,
+                token.text(),
+                file,
+                token.start(),
+                token.end(),
+                text.range(token.start(), token.end()),
+                role,
+                container);
+        occurrences.putIfAbsent(file + ":" + token.start() + ":" + scip, occurrence);
+        if (container != null && !declaration && !container.equals(scip))
+          edges.add(new Edge(container, scip, role));
+      }
+
+      void typeEdges(String owner, TypeMirror type, String kind, Set<String> visited) {
+        if (type == null || owner == null) return;
+        String key = type.toString();
+        if (!visited.add(key)) return;
+        if (type instanceof ArrayType array)
+          typeEdges(owner, array.getComponentType(), kind, visited);
+        else if (type instanceof DeclaredType declared) {
+          String target = symbol(declared.asElement());
+          if (target != null && !target.equals(owner)) edges.add(new Edge(owner, target, kind));
+          for (var argument : declared.getTypeArguments())
+            typeEdges(owner, argument, kind, visited);
+        } else if (type instanceof TypeVariable variable)
+          typeEdges(owner, variable.getUpperBound(), kind, visited);
+        else if (type instanceof WildcardType wildcard) {
+          typeEdges(owner, wildcard.getExtendsBound(), kind, visited);
+          typeEdges(owner, wildcard.getSuperBound(), kind, visited);
+        } else if (type instanceof IntersectionType intersection)
+          for (var bound : intersection.getBounds()) typeEdges(owner, bound, kind, visited);
+      }
+
+      final Set<Object> dependencyTypes = new HashSet<>();
+
+      void dependencyType(TypeMirror type) {
+        if (type == null
+            || type.getKind().isPrimitive()
+            || type.getKind() == TypeKind.VOID
+            || type.getKind() == TypeKind.NONE
+            || type.getKind() == TypeKind.ERROR) return;
+        if (!dependencyTypes.add(
+            type instanceof TypeVariable variable ? variable.asElement() : type.toString())) return;
+        if (type instanceof ArrayType array) dependencyType(array.getComponentType());
+        else if (type instanceof DeclaredType declared) {
+          String file = identity.sourceFile(declared.asElement());
+          if (file != null) {
+            dependencies.add(Path.of(file));
+            for (var parent : task.getTypes().directSupertypes(type)) dependencyType(parent);
+          }
+          for (var argument : declared.getTypeArguments()) dependencyType(argument);
+        } else if (type instanceof TypeVariable variable) dependencyType(variable.getUpperBound());
+        else if (type instanceof WildcardType wildcard) {
+          dependencyType(wildcard.getExtendsBound());
+          dependencyType(wildcard.getSuperBound());
+        } else if (type instanceof IntersectionType intersection)
+          for (var bound : intersection.getBounds()) dependencyType(bound);
+      }
+
+      void signatureDependencies(Element element) {
+        if (element instanceof ExecutableElement method) {
+          dependencyType(method.getReturnType());
+          for (var parameter : method.getParameters()) dependencyType(parameter.asType());
+          for (var exception : method.getThrownTypes()) dependencyType(exception);
+          for (var parameter : method.getTypeParameters())
+            for (var bound : parameter.getBounds()) dependencyType(bound);
+        }
+        if (element != null)
+          for (var annotation : element.getAnnotationMirrors())
+            dependencyType(annotation.getAnnotationType());
+      }
+
+      void structure(Element element) {
+        String owner = symbol(element);
+        if (owner == null) return;
+        if (element instanceof TypeElement type) {
+          typeEdges(owner, type.getSuperclass(), "extends", new HashSet<>());
+          for (var parent : type.getInterfaces())
+            typeEdges(
+                owner,
+                parent,
+                type.getKind().isInterface() ? "extends" : "implements",
+                new HashSet<>());
+        }
+        if (element instanceof ExecutableElement method) {
+          typeEdges(owner, method.getReturnType(), "return_type", new HashSet<>());
+          for (var parameter : method.getParameters())
+            typeEdges(owner, parameter.asType(), "param_type", new HashSet<>());
+          for (var exception : method.getThrownTypes())
+            typeEdges(owner, exception, "throws", new HashSet<>());
+          if (method.getEnclosingElement() instanceof TypeElement type
+              && method.getKind() == ElementKind.METHOD) {
+            var queue = new ArrayDeque<TypeMirror>(task.getTypes().directSupertypes(type.asType()));
+            var seen = new HashSet<String>();
+            while (!queue.isEmpty()) {
+              var parent = queue.removeFirst();
+              if (!seen.add(parent.toString())) continue;
+              var superElement = task.getTypes().asElement(parent);
+              if (superElement instanceof TypeElement superType)
+                for (var member : superType.getEnclosedElements())
+                  if (member instanceof ExecutableElement candidate
+                      && candidate.getSimpleName().contentEquals(method.getSimpleName())
+                      && task.getElements().overrides(method, candidate, type)) {
+                    String target = symbol(candidate);
+                    if (target != null) edges.add(new Edge(owner, target, "overrides"));
+                  }
+              queue.addAll(task.getTypes().directSupertypes(parent));
             }
-            @Override public Void visitClass(ClassTree tree,String parent){var e=element();String scip=capture.symbol(e);if(e!=null){capture.occurrence(getCurrentPath(),e,identity.displayName(e),true,"declaration",parent);capture.structure(e);if(e instanceof TypeElement type&&DeclarationContract.exported(type))capture.inheritedContracts(type);}return super.visitClass(tree,scip);}
-            @Override public Void visitMethod(MethodTree tree,String parent){var e=element();
-                int begin=capture.start(unit,tree),end=capture.end(unit,tree);
-                if(focus!=null&&(end<=focus.start()||begin>=focus.end())){capture.signatureDependencies(e);return null;}
-                String scip=capture.symbol(e);if(e!=null){capture.occurrence(getCurrentPath(),e,identity.displayName(e),true,"declaration",parent);capture.structure(e);}if(bodies)return super.visitMethod(tree,scip);scan(tree.getModifiers(),scip);scan(tree.getReturnType(),scip);scan(tree.getTypeParameters(),scip);scan(tree.getParameters(),scip);scan(tree.getThrows(),scip);return null;}
-            @Override public Void visitVariable(VariableTree tree,String parent){var e=element();if(e!=null){capture.occurrence(getCurrentPath(),e,identity.displayName(e),true,"declaration",parent);capture.structure(e);}scan(tree.getModifiers(),parent);scan(tree.getType(),parent);if(bodies)scan(tree.getInitializer(),e!=null&&e.getKind().isField()?capture.symbol(e):parent);return null;}
-            @Override public Void visitTypeParameter(TypeParameterTree tree,String parent){var e=element();if(e!=null)capture.occurrence(getCurrentPath(),e,tree.getName().toString(),true,"declaration",parent);return super.visitTypeParameter(tree,parent);}
-            @Override public Void visitBlock(BlockTree tree,String parent){return bodies?super.visitBlock(tree,parent):null;}
-            @Override public Void visitIdentifier(IdentifierTree tree,String parent){reference(tree.getName().toString(),parent);return super.visitIdentifier(tree,parent);}
-            @Override public Void visitMemberSelect(MemberSelectTree tree,String parent){reference(tree.getIdentifier().toString(),parent);return super.visitMemberSelect(tree,parent);}
-            @Override public Void visitMemberReference(MemberReferenceTree tree,String parent){var e=element();capture.occurrence(getCurrentPath(),e,tree.getName().toString(),false,"calls",parent);return super.visitMemberReference(tree,parent);}
-            @Override public Void visitNewClass(NewClassTree tree,String parent){var e=element();if(e!=null)capture.occurrence(new TreePath(getCurrentPath(),tree.getIdentifier()),e,identity.displayName(e),false,"instantiates",parent);return super.visitNewClass(tree,parent);}
-            void reference(String name,String container){
-                var e=element();if(e==null)return;String role=e instanceof ExecutableElement?"calls":"reads";
-                Tree parent=getCurrentPath().getParentPath()==null?null:getCurrentPath().getParentPath().getLeaf(),leaf=getCurrentPath().getLeaf();
-                if(parent instanceof AssignmentTree assignment&&assignment.getVariable()==leaf||parent instanceof CompoundAssignmentTree compound&&compound.getVariable()==leaf||parent instanceof UnaryTree unary&&Set.of(Tree.Kind.PREFIX_INCREMENT,Tree.Kind.PREFIX_DECREMENT,Tree.Kind.POSTFIX_INCREMENT,Tree.Kind.POSTFIX_DECREMENT).contains(unary.getKind()))role="writes";
-                capture.occurrence(getCurrentPath(),e,name,false,role,container);
-                if(role.equals("writes")&&(parent instanceof CompoundAssignmentTree||parent instanceof UnaryTree)){String target=capture.symbol(e);if(container!=null&&target!=null)edges.add(new Edge(container,target,"reads"));}
-            }
-        }.scan(unit,null);
-        return new Snapshot(Collections.unmodifiableMap(symbols),List.copyOf(occurrences.values()),List.copyOf(edges),Set.copyOf(dependencies),SemanticApi.build(module[0],contracts,owners,exportedNames,prior));
+          }
+        } else if (element instanceof VariableElement variable)
+          typeEdges(owner, variable.asType(), "return_type", new HashSet<>());
+        for (var annotation : element.getAnnotationMirrors())
+          typeEdges(owner, annotation.getAnnotationType(), "annotated_by", new HashSet<>());
+      }
     }
+    var capture = new Capture();
+    for (var unit : units)
+      new TreePathScanner<Void, String>() {
+        int level;
+
+        Element element() {
+          var element = trees.getElement(getCurrentPath());
+          if (getCurrentPath().getLeaf() instanceof ClassTree
+              || getCurrentPath().getLeaf() instanceof MethodTree
+              || getCurrentPath().getLeaf() instanceof VariableTree
+              || getCurrentPath().getLeaf() instanceof TypeParameterTree)
+            identity.remember(element, getCurrentPath());
+          return element;
+        }
+
+        @Override
+        public Void visitImport(ImportTree tree, String parent) {
+          if (tree.isStatic()
+              && tree.getQualifiedIdentifier() instanceof MemberSelectTree selected
+              && !selected.getIdentifier().contentEquals("*")) {
+            var selectedPath = new TreePath(getCurrentPath(), selected);
+            var owner = trees.getElement(new TreePath(selectedPath, selected.getExpression()));
+            if (owner instanceof TypeElement type
+                && type.asType() instanceof DeclaredType declared) {
+              var scope = trees.getScope(getCurrentPath());
+              var text = capture.source(unit);
+              int begin = capture.start(unit, selected), finish = capture.end(unit, selected);
+              var token = text.named(selected.getIdentifier().toString(), begin, finish, true);
+              if (token != null)
+                for (var member : task.getElements().getAllMembers(type))
+                  if (member.getModifiers().contains(Modifier.STATIC)
+                      && member.getSimpleName().contentEquals(selected.getIdentifier())
+                      && trees.isAccessible(scope, member, declared)) {
+                    String scip = capture.symbol(member);
+                    if (scip == null) continue;
+                    String file = Path.of(unit.getSourceFile().toUri()).toString();
+                    var site =
+                        new ImportSite(
+                            capture.start(unit, tree),
+                            capture.end(unit, tree),
+                            selected.getExpression().toString());
+                    occurrences.putIfAbsent(
+                        file + ":" + token.start() + ":" + scip,
+                        new Occurrence(
+                            scip,
+                            token.text(),
+                            file,
+                            token.start(),
+                            token.end(),
+                            text.range(token.start(), token.end()),
+                            "import",
+                            null,
+                            site));
+                  }
+            }
+          }
+          return super.visitImport(tree, parent);
+        }
+
+        @Override
+        public Void visitClass(ClassTree tree, String parent) {
+          var e = element();
+          capture.outline(e, level);
+          String scip = capture.symbol(e);
+          if (e != null) {
+            capture.occurrence(
+                getCurrentPath(), e, identity.displayName(e), true, "declaration", parent);
+            capture.structure(e);
+            if (outline == null
+                && e instanceof TypeElement type
+                && DeclarationContract.exported(type)) capture.inheritedContracts(type);
+          }
+          level++;
+          try {
+            return super.visitClass(tree, scip);
+          } finally {
+            level--;
+          }
+        }
+
+        @Override
+        public Void visitMethod(MethodTree tree, String parent) {
+          var e = element();
+          capture.outline(e, level);
+          int begin = capture.start(unit, tree), end = capture.end(unit, tree);
+          if (focus != null && (end <= focus.start() || begin >= focus.end())) {
+            capture.signatureDependencies(e);
+            return null;
+          }
+          String scip = capture.symbol(e);
+          if (e != null) {
+            capture.occurrence(
+                getCurrentPath(), e, identity.displayName(e), true, "declaration", parent);
+            capture.structure(e);
+          }
+          if (bodies) return super.visitMethod(tree, scip);
+          scan(tree.getModifiers(), scip);
+          scan(tree.getReturnType(), scip);
+          scan(tree.getTypeParameters(), scip);
+          scan(tree.getParameters(), scip);
+          scan(tree.getThrows(), scip);
+          return null;
+        }
+
+        @Override
+        public Void visitVariable(VariableTree tree, String parent) {
+          var e = element();
+          if (e != null && e.getKind().isField()) capture.outline(e, level);
+          if (e != null) {
+            capture.occurrence(
+                getCurrentPath(), e, identity.displayName(e), true, "declaration", parent);
+            capture.structure(e);
+          }
+          scan(tree.getModifiers(), parent);
+          scan(tree.getType(), parent);
+          if (bodies)
+            scan(
+                tree.getInitializer(),
+                e != null && e.getKind().isField() ? capture.symbol(e) : parent);
+          return null;
+        }
+
+        @Override
+        public Void visitTypeParameter(TypeParameterTree tree, String parent) {
+          var e = element();
+          if (e != null)
+            capture.occurrence(
+                getCurrentPath(), e, tree.getName().toString(), true, "declaration", parent);
+          return super.visitTypeParameter(tree, parent);
+        }
+
+        @Override
+        public Void visitBlock(BlockTree tree, String parent) {
+          return bodies ? super.visitBlock(tree, parent) : null;
+        }
+
+        @Override
+        public Void visitIdentifier(IdentifierTree tree, String parent) {
+          reference(tree.getName().toString(), parent);
+          return super.visitIdentifier(tree, parent);
+        }
+
+        @Override
+        public Void visitMemberSelect(MemberSelectTree tree, String parent) {
+          reference(tree.getIdentifier().toString(), parent);
+          return super.visitMemberSelect(tree, parent);
+        }
+
+        @Override
+        public Void visitMemberReference(MemberReferenceTree tree, String parent) {
+          var e = element();
+          capture.occurrence(
+              getCurrentPath(), e, tree.getName().toString(), false, "calls", parent);
+          return super.visitMemberReference(tree, parent);
+        }
+
+        @Override
+        public Void visitNewClass(NewClassTree tree, String parent) {
+          var e = element();
+          if (e != null)
+            capture.occurrence(
+                new TreePath(getCurrentPath(), tree.getIdentifier()),
+                e,
+                identity.displayName(e),
+                false,
+                "instantiates",
+                parent);
+          return super.visitNewClass(tree, parent);
+        }
+
+        void reference(String name, String container) {
+          var e = element();
+          if (e == null) return;
+          String role = e instanceof ExecutableElement ? "calls" : "reads";
+          Tree
+              parent =
+                  getCurrentPath().getParentPath() == null
+                      ? null
+                      : getCurrentPath().getParentPath().getLeaf(),
+              leaf = getCurrentPath().getLeaf();
+          if (parent instanceof AssignmentTree assignment && assignment.getVariable() == leaf
+              || parent instanceof CompoundAssignmentTree compound && compound.getVariable() == leaf
+              || parent instanceof UnaryTree unary
+                  && Set.of(
+                          Tree.Kind.PREFIX_INCREMENT,
+                          Tree.Kind.PREFIX_DECREMENT,
+                          Tree.Kind.POSTFIX_INCREMENT,
+                          Tree.Kind.POSTFIX_DECREMENT)
+                      .contains(unary.getKind())) role = "writes";
+          capture.occurrence(getCurrentPath(), e, name, false, role, container);
+          if (role.equals("writes")
+              && (parent instanceof CompoundAssignmentTree || parent instanceof UnaryTree)) {
+            String target = capture.symbol(e);
+            if (container != null && target != null)
+              edges.add(new Edge(container, target, "reads"));
+          }
+        }
+      }.scan(unit, null);
+    if (outline != null)
+      return new Snapshot(Map.of(), List.of(), List.of(), Set.copyOf(dependencies));
+    return new Snapshot(
+        Collections.unmodifiableMap(symbols),
+        List.copyOf(occurrences.values()),
+        List.copyOf(edges),
+        Set.copyOf(dependencies),
+        SemanticApi.build(module[0], contracts, owners, exportedNames, prior));
+  }
 }

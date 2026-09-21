@@ -3,6 +3,7 @@ package dev.jvmd.dist;
 import dev.jvmd.analyzer.*;
 import dev.jvmd.core.*;
 import dev.jvmd.index.IndexService;
+import dev.jvmd.index.FileSemanticContribution;
 import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -12,13 +13,12 @@ import java.util.concurrent.atomic.LongAdder;
 
 /**
  * Persistent module-level actor registry. Each actor owns one platform thread and every
- * Analyzer/CompilerPool it touches; only detached envelopes, fingerprints and counters cross actors.
+ * Analyzer/CompilerPool it touches; only detached envelopes, contributions and counters cross actors.
  */
 public final class ModuleAnalyzerRegistry implements AutoCloseable {
-    private record Detached<T>(T value,Map<Path,String> fingerprints){}
+    private record Detached<T>(T value,Map<Path,FileSemanticContribution> contributions){}
     private final Map<String,Actor> actors=new LinkedHashMap<>();
-    private final Map<Path,String> fingerprints=new HashMap<>();
-    private final Set<Path> pendingFingerprintChanges=new HashSet<>();
+    private final Map<Path,FileSemanticContribution> contributions=new HashMap<>();
     private final int parallelism;
     private final FileStateRegistry classpathFiles;
     private boolean closed;
@@ -47,23 +47,23 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
     }
 
     private void changed(Path path,String hash)throws Exception{
-        path=path.toAbsolutePath().normalize();String previous;
+        path=path.toAbsolutePath().normalize();FileSemanticContribution previous;
         List<Actor> snapshot;
-        synchronized(this){previous=fingerprints.get(path);pendingFingerprintChanges.add(path);snapshot=List.copyOf(actors.values());}
+        synchronized(this){previous=contributions.get(path);snapshot=List.copyOf(actors.values());}
         for(var actor:snapshot){
-            if(previous!=null)actor.localResolvedApi(path,previous);
+            if(previous!=null)actor.localResolvedContribution(path,previous);
             actor.localChanged(path,hash);
         }
     }
-    private void recordFingerprint(Path path,String fingerprint)throws Exception{
-        if(fingerprint==null)return;
+    private void recordContribution(Path path,FileSemanticContribution contribution)throws Exception{
+        if(contribution==null)return;
         path=path.toAbsolutePath().normalize();boolean resolve;List<Actor> snapshot;
-        synchronized(this){fingerprints.put(path,fingerprint);resolve=pendingFingerprintChanges.remove(path);snapshot=resolve?List.copyOf(actors.values()):List.of();}
-        if(resolve)for(var actor:snapshot)actor.localResolvedApi(path,fingerprint);
+        synchronized(this){resolve=!Objects.equals(contributions.put(path,contribution),contribution);snapshot=resolve?List.copyOf(actors.values()):List.of();}
+        if(resolve)for(var actor:snapshot)actor.localResolvedContribution(path,contribution);
     }
     private void namespaceChanged()throws Exception{
         List<Actor> snapshot;
-        synchronized(this){fingerprints.clear();pendingFingerprintChanges.clear();snapshot=List.copyOf(actors.values());}
+        synchronized(this){contributions.clear();snapshot=List.copyOf(actors.values());}
         for(var actor:snapshot)actor.localNamespaceChanged();
     }
 
@@ -71,7 +71,7 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
         var detail=new LinkedHashMap<String,Object>();
         long cpu=0;for(var entry:actors.entrySet()){detail.put(entry.getKey(),entry.getValue().status());cpu+=entry.getValue().cpuNanos();}
         return Map.of("initialized",true,"parallelism",parallelism,"actor_count",actors.size(),
-                "cpu_ms",Math.round(cpu/1000.0)/1000.0,"known_api_fingerprints",fingerprints.size(),"actors",detail);
+                "cpu_ms",Math.round(cpu/1000.0)/1000.0,"known_api_contributions",contributions.size(),"actors",detail);
     }
     public Map<String,Object> analyzerStatus(Map<String,Object> additional)throws Exception{
         List<Map<String,Object>> states=new ArrayList<>();if(additional!=null&&!additional.isEmpty())states.add(additional);
@@ -117,7 +117,7 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
 
     @Override public void close()throws Exception{
         List<Actor> snapshot;
-        synchronized(this){if(closed)return;closed=true;snapshot=List.copyOf(actors.values());actors.clear();fingerprints.clear();pendingFingerprintChanges.clear();}
+        synchronized(this){if(closed)return;closed=true;snapshot=List.copyOf(actors.values());actors.clear();contributions.clear();}
         Exception failure=null;for(var actor:snapshot)try{actor.close();}catch(Exception error){failure=error;}
         if(failure!=null)throw failure;
     }
@@ -139,38 +139,38 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
         public Envelope cachedDiagnostics(Path path,Documents documents)throws Exception{
             var detached=actor.call(()->{
                 var value=actor.analyzer.cachedDiagnostics(path,documents);
-                return new Detached<>(value,value==null?Map.of():Map.of(path,actor.analyzer.apiFingerprint(path)));
+                return new Detached<>(value,value==null||actor.analyzer.contribution(path)==null?Map.of():Map.of(path,actor.analyzer.contribution(path)));
             });
-            publishFingerprints(detached.fingerprints());return detached.value();
+            publishContributions(detached.contributions());return detached.value();
         }
         public Map<Path,Envelope> cachedDiagnostics(Collection<Path> files,Documents documents)throws Exception{
             var detached=actor.call(()->{
-                var values=new LinkedHashMap<Path,Envelope>();var fps=new LinkedHashMap<Path,String>();
+                var values=new LinkedHashMap<Path,Envelope>();var fps=new LinkedHashMap<Path,FileSemanticContribution>();
                 for(Path file:files){
                     var value=actor.analyzer.cachedDiagnostics(file,documents);
-                    if(value!=null){values.put(file,value);var fp=actor.analyzer.apiFingerprint(file);if(fp!=null)fps.put(file,fp);}
+                    if(value!=null){values.put(file,value);var fp=actor.analyzer.contribution(file);if(fp!=null)fps.put(file,fp);}
                 }
                 return new Detached<>(Map.copyOf(values),Map.copyOf(fps));
             });
-            publishFingerprints(detached.fingerprints());return detached.value();
+            publishContributions(detached.contributions());return detached.value();
         }
         public Envelope diagnostics(Path path,Documents documents)throws Exception{
             var detached=actor.call(()->{
-                var value=actor.analyzer.diagnostics(path,documents);var fp=actor.analyzer.apiFingerprint(path);
+                var value=actor.analyzer.diagnostics(path,documents);var fp=actor.analyzer.contribution(path);
                 return new Detached<>(value,fp==null?Map.of():Map.of(path,fp));
             });
-            publishFingerprints(detached.fingerprints());return detached.value();
+            publishContributions(detached.contributions());return detached.value();
         }
         public Map<Path,Envelope> diagnosticsBatch(Map<Path,String> sources)throws Exception{
             var detached=actor.call(()->{
-                var value=actor.analyzer.diagnosticsBatch(sources);var fps=new LinkedHashMap<Path,String>();
-                for(Path path:sources.keySet()){var fp=actor.analyzer.apiFingerprint(path);if(fp!=null)fps.put(path,fp);}
+                var value=actor.analyzer.diagnosticsBatch(sources);var fps=new LinkedHashMap<Path,FileSemanticContribution>();
+                for(Path path:sources.keySet()){var fp=actor.analyzer.contribution(path);if(fp!=null)fps.put(path,fp);}
                 return new Detached<>(value,Map.copyOf(fps));
             });
-            publishFingerprints(detached.fingerprints());return detached.value();
+            publishContributions(detached.contributions());return detached.value();
         }
-        private void publishFingerprints(Map<Path,String> fingerprints)throws Exception{
-            for(var entry:fingerprints.entrySet())recordFingerprint(entry.getKey(),entry.getValue());
+        private void publishContributions(Map<Path,FileSemanticContribution> contributions)throws Exception{
+            for(var entry:contributions.entrySet())recordContribution(entry.getKey(),entry.getValue());
         }
         public Map<String,Object> status()throws Exception{return actor.status();}
         public long cpuNanos(){return actor.cpuNanos();}
@@ -231,7 +231,7 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
             result.put("actor_cpu_ms",Math.round(cpuNanos()/1000.0)/1000.0);result.put("actor_calls",calls.sum());return Map.copyOf(result);
         }
         private void localChanged(Path path,String hash)throws Exception{call(()->{analyzer.changed(path,hash);return null;});}
-        private void localResolvedApi(Path path,String fingerprint)throws Exception{call(()->{analyzer.resolvedApi(path,fingerprint);return null;});}
+        private void localResolvedContribution(Path path,FileSemanticContribution contribution)throws Exception{call(()->{analyzer.resolvedContribution(contribution);return null;});}
         private void localNamespaceChanged()throws Exception{call(()->{analyzer.namespaceChanged();return null;});}
         private long cpuTime(){
             var bean=ManagementFactory.getThreadMXBean();

@@ -149,6 +149,25 @@ class ApiFingerprintInvalidationTest {
         }
     }
 
+    @Test void focusedAnalysisPreservesFactsAndFullReplacementRemovesObsoleteDependency()throws Exception{
+        Path api=root.resolve("Api.java"),use=root.resolve("Use.java");
+        String apiText="class Api { static int value(){return 1;} }";
+        String original="class Use { int read(){return Api.value();} }",changed="class Use { int read(){return 2;} }";
+        Files.writeString(api,apiText);Files.writeString(use,original);var documents=new Documents();
+        try(var analyzer=analyzer(documents)){
+            diagnostics(analyzer,api,apiText);diagnostics(analyzer,use,original);
+            var complete=analyzer.contribution(use);assertThat(complete.dependencies()).contains(api);
+            documents.open(use,changed,1);analyzer.changed(use,documents.hash(use));
+            analyzer.bindings(use,changed,changed.indexOf("return 2")+7);
+            assertThat(analyzer.contribution(use)).isEqualTo(complete);
+            diagnostics(analyzer,use,changed);assertThat(analyzer.contribution(use).dependencies()).doesNotContain(api);
+            String newApi="class Api { static String value(){return \"different\";} }";
+            documents.open(api,newApi,1);analyzer.changed(api,documents.hash(api));diagnostics(analyzer,api,newApi);
+            long queries=number(analyzer,"queries");diagnostics(analyzer,use,changed);
+            assertThat(number(analyzer,"queries")).isEqualTo(queries);
+        }
+    }
+
     private Analyzer analyzer(Documents documents)throws Exception{
         var analyzer=new Analyzer();analyzer.configure(new Analyzer.Context("test:app:1","25",List.of(),List.of(root),"ctx",Map.of(root.toUri().toString(),"test:app:1")),null,256L*1024*1024);analyzer.documents(documents);return analyzer;
     }

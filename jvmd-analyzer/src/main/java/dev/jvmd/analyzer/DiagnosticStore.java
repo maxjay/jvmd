@@ -1,6 +1,7 @@
 package dev.jvmd.analyzer;
 
 import dev.jvmd.core.Envelope;
+import dev.jvmd.index.FileSemanticContribution;
 import java.nio.file.Path;
 import java.util.*;
 
@@ -14,7 +15,8 @@ public final class DiagnosticStore {
             Objects.requireNonNull(classpathFingerprint);
         }
     }
-    public record State(Envelope diagnostics,String apiFingerprint,Set<Path> dependencies) {
+    public record State(Envelope diagnostics,String apiFingerprint,Set<Path> dependencies,FileSemanticContribution contribution) {
+        public State(Envelope diagnostics,String apiFingerprint,Set<Path> dependencies){this(diagnostics,apiFingerprint,dependencies,null);}
         public State { dependencies=Set.copyOf(dependencies); }
     }
     public enum Validity { VALID, STALE, CONDITIONALLY_STALE, UNKNOWN }
@@ -42,7 +44,7 @@ public final class DiagnosticStore {
     }
     private State lookup(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint){
         var key=new Key(file,sourceHash,contextFingerprint,classpathFingerprint);var value=files.get(key);
-        if(value==null&&snapshots!=null){value=snapshots.restore(key);if(value!=null)put(file,sourceHash,contextFingerprint,classpathFingerprint,value.diagnostics(),value.apiFingerprint(),value.dependencies(),false);}
+        if(value==null&&snapshots!=null){value=snapshots.restore(key);if(value!=null)put(file,sourceHash,contextFingerprint,classpathFingerprint,value.diagnostics(),value.apiFingerprint(),value.dependencies(),value.contribution(),false);}
         if(value==null)misses++;else hits++;
         return value;
     }
@@ -51,35 +53,20 @@ public final class DiagnosticStore {
         put(file,sourceHash,contextFingerprint,classpathFingerprint,diagnostics,null,Set.of());
     }
     public void put(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint,Envelope diagnostics,String apiFingerprint,Set<Path> dependencies){
-        put(file,sourceHash,contextFingerprint,classpathFingerprint,diagnostics,apiFingerprint,dependencies,true);
+        put(file,sourceHash,contextFingerprint,classpathFingerprint,diagnostics,apiFingerprint,dependencies,null,true);
     }
-    private void put(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint,Envelope diagnostics,String apiFingerprint,Set<Path> dependencies,boolean persist){
+    public void put(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint,Envelope diagnostics,String apiFingerprint,Set<Path> dependencies,FileSemanticContribution contribution){
+        put(file,sourceHash,contextFingerprint,classpathFingerprint,diagnostics,apiFingerprint,dependencies,contribution,true);
+    }
+    private void put(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint,Envelope diagnostics,String apiFingerprint,Set<Path> dependencies,FileSemanticContribution contribution,boolean persist){
         Path normalized=file.toAbsolutePath().normalize();
         for(var key:List.copyOf(files.keySet()))if(key.file().equals(normalized)&&key.contextFingerprint().equals(contextFingerprint))remove(key);
         var key=new Key(normalized,sourceHash,contextFingerprint,classpathFingerprint);
-        var state=new State(diagnostics,apiFingerprint,dependencies);
+        var state=new State(diagnostics,apiFingerprint,dependencies,contribution);
         long size;
         try{size=512L+2L*dev.jvmd.core.Json.MAPPER.writeValueAsBytes(diagnostics).length+2L*key.toString().length()+dependencies.stream().mapToLong(p->128L+2L*p.toString().length()).sum();}
         catch(Exception error){throw new IllegalArgumentException("Diagnostic state is not detached",error);}
         files.put(key,state);weights.put(key,size);bytes+=size;puts++;trim();if(persist&&snapshots!=null)snapshots.save(key,state,inputHashes);
-    }
-
-    public String apiFingerprint(Path file){
-        Path normalized=file.toAbsolutePath().normalize();String result=null;
-        for(var entry:files.entrySet())if(entry.getKey().file().equals(normalized)&&entry.getValue().apiFingerprint()!=null)result=entry.getValue().apiFingerprint();
-        return result;
-    }
-
-    public Set<Path> unresolvedFiles(){
-        var result=new LinkedHashSet<Path>();
-        for(var entry:files.entrySet())if(hasUnresolved(entry.getValue().diagnostics()))result.add(entry.getKey().file());
-        return Set.copyOf(result);
-    }
-
-    private static boolean hasUnresolved(Envelope envelope){
-        if(!(envelope.result() instanceof Map<?,?> result)||!(result.get("diagnostics") instanceof List<?> diagnostics))return false;
-        for(Object value:diagnostics)if(value instanceof CompilerPool.Problem problem&&problem.code().contains("cant.resolve"))return true;
-        return false;
     }
 
     public void invalidate(Collection<Path> paths){

@@ -11,6 +11,7 @@ public final class SourceIndexPublisher implements AutoCloseable {
                         String moduleId,String contextFingerprint){
         public Delta {
             contribution=Objects.requireNonNull(contribution);semanticHash=Objects.requireNonNull(semanticHash);
+            if(tier!=2)throw new IllegalArgumentException("Only complete attribution may replace source state");
             symbols=List.copyOf(symbols);edges=List.copyOf(edges);
             moduleId=Objects.requireNonNull(moduleId);contextFingerprint=Objects.requireNonNull(contextFingerprint);
         }

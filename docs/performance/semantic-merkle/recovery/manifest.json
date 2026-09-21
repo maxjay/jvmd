@@ -1,0 +1,22 @@
+{
+  "overview-before-summary.json": {
+    "bytes": 3011,
+    "sha256": "4c8d6d44b30a5e96ef61ae0a9ba3fe8f1da66051683da5a7a77f72bd2dcc97d1"
+  },
+  "overview-before.json.gz": {
+    "bytes": 45959,
+    "sha256": "67fea317dda769d00446b7b77458accc120cac71200e47cf687bb54094956c5b"
+  },
+  "published-comparison.json.gz": {
+    "bytes": 111356,
+    "sha256": "289869fbde7906af6ebaae8ce7cd58f9fea65d1b5e55557ec3931d8279565ac7"
+  },
+  "published-summary.json": {
+    "bytes": 33802,
+    "sha256": "cec962f7c89fb10c4da34439436aa168b3e89e0b3c02299c8da58e7cd2de7923"
+  },
+  "published-worker-logs.tar.gz": {
+    "bytes": 17475,
+    "sha256": "40792262be7b1b67e32576047cf654bc99445d5aeeaeb5761a5140ba80e63685"
+  }
+}

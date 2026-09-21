@@ -430,3 +430,13 @@ Each entry records the change, validation, limitations and next work. Historical
 - Before more production edits: rerun the full baseline/published comparison and profile
   repeated warm navigation, then name the redundant ownership/code that a change removes.
   Keep existing latency, correctness and readable-code acceptance criteria unchanged.
+
+## 023 — Recovered measurements and overview baseline
+
+- [x] Regenerated the published production versus `ae23fd1` comparison: ten alternating pairs, twenty workers, all assertions passed. The old raw files remain unavailable; this is a new campaign on the recovered host.
+- [x] Preserve complete campaign/build/source/dependency hashes and samples, worker commands/logs, summary and checksums under `docs/performance/semantic-merkle/recovery/`.
+- [x] 512-file body-edit medians on this host: 137.439 → 47.816 ms; paired change −61.2% [−67.4, −56.7]. Small warm results remain uncertain; do not combine these samples with the previous host's rounded summary.
+- [x] Added overview benchmark before production edits: cold, warm, and documentation/position edits on 100 methods. Captured ten baseline/published pairs with the new identical harness. Published position-edit allocation is 10.26 MB versus baseline 8.13 MB; paired +26.2%.
+- [x] Isolated warm-reference JFR diagnostic completed. JSON serialization, input validation and reference collection dominate visible work; no evidence that warm API hashing explains the remaining latency. Diagnostic timings are excluded from acceptance.
+- [ ] Consolidate overview declaration capture with Bindings. Preserve depth, unresolved declarations, sparse protocol fields, current docs and positions. Remove the duplicate compiler-tree pass and measure the result.
+- [ ] Overall acceptance remains open: unresolved latency, readable production line increase, and completion CI failure.

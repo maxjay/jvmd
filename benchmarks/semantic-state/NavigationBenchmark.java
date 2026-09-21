@@ -198,6 +198,7 @@ public final class NavigationBenchmark {
         realModule(root.resolve("real"), Path.of(args[2]), dependencies);
         validation(root.resolve("validation"));
         LifecycleBenchmark.run(root.resolve("lifecycle"));
+        OverviewBenchmark.run(root.resolve("overview"));
         var report = new LinkedHashMap<String, Object>();
         report.put("samples", samples);
         report.put("java_version", System.getProperty("java.runtime.version"));

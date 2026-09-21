@@ -188,6 +188,7 @@ class SemanticMemoryProbeTest {
         row.put("gc_ms", gcMillis);
         row.set("workspace_bindings", status.path("workspace_bindings"));
         row.set("index_timings", status.path("index").path("timings"));
+        row.set("index_store", status.path("index").path("store"));
         row.set(
             "rocks_native_memory",
             status.path("index").path("generation_sink").path("native_memory"));

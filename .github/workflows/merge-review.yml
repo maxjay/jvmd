@@ -1,0 +1,88 @@
+name: Merge Review
+
+on:
+  pull_request:
+    # Deliberately omit synchronize: this expensive evidence runs when review starts,
+    # not on every commit pushed while a PR is being developed.
+    types: [opened, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: merge-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  evidence:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install checksum-pinned Temurin 25.0.4.1+1
+        shell: bash
+        run: |
+          curl -fsSL --retry 3 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz' -o "$RUNNER_TEMP/temurin25.tar.gz"
+          printf '%s  %s\n' dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e "$RUNNER_TEMP/temurin25.tar.gz" | sha256sum --check -
+          mkdir -p "$RUNNER_TEMP/toolchain"
+          tar -xzf "$RUNNER_TEMP/temurin25.tar.gz" -C "$RUNNER_TEMP/toolchain"
+          echo "JAVA_HOME=$RUNNER_TEMP/toolchain/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/toolchain/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
+      - name: Build once for corpus and benchmark
+        run: |
+          mvn -B -DskipTests install
+          bash jvmd-dist/assemble.sh
+      - name: Consolidated corpus correctness
+        run: |
+          bash jvmd-tests/corpus/fetch.sh
+          mvn -B -q -f jvmd-tests/corpus/petclinic/pom.xml test-compile
+          mvn -B -pl jvmd-tests test -Dgroups=phase-4 -DexcludedGroups=perf -DargLine=-Xmx1024m
+          mvn -B -pl jvmd-tests test -Dgroups=phase-8 -DexcludedGroups=perf -Dtest=CorpusAgentSessionTest -DargLine=-Xmx1024m
+          mvn -B -pl jvmd-tests test -Dgroups=phase-9 -DexcludedGroups=perf -Dtest=CorpusLspSessionTest -DargLine=-Xmx1024m
+      - name: Install pinned JDTLS 1.61.0
+        shell: bash
+        run: |
+          curl -fsSL --retry 3 'https://download.eclipse.org/jdtls/milestones/1.61.0/jdt-language-server-1.61.0-202609031315.tar.gz' -o "$RUNNER_TEMP/jdtls.tar.gz"
+          printf '%s  %s\n' 338e7e73d61836651ba2453919a0d34fa763eb4e7c03342092309bffb8934c64 "$RUNNER_TEMP/jdtls.tar.gz" | sha256sum --check -
+          mkdir "$RUNNER_TEMP/jdtls" && tar -xzf "$RUNNER_TEMP/jdtls.tar.gz" -C "$RUNNER_TEMP/jdtls"
+      - name: Install pinned Node.js for the TypeScript LSP bridge
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+      - name: Compile reproducible benchmark fixture
+        run: |
+          deps="$PWD/jvmd-dist/target/image/lib/jvmd"
+          python benchmarks/workspaces/compile.py --repo "$PWD" --java-home "$JAVA_HOME" --dependencies "$deps" --output "$RUNNER_TEMP/build"
+          python benchmarks/workspaces/fixture.py --build "$RUNNER_TEMP/build/build.json" --dependencies "$deps" --root "$RUNNER_TEMP/fixtures"
+      - name: Fast JVMD and JDTLS correctness benchmark
+        run: |
+          python benchmarks/workspaces/matrix.py --repo "$PWD" --before "$RUNNER_TEMP/build/build.json" --after "$RUNNER_TEMP/build/build.json" \
+            --java-home "$JAVA_HOME" --jdtls "$RUNNER_TEMP/jdtls" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" \
+            --fixtures "$RUNNER_TEMP/fixtures" --root "$RUNNER_TEMP/results" --runs 1 --sources 24 --workspaces 1 --samples 1 --edits 2 \
+            --fixture-names real --modes after jdtls-shared
+          python benchmarks/workspaces/verify.py "$RUNNER_TEMP/results" "$RUNNER_TEMP/verification.json"
+          python benchmarks/workspaces/summarize.py "$RUNNER_TEMP/results" "$RUNNER_TEMP/summary.json"
+          python benchmarks/workspaces/compare.py "$RUNNER_TEMP/summary.json" "$RUNNER_TEMP/comparison.json" --markdown "$RUNNER_TEMP/comparison.md"
+          node benchmarks/workspaces/dashboard.mjs --comparison "$RUNNER_TEMP/comparison.json" --verification "$RUNNER_TEMP/verification.json" --output "$RUNNER_TEMP/dashboard.html"
+          cat "$RUNNER_TEMP/comparison.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload merge evidence and dashboard
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: merge-review-evidence
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/dashboard.html
+            ${{ runner.temp }}/comparison.*
+            ${{ runner.temp }}/summary.json
+            ${{ runner.temp }}/verification.json
+            ${{ runner.temp }}/results/**/report.json
+            ${{ runner.temp }}/results/**/messages.jsonl
+            ${{ runner.temp }}/results/**/resources.json
+            jvmd-tests/target/surefire-reports/
+            jvmd-tests/target/agreement.json
+            jvmd-tests/target/sweep.json
+            jvmd-tests/target/agent-session.json
+            jvmd-tests/target/editor-session.json

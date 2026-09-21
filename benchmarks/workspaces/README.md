@@ -81,6 +81,8 @@ python benchmarks/workspaces/verify.py "$BENCH_RESULTS" "$BENCH_VERIFICATION"
 python benchmarks/workspaces/summarize.py "$BENCH_RESULTS" "$BENCH_SUMMARY"
 python benchmarks/workspaces/compare.py "$BENCH_SUMMARY" "$BENCH_COMPARISON" \
   --candidate after --baseline jdtls-shared --markdown "$BENCH_COMPARISON.md"
+node benchmarks/workspaces/dashboard.mjs --comparison "$BENCH_COMPARISON" \
+  --verification "$BENCH_VERIFICATION" --output "$BENCH_DASHBOARD.html"
 python benchmarks/workspaces/added.py --repo "$PWD" \
   --build "$BENCH_BUILD/build.json" --java-home "$BENCH_JDK" \
   --jdtls "$JDTLS_HOME" --resolvers "$JVMD_RESOLVERS" \
@@ -103,6 +105,10 @@ The independent verifier also runs against extracted archives: original absolute
 file URIs are mapped to the included generated workspace sources. Every timed
 editor response must exist in the closed trace, and all definition/reference/rename
 ranges are checked against those sources.
+
+`dashboard.mjs` turns only the independently verified comparison artifacts into a
+small, self-contained HTML report. It has no package dependencies, performs no
+benchmark work itself, and escapes fixture and metric labels before rendering.
 
 The benchmark harnesses remain the executable source for reproducing workspace comparisons; historical narrative reports were removed during consolidation.
 

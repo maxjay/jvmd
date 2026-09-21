@@ -414,3 +414,19 @@ Each entry records the change, validation, limitations and next work. Historical
   Publish manifests/raw campaigns/allocation/p95/GC/RSS and failure logs, verify the report
   generator's mixed-build/forced-GC rejection, and continue unresolved latency/complexity work.
   PR #8 stays draft and unmerged. No algebraic engine, parser or database expansion now.
+
+## 2026-09-21 — 022: recover published state and regenerate missing evidence
+
+- The resumed environment restored an older local checkout (8321d2a), not the workspace
+  that produced candidate-9. The semantic-dag directory and its raw archives are absent.
+  Preserved the old checkout history, fetched 7e564126, and created continue/semantic-state
+  locally; the publication target remains architecture/semantic-state / draft PR #8.
+- The earlier observed summary remains historical. New campaigns will be named recovery
+  campaigns, not represented as recovery of the original individual samples.
+- Restored the exact ae23fd1 baseline worktree. Downloaded and checksum-verified the same
+  Temurin 25.0.4.1+1 archive and restored test/formatter dependencies. The restored JDK
+  image in the scratch workspace was truncated; rebuilding tool files outside that restored
+  directory before measuring. Keep the failed build logs separate from timing evidence.
+- Before more production edits: rerun the full baseline/published comparison and profile
+  repeated warm navigation, then name the redundant ownership/code that a change removes.
+  Keep existing latency, correctness and readable-code acceptance criteria unchanged.

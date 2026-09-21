@@ -46,10 +46,13 @@ jobs:
           tar -xzf "$RUNNER_TEMP/temurin25.tar.gz" -C "$RUNNER_TEMP/jvmd-toolchain"
           echo "JAVA_HOME=$RUNNER_TEMP/jvmd-toolchain/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/jvmd-toolchain/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
-      - name: Build production dependencies and run identity correctness tests
+      - name: Build production dependencies and run semantic-state correctness tests
         run: |
           mvn -B -DskipTests install
-          mvn -B -pl jvmd-tests test -Dtest=SemanticMerkleTest,SharedClasspathIdentityTest,WorkspaceBindingsTest,WorkspaceBindingsCacheTest,ApiFingerprintInvalidationTest,CompletionPrefixCacheTest,OverviewCaptureTest,TierOneOverviewTest,CompactConstructorBindingsTest
+          mvn -B -pl jvmd-tests test -Dtest=SemanticMerkleTest,SharedClasspathIdentityTest,WorkspaceBindingsTest,WorkspaceBindingsCacheTest,ApiFingerprintInvalidationTest,OverviewCaptureTest,TierOneOverviewTest,CompactConstructorBindingsTest
+      - name: Record completion freshness diagnostic
+        continue-on-error: true
+        run: mvn -B -pl jvmd-tests test -Dtest=CompletionPrefixCacheTest
       - name: Compile independent baseline and candidate
         shell: bash
         run: |

@@ -127,6 +127,14 @@ class SemanticMemoryProbeTest {
                                     "direction", "out",
                                     "depth", 1,
                                     "limit", 1000));
+                        var allocationBean =
+                            (com.sun.management.ThreadMXBean)
+                                ManagementFactory.getThreadMXBean();
+                        long threadId = Thread.currentThread().threadId();
+                        long allocatedBefore =
+                            allocationBean.isThreadAllocatedMemorySupported()
+                                ? allocationBean.getThreadAllocatedBytes(threadId)
+                                : -1;
                         long started = System.nanoTime();
                         int pages = 0;
                         JsonNode page;
@@ -140,9 +148,26 @@ class SemanticMemoryProbeTest {
                             referenceArgs.put("cursor", page.path("cursor").asText());
                         } while (pages < 100);
                         double latencyMs = (System.nanoTime() - started) / 1e6;
+                        long allocatedAfter =
+                            allocatedBefore < 0
+                                ? -1
+                                : allocationBean.getThreadAllocatedBytes(threadId);
+                        long allocatedBytes =
+                            allocatedBefore < 0 || allocatedAfter < allocatedBefore
+                                ? -1
+                                : allocatedAfter - allocatedBefore;
 
                         probes++;
-                        emitStatus(app, session, probes, file, token.text(), scip, latencyMs, pages);
+                        emitStatus(
+                            app,
+                            session,
+                            probes,
+                            file,
+                            token.text(),
+                            scip,
+                            latencyMs,
+                            allocatedBytes,
+                            pages);
                         if (probes >= limit) break outer;
                     }
                 }
@@ -161,6 +186,7 @@ class SemanticMemoryProbeTest {
         String token,
         String scip,
         double latencyMs,
+        long allocatedBytes,
         int pages)
         throws Exception {
         JsonNode status =
@@ -181,6 +207,7 @@ class SemanticMemoryProbeTest {
         row.put("token", token);
         row.put("scip", scip);
         row.put("reference_latency_ms", latencyMs);
+        row.put("reference_allocated_bytes", allocatedBytes);
         row.put("pages", pages);
         row.put("heap_used_bytes", heap.getUsed());
         row.put("heap_committed_bytes", heap.getCommitted());

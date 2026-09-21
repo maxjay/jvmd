@@ -71,7 +71,8 @@ public final class FileStateRegistry {
         root=root.toAbsolutePath().normalize();
         return inventory(root,suffix,inventories.computeIfAbsent(new InventoryKey(root,suffix),ignored->new Directory()));
     }
-    private List<Path> inventory(Path root,String suffix,Directory state)throws IOException {
+    private List<Path> inventory(Path root,String suffix,Directory state)throws IOException {return inventory(root,suffix,state,0);}
+    private List<Path> inventory(Path root,String suffix,Directory state,int attempt)throws IOException {
         metadataChecks++;
         Map<String,Object> before;
         try { before=Files.readAttributes(root,"unix:size,lastModifiedTime,ctime,ino,isDirectory",LinkOption.NOFOLLOW_LINKS); }
@@ -84,8 +85,17 @@ public final class FileStateRegistry {
             try(var stream=Files.list(root)){state.children=stream.sorted().toList();}
             catch(NoSuchFileException missing){state.children=List.of();}
             // Do not accept an observation if directory membership changed while enumerating it.
-            if(before!=null&&!before.equals(Files.readAttributes(root,"unix:size,lastModifiedTime,ctime,ino,isDirectory",LinkOption.NOFOLLOW_LINKS)))
-                throw new IOException("Directory changed during reconciliation: "+root);
+            if(before!=null){
+                metadataChecks++;
+                Map<String,Object> after;
+                try{after=Files.readAttributes(root,"unix:size,lastModifiedTime,ctime,ino,isDirectory",LinkOption.NOFOLLOW_LINKS);}
+                catch(NoSuchFileException removed){after=null;}
+                if(!before.equals(after)){
+                    state.stamp=null;
+                    if(attempt>=3)throw new CompilerInputs.Superseded("Directory changed repeatedly during reconciliation: "+root);
+                    return inventory(root,suffix,state,attempt+1);
+                }
+            }
             state.stamp=before;
             state.directories.keySet().retainAll(state.children);
             var leaves=new HashSet<Path>();

@@ -1,0 +1,355 @@
+{
+  "source": "Rounded values read from completed combined-9 local report before environment disconnection; raw archive publication remains pending.",
+  "baseline": "ae23fd1f44573bd3427c0e77f967150173669a2f",
+  "production_commit": "227598c73559be34a89af406e59b7ca5f5d97b90",
+  "independent_pairs": 20,
+  "latency": [
+    {
+      "scenario": "cold_jvm_32/cold_workspace",
+      "before_median_ms": 829.668,
+      "after_median_ms": 818.964,
+      "paired_change_percent": -0.5,
+      "paired_ci95_percent": [
+        -3.4,
+        5.2
+      ]
+    },
+    {
+      "scenario": "cold_jvm_32/warm",
+      "before_median_ms": 2.896,
+      "after_median_ms": 3.315,
+      "paired_change_percent": 12.7,
+      "paired_ci95_percent": [
+        5.3,
+        26
+      ]
+    },
+    {
+      "scenario": "cold_jvm_32/body_edit",
+      "before_median_ms": 32.245,
+      "after_median_ms": 28.539,
+      "paired_change_percent": -18.5,
+      "paired_ci95_percent": [
+        -22.8,
+        -8.5
+      ]
+    },
+    {
+      "scenario": "cold_jvm_32/api_edit",
+      "before_median_ms": 72.205,
+      "after_median_ms": 69.252,
+      "paired_change_percent": -2.4,
+      "paired_ci95_percent": [
+        -13.8,
+        7.4
+      ]
+    },
+    {
+      "scenario": "cold_jvm_32/rename_preview",
+      "before_median_ms": 6.417,
+      "after_median_ms": 7.153,
+      "paired_change_percent": 7.4,
+      "paired_ci95_percent": [
+        -2.9,
+        25.9
+      ]
+    },
+    {
+      "scenario": "navigation_128/cold_workspace",
+      "before_median_ms": 307.05,
+      "after_median_ms": 328.267,
+      "paired_change_percent": 7.8,
+      "paired_ci95_percent": [
+        1.1,
+        21.9
+      ]
+    },
+    {
+      "scenario": "navigation_128/warm",
+      "before_median_ms": 2.821,
+      "after_median_ms": 3.137,
+      "paired_change_percent": 8.9,
+      "paired_ci95_percent": [
+        -3.2,
+        15.8
+      ]
+    },
+    {
+      "scenario": "navigation_128/body_edit",
+      "before_median_ms": 26.342,
+      "after_median_ms": 19.933,
+      "paired_change_percent": -28.4,
+      "paired_ci95_percent": [
+        -37.1,
+        -18.9
+      ]
+    },
+    {
+      "scenario": "navigation_128/api_edit",
+      "before_median_ms": 59.865,
+      "after_median_ms": 55.462,
+      "paired_change_percent": -2.9,
+      "paired_ci95_percent": [
+        -16,
+        10.7
+      ]
+    },
+    {
+      "scenario": "navigation_128/rename_preview",
+      "before_median_ms": 2.545,
+      "after_median_ms": 2.807,
+      "paired_change_percent": 17.3,
+      "paired_ci95_percent": [
+        -3,
+        41.9
+      ]
+    },
+    {
+      "scenario": "navigation_512/cold_workspace",
+      "before_median_ms": 702.318,
+      "after_median_ms": 663.755,
+      "paired_change_percent": -3,
+      "paired_ci95_percent": [
+        -11.1,
+        8.3
+      ]
+    },
+    {
+      "scenario": "navigation_512/warm",
+      "before_median_ms": 5.517,
+      "after_median_ms": 4.321,
+      "paired_change_percent": -26,
+      "paired_ci95_percent": [
+        -33.4,
+        -4.5
+      ]
+    },
+    {
+      "scenario": "navigation_512/body_edit",
+      "before_median_ms": 46.454,
+      "after_median_ms": 23.613,
+      "paired_change_percent": -47.2,
+      "paired_ci95_percent": [
+        -52.8,
+        -39.7
+      ]
+    },
+    {
+      "scenario": "navigation_512/api_edit",
+      "before_median_ms": 74.101,
+      "after_median_ms": 54.76,
+      "paired_change_percent": -27.4,
+      "paired_ci95_percent": [
+        -32.7,
+        -17.1
+      ]
+    },
+    {
+      "scenario": "navigation_512/rename_preview",
+      "before_median_ms": 4.828,
+      "after_median_ms": 4.523,
+      "paired_change_percent": -2.6,
+      "paired_ci95_percent": [
+        -16.5,
+        8.3
+      ]
+    },
+    {
+      "scenario": "real_core/cold_workspace",
+      "before_median_ms": 1056.398,
+      "after_median_ms": 1099.747,
+      "paired_change_percent": 3.1,
+      "paired_ci95_percent": [
+        -5.4,
+        15.1
+      ]
+    },
+    {
+      "scenario": "real_core/warm",
+      "before_median_ms": 0.212,
+      "after_median_ms": 0.224,
+      "paired_change_percent": 3.7,
+      "paired_ci95_percent": [
+        -14.5,
+        21.8
+      ]
+    },
+    {
+      "scenario": "real_core/position_edit",
+      "before_median_ms": 45.701,
+      "after_median_ms": 9.689,
+      "paired_change_percent": -78.8,
+      "paired_ci95_percent": [
+        -84,
+        -76.9
+      ]
+    },
+    {
+      "scenario": "validation_512/precise_epoch",
+      "before_median_ms": 0.001,
+      "after_median_ms": 0.001,
+      "paired_change_percent": 0,
+      "paired_ci95_percent": [
+        -1.8,
+        3.2
+      ]
+    },
+    {
+      "scenario": "validation_512/coarse_disk",
+      "before_median_ms": 1.188,
+      "after_median_ms": 1.155,
+      "paired_change_percent": -1.9,
+      "paired_ci95_percent": [
+        -14.7,
+        4.8
+      ]
+    },
+    {
+      "scenario": "lifecycle_65/cold_modules",
+      "before_median_ms": 59.54,
+      "after_median_ms": 58.119,
+      "paired_change_percent": 1.1,
+      "paired_ci95_percent": [
+        -19.3,
+        17.6
+      ]
+    },
+    {
+      "scenario": "lifecycle_65/warm_modules",
+      "before_median_ms": 0.446,
+      "after_median_ms": 0.329,
+      "paired_change_percent": -13.1,
+      "paired_ci95_percent": [
+        -32.8,
+        3.6
+      ]
+    },
+    {
+      "scenario": "lifecycle_65/diagnostics_warm",
+      "before_median_ms": 0.299,
+      "after_median_ms": 0.216,
+      "paired_change_percent": -18.1,
+      "paired_ci95_percent": [
+        -30,
+        -1.5
+      ]
+    },
+    {
+      "scenario": "lifecycle_65/body_edit",
+      "before_median_ms": 34.865,
+      "after_median_ms": 5.053,
+      "paired_change_percent": -84.9,
+      "paired_ci95_percent": [
+        -86.3,
+        -83.6
+      ]
+    },
+    {
+      "scenario": "lifecycle_65/cross_module_api",
+      "before_median_ms": 32.817,
+      "after_median_ms": 29.458,
+      "paired_change_percent": -5.9,
+      "paired_ci95_percent": [
+        -21.2,
+        -0.1
+      ]
+    },
+    {
+      "scenario": "lifecycle_65/diagnostics_after_api",
+      "before_median_ms": 0.465,
+      "after_median_ms": 0.457,
+      "paired_change_percent": 11,
+      "paired_ci95_percent": [
+        -6.1,
+        27.6
+      ]
+    },
+    {
+      "scenario": "lifecycle_65/documentation_position",
+      "before_median_ms": 29.04,
+      "after_median_ms": 30.657,
+      "paired_change_percent": 6.1,
+      "paired_ci95_percent": [
+        0.2,
+        13.9
+      ]
+    },
+    {
+      "scenario": "lifecycle_65/buffer_open",
+      "before_median_ms": 7.598,
+      "after_median_ms": 5.483,
+      "paired_change_percent": -29,
+      "paired_ci95_percent": [
+        -34.5,
+        -22.9
+      ]
+    },
+    {
+      "scenario": "lifecycle_65/buffer_api",
+      "before_median_ms": 27.279,
+      "after_median_ms": 28.736,
+      "paired_change_percent": 6.5,
+      "paired_ci95_percent": [
+        2.5,
+        17
+      ]
+    },
+    {
+      "scenario": "lifecycle_65/buffer_close",
+      "before_median_ms": 27.548,
+      "after_median_ms": 28.178,
+      "paired_change_percent": 6.1,
+      "paired_ci95_percent": [
+        -6.3,
+        16.2
+      ]
+    },
+    {
+      "scenario": "lifecycle_65/file_add",
+      "before_median_ms": 23.612,
+      "after_median_ms": 25.565,
+      "paired_change_percent": 3.5,
+      "paired_ci95_percent": [
+        -5.1,
+        19.1
+      ]
+    },
+    {
+      "scenario": "lifecycle_65/file_delete",
+      "before_median_ms": 23.647,
+      "after_median_ms": 24.221,
+      "paired_change_percent": 1.6,
+      "paired_ci95_percent": [
+        -6.9,
+        18.5
+      ]
+    },
+    {
+      "scenario": "lifecycle_65/context_change",
+      "before_median_ms": 22.747,
+      "after_median_ms": 23.745,
+      "paired_change_percent": 4.3,
+      "paired_ci95_percent": [
+        -2.3,
+        16.6
+      ]
+    },
+    {
+      "scenario": "lifecycle_65/context_restore",
+      "before_median_ms": 23.853,
+      "after_median_ms": 26.983,
+      "paired_change_percent": 11.1,
+      "paired_ci95_percent": [
+        -5.1,
+        24.7
+      ]
+    }
+  ],
+  "primary_gates_pass": true,
+  "no_regression_pass": false,
+  "production_lines": {
+    "before": 5404,
+    "after": 6304,
+    "delta": 900
+  }
+}

@@ -379,3 +379,38 @@ Each entry records the change, validation, limitations and next work. Historical
   failed gate; no unrelated deletion, shorthand or formatting trick is counted as progress.
 - Candidate-9 complete paired campaign started. Earlier published 1eac607 passed Checkpoints,
   Distributions and Semantic state benchmarks; that does not certify these follow-up edits.
+
+## 2026-09-21 — 021: complete measurements; acceptance fails; evidence publication interrupted
+
+- Published candidate-9 production as 227598c73559be34a89af406e59b7ca5f5d97b90.
+  All compiled production hashes were checked against that commit before disconnection.
+- Ten initial plus ten confirmation pairs completed; all 40 benchmark workers pass output
+  assertions. 512-file body edit: 46.454 -> 23.613 ms; paired -47.2% [-52.8%, -39.7%].
+  API edit: 74.101 -> 54.760 ms; paired -27.4% [-32.7%, -17.1%].
+  Body allocation: 17.98 -> 7.65 MB. The primary gates pass.
+- Overall latency gate fails: 32-file warm 2.896 -> 3.315 ms, paired +12.7% [5.3%,26.0%].
+  Other startup/small-query/lifecycle intervals remain unresolved. All 34 latency scenarios
+  are preserved in the GitHub report; no selection of a favourable campaign.
+- Same-formatter code audit is +900 production lines. Overall simplification is not achieved.
+- Three separate forced-GC pairs completed. With 13 readers, whole-JVM live heap medians
+  20.06 -> 18.46 MiB; after releasing readers 17.81 -> 18.46 MiB. No blanket memory claim.
+- 55 focused tests pass. Exact production Checkpoints 35548645908 and Distributions
+  35548645915 pass. Benchmark workflow 35548645946 fails the same completion precheck
+  on both attempts; timing never starts in that workflow.
+- Untouched-baseline repetition reproduces the new-source failure once and timestamp-edit
+  failure twice in 20 two-test repetitions. Candidate-9 has zero failed repetitions.
+  This proves baseline intermittency, not a correctness fix or waiver.
+- The execution environment disconnected (environment_offline) while saving the final report.
+  Production was already published. The raw evidence bundle and report generator were local,
+  not committed. GitHub now preserves the observed summary and this recovery checkpoint.
+  Do not mark full evidence publication complete or claim the raw archives are uploaded.
+- Recovery workspace: /workspace/scratch/7164a0d102d4/jvmd-review.
+  Raw campaign root: /workspace/scratch/7164a0d102d4/semantic-dag.
+  Relevant folders: comparison-9, confirmation-9, combined-9, retained-9, candidate-9,
+  tests-9, readability-9, completion-repetition. Earlier campaigns 5–8, baseline and
+  profile-6 remain there. Prepared but uncommitted evidence is under
+  docs/performance/semantic-merkle; report generator is benchmarks/semantic-state/report.py.
+- On recovery, preserve local uncommitted evidence before reconciling the GitHub docs commit.
+  Publish manifests/raw campaigns/allocation/p95/GC/RSS and failure logs, verify the report
+  generator's mixed-build/forced-GC rejection, and continue unresolved latency/complexity work.
+  PR #8 stays draft and unmerged. No algebraic engine, parser or database expansion now.

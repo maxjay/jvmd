@@ -26,7 +26,7 @@ with measured end-to-end latency and allocation improvement. No cosmetic line re
 - [x] 4. Compose file/module/workspace API roots with structural sharing. Reuse unchanged
   contracts. Keep text, API, references, positions, docs and compiler context distinct.
   Provide an explicit old/new keyed-contribution boundary for future accumulators.
-- [ ] 5. Migrate navigation and diagnostics/index publication to the shared results.
+- [x] 5. Migrate navigation and diagnostics/index publication to the shared results.
   Replace whole-workspace graph aggregation/JSON sizing with changed-file contributions.
   Remove the superseded state, hash/serialization and invalidation implementations.
 - [ ] 6. Verify correctness: clean-analysis agreement, API boundaries, dependencies,
@@ -64,3 +64,14 @@ with measured end-to-end latency and allocation improvement. No cosmetic line re
 
 Details and predeclared acceptance: `docs/semantic-state.md` and
 `benchmarks/semantic-state/README.md`. Append progress continuously; commit coherent steps.
+
+## Current result — candidate 227598c
+
+Implementation steps 1–5 are complete. Acceptance is not.
+Twenty paired comparisons completed and meet the primary edit-latency/allocation targets.
+Small-workspace warm latency regresses; other intervals remain unresolved. Readable
+production code increased by 900 lines. Full Checkpoints/Distributions pass, but the
+dedicated benchmark job fails a completion precheck also reproduced on the baseline.
+The environment disconnected before raw evidence publication; steps 6–8 remain open.
+The report at docs/performance/semantic-merkle/README.md preserves observed results;
+SEMANTIC-STATE-PROGRESS.md records recovery paths. No approval or merge is implied.

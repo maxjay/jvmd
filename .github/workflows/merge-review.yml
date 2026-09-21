@@ -18,7 +18,8 @@ jobs:
   evidence:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    # This is a fast review signal, not the exhaustive performance suite.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Install checksum-pinned Temurin 25.0.4.1+1
@@ -32,7 +33,7 @@ jobs:
           echo "$RUNNER_TEMP/toolchain/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
       - name: Build benchmark production classes
         run: |
-          mvn -B -DskipTests install
+          mvn -B -T1C -DskipTests install
           bash jvmd-dist/assemble.sh
       - name: Install pinned JDTLS 1.61.0
         shell: bash
@@ -48,14 +49,14 @@ jobs:
         run: |
           deps="$PWD/jvmd-dist/target/image/lib/jvmd"
           python benchmarks/workspaces/compile.py --repo "$PWD" --java-home "$JAVA_HOME" --dependencies "$deps" --output "$RUNNER_TEMP/build"
-          # The generated 128-JAR corpus is deterministic and needs no repository checkout.
-          python benchmarks/workspaces/fixture.py --build "$RUNNER_TEMP/build/build.json" --dependencies "$deps" --root "$RUNNER_TEMP/fixtures" --fixture-names multi
+          # 512 sources plus 64 dependency JARs, with an exact generated oracle.
+          python benchmarks/workspaces/fixture.py --build "$RUNNER_TEMP/build/build.json" --dependencies "$deps" --root "$RUNNER_TEMP/fixtures" --fixture-names review
       - name: Fast JVMD and JDTLS correctness benchmark
         run: |
-          python benchmarks/workspaces/matrix.py --repo "$PWD" --before "$RUNNER_TEMP/build/build.json" --after "$RUNNER_TEMP/build/build.json" \
+          timeout --signal=TERM 15m python benchmarks/workspaces/matrix.py --repo "$PWD" --before "$RUNNER_TEMP/build/build.json" --after "$RUNNER_TEMP/build/build.json" \
             --java-home "$JAVA_HOME" --jdtls "$RUNNER_TEMP/jdtls" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" \
-            --fixtures "$RUNNER_TEMP/fixtures" --root "$RUNNER_TEMP/results" --runs 1 --sources 24 --workspaces 1 --samples 1 --edits 2 \
-            --fixture-names multi --modes after jdtls-shared
+            --fixtures "$RUNNER_TEMP/fixtures" --root "$RUNNER_TEMP/results" --runs 1 --sources 512 --workspaces 1 --samples 1 --edits 2 \
+            --fixture-names review --modes after jdtls-shared
           python benchmarks/workspaces/verify.py "$RUNNER_TEMP/results" "$RUNNER_TEMP/verification.json"
           python benchmarks/workspaces/summarize.py "$RUNNER_TEMP/results" "$RUNNER_TEMP/summary.json"
           python benchmarks/workspaces/compare.py "$RUNNER_TEMP/summary.json" "$RUNNER_TEMP/comparison.json" --markdown "$RUNNER_TEMP/comparison.md"

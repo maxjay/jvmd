@@ -110,12 +110,21 @@ ranges are checked against those sources.
 small, self-contained HTML report. It has no package dependencies, performs no
 benchmark work itself, and escapes fixture and metric labels before rendering.
 
-The merge-review gate uses `fixture.py --fixture-names multi` as its correctness
-corpus instead of cloning a separate source repository. The deterministic fixture
-contains 128 dependency JARs, while the workload generates source files and checks
+The merge-review gate uses `fixture.py --fixture-names review` as its correctness
+corpus instead of cloning a separate source repository. Its checked oracle covers
+512 generated source files and 64 dependency JARs (1,024 binary classes), while the workload checks
 the same hover, completion, signature, navigation, references, rename, symbols,
 unsaved edits, diagnostics, and dependency identities against JVMD and JDTLS.
-Selecting fixtures also avoids generating the two large unused fixture variants.
+Every generated fixture records expected dependency identities in `fixture.json`;
+the matrix consumes that manifest instead of relying on fixture-name conventions.
+The action generates only this corpus, runs servers serially, caps the matrix at
+15 minutes, and caps the entire job at 30 minutes.
+
+Rewriting the Python coordinator in another language would not materially shorten
+this gate: compilation, JVM startup, indexing, and checked LSP requests dominate
+the run. The fast path instead reduces synthetic members, avoids unused fixtures,
+uses a parallel Maven build, and keeps one correctness repetition. The full suite
+remains the place for statistically meaningful performance measurements.
 
 The benchmark harnesses remain the executable source for reproducing workspace comparisons; historical narrative reports were removed during consolidation.
 

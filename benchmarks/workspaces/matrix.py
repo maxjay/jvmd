@@ -21,7 +21,12 @@ for repetition in range(a.runs):
                        '--java-home', str(a.java_home.resolve()), '--jdtls', str(a.jdtls.resolve()), '--resolvers', str(a.resolvers.resolve()),
                        '--repository', str((a.fixtures/fixture).resolve()), '--root', str(output.resolve()), '--runs', '1', '--servers', 'jvmd' if mode in ('before', 'after', 'main') else mode,
                        '--sources', str(a.sources), '--workspaces', str(a.workspaces), '--samples', str(a.samples), '--edits', str(a.edits)]
-            if fixture != 'real': command += ['--dependency-type', 'fixture.a0.Type0', '--binary-expression', 'marker0', '--binary-member', 'marker0', '--query', 'Type0', '--jdtls-query', 'Type0', '--expected-results', str(1 if fixture == 'single' else 128)]
+            fixture_manifest = a.fixtures/fixture/'fixture.json'
+            if fixture_manifest.exists():
+                generated = json.loads(fixture_manifest.read_text())
+                command += ['--dependency-type', generated['dependency_type'], '--binary-expression', generated['binary_expression'],
+                            '--binary-member', generated['binary_member'], '--query', generated['query'],
+                            '--jdtls-query', generated['jdtls_query'], '--expected-results', str(generated['expected_results'])]
             if a.profile: command.append('--profile')
             commands.append({'label': label, 'command': command})
             if (output/'complete.json').exists(): continue

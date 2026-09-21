@@ -121,6 +121,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     private List<Path> classInputs(){return modulePaths.isEmpty()?classpath:classpath.stream().filter(path->modulePaths.values().stream().noneMatch(paths->paths.contains(path))).toList();}
     public void validateClasspath(CompilerInputs.EnvironmentIdentity current){
         try {
+            if(current.equals(acceptedEnvironment))return;
             for(Path path:classpath)if(path.toString().endsWith(".jar")&&!Files.isRegularFile(path))throw new IOException("Missing classpath archive: "+path);
             for(var catalog:catalogs.values())if(!catalog.stamp().equals(stamp(catalog.path())))throw new IOException("Loaded classpath changed: "+catalog.path());
             if(acceptedEnvironment!=null&&!current.equals(acceptedEnvironment)){
@@ -302,6 +303,11 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     @Override public boolean hasLocation(Location location){if(location==StandardLocation.MODULE_SOURCE_PATH)return !moduleSources.isEmpty();return location==StandardLocation.CLASS_PATH||location==StandardLocation.SOURCE_PATH&&moduleSources.isEmpty()&&!documents.isEmpty()||super.hasLocation(delegate(location));}
     void invalidateSourceInventory(){sourceCatalogDirty=true;}
     public void sourcesChanged(){try{fileManager.flush();configureModules();}catch(IOException e){throw new UncheckedIOException(e);}}
+    void inheritWork(IndexedFileManager prior){
+        hits+=prior.hits;loads+=prior.loads;environmentChanges+=prior.environmentChanges;
+        sourceCatalogBuilds+=prior.sourceCatalogBuilds;sourceCatalogFiles+=prior.sourceCatalogFiles;
+        sourceListCalls+=prior.sourceListCalls;sourceListEntries+=prior.sourceListEntries;
+    }
     public void invalidate(){catalogs.clear();acceptedEnvironment=null;bytes.clear();byteSize=0;sourcesChanged();}
     @Override public void close()throws IOException{
         try{super.close();}finally{

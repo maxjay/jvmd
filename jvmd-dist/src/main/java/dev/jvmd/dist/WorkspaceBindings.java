@@ -64,11 +64,15 @@ public final class WorkspaceBindings implements AutoCloseable {
                     &&modules.entrySet().stream().allMatch(e->e.getValue().snapshot().sameInputs(other.modules.get(e.getKey()).snapshot()));
         }
         String text(Path file,Documents documents)throws Exception{return modules.get(owners.get(file)).snapshot().text(file,documents);}
-        boolean contextChanged(Path file,Inputs prior){
-            String owner=owners.get(file);var before=prior.modules.get(owner);var after=modules.get(owner);
-            return !Objects.equals(owner,prior.owners.get(file))||before==null
-                    ||!before.snapshot().environment().equals(after.snapshot().environment())
-                    ||!before.snapshot().membership().equals(after.snapshot().membership());
+        Set<String> changedContexts(Inputs prior){
+            var changed=new HashSet<String>();
+            for(var entry:modules.entrySet()){
+                var before=prior.modules.get(entry.getKey());var after=entry.getValue();
+                if(before==null||!before.snapshot().environment().equals(after.snapshot().environment()))changed.add(entry.getKey());
+                else for(Path file:after.snapshot().changedSince(before.snapshot()))
+                    if(!before.owners().contains(file)&&!after.owners().contains(file)){changed.add(entry.getKey());break;}
+            }
+            return changed;
         }
     }
     private Inputs inputs,observedInputs;
@@ -149,9 +153,10 @@ public final class WorkspaceBindings implements AutoCloseable {
         try(var batch=facts().transaction()){
         var priorInputs=inputs;var priorFragments=new LinkedHashMap<>(fragments);
         boolean full=priorInputs==null;
+        var changedContexts=full?Set.<String>of():current.changedContexts(priorInputs);
         var dirty=new LinkedHashSet<Path>();
         if(full)dirty.addAll(current.sources().keySet());
-        else for(Path file:current.sources().keySet())if(current.contextChanged(file,priorInputs)||!Objects.equals(priorInputs.sources().get(file),current.sources().get(file)))dirty.add(file);
+        else for(Path file:current.sources().keySet())if(changedContexts.contains(current.owners().get(file))||!Objects.equals(current.owners().get(file),priorInputs.owners().get(file))||!Objects.equals(priorInputs.sources().get(file),current.sources().get(file)))dirty.add(file);
 
         builds++;
         if(full){fullBuilds++;for(Path file:priorFragments.keySet())facts().remove(batch,file);priorFragments.clear();semantic.clear();}

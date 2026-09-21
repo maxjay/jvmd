@@ -28,7 +28,10 @@ for module in sorted(a.repo.glob('jvmd-*')):
                 value=value.replace('var result=new TreeMap<Path,String>();',f'{probe}.add("identity_map_rebuilds",1);var result=new TreeMap<Path,String>();')
             if f.stem=='WorkspaceBindings' and 'var sourceValues=new LinkedHashMap<Path,String>();' in value:
                 value=value.replace('var sourceValues=new LinkedHashMap<Path,String>();',f'{probe}.add("identity_map_rebuilds",2);var sourceValues=new LinkedHashMap<Path,String>();')
-            if f.stem=='CompilerInputs': value=value.replace('new LinkedHashMap<>(prior)',f'{probe}.copyMap(prior)')
+            if f.stem=='CompilerInputs':
+                value=value.replace('new LinkedHashMap<>(prior)',f'{probe}.copyMap(prior)')
+                value=value.replace('observations++;',f'observations++;{probe}.add("input_captures",1);')
+                value=value.replace('public synchronized EnvironmentIdentity environment(Configuration config)throws IOException {',f'public synchronized EnvironmentIdentity environment(Configuration config)throws IOException {{{probe}.add("environment_observations",1);')
         out=source/f.relative_to(a.repo);out.parent.mkdir(parents=True,exist_ok=True);out.write_text(value);files.append(out)
     resources=module/'src/main/resources'
     if resources.exists():shutil.copytree(resources,classes,dirs_exist_ok=True)

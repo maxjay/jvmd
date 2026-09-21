@@ -68,11 +68,14 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return compiler.inputSnapshot();
     }
     private String classpathStamp()throws Exception{return computeClasspathStamp();}
+    private CompilerInputs.Snapshot validatedInputs()throws Exception {
+        var inputs=inputSnapshot();
+        if(!compiler.cacheValid(inputs)){outlines.clear();focused.clear();}
+        return inputs;
+    }
     private String computeClasspathStamp()throws Exception {
         classpathFingerprints++;
-        if(!compiler.cacheValid()){outlines.clear();focused.clear();}
-        var inputs=inputSnapshot();
-        // Membership affects resolution, but source bodies do not enter this environment key.
+        var inputs=validatedInputs();
         return inputs.environment().value()+":"+inputs.membership().value();
     }
     private Map<Path,String> sourceIdentities()throws Exception{return inputSnapshot().sources();}
@@ -189,9 +192,12 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     public void namespaceChanged(){diagnosticStore.clear();for(var caches:modules.values()){caches.outlines.clear();caches.focused.clear();caches.completion=null;}dependencies.semantic().clear();for(var pool:compilerPools.values())pool.recycle();}
     public CompilerPool.Outcome<Bindings.Snapshot> bindings(Path path,String text,Integer cursor)throws Exception{
+        return bindings(path,text,cursor,validatedInputs());
+    }
+    private CompilerPool.Outcome<Bindings.Snapshot> bindings(Path path,String text,Integer cursor,CompilerInputs.Snapshot observed)throws Exception{
         path=path.toAbsolutePath().normalize();reconcileSemanticRevision(path);touch(path,text);
-        String hash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));classpathStamp();
-        var observed=inputSnapshot();String stamp=observed.environment().value()+":"+observed.membership().value();
+        String hash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String stamp=observed.environment().value()+":"+observed.membership().value();
         for(var entry:new ArrayList<>(focused.entrySet())){
             var cached=entry.getValue();
             if(cached.file().equals(path)&&cached.hash().equals(hash)&&cached.stamp().equals(stamp)
@@ -202,8 +208,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var focus=cursor==null?null:focusing.focus(path,text,cursor);
         String source=focus==null?text:focus.source();Path file=path;bindingComputations++;
         var inputHashes=observed.sources();
-        var outcome=compiler.query(path,source,2,(task,units,tier)->Bindings.capture(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),file,sourceText(file,text),true,focus==null?null:focus.member().equals("declarations")?new Focusing.Span(cursor,cursor+1):new Focusing.Span(focus.start(),focus.end())));
-        if(!observed.equals(inputSnapshot()))return new CompilerPool.Outcome<>(outcome.tier(),null,List.of(),List.of("diagnostics_superseded: source changed during analysis"));
+        var outcome=compiler.query(path,source,2,observed,(task,units,tier)->Bindings.capture(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),file,sourceText(file,text),true,focus==null?null:focus.member().equals("declarations")?new Focusing.Span(cursor,cursor+1):new Focusing.Span(focus.start(),focus.end())));
         diagnosticStore.inputHashes(inputHashes);
         if(outcome.result()!=null&&outcome.warnings().isEmpty()){
             dependencies.recordFocused(path,outcome.result().dependencies());
@@ -234,7 +239,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     /** Validate identity before reading source text: warm diagnostics need no source bytes. */
     public Envelope cachedDiagnostics(Path path,Documents documents)throws Exception{
-        path=path.toAbsolutePath().normalize();var observed=inputSnapshot();
+        return cachedDiagnostics(path,documents,inputSnapshot());
+    }
+    private Envelope cachedDiagnostics(Path path,Documents documents,CompilerInputs.Snapshot observed)throws Exception{
+        path=path.toAbsolutePath().normalize();
         String hash=observed.sources().get(path);if(hash==null)hash=documents.sourceHash(path);
         reconcileSemanticRevision(path);touchHash(path,hash);invalidateConditionalIfUnresolved(path);
         var cached=restoreDiagnostics(path,hash,observed.environment().value()+":"+observed.membership().value());
@@ -255,18 +263,17 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return state.diagnostics();
     }
     public Envelope diagnostics(Path path,Documents documents)throws Exception{
-        var cached=cachedDiagnostics(path,documents);if(cached!=null)return cached;
-        var observed=inputSnapshot();var result=diagnostics(path,observed.text(path,documents));
-        if(!observed.equals(inputSnapshot()))return new Envelope(1,"live",false,null,List.of("diagnostics_superseded: inputs changed during analysis"),Map.of("diagnostics",List.of()));
-        return result;
+        var observed=inputSnapshot();var cached=cachedDiagnostics(path,documents,observed);if(cached!=null)return cached;
+        if(!compiler.cacheValid(observed)){outlines.clear();focused.clear();}
+        return diagnostics(path,observed.text(path,documents),observed);
     }
     /** One javac task, followed by per-file detached states; no compiler objects escape. */
     public Map<Path,CompilerPool.Outcome<Bindings.Snapshot>> bindingsBatch(Map<Path,String> sources)throws Exception{
         if(sources.isEmpty())return Map.of();
         var inputs=new ArrayList<CompilerPool.SourceInput>();
         for(var entry:sources.entrySet()){reconcileSemanticRevision(entry.getKey());touch(entry.getKey(),entry.getValue());inputs.add(new CompilerPool.SourceInput(entry.getKey(),entry.getValue()));}
-        classpathStamp();var observed=inputSnapshot();String stamp=observed.environment().value()+":"+observed.membership().value();var inputHashes=observed.sources();
-        var result=compiler.batchQuery(inputs,2,(task,units,tier)->{
+        var observed=validatedInputs();String stamp=observed.environment().value()+":"+observed.membership().value();var inputHashes=observed.sources();
+        var result=compiler.batchQuery(inputs,2,observed,(task,units,tier)->{
             var snapshots=new LinkedHashMap<Path,Bindings.Snapshot>();
             for(var unit:units){
                 Path file=Path.of(unit.getSourceFile().toUri()).toAbsolutePath().normalize();String text=sources.get(file);
@@ -275,9 +282,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             return snapshots;
         });
         bindingComputations+=sources.size();
-        if(!observed.equals(inputSnapshot())){
-            var superseded=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();for(Path file:sources.keySet())superseded.put(file,new CompilerPool.Outcome<>(1,null,List.of(),List.of("diagnostics_superseded: source changed during analysis")));return superseded;
-        }
         diagnosticStore.inputHashes(inputHashes);
         var values=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();
         // Resolve every API first: invalidation from a later file must not erase an earlier fresh result.
@@ -311,14 +315,15 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         catch(Exception invalid){return false;}
     }
     public Envelope diagnostics(Path path,String text)throws Exception{
+        return diagnostics(path,text,validatedInputs());
+    }
+    private Envelope diagnostics(Path path,String text,CompilerInputs.Snapshot observed)throws Exception{
         path=path.toAbsolutePath().normalize();reconcileSemanticRevision(path);touch(path,text);invalidateConditionalIfUnresolved(path);
-        String sourceHash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)),stamp=classpathStamp(),generation=context.generation();
+        String sourceHash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)),stamp=observed.environment().value()+":"+observed.membership().value(),generation=context.generation();
         var cached=restoreDiagnostics(path,sourceHash,stamp);
         if(cached!=null){diagnosticFilesReused++;return cached;}
-        var observed=inputSnapshot();
         long computations=bindingComputations;
-        var outcome=bindings(path,text,null);
-        if(!observed.equals(inputSnapshot()))return new Envelope(1,"live",false,null,List.of("diagnostics_superseded: inputs changed during analysis"),Map.of("diagnostics",List.of()));
+        var outcome=bindings(path,text,null,observed);
         if(bindingComputations>computations)diagnosticFilesAnalysed++;else diagnosticFilesReused++;
         var warnings=new LinkedHashSet<String>(warnings(outcome.warnings()));
         if(outcome.result()!=null)for(var problem:outcome.diagnostics())if(problem.kind().equals("ERROR")){
@@ -344,7 +349,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         while(end<text.length()&&Character.isJavaIdentifierPart(text.codePointAt(end)))end+=Character.charCount(text.codePointAt(end));
         String prefix=text.substring(start,cursor),patched=text.substring(0,start)+EditorQueries.MARKER+text.substring(end);int focusCursor=start;
         touch(path,text);
-        var caches=modules.get(context.generation());long phaseStarted=System.nanoTime();String key=completionKey(path,patched,start);keyNanos=System.nanoTime()-phaseStarted;
+        var caches=modules.get(context.generation());long phaseStarted=System.nanoTime();var observed=inputSnapshot();String key=completionKey(path,patched,start,observed);keyNanos=System.nanoTime()-phaseStarted;
         var cached=caches.completion;CompilerPool.Outcome<List<Map<String,Object>>> outcome;
         if(key!=null&&cached!=null&&key.equals(cached.key())&&prefix.startsWith(cached.prefix())){
             completionCacheHits++;cacheHit=true;outcome=cached.result();
@@ -354,7 +359,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             completionComputations++;phaseStarted=System.nanoTime();compiler.sourcesChanged();sourceRefreshNanos=System.nanoTime()-phaseStarted;
             phaseStarted=System.nanoTime();var focus=focusing.focus(path,patched,focusCursor);focusNanos=System.nanoTime()-phaseStarted;
             phaseStarted=System.nanoTime();
-            outcome=compiler.query(path,focus.source(),2,(task,units,tier)->EditorQueries.completion(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),prefix,profile));
+            outcome=compiler.query(path,focus.source(),2,observed,(task,units,tier)->EditorQueries.completion(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),prefix,profile));
             queryNanos=System.nanoTime()-phaseStarted;
             // Keep one detached result per module. A broader prefix recomputes candidates;
             // narrowing filters the already sorted rows without retaining javac objects.
@@ -382,10 +387,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return new Envelope(outcome.tier(),"live",to<values.size(),to<values.size()?Integer.toString(to):null,warnings(outcome.warnings()),Map.of("items",values.subList(from,to),"range",new SourceText(text).range(start,end)));
     }
     private static double millis(long nanos){return Math.round(nanos/1000.0)/1000.0;}
-    private String completionKey(Path file,String patched,int start)throws Exception{
+    private String completionKey(Path file,String patched,int start,CompilerInputs.Snapshot inputs)throws Exception{
         if(patched.length()>256*1024)return null;
         var stamp=new StringBuilder(context.toString()).append('\0').append(file).append(':').append(start).append(':').append(Hashing.sha256(patched.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        var inputs=inputSnapshot();stamp.append(inputs.environment().value()).append(inputs.membership().value());
+        stamp.append(inputs.environment().value()).append(inputs.membership().value());
         // Exclude only the explicit token-stripped buffer; all other live source inputs matter.
         for(var entry:inputs.sources().entrySet().stream().sorted(Map.Entry.comparingByKey()).toList())
             if(!entry.getKey().equals(file))stamp.append('\0').append(entry.getKey()).append(':').append(entry.getValue());

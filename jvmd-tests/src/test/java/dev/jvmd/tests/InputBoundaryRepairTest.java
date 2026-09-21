@@ -74,6 +74,16 @@ class InputBoundaryRepairTest {
             }
         }
     }
+    @Test void nestedAnalysisUsesOneStartAndOneEndCapture()throws Exception {
+        Path file=Files.writeString(root.resolve("A.java"),"class A { int n; }");var docs=new Documents();
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(new Analyzer.Context("test:app:1","25",List.of(),List.of(root),"module",Map.of()),null,128L*1024*1024);analyzer.documents(docs);
+            var result=analyzer.diagnostics(file,docs);assertThat(result.warnings()).isEmpty();
+            assertThat(((Map<?,?>)analyzer.status().get("input_validation")).get("observations")).isEqualTo(2L);
+            analyzer.diagnostics(file,docs);
+            assertThat(((Map<?,?>)analyzer.status().get("input_validation")).get("observations")).isEqualTo(3L);
+        }
+    }
     @Test void overlappingSourceAndEnvironmentHaveStableFencesAndCompile()throws Exception {
         Path file=Files.writeString(root.resolve("A.java"),"class A {}");var files=new FileStateRegistry();var docs=new Documents(files);docs.open(file,Files.readString(file),1);
         var config=new CompilerInputs.Configuration("module",List.of(root),List.of(),List.of("--release","25","--patch-module","java.base="+root));

@@ -135,3 +135,15 @@ pool recycle and caused duplicate-patch errors on the now-required rebuild.
 Source and environment evidence have separate roles. Documents keeps weak,
 module-owned transition subscriptions, not a closed-file history; only relevant
 transitions advance their monotonic version. Content equality still permits reuse.
+
+Operation checkpoint: 140 phase 3/4 assertions pass, including prior semantic policy,
+zero-decoded-budget fact lifetime, pinned reads and aborted rebuild coverage.
+Analyzer passes its start snapshot into CompilerPool; javac performs the one fresh
+end capture before returning accepted output. Diagnostics and batch attribution no
+longer wrap that work in repeated whole-module captures. File-manager reuse compares
+the supplied complete environment and no longer re-observes it. Per-request boolean
+freshness memoization was removed; a newly captured input can never be hidden behind
+an earlier same-request valid flag. Warm diagnostic cache hits retain one capture.
+Counters continue across actual file-manager replacement. Membership invalidation
+remains SemanticUpdatePolicy's responsibility; only environment or non-owned compiler
+source changes invalidate a module's full owned fact set.

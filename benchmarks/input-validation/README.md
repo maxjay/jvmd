@@ -4,7 +4,7 @@ This component harness complements the existing workspace benchmark. It does not
 compare JVMD counters with JDTLS, or equate component latency with editor latency.
 See [the measured report](../../docs/performance/2026-09-21-input-validation.md).
 
-Use Python 3.11+, JDK 25, the same dependency JAR directory for both revisions,
+Use Python 3.11+, JDK 25, the dependency JAR directory built for each revision,
 and fresh output directories. `prepare.py` copies production sources into its
 output and adds the same measurement hooks to both revisions. It does not edit
 either checkout. Build manifests identify every original production source.
@@ -12,7 +12,7 @@ either checkout. Build manifests identify every original production source.
 ```sh
 git worktree add "$BENCH_BASE" 9ac81c4bdded8de18537569debf02e789c24fe27
 python benchmarks/input-validation/prepare.py --repo "$BENCH_BASE" \
-  --dependencies "$JVMD_DEPENDENCIES" --java-home "$BENCH_JDK" --output "$INPUT_BASE"
+  --dependencies "$JVMD_BASE_DEPENDENCIES" --java-home "$BENCH_JDK" --output "$INPUT_BASE"
 python benchmarks/input-validation/prepare.py --repo "$PWD" \
   --dependencies "$JVMD_DEPENDENCIES" --java-home "$BENCH_JDK" --output "$INPUT_HEAD"
 python benchmarks/input-validation/run.py "$INPUT_BASE/build.json" \
@@ -45,7 +45,7 @@ Run that suite separately with uninstrumented builds:
 
 ```sh
 python benchmarks/workspaces/compile.py --repo "$BENCH_BASE" \
-  --dependencies "$JVMD_DEPENDENCIES" --java-home "$BENCH_JDK" --output "$EDITOR_BASE"
+  --dependencies "$JVMD_BASE_DEPENDENCIES" --java-home "$BENCH_JDK" --output "$EDITOR_BASE"
 python benchmarks/workspaces/compile.py --repo "$PWD" \
   --dependencies "$JVMD_DEPENDENCIES" --java-home "$BENCH_JDK" --output "$EDITOR_HEAD"
 python benchmarks/workspaces/fixture.py --build "$EDITOR_HEAD/build.json" \
@@ -70,3 +70,7 @@ messages are in `docs/performance/input-validation/current`. To independently
 verify the archived responses, extract `e2e-raw.tar.gz` into a new directory and
 pass it to `benchmarks/workspaces/verify.py`. Absolute original paths remain in
 manifests for provenance; the verifier relocates workspace source paths.
+
+Each build manifest also records dependency hashes. The original before/after
+measurements used identical dependency versions; future upgrades must build the
+baseline with its own dependencies, not substitute candidate libraries.

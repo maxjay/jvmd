@@ -14,6 +14,72 @@ class CompilerInputsTest {
     @TempDir Path root;
     private CompilerInputs.Configuration config(List<Path> cp){return new CompilerInputs.Configuration("module",List.of(root),cp,List.of("--release","25"));}
     private static long count(Map<String,Object> status,String key){return ((Number)status.get(key)).longValue();}
+    @Test void compilerInventoriesFollowRootAndPackageLinksAndRejectCycles()throws Exception {
+        Path target=Files.createDirectories(root.resolve("target"));
+        Path binary=Files.write(target.resolve("A.class"),new byte[]{1});
+        Path cp=root.resolve("cp");
+        try{Files.createSymbolicLink(cp,target);}catch(UnsupportedOperationException|java.nio.file.FileSystemException unsupported){
+            Assumptions.abort("Symbolic links unavailable: "+unsupported);return;
+        }
+        var files=new FileStateRegistry();var inputs=new CompilerInputs(files);var configuration=config(List.of(cp));
+        var initial=inputs.environment(configuration);
+        Files.write(binary,new byte[]{2});assertThat(inputs.environment(configuration)).isNotEqualTo(initial);
+        assertThat(files.inventory(cp,".class")).isEmpty(); // source discovery stays no-follow
+        Path external=Files.createDirectories(root.resolve("external"));
+        Files.createSymbolicLink(target.resolve("pkg"),external);
+        var empty=inputs.environment(configuration);
+        Path member=Files.write(external.resolve("B.class"),new byte[]{3});
+        var added=inputs.environment(configuration);assertThat(added).isNotEqualTo(empty);
+        Files.write(member,new byte[]{4});assertThat(inputs.environment(configuration)).isNotEqualTo(added);
+        Files.delete(member);Files.delete(external);
+        inputs.environment(configuration); // dangling package link
+        Files.createDirectory(external);Files.write(external.resolve("C.class"),new byte[]{5});
+        assertThat(inputs.environment(configuration)).isNotEqualTo(empty);
+        Files.createSymbolicLink(external.resolve("loop"),target);
+        assertThatThrownBy(()->inputs.environment(configuration)).isInstanceOf(FileSystemLoopException.class);
+        Files.delete(external.resolve("loop"));
+        assertThat(files.inventory(cp,".class",true)).contains(cp.resolve("pkg/C.class"));
+    }
+    @Test void everyAdditionalJavacInputPathObservesEditsAndMembership()throws Exception {
+        Path input=Files.createDirectories(root.resolve("options"));
+        Path file=Files.writeString(input.resolve("Input.java"),"class Input {}");
+        var inputs=new CompilerInputs(new FileStateRegistry());int version=0;
+        for(String option:List.of("--source-path","-sourcepath","--module-source-path","--boot-class-path","-bootclasspath",
+                "-extdirs","-endorseddirs","-Djava.ext.dirs","-Djava.endorsed.dirs")){
+            for(boolean equals:List.of(false,true)){
+                var options=equals?List.of(option+"="+input):List.of(option,input.toString());
+                var configuration=new CompilerInputs.Configuration("module",List.of(),List.of(),options);
+                var before=inputs.environment(configuration);
+                Files.writeString(file,"class Input { int n="+(++version)+"; }");
+                assertThat(inputs.environment(configuration)).as(options.toString()).isNotEqualTo(before);
+            }
+        }
+        for(String value:List.of("-Xbootclasspath:","-Xbootclasspath/a:","-Xbootclasspath/p:")){
+            var configuration=new CompilerInputs.Configuration("module",List.of(),List.of(),List.of(value+input));
+            var before=inputs.environment(configuration);Files.writeString(file,"class Input { int n="+(++version)+"; }");
+            assertThat(inputs.environment(configuration)).isNotEqualTo(before);
+        }
+        for(String value:List.of("m="+input,input+"/*/src",input+"/{one,two}/*")){
+            var configuration=new CompilerInputs.Configuration("module",List.of(),List.of(),List.of("--module-source-path",value));
+            var before=inputs.environment(configuration);
+            Files.writeString(input.resolve("Added"+(++version)+".java"),"class Added {}");
+            assertThat(inputs.environment(configuration)).isNotEqualTo(before);
+        }
+    }
+    @Test void inventoryEvictionBoundsClosedWorkspaceRetentionAndReconcilesOnReuse()throws Exception {
+        var files=new FileStateRegistry();var inputs=new CompilerInputs(files);var documents=new Documents();
+        Path first=Files.createDirectories(root.resolve("first"));Path source=Files.writeString(first.resolve("A.java"),"class A {}");
+        var configuration=new CompilerInputs.Configuration("module",List.of(first),List.of(),List.of());
+        var accepted=inputs.capture(configuration,documents);
+        for(int i=0;i<160;i++)files.inventory(Files.createDirectories(root.resolve("workspace"+i)),".java");
+        assertThat(count(files.status(),"inventory_entries")).isLessThanOrEqualTo(128);
+        assertThat(count(files.status(),"inventory_evictions")).isPositive();
+        long enumerations=count(files.status(),"directory_enumerations");
+        assertThat(inputs.capture(configuration,documents).sameInputs(accepted)).isTrue();
+        assertThat(count(files.status(),"directory_enumerations")).isGreaterThan(enumerations);
+        Files.writeString(source,"class A { int n; }");
+        assertThat(inputs.capture(configuration,documents).changedSince(accepted)).containsExactly(source);
+    }
     @Test void warmObservationsReuseMapsWithoutEnumeratingOrHashingAndBodyIsNotEnvironment()throws Exception {
         Path a=Files.writeString(root.resolve("A.java"),"class A { int n=1; }");
         var files=new FileStateRegistry();var inputs=new CompilerInputs(files);var docs=new Documents();

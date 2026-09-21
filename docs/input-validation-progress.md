@@ -85,3 +85,15 @@ Delivery: [PR #21](https://github.com/maxjay/jvmd/pull/21) is open, unmerged.
 GitHub Checkpoints, Distributions and Merge Review started; results are pending.
 Main advanced during measurement with reporting-only #20 (`6129dbf`); it was
 merged into this branch and reporting tests rerun. Measured production is unchanged.
+
+Review repairs checkpoint: addressed all four PR #21 findings. Compiler environment
+inventories follow directory links (including package links and target recreation),
+with cycle rejection; ordinary source discovery stays no-follow. Added source,
+module-source, legacy bootstrap/extension/endorsed path options, including inline
+-Xbootclasspath and module path patterns. The shared directory cache now evicts
+least-recently-used root/suffix/mode inventories above 128; revisiting an evicted
+root reconciles without clearing accepted input/semantic state. Baseline benchmark
+compilation now uses the base checkout's own runtime dependencies and manifests
+record their hashes. Regression and benchmark verification follows this checkpoint.
+Prior head c3ccd8cf passed all three GitHub workflows (Checkpoints, Distributions,
+and Merge Review), including the hosted JDTLS comparison.

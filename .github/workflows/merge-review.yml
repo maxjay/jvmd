@@ -108,7 +108,7 @@ jobs:
         shell: bash
         run: |
           deps="$PWD/jvmd-dist/target/image/lib/jvmd"
-          python benchmarks/input-validation/prepare.py --repo "$RUNNER_TEMP/semantic-base" --dependencies "$deps" --java-home "$JAVA_HOME" --output "$RUNNER_TEMP/input-base"
+          python benchmarks/input-validation/prepare.py --repo "$RUNNER_TEMP/semantic-base" --dependencies "$RUNNER_TEMP/semantic-base/jvmd-dist/target/lib" --java-home "$JAVA_HOME" --output "$RUNNER_TEMP/input-base"
           python benchmarks/input-validation/prepare.py --repo "$PWD" --dependencies "$deps" --java-home "$JAVA_HOME" --output "$RUNNER_TEMP/input-candidate"
           python benchmarks/input-validation/run.py "$RUNNER_TEMP/input-base/build.json" "$RUNNER_TEMP/input-candidate/build.json" "$RUNNER_TEMP/input-validation"
           python benchmarks/input-validation/summarize.py "$RUNNER_TEMP/input-validation" "$RUNNER_TEMP/input-validation-summary.json"

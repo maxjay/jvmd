@@ -88,19 +88,24 @@ public final class CompilerInputs {
     public synchronized EnvironmentIdentity environment(Configuration config)throws IOException {
         var paths=new ArrayList<List<Path>>();
         for(Path path:config.classpath()){
-            if(Files.isDirectory(path)){paths.add(files.inventory(path,".class"));paths.add(files.inventory(path,".jar"));}
+            if(Files.isDirectory(path)){paths.add(files.inventory(path,".class",true));paths.add(files.inventory(path,".jar",true));}
             else paths.add(List.of(path));
         }
         var entries=new ArrayList<Path>();
-        var pathOptions=Set.of("--module-path","-p","--upgrade-module-path","--class-path","-classpath","-cp","--processor-path","-processorpath","--processor-module-path","--patch-module","--system");
+        var pathOptions=Set.of("--module-path","-p","--upgrade-module-path","--class-path","-classpath","-cp","--processor-path","-processorpath","--processor-module-path","--patch-module","--system",
+                "--source-path","-sourcepath","--module-source-path","--boot-class-path","-bootclasspath",
+                "-extdirs","-endorseddirs","-Djava.ext.dirs","-Djava.endorsed.dirs");
         for(int i=0;i<config.options().size();i++){
             String option=config.options().get(i),name=option.contains("=")?option.substring(0,option.indexOf('=')):option;
+            if(option.startsWith("-Xbootclasspath:")||option.startsWith("-Xbootclasspath/a:")||option.startsWith("-Xbootclasspath/p:")){
+                addOptionPaths(entries,option.substring(option.indexOf(':')+1));continue;
+            }
             if(!pathOptions.contains(name))continue;
             String value=option.contains("=")?option.substring(option.indexOf('=')+1):i+1<config.options().size()?config.options().get(++i):"";
-            if(name.equals("--patch-module")&&value.contains("="))value=value.substring(value.indexOf('=')+1);
-            for(String entry:value.split(java.util.regex.Pattern.quote(File.pathSeparator)))if(!entry.isBlank()&&!entry.equals("none"))entries.add(Path.of(entry).toAbsolutePath().normalize());
+            if((name.equals("--patch-module")||name.equals("--module-source-path"))&&value.contains("="))value=value.substring(value.indexOf('=')+1);
+            addOptionPaths(entries,value);
         }
-        for(Path path:entries)paths.add(Files.isDirectory(path)?files.inventory(path,""):List.of(path));
+        for(Path path:entries)paths.add(Files.isDirectory(path)?files.inventory(path,"",true):List.of(path));
         Path home=Path.of(System.getProperty("java.home"));
         paths.add(List.of(home.resolve("release"),home.resolve("lib/modules"),home.resolve("lib/ct.sym")));
         if(!config.equals(environmentConfiguration)||!paths.equals(environmentInventories)){
@@ -111,6 +116,19 @@ public final class CompilerInputs {
             environmentIdentity=environment(config.generation(),config.roots(),config.options(),List.of(),Map.of(),config.classpath().stream().map(Path::toString).toList(),config.platform(),env);
         }
         environmentConfiguration=config;environmentFiles=env;return environmentIdentity;
+    }
+    private static void addOptionPaths(List<Path> entries,String value){
+        for(String entry:value.split(java.util.regex.Pattern.quote(File.pathSeparator))){
+            if(entry.isBlank()||entry.equals("none"))continue;
+            // Module-source-path patterns select descendants; observe their containing tree.
+            int wildcard=entry.indexOf('*'), group=entry.indexOf('{');
+            if(group>=0&&(wildcard<0||group<wildcard))wildcard=group;
+            if(wildcard>=0){
+                int separator=Math.max(entry.lastIndexOf('/',wildcard),entry.lastIndexOf('\\',wildcard));
+                entry=separator<0?".":entry.substring(0,separator+1);
+            }
+            entries.add(Path.of(entry.isEmpty()?".":entry).toAbsolutePath().normalize());
+        }
     }
     private Map<Path,String> observe(Set<Path> paths,Map<Path,String> prior,Documents documents)throws IOException {
         Map<Path,String> updated=null;

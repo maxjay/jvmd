@@ -12,7 +12,7 @@ public final class FileStateRegistry {
     private record Stamp(Object size, Object modified, Object changed, Object inode,boolean regular) { }
     private record Entry(Stamp stamp, String hash) { }
     private final Map<Path, Entry> files = new LinkedHashMap<>(256, .75f, true);
-    private long hashes, hits, bytes, metadataChecks, enumerations;
+    private long hashes, hits, bytes, metadataChecks, enumerations, inventoryEvictions;
 
     public synchronized String hash(Path file) throws IOException {
         file = file.toAbsolutePath().normalize();
@@ -60,24 +60,43 @@ public final class FileStateRegistry {
         }
     }
 
-    private record InventoryKey(Path root,String suffix) { }
+    private record InventoryKey(Path root,String suffix,boolean followLinks) { }
     private static final class Directory {
         Map<String,Object> stamp;
         List<Path> children=List.of(), members=List.of();
         final Map<Path,Directory> directories=new HashMap<>();
+        final Set<Path> links=new HashSet<>();
     }
-    private final Map<InventoryKey,Directory> inventories=new HashMap<>();
+    private final Map<InventoryKey,Directory> inventories=new LinkedHashMap<>(16,.75f,true);
+    private static final int MAX_INVENTORIES=128;
 
     /** Checks every known directory's change time, including missing roots; no watcher delivery assumption. */
     public synchronized List<Path> inventory(Path root,String suffix)throws IOException {
-        root=root.toAbsolutePath().normalize();
-        return inventory(root,suffix,inventories.computeIfAbsent(new InventoryKey(root,suffix),ignored->new Directory()));
+        return inventory(root,suffix,false);
     }
-    private List<Path> inventory(Path root,String suffix,Directory state)throws IOException {return inventory(root,suffix,state,0);}
-    private List<Path> inventory(Path root,String suffix,Directory state,int attempt)throws IOException {
+    /** Compiler paths follow links; ordinary source discovery retains its no-follow policy. */
+    public synchronized List<Path> inventory(Path root,String suffix,boolean followLinks)throws IOException {
+        root=root.toAbsolutePath().normalize();
+        var key=new InventoryKey(root,suffix,followLinks);
+        var state=inventories.computeIfAbsent(key,ignored->new Directory());
+        while(inventories.size()>MAX_INVENTORIES){inventories.remove(inventories.keySet().iterator().next());inventoryEvictions++;}
+        return inventory(root,suffix,state,followLinks,new HashSet<>());
+    }
+    private List<Path> inventory(Path root,String suffix,Directory state,boolean followLinks,Set<Path> ancestors)throws IOException {
+        Path target=null;
+        if(followLinks){
+            metadataChecks++;
+            try{target=root.toRealPath();}catch(NoSuchFileException missing){return List.of();}
+            if(!ancestors.add(target))throw new FileSystemLoopException(root.toString());
+        }
+        try{return inventory(root,suffix,state,followLinks,ancestors,0);}
+        finally{if(target!=null)ancestors.remove(target);}
+    }
+    private List<Path> inventory(Path root,String suffix,Directory state,boolean followLinks,Set<Path> ancestors,int attempt)throws IOException {
+        LinkOption[] options=followLinks?new LinkOption[0]:new LinkOption[]{LinkOption.NOFOLLOW_LINKS};
         metadataChecks++;
         Map<String,Object> before;
-        try { before=Files.readAttributes(root,"unix:size,lastModifiedTime,ctime,ino,isDirectory",LinkOption.NOFOLLOW_LINKS); }
+        try { before=Files.readAttributes(root,"unix:size,lastModifiedTime,ctime,ino,isDirectory",options); }
         catch(NoSuchFileException missing){state.stamp=null;state.children=List.of();state.members=List.of();state.directories.clear();return state.members;}
         catch(UnsupportedOperationException|IllegalArgumentException unsupported){before=null;}
         if(before!=null&&!Boolean.TRUE.equals(before.get("isDirectory")))return List.of();
@@ -90,28 +109,36 @@ public final class FileStateRegistry {
             if(before!=null){
                 metadataChecks++;
                 Map<String,Object> after;
-                try{after=Files.readAttributes(root,"unix:size,lastModifiedTime,ctime,ino,isDirectory",LinkOption.NOFOLLOW_LINKS);}
+                try{after=Files.readAttributes(root,"unix:size,lastModifiedTime,ctime,ino,isDirectory",options);}
                 catch(NoSuchFileException removed){after=null;}
                 if(!before.equals(after)){
                     state.stamp=null;
                     if(attempt>=3)throw new CompilerInputs.Superseded("Directory changed repeatedly during reconciliation: "+root);
-                    return inventory(root,suffix,state,attempt+1);
+                    return inventory(root,suffix,state,followLinks,ancestors,attempt+1);
                 }
             }
             state.stamp=before;
             state.directories.keySet().retainAll(state.children);
+            state.links.clear();
             for(Path child:state.children){
                 metadataChecks++;
-                if(Files.isDirectory(child,LinkOption.NOFOLLOW_LINKS))state.directories.computeIfAbsent(child,ignored->new Directory());
+                if(followLinks&&Files.isSymbolicLink(child))state.links.add(child);
+                if(Files.isDirectory(child,options))state.directories.computeIfAbsent(child,ignored->new Directory());
                 else state.directories.remove(child);
             }
         }
         List<Path> values=null;
         int offset=0;
         for(Path child:state.children){
+            // A link target can appear, disappear or change type without changing its parent.
+            if(state.links.contains(child)){
+                metadataChecks++;
+                if(Files.isDirectory(child))state.directories.computeIfAbsent(child,ignored->new Directory());
+                else state.directories.remove(child);
+            }
             List<Path> members;
             if(state.directories.containsKey(child))
-                members=inventory(child,suffix,state.directories.computeIfAbsent(child,ignored->new Directory()));
+                members=inventory(child,suffix,state.directories.get(child),followLinks,ancestors);
             else members=child.toString().endsWith(suffix)?List.of(child):List.of();
             for(Path file:members){
                 if(values==null&&(offset>=state.members.size()||!file.equals(state.members.get(offset))))values=new ArrayList<>(state.members.subList(0,offset));
@@ -128,6 +155,6 @@ public final class FileStateRegistry {
     public synchronized Object evidence(Path file){return files.get(file.toAbsolutePath().normalize());}
     public synchronized void forget(Path file) { files.remove(file.toAbsolutePath().normalize()); }
     public synchronized Map<String, Object> status() {
-        return Map.of("entries", files.size(), "hashes", hashes, "stat_hits", hits, "bytes_hashed", bytes, "metadata_checks", metadataChecks, "directory_enumerations", enumerations);
+        return Map.of("entries", files.size(), "hashes", hashes, "stat_hits", hits, "bytes_hashed", bytes, "metadata_checks", metadataChecks, "directory_enumerations", enumerations, "inventory_entries", inventories.size(), "inventory_evictions", inventoryEvictions);
     }
 }

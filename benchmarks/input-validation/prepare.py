@@ -36,5 +36,5 @@ probe=Path(__file__).with_name('InputWorkProbe.java');files.append(probe)
 jars=[j for j in sorted(a.dependencies.glob('*.jar')) if not j.name.startswith('jvmd-')]
 cp=':'.join(map(str,jars)); command=[str(a.java_home/'bin/javac'),'-source','25','-target','25',*exports,'-cp',cp,'-d',str(classes),*map(str,files),str(Path(__file__).with_name('Validation.java')),str(Path(__file__).with_name('Diagnostics.java'))]
 with (a.output/'compile.log').open('w') as log: subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True)
-report={'revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=a.repo,text=True).strip(),'sources':hashes,'command':command,'classpath':str(classes)+':'+cp,'java':str(a.java_home/'bin/java'),'exports':exports}
+report={'revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=a.repo,text=True).strip(),'sources':hashes,'dependencies':{j.name:hashlib.sha256(j.read_bytes()).hexdigest() for j in jars},'command':command,'classpath':str(classes)+':'+cp,'java':str(a.java_home/'bin/java'),'exports':exports}
 (a.output/'build.json').write_text(json.dumps(report,indent=2)+'\n')

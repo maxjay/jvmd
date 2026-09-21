@@ -2,9 +2,8 @@ name: Merge Review
 
 on:
   pull_request:
-    # Deliberately omit synchronize: this expensive evidence runs when review starts,
-    # not on every commit pushed while a PR is being developed.
-    types: [opened, reopened, ready_for_review]
+    # Refresh changed benchmark/report code; ordinary implementation pushes remain gated below.
+    types: [opened, reopened, ready_for_review, synchronize]
   workflow_dispatch:
 
 permissions:
@@ -16,11 +15,38 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  select:
+    runs-on: ubuntu-24.04
+    outputs:
+      run: ${{ steps.changed.outputs.run }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - id: changed
+        env:
+          ACTION: ${{ github.event.action }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [[ "$ACTION" != synchronize ]]; then
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+          else
+            git fetch --depth=1 origin "$BEFORE_SHA"
+            if git diff --quiet "$BEFORE_SHA" "$HEAD_SHA" -- benchmarks .github/workflows/merge-review.yml; then
+              echo 'run=false' >> "$GITHUB_OUTPUT"
+            else
+              echo 'run=true' >> "$GITHUB_OUTPUT"
+            fi
+          fi
   evidence:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false }}
+    needs: select
+    if: ${{ needs.select.outputs.run == 'true' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false) }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install checksum-pinned Temurin 25.0.4.1+1
         shell: bash
         run: |
@@ -56,6 +82,28 @@ jobs:
           python benchmarks/workspaces/compile.py --repo "$PWD" --java-home "$JAVA_HOME" --dependencies "$deps" --output "$RUNNER_TEMP/build" --reuse-production-jars
           # 192 sources plus 64 dependency JARs, with an exact generated oracle.
           python benchmarks/workspaces/fixture.py --build "$RUNNER_TEMP/build/build.json" --dependencies "$deps" --root "$RUNNER_TEMP/fixtures" --fixture-names review
+      - name: Compare semantic state against the PR base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          # Manual runs compare against the preceding commit. PR runs use the exact PR base.
+          if [[ -z "$BASE_SHA" ]]; then
+            git fetch --depth=2 origin "$HEAD_SHA"
+            BASE_SHA="$(git rev-parse "$HEAD_SHA^")"
+          fi
+          git fetch --depth=1 origin "$BASE_SHA"
+          git worktree add --detach "$RUNNER_TEMP/semantic-base" "$BASE_SHA"
+          (
+            cd "$RUNNER_TEMP/semantic-base"
+            mvn -B -T1C -Dmaven.test.skip=true -pl jvmd-dist -am package
+          )
+          JAVA_HOME="$JAVA_HOME" benchmarks/semantic-state/run.sh \
+            "$RUNNER_TEMP/semantic-base/jvmd-dist/target/*:$RUNNER_TEMP/semantic-base/jvmd-dist/target/lib/*" \
+            "$PWD/jvmd-dist/target/*:$PWD/jvmd-dist/target/lib/*" "$RUNNER_TEMP/semantic-state"
+          python benchmarks/semantic-state/summarize.py "$RUNNER_TEMP/semantic-state" "$RUNNER_TEMP/semantic-state-summary.json" \
+            --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA"
       - name: Fast JVMD and JDTLS correctness benchmark
         run: |
           python benchmarks/workspaces/matrix.py --repo "$PWD" --before "$RUNNER_TEMP/build/build.json" --after "$RUNNER_TEMP/build/build.json" \
@@ -64,7 +112,7 @@ jobs:
             --fixture-names review --modes after jdtls-shared
           python benchmarks/workspaces/verify.py "$RUNNER_TEMP/results" "$RUNNER_TEMP/verification.json"
           python benchmarks/workspaces/summarize.py "$RUNNER_TEMP/results" "$RUNNER_TEMP/summary.json"
-          python benchmarks/workspaces/compare.py "$RUNNER_TEMP/summary.json" "$RUNNER_TEMP/comparison.json" --markdown "$RUNNER_TEMP/comparison.md"
+          python benchmarks/workspaces/compare.py "$RUNNER_TEMP/summary.json" "$RUNNER_TEMP/comparison.json" --markdown "$RUNNER_TEMP/comparison.md" --semantic-state "$RUNNER_TEMP/semantic-state-summary.json"
           python benchmarks/workspaces/matrix.py --repo "$PWD" --before "$RUNNER_TEMP/build/build.json" --after "$RUNNER_TEMP/build/build.json" \
             --java-home "$JAVA_HOME" --jdtls "$RUNNER_TEMP/jdtls" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" \
             --fixtures "$RUNNER_TEMP/fixtures" --root "$RUNNER_TEMP/allocation-results" --runs 1 --sources 192 --workspaces 1 --samples 1 --edits 2 \
@@ -104,6 +152,9 @@ jobs:
           name: merge-review-evidence
           if-no-files-found: warn
           path: |
+            ${{ runner.temp }}/semantic-state-summary.json
+            ${{ runner.temp }}/semantic-state/*.json
+            ${{ runner.temp }}/semantic-state/disk-kib.txt
             ${{ runner.temp }}/dashboard.html
             ${{ runner.temp }}/comparison.*
             ${{ runner.temp }}/summary.json

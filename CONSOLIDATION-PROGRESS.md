@@ -199,3 +199,71 @@ The baseline runtime tree was verified identical to main. JDK: Temurin 25.0.4.1;
 ### Checkpoints follow-up — completion discovery race
 
 Checkpoints run 35653852144 failed only `CompletionPrefixCacheTest.changedReleaseAndNewSourceNamesCannotReuseOldCandidates` in Phase 4. The retry after an unresolved receiver flushed javac but retained the source inventory until a WatchService create event arrived. Added a deterministic regression that suppresses event delivery: it fails before the fix and passes after it. Empty completion results now invalidate the source inventory for the next attempt; successful prefix-cache hits keep their existing fast path. The complete Phase 4 group passes locally: **79 tests, 0 failures/errors**, without changing the checkpoint or weakening assertions.
+
+## 2026-09-21: Separate fact lifetime from navigation results
+
+Base: main `563ecc4`, including the Rocks cutover and shared semantic policy.
+Branch: `refactor/indexed-semantic-read-view`.
+
+- [x] Reproduce aggregate rejection losing reusable file state.
+- [x] Store detached file facts independently of bounded decoded caches.
+- [x] Replace aggregate admission/JSON sizing with pinned indexed read views.
+- [x] Use per-owner binary records and postings for persistent local-source facts.
+- [x] Migrate legacy source JSON atomically and preserve SCIP/numeric identities.
+- [x] Move source precedence, deduplication, expansion and pagination into a common workspace read view.
+- [x] Check zero-budget reuse, old-view isolation, replacement/deletion, stale binary-edge masking, migration, and query/edit behavior.
+- [x] Run before/after measurements and preserve raw samples and reproduction.
+
+Production implementation: `20ad41cd25c55a96aaa2e3733012e2290f2bc63b`.
+Its tree matches the locally tested tree exactly. Production Java is **+350 lines** overall;
+`Application` loses 55 lines. This removes lifetime/query ownership duplication but is not a net
+line-count reduction: the indexed fact engine, codec and read-view contract replace in-memory maps
+and JSON rather than simply deleting functionality.
+
+On the isolated 128-file zero-budget workload, 31 requests load **3,968 → 128 files**, with warm
+request medians **5.407 → 0.870 ms**. Cold construction slows **258.19 → 413.65 ms**. Below the old
+admission threshold, warm times are **0.746 → 0.816 ms**. For 3,072 local symbols, warm prefix search
+is **3.478 → 0.185 ms** and exact-name search **3.603 → 0.320 ms**. Source publication and disk
+space increase; see the report for costs, limitations, tests and reproduction.
+
+Evidence: `docs/performance/2026-09-21-semantic-state.md` and `docs/performance/semantic-state/`.
+Harness: `benchmarks/semantic-state/`. Full PR CI is separate from the local targeted checks.
+
+### Review follow-up — declaration ownership, transactional owners, and read leases
+
+Combined search now masks dependency results only when the live view owns a declaration, using
+`declaration/<scip>` postings. A real JAR/application regression warms bindings through a call to
+a dependency class and verifies combined search still returns that class exactly once.
+
+Full rebuilds retain the committed owner inventory until the fact batch commits. Replacement
+metadata is published immediately after commit, before view construction or validation can fail.
+The regression changes context, removes a file, throws from the loader, and successfully retries;
+removed-file facts disappear from the new view while the old pinned view remains readable.
+
+The cache retains revision metadata; each `get`/`peek` returns an independent caller-owned lease.
+Application closes its leases and uses a separate revision identity for index reuse. Tests cover
+close/reacquire through both validation paths and both peek APIs, overlapping leases, idempotent
+close, and reuse without another loader call at zero decoded budget. The benchmark harness also
+closes leases when the tested revision supports them.
+
+Validation: **45 tests, zero failures/errors/skips** across fact lifetime, source overlays, index
+contracts, pagination, navigation, rename, and semantic protocol coverage. Temporarily restoring
+the two original correctness defects made both new regressions fail. Existing performance samples
+remain attributed to their recorded revision; they are not measurements of this follow-up.
+
+### Main integration and PR review responses
+
+Merged main `4d90be5` (previous-PR benchmark comparison) into the branch. The Merge Review
+job passed both benchmark stages and failed in the previous-PR comparison stage; the merged
+checkout now contains the `trend.py` script used by that workflow step.
+
+Updated the exact module dependency contract for `dev.jvmd.dist` and added explicit descriptor
+coverage for `dev.jvmd.index.rocks`, including the existing javac-internals boundary checks.
+The other review findings (declaration masking, aborted rebuild ownership, and synchronized
+lease registration) were already fixed in `667d435`.
+
+Validation: ModuleArchitectureTest, SemanticFactLifetimeTest, and DependencyFindPaginationTest
+pass (10 tests); benchmark trend, harness, and dashboard tests pass (10 tests). A broader local
+Phase 1 attempt ran 17 tests, with five environment/prerequisite failures: the runtime image and
+AOT training were not assembled, and this executor rejects Unix sockets. These are not reported
+as passing; CI remains the complete runtime gate.

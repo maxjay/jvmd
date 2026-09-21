@@ -23,6 +23,17 @@ public interface IndexStore extends AutoCloseable {
         }
     }
 
+    /** Query contract shared with the live source overlay; numeric storage handles stay inside the adapter. */
+    default SymbolReadView readView(String workspace){
+        var store=this;return new SymbolReadView(){
+            public boolean declares(String scip)throws Exception{return byScip(scip)!=null;}
+            public Map<String,Object> byScip(String scip)throws Exception{return store.byScip(scip,workspace);}
+            private Page page(List<Map<String,Object>> rows,int limit){boolean more=rows.size()>limit;var items=rows.subList(0,Math.min(limit,rows.size()));return new Page(items,more?items.getLast().get("id").toString():null);}
+            public Page find(String query,boolean substring,Set<String> kinds,int limit,String cursor)throws Exception{return page(store.find(query,workspace,substring,limit+1,cursor==null?0:Long.parseLong(cursor),kinds),limit);}
+            public Page descendants(String path,int depth,Set<String> kinds,int limit,String cursor)throws Exception{return page(store.descendants(path,workspace,depth,limit+1,cursor==null?0:Long.parseLong(cursor),kinds),limit);}
+        };
+    }
+
     String backend();
     ArtifactRecord artifact(Path path)throws Exception;
     void publishPath(Path path,long artifactId,long size,long mtime)throws Exception;

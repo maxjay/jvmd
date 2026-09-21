@@ -44,6 +44,20 @@ def markdown(result):
             improvement_text = 'n/a' if improvement is None else f'{improvement:+.1f}%'
             lines.append(f"| {fixture} | {name} | {values['unit']} | {values['jvmd']:.3f} | {values['jdtls']:.3f} | {ratio_text} | {improvement_text} |")
     lines += ['', result['interpretation']]
+    if result.get('semantic_state'):
+        lines += ['', semantic_markdown(result['semantic_state'])]
+    return '\n'.join(lines)+'\n'
+
+
+def semantic_markdown(result):
+    lines = ['## JVMD semantic state: base versus candidate', '', result['interpretation'], '',
+             f"Base: `{result['base_sha']}` · candidate: `{result['head_sha']}`", '',
+             '| Metric | Unit | Base JVMD | Candidate JVMD | After / before | Repetitions |',
+             '|---|---|---:|---:|---:|---:|']
+    for row in result['rows']:
+        ratio = row['after_over_before']
+        ratio_text = 'n/a' if ratio is None else f'{ratio:.3f}'
+        lines.append(f"| {row['metric']} | {row['unit']} | {row['before']:.3f} | {row['after']:.3f} | {ratio_text} | {row['repetitions']} |")
     return '\n'.join(lines)+'\n'
 
 
@@ -53,7 +67,9 @@ if __name__ == '__main__':
     parser.add_argument('--candidate', default='after'); parser.add_argument('--baseline', default='jdtls-shared')
     parser.add_argument('--metrics', nargs='+')
     parser.add_argument('--markdown', type=Path)
+    parser.add_argument('--semantic-state', type=Path, help='Paired JVMD component evidence, kept separate from LSP ratios')
     args = parser.parse_args(); result = compare(json.loads(args.summary.read_text()), args.candidate, args.baseline, args.metrics)
+    if args.semantic_state: result['semantic_state'] = json.loads(args.semantic_state.read_text())
     args.output.write_text(json.dumps(result, indent=2)+'\n')
     if args.markdown: args.markdown.write_text(markdown(result))
     print(json.dumps({'fixtures': len(result['fixtures'])}))

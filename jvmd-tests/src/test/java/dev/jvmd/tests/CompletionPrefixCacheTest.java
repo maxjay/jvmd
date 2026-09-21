@@ -1,6 +1,8 @@
 package dev.jvmd.tests;
 
 import dev.jvmd.analyzer.Analyzer;
+import dev.jvmd.analyzer.CompilerPool;
+import dev.jvmd.analyzer.IndexedFileManager;
 import dev.jvmd.core.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.nio.file.*;
@@ -86,6 +88,25 @@ class CompletionPrefixCacheTest {
             assertThat(analyzer.status().get("completion_computations")).isEqualTo(4L);
         }
     }
+    @Test void unresolvedReceiverRetriesSourceDiscoveryWithoutAWatchEvent()throws Exception{
+        Path file=Files.writeString(root.resolve("Use.java"),text("get"));
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);
+            assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).doesNotContain("getPets");
+            // Suppress delivery while leaving the cached source catalog marked reliable.
+            // This deterministically models a create event arriving after the next query.
+            var compilerField=Analyzer.class.getDeclaredField("compiler");compilerField.setAccessible(true);
+            var managerField=CompilerPool.class.getDeclaredField("manager");managerField.setAccessible(true);
+            var manager=managerField.get(compilerField.get(analyzer));
+            var watchesField=IndexedFileManager.class.getDeclaredField("sourceWatchDirectories");watchesField.setAccessible(true);
+            var watches=(Map<?,?>)watchesField.get(manager);
+            watches.keySet().forEach(key->((WatchKey)key).cancel());
+            Files.writeString(root.resolve("Api.java"),"class Api { int getPets(){return 1;} }");
+            assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
+            assertThat(analyzer.status()).containsEntry("completion_computations",2L);
+        }
+    }
+
     @Test void nonSourceFilesystemChurnDoesNotInvalidateWatcherBackedCandidates()throws Exception{
         Files.writeString(root.resolve("Api.java"),"class Api { int getPets(){return 1;} }");
         Path file=Files.writeString(root.resolve("Use.java"),text("g"));var documents=new Documents();documents.open(file,text("g"),1);

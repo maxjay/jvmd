@@ -138,6 +138,7 @@ public final class CompilerPool implements AutoCloseable {
     private long heap(){return heapUsage.getAsLong();}
     public void recycle(){checkThread();releasePlatform.close();pool=new JavacTaskPool(1);if(manager!=null)manager.invalidate();baseline=heap();recycles++;validatedRequestId=-1;}
     /** JavacTaskPool clears source symbols after each task; refresh source discovery without dropping binary state. */
+    public void invalidateSourceInventory(){checkThread();if(manager!=null)manager.invalidateSourceInventory();}
     public void sourcesChanged(){checkThread();if(manager!=null){manager.sourcesChanged();refreshSourceModules();}validatedRequestId=-1;}
     /** Cheap source namespace/content epoch when the platform watcher is reliable; -1 requests conservative validation. */
     public long sourceStateGeneration(){checkThread();return manager==null?-1L:manager.sourceStateGeneration();}

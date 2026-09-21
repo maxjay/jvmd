@@ -392,6 +392,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             phaseStarted=System.nanoTime();
             // Empty results can mean the receiver is unresolved. Do not cache them: a newly
             // created source may make that receiver resolvable before a WatchService event arrives.
+            // Also discard the discovery catalog: flushing javac alone still leaves a newly
+            // created receiver invisible when its filesystem event has not arrived yet.
+            if(outcome.result()==null||outcome.result().isEmpty())compiler.invalidateSourceInventory();
             caches.completion=key!=null&&outcome.tier()==2&&outcome.warnings().isEmpty()&&outcome.result()!=null&&!outcome.result().isEmpty()&&outcome.result().size()<=256
                     &&Json.MAPPER.writeValueAsBytes(outcome.result()).length<=256*1024?new CompletionCached(key,prefix,new CompilerPool.Outcome<>(2,outcome.result(),List.of(),List.of())):null;
             cacheAdmissionNanos=System.nanoTime()-phaseStarted;

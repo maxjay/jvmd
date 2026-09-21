@@ -195,3 +195,7 @@ Production Java is **+170 net lines** (410 added, 240 deleted), including the im
 The baseline runtime tree was verified identical to main. JDK: Temurin 25.0.4.1; 1 GiB maximum heap. Initial local checks needed a fresh JDK, the Maven 3 resolver executable, and Maven on PATH; after repairing the toolchain, all selected checks passed without weakening assertions. The initial-attribution cache regression found by `BatchDiagnosticsTest` was fixed in the shared policy.
 
 [Raw samples and scope](docs/performance/2026-09-21-semantic-policy.json). [Reproduction](benchmarks/semantic-policy/README.md).
+
+### Checkpoints follow-up — completion discovery race
+
+Checkpoints run 35653852144 failed only `CompletionPrefixCacheTest.changedReleaseAndNewSourceNamesCannotReuseOldCandidates` in Phase 4. The retry after an unresolved receiver flushed javac but retained the source inventory until a WatchService create event arrived. Added a deterministic regression that suppresses event delivery: it fails before the fix and passes after it. Empty completion results now invalidate the source inventory for the next attempt; successful prefix-cache hits keep their existing fast path. The complete Phase 4 group passes locally: **79 tests, 0 failures/errors**, without changing the checkpoint or weakening assertions.

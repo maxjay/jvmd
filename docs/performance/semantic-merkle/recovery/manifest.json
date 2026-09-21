@@ -1,4 +1,48 @@
 {
+  "ad9ce2a-combined.json.gz": {
+    "bytes": 183839,
+    "sha256": "eb8ef21023814a967109e0777b35e70a33a103608954e1435c80edb5d1716808"
+  },
+  "ad9ce2a-consumer-logs.tar.gz": {
+    "bytes": 5978,
+    "sha256": "8c9b1246268765f696ff1ca173034334e77eac5e0d4d8e0dc08974e237bfe9d6"
+  },
+  "ad9ce2a-retained-summary.json": {
+    "bytes": 447,
+    "sha256": "4aeb6315f4708b2b762914aa7e7c385541dd994de4db836a29184c6a34123b3b"
+  },
+  "ad9ce2a-retained.json.gz": {
+    "bytes": 66394,
+    "sha256": "0d684fb0b700aae7268b187243c31105a47260fdf5e193f8df9f9a22efc8e912"
+  },
+  "ad9ce2a-summary.json": {
+    "bytes": 36728,
+    "sha256": "faa256e8b8e72156e51286a59c941346e2f9d652616502318c469a826c5173ff"
+  },
+  "ad9ce2a-worker-logs.tar.gz": {
+    "bytes": 40428,
+    "sha256": "a37cbef6af0ef7682a919c7d2680365a95150eb2d1007c9f9ebdcde96adb5369"
+  },
+  "ci-ad9ce2a-failure.txt": {
+    "bytes": 3283,
+    "sha256": "083b5a944d9fc515d56fb1d6417948481d8c80d838a2dd4f1d2909be4d5a6bf0"
+  },
+  "delayed-completion-baseline-v3-command.json": {
+    "bytes": 1530,
+    "sha256": "fb8a0d872c5af08bc0fac70dff4225e3302a1523c41779b75724f9bbf25764a9"
+  },
+  "delayed-completion-baseline-v3.json": {
+    "bytes": 2678,
+    "sha256": "4fff592c8ab765bb147dfa7ac692b69d68405e18eca2cfed4065c60716a7b98b"
+  },
+  "delayed-completion-consolidated-v1-command.json": {
+    "bytes": 1570,
+    "sha256": "655b0cc41ec1929cecf79cb516ec4a0d015fd65d98152d094a915459bbdeb9ad"
+  },
+  "delayed-completion-consolidated-v1.json": {
+    "bytes": 2678,
+    "sha256": "8fe42f7a8a620721a3df6c04bdef63cda667a2116b67703c7a04c75d4fbbdab2"
+  },
   "overview-before-summary.json": {
     "bytes": 3011,
     "sha256": "4c8d6d44b30a5e96ef61ae0a9ba3fe8f1da66051683da5a7a77f72bd2dcc97d1"
@@ -19,6 +63,10 @@
     "bytes": 3561,
     "sha256": "b0c3e2ed3a0bb1c36d2c9e79d3779dbabb06c7070ff5da582e9db98228e8ad15"
   },
+  "production-source-verification.json": {
+    "bytes": 14406,
+    "sha256": "3c393fc5be2e2107d9facf6d1b29792498c7bb96193e2797f47211e249d47c27"
+  },
   "published-comparison.json.gz": {
     "bytes": 111356,
     "sha256": "289869fbde7906af6ebaae8ce7cd58f9fea65d1b5e55557ec3931d8279565ac7"
@@ -30,5 +78,17 @@
   "published-worker-logs.tar.gz": {
     "bytes": 17475,
     "sha256": "40792262be7b1b67e32576047cf654bc99445d5aeeaeb5761a5140ba80e63685"
+  },
+  "readability-audit.json": {
+    "bytes": 2293,
+    "sha256": "23e0cc139fada76906b628cbf61df35fb8e7ebbd1eae62e2d06272561e632430"
+  },
+  "warm-after-profile-summary.json": {
+    "bytes": 4539,
+    "sha256": "86f51a0a2f37f9972de195bd68ca8c17a31b812cb31e4620fe8dc0e094cca309"
+  },
+  "warm-before-profile-summary.json": {
+    "bytes": 4540,
+    "sha256": "a3a515f8f1c2154f5e87645d51c6fc11c3b76fecfc01341e6eaf76c4fa56ece1"
   }
 }

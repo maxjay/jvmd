@@ -136,3 +136,9 @@ depth filtering. It runs after the existing 34 scenarios, preserving their reque
 numbers must not be pooled with the full application suite. The first five cached requests
 are explicitly startup-sequence measurements, not a claim of steady-state tail latency.
 Unresolved declarations and compact constructors have deterministic contract tests.
+
+Use `report.py INITIAL/campaign.json CONFIRMATION/campaign.json --output REPORT` to
+combine a permitted confirmation and render all scenarios. It rejects incomplete pairs
+and differing builds, harnesses, fixtures or host metadata. Never combine profiled or
+forced-GC runs with latency samples. The diagnostics directory contains separate probes;
+its delayed-notification completion experiment is a correctness reproduction, not timing.

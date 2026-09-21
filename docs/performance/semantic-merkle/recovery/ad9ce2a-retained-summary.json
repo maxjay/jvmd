@@ -1,0 +1,17 @@
+{
+  "pairs": 3,
+  "snapshots": 13,
+  "measurement": "whole-JVM live heap after forced GC, not object-exact graph retention",
+  "median_bytes": {
+    "before": {
+      "initial_live_heap_bytes": 26938176,
+      "with_old_readers_bytes": 21141168,
+      "released_readers_bytes": 18818520
+    },
+    "after": {
+      "initial_live_heap_bytes": 31718688,
+      "with_old_readers_bytes": 19486000,
+      "released_readers_bytes": 19484304
+    }
+  }
+}

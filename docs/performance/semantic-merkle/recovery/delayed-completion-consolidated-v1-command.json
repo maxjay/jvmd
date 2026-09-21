@@ -1,0 +1,17 @@
+{
+  "command": [
+    "/tmp/jvmd-semantic-tools/jdk-25.0.4.1+1/bin/java",
+    "--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+    "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED",
+    "--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
+    "--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED",
+    "--add-exports=jdk.compiler/com.sun.tools.javac.platform=ALL-UNNAMED",
+    "-cp",
+    "/workspace/scratch/7164a0d102d4/semantic-recovery/delayed-completion-consolidated-v1/classes:/workspace/scratch/7164a0d102d4/semantic-recovery/consolidated-v1/classes:/workspace/scratch/7164a0d102d4/semantic-recovery/consolidated-v1-dependencies/jackson-annotations-2.22.jar:/workspace/scratch/7164a0d102d4/semantic-recovery/consolidated-v1-dependencies/jackson-core-2.22.2.jar:/workspace/scratch/7164a0d102d4/semantic-recovery/consolidated-v1-dependencies/jackson-databind-2.22.2.jar:/workspace/scratch/7164a0d102d4/semantic-recovery/consolidated-v1-dependencies/rocksdbjni-10.10.1.1.jar:/workspace/scratch/7164a0d102d4/semantic-recovery/consolidated-v1-dependencies/sqlite-jdbc-3.53.4.0.jar",
+    "DelayedCompletionProbe",
+    "/workspace/scratch/7164a0d102d4/semantic-recovery/delayed-completion-consolidated-v1/workspace",
+    "/workspace/scratch/7164a0d102d4/semantic-recovery/delayed-completion-consolidated-v1/result.json"
+  ],
+  "source_sha256": "6e840ba9453ad2c08e48cc834b1cedb63b47021312c94648f9f63cca0a6afdec",
+  "build_manifest": "/workspace/scratch/7164a0d102d4/semantic-recovery/consolidated-v1/build.json"
+}

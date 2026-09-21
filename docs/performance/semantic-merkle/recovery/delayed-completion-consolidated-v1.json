@@ -1,0 +1,104 @@
+{
+  "changed_dependency" : {
+    "observes_current_source" : false,
+    "completion_computations" : 1,
+    "after_disk_change" : {
+      "items" : [ {
+        "scip" : "maven jdk/java.base 25 java/lang/Object#getClass().",
+        "name" : "getClass",
+        "name_path" : "java.lang.Object/getClass()",
+        "kind" : "method",
+        "signature" : "final native public java.lang.Class<?> getClass()",
+        "modifiers" : [ "final", "native", "public" ],
+        "label" : "getClass(): java.lang.Class<?>",
+        "parameters" : [ ],
+        "doc" : null
+      }, {
+        "scip" : "maven probe/completion 1 Api#getPets().",
+        "name" : "getPets",
+        "name_path" : "Api/getPets()",
+        "kind" : "method",
+        "signature" : "int getPets()",
+        "modifiers" : [ ],
+        "label" : "getPets(): int",
+        "parameters" : [ ],
+        "doc" : null
+      } ],
+      "range" : {
+        "start" : {
+          "line" : 0,
+          "character" : 44
+        },
+        "end" : {
+          "line" : 0,
+          "character" : 47
+        }
+      }
+    },
+    "first" : {
+      "items" : [ {
+        "scip" : "maven jdk/java.base 25 java/lang/Object#getClass().",
+        "name" : "getClass",
+        "name_path" : "java.lang.Object/getClass()",
+        "kind" : "method",
+        "signature" : "final native public java.lang.Class<?> getClass()",
+        "modifiers" : [ "final", "native", "public" ],
+        "label" : "getClass(): java.lang.Class<?>",
+        "parameters" : [ ],
+        "doc" : null
+      }, {
+        "scip" : "maven probe/completion 1 Api#getPets().",
+        "name" : "getPets",
+        "name_path" : "Api/getPets()",
+        "kind" : "method",
+        "signature" : "int getPets()",
+        "modifiers" : [ ],
+        "label" : "getPets(): int",
+        "parameters" : [ ],
+        "doc" : null
+      } ],
+      "range" : {
+        "start" : {
+          "line" : 0,
+          "character" : 44
+        },
+        "end" : {
+          "line" : 0,
+          "character" : 47
+        }
+      }
+    },
+    "completion_cache_hits" : 1
+  },
+  "new_source" : {
+    "observes_current_source" : false,
+    "completion_computations" : 2,
+    "after_disk_change" : {
+      "items" : [ ],
+      "range" : {
+        "start" : {
+          "line" : 0,
+          "character" : 44
+        },
+        "end" : {
+          "line" : 0,
+          "character" : 47
+        }
+      }
+    },
+    "first" : {
+      "items" : [ ],
+      "range" : {
+        "start" : {
+          "line" : 0,
+          "character" : 44
+        },
+        "end" : {
+          "line" : 0,
+          "character" : 47
+        }
+      }
+    },
+    "completion_cache_hits" : 0
+  }
+}

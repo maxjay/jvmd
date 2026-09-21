@@ -1,0 +1,76 @@
+{
+  "formatter": "Google Java Format 1.30.0",
+  "formatter_sha256": "f2239a8a234a240a54fdff7809d4b3e66702c21f590c77a0b6cf7b20c829e95a",
+  "baseline": "ae23fd1f44573bd3427c0e77f967150173669a2f",
+  "published": "227598c73559be34a89af406e59b7ca5f5d97b90",
+  "candidate": "ad9ce2ab6f08b72b2744884d08331928edc48953",
+  "lines": {
+    "jvmd-core/src/main/java/dev/jvmd/core/FileStateRegistry.java": {
+      "baseline": 81,
+      "published": 90,
+      "candidate": 90
+    },
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Bindings.java": {
+      "baseline": 594,
+      "published": 676,
+      "candidate": 753
+    },
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/DiagnosticSnapshots.java": {
+      "baseline": 236,
+      "published": 236,
+      "candidate": 236
+    },
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Analyzer.java": {
+      "baseline": 1412,
+      "published": 1432,
+      "candidate": 1279
+    },
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Dependencies.java": {
+      "baseline": 98,
+      "published": 95,
+      "candidate": 95
+    },
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/ApiFingerprint.java": {
+      "baseline": 105
+    },
+    "jvmd-dist/src/main/java/dev/jvmd/dist/Application.java": {
+      "baseline": 2302,
+      "published": 2295,
+      "candidate": 2295
+    },
+    "jvmd-dist/src/main/java/dev/jvmd/dist/WorkspaceBindings.java": {
+      "baseline": 576,
+      "published": 548,
+      "candidate": 548
+    },
+    "jvmd-core/src/main/java/dev/jvmd/core/PersistentMap.java": {
+      "published": 201,
+      "candidate": 201
+    },
+    "jvmd-core/src/main/java/dev/jvmd/core/SemanticNode.java": {
+      "published": 102,
+      "candidate": 102
+    },
+    "jvmd-core/src/main/java/dev/jvmd/core/DependencyGraph.java": {
+      "published": 56,
+      "candidate": 56
+    },
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/DeclarationContract.java": {
+      "published": 127,
+      "candidate": 127
+    },
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/SemanticApi.java": {
+      "published": 87,
+      "candidate": 87
+    },
+    "jvmd-dist/src/main/java/dev/jvmd/dist/NavigationIndex.java": {
+      "published": 359,
+      "candidate": 365
+    }
+  },
+  "totals": {
+    "baseline": 5404,
+    "published": 6304,
+    "candidate": 6234
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "changed_dependency" : {
+    "first" : {
+      "range" : {
+        "start" : {
+          "line" : 0,
+          "character" : 44
+        },
+        "end" : {
+          "line" : 0,
+          "character" : 47
+        }
+      },
+      "items" : [ {
+        "scip" : "maven jdk/java.base 25 java/lang/Object#getClass().",
+        "name" : "getClass",
+        "name_path" : "java.lang.Object/getClass()",
+        "kind" : "method",
+        "signature" : "final native public java.lang.Class<?> getClass()",
+        "modifiers" : [ "final", "native", "public" ],
+        "label" : "getClass(): java.lang.Class<?>",
+        "parameters" : [ ],
+        "doc" : null
+      }, {
+        "scip" : "maven probe/completion 1 Api#getPets().",
+        "name" : "getPets",
+        "name_path" : "Api/getPets()",
+        "kind" : "method",
+        "signature" : "int getPets()",
+        "modifiers" : [ ],
+        "label" : "getPets(): int",
+        "parameters" : [ ],
+        "doc" : null
+      } ]
+    },
+    "completion_cache_hits" : 1,
+    "observes_current_source" : false,
+    "completion_computations" : 1,
+    "after_disk_change" : {
+      "range" : {
+        "start" : {
+          "line" : 0,
+          "character" : 44
+        },
+        "end" : {
+          "line" : 0,
+          "character" : 47
+        }
+      },
+      "items" : [ {
+        "scip" : "maven jdk/java.base 25 java/lang/Object#getClass().",
+        "name" : "getClass",
+        "name_path" : "java.lang.Object/getClass()",
+        "kind" : "method",
+        "signature" : "final native public java.lang.Class<?> getClass()",
+        "modifiers" : [ "final", "native", "public" ],
+        "label" : "getClass(): java.lang.Class<?>",
+        "parameters" : [ ],
+        "doc" : null
+      }, {
+        "scip" : "maven probe/completion 1 Api#getPets().",
+        "name" : "getPets",
+        "name_path" : "Api/getPets()",
+        "kind" : "method",
+        "signature" : "int getPets()",
+        "modifiers" : [ ],
+        "label" : "getPets(): int",
+        "parameters" : [ ],
+        "doc" : null
+      } ]
+    }
+  },
+  "new_source" : {
+    "first" : {
+      "range" : {
+        "start" : {
+          "line" : 0,
+          "character" : 44
+        },
+        "end" : {
+          "line" : 0,
+          "character" : 47
+        }
+      },
+      "items" : [ ]
+    },
+    "completion_cache_hits" : 0,
+    "observes_current_source" : false,
+    "completion_computations" : 2,
+    "after_disk_change" : {
+      "range" : {
+        "start" : {
+          "line" : 0,
+          "character" : 44
+        },
+        "end" : {
+          "line" : 0,
+          "character" : 47
+        }
+      },
+      "items" : [ ]
+    }
+  }
+}

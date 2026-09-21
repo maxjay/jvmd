@@ -48,6 +48,8 @@ with measured end-to-end latency and allocation improvement. No cosmetic line re
 - Complete dependency observations replace prior edges; partial observations remain conservative.
 - Changed paths update changed contributions and ancestors; unchanged subtrees are reused.
 - Keep persistence and live observations explicit. Equal roots do not detect unobserved disk edits.
+- Validate captured source and namespace inputs, including negative lookups; delivered watcher
+  epochs alone are not proof of current filesystem contents.
 - Every abstraction names the code/state it replaces. Use descriptive names and normal formatting.
 - Benchmark before production edits, compare independent alternating JVM pairs, report all paths.
 - Keep correctness, mechanism implementation and performance acceptance separately visible.
@@ -65,13 +67,28 @@ with measured end-to-end latency and allocation improvement. No cosmetic line re
 Details and predeclared acceptance: `docs/semantic-state.md` and
 `benchmarks/semantic-state/README.md`. Append progress continuously; commit coherent steps.
 
-## Current result — candidate 227598c
+## Current result — production ad9ce2a
 
-Implementation steps 1–5 are complete. Acceptance is not.
-Twenty paired comparisons completed and meet the primary edit-latency/allocation targets.
-Small-workspace warm latency regresses; other intervals remain unresolved. Readable
-production code increased by 900 lines. Full Checkpoints/Distributions pass, but the
-dedicated benchmark job fails a completion precheck also reproduced on the baseline.
-The environment disconnected before raw evidence publication; steps 6–8 remain open.
-The report at docs/performance/semantic-merkle/README.md preserves observed results;
-SEMANTIC-STATE-PROGRESS.md records recovery paths. No approval or merge is implied.
+Implementation steps 1–5 are complete. Acceptance steps 6–8 remain open.
+
+| Gate | Completed evidence | Remaining failure or uncertainty |
+| --- | --- | --- |
+| 6. Correctness | 35/35 focused local tests; new overview contracts pass on baseline and candidate; current Checkpoints and Distributions pass | Dedicated benchmark CI fails new-source completion. A delayed-notification probe reproduces both stale dependency results and stale source catalogues on baseline and candidate. |
+| 7. Performance and memory | 20 paired JVM comparisons, all 37 scenarios; raw samples/logs published; three separate retained-heap pairs | Primary edit latency/allocation pass. Small-query latency and other intervals remain unresolved; isolated cached overview regresses versus prior candidate. Initial heap +17.7% needs attribution. |
+| 8. Consolidation and final acceptance | Removed duplicate overview scanner/encoder and unnecessary API graph construction; same-formatter audit retained | 70 fewer lines than prior candidate, still +830 versus original baseline. Net reduction is unmet. PR remains a draft. |
+
+Next work, in order:
+
+1. Establish completion latency/allocation baselines, then repair source/namespace validation
+   with deterministic delayed-notification tests. The new-source failure occurs even on a
+   cache miss, so changing completion-cache admission alone is insufficient.
+2. Attribute initial heap growth and remaining small-query/cold costs before choosing further
+   replacements. Keep all failed/uncertain timing cases visible.
+3. Consolidate remaining duplicated semantic representation/ownership, count all affected
+   readable production code, and benchmark each complete replacement. No formatting tricks.
+4. Re-run required acceptance gates on the resulting exact production revision; publish the
+   evidence and update this checklist before considering readiness.
+
+Current full report: `docs/performance/semantic-merkle/README.md`.
+Every transition and failure remains in `SEMANTIC-STATE-PROGRESS.md`; older rounded evidence
+is separated from regenerated raw campaigns. No approval or merge is implied.

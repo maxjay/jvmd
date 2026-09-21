@@ -1,0 +1,42 @@
+2026-09-21T09:32:08.0855304Z [ERROR] Tests run: 8, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.635 s <<< FAILURE! -- in dev.jvmd.tests.CompletionPrefixCacheTest
+2026-09-21T09:32:08.0857399Z [ERROR] dev.jvmd.tests.CompletionPrefixCacheTest.changedReleaseAndNewSourceNamesCannotReuseOldCandidates -- Time elapsed: 0.080 s <<< FAILURE!
+2026-09-21T09:32:08.0858947Z java.lang.AssertionError: 
+2026-09-21T09:32:08.0859659Z 
+2026-09-21T09:32:08.0860007Z Expecting EmptyList:
+2026-09-21T09:32:08.0860544Z   []
+2026-09-21T09:32:08.0861020Z to contain:
+2026-09-21T09:32:08.0861513Z   ["getPets"]
+2026-09-21T09:32:08.0862087Z but could not find the following element(s):
+2026-09-21T09:32:08.0862771Z   ["getPets"]
+2026-09-21T09:32:08.0863147Z 
+2026-09-21T09:32:08.0864220Z 	at dev.jvmd.tests.CompletionPrefixCacheTest.changedReleaseAndNewSourceNamesCannotReuseOldCandidates(CompletionPrefixCacheTest.java:85)
+2026-09-21T09:32:08.0873305Z 	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+2026-09-21T09:32:08.0874482Z 	at java.base/java.util.ArrayList.forEach(ArrayList.java:1604)
+2026-09-21T09:32:08.0875399Z 	at java.base/java.util.ArrayList.forEach(ArrayList.java:1604)
+2026-09-21T09:32:08.0876034Z 
+2026-09-21T09:32:08.0876432Z [INFO] Running dev.jvmd.tests.OverviewCaptureTest
+2026-09-21T09:32:08.1447566Z [INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.069 s -- in dev.jvmd.tests.OverviewCaptureTest
+2026-09-21T09:32:08.1448779Z [INFO] Running dev.jvmd.tests.CompactConstructorBindingsTest
+2026-09-21T09:32:08.2159585Z {"tier":0,"session":"","faults":0,"latency_ms":0.701446,"method":"session.open","truncated":false}
+2026-09-21T09:32:08.2160923Z {"tier":2,"session":"s1","faults":0,"latency_ms":36.882584,"method":"symbol.atPosition","truncated":false}
+2026-09-21T09:32:08.2161789Z {"tier":2,"session":"s1","faults":0,"latency_ms":1.60752,"method":"symbol.describe","truncated":false}
+2026-09-21T09:32:08.2343906Z {"tier":2,"session":"s1","faults":0,"latency_ms":37.856916,"method":"symbol.references","truncated":false}
+2026-09-21T09:32:08.2345698Z {"tier":1,"session":"s1","faults":0,"latency_ms":4.157688,"method":"symbol.overview","truncated":false}
+2026-09-21T09:32:08.2455139Z [INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.093 s -- in dev.jvmd.tests.CompactConstructorBindingsTest
+2026-09-21T09:32:08.2693463Z [INFO] 
+2026-09-21T09:32:08.2694099Z [INFO] Results:
+2026-09-21T09:32:08.2695102Z [INFO] 
+2026-09-21T09:32:08.2697849Z [ERROR] Failures: 
+2026-09-21T09:32:08.2698700Z [ERROR]   CompletionPrefixCacheTest.changedReleaseAndNewSourceNamesCannotReuseOldCandidates:85 
+2026-09-21T09:32:08.2699653Z Expecting EmptyList:
+2026-09-21T09:32:08.2700115Z   []
+2026-09-21T09:32:08.2701269Z to contain:
+2026-09-21T09:32:08.2701568Z   ["getPets"]
+2026-09-21T09:32:08.2701935Z but could not find the following element(s):
+2026-09-21T09:32:08.2702391Z   ["getPets"]
+2026-09-21T09:32:08.2702577Z 
+2026-09-21T09:32:08.2702690Z [INFO] 
+2026-09-21T09:32:08.2702958Z [ERROR] Tests run: 41, Failures: 1, Errors: 0, Skipped: 0
+2026-09-21T09:32:08.2703277Z [INFO] 
+2026-09-21T09:32:08.2724007Z [INFO] ------------------------------------------------------------------------
+2026-09-21T09:32:08.2725260Z [INFO] BUILD FAILURE

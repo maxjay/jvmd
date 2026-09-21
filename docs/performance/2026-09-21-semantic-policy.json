@@ -1,0 +1,127 @@
+{
+  "baseline_revision": "a0fa429d0811014ccd99d30bf4c9777307f6a992",
+  "implementation_revision": "ba95dd72cbfbaab662a5ffa6d0ebb0134e1dbd2c",
+  "jdk": "openjdk 25.0.4.1 2026-08-18 LTS",
+  "heap_bytes": 1073741824,
+  "scope": "Storage microbenchmark, 1000 isolated files, 20 body warmups, 100 body and 100 API changes; three serial alternating repetitions, fresh store and same fixture path. No editor latency or whole-corpus allocation claim. Main speedup derives from PR #11 postings.",
+  "harness_sha256": "495f5f0038788858d1faa99c6132a6320869949c38e83115f6923f83cdbba13e",
+  "validation": {
+    "targeted_tests": 48,
+    "failures": 0,
+    "errors": 0,
+    "legacy_store_migration_passed": true
+  },
+  "summary": [
+    {
+      "revision": "baseline",
+      "case": "body",
+      "p50_ms": 2.893647,
+      "p95_ms": 3.630937
+    },
+    {
+      "revision": "consolidated",
+      "case": "body",
+      "p50_ms": 0.041112,
+      "p95_ms": 0.182585
+    },
+    {
+      "revision": "baseline",
+      "case": "api",
+      "p50_ms": 2.911113,
+      "p95_ms": 3.508583
+    },
+    {
+      "revision": "consolidated",
+      "case": "api",
+      "p50_ms": 0.05337,
+      "p95_ms": 0.148483
+    }
+  ],
+  "samples": [
+    {
+      "revision": "baseline",
+      "repetition": 1,
+      "case": "body",
+      "p50_ms": 2.838113,
+      "p95_ms": 3.630937
+    },
+    {
+      "revision": "baseline",
+      "repetition": 1,
+      "case": "api",
+      "p50_ms": 2.870382,
+      "p95_ms": 3.508583
+    },
+    {
+      "revision": "consolidated",
+      "repetition": 1,
+      "case": "body",
+      "p50_ms": 0.064878,
+      "p95_ms": 0.182585
+    },
+    {
+      "revision": "consolidated",
+      "repetition": 1,
+      "case": "api",
+      "p50_ms": 0.073441,
+      "p95_ms": 0.178069
+    },
+    {
+      "revision": "consolidated",
+      "repetition": 2,
+      "case": "body",
+      "p50_ms": 0.040391,
+      "p95_ms": 0.24565
+    },
+    {
+      "revision": "consolidated",
+      "repetition": 2,
+      "case": "api",
+      "p50_ms": 0.05337,
+      "p95_ms": 0.148483
+    },
+    {
+      "revision": "baseline",
+      "repetition": 2,
+      "case": "body",
+      "p50_ms": 2.993728,
+      "p95_ms": 4.712745
+    },
+    {
+      "revision": "baseline",
+      "repetition": 2,
+      "case": "api",
+      "p50_ms": 2.911113,
+      "p95_ms": 3.402964
+    },
+    {
+      "revision": "baseline",
+      "repetition": 3,
+      "case": "body",
+      "p50_ms": 2.893647,
+      "p95_ms": 3.618668
+    },
+    {
+      "revision": "baseline",
+      "repetition": 3,
+      "case": "api",
+      "p50_ms": 3.088169,
+      "p95_ms": 4.797583
+    },
+    {
+      "revision": "consolidated",
+      "repetition": 3,
+      "case": "body",
+      "p50_ms": 0.041112,
+      "p95_ms": 0.091287
+    },
+    {
+      "revision": "consolidated",
+      "repetition": 3,
+      "case": "api",
+      "p50_ms": 0.03979,
+      "p95_ms": 0.138979
+    }
+  ],
+  "implementation_tree": "c0b7231004b8d23d032e74cd77c918f0deef920a"
+}

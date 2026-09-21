@@ -175,3 +175,23 @@ Median measurements, in milliseconds:
 Timing is mixed; these small-fixture measurements support no blanket speedup claim. This is an ownership/deletion change. Full scenario samples, environment, semantic hashes, revisions, and publication counts are in [the benchmark evidence](docs/performance/2026-09-21-storage-cutover.json). Compatibility and status changes are documented in [storage.md](docs/storage.md).
 
 Reproduction uses `benchmarks/index-updates/RepositoryUpdateBenchmark.java` compiled against each revision's core/index/Rocks classes and runtime dependencies (SQLite JDBC only for baseline). Invoke `fixture`, then `seed`, `updates`, and `restart`, each with arguments `<operation> <repository> <state> <output.json> 8 100 10 true`; use `java -Xmx1024m --enable-native-access=ALL-UNNAMED`. Restore the same pristine fixture path and create independent state for each repetition, alternating revision order. For compatibility, run baseline `seed`, then cutover `reopen` against that same repository/state. OS caches were not flushed.
+
+## 2026-09-21 — Shared semantic update policy
+
+Implemented from main `a0fa429` in `ba95dd7` on `refactor/semantic-update-policy`.
+
+- [x] Preserve `FileSemanticContribution`; centralize API/body/namespace classification, unresolved matching, dependency closure, complete replacement, deletion, and pending resolution in `SemanticUpdatePolicy`.
+- [x] Reuse PR #11's semantic-postings implementation from `0fad49d`, adapting it to the shared policy. The unrelated local-source lookup optimization in #11 is not included. The PR remains open.
+- [x] Remove `WorkspaceBindings.reverseClosure()` and its API comparison. Add/delete updates use shared decisions; compiler-environment identity checks still require a full cache rebuild.
+- [x] Remove analyzer-owned API fingerprint, pending API, and conditional-by-file maps and `DiagnosticStore`'s unresolved-file sweep. `Dependencies.recordFocused()` explicitly supplements dependency facts; full contributions replace all prior edges and unresolved facts.
+- [x] Module actors exchange detached complete contributions. Compiler objects remain on their existing owner threads. Initial attribution seeds facts without invalidating callers already analysed against those sources.
+- [x] Reject incomplete source-publication deltas; focused and failed results cannot replace the authoritative contribution. Publication identity includes dependency/export/unresolved facts so unchanged source/API hashes cannot suppress their replacement.
+- [x] Persist complete diagnostic contributions in diagnostic snapshot schema 3. Older diagnostic snapshots are cache misses and reanalyse; Rocks canonical contributions and postings retain their existing encodings. Contributions, postings, and invalidation revisions now commit in one Rocks write batch.
+- [x] Pass 48 targeted tests with a 1 GiB test JVM, including live/verified diagnostics, multi-module API changes, body-only reuse, focused/full edge replacement, unresolved errors, navigation, cycles, deletion, and restart. A store seeded by main also passed migration, affected-file, and revision checks.
+- [x] Record three serial alternating repetitions of the same 1,000-file storage microbenchmark against main and the implementation. Median-of-run p50: body update **2.894 → 0.041 ms**, API update **2.911 → 0.053 ms**. Median-of-run p95: body **3.631 → 0.183 ms**, API **3.509 → 0.148 ms**. These gains chiefly come from #11's postings; no editor latency or whole-corpus allocation claim is made.
+
+Production Java is **+170 net lines** (410 added, 240 deleted), including the imported postings and explicit update contract. This consolidates policy ownership but does not yield a net production line reduction in this step. Live unresolved matching still scans actor-local canonical contributions; persisted matching uses #11's postings. Errors without a stable javac target use the explicit `*` unresolved marker, consistently across consumers.
+
+The baseline runtime tree was verified identical to main. JDK: Temurin 25.0.4.1; 1 GiB maximum heap. Initial local checks needed a fresh JDK, the Maven 3 resolver executable, and Maven on PATH; after repairing the toolchain, all selected checks passed without weakening assertions. The initial-attribution cache regression found by `BatchDiagnosticsTest` was fixed in the shared policy.
+
+[Raw samples and scope](docs/performance/2026-09-21-semantic-policy.json). [Reproduction](benchmarks/semantic-policy/README.md).

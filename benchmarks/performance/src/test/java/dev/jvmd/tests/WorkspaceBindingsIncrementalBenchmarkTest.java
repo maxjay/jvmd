@@ -11,6 +11,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 @Tag("phase-4")
+@Tag("perf")
 class WorkspaceBindingsIncrementalBenchmarkTest {
     @TempDir Path root;
 

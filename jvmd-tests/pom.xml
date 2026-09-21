@@ -11,4 +11,13 @@
       </execution></executions>
     </plugin>
   </plugins></build>
+<profiles><profile>
+  <id>benchmarks</id>
+  <build><plugins><plugin>
+    <groupId>org.codehaus.mojo</groupId><artifactId>build-helper-maven-plugin</artifactId><version>3.6.1</version>
+    <executions><execution><id>add-performance-benchmarks</id><phase>generate-test-sources</phase><goals><goal>add-test-source</goal></goals>
+      <configuration><sources><source>${maven.multiModuleProjectDirectory}/benchmarks/performance/src/test/java</source></sources></configuration>
+    </execution></executions>
+  </plugin></plugins></build>
+</profile></profiles>
 </project>

@@ -255,3 +255,11 @@ The result cache is deliberately bounded: one candidate set per module, at most
 256 rows / 256 KiB, and source contexts of at most 256 files. Larger contexts
 continue through normal javac analysis. Source identities, unsaved declarations,
 classpath identities and compiler context must all agree before reuse.
+
+### Relocated JVM microbenchmarks
+
+The workspace comparison complements, rather than replaces, the exact JVM performance suite in
+[`../performance`](../performance/README.md). Merge Review runs those relocated JUnit benchmark
+methods first, with their original correctness assertions enabled and timing/resource targets recorded as observations, and includes their
+JSON and Surefire reports in `merge-review-evidence`. They no longer exist under the ordinary
+`jvmd-tests/src/test/java` tree and therefore cannot make the checkpoint pipeline timing-sensitive.

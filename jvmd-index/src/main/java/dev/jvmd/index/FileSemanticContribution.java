@@ -7,7 +7,10 @@ import java.util.*;
  * Canonical detached semantic facts for one source file.
  *
  * <p>Persistence, invalidation and publication consume this value instead of defining parallel
- * per-file semantic records.
+ * per-file semantic records. A complete contribution replaces every set, including empty sets.
+ * Focused and failed analysis must use the corresponding SemanticUpdatePolicy completeness,
+ * never masquerade as a complete replacement. The unresolved target "*" records an error for
+ * which javac supplied no stable target; every API export change can affect that file.
  */
 public record FileSemanticContribution(
         Path file,

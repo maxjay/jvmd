@@ -2,6 +2,7 @@ package dev.jvmd.dist;
 
 import dev.jvmd.analyzer.*;
 import dev.jvmd.core.*;
+import dev.jvmd.index.*;
 import java.nio.file.*;
 import java.util.*;
 
@@ -56,13 +57,14 @@ public final class WorkspaceBindings implements AutoCloseable {
         var result=new LinkedHashMap<K,List<Integer>>();values.forEach((key,list)->result.put(key,List.copyOf(list)));return Collections.unmodifiableMap(result);
     }
     private record Inputs(String generation,Map<Path,String> sourceHashes,Map<Path,String> classpathHashes,List<Path> files,List<Path> classpath) { }
-    private record Fragment(String hash,CompilerPool.Outcome<Bindings.Snapshot> outcome,String apiFingerprint) { }
+    private record Fragment(CompilerPool.Outcome<Bindings.Snapshot> outcome,FileSemanticContribution contribution) { }
     private record Stamp(Map<String,Object> attributes,String hash) { }
     private final LinkedHashMap<Path,Stamp> hashes=new LinkedHashMap<>(256,.75f,true);
     private final LinkedHashMap<Path,Fragment> fragments=new LinkedHashMap<>();
     private final FileStateRegistry classpathFiles;
     public WorkspaceBindings(){this(new FileStateRegistry());}
     public WorkspaceBindings(FileStateRegistry classpathFiles){this.classpathFiles=Objects.requireNonNull(classpathFiles);}
+    private final SemanticUpdatePolicy.Live semantic=new SemanticUpdatePolicy.Live();
     private Inputs inputs;
     private Snapshot snapshot;
     private ValidationToken validationToken;
@@ -97,8 +99,7 @@ public final class WorkspaceBindings implements AutoCloseable {
     }
     private static boolean sameContext(Inputs first,Inputs second){
         return first!=null&&second!=null&&Objects.equals(first.generation(),second.generation())
-                &&first.classpathHashes().equals(second.classpathHashes())
-                &&first.sourceHashes().keySet().equals(second.sourceHashes().keySet());
+                &&first.classpathHashes().equals(second.classpathHashes());
     }
     public Snapshot peek(List<Path> files,List<Path> classpath,Documents documents,String generation)throws Exception {
         if(snapshot==null)return null;fullValidations++;
@@ -121,32 +122,6 @@ public final class WorkspaceBindings implements AutoCloseable {
             return results;
         });
     }
-    private static String api(Path file,CompilerPool.Outcome<Bindings.Snapshot> outcome){
-        return outcome!=null&&outcome.result()!=null?ApiFingerprint.of(outcome.result(),file):"";
-    }
-    private static boolean hasErrors(Fragment fragment){
-        return fragment!=null&&fragment.outcome().diagnostics().stream().anyMatch(problem->problem.kind().equals("ERROR"));
-    }
-    private static Set<Path> reverseClosure(Map<Path,Fragment> prior,Set<Path> roots,Set<Path> currentFiles){
-        var reverse=new HashMap<Path,Set<Path>>();
-        for(var entry:prior.entrySet()){
-            var outcome=entry.getValue().outcome();if(outcome==null||outcome.result()==null)continue;
-            for(Path dependency:outcome.result().dependencies()){
-                Path normalized=dependency.toAbsolutePath().normalize();
-                if(!normalized.equals(entry.getKey()))reverse.computeIfAbsent(normalized,ignored->new LinkedHashSet<>()).add(entry.getKey());
-            }
-        }
-        var selected=new LinkedHashSet<Path>();var queue=new ArrayDeque<Path>();
-        roots.forEach(path->queue.add(path.toAbsolutePath().normalize()));
-        // API additions can resolve a previously unresolved symbol with no old dependency edge.
-        // Reanalyse the errored fragment itself, then propagate through any dependants it owns.
-        for(var entry:prior.entrySet())if(hasErrors(entry.getValue())&&currentFiles.contains(entry.getKey())&&selected.add(entry.getKey()))queue.add(entry.getKey());
-        while(!queue.isEmpty()){
-            Path changed=queue.removeFirst();
-            for(Path dependant:reverse.getOrDefault(changed,Set.of()))if(currentFiles.contains(dependant)&&selected.add(dependant))queue.addLast(dependant);
-        }
-        selected.removeAll(roots);return selected;
-    }
     private Map<Path,Fragment> load(Set<Path> files,Inputs current,Documents documents,BatchLoader loader)throws Exception{
         if(files.isEmpty())return Map.of();
         var texts=new LinkedHashMap<Path,String>();
@@ -155,7 +130,7 @@ public final class WorkspaceBindings implements AutoCloseable {
         var result=new LinkedHashMap<Path,Fragment>();
         for(Path file:texts.keySet()){
             var outcome=Objects.requireNonNull(loaded.get(file),"Missing file in binding batch: "+file);
-            result.put(file,new Fragment(current.sourceHashes().get(file),outcome,api(file,outcome)));
+            result.put(file,new Fragment(outcome,outcome.tier()==2&&outcome.result()!=null&&outcome.warnings().isEmpty()?SemanticContributions.from(file,current.sourceHashes().get(file),outcome.result(),outcome.diagnostics()):null));
         }
         return result;
     }
@@ -204,27 +179,30 @@ public final class WorkspaceBindings implements AutoCloseable {
         }
 
         var priorInputs=inputs;var priorFragments=new LinkedHashMap<>(fragments);
-        boolean full=!sameContext(priorInputs,current)||priorFragments.size()!=current.files().size();
+        boolean full=!sameContext(priorInputs,current);
         var dirty=new LinkedHashSet<Path>();
         if(full)dirty.addAll(current.files());
         else for(Path file:current.files())if(!Objects.equals(priorInputs.sourceHashes().get(file),current.sourceHashes().get(file)))dirty.add(file);
 
         builds++;snapshot=null;serializedBytes=0;
-        if(full){fullBuilds++;fragments.clear();priorFragments.clear();}
+        if(full){fullBuilds++;fragments.clear();priorFragments.clear();semantic.clear();}
         else incrementalBuilds++;
 
-        var working=new LinkedHashMap<Path,Fragment>(priorFragments);
+        var removedDependants=new LinkedHashSet<Path>();
+        if(!full)for(Path file:priorFragments.keySet())if(!current.sourceHashes().containsKey(file))removedDependants.addAll(semantic.remove(file).reanalyze());
+        removedDependants.retainAll(current.sourceHashes().keySet());dirty.addAll(removedDependants);
+        var working=new LinkedHashMap<Path,Fragment>(priorFragments);working.keySet().retainAll(current.sourceHashes().keySet());
         var first=load(dirty,current,documents,loader);working.putAll(first);
-        var apiChanged=new LinkedHashSet<Path>();
-        if(!full)for(Path file:dirty){
-            var before=priorFragments.get(file);var after=first.get(file);
-            if(before==null||after==null||!Objects.equals(before.apiFingerprint(),after.apiFingerprint()))apiChanged.add(file);
+        var dependants=new LinkedHashSet<Path>();
+        for(var fragment:first.values()){
+            if(fragment.contribution()==null)continue;
+            var decision=full?semantic.resolve(fragment.contribution()):semantic.update(fragment.contribution(),SemanticUpdatePolicy.Completeness.COMPLETE);
+            if(!full){apiInvalidations+=decision.apiChanged().size();dependants.addAll(decision.reanalyze());}
         }
-        if(!apiChanged.isEmpty()){
-            apiInvalidations+=apiChanged.size();
-            var dependants=reverseClosure(priorFragments,apiChanged,new LinkedHashSet<>(current.files()));
-            dependants.removeAll(dirty);
-            if(!dependants.isEmpty())working.putAll(load(dependants,current,documents,loader));
+        dependants.retainAll(current.sourceHashes().keySet());dependants.removeAll(dirty);
+        if(!dependants.isEmpty()){
+            var loaded=load(dependants,current,documents,loader);working.putAll(loaded);
+            for(var fragment:loaded.values())if(fragment.contribution()!=null)semantic.update(fragment.contribution(),SemanticUpdatePolicy.Completeness.COMPLETE);
             dirty.addAll(dependants);
         }
 
@@ -250,5 +228,5 @@ public final class WorkspaceBindings implements AutoCloseable {
         result.put("fast_validation_hits",fastValidationHits);result.put("full_validations",fullValidations);result.put("fast_validation_ready",validationToken!=null);
         return Collections.unmodifiableMap(result);
     }
-    @Override public void close(){snapshot=null;inputs=null;validationToken=null;fragments.clear();hashes.clear();serializedBytes=0;}
+    @Override public void close(){snapshot=null;inputs=null;validationToken=null;fragments.clear();semantic.clear();hashes.clear();serializedBytes=0;}
 }

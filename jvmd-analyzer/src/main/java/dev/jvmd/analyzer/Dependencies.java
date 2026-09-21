@@ -1,12 +1,13 @@
 package dev.jvmd.analyzer;
 
-import dev.jvmd.core.Hashing;
+import dev.jvmd.index.SemanticUpdatePolicy;
 import java.nio.file.*;
 import java.util.*;
 
 /** Implements 4.2: content-checked reverse source dependencies and lazy invalidation. */
 public final class Dependencies {
-    private final Map<Path,Set<Path>> forward=new HashMap<>(),reverse=new HashMap<>();
+    private final SemanticUpdatePolicy.Live semantic=new SemanticUpdatePolicy.Live();
+    public SemanticUpdatePolicy.Live semantic(){return semantic;}
     private final Map<Path,String> hashes=new HashMap<>();
     private java.util.function.Function<Path,String> documentHash=_->null;
     private dev.jvmd.core.FileStateRegistry files=new dev.jvmd.core.FileStateRegistry();
@@ -19,15 +20,17 @@ public final class Dependencies {
         if(previous!=null&&!previous.equals(hash))return changed(path);
         return Set.of();
     }
-    public void record(Path file,Set<Path> dependencies)throws Exception{
+    /** A partial observation adds edges; complete contributions replace them through the semantic policy. */
+    public void recordFocused(Path file,Set<Path> dependencies)throws Exception{
         file=file.toAbsolutePath().normalize();
-        var copy=new LinkedHashSet<Path>(forward.getOrDefault(file,Set.of()));
-        for(Path dependency:dependencies){dependency=dependency.toAbsolutePath().normalize();if(dependency.equals(file))continue;copy.add(dependency);reverse.computeIfAbsent(dependency,k->new LinkedHashSet<>()).add(file);if(!hashes.containsKey(dependency))hashes.put(dependency,hash(dependency));}
-        forward.put(file,Set.copyOf(copy));stale.remove(file);
+        semantic.recordFocused(file,dependencies);
+        for(Path dependency:dependencies){dependency=dependency.toAbsolutePath().normalize();if(!hashes.containsKey(dependency))hashes.put(dependency,hash(dependency));}
+        stale.remove(file);
     }
+
     public Set<Path> check(Path file)throws Exception{
         var changed=new LinkedHashSet<Path>();var visit=new ArrayDeque<Path>();var seen=new HashSet<Path>();visit.add(file.toAbsolutePath().normalize());
-        while(!visit.isEmpty()){Path path=visit.removeFirst();if(!seen.add(path))continue;changed.addAll(observe(path,hash(path)));visit.addAll(forward.getOrDefault(path,Set.of()));}
+        while(!visit.isEmpty()){Path path=visit.removeFirst();if(!seen.add(path))continue;changed.addAll(observe(path,hash(path)));visit.addAll(semantic.dependencies(path));}
         return changed;
     }
     public Set<Path> changed(Path path){
@@ -36,11 +39,10 @@ public final class Dependencies {
     }
     public Set<Path> changed(Path path,String currentHash){
         path=path.toAbsolutePath().normalize();boolean authoritative=currentHash!=null;if(authoritative)hashes.put(path,currentHash);
-        var result=new LinkedHashSet<Path>();var queue=new ArrayDeque<Path>();queue.add(path);
-        while(!queue.isEmpty()){Path next=queue.removeFirst();if(result.add(next))queue.addAll(reverse.getOrDefault(next,Set.of()));}
+        var result=semantic.changed(path);
         if(authoritative)stale.add(path);else stale.addAll(result);return Set.copyOf(result);
     }
     private String hash(Path file)throws Exception{String memory=documentHash.apply(file);return memory!=null?memory:files.hash(file);}
     public boolean stale(Path file){return stale.contains(file.toAbsolutePath().normalize());}
-    public Map<String,Object> status(){return Map.of("tracked_files",hashes.size(),"reverse_edges",reverse.values().stream().mapToInt(Set::size).sum(),"stale_files",stale.stream().map(Path::toString).sorted().toList());}
+    public Map<String,Object> status(){return Map.of("tracked_files",hashes.size(),"reverse_edges",semantic.edgeCount(),"stale_files",stale.stream().map(Path::toString).sorted().toList());}
 }

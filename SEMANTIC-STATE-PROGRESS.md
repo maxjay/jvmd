@@ -491,3 +491,16 @@ Each entry records the change, validation, limitations and next work. Historical
 - [x] Same-formatter response-budget code: 326 → 346 lines. This bounded counter removes allocation and copying, adds no authoritative state, and leaves the broader net-code-reduction goal unmet.
 - [x] Publish both complete campaigns, worker commands/logs, diagnostic/pilot evidence, correctness reports, exact source verification and checksums. Update the checklist to reflect the user's final scope.
 - This closes the requested implementation and measurement pass. Statistical latency certainty, completion freshness, initial heap attribution and broader consolidation remain explicitly unresolved/deferred; no further architectural work is started. PR #8 remains draft and unmerged.
+
+
+## 029 — Reopen acceptance around semantic memory architecture
+
+- Corpus on the ready-for-review PR exposed a reproducible large-workspace resource failure in phase-4 `IdentifierSweepTest`: test assertions remain clean, then repeated `symbol.references` calls degrade from millisecond-scale to multi-second latency, Rocks reports `Insert failed due to LRU cache being full`, and the 1 GiB Surefire fork dies with `Java heap space`.
+- This is no longer treated as a one-test fix. The active objective is to prove or reject the semantic-state representation's memory/allocation architecture and scaling properties.
+- [x] Fixed comparison revisions: original baseline `ae23fd1f`, archived first attempt `9611f458`, and candidate-at-investigation-start `8c9ed2aa`.
+- [x] Added `SEMANTIC-MEMORY-CHECKLIST.md`: architecture-first execution/acceptance gates. Raising heap/Rocks limits or weakening Corpus is explicitly prohibited as a diagnostic shortcut.
+- [x] Added `docs/semantic-memory-architecture.md`: initial state ownership/multiplicity ledger and the rule “persist canonical facts and roots; derive projections.”
+- [x] Initial code audit identifies overlapping state worth measuring rather than assuming wrong: RocksWorkspaceState F/C/D/M, RocksSemanticInvalidation content/API/dependency/export/unresolved records, DiagnosticSnapshots identity payload, source index facts, and NavigationIndex's multiple postings.
+- [x] Confirmed a concrete algorithmic concern: `RocksSemanticInvalidation.observeFile` loads/decodes the complete module semantic record set for a one-file update before rebuilding reverse dependencies. This is a measured-design target, not yet claimed as the Corpus root cause.
+- [ ] Phase 1: run identical large-workspace/scaling diagnostics on baseline and current candidate under the same 1 GiB heap. Capture retained/peak heap, allocation, GC, Rocks usage, semantic rebuild/cache/discard counters, files analysed, index writes and references latency over time.
+- [ ] No production semantic-state redesign until phase 1 attributes the growth mechanism.

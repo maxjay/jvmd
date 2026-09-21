@@ -33,6 +33,18 @@ class SemanticFactLifetimeTest {
             assertThat(cache.status()).containsEntry("fragment_files",2).containsEntry("decoded_estimated_bytes",0L).doesNotContainKey("serialized_bytes");
         }
     }
+    @Test void indexedNamePagesReturnEveryDeclarationOnce()throws Exception {
+        Path file=root.resolve("Types.java");Files.writeString(file,java.util.stream.IntStream.range(0,20).mapToObj(i->"class Type"+i+" {}").collect(java.util.stream.Collectors.joining("\n")));
+        try(var analyzer=new Analyzer();var cache=new WorkspaceBindings()){
+            analyzer.configure(new Analyzer.Context("test:app:1","25",List.of(),List.of(root),"1",Map.of(root.toUri().toString(),"test:app:1")),null,64L*1024*1024);
+            var view=cache.get(()->List.of(file),List.of(),new Documents(),"1",0,(path,text)->analyzer.bindings(path,text,null));
+            var found=new ArrayList<String>();String cursor=null;int pages=0;
+            do{var page=view.find("Type",true,Set.of("class"),3,cursor);assertThat(page.symbols()).hasSizeLessThanOrEqualTo(3);
+                for(var symbol:page.symbols())found.add(symbol.get("name").toString());cursor=page.cursor();assertThat(++pages).isLessThanOrEqualTo(7);
+            }while(cursor!=null);
+            assertThat(found).containsExactlyInAnyOrderElementsOf(java.util.stream.IntStream.range(0,20).mapToObj(i->"Type"+i).toList());
+        }
+    }
     @Test void incompleteObservationIsRetriedInsteadOfBecomingAuthoritative()throws Exception {
         Path file=root.resolve("A.java");Files.writeString(file,"class A {}");int[] loads={0};
         try(var cache=new WorkspaceBindings()){

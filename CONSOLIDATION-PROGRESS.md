@@ -199,3 +199,32 @@ The baseline runtime tree was verified identical to main. JDK: Temurin 25.0.4.1;
 ### Checkpoints follow-up — completion discovery race
 
 Checkpoints run 35653852144 failed only `CompletionPrefixCacheTest.changedReleaseAndNewSourceNamesCannotReuseOldCandidates` in Phase 4. The retry after an unresolved receiver flushed javac but retained the source inventory until a WatchService create event arrived. Added a deterministic regression that suppresses event delivery: it fails before the fix and passes after it. Empty completion results now invalidate the source inventory for the next attempt; successful prefix-cache hits keep their existing fast path. The complete Phase 4 group passes locally: **79 tests, 0 failures/errors**, without changing the checkpoint or weakening assertions.
+
+## 2026-09-21: Separate fact lifetime from navigation results
+
+Base: main `563ecc4`, including the Rocks cutover and shared semantic policy.
+Branch: `refactor/indexed-semantic-read-view`.
+
+- [x] Reproduce aggregate rejection losing reusable file state.
+- [x] Store detached file facts independently of bounded decoded caches.
+- [x] Replace aggregate admission/JSON sizing with pinned indexed read views.
+- [x] Use per-owner binary records and postings for persistent local-source facts.
+- [x] Migrate legacy source JSON atomically and preserve SCIP/numeric identities.
+- [x] Move source precedence, deduplication, expansion and pagination into a common workspace read view.
+- [x] Check zero-budget reuse, old-view isolation, replacement/deletion, stale binary-edge masking, migration, and query/edit behavior.
+- [x] Run before/after measurements and preserve raw samples and reproduction.
+
+Production implementation: `20ad41cd25c55a96aaa2e3733012e2290f2bc63b`.
+Its tree matches the locally tested tree exactly. Production Java is **+350 lines** overall;
+`Application` loses 55 lines. This removes lifetime/query ownership duplication but is not a net
+line-count reduction: the indexed fact engine, codec and read-view contract replace in-memory maps
+and JSON rather than simply deleting functionality.
+
+On the isolated 128-file zero-budget workload, 31 requests load **3,968 → 128 files**, with warm
+request medians **5.407 → 0.870 ms**. Cold construction slows **258.19 → 413.65 ms**. Below the old
+admission threshold, warm times are **0.746 → 0.816 ms**. For 3,072 local symbols, warm prefix search
+is **3.478 → 0.185 ms** and exact-name search **3.603 → 0.320 ms**. Source publication and disk
+space increase; see the report for costs, limitations, tests and reproduction.
+
+Evidence: `docs/performance/2026-09-21-semantic-state.md` and `docs/performance/semantic-state/`.
+Harness: `benchmarks/semantic-state/`. Full PR CI is separate from the local targeted checks.

@@ -1,0 +1,66 @@
+{
+  "baseline": "563ecc473fe9c033ece775686645972baca8d41a",
+  "implementation_commit": "20ad41cd25c55a96aaa2e3733012e2290f2bc63b",
+  "implementation_tree": "4a4250b3093036c205926ecd3213af4ab9e7448a",
+  "production_lines": {
+    "added": 540,
+    "removed": 190,
+    "net": 350
+  },
+  "repetitions": 3,
+  "jvm_heap": "1 GiB",
+  "source_symbols": 3072,
+  "source_files": 256,
+  "workspace_files": 128,
+  "workspace_queries": 31,
+  "metrics": {
+    "lifetime": {
+      "baseline": {
+        "cold_ms": 258.187479,
+        "warm_median_ms": 5.406787,
+        "file_loads": 3968
+      },
+      "after": {
+        "cold_ms": 413.651941,
+        "warm_median_ms": 0.8703160000000001,
+        "file_loads": 128
+      }
+    },
+    "retained": {
+      "baseline": {
+        "cold_ms": 286.821938,
+        "warm_median_ms": 0.7462485,
+        "file_loads": 128
+      },
+      "after": {
+        "cold_ms": 428.571473,
+        "warm_median_ms": 0.8155129999999999,
+        "file_loads": 128
+      }
+    },
+    "source": {
+      "baseline": {
+        "cold_identity_ms": 69.195375,
+        "cold_identity_allocated_bytes": 6693984,
+        "identity_median_ms": 0.104497,
+        "handle_median_ms": 0.1358945,
+        "prefix_median_ms": 3.4779915,
+        "exact_median_ms": 3.6029805
+      },
+      "after": {
+        "cold_identity_ms": 40.136516,
+        "cold_identity_allocated_bytes": 1944944,
+        "identity_median_ms": 0.0891995,
+        "handle_median_ms": 0.0805915,
+        "prefix_median_ms": 0.1848885,
+        "exact_median_ms": 0.31957599999999997
+      }
+    }
+  },
+  "tests": {
+    "tests": 42,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  }
+}

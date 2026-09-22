@@ -1,0 +1,140 @@
+package dev.jvmd.tests;
+
+import dev.jvmd.core.RequestScope;
+import dev.jvmd.core.Session;
+import java.nio.file.*;
+import java.util.*;
+import java.util.concurrent.*;
+import jdk.jfr.Recording;
+import jdk.jfr.consumer.RecordingFile;
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.io.TempDir;
+import static org.assertj.core.api.Assertions.*;
+
+@Tag("phase-4")
+class RequestScopeTraceTest {
+    @TempDir Path root;
+
+    @Test void optInEventsPreserveCausalityAcrossThreadsWithoutMemoLeaks()throws Exception {
+        Path recording=run(true);
+        var events=RecordingFile.readAllEvents(recording).stream().filter(e->e.getEventType().getName().equals("dev.jvmd.Stage")).toList();
+        assertThat(events).isNotEmpty();
+        assertThat(events.stream().filter(e->!e.getString("stage").equals("index.scan"))).allMatch(e->"workflow-test".equals(e.getString("workflow")));
+        assertThat(events.stream().filter(e->!e.getString("stage").equals("index.scan"))).allMatch(e->"edit-1".equals(e.getString("invocation")));
+        var scans=events.stream().filter(e->e.getString("stage").equals("index.scan")).toList();
+        assertThat(scans).hasSize(2);
+        assertThat(scans.get(0).getString("workflow")).isEqualTo("workflow-test");
+        assertThat(scans.get(1).getString("workflow")).isNull();
+        var failures=events.stream().filter(e->e.getString("stage").equals("rpc.execute")&&e.getString("method").startsWith("daemon.failure")).toList();
+        assertThat(failures).hasSize(3).allMatch(e->e.getString("outcome").equals("failed"));
+        var rpc=events.stream().filter(e->e.getString("stage").equals("rpc.execute")).findFirst().orElseThrow();
+        var nested=events.stream().filter(e->e.getString("stage").equals("test.nested")).findFirst().orElseThrow();
+        assertThat(nested.getLong("parent")).isEqualTo(rpc.getLong("span"));
+        assertThat(nested.getLong("request")).isEqualTo(rpc.getLong("request"));
+        var actor=events.stream().filter(e->e.getString("stage").equals("test.actor")).findFirst().orElseThrow();
+        assertThat(actor.getLong("parent")).isEqualTo(rpc.getLong("span"));
+        assertThat(actor.getLong("request")).isEqualTo(rpc.getLong("request"));
+        assertThat(actor.getThread().getJavaThreadId()).isNotEqualTo(rpc.getThread().getJavaThreadId());
+        assertThat(actor.getString("counters")).contains("\"operations\":3");
+        var queued=events.stream().filter(e->e.getString("stage").equals("session.queue")).findFirst().orElseThrow();
+        assertThat(queued.getBoolean("queued")).isTrue();
+        assertThat(queued.getLong("threadCpuNanos")).isEqualTo(-1);
+        assertThat(queued.getLong("threadAllocatedBytes")).isEqualTo(-1);
+        var virtual=events.stream().filter(e->e.getString("stage").equals("test.virtual")).findFirst().orElseThrow();
+        assertThat(virtual.getBoolean("virtualThread")).isTrue();
+        assertThat(virtual.getLong("threadAllocatedBytes")).isEqualTo(-1);
+        var input=events.stream().filter(e->e.getString("stage").equals("test.inputs")).findFirst().orElseThrow();
+        var counts=dev.jvmd.core.Json.MAPPER.readTree(input.getString("counters"));
+        assertThat(counts.path("metadata_checks").asLong()).isEqualTo(counts.path("expected_metadata_checks").asLong());
+        assertThat(counts.path("files_hashed").asLong()).isEqualTo(1);
+        assertThat(counts.path("records_decoded").asLong()).isEqualTo(1);
+        assertThat(counts.path("record_bytes_decoded").asLong()).isPositive();
+        assertThat(events).allMatch(e->e.getLong("durationNanos")>=0);
+    }
+
+    @Test void disabledInstrumentationEmitsNoEvents()throws Exception {
+        assertThat(RecordingFile.readAllEvents(run(false))).noneMatch(e->e.getEventType().getName().equals("dev.jvmd.Stage"));
+    }
+
+    private Path run(boolean enabled)throws Exception {
+        Path recording=root.resolve(enabled+".jfr"), log=root.resolve(enabled+".log");
+        var process=new ProcessBuilder(Path.of(System.getProperty("java.home"),"bin/java").toString(),
+                "-Djvmd.trace="+enabled,"-cp",System.getProperty("java.class.path"),Probe.class.getName(),recording.toString())
+                .redirectErrorStream(true).redirectOutput(log.toFile()).start();
+        assertThat(process.waitFor(30,TimeUnit.SECONDS)).isTrue();
+        assertThat(process.exitValue()).withFailMessage(Files.readString(log)).isZero();
+        return recording;
+    }
+
+    public static class Probe {
+        public static void main(String[] args)throws Exception {
+            try(var recording=new Recording();var session=new Session("trace-test",Path.of("."))){
+                recording.enable("dev.jvmd.Stage");recording.start();
+                RequestScope.traced("test","workflow-test","edit-1","B",()->{
+                    var context=RequestScope.current();
+                    try(var sessions=new dev.jvmd.core.Sessions()){
+                        var dispatcher=new dev.jvmd.core.Dispatcher(sessions,new dev.jvmd.core.Metrics());
+                        dispatcher.register("daemon.nested",(_,_) -> {
+                            try(var span=RequestScope.stage("test.nested")){
+                                return dev.jvmd.core.Envelope.of(0,"live",Map.of("ok",true));
+                            }
+                        });
+                        var response=dispatcher.dispatch(dev.jvmd.core.Json.MAPPER.readTree("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"daemon.nested\",\"params\":{}}"));
+                        if(response.has("error"))throw new AssertionError(response);
+                        if(RequestScope.current()!=context)throw new AssertionError("Nested dispatch replaced request context");
+                    }
+
+                    if(RequestScope.TRACING){
+                        RequestScope.memo("retained",()->new byte[1024]);
+                        var detached=RequestScope.detached();
+                        if(!detached.values().isEmpty()||detached.span()!=null||detached.causalSpan()==0)throw new AssertionError("Detached cause retained memo or lost parent");
+                    }
+                    session.execute(()->RequestScope.with(context,()->{
+                        try(var span=RequestScope.stage("test.actor")){span.count("operations",3);}
+                        return null;
+                    }));
+                    try(var workers=Executors.newVirtualThreadPerTaskExecutor()){
+                        workers.submit(()->RequestScope.with(context,()->{
+                            try(var span=RequestScope.stage("test.virtual")){return null;}
+                        })).get();
+                    }
+                    Path source=Path.of(args[0]).getParent().resolve("CompileProbe.java");
+                    Files.writeString(source,"public class CompileProbe { public static int value(){return 1;} }");
+                    var registry=new dev.jvmd.core.FileStateRegistry();
+                    try(var span=RequestScope.stage("test.inputs")){
+                        registry.hash(source);registry.hash(source);
+                        byte[] record=dev.jvmd.index.FactCodec.encode(Map.of("name","fixture"));
+                        if(!dev.jvmd.index.FactCodec.decode(record,Map.class).get("name").equals("fixture"))throw new AssertionError("Decoded fact changed");
+                        span.count("expected_metadata_checks",((Number)registry.status().get("metadata_checks")).longValue());
+                    }
+                    return null;
+                });
+                try(var sessions=new dev.jvmd.core.Sessions()){
+                    var dispatcher=new dev.jvmd.core.Dispatcher(sessions,new dev.jvmd.core.Metrics());
+                    dispatcher.register("daemon.failure-rpc",(_,_) -> {throw dev.jvmd.core.RpcException.invalid("fixture");});
+                    dispatcher.register("daemon.failure-internal",(_,_) -> {throw new IllegalStateException("fixture");});
+                    for(String method:List.of("daemon.failure-invalid","daemon.failure-rpc","daemon.failure-internal")){
+                        var request=dev.jvmd.core.Json.MAPPER.createObjectNode().put("jsonrpc",method.endsWith("invalid")?"invalid":"2.0").put("id",1).put("method",method);
+                        request.putObject("_jvmdTrace").put("workflow","workflow-test").put("invocation","edit-1");
+                        dispatcher.dispatch(request);
+                    }
+                }
+                Path repository=Files.createDirectory(Path.of(args[0]).resolveSibling("repository"));
+                try(var index=new dev.jvmd.index.IndexService(repository.resolveSibling("trace-index.db"),repository)){
+                    var scheduled=new java.util.concurrent.atomic.AtomicReference<Runnable>();
+                    var replacement=new ScheduledThreadPoolExecutor(1){
+                        @Override public ScheduledFuture<?> scheduleWithFixedDelay(Runnable task,long initial,long delay,TimeUnit unit){
+                            scheduled.set(task);return null;
+                        }
+                    };
+                    var field=dev.jvmd.index.IndexService.class.getDeclaredField("scanner");field.setAccessible(true);
+                    ((ScheduledExecutorService)field.get(index)).shutdownNow();field.set(index,replacement);
+                    RequestScope.traced("test.scan","workflow-test","edit-1","B",()->{index.start();return null;});
+                    scheduled.get().run();scheduled.get().run();
+                }
+                if(RequestScope.current()!=null)throw new AssertionError("Context leaked");
+                recording.stop();recording.dump(Path.of(args[0]));
+            }
+        }
+    }
+}

@@ -1,70 +1,181 @@
 #!/usr/bin/env python3
-"""Independently verify complete response coverage and real source ranges after timing."""
-import argparse, json, re
+"""One independent source oracle for live and archived prepared-server results."""
+import argparse
+import json
+import re
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-def source_path(uri, worker):
-    parsed = urlparse(uri); assert parsed.scheme == 'file', uri
-    original = Path(unquote(parsed.path))
-    # Archived traces retain original URIs. Resolve generated workspace paths below
-    # the extracted worker directory so verification works on another machine.
-    offset = next(i for i, part in enumerate(original.parts) if re.fullmatch(r'workspace\d+', part))
-    return worker.joinpath(*original.parts[offset:])
 
 def selected(text, range_):
+    if isinstance(range_, list):
+        range_ = {"start": range_[0], "end": range_[1]}
     lines = text.splitlines(keepends=True)
-    def offset(position): return sum(len(s) for s in lines[:position['line']])+position['character']
-    start, end = offset(range_['start']), offset(range_['end']); assert 0 <= start < end <= len(text)
+
+    def offset(p):
+        return sum(len(s) for s in lines[: p["line"]]) + p["character"]
+
+    start, end = offset(range_["start"]), offset(range_["end"])
+    if not 0 <= start < end <= len(text):
+        raise ValueError("invalid source range")
     return text[start:end]
 
-def verify(root):
-    counts = {'workers': 0, 'editor_responses': 0, 'responses': 0, 'ranges': 0, 'dependency_identity_sets': 0}; identity_sets = {}
-    for report_path in sorted(root.glob('*/*/report.json')):
-        report = json.loads(report_path.read_text()); assert report['complete'], report_path
-        before = counts['responses']
-        editor_before = counts['editor_responses']
-        fixture = report_path.parent.parent.name.split('-', 1)[0]
-        for workspace in report['workspaces']:
-            identities = workspace['dependency_identities']; old = identity_sets.setdefault(fixture, identities)
-            assert identities == old, (report_path, identities, old); counts['dependency_identity_sets'] += 1
-        for path in sorted(report_path.parent.glob('process*/messages.jsonl')):
-            pending = {}; partials = {}
-            for line in path.read_text().splitlines():
-                record = json.loads(line); message = record['message']
-                if record['direction'] == 'send' and 'method' in message and 'id' in message: pending[message['id']] = message
-                elif record['direction'] == 'receive' and message.get('method') == '$/progress':
-                    params = message.get('params', {}); partials.setdefault(params.get('token'), []).extend(params.get('value', []))
-                elif record['direction'] == 'receive' and 'method' not in message and 'id' in message and message['id'] in pending:
-                    request = pending.pop(message['id']); method = request['method']
-                    if method in ('textDocument/hover','textDocument/completion','textDocument/signatureHelp','textDocument/definition','textDocument/references','textDocument/rename','textDocument/documentSymbol'):
-                        assert 'error' not in message, message; counts['editor_responses'] += 1
-                    if method not in ('textDocument/references', 'textDocument/rename', 'textDocument/definition'): continue
-                    assert 'error' not in message, message; value = message['result']; counts['responses'] += 1
-                    token = request.get('params', {}).get('partialResultToken')
-                    if token in partials and isinstance(value, list): value = partials.pop(token)+value
-                    probe = source_path(request['params']['textDocument']['uri'],report_path.parent); expected = set(probe.parent.glob('*.java'))
-                    if method == 'textDocument/references': locations = value
-                    elif method == 'textDocument/definition':
-                        locations = [value] if isinstance(value, dict) else value
-                        assert len(locations) == 1 and source_path(locations[0]['uri'],report_path.parent).name.endswith('_0.java'), value
-                    else:
-                        locations = [{'uri': change['textDocument']['uri'], **edit} for change in value.get('documentChanges', []) for edit in change.get('edits', [])]
-                        locations += [{'uri': uri, **edit} for uri, edits in value.get('changes', {}).items() for edit in edits]
-                        assert all(location['newText'] == 'doubled' for location in locations), value
-                    actual = [source_path(location['uri'],report_path.parent) for location in locations]
-                    if method != 'textDocument/definition': assert len(actual) == len(set(actual)) and set(actual) == expected, (path, actual, expected)
-                    for location, source in zip(locations, actual):
-                        token = selected(source.read_text(), location['range'])
-                        assert token == 'twice' or method == 'textDocument/references' and re.fullmatch(r'twice\([^)]*\)', token), (path, token)
-                        counts['ranges'] += 1
-        expected_responses = sum(sum(len(w['operations_ms'][k]) for k in ('definition','references','rename_preview')) for w in report['workspaces'])
-        assert counts['responses']-before == expected_responses, ('incomplete protocol trace',report_path,counts['responses']-before,expected_responses)
-        expected_editor = sum(sum(len(v) for v in w['operations_ms'].values())+sum(len(v) for v in w['typing_ms'].values()) for w in report['workspaces'])
-        assert counts['editor_responses']-editor_before == expected_editor, ('incomplete editor trace',report_path,counts['editor_responses']-editor_before,expected_editor)
-        counts['workers'] += 1
-    return counts
 
-if __name__ == '__main__':
-    p = argparse.ArgumentParser(); p.add_argument('root', type=Path); p.add_argument('output', type=Path); a = p.parse_args()
-    result = verify(a.root); a.output.write_text(json.dumps(result, indent=2)+'\n'); print(json.dumps(result))
+def locations(value):
+    rows = [value] if isinstance(value, dict) else value or []
+    return [
+        {
+            "uri": unquote(r.get("uri", r.get("targetUri", ""))),
+            "range": r.get("targetSelectionRange", r.get("range")),
+        }
+        for r in rows
+    ]
+
+
+def classify(operation, row):
+    if "result" not in row:
+        return row.get("outcome", "error")
+    result = row["result"]
+    name = operation["operation"]
+    symbol = operation["symbol"]
+    try:
+        if name in ("definition", "dependency_definition"):
+            actual = locations(result)
+            expected = operation["expected"]
+            if len(actual) != 1:
+                return "incomplete" if not actual else "wrong"
+            loc = actual[0]
+            if name == "definition":
+                return "correct" if loc == locations([expected])[0] else "wrong"
+            if loc["uri"].startswith("jdt:"):
+                evidence = next(
+                    (v for k, v in row.get("source_evidence", {}).items() if unquote(k) == loc["uri"]), {}
+                )
+                source = evidence.get("source", "")
+                valid = (
+                    urlparse(loc["uri"]).path == "/" + expected["binary_name"] + "/" + expected["source_name"]
+                    and source.strip() == expected["source"].strip()
+                    and selected(source, loc["range"]) == symbol
+                )
+            else:
+                valid = (
+                    loc["uri"] == unquote(expected["uri"])
+                    and selected(expected["source"], loc["range"]) == symbol
+                )
+            return "correct" if valid else "wrong"
+        if name == "references":
+            expected = operation["expected"]
+            actual = locations(result)
+            # JVMD returns invocation ranges; JDTLS returns identifiers. Both must
+            # start at precisely the expected occurrence, with only its call suffix.
+            normalized = []
+            for loc in actual:
+                matches = [
+                    e
+                    for e in expected
+                    if unquote(e["uri"]) == loc["uri"] and e["range"]["start"] == loc["range"]["start"]
+                ]
+                if not matches:
+                    return "wrong"
+                e = matches[0]
+                if loc["range"] != e["range"]:
+                    text = selected(operation["source"], loc["range"])
+                    if not re.fullmatch(re.escape(symbol) + r"\([12]\)", text):
+                        return "wrong"
+                normalized.append(e)
+            key = lambda r: json.dumps(r, sort_keys=True)
+            return "correct" if sorted(map(key, normalized)) == sorted(map(key, expected)) else "incomplete"
+        if name == "hover":
+            text = json.dumps(result)
+            return (
+                "correct"
+                if re.search(r"\bint\s+[\w.]*" + re.escape(symbol) + r"\s*\(int\s+input\)", text)
+                else "wrong"
+            )
+        if name == "completion":
+            rows = result.get("items", []) if isinstance(result, dict) else result or []
+            matches = [r for r in rows if re.match(re.escape(symbol) + r"(?:\b|\()", r.get("label", ""))]
+            if not matches:
+                return "incomplete"
+            if any(re.search(r"\bString\b", json.dumps(r)) for r in matches):
+                return "stale"
+            signature = re.escape(symbol) + r"\(int(?:\s+input)?\)\s*:\s*int\b"
+            return "correct" if any(re.search(signature, json.dumps(r)) for r in matches) else "wrong"
+
+    except (ValueError, KeyError, TypeError, IndexError):
+        return "wrong"
+    raise ValueError("unknown operation: " + name)
+
+
+def verify(root):
+    provenance = json.loads((root / "provenance.json").read_text())
+    workers = []
+    expected_workers = provenance["runs"] * (2 if provenance["overhead"] else len(provenance["servers"]))
+    identities = set()
+    for path in sorted(root.glob("*/report.json")):
+        report = json.loads(path.read_text())
+        fixture = json.loads((path.parent / "fixture.json").read_text())
+        identities.add(fixture["identity"])
+        operations = {(o["operation"], o["target"]): o for o in fixture["operations"]}
+        errors = []
+        seen = set()
+        for row in report["actions"]:
+            key = (row["operation"], row["target"])
+            identity = (*key, row["state"], row["sample"])
+            if identity in seen:
+                errors.append("duplicate invocation")
+            seen.add(identity)
+            if key not in operations or classify(operations[key], row) != row["outcome"]:
+                errors.append("misclassified invocation " + row["id"])
+            if row["outcome"] == "correct" and (row.get("latency_ms") is None or row["latency_ms"] < 0):
+                errors.append("missing timing")
+        required = {
+            (op, target, state, sample)
+            for op, target in operations
+            for state, count in [
+                ("first", 1),
+                ("warmup", provenance["warmup"]),
+                ("warm", provenance["samples"]),
+            ]
+            for sample in range(count)
+        }
+        missing = sorted(required - seen)
+        passed = (
+            not errors
+            and not missing
+            and all(row["outcome"] == "correct" for row in report["actions"])
+            and report["outcome"] == "correct"
+        )
+        workers.append(
+            {
+                "worker": path.parent.name,
+                "verified": passed,
+                "classification_valid": not errors,
+                "errors": errors,
+                "not_executed": missing,
+                "outcomes": {
+                    outcome: sum(row["outcome"] == outcome for row in report["actions"])
+                    for outcome in sorted({r["outcome"] for r in report["actions"]})
+                },
+            }
+        )
+    return {
+        "schema": 2,
+        "workers": workers,
+        "fixture_identity_equal": len(identities) == 1,
+        "expected_workers": expected_workers,
+        "complete": len(workers) == expected_workers
+        and len(identities) == 1
+        and all(w["verified"] for w in workers),
+    }
+
+
+if __name__ == "__main__":
+    p = argparse.ArgumentParser()
+    p.add_argument("root", type=Path)
+    p.add_argument("output", type=Path)
+    a = p.parse_args()
+    result = verify(a.root)
+    a.output.write_text(json.dumps(result, indent=2) + "\n")
+    print(json.dumps(result))
+    raise SystemExit(0 if result["complete"] else 1)

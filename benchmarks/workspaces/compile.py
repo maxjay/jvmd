@@ -25,7 +25,6 @@ def main():
     sources = [] if a.reuse_production_jars else production_sources
     harness = Path(__file__).resolve().parent
     sources += list(harness.glob('*.java'))
-    sources += [repo/'benchmarks/index-updates/RepositoryUpdateBenchmark.java']
     command = [str(a.java_home.resolve()/'bin/javac'), '-source', '25', '-target', '25', *EXPORTS,
                '-encoding', 'UTF-8', '-g', '-parameters', '-cp', os.pathsep.join(map(str, jars)), '-d', str(classes), *map(str, sources)]
     with (output/'compile.log').open('w') as log:

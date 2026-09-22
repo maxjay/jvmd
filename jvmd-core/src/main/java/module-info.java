@@ -2,6 +2,8 @@
 module dev.jvmd.core {
     requires transitive com.fasterxml.jackson.databind;
     requires java.management;
+    requires jdk.jfr;
+    requires jdk.management;
     exports dev.jvmd.core;
     opens dev.jvmd.core to com.fasterxml.jackson.databind;
 }

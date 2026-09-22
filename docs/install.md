@@ -108,7 +108,7 @@ The archive is built and trained once on its native OS/CPU runner. Release tests
 
 Normal launches use JVM AOT auto mode. If a cache cannot be used on a particular machine, the JVM can fall back to ordinary loading; `daemon.status` reports cache acceptance. This preserves execution semantics, but it does not promise identical startup times across CPUs, disks, repositories, or operating systems. Keep the matching runtime and jars together, and do not strip or rewrite them after installation.
 
-The millisecond performance targets are CI assertions, not production cutoffs. A query taking 200 ms instead of a tested 50 ms target still returns normally. Prebuilt users do not run the benchmark suite. Separate operational deadlines prevent hangs: adapter startup is 10 seconds, adapter requests six minutes, verified builds five minutes, and debugger method evaluation five seconds. Evaluation timeout can terminate the debugged application; see the [integration contract](integration.md#runtime-and-debugging).
+Operational deadlines prevent hangs: adapter startup is 10 seconds, adapter requests six minutes, verified builds five minutes, and debugger method evaluation five seconds. Evaluation timeout can terminate the debugged application; see the [integration contract](integration.md#runtime-and-debugging).
 
 ## Build and publish distributions
 
@@ -120,7 +120,7 @@ python3 jvmd-dist/release/build.py --version v0.1.0-preview.1
 
 The script downloads checksum-pinned Temurin, Node, and Maven from their publishers, builds the reactor, assembles and trains the runtime, creates the archive, and tests its installation. It writes archives, SHA-256 sidecars, and JSON evidence to `jvmd-dist/target/release/`. JDK legal notices, Node's license, project license, and dependency documentation travel with the archive.
 
-The separate [Distributions workflow](../.github/workflows/releases.yml) builds Linux x64/arm64 and macOS Intel/Apple Silicon artifacts. PR builds produce downloadable previews without publishing a release. The existing Checkpoints workflow is unchanged.
+The separate [Distributions workflow](../.github/workflows/releases.yml) builds Linux x64/arm64 and macOS Intel/Apple Silicon artifacts. Merged PRs produce downloadable previews without publishing a release.
 
 After the tested commit is on `main`, tag that exact commit:
 
@@ -129,4 +129,4 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The tag workflow requires successful native archive checks and a successful Checkpoints run for the same commit before publishing GitHub Release assets. Tags containing a suffix, such as `v0.1.0-preview.1`, publish as prereleases. Published assets are not overwritten by reruns.
+The tag workflow requires successful native archive checks and a successful Tests run for the same commit before publishing GitHub Release assets. Tags containing a suffix, such as `v0.1.0-preview.1`, publish as prereleases. Published assets are not overwritten by reruns.

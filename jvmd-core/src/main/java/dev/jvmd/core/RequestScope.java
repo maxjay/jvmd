@@ -7,14 +7,15 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class RequestScope {
     @FunctionalInterface public interface ThrowingSupplier<T>{T get()throws Exception;}
     private static final Object NULL=new Object();
-    public record Context(long id,String method,ConcurrentMap<Object,CompletableFuture<Object>> values){}
+    public record Context(long id,String method,ConcurrentMap<Object,CompletableFuture<Object>> values,
+                          String workflow,String invocation,String revision,Span span,long causalSpan){}
     private static final AtomicLong sequence=new AtomicLong();
     private static final ThreadLocal<Context> current=new ThreadLocal<>();
     private RequestScope(){}
 
     public static <T> T call(String method,ThrowingSupplier<T> supplier)throws Exception{
         if(current.get()!=null)return supplier.get();
-        var context=new Context(sequence.incrementAndGet(),method,new ConcurrentHashMap<>());
+        var context=new Context(sequence.incrementAndGet(),method,new ConcurrentHashMap<>(),"","","",null,0);
         current.set(context);
         try{return supplier.get();}finally{current.remove();}
     }
@@ -64,5 +65,98 @@ public final class RequestScope {
     public static <T> T isolated(ThrowingSupplier<T> work)throws Exception{
         var previous=current.get();current.remove();
         try{return work.get();}finally{if(previous!=null)current.set(previous);}
+    }
+
+    /** Opt-in diagnostics only. No event, map or clock read on the disabled path. */
+    public static final boolean TRACING=Boolean.getBoolean("jvmd.trace");
+    private static final AtomicLong spans=new AtomicLong();
+    private static final Span DISABLED=new Span();
+
+    public static <T> T traced(String method,String workflow,String invocation,String revision,ThrowingSupplier<T> work)throws Exception{
+        if(!TRACING)return call(method,work);
+        var previous=current.get();
+        current.set(new Context(sequence.incrementAndGet(),method,new ConcurrentHashMap<>(),workflow,invocation,revision,null,0));
+        try(var span=stage("rpc.execute")){
+            try{return work.get();}catch(Exception|Error error){span.outcome("failed");throw error;}
+        }finally{if(previous==null)current.remove();else current.set(previous);}
+    }
+
+    public static Span stage(String name){
+        if(!TRACING)return DISABLED;
+        return new Span(name,0);
+    }
+
+    /** Queue duration uses this JVM's monotonic clock; counters belong to no executing thread. */
+    public static void queued(String name,long enqueued){
+        if(TRACING&&enqueued!=0)try(var span=new Span(name,enqueued)){span.outcome("started");}
+    }
+
+    public static void count(String name,long value){
+        if(!TRACING)return;
+        var context=current.get();
+        if(context!=null&&context.span()!=null)context.span().count(name,value);
+    }
+
+    /** Causal identity for detached publication, without retaining request memoized values. */
+    public static Context detached(){
+        if(!TRACING)return null;
+        var context=current.get();
+        return context==null?null:new Context(context.id(),context.method(),new ConcurrentHashMap<>(),context.workflow(),context.invocation(),context.revision(),null,
+                context.span()==null?context.causalSpan():context.span().span);
+    }
+
+    @jdk.jfr.Name("dev.jvmd.Stage")
+    @jdk.jfr.Label("JVMD workflow stage")
+    @jdk.jfr.Category("JVMD")
+    @jdk.jfr.StackTrace(false)
+    public static final class Span extends jdk.jfr.Event implements AutoCloseable {
+        public String workflow,invocation,revision,method,stage,outcome="observed",cache="not recorded",counters;
+        public long request,span,parent,process,startNanos,durationNanos,threadCpuNanos=-1,threadAllocatedBytes=-1;
+        public boolean queued,virtualThread;
+        private final transient Context previous;
+        private final transient java.util.Map<String,Long> work;
+        private final transient long cpuStart,allocationStart;
+        private transient boolean closed;
+
+        private Span(){previous=null;work=null;cpuStart=allocationStart=-1;}
+        private Span(String name,long enqueue){
+            previous=current.get();work=new java.util.LinkedHashMap<>();
+            stage=name;span=spans.incrementAndGet();process=ProcessHandle.current().pid();
+            if(previous!=null){
+                workflow=previous.workflow();invocation=previous.invocation();revision=previous.revision();method=previous.method();request=previous.id();
+                parent=previous.span()==null?previous.causalSpan():previous.span().span;
+                current.set(new Context(request,method,previous.values(),workflow,invocation,revision,this,parent));
+            }
+            queued=enqueue!=0;startNanos=queued?enqueue:System.nanoTime();
+            virtualThread=Thread.currentThread().isVirtual();
+            cpuStart=queued||virtualThread?-1:Counters.cpu();
+            allocationStart=queued||virtualThread?-1:Counters.allocated();
+            begin();
+        }
+        public void count(String name,long value){if(work!=null)work.merge(name,value,Long::sum);}
+        public void outcome(String value){if(work!=null)outcome=value;}
+        public void cache(String value){if(work!=null)cache=value;}
+        public void revision(String value){if(work!=null)revision=value;}
+        @Override public void close(){
+            if(work==null||closed)return;
+            closed=true;durationNanos=System.nanoTime()-startNanos;
+            if(cpuStart>=0){long end=Counters.cpu();if(end>=cpuStart)threadCpuNanos=end-cpuStart;}
+            if(allocationStart>=0){long end=Counters.allocated();if(end>=allocationStart)threadAllocatedBytes=end-allocationStart;}
+            end();
+            // Event serialization is excluded from this span's counters, but remains visible in its parent.
+            try{counters=Json.MAPPER.writeValueAsString(work);}catch(java.io.IOException ignored){counters="{}";}
+            commit();
+            if(previous==null)current.remove();else current.set(previous);
+        }
+    }
+
+    /** Initialized only for enabled attribution; never changes VM counter settings. */
+    private static final class Counters {
+        private static final java.lang.management.ThreadMXBean bean=java.lang.management.ManagementFactory.getThreadMXBean();
+        static long cpu(){return bean.isCurrentThreadCpuTimeSupported()&&bean.isThreadCpuTimeEnabled()?bean.getCurrentThreadCpuTime():-1;}
+        static long allocated(){
+            return bean instanceof com.sun.management.ThreadMXBean extended&&extended.isThreadAllocatedMemorySupported()&&extended.isThreadAllocatedMemoryEnabled()
+                    ?extended.getThreadAllocatedBytes(Thread.currentThread().threadId()):-1;
+        }
     }
 }

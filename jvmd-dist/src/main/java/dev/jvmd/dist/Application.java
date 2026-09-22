@@ -653,6 +653,7 @@ public final class Application implements AutoCloseable {
         return resolver;
     }
     private Resolution refresh(Session session) throws Exception {
+        try(var trace=dev.jvmd.core.RequestScope.stage("project.resolve")){
         Resolution graph = resolver().resolveWorkspace(session.root(),workspace(session).roots(),workspace(session).ignoreVersions());
         var previous = (Resolution) session.state("resolution");
         if (previous == null || !previous.fingerprint().equals(graph.fingerprint())) {
@@ -667,9 +668,12 @@ public final class Application implements AutoCloseable {
         if(graph.modules().stream().anyMatch(m->m.processing().lombok()||m.testProcessing().lombok()))session.warn("lombok_reduced_fidelity: generated member bodies and positions are unavailable");
         if(index!=null && index.isDone() && !index.isCompletedExceptionally()) bindIndex(session,index.join());
         return graph;
+    
+        }
     }
     private synchronized void initializeIndex(boolean scan) {
         if(index!=null)return;
+        var cause=RequestScope.detached();
         index=java.util.concurrent.CompletableFuture.supplyAsync(()->{
             IndexStorage storage=null;
             try {
@@ -684,7 +688,10 @@ public final class Application implements AutoCloseable {
                 if(storage!=null)try{storage.close();}catch(Exception close){e.addSuppressed(close);}
                 throw new java.util.concurrent.CompletionException(e);
             }
-        }, task -> Thread.ofVirtual().name("jvmd-index-start").start(task));
+        }, task -> Thread.ofVirtual().name("jvmd-index-start").start(cause==null?task:()->{
+            try{RequestScope.with(cause,()->{try(var span=RequestScope.stage("index.bootstrap")){task.run();}return null;});}
+            catch(Exception error){throw new java.util.concurrent.CompletionException(error);}
+        }));
     }
     private IndexService index() { initializeIndex(false); return index.join(); }
     private void bindIndex(Session session,IndexService database)throws Exception {

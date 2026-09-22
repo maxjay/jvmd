@@ -1,4 +1,4 @@
-name: Checkpoints
+name: Tests
 on:
   push:
     branches: [main]
@@ -15,13 +15,28 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Cache third-party Maven dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.m2/repository
+            !~/.m2/repository/dev/jvmd
+          key: maven-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: maven-${{ runner.os }}-${{ runner.arch }}-
+      - name: Cache pinned JDK archive
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ${{ runner.temp }}/downloads/temurin25.tar.gz
+          key: jdk-${{ runner.os }}-${{ runner.arch }}-dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e
       - name: Install checksum-pinned Temurin 25.0.4.1+1
         shell: bash
         run: |
-          curl -fsSL --retry 3 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz' -o "$RUNNER_TEMP/temurin25.tar.gz"
-          printf '%s  %s\n' dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e "$RUNNER_TEMP/temurin25.tar.gz" | sha256sum --check -
+          mkdir -p "$RUNNER_TEMP/downloads"
+          [[ -f "$RUNNER_TEMP/downloads/temurin25.tar.gz" ]] || curl -fsSL --retry 3 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz' -o "$RUNNER_TEMP/downloads/temurin25.tar.gz"
+          printf '%s  %s\n' dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e "$RUNNER_TEMP/downloads/temurin25.tar.gz" | sha256sum --check -
           mkdir -p "$RUNNER_TEMP/jvmd-toolchain"
-          tar -xzf "$RUNNER_TEMP/temurin25.tar.gz" -C "$RUNNER_TEMP/jvmd-toolchain"
+          tar -xzf "$RUNNER_TEMP/downloads/temurin25.tar.gz" -C "$RUNNER_TEMP/jvmd-toolchain"
           echo "JAVA_HOME=$RUNNER_TEMP/jvmd-toolchain/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/jvmd-toolchain/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
       - name: Compile and package
@@ -33,12 +48,19 @@ jobs:
           bash jvmd-dist/train-aot.sh
       - name: Phase 1 deterministic checkpoints
         run: mvn -B -pl jvmd-tests test -Dgroups=phase-1 -DexcludedGroups=corpus
+      - name: Cache runtime test downloads
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ${{ runner.temp }}/runtime-downloads
+          key: runtime-tests-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/workflows/checkpoints.yml') }}
       - name: Install pinned Maven 4 for native resolver agreement
         shell: bash
         run: |
-          maven4_archive="$RUNNER_TEMP/apache-maven-4.0.0-rc-6-bin.tar.gz"
+          mkdir -p "$RUNNER_TEMP/runtime-downloads"
+          maven4_archive="$RUNNER_TEMP/runtime-downloads/apache-maven-4.0.0-rc-6-bin.tar.gz"
           maven4_url='https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/4.0.0-rc-6/apache-maven-4.0.0-rc-6-bin.tar.gz'
-          curl -fsSL --retry 3 "$maven4_url" -o "$maven4_archive"
+          [[ -f "${maven4_archive}" ]] || curl -fsSL --retry 3 "$maven4_url" -o "$maven4_archive"
           curl -fsSL --retry 3 "$maven4_url.sha512" -o "$maven4_archive.sha512"
           read -r maven4_digest _ < "$maven4_archive.sha512" || [[ -n "$maven4_digest" ]]
           [[ "$maven4_digest" =~ ^[[:xdigit:]]{128}$ ]]
@@ -81,8 +103,8 @@ jobs:
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         shell: bash
         run: |
-          jbr_archive="$RUNNER_TEMP/jbrsdk-25.0.4.1-linux-x64-b583.48.tar.gz"
-          curl -fsSL --retry 3 --max-time 180 "https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk-25.0.4.1-linux-x64-b583.48.tar.gz" -o "$jbr_archive"
+          jbr_archive="$RUNNER_TEMP/runtime-downloads/jbrsdk-25.0.4.1-linux-x64-b583.48.tar.gz"
+          [[ -f "${jbr_archive}" ]] || curl -fsSL --retry 3 --max-time 180 "https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk-25.0.4.1-linux-x64-b583.48.tar.gz" -o "$jbr_archive"
           curl -fsSL --retry 3 "https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk-25.0.4.1-linux-x64-b583.48.tar.gz.checksum" -o "$jbr_archive.checksum"
           read -r jbr_digest _ < "$jbr_archive.checksum"
           [[ "$jbr_digest" =~ ^[[:xdigit:]]{128}$ ]]
@@ -96,8 +118,8 @@ jobs:
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         shell: bash
         run: |
-          ha_jar="$RUNNER_TEMP/hotswap-agent-2.0.3.jar"
-          curl -fsSL --retry 3 --max-time 120 'https://github.com/HotswapProjects/HotswapAgent/releases/download/RELEASE-2.0.3/hotswap-agent-2.0.3.jar' -o "$ha_jar"
+          ha_jar="$RUNNER_TEMP/runtime-downloads/hotswap-agent-2.0.3.jar"
+          [[ -f "${ha_jar}" ]] || curl -fsSL --retry 3 --max-time 120 'https://github.com/HotswapProjects/HotswapAgent/releases/download/RELEASE-2.0.3/hotswap-agent-2.0.3.jar' -o "$ha_jar"
           printf '%s  %s\n' 4ef49724b7d8523536d2e2a7310f827f4db9f4fed3489224e05d7bf87f0594f9 "$ha_jar" | sha256sum --check -
           echo "JVMD_HOTSWAP_AGENT=$ha_jar" >> "$GITHUB_ENV"
       - name: Enhanced hot swap on JBR and stock fallback

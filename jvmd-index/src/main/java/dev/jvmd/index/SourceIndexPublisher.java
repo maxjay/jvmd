@@ -3,6 +3,7 @@ package dev.jvmd.index;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.atomic.LongAdder;
+import dev.jvmd.core.RequestScope;
 
 /** A bounded, coalescing queue of detached facts. Compiler responses never wait for the writer. */
 public final class SourceIndexPublisher implements AutoCloseable {
@@ -22,6 +23,9 @@ public final class SourceIndexPublisher implements AutoCloseable {
     private final Sink sink;
     private final long budget;
     private final LinkedHashMap<Path,Delta> pending=new LinkedHashMap<>();
+    private record Cause(RequestScope.Context context,long enqueued){}
+    // Attribution follows exactly the bounded pending queue; no history survives removal.
+    private final Map<Path,Cause> causes=RequestScope.TRACING?new HashMap<>():null;
     private final LinkedHashMap<Path,String> published=new LinkedHashMap<>();
     private final LongAdder enqueued=new LongAdder(),writes=new LongAdder(),coalesced=new LongAdder(),skipped=new LongAdder(),failed=new LongAdder(),dropped=new LongAdder();
     private long bytes;
@@ -35,26 +39,37 @@ public final class SourceIndexPublisher implements AutoCloseable {
         var queued=pending.get(delta.file());
         if(queued!=null&&queued.semanticHash().equals(delta.semanticHash())){skipped.increment();return;}
         if(delta.semanticHash().equals(published.get(delta.file()))&&queued==null){skipped.increment();return;}
-        var old=pending.remove(delta.file());if(old!=null){bytes-=old.bytes();coalesced.increment();}
+        var old=pending.remove(delta.file());if(causes!=null)causes.remove(delta.file());if(old!=null){bytes-=old.bytes();coalesced.increment();RequestScope.count("publications_coalesced",1);}
         if(delta.bytes()>budget){dropped.increment();return;}
         while(bytes+delta.bytes()>budget&&!pending.isEmpty()){
-            var victim=pending.keySet().iterator().next();bytes-=pending.remove(victim).bytes();dropped.increment();
+            var victim=pending.keySet().iterator().next();bytes-=pending.remove(victim).bytes();if(causes!=null)causes.remove(victim);dropped.increment();RequestScope.count("publications_dropped",1);
         }
         pending.put(delta.file(),delta);bytes+=delta.bytes();enqueued.increment();
+        if(causes!=null)causes.put(delta.file(),new Cause(RequestScope.detached(),System.nanoTime()));
         if(worker==null)worker=Thread.ofVirtual().name("jvmd-source-publisher").start(this::run);
         notifyAll();
     }
     private void run(){
         while(true){
             Delta delta;
+            Cause cause;
             synchronized(this){
                 while(pending.isEmpty()&&!closing)try{wait();}catch(InterruptedException interrupted){return;}
                 if(pending.isEmpty())return;
                 delta=pending.remove(pending.keySet().iterator().next());bytes-=delta.bytes();
+                cause=causes==null?null:causes.remove(delta.file());
                 if(delta.semanticHash().equals(published.get(delta.file()))){skipped.increment();continue;}
             }
             try{
-                sink.publish(delta);writes.increment();
+                if(cause==null)sink.publish(delta);
+                else RequestScope.with(cause.context(),()->{
+                    RequestScope.queued("facts.queue",cause.enqueued());
+                    try(var span=RequestScope.stage("facts.background_publish")){
+                        try{sink.publish(delta);}catch(Exception failure){span.outcome("failed");throw failure;}
+                    }
+                    return null;
+                });
+                writes.increment();
                 synchronized(this){published.put(delta.file(),delta.semanticHash());while(published.size()>32768)published.remove(published.keySet().iterator().next());}
             }catch(Exception error){failed.increment();failure=error.getClass().getSimpleName()+": "+error.getMessage();}
         }

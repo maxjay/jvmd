@@ -211,9 +211,13 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
             if(Thread.currentThread()==owner)return work.call();
             calls.increment();
             var inherited=RequestScope.current();
+            long enqueued=RequestScope.TRACING?System.nanoTime():0;
             Future<T> future=executor.submit(()->{
                 long started=cpuTime();
-                try{return inherited==null?work.call():RequestScope.with(inherited,work::call);}
+                try{return RequestScope.with(inherited,()->{
+                    RequestScope.queued("module.queue",enqueued);
+                    try(var span=RequestScope.stage("module.execute")){return work.call();}
+                });}
                 finally{long ended=cpuTime();if(ended>=started)cpuNanos.add(ended-started);}
             });
             try{return future.get();}

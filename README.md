@@ -4,7 +4,7 @@
 
 Give your coding agent and editor a shared view of your code, dependencies, and running app. jvmd stays running between requests, so the next question starts warm.
 
-[Get started](#get-started) · [Connect](#connect) · [Performance](#performance) · [Guide](docs/usage.md)
+[Get started](#get-started) · [Connect](#connect) · [Integration guide](docs/integration.md)
 
 | | What you can do |
 | --- | --- |
@@ -62,7 +62,7 @@ Set this as your Java language server command over stdio:
 jvmd-dist/target/image/bin/jvmd-lsp --root /absolute/path/to/your-project
 ```
 
-Completion, hover, go-to-definition, references, rename, and diagnostics work with unsaved files. [Editor details →](docs/usage.md#editors)
+Completion, hover, go-to-definition, references, rename, and diagnostics work with unsaved files. [Editor details →](docs/integration.md#lsp-client-contract)
 
 </details>
 
@@ -99,26 +99,12 @@ An agent can handle that with the built-in tools. These MCP tool-call parameters
 {"name": "diagnostics", "arguments": {"verified": true}}
 ```
 
-Edits return immediate feedback. A successful verified build is the completion check; save editor buffers first. [All 14 tools →](docs/usage.md#connect-an-agent-or-editor)
-
-## Performance
-
-Measured on Linux amd64 with AOT enabled in a [passing CI run](https://github.com/maxjay/jvmd/actions/runs/34882043173):
-
-| Operation | Time |
-| --- | ---: |
-| Daemon startup | **208 ms** |
-| Focused source analysis · p95 | **28 ms** |
-| Documentation, three levels deep · p95 | **8 ms** |
-| Full method-body hot swap · p95 | **58 ms** |
-
-The same run passed **99.878%** of **75,565** identifier checks across Spring PetClinic and jvmd. Results depend on the workload and machine.
+Edits return immediate feedback. A successful verified build is the completion check; save editor buffers first. [All 14 tools →](docs/integration.md#agent-tool-contract)
 
 ## Go further
 
-- [Configuration & multiple repositories](docs/usage.md#configuration)
-- [Debugging, hot swap & recordings](docs/usage.md#debug-and-hot-swap)
-- [Adapter setup](shim/README.md)
+- [Open and use a workspace](docs/integration.md#open-and-use-a-workspace)
+- [Debugging, hot swap & recordings](docs/integration.md#runtime-and-debugging)
 - [Build a client: integration guide & API](docs/integration.md)
 - [Dependencies](DEPENDENCIES.md)
 
@@ -126,5 +112,3 @@ The same run passed **99.878%** of **75,565** identifier checks across Spring Pe
 
 Copyright © 2026 Max. jvmd is available under the [MIT License](LICENSE),
 including for commercial and workplace use.
-
-Storage uses Rocks exclusively. See [storage ownership and cache compatibility](docs/storage.md) for the supported format lifecycle and upgrade behavior.

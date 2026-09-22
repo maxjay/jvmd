@@ -59,15 +59,20 @@ public final class CompilerInputs {
     public CompilerInputs(FileStateRegistry files){this.files=Objects.requireNonNull(files);}
 
     public synchronized Snapshot capture(Configuration config,Documents documents)throws IOException {
+        try(var trace=dev.jvmd.core.RequestScope.stage("inputs.discover")){
         var paths=new ArrayList<List<Path>>();
         for(Path root:config.roots())paths.add(files.inventory(root,".java"));
         if(!paths.equals(inventories)){
             discovered=paths.stream().flatMap(Collection::stream).distinct().toList();inventories=List.copyOf(paths);
         }
         return capture(config,documents,discovered);
+    
+        }
     }
     /** Explicit inventories are for callers which already own discovery, not a second freshness policy. */
     public synchronized Snapshot capture(Configuration config,Documents documents,Collection<Path> diskFiles)throws IOException {
+        try(var trace=dev.jvmd.core.RequestScope.stage("inputs.validate")){
+            trace.count("captures",1);
         long start=System.nanoTime();observations++;
         try {
             boolean sameConfig=config.equals(configuration);
@@ -87,10 +92,12 @@ public final class CompilerInputs {
             MembershipIdentity membership=snapshot!=null&&sameConfig&&sources.keySet().equals(prior.keySet())?snapshot.membership():
                     new MembershipIdentity(compose("membership-v1",config.roots(),new TreeSet<>(sources.keySet())));
             if(snapshot==null||sources!=prior||!environment.equals(snapshot.environment())||!membership.equals(snapshot.membership())||snapshot.observation()!=observation){
-                snapshot=new Snapshot(sources,membership,environment,observation);rebuilds++;
+                snapshot=new Snapshot(sources,membership,environment,observation);rebuilds++;RequestScope.count("snapshot_rebuilds",1);
             }
             configuration=config;return snapshot;
         } finally {validationNanos+=System.nanoTime()-start;}
+    
+        }
     }
     /** The same environment boundary is usable without rediscovering source inputs. */
     public synchronized EnvironmentIdentity environment(Configuration config)throws IOException {

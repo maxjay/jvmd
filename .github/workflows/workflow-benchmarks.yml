@@ -1,0 +1,129 @@
+name: Benchmarks
+on:
+  pull_request:
+    paths:
+      - 'benchmarks/workspaces/**'
+      - 'jvmd-*/src/main/**'
+      - 'shim/src/**'
+      - '.github/workflows/workflow-benchmarks.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'benchmarks/workspaces/**'
+      - 'jvmd-*/src/main/**'
+      - 'shim/src/**'
+      - '.github/workflows/workflow-benchmarks.yml'
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [comparison, jdtls, attribution, overhead]
+        default: comparison
+permissions:
+  contents: read
+concurrency:
+  group: benchmark-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  measure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+      - name: Cache third-party Maven dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.m2/repository
+            !~/.m2/repository/dev/jvmd
+          key: maven-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: maven-${{ runner.os }}-${{ runner.arch }}-
+      - name: Cache pinned JDK archive
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ${{ runner.temp }}/downloads/temurin25.tar.gz
+          key: jdk-${{ runner.os }}-${{ runner.arch }}-dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e
+      - name: Install pinned JDK
+        run: |
+          mkdir -p "$RUNNER_TEMP/tools" "$RUNNER_TEMP/jdtls"
+          mkdir -p "$RUNNER_TEMP/downloads"
+          [[ -f "$RUNNER_TEMP/downloads/temurin25.tar.gz" ]] || curl -fsSL --retry 3 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz' -o "$RUNNER_TEMP/downloads/temurin25.tar.gz"
+          printf '%s  %s\n' dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e "$RUNNER_TEMP/downloads/temurin25.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/downloads/temurin25.tar.gz" -C "$RUNNER_TEMP/tools"
+          echo "JAVA_HOME=$RUNNER_TEMP/tools/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/tools/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
+      - name: Cache pinned JDTLS archive
+        if: inputs.mode == 'jdtls'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ${{ runner.temp }}/jdtls.tar.gz
+          key: jdtls-338e7e73d61836651ba2453919a0d34fa763eb4e7c03342092309bffb8934c64
+      - name: Install JDTLS for requested comparison
+        if: inputs.mode == 'jdtls'
+        run: |
+          [[ -f "$RUNNER_TEMP/jdtls.tar.gz" ]] || curl -fsSL --retry 3 'https://download.eclipse.org/jdtls/milestones/1.61.0/jdt-language-server-1.61.0-202609031315.tar.gz' -o "$RUNNER_TEMP/jdtls.tar.gz"
+          printf '%s  %s\n' 338e7e73d61836651ba2453919a0d34fa763eb4e7c03342092309bffb8934c64 "$RUNNER_TEMP/jdtls.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/jdtls.tar.gz" -C "$RUNNER_TEMP/jdtls"
+      - name: Cache pinned Maven bootstrap
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ${{ runner.temp }}/workflow-maven
+          key: maven-tool-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('jvmd-dist/release/toolchains.json') }}
+      - name: Reuse pinned release Maven bootstrap
+        run: |
+          python - <<'PYCODE'
+          import importlib.util, os
+          from pathlib import Path
+          spec=importlib.util.spec_from_file_location('release_tools','jvmd-dist/release/build.py')
+          module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+          maven=module.toolchain(module.PINS['maven'],Path(os.environ['RUNNER_TEMP'])/'workflow-maven')
+          with open(os.environ['GITHUB_PATH'],'a') as out:out.write(str(maven/'bin')+'\n')
+          PYCODE
+      - name: Build and record provenance
+        run: |
+          mvn -B -DskipTests install
+          bash jvmd-dist/assemble.sh
+          python benchmarks/workspaces/compile.py --repo "$PWD" --java-home "$JAVA_HOME" --dependencies "$PWD/jvmd-dist/target/image/lib/jvmd" --output "$RUNNER_TEMP/workflow-build" --reuse-production-jars
+      - name: Harness regressions
+        run: python -m unittest discover -s benchmarks/workspaces -p 'test_*.py'
+      - name: Measure prepared queries
+        env:
+          MODE: ${{ inputs.mode || 'comparison' }}
+        run: |
+          options=(--servers jvmd --runs 5)
+          case "$MODE" in
+            jdtls) options=(--servers jvmd jdtls --runs 5 --jdtls "$RUNNER_TEMP/jdtls");;
+            attribution) options=(--mode attribution --runs 1);;
+            overhead) options=(--overhead --runs 5);;
+          esac
+          python benchmarks/workspaces/run.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --root "$RUNNER_TEMP/results" --samples 20 "${options[@]}"
+      - name: Verify and summarize
+        if: ${{ !cancelled() }}
+        run: python benchmarks/workspaces/summarize.py "$RUNNER_TEMP/results" "$RUNNER_TEMP/result.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ !cancelled() }}
+        with:
+          name: benchmark-result-${{ github.run_attempt }}
+          retention-days: 7
+          path: ${{ runner.temp }}/result.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ !cancelled() && (inputs.mode == 'attribution' || inputs.mode == 'overhead') }}
+        with:
+          name: benchmark-profiles
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/results/**/trace.json
+            ${{ runner.temp }}/results/**/attribution.json
+            ${{ runner.temp }}/results/**/profile-events.json
+            ${{ runner.temp }}/results/**/report.json
+            ${{ runner.temp }}/results/**/provenance.json
+            ${{ runner.temp }}/results/**/command.json

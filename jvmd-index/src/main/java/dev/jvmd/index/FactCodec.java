@@ -18,7 +18,10 @@ public final class FactCodec {
         try(var in=new DataInputStream(new ByteArrayInputStream(bytes))){
             if(in.readInt()!=0x4a564601)throw new IOException("Unsupported fact format");
             Object value=read(in,new ArrayList<>(),0);if(in.available()!=0)throw new IOException("Trailing fact data");
-            return Json.MAPPER.convertValue(value,type);
+            T decoded=Json.MAPPER.convertValue(value,type);
+            dev.jvmd.core.RequestScope.count("records_decoded",1);
+            dev.jvmd.core.RequestScope.count("record_bytes_decoded",bytes.length);
+            return decoded;
         }
     }
     private static void string(DataOutputStream out,String value,Map<String,Integer> strings)throws IOException {

@@ -5,51 +5,257 @@ import threading
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from compare import compare
-from resources import ProcessMonitor
+from resources import ProcessMonitor, attribute_samples
 from run import Client, first_system_value
+from verify import classify, verify
+from summarize import stats
 
 
 class HarnessTest(unittest.TestCase):
+    def test_encoded_uris_on_both_sides(self):
+        expected = {"uri": "file:///space%20and%20%C3%A9/Caller.java",
+                    "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 6}}}
+        for operation in ("definition", "references"):
+            op = dict(operation=operation, symbol="value0", source="value0(1)",
+                      expected=[expected] if operation == "references" else expected)
+            for uri in (expected["uri"], "file:///space and é/Caller.java"):
+                self.assertEqual("correct", classify(op, {"result": [dict(expected, uri=uri)]}))
+
+    def test_preparation_matches_equivalent_diagnostic_uris(self):
+        client = Client.__new__(Client)
+        client.condition = threading.Condition()
+        client.failure = None
+        client.notifications = [{"method": "textDocument/publishDiagnostics", "params": {
+            "uri": "file:///space%20é/Test.java", "version": 1, "diagnostics": []}}]
+        result = client.diagnostics("file:///space%20%C3%A9/Test.java", 1, False, 0, timeout=0)
+        self.assertEqual([], result["diagnostics"])
+
+    def test_jdt_attached_source_uri_from_pinned_server(self):
+        source = "int base0(int input) {}"
+        uri = "jdt://contents/offset-1.jar/external/Offset.java?=library/%5C/repository%5C/offset-1.jar%3Cexternal%28Offset.class"
+        op = dict(operation="dependency_definition", symbol="base0", expected=dict(
+            binary_name="offset-1.jar", source_name="external/Offset.java", source=source))
+        loc = dict(uri=uri, range={"start": {"line": 0, "character": 4}, "end": {"line": 0, "character": 9}})
+        row = dict(result=[loc], source_evidence={uri: {"source": source}})
+        self.assertEqual("correct", classify(op, row))
+        row["source_evidence"][uri]["source"] = "int base0(String input) {}"
+        self.assertEqual("wrong", classify(op, row))
+        row["source_evidence"][uri]["source"] = source
+        loc["uri"] = uri.replace("offset-1.jar", "offset-2.jar")
+        self.assertEqual("wrong", classify(op, row))
+
+    def test_fixture_identity_includes_project_configuration(self):
+        from fixture import fixture_identity
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("library/.project", "library/.classpath", "host/.jvmd/workspace.json"):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                before = fixture_identity(root)
+                path.write_text("configuration")
+                self.assertNotEqual(before, fixture_identity(root))
+                before = fixture_identity(root)
+                path.write_text("changed")
+                self.assertNotEqual(before, fixture_identity(root))
+
+    def test_process_tree_survives_one_task_exiting(self):
+        from resources import _process_tree
+        from unittest.mock import patch
+        def read(path, *args, **kwargs):
+            if str(path).endswith("/exited/children"): raise FileNotFoundError()
+            return "2" if str(path).endswith("/live/children") else ""
+        def glob(path, pattern):
+            return [Path("/proc/1/task/exited/children"), Path("/proc/1/task/live/children")] if str(path) == "/proc/1/task" else []
+        with patch.object(Path, "exists", return_value=True), patch.object(Path, "glob", glob), patch.object(Path, "read_text", read):
+            self.assertEqual({1, 2}, _process_tree(1))
+
+    def test_compatibility_includes_aggregation_build_and_cpu_period(self):
+        from summarize import summarize
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            provenance = {"build": {"revision": "a", "tree": "b", "dependencies": {}}, "cpu_period": "100000",
+                          "harness": {name: "original" for name in ("run.py", "fixture.py", "verify.py", "resources.py", "bridge.ts", "StdioApplication.java", "compile.py", "summarize.py")}}
+            def summary():
+                (root / "provenance.json").write_text(json.dumps(provenance))
+                return summarize(root)
+            with patch("summarize.verify", return_value={"complete": False, "workers": []}):
+                original = summary()["compatibility"]
+                for name in ("compile.py", "summarize.py"):
+                    provenance["harness"][name] = "changed"
+                    self.assertNotEqual(original, summary()["compatibility"])
+                    provenance["harness"][name] = "original"
+                provenance["cpu_period"] = "200000"
+                self.assertNotEqual(original, summary()["compatibility"])
+
+    def test_completion_rejects_stale_and_missing_signature(self):
+        operation = {"operation": "completion", "symbol": "value0"}
+        check = lambda rows: classify(operation, {"result": {"items": rows}})
+        self.assertEqual("incomplete", check([]))
+        self.assertEqual("wrong", check([{"label": "value0()", "detail": "int"}]))
+        self.assertEqual("correct", check([{"label": "value0(int input): int"}]))
+        self.assertEqual("stale", check([{"label": "value0(int input)", "detail": "String"}]))
+
+    def test_definition_rejects_wrong_location_and_range(self):
+        expected = {
+            "uri": "file:///library/Library.java",
+            "range": {"start": {"line": 0, "character": 4}, "end": {"line": 0, "character": 10}},
+        }
+        op = {"operation": "definition", "symbol": "value0", "expected": expected}
+        self.assertEqual("correct", classify(op, {"result": [expected]}))
+        self.assertEqual(
+            "wrong", classify(op, {"result": [dict(expected, uri="file:///installed/Library.java")]})
+        )
+        self.assertEqual("incomplete", classify(op, {"result": []}))
+
+    def test_references_reject_duplicates_and_partial_sets(self):
+        expected = {
+            "uri": "file:///Caller.java",
+            "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 6}},
+        }
+        op = {"operation": "references", "symbol": "value0", "expected": [expected], "source": "value0(1)"}
+        self.assertEqual("correct", classify(op, {"result": [expected]}))
+        self.assertEqual("incomplete", classify(op, {"result": []}))
+        self.assertEqual("incomplete", classify(op, {"result": [expected, expected]}))
+        call = {
+            "uri": expected["uri"],
+            "range": {"start": expected["range"]["start"], "end": {"line": 0, "character": 9}},
+        }
+        self.assertEqual("correct", classify(op, {"result": [call]}))
+
+    def test_dependency_source_rejects_wrong_version(self):
+        source = "int base0(int input) {}"
+        expected = {
+            "uri": "jar:file:///repo/offset-1-sources.jar!/external/Offset.java",
+            "source": source,
+            "binary_name": "offset-1.jar",
+        }
+        op = {"operation": "dependency_definition", "symbol": "base0", "expected": expected}
+        location = {
+            "uri": expected["uri"],
+            "range": {"start": {"line": 0, "character": 4}, "end": {"line": 0, "character": 9}},
+        }
+        self.assertEqual("correct", classify(op, {"result": [location]}))
+        location["uri"] = location["uri"].replace("offset-1-", "offset-2-")
+        self.assertEqual("wrong", classify(op, {"result": [location]}))
+
+    def test_missing_required_invocations_cannot_pass(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            worker = root / "worker"
+            worker.mkdir()
+            (root / "provenance.json").write_text(
+                json.dumps({"runs": 1, "servers": ["jvmd"], "overhead": False, "samples": 1, "warmup": 1})
+            )
+            (worker / "fixture.json").write_text(
+                json.dumps({"identity": "fixture", "operations": [{"operation": "hover", "target": "0"}]})
+            )
+            (worker / "report.json").write_text(json.dumps({"outcome": "correct", "actions": []}))
+            self.assertFalse(verify(root)["complete"])
+            self.assertEqual(3, len(verify(root)["workers"][0]["not_executed"]))
+
+    def test_percentile_precision_requires_warm_samples(self):
+        self.assertIsNone(stats([1] * 19, "warm")["p95_ms"])
+        self.assertIsNone(stats([1] * 100, "first")["p95_ms"])
+        self.assertEqual(1, stats([1] * 20, "warm")["p95_ms"])
+
+    def test_samples_choose_innermost_matching_thread_and_leave_others_unassigned(self):
+        spans = [
+            {
+                "queued": False,
+                "eventThread": {"javaThreadId": 7},
+                "startTime": "2026-01-01T00:00:00Z",
+                "duration": "PT1S",
+                "durationNanos": 1_000_000_000,
+                "stage": "parent",
+                "span": 1,
+            },
+            {
+                "queued": False,
+                "eventThread": {"javaThreadId": 7},
+                "startTime": "2026-01-01T00:00:00.1Z",
+                "duration": "PT0.3S",
+                "durationNanos": 300_000_000,
+                "stage": "child",
+                "span": 2,
+            },
+        ]
+        events = [
+            {
+                "type": "jdk.ExecutionSample",
+                "values": {"startTime": "2026-01-01T00:00:00.2Z", "sampledThread": {"javaThreadId": thread}},
+            }
+            for thread in (7, 8)
+        ]
+        result = attribute_samples(events, spans)
+        self.assertEqual(2, result["total_events"]["jdk.ExecutionSample"])
+        self.assertEqual(1, result["assigned_events"]["jdk.ExecutionSample"])
+        self.assertEqual({2, None}, {row["span"] for row in result["groups"]})
+
+    def test_jfr_wait_attribution_handles_minute_and_hour_durations(self):
+        span = {
+            "queued": False,
+            "eventThread": {"javaThreadId": 7},
+            "startTime": "2026-01-01T00:00:00Z",
+            "duration": "PT1H1M0.5S",
+            "durationNanos": 3660500000000,
+            "stage": "project.resolve",
+            "span": 1,
+        }
+        event = {
+            "type": "jdk.ThreadPark",
+            "values": {
+                "eventThread": {"javaThreadId": 7},
+                "startTime": "2026-01-01T00:01:00Z",
+                "duration": "PT1M0.689558602S",
+            },
+        }
+        result = attribute_samples([event], [span])
+        self.assertEqual(1, result["assigned_events"]["jdk.ThreadPark"])
+        self.assertAlmostEqual(60689.558602, result["groups"][0]["observed_wait_ms"])
+
     def test_optional_system_value_supports_cgroup_v1_and_missing_files(self):
         with tempfile.TemporaryDirectory() as directory:
-            missing = Path(directory)/'v2'; fallback = Path(directory)/'v1'
-            fallback.write_text('200000\n')
-            self.assertEqual('200000', first_system_value((missing, fallback)))
+            missing = Path(directory) / "v2"
+            fallback = Path(directory) / "v1"
+            fallback.write_text("200000\n")
+            self.assertEqual("200000", first_system_value((missing, fallback)))
             self.assertIsNone(first_system_value((missing,)))
 
     def test_client_reassembles_lsp_partial_results(self):
         client = Client.__new__(Client)
-        client.next = 0; client.responses = {}; client.notifications = []; client.failure = None
+        client.next = 0
+        client.responses = {}
+        client.notifications = []
+        client.failure = None
         client.condition = threading.Condition()
+
         def send(message):
-            token = message['params']['partialResultToken']
-            client.notifications.extend([
-                {'method': '$/progress', 'params': {'token': token, 'value': [1, 2]}},
-                {'method': '$/progress', 'params': {'token': token, 'value': [3]}},
-            ])
-            client.responses[message['id']] = {'id': message['id'], 'result': []}
+            token = message["params"]["partialResultToken"]
+            client.notifications.extend(
+                [
+                    {"method": "$/progress", "params": {"token": token, "value": [1, 2]}},
+                    {"method": "$/progress", "params": {"token": token, "value": [3]}},
+                ]
+            )
+            client.responses[message["id"]] = {"id": message["id"], "result": []}
+
         client.send = send
-        result, _ = client.call('textDocument/references', {'textDocument': {'uri': 'file:///Test.java'}})
+        result, _ = client.call("textDocument/references", {"textDocument": {"uri": "file:///Test.java"}})
         self.assertEqual([1, 2, 3], result)
 
-    def test_compare_reports_directional_ratio(self):
-        summary = {'fixtures': {'small': {'after': {'median': {'hover': 2.0, 'peak_rss_mib': 40.0}},
-                                                   'jdtls-shared': {'median': {'hover': 4.0, 'peak_rss_mib': 100.0}}}}}
-        result = compare(summary, 'after', 'jdtls-shared')
-        self.assertEqual(.5, result['fixtures']['small']['hover']['jvmd_over_jdtls'])
-        self.assertEqual(.4, result['fixtures']['small']['peak_rss_mib']['jvmd_over_jdtls'])
-        self.assertEqual('ms', result['fixtures']['small']['hover']['unit'])
-        self.assertEqual('MiB', result['fixtures']['small']['peak_rss_mib']['unit'])
-
-    @unittest.skipUnless(Path('/proc/self/stat').exists(), 'Linux /proc required')
+    @unittest.skipUnless(Path("/proc/self/stat").exists(), "Linux /proc required")
     def test_monitor_includes_descendant_memory(self):
-        child = subprocess.Popen([sys.executable, '-c', 'import time; x=bytearray(8*1024*1024); time.sleep(.25)'])
-        monitor = ProcessMonitor(child.pid, .005)
-        child.wait(); values = monitor.close()
-        self.assertGreater(values['samples'], 1)
-        self.assertGreater(values['peak_rss_bytes'], 8*1024*1024)
-        self.assertGreaterEqual(values['peak_processes'], 1)
+        child = subprocess.Popen(
+            [sys.executable, "-c", "import time; x=bytearray(8*1024*1024); time.sleep(.25)"]
+        )
+        monitor = ProcessMonitor(child.pid, 0.005)
+        child.wait()
+        values = monitor.close()
+        self.assertGreater(values["samples"], 1)
+        self.assertGreater(values["peak_rss_bytes"], 8 * 1024 * 1024)
+        self.assertGreaterEqual(values["peak_processes"], 1)
 
 
-if __name__ == '__main__': unittest.main()
+if __name__ == "__main__":
+    unittest.main()

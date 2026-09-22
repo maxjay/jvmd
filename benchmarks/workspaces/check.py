@@ -4,7 +4,6 @@ import io
 import json
 import math
 import os
-import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -71,6 +70,14 @@ def render(result, status, url):
     return "\n".join(lines) + "\n"
 
 
+class ArtifactRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, *args):
+        redirected = super().redirect_request(request, *args)
+        if redirected:
+            redirected.remove_header("Authorization")
+        return redirected
+
+
 def api(path, data=None, method=None):
     request = urllib.request.Request("https://api.github.com/repos/" + os.environ["GITHUB_REPOSITORY"] + "/" + path,
                                     data=json.dumps(data).encode() if data is not None else None,
@@ -117,7 +124,7 @@ def publish(event):
                 if artifact["size_in_bytes"] > 120000:
                     raise ValueError("Oversized benchmark result")
                 request = urllib.request.Request(artifact["archive_download_url"], headers={"Authorization": "Bearer " + os.environ["GH_TOKEN"]})
-                with urllib.request.urlopen(request) as response, zipfile.ZipFile(io.BytesIO(response.read(120001))) as archive:
+                with urllib.request.build_opener(ArtifactRedirect).open(request) as response, zipfile.ZipFile(io.BytesIO(response.read(120001))) as archive:
                     if archive.getinfo("result.json").file_size > 55000:
                         raise ValueError("Oversized result JSON")
                     result = validate(json.loads(archive.read("result.json")), revision)

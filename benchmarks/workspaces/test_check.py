@@ -45,6 +45,7 @@ class CheckTest(unittest.TestCase):
         pr = {"number": 22, "state": "open", "head": {"sha": run["head_sha"]}, "base": {"sha": "b" * 40}}
         def api(path, data=None, method=None):
             calls.append((path, data, method))
+            if path == "check-runs": return check
             if path == "actions/runs/7": return run
             if path.endswith("/artifacts"): return {"artifacts": []}
             if path.startswith("commits/"): return [pr]
@@ -57,6 +58,10 @@ class CheckTest(unittest.TestCase):
             self.assertFalse(any(path.startswith("check-runs/") for path, _, _ in calls))
             calls.clear(); publish(dict(run, run_attempt=1))
             self.assertEqual(1, len(calls))
+            calls.clear()
+            with patch("check.records", return_value=[]): publish(run)
+            self.assertTrue(any(data and data.get("conclusion") == "failure" for _, data, _ in calls))
+            self.assertTrue(any(data and "Failed" in data.get("body", "") for _, data, _ in calls))
             calls.clear(); pr["head"]["sha"] = "c" * 40; publish(run)
             self.assertFalse(any(method == "PATCH" for _, _, method in calls))
 

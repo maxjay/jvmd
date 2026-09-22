@@ -34,7 +34,16 @@ export default class CompletionScenario extends LspScenarioHarness {
       context: { triggerKind: 2, triggerCharacter: "." },
     });
 
-    const first = await this.measure(completion, normaliseCompletion);
+    const firstRaw = await completion();
+    const first = await this.measure(async () => firstRaw, normaliseCompletion);
+
+    const firstItems = Array.isArray(firstRaw) ? firstRaw : firstRaw?.items ?? [];
+    assert(firstItems.length > 0, "Expected completion candidates");
+    const resolved = await this.measure(
+      () => this.request<any>("completionItem/resolve", firstItems[0]),
+      normaliseResolvedCompletion,
+    );
+
     const repeated = await this.measure(completion, normaliseCompletion);
 
     this.change(
@@ -44,7 +53,7 @@ export default class CompletionScenario extends LspScenarioHarness {
 
     const afterUnsavedEdit = await this.measure(completion, normaliseCompletion);
 
-    return { first, repeated, afterUnsavedEdit };
+    return { first, resolved, repeated, afterUnsavedEdit };
   }
 }
 
@@ -67,4 +76,17 @@ function normaliseCompletion(response: CompletionResponse) {
       String(a.kind).localeCompare(String(b.kind)) ||
       a.insertText.localeCompare(b.insertText)
     );
+}
+
+
+function normaliseResolvedCompletion(item: any) {
+  return {
+    label: item?.label ?? null,
+    detail: item?.detail ?? null,
+    documentation:
+      typeof item?.documentation === "string"
+        ? item.documentation
+        : item?.documentation?.value ?? null,
+    insertText: item?.textEdit?.newText ?? item?.insertText ?? item?.label ?? null,
+  };
 }

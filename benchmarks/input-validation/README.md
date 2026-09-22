@@ -2,7 +2,6 @@
 
 This component harness complements the existing workspace benchmark. It does not
 compare JVMD counters with JDTLS, or equate component latency with editor latency.
-Input ownership is described in [storage.md](../../docs/storage.md).
 
 Use Python 3.11+, JDK 25, the dependency JAR directory built for each revision,
 and fresh output directories. `prepare.py` copies production sources into its

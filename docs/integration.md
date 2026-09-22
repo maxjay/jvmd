@@ -51,7 +51,7 @@ Launch only the adapter your client needs. Each adapter connects to the resident
 
 For VS Code Remote/WSL/SSH, run jvmd on the host containing the workspace. Paths and file URIs must refer to that host. A Windows UI connected to a WSL extension host uses a Linux installation.
 
-Machine configuration is `~/.config/jvmd/config.json`; see the [configuration guide](usage.md#configuration). For Maven 3.8.3 projects, use `"maven_major": 3`.
+Machine configuration is `~/.config/jvmd/config.json`. For Maven 3.8.3 projects, use `"maven_major": 3`.
 
 `JVMD_CONFIG` selects another configuration file for both adapters and their launched daemon. An existing shared daemon keeps the configuration with which it started.
 
@@ -409,7 +409,7 @@ Frame tokens expire after execution resumes, stepping, evaluation that invokes t
 
 Tier-2 evaluation compiles Java expressions, including lambdas, in the stopped source context. Method evaluation can have application side effects. A five-second evaluation timeout can terminate the owned application and require restart; inspect the returned details.
 
-Stock Java supports method-body hot swap. Structural changes can require restart; enhanced redefinition depends on configured JBR capabilities. Multi-module hot swap is not atomic across modules. See the [runtime guide](usage.md#debug-and-hot-swap) for evaluation and recording limits.
+Stock Java supports method-body hot swap. Structural changes can require restart; enhanced redefinition depends on configured JBR capabilities. Multi-module hot swap is not atomic across modules.
 
 ## Client acceptance checks
 

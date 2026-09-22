@@ -38,6 +38,7 @@ public final class Application implements AutoCloseable {
         dispatcher.status("resolver", () -> resolver == null ? java.util.Map.of("maven_major", config.mavenMajor(), "initialized", false) : resolver.status());
         dispatcher.status("classpath_files",classpathFiles::status);
         dispatcher.register("session.open", (_, p) -> {
+            awaitReady();
             var session = sessions.open(Path.of(Dispatcher.required(p, "root")));
             session.put("documents",new Documents(classpathFiles));
             var manifest=p.get("manifest");
@@ -682,7 +683,7 @@ public final class Application implements AutoCloseable {
                 if(budgetMb<1)throw new IllegalArgumentException("jvmd.index.generation_budget_mb must be positive");
                 storage=IndexStorage.open(config.stateDir().resolve("index-v2"),Math.multiplyExact(budgetMb,1024L*1024L));
                 var service=new IndexService(storage,config.m2Repo());
-                if(scan)service.start();
+                if(scan)service.start().join();
                 return service;
             } catch(Exception e){
                 if(storage!=null)try{storage.close();}catch(Exception close){e.addSuppressed(close);}
@@ -694,6 +695,7 @@ public final class Application implements AutoCloseable {
         }));
     }
     private IndexService index() { initializeIndex(false); return index.join(); }
+    private void awaitReady(){if(config.indexOnStart())index();}
     private void bindIndex(Session session,IndexService database)throws Exception {
         var graph=(Resolution)session.state("resolution");if(graph==null)return;
         for(var module:graph.modules()){
@@ -823,6 +825,7 @@ public final class Application implements AutoCloseable {
         var server = new UnixServer(config, app.dispatcher, app);
         Runtime.getRuntime().addShutdownHook(Thread.ofPlatform().unstarted(server::close));
         server.start();
+        app.awaitReady();
         System.out.println("READY " + config.socket());
         server.await();
     }

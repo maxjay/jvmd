@@ -19,22 +19,45 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
-          distribution: temurin
-          java-version: "25"
-          cache: maven
+          node-version: 24.21.0
 
-      - uses: actions/setup-node@v4
+      - name: Cache third-party Maven dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
-          node-version: "24.21.0"
+          path: |
+            ~/.m2/repository
+            !~/.m2/repository/dev/jvmd
+          key: maven-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: maven-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Cache pinned JDK archive
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ${{ runner.temp }}/downloads/temurin25.tar.gz
+          key: jdk-${{ runner.os }}-${{ runner.arch }}-dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e
+
+      - name: Install pinned JDK
+        run: |
+          mkdir -p "$RUNNER_TEMP/tools" "$RUNNER_TEMP/downloads"
+          [[ -f "$RUNNER_TEMP/downloads/temurin25.tar.gz" ]] || curl -fsSL --retry 3 \
+            'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz' \
+            -o "$RUNNER_TEMP/downloads/temurin25.tar.gz"
+          printf '%s  %s\n' \
+            dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e \
+            "$RUNNER_TEMP/downloads/temurin25.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/downloads/temurin25.tar.gz" -C "$RUNNER_TEMP/tools"
+          echo "JAVA_HOME=$RUNNER_TEMP/tools/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/tools/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
 
       - name: Install harness dependency
         run: npm install --prefix benchmarks/lsp-scenarios --ignore-scripts
 
       - name: Restore prepared Apache Maven fixture
         id: fixture
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ runner.temp }}/apache-maven-fixture
           key: apache-maven-lsp-v1
@@ -55,7 +78,7 @@ jobs:
 
       - name: Cache pinned JDTLS archive
         if: inputs.mode == 'record'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ runner.temp }}/jdtls.tar.gz
           key: jdtls-338e7e73d61836651ba2453919a0d34fa763eb4e7c03342092309bffb8934c64
@@ -64,7 +87,7 @@ jobs:
         if: inputs.mode == 'record'
         run: |
           mkdir -p "$RUNNER_TEMP/jdtls"
-          curl -fsSL --retry 3 \
+          [[ -f "$RUNNER_TEMP/jdtls.tar.gz" ]] || curl -fsSL --retry 3 \
             https://download.eclipse.org/jdtls/milestones/1.61.0/jdt-language-server-1.61.0-202609031315.tar.gz \
             -o "$RUNNER_TEMP/jdtls.tar.gz"
           printf '%s  %s\n' \

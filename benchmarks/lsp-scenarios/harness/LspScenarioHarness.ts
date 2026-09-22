@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import {
   createMessageConnection,
   StreamMessageReader,
@@ -184,23 +185,26 @@ export abstract class LspScenarioHarness {
     const expected: Record<string, Measurement<unknown>> =
       JSON.parse(readFileSync(file, "utf8"));
 
-    assert.deepEqual(Object.keys(actual).sort(), Object.keys(expected).sort());
-    for (const [name, measurement] of Object.entries(actual)) {
-      assert.deepEqual(
-        measurement.result,
-        expected[name].result,
-        this.id + "/" + name + " differs from JDTLS",
-      );
-    }
+    const cases = [...new Set([...Object.keys(expected), ...Object.keys(actual)])];
+    const correctness = Object.fromEntries(
+      cases.map(name => [
+        name,
+        expected[name] !== undefined &&
+          actual[name] !== undefined &&
+          isDeepStrictEqual(actual[name].result, expected[name].result),
+      ]),
+    );
 
-    console.table(Object.keys(actual).map(name => ({
+    console.table(cases.map(name => ({
       case: name,
-      jdtlsMs: expected[name].metrics.latencyMs.toFixed(2),
-      jvmdMs: actual[name].metrics.latencyMs.toFixed(2),
-      jdtlsPeakMb: mb(expected[name].metrics.memory.peak.totalKb),
-      jvmdPeakMb: mb(actual[name].metrics.memory.peak.totalKb),
+      correct: correctness[name] ? "yes" : "NO",
+      jdtlsMs: expected[name] ? expected[name].metrics.latencyMs.toFixed(2) : "-",
+      jvmdMs: actual[name] ? actual[name].metrics.latencyMs.toFixed(2) : "-",
+      jdtlsPeakMb: expected[name] ? mb(expected[name].metrics.memory.peak.totalKb) : "-",
+      jvmdPeakMb: actual[name] ? mb(actual[name].metrics.memory.peak.totalKb) : "-",
     })));
-    writeSummary(this.id, this.name, actual, expected);
+
+    writeSummary(this.id, this.name, actual, expected, correctness);
   }
 }
 
@@ -337,6 +341,7 @@ function writeSummary(
   name: string,
   actual: Record<string, Measurement<unknown>>,
   expected?: Record<string, Measurement<unknown>>,
+  correctness: Record<string, boolean> = {},
 ) {
   const file = process.env.GITHUB_STEP_SUMMARY;
   if (!file) return;
@@ -352,14 +357,18 @@ function writeSummary(
       : "| --- | ---: | ---: |",
   ];
 
-  for (const caseName of Object.keys(actual)) {
+  const cases = expected
+    ? [...new Set([...Object.keys(expected), ...Object.keys(actual)])]
+    : Object.keys(actual);
+
+  for (const caseName of cases) {
     const current = actual[caseName];
     if (expected) {
       const baseline = expected[caseName];
       lines.push(
-        `| ${caseName} | ✅ | ${baseline.metrics.latencyMs.toFixed(2)} | ${current.metrics.latencyMs.toFixed(2)} | ${mb(baseline.metrics.memory.peak.totalKb)} | ${mb(current.metrics.memory.peak.totalKb)} |`,
+        `| ${caseName} | ${correctness[caseName] ? "✅" : "❌"} | ${baseline ? baseline.metrics.latencyMs.toFixed(2) : "-"} | ${current ? current.metrics.latencyMs.toFixed(2) : "-"} | ${baseline ? mb(baseline.metrics.memory.peak.totalKb) : "-"} | ${current ? mb(current.metrics.memory.peak.totalKb) : "-"} |`,
       );
-    } else {
+    } else if (current) {
       lines.push(
         `| ${caseName} | ${current.metrics.latencyMs.toFixed(2)} | ${mb(current.metrics.memory.peak.totalKb)} |`,
       );

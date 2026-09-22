@@ -88,7 +88,7 @@ async function jvmd(config, report) {
 exports.run = async () => {
   const config=JSON.parse(fs.readFileSync(process.env.JVMD_WORKFLOW_CONFIG,'utf8'));
   const report=config.report;
-  let adapter,revision="A",provider,consumer,activeInvocation;
+  let adapter,revision=config.initial_revision||"A",provider,consumer,activeInvocation;
   const flush=()=>fs.writeFileSync(path.join(config.root,'driver-result.json'),JSON.stringify(report,null,2));
   async function check(name, action, oracle, timeout=30000){
     const id=report.workflow+':'+report.actions.length+':'+name;
@@ -110,7 +110,7 @@ exports.run = async () => {
   }
   function classify(name,result){
     if(name.includes('completion')){
-      const values=result.items?.filter(i=>i.label.startsWith('value'))||[];
+      const values=result.items?.filter(i=>i.label.startsWith(config.fixture.expected.method||'value'))||[];
       return values.length?'stale':'incomplete';
     }
     if(name==='revert_diagnostics')return 'stale';
@@ -141,13 +141,15 @@ exports.run = async () => {
     provider=await vscode.workspace.openTextDocument(files.provider);
     consumer=await vscode.workspace.openTextDocument(files.consumer);
     await vscode.window.showTextDocument(consumer);
-    let point=position(consumer.getText(),consumer.getText().indexOf('.value')+4);
+    const method=config.fixture.expected.method||'value';
+    const initialType=revision==='API'?'String':config.fixture.expected.initial_type||'int';
+    let point=position(consumer.getText(),config.fixture.probe_offset??consumer.getText().indexOf('.value')+4);
     async function completion(){
       const result=await vscode.commands.executeCommand('vscode.executeCompletionItemProvider',consumer.uri,point);
       return {version:consumer.version,items:(result?.items||[]).map(i=>({label:typeof i.label==='string'?i.label:i.label.label,detail:i.detail||''}))};
     }
     function completionOracle(type){return result=>{
-      const values=result.items.filter(i=>i.label.startsWith('value'));
+      const values=result.items.filter(i=>i.label.startsWith(method));
       return result.version===consumer.version&&values.some(i=>new RegExp('\\b'+type+'\\b').test(JSON.stringify(i)))&&!values.some(i=>new RegExp('\\b'+(type==='int'?'String':'int')+'\\b').test(JSON.stringify(i)));
     };}
     async function definition(){
@@ -155,10 +157,10 @@ exports.run = async () => {
       return (result||[]).map(r=>({uri:(r.uri||r.targetUri).toString(),range:plainRange(r.range||r.targetSelectionRange)}));
     }
     const definitionOracle=result=>result.length===1&&vscode.Uri.parse(result[0].uri).fsPath===files.provider;
-    await check('warm_completion',completion,completionOracle('int'),120000);
+    await check('warm_completion',completion,completionOracle(initialType),120000);
     await check('warm_definition',definition,definitionOracle);
     report.open_to_project_ready_ms=now()-start;flush();
-    for(let i=0;i<config.samples;i++)await check('unchanged_completion',completion,completionOracle('int'));
+    for(let i=0;i<config.samples;i++)await check('unchanged_completion',completion,completionOracle(initialType));
     async function editProvider(version){
       revision=version;if(adapter)await adapter.mark(activeInvocation,revision);
       await vscode.window.showTextDocument(provider);
@@ -181,7 +183,7 @@ exports.run = async () => {
       const expected=config.fixture.expected.references.map(r=>JSON.stringify(r)).sort();
       const locations=rows=>rows.map(r=>({uri:(r.uri||r.targetUri).toString(),range:plainRange(r.range||r.targetSelectionRange)}));
       await check('references',async()=>locations(await vscode.commands.executeCommand('vscode.executeReferenceProvider',consumer.uri,point)||[]),rows=>{
-        const uses=rows.filter(r=>vscode.Uri.parse(r.uri).fsPath!==files.provider).map(r=>JSON.stringify(r)).sort();
+        const uses=rows.filter(r=>!(vscode.Uri.parse(r.uri).fsPath===files.provider&&JSON.stringify(r.range)===JSON.stringify(config.fixture.expected.definition.range))).map(r=>JSON.stringify(r)).sort();
         return JSON.stringify(uses)===JSON.stringify(expected);
       });
       await check('rename_preview',async()=>{
@@ -189,7 +191,7 @@ exports.run = async () => {
         return (edit?.entries()||[]).flatMap(([uri,rows])=>rows.map(row=>({uri:uri.toString(),range:plainRange(row.range),newText:row.newText})));
       },rows=>rows.length===3&&rows.every(r=>r.newText==='renamedValue')&&new Set(rows.map(r=>r.uri)).size===3);
     }
-    if(config.workflow!=='runtime'){
+    if(['language','coverage'].includes(config.workflow)){
     const changed=now();
     await check('api_save',async()=>{await editProvider('API');return {text:provider.getText(),dirty:provider.isDirty,provider_version:provider.version};},r=>!r.dirty&&r.text===config.fixture.versions.API);
     await check('api_completion',completion,completionOracle('String'));
@@ -293,7 +295,7 @@ exports.run = async () => {
         tracker.dispose();started.dispose();fs.writeFileSync(path.join(config.root,'debug-protocol.json'),JSON.stringify(dap,null,2));
       }
     }
-    report.outcome='correct';
+    report.final_revision=revision;report.outcome='correct';
   }catch(error){report.outcome='failed';report.error=String(error);throw error;}
   finally{if(adapter)await adapter.close();flush();}
 };

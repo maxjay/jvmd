@@ -35,6 +35,16 @@ jobs:
           "$code" --no-sandbox --user-data-dir "$RUNNER_TEMP/install-user" --extensions-dir "$RUNNER_TEMP/extensions" --install-extension redhat.java@1.47.0
           "$code" --no-sandbox --user-data-dir "$RUNNER_TEMP/install-user" --extensions-dir "$RUNNER_TEMP/extensions" --install-extension vscjava.vscode-java-debug@0.58.4
           "$code" --no-sandbox --user-data-dir "$RUNNER_TEMP/install-user" --extensions-dir "$RUNNER_TEMP/extensions" --install-extension vscjava.vscode-java-test@0.43.2
+      - name: Reuse pinned release Maven bootstrap
+        run: |
+          python - <<'PYCODE'
+          import importlib.util, os
+          from pathlib import Path
+          spec=importlib.util.spec_from_file_location('release_tools','jvmd-dist/release/build.py')
+          module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+          maven=module.toolchain(module.PINS['maven'],Path(os.environ['RUNNER_TEMP'])/'workflow-maven')
+          with open(os.environ['GITHUB_PATH'],'a') as out:out.write(str(maven/'bin')+'\n')
+          PYCODE
       - name: Build and record provenance
         run: |
           mvn -B -DskipTests install
@@ -42,7 +52,7 @@ jobs:
           python benchmarks/workspaces/compile.py --repo "$PWD" --java-home "$JAVA_HOME" --dependencies "$PWD/jvmd-dist/target/image/lib/jvmd" --output "$RUNNER_TEMP/workflow-build" --reuse-production-jars
       - name: Serial actual VS Code language workflow
         run: |
-          xvfb-run -a python benchmarks/workspaces/workflows.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --vscode "$RUNNER_TEMP/workflow-tools/VSCode-linux-x64/bin/code" --extensions "$RUNNER_TEMP/extensions" --root "$RUNNER_TEMP/workflow-results/comparison" --dependency-cache "$HOME/.m2/repository" --runs 5 --samples 20
+          xvfb-run -a python benchmarks/workspaces/workflows.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --vscode "$RUNNER_TEMP/workflow-tools/VSCode-linux-x64/bin/code" --extensions "$RUNNER_TEMP/extensions" --root "$RUNNER_TEMP/workflow-results/comparison" --dependency-cache "$HOME/.m2/repository" --runs 5 --samples 20 --reopen
       - name: Independent runtime workflow
         if: ${{ !cancelled() }}
         run: |
@@ -60,21 +70,35 @@ jobs:
           python benchmarks/workspaces/workflows.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --root "$RUNNER_TEMP/workflow-results/retention" --engines engine-jvmd --mode retention --runs 1 --samples 5 --edits 20 || failed=1
           python benchmarks/workspaces/workflows.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --root "$RUNNER_TEMP/workflow-results/overhead" --engines engine-jvmd --overhead --runs 5 --samples 20 || failed=1
           exit "$failed"
+      - name: Prepare existing pinned Maven corpus dependency cache
+        if: ${{ !cancelled() }}
+        run: |
+          bash jvmd-tests/corpus/fetch.sh
+          mkdir -p "$RUNNER_TEMP/workflow-results/project-preparation"
+          mvn -B -f jvmd-tests/corpus/petclinic/pom.xml org.apache.maven.plugins:maven-dependency-plugin:3.8.1:go-offline > "$RUNNER_TEMP/workflow-results/project-preparation/dependencies.log" 2>&1
+      - name: Actual VS Code pinned Maven project readiness
+        if: ${{ !cancelled() }}
+        run: |
+          xvfb-run -a python benchmarks/workspaces/workflows.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --vscode "$RUNNER_TEMP/workflow-tools/VSCode-linux-x64/bin/code" --extensions "$RUNNER_TEMP/extensions" --root "$RUNNER_TEMP/workflow-results/project" --dependency-cache "$HOME/.m2/repository" --workflow project --project "$PWD/jvmd-tests/corpus/petclinic" --timeout 360 --smoke
       - name: Independently verify workflow outcomes
         if: ${{ !cancelled() }}
         run: |
           failed=0
-          for mode in comparison attribution runtime coverage runtime-attribution retention overhead; do
+          for mode in comparison attribution runtime coverage runtime-attribution retention overhead project; do
             python benchmarks/workspaces/verify.py "$RUNNER_TEMP/workflow-results/$mode" "$RUNNER_TEMP/workflow-results/$mode/verification.json" --workflows || failed=1
           done
           exit "$failed"
       - name: Render checked investigation reports
         if: ${{ !cancelled() }}
         run: |
-          for mode in comparison attribution runtime coverage runtime-attribution retention overhead; do
+          for mode in comparison attribution runtime coverage runtime-attribution retention overhead project; do
             python benchmarks/workspaces/summarize.py "$RUNNER_TEMP/workflow-results/$mode" "$RUNNER_TEMP/workflow-results/$mode/summary.json" --workflows
             node benchmarks/workspaces/dashboard.mjs --comparison "$RUNNER_TEMP/workflow-results/$mode/summary.json" --verification "$RUNNER_TEMP/workflow-results/$mode/verification.json" --output "$RUNNER_TEMP/workflow-results/$mode/dashboard.html"
           done
+      - name: Preview the generated comparison dashboard
+        if: ${{ !cancelled() }}
+        run: |
+          google-chrome --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=1440,1000 --screenshot="$RUNNER_TEMP/workflow-results/comparison/dashboard.png" "file://$RUNNER_TEMP/workflow-results/comparison/dashboard.html"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -84,11 +108,13 @@ jobs:
             ${{ runner.temp }}/workflow-results/**/report.json
             ${{ runner.temp }}/workflow-results/**/summary.json
             ${{ runner.temp }}/workflow-results/**/dashboard.html
+            ${{ runner.temp }}/workflow-results/**/dashboard.png
             ${{ runner.temp }}/workflow-results/**/driver-result.json
             ${{ runner.temp }}/workflow-results/**/driver.json
             ${{ runner.temp }}/workflow-results/**/provenance.json
             ${{ runner.temp }}/workflow-results/**/command.json
             ${{ runner.temp }}/workflow-results/**/editor.log
+            ${{ runner.temp }}/workflow-results/project-preparation/dependencies.log
             ${{ runner.temp }}/workflow-results/**/bridge.log
             ${{ runner.temp }}/workflow-results/**/debug-protocol.json
             ${{ runner.temp }}/workflow-results/**/user-data/logs/**/exthost/output_logging_*/*.log

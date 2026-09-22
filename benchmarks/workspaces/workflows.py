@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import signal
@@ -12,7 +13,7 @@ import sys
 import time
 
 from compile import EXPORTS, sha
-from modules import workflow_fixture
+from modules import workflow_fixture, project_fixture
 from resources import ProcessMonitor, export_workflow_jfr, workflow_resources
 from run import Client, CAPABILITIES, position
 
@@ -23,12 +24,12 @@ def write(path, value):
     path.write_text(json.dumps(value, indent=2)+'\n')
 
 
-def configuration(a, root, fixture, build, workflow):
+def configuration(a, root, fixture, build, workflow, state=None):
     config = root/'config.json'
     write(config, {'jdk_home':str(a.java_home), 'm2_repo':fixture['repository'],
                    'index_on_start':True, 'heap_ceiling_mb':1024})
     java = [str(a.java_home/'bin/java'), *EXPORTS, '--enable-native-access=ALL-UNNAMED',
-            '-Xmx1024m', f'-Djvmd.config={config}', f'-Djvmd.state={root / "state"}',
+            '-Xmx1024m', f'-Djvmd.config={config}', f'-Djvmd.state={state or root / "state"}',
             f'-Djvmd.resolvers={a.resolvers}', '-Djvmd.index.scan.initial_delay_seconds=0']
     if a.mode=='retention':java+=['-Djvmd.benchmark.retention=true']
     if a.mode == 'attribution' or a.instrumentation:
@@ -141,7 +142,7 @@ def engine(a, root, fixture, build, report):
                 client.notify('textDocument/didSave',{'textDocument':{'uri':provider.as_uri()}})
                 check('body_completion' if revision=='B' else 'api_completion',complete,lambda r:valid_completion(r,'int' if revision=='B' else 'String'))
                 snapshot('released_edit_'+str(edit))
-            opened=[]
+            opened=[];revision='A'
             for extra in report.get('additional_fixtures',[]):
                 extra=json.loads((root/extra).read_text())
                 id_=rpc('session.open',{'root':extra['roots'][0]})['session'];opened.append((id_,extra))
@@ -162,7 +163,7 @@ def engine(a, root, fixture, build, report):
         client.close()
 
 
-def product(a,root,fixture,build,report,backend):
+def product(a,root,fixture,build,report,backend,resume=None):
     if a.mode=='retention':raise RuntimeError('Product retention adapter is not implemented; use --engines engine-jvmd for retained-view diagnostics')
     if a.vscode is None:raise RuntimeError('--vscode is required for an actual VS Code run')
     extension=root/'extension';extension.mkdir()
@@ -172,23 +173,23 @@ def product(a,root,fixture,build,report,backend):
     subprocess.run([a.node,'--input-type=module','-e',
                     'import{stripTypeScriptTypes}from"node:module";import{readFileSync,writeFileSync}from"node:fs";writeFileSync(process.argv[2],stripTypeScriptTypes(readFileSync(process.argv[1],"utf8")));',
                     str(a.repo/'shim/src/transport.ts'),str(extension/'transport.mjs')],check=True,capture_output=True)
-    bridge=configuration(a,root,fixture,build,report['workflow']) if backend=='jvmd' else None
+    bridge=configuration(a,root,fixture,build,report['workflow'],resume/'state' if resume else None) if backend=='jvmd' else None
     settings=root/'settings.xml'
     settings.write_text('<settings><localRepository>'+fixture['repository']+'</localRepository><offline>true</offline></settings>')
-    workspace=root/'fixture.code-workspace'
-    write(workspace,{'folders':[{'path':p} for p in fixture['roots']], 'settings':{
+    workspace=(resume or root)/'fixture.code-workspace'
+    if not resume:write(workspace,{'folders':[{'path':p} for p in fixture['roots']], 'settings':{
         'security.workspace.trust.enabled':False,'java.jdt.ls.java.home':str(a.java_home),
         'java.configuration.maven.userSettings':str(settings),'java.configuration.updateBuildConfiguration':'automatic',
         'java.import.maven.enabled':True,'java.import.gradle.enabled':False,'java.autobuild.enabled':True,
         'java.server.launchMode':'Standard','java.debug.settings.hotCodeReplace':'manual',
         'java.debug.settings.forceBuildBeforeLaunch':True,
         'update.mode':'none','extensions.autoUpdate':False,'telemetry.telemetryLevel':'off'}})
-    config={'fixture':fixture,'report':report,'root':str(root),'backend':backend,'bridge':bridge,'samples':a.samples,'workflow':a.workflow}
+    config={'fixture':fixture,'report':report,'root':str(root),'backend':backend,'bridge':bridge,'samples':a.samples,'workflow':report['scenario'],'initial_revision':report.get('initial_revision','A')}
     write(root/'driver.json',config)
     executable=a.vscode
     if executable.parent.name=='bin' and (executable.parent.parent/'code').is_file():executable=executable.parent.parent/'code'
     command=[str(executable),'--no-sandbox','--disable-gpu','--disable-workspace-trust','--skip-welcome','--skip-release-notes',
-             '--user-data-dir',str(root/'user-data'),'--extensions-dir',str(a.extensions),
+             '--user-data-dir',str((resume or root)/'user-data'),'--extensions-dir',str(a.extensions),
              '--extensionDevelopmentPath='+str(extension),'--extensionTestsPath='+str(extension/'vscode.cjs'),str(workspace)]
     if backend=='jvmd':command+=['--disable-extension','redhat.java','--disable-extension','vscjava.vscode-java-debug','--disable-extension','vscjava.vscode-java-test']
     write(root/'command.json',command)
@@ -227,9 +228,21 @@ def product(a,root,fixture,build,report,backend):
             workflow_resources(report,root/'resource-samples.jsonl')
 
 
+def finish(a,root,report):
+    if (root/'server.jfr').exists():
+        try:report['profiles']=[export_workflow_jfr(a.java_home/'bin/jfr',root/'server.jfr',root,a.repo,'profile' if a.mode=='attribution' else 'stages.jfc')]
+        except Exception as error:
+            report['profile_error']=repr(error)
+            if a.mode=='attribution':report['outcome']='failed'
+    elif a.mode=='attribution' and 'jvmd' in report['engine']:
+        report['profile_error']='Required JVMD recording is missing';report['outcome']='failed'
+    write(root/'report.json',report)
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('repo','build','java-home','resolvers','root'):parser.add_argument('--'+name,type=Path,required=True)
+    parser.add_argument('--project',type=Path,help='Unmodified PetClinic checkout from jvmd-tests/corpus/fetch.sh')
     parser.add_argument('--dependency-cache',type=Path,help='Prepared Maven artifact cache copied equally before each timed process; downloads are excluded')
     parser.add_argument('--vscode',type=Path);parser.add_argument('--extensions',type=Path)
     parser.add_argument('--node',default=shutil.which('node'))
@@ -237,14 +250,17 @@ def main():
     parser.add_argument('--mode',choices=['comparison','attribution','retention'],default='comparison')
     parser.add_argument('--runs',type=int,default=5);parser.add_argument('--samples',type=int,default=20)
     parser.add_argument('--sources',type=int,default=4);parser.add_argument('--timeout',type=int,default=240)
+    parser.add_argument('--reopen',action='store_true',help='Reopen actual products using the same project paths and persisted editor/server state')
     parser.add_argument('--overhead',action='store_true',help='Serial alternating disabled/enabled stage-JFR pairs for each engine and repetition')
     parser.add_argument('--instrumentation',action='store_true',help='Stage-only JFR in comparison mode for explicit overhead pairs; excluded from ordinary comparisons')
     parser.add_argument('--edits',type=int,default=20)
     parser.add_argument('--workspaces',type=int,default=3)
-    parser.add_argument('--workflow',choices=['language','runtime','coverage'],default='language');parser.add_argument('--smoke',action='store_true')
+    parser.add_argument('--workflow',choices=['language','runtime','coverage','project'],default='language');parser.add_argument('--smoke',action='store_true')
     a=parser.parse_args()
     for key,value in vars(a).items():
         if isinstance(value,Path):setattr(a,key,value.resolve())
+    if a.reopen and 'engine-jvmd' in a.engines:parser.error('--reopen currently uses the product adapter; engine persisted reopen is in run.py')
+    if a.workflow=='project' and a.project is None:parser.error('--workflow project requires --project')
     if a.overhead and (a.mode!='comparison' or 'vscode-java' in a.engines):parser.error('overhead requires comparison mode and JVMD engines only')
     if not 1<=a.workspaces<=8:parser.error('--workspaces must be 1..8')
     if not 1<=a.edits<=32:parser.error('--edits must be 1..32 (bounded retained-view diagnostic)')
@@ -253,6 +269,7 @@ def main():
     build=json.loads(a.build.read_text())
     provenance={'build':build,'command':sys.argv,'platform':sys.platform,'machine':dict(zip(('sysname','nodename','release','version','machine'),os.uname())),
                 'java':subprocess.check_output([str(a.java_home/'bin/java'),'-version'],stderr=subprocess.STDOUT,text=True),
+                'maven':subprocess.check_output([shutil.which('mvn'),'-version'],text=True) if shutil.which('mvn') else 'external Maven unavailable; resolver bundle hashes recorded in build',
                 'node':subprocess.check_output([a.node,'--version'],text=True),'harness':{str(p.relative_to(a.repo)):sha(p) for p in HERE.iterdir() if p.is_file()},
                 'cache':{'project':'fresh tool/project state','dependencies':str(a.dependency_cache) if a.dependency_cache else 'generated external dependency only','downloads':'none during measurement; Maven offline','os':'not flushed'},
                 'profiles':'attribution timings excluded from comparisons','extensions':{}}
@@ -270,9 +287,12 @@ def main():
             root=a.root/f'{name}-{repetition}{suffix}';root.mkdir()
             report={'schema':1,'workflow':f'{a.workflow}-{repetition}-{name}','engine':name,'repetition':repetition,'mode':a.mode,'instrumentation':a.instrumentation,'overhead_pair':a.overhead,
                     'boundary':'backend-result' if name=='engine-jvmd' else 'VS Code provider readiness','actions':[],
-                    'outcome':'unavailable','scenario':a.workflow,'fixture':'fixture/fixture.json','profiles':[],'unmeasured':['visible UI completion','IntelliJ','retained heap']}
+                    'outcome':'unavailable','cache_state':'fresh project/tool state, dependencies available','scenario':a.workflow,'fixture':'fixture/fixture.json','profiles':[],'unmeasured':['visible UI completion','IntelliJ','retained heap']}
             try:
-                fixture=workflow_fixture(root/'fixture',a.java_home,a.sources)
+                if a.workflow=='project':
+                    pin=re.search(r'pin=([a-f0-9]{40})',(a.repo/'jvmd-tests/corpus/fetch.sh').read_text()).group(1)
+                    fixture=project_fixture(root/'fixture',a.project,pin)
+                else:fixture=workflow_fixture(root/'fixture',a.java_home,a.sources)
                 if a.dependency_cache:
                     shutil.copytree(a.dependency_cache,fixture['repository'],dirs_exist_ok=True)
                     # The fixture's local sources must not accidentally resolve from the supplied cache.
@@ -289,11 +309,20 @@ def main():
             except Exception as error:
                 report['outcome']='failed';report.setdefault('error',repr(error));report['process_error']=repr(error);failures.append(root.name)
             finally:
-                if (root/'server.jfr').exists():
-                    try:report['profiles']=[export_workflow_jfr(a.java_home/'bin/jfr',root/'server.jfr',root,a.repo,'profile' if a.mode=='attribution' else 'stages.jfc')]
-                    except Exception as error:report['profile_error']=repr(error)
-                write(root/'report.json',report)
+                finish(a,root,report)
+            if report['outcome']!='correct' and root.name not in failures:failures.append(root.name)
             print(name,repetition,report['outcome'],report.get('error',''),flush=True)
+            if a.reopen and report['outcome']=='correct':
+                reopened=a.root/(root.name+'-reopen');reopened.mkdir()
+                again={key:value for key,value in report.items() if key in ('schema','engine','repetition','mode','instrumentation','boundary','unmeasured')}
+                again.update(workflow=report['workflow']+'-reopen',scenario='reopen',cache_state='persisted reopen',
+                    initial_revision=report['final_revision'],fixture='../'+root.name+'/fixture/fixture.json',actions=[],profiles=[],outcome='unavailable')
+                try:product(a,reopened,fixture,build,again,name.removeprefix('vscode-'),resume=root)
+                except Exception as error:
+                    again['outcome']='failed';again.setdefault('error',repr(error));failures.append(reopened.name)
+                finally:finish(a,reopened,again)
+                if again['outcome']!='correct' and reopened.name not in failures:failures.append(reopened.name)
+                print(name,repetition,'reopen',again['outcome'],again.get('error',''),flush=True)
     write(a.root/'complete.json',{'complete':not failures,'failures':failures})
     if failures:raise SystemExit(1)
 

@@ -62,6 +62,30 @@ def workflow_fixture(root, java_home, sources=4):
     (root/'fixture.json').write_text(json.dumps(result,indent=2)+'\n')
     return result
 
+def project_fixture(root, source, pin):
+    """Copy the existing pinned PetClinic corpus with no prebuilt project outputs."""
+    import hashlib
+    import shutil
+    actual=subprocess.check_output(['git','-C',str(source),'rev-parse','HEAD'],text=True).strip()
+    if actual!=pin:raise ValueError(f'PetClinic revision {actual} does not match corpus pin {pin}')
+    if subprocess.check_output(['git','-C',str(source),'status','--porcelain','--untracked-files=no'],text=True).strip():
+        raise ValueError('Pinned PetClinic checkout has tracked modifications')
+    root.mkdir(parents=True)
+    project=root/'project'
+    shutil.copytree(source,project,ignore=shutil.ignore_patterns('.git','target'))
+    owner=project/'src/main/java/org/springframework/samples/petclinic/owner/Owner.java'
+    text=owner.read_text();declaration=text.index('getPets()');call=text.index('getPets().contains')
+    repository=root/'repository';repository.mkdir()
+    result={'kind':'petclinic','pin':pin,'root':str(root),'roots':[str(project)],'repository':str(repository),
+        'files':{'provider':str(owner),'consumer':str(owner)},'versions':{'A':text},
+        'probe_offset':call+len('getPe'),
+        'expected':{'method':'getPets','initial_type':'List','definition':{'path':str(owner),
+            'range':{'start':position(text,declaration),'end':position(text,declaration+len('getPets'))}}},
+        'source_hashes':{str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in project.rglob('*.java')}}
+    (root/'fixture.json').write_text(json.dumps(result,indent=2)+'\n')
+    return result
+
+
 def fixture(root,count):
     modules={'base':[], 'core':['base'], 'app':['core'], 'independent':[]}
     root.mkdir(parents=True);wrapper=root/'.mvn/wrapper';wrapper.mkdir(parents=True)

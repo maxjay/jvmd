@@ -30,7 +30,7 @@ xvfb-run -a python benchmarks/workspaces/workflows.py --repo "$PWD" \
   --root "$BENCH_RESULTS" --workflow language --smoke
 
 # Evidence: use the same arguments, a new output directory, and replace
-# --smoke with --runs 5 --samples 20. Products run serially in rotating order.
+# --smoke with --runs 5 --samples 20 --reopen. Products run serially in rotating order.
 # Runtime/debug/hot swap: --workflow runtime (independent fresh process).
 # Prefix/backspace, references, rename preview and revert: --workflow coverage.
 # Scaling: --sources 128 increases the independent fixture source population.
@@ -62,7 +62,7 @@ node benchmarks/workspaces/dashboard.mjs \
 ```
 
 The CI workflow pins VS Code 1.104.2, Red Hat Java 1.47.0, Java Debug 0.58.4,
-Java Test 0.43.2, Temurin 25.0.4.1+1 and Node 24.21.0. Its JDK/editor archives are
+Java Test 0.43.2, Temurin 25.0.4.1+1, Maven 3.9.16 and Node 24.21.0. Its JDK/editor archives are
 hash checked. Reports record extension versions, server JAR hashes, commands,
 fixture identities and exact source/build provenance. JVMD engine/adapter JVMs
 use a documented 1 GiB maximum heap. Java uses its ordinary extension settings;
@@ -77,6 +77,15 @@ the installed debugger's real DAP session. Their readiness boundaries are
 recorded separately. Neither provider completion nor debug-protocol readiness
 is a measurement of pixels appearing in the editor. JVMD dependent diagnostics
 are explicitly requested; Java diagnostics use the normal automatic builder.
+
+For practical project import/readiness, reuse `jvmd-tests/corpus/fetch.sh` and
+prepare its dependencies with the pinned Maven dependency-plugin `go-offline`
+goal. Run `--workflow project --project jvmd-tests/corpus/petclinic` with both
+actual VS Code comparators. The fixture builder checks the corpus script's pin,
+rejects tracked modifications and copies sources/resources without `target/`
+outputs. Its independent probe requires `Owner.getPets()` completion and the
+exact declaration. This scenario measures project readiness, not PetClinic's
+server launch or generated-resource correctness.
 
 ## Verification and interpretation
 
@@ -126,10 +135,9 @@ will remain bounded over arbitrarily long sessions. The final control workspace
 remains open while collecting heap observations.
 
 Known measurement boundaries: there is no IntelliJ adapter, product retained-heap
-adapter, pinned real-Maven-project scenario, processor/resource-generation
+adapter, processor/resource-generation
 scenario, forced concurrent-indexing schedule, structural-hot-swap scenario or
-visible-UI oracle yet. Engine persisted-reopen coverage exists in `run.py`;
-product persisted-reopen coverage is not yet implemented. The report schema
+visible-UI oracle yet. Product `--reopen` preserves the same workspace paths, editor profile and server state, then checks the persisted document revision. Engine persisted-reopen coverage also exists in `run.py`. The report schema
 can carry another actual IDE's actions, attempts, resources and provenance;
 there is no speculative comparator plugin interface. Unsupported and unexecuted
 work must be listed explicitly in the PR and results, not replaced with zeroes.

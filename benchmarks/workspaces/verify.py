@@ -20,14 +20,15 @@ def selected(text, range_):
     return text[start:end]
 
 
-def workflow_oracle(name, result, fixture):
+def workflow_oracle(name, result, fixture, revision=None):
     """Independent expectations from generated sources, never another engine's output."""
     if name=='api_save':return result.get('dirty') is False and result.get('text')==fixture['versions']['API']
     if name == 'open':return bool(result.get('capabilities'))
+    if name in ('workspace_completion','reopen_completion'):revision='A' # Newly opened fixture starts at its recorded A source.
     if 'completion' in name:
         rows=result.get('items',[]) if isinstance(result,dict) else result
-        rows=[row for row in rows or [] if row.get('label','').startswith('value')]
-        expected='String' if name=='api_completion' else 'int'
+        rows=[row for row in rows or [] if row.get('label','').startswith(fixture.get('expected',{}).get('method','value'))]
+        expected='String' if name=='api_completion' or revision=='API' else fixture.get('expected',{}).get('initial_type','int')
         stale='int' if expected=='String' else 'String'
         return any(re.search(r'\b'+expected+r'\b',json.dumps(r)) for r in rows) and not any(re.search(r'\b'+stale+r'\b',json.dumps(r)) for r in rows)
     if 'definition' in name:
@@ -35,8 +36,8 @@ def workflow_oracle(name, result, fixture):
         if len(rows or [])!=1:return False
         row=rows[0]; actual=unquote(urlparse(row['uri']).path)
         if actual!=fixture['files']['provider']:return False
-        source=fixture['versions']['API' if name=='api_definition' else 'A']
-        return selected(source,row['range'])=='value'
+        source=fixture['versions']['API' if name=='api_definition' or revision=='API' else 'A']
+        return selected(source,row['range'])==fixture.get('expected',{}).get('method','value')
     if 'diagnostics' in name:
         errors=[d for d in result.get('diagnostics',[]) if d.get('severity')==1]
         if name=='revert_diagnostics':return not errors
@@ -49,7 +50,7 @@ def workflow_oracle(name, result, fixture):
             expected.append({'uri':Path(fixture['files']['provider']).as_uri(),'range':fixture['expected']['definition']['range']})
             if any(row.get('newText')!='renamedValue' for row in result):return False
             actual=[{'uri':r['uri'],'range':r['range']} for r in result]
-        else:actual=[r for r in result if unquote(urlparse(r['uri']).path)!=fixture['files']['provider']]
+        else:actual=[r for r in result if not (unquote(urlparse(r['uri']).path)==fixture['files']['provider'] and r['range']==fixture['expected']['definition']['range'])]
         key=lambda r:json.dumps(r,sort_keys=True)
         return sorted(map(key,actual))==sorted(map(key,expected))
     if name in ('run_output','hotswap_output'):
@@ -77,7 +78,7 @@ def verify_workflows(root):
             valid=[]
             for attempt in action['attempts']:
                 attempts+=1
-                try:correct='result' in attempt and workflow_oracle(action['name'],attempt['result'],fixture)
+                try:correct='result' in attempt and workflow_oracle(action['name'],attempt['result'],fixture,action.get('input_revision'))
                 except (KeyError,ValueError,AssertionError,IndexError,TypeError):correct=False
                 if 'document_version' in action and isinstance(attempt.get('result'),dict) and 'version' in attempt['result']:
                     correct=correct and attempt['result']['version']==action['document_version']
@@ -88,7 +89,7 @@ def verify_workflows(root):
             if action.get('retry_count')!=max(0,len(valid)-1):errors.append(action['name']+': retry count')
             if action['outcome']!='correct' and action.get('time_to_correct_ms') is not None:errors.append(action['name']+': failure has success timing')
         required={'warm_completion','warm_definition'}
-        if report.get('scenario','language')!='runtime':required.update({'api_completion','api_diagnostics','api_definition'})
+        if report.get('scenario','language') in ('language','coverage'):required.update({'api_completion','api_diagnostics','api_definition'})
         if report.get('scenario')=='coverage':required.update({'prefix_completion','growth_completion','backspace_completion','broadening_completion','references','rename_preview','revert_diagnostics'})
         if report.get('scenario')=='runtime':required.update({'run_output','debug_stop','debug_locals','debug_step','hotswap_output'})
         if report['outcome']=='correct' and not required.issubset({a['name'] for a in report['actions']}):errors.append('missing required actions')

@@ -83,7 +83,7 @@ def summarize_workflows(root):
             report[key]=json.loads((path.parent/file).read_text()) if (path.parent/file).exists() else None
         backlog.extend(investigate(report))
         invocations.append(report)
-        mode=report['mode']+(' / overhead' if report.get('overhead_pair') else '')+(' / stages enabled' if report.get('instrumentation') else '')
+        mode=report['mode']+' / '+report.get('cache_state','fresh project/tool state')+(' / overhead' if report.get('overhead_pair') else '')+(' / stages enabled' if report.get('instrumentation') else '')
         for name in sorted({a['name'] for a in report['actions']}):
             actions=[a for a in report['actions'] if a['name']==name]
             successes=[a['time_to_correct_ms'] for a in actions if a['outcome']=='correct'] if checked[path.parent.name]['verified'] else []

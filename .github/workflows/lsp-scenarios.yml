@@ -29,6 +29,9 @@ jobs:
         with:
           node-version: "24.21.0"
 
+      - name: Install harness dependency
+        run: npm install --prefix benchmarks/lsp-scenarios --ignore-scripts
+
       - name: Restore prepared Apache Maven fixture
         id: fixture
         uses: actions/cache@v4

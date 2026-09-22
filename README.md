@@ -4,7 +4,7 @@
 
 Give your coding agent and editor a shared view of your code, dependencies, and running app. jvmd stays running between requests, so the next question starts warm.
 
-[Get started](#get-started) · [Connect](#connect) · [Performance](#performance) · [Integration guide](docs/integration.md)
+[Get started](#get-started) · [Connect](#connect) · [Integration guide](docs/integration.md)
 
 | | What you can do |
 | --- | --- |
@@ -101,24 +101,10 @@ An agent can handle that with the built-in tools. These MCP tool-call parameters
 
 Edits return immediate feedback. A successful verified build is the completion check; save editor buffers first. [All 14 tools →](docs/integration.md#agent-tool-contract)
 
-## Performance
-
-Measured on Linux amd64 with AOT enabled in a [passing CI run](https://github.com/maxjay/jvmd/actions/runs/34882043173):
-
-| Operation | Time |
-| --- | ---: |
-| Daemon startup | **208 ms** |
-| Focused source analysis · p95 | **28 ms** |
-| Documentation, three levels deep · p95 | **8 ms** |
-| Full method-body hot swap · p95 | **58 ms** |
-
-The same run passed **99.878%** of **75,565** identifier checks across Spring PetClinic and jvmd. Results depend on the workload and machine.
-
 ## Go further
 
 - [Open and use a workspace](docs/integration.md#open-and-use-a-workspace)
 - [Debugging, hot swap & recordings](docs/integration.md#runtime-and-debugging)
-- [Adapter setup](shim/README.md)
 - [Build a client: integration guide & API](docs/integration.md)
 - [Dependencies](DEPENDENCIES.md)
 
@@ -126,5 +112,3 @@ The same run passed **99.878%** of **75,565** identifier checks across Spring Pe
 
 Copyright © 2026 Max. jvmd is available under the [MIT License](LICENSE),
 including for commercial and workplace use.
-
-Storage uses Rocks exclusively.

@@ -32,7 +32,7 @@ python3 jvmd-dist/export-api.py --check
 
 ## Launch and distribution
 
-Treat the built `image/` directory as one installation. Preserve its `bin/` and `lib/` layout, resolver bundles, shim sources, and trained cache. [Prebuilt distributions](install.md) add a matching Node.js runtime and are tested after extraction to a different path. PR workflow artifacts provide previews; tagged builds publish release downloads after their checks pass.
+Treat the built `image/` directory as one installation. Preserve its `bin/` and `lib/` layout, resolver bundles, shim sources, and trained cache. [Prebuilt distributions](install.md) add a matching Node.js runtime and are tested after extraction to a different path. Merged-PR workflow artifacts provide previews; tagged builds publish release downloads after their checks pass.
 
 ```sh
 /opt/jvmd/bin/jvmd-lsp --root /absolute/path/to/project

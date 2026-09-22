@@ -102,3 +102,5 @@ class CheckTest(unittest.TestCase):
             self.assertEqual(saved, baseline("base", "same"))
             self.assertIsNone(baseline("base", "different"))
             self.assertTrue(all(call.args == ("ancestor",) for call in read.call_args_list))
+
+# Temporary PR check publication validation; this branch will not be merged.

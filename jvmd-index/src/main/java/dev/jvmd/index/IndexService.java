@@ -47,9 +47,9 @@ public final class IndexService implements AutoCloseable {
     public IndexStore store(){return store;}
     public long generation(){return indexed.get();}
     public CompletableFuture<Void> start(){
-        if(!started.compareAndSet(false,true))return readiness;
         long initialDelaySeconds=Long.getLong("jvmd.index.scan.initial_delay_seconds",2L);
         if(initialDelaySeconds<0)throw new IllegalArgumentException("jvmd.index.scan.initial_delay_seconds must be non-negative");
+        if(!started.compareAndSet(false,true))return readiness;
         var initialCause=RequestScope.detached();
         scanner.schedule(()->{
             if(closed){

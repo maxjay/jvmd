@@ -7,8 +7,7 @@ permissions:
   contents: read
   actions: read
   checks: write
-  issues: write
-  pull-requests: read
+  pull-requests: write
 concurrency:
   group: benchmark-report-${{ github.event.workflow_run.head_repository.id }}-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: false

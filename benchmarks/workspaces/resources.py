@@ -89,9 +89,20 @@ class ProcessMonitor:
             for key, value in values.items(): self.maximum[key] = max(self.maximum[key], value)
             self.stop_event.wait(self.interval)
 
-    def close(self):
+    def close(self, debuggees=()):
         self.stop_event.set(); self.thread.join(timeout=2)
         if self.output:self.output.close()
+        if debuggees:
+            for process in self.processes.values():
+                if process['pid'] in debuggees:process['role']='debuggee'
+            if self.output:
+                for role in ('tooling','debuggee'):self.maximum[role+'_rss_bytes']=0
+                for line in Path(self.output.name).read_text().splitlines():
+                    row=json.loads(line)
+                    for p in row['processes']:
+                        if p['pid'] in debuggees:p['role']='debuggee'
+                    for role in ('tooling','debuggee'):
+                        self.maximum[role+'_rss_bytes']=max(self.maximum[role+'_rss_bytes'],sum(p['rss_bytes'] for p in row['processes'] if p['role']==role))
         values = dict(self.maximum); ticks = os.sysconf('SC_CLK_TCK')
         return {'source': 'Linux /proc, process plus descendants', 'sample_interval_ms': self.interval*1000,
                 'samples': self.samples, 'peak_rss_bytes': values.get('rss_bytes', 0),
@@ -112,9 +123,11 @@ def workflow_resources(report, samples):
     Exited children keep their last observed counters; missed final work is unavailable.
     """
     rows=[];totals={}
+    debuggees=report.get('debuggee_pids',[])
     for line in samples.read_text().splitlines():
         row=json.loads(line)
         for process in row['processes']:
+            if process['pid'] in debuggees:process['role']='debuggee'
             totals[(process['pid'],process['start_ticks'])]=process
         row['cumulative']={role:sum(p['cpu_ticks'] for p in totals.values() if p['role']==role) for role in ('tooling','debuggee')}
         rows.append(row)
@@ -134,7 +147,7 @@ def workflow_resources(report, samples):
             'peak_rss_bytes':{role:max(sum(p['rss_bytes'] for p in r['processes'] if p['role']==role) for r in interval) for role in ('tooling','debuggee')}}
 
 
-def export_workflow_jfr(jfr_tool, recording, output, repo=None):
+def export_workflow_jfr(jfr_tool, recording, output, repo=None, settings="profile"):
     """Selected diagnostic events only. Chrome trace opens in Perfetto; no VM environment export."""
     allowed=['dev.jvmd.Stage','jdk.ExecutionSample','jdk.ObjectAllocationSample','jdk.GarbageCollection',
              'jdk.GCHeapSummary','jdk.ThreadPark','jdk.JavaMonitorEnter','jdk.JavaMonitorWait']
@@ -158,7 +171,7 @@ def export_workflow_jfr(jfr_tool, recording, output, repo=None):
     result={'trace':'trace.json','events':'profile-events.json','attribution':'attribution.json','recording_sha256':hashlib.sha256(recording.read_bytes()).hexdigest(),
             'clock':'Span start/duration are monotonic within one JVM; no cross-process subtraction',
             'scope':'Inclusive thread counters; do not sum nested spans. Virtual-thread/queue counters unavailable (-1). JFR CPU/allocation are samples, not retained heap.',
-            'settings':'JFR profile, stackdepth=128; JVMD stages opt in with -Djvmd.trace=true','command':command,'spans':len(spans)}
+            'settings':f'JFR {settings}, stackdepth=128; JVMD stages opt in with -Djvmd.trace=true','command':command,'spans':len(spans)}
     (output/'profiles.json').write_text(json.dumps(result,indent=2)+'\n')
     return result
 

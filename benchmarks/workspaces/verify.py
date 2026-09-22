@@ -22,6 +22,7 @@ def selected(text, range_):
 
 def workflow_oracle(name, result, fixture):
     """Independent expectations from generated sources, never another engine's output."""
+    if name=='api_save':return result.get('dirty') is False and result.get('text')==fixture['versions']['API']
     if name == 'open':return bool(result.get('capabilities'))
     if 'completion' in name:
         rows=result.get('items',[]) if isinstance(result,dict) else result
@@ -42,6 +43,15 @@ def workflow_oracle(name, result, fixture):
         # The only erroneous statement is the typed caller on zero-based line 2.
         return bool(errors) and all((d['range'][0] if isinstance(d['range'],list) else d['range']['start'])['line']==2 for d in errors) and any(
             any(term in d.get('message','').lower() for term in ('string','int','convert','type')) for d in errors)
+    if name in ('references','rename_preview'):
+        expected=list(fixture['expected']['references'])
+        if name=='rename_preview':
+            expected.append({'uri':Path(fixture['files']['provider']).as_uri(),'range':fixture['expected']['definition']['range']})
+            if any(row.get('newText')!='renamedValue' for row in result):return False
+            actual=[{'uri':r['uri'],'range':r['range']} for r in result]
+        else:actual=[r for r in result if unquote(urlparse(r['uri']).path)!=fixture['files']['provider']]
+        key=lambda r:json.dumps(r,sort_keys=True)
+        return sorted(map(key,actual))==sorted(map(key,expected))
     if name in ('run_output','hotswap_output'):
         marker=fixture['expected']['B' if name=='run_output' else 'C']
         return marker in result.get('output','') and result.get('pid',0)>0 and (name!='hotswap_output' or result['pid']==result.get('original_pid'))
@@ -79,8 +89,14 @@ def verify_workflows(root):
             if action['outcome']!='correct' and action.get('time_to_correct_ms') is not None:errors.append(action['name']+': failure has success timing')
         required={'warm_completion','warm_definition'}
         if report.get('scenario','language')!='runtime':required.update({'api_completion','api_diagnostics','api_definition'})
+        if report.get('scenario')=='coverage':required.update({'prefix_completion','growth_completion','backspace_completion','broadening_completion','references','rename_preview','revert_diagnostics'})
         if report.get('scenario')=='runtime':required.update({'run_output','debug_stop','debug_locals','debug_step','hotswap_output'})
         if report['outcome']=='correct' and not required.issubset({a['name'] for a in report['actions']}):errors.append('missing required actions')
+        if report.get('mode')=='retention' and report['outcome']=='correct':
+            snapshots=report.get('retention',{}).get('snapshots',[])
+            held=[s['held_views'] for s in snapshots if s['phase'].startswith('held_edit_')]
+            released=[s for s in snapshots if s['phase'].startswith('released_edit_')]
+            if not held or held!=list(range(1,len(held)+1)) or len(released)!=len(held) or any(s['held_views']!=0 or s['heap_used_bytes']<=0 for s in released):errors.append('invalid retained-view lifecycle')
         workers.append({'worker':path.parent.name,'outcome':report['outcome'],'verified':not errors and report['outcome']=='correct',
                         'attempts':attempts,'errors':errors})
     if not workers:raise AssertionError('No workflow reports')

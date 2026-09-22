@@ -1,4 +1,140 @@
-# Shared-workspace editor benchmark
+# Development workflow benchmarks
+
+`workflows.py` extends this harness's generated workspaces, protocol client,
+resource sampler, independent verifier, build provenance and dashboard. It runs
+development actions through actual VS Code providers or the existing engine
+transport. `run.py`, `modules.py` and `prefix.py` remain **engine comparisons**;
+direct JDTLS traffic is not a measurement of the complete VS Code product.
+
+The product fixture is a host reactor (application, dependent and independent
+modules) and a library in separate Git repositories. Both products resolve the
+same local Maven coordinates. An external dependency includes its matching
+source JAR. Fixture generation, Git commits and JAR timestamps are deterministic.
+The ordinary-Java fixture requires no processors or resource generators.
+
+## Commands and boundaries
+
+Build with the `compile.py` command below, or use `--reuse-production-jars` after
+assembling JVMD. Define `BENCH_JDK`, `BENCH_BUILD`, `JVMD_RESOLVERS`, `VSCODE`,
+`JAVA_EXTENSIONS`, `MAVEN_CACHE` and a new `BENCH_RESULTS` directory. The prepared
+cache is copied equally before timing; local fixture coordinates are removed
+from that copy. Maven is offline during measurement. Do not precompile fixture
+sources to conceal import or runtime compilation costs.
+
+```sh
+# Small deterministic correctness smoke. Linux requires a working display/Xvfb.
+xvfb-run -a python benchmarks/workspaces/workflows.py --repo "$PWD" \
+  --build "$BENCH_BUILD/build.json" --java-home "$BENCH_JDK" \
+  --resolvers "$JVMD_RESOLVERS" --vscode "$VSCODE" \
+  --extensions "$JAVA_EXTENSIONS" --dependency-cache "$MAVEN_CACHE" \
+  --root "$BENCH_RESULTS" --workflow language --smoke
+
+# Evidence: use the same arguments, a new output directory, and replace
+# --smoke with --runs 5 --samples 20. Products run serially in rotating order.
+# Runtime/debug/hot swap: --workflow runtime (independent fresh process).
+# Prefix/backspace, references, rename preview and revert: --workflow coverage.
+# Scaling: --sources 128 increases the independent fixture source population.
+
+# Attribution: same action, separate process; never headline comparison timings.
+# Add --engines vscode-jvmd --mode attribution, using a new output directory.
+
+# Retained-view and multiple-workspace diagnostics, explicitly engine-only.
+python benchmarks/workspaces/workflows.py --repo "$PWD" \
+  --build "$BENCH_BUILD/build.json" --java-home "$BENCH_JDK" \
+  --resolvers "$JVMD_RESOLVERS" --root "$RETENTION_RESULTS" \
+  --engines engine-jvmd --mode retention --runs 1 --samples 5 \
+  --edits 20 --workspaces 3
+
+# Alternating instrumentation-disabled/stage-JFR-enabled process pairs.
+python benchmarks/workspaces/workflows.py --repo "$PWD" \
+  --build "$BENCH_BUILD/build.json" --java-home "$BENCH_JDK" \
+  --resolvers "$JVMD_RESOLVERS" --root "$OVERHEAD_RESULTS" \
+  --engines engine-jvmd --overhead --runs 5 --samples 20
+
+python benchmarks/workspaces/verify.py "$BENCH_RESULTS" \
+  "$BENCH_RESULTS/verification.json" --workflows
+python benchmarks/workspaces/summarize.py "$BENCH_RESULTS" \
+  "$BENCH_RESULTS/summary.json" --workflows
+node benchmarks/workspaces/dashboard.mjs \
+  --comparison "$BENCH_RESULTS/summary.json" \
+  --verification "$BENCH_RESULTS/verification.json" \
+  --output "$BENCH_RESULTS/dashboard.html"
+```
+
+The CI workflow pins VS Code 1.104.2, Red Hat Java 1.47.0, Java Debug 0.58.4,
+Java Test 0.43.2, Temurin 25.0.4.1+1 and Node 24.21.0. Its JDK/editor archives are
+hash checked. Reports record extension versions, server JAR hashes, commands,
+fixture identities and exact source/build provenance. JVMD engine/adapter JVMs
+use a documented 1 GiB maximum heap. Java uses its ordinary extension settings;
+normal import, autobuild and debug build-before-launch remain enabled. This is a
+Linux configuration; do not combine it with Windows, WSL or other filesystems.
+
+The JVMD benchmark extension reuses the shipped RpcClient/LspBridge and existing
+`run.start`/`debug.op`. It refuses to run with competing Java providers loaded.
+It adds no DAP server. JVMD runtime output is read from the existing bounded
+DebugSession buffer by the benchmark executable. Java runtime operations use
+the installed debugger's real DAP session. Their readiness boundaries are
+recorded separately. Neither provider completion nor debug-protocol readiness
+is a measurement of pixels appearing in the editor. JVMD dependent diagnostics
+are explicitly requested; Java diagnostics use the normal automatic builder.
+
+## Verification and interpretation
+
+Every action retains all attempts, first-response time, time to first correct
+result, retry count, timeout and document revision. Fixtures independently
+specify signatures, exact source selections/ranges, references, rename edits,
+run output and debugger state. Launch acceptance and successful redefine
+responses are insufficient: execution must produce the changed marker, and hot
+swap must preserve the process identity. Failed runs remain visible and do not
+contribute fast correct samples. Summaries use medians of process medians;
+within-process p95 requires at least 20 correct samples per process. Five cold
+processes do not establish a useful cold p95 or p99.
+
+Comparison mode records external timing and Linux process-tree CPU/RSS samples.
+All extension hosts, bridges, servers and observed compiler children are in
+scope; debuggee PIDs are reported separately. Sampling can miss short-lived
+processes and their final counters. RSS includes native memory and is not live
+heap. Per-action resource intervals use an IPC clock-alignment bracket with its
+uncertainty, not subtraction of unrelated clock origins. External open-to-ready
+includes process startup; driver readiness begins inside the extension host.
+
+Attribution opts into `RequestScope` spans and JFR (`profile`, stack depth 128).
+Actor queues record enqueue and execution separately. Detached publication
+keeps causal IDs without keeping request memoized values alive. The benchmark
+bridge preserves the dispatch cause of deferred callbacks. `trace.json` is a
+standard Chrome/Perfetto trace; `profile-events.json` contains selected CPU,
+allocation, GC and wait events. `attribution.json` matches samples to the
+innermost executing span on the same JFR thread. Unmatched/carrier-thread samples
+stay unattributed. Parent/child durations overlap and must not be summed; neither
+may stage p95 values be summed to explain an end-to-end p95. Inspect the actual
+slow invocation. Javac enter/attribute is combined because this boundary does
+not accurately separate those phases. Response encoding covers envelope
+conversion, not the entire pipe framing/write operation.
+
+Platform-thread CPU/allocation counters are inclusive and scoped to that thread.
+Unavailable virtual-thread or queue counters are `-1`, not zero. JFR allocation
+weights are statistical estimates of allocated bytes, never retained heap.
+Stage-only overhead runs have a separate recording configuration and label;
+they are distinct from both uninstrumented comparison and full profiling.
+
+Retention mode holds bounded leases from the actual WorkspaceBindings path
+while making checked edits, releases them, repeats edits, opens additional
+workspaces and closes/reopens them. Explicit GC requests occur only in this
+diagnostic mode. It reports heap, nonheap, GC and workspace counters separately
+from RSS. This is not a dominator/retained-size analysis or proof that all memory
+will remain bounded over arbitrarily long sessions. The final control workspace
+remains open while collecting heap observations.
+
+Known measurement boundaries: there is no IntelliJ adapter, product retained-heap
+adapter, pinned real-Maven-project scenario, processor/resource-generation
+scenario, forced concurrent-indexing schedule, structural-hot-swap scenario or
+visible-UI oracle yet. Engine persisted-reopen coverage exists in `run.py`;
+product persisted-reopen coverage is not yet implemented. The report schema
+can carry another actual IDE's actions, attempts, resources and provenance;
+there is no speculative comparator plugin interface. Unsupported and unexecuted
+work must be listed explicitly in the PR and results, not replaced with zeroes.
+
+## Controlled engine comparison
 
 `run.py` exercises the production JVMD Application, Dispatcher, framing, RPC client
 and LSP bridge. The only substitute is stdin/stdout for the daemon's Unix socket.

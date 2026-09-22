@@ -30,13 +30,18 @@ def configuration(a, root, fixture, build, workflow):
     java = [str(a.java_home/'bin/java'), *EXPORTS, '--enable-native-access=ALL-UNNAMED',
             '-Xmx1024m', f'-Djvmd.config={config}', f'-Djvmd.state={root / "state"}',
             f'-Djvmd.resolvers={a.resolvers}', '-Djvmd.index.scan.initial_delay_seconds=0']
-    if a.mode == 'attribution':
-        java += ['-Djvmd.trace=true', f'-XX:StartFlightRecording=filename={root / "server.jfr"},settings=profile,dumponexit=true',
+    if a.mode=='retention':java+=['-Djvmd.benchmark.retention=true']
+    if a.mode == 'attribution' or a.instrumentation:
+        settings='profile'
+        if a.mode!='attribution':
+            settings=root/'stages.jfc'
+            settings.write_text('<configuration version="2.0" label="JVMD stages" provider="JVMD"><event name="dev.jvmd.Stage"><setting name="enabled">true</setting><setting name="stackTrace">false</setting></event></configuration>')
+        java += ['-Djvmd.trace=true', f'-XX:StartFlightRecording=filename={root / "server.jfr"},settings={settings},dumponexit=true',
                  '-XX:FlightRecorderOptions=stackdepth=128', '-Xlog:jfr*=off']
     java += ['-cp', build['classpath'], 'dev.jvmd.benchmark.StdioApplication']
     bridge = root/'bridge.json'
     write(bridge, {'repo':str(a.repo), 'root':fixture['roots'][0], 'command':java,
-                   'trace':{'workflow':workflow,'revision':'fixture:A→API→B→C'} if a.mode == 'attribution' else None})
+                   'trace':{'workflow':workflow,'revision':'fixture:A→API→B→C'} if a.mode == 'attribution' or a.instrumentation else None})
     return [a.node, str(HERE/'bridge.ts'), str(bridge)]
 
 
@@ -73,7 +78,7 @@ def engine(a, root, fixture, build, report):
     version=1;revision='A'
     def check(name,action,oracle):
         id_=report['workflow']+':'+str(len(report['actions']))+':'+name
-        if a.mode=='attribution':client.call('benchmark/traceContext',{'invocation':id_,'revision':revision})
+        if a.mode=='attribution' or a.instrumentation:client.call('benchmark/traceContext',{'invocation':id_,'revision':revision})
         try:return record(report,name,action,oracle)
         finally:report['actions'][-1].update(id=id_,input_revision=revision)
     def complete():
@@ -94,6 +99,7 @@ def engine(a, root, fixture, build, report):
             file=Path(fixture['files'][name]);client.notify('textDocument/didOpen',{'textDocument':{'uri':file.as_uri(),'languageId':'java','version':version,'text':file.read_text()}})
         check('warm_completion',complete,lambda r:valid_completion(r,'int'))
         check('warm_definition',definition,lambda r:bool(r) and r[0]['uri']==provider.as_uri())
+        for _ in range(a.samples):check('unchanged_completion',complete,lambda r:valid_completion(r,'int'))
         revision='API';began=time.monotonic_ns();provider.write_text(fixture['versions']['API']);version+=1
         client.notify('textDocument/didChange',{'textDocument':{'uri':provider.as_uri(),'version':version},'contentChanges':[{'text':provider.read_text()}]})
         client.notify('textDocument/didSave',{'textDocument':{'uri':provider.as_uri()}})
@@ -105,12 +111,59 @@ def engine(a, root, fixture, build, report):
         check('api_diagnostics',diagnostics,lambda r:any(d.get('severity')==1 for d in r['diagnostics']))
         check('api_definition',definition,lambda r:bool(r) and r[0]['uri']==provider.as_uri())
         report['api_edit_to_correct_ms']=(time.monotonic_ns()-began)/1e6
+        if a.mode=='retention':
+            session=client.call('jvmd/request',{'method':'daemon.status'})[0]['result']['sessions'][0]['session']
+            def rpc(method,params=None):
+                result=client.call('jvmd/request',{'method':method,'params':{'session':session,**(params or {})}})[0]
+                if result.get('warnings'):
+                    report.setdefault('warnings',[]).extend(result['warnings'])
+                    if any(w.startswith(('analyzer_fault','diagnostics_superseded')) for w in result['warnings']):raise AssertionError(result)
+                return result['result']
+            report['retention']={'boundary':'JVMD engine and actual WorkspaceBindings leases','snapshots':[],
+                'unmeasured':['VS Code product retention','retained object graph','heap after closing the final workspace']}
+            def snapshot(phase,operation='snapshot'):
+                value=rpc('benchmark.retention',{'operation':operation})
+                if value.get('heap_used_bytes',0)<=0:raise AssertionError(value)
+                report['retention']['snapshots'].append({'phase':phase,**value})
+            snapshot('before_edits')
+            for edit in range(a.edits):
+                revision='B' if edit%2==0 else 'API'
+                provider.write_text(fixture['versions'][revision]);version+=1
+                client.notify('textDocument/didChange',{'textDocument':{'uri':provider.as_uri(),'version':version},'contentChanges':[{'text':provider.read_text()}]})
+                client.notify('textDocument/didSave',{'textDocument':{'uri':provider.as_uri()}})
+                check('body_completion' if revision=='B' else 'api_completion',complete,lambda r:valid_completion(r,'int' if revision=='B' else 'String'))
+                snapshot('held_edit_'+str(edit),'hold')
+            snapshot('views_released','release')
+            for edit in range(a.edits):
+                revision='B' if edit%2==0 else 'API'
+                provider.write_text(fixture['versions'][revision]);version+=1
+                client.notify('textDocument/didChange',{'textDocument':{'uri':provider.as_uri(),'version':version},'contentChanges':[{'text':provider.read_text()}]})
+                client.notify('textDocument/didSave',{'textDocument':{'uri':provider.as_uri()}})
+                check('body_completion' if revision=='B' else 'api_completion',complete,lambda r:valid_completion(r,'int' if revision=='B' else 'String'))
+                snapshot('released_edit_'+str(edit))
+            opened=[]
+            for extra in report.get('additional_fixtures',[]):
+                extra=json.loads((root/extra).read_text())
+                id_=rpc('session.open',{'root':extra['roots'][0]})['session'];opened.append((id_,extra))
+                file=Path(extra['files']['consumer']);source=file.read_text()
+                params={'session':id_,'method':'textDocument/completion','params':{'textDocument':{'uri':file.as_uri()},'position':position(source,source.index('.value')+4)}}
+                check('workspace_completion',lambda:rpc('lsp.request',params)['value'],lambda r:valid_completion(r,'int'))
+                snapshot('workspace_open_'+id_)
+            for id_,extra in opened:
+                rpc('session.close',{'session':id_});snapshot('workspace_closed_'+id_)
+                for cycle in range(2):
+                    reopened=rpc('session.open',{'root':extra['roots'][0]})['session']
+                    file=Path(extra['files']['consumer']);source=file.read_text()
+                    params={'session':reopened,'method':'textDocument/completion','params':{'textDocument':{'uri':file.as_uri()},'position':position(source,source.index('.value')+4)}}
+                    check('reopen_completion',lambda:rpc('lsp.request',params)['value'],lambda r:valid_completion(r,'int'))
+                    rpc('session.close',{'session':reopened});snapshot('reopen_closed_'+reopened)
         report['outcome']='correct'
     finally:
         client.close()
 
 
 def product(a,root,fixture,build,report,backend):
+    if a.mode=='retention':raise RuntimeError('Product retention adapter is not implemented; use --engines engine-jvmd for retained-view diagnostics')
     if a.vscode is None:raise RuntimeError('--vscode is required for an actual VS Code run')
     extension=root/'extension';extension.mkdir()
     shutil.copyfile(HERE/'vscode-package.json',extension/'package.json')
@@ -169,7 +222,8 @@ def product(a,root,fixture,build,report,backend):
             if process.poll() is None:process.kill();process.wait()
             try:os.killpg(process.pid,signal.SIGTERM)
             except ProcessLookupError:pass
-            write(root/'resources.json',monitor.close())
+            report['debuggee_pids']=sorted({attempt['result']['pid'] for action in report['actions'] if action['name'] in ('run_output','hotswap_output') for attempt in action['attempts'] if isinstance(attempt.get('result'),dict) and attempt['result'].get('pid')})
+            write(root/'resources.json',monitor.close(report['debuggee_pids']))
             workflow_resources(report,root/'resource-samples.jsonl')
 
 
@@ -183,12 +237,18 @@ def main():
     parser.add_argument('--mode',choices=['comparison','attribution','retention'],default='comparison')
     parser.add_argument('--runs',type=int,default=5);parser.add_argument('--samples',type=int,default=20)
     parser.add_argument('--sources',type=int,default=4);parser.add_argument('--timeout',type=int,default=240)
+    parser.add_argument('--overhead',action='store_true',help='Serial alternating disabled/enabled stage-JFR pairs for each engine and repetition')
+    parser.add_argument('--instrumentation',action='store_true',help='Stage-only JFR in comparison mode for explicit overhead pairs; excluded from ordinary comparisons')
+    parser.add_argument('--edits',type=int,default=20)
+    parser.add_argument('--workspaces',type=int,default=3)
     parser.add_argument('--workflow',choices=['language','runtime','coverage'],default='language');parser.add_argument('--smoke',action='store_true')
     a=parser.parse_args()
     for key,value in vars(a).items():
         if isinstance(value,Path):setattr(a,key,value.resolve())
-    if a.mode=='retention':parser.error('retention workflow is not yet implemented; no retention measurements are claimed')
-    if a.smoke:a.runs=1;a.samples=2
+    if a.overhead and (a.mode!='comparison' or 'vscode-java' in a.engines):parser.error('overhead requires comparison mode and JVMD engines only')
+    if not 1<=a.workspaces<=8:parser.error('--workspaces must be 1..8')
+    if not 1<=a.edits<=32:parser.error('--edits must be 1..32 (bounded retained-view diagnostic)')
+    if a.smoke:a.runs=1;a.samples=2;a.edits=3
     a.root.mkdir(parents=True,exist_ok=False)
     build=json.loads(a.build.read_text())
     provenance={'build':build,'command':sys.argv,'platform':sys.platform,'machine':dict(zip(('sysname','nodename','release','version','machine'),os.uname())),
@@ -198,14 +258,17 @@ def main():
                 'profiles':'attribution timings excluded from comparisons','extensions':{}}
     if a.extensions:
         for p in a.extensions.glob('*/package.json'):
-            data=json.loads(p.read_text());provenance['extensions'][data.get('publisher','')+'.'+data['name']]={'version':data['version'],'manifest_sha256':sha(p)}
+            data=json.loads(p.read_text());provenance['extensions'][data.get('publisher','')+'.'+data['name']]={'version':data['version'],'manifest_sha256':sha(p),'server_jars':{str(jar.relative_to(p.parent)):sha(jar) for jar in p.parent.glob('server/**/*.jar')}}
     write(a.root/'provenance.json',provenance)
     failures=[]
     for repetition in range(a.runs):
         order=a.engines[repetition%len(a.engines):]+a.engines[:repetition%len(a.engines)]
-        for name in order:
-            root=a.root/f'{name}-{repetition}';root.mkdir()
-            report={'schema':1,'workflow':f'{a.workflow}-{repetition}-{name}','engine':name,'repetition':repetition,'mode':a.mode,
+        states=([False,True] if repetition%2==0 else [True,False]) if a.overhead else [a.instrumentation]
+        for name,instrumentation in [(name,state) for state in states for name in order]:
+            a.instrumentation=instrumentation
+            suffix=('-stages' if instrumentation else '-disabled') if a.overhead else ''
+            root=a.root/f'{name}-{repetition}{suffix}';root.mkdir()
+            report={'schema':1,'workflow':f'{a.workflow}-{repetition}-{name}','engine':name,'repetition':repetition,'mode':a.mode,'instrumentation':a.instrumentation,'overhead_pair':a.overhead,
                     'boundary':'backend-result' if name=='engine-jvmd' else 'VS Code provider readiness','actions':[],
                     'outcome':'unavailable','scenario':a.workflow,'fixture':'fixture/fixture.json','profiles':[],'unmeasured':['visible UI completion','IntelliJ','retained heap']}
             try:
@@ -214,15 +277,20 @@ def main():
                     shutil.copytree(a.dependency_cache,fixture['repository'],dirs_exist_ok=True)
                     # The fixture's local sources must not accidentally resolve from the supplied cache.
                     shutil.rmtree(Path(fixture['repository'])/'workflow',ignore_errors=True)
+                if a.mode=='retention':
+                    report['additional_fixtures']=[]
+                    for number in range(1,a.workspaces):
+                        extra=workflow_fixture(root/f'fixture{number}',a.java_home,a.sources)
+                        report['additional_fixtures'].append(f'fixture{number}/fixture.json')
                 if name=='engine-jvmd':
                     if a.workflow!='language':raise ValueError('engine adapter currently supports language workflow only')
                     engine(a,root,fixture,build,report)
                 else:product(a,root,fixture,build,report,name.removeprefix('vscode-'))
             except Exception as error:
-                report['outcome']='failed';report['error']=repr(error);failures.append(root.name)
+                report['outcome']='failed';report.setdefault('error',repr(error));report['process_error']=repr(error);failures.append(root.name)
             finally:
                 if (root/'server.jfr').exists():
-                    try:report['profiles']=[export_workflow_jfr(a.java_home/'bin/jfr',root/'server.jfr',root,a.repo)]
+                    try:report['profiles']=[export_workflow_jfr(a.java_home/'bin/jfr',root/'server.jfr',root,a.repo,'profile' if a.mode=='attribution' else 'stages.jfc')]
                     except Exception as error:report['profile_error']=repr(error)
                 write(root/'report.json',report)
             print(name,repetition,report['outcome'],report.get('error',''),flush=True)

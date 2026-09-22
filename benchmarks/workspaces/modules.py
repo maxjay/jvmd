@@ -49,10 +49,14 @@ def workflow_fixture(root, java_home, sources=4):
     source_api=source_a.replace('public static int value()', 'public static String value()').replace('return value;', 'return "changed";')
     source_b=source_a.replace('base + 1','base + 2').replace('"A"','"B"')
     source_c=source_b.replace('base + 2','base + 3').replace('"B"','"C"')
+    def call_range(file):
+        text=file.read_text();start=text.index('Library.value')+len('Library.');end=start+len('value')
+        return {'uri':file.as_uri(),'range':{'start':position(text,start),'end':position(text,end)}}
     files={'provider':str(provider),'consumer':str(consumer),'main':str(main),'independent':str(independent)}
     result={'root':str(root),'roots':[str(host),str(library)],'repository':str(repository),'files':files,
             'versions':{'A':source_a,'API':source_api,'B':source_b,'C':source_c},
             'expected':{'definition':{'path':str(provider),'range':{'start':{'line':2,'character':20},'end':{'line':2,'character':25}}},
+                        'references':[call_range(consumer),call_range(main)],
                         'breakpoint_line':6,'locals':{'base':'40','value':'42'},'B':'READY revision=B value=42','C':'READY revision=C value=43'},
             'source_hashes':{str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in root.rglob('*.java')}}
     (root/'fixture.json').write_text(json.dumps(result,indent=2)+'\n')

@@ -56,6 +56,17 @@ async function jvmd(config, report) {
     const result=await client.call('textDocument/definition',{textDocument:{uri:doc.uri.toString()},position:pos});
     return (Array.isArray(result)?result:[result]).filter(Boolean).map(row=>new vscode.Location(vscode.Uri.parse(row.uri),range(row.range)));
   }}));
+  subscriptions.push(vscode.languages.registerReferenceProvider(selector,{async provideReferences(doc,pos,context){
+    const result=await client.call('textDocument/references',{textDocument:{uri:doc.uri.toString()},position:pos,context});
+    return (result||[]).map(row=>new vscode.Location(vscode.Uri.parse(row.uri),range(row.range)));
+  }}));
+  subscriptions.push(vscode.languages.registerRenameProvider(selector,{async provideRenameEdits(doc,pos,newName){
+    const result=await client.call('textDocument/rename',{textDocument:{uri:doc.uri.toString()},position:pos,newName});
+    const edit=new vscode.WorkspaceEdit();
+    for(const [uri,rows] of Object.entries(result.changes||{}))for(const row of rows)edit.replace(vscode.Uri.parse(uri),range(row.range),row.newText);
+    for(const change of result.documentChanges||[])for(const row of change.edits||[])edit.replace(vscode.Uri.parse(change.textDocument.uri),range(row.range),row.newText);
+    return edit;
+  }}));
   for(const doc of vscode.workspace.textDocuments)open(doc);
   let session;
   async function rpc(method,params={}){
@@ -67,7 +78,7 @@ async function jvmd(config, report) {
     return response.result;
   }
   return {rpc,diagnosticVersions,async mark(invocation,revision){
-    if(config.report.mode==='attribution')await client.call('benchmark/traceContext',{invocation,revision});
+    if(config.report.mode==='attribution'||config.report.instrumentation)await client.call('benchmark/traceContext',{invocation,revision});
   },async close(){
     for(const item of subscriptions)item.dispose();diagnostics.dispose();
     try{await client.call('shutdown');notify('exit');await Promise.race([new Promise(resolve=>child.once('exit',resolve)),sleep(10000)]);}finally{if(child.exitCode===null)child.kill();stream.destroy();log.end();}
@@ -77,11 +88,11 @@ async function jvmd(config, report) {
 exports.run = async () => {
   const config=JSON.parse(fs.readFileSync(process.env.JVMD_WORKFLOW_CONFIG,'utf8'));
   const report=config.report;
-  let adapter,revision="A",provider,consumer;
+  let adapter,revision="A",provider,consumer,activeInvocation;
   const flush=()=>fs.writeFileSync(path.join(config.root,'driver-result.json'),JSON.stringify(report,null,2));
   async function check(name, action, oracle, timeout=30000){
     const id=report.workflow+':'+report.actions.length+':'+name;
-    if(adapter)await adapter.mark(id,revision);
+    activeInvocation=id;if(adapter)await adapter.mark(id,revision);
     const start=now();const row={id,name,input_revision:revision,document_version:consumer?.version,start_ms:start,attempts:[],outcome:'timed_out',time_to_correct_ms:null};report.actions.push(row);
     for(;;){
       const began=now();let valid=false, attempt;
@@ -91,7 +102,7 @@ exports.run = async () => {
       catch(error){attempt={...attempt,outcome:String(error).includes('WORKFLOW_TIMEOUT')?'timed_out':/cancel/i.test(String(error))?'cancelled':'error',error:String(error)};}
       finally{clearTimeout(timer);}
       const end=now();attempt.start_ms=began;attempt.end_ms=end;attempt.latency_ms=end-began;row.attempts.push(attempt);
-      row.first_response_ms=row.attempts[0].latency_ms;row.retry_count=row.attempts.length-1;row.elapsed_ms=end-start;
+      row.result_revision=revision;row.first_response_ms=row.attempts[0].latency_ms;row.retry_count=row.attempts.length-1;row.elapsed_ms=end-start;
       if(valid){row.outcome='correct';row.time_to_correct_ms=row.elapsed_ms;flush();return attempt.result;}
       flush();if(end-start>=timeout)throw new Error(`${name}: no correct result within ${timeout} ms`);
       await sleep(50);
@@ -130,7 +141,7 @@ exports.run = async () => {
     provider=await vscode.workspace.openTextDocument(files.provider);
     consumer=await vscode.workspace.openTextDocument(files.consumer);
     await vscode.window.showTextDocument(consumer);
-    const point=position(consumer.getText(),consumer.getText().indexOf('.value')+4);
+    let point=position(consumer.getText(),consumer.getText().indexOf('.value')+4);
     async function completion(){
       const result=await vscode.commands.executeCommand('vscode.executeCompletionItemProvider',consumer.uri,point);
       return {version:consumer.version,items:(result?.items||[]).map(i=>({label:typeof i.label==='string'?i.label:i.label.label,detail:i.detail||''}))};
@@ -149,14 +160,38 @@ exports.run = async () => {
     report.open_to_project_ready_ms=now()-start;flush();
     for(let i=0;i<config.samples;i++)await check('unchanged_completion',completion,completionOracle('int'));
     async function editProvider(version){
-      revision=version;if(adapter)await adapter.mark(report.workflow+':edit:'+version,revision);
+      revision=version;if(adapter)await adapter.mark(activeInvocation,revision);
       await vscode.window.showTextDocument(provider);
       const edit=new vscode.WorkspaceEdit();edit.replace(provider.uri,new vscode.Range(provider.positionAt(0),provider.positionAt(provider.getText().length)),config.fixture.versions[version]);
       if(!await vscode.workspace.applyEdit(edit))throw new Error('edit rejected');if(!await provider.save())throw new Error('save rejected');
       await vscode.window.showTextDocument(consumer);
     }
+    if(config.workflow==='coverage'){
+      const original=consumer.getText();
+      for(const [name,prefix] of [['prefix_completion','v'],['growth_completion','va'],['growth_completion','val'],['backspace_completion','v'],['broadening_completion','']]){
+        const text=original.replace('Library.value','Library.'+prefix);
+        const edit=new vscode.WorkspaceEdit();edit.replace(consumer.uri,new vscode.Range(consumer.positionAt(0),consumer.positionAt(consumer.getText().length)),text);
+        if(!await vscode.workspace.applyEdit(edit))throw new Error('typing edit rejected');
+        point=position(text,text.indexOf('Library.')+'Library.'.length+prefix.length);
+        await check(name,completion,completionOracle('int'));
+      }
+      const restore=new vscode.WorkspaceEdit();restore.replace(consumer.uri,new vscode.Range(consumer.positionAt(0),consumer.positionAt(consumer.getText().length)),original);
+      if(!await vscode.workspace.applyEdit(restore)||!await consumer.save())throw new Error('caller restore failed');
+      point=position(original,original.indexOf('.value')+4);
+      const expected=config.fixture.expected.references.map(r=>JSON.stringify(r)).sort();
+      const locations=rows=>rows.map(r=>({uri:(r.uri||r.targetUri).toString(),range:plainRange(r.range||r.targetSelectionRange)}));
+      await check('references',async()=>locations(await vscode.commands.executeCommand('vscode.executeReferenceProvider',consumer.uri,point)||[]),rows=>{
+        const uses=rows.filter(r=>vscode.Uri.parse(r.uri).fsPath!==files.provider).map(r=>JSON.stringify(r)).sort();
+        return JSON.stringify(uses)===JSON.stringify(expected);
+      });
+      await check('rename_preview',async()=>{
+        const edit=await vscode.commands.executeCommand('vscode.executeDocumentRenameProvider',consumer.uri,point,'renamedValue');
+        return (edit?.entries()||[]).flatMap(([uri,rows])=>rows.map(row=>({uri:uri.toString(),range:plainRange(row.range),newText:row.newText})));
+      },rows=>rows.length===3&&rows.every(r=>r.newText==='renamedValue')&&new Set(rows.map(r=>r.uri)).size===3);
+    }
     if(config.workflow!=='runtime'){
-    const changed=now();await editProvider('API');
+    const changed=now();
+    await check('api_save',async()=>{await editProvider('API');return {text:provider.getText(),dirty:provider.isDirty,provider_version:provider.version};},r=>!r.dirty&&r.text===config.fixture.versions.API);
     await check('api_completion',completion,completionOracle('String'));
     // JVMD dependent diagnostics are demand-driven; request them through its existing LSP bridge.
     // VS Code Java uses its ordinary automatic dependent build. This difference is recorded.
@@ -181,6 +216,7 @@ exports.run = async () => {
           dap.push({elapsed_ms:now(),message});
           if(message.type==='event'&&message.event==='output')output+=message.body.output||'';
           if(message.type==='event'&&message.event==='process')pid=message.body.systemProcessId;
+          if(message.type==='event'&&message.event==='processid')pid=message.body.processId;
         }
       };}});
       const started=vscode.debug.onDidStartDebugSession(session=>{if(session.type==='java')debugSession=session;});

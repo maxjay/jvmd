@@ -64,6 +64,9 @@ public final class UnixServer implements AutoCloseable {
                 connections.submit(() -> serve(client));
             } catch (IOException e) { if (!closed.get()) System.getLogger("jvmd").log(System.Logger.Level.WARNING, "Accept failed", e); }
         });
+    }
+    public void ready() {
+        lastActivity=System.nanoTime();
         long interval = Math.max(10, Math.min(1000, config.idleTimeout().toMillis() / 4));
         timer.scheduleWithFixedDelay(() -> {
             if (active.get() == 0 && System.nanoTime() - lastActivity > config.idleTimeout().toNanos()) close();

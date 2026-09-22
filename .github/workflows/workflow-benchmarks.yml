@@ -1,0 +1,75 @@
+name: Development workflows
+on:
+  pull_request:
+    paths:
+      - 'benchmarks/workspaces/**'
+      - 'jvmd-*/src/main/**'
+      - '.github/workflows/workflow-benchmarks.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+      - name: Install pinned JDK and actual VS Code
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/workflow-tools" "$RUNNER_TEMP/extensions"
+          curl -fsSL --retry 3 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz' -o "$RUNNER_TEMP/jdk.tar.gz"
+          printf '%s  %s\n' dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e "$RUNNER_TEMP/jdk.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/jdk.tar.gz" -C "$RUNNER_TEMP/workflow-tools"
+          echo "JAVA_HOME=$RUNNER_TEMP/workflow-tools/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/workflow-tools/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
+          curl -fsSL --retry 3 'https://update.code.visualstudio.com/1.104.2/linux-x64/stable' -o "$RUNNER_TEMP/code.tar.gz"
+          printf '%s  %s\n' d3382c4749e4f73b0e78470a86b98015b021bca28536c0bc7d78c29f115c9dd1 "$RUNNER_TEMP/code.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/code.tar.gz" -C "$RUNNER_TEMP/workflow-tools"
+          code="$RUNNER_TEMP/workflow-tools/VSCode-linux-x64/bin/code"
+          "$code" --no-sandbox --user-data-dir "$RUNNER_TEMP/install-user" --extensions-dir "$RUNNER_TEMP/extensions" --install-extension redhat.java@1.47.0
+          "$code" --no-sandbox --user-data-dir "$RUNNER_TEMP/install-user" --extensions-dir "$RUNNER_TEMP/extensions" --install-extension vscjava.vscode-java-debug@0.58.4
+          "$code" --no-sandbox --user-data-dir "$RUNNER_TEMP/install-user" --extensions-dir "$RUNNER_TEMP/extensions" --install-extension vscjava.vscode-java-test@0.43.0
+      - name: Build and record provenance
+        run: |
+          mvn -B -DskipTests install
+          bash jvmd-dist/assemble.sh
+          python benchmarks/workspaces/compile.py --repo "$PWD" --java-home "$JAVA_HOME" --dependencies "$PWD/jvmd-dist/target/image/lib/jvmd" --output "$RUNNER_TEMP/workflow-build" --reuse-production-jars
+      - name: Serial actual VS Code language workflow
+        run: |
+          xvfb-run -a python benchmarks/workspaces/workflows.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --vscode "$RUNNER_TEMP/workflow-tools/VSCode-linux-x64/bin/code" --extensions "$RUNNER_TEMP/extensions" --root "$RUNNER_TEMP/workflow-results/comparison" --smoke
+      - name: Separate attribution run
+        if: ${{ !cancelled() }}
+        run: |
+          xvfb-run -a python benchmarks/workspaces/workflows.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --vscode "$RUNNER_TEMP/workflow-tools/VSCode-linux-x64/bin/code" --extensions "$RUNNER_TEMP/extensions" --root "$RUNNER_TEMP/workflow-results/attribution" --engines vscode-jvmd --mode attribution --smoke
+      - name: Independently verify workflow outcomes
+        if: ${{ !cancelled() }}
+        run: |
+          python benchmarks/workspaces/verify.py "$RUNNER_TEMP/workflow-results/comparison" "$RUNNER_TEMP/workflow-results/comparison/verification.json" --workflows
+          python benchmarks/workspaces/verify.py "$RUNNER_TEMP/workflow-results/attribution" "$RUNNER_TEMP/workflow-results/attribution/verification.json" --workflows
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: development-workflows
+          retention-days: 30
+          path: |
+            ${{ runner.temp }}/workflow-results/**/report.json
+            ${{ runner.temp }}/workflow-results/**/driver-result.json
+            ${{ runner.temp }}/workflow-results/**/driver.json
+            ${{ runner.temp }}/workflow-results/**/provenance.json
+            ${{ runner.temp }}/workflow-results/**/command.json
+            ${{ runner.temp }}/workflow-results/**/*.log
+            ${{ runner.temp }}/workflow-results/**/resources.json
+            ${{ runner.temp }}/workflow-results/**/resource-samples.jsonl
+            ${{ runner.temp }}/workflow-results/**/verification.json
+            ${{ runner.temp }}/workflow-results/**/trace.json
+            ${{ runner.temp }}/workflow-results/**/profile-events.json
+            ${{ runner.temp }}/workflow-results/**/profiles.json
+            ${{ runner.temp }}/workflow-results/**/fixture.json
+            ${{ runner.temp }}/workflow-results/**/*.java
+            ${{ runner.temp }}/workflow-build/build.json

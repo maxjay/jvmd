@@ -4,6 +4,60 @@ import argparse,json,os,re,statistics,subprocess,time
 from pathlib import Path
 from run import CAPABILITIES,SETTINGS,position,start
 
+def workflow_fixture(root, java_home, sources=4):
+    """Two actual Git repositories; equal Maven coordinates and source substitution."""
+    import hashlib
+    host, library = root/'host', root/'library'
+    root.mkdir(parents=True, exist_ok=False)
+    header = '<project><modelVersion>4.0.0</modelVersion><groupId>workflow</groupId><version>1</version>'
+    modules = {'library': [], 'dependent': ['library'], 'app': ['dependent', 'library'], 'independent': []}
+    files = {}
+    for name, dependencies in modules.items():
+        project = library if name == 'library' else host/name
+        source = project/'src/main/java/bench'; source.mkdir(parents=True)
+        deps = ''.join('<dependency><groupId>workflow</groupId><artifactId>'+d+'</artifactId><version>1</version></dependency>' for d in dependencies)
+        if name == 'library':
+            deps += '<dependency><groupId>external</groupId><artifactId>offset</artifactId><version>1</version></dependency>'
+        (project/'pom.xml').write_text(header+'<artifactId>'+name+'</artifactId><properties><maven.compiler.release>17</maven.compiler.release></properties><dependencies>'+deps+'</dependencies></project>')
+        for i in range(sources):
+            (source/f'Unused{name.title()}{i}.java').write_text(f'package bench; public class Unused{name.title()}{i} {{ public int id(){{return {i};}} }}\n')
+        wrapper = project/'.mvn/wrapper'; wrapper.mkdir(parents=True)
+        (wrapper/'maven-wrapper.properties').write_text('distributionUrl=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.9/apache-maven-3.9.9-bin.zip\n')
+    (host/'pom.xml').write_text(header+'<artifactId>host</artifactId><packaging>pom</packaging><modules><module>dependent</module><module>app</module><module>independent</module></modules></project>')
+    provider = library/'src/main/java/bench/Library.java'
+    provider.write_text('package bench;\npublic class Library {\n  public static int value() {\n    int base = external.Offset.base();\n    int value = base + 1;\n    return value;\n  }\n  public static String revision() { return "A"; }\n}\n')
+    consumer = host/'dependent/src/main/java/bench/Dependent.java'
+    consumer.write_text('package bench;\npublic class Dependent {\n  public static int read() { return Library.value(); }\n}\n')
+    main = host/'app/src/main/java/bench/Main.java'
+    main.write_text('package bench;\npublic class Main {\n  public static void main(String[] args) throws Exception {\n    while (true) {\n      int value = Library.value();\n      System.out.println("READY revision=" + Library.revision() + " value=" + value);\n      Thread.sleep(200);\n    }\n  }\n}\n')
+    independent = host/'independent/src/main/java/bench/Independent.java'
+    independent.write_text('package bench; public class Independent { public static int value(){return 7;} }\n')
+    repository = root/'repository'; artifact=repository/'external/offset/1'; artifact.mkdir(parents=True)
+    external = root/'external-src/external/Offset.java'; external.parent.mkdir(parents=True)
+    external.write_text('package external; public class Offset { public static int base(){return 40;} }\n')
+    classes=root/'external-classes'; classes.mkdir()
+    subprocess.run([str(java_home/'bin/javac'),'--release','17','-g','-d',str(classes),str(external)],check=True)
+    subprocess.run([str(java_home/'bin/jar'),'--create','--file',str(artifact/'offset-1.jar'),'-C',str(classes),'.'],check=True)
+    subprocess.run([str(java_home/'bin/jar'),'--create','--file',str(artifact/'offset-1-sources.jar'),'-C',str(external.parent.parent),'.'],check=True)
+    (artifact/'offset-1.pom').write_text('<project><modelVersion>4.0.0</modelVersion><groupId>external</groupId><artifactId>offset</artifactId><version>1</version></project>')
+    manifest=host/'.jvmd/workspace.json';manifest.parent.mkdir();manifest.write_text(json.dumps({'roots':['.','../library'],'ignore_versions':False}))
+    for project in (host,library):
+        subprocess.run(['git','init','-q',str(project)],check=True)
+        subprocess.run(['git','-C',str(project),'add','.'],check=True)
+        subprocess.run(['git','-C',str(project),'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm','Deterministic workflow fixture'],check=True)
+    source_a=provider.read_text()
+    source_api=source_a.replace('public static int value()', 'public static String value()').replace('return value;', 'return "changed";')
+    source_b=source_a.replace('base + 1','base + 2').replace('"A"','"B"')
+    source_c=source_b.replace('base + 2','base + 3').replace('"B"','"C"')
+    files={'provider':str(provider),'consumer':str(consumer),'main':str(main),'independent':str(independent)}
+    result={'root':str(root),'roots':[str(host),str(library)],'repository':str(repository),'files':files,
+            'versions':{'A':source_a,'API':source_api,'B':source_b,'C':source_c},
+            'expected':{'definition':{'path':str(provider),'range':{'start':{'line':2,'character':20},'end':{'line':2,'character':25}}},
+                        'breakpoint_line':6,'locals':{'base':'40','value':'42'},'B':'READY revision=B value=42','C':'READY revision=C value=43'},
+            'source_hashes':{str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in root.rglob('*.java')}}
+    (root/'fixture.json').write_text(json.dumps(result,indent=2)+'\n')
+    return result
+
 def fixture(root,count):
     modules={'base':[], 'core':['base'], 'app':['core'], 'independent':[]}
     root.mkdir(parents=True);wrapper=root/'.mvn/wrapper';wrapper.mkdir(parents=True)

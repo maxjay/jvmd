@@ -18,6 +18,61 @@ def selected(text, range_):
     start, end = offset(range_['start']), offset(range_['end']); assert 0 <= start < end <= len(text)
     return text[start:end]
 
+
+def workflow_oracle(name, result, fixture):
+    """Independent expectations from generated sources, never another engine's output."""
+    if name == 'open':return bool(result.get('capabilities'))
+    if 'completion' in name:
+        rows=result.get('items',[]) if isinstance(result,dict) else result
+        rows=[row for row in rows or [] if row.get('label','').startswith('value')]
+        expected='String' if name=='api_completion' else 'int'
+        stale='int' if expected=='String' else 'String'
+        return any(re.search(r'\b'+expected+r'\b',json.dumps(r)) for r in rows) and not any(re.search(r'\b'+stale+r'\b',json.dumps(r)) for r in rows)
+    if 'definition' in name:
+        rows=[result] if isinstance(result,dict) else result
+        if len(rows or [])!=1:return False
+        row=rows[0]; actual=unquote(urlparse(row['uri']).path)
+        if actual!=fixture['files']['provider']:return False
+        source=fixture['versions']['API' if name=='api_definition' else 'A']
+        return selected(source,row['range'])=='value'
+    if 'diagnostics' in name:
+        errors=[d for d in result.get('diagnostics',[]) if d.get('severity')==1]
+        if name=='revert_diagnostics':return not errors
+        # The only erroneous statement is the typed caller on zero-based line 2.
+        return bool(errors) and all(d['range']['start']['line']==2 for d in errors) and any(
+            any(term in d.get('message','').lower() for term in ('string','int','convert','type')) for d in errors)
+    if name in ('run_output','hotswap_output'):
+        marker=fixture['expected']['B' if name=='run_output' else 'C']
+        return marker in result.get('output','')
+    raise AssertionError('Missing independent oracle: '+name)
+
+
+def verify_workflows(root):
+    workers=[]
+    for path in sorted(root.glob('*/report.json')):
+        report=json.loads(path.read_text())
+        if 'workflow' not in report:continue
+        fixture=json.loads((path.parent/report['fixture']).read_text())
+        errors=[];attempts=0
+        for action in report['actions']:
+            valid=[]
+            for attempt in action['attempts']:
+                attempts+=1
+                try:correct='result' in attempt and workflow_oracle(action['name'],attempt['result'],fixture)
+                except (KeyError,ValueError,AssertionError,IndexError,TypeError):correct=False
+                valid.append(correct)
+                if (attempt['outcome']=='correct')!=correct:errors.append(action['name']+': misclassified attempt')
+            if action['outcome']=='correct' and (not valid or not valid[-1] or any(valid[:-1])):
+                errors.append(action['name']+': invalid first-correct boundary')
+            if action.get('retry_count')!=max(0,len(valid)-1):errors.append(action['name']+': retry count')
+            if action['outcome']!='correct' and action.get('time_to_correct_ms') is not None:errors.append(action['name']+': failure has success timing')
+        required={'warm_completion','warm_definition','api_completion','api_diagnostics','api_definition'}
+        if report['outcome']=='correct' and not required.issubset({a['name'] for a in report['actions']}):errors.append('missing required actions')
+        workers.append({'worker':path.parent.name,'outcome':report['outcome'],'verified':not errors and report['outcome']=='correct',
+                        'attempts':attempts,'errors':errors})
+    if not workers:raise AssertionError('No workflow reports')
+    return {'schema':1,'workflow_workers':workers,'complete':all(w['verified'] for w in workers)}
+
 def verify(root):
     counts = {'workers': 0, 'editor_responses': 0, 'responses': 0, 'ranges': 0, 'dependency_identity_sets': 0}; identity_sets = {}
     for report_path in sorted(root.glob('*/*/report.json')):
@@ -66,5 +121,7 @@ def verify(root):
     return counts
 
 if __name__ == '__main__':
-    p = argparse.ArgumentParser(); p.add_argument('root', type=Path); p.add_argument('output', type=Path); a = p.parse_args()
-    result = verify(a.root); a.output.write_text(json.dumps(result, indent=2)+'\n'); print(json.dumps(result))
+    p = argparse.ArgumentParser(); p.add_argument('root', type=Path); p.add_argument('output', type=Path); p.add_argument('--workflows',action='store_true'); a = p.parse_args()
+    result = verify_workflows(a.root) if a.workflows else verify(a.root)
+    a.output.write_text(json.dumps(result, indent=2)+'\n'); print(json.dumps(result))
+    if a.workflows and not result['complete']:raise SystemExit(1)

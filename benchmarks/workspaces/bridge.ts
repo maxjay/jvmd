@@ -13,6 +13,17 @@ const stream=new Duplex({read(){},write(chunk,encoding,callback){child.stdin.wri
 child.stdout.on('data',chunk=>stream.push(chunk));child.stdout.on('end',()=>stream.push(null));
 child.on('error',error=>stream.destroy(error));
 const client=new RpcClient(stream as any);
+// One fixture workflow spans the bridge's RPCs and delayed diagnostics. Never shipped.
+if(config.trace){
+  // RpcClient writes framed messages; decorate only this benchmark-owned transport.
+  const write=stream.write.bind(stream);
+  stream.write=((chunk:any,...args:any[])=>{
+    const bytes=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);
+    const boundary=bytes.indexOf('\r\n\r\n');
+    if(boundary>=0){const message=JSON.parse(bytes.subarray(boundary+4).toString());message._jvmdTrace=config.trace;return write(encode(message),...args);}
+    return write(chunk,...args);
+  }) as any;
+}
 const send=(message:any)=>process.stdout.write(encode(message));
 let bridge:any,root=config.root;
 const bridges:any[]=[];

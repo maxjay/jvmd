@@ -99,15 +99,9 @@ def classify(operation, row):
                 return "incomplete"
             if any(re.search(r"\bString\b", json.dumps(r)) for r in matches):
                 return "stale"
-            return (
-                "correct"
-                if any(
-                    re.search(re.escape(symbol) + r"\s*\([^)]*\bint\b", json.dumps(r))
-                    and re.search(r"\bint\b", json.dumps(r))
-                    for r in matches
-                )
-                else "wrong"
-            )
+            signature = re.escape(symbol) + r"\(int(?:\s+input)?\)\s*:\s*int\b"
+            return "correct" if any(re.search(signature, json.dumps(r)) for r in matches) else "wrong"
+
     except (ValueError, KeyError, TypeError, IndexError):
         return "wrong"
     raise ValueError("unknown operation: " + name)

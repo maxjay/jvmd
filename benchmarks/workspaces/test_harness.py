@@ -17,7 +17,7 @@ class HarnessTest(unittest.TestCase):
         check = lambda rows: classify(operation, {"result": {"items": rows}})
         self.assertEqual("incomplete", check([]))
         self.assertEqual("wrong", check([{"label": "value0()", "detail": "int"}]))
-        self.assertEqual("correct", check([{"label": "value0(int input)", "detail": "int"}]))
+        self.assertEqual("correct", check([{"label": "value0(int input): int"}]))
         self.assertEqual("stale", check([{"label": "value0(int input)", "detail": "String"}]))
 
     def test_definition_rejects_wrong_location_and_range(self):

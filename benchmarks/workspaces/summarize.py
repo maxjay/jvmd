@@ -71,6 +71,34 @@ def summarize(root):
                 continue
             key = (action["operation"], action["state"], run["server"], run["mode"])
             groups[key].append((run["directory"], action))
+    # Link separate diagnostic runs by exact production revision and fixture identity.
+    diagnostics = []
+    for path in sorted(root.parent.glob("*/*/report.json")):
+        report = json.loads(path.read_text())
+        if report.get("schema") != 2 or report.get("mode") != "attribution":
+            continue
+        if report.get("build_revision") != provenance["build"]["revision"]:
+            continue
+        for action in report["actions"]:
+            diagnostics.append(
+                (report, action, "../" + path.parent.parent.name + "/dashboard.html#" + action["id"])
+            )
+    for run in runs:
+        for action in run["actions"]:
+            matches = [
+                (a, url)
+                for report, a, url in diagnostics
+                if report["fixture_identity"] == run["fixture_identity"]
+                and all(a[k] == action[k] for k in ("operation", "target", "state"))
+            ]
+            if matches:
+                selected, url = max(matches, key=lambda pair: pair[0].get("latency_ms", 0))
+                action["diagnostic"] = {
+                    "url": url,
+                    "id": selected["id"],
+                    "outcome": selected["outcome"],
+                    "note": "Separate profiled process; same revision, fixture, operation, target and warm-up state. Not the same latency sample.",
+                }
     rows = []
     for (operation, state, server, mode), actions in sorted(groups.items()):
         correct = [(worker, a) for worker, a in actions if a["outcome"] == "correct"]

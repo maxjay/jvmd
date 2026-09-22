@@ -38,6 +38,8 @@ class RequestScopeTraceTest {
         var counts=dev.jvmd.core.Json.MAPPER.readTree(input.getString("counters"));
         assertThat(counts.path("metadata_checks").asLong()).isEqualTo(counts.path("expected_metadata_checks").asLong());
         assertThat(counts.path("files_hashed").asLong()).isEqualTo(1);
+        assertThat(counts.path("records_decoded").asLong()).isEqualTo(1);
+        assertThat(counts.path("record_bytes_decoded").asLong()).isPositive();
         assertThat(events).allMatch(e->e.getLong("durationNanos")>=0);
     }
 
@@ -80,6 +82,8 @@ class RequestScopeTraceTest {
                     var registry=new dev.jvmd.core.FileStateRegistry();
                     try(var span=RequestScope.stage("test.inputs")){
                         registry.hash(source);registry.hash(source);
+                        byte[] record=dev.jvmd.index.FactCodec.encode(Map.of("name","fixture"));
+                        if(!dev.jvmd.index.FactCodec.decode(record,Map.class).get("name").equals("fixture"))throw new AssertionError("Decoded fact changed");
                         span.count("expected_metadata_checks",((Number)registry.status().get("metadata_checks")).longValue());
                     }
                     return null;

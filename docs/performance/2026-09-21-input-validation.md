@@ -1,6 +1,6 @@
 # Input identity consolidation — measured delivery
 
-Current result: see **Bounded finish (2026-09-22)** below; preceding sections are historical.
+Current result: see **Final late-review verification (2026-09-22)** below; preceding sections are historical.
 
 ## Revision and prerequisite evidence
 
@@ -482,7 +482,7 @@ For LSP use `workspaces/compile.py` per checkout and `workspaces/matrix.py --rep
 --before BASE/build.json --after HEAD/build.json --java-home JDK --jdtls JDTLS
 --resolvers RESOLVERS --fixtures FIXTURES --root OUTPUT --runs 3 --sources 32
 --workspaces 1 --samples 3 --edits 2 --fixture-names real --modes main after`.
-Run `verify.py OUTPUT` and `summarize.py OUTPUT SUMMARY.json`; use a separate output and `--profile`
+Run `verify.py OUTPUT VERIFICATION.json` and `summarize.py OUTPUT SUMMARY.json`; use a separate output and `--profile`
 for allocation. The archived matrix manifests preserve exact machine paths/flags.
 Run phase-3/4 with `mvn -B -pl jvmd-tests -am -Dgroups=phase-3,phase-4
 -Djvmd.resolvers=RESOLVERS -DargLine=-Xmx1g test`; baseline assertion run substitutes
@@ -496,3 +496,129 @@ Final CI: [Checkpoints](https://github.com/maxjay/jvmd/actions/runs/35670736591)
 published production 82bf709b3a70b6b35dfde617dea1eef61eeb80cb. The latter includes
 hosted JVMD/JDTLS correctness and semantic-state/input-validation evidence. Raw test
 logs are gzip-compressed without changing their contents.
+
+## Final late-review verification (2026-09-22)
+
+**This is the current result.** The bounded-finish section above describes the
+surviving ownership/repairs; its earlier revision and measurement tables are historical.
+Three additional inline comments arrived during that work. All seven review threads
+are now resolved. No replacement PR or parallel observation owner was introduced.
+
+Final benchmarked production/harness: local
+`12b917a5898a4a3ed461182b6bb3aaa42a50723d`, published
+`c0924f5d57a3e2ba02169f4b77567e54d19aa7f7`, identical full tree
+`984a3ea1a132157ba241553757753435f323e9e7`. Immediate and original baselines remain
+0347d7ab58a9c176ac3be027d36c0f2a72209459 and
+9ac81c4bdded8de18537569debf02e789c24fe27. Subsequent changes add only evidence and
+strengthen a regression to reconcile an environment inventory inside a real compiler
+callback; measured production/harness files are unchanged.
+
+Disk evidence formerly compared evictable Entry references. FileStateRegistry now
+returns matching hash/evidence atomically and CompilerInputs compares their values.
+A normal hit returns the existing observation object; eviction/reconciliation cannot
+manufacture a transition solely by allocating another object. Genuine stamp/content
+changes still differ. Environment inventory observations carry immutable directory
+stamp/child evidence separately from the member list. Create/delete reversion changes
+the fence even when the environment content identity returns to the previous value.
+Equal reconstruction after eviction stays equal. No second registry or hash was added.
+
+Source inventory retains its existing membership and supplied-byte validation, not
+unfiltered directory-stamp invalidation: an initial broader attempt counted compiler
+persistence writes underneath source roots as input changes, which existing tests
+correctly rejected. The new directory evidence is consumed for environment paths.
+The implementation still uses conservative metadata observation, not watcher quietness.
+The third comment, obsolete evidence retention, was already repaired by separate role
+maps and pruning against each role's current inputs; it now has an explicit assertion.
+
+New normal phase-4 regressions:
+
+- `evictedDiskObservationsDoNotManufactureSupersession`: forced registry removal,
+  full reconciliation (including environment inventory), unchanged equality, successful
+  real compiler callback, and a subsequent genuine source change.
+- `revertedDirectoryMembershipStillSupersedesCompilerWork`: equal contents with changed
+  fence, stable next capture, real compiler supersession, successful retry. Directory
+  time is changed deterministically; no sleeps or timing race.
+- `observationsReleasePathsRemovedFromEitherRole`: deleted source/environment paths
+  are absent from both role evidence sets.
+
+On c2b1669 production the focused 8-test suite had exactly **2 assertion failures,
+0 errors and 0 skips**; pruning already passed. Final **143 phase-3/4 tests** pass,
+plus 3 Rocks workspace and 11 reporting tests. [Checkpoints](https://github.com/maxjay/jvmd/actions/runs/35672018976),
+[Distributions](https://github.com/maxjay/jvmd/actions/runs/35672019034) and
+[Merge Review](https://github.com/maxjay/jvmd/actions/runs/35672018975) all pass on
+c0924f5, including hosted semantic-state, input-validation and JVMD/JDTLS correctness.
+Final raw evidence and logs are in [finish/late-review](input-validation/finish/late-review).
+The complete baseline/repair chronology is retained rather than overwritten.
+
+Production LOC versus immediate baseline: **218 added / 106 deleted, net +112**;
+versus original baseline: **645 added / 463 deleted, net +182**. Extra late-review code
+represents value-stable observation evidence and directory metadata evidence inside
+existing owners. There is no shrinkage claim.
+
+All workloads were repeated with the same method described above: three serial
+alternating isolated runs, same JDK/dependency hashes/fixtures/1 GiB heap, separate
+cold/warm phases and separate JFR run. Each editor comparison and profile run again
+verified 504 responses, 3120 ranges and 12 dependency identity sets. The existing
+harness additionally counts directory-evidence rebuilds; warm count is zero. This
+counter is absent in older implementations and is not a JDTLS metric.
+
+| Immediate baseline → final component | Before | After |
+| --- | ---: | ---: |
+| Input validation p50 / p95, ms | 2.140 / 3.446 | 1.568 / 2.662 |
+| Detached navigation p50 / p95, ms | 1.071 / 1.624 | 0.961 / 1.497 |
+| Warm real diagnostics p50 / p95, ms | 0.858 / 1.410 | 1.321 / 2.480 |
+| Warm diagnostic bytes / 40 requests, owner thread | 10,372,064 | 9,949,624 |
+| Warm diagnostic captures / metadata checks | 40 / 5,360 | 40 / 5,360 |
+| Warm enumerations / hashed bytes / identity-map rebuilds | 0 / 0 / 0 | 0 / 0 / 0 |
+| Body diagnostic captures / metadata checks | 12 / 1,599 | 3 / 402 |
+| Body diagnostics p50, ms / allocated bytes | 21.095 / 3,550,176 | 24.870 / 1,238,576 |
+| API diagnostics p50, ms | 65.827 | 53.564 |
+| Membership diagnostics p50, ms | 35.384 | 23.494 |
+| Environment diagnostics p50, ms | 82.517 | 65.538 |
+| Cold diagnostics p50, ms | 887.376 | 828.870 |
+| Cold input validation p50, ms | 243.026 | 220.693 |
+| Explicit reconciliation validation p50, ms | 133.775 | 129.173 |
+
+Body/API javac counts remain 1/2, preserving dependent diagnostic reuse. Detached body
+navigation regresses 4.695→6.606 ms. The warm diagnostic latency regression is not
+hidden by lower allocation or fewer captures elsewhere. Against original baseline,
+warm diagnostic allocation remains **5,752,592→9,949,624 bytes (+73.0%)**; p50/p95
+0.760/1.429→0.848/1.384 ms in that separate pairing. Repaired timings vary across
+pairings; these few repetitions support no statistical or universal speedup claim.
+
+| Real LSP (ms unless stated) | Immediate | Final | Original | Final in original pair |
+| --- | ---: | ---: | ---: | ---: |
+| Warm references | 8.854 | 8.705 | 6.872 | 8.848 |
+| Warm completion | 5.101 | 5.042 | 5.203 | 5.767 |
+| Warm definition | 6.287 | 4.493 | 4.326 | 5.654 |
+| Warm binary completion | 6.209 | 6.684 | 5.823 | 7.467 |
+| Warm rename preview | 11.402 | 12.998 | 11.303 | 13.227 |
+| Diagnostics error / restore | 224.634 / 213.878 | 220.493 / 212.467 | 223.884 / 213.361 | 221.425 / 213.039 |
+| Fresh setup | 2,973.550 | 3,025.823 | 2,810.126 | 2,893.686 |
+| Restart | 1,904.018 | 1,968.262 | 1,791.097 | 1,878.696 |
+| Total measured work | 7,767.382 | 7,796.263 | 7,213.601 | 7,544.792 |
+| Peak process-tree RSS, MiB | 476.477 | 501.277 | 488.383 | 487.336 |
+
+Total measured editor work is **+0.4% versus immediate baseline, +4.6% versus original**.
+Whole-run JFR sampled allocation is 1,499.106→1,465.844 MiB in the separate profile
+run, not retained heap or per-request allocation. Raw summaries retain all operations,
+per-process distributions, metadata/enumeration/hash/map/capture work and cold costs;
+`editor-warm-distributions.json` also reports pooled p50/p95. `profile-stacks.json.gz`
+contains inclusive allocation/CPU samples, with recording hashes in resource reports.
+
+The remaining diagnosis is unchanged: warm metadata traversal still visits all tracked
+inputs, and navigation validates actual module environments rather than a reduced
+union. No safe single warm capture was removed. Remaining metadata allocation and
+editor regressions are limitations, not claims of completion of a separate future
+performance redesign. Original baseline reconciliation is a harness no-op, so its
+1.691 ms versus final 126.557 ms is not equivalent work; cold original identity checks
+also omitted the platform hashing now required (47.723→213.732 ms). Both differences
+remain explicit rather than being presented as like-for-like speed regressions.
+
+`finish/late-review/reproduce.sh` records final commands. Supply equivalent checkout,
+JDK, resolver and dependency directories for another machine; build manifests and
+archived `commands.json` record all input hashes and exact runtime flags. Verification
+syntax is `workspaces/verify.py OUTPUT VERIFICATION.json`; summarization takes both
+input directory and output JSON. An initial verification invocation omitted its output
+argument after a completed matrix; it was corrected and verification succeeded before
+continuing. No failed correctness result was skipped or discarded.

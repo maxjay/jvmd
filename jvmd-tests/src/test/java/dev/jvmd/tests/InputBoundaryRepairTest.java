@@ -115,14 +115,14 @@ class InputBoundaryRepairTest {
         }
     }
     @Test void evictedDiskObservationsDoNotManufactureSupersession()throws Exception {
-        Path file=Files.writeString(root.resolve("A.java"),"class A {}");var files=new FileStateRegistry();var docs=new Documents(files);
-        var inputs=new CompilerInputs(files);var config=new CompilerInputs.Configuration("module",List.of(root),List.of(),List.of("--release","25"));
+        Path cp=Files.createDirectory(root.resolve("classes")),file=Files.writeString(root.resolve("A.java"),"class A {}");var files=new FileStateRegistry();var docs=new Documents(files);
+        var inputs=new CompilerInputs(files);var config=new CompilerInputs.Configuration("module",List.of(root),List.of(cp),List.of("--release","25"));
         var before=inputs.capture(config,docs);files.forget(file);
         assertThat(inputs.capture(config,docs)).isEqualTo(before);
         files.reconcile();assertThat(inputs.capture(config,docs)).isEqualTo(before);
         try(var pool=new CompilerPool(files)){
-            pool.configure("module","25",List.of(),List.of(root),null,128L*1024*1024);pool.documents(docs);
-            assertThat(pool.query(file,docs.text(file),2,(task,units,tier)->{files.forget(file);return "stable";}).result()).isEqualTo("stable");
+            pool.configure("module","25",List.of(cp),List.of(root),null,128L*1024*1024);pool.documents(docs);
+            assertThat(pool.query(file,docs.text(file),2,(task,units,tier)->{files.reconcile();return "stable";}).result()).isEqualTo("stable");
         }
         Files.writeString(file,"class A { int n; }");assertThat(inputs.capture(config,docs)).isNotEqualTo(before);
     }

@@ -180,9 +180,9 @@ and directory create/delete reversion. Reopening the same bounded observation re
 no new subsystem. Previously published measurements remain historical and will be
 superseded by measurements of the final corrected production tree.
 
-- [ ] Stabilize evidence after disk-cache eviction and reconciliation.
-- [ ] Propagate directory observation changes independently of final membership.
-- [ ] Verify evidence pruning, rerun gates/benchmarks, resolve the new threads.
+- [x] Stabilize evidence after disk-cache eviction and reconciliation.
+- [x] Propagate directory observation changes independently of final membership.
+- [x] Verify evidence pruning, rerun gates/benchmarks, resolve the new threads.
 
 Late correctness checkpoint: the new 8-test focused suite had exactly two assertion
 failures on c2b1669 production; pruning already passed. Final phase-3/4 gate now passes
@@ -194,3 +194,21 @@ lifetime as other inputs. Source inventory retains its existing membership/byte 
 tracking every directory stamp there incorrectly counted compiler persistence writes
 under source roots; existing regressions exposed and prevented that broad invalidation.
 Benchmark instrumentation now exposes directory-evidence rebuilds separately.
+
+Late-review completion checkpoint: final production/harness tested as local
+12b917a5898a4a3ed461182b6bb3aaa42a50723d and published as
+c0924f5d57a3e2ba02169f4b77567e54d19aa7f7, identical tree
+984a3ea1a132157ba241553757753435f323e9e7. All three workflows passed:
+Checkpoints 35672018976, Distributions 35672019034, Merge Review 35672018975.
+The strengthened real compiler callback reconciles both file and environment
+inventories and passes; full local validation again passes 143 phase-3/4 tests,
+3 Rocks tests and 11 reporting tests. All seven review threads are resolved.
+Three fresh alternating repetitions versus both baselines and separate JFR runs
+pass all response/range checks. Final evidence is under finish/late-review and the
+report's Final late-review verification section supersedes earlier measurements.
+Warm diagnostics retain zero enumeration/hash/map rebuilds and one capture per hit;
+body captures remain 12→3. Final editor measured work +0.4% versus immediate and
++4.6% versus original; warm diagnostics allocation +73.0% versus original remains
+a limitation. Production +218/-106 (net +112) versus immediate; +645/-463 (net +182)
+versus original. The final evidence/test-only commit changes no benchmarked production
+or harness files. PR #21 remains open, unmerged.

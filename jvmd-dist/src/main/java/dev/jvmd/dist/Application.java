@@ -385,7 +385,7 @@ public final class Application implements AutoCloseable {
         var database=index();String workspace=session.state("resolution")==null?null:session.id();
         if(!symbol.containsKey("id")){
             prepareIndex(session,database);var indexed=database.find(symbol.get("scip").toString(),workspace,false,2,0);
-            if(indexed.size()==1){var current=new LinkedHashMap<>(indexed.getFirst());current.putAll(symbol);symbol=current;}
+            if(indexed.size()==1){var current=new LinkedHashMap<>(indexed.getFirst());symbol.forEach((key,value)->{if(value!=null)current.put(key,value);});symbol=current;}
         }
         var docs=session.state("documentation",()->new dev.jvmd.index.Documentation(database,config.jdkHome()));
         var result=docs.describe(symbol,workspace,detail,depth,limit,offset);var warnings=new LinkedHashSet<>(base.warnings());warnings.addAll(result.warnings());
@@ -612,8 +612,12 @@ public final class Application implements AutoCloseable {
             targets.add(new dev.jvmd.runtime.RunManager.Target(session.root(),List.copyOf(sourceRoots),List.copyOf(classpath),options,output));
         }else{
             var module=graph.modules().stream().filter(m->source.startsWith(Path.of(m.directory()))).max(Comparator.comparingInt(m->m.directory().length())).orElseThrow();output=Path.of(module.classes());options=runtimeCompilerOptions(module);
-            compileRuntimeModule(session,graph,module,new HashSet<>(),new HashSet<>());
-            classpath.add(output);graph.classpaths().getOrDefault(module.gav()+":runtime",graph.classpaths().getOrDefault(module.gav()+":main",List.of())).forEach(path->classpath.add(Path.of(path)));
+            var finished=new HashSet<String>();var visiting=new HashSet<String>();
+            compileRuntimeModule(session,graph,module,finished,visiting);
+            var runtimeDependencies=overlay(session,graph).runtimeDependencies(graph,module.gav());
+            for(var dependency:runtimeDependencies)compileRuntimeModule(session,graph,dependency,finished,visiting);
+            classpath.add(output);runtimeDependencies.forEach(dependency->classpath.add(Path.of(dependency.classes())));
+            graph.classpaths().getOrDefault(module.gav()+":runtime",graph.classpaths().getOrDefault(module.gav()+":main",List.of())).forEach(path->classpath.add(Path.of(path)));
             for(var local:graph.modules()){
                 var roots=local.sources().stream().map(Path::of).toList();sourceRoots.addAll(roots);coordinates.put(Path.of(local.directory()),local.gav());
                 var compilePath=new LinkedHashSet<Path>();compilePath.add(Path.of(local.classes()));graph.classpaths().getOrDefault(local.gav()+":main",List.of()).forEach(path->compilePath.add(Path.of(path)));overlay(session,graph).dependencies(graph,local.gav(),false).forEach(m->compilePath.add(Path.of(m.classes())));

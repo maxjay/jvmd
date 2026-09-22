@@ -12,9 +12,11 @@ import javax.tools.*;
 
 /** Implements 4.4 pass 2: parse-only source signatures joined to binary descriptors. */
 public final class SourceJoin {
+    private static final java.util.regex.Pattern TRIVIA=java.util.regex.Pattern.compile("(?:\\s|/\\*.*?\\*/|//[^\\r\\n]*)*",java.util.regex.Pattern.DOTALL);
     /** Implements 4.4: immutable source metadata, keyed by owner/name/erased descriptor. */
     public record Member(String owner, String name, String descriptor, List<String> parameters,
-                         String doc, String file, int line, int start, int end, int bodyStart, int bodyEnd) { }
+                         String doc, String file, int line, int start, int end, int bodyStart, int bodyEnd,
+                         int nameStart, int nameEnd) { }
     /** Implements 9.9: matched source declarations and explicit unmatched count. */
     public record Result(List<Member> members, int eligible, List<String> unmatched) { }
     /** Implements 4.4: in-memory source, never added to the daemon classpath. */
@@ -87,10 +89,19 @@ public final class SourceJoin {
                     void add(String owner, String name, String descriptor, List<String> params, Tree tree, Tree body) {
                         var comment = docs.getDocCommentTree(getCurrentPath());
                         long start = positions.getStartPosition(unit, tree), end = positions.getEndPosition(unit, tree);
+                        int nameStart=-1;
+                        if(tree instanceof MethodTree method&&method.getReturnType()!=null){
+                            int afterType=(int)positions.getEndPosition(unit,method.getReturnType());
+                            String source=sources.get(unit.getSourceFile().getName().replaceFirst("^/", ""));
+                            if(afterType>=0&&end>=afterType){
+                                var trivia=TRIVIA.matcher(source).region(afterType,(int)end);
+                                if(trivia.lookingAt()&&source.startsWith(name,trivia.end()))nameStart=trivia.end();
+                            }
+                        }
                         matched.add(new Member(owner, name, descriptor, params, comment == null ? null : DocMarkdown.render(comment.toString()),
                                 unit.getSourceFile().getName().replaceFirst("^/", ""), (int) unit.getLineMap().getLineNumber(Math.max(0,start)),
                                 (int) start, (int) end, body == null ? -1 : (int) positions.getStartPosition(unit, body),
-                                body == null ? -1 : (int) positions.getEndPosition(unit, body)));
+                                body == null ? -1 : (int) positions.getEndPosition(unit, body),nameStart,nameStart<0?-1:nameStart+name.length()));
                     }
                 }.scan(unit, null);
             }

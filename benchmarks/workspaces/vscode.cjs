@@ -120,6 +120,7 @@ exports.run = async () => {
       return values.length?'stale':'incomplete';
     }
     if(name==='revert_diagnostics')return 'stale';
+    if(name.includes('definition')&&Array.isArray(result)&&result.length===0)return 'incomplete';
     if(name==='api_diagnostics'&&!result.diagnostics?.length)return 'stale';
     if(name.endsWith('_output'))return /Exception|Error|fatal/i.test(result.output||'')?'wrong':result.output?.includes('READY revision=')?'stale':'incomplete';
     if(name.startsWith('debug_')&&result.frames?.length===0)return 'incomplete';

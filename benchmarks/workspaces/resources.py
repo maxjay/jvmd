@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Out-of-process resource and JFR measurements for LSP benchmark workers."""
-import collections, datetime, hashlib, json, os, subprocess, threading, time
+import collections, datetime, hashlib, json, os, re, subprocess, threading, time
 from pathlib import Path
 
 
@@ -173,9 +173,9 @@ def export_workflow_jfr(jfr_tool, recording, output, repo=None, settings="profil
                       'tid':s['eventThread']['javaThreadId'],'ts':(s['startNanos']-origin)/1000,
                       'dur':s['durationNanos']/1000,'args':args})
     (output/'trace.json').write_text(json.dumps({'traceEvents':trace,'displayTimeUnit':'ms'}))
+    (output/'profile-events.json').write_text(json.dumps({'recording':{'events':events}}))
     attribution=attribute_samples(events,spans,repo)
     (output/'attribution.json').write_text(json.dumps(attribution,indent=2)+'\n')
-    (output/'profile-events.json').write_text(json.dumps({'recording':{'events':events}}))
     result={'trace':'trace.json','events':'profile-events.json','attribution':'attribution.json','recording_sha256':hashlib.sha256(recording.read_bytes()).hexdigest(),
             'clock':'Span start/duration are monotonic within one JVM; no cross-process subtraction',
             'scope':'Inclusive thread counters; do not sum nested spans. Virtual-thread/queue counters unavailable (-1). JFR CPU/allocation are samples, not retained heap.',
@@ -193,7 +193,9 @@ def attribute_samples(events, spans, repo=None):
     def instant(value):
         return datetime.datetime.fromisoformat(value).timestamp()
     def duration(value):
-        return float(value.removeprefix('PT').removesuffix('S'))
+        parts=re.fullmatch(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?',value)
+        if not parts or not any(parts.groups()):raise ValueError('Unsupported JFR duration: '+value)
+        return sum(float(number or 0)*unit for number,unit in zip(parts.groups(),(3600,60,1)))
     intervals=collections.defaultdict(list)
     for span in spans:
         if span['queued']:continue

@@ -33,7 +33,7 @@ export function renderWorkflowDashboard(summary) {
 <td>${escape(stage.args.cache)}</td><td>${escape(JSON.stringify(stage.args.work))}</td><td><details><summary>Matching samples</summary>${profiles.filter(p=>p.span===stage.args.span).flatMap(p=>Object.entries(p.methods)).slice(0,12).map(methodLink).join('<br>')}<pre>${escape(JSON.stringify(profiles.filter(p=>p.span===stage.args.span),null,2))}</pre></details></td></tr>`).join('');
     const base=escape(run.directory);
     return `<details id="${escape(run.workflow)}"><summary>${escape(run.workflow)} — ${escape(run.outcome)} — API edit ${value(run.api_edit_to_correct_ms)}</summary>
-<p>${escape(run.boundary)}. First open/reopen: ${value(run.external_open_to_ready_ms)}. ${escape(run.runtime_boundary||'Runtime not measured')}. ${escape(run.error||'')}</p>
+<p>${escape(run.boundary)}. First open/reopen: ${value(run.external_open_to_ready_ms)}. ${escape(run.runtime_boundary||'Runtime not measured')}. ${escape(run.error||run.profile_error||'')}</p>
 ${run.dependency_navigation_boundary?`<p>${escape(run.dependency_navigation_boundary)}</p>`:''}
 <p>Related diagnostic invocations (separate processes, matching build and fixture): ${(run.related_diagnostics||[]).map(d=>`<a href="${escape(d.url)}">${escape(d.mode+': '+d.workflow+' — '+d.outcome)}</a>`).join(' · ')||'not measured'}</p>
 <p>Whole invocation CPU ${value(run.resources?.cpu_seconds_observed,'s')}; peak combined RSS ${value(run.resources ? run.resources.peak_rss_bytes/1048576 : null,'MiB')}.

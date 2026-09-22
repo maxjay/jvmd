@@ -43,10 +43,23 @@ def investigate(run):
                 'code':'jvmd-dist/src/main/java/dev/jvmd/dist/Application.java: run / compileRuntimeModule',
                 'hypothesis':'Compilation overlays local sources, but the launch classpath may still use the pre-compilation graph without those source-only module outputs.',
                 'candidate':'Test adding the exact local runtime dependency outputs to launch classpath construction in a separate correctness change.',
+                'scope':'Runs with source-only local runtime dependencies; no benefit is claimed for installed-artifact-only launches.',
                 'benefit':'Restore a correct cross-repository launch; no latency saving can be estimated from a failed action.',
                 'constraints':'Respect runtime scopes, transitive dependencies and selected local versions; do not substitute an installed library or launch stale outputs.',
                 'verify':'--workflow runtime, required B/C markers, breakpoint/locals/step and unchanged PID',
                 'confidence':'High for observed failure; root cause remains a hypothesis.'})
+        if action['name']=='dependency_definition' and 'jvmd' in run['engine']:
+            backlog.append({'priority':1,'workflow':run['workflow'],'action':action['name'],'stage':'dependency source selection',
+                'evidence':{'attempts':len(action['attempts']),'empty_results':sum(a.get('result')==[] for a in action['attempts']),
+                    'artifact':run['directory']+'/report.json'},
+                'code':'jvmd-dist/src/main/java/dev/jvmd/dist/Application.java: describeDocumented; jvmd-lsp/src/main/java/dev/jvmd/lsp/LspFacade.java: location',
+                'hypothesis':'Merging live binary-symbol data may overwrite indexed source-JAR metadata with null source fields; exact name ranges also require checking.',
+                'candidate':'Test preserving the selected artifact source metadata when the live symbol has no source location, in a separate correctness change.',
+                'scope':'Navigation to matched external source JARs; local-source navigation already has its own oracle.',
+                'benefit':'Restore correct navigation; no speedup can be estimated from missing results.',
+                'constraints':'Preserve artifact/version selection and exact declaration ranges; do not substitute another source checkout or decompiled content.',
+                'verify':'--workflow coverage: dependency_definition must select the fixture source JAR and the base identifier.',
+                'confidence':'Observed empty provider results; metadata-merge root cause is a code-inspection hypothesis.'})
     interventions={
         'project.resolve':('Project refresh includes resolution and workspace index binding.','Inspect the measured refresh wait/CPU stacks before testing a narrower refresh path.','Preserve selected dependency versions, workspace source precedence, generation publication and memory admission limits.'),
         'inputs.validate':('Repeated input observation may dominate the action.','Examine request-scoped duplicate metadata/hash observations before changing validation.','Preserve document versions, filesystem change detection and current-input agreement.'),
@@ -84,6 +97,7 @@ def investigate(run):
                             'artifact':run['directory']+'/trace.json'},
                 'code':{name:method for p in profiles for name,method in p['methods'].items()},
                 'hypothesis':hypothesis,'candidate':candidate,'constraints':constraints,
+                'scope':'Foreground actions overlapping background artifact scans; no idle-warm benefit is assumed.' if admission else 'This action and cache state on comparable fixtures; repeat before extrapolating.',
                 'benefit':f'For this invocation only, a 10x stage speedup saves at most {bound:.3f} ms if the whole measured interval is serial on the critical path. The complete API edit took {run.get("api_edit_to_correct_ms",action["time_to_correct_ms"]):.3f} ms. Inclusive/background overlap can make the benefit smaller.',
                 'verify':'Repeat the same API edit with independent correctness, unprofiled comparison, identical cache state and stage/work attribution.',
                 'confidence':'Recorded admission wait stack and overlapping indexing; repeat before changing scheduling.' if admission else 'One profiled invocation; validate critical-path contribution and repeat before optimizing.'})
@@ -148,7 +162,7 @@ def summarize_workflows(root):
             observed=[p[key] for p in processes if p[key] is not None]
             rows[-1][key]=med(observed) if observed else None
     return {'schema':1,'kind':'workflows','rows':rows,'invocations':invocations,'verification':verification,
-            'improvement_backlog':sorted(backlog,key=lambda b:b['priority']),
+            'improvement_backlog':sorted(backlog,key=lambda b:(b['priority'],-b.get('evidence',{}).get('inclusive_wall_ms',0))),
             'provenance':provenance,
             'aggregation':'Median of per-process medians; p95 only with at least 20 correct samples in every process. Failed workers remain visible and contribute no fast successes. Modes never mixed.'}
 

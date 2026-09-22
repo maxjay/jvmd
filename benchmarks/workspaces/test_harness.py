@@ -92,6 +92,15 @@ class HarnessTest(unittest.TestCase):
         self.assertEqual(1, result['assigned_events']['jdk.ExecutionSample'])
         self.assertEqual({2, None}, {row['span'] for row in result['groups']})
 
+    def test_jfr_wait_attribution_handles_minute_and_hour_durations(self):
+        span={'queued':False,'eventThread':{'javaThreadId':7},'startTime':'2026-01-01T00:00:00Z',
+              'duration':'PT1H1M0.5S','durationNanos':3660500000000,'stage':'project.resolve','span':1}
+        event={'type':'jdk.ThreadPark','values':{'eventThread':{'javaThreadId':7},
+            'startTime':'2026-01-01T00:01:00Z','duration':'PT1M0.689558602S'}}
+        result=attribute_samples([event],[span])
+        self.assertEqual(1,result['assigned_events']['jdk.ThreadPark'])
+        self.assertAlmostEqual(60689.558602,result['groups'][0]['observed_wait_ms'])
+
     def test_optional_system_value_supports_cgroup_v1_and_missing_files(self):
         with tempfile.TemporaryDirectory() as directory:
             missing = Path(directory)/'v2'; fallback = Path(directory)/'v1'

@@ -128,7 +128,7 @@ def publish(event):
                     if archive.getinfo("result.json").file_size > 55000:
                         raise ValueError("Oversized result JSON")
                     result = validate(json.loads(archive.read("result.json")), revision)
-        except (ValueError, KeyError, zipfile.BadZipFile):
+        except (ValueError, KeyError, TypeError, AttributeError, zipfile.BadZipFile):
             result = {"schema": 2, "revision": revision, "rows": [], "complete": False}
     result["complete"] = bool(result.get("complete") and complete and run["conclusion"] == "success")
     result.update(run_id=run["id"], attempt=run["run_attempt"], baseline_eligible=run["event"] == "push" and run["head_branch"] == "main")

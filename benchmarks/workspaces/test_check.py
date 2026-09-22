@@ -43,6 +43,7 @@ class CheckTest(unittest.TestCase):
         check = {"id": 9, "url": record["check_url"], "status": "completed", "external_id": "jvmd-benchmark:7:2",
                  "output": {"text": "```json\n" + json.dumps(record) + "\n```"}}
         pr = {"number": 22, "state": "open", "head": {"sha": run["head_sha"]}, "base": {"sha": "b" * 40}}
+        latest = [run]
         def api(path, data=None, method=None):
             calls.append((path, data, method))
             if path == "check-runs": return check
@@ -50,7 +51,7 @@ class CheckTest(unittest.TestCase):
             if path.endswith("/artifacts"): return {"artifacts": []}
             if path.startswith("commits/"): return [pr]
             if path == "pulls/22": return pr
-            if path.startswith("actions/workflows/"): return {"workflow_runs": [run]}
+            if path.startswith("actions/workflows/"): return {"workflow_runs": latest}
             if path.startswith("issues/22/comments"): return [{"id": 3, "user": {"login": "github-actions[bot]"}, "body": "<!-- jvmd-benchmark -->old"}]
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": directory + "/summary"}), patch("check.api", api), patch("check.records", return_value=[check]):
             publish(run); publish(run)
@@ -62,6 +63,8 @@ class CheckTest(unittest.TestCase):
             with patch("check.records", return_value=[]): publish(run)
             self.assertTrue(any(data and data.get("conclusion") == "failure" for _, data, _ in calls))
             self.assertTrue(any(data and "Failed" in data.get("body", "") for _, data, _ in calls))
+            calls.clear(); latest.append({"id": 8}); publish(run)
+            self.assertFalse(any(method == "PATCH" for _, _, method in calls))
             calls.clear(); pr["head"]["sha"] = "c" * 40; publish(run)
             self.assertFalse(any(method == "PATCH" for _, _, method in calls))
 

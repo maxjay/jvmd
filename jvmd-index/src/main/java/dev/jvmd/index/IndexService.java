@@ -34,7 +34,10 @@ public final class IndexService implements AutoCloseable {
     private volatile String phase="idle";
     private volatile long total;
     private volatile boolean closed;
-    private final AtomicBoolean closing=new AtomicBoolean();
+    private final Object shutdownLock=new Object();
+    private boolean sourcePublisherClosed;
+    private boolean storageClosed;
+    private boolean cleanupComplete;
     /** The legacy database path selects the sibling Rocks directory; SQLite files are never opened. */
     public IndexService(Path database,Path repository) throws Exception {
         this(IndexStorage.open(database.resolveSibling(database.getFileName().toString().equals("index.db")?"index-v2":database.getFileName()+".rocks"),128L*1024*1024),repository);
@@ -359,13 +362,18 @@ public final class IndexService implements AutoCloseable {
     public static String namePath(BinaryReader.Symbol s){String owner=s.fqn().replace('$','/');if(s.key().equals(s.fqn()))return owner;if(s.kind().equals("method")||s.kind().equals("ctor")){var type=java.lang.constant.MethodTypeDesc.ofDescriptor(s.descriptor());return owner+"/"+s.name()+"("+String.join(",",Arrays.stream(type.parameterArray()).map(p->p.displayName().replace('$','.')).toList())+")";}return owner+"/"+s.name();}
     public static String scip(String gav,BinaryReader.Symbol s){String[] parts=gav.split(":",3);String prefix="maven "+parts[0]+"/"+parts[1]+" "+parts[2]+" ";String owner=s.fqn().replace('.','/').replace('$','#')+"#";if(s.key().equals(s.fqn()))return prefix+owner;if(s.kind().equals("method")||s.kind().equals("ctor")){var type=java.lang.constant.MethodTypeDesc.ofDescriptor(s.descriptor());return prefix+owner+(s.kind().equals("ctor")?"<init>":s.name())+"("+String.join(",",Arrays.stream(type.parameterArray()).map(Signatures::qualified).toList())+").";}return prefix+owner+s.name()+".";}
     @Override public void close()throws Exception {
-        if(!closing.compareAndSet(false,true))return;
-        closed=true;
-        readiness.completeExceptionally(new CancellationException("Index closed"));
-        scanner.shutdownNow();sourcePublisher.close();readers.shutdown();
-        if(!readers.awaitTermination(60,TimeUnit.SECONDS)){readers.shutdownNow();
-            if(!readers.awaitTermination(5,TimeUnit.SECONDS))throw new IllegalStateException("Index workers did not stop; native handles remain open");}
-        if(!scanner.awaitTermination(5,TimeUnit.SECONDS))throw new IllegalStateException("Index scanner did not stop; native handles remain open");
-        storage.close();
+        synchronized(shutdownLock){
+            if(cleanupComplete)return;
+            closed=true;
+            readiness.completeExceptionally(new CancellationException("Index closed"));
+            scanner.shutdownNow();
+            if(!sourcePublisherClosed){sourcePublisher.close();sourcePublisherClosed=true;}
+            readers.shutdown();
+            if(!readers.awaitTermination(60,TimeUnit.SECONDS)){readers.shutdownNow();
+                if(!readers.awaitTermination(5,TimeUnit.SECONDS))throw new IllegalStateException("Index workers did not stop; native handles remain open");}
+            if(!scanner.awaitTermination(5,TimeUnit.SECONDS))throw new IllegalStateException("Index scanner did not stop; native handles remain open");
+            if(!storageClosed){storage.close();storageClosed=true;}
+            cleanupComplete=true;
+        }
     }
 }

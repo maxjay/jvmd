@@ -25,6 +25,8 @@ public final class Application implements AutoCloseable {
     private volatile MavenResolver resolver;
     private volatile dev.jvmd.runtime.JavaRuntime.Selection debuggeeRuntime;
     private volatile java.util.concurrent.CompletableFuture<IndexService> index;
+    private volatile IndexService bootstrappingIndex;
+    private final java.util.concurrent.atomic.AtomicBoolean closed=new java.util.concurrent.atomic.AtomicBoolean();
     private static final Set<String> COMPLETION_TYPE_KINDS=Set.of("class","interface","enum","record","annotation");
     private record TypeCompletionCache(String generation,String prefix,List<Map<String,Object>> rows,boolean complete) { }
     public Application(Config config) {
@@ -38,6 +40,7 @@ public final class Application implements AutoCloseable {
         dispatcher.status("resolver", () -> resolver == null ? java.util.Map.of("maven_major", config.mavenMajor(), "initialized", false) : resolver.status());
         dispatcher.status("classpath_files",classpathFiles::status);
         dispatcher.register("session.open", (_, p) -> {
+            awaitReady();
             var session = sessions.open(Path.of(Dispatcher.required(p, "root")));
             session.put("documents",new Documents(classpathFiles));
             var manifest=p.get("manifest");
@@ -676,16 +679,20 @@ public final class Application implements AutoCloseable {
         var cause=RequestScope.detached();
         index=java.util.concurrent.CompletableFuture.supplyAsync(()->{
             IndexStorage storage=null;
+            IndexService service=null;
             try {
                 long defaultBudgetMb=Math.max(8L,Math.min(128L,config.heapCeilingMb()/8L));
                 long budgetMb=Long.getLong("jvmd.index.generation_budget_mb",defaultBudgetMb);
                 if(budgetMb<1)throw new IllegalArgumentException("jvmd.index.generation_budget_mb must be positive");
                 storage=IndexStorage.open(config.stateDir().resolve("index-v2"),Math.multiplyExact(budgetMb,1024L*1024L));
-                var service=new IndexService(storage,config.m2Repo());
-                if(scan)service.start();
+                service=new IndexService(storage,config.m2Repo());
+                bootstrappingIndex=service;
+                if(closed.get())throw new java.util.concurrent.CancellationException("Application closed during index bootstrap");
+                if(scan)service.start().join();
                 return service;
-            } catch(Exception e){
-                if(storage!=null)try{storage.close();}catch(Exception close){e.addSuppressed(close);}
+            } catch(Exception|LinkageError e){
+                if(service!=null)try{service.close();}catch(Exception close){e.addSuppressed(close);}
+                else if(storage!=null)try{storage.close();}catch(Exception close){e.addSuppressed(close);}
                 throw new java.util.concurrent.CompletionException(e);
             }
         }, task -> Thread.ofVirtual().name("jvmd-index-start").start(cause==null?task:()->{
@@ -694,6 +701,7 @@ public final class Application implements AutoCloseable {
         }));
     }
     private IndexService index() { initializeIndex(false); return index.join(); }
+    private void awaitReady(){if(config.indexOnStart())index();}
     private void bindIndex(Session session,IndexService database)throws Exception {
         var graph=(Resolution)session.state("resolution");if(graph==null)return;
         for(var module:graph.modules()){
@@ -778,9 +786,15 @@ public final class Application implements AutoCloseable {
     }
 
     @Override public void close() throws Exception {
+        if(!closed.compareAndSet(false,true))return;
         try { sessions.close(); } finally {
             try { if (resolver != null) resolver.close(); }
-            finally { if(index!=null&&!index.isCompletedExceptionally())index.join().close(); }
+            finally {
+                var service=bootstrappingIndex;
+                if(service!=null)service.close();
+                else if(index!=null)try{index.join().close();}
+                catch(java.util.concurrent.CompletionException|java.util.concurrent.CancellationException ignored){}
+            }
         }
     }
     public static void main(String[] args) throws Exception {
@@ -823,7 +837,14 @@ public final class Application implements AutoCloseable {
         var server = new UnixServer(config, app.dispatcher, app);
         Runtime.getRuntime().addShutdownHook(Thread.ofPlatform().unstarted(server::close));
         server.start();
-        System.out.println("READY " + config.socket());
-        server.await();
+        try {
+            app.awaitReady();
+            server.ready();
+            System.out.println("READY " + config.socket());
+            server.await();
+        } catch(Exception|LinkageError e) {
+            server.close();
+            throw e;
+        }
     }
 }

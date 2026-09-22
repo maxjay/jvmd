@@ -30,6 +30,45 @@ class JsonRpcServerTest {
         assertThat(Framing.read(input)).isNull();
         assertThatThrownBy(() -> Framing.read(new ByteArrayInputStream("Content-Length: -1\r\n\r\n".getBytes()))).isInstanceOf(java.io.IOException.class);
     }
+    @Test void idleExpiryStartsOnlyAfterReady() throws Exception {
+        var config = TestSupport.config(temp, Duration.ofMillis(50));
+        var app = new Application(config);
+        try (var server = new UnixServer(config, app.dispatcher(), app)) {
+            server.start();
+            Thread.sleep(150);
+            assertThat(server.await(10, java.util.concurrent.TimeUnit.MILLISECONDS)).isFalse();
+            assertThat(java.nio.file.Files.exists(config.socket())).isTrue();
+
+            server.ready();
+            assertThat(server.await(2, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        }
+    }
+    @Test void concurrentCloseWaitsForResourceCleanup() throws Exception {
+        var config = TestSupport.config(temp, Duration.ofHours(4));
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        try (var sessions = new Sessions()) {
+            var server = new UnixServer(config, new Dispatcher(sessions, new Metrics()), () -> {
+                entered.countDown();
+                release.await(5, java.util.concurrent.TimeUnit.SECONDS);
+            });
+            server.start();
+            try (var workers = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+                var first = workers.submit(server::close);
+                assertThat(entered.await(2, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                var second = workers.submit(server::close);
+                Thread.sleep(50);
+                assertThat(second.isDone()).isFalse();
+                release.countDown();
+                first.get(2, java.util.concurrent.TimeUnit.SECONDS);
+                second.get(2, java.util.concurrent.TimeUnit.SECONDS);
+                assertThat(server.await(10, java.util.concurrent.TimeUnit.MILLISECONDS)).isTrue();
+            } finally {
+                release.countDown();
+                server.close();
+            }
+        }
+    }
     @Test void actualUnixSocketAndMalformedJsonIsolation() throws Exception {
         var config = TestSupport.config(temp, Duration.ofHours(4));
         var app = new Application(config);

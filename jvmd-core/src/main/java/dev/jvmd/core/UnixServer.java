@@ -27,6 +27,7 @@ public final class UnixServer implements AutoCloseable {
     private final Dispatcher dispatcher;
     private final AutoCloseable resources;
     private final AtomicBoolean closed = new AtomicBoolean();
+    private final AtomicBoolean idleArmed = new AtomicBoolean();
     private final AtomicInteger active = new AtomicInteger();
     private final CountDownLatch stopped = new CountDownLatch(1);
     private final Set<SocketChannel> clients = ConcurrentHashMap.newKeySet();
@@ -64,6 +65,10 @@ public final class UnixServer implements AutoCloseable {
                 connections.submit(() -> serve(client));
             } catch (IOException e) { if (!closed.get()) System.getLogger("jvmd").log(System.Logger.Level.WARNING, "Accept failed", e); }
         });
+    }
+    public void ready() {
+        if(closed.get()||!idleArmed.compareAndSet(false,true))return;
+        lastActivity=System.nanoTime();
         long interval = Math.max(10, Math.min(1000, config.idleTimeout().toMillis() / 4));
         timer.scheduleWithFixedDelay(() -> {
             if (active.get() == 0 && System.nanoTime() - lastActivity > config.idleTimeout().toNanos()) close();
@@ -93,7 +98,11 @@ public final class UnixServer implements AutoCloseable {
     public boolean await(long timeout, TimeUnit unit) throws InterruptedException { return stopped.await(timeout, unit); }
     public void await() throws InterruptedException { stopped.await(); }
     @Override public void close() {
-        if (!closed.compareAndSet(false, true)) return;
+        if (!closed.compareAndSet(false, true)) {
+            try { stopped.await(); }
+            catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            return;
+        }
         timer.shutdownNow();
         try {
             if (server != null) server.close();

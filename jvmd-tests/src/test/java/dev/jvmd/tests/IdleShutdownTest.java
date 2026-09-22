@@ -19,6 +19,7 @@ class IdleShutdownTest {
         try (var sessions = new Sessions(); var server = new UnixServer(config,
                 new Dispatcher(sessions, new Metrics()), () -> flushed.set(true))) {
             server.start();
+            server.ready();
             assertThat(server.await(5, TimeUnit.SECONDS)).isTrue();
             assertThat(flushed).isTrue();
             assertThat(config.socket()).doesNotExist();

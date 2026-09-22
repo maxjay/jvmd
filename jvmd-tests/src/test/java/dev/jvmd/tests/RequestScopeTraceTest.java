@@ -121,16 +121,20 @@ class RequestScopeTraceTest {
                 }
                 Path repository=Files.createDirectory(Path.of(args[0]).resolveSibling("repository"));
                 try(var index=new dev.jvmd.index.IndexService(repository.resolveSibling("trace-index.db"),repository)){
-                    var scheduled=new java.util.concurrent.atomic.AtomicReference<Runnable>();
+                    var initial=new java.util.concurrent.atomic.AtomicReference<Runnable>();
+                    var periodic=new java.util.concurrent.atomic.AtomicReference<Runnable>();
                     var replacement=new ScheduledThreadPoolExecutor(1){
-                        @Override public ScheduledFuture<?> scheduleWithFixedDelay(Runnable task,long initial,long delay,TimeUnit unit){
-                            scheduled.set(task);return null;
+                        @Override public ScheduledFuture<?> schedule(Runnable task,long delay,TimeUnit unit){
+                            initial.set(task);return null;
+                        }
+                        @Override public ScheduledFuture<?> scheduleWithFixedDelay(Runnable task,long initialDelay,long delay,TimeUnit unit){
+                            periodic.set(task);return null;
                         }
                     };
                     var field=dev.jvmd.index.IndexService.class.getDeclaredField("scanner");field.setAccessible(true);
                     ((ScheduledExecutorService)field.get(index)).shutdownNow();field.set(index,replacement);
                     RequestScope.traced("test.scan","workflow-test","edit-1","B",()->{index.start();return null;});
-                    scheduled.get().run();scheduled.get().run();
+                    initial.get().run();periodic.get().run();
                 }
                 if(RequestScope.current()!=null)throw new AssertionError("Context leaked");
                 recording.stop();recording.dump(Path.of(args[0]));

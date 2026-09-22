@@ -56,20 +56,10 @@ jobs:
           tar -xzf "$RUNNER_TEMP/temurin25.tar.gz" -C "$RUNNER_TEMP/toolchain"
           echo "JAVA_HOME=$RUNNER_TEMP/toolchain/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/toolchain/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
-      - name: Build production classes while fetching JDTLS
-        shell: bash
+      - name: Build production classes
         run: |
-          (
-            curl -fsSL --retry 3 'https://download.eclipse.org/jdtls/milestones/1.61.0/jdt-language-server-1.61.0-202609031315.tar.gz' -o "$RUNNER_TEMP/jdtls.tar.gz"
-            printf '%s  %s\n' 338e7e73d61836651ba2453919a0d34fa763eb4e7c03342092309bffb8934c64 "$RUNNER_TEMP/jdtls.tar.gz" | sha256sum --check -
-            mkdir "$RUNNER_TEMP/jdtls" && tar -xzf "$RUNNER_TEMP/jdtls.tar.gz" -C "$RUNNER_TEMP/jdtls"
-          ) &
-          jdtls_download=$!
-          # Tests are exercised by the normal checkpoint workflow. Avoid even compiling
-          # them here, and use all available cores for the production reactor.
           mvn -B -T1C -Dmaven.test.skip=true -pl jvmd-dist,jvmd-resolver/maven3,jvmd-resolver/maven4 -am install
           bash jvmd-dist/assemble.sh
-          wait "$jdtls_download"
       - name: Install pinned Node.js for the TypeScript LSP bridge
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
@@ -80,8 +70,6 @@ jobs:
           # Maven already compiled production. Compile only the small benchmark
           # adapters instead of compiling the entire JVMD source tree a second time.
           python benchmarks/workspaces/compile.py --repo "$PWD" --java-home "$JAVA_HOME" --dependencies "$deps" --output "$RUNNER_TEMP/build" --reuse-production-jars
-          # 192 sources plus 64 dependency JARs, with an exact generated oracle.
-          python benchmarks/workspaces/fixture.py --build "$RUNNER_TEMP/build/build.json" --dependencies "$deps" --root "$RUNNER_TEMP/fixtures" --fixture-names review
       - name: Compare semantic state against the PR base
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -112,104 +100,15 @@ jobs:
           python benchmarks/input-validation/prepare.py --repo "$PWD" --dependencies "$deps" --java-home "$JAVA_HOME" --output "$RUNNER_TEMP/input-candidate"
           python benchmarks/input-validation/run.py "$RUNNER_TEMP/input-base/build.json" "$RUNNER_TEMP/input-candidate/build.json" "$RUNNER_TEMP/input-validation"
           python benchmarks/input-validation/summarize.py "$RUNNER_TEMP/input-validation" "$RUNNER_TEMP/input-validation-summary.json"
-      - name: Fast JVMD and JDTLS correctness benchmark
-        run: |
-          python benchmarks/workspaces/matrix.py --repo "$PWD" --before "$RUNNER_TEMP/build/build.json" --after "$RUNNER_TEMP/build/build.json" \
-            --java-home "$JAVA_HOME" --jdtls "$RUNNER_TEMP/jdtls" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" \
-            --fixtures "$RUNNER_TEMP/fixtures" --root "$RUNNER_TEMP/results" --runs 1 --sources 192 --workspaces 1 --samples 1 --edits 2 \
-            --fixture-names review --modes after jdtls-shared
-          python benchmarks/workspaces/verify.py "$RUNNER_TEMP/results" "$RUNNER_TEMP/verification.json"
-          python benchmarks/workspaces/summarize.py "$RUNNER_TEMP/results" "$RUNNER_TEMP/summary.json"
-          python benchmarks/workspaces/compare.py "$RUNNER_TEMP/summary.json" "$RUNNER_TEMP/comparison.json" --markdown "$RUNNER_TEMP/comparison.md" --semantic-state "$RUNNER_TEMP/semantic-state-summary.json" --input-validation "$RUNNER_TEMP/input-validation-summary.json"
-          python benchmarks/workspaces/matrix.py --repo "$PWD" --before "$RUNNER_TEMP/build/build.json" --after "$RUNNER_TEMP/build/build.json" \
-            --java-home "$JAVA_HOME" --jdtls "$RUNNER_TEMP/jdtls" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" \
-            --fixtures "$RUNNER_TEMP/fixtures" --root "$RUNNER_TEMP/allocation-results" --runs 1 --sources 192 --workspaces 1 --samples 1 --edits 2 \
-            --fixture-names review --modes after jdtls-shared --profile
-          python benchmarks/workspaces/verify.py "$RUNNER_TEMP/allocation-results" "$RUNNER_TEMP/allocation-verification.json"
-          python benchmarks/workspaces/summarize.py "$RUNNER_TEMP/allocation-results" "$RUNNER_TEMP/allocation-summary.json"
-          python benchmarks/workspaces/compare.py "$RUNNER_TEMP/allocation-summary.json" "$RUNNER_TEMP/allocation-comparison.json" --metrics sampled_allocated_mib peak_rss_mib cpu_seconds --markdown "$RUNNER_TEMP/allocation-comparison.md"
-          node benchmarks/workspaces/dashboard.mjs --comparison "$RUNNER_TEMP/comparison.json" --allocation "$RUNNER_TEMP/allocation-comparison.json" --verification "$RUNNER_TEMP/verification.json" --output "$RUNNER_TEMP/dashboard.html"
-      - name: Compare with the previous completed PR
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CURRENT_PR: ${{ github.event.pull_request.number }}
-        run: |
-          previous_pr="$(gh api 'repos/${{ github.repository }}/pulls?state=closed&sort=updated&direction=desc&per_page=100' \
-            --jq "[.[] | select(.merged_at != null and (.number | tostring) != \"$CURRENT_PR\")] | sort_by(.merged_at) | last | .number // empty")"
-          if [[ -n "$previous_pr" ]]; then
-            gh api "repos/${{ github.repository }}/issues/$previous_pr/comments" --paginate \
-              --jq '[.[] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- jvmd-merge-review -->")))][-1].body // empty' \
-              > "$RUNNER_TEMP/previous-pr-comment.md"
-          fi
-          if [[ -s "$RUNNER_TEMP/previous-pr-comment.md" ]]; then
-            python benchmarks/workspaces/trend.py "$RUNNER_TEMP/comparison.json" "$RUNNER_TEMP/previous-pr-comment.md" \
-              --table 0 --previous-pr "$previous_pr" --markdown "$RUNNER_TEMP/comparison.md"
-            python benchmarks/workspaces/trend.py "$RUNNER_TEMP/allocation-comparison.json" "$RUNNER_TEMP/previous-pr-comment.md" \
-              --table 1 --previous-pr "$previous_pr" --markdown "$RUNNER_TEMP/allocation-comparison.md"
-          else
-            echo 'No benchmark comment was found on a previous completed PR; improvement values are unavailable.'
-          fi
-          cat "$RUNNER_TEMP/comparison.md" >> "$GITHUB_STEP_SUMMARY"
-          printf '\n## Sampled allocation profile\n\n' >> "$GITHUB_STEP_SUMMARY"
-          cat "$RUNNER_TEMP/allocation-comparison.md" >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload merge evidence and dashboard
+      - name: Upload component evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: merge-review-evidence
-          if-no-files-found: warn
+          name: component-review-evidence
+          retention-days: 30
           path: |
             ${{ runner.temp }}/input-validation-summary.json
             ${{ runner.temp }}/input-validation/*.json
             ${{ runner.temp }}/semantic-state-summary.json
             ${{ runner.temp }}/semantic-state/*.json
             ${{ runner.temp }}/semantic-state/disk-kib.txt
-            ${{ runner.temp }}/dashboard.html
-            ${{ runner.temp }}/comparison.*
-            ${{ runner.temp }}/summary.json
-            ${{ runner.temp }}/verification.json
-            ${{ runner.temp }}/allocation-*.json
-            ${{ runner.temp }}/allocation-*.md
-            ${{ runner.temp }}/results/**/report.json
-            ${{ runner.temp }}/results/**/messages.jsonl
-            ${{ runner.temp }}/results/**/resources.json
-            ${{ runner.temp }}/allocation-results/**/report.json
-            ${{ runner.temp }}/allocation-results/**/messages.jsonl
-            ${{ runner.temp }}/allocation-results/**/resources.json
-      - name: Publish merge evidence on the PR
-        if: ${{ success() }}
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
-        run: |
-          if [[ -z "$PR_NUMBER" ]]; then
-            PR_NUMBER="$(gh api "repos/${{ github.repository }}/pulls?state=open&head=${{ github.repository_owner }}:$HEAD_BRANCH" --jq '.[0].number // empty')"
-          fi
-          if [[ -z "$PR_NUMBER" ]]; then
-            echo 'No open pull request found for this branch; evidence remains on the workflow run.'
-            exit 0
-          fi
-          body="$RUNNER_TEMP/pr-evidence.md"
-          {
-            echo '<!-- jvmd-merge-review -->'
-            echo '## JVMD / JDTLS merge evidence'
-            echo
-            cat "$RUNNER_TEMP/comparison.md"
-            echo
-            echo '## Sampled allocation profile'
-            echo
-            cat "$RUNNER_TEMP/allocation-comparison.md"
-            echo
-            printf '[Download the dashboard and independently verified raw evidence](https://github.com/%s/actions/runs/%s)\n' \
-              '${{ github.repository }}' '${{ github.run_id }}'
-          } > "$body"
-          comments="repos/${{ github.repository }}/issues/$PR_NUMBER/comments"
-          comment_id="$(gh api "$comments" --paginate --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- jvmd-merge-review -->"))) | .id' | tail -1)"
-          if [[ -n "$comment_id" ]]; then
-            gh api --method PATCH "repos/${{ github.repository }}/issues/comments/$comment_id" -F "body=@$body" >/dev/null
-          else
-            gh api --method POST "$comments" -F "body=@$body" >/dev/null
-          fi

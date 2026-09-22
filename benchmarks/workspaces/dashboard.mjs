@@ -1,118 +1,63 @@
 #!/usr/bin/env node
-/** Build a dependency-free, self-contained dashboard from checked benchmark output. */
-import { readFile, writeFile } from 'node:fs/promises';
-import { parseArgs } from 'node:util';
+/** The prepared-server report, with invocation-level standard trace/profile links. */
+import { readFile, writeFile } from "node:fs/promises";
+import { parseArgs } from "node:util";
+const escape = (value) =>
+  String(value).replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        c
+      ],
+  );
+const value = (n) => (n == null ? "unavailable" : Number(n).toFixed(3));
+const details = (title, data) =>
+  `<details><summary>${escape(title)}</summary><pre>${escape(JSON.stringify(data, null, 2))}</pre></details>`;
 
-const escape = value => String(value).replace(/[&<>"']/g, character => ({
-  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-})[character]);
-
-export function renderWorkflowDashboard(summary) {
-  const labels={open_to_project_ready:'Open projects → correct navigation and completion',open_with_typing_to_ready:'Open, type and navigate → correct results',api_edit_to_correct:'Change library API → correct caller results',api_save:'Edit and save library API',api_completion:'Complete call after API edit',api_diagnostics:'Check caller diagnostics after API edit',api_definition:'Navigate to edited declaration',dependency_definition:'Navigate to dependency source JAR',run_output:'Save library body → run host → verify output',debug_stop:'Stop in library from host',debug_locals:'Inspect stopped locals',debug_step:'Step back into host',hotswap_output:'Change method body → hot swap → verify same process'};
-  Object.assign(labels,{warm_completion:'First completion',warm_definition:'First project-aware definition',unchanged_completion:'Unchanged warm completion'});
-  const label=name=>labels[name]||name.replaceAll('_',' ');
-  const sourceRevision=summary.provenance.build.revision;
-  const methodLink=([name,method])=>summary.provenance.build.dirty ? escape(name) : `<a href="https://github.com/maxjay/jvmd/blob/${escape(sourceRevision)}/${escape(method.source)}${method.line>0?'#L'+method.line:''}">${escape(name)}</a>`;
-  const value = (number, unit = 'ms') => number === null || number === undefined ? 'unavailable' : `${Number(number).toFixed(2)} ${unit}`;
-  const primary=['open_to_project_ready','open_with_typing_to_ready','api_edit_to_correct','run_output','debug_stop','debug_locals','debug_step','hotswap_output','references','rename_preview','dependency_definition','revert_completion'];
-  const rows = values => values.map(row => `<tr><td>${escape(label(row.action))}</td><td>${escape(row.engine)}</td><td>${escape(row.mode)}</td>
-<td>${row.correct} correct / ${row.failures} failed</td><td>${value(row.p50_ms)}</td><td>${value(row.p95_ms)}</td>
-<td>${value(row.tooling_cpu_s,'s')}</td><td>${value(row.tooling_rss_mib,'MiB')}</td><td>${value(row.sampled_allocation_mib,'MiB sampled')}</td><td>${row.processes.length}</td><td>${value(row.min_process_p50_ms)}–${value(row.max_process_p50_ms)}</td></tr>`).join('');
-  const table=values=>`<div class="scroll"><table><thead><tr><th>Action</th><th>Comparator</th><th>Mode / cache</th><th>Correctness</th><th>p50</th><th>p95</th><th>Tooling CPU observed</th><th>Tooling RSS</th><th>Sampled allocation</th><th>Processes</th><th>Process p50 range</th></tr></thead><tbody>${rows(values)}</tbody></table></div>`;
-  const overview=table(summary.rows.filter(r=>primary.includes(r.action)).sort((a,b)=>primary.indexOf(a.action)-primary.indexOf(b.action)||a.mode.localeCompare(b.mode)||a.engine.localeCompare(b.engine)));
-  const requests=table(summary.rows.filter(r=>!primary.includes(r.action)));
-  const invocations = [...summary.invocations].sort((a,b) => (b.api_edit_to_correct_ms||0)-(a.api_edit_to_correct_ms||0)).map(run => {
-    const stages = run.trace?.traceEvents || [];
-    const actions = run.actions.map(action => `<tr><td>${escape(label(action.name))}<br><small>${escape(action.id||'')}</small></td><td>${escape(action.outcome)}</td>
-<td>${value(action.first_response_ms)}</td><td>${value(action.time_to_correct_ms)}</td><td>${action.retry_count ?? 0}</td>
-<td><details><summary>${action.attempts.length} recorded attempts</summary><pre>${escape(JSON.stringify({attempts:action.attempts,resources:action.resources,trace:action.trace_evidence},null,2))}</pre></details></td></tr>`).join('');
-    const profiles=run.attribution?.groups||[];
-    const stageRows = [...stages].sort((a,b)=>b.dur-a.dur).map(stage => `<tr><td>${escape(stage.name)}</td><td>${escape(stage.args.method)}</td>
-<td>${escape(stage.args.invocation||'unassigned')}</td><td>${stage.args.span} / ${stage.args.parent}</td><td>${stage.tid}</td><td>${value(stage.ts/1000)}</td><td>${value(stage.dur/1000)}</td>
-<td>${value(stage.args.threadCpuNanos<0?null:stage.args.threadCpuNanos/1e6)}</td><td>${value(stage.args.threadAllocatedBytes<0?null:stage.args.threadAllocatedBytes/1048576,'MiB')}</td>
-<td>${escape(stage.args.cache)}</td><td>${escape(JSON.stringify(stage.args.work))}</td><td><details><summary>Matching samples</summary>${profiles.filter(p=>p.span===stage.args.span).flatMap(p=>Object.entries(p.methods)).slice(0,12).map(methodLink).join('<br>')}<pre>${escape(JSON.stringify(profiles.filter(p=>p.span===stage.args.span),null,2))}</pre></details></td></tr>`).join('');
-    const base=escape(run.directory);
-    return `<details id="${escape(run.workflow)}"><summary>${escape(run.workflow)} — ${escape(run.outcome)} — API edit ${value(run.api_edit_to_correct_ms)}</summary>
-<p>${escape(run.boundary)}. First open/reopen: ${value(run.external_open_to_ready_ms)}. ${escape(run.runtime_boundary||'Runtime not measured')}. ${escape(run.error||run.profile_error||'')}</p>
-${run.dependency_navigation_boundary?`<p>${escape(run.dependency_navigation_boundary)}</p>`:''}
-<p>Related diagnostic invocations (separate processes, matching build and fixture): ${(run.related_diagnostics||[]).map(d=>`<a href="${escape(d.url)}">${escape(d.mode+': '+d.workflow+' — '+d.outcome)}</a>`).join(' · ')||'not measured'}</p>
-<p>Whole invocation CPU ${value(run.resources?.cpu_seconds_observed,'s')}; peak combined RSS ${value(run.resources ? run.resources.peak_rss_bytes/1048576 : null,'MiB')}.
-Allocated bytes in comparison: unavailable. Retained heap: unavailable.</p>
-<p><a href="${base}/report.json">Raw results</a> · <a href="${base}/${escape(run.fixture)}">Fixture and expectations</a> · <a href="${base}/command.json">Reproduction command</a> · <a href="${base}/resources.json">Resource scope</a>
-${stages.length ? ` · <a href="${base}/trace.json">Perfetto / Chrome timeline</a> · <a href="${base}/profile-events.json">CPU, allocation, GC and waits</a> · <a href="${base}/attribution.json">Samples matched to stages</a>` : ' · Internal stages: not attributed'}</p>
-<div class="scroll"><table><thead><tr><th>Action</th><th>Outcome</th><th>First response</th><th>Time to correct</th><th>Retries</th><th>Evidence</th></tr></thead><tbody>${actions}</tbody></table></div>
-${stages.length ? `<p>Stages below belong to this invocation. Times use one JVM clock. Parent/child and parallel intervals overlap; durations and inclusive thread counters must not be summed. Queue CPU/allocation and virtual-thread counters are unavailable. Open the standard trace in Perfetto to inspect overlap.</p>
-<div class="scroll"><table><thead><tr><th>Stage</th><th>RPC</th><th>Action ID</th><th>Span / parent</th><th>Thread</th><th>Start</th><th>Wall</th><th>Thread CPU</th><th>Thread allocation</th><th>Cache</th><th>Actual work</th><th>Profiles</th></tr></thead><tbody>${stageRows}</tbody></table></div>` : ''}
-<details><summary>Retention diagnostics</summary><pre>${escape(JSON.stringify(run.retention||{status:'not measured'},null,2))}</pre></details>
-<details><summary>Routing, correctness and limits</summary><pre>${escape(JSON.stringify({routing:run.routing,verification:run.verification,unmeasured:run.unmeasured,profiles:run.profiles},null,2))}</pre></details></details>`;
-  }).join('');
-  return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>JVMD development workflows</title>
-<style>body{font:15px/1.5 system-ui;margin:32px;background:#101724;color:#e8edf7}h1{font-size:32px}a{color:#79d1ef}table{border-collapse:collapse;width:100%}td,th{padding:9px;text-align:left;border-bottom:1px solid #344054;vertical-align:top}th{color:#9facbf}details{padding:14px;border:1px solid #344054;margin:12px 0}summary{cursor:pointer;font-weight:600}pre{white-space:pre-wrap;max-height:420px;overflow:auto;font-size:12px}.scroll{overflow:auto}p{max-width:1100px}.failed{color:#ffa188}</style>
-<h1>Development actions → verified results → measured work</h1>
-<p class="failed">${summary.verification.complete ? 'All included workers independently verified.' : 'Failures or unavailable runs are present. No winner is inferred.'}</p>
-<p>${escape(summary.aggregation)} Product results use the actual pinned VS Code. Engine rows are separate. Provider and debug-protocol readiness do not measure visible UI completion.</p>
-${overview}
-<p>Per-action CPU/RSS cover bracketed process-tree intervals, including concurrent work; details include clock uncertainty. Missing allocation is unavailable, not zero. RSS sums shared pages and is not retained heap.</p>
-<details><summary>Individual provider requests and warm samples</summary>${requests}</details>
-<h2>Select an invocation</h2><p>Slow API-edit invocations appear first. Failed attempts remain visible. Profiled timings are excluded from comparison rows.</p>${invocations}
-<h2>Evidence-led next changes</h2><p>Correctness blockers come first. Performance hypotheses refer to a particular measured invocation; their bounds are not predicted whole-product speedups.</p><pre>${escape(JSON.stringify(summary.improvement_backlog||[],null,2))}</pre>
-<h2>Exact provenance</h2><pre>${escape(JSON.stringify(summary.provenance,null,2))}</pre></html>`;
+export function renderDashboard(summary) {
+  if (summary.schema !== 2)
+    throw new Error("Expected prepared-server schema 2");
+  const table = (rows) =>
+    `<div class="scroll"><table><thead><tr><th>Operation / targets</th><th>Prepared state</th><th>Server / mode</th><th>Outcomes</th><th>p50 ms</th><th>p95 ms</th><th>Successful samples</th><th>Process medians min–max ms</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${escape(r.operation)} / ${escape(r.targets.join(","))}</td><td>${escape(r.state)}</td><td>${escape(r.server)} / ${escape(r.mode)}</td><td>${escape(JSON.stringify(r.outcomes))}</td><td>${value(r.p50_ms)}</td><td>${value(r.p95_ms)}</td><td>${r.samples}</td><td>${r.process_p50_range_ms?.map(value).join("–") || "unavailable"}${details("Per-process samples", r.processes)}</td></tr>`).join("")}</tbody></table></div>`;
+  const revision = summary.provenance.build.revision;
+  const runs = summary.invocations
+    .map((run) => {
+      const base = escape(run.directory);
+      const actions = [...run.actions]
+        .sort((a, b) => (b.latency_ms || 0) - (a.latency_ms || 0))
+        .map((a) => {
+          const spans = a.stages || [];
+          const methods = Object.fromEntries(
+            (a.profile_groups || []).flatMap((g) =>
+              Object.entries(g.methods || {}),
+            ),
+          );
+          const links = Object.entries(methods)
+            .map(
+              ([name, m]) =>
+                `<a href="https://github.com/maxjay/jvmd/blob/${escape(revision)}/${escape(m.source)}${m.line > 0 ? "#L" + m.line : ""}">${escape(name)}</a>`,
+            )
+            .join("<br>");
+          return `<details id="${escape(a.id)}"><summary>${escape(a.operation)} / ${escape(a.target)} — ${escape(a.state)} — ${escape(a.outcome)} — ${value(a.latency_ms)} ms</summary><p>Invocation ${escape(a.id)}. RPC union ${value(a.rpc_union_ms)} ms; queue union ${value(a.queue_union_ms)} ms.</p>${details("Response and supplementary correctness evidence", { result: a.result, source_evidence: a.source_evidence, error: a.error })}${spans.length ? details("Actual stages: nesting, thread counters and work", spans) : "<p>Internal stages: not attributed.</p>"}${links}${details("Sampled CPU/allocation and observed waits", a.profile_groups || "not attributed")}</details>`;
+        })
+        .join("");
+      return `<details><summary>${base} — ${escape(run.outcome)} — preparation ${value(run.preparation?.process_start_to_ready_ms)} ms</summary><p>${escape(run.error || run.close_error || run.profile_error || "")}</p><p><a href="${base}/report.json">Raw invocations</a> · <a href="${base}/fixture.json">Independent oracle</a> · <a href="${base}/command.json">Server command</a> · <a href="${base}/resources.json">Server/bridge resources</a>${run.profiles ? ` · <a href="${base}/trace.json">Perfetto timeline</a> · <a href="${base}/attribution.json">Attribution</a> · <a href="${base}/profile-events.json">CPU/allocation/wait/GC events</a>` : ""}</p>${details("Preparation duration, queries and configuration", run.preparation)}${details("Process resources (includes preparation)", run.resources)}${actions}</details>`;
+    })
+    .join("");
+  return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Prepared JVMD / JDTLS</title><style>body{font:15px/1.5 system-ui;margin:30px;color:#e8edf7;background:#101724}a{color:#79d1ef}td,th{padding:9px;border-bottom:1px solid #344054;text-align:left;vertical-align:top}table{border-collapse:collapse;width:100%}details{border:1px solid #344054;padding:12px;margin:10px 0}summary{cursor:pointer}pre{white-space:pre-wrap;max-height:420px;overflow:auto;font-size:12px}.scroll{overflow:auto}</style><h1>Prepared JVMD / JDTLS language services</h1><p>${summary.verification.complete ? "All required invocations passed." : "Failures or unmeasured requests are present; successful latency excludes them."}</p><p>${escape(summary.aggregation)}</p>${table(summary.rows.filter((r) => r.mode === "comparison"))}<h2>Separate attribution and instrumentation overhead</h2>${table(summary.rows.filter((r) => r.mode !== "comparison"))}<p>${escape(summary.scope)} Inclusive nested/overlapping spans and thread counters must not be summed. Virtual-thread counters are unavailable. CPU/allocation samples are statistical; an empty sample set does not prove zero cost.</p><h2>Invocations (slow requests first within each process)</h2>${runs}${details("Independent verification", summary.verification)}${details("Exact revision and reproduction command", summary.provenance)}</html>`;
 }
 
-export function renderDashboard(comparison, verification, allocation = null) {
-  if (comparison.kind === 'workflows') return renderWorkflowDashboard(comparison);
-  const collect = (result, suite, selected = () => true) => Object.entries(result?.fixtures || {}).flatMap(([fixture, metrics]) =>
-    Object.entries(metrics).filter(([metric]) => selected(metric)).map(([metric, values]) => ({ fixture, suite, metric, ...values })));
-  const rows = [
-    ...collect(comparison, 'timing', metric => metric !== 'sampled_allocated_mib'),
-    ...collect(allocation, 'allocation', metric => ['sampled_allocated_mib', 'peak_rss_mib', 'cpu_seconds'].includes(metric)),
-  ];
-  if (!rows.length) throw new Error('comparison contains no metrics');
-  const faster = rows.filter(row => row.jvmd_over_jdtls !== null && row.jvmd_over_jdtls < 1).length;
-  const verified = Number(verification.editor_responses || 0);
-  const ranges = Number(verification.ranges || 0);
-  const tableRows = rows.map(row => {
-    const ratio = row.jvmd_over_jdtls;
-    const ratioText = ratio === null ? 'n/a' : `${ratio.toFixed(2)}×`;
-    const width = ratio === null ? 0 : Math.min(100, ratio * 50);
-    const tone = ratio !== null && ratio <= 1 ? 'good' : 'slow';
-    const unit = row.unit || 'ms';
-    return `<tr><td><strong>${escape(row.fixture)}</strong></td><td>${escape(row.suite)}</td><td>${escape(row.metric)}</td>`+
-      `<td>${Number(row.jvmd).toFixed(2)} ${escape(unit)}</td><td>${Number(row.jdtls).toFixed(2)} ${escape(unit)}</td>`+
-      `<td class="ratio ${tone}"><span style="width:${width.toFixed(1)}%"></span>${ratioText}</td></tr>`;
-  }).join('\n');
-  const componentSection = (semantic, title) => semantic ? `<section><h2>${escape(title)}</h2>
-<p class="note">${escape(semantic.interpretation)}</p>
-<p class="note">Base <code>${escape(semantic.base_sha)}</code> · candidate <code>${escape(semantic.head_sha)}</code></p>
-<div class="table"><table><thead><tr><th>Metric</th><th>Unit</th><th>Base JVMD</th><th>Candidate JVMD</th><th>After / before</th><th>Repetitions</th></tr></thead><tbody>
-${semantic.rows.map(row => `<tr><td>${escape(row.metric)}</td><td>${escape(row.unit)}</td><td>${Number(row.before).toFixed(3)}</td><td>${Number(row.after).toFixed(3)}</td><td>${row.after_over_before === null ? 'n/a' : Number(row.after_over_before).toFixed(3)}</td><td>${Number(row.repetitions)}</td></tr>`).join('\n')}
-</tbody></table></div></section>` : '';
-  const semanticSection = componentSection(comparison.semantic_state, 'JVMD semantic state: base versus candidate') + componentSection(comparison.input_validation, 'JVMD input validation: base versus candidate');
-  const generated = new Date().toISOString();
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>JVMD review benchmark</title><style>
-:root{color-scheme:dark;--bg:#0b1020;--panel:#151c31;--line:#293552;--text:#f3f6ff;--muted:#9eabc7;--cyan:#58d5e8;--green:#72e6a6;--orange:#ffb86b}*{box-sizing:border-box}
-body{margin:0;background:radial-gradient(circle at 15% 0,#172a4a 0,transparent 38%),var(--bg);color:var(--text);font:14px/1.5 ui-sans-serif,system-ui,sans-serif}.wrap{max-width:1120px;margin:auto;padding:48px 20px}header{margin-bottom:28px}h1{font-size:clamp(28px,5vw,48px);margin:0;letter-spacing:-.04em}header p,.note{color:var(--muted)}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:24px 0}.card{background:linear-gradient(145deg,#18223a,var(--panel));border:1px solid var(--line);border-radius:14px;padding:18px}.card b{display:block;font-size:26px;color:var(--cyan)}.card small{color:var(--muted);text-transform:uppercase;letter-spacing:.08em}.table{overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:14px}table{width:100%;border-collapse:collapse;min-width:720px}th,td{text-align:right;padding:11px 14px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-size:12px;text-transform:uppercase}th:first-child,th:nth-child(2),th:nth-child(3),td:first-child,td:nth-child(2),td:nth-child(3){text-align:left}.ratio{position:relative;min-width:130px}.ratio span{position:absolute;left:8px;top:25%;height:50%;border-radius:4px;opacity:.18;background:currentColor}.good{color:var(--green)}.slow{color:var(--orange)}footer{margin-top:18px;color:var(--muted);font-size:12px}code{color:var(--cyan)}
-</style></head><body><main class="wrap"><header><p>MERGE-READINESS EVIDENCE</p><h1>JVMD <span style="color:var(--cyan)">vs JDTLS</span></h1><p>Both servers ran the same black-box LSP workload. Lower ratios are better.</p></header>
-<section class="cards"><div class="card"><small>Verified responses</small><b>${verified.toLocaleString()}</b></div><div class="card"><small>Validated source ranges</small><b>${ranges.toLocaleString()}</b></div><div class="card"><small>JVMD wins</small><b>${faster} / ${rows.length}</b></div><div class="card"><small>Workers checked</small><b>${Number(verification.workers || 0)}</b></div></section>
-<div class="table"><table><thead><tr><th>Fixture</th><th>Suite</th><th>Metric</th><th>JVMD</th><th>JDTLS</th><th>JVMD / JDTLS</th></tr></thead><tbody>${tableRows}</tbody></table></div>
-<p class="note">Correctness includes complete protocol traces, dependency identity agreement, definitions, references, rename edits, and source ranges. Latency is milliseconds, CPU is seconds, and memory/I/O are MiB. Sampled allocation is estimated allocated bytes, not retained heap.</p>
-${semanticSection}
-<footer>Generated ${escape(generated)} · candidate <code>${escape(comparison.candidate)}</code> · baseline <code>${escape(comparison.baseline)}</code></footer></main></body></html>`;
+if (
+  process.argv[1] &&
+  import.meta.url === new URL(`file://${process.argv[1]}`).href
+) {
+  const { values } = parseArgs({
+    options: { summary: { type: "string" }, output: { type: "string" } },
+  });
+  if (!values.summary || !values.output)
+    throw new Error("--summary and --output are required");
+  await writeFile(
+    values.output,
+    renderDashboard(JSON.parse(await readFile(values.summary, "utf8"))),
+  );
 }
-
-async function main() {
-  const { values } = parseArgs({ options: {
-    comparison: { type: 'string' }, verification: { type: 'string' }, allocation: { type: 'string' }, output: { type: 'string' }
-  }});
-  for (const name of ['comparison', 'verification', 'output']) if (!values[name]) throw new Error(`--${name} is required`);
-  const [comparison, verification, allocation] = await Promise.all([
-    readFile(values.comparison, 'utf8').then(JSON.parse), readFile(values.verification, 'utf8').then(JSON.parse),
-    values.allocation ? readFile(values.allocation, 'utf8').then(JSON.parse) : null,
-  ]);
-  await writeFile(values.output, renderDashboard(comparison, verification, allocation));
-  process.stdout.write(JSON.stringify({ output: values.output, fixtures: Object.keys(comparison.fixtures || {}).length })+'\n');
-}
-
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) main();

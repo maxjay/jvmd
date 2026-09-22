@@ -1,8 +1,0 @@
-{
-  "name": "jvmd-workflow-benchmark",
-  "publisher": "jvmd-benchmark",
-  "version": "0.0.1",
-  "engines": {"vscode": "^1.104.0"},
-  "activationEvents": ["onStartupFinished"],
-  "main": "./vscode.cjs"
-}

@@ -27,7 +27,7 @@ def _process_tree(root_pid):
         if pid in found:
             continue
         try:
-            # Children launched by actor/extension-host threads are not necessarily
+            # Children launched by actor threads are not necessarily
             # listed on the thread-group leader. Inspect every live task.
             children = [int(value) for task in Path(f'/proc/{pid}/task').glob('*/children')
                         for value in task.read_text().split()]
@@ -52,7 +52,7 @@ def _sample(pid):
             threads += int(next(line.split()[1] for line in status if line.startswith('Threads:')))
             read_bytes += int(io.get('read_bytes', 0)); write_bytes += int(io.get('write_bytes', 0))
             command=Path(f'/proc/{child}/cmdline').read_bytes().split(b'\0')
-            role='debuggee' if b'bench.Main' in command else 'tooling'
+            role='server' if command and Path(command[0].decode()).name=='java' else 'bridge'
             processes.append({'pid':child,'start_ticks':int(stat[19]),'role':role,
                               'rss_bytes':int(stat[21])*os.sysconf('SC_PAGE_SIZE'),
                               'cpu_ticks':int(stat[11])+int(stat[12]),
@@ -84,25 +84,14 @@ class ProcessMonitor:
                 key=(process['pid'],process['start_ticks'])
                 old=self.processes.setdefault(key,dict(process))
                 for field in ('cpu_ticks','read_bytes','write_bytes'):old[field]=max(old[field],process[field])
-            for role in ('tooling','debuggee'):
+            for role in ('server','bridge'):
                 values[role+'_rss_bytes']=sum(p['rss_bytes'] for p in processes if p['role']==role)
             for key, value in values.items(): self.maximum[key] = max(self.maximum[key], value)
             self.stop_event.wait(self.interval)
 
-    def close(self, debuggees=()):
+    def close(self):
         self.stop_event.set(); self.thread.join(timeout=2)
         if self.output:self.output.close()
-        if debuggees:
-            for process in self.processes.values():
-                if process['pid'] in debuggees:process['role']='debuggee'
-            if self.output:
-                for role in ('tooling','debuggee'):self.maximum[role+'_rss_bytes']=0
-                for line in Path(self.output.name).read_text().splitlines():
-                    row=json.loads(line)
-                    for p in row['processes']:
-                        if p['pid'] in debuggees:p['role']='debuggee'
-                    for role in ('tooling','debuggee'):
-                        self.maximum[role+'_rss_bytes']=max(self.maximum[role+'_rss_bytes'],sum(p['rss_bytes'] for p in row['processes'] if p['role']==role))
         values = dict(self.maximum); ticks = os.sysconf('SC_CLK_TCK')
         return {'source': 'Linux /proc, process plus descendants', 'sample_interval_ms': self.interval*1000,
                 'rss_scope':'Sum of process RSS; shared pages can be counted multiple times; not PSS or unique physical memory',
@@ -111,51 +100,28 @@ class ProcessMonitor:
                 'cpu_scope':'Last observed cumulative CPU of each pid/start-time identity; very short-lived or final unsampled work can be missed',
                 'groups':{role:{'peak_rss_bytes':values.get(role+'_rss_bytes',0),
                                 'cpu_seconds_observed':sum(p['cpu_ticks'] for p in self.processes.values() if p['role']==role)/ticks}
-                          for role in ('tooling','debuggee')},
+                          for role in ('server','bridge')},
                 'peak_processes': values.get('processes', 0), 'peak_threads': values.get('threads', 0),
                 'read_bytes_observed': sum(p['read_bytes'] for p in self.processes.values()),
                 'write_bytes_observed': sum(p['write_bytes'] for p in self.processes.values())}
 
 
-def workflow_resources(report, samples):
-    """Observed whole-process work during an action, including concurrent background work.
-
-    Bracketing samples and clock uncertainty are exposed, never called exact attribution.
-    Exited children keep their last observed counters; missed final work is unavailable.
-    """
-    rows=[];totals={}
-    debuggees=report.get('debuggee_pids',[])
-    for line in samples.read_text().splitlines():
-        row=json.loads(line)
-        for process in row['processes']:
-            if process['pid'] in debuggees:process['role']='debuggee'
-            totals[(process['pid'],process['start_ticks'])]=process
-        row['cumulative']={role:sum(p['cpu_ticks'] for p in totals.values() if p['role']==role) for role in ('tooling','debuggee')}
-        rows.append(row)
-    alignment=report.get('clock_alignment',{})
-    offset=alignment.get('controller_minus_driver_ms',0)
-    composites={}
-    if report.get('external_open_to_ready_ms') is not None and 'external_open_start_ms' in report:
-        composites['open_to_project_ready']={'start_ms':report['external_open_start_ms']-offset,'elapsed_ms':report['external_open_to_ready_ms'],'process_start':True}
-    if report.get('api_edit_to_correct_ms') is not None and 'api_edit_start_ms' in report:
-        composites['api_edit_to_correct']={'start_ms':report['api_edit_start_ms'],'elapsed_ms':report['api_edit_to_correct_ms']}
-    for action in [*report['actions'],*composites.values()]:
-        if 'start_ms' not in action or not alignment:continue
-        start=(action['start_ms']+offset)*1e6
-        end=start+action['elapsed_ms']*1e6
-        before=next((r for r in reversed(rows) if r['monotonic_ns']<=start),None)
-        after=next((r for r in rows if r['monotonic_ns']>=end),None)
-        if before is None and action.get('process_start'):before={'monotonic_ns':start,'cumulative':{'tooling':0,'debuggee':0}}
+def request_resources(report, file):
+    """Bracket LSP responses with same-controller-clock process samples, not exact attribution."""
+    samples=[json.loads(line) for line in file.read_text().splitlines()]
+    for action in report['actions']:
+        if 'response_ns' not in action:continue
+        before=next((s for s in reversed(samples) if s['monotonic_ns']<=action['start_ns']),None)
+        after=next((s for s in samples if s['monotonic_ns']>=action['response_ns']),None)
         if before is None or after is None:continue
-        interval=[r for r in rows if before['monotonic_ns']<=r['monotonic_ns']<=after['monotonic_ns']]
-        action['resources']={'scope':'Tooling and debuggee process trees during the bracketed interval, including concurrent work; sampled lower bound for short-lived children',
-            'clock_uncertainty_ms':alignment['uncertainty_ms'],'sample_bracket_ms':(after['monotonic_ns']-before['monotonic_ns'])/1e6,
-            'cpu_seconds_observed':{role:max(0,after['cumulative'][role]-before['cumulative'][role])/os.sysconf('SC_CLK_TCK') for role in ('tooling','debuggee')},
-            'peak_rss_bytes':{role:max(sum(p['rss_bytes'] for p in r['processes'] if p['role']==role) for r in interval) for role in ('tooling','debuggee')}}
-    report['workflow_resources']={name:row['resources'] for name,row in composites.items() if 'resources' in row}
+        previous={(p['pid'],p['start_ticks']):p['cpu_ticks'] for p in before['processes']}
+        action['resources']={'scope':'Bracketed process work including background activity; short requests share samples, never sum these estimates.',
+            'sample_bracket_ms':(after['monotonic_ns']-before['monotonic_ns'])/1e6,
+            'groups':{role:{'cpu_ms_observed':sum(max(0,p['cpu_ticks']-previous.get((p['pid'],p['start_ticks']),p['cpu_ticks'])) for p in after['processes'] if p['role']==role)*1000/os.sysconf('SC_CLK_TCK'),
+                'rss_bytes_at_response':sum(p['rss_bytes'] for p in after['processes'] if p['role']==role)} for role in ('server','bridge')}}
 
 
-def export_workflow_jfr(jfr_tool, recording, output, repo=None, settings="profile"):
+def export_jfr(jfr_tool, recording, output, repo=None, settings="profile"):
     """Selected diagnostic events only. Chrome trace opens in Perfetto; no VM environment export."""
     allowed=['dev.jvmd.Stage','jdk.ExecutionSample','jdk.ObjectAllocationSample','jdk.GarbageCollection',
              'jdk.GCHeapSummary','jdk.ThreadPark','jdk.JavaMonitorEnter','jdk.JavaMonitorWait']
@@ -235,22 +201,3 @@ def attribute_samples(events, spans, repo=None):
             'allocation':'Statistical ObjectAllocationSample weights; neither exact allocation nor retained memory.',
             'total_events':dict(total),'assigned_events':dict(assigned),'groups':rows}
 
-
-def summarize_jfr(jfr_tool, recording):
-    """Aggregate sampled allocation weights without publishing sensitive raw JFR data."""
-    command = [str(jfr_tool), 'print', '--json', '--stack-depth', '64', '--events',
-               'jdk.ObjectAllocationSample,jdk.ExecutionSample', str(recording)]
-    result = subprocess.run(command, capture_output=True, text=True, check=True)
-    allocated = cpu_samples = allocation_samples = 0; classes = collections.Counter()
-    for event in json.loads(result.stdout)['recording']['events']:
-        values = event['values']
-        if event['type'] == 'jdk.ExecutionSample': cpu_samples += 1; continue
-        weight = int(values.get('weight', 0)); allocated += weight; allocation_samples += 1
-        object_class = values.get('objectClass') or {}
-        name = object_class.get('name', '<unknown>') if isinstance(object_class, dict) else str(object_class)
-        classes[name.replace('/', '.')] += weight
-    return {'method': 'JFR ObjectAllocationSample weights (estimated allocated bytes, not retained heap)',
-            'recording': recording.name, 'recording_sha256': hashlib.sha256(recording.read_bytes()).hexdigest(),
-            'sampled_allocated_bytes': allocated,
-            'allocation_samples': allocation_samples, 'cpu_samples': cpu_samples,
-            'largest_allocated_classes': dict(classes.most_common(25))}

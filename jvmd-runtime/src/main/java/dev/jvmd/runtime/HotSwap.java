@@ -19,7 +19,7 @@ public final class HotSwap {
             for(var type:debug.vm().classesByName(name))classes.put(type,entry.getValue());
         }
         long before=System.nanoTime();String restart=null;
-        try(var trace=RequestScope.stage("runtime.redefine")){trace.count("classes",classes.size());if(!classes.isEmpty())debug.vm().redefineClasses(classes);}
+        try{if(!classes.isEmpty())debug.vm().redefineClasses(classes);}
         catch(UnsupportedOperationException e){restart=e.getClass().getSimpleName()+": "+e.getMessage();}
         catch(ClassFormatError|VerifyError e){throw new RpcException(-32003,"unsupported_capability",Map.of("capability","hotswap","reason",e.toString()));}
         long redefinedAt=System.nanoTime();double redefine=(redefinedAt-before)/1e6;

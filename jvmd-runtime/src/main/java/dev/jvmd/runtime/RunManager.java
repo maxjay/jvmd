@@ -18,11 +18,8 @@ public final class RunManager implements AutoCloseable {
     private long sequence;
     public RunManager(String workspace){this.workspace=workspace;}
     public Envelope start(Request request)throws Exception{
-        try(var trace=dev.jvmd.core.RequestScope.stage("runtime.launch")){
         if(runs.size()>=8)throw RpcException.invalid("At most eight application runs can be open in one workspace");
         String id=workspace+"r"+(++sequence);var debug=new DebugSession(id,request.launch(),request.sources());runs.put(id,new Run(request,debug,new CompiledEvaluation(debug,request)));return Envelope.of(2,"live",debug.status());
-    
-        }
     }
     public Envelope operation(String id,String op,JsonNode args)throws Exception{
         var run=runs.get(id);if(run==null)throw new RpcException(-32001,"session_not_found",Map.of("run_session",id));var debug=run.debug();

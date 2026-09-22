@@ -70,7 +70,7 @@ public final class DebugSession implements AutoCloseable {
                 int address=port.get(10,TimeUnit.SECONDS);listening=address;
                 var connector=Bootstrap.virtualMachineManager().attachingConnectors().stream().filter(c->c.name().equals("com.sun.jdi.SocketAttach")).findFirst().orElseThrow();
                 var arguments=connector.defaultArguments();arguments.get("hostname").setValue("127.0.0.1");arguments.get("port").setValue(Integer.toString(address));arguments.get("timeout").setValue("5000");
-                long before=System.nanoTime();try(var trace=RequestScope.stage("debug.attach")){connected=connector.attach(arguments);}elapsed=(System.nanoTime()-before)/1e6;
+                long before=System.nanoTime();connected=connector.attach(arguments);elapsed=(System.nanoTime()-before)/1e6;
             }
         }catch(Exception e){handles.close();process.destroyForcibly();throw e;}
         vm=connected;attachMillis=elapsed;jdwpPort=listening;
@@ -108,7 +108,6 @@ public final class DebugSession implements AutoCloseable {
         catch(Exception e){warnings.add("debug_event_fault: "+e);nextStop.completeExceptionally(e);}
     }
     public synchronized Map<String,Object> breakpoint(String className,Path file,int line)throws Exception{
-        try(var trace=dev.jvmd.core.RequestScope.stage("debug.bind_breakpoint")){
         requireDebug();if(line<1)throw RpcException.invalid("Breakpoint line must be positive");
         if((className==null||className.isBlank())&&file==null)throw RpcException.invalid("A class or source path is required");
         if(breaks.size()>=1000)throw RpcException.invalid("Breakpoint limit is 1000");
@@ -119,8 +118,6 @@ public final class DebugSession implements AutoCloseable {
         prepare.setSuspendPolicy(EventRequest.SUSPEND_EVENT_THREAD);prepare.enable();breakpoint.requests.add(prepare);breaks.put(breakpoint.id,breakpoint);
         for(var type:vm.allClasses())if(type.isPrepared())bind(breakpoint,type);
         return Map.of("breakpoint",breakpoint.id,"bound",breakpoint.locations.size(),"pending",breakpoint.locations.isEmpty());
-    
-        }
     }
     private void bind(Break breakpoint,ReferenceType type)throws Exception{
         if(breakpoint.className!=null&&!breakpoint.className.isBlank()&&!type.name().equals(breakpoint.className)&&!type.name().startsWith(breakpoint.className+"$"))return;
@@ -154,15 +151,12 @@ public final class DebugSession implements AutoCloseable {
         CompletableFuture<Void> future;synchronized(this){if(!stopped.isEmpty())return;future=nextStop;}future.get(timeout.toMillis(),TimeUnit.MILLISECONDS);
     }
     public synchronized Envelope frames(Long thread,int offset,int limit)throws Exception{
-        try(var trace=dev.jvmd.core.RequestScope.stage("debug.inspect")){
         if(offset<0||limit<1||limit>200)throw RpcException.invalid("Frame page limit must be 1..200");
         var stop=stop(thread);int size=stop.thread().frameCount(),from=Math.min(offset,size),to=Math.min(size,from+limit);var values=new ArrayList<Map<String,Object>>();int number=from;
         for(var frame:stop.thread().frames(from,to-from)){
             var location=frame.location();var value=new LinkedHashMap<String,Object>();value.put("frame",frameId(stop,number));value.put("index",number++);value.put("thread",stop.thread().uniqueID());value.put("class",location.declaringType().name());value.put("method",location.method().name());value.put("scip",sources.symbol(location.declaringType(),location.method()));value.put("descriptor",location.method().signature());value.put("obsolete",location.method().isObsolete());value.put("line",location.lineNumber());var source=sources.find(location.declaringType());value.put("source_file",source==null?null:source.toString());values.add(value);
         }
         return new Envelope(2,"live",to<size,to<size?Integer.toString(to):null,List.copyOf(warnings),Map.of("frames",values));
-    
-        }
     }
     private String frameId(Stop stop,int number){return "frame:"+id+":"+stop.epoch()+":"+stop.thread().uniqueID()+":"+number;}
     synchronized StackFrame frame(String ref)throws Exception{
@@ -172,15 +166,12 @@ public final class DebugSession implements AutoCloseable {
         catch(NumberFormatException|IndexOutOfBoundsException e){throw RpcException.invalid("Invalid frame");}
     }
     public synchronized Envelope locals(String ref,int offset,int limit)throws Exception{
-        try(var trace=dev.jvmd.core.RequestScope.stage("debug.inspect")){
         if(offset<0||limit<1||limit>200)throw RpcException.invalid("Local page limit must be 1..200");
         var frame=frame(ref);List<LocalVariable> variables;
         try{variables=frame.visibleVariables();}catch(AbsentInformationException e){throw missingLocals();}
         int from=Math.min(offset,variables.size()),to=Math.min(variables.size(),from+limit);var selected=variables.subList(from,to);var values=frame.getValues(selected);var result=new ArrayList<Map<String,Object>>();
         for(var variable:selected)result.add(Map.of("name",variable.name(),"type",variable.typeName(),"scip",variable.isArgument()?sources.symbol(frame.location().declaringType(),frame.location().method())+"("+variable.name()+")":"local "+id+"_"+Integer.toUnsignedString(Objects.hash(ref,variable.name(),variable.signature())),"value",value(values.get(variable))));
         return new Envelope(2,"live",to<variables.size(),to<variables.size()?Integer.toString(to):null,List.copyOf(warnings),Map.of("locals",result,"this",value(frame.thisObject())));
-    
-        }
     }
     <T> T invocation(java.util.concurrent.Callable<T> action)throws Exception{return invocation(action,Duration.ofSeconds(5));}
     <T> T invocation(java.util.concurrent.Callable<T> action,Duration timeout)throws Exception{

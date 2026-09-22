@@ -27,10 +27,7 @@ if(config.trace){
   }) as any;
 }
 const send=(message:any)=>process.stdout.write(encode(message));
-let bridge:any,root=config.root;
-const bridges:any[]=[];
-function makeBridge(){bridge=new LspBridge(async()=>client,root,send,()=>{});bridges.push(bridge);}
-makeBridge();
+const bridge=new LspBridge(async()=>client,config.root,send,()=>{});
 let queue=Promise.resolve();
 async function handle(message:any){
   if(message.method==='benchmark/traceContext'){
@@ -41,10 +38,9 @@ async function handle(message:any){
     try { send({jsonrpc:'2.0',id:message.id,result:await collect(client,message.params.method,message.params.params||{})}); }
     catch(error){send({jsonrpc:'2.0',id:message.id,error:(error as any).rpc||{code:-32603,message:String(error)}});}return;
   }
-  if(message.method==='jvmd/openWorkspace'){root=message.params.root;makeBridge();send({jsonrpc:'2.0',id:message.id,result:null});return;}
   await bridge.handle(message);
   if(message.method==='exit'){
-    for(const item of bridges)await item.close();
+    await bridge.close();
     await client.call('daemon.shutdown');child.stdin.end();await exited;process.stdin.destroy();
   }
 }

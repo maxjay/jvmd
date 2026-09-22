@@ -38,12 +38,6 @@ class RequestScopeTraceTest {
         var counts=dev.jvmd.core.Json.MAPPER.readTree(input.getString("counters"));
         assertThat(counts.path("metadata_checks").asLong()).isEqualTo(counts.path("expected_metadata_checks").asLong());
         assertThat(counts.path("files_hashed").asLong()).isEqualTo(1);
-        var compile=events.stream().filter(e->e.getString("stage").equals("runtime.compile")).findFirst().orElseThrow();
-        var worker=events.stream().filter(e->e.getString("stage").equals("runtime.javac")).findFirst().orElseThrow();
-        assertThat(worker.getLong("parent")).isEqualTo(compile.getLong("span"));
-        assertThat(worker.getThread().getJavaThreadId()).isNotEqualTo(compile.getThread().getJavaThreadId());
-        assertThat(worker.getBoolean("virtualThread")).isFalse();
-        assertThat(worker.getString("counters")).contains("\"classes\":1");
         assertThat(events).allMatch(e->e.getLong("durationNanos")>=0);
     }
 
@@ -88,9 +82,6 @@ class RequestScopeTraceTest {
                         registry.hash(source);registry.hash(source);
                         span.count("expected_metadata_checks",((Number)registry.status().get("metadata_checks")).longValue());
                     }
-                    var compiled=dev.jvmd.runtime.RuntimeCompiler.compile(Path.of(System.getProperty("java.home")),source.getParent(),
-                        List.of(source),List.of(),List.of(source.getParent()),List.of("--release","25"),java.time.Duration.ofSeconds(15));
-                    if(!compiled.classes().containsKey("CompileProbe.class"))throw new AssertionError("Runtime compiler did not emit the fixture");
                     return null;
                 });
                 if(RequestScope.current()!=null)throw new AssertionError("Context leaked");

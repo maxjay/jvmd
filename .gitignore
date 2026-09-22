@@ -6,3 +6,4 @@ jvmd-tests/corpus/user/
 *.aot
 *.aotconf
 *.log
+**/__pycache__/

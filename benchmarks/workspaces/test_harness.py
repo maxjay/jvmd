@@ -5,154 +5,195 @@ import threading
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from compare import compare
 from resources import ProcessMonitor, attribute_samples
 from run import Client, first_system_value
-from verify import workflow_oracle, verify_workflows
-from summarize import investigate
+from verify import classify, verify
+from summarize import investigate, stats
 
 
 class HarnessTest(unittest.TestCase):
-    def test_worker_success_cannot_hide_failed_actions(self):
+    def test_completion_rejects_stale_and_missing_signature(self):
+        operation = {"operation": "completion", "symbol": "value0"}
+        check = lambda rows: classify(operation, {"result": {"items": rows}})
+        self.assertEqual("incomplete", check([]))
+        self.assertEqual("wrong", check([{"label": "value0()", "detail": "int"}]))
+        self.assertEqual("correct", check([{"label": "value0(int input)", "detail": "int"}]))
+        self.assertEqual("stale", check([{"label": "value0(int input)", "detail": "String"}]))
+
+    def test_definition_rejects_wrong_location_and_range(self):
+        expected = {
+            "uri": "file:///library/Library.java",
+            "range": {"start": {"line": 0, "character": 4}, "end": {"line": 0, "character": 10}},
+        }
+        op = {"operation": "definition", "symbol": "value0", "expected": expected}
+        self.assertEqual("correct", classify(op, {"result": [expected]}))
+        self.assertEqual(
+            "wrong", classify(op, {"result": [dict(expected, uri="file:///installed/Library.java")]})
+        )
+        self.assertEqual("incomplete", classify(op, {"result": []}))
+
+    def test_references_reject_duplicates_and_partial_sets(self):
+        expected = {
+            "uri": "file:///Caller.java",
+            "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 6}},
+        }
+        op = {"operation": "references", "symbol": "value0", "expected": [expected], "source": "value0(1)"}
+        self.assertEqual("correct", classify(op, {"result": [expected]}))
+        self.assertEqual("incomplete", classify(op, {"result": []}))
+        self.assertEqual("incomplete", classify(op, {"result": [expected, expected]}))
+        call = {
+            "uri": expected["uri"],
+            "range": {"start": expected["range"]["start"], "end": {"line": 0, "character": 9}},
+        }
+        self.assertEqual("correct", classify(op, {"result": [call]}))
+
+    def test_dependency_source_rejects_wrong_version(self):
+        source = "int base0(int input) {}"
+        expected = {
+            "uri": "jar:file:///repo/offset-1-sources.jar!/external/Offset.java",
+            "source": source,
+            "binary_name": "offset-1.jar",
+        }
+        op = {"operation": "dependency_definition", "symbol": "base0", "expected": expected}
+        location = {
+            "uri": expected["uri"],
+            "range": {"start": {"line": 0, "character": 4}, "end": {"line": 0, "character": 9}},
+        }
+        self.assertEqual("correct", classify(op, {"result": [location]}))
+        location["uri"] = location["uri"].replace("offset-1-", "offset-2-")
+        self.assertEqual("wrong", classify(op, {"result": [location]}))
+
+    def test_missing_required_invocations_cannot_pass(self):
         with tempfile.TemporaryDirectory() as directory:
-            worker=Path(directory)/'worker';worker.mkdir()
-            (worker/'fixture.json').write_text('{}')
-            report={'workflow':'failure-check','scenario':'project','fixture':'fixture.json','outcome':'correct',
-                    'actions':[{'name':name,'outcome':'timed_out','time_to_correct_ms':None,'attempts':[],
-                                'retry_count':0} for name in ('warm_completion','warm_definition')]}
-            (worker/'report.json').write_text(json.dumps(report))
-            result=verify_workflows(Path(directory))
-            self.assertFalse(result['complete'])
-            self.assertIn('successful worker contains failed actions',result['workflow_workers'][0]['errors'])
+            root = Path(directory)
+            worker = root / "worker"
+            worker.mkdir()
+            (root / "provenance.json").write_text(
+                json.dumps({"runs": 1, "servers": ["jvmd"], "overhead": False, "samples": 1, "warmup": 1})
+            )
+            (worker / "fixture.json").write_text(
+                json.dumps({"identity": "fixture", "operations": [{"operation": "hover", "target": "0"}]})
+            )
+            (worker / "report.json").write_text(json.dumps({"outcome": "correct", "actions": []}))
+            self.assertFalse(verify(root)["complete"])
+            self.assertEqual(3, len(verify(root)["workers"][0]["not_executed"]))
 
-    def test_backlog_prioritizes_observed_refresh_wait_over_small_completion_cost(self):
-        stage=lambda name,id_,parent,duration:{'name':name,'ts':0,'dur':duration*1000,
-            'args':{'span':id_,'parent':parent,'invocation':'edit','queued':False,'work':{}}}
-        report={'engine':'vscode-jvmd','workflow':'unit-test','directory':'worker','api_edit_to_correct_ms':1000,
-            'actions':[{'id':'edit','name':'api_completion','outcome':'correct','time_to_correct_ms':1000}],
-            'trace':{'traceEvents':[stage('rpc.execute',1,0,1000),stage('project.resolve',2,1,900),stage('completion.materialize',3,1,20)]},
-            'attribution':{'groups':[{'span':2,'invocation':'edit','event':'jdk.ThreadPark','samples':1,'observed_wait_ms':880,
-                'methods':{'dev.jvmd.index.rocks.RocksArtifactAdmission.acquireArtifact':{'source':'admission.java','line':1}}}]}}
-        backlog=investigate(report)
-        self.assertEqual('project.resolve',backlog[0]['stage'])
-        self.assertEqual(880,backlog[0]['evidence']['wait_events_ms'])
-        self.assertIn('memory admission',backlog[0]['hypothesis'])
+    def test_nested_spans_are_not_added(self):
+        stage = lambda name, start, duration: {
+            "name": name,
+            "ts": start,
+            "dur": duration,
+            "args": {"invocation": "request", "queued": False},
+        }
+        run = {
+            "actions": [{"id": "request"}],
+            "trace": {"traceEvents": [stage("rpc.execute", 0, 1000), stage("inputs.validate", 100, 500)]},
+        }
+        investigate(run)
+        self.assertEqual(1, run["actions"][0]["rpc_union_ms"])
 
-    def test_completion_rejects_stale_and_incomplete_semantics(self):
-        self.assertFalse(workflow_oracle('api_completion', {'items': []}, {}))
-        self.assertFalse(workflow_oracle('api_completion', {'items': [{'label': 'value()', 'detail': 'int'}]}, {}))
-        self.assertFalse(workflow_oracle('api_completion', {'items': [
-            {'label': 'value()', 'detail': 'String'}, {'label': 'value()', 'detail': 'int'}]}, {}))
-        self.assertTrue(workflow_oracle('api_completion', {'items': [{'label': 'value()', 'detail': 'String'}]}, {}))
-        self.assertFalse(workflow_oracle('api_completion', {'items': [{'label': 'value(String required)', 'detail': 'String'}]}, {}))
-
-    def test_definition_checks_source_selection_and_token_range(self):
-        fixture = {'files': {'provider': '/library/Library.java'}, 'versions': {'A': 'int value() {}'}}
-        result = [{'uri': 'file:///library/Library.java', 'range': {
-            'start': {'line': 0, 'character': 4}, 'end': {'line': 0, 'character': 9}}}]
-        self.assertTrue(workflow_oracle('warm_definition', result, fixture))
-        result[0]['range']['end']['character'] = 10
-        self.assertFalse(workflow_oracle('warm_definition', result, fixture))
-        result[0]['uri'] = 'file:///installed/Library.java'
-        self.assertFalse(workflow_oracle('warm_definition', result, fixture))
-
-    def test_hotswap_requires_changed_output_in_same_process(self):
-        fixture = {'expected': {'C': 'READY revision=C value=43'}}
-        self.assertFalse(workflow_oracle('hotswap_output', {'pid': 10, 'original_pid': 9,
-            'output': fixture['expected']['C']}, fixture))
-        self.assertFalse(workflow_oracle('hotswap_output', {'pid': 10, 'original_pid': 10,
-            'output': 'READY revision=B value=42'}, fixture))
-        self.assertTrue(workflow_oracle('hotswap_output', {'pid': 10, 'original_pid': 10,
-            'output': fixture['expected']['C']}, fixture))
-
-    def test_dependency_navigation_rejects_wrong_artifact_and_wrong_source(self):
-        source='public static int base(){return 40;}'
-        fixture={'expected':{'external_source':source,'external_source_uri':'jar:file:///repo/offset-1-sources.jar!/external/Offset.java'}}
-        row={'uri':fixture['expected']['external_source_uri'],'range':{'start':{'line':0,'character':18},'end':{'line':0,'character':22}},'source':None}
-        self.assertTrue(workflow_oracle('dependency_definition',[row],fixture))
-        row['uri']=row['uri'].replace('offset-1-','offset-2-')
-        self.assertFalse(workflow_oracle('dependency_definition',[row],fixture))
-        row.update(uri='jdt://contents/offset-1.jar/external/Offset.class?project',source=source)
-        self.assertTrue(workflow_oracle('dependency_definition',[row],fixture))
-        row['source']=source.replace('40','99')
-        self.assertFalse(workflow_oracle('dependency_definition',[row],fixture))
-
-    def test_reference_call_ranges_are_valid_but_rename_must_replace_only_identifier(self):
-        token={'uri':'file:///host/Main.java','range':{'start':{'line':2,'character':4},'end':{'line':2,'character':9}}}
-        call={'uri':token['uri'],'range':{'start':token['range']['start'],'end':{'line':2,'character':11}}}
-        declaration={'uri':'file:///library/Library.java','range':token['range']}
-        fixture={'files':{'provider':'/library/Library.java'},'expected':{
-            'references':[token],'reference_call_ranges':[call],'definition':{'range':token['range']}}}
-        for location in (token,call):self.assertTrue(workflow_oracle('references',[location],fixture))
-        self.assertFalse(workflow_oracle('references',[],fixture))
-        self.assertFalse(workflow_oracle('references',[token,call],fixture))
-        edits=lambda location:[dict(location,newText='renamedValue'),dict(declaration,newText='renamedValue')]
-        self.assertTrue(workflow_oracle('rename_preview',edits(token),fixture))
-        self.assertFalse(workflow_oracle('rename_preview',edits(call),fixture))
+    def test_percentile_precision_requires_warm_samples(self):
+        self.assertIsNone(stats([1] * 19, "warm")["p95_ms"])
+        self.assertIsNone(stats([1] * 100, "first")["p95_ms"])
+        self.assertEqual(1, stats([1] * 20, "warm")["p95_ms"])
 
     def test_samples_choose_innermost_matching_thread_and_leave_others_unassigned(self):
-        spans = [{'queued': False, 'eventThread': {'javaThreadId': 7},
-                  'startTime': '2026-01-01T00:00:00Z', 'duration': 'PT1S',
-                  'durationNanos': 1_000_000_000, 'stage': 'parent', 'span': 1},
-                 {'queued': False, 'eventThread': {'javaThreadId': 7},
-                  'startTime': '2026-01-01T00:00:00.1Z', 'duration': 'PT0.3S',
-                  'durationNanos': 300_000_000, 'stage': 'child', 'span': 2}]
-        events = [{'type': 'jdk.ExecutionSample', 'values': {
-            'startTime': '2026-01-01T00:00:00.2Z', 'sampledThread': {'javaThreadId': thread}}}
-            for thread in (7, 8)]
+        spans = [
+            {
+                "queued": False,
+                "eventThread": {"javaThreadId": 7},
+                "startTime": "2026-01-01T00:00:00Z",
+                "duration": "PT1S",
+                "durationNanos": 1_000_000_000,
+                "stage": "parent",
+                "span": 1,
+            },
+            {
+                "queued": False,
+                "eventThread": {"javaThreadId": 7},
+                "startTime": "2026-01-01T00:00:00.1Z",
+                "duration": "PT0.3S",
+                "durationNanos": 300_000_000,
+                "stage": "child",
+                "span": 2,
+            },
+        ]
+        events = [
+            {
+                "type": "jdk.ExecutionSample",
+                "values": {"startTime": "2026-01-01T00:00:00.2Z", "sampledThread": {"javaThreadId": thread}},
+            }
+            for thread in (7, 8)
+        ]
         result = attribute_samples(events, spans)
-        self.assertEqual(2, result['total_events']['jdk.ExecutionSample'])
-        self.assertEqual(1, result['assigned_events']['jdk.ExecutionSample'])
-        self.assertEqual({2, None}, {row['span'] for row in result['groups']})
+        self.assertEqual(2, result["total_events"]["jdk.ExecutionSample"])
+        self.assertEqual(1, result["assigned_events"]["jdk.ExecutionSample"])
+        self.assertEqual({2, None}, {row["span"] for row in result["groups"]})
 
     def test_jfr_wait_attribution_handles_minute_and_hour_durations(self):
-        span={'queued':False,'eventThread':{'javaThreadId':7},'startTime':'2026-01-01T00:00:00Z',
-              'duration':'PT1H1M0.5S','durationNanos':3660500000000,'stage':'project.resolve','span':1}
-        event={'type':'jdk.ThreadPark','values':{'eventThread':{'javaThreadId':7},
-            'startTime':'2026-01-01T00:01:00Z','duration':'PT1M0.689558602S'}}
-        result=attribute_samples([event],[span])
-        self.assertEqual(1,result['assigned_events']['jdk.ThreadPark'])
-        self.assertAlmostEqual(60689.558602,result['groups'][0]['observed_wait_ms'])
+        span = {
+            "queued": False,
+            "eventThread": {"javaThreadId": 7},
+            "startTime": "2026-01-01T00:00:00Z",
+            "duration": "PT1H1M0.5S",
+            "durationNanos": 3660500000000,
+            "stage": "project.resolve",
+            "span": 1,
+        }
+        event = {
+            "type": "jdk.ThreadPark",
+            "values": {
+                "eventThread": {"javaThreadId": 7},
+                "startTime": "2026-01-01T00:01:00Z",
+                "duration": "PT1M0.689558602S",
+            },
+        }
+        result = attribute_samples([event], [span])
+        self.assertEqual(1, result["assigned_events"]["jdk.ThreadPark"])
+        self.assertAlmostEqual(60689.558602, result["groups"][0]["observed_wait_ms"])
 
     def test_optional_system_value_supports_cgroup_v1_and_missing_files(self):
         with tempfile.TemporaryDirectory() as directory:
-            missing = Path(directory)/'v2'; fallback = Path(directory)/'v1'
-            fallback.write_text('200000\n')
-            self.assertEqual('200000', first_system_value((missing, fallback)))
+            missing = Path(directory) / "v2"
+            fallback = Path(directory) / "v1"
+            fallback.write_text("200000\n")
+            self.assertEqual("200000", first_system_value((missing, fallback)))
             self.assertIsNone(first_system_value((missing,)))
 
     def test_client_reassembles_lsp_partial_results(self):
         client = Client.__new__(Client)
-        client.next = 0; client.responses = {}; client.notifications = []; client.failure = None
+        client.next = 0
+        client.responses = {}
+        client.notifications = []
+        client.failure = None
         client.condition = threading.Condition()
+
         def send(message):
-            token = message['params']['partialResultToken']
-            client.notifications.extend([
-                {'method': '$/progress', 'params': {'token': token, 'value': [1, 2]}},
-                {'method': '$/progress', 'params': {'token': token, 'value': [3]}},
-            ])
-            client.responses[message['id']] = {'id': message['id'], 'result': []}
+            token = message["params"]["partialResultToken"]
+            client.notifications.extend(
+                [
+                    {"method": "$/progress", "params": {"token": token, "value": [1, 2]}},
+                    {"method": "$/progress", "params": {"token": token, "value": [3]}},
+                ]
+            )
+            client.responses[message["id"]] = {"id": message["id"], "result": []}
+
         client.send = send
-        result, _ = client.call('textDocument/references', {'textDocument': {'uri': 'file:///Test.java'}})
+        result, _ = client.call("textDocument/references", {"textDocument": {"uri": "file:///Test.java"}})
         self.assertEqual([1, 2, 3], result)
 
-    def test_compare_reports_directional_ratio(self):
-        summary = {'fixtures': {'small': {'after': {'median': {'hover': 2.0, 'peak_rss_mib': 40.0}},
-                                                   'jdtls-shared': {'median': {'hover': 4.0, 'peak_rss_mib': 100.0}}}}}
-        result = compare(summary, 'after', 'jdtls-shared')
-        self.assertEqual(.5, result['fixtures']['small']['hover']['jvmd_over_jdtls'])
-        self.assertEqual(.4, result['fixtures']['small']['peak_rss_mib']['jvmd_over_jdtls'])
-        self.assertEqual('ms', result['fixtures']['small']['hover']['unit'])
-        self.assertEqual('MiB', result['fixtures']['small']['peak_rss_mib']['unit'])
-
-    @unittest.skipUnless(Path('/proc/self/stat').exists(), 'Linux /proc required')
+    @unittest.skipUnless(Path("/proc/self/stat").exists(), "Linux /proc required")
     def test_monitor_includes_descendant_memory(self):
-        child = subprocess.Popen([sys.executable, '-c', 'import time; x=bytearray(8*1024*1024); time.sleep(.25)'])
-        monitor = ProcessMonitor(child.pid, .005)
-        child.wait(); values = monitor.close()
-        self.assertGreater(values['samples'], 1)
-        self.assertGreater(values['peak_rss_bytes'], 8*1024*1024)
-        self.assertGreaterEqual(values['peak_processes'], 1)
+        child = subprocess.Popen(
+            [sys.executable, "-c", "import time; x=bytearray(8*1024*1024); time.sleep(.25)"]
+        )
+        monitor = ProcessMonitor(child.pid, 0.005)
+        child.wait()
+        values = monitor.close()
+        self.assertGreater(values["samples"], 1)
+        self.assertGreater(values["peak_rss_bytes"], 8 * 1024 * 1024)
+        self.assertGreaterEqual(values["peak_processes"], 1)
 
 
-if __name__ == '__main__': unittest.main()
+if __name__ == "__main__":
+    unittest.main()

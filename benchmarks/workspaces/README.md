@@ -70,7 +70,8 @@ only the generated root path; dependency JAR and source hashes are also recorded
 
 Each fresh process opens every request document and waits for clear diagnostics.
 A separate `PrepSentinel.ready` hover checks project-aware readiness; JVMD also waits
-for the initial normal repository scan. All preparation queries and opened documents
+for the initial normal repository scan. JDTLS also searches the separate sentinel
+through workspace-symbol search to wait for its search index. All preparation queries and opened documents
 are recorded, including duration outside query timings. No measured target is queried
 by the readiness check. Opening documents and collecting diagnostics do prepare
 compiler state; prior measured operations can also share caches. “First” means first

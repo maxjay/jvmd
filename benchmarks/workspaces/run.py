@@ -328,6 +328,9 @@ def prepare(client, fixture, server, timeout, report):
             ready = (
                 ready and status.get("phase") == "ready" and status.get("timings", {}).get("scans", 0) >= 1
             )
+        else:
+            symbols = query("workspace/symbol", {"query": "PrepSentinel"})
+            ready = ready and any(row.get("name") == "PrepSentinel" for row in symbols or [])
         if ready:
             break
         if time.monotonic() > deadline:
@@ -338,7 +341,7 @@ def prepare(client, fixture, server, timeout, report):
         "duration_ms": (time.monotonic_ns() - began) / 1e6,
         "queries": probes,
         "opened_documents": list(documents),
-        "state": "fresh server/project state, dependency JARs available; zero-error diagnostics for every query document and separate PrepSentinel hover; JVMD initial repository scan complete",
+        "state": "fresh server/project state, dependency JARs available; zero-error diagnostics for every query document and separate PrepSentinel hover; JVMD initial repository scan complete; JDTLS sentinel workspace search completes its index barrier",
         "first_lookup_note": "No timed symbol was queried during readiness. Document opening, diagnostics, indexing and prior operations may share compiler/index caches.",
     }
 

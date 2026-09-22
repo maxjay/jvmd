@@ -1,0 +1,73 @@
+name: LSP scenarios
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [record, compare]
+        default: compare
+
+permissions:
+  contents: read
+
+jobs:
+  scenarios:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.21.0"
+
+      - name: Restore prepared Apache Maven fixture
+        id: fixture
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/apache-maven-fixture
+          key: apache-maven-lsp-v1
+
+      - name: Prepare Apache Maven fixture
+        if: steps.fixture.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/apache/maven.git "$RUNNER_TEMP/apache-maven-fixture"
+          git -C "$RUNNER_TEMP/apache-maven-fixture" checkout 5cd1b60264101080c712accd605180a4bd9222e0
+          cd "$RUNNER_TEMP/apache-maven-fixture"
+          ./mvnw -B -DskipTests install
+
+      - name: Build JVMD
+        if: inputs.mode == 'compare'
+        run: |
+          mvn -B -DskipTests install
+          bash jvmd-dist/assemble.sh
+
+      - name: Install JDTLS
+        if: inputs.mode == 'record'
+        run: |
+          mkdir -p "$RUNNER_TEMP/jdtls"
+          curl -fsSL --retry 3             https://download.eclipse.org/jdtls/milestones/1.61.0/jdt-language-server-1.61.0-202609031315.tar.gz             -o "$RUNNER_TEMP/jdtls.tar.gz"
+          tar -xzf "$RUNNER_TEMP/jdtls.tar.gz" -C "$RUNNER_TEMP/jdtls"
+
+      - name: Run scenarios
+        env:
+          FIXTURE_ROOT: ${{ runner.temp }}/apache-maven-fixture
+          MODE: ${{ inputs.mode }}
+          SERVER: ${{ inputs.mode == 'record' && 'jdtls' || 'jvmd' }}
+          JDTLS_HOME: ${{ runner.temp }}/jdtls
+        run: node benchmarks/lsp-scenarios/run.ts
+
+      - name: Upload JDTLS baseline
+        if: inputs.mode == 'record'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lsp-jdtls-baseline
+          path: benchmarks/lsp-scenarios/expected/

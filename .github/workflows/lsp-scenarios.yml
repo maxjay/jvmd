@@ -6,10 +6,10 @@ on:
       mode:
         type: choice
         options: [record, compare]
-        default: compare
+        default: record
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   scenarios:
@@ -57,7 +57,12 @@ jobs:
         if: inputs.mode == 'record'
         run: |
           mkdir -p "$RUNNER_TEMP/jdtls"
-          curl -fsSL --retry 3             https://download.eclipse.org/jdtls/milestones/1.61.0/jdt-language-server-1.61.0-202609031315.tar.gz             -o "$RUNNER_TEMP/jdtls.tar.gz"
+          curl -fsSL --retry 3 \
+            https://download.eclipse.org/jdtls/milestones/1.61.0/jdt-language-server-1.61.0-202609031315.tar.gz \
+            -o "$RUNNER_TEMP/jdtls.tar.gz"
+          printf '%s  %s\n' \
+            338e7e73d61836651ba2453919a0d34fa763eb4e7c03342092309bffb8934c64 \
+            "$RUNNER_TEMP/jdtls.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/jdtls.tar.gz" -C "$RUNNER_TEMP/jdtls"
 
       - name: Run scenarios

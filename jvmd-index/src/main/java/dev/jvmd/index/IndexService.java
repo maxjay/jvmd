@@ -43,15 +43,22 @@ public final class IndexService implements AutoCloseable {
     }
     public IndexStore store(){return store;}
     public long generation(){return indexed.get();}
-    public void start(){
+    public CompletableFuture<Void> start(){
         long initialDelaySeconds=Long.getLong("jvmd.index.scan.initial_delay_seconds",2L);
         if(initialDelaySeconds<0)throw new IllegalArgumentException("jvmd.index.scan.initial_delay_seconds must be non-negative");
+        var firstScan=new CompletableFuture<Void>();
         var initialCause=new java.util.concurrent.atomic.AtomicReference<>(RequestScope.detached());
-        scanner.scheduleWithFixedDelay(()->{try{
-            var cause=initialCause.getAndSet(null);
-            if(cause==null)scan();else RequestScope.with(cause,()->{scan();return null;});
-        }catch(Exception e){warn("index_scan_fault: "+e);}},
-                initialDelaySeconds,60,TimeUnit.SECONDS);
+        scanner.scheduleWithFixedDelay(()->{
+            try{
+                var cause=initialCause.getAndSet(null);
+                if(cause==null)scan();else RequestScope.with(cause,()->{scan();return null;});
+                firstScan.complete(null);
+            }catch(Exception e){
+                warn("index_scan_fault: "+e);
+                firstScan.completeExceptionally(e);
+            }
+        },initialDelaySeconds,60,TimeUnit.SECONDS);
+        return firstScan;
     }
     public synchronized void scan() throws Exception {
         if(closed||!Files.isDirectory(repository))return;

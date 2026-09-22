@@ -385,7 +385,7 @@ public final class Application implements AutoCloseable {
         var database=index();String workspace=session.state("resolution")==null?null:session.id();
         if(!symbol.containsKey("id")){
             prepareIndex(session,database);var indexed=database.find(symbol.get("scip").toString(),workspace,false,2,0);
-            if(indexed.size()==1){var current=new LinkedHashMap<>(indexed.getFirst());current.putAll(symbol);symbol=current;}
+            if(indexed.size()==1){var current=new LinkedHashMap<>(indexed.getFirst());symbol.forEach((key,value)->{if(value!=null)current.put(key,value);});symbol=current;}
         }
         var docs=session.state("documentation",()->new dev.jvmd.index.Documentation(database,config.jdkHome()));
         var result=docs.describe(symbol,workspace,detail,depth,limit,offset);var warnings=new LinkedHashSet<>(base.warnings());warnings.addAll(result.warnings());

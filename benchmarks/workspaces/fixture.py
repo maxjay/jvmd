@@ -165,10 +165,6 @@ def create(root, java_home, targets=3, sources=24):
                 "expected": expected,
             }
         )
-    # Deliberately wrong oracle for temporary CI failure-publication validation.
-    for operation in operations:
-        if operation['operation'] == 'hover':
-            operation['symbol'] = 'deliberatelyMissingSymbol'
     identity, files = fixture_identity(root)
     return {
         "schema": 2,

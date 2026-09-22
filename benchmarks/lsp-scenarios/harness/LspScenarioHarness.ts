@@ -4,6 +4,8 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSyn
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import net from "node:net";
+import { RpcClient } from "../../../shim/src/transport.ts";
 import {
   createMessageConnection,
   StreamMessageReader,
@@ -241,6 +243,7 @@ async function startJvmd(root: string): Promise<RunningServer> {
   });
 
   await waitFor(() => existsSync(socket), "JVMD socket");
+  await waitForJvmdIndex(socket);
 
   const adapter = spawn(
     path.join(image, "bin/jvmd-lsp"),
@@ -291,6 +294,37 @@ function startJdtls(): RunningServer {
     ),
     server,
   };
+}
+
+async function waitForJvmdIndex(socketPath: string) {
+  const socket = await new Promise<net.Socket>((resolve, reject) => {
+    const connection = net.createConnection(socketPath);
+    connection.once("connect", () => resolve(connection));
+    connection.once("error", reject);
+  });
+
+  const client = new RpcClient(socket);
+  const deadline = Date.now() + 120_000;
+
+  try {
+    while (Date.now() < deadline) {
+      const status = await client.call("daemon.status");
+      const index = status?.result?.index;
+
+      if (
+        index?.phase === "ready" &&
+        Number(index?.timings?.scans ?? 0) >= 1
+      ) {
+        return;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+  } finally {
+    client.close();
+  }
+
+  throw new Error("Timed out waiting for JVMD repository index");
 }
 
 function memory(running: RunningServer): Memory {

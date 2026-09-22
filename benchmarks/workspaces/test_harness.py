@@ -21,6 +21,15 @@ class HarnessTest(unittest.TestCase):
             for uri in (expected["uri"], "file:///space and é/Caller.java"):
                 self.assertEqual("correct", classify(op, {"result": [dict(expected, uri=uri)]}))
 
+    def test_preparation_matches_equivalent_diagnostic_uris(self):
+        client = Client.__new__(Client)
+        client.condition = threading.Condition()
+        client.failure = None
+        client.notifications = [{"method": "textDocument/publishDiagnostics", "params": {
+            "uri": "file:///space%20é/Test.java", "version": 1, "diagnostics": []}}]
+        result = client.diagnostics("file:///space%20%C3%A9/Test.java", 1, False, 0, timeout=0)
+        self.assertEqual([], result["diagnostics"])
+
     def test_jdt_attached_source_uri_from_pinned_server(self):
         source = "int base0(int input) {}"
         uri = "jdt://contents/offset-1.jar/external/Offset.java?=library/%5C/repository%5C/offset-1.jar%3Cexternal%28Offset.class"

@@ -2,6 +2,7 @@
 """Prepared JVMD/JDTLS comparison through normal production LSP endpoints."""
 import argparse, json, os, subprocess, sys, threading, time
 from pathlib import Path
+from urllib.parse import unquote
 from compile import EXPORTS, sha
 from resources import ProcessMonitor
 
@@ -151,7 +152,7 @@ class Client:
                 p = message.get("params", {})
                 if (
                     message.get("method") == "textDocument/publishDiagnostics"
-                    and p.get("uri") == uri
+                    and unquote(p.get("uri", "")) == unquote(uri)
                     and p.get("version", version) == version
                 ):
                     diagnostics = p.get("diagnostics", [])

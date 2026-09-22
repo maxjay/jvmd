@@ -107,6 +107,8 @@ def verify_workflows(root):
         if report.get('scenario')=='runtime':required.update({'run_output','debug_stop','debug_locals','debug_step','hotswap_output'})
         not_executed=sorted(required-{a['name'] for a in report['actions']})
         if report['outcome']=='correct' and not_executed:errors.append('missing required actions')
+        if report['outcome']=='correct' and any(a['outcome']!='correct' for a in report['actions']):
+            errors.append('successful worker contains failed actions')
         if report.get('mode')=='retention' and report['outcome']=='correct':
             snapshots=report.get('retention',{}).get('snapshots',[])
             held=[s['held_views'] for s in snapshots if s['phase'].startswith('held_edit_')]

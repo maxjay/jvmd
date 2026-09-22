@@ -8,11 +8,23 @@ sys.path.insert(0, str(Path(__file__).parent))
 from compare import compare
 from resources import ProcessMonitor, attribute_samples
 from run import Client, first_system_value
-from verify import workflow_oracle
+from verify import workflow_oracle, verify_workflows
 from summarize import investigate
 
 
 class HarnessTest(unittest.TestCase):
+    def test_worker_success_cannot_hide_failed_actions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            worker=Path(directory)/'worker';worker.mkdir()
+            (worker/'fixture.json').write_text('{}')
+            report={'workflow':'failure-check','scenario':'project','fixture':'fixture.json','outcome':'correct',
+                    'actions':[{'name':name,'outcome':'timed_out','time_to_correct_ms':None,'attempts':[],
+                                'retry_count':0} for name in ('warm_completion','warm_definition')]}
+            (worker/'report.json').write_text(json.dumps(report))
+            result=verify_workflows(Path(directory))
+            self.assertFalse(result['complete'])
+            self.assertIn('successful worker contains failed actions',result['workflow_workers'][0]['errors'])
+
     def test_backlog_prioritizes_observed_refresh_wait_over_small_completion_cost(self):
         stage=lambda name,id_,parent,duration:{'name':name,'ts':0,'dur':duration*1000,
             'args':{'span':id_,'parent':parent,'invocation':'edit','queued':False,'work':{}}}

@@ -36,4 +36,17 @@ class EagerRepositoryIndexTest {
   }finally{if(previous==null)System.clearProperty(key);else System.setProperty(key,previous);}
  }
 
+ @Test void deletingRepositoryRemovesPreviouslyIndexedArtifacts()throws Exception{
+  Path repository=temp.resolve("deleted-repository");
+  IndexFixtures.jar(repository.resolve("fixture/sample/1"),"sample-1",IndexFixtures.generic(),false);
+  try(var index=new IndexService(temp.resolve("deleted.db"),repository)){
+   index.scan();
+   assertThat(index.find("transform",null,false,10,0)).isNotEmpty();
+   try(var files=Files.walk(repository)){for(var path:files.sorted(java.util.Comparator.reverseOrder()).toList())Files.delete(path);}
+   index.scan();
+   assertThat(index.find("transform",null,false,10,0)).isEmpty();
+   assertThat(index.status()).containsEntry("phase","ready");
+  }
+ }
+
 }

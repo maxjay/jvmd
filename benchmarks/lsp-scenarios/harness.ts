@@ -221,7 +221,14 @@ async function startJvmd(root: string): Promise<RunningServer> {
     JVMD_CONFIG: path.join(state, "config.json"),
   };
 
-  const server = spawn(path.join(image, "bin/jvmd"), [], {
+  writeFileSync(path.join(state, "config.json"), "{}\n");
+  const server = spawn(path.join(image, "bin/java"), [
+    "-Djvmd.socket=" + socket,
+    "-Djvmd.state=" + path.join(state, "state"),
+    "-Djvmd.config=" + path.join(state, "config.json"),
+    "-cp", path.join(image, "lib/jvmd/*"),
+    "dev.jvmd.dist.Application",
+  ], {
     env,
     stdio: ["ignore", "ignore", "inherit"],
   });

@@ -1,6 +1,10 @@
 name: LSP scenarios
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/lsp-scenarios.yml'
   workflow_dispatch:
     inputs:
       mode:
@@ -68,23 +72,22 @@ jobs:
           git clone https://github.com/apache/maven.git "$RUNNER_TEMP/apache-maven-fixture"
           git -C "$RUNNER_TEMP/apache-maven-fixture" checkout 5cd1b60264101080c712accd605180a4bd9222e0
           cd "$RUNNER_TEMP/apache-maven-fixture"
-          ./mvnw -B -DskipTests install
+          mvn -B -DskipTests install
 
       - name: Build JVMD
-        if: inputs.mode == 'compare'
         run: |
           mvn -B -DskipTests install
           bash jvmd-dist/assemble.sh
 
       - name: Cache pinned JDTLS archive
-        if: inputs.mode == 'record'
+        if: github.event_name == 'push' || inputs.mode == 'record'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ runner.temp }}/jdtls.tar.gz
           key: jdtls-338e7e73d61836651ba2453919a0d34fa763eb4e7c03342092309bffb8934c64
 
       - name: Install JDTLS
-        if: inputs.mode == 'record'
+        if: github.event_name == 'push' || inputs.mode == 'record'
         run: |
           mkdir -p "$RUNNER_TEMP/jdtls"
           [[ -f "$RUNNER_TEMP/jdtls.tar.gz" ]] || curl -fsSL --retry 3 \
@@ -95,16 +98,24 @@ jobs:
             "$RUNNER_TEMP/jdtls.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/jdtls.tar.gz" -C "$RUNNER_TEMP/jdtls"
 
-      - name: Run scenarios
+      - name: Record JDTLS baseline
+        if: github.event_name == 'push' || inputs.mode == 'record'
         env:
           FIXTURE_ROOT: ${{ runner.temp }}/apache-maven-fixture
-          MODE: ${{ inputs.mode }}
-          SERVER: ${{ inputs.mode == 'record' && 'jdtls' || 'jvmd' }}
+          MODE: record
+          SERVER: jdtls
           JDTLS_HOME: ${{ runner.temp }}/jdtls
         run: node benchmarks/lsp-scenarios/run.ts
 
+      - name: Compare JVMD
+        env:
+          FIXTURE_ROOT: ${{ runner.temp }}/apache-maven-fixture
+          MODE: compare
+          SERVER: jvmd
+        run: node benchmarks/lsp-scenarios/run.ts
+
       - name: Commit JDTLS baseline
-        if: inputs.mode == 'record'
+        if: github.event_name == 'push' || inputs.mode == 'record'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

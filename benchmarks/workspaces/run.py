@@ -494,6 +494,7 @@ def main():
         machine=dict(zip(("system", "node", "release", "version", "machine"), os.uname())),
         harness={f.name: sha(f) for f in Path(__file__).parent.iterdir() if f.is_file()},
         jdtls={str(f.relative_to(a.jdtls)): sha(f) for f in sorted((a.jdtls / "plugins").glob("*.jar"))},
+        resolver_bundles={f.name: sha(f) for f in sorted(a.resolvers.glob("*.jar"))},
         jdk=subprocess.run(
             [str(a.java_home / "bin/java"), "-version"], capture_output=True, text=True
         ).stderr,

@@ -25,6 +25,8 @@ public final class SemanticUpdatePolicy {
         Set<Path> files();
     }
     public static Result decide(Collection<Change> changes,boolean environmentChanged,Postings postings){
+        try(var trace=dev.jvmd.core.RequestScope.stage("semantic.invalidate")){
+            trace.count("changed_files",changes.size());
         var api=new LinkedHashSet<Path>();var body=new LinkedHashSet<Path>();var deleted=new LinkedHashSet<Path>();
         var exports=new LinkedHashSet<String>();boolean namespace=false;
         for(var change:changes){
@@ -42,7 +44,10 @@ public final class SemanticUpdatePolicy {
             affected.addAll(closure(roots,postings));
         }
         affected.removeAll(deleted);
+        trace.count("affected_files",affected.size());trace.count("api_files",api.size());trace.count("body_files",body.size());
         return new Result(affected,api,body,deleted,environmentChanged,namespace);
+    
+        }
     }
     public static Set<Path> closure(Collection<Path> roots,Postings postings){
         var result=new LinkedHashSet<Path>();var queue=new ArrayDeque<>(roots);

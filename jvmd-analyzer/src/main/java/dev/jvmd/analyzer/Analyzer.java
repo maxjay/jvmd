@@ -341,6 +341,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return envelope;
     }
     public Envelope completion(Path path,String text,int line,int character,int limit,int offset)throws Exception{
+        try(var trace=dev.jvmd.core.RequestScope.stage("completion.materialize")){
         long requestStarted=System.nanoTime(),keyNanos=0,sourceRefreshNanos=0,focusNanos=0,queryNanos=0,cacheAdmissionNanos=0,filterNanos=0;
         var profile=new EditorQueries.CompletionTiming();boolean cacheHit=false;
         path=path.toAbsolutePath().normalize();
@@ -379,12 +380,15 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         completionEditorNanos+=profile.totalNanos();completionCandidateNanos+=profile.candidateNanos();completionRowNanos+=profile.rowNanos();completionDocNanos+=profile.docNanos();
         completionSortNanos+=profile.sortNanos();completionCacheAdmissionNanos+=cacheAdmissionNanos;completionFilterNanos+=filterNanos;completionTotalNanos+=totalNanos;
         completionCandidatesSeen+=profile.candidates();completionRowsMaterialized+=profile.rows();completionDocLookups+=profile.docs();completionLastCacheHit=cacheHit;
+        trace.cache(cacheHit?"prefix-hit":"recompute");trace.count("candidates_examined",profile.candidates());trace.count("rows_built",profile.rows());trace.count("documentation_lookups",profile.docs());
         completionLastTimingMs=Map.ofEntries(
                 Map.entry("key",millis(keyNanos)),Map.entry("source_refresh",millis(sourceRefreshNanos)),Map.entry("focus",millis(focusNanos)),
                 Map.entry("compiler_query",millis(queryNanos)),Map.entry("editor_total",millis(profile.totalNanos())),Map.entry("candidate_discovery",millis(profile.candidateNanos())),
                 Map.entry("row_materialization",millis(profile.rowNanos())),Map.entry("documentation",millis(profile.docNanos())),Map.entry("sort",millis(profile.sortNanos())),
                 Map.entry("cache_admission",millis(cacheAdmissionNanos)),Map.entry("filter",millis(filterNanos)),Map.entry("total",millis(totalNanos)));
         return new Envelope(outcome.tier(),"live",to<values.size(),to<values.size()?Integer.toString(to):null,warnings(outcome.warnings()),Map.of("items",values.subList(from,to),"range",new SourceText(text).range(start,end)));
+    
+        }
     }
     private static double millis(long nanos){return Math.round(nanos/1000.0)/1000.0;}
     private String completionKey(Path file,String patched,int start,CompilerInputs.Snapshot inputs)throws Exception{

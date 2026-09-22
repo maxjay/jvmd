@@ -653,6 +653,7 @@ public final class Application implements AutoCloseable {
         return resolver;
     }
     private Resolution refresh(Session session) throws Exception {
+        try(var trace=dev.jvmd.core.RequestScope.stage("project.resolve")){
         Resolution graph = resolver().resolveWorkspace(session.root(),workspace(session).roots(),workspace(session).ignoreVersions());
         var previous = (Resolution) session.state("resolution");
         if (previous == null || !previous.fingerprint().equals(graph.fingerprint())) {
@@ -667,6 +668,8 @@ public final class Application implements AutoCloseable {
         if(graph.modules().stream().anyMatch(m->m.processing().lombok()||m.testProcessing().lombok()))session.warn("lombok_reduced_fidelity: generated member bodies and positions are unavailable");
         if(index!=null && index.isDone() && !index.isCompletedExceptionally()) bindIndex(session,index.join());
         return graph;
+    
+        }
     }
     private synchronized void initializeIndex(boolean scan) {
         if(index!=null)return;

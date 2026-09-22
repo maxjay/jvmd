@@ -15,6 +15,8 @@ public final class RuntimeCompiler {
     }
     private RuntimeCompiler() { }
     public static Compilation compile(Path javaHome,Path directory,List<Path> sources,List<Path> classpath,List<Path> sourceRoots,List<String> options,Duration timeout)throws Exception{
+        try(var trace=dev.jvmd.core.RequestScope.stage("runtime.compile")){
+            trace.count("files",sources.size());trace.cache(InProcessCompiler.eligible(javaHome,options)?"in-process":"external");
         if(sources.isEmpty()||sources.size()>1000)throw RpcException.invalid("Compile requires 1..1000 source files");
         if(InProcessCompiler.eligible(javaHome,options))return InProcessCompiler.compile(javaHome,sources,classpath,sourceRoots,options,timeout);
         Path temporary=Files.createTempDirectory("jvmd-runtime-compile-"),output=Files.createDirectories(temporary.resolve("classes")),arguments=temporary.resolve("javac.args");
@@ -33,13 +35,19 @@ public final class RuntimeCompiler {
             var classes=new LinkedHashMap<String,byte[]>();long size=0;try(var files=Files.walk(output)){for(Path file:files.filter(p->p.toString().endsWith(".class")).sorted().toList()){size+=Files.size(file);if(size>128L*1024*1024)throw new RpcException(-32005,"budget_exceeded",Map.of("reason","Compiled output exceeds 128 MiB"));classes.put(output.relativize(file).toString().replace(java.io.File.separatorChar,'/'),Files.readAllBytes(file));}}
             return new Compilation(Collections.unmodifiableMap(classes),(System.nanoTime()-start)/1e6,tail.toString());
         }finally{if(child!=null&&child.isAlive())kill(child);delete(temporary);}
+    
+        }
     }
     private static String quote(String value){return "\""+value.replace("\\","\\\\").replace("\"","\\\"").replace("\n","\\n").replace("\r","\\r")+"\"";}
     public static void publish(Compilation compiled,Path output)throws Exception{
+        try(var trace=dev.jvmd.core.RequestScope.stage("runtime.publish")){
+            trace.count("classes",compiled.classes().size());
         output=output.toAbsolutePath().normalize();Files.createDirectories(output);
         for(var entry:compiled.classes().entrySet()){
             Path destination=output.resolve(entry.getKey()).normalize();if(!destination.startsWith(output))throw RpcException.invalid("Invalid class output path");Files.createDirectories(destination.getParent());
             Path temporary=Files.createTempFile(destination.getParent(),".jvmd-class-",".tmp");try{Files.write(temporary,entry.getValue());try{Files.move(temporary,destination,StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);}catch(AtomicMoveNotSupportedException e){Files.move(temporary,destination,StandardCopyOption.REPLACE_EXISTING);}}finally{Files.deleteIfExists(temporary);}
+        }
+    
         }
     }
     private static void kill(Process child){child.descendants().forEach(ProcessHandle::destroyForcibly);child.destroyForcibly();}

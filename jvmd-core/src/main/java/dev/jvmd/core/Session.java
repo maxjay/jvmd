@@ -41,7 +41,12 @@ public final class Session implements AutoCloseable {
     }
     public <T> T execute(int priority,Callable<T> work) throws Exception {
         if (Thread.currentThread() == owner) return work.call();
-        var job=new Job<T>(()->RequestScope.isolated(work::call),priority,sequence.incrementAndGet());executor.execute(job);
+        var inherited=RequestScope.TRACING?RequestScope.current():null;
+        long enqueued=RequestScope.TRACING?System.nanoTime():0;
+        var job=new Job<T>(()->RequestScope.isolated(()->RequestScope.with(inherited,()->{
+            RequestScope.queued("session.queue",enqueued);
+            return work.call();
+        })),priority,sequence.incrementAndGet());executor.execute(job);
         try { return job.get(); }
         catch (ExecutionException e) {
             if (e.getCause() instanceof Exception x) throw x;

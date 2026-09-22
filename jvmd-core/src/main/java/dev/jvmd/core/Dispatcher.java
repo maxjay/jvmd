@@ -47,6 +47,13 @@ public final class Dispatcher {
         return status;
     }
     public ObjectNode dispatch(JsonNode request) {
+        if(!RequestScope.TRACING)return dispatchRequest(request);
+        var trace=request==null?Json.MAPPER.nullNode():request.path("_jvmdTrace");
+        String method=request==null?"":request.path("method").asText("");
+        try{return RequestScope.traced(method,trace.path("workflow").asText(""),trace.path("revision").asText(""),()->dispatchRequest(request));}
+        catch(Exception impossible){throw new IllegalStateException(impossible);}
+    }
+    private ObjectNode dispatchRequest(JsonNode request) {
         if (request == null) request = Json.MAPPER.nullNode();
         String method = request.path("method").asText("");
         JsonNode id = request.get("id");
@@ -75,7 +82,7 @@ public final class Dispatcher {
                 int priority=method.startsWith("document.")?0:method.equals("lsp.diagnostics")?1:method.equals("diag.get")?(params.path("paths").isEmpty()?5:3):2;
                 envelope = session == null ? RequestScope.call(method,()->handler.call(null,params)) : session.execute(priority,() -> RequestScope.call(method,()->handler.call(session,params)));
                 if (envelope == null) throw new IllegalStateException("Handler omitted envelope");
-                response.set("result", Json.MAPPER.valueToTree(envelope));
+                try(var span=RequestScope.stage("response.encode")){response.set("result", Json.MAPPER.valueToTree(envelope));}
             }
             if(id!=null)response=budgets.enforce(response,method,params);
         } catch (RpcException e) {

@@ -13,7 +13,7 @@ class ModuleArchitectureTest {
     @TempDir Path temp;
     @Test void compiledModuleRequiresMatchTheArchitecture() throws Exception {
         var expected=Map.of(
-                "core",Set.of("java.base","java.management","com.fasterxml.jackson.databind"),
+                "core",Set.of("java.base","java.management","jdk.jfr","jdk.management","com.fasterxml.jackson.databind"),
                 "index",Set.of("java.base","dev.jvmd.core","java.compiler","jdk.compiler"),
                 "index-rocks",Set.of("java.base","dev.jvmd.index","rocksdbjni"),
                 "analyzer",Set.of("java.base","dev.jvmd.core","dev.jvmd.index","java.compiler","jdk.compiler","java.management"),

@@ -18,7 +18,7 @@ public final class FileStateRegistry {
         file = file.toAbsolutePath().normalize();
         Stamp before;
         try {before=stamp(file);}catch(NoSuchFileException missing){files.remove(file);return "missing";}
-        if(before==null)metadataChecks++;
+        if(before==null)metadataChecks++;RequestScope.count("metadata_checks",1);
         if(before==null?!Files.isRegularFile(file):!before.regular()){files.remove(file);return "missing";}
         var previous = files.get(file);
         if (before != null && previous != null && before.equals(previous.stamp())) {
@@ -34,9 +34,9 @@ public final class FileStateRegistry {
             try (var input = Files.newInputStream(file)) {
                 long length = before == null ? Files.size(file) : ((Number) before.size()).longValue();
                 byte[] buffer = new byte[(int) Math.max(1, Math.min(65536, length))];
-                for (int n; (n = input.read(buffer)) != -1;) { digest.update(buffer, 0, n); bytes += n; }
+                for (int n; (n = input.read(buffer)) != -1;) { digest.update(buffer, 0, n); bytes += n;RequestScope.count("bytes_hashed",n); }
             }
-            String hash = HexFormat.of().formatHex(digest.digest()); hashes++;
+            String hash = HexFormat.of().formatHex(digest.digest()); hashes++;RequestScope.count("files_hashed",1);
             Stamp after = stamp(file);
             if (before == null || before.equals(after)) {
                 if(after==null&&previous!=null&&hash.equals(previous.hash()))return previous.hash();
@@ -50,7 +50,7 @@ public final class FileStateRegistry {
     }
 
     private Stamp stamp(Path file) throws IOException {
-        metadataChecks++;
+        metadataChecks++;RequestScope.count("metadata_checks",1);
         try {
             var values = Files.readAttributes(file, "unix:size,lastModifiedTime,ctime,ino,isRegularFile");
             return new Stamp(values.get("size"), values.get("lastModifiedTime"), values.get("ctime"), values.get("ino"),Boolean.TRUE.equals(values.get("isRegularFile")));
@@ -111,7 +111,7 @@ public final class FileStateRegistry {
     private List<Path> inventory(Path root,String suffix,Directory state,boolean followLinks,Set<Path> ancestors)throws IOException {
         Path target=null;
         if(followLinks){
-            metadataChecks++;
+            metadataChecks++;RequestScope.count("metadata_checks",1);
             try{target=root.toRealPath();}catch(NoSuchFileException missing){state.missing();state.observed();return state.members;}
             if(!ancestors.add(target))throw new FileSystemLoopException(root.toString());
         }
@@ -120,7 +120,7 @@ public final class FileStateRegistry {
     }
     private List<Path> inventory(Path root,String suffix,Directory state,boolean followLinks,Set<Path> ancestors,int attempt)throws IOException {
         LinkOption[] options=followLinks?new LinkOption[0]:new LinkOption[]{LinkOption.NOFOLLOW_LINKS};
-        metadataChecks++;
+        metadataChecks++;RequestScope.count("metadata_checks",1);
         Map<String,Object> before;
         try { before=Files.readAttributes(root,"unix:size,lastModifiedTime,ctime,ino,isDirectory",options); }
         catch(NoSuchFileException missing){state.missing();return state.members;}
@@ -128,12 +128,12 @@ public final class FileStateRegistry {
         if(before!=null&&!Boolean.TRUE.equals(before.get("isDirectory"))){state.missing();state.stamp=before;return state.members;}
         boolean changed=before==null||!before.equals(state.stamp);
         if(changed){
-            enumerations++;
+            enumerations++;RequestScope.count("inventories",1);
             try(var stream=Files.list(root)){state.children=stream.sorted().toList();}
             catch(NoSuchFileException missing){state.children=List.of();}
             // Do not accept an observation if directory membership changed while enumerating it.
             if(before!=null){
-                metadataChecks++;
+                metadataChecks++;RequestScope.count("metadata_checks",1);
                 Map<String,Object> after;
                 try{after=Files.readAttributes(root,"unix:size,lastModifiedTime,ctime,ino,isDirectory",options);}
                 catch(NoSuchFileException removed){after=null;}
@@ -147,7 +147,7 @@ public final class FileStateRegistry {
             state.directories.keySet().retainAll(state.children);
             state.links.clear();
             for(Path child:state.children){
-                metadataChecks++;
+                metadataChecks++;RequestScope.count("metadata_checks",1);
                 if(followLinks&&Files.isSymbolicLink(child))state.links.add(child);
                 if(Files.isDirectory(child,options))state.directories.computeIfAbsent(child,ignored->new Directory());
                 else state.directories.remove(child);
@@ -158,7 +158,7 @@ public final class FileStateRegistry {
         for(Path child:state.children){
             // A link target can appear, disappear or change type without changing its parent.
             if(state.links.contains(child)){
-                metadataChecks++;
+                metadataChecks++;RequestScope.count("metadata_checks",1);
                 if(Files.isDirectory(child))state.directories.computeIfAbsent(child,ignored->new Directory());
                 else state.directories.remove(child);
             }

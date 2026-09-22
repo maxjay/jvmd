@@ -92,6 +92,8 @@ public final class CompilerPool implements AutoCloseable {
         batchQueries++;batchFiles+=sources.size();return execute(List.copyOf(sources),tier,observed,query);
     }
     private <T> Outcome<T> execute(List<SourceInput> sources,int tier,CompilerInputs.Snapshot observed,Query<T> query)throws Exception {
+        try(var trace=dev.jvmd.core.RequestScope.stage("compiler.prepare")){
+            trace.count("invocations",1);trace.count("explicit_sources",sources.size());
         Path path=sources.getFirst().file();
         checkThread();if(manager==null)throw new IllegalStateException("Compiler classpath not configured");
         manager.expectedInputs(observed);
@@ -122,8 +124,8 @@ public final class CompilerPool implements AutoCloseable {
                     }
                 });
                 try {
-                    task.parse().forEach(units::add);
-                    if(tier>=1){var entered=((JavacTaskImpl)task).enter();if(tier==2)((JavacTaskImpl)task).analyze(entered);}
+                    try(var span=dev.jvmd.core.RequestScope.stage("compiler.parse")){task.parse().forEach(units::add);span.count("units",units.size());}
+                    if(tier>=1)try(var span=dev.jvmd.core.RequestScope.stage("compiler.enter_attribute")){var entered=((JavacTaskImpl)task).enter();if(tier==2)((JavacTaskImpl)task).analyze(entered);span.count("parsed_sources",parsed.size());}
                 }catch(AssertionError|RuntimeException e){System.getLogger("jvmd.analyzer").log(System.Logger.Level.ERROR,"Compilation fault in "+path,e);actual[0]=Math.min(1,tier);fault[0]=true;faults++;warnings.add("analyzer_fault: "+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()));}
                 catch(java.io.IOException e){throw new java.io.UncheckedIOException(e);}
                 try{return query.read(task,List.copyOf(units),actual[0]);}
@@ -136,6 +138,8 @@ public final class CompilerPool implements AutoCloseable {
         }catch(QueryFailure e){releasePlatform.close();throw (Exception)e.getCause();}
         catch(AssertionError|RuntimeException e){System.getLogger("jvmd.analyzer").log(System.Logger.Level.ERROR,"Compiler query fault in "+path,e);fault[0]=true;faults++;return new Outcome<>(Math.min(1,tier),null,List.of(),List.of("analyzer_fault: "+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage())));}
         finally{queryNanos+=System.nanoTime()-queryStarted;if(fault[0])recycle();}
+    
+        }
     }
 
     private static void resetSourcePackages(JavacTask task,List<CompilationUnitTree> units){

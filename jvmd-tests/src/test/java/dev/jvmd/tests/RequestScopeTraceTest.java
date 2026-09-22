@@ -20,6 +20,7 @@ class RequestScopeTraceTest {
         var events=RecordingFile.readAllEvents(recording).stream().filter(e->e.getEventType().getName().equals("dev.jvmd.Stage")).toList();
         assertThat(events).isNotEmpty();
         assertThat(events).allMatch(e->e.getString("workflow").equals("workflow-test"));
+        assertThat(events).allMatch(e->e.getString("invocation").equals("edit-1"));
         var rpc=events.stream().filter(e->e.getString("stage").equals("rpc.execute")).findFirst().orElseThrow();
         var actor=events.stream().filter(e->e.getString("stage").equals("test.actor")).findFirst().orElseThrow();
         assertThat(actor.getLong("parent")).isEqualTo(rpc.getLong("span"));
@@ -54,8 +55,13 @@ class RequestScopeTraceTest {
         public static void main(String[] args)throws Exception {
             try(var recording=new Recording();var session=new Session("trace-test",Path.of("."))){
                 recording.enable("dev.jvmd.Stage");recording.start();
-                RequestScope.traced("test","workflow-test","B",()->{
+                RequestScope.traced("test","workflow-test","edit-1","B",()->{
                     var context=RequestScope.current();
+                    if(RequestScope.TRACING){
+                        RequestScope.memo("retained",()->new byte[1024]);
+                        var detached=RequestScope.detached();
+                        if(!detached.values().isEmpty()||detached.span()!=null||detached.causalSpan()==0)throw new AssertionError("Detached cause retained memo or lost parent");
+                    }
                     session.execute(()->RequestScope.with(context,()->{
                         try(var span=RequestScope.stage("test.actor")){span.count("operations",3);}
                         return null;

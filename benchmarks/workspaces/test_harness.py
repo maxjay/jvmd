@@ -6,11 +6,53 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from compare import compare
-from resources import ProcessMonitor
+from resources import ProcessMonitor, attribute_samples
 from run import Client, first_system_value
+from verify import workflow_oracle
 
 
 class HarnessTest(unittest.TestCase):
+    def test_completion_rejects_stale_and_incomplete_semantics(self):
+        self.assertFalse(workflow_oracle('api_completion', {'items': []}, {}))
+        self.assertFalse(workflow_oracle('api_completion', {'items': [{'label': 'value()', 'detail': 'int'}]}, {}))
+        self.assertFalse(workflow_oracle('api_completion', {'items': [
+            {'label': 'value()', 'detail': 'String'}, {'label': 'value()', 'detail': 'int'}]}, {}))
+        self.assertTrue(workflow_oracle('api_completion', {'items': [{'label': 'value()', 'detail': 'String'}]}, {}))
+
+    def test_definition_checks_source_selection_and_token_range(self):
+        fixture = {'files': {'provider': '/library/Library.java'}, 'versions': {'A': 'int value() {}'}}
+        result = [{'uri': 'file:///library/Library.java', 'range': {
+            'start': {'line': 0, 'character': 4}, 'end': {'line': 0, 'character': 9}}}]
+        self.assertTrue(workflow_oracle('warm_definition', result, fixture))
+        result[0]['range']['end']['character'] = 10
+        self.assertFalse(workflow_oracle('warm_definition', result, fixture))
+        result[0]['uri'] = 'file:///installed/Library.java'
+        self.assertFalse(workflow_oracle('warm_definition', result, fixture))
+
+    def test_hotswap_requires_changed_output_in_same_process(self):
+        fixture = {'expected': {'C': 'READY revision=C value=43'}}
+        self.assertFalse(workflow_oracle('hotswap_output', {'pid': 10, 'original_pid': 9,
+            'output': fixture['expected']['C']}, fixture))
+        self.assertFalse(workflow_oracle('hotswap_output', {'pid': 10, 'original_pid': 10,
+            'output': 'READY revision=B value=42'}, fixture))
+        self.assertTrue(workflow_oracle('hotswap_output', {'pid': 10, 'original_pid': 10,
+            'output': fixture['expected']['C']}, fixture))
+
+    def test_samples_choose_innermost_matching_thread_and_leave_others_unassigned(self):
+        spans = [{'queued': False, 'eventThread': {'javaThreadId': 7},
+                  'startTime': '2026-01-01T00:00:00Z', 'duration': 'PT1S',
+                  'durationNanos': 1_000_000_000, 'stage': 'parent', 'span': 1},
+                 {'queued': False, 'eventThread': {'javaThreadId': 7},
+                  'startTime': '2026-01-01T00:00:00.1Z', 'duration': 'PT0.3S',
+                  'durationNanos': 300_000_000, 'stage': 'child', 'span': 2}]
+        events = [{'type': 'jdk.ExecutionSample', 'values': {
+            'startTime': '2026-01-01T00:00:00.2Z', 'sampledThread': {'javaThreadId': thread}}}
+            for thread in (7, 8)]
+        result = attribute_samples(events, spans)
+        self.assertEqual(2, result['total_events']['jdk.ExecutionSample'])
+        self.assertEqual(1, result['assigned_events']['jdk.ExecutionSample'])
+        self.assertEqual({2, None}, {row['span'] for row in result['groups']})
+
     def test_optional_system_value_supports_cgroup_v1_and_missing_files(self):
         with tempfile.TemporaryDirectory() as directory:
             missing = Path(directory)/'v2'; fallback = Path(directory)/'v1'

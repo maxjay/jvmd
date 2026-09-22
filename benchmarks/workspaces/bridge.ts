@@ -31,6 +31,10 @@ function makeBridge(){bridge=new LspBridge(async()=>client,root,send,()=>{});bri
 makeBridge();
 let queue=Promise.resolve();
 async function handle(message:any){
+  if(message.method==='benchmark/traceContext'){
+    if(config.trace)Object.assign(config.trace,message.params);
+    send({jsonrpc:'2.0',id:message.id,result:null});return;
+  }
   if(message.method==='jvmd/request'){
     try { send({jsonrpc:'2.0',id:message.id,result:await collect(client,message.params.method,message.params.params||{})}); }
     catch(error){send({jsonrpc:'2.0',id:message.id,error:(error as any).rpc||{code:-32603,message:String(error)}});}return;

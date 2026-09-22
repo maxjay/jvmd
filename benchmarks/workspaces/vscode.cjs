@@ -66,7 +66,9 @@ async function jvmd(config, report) {
     if(response.warnings?.some(s=>s.startsWith('analyzer_fault')))throw new Error(JSON.stringify(response));
     return response.result;
   }
-  return {rpc,diagnosticVersions,async close(){
+  return {rpc,diagnosticVersions,async mark(invocation,revision){
+    if(config.report.mode==='attribution')await client.call('benchmark/traceContext',{invocation,revision});
+  },async close(){
     for(const item of subscriptions)item.dispose();diagnostics.dispose();
     try{await client.call('shutdown');notify('exit');await Promise.race([new Promise(resolve=>child.once('exit',resolve)),sleep(10000)]);}finally{if(child.exitCode===null)child.kill();stream.destroy();log.end();}
   }};
@@ -75,14 +77,19 @@ async function jvmd(config, report) {
 exports.run = async () => {
   const config=JSON.parse(fs.readFileSync(process.env.JVMD_WORKFLOW_CONFIG,'utf8'));
   const report=config.report;
-  let adapter;
+  let adapter,revision="A",provider,consumer;
   const flush=()=>fs.writeFileSync(path.join(config.root,'driver-result.json'),JSON.stringify(report,null,2));
   async function check(name, action, oracle, timeout=30000){
-    const start=now();const row={name,start_ms:start,attempts:[],outcome:'timed_out',time_to_correct_ms:null};report.actions.push(row);
+    const id=report.workflow+':'+report.actions.length+':'+name;
+    if(adapter)await adapter.mark(id,revision);
+    const start=now();const row={id,name,input_revision:revision,document_version:consumer?.version,start_ms:start,attempts:[],outcome:'timed_out',time_to_correct_ms:null};report.actions.push(row);
     for(;;){
       const began=now();let valid=false, attempt;
-      try{const result=plain(await action());valid=oracle(result);attempt={result,outcome:valid?'correct':'wrong_or_stale'};}
-      catch(error){attempt={outcome:'error',error:String(error)};}
+      let timer;
+      try{const result=plain(await Promise.race([action(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('WORKFLOW_TIMEOUT')),Math.max(1,timeout-(now()-start)));})]));attempt={result};valid=oracle(result);attempt.outcome=valid?'correct':classify(name,result);
+        if(result?.version!==undefined&&result.version!==row.document_version){valid=false;attempt.outcome='superseded';}}
+      catch(error){attempt={...attempt,outcome:String(error).includes('WORKFLOW_TIMEOUT')?'timed_out':/cancel/i.test(String(error))?'cancelled':'error',error:String(error)};}
+      finally{clearTimeout(timer);}
       const end=now();attempt.start_ms=began;attempt.end_ms=end;attempt.latency_ms=end-began;row.attempts.push(attempt);
       row.first_response_ms=row.attempts[0].latency_ms;row.retry_count=row.attempts.length-1;row.elapsed_ms=end-start;
       if(valid){row.outcome='correct';row.time_to_correct_ms=row.elapsed_ms;flush();return attempt.result;}
@@ -90,7 +97,24 @@ exports.run = async () => {
       await sleep(50);
     }
   }
+  function classify(name,result){
+    if(name.includes('completion')){
+      const values=result.items?.filter(i=>i.label.startsWith('value'))||[];
+      return values.length?'stale':'incomplete';
+    }
+    if(name==='revert_diagnostics')return 'stale';
+    if(name==='api_diagnostics'&&!result.diagnostics?.length)return 'stale';
+    if(name.endsWith('_output'))return result.output?'stale':'incomplete';
+    return 'wrong';
+  }
   try{
+    const clockStart=now();fs.writeFileSync(path.join(config.root,'clock-request.json'),'{}');
+    while(!fs.existsSync(path.join(config.root,'clock-response.json'))){
+      if(now()-clockStart>10000)throw new Error('controller clock handshake timed out');await sleep(1);
+    }
+    const remote=JSON.parse(fs.readFileSync(path.join(config.root,'clock-response.json'),'utf8'));const clockEnd=now();
+    report.clock_alignment={controller_minus_driver_ms:remote.monotonic_ms-(clockStart+clockEnd)/2,uncertainty_ms:(clockEnd-clockStart)/2,
+      method:'One IPC round trip brackets controller monotonic timestamp; independent clock origins, no raw subtraction'};
     report.editor={version:vscode.version,extensions:vscode.extensions.all.filter(e=>!e.packageJSON.isBuiltin).map(e=>({id:e.id,version:e.packageJSON.version,active:e.isActive}))};
     const start=now();
     if(config.backend==='jvmd'){
@@ -103,8 +127,8 @@ exports.run = async () => {
       report.routing={language:'redhat.java',runtime:'vscjava.vscode-java-debug',java_version:java.packageJSON.version,debug_version:debug.packageJSON.version};
     }
     const files=config.fixture.files;
-    const provider=await vscode.workspace.openTextDocument(files.provider);
-    const consumer=await vscode.workspace.openTextDocument(files.consumer);
+    provider=await vscode.workspace.openTextDocument(files.provider);
+    consumer=await vscode.workspace.openTextDocument(files.consumer);
     await vscode.window.showTextDocument(consumer);
     const point=position(consumer.getText(),consumer.getText().indexOf('.value')+4);
     async function completion(){
@@ -122,12 +146,16 @@ exports.run = async () => {
     const definitionOracle=result=>result.length===1&&vscode.Uri.parse(result[0].uri).fsPath===files.provider;
     await check('warm_completion',completion,completionOracle('int'),120000);
     await check('warm_definition',definition,definitionOracle);
-    report.open_to_project_ready_ms=now()-start;
+    report.open_to_project_ready_ms=now()-start;flush();
     for(let i=0;i<config.samples;i++)await check('unchanged_completion',completion,completionOracle('int'));
     async function editProvider(version){
+      revision=version;if(adapter)await adapter.mark(report.workflow+':edit:'+version,revision);
+      await vscode.window.showTextDocument(provider);
       const edit=new vscode.WorkspaceEdit();edit.replace(provider.uri,new vscode.Range(provider.positionAt(0),provider.positionAt(provider.getText().length)),config.fixture.versions[version]);
       if(!await vscode.workspace.applyEdit(edit))throw new Error('edit rejected');if(!await provider.save())throw new Error('save rejected');
+      await vscode.window.showTextDocument(consumer);
     }
+    if(config.workflow!=='runtime'){
     const changed=now();await editProvider('API');
     await check('api_completion',completion,completionOracle('String'));
     // JVMD dependent diagnostics are demand-driven; request them through its existing LSP bridge.
@@ -139,10 +167,13 @@ exports.run = async () => {
     }else await check('api_diagnostics',async()=>({uri:consumer.uri.toString(),version:consumer.version,diagnostics:diagnosticQuery()}),r=>r.diagnostics.some(d=>d.severity===1));
     await check('api_definition',definition,definitionOracle);
     report.api_edit_to_correct_ms=now()-changed;
+    }
+    if(config.workflow==='coverage'){
     await editProvider('A');await check('revert_completion',completion,completionOracle('int'));
     if(adapter)await check('revert_diagnostics',async()=>{const value=await adapter.rpc('lsp.diagnostics',{uri:consumer.uri.toString()});return value.value;},r=>r.diagnostics?.length===0);
     else await check('revert_diagnostics',async()=>({diagnostics:diagnosticQuery()}),r=>r.diagnostics.length===0);
-    if(config.runtime){
+    }
+    if(config.workflow==='runtime'){
       let run,debugSession,breakpoint,thread,frame,pid;
       const dap=[];let output='';
       const tracker=vscode.debug.registerDebugAdapterTrackerFactory('java',{createDebugAdapterTracker(session){return {

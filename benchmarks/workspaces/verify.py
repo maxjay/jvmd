@@ -69,14 +69,17 @@ def verify_workflows(root):
                 attempts+=1
                 try:correct='result' in attempt and workflow_oracle(action['name'],attempt['result'],fixture)
                 except (KeyError,ValueError,AssertionError,IndexError,TypeError):correct=False
+                if 'document_version' in action and isinstance(attempt.get('result'),dict) and 'version' in attempt['result']:
+                    correct=correct and attempt['result']['version']==action['document_version']
                 valid.append(correct)
                 if (attempt['outcome']=='correct')!=correct:errors.append(action['name']+': misclassified attempt')
             if action['outcome']=='correct' and (not valid or not valid[-1] or any(valid[:-1])):
                 errors.append(action['name']+': invalid first-correct boundary')
             if action.get('retry_count')!=max(0,len(valid)-1):errors.append(action['name']+': retry count')
             if action['outcome']!='correct' and action.get('time_to_correct_ms') is not None:errors.append(action['name']+': failure has success timing')
-        required={'warm_completion','warm_definition','api_completion','api_diagnostics','api_definition'}
-        if report.get('runtime'):required.update({'run_output','debug_stop','debug_locals','debug_step','hotswap_output'})
+        required={'warm_completion','warm_definition'}
+        if report.get('scenario','language')!='runtime':required.update({'api_completion','api_diagnostics','api_definition'})
+        if report.get('scenario')=='runtime':required.update({'run_output','debug_stop','debug_locals','debug_step','hotswap_output'})
         if report['outcome']=='correct' and not required.issubset({a['name'] for a in report['actions']}):errors.append('missing required actions')
         workers.append({'worker':path.parent.name,'outcome':report['outcome'],'verified':not errors and report['outcome']=='correct',
                         'attempts':attempts,'errors':errors})

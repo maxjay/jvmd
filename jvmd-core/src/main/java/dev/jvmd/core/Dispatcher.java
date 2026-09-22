@@ -50,7 +50,7 @@ public final class Dispatcher {
         if(!RequestScope.TRACING)return dispatchRequest(request);
         var trace=request==null?Json.MAPPER.nullNode():request.path("_jvmdTrace");
         String method=request==null?"":request.path("method").asText("");
-        try{return RequestScope.traced(method,trace.path("workflow").asText(""),trace.path("revision").asText(""),()->dispatchRequest(request));}
+        try{return RequestScope.traced(method,trace.path("workflow").asText(""),trace.path("invocation").asText(""),trace.path("revision").asText(""),()->dispatchRequest(request));}
         catch(Exception impossible){throw new IllegalStateException(impossible);}
     }
     private ObjectNode dispatchRequest(JsonNode request) {

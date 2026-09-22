@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Out-of-process resource and JFR measurements for LSP benchmark workers."""
-import collections, hashlib, json, os, subprocess, threading, time
+import collections, datetime, hashlib, json, os, subprocess, threading, time
 from pathlib import Path
 
 
@@ -105,7 +105,36 @@ class ProcessMonitor:
                 'write_bytes_observed': sum(p['write_bytes'] for p in self.processes.values())}
 
 
-def export_workflow_jfr(jfr_tool, recording, output):
+def workflow_resources(report, samples):
+    """Observed whole-process work during an action, including concurrent background work.
+
+    Bracketing samples and clock uncertainty are exposed, never called exact attribution.
+    Exited children keep their last observed counters; missed final work is unavailable.
+    """
+    rows=[];totals={}
+    for line in samples.read_text().splitlines():
+        row=json.loads(line)
+        for process in row['processes']:
+            totals[(process['pid'],process['start_ticks'])]=process
+        row['cumulative']={role:sum(p['cpu_ticks'] for p in totals.values() if p['role']==role) for role in ('tooling','debuggee')}
+        rows.append(row)
+    alignment=report.get('clock_alignment',{})
+    offset=alignment.get('controller_minus_driver_ms',0)
+    for action in report['actions']:
+        if 'start_ms' not in action or not alignment:continue
+        start=(action['start_ms']+offset)*1e6
+        end=start+action['elapsed_ms']*1e6
+        before=next((r for r in reversed(rows) if r['monotonic_ns']<=start),None)
+        after=next((r for r in rows if r['monotonic_ns']>=end),None)
+        if before is None or after is None:continue
+        interval=[r for r in rows if before['monotonic_ns']<=r['monotonic_ns']<=after['monotonic_ns']]
+        action['resources']={'scope':'Tooling and debuggee process trees during the bracketed interval, including concurrent work; sampled lower bound for short-lived children',
+            'clock_uncertainty_ms':alignment['uncertainty_ms'],'sample_bracket_ms':(after['monotonic_ns']-before['monotonic_ns'])/1e6,
+            'cpu_seconds_observed':{role:max(0,after['cumulative'][role]-before['cumulative'][role])/os.sysconf('SC_CLK_TCK') for role in ('tooling','debuggee')},
+            'peak_rss_bytes':{role:max(sum(p['rss_bytes'] for p in r['processes'] if p['role']==role) for r in interval) for role in ('tooling','debuggee')}}
+
+
+def export_workflow_jfr(jfr_tool, recording, output, repo=None):
     """Selected diagnostic events only. Chrome trace opens in Perfetto; no VM environment export."""
     allowed=['dev.jvmd.Stage','jdk.ExecutionSample','jdk.ObjectAllocationSample','jdk.GarbageCollection',
              'jdk.GCHeapSummary','jdk.ThreadPark','jdk.JavaMonitorEnter','jdk.JavaMonitorWait']
@@ -117,18 +146,71 @@ def export_workflow_jfr(jfr_tool, recording, output):
     trace=[]
     for s in spans:
         args={key:s[key] for key in ('workflow','revision','method','request','span','parent','outcome','cache','threadCpuNanos','threadAllocatedBytes','queued','virtualThread')}
+        args['invocation']=s.get('invocation','')
         args['work']=json.loads(s['counters'])
         trace.append({'name':s['stage'],'cat':'JVMD','ph':'X','pid':s['process'],
                       'tid':s['eventThread']['javaThreadId'],'ts':(s['startNanos']-origin)/1000,
                       'dur':s['durationNanos']/1000,'args':args})
     (output/'trace.json').write_text(json.dumps({'traceEvents':trace,'displayTimeUnit':'ms'}))
+    attribution=attribute_samples(events,spans,repo)
+    (output/'attribution.json').write_text(json.dumps(attribution,indent=2)+'\n')
     (output/'profile-events.json').write_text(json.dumps({'recording':{'events':events}}))
-    result={'trace':'trace.json','events':'profile-events.json','recording_sha256':hashlib.sha256(recording.read_bytes()).hexdigest(),
+    result={'trace':'trace.json','events':'profile-events.json','attribution':'attribution.json','recording_sha256':hashlib.sha256(recording.read_bytes()).hexdigest(),
             'clock':'Span start/duration are monotonic within one JVM; no cross-process subtraction',
             'scope':'Inclusive thread counters; do not sum nested spans. Virtual-thread/queue counters unavailable (-1). JFR CPU/allocation are samples, not retained heap.',
             'settings':'JFR profile, stackdepth=128; JVMD stages opt in with -Djvmd.trace=true','command':command,'spans':len(spans)}
     (output/'profiles.json').write_text(json.dumps(result,indent=2)+'\n')
     return result
+
+
+def attribute_samples(events, spans, repo=None):
+    """Match samples to the smallest executing span on that JFR thread and clock.
+
+    Queue events deliberately have no executing interval. Samples outside a span,
+    including carrier threads without a matching virtual-thread identity, stay unassigned.
+    """
+    def instant(value):
+        return datetime.datetime.fromisoformat(value).timestamp()
+    def duration(value):
+        return float(value.removeprefix('PT').removesuffix('S'))
+    intervals=collections.defaultdict(list)
+    for span in spans:
+        if span['queued']:continue
+        begin=instant(span['startTime'])
+        intervals[span['eventThread']['javaThreadId']].append((begin,begin+duration(span['duration']),span))
+    groups={};total=collections.Counter();assigned=collections.Counter()
+    sources={}
+    if repo:
+        for file in repo.glob('jvmd-*/src/main/java/**/*.java'):
+            sources[str(file).split('/src/main/java/',1)[1][:-5]]=str(file.relative_to(repo))
+    for event in events:
+        kind=event['type']
+        if kind not in ('jdk.ExecutionSample','jdk.ObjectAllocationSample','jdk.ThreadPark','jdk.JavaMonitorEnter','jdk.JavaMonitorWait'):continue
+        data=event['values'];thread=data.get('sampledThread',data.get('eventThread')) or {}
+        timestamp=instant(data['startTime']);total[kind]+=1
+        matches=[span for begin,end,span in intervals.get(thread.get('javaThreadId'),[]) if begin<=timestamp<=end]
+        span=min(matches,key=lambda s:s['durationNanos']) if matches else None
+        if span:assigned[kind]+=1
+        key=(span.get('invocation','') if span else '',span['span'] if span else None,kind)
+        group=groups.setdefault(key,{'invocation':key[0],'span':key[1],'stage':span['stage'] if span else 'not attributed',
+                                     'event':kind,'samples':0,'sampled_allocated_bytes':0,'observed_wait_ms':0,'stacks':collections.Counter(),'methods':{}})
+        group['samples']+=1
+        group['sampled_allocated_bytes']+=data.get('weight',0) if kind=='jdk.ObjectAllocationSample' else 0
+        group['observed_wait_ms']+=duration(data.get('duration','PT0S'))*1000
+        frames=(data.get('stackTrace') or {}).get('frames',[])
+        names=[]
+        for frame in frames:
+            method=frame['method'];type_=method['type']['name'];name=type_.replace('/','.')+'.'+method['name'];names.append(name)
+            source=sources.get(type_.split('$')[0])
+            if source:group['methods'][name]={'source':source,'line':frame['lineNumber']}
+        group['stacks'][';'.join(reversed(names))]+=data.get('weight',1) if kind=='jdk.ObjectAllocationSample' else 1
+    rows=[]
+    for group in groups.values():
+        group['stacks']=dict(group['stacks'].most_common(20));rows.append(group)
+    return {'matching':'Same JFR clock and Java thread; innermost executing span at event start. Wait durations may extend beyond that span. No cross-process timestamp subtraction.',
+            'precision':'JFR timestamps parsed to microseconds; samples at boundaries may be ambiguous.',
+            'allocation':'Statistical ObjectAllocationSample weights; neither exact allocation nor retained memory.',
+            'total_events':dict(total),'assigned_events':dict(assigned),'groups':rows}
 
 
 def summarize_jfr(jfr_tool, recording):

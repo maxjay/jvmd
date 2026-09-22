@@ -14,23 +14,24 @@ export function renderWorkflowDashboard(summary) {
 <td>${row.processes.length}</td><td>${value(row.min_process_p50_ms)}–${value(row.max_process_p50_ms)}</td></tr>`).join('');
   const invocations = [...summary.invocations].sort((a,b) => (b.api_edit_to_correct_ms||0)-(a.api_edit_to_correct_ms||0)).map(run => {
     const stages = run.trace?.traceEvents || [];
-    const actions = run.actions.map(action => `<tr><td>${escape(action.name)}</td><td>${escape(action.outcome)}</td>
+    const actions = run.actions.map(action => `<tr><td>${escape(action.name)}<br><small>${escape(action.id||'')}</small></td><td>${escape(action.outcome)}</td>
 <td>${value(action.first_response_ms)}</td><td>${value(action.time_to_correct_ms)}</td><td>${action.retry_count ?? 0}</td>
-<td><details><summary>${action.attempts.length} recorded attempts</summary><pre>${escape(JSON.stringify(action.attempts,null,2))}</pre></details></td></tr>`).join('');
+<td><details><summary>${action.attempts.length} recorded attempts</summary><pre>${escape(JSON.stringify({attempts:action.attempts,resources:action.resources},null,2))}</pre></details></td></tr>`).join('');
+    const profiles=run.attribution?.groups||[];
     const stageRows = [...stages].sort((a,b)=>b.dur-a.dur).map(stage => `<tr><td>${escape(stage.name)}</td><td>${escape(stage.args.method)}</td>
-<td>${stage.args.span} / ${stage.args.parent}</td><td>${stage.tid}</td><td>${value(stage.ts/1000)}</td><td>${value(stage.dur/1000)}</td>
+<td>${escape(stage.args.invocation||'unassigned')}</td><td>${stage.args.span} / ${stage.args.parent}</td><td>${stage.tid}</td><td>${value(stage.ts/1000)}</td><td>${value(stage.dur/1000)}</td>
 <td>${value(stage.args.threadCpuNanos<0?null:stage.args.threadCpuNanos/1e6)}</td><td>${value(stage.args.threadAllocatedBytes<0?null:stage.args.threadAllocatedBytes/1048576,'MiB')}</td>
-<td>${escape(stage.args.cache)}</td><td>${escape(JSON.stringify(stage.args.work))}</td></tr>`).join('');
+<td>${escape(stage.args.cache)}</td><td>${escape(JSON.stringify(stage.args.work))}</td><td><details><summary>Matching samples</summary><pre>${escape(JSON.stringify(profiles.filter(p=>p.span===stage.args.span),null,2))}</pre></details></td></tr>`).join('');
     const base=escape(run.directory);
     return `<details><summary>${escape(run.workflow)} — ${escape(run.outcome)} — API edit ${value(run.api_edit_to_correct_ms)}</summary>
 <p>${escape(run.boundary)}. ${escape(run.runtime_boundary||'Runtime not measured')}. ${escape(run.error||'')}</p>
 <p>Whole invocation CPU ${value(run.resources?.cpu_seconds_observed,'s')}; peak combined RSS ${value(run.resources ? run.resources.peak_rss_bytes/1048576 : null,'MiB')}.
 Allocated bytes in comparison: unavailable. Retained heap: unavailable.</p>
 <p><a href="${base}/report.json">Raw results</a> · <a href="${base}/fixture/fixture.json">Fixture and expectations</a> · <a href="${base}/command.json">Reproduction command</a> · <a href="${base}/resources.json">Resource scope</a>
-${stages.length ? ` · <a href="${base}/trace.json">Perfetto / Chrome timeline</a> · <a href="${base}/profile-events.json">CPU, allocation, GC and waits</a>` : ' · Internal stages: not attributed'}</p>
+${stages.length ? ` · <a href="${base}/trace.json">Perfetto / Chrome timeline</a> · <a href="${base}/profile-events.json">CPU, allocation, GC and waits</a> · <a href="${base}/attribution.json">Samples matched to stages</a>` : ' · Internal stages: not attributed'}</p>
 <div class="scroll"><table><thead><tr><th>Action</th><th>Outcome</th><th>First response</th><th>Time to correct</th><th>Retries</th><th>Evidence</th></tr></thead><tbody>${actions}</tbody></table></div>
 ${stages.length ? `<p>Stages below belong to this invocation. Times use one JVM clock. Parent/child and parallel intervals overlap; durations and inclusive thread counters must not be summed. Queue CPU/allocation and virtual-thread counters are unavailable. Open the standard trace in Perfetto to inspect overlap.</p>
-<div class="scroll"><table><thead><tr><th>Stage</th><th>RPC</th><th>Span / parent</th><th>Thread</th><th>Start</th><th>Wall</th><th>Thread CPU</th><th>Thread allocation</th><th>Cache</th><th>Actual work</th></tr></thead><tbody>${stageRows}</tbody></table></div>` : ''}
+<div class="scroll"><table><thead><tr><th>Stage</th><th>RPC</th><th>Action ID</th><th>Span / parent</th><th>Thread</th><th>Start</th><th>Wall</th><th>Thread CPU</th><th>Thread allocation</th><th>Cache</th><th>Actual work</th><th>Profiles</th></tr></thead><tbody>${stageRows}</tbody></table></div>` : ''}
 <details><summary>Routing, correctness and limits</summary><pre>${escape(JSON.stringify({routing:run.routing,verification:run.verification,unmeasured:run.unmeasured,profiles:run.profiles},null,2))}</pre></details></details>`;
   }).join('');
   return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>JVMD development workflows</title>

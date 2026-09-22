@@ -17,7 +17,7 @@ def summarize_workflows(root):
         if 'workflow' not in report:continue
         report['directory']=path.parent.name
         report['verification']=checked[path.parent.name]
-        for file,key in [('resources.json','resources'),('trace.json','trace')]:
+        for file,key in [('resources.json','resources'),('trace.json','trace'),('attribution.json','attribution')]:
             report[key]=json.loads((path.parent/file).read_text()) if (path.parent/file).exists() else None
         invocations.append(report)
         for name in sorted({a['name'] for a in report['actions']}):

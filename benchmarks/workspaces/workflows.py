@@ -13,7 +13,7 @@ import time
 
 from compile import EXPORTS, sha
 from modules import workflow_fixture
-from resources import ProcessMonitor, export_workflow_jfr
+from resources import ProcessMonitor, export_workflow_jfr, workflow_resources
 from run import Client, CAPABILITIES, position
 
 HERE = Path(__file__).resolve().parent
@@ -46,12 +46,13 @@ def record(report, name, action, correct, timeout=30):
     row={'name':name,'start_ns':started,'outcome':'timed_out','attempts':[], 'time_to_correct_ms':None}
     report['actions'].append(row)
     while True:
-        before=time.monotonic_ns()
+        before=time.monotonic_ns();attempt={}
+        value=None
         try:
-            value=action(); valid=correct(value)
-            attempt={'result':value,'outcome':'correct' if valid else 'wrong_or_stale'}
+            value=action();attempt['result']=value;valid=correct(value)
+            attempt['outcome']='correct' if valid else ('stale' if 'completion' in name or 'diagnostics' in name else 'wrong')
         except Exception as error:
-            valid=False;attempt={'outcome':'error','error':repr(error)}
+            valid=False;attempt.update(outcome='error',error=repr(error))
         ended=time.monotonic_ns()
         attempt.update(start_ns=before,end_ns=ended,latency_ms=(ended-before)/1e6)
         row['attempts'].append(attempt)
@@ -69,7 +70,12 @@ def engine(a, root, fixture, build, report):
     command=configuration(a,root,fixture,build,report['workflow'])
     client=Client(command,root)
     provider=Path(fixture['files']['provider']);consumer=Path(fixture['files']['consumer'])
-    version=1
+    version=1;revision='A'
+    def check(name,action,oracle):
+        id_=report['workflow']+':'+str(len(report['actions']))+':'+name
+        if a.mode=='attribution':client.call('benchmark/traceContext',{'invocation':id_,'revision':revision})
+        try:return record(report,name,action,oracle)
+        finally:report['actions'][-1].update(id=id_,input_revision=revision)
     def complete():
         source=consumer.read_text();offset=source.index('.value')+len('.val')
         return client.call('textDocument/completion',{'textDocument':{'uri':consumer.as_uri()},'position':position(source,offset)})[0]
@@ -82,22 +88,22 @@ def engine(a, root, fixture, build, report):
         value=client.call('textDocument/definition',{'textDocument':{'uri':consumer.as_uri()},'position':position(source,offset)})[0]
         return [value] if isinstance(value,dict) else value
     try:
-        record(report,'open',lambda: client.call('initialize',{'processId':os.getpid(),'rootUri':Path(fixture['roots'][0]).as_uri(),'workspaceFolders':[{'uri':Path(p).as_uri(),'name':Path(p).name} for p in fixture['roots']],'capabilities':CAPABILITIES})[0],lambda r:bool(r.get('capabilities')))
+        check('open',lambda: client.call('initialize',{'processId':os.getpid(),'rootUri':Path(fixture['roots'][0]).as_uri(),'workspaceFolders':[{'uri':Path(p).as_uri(),'name':Path(p).name} for p in fixture['roots']],'capabilities':CAPABILITIES})[0],lambda r:bool(r.get('capabilities')))
         client.notify('initialized')
         for name in ('provider','consumer'):
             file=Path(fixture['files'][name]);client.notify('textDocument/didOpen',{'textDocument':{'uri':file.as_uri(),'languageId':'java','version':version,'text':file.read_text()}})
-        record(report,'warm_completion',complete,lambda r:valid_completion(r,'int'))
-        record(report,'warm_definition',definition,lambda r:bool(r) and r[0]['uri']==provider.as_uri())
-        began=time.monotonic_ns();provider.write_text(fixture['versions']['API']);version+=1
+        check('warm_completion',complete,lambda r:valid_completion(r,'int'))
+        check('warm_definition',definition,lambda r:bool(r) and r[0]['uri']==provider.as_uri())
+        revision='API';began=time.monotonic_ns();provider.write_text(fixture['versions']['API']);version+=1
         client.notify('textDocument/didChange',{'textDocument':{'uri':provider.as_uri(),'version':version},'contentChanges':[{'text':provider.read_text()}]})
         client.notify('textDocument/didSave',{'textDocument':{'uri':provider.as_uri()}})
-        record(report,'api_completion',complete,lambda r:valid_completion(r,'String'))
+        check('api_completion',complete,lambda r:valid_completion(r,'String'))
         client.notify('textDocument/didSave',{'textDocument':{'uri':consumer.as_uri()}})
         def diagnostics():
             rows=[m['params'] for m in client.notifications if m.get('method')=='textDocument/publishDiagnostics' and m.get('params',{}).get('uri')==consumer.as_uri()]
             return rows[-1] if rows else {'diagnostics':[]}
-        record(report,'api_diagnostics',diagnostics,lambda r:any(d.get('severity')==1 for d in r['diagnostics']))
-        record(report,'api_definition',definition,lambda r:bool(r) and r[0]['uri']==provider.as_uri())
+        check('api_diagnostics',diagnostics,lambda r:any(d.get('severity')==1 for d in r['diagnostics']))
+        check('api_definition',definition,lambda r:bool(r) and r[0]['uri']==provider.as_uri())
         report['api_edit_to_correct_ms']=(time.monotonic_ns()-began)/1e6
         report['outcome']='correct'
     finally:
@@ -124,7 +130,7 @@ def product(a,root,fixture,build,report,backend):
         'java.server.launchMode':'Standard','java.debug.settings.hotCodeReplace':'manual',
         'java.debug.settings.forceBuildBeforeLaunch':True,
         'update.mode':'none','extensions.autoUpdate':False,'telemetry.telemetryLevel':'off'}})
-    config={'fixture':fixture,'report':report,'root':str(root),'backend':backend,'bridge':bridge,'samples':a.samples,'runtime':a.runtime}
+    config={'fixture':fixture,'report':report,'root':str(root),'backend':backend,'bridge':bridge,'samples':a.samples,'workflow':a.workflow}
     write(root/'driver.json',config)
     executable=a.vscode
     if executable.parent.name=='bin' and (executable.parent.parent/'code').is_file():executable=executable.parent.parent/'code'
@@ -137,17 +143,34 @@ def product(a,root,fixture,build,report,backend):
     with (root/'editor.log').open('w') as log:
         process=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT,env=environment,start_new_session=True)
         monitor=ProcessMonitor(process.pid, output=root/"resource-samples.jsonl")
+        began=time.monotonic();deadline=began+a.timeout
+        ready=None
         try:
-            status=process.wait(timeout=a.timeout)
+            while process.poll() is None:
+                if time.monotonic()>deadline:raise TimeoutError('VS Code process deadline exceeded')
+                if (root/'clock-request.json').exists() and not (root/'clock-response.json').exists():
+                    write(root/'clock-response.json',{'monotonic_ms':time.monotonic_ns()/1e6})
+                if ready is None and (root/'driver-result.json').exists():
+                    try:
+                        progress=json.loads((root/'driver-result.json').read_text())
+                        if 'open_to_project_ready_ms' in progress:ready=(time.monotonic()-began)*1000
+                    except json.JSONDecodeError:pass
+                time.sleep(.01)
+            status=process.returncode
+            report['external_open_to_ready_ms']=ready
+            report['editor_process_ms']=(time.monotonic()-began)*1000
             result=root/'driver-result.json'
             if result.exists():report.update(json.loads(result.read_text()))
             if status:raise RuntimeError(f'VS Code exited {status}; see editor.log')
             if report.get('outcome')!='correct':raise AssertionError('VS Code did not produce a checked result')
         finally:
+            if (root/'driver-result.json').exists():
+                report.update(json.loads((root/'driver-result.json').read_text()))
             if process.poll() is None:process.kill();process.wait()
             try:os.killpg(process.pid,signal.SIGTERM)
             except ProcessLookupError:pass
             write(root/'resources.json',monitor.close())
+            workflow_resources(report,root/'resource-samples.jsonl')
 
 
 def main():
@@ -160,7 +183,7 @@ def main():
     parser.add_argument('--mode',choices=['comparison','attribution','retention'],default='comparison')
     parser.add_argument('--runs',type=int,default=5);parser.add_argument('--samples',type=int,default=20)
     parser.add_argument('--sources',type=int,default=4);parser.add_argument('--timeout',type=int,default=240)
-    parser.add_argument('--runtime',action='store_true');parser.add_argument('--smoke',action='store_true')
+    parser.add_argument('--workflow',choices=['language','runtime','coverage'],default='language');parser.add_argument('--smoke',action='store_true')
     a=parser.parse_args()
     for key,value in vars(a).items():
         if isinstance(value,Path):setattr(a,key,value.resolve())
@@ -182,22 +205,24 @@ def main():
         order=a.engines[repetition%len(a.engines):]+a.engines[:repetition%len(a.engines)]
         for name in order:
             root=a.root/f'{name}-{repetition}';root.mkdir()
-            report={'schema':1,'workflow':f'library-development-{repetition}-{name}','engine':name,'repetition':repetition,'mode':a.mode,
+            report={'schema':1,'workflow':f'{a.workflow}-{repetition}-{name}','engine':name,'repetition':repetition,'mode':a.mode,
                     'boundary':'backend-result' if name=='engine-jvmd' else 'VS Code provider readiness','actions':[],
-                    'outcome':'unavailable','runtime':a.runtime,'fixture':'fixture/fixture.json','profiles':[],'unmeasured':['visible UI completion','IntelliJ','retained heap']}
+                    'outcome':'unavailable','scenario':a.workflow,'fixture':'fixture/fixture.json','profiles':[],'unmeasured':['visible UI completion','IntelliJ','retained heap']}
             try:
                 fixture=workflow_fixture(root/'fixture',a.java_home,a.sources)
                 if a.dependency_cache:
                     shutil.copytree(a.dependency_cache,fixture['repository'],dirs_exist_ok=True)
                     # The fixture's local sources must not accidentally resolve from the supplied cache.
                     shutil.rmtree(Path(fixture['repository'])/'workflow',ignore_errors=True)
-                if name=='engine-jvmd':engine(a,root,fixture,build,report)
+                if name=='engine-jvmd':
+                    if a.workflow!='language':raise ValueError('engine adapter currently supports language workflow only')
+                    engine(a,root,fixture,build,report)
                 else:product(a,root,fixture,build,report,name.removeprefix('vscode-'))
             except Exception as error:
                 report['outcome']='failed';report['error']=repr(error);failures.append(root.name)
             finally:
                 if (root/'server.jfr').exists():
-                    try:report['profiles']=[export_workflow_jfr(a.java_home/'bin/jfr',root/'server.jfr',root)]
+                    try:report['profiles']=[export_workflow_jfr(a.java_home/'bin/jfr',root/'server.jfr',root,a.repo)]
                     except Exception as error:report['profile_error']=repr(error)
                 write(root/'report.json',report)
             print(name,repetition,report['outcome'],report.get('error',''),flush=True)

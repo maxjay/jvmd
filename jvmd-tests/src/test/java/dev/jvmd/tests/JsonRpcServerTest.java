@@ -30,6 +30,19 @@ class JsonRpcServerTest {
         assertThat(Framing.read(input)).isNull();
         assertThatThrownBy(() -> Framing.read(new ByteArrayInputStream("Content-Length: -1\r\n\r\n".getBytes()))).isInstanceOf(java.io.IOException.class);
     }
+    @Test void idleExpiryStartsOnlyAfterReady() throws Exception {
+        var config = TestSupport.config(temp, Duration.ofMillis(50));
+        var app = new Application(config);
+        try (var server = new UnixServer(config, app.dispatcher(), app)) {
+            server.start();
+            Thread.sleep(150);
+            assertThat(server.await(10, java.util.concurrent.TimeUnit.MILLISECONDS)).isFalse();
+            assertThat(java.nio.file.Files.exists(config.socket())).isTrue();
+
+            server.ready();
+            assertThat(server.await(2, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        }
+    }
     @Test void actualUnixSocketAndMalformedJsonIsolation() throws Exception {
         var config = TestSupport.config(temp, Duration.ofHours(4));
         var app = new Application(config);

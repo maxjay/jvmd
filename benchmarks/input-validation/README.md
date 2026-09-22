@@ -39,36 +39,14 @@ file bytes; composition hashes and supplied-text checks are not file I/O hashes.
 Reconciliation explicitly drops the candidate's disk observations. The baseline
 has no equivalent operation and does nothing in this scenario. Report this as
 the cost of the new conservative recovery operation, not an equivalent-work
-speed comparison. Process restart is compared by the workspace suite.
-
-Run that suite separately with uninstrumented builds:
-
-```sh
-python benchmarks/workspaces/compile.py --repo "$BENCH_BASE" \
-  --dependencies "$JVMD_BASE_DEPENDENCIES" --java-home "$BENCH_JDK" --output "$EDITOR_BASE"
-python benchmarks/workspaces/compile.py --repo "$PWD" \
-  --dependencies "$JVMD_DEPENDENCIES" --java-home "$BENCH_JDK" --output "$EDITOR_HEAD"
-python benchmarks/workspaces/fixture.py --build "$EDITOR_HEAD/build.json" \
-  --dependencies "$JVMD_DEPENDENCIES" --root "$BENCH_FIXTURES"
-python benchmarks/workspaces/matrix.py --repo "$PWD" \
-  --before "$EDITOR_BASE/build.json" --after "$EDITOR_HEAD/build.json" \
-  --java-home "$BENCH_JDK" --jdtls "$JDTLS_HOME" --resolvers "$JVMD_RESOLVERS" \
-  --fixtures "$BENCH_FIXTURES" --root "$EDITOR_RESULTS" --runs 3 \
-  --sources 32 --workspaces 1 --samples 3 --edits 2 --fixture-names real --modes main after
-python benchmarks/workspaces/verify.py "$EDITOR_RESULTS" "$EDITOR_VERIFICATION"
-python benchmarks/workspaces/summarize.py "$EDITOR_RESULTS" "$EDITOR_SUMMARY"
-```
-
-`main` and `after` here are baseline JVMD and candidate JVMD. Do not use the legacy
-JDTLS-labelled comparison table for those modes. The PR merge-review workflow
-keeps its separate JVMD/JDTLS comparison and attaches `--input-validation` to the
-existing report/dashboard. JVMD-only work counts remain a separate component
-section and do not contribute to JDTLS win counts.
+speed comparison. Prepared language-service requests are measured separately by the
+[workspace benchmark](../workspaces/README.md). Its ordinary comparison, attribution
+and overhead runs use one LSP request path and their own correctness oracle. Component
+work counts here remain separate from JVMD/JDTLS request timings.
 
 Write raw records, profiles and logs to an ignored `target/` directory or an external
-results directory. To independently verify an archived LSP run, extract it into a
-new directory and pass it to `benchmarks/workspaces/verify.py`. Original paths in
-manifests are provenance; the verifier relocates generated workspace sources.
+results directory. Archive the matching source revision and harness with evidence;
+old report formats require their pinned historical verifier.
 
 Each build manifest also records dependency hashes. The original before/after
 measurements used identical dependency versions; future upgrades must build the

@@ -1,0 +1,852 @@
+{
+  "first": {
+    "result": [
+      {
+        "label": "addAttachedArtifact(Artifact artifact) : void",
+        "kind": 2,
+        "insertText": "addAttachedArtifact"
+      },
+      {
+        "label": "addCompileSourceRoot(String path) : void",
+        "kind": 2,
+        "insertText": "addCompileSourceRoot"
+      },
+      {
+        "label": "addContributor(Contributor contributor) : void",
+        "kind": 2,
+        "insertText": "addContributor"
+      },
+      {
+        "label": "addDeveloper(Developer developer) : void",
+        "kind": 2,
+        "insertText": "addDeveloper"
+      },
+      {
+        "label": "addLicense(License license) : void",
+        "kind": 2,
+        "insertText": "addLicense"
+      },
+      {
+        "label": "addLifecyclePhase(String lifecyclePhase) : void",
+        "kind": 2,
+        "insertText": "addLifecyclePhase"
+      },
+      {
+        "label": "addMailingList(MailingList mailingList) : void",
+        "kind": 2,
+        "insertText": "addMailingList"
+      },
+      {
+        "label": "addProjectReference(MavenProject project) : void",
+        "kind": 2,
+        "insertText": "addProjectReference"
+      },
+      {
+        "label": "addResource(Resource resource) : void",
+        "kind": 2,
+        "insertText": "addResource"
+      },
+      {
+        "label": "addScriptSourceRoot(String path) : void",
+        "kind": 2,
+        "insertText": "addScriptSourceRoot"
+      },
+      {
+        "label": "addSourceRoot(ProjectScope scope, Language language, Path directory) : void",
+        "kind": 2,
+        "insertText": "addSourceRoot"
+      },
+      {
+        "label": "addSourceRoot(ProjectScope scope, Language language, String directory) : void",
+        "kind": 2,
+        "insertText": "addSourceRoot"
+      },
+      {
+        "label": "addSourceRoot(SourceRoot source) : void",
+        "kind": 2,
+        "insertText": "addSourceRoot"
+      },
+      {
+        "label": "addTestCompileSourceRoot(String path) : void",
+        "kind": 2,
+        "insertText": "addTestCompileSourceRoot"
+      },
+      {
+        "label": "addTestResource(Resource testResource) : void",
+        "kind": 2,
+        "insertText": "addTestResource"
+      },
+      {
+        "label": "attachArtifact(String type, String classifier, File file) : void",
+        "kind": 2,
+        "insertText": "attachArtifact"
+      },
+      {
+        "label": "clone() : MavenProject",
+        "kind": 2,
+        "insertText": "clone"
+      },
+      {
+        "label": "createArtifacts(ArtifactFactory artifactFactory, String inheritedScope, ArtifactFilter filter) : Set<Artifact>",
+        "kind": 2,
+        "insertText": "createArtifacts"
+      },
+      {
+        "label": "equals(Object other) : boolean",
+        "kind": 2,
+        "insertText": "equals"
+      },
+      {
+        "label": "getActiveProfiles() : List<Profile>",
+        "kind": 2,
+        "insertText": "getActiveProfiles"
+      },
+      {
+        "label": "getArtifact() : Artifact",
+        "kind": 2,
+        "insertText": "getArtifact"
+      },
+      {
+        "label": "getArtifactId() : String",
+        "kind": 2,
+        "insertText": "getArtifactId"
+      },
+      {
+        "label": "getArtifactMap() : Map<String,Artifact>",
+        "kind": 2,
+        "insertText": "getArtifactMap"
+      },
+      {
+        "label": "getArtifacts() : Set<Artifact>",
+        "kind": 2,
+        "insertText": "getArtifacts"
+      },
+      {
+        "label": "getAttachedArtifacts() : List<Artifact>",
+        "kind": 2,
+        "insertText": "getAttachedArtifacts"
+      },
+      {
+        "label": "getBasedir() : File",
+        "kind": 2,
+        "insertText": "getBasedir"
+      },
+      {
+        "label": "getBaseDirectory() : Path",
+        "kind": 2,
+        "insertText": "getBaseDirectory"
+      },
+      {
+        "label": "getBuild() : Build",
+        "kind": 2,
+        "insertText": "getBuild"
+      },
+      {
+        "label": "getBuildExtensions() : List<Extension>",
+        "kind": 2,
+        "insertText": "getBuildExtensions"
+      },
+      {
+        "label": "getBuildPlugins() : List<Plugin>",
+        "kind": 2,
+        "insertText": "getBuildPlugins"
+      },
+      {
+        "label": "getCiManagement() : CiManagement",
+        "kind": 2,
+        "insertText": "getCiManagement"
+      },
+      {
+        "label": "getClass() : Class<?>",
+        "kind": 2,
+        "insertText": "getClass"
+      },
+      {
+        "label": "getClassRealm() : ClassRealm",
+        "kind": 2,
+        "insertText": "getClassRealm"
+      },
+      {
+        "label": "getCollectedProjects() : List<MavenProject>",
+        "kind": 2,
+        "insertText": "getCollectedProjects"
+      },
+      {
+        "label": "getCompileArtifacts() : List<Artifact>",
+        "kind": 2,
+        "insertText": "getCompileArtifacts"
+      },
+      {
+        "label": "getCompileClasspathElements() : List<String>",
+        "kind": 2,
+        "insertText": "getCompileClasspathElements"
+      },
+      {
+        "label": "getCompileDependencies() : List<Dependency>",
+        "kind": 2,
+        "insertText": "getCompileDependencies"
+      },
+      {
+        "label": "getCompileSourceRoots() : List<String>",
+        "kind": 2,
+        "insertText": "getCompileSourceRoots"
+      },
+      {
+        "label": "getContextValue(String key) : Object",
+        "kind": 2,
+        "insertText": "getContextValue"
+      },
+      {
+        "label": "getContributors() : List<Contributor>",
+        "kind": 2,
+        "insertText": "getContributors"
+      },
+      {
+        "label": "getDefaultGoal() : String",
+        "kind": 2,
+        "insertText": "getDefaultGoal"
+      },
+      {
+        "label": "getDependencies() : List<Dependency>",
+        "kind": 2,
+        "insertText": "getDependencies"
+      },
+      {
+        "label": "getDependencyArtifacts() : Set<Artifact>",
+        "kind": 2,
+        "insertText": "getDependencyArtifacts"
+      },
+      {
+        "label": "getDependencyManagement() : DependencyManagement",
+        "kind": 2,
+        "insertText": "getDependencyManagement"
+      },
+      {
+        "label": "getDescription() : String",
+        "kind": 2,
+        "insertText": "getDescription"
+      },
+      {
+        "label": "getDevelopers() : List<Developer>",
+        "kind": 2,
+        "insertText": "getDevelopers"
+      },
+      {
+        "label": "getDistributionManagement() : DistributionManagement",
+        "kind": 2,
+        "insertText": "getDistributionManagement"
+      },
+      {
+        "label": "getDistributionManagementArtifactRepository() : ArtifactRepository",
+        "kind": 2,
+        "insertText": "getDistributionManagementArtifactRepository"
+      },
+      {
+        "label": "getEnabledSourceRoots(ProjectScope scope, Language language) : Stream<SourceRoot>",
+        "kind": 2,
+        "insertText": "getEnabledSourceRoots"
+      },
+      {
+        "label": "sources : Set<org.apache.maven.api.SourceRoot>",
+        "kind": 5,
+        "insertText": "sources"
+      }
+    ],
+    "metrics": {
+      "latencyMs": 953.730193000003,
+      "memory": {
+        "before": {
+          "serverKb": 1702212,
+          "adapterKb": 0,
+          "totalKb": 1702212
+        },
+        "after": {
+          "serverKb": 1709360,
+          "adapterKb": 0,
+          "totalKb": 1709360
+        },
+        "peak": {
+          "serverKb": 1709360,
+          "adapterKb": 0,
+          "totalKb": 1709360
+        }
+      }
+    }
+  },
+  "resolved": {
+    "result": {
+      "label": "sources : Set<org.apache.maven.api.SourceRoot>",
+      "detail": "MavenProject.sources : Set<org.apache.maven.api.SourceRoot>",
+      "documentation": null,
+      "insertText": "sources"
+    },
+    "metrics": {
+      "latencyMs": 21.8810020000019,
+      "memory": {
+        "before": {
+          "serverKb": 1709384,
+          "adapterKb": 0,
+          "totalKb": 1709384
+        },
+        "after": {
+          "serverKb": 1709460,
+          "adapterKb": 0,
+          "totalKb": 1709460
+        },
+        "peak": {
+          "serverKb": 1709460,
+          "adapterKb": 0,
+          "totalKb": 1709460
+        }
+      }
+    }
+  },
+  "repeated": {
+    "result": [
+      {
+        "label": "addAttachedArtifact(Artifact artifact) : void",
+        "kind": 2,
+        "insertText": "addAttachedArtifact"
+      },
+      {
+        "label": "addCompileSourceRoot(String path) : void",
+        "kind": 2,
+        "insertText": "addCompileSourceRoot"
+      },
+      {
+        "label": "addContributor(Contributor contributor) : void",
+        "kind": 2,
+        "insertText": "addContributor"
+      },
+      {
+        "label": "addDeveloper(Developer developer) : void",
+        "kind": 2,
+        "insertText": "addDeveloper"
+      },
+      {
+        "label": "addLicense(License license) : void",
+        "kind": 2,
+        "insertText": "addLicense"
+      },
+      {
+        "label": "addLifecyclePhase(String lifecyclePhase) : void",
+        "kind": 2,
+        "insertText": "addLifecyclePhase"
+      },
+      {
+        "label": "addMailingList(MailingList mailingList) : void",
+        "kind": 2,
+        "insertText": "addMailingList"
+      },
+      {
+        "label": "addProjectReference(MavenProject project) : void",
+        "kind": 2,
+        "insertText": "addProjectReference"
+      },
+      {
+        "label": "addResource(Resource resource) : void",
+        "kind": 2,
+        "insertText": "addResource"
+      },
+      {
+        "label": "addScriptSourceRoot(String path) : void",
+        "kind": 2,
+        "insertText": "addScriptSourceRoot"
+      },
+      {
+        "label": "addSourceRoot(ProjectScope scope, Language language, Path directory) : void",
+        "kind": 2,
+        "insertText": "addSourceRoot"
+      },
+      {
+        "label": "addSourceRoot(ProjectScope scope, Language language, String directory) : void",
+        "kind": 2,
+        "insertText": "addSourceRoot"
+      },
+      {
+        "label": "addSourceRoot(SourceRoot source) : void",
+        "kind": 2,
+        "insertText": "addSourceRoot"
+      },
+      {
+        "label": "addTestCompileSourceRoot(String path) : void",
+        "kind": 2,
+        "insertText": "addTestCompileSourceRoot"
+      },
+      {
+        "label": "addTestResource(Resource testResource) : void",
+        "kind": 2,
+        "insertText": "addTestResource"
+      },
+      {
+        "label": "attachArtifact(String type, String classifier, File file) : void",
+        "kind": 2,
+        "insertText": "attachArtifact"
+      },
+      {
+        "label": "clone() : MavenProject",
+        "kind": 2,
+        "insertText": "clone"
+      },
+      {
+        "label": "createArtifacts(ArtifactFactory artifactFactory, String inheritedScope, ArtifactFilter filter) : Set<Artifact>",
+        "kind": 2,
+        "insertText": "createArtifacts"
+      },
+      {
+        "label": "equals(Object other) : boolean",
+        "kind": 2,
+        "insertText": "equals"
+      },
+      {
+        "label": "getActiveProfiles() : List<Profile>",
+        "kind": 2,
+        "insertText": "getActiveProfiles"
+      },
+      {
+        "label": "getArtifact() : Artifact",
+        "kind": 2,
+        "insertText": "getArtifact"
+      },
+      {
+        "label": "getArtifactId() : String",
+        "kind": 2,
+        "insertText": "getArtifactId"
+      },
+      {
+        "label": "getArtifactMap() : Map<String,Artifact>",
+        "kind": 2,
+        "insertText": "getArtifactMap"
+      },
+      {
+        "label": "getArtifacts() : Set<Artifact>",
+        "kind": 2,
+        "insertText": "getArtifacts"
+      },
+      {
+        "label": "getAttachedArtifacts() : List<Artifact>",
+        "kind": 2,
+        "insertText": "getAttachedArtifacts"
+      },
+      {
+        "label": "getBasedir() : File",
+        "kind": 2,
+        "insertText": "getBasedir"
+      },
+      {
+        "label": "getBaseDirectory() : Path",
+        "kind": 2,
+        "insertText": "getBaseDirectory"
+      },
+      {
+        "label": "getBuild() : Build",
+        "kind": 2,
+        "insertText": "getBuild"
+      },
+      {
+        "label": "getBuildExtensions() : List<Extension>",
+        "kind": 2,
+        "insertText": "getBuildExtensions"
+      },
+      {
+        "label": "getBuildPlugins() : List<Plugin>",
+        "kind": 2,
+        "insertText": "getBuildPlugins"
+      },
+      {
+        "label": "getCiManagement() : CiManagement",
+        "kind": 2,
+        "insertText": "getCiManagement"
+      },
+      {
+        "label": "getClass() : Class<?>",
+        "kind": 2,
+        "insertText": "getClass"
+      },
+      {
+        "label": "getClassRealm() : ClassRealm",
+        "kind": 2,
+        "insertText": "getClassRealm"
+      },
+      {
+        "label": "getCollectedProjects() : List<MavenProject>",
+        "kind": 2,
+        "insertText": "getCollectedProjects"
+      },
+      {
+        "label": "getCompileArtifacts() : List<Artifact>",
+        "kind": 2,
+        "insertText": "getCompileArtifacts"
+      },
+      {
+        "label": "getCompileClasspathElements() : List<String>",
+        "kind": 2,
+        "insertText": "getCompileClasspathElements"
+      },
+      {
+        "label": "getCompileDependencies() : List<Dependency>",
+        "kind": 2,
+        "insertText": "getCompileDependencies"
+      },
+      {
+        "label": "getCompileSourceRoots() : List<String>",
+        "kind": 2,
+        "insertText": "getCompileSourceRoots"
+      },
+      {
+        "label": "getContextValue(String key) : Object",
+        "kind": 2,
+        "insertText": "getContextValue"
+      },
+      {
+        "label": "getContributors() : List<Contributor>",
+        "kind": 2,
+        "insertText": "getContributors"
+      },
+      {
+        "label": "getDefaultGoal() : String",
+        "kind": 2,
+        "insertText": "getDefaultGoal"
+      },
+      {
+        "label": "getDependencies() : List<Dependency>",
+        "kind": 2,
+        "insertText": "getDependencies"
+      },
+      {
+        "label": "getDependencyArtifacts() : Set<Artifact>",
+        "kind": 2,
+        "insertText": "getDependencyArtifacts"
+      },
+      {
+        "label": "getDependencyManagement() : DependencyManagement",
+        "kind": 2,
+        "insertText": "getDependencyManagement"
+      },
+      {
+        "label": "getDescription() : String",
+        "kind": 2,
+        "insertText": "getDescription"
+      },
+      {
+        "label": "getDevelopers() : List<Developer>",
+        "kind": 2,
+        "insertText": "getDevelopers"
+      },
+      {
+        "label": "getDistributionManagement() : DistributionManagement",
+        "kind": 2,
+        "insertText": "getDistributionManagement"
+      },
+      {
+        "label": "getDistributionManagementArtifactRepository() : ArtifactRepository",
+        "kind": 2,
+        "insertText": "getDistributionManagementArtifactRepository"
+      },
+      {
+        "label": "getEnabledSourceRoots(ProjectScope scope, Language language) : Stream<SourceRoot>",
+        "kind": 2,
+        "insertText": "getEnabledSourceRoots"
+      },
+      {
+        "label": "sources : Set<org.apache.maven.api.SourceRoot>",
+        "kind": 5,
+        "insertText": "sources"
+      }
+    ],
+    "metrics": {
+      "latencyMs": 140.81676800000423,
+      "memory": {
+        "before": {
+          "serverKb": 1709460,
+          "adapterKb": 0,
+          "totalKb": 1709460
+        },
+        "after": {
+          "serverKb": 1709620,
+          "adapterKb": 0,
+          "totalKb": 1709620
+        },
+        "peak": {
+          "serverKb": 1709620,
+          "adapterKb": 0,
+          "totalKb": 1709620
+        }
+      }
+    }
+  },
+  "afterUnsavedEdit": {
+    "result": [
+      {
+        "label": "addAttachedArtifact(Artifact artifact) : void",
+        "kind": 2,
+        "insertText": "addAttachedArtifact"
+      },
+      {
+        "label": "addCompileSourceRoot(String path) : void",
+        "kind": 2,
+        "insertText": "addCompileSourceRoot"
+      },
+      {
+        "label": "addContributor(Contributor contributor) : void",
+        "kind": 2,
+        "insertText": "addContributor"
+      },
+      {
+        "label": "addDeveloper(Developer developer) : void",
+        "kind": 2,
+        "insertText": "addDeveloper"
+      },
+      {
+        "label": "addLicense(License license) : void",
+        "kind": 2,
+        "insertText": "addLicense"
+      },
+      {
+        "label": "addLifecyclePhase(String lifecyclePhase) : void",
+        "kind": 2,
+        "insertText": "addLifecyclePhase"
+      },
+      {
+        "label": "addMailingList(MailingList mailingList) : void",
+        "kind": 2,
+        "insertText": "addMailingList"
+      },
+      {
+        "label": "addProjectReference(MavenProject project) : void",
+        "kind": 2,
+        "insertText": "addProjectReference"
+      },
+      {
+        "label": "addResource(Resource resource) : void",
+        "kind": 2,
+        "insertText": "addResource"
+      },
+      {
+        "label": "addScriptSourceRoot(String path) : void",
+        "kind": 2,
+        "insertText": "addScriptSourceRoot"
+      },
+      {
+        "label": "addSourceRoot(ProjectScope scope, Language language, Path directory) : void",
+        "kind": 2,
+        "insertText": "addSourceRoot"
+      },
+      {
+        "label": "addSourceRoot(ProjectScope scope, Language language, String directory) : void",
+        "kind": 2,
+        "insertText": "addSourceRoot"
+      },
+      {
+        "label": "addSourceRoot(SourceRoot source) : void",
+        "kind": 2,
+        "insertText": "addSourceRoot"
+      },
+      {
+        "label": "addTestCompileSourceRoot(String path) : void",
+        "kind": 2,
+        "insertText": "addTestCompileSourceRoot"
+      },
+      {
+        "label": "addTestResource(Resource testResource) : void",
+        "kind": 2,
+        "insertText": "addTestResource"
+      },
+      {
+        "label": "attachArtifact(String type, String classifier, File file) : void",
+        "kind": 2,
+        "insertText": "attachArtifact"
+      },
+      {
+        "label": "benchmarkAddedMethod() : void",
+        "kind": 2,
+        "insertText": "benchmarkAddedMethod"
+      },
+      {
+        "label": "clone() : MavenProject",
+        "kind": 2,
+        "insertText": "clone"
+      },
+      {
+        "label": "createArtifacts(ArtifactFactory artifactFactory, String inheritedScope, ArtifactFilter filter) : Set<Artifact>",
+        "kind": 2,
+        "insertText": "createArtifacts"
+      },
+      {
+        "label": "equals(Object other) : boolean",
+        "kind": 2,
+        "insertText": "equals"
+      },
+      {
+        "label": "getActiveProfiles() : List<Profile>",
+        "kind": 2,
+        "insertText": "getActiveProfiles"
+      },
+      {
+        "label": "getArtifact() : Artifact",
+        "kind": 2,
+        "insertText": "getArtifact"
+      },
+      {
+        "label": "getArtifactId() : String",
+        "kind": 2,
+        "insertText": "getArtifactId"
+      },
+      {
+        "label": "getArtifactMap() : Map<String,Artifact>",
+        "kind": 2,
+        "insertText": "getArtifactMap"
+      },
+      {
+        "label": "getArtifacts() : Set<Artifact>",
+        "kind": 2,
+        "insertText": "getArtifacts"
+      },
+      {
+        "label": "getAttachedArtifacts() : List<Artifact>",
+        "kind": 2,
+        "insertText": "getAttachedArtifacts"
+      },
+      {
+        "label": "getBasedir() : File",
+        "kind": 2,
+        "insertText": "getBasedir"
+      },
+      {
+        "label": "getBaseDirectory() : Path",
+        "kind": 2,
+        "insertText": "getBaseDirectory"
+      },
+      {
+        "label": "getBuild() : Build",
+        "kind": 2,
+        "insertText": "getBuild"
+      },
+      {
+        "label": "getBuildExtensions() : List<Extension>",
+        "kind": 2,
+        "insertText": "getBuildExtensions"
+      },
+      {
+        "label": "getBuildPlugins() : List<Plugin>",
+        "kind": 2,
+        "insertText": "getBuildPlugins"
+      },
+      {
+        "label": "getCiManagement() : CiManagement",
+        "kind": 2,
+        "insertText": "getCiManagement"
+      },
+      {
+        "label": "getClass() : Class<?>",
+        "kind": 2,
+        "insertText": "getClass"
+      },
+      {
+        "label": "getClassRealm() : ClassRealm",
+        "kind": 2,
+        "insertText": "getClassRealm"
+      },
+      {
+        "label": "getCollectedProjects() : List<MavenProject>",
+        "kind": 2,
+        "insertText": "getCollectedProjects"
+      },
+      {
+        "label": "getCompileArtifacts() : List<Artifact>",
+        "kind": 2,
+        "insertText": "getCompileArtifacts"
+      },
+      {
+        "label": "getCompileClasspathElements() : List<String>",
+        "kind": 2,
+        "insertText": "getCompileClasspathElements"
+      },
+      {
+        "label": "getCompileDependencies() : List<Dependency>",
+        "kind": 2,
+        "insertText": "getCompileDependencies"
+      },
+      {
+        "label": "getCompileSourceRoots() : List<String>",
+        "kind": 2,
+        "insertText": "getCompileSourceRoots"
+      },
+      {
+        "label": "getContextValue(String key) : Object",
+        "kind": 2,
+        "insertText": "getContextValue"
+      },
+      {
+        "label": "getContributors() : List<Contributor>",
+        "kind": 2,
+        "insertText": "getContributors"
+      },
+      {
+        "label": "getDefaultGoal() : String",
+        "kind": 2,
+        "insertText": "getDefaultGoal"
+      },
+      {
+        "label": "getDependencies() : List<Dependency>",
+        "kind": 2,
+        "insertText": "getDependencies"
+      },
+      {
+        "label": "getDependencyArtifacts() : Set<Artifact>",
+        "kind": 2,
+        "insertText": "getDependencyArtifacts"
+      },
+      {
+        "label": "getDependencyManagement() : DependencyManagement",
+        "kind": 2,
+        "insertText": "getDependencyManagement"
+      },
+      {
+        "label": "getDescription() : String",
+        "kind": 2,
+        "insertText": "getDescription"
+      },
+      {
+        "label": "getDevelopers() : List<Developer>",
+        "kind": 2,
+        "insertText": "getDevelopers"
+      },
+      {
+        "label": "getDistributionManagement() : DistributionManagement",
+        "kind": 2,
+        "insertText": "getDistributionManagement"
+      },
+      {
+        "label": "getDistributionManagementArtifactRepository() : ArtifactRepository",
+        "kind": 2,
+        "insertText": "getDistributionManagementArtifactRepository"
+      },
+      {
+        "label": "sources : Set<org.apache.maven.api.SourceRoot>",
+        "kind": 5,
+        "insertText": "sources"
+      }
+    ],
+    "metrics": {
+      "latencyMs": 210.13052099999913,
+      "memory": {
+        "before": {
+          "serverKb": 1709620,
+          "adapterKb": 0,
+          "totalKb": 1709620
+        },
+        "after": {
+          "serverKb": 1710072,
+          "adapterKb": 0,
+          "totalKb": 1710072
+        },
+        "peak": {
+          "serverKb": 1710072,
+          "adapterKb": 0,
+          "totalKb": 1710072
+        }
+      }
+    }
+  }
+}

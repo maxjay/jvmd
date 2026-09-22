@@ -206,6 +206,12 @@ export abstract class LspScenarioHarness {
       jvmdPeakMb: actual[name] ? mb(actual[name].metrics.memory.peak.totalKb) : "-",
     })));
 
+    for (const caseName of cases) {
+      if (!correctness[caseName]) {
+        console.log(formatMismatch(caseName, expected[caseName], actual[caseName]));
+      }
+    }
+
     writeSummary(this.id, this.name, actual, expected, correctness);
   }
 }
@@ -369,6 +375,75 @@ function mb(kb: number) {
   return (kb / 1024).toFixed(1);
 }
 
+function formatMismatch(
+  caseName: string,
+  expected?: Measurement<unknown>,
+  actual?: Measurement<unknown>,
+) {
+  const lines = [`\n=== mismatch: ${caseName} ===`];
+
+  if (!expected) {
+    lines.push("JDTLS case: missing");
+    lines.push("JVMD:", JSON.stringify(actual?.result, null, 2));
+    return lines.join("\n");
+  }
+
+  if (!actual) {
+    lines.push("JVMD case: missing");
+    lines.push("JDTLS:", JSON.stringify(expected.result, null, 2));
+    return lines.join("\n");
+  }
+
+  if (Array.isArray(expected.result) && Array.isArray(actual.result)) {
+    const diff = arrayDiff(expected.result, actual.result);
+    lines.push(`JDTLS items: ${expected.result.length}`);
+    lines.push(`JVMD items: ${actual.result.length}`);
+    lines.push(`Missing from JVMD: ${diff.missing.length}`);
+    lines.push(JSON.stringify(diff.missing.slice(0, 20), null, 2));
+    lines.push(`Extra in JVMD: ${diff.extra.length}`);
+    lines.push(JSON.stringify(diff.extra.slice(0, 20), null, 2));
+    return lines.join("\n");
+  }
+
+  lines.push("JDTLS:", JSON.stringify(expected.result, null, 2));
+  lines.push("JVMD:", JSON.stringify(actual.result, null, 2));
+  return lines.join("\n");
+}
+
+function arrayDiff(expected: unknown[], actual: unknown[]) {
+  const actualCounts = counts(actual);
+  const missing: unknown[] = [];
+  for (const item of expected) {
+    const key = stableKey(item);
+    const remaining = actualCounts.get(key) ?? 0;
+    if (remaining > 0) actualCounts.set(key, remaining - 1);
+    else missing.push(item);
+  }
+
+  const expectedCounts = counts(expected);
+  const extra: unknown[] = [];
+  for (const item of actual) {
+    const key = stableKey(item);
+    const remaining = expectedCounts.get(key) ?? 0;
+    if (remaining > 0) expectedCounts.set(key, remaining - 1);
+    else extra.push(item);
+  }
+
+  return { missing, extra };
+}
+
+function counts(values: unknown[]) {
+  const result = new Map<string, number>();
+  for (const value of values) {
+    const key = stableKey(value);
+    result.set(key, (result.get(key) ?? 0) + 1);
+  }
+  return result;
+}
+
+function stableKey(value: unknown) {
+  return JSON.stringify(value);
+}
 
 function writeSummary(
   id: string,
@@ -406,6 +481,57 @@ function writeSummary(
       lines.push(
         `| ${caseName} | ${current.metrics.latencyMs.toFixed(2)} | ${mb(current.metrics.memory.peak.totalKb)} |`,
       );
+    }
+  }
+
+  if (expected) {
+    const mismatches = cases.filter(caseName => !correctness[caseName]);
+    if (mismatches.length) {
+      lines.push("", "### Correctness mismatches", "");
+      for (const caseName of mismatches) {
+        const baseline = expected[caseName];
+        const current = actual[caseName];
+        lines.push(`#### ${caseName}`, "");
+
+        if (!baseline) {
+          lines.push("JDTLS case is missing.", "");
+          continue;
+        }
+
+        if (!current) {
+          lines.push("JVMD case is missing.", "");
+          lines.push("JDTLS result:", "", "    " + JSON.stringify(baseline.result, null, 2).replace(/\n/g, "\n    "), "");
+          continue;
+        }
+
+        if (Array.isArray(baseline.result) && Array.isArray(current.result)) {
+          const diff = arrayDiff(baseline.result, current.result);
+          lines.push(
+            `- JDTLS items: **${baseline.result.length}**`,
+            `- JVMD items: **${current.result.length}**`,
+            `- Missing from JVMD: **${diff.missing.length}**`,
+            `- Extra in JVMD: **${diff.extra.length}**`,
+            "",
+          );
+          if (diff.missing.length) {
+            lines.push("Missing from JVMD (first 20):", "", "    " + JSON.stringify(diff.missing.slice(0, 20), null, 2).replace(/\n/g, "\n    "), "");
+          }
+          if (diff.extra.length) {
+            lines.push("Extra in JVMD (first 20):", "", "    " + JSON.stringify(diff.extra.slice(0, 20), null, 2).replace(/\n/g, "\n    "), "");
+          }
+        } else {
+          lines.push(
+            "JDTLS result:",
+            "",
+            "    " + JSON.stringify(baseline.result, null, 2).replace(/\n/g, "\n    "),
+            "",
+            "JVMD result:",
+            "",
+            "    " + JSON.stringify(current.result, null, 2).replace(/\n/g, "\n    "),
+            "",
+          );
+        }
+      }
     }
   }
 

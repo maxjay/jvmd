@@ -1,9 +1,43 @@
 #!/usr/bin/env python3
 """Preserve per-worker values and aggregate medians without dropping slower runs."""
 import argparse, json, statistics
+import math
 from pathlib import Path
 
 def med(values): return statistics.median(values)
+
+
+def summarize_workflows(root):
+    from verify import verify_workflows
+    verification=verify_workflows(root)
+    checked={r['worker']:r for r in verification['workflow_workers']}
+    invocations=[];groups={}
+    for path in sorted(root.glob('*/report.json')):
+        report=json.loads(path.read_text())
+        if 'workflow' not in report:continue
+        report['directory']=path.parent.name
+        report['verification']=checked[path.parent.name]
+        for file,key in [('resources.json','resources'),('trace.json','trace')]:
+            report[key]=json.loads((path.parent/file).read_text()) if (path.parent/file).exists() else None
+        invocations.append(report)
+        for name in sorted({a['name'] for a in report['actions']}):
+            actions=[a for a in report['actions'] if a['name']==name]
+            successes=[a['time_to_correct_ms'] for a in actions if a['outcome']=='correct'] if checked[path.parent.name]['verified'] else []
+            row={'repetition':report['repetition'],'invocation':report['workflow'],'attempts':sum(len(a['attempts']) for a in actions),
+                 'count':len(actions),'correct':len(successes),'failures':len(actions)-len(successes),
+                 'p50_ms':med(successes) if successes else None,
+                 'p95_ms':sorted(successes)[math.ceil(.95*len(successes))-1] if len(successes)>=20 else None}
+            groups.setdefault((report['engine'],report['mode'],name),[]).append(row)
+    rows=[]
+    for (engine,mode,name),processes in groups.items():
+        values=[p['p50_ms'] for p in processes if p['p50_ms'] is not None]
+        rows.append({'engine':engine,'mode':mode,'action':name,'processes':processes,
+                     'correct':sum(p['correct'] for p in processes),'failures':sum(p['failures'] for p in processes),
+                     'p50_ms':med(values) if values else None,'min_process_p50_ms':min(values) if values else None,'max_process_p50_ms':max(values) if values else None,
+                     'p95_ms':med(p['p95_ms'] for p in processes) if all(p['p95_ms'] is not None for p in processes) else None})
+    return {'schema':1,'kind':'workflows','rows':rows,'invocations':invocations,'verification':verification,
+            'provenance':json.loads((root/'provenance.json').read_text()),
+            'aggregation':'Median of per-process medians; p95 only with at least 20 correct samples in every process. Failed workers remain visible and contribute no fast successes. Modes never mixed.'}
 
 def summarize(root):
     groups = {}; totals = {'workers': 0, 'workspaces': 0, 'editor_requests': 0}
@@ -45,5 +79,6 @@ def summarize(root):
             'aggregation': 'Median of worker medians; new-workspace metrics use resident roots; warm metrics exclude the first request.', 'totals': totals, 'fixtures': output}
 
 if __name__ == '__main__':
-    p = argparse.ArgumentParser(); p.add_argument('root', type=Path); p.add_argument('output', type=Path); a = p.parse_args()
-    result = summarize(a.root); a.output.write_text(json.dumps(result, indent=2)+'\n'); print(json.dumps(result['totals']))
+    p = argparse.ArgumentParser(); p.add_argument('root', type=Path); p.add_argument('output', type=Path); p.add_argument('--workflows',action='store_true'); a = p.parse_args()
+    result = summarize_workflows(a.root) if a.workflows else summarize(a.root)
+    a.output.write_text(json.dumps(result, indent=2)+'\n'); print(json.dumps(result.get('totals',result.get('verification'))))

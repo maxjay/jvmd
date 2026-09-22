@@ -8,14 +8,14 @@ public final class RequestScope {
     @FunctionalInterface public interface ThrowingSupplier<T>{T get()throws Exception;}
     private static final Object NULL=new Object();
     public record Context(long id,String method,ConcurrentMap<Object,CompletableFuture<Object>> values,
-                          String workflow,String revision,Span span){}
+                          String workflow,String revision,Span span,long causalSpan){}
     private static final AtomicLong sequence=new AtomicLong();
     private static final ThreadLocal<Context> current=new ThreadLocal<>();
     private RequestScope(){}
 
     public static <T> T call(String method,ThrowingSupplier<T> supplier)throws Exception{
         if(current.get()!=null)return supplier.get();
-        var context=new Context(sequence.incrementAndGet(),method,new ConcurrentHashMap<>(),"","",null);
+        var context=new Context(sequence.incrementAndGet(),method,new ConcurrentHashMap<>(),"","",null,0);
         current.set(context);
         try{return supplier.get();}finally{current.remove();}
     }
@@ -75,7 +75,7 @@ public final class RequestScope {
     public static <T> T traced(String method,String workflow,String revision,ThrowingSupplier<T> work)throws Exception{
         if(!TRACING)return call(method,work);
         var previous=current.get();
-        current.set(new Context(sequence.incrementAndGet(),method,new ConcurrentHashMap<>(),workflow,revision,null));
+        current.set(new Context(sequence.incrementAndGet(),method,new ConcurrentHashMap<>(),workflow,revision,null,0));
         try(var span=stage("rpc.execute")){
             try{return work.get();}catch(Exception|Error error){span.outcome("failed");throw error;}
         }finally{if(previous==null)current.remove();else current.set(previous);}
@@ -97,6 +97,14 @@ public final class RequestScope {
         if(context!=null&&context.span()!=null)context.span().count(name,value);
     }
 
+    /** Causal identity for detached publication, without retaining request memoized values. */
+    public static Context detached(){
+        if(!TRACING)return null;
+        var context=current.get();
+        return context==null?null:new Context(context.id(),context.method(),new ConcurrentHashMap<>(),context.workflow(),context.revision(),null,
+                context.span()==null?context.causalSpan():context.span().span);
+    }
+
     @jdk.jfr.Name("dev.jvmd.Stage")
     @jdk.jfr.Label("JVMD workflow stage")
     @jdk.jfr.Category("JVMD")
@@ -116,8 +124,8 @@ public final class RequestScope {
             stage=name;span=spans.incrementAndGet();process=ProcessHandle.current().pid();
             if(previous!=null){
                 workflow=previous.workflow();revision=previous.revision();method=previous.method();request=previous.id();
-                parent=previous.span()==null?0:previous.span().span;
-                current.set(new Context(request,method,previous.values(),workflow,revision,this));
+                parent=previous.span()==null?previous.causalSpan():previous.span().span;
+                current.set(new Context(request,method,previous.values(),workflow,revision,this,parent));
             }
             queued=enqueue!=0;startNanos=queued?enqueue:System.nanoTime();
             virtualThread=Thread.currentThread().isVirtual();

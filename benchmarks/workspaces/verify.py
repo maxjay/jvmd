@@ -13,6 +13,7 @@ def source_path(uri, worker):
     return worker.joinpath(*original.parts[offset:])
 
 def selected(text, range_):
+    if isinstance(range_,list):range_={'start':range_[0],'end':range_[1]}
     lines = text.splitlines(keepends=True)
     def offset(position): return sum(len(s) for s in lines[:position['line']])+position['character']
     start, end = offset(range_['start']), offset(range_['end']); assert 0 <= start < end <= len(text)
@@ -39,11 +40,19 @@ def workflow_oracle(name, result, fixture):
         errors=[d for d in result.get('diagnostics',[]) if d.get('severity')==1]
         if name=='revert_diagnostics':return not errors
         # The only erroneous statement is the typed caller on zero-based line 2.
-        return bool(errors) and all(d['range']['start']['line']==2 for d in errors) and any(
+        return bool(errors) and all((d['range'][0] if isinstance(d['range'],list) else d['range']['start'])['line']==2 for d in errors) and any(
             any(term in d.get('message','').lower() for term in ('string','int','convert','type')) for d in errors)
     if name in ('run_output','hotswap_output'):
         marker=fixture['expected']['B' if name=='run_output' else 'C']
-        return marker in result.get('output','')
+        return marker in result.get('output','') and result.get('pid',0)>0 and (name!='hotswap_output' or result['pid']==result.get('original_pid'))
+    if name in ('debug_stop','debug_step'):
+        frames=result.get('frames',[])
+        if not frames:return False
+        frame=frames[0]
+        if name=='debug_stop':return frame.get('source_file')==fixture['files']['provider'] and frame.get('line')==fixture['expected']['breakpoint_line']
+        return frame.get('source_file')==fixture['files']['main'] and 'main' in frame.get('method','')
+    if name=='debug_locals':
+        return all(any(v.get('name')==name and v.get('value')==value for v in result.get('locals',[])) for name,value in fixture['expected']['locals'].items())
     raise AssertionError('Missing independent oracle: '+name)
 
 
@@ -67,6 +76,7 @@ def verify_workflows(root):
             if action.get('retry_count')!=max(0,len(valid)-1):errors.append(action['name']+': retry count')
             if action['outcome']!='correct' and action.get('time_to_correct_ms') is not None:errors.append(action['name']+': failure has success timing')
         required={'warm_completion','warm_definition','api_completion','api_diagnostics','api_definition'}
+        if report.get('runtime'):required.update({'run_output','debug_stop','debug_locals','debug_step','hotswap_output'})
         if report['outcome']=='correct' and not required.issubset({a['name'] for a in report['actions']}):errors.append('missing required actions')
         workers.append({'worker':path.parent.name,'outcome':report['outcome'],'verified':not errors and report['outcome']=='correct',
                         'attempts':attempts,'errors':errors})

@@ -122,7 +122,7 @@ def product(a,root,fixture,build,report,backend):
         'java.configuration.maven.userSettings':str(settings),'java.configuration.updateBuildConfiguration':'automatic',
         'java.import.maven.enabled':True,'java.import.gradle.enabled':False,'java.autobuild.enabled':True,
         'java.server.launchMode':'Standard','java.debug.settings.hotCodeReplace':'manual',
-        'java.debug.settings.forceBuildBeforeLaunch':True,'java.configuration.runtimes':[{'name':'JavaSE-17','path':str(a.java_home),'default':True}],
+        'java.debug.settings.forceBuildBeforeLaunch':True,
         'update.mode':'none','extensions.autoUpdate':False,'telemetry.telemetryLevel':'off'}})
     config={'fixture':fixture,'report':report,'root':str(root),'backend':backend,'bridge':bridge,'samples':a.samples,'runtime':a.runtime}
     write(root/'driver.json',config)
@@ -153,6 +153,7 @@ def product(a,root,fixture,build,report,backend):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('repo','build','java-home','resolvers','root'):parser.add_argument('--'+name,type=Path,required=True)
+    parser.add_argument('--dependency-cache',type=Path,help='Prepared Maven artifact cache copied equally before each timed process; downloads are excluded')
     parser.add_argument('--vscode',type=Path);parser.add_argument('--extensions',type=Path)
     parser.add_argument('--node',default=shutil.which('node'))
     parser.add_argument('--engines',nargs='+',choices=['engine-jvmd','vscode-jvmd','vscode-java'],default=['vscode-jvmd','vscode-java'])
@@ -170,7 +171,7 @@ def main():
     provenance={'build':build,'command':sys.argv,'platform':sys.platform,'machine':dict(zip(('sysname','nodename','release','version','machine'),os.uname())),
                 'java':subprocess.check_output([str(a.java_home/'bin/java'),'-version'],stderr=subprocess.STDOUT,text=True),
                 'node':subprocess.check_output([a.node,'--version'],text=True),'harness':{str(p.relative_to(a.repo)):sha(p) for p in HERE.iterdir() if p.is_file()},
-                'cache':'fresh tool/project state; generated external dependency cached; OS caches not flushed',
+                'cache':{'project':'fresh tool/project state','dependencies':str(a.dependency_cache) if a.dependency_cache else 'generated external dependency only','downloads':'none during measurement; Maven offline','os':'not flushed'},
                 'profiles':'attribution timings excluded from comparisons','extensions':{}}
     if a.extensions:
         for p in a.extensions.glob('*/package.json'):
@@ -183,9 +184,13 @@ def main():
             root=a.root/f'{name}-{repetition}';root.mkdir()
             report={'schema':1,'workflow':f'library-development-{repetition}-{name}','engine':name,'repetition':repetition,'mode':a.mode,
                     'boundary':'backend-result' if name=='engine-jvmd' else 'VS Code provider readiness','actions':[],
-                    'outcome':'unavailable','fixture':'fixture/fixture.json','profiles':[],'unmeasured':['visible UI completion','IntelliJ','retained heap']}
+                    'outcome':'unavailable','runtime':a.runtime,'fixture':'fixture/fixture.json','profiles':[],'unmeasured':['visible UI completion','IntelliJ','retained heap']}
             try:
                 fixture=workflow_fixture(root/'fixture',a.java_home,a.sources)
+                if a.dependency_cache:
+                    shutil.copytree(a.dependency_cache,fixture['repository'],dirs_exist_ok=True)
+                    # The fixture's local sources must not accidentally resolve from the supplied cache.
+                    shutil.rmtree(Path(fixture['repository'])/'workflow',ignore_errors=True)
                 if name=='engine-jvmd':engine(a,root,fixture,build,report)
                 else:product(a,root,fixture,build,report,name.removeprefix('vscode-'))
             except Exception as error:

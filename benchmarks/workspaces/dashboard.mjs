@@ -7,7 +7,44 @@ const escape = value => String(value).replace(/[&<>"']/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
 })[character]);
 
+export function renderWorkflowDashboard(summary) {
+  const value = (number, unit = 'ms') => number === null || number === undefined ? 'unavailable' : `${Number(number).toFixed(2)} ${unit}`;
+  const overview = summary.rows.map(row => `<tr><td>${escape(row.action)}</td><td>${escape(row.engine)}</td><td>${escape(row.mode)}</td>
+<td>${row.correct} correct / ${row.failures} failed</td><td>${value(row.p50_ms)}</td><td>${value(row.p95_ms)}</td>
+<td>${row.processes.length}</td><td>${value(row.min_process_p50_ms)}–${value(row.max_process_p50_ms)}</td></tr>`).join('');
+  const invocations = [...summary.invocations].sort((a,b) => (b.api_edit_to_correct_ms||0)-(a.api_edit_to_correct_ms||0)).map(run => {
+    const stages = run.trace?.traceEvents || [];
+    const actions = run.actions.map(action => `<tr><td>${escape(action.name)}</td><td>${escape(action.outcome)}</td>
+<td>${value(action.first_response_ms)}</td><td>${value(action.time_to_correct_ms)}</td><td>${action.retry_count ?? 0}</td>
+<td><details><summary>${action.attempts.length} recorded attempts</summary><pre>${escape(JSON.stringify(action.attempts,null,2))}</pre></details></td></tr>`).join('');
+    const stageRows = [...stages].sort((a,b)=>b.dur-a.dur).map(stage => `<tr><td>${escape(stage.name)}</td><td>${escape(stage.args.method)}</td>
+<td>${stage.args.span} / ${stage.args.parent}</td><td>${stage.tid}</td><td>${value(stage.ts/1000)}</td><td>${value(stage.dur/1000)}</td>
+<td>${value(stage.args.threadCpuNanos<0?null:stage.args.threadCpuNanos/1e6)}</td><td>${value(stage.args.threadAllocatedBytes<0?null:stage.args.threadAllocatedBytes/1048576,'MiB')}</td>
+<td>${escape(stage.args.cache)}</td><td>${escape(JSON.stringify(stage.args.work))}</td></tr>`).join('');
+    const base=escape(run.directory);
+    return `<details><summary>${escape(run.workflow)} — ${escape(run.outcome)} — API edit ${value(run.api_edit_to_correct_ms)}</summary>
+<p>${escape(run.boundary)}. ${escape(run.runtime_boundary||'Runtime not measured')}. ${escape(run.error||'')}</p>
+<p>Whole invocation CPU ${value(run.resources?.cpu_seconds_observed,'s')}; peak combined RSS ${value(run.resources ? run.resources.peak_rss_bytes/1048576 : null,'MiB')}.
+Allocated bytes in comparison: unavailable. Retained heap: unavailable.</p>
+<p><a href="${base}/report.json">Raw results</a> · <a href="${base}/fixture/fixture.json">Fixture and expectations</a> · <a href="${base}/command.json">Reproduction command</a> · <a href="${base}/resources.json">Resource scope</a>
+${stages.length ? ` · <a href="${base}/trace.json">Perfetto / Chrome timeline</a> · <a href="${base}/profile-events.json">CPU, allocation, GC and waits</a>` : ' · Internal stages: not attributed'}</p>
+<div class="scroll"><table><thead><tr><th>Action</th><th>Outcome</th><th>First response</th><th>Time to correct</th><th>Retries</th><th>Evidence</th></tr></thead><tbody>${actions}</tbody></table></div>
+${stages.length ? `<p>Stages below belong to this invocation. Times use one JVM clock. Parent/child and parallel intervals overlap; durations and inclusive thread counters must not be summed. Queue CPU/allocation and virtual-thread counters are unavailable. Open the standard trace in Perfetto to inspect overlap.</p>
+<div class="scroll"><table><thead><tr><th>Stage</th><th>RPC</th><th>Span / parent</th><th>Thread</th><th>Start</th><th>Wall</th><th>Thread CPU</th><th>Thread allocation</th><th>Cache</th><th>Actual work</th></tr></thead><tbody>${stageRows}</tbody></table></div>` : ''}
+<details><summary>Routing, correctness and limits</summary><pre>${escape(JSON.stringify({routing:run.routing,verification:run.verification,unmeasured:run.unmeasured,profiles:run.profiles},null,2))}</pre></details></details>`;
+  }).join('');
+  return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>JVMD development workflows</title>
+<style>body{font:15px/1.5 system-ui;margin:32px;background:#101724;color:#e8edf7}h1{font-size:32px}a{color:#79d1ef}table{border-collapse:collapse;width:100%}td,th{padding:9px;text-align:left;border-bottom:1px solid #344054;vertical-align:top}th{color:#9facbf}details{padding:14px;border:1px solid #344054;margin:12px 0}summary{cursor:pointer;font-weight:600}pre{white-space:pre-wrap;max-height:420px;overflow:auto;font-size:12px}.scroll{overflow:auto}p{max-width:1100px}.failed{color:#ffa188}</style>
+<h1>Development actions → verified results → measured work</h1>
+<p class="failed">${summary.verification.complete ? 'All included workers independently verified.' : 'Failures or unavailable runs are present. No winner is inferred.'}</p>
+<p>${escape(summary.aggregation)} Product results use the actual pinned VS Code. Engine rows are separate. Provider and debug-protocol readiness do not measure visible UI completion.</p>
+<div class="scroll"><table><thead><tr><th>Action</th><th>Comparator</th><th>Mode</th><th>Correctness</th><th>p50</th><th>p95</th><th>Processes</th><th>Process p50 range</th></tr></thead><tbody>${overview}</tbody></table></div>
+<h2>Select an invocation</h2><p>Slow API-edit invocations appear first. Failed attempts remain visible. Profiled timings are excluded from comparison rows.</p>${invocations}
+<h2>Exact provenance</h2><pre>${escape(JSON.stringify(summary.provenance,null,2))}</pre></html>`;
+}
+
 export function renderDashboard(comparison, verification, allocation = null) {
+  if (comparison.kind === 'workflows') return renderWorkflowDashboard(comparison);
   const collect = (result, suite, selected = () => true) => Object.entries(result?.fixtures || {}).flatMap(([fixture, metrics]) =>
     Object.entries(metrics).filter(([metric]) => selected(metric)).map(([metric, values]) => ({ fixture, suite, metric, ...values })));
   const rows = [
@@ -59,7 +96,7 @@ async function main() {
     values.allocation ? readFile(values.allocation, 'utf8').then(JSON.parse) : null,
   ]);
   await writeFile(values.output, renderDashboard(comparison, verification, allocation));
-  process.stdout.write(JSON.stringify({ output: values.output, fixtures: Object.keys(comparison.fixtures).length })+'\n');
+  process.stdout.write(JSON.stringify({ output: values.output, fixtures: Object.keys(comparison.fixtures || {}).length })+'\n');
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) main();

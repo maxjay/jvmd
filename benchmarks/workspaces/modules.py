@@ -18,7 +18,7 @@ def workflow_fixture(root, java_home, sources=4):
         deps = ''.join('<dependency><groupId>workflow</groupId><artifactId>'+d+'</artifactId><version>1</version></dependency>' for d in dependencies)
         if name == 'library':
             deps += '<dependency><groupId>external</groupId><artifactId>offset</artifactId><version>1</version></dependency>'
-        (project/'pom.xml').write_text(header+'<artifactId>'+name+'</artifactId><properties><maven.compiler.release>17</maven.compiler.release></properties><dependencies>'+deps+'</dependencies></project>')
+        (project/'pom.xml').write_text(header+'<artifactId>'+name+'</artifactId><properties><maven.compiler.release>17</maven.compiler.release></properties><build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.16.0</version><configuration><debug>true</debug><debuglevel>lines,vars,source</debuglevel></configuration></plugin></plugins></build><dependencies>'+deps+'</dependencies></project>')
         for i in range(sources):
             (source/f'Unused{name.title()}{i}.java').write_text(f'package bench; public class Unused{name.title()}{i} {{ public int id(){{return {i};}} }}\n')
         wrapper = project/'.mvn/wrapper'; wrapper.mkdir(parents=True)
@@ -37,14 +37,14 @@ def workflow_fixture(root, java_home, sources=4):
     external.write_text('package external; public class Offset { public static int base(){return 40;} }\n')
     classes=root/'external-classes'; classes.mkdir()
     subprocess.run([str(java_home/'bin/javac'),'--release','17','-g','-d',str(classes),str(external)],check=True)
-    subprocess.run([str(java_home/'bin/jar'),'--create','--file',str(artifact/'offset-1.jar'),'-C',str(classes),'.'],check=True)
-    subprocess.run([str(java_home/'bin/jar'),'--create','--file',str(artifact/'offset-1-sources.jar'),'-C',str(external.parent.parent),'.'],check=True)
+    subprocess.run([str(java_home/'bin/jar'),'--create','--date=2025-01-01T00:00:00Z','--file',str(artifact/'offset-1.jar'),'-C',str(classes),'.'],check=True)
+    subprocess.run([str(java_home/'bin/jar'),'--create','--date=2025-01-01T00:00:00Z','--file',str(artifact/'offset-1-sources.jar'),'-C',str(external.parent.parent),'.'],check=True)
     (artifact/'offset-1.pom').write_text('<project><modelVersion>4.0.0</modelVersion><groupId>external</groupId><artifactId>offset</artifactId><version>1</version></project>')
     manifest=host/'.jvmd/workspace.json';manifest.parent.mkdir();manifest.write_text(json.dumps({'roots':['.','../library'],'ignore_versions':False}))
     for project in (host,library):
         subprocess.run(['git','init','-q',str(project)],check=True)
         subprocess.run(['git','-C',str(project),'add','.'],check=True)
-        subprocess.run(['git','-C',str(project),'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm','Deterministic workflow fixture'],check=True)
+        subprocess.run(['git','-C',str(project),'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm','Deterministic workflow fixture'],check=True,env=dict(os.environ,GIT_AUTHOR_DATE='2025-01-01T00:00:00Z',GIT_COMMITTER_DATE='2025-01-01T00:00:00Z'))
     source_a=provider.read_text()
     source_api=source_a.replace('public static int value()', 'public static String value()').replace('return value;', 'return "changed";')
     source_b=source_a.replace('base + 1','base + 2').replace('"A"','"B"')

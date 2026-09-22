@@ -13,6 +13,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const now = () => Number(process.hrtime.bigint()) / 1e6;
 const plain = value => JSON.parse(JSON.stringify(value));
 const position = (text, offset) => {const before=text.slice(0,offset).split('\n');return new vscode.Position(before.length-1,before.at(-1).length);};
+const plainRange = r => ({start:{line:r.start.line,character:r.start.character},end:{line:r.end.line,character:r.end.character}});
 const range = r => new vscode.Range(r.start.line,r.start.character,r.end.line,r.end.character);
 
 async function jvmd(config, report) {
@@ -116,7 +117,7 @@ exports.run = async () => {
     };}
     async function definition(){
       const result=await vscode.commands.executeCommand('vscode.executeDefinitionProvider',consumer.uri,point);
-      return (result||[]).map(r=>({uri:(r.uri||r.targetUri).toString(),range:r.range||r.targetSelectionRange}));
+      return (result||[]).map(r=>({uri:(r.uri||r.targetUri).toString(),range:plainRange(r.range||r.targetSelectionRange)}));
     }
     const definitionOracle=result=>result.length===1&&vscode.Uri.parse(result[0].uri).fsPath===files.provider;
     await check('warm_completion',completion,completionOracle('int'),120000);
@@ -132,16 +133,99 @@ exports.run = async () => {
     // JVMD dependent diagnostics are demand-driven; request them through its existing LSP bridge.
     // VS Code Java uses its ordinary automatic dependent build. This difference is recorded.
     if(adapter){await consumer.save();await adapter.rpc('lsp.diagnostics',{uri:consumer.uri.toString()});}
-    const diagnosticQuery=()=>vscode.languages.getDiagnostics(consumer.uri).map(d=>({message:d.message,severity:d.severity+1,range:d.range,code:d.code,source:d.source}));
+    const diagnosticQuery=()=>vscode.languages.getDiagnostics(consumer.uri).map(d=>({message:d.message,severity:d.severity+1,range:plainRange(d.range),code:d.code,source:d.source}));
     if(adapter){
       await check('api_diagnostics',async()=>{const value=await adapter.rpc('lsp.diagnostics',{uri:consumer.uri.toString()});return value.value;},r=>r.diagnostics?.some(d=>d.severity===1));
     }else await check('api_diagnostics',async()=>({uri:consumer.uri.toString(),version:consumer.version,diagnostics:diagnosticQuery()}),r=>r.diagnostics.some(d=>d.severity===1));
     await check('api_definition',definition,definitionOracle);
     report.api_edit_to_correct_ms=now()-changed;
-    await editProvider('B');await check('revert_completion',completion,completionOracle('int'));
+    await editProvider('A');await check('revert_completion',completion,completionOracle('int'));
     if(adapter)await check('revert_diagnostics',async()=>{const value=await adapter.rpc('lsp.diagnostics',{uri:consumer.uri.toString()});return value.value;},r=>r.diagnostics?.length===0);
     else await check('revert_diagnostics',async()=>({diagnostics:diagnosticQuery()}),r=>r.diagnostics.length===0);
-    if(config.runtime)throw new Error('runtime slice not implemented yet');
+    if(config.runtime){
+      let run,debugSession,breakpoint,thread,frame,pid;
+      const dap=[];let output='';
+      const tracker=vscode.debug.registerDebugAdapterTrackerFactory('java',{createDebugAdapterTracker(session){return {
+        onDidSendMessage(message){
+          dap.push({elapsed_ms:now(),message});
+          if(message.type==='event'&&message.event==='output')output+=message.body.output||'';
+          if(message.type==='event'&&message.event==='process')pid=message.body.systemProcessId;
+        }
+      };}});
+      const started=vscode.debug.onDidStartDebugSession(session=>{if(session.type==='java')debugSession=session;});
+      const op=(name,args={})=>adapter.rpc('debug.op',{run_session:run.run_session,op:name,args});
+      async function currentOutput(){
+        if(adapter)return adapter.rpc('benchmark.runOutput',{run_session:run.run_session});
+        return {output,pid,run_session:debugSession?.id};
+      }
+      try{
+        await check('run_output',async()=>{
+          if(!run){
+            await editProvider('B');
+            if(adapter){run=await adapter.rpc('run.start',{target:'bench.Main',debug:true});pid=run.pid;}
+            else{
+              const ok=await vscode.debug.startDebugging(vscode.workspace.getWorkspaceFolder(vscode.Uri.file(files.main)),{
+                type:'java',name:'Workflow host',request:'launch',mainClass:'bench.Main',projectName:'app',
+                cwd:config.fixture.roots[0],console:'internalConsole',stopOnEntry:false});
+              if(!ok)throw new Error('debug launch rejected');run={launched:true};
+            }
+          }
+          return currentOutput();
+        },r=>r.output.includes(config.fixture.expected.B)&&r.pid>0);
+        const originalPid=pid;
+        await check('debug_stop',async()=>{
+          if(!breakpoint){
+            if(adapter)breakpoint=await op('break',{class:'bench.Library',path:files.provider,line:config.fixture.expected.breakpoint_line});
+            else{breakpoint=new vscode.SourceBreakpoint(new vscode.Location(provider.uri,new vscode.Position(config.fixture.expected.breakpoint_line-1,0)));vscode.debug.addBreakpoints([breakpoint]);}
+          }
+          if(adapter){
+            const status=await adapter.rpc('session.status');const active=status.runs.find(r=>r.run_session===run.run_session);
+            thread=active.stopped_threads[0];if(!thread)return {frames:[]};
+            const frames=await op('frames',{thread});frame=frames.frames[0];return frames;
+          }
+          const stop=[...dap].reverse().find(r=>r.message.event==='stopped');
+          if(!stop)return {frames:[]};thread=stop.message.body.threadId;
+          const result=await debugSession.customRequest('stackTrace',{threadId:thread});
+          frame=result.stackFrames[0];return {frames:result.stackFrames.map(f=>({frame:f.id,source_file:f.source?.path,line:f.line,method:f.name,thread}))};
+        },r=>r.frames?.[0]?.source_file===files.provider&&r.frames[0].line===config.fixture.expected.breakpoint_line);
+        await check('debug_locals',async()=>{
+          if(adapter){const result=await op('locals',{frame:frame.frame});return {locals:result.locals.map(v=>({name:v.name,value:v.value.value}))};}
+          const scopes=await debugSession.customRequest('scopes',{frameId:frame.id});const locals=[];
+          for(const scope of scopes.scopes.filter(s=>!s.expensive)){
+            const values=await debugSession.customRequest('variables',{variablesReference:scope.variablesReference});locals.push(...values.variables.map(v=>({name:v.name,value:v.value})));
+          }
+          return {locals};
+        },r=>Object.entries(config.fixture.expected.locals).every(([name,value])=>r.locals.some(v=>v.name===name&&v.value===value)));
+        let stepped=false,stepEvent=0;
+        await check('debug_step',async()=>{
+          if(!stepped){stepEvent=dap.length;if(adapter)await op('step_out',{thread});else await debugSession.customRequest('stepOut',{threadId:thread});stepped=true;}
+          if(adapter)return op('frames',{thread});
+          if(!dap.slice(stepEvent).some(r=>r.message.event==='stopped'))return {frames:[]};
+          const value=await debugSession.customRequest('stackTrace',{threadId:thread});
+          return {frames:value.stackFrames.map(f=>({source_file:f.source?.path,line:f.line,method:f.name,thread}))};
+        },r=>r.frames?.[0]?.source_file===files.main&&r.frames[0].method.includes('main'));
+        let swapped=false;
+        await check('hotswap_output',async()=>{
+          if(!swapped){
+            await editProvider('C');
+            if(adapter){
+              const result=await op('hotswap',{paths:[files.provider]});report.hotswap_response=result;
+              if(result.restart_required||result.redefined<1)throw new Error('body hot swap not applied');
+              await op('unbreak',{breakpoint:breakpoint.breakpoint});await op('continue',{thread});
+            }else{
+              await vscode.commands.executeCommand('java.debug.hotCodeReplace');
+              vscode.debug.removeBreakpoints([breakpoint]);await debugSession.customRequest('continue',{threadId:thread});
+            }
+            swapped=true;
+          }
+          const value=await currentOutput();return {...value,original_pid:originalPid};
+        },r=>r.pid===r.original_pid&&r.pid>0&&r.output.includes(config.fixture.expected.C));
+        report.runtime_boundary=adapter?'JVMD runtime RPC readiness through benchmark-only output reader':'VS Code Java debug protocol readiness';
+      }finally{
+        if(adapter&&run?.run_session)await op('stop');else if(debugSession)await vscode.debug.stopDebugging(debugSession);
+        tracker.dispose();started.dispose();fs.writeFileSync(path.join(config.root,'debug-protocol.json'),JSON.stringify(dap,null,2));
+      }
+    }
     report.outcome='correct';
   }catch(error){report.outcome='failed';report.error=String(error);throw error;}
   finally{if(adapter)await adapter.close();flush();}

@@ -34,7 +34,7 @@ jobs:
           code="$RUNNER_TEMP/workflow-tools/VSCode-linux-x64/bin/code"
           "$code" --no-sandbox --user-data-dir "$RUNNER_TEMP/install-user" --extensions-dir "$RUNNER_TEMP/extensions" --install-extension redhat.java@1.47.0
           "$code" --no-sandbox --user-data-dir "$RUNNER_TEMP/install-user" --extensions-dir "$RUNNER_TEMP/extensions" --install-extension vscjava.vscode-java-debug@0.58.4
-          "$code" --no-sandbox --user-data-dir "$RUNNER_TEMP/install-user" --extensions-dir "$RUNNER_TEMP/extensions" --install-extension vscjava.vscode-java-test@0.43.0
+          "$code" --no-sandbox --user-data-dir "$RUNNER_TEMP/install-user" --extensions-dir "$RUNNER_TEMP/extensions" --install-extension vscjava.vscode-java-test@0.43.2
       - name: Build and record provenance
         run: |
           mvn -B -DskipTests install
@@ -42,16 +42,23 @@ jobs:
           python benchmarks/workspaces/compile.py --repo "$PWD" --java-home "$JAVA_HOME" --dependencies "$PWD/jvmd-dist/target/image/lib/jvmd" --output "$RUNNER_TEMP/workflow-build" --reuse-production-jars
       - name: Serial actual VS Code language workflow
         run: |
-          xvfb-run -a python benchmarks/workspaces/workflows.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --vscode "$RUNNER_TEMP/workflow-tools/VSCode-linux-x64/bin/code" --extensions "$RUNNER_TEMP/extensions" --root "$RUNNER_TEMP/workflow-results/comparison" --smoke
+          xvfb-run -a python benchmarks/workspaces/workflows.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --vscode "$RUNNER_TEMP/workflow-tools/VSCode-linux-x64/bin/code" --extensions "$RUNNER_TEMP/extensions" --root "$RUNNER_TEMP/workflow-results/comparison" --dependency-cache "$HOME/.m2/repository" --smoke --runtime
       - name: Separate attribution run
         if: ${{ !cancelled() }}
         run: |
-          xvfb-run -a python benchmarks/workspaces/workflows.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --vscode "$RUNNER_TEMP/workflow-tools/VSCode-linux-x64/bin/code" --extensions "$RUNNER_TEMP/extensions" --root "$RUNNER_TEMP/workflow-results/attribution" --engines vscode-jvmd --mode attribution --smoke
+          xvfb-run -a python benchmarks/workspaces/workflows.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --vscode "$RUNNER_TEMP/workflow-tools/VSCode-linux-x64/bin/code" --extensions "$RUNNER_TEMP/extensions" --root "$RUNNER_TEMP/workflow-results/attribution" --engines vscode-jvmd --mode attribution --dependency-cache "$HOME/.m2/repository" --smoke --runtime
       - name: Independently verify workflow outcomes
         if: ${{ !cancelled() }}
         run: |
           python benchmarks/workspaces/verify.py "$RUNNER_TEMP/workflow-results/comparison" "$RUNNER_TEMP/workflow-results/comparison/verification.json" --workflows
           python benchmarks/workspaces/verify.py "$RUNNER_TEMP/workflow-results/attribution" "$RUNNER_TEMP/workflow-results/attribution/verification.json" --workflows
+      - name: Render checked investigation reports
+        if: ${{ !cancelled() }}
+        run: |
+          for mode in comparison attribution; do
+            python benchmarks/workspaces/summarize.py "$RUNNER_TEMP/workflow-results/$mode" "$RUNNER_TEMP/workflow-results/$mode/summary.json" --workflows
+            node benchmarks/workspaces/dashboard.mjs --comparison "$RUNNER_TEMP/workflow-results/$mode/summary.json" --verification "$RUNNER_TEMP/workflow-results/$mode/verification.json" --output "$RUNNER_TEMP/workflow-results/$mode/dashboard.html"
+          done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -59,11 +66,16 @@ jobs:
           retention-days: 30
           path: |
             ${{ runner.temp }}/workflow-results/**/report.json
+            ${{ runner.temp }}/workflow-results/**/summary.json
+            ${{ runner.temp }}/workflow-results/**/dashboard.html
             ${{ runner.temp }}/workflow-results/**/driver-result.json
             ${{ runner.temp }}/workflow-results/**/driver.json
             ${{ runner.temp }}/workflow-results/**/provenance.json
             ${{ runner.temp }}/workflow-results/**/command.json
-            ${{ runner.temp }}/workflow-results/**/*.log
+            ${{ runner.temp }}/workflow-results/**/editor.log
+            ${{ runner.temp }}/workflow-results/**/bridge.log
+            ${{ runner.temp }}/workflow-results/**/debug-protocol.json
+            ${{ runner.temp }}/workflow-results/**/user-data/logs/**/exthost/output_logging_*/*.log
             ${{ runner.temp }}/workflow-results/**/resources.json
             ${{ runner.temp }}/workflow-results/**/resource-samples.jsonl
             ${{ runner.temp }}/workflow-results/**/verification.json

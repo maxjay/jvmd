@@ -121,12 +121,12 @@ class WorkspaceBindingsCacheTest {
         try(var analyzer=new Analyzer();var cache=new WorkspaceBindings()){
             analyzer.configure(new Analyzer.Context("test:app:1","25",List.of(binary),List.of(source),"1",Map.of(source.toUri().toString(),"test:app:1")),null,256L*1024*1024);
             WorkspaceBindings.Loader loader=(file,value)->analyzer.bindings(file,value,null);
-            assertThat(cache.get(()->List.of(caller),List.of(binary),documents,"1",16L*1024*1024,loader).diagnostics()).isEmpty();
+            assertThat(cache.get(()->List.of(caller),new dev.jvmd.core.CompilerInputs.Configuration("1",List.of(root),List.of(binary),List.of("--release","25")),documents,16L*1024*1024,loader).diagnostics()).isEmpty();
             Path classFile=binary.resolve("Api.class");var stamp=Files.getLastModifiedTime(classFile);
             Files.writeString(api,"public class Api { public static int b(){return 1;} }");compile(api,binary);Files.setLastModifiedTime(classFile,stamp);
-            assertThat(cache.get(()->List.of(caller),List.of(binary),documents,"1",16L*1024*1024,loader).diagnostics()).anyMatch(d->d.code().contains("cant.resolve"));
+            assertThat(cache.get(()->List.of(caller),new dev.jvmd.core.CompilerInputs.Configuration("1",List.of(root),List.of(binary),List.of("--release","25")),documents,16L*1024*1024,loader).diagnostics()).anyMatch(d->d.code().contains("cant.resolve"));
             Files.writeString(api,"public class Api { public static int a(){return 1;} }");compile(api,binary);Files.setLastModifiedTime(classFile,stamp);
-            assertThat(cache.get(()->List.of(caller),List.of(binary),documents,"1",16L*1024*1024,loader).diagnostics()).isEmpty();
+            assertThat(cache.get(()->List.of(caller),new dev.jvmd.core.CompilerInputs.Configuration("1",List.of(root),List.of(binary),List.of("--release","25")),documents,16L*1024*1024,loader).diagnostics()).isEmpty();
         }
     }
     private static void compile(Path source,Path output){assertThat(javax.tools.ToolProvider.getSystemJavaCompiler().run(null,null,null,"-d",output.toString(),source.toString())).isZero();}

@@ -134,12 +134,12 @@ class CompilerInputsTest {
         Path a=Files.writeString(root.resolve("A.java"),"class A {}");var docs=new Documents();var files=new ArrayList<>(List.of(a));
         try(var cache=new WorkspaceBindings()){
             WorkspaceBindings.Loader empty=(file,text)->new CompilerPool.Outcome<>(2,new Bindings.Snapshot(Map.of(),List.of(),List.of(),Set.of()),List.of(),List.of());
-            try(var accepted=cache.get(()->files,List.of(),docs,"1",0,empty)){
+            try(var accepted=cache.get(()->files,new dev.jvmd.core.CompilerInputs.Configuration("1",List.of(root),List.of(),List.of("--release","25")),docs,0,empty)){
                 Object revision=accepted.revision();Files.writeString(a,"class A { int x; }");
-                assertThatThrownBy(()->cache.get(()->files,List.of(),docs,"1",0,(file,text)->{Files.writeString(a,"class A { int y; }");return empty.load(file,text);})).isInstanceOf(CompilerInputs.Superseded.class);
+                assertThatThrownBy(()->cache.get(()->files,new dev.jvmd.core.CompilerInputs.Configuration("1",List.of(root),List.of(),List.of("--release","25")),docs,0,(file,text)->{Files.writeString(a,"class A { int y; }");return empty.load(file,text);})).isInstanceOf(CompilerInputs.Superseded.class);
                 assertThat(cache.status()).containsEntry("fragment_files",1);
-                assertThatThrownBy(()->cache.get(()->files,List.of(),docs,"1",0,(file,text)->{throw new java.io.IOException("failed refresh");})).isInstanceOf(java.io.IOException.class);
-                try(var retry=cache.get(()->files,List.of(),docs,"1",0,empty)){assertThat(retry.revision()).isNotSameAs(revision);assertThat(retry.warnings()).isEmpty();}
+                assertThatThrownBy(()->cache.get(()->files,new dev.jvmd.core.CompilerInputs.Configuration("1",List.of(root),List.of(),List.of("--release","25")),docs,0,(file,text)->{throw new java.io.IOException("failed refresh");})).isInstanceOf(java.io.IOException.class);
+                try(var retry=cache.get(()->files,new dev.jvmd.core.CompilerInputs.Configuration("1",List.of(root),List.of(),List.of("--release","25")),docs,0,empty)){assertThat(retry.revision()).isNotSameAs(revision);assertThat(retry.warnings()).isEmpty();}
             }
         }
     }

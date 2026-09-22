@@ -42,7 +42,7 @@ public class Validation {
                 for(int i=0;i<(scenario.equals("unchanged")?40:1);i++) {
                     long start=System.nanoTime();invoke(analyzer,"computeClasspathStamp");invoke(analyzer,"sourceIdentities");validation.add((System.nanoTime()-start)/1e6);
                     start=System.nanoTime();
-                    try(var view=navigation.get(()->discover(files,sources),List.of(classes),documents,"fixture",0,(file,text)->{
+                    try(var view=InputNavigation.get(navigation,()->discover(files,sources),List.of(sources),List.of(classes),documents,"fixture",0,(file,text)->{
                         loaded[0]++;return new CompilerPool.Outcome<>(2,new Bindings.Snapshot(Map.of(),List.of(),List.of(),Set.of()),List.of(),List.of());
                     })) {nav.add((System.nanoTime()-start)/1e6);}
                 }

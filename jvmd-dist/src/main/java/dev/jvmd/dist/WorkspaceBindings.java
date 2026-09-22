@@ -94,24 +94,22 @@ public final class WorkspaceBindings implements AutoCloseable {
     private Snapshot acquire(Revision revision)throws Exception{return new Snapshot(facts().view(),revision.identity(),revision.diagnostics(),revision.tier(),revision.warnings());}
     private long hits,builds,fullBuilds,incrementalBuilds,filesReanalysed,filesReused,apiInvalidations,fastValidationHits,fullValidations;
     private int lastReanalysedFiles;
-    private InputSource detachedInputs(SourceFiles sources,List<Path> classpath,Documents documents,String generation){
-        // Explicit inventory API for detached fact loaders without a configured compiler.
-        var config=new CompilerInputs.Configuration(generation,List.of(),classpath,List.of());
-        return ()->{var snapshot=observations.capture(config,documents,sources.files());return Map.of(generation,new ModuleInputs(snapshot,snapshot.sources().keySet()));};
+    private InputSource configuredInputs(SourceFiles sources,CompilerInputs.Configuration configuration,Documents documents){
+        return ()->{var snapshot=observations.capture(configuration,documents,sources.files());return Map.of(configuration.generation(),new ModuleInputs(snapshot,snapshot.sources().keySet()));};
     }
     public Snapshot peek(InputSource source)throws Exception {
         if(snapshot==null)return null;
         if(!capture(source).sameInputs(inputs)){fullValidations++;return null;}
         hits++;fastValidationHits++;return acquire(snapshot);
     }
-    public Snapshot peek(List<Path> files,List<Path> classpath,Documents documents,String generation)throws Exception {
-        return peek(detachedInputs(()->files,classpath,documents,generation));
+    public Snapshot peek(List<Path> files,CompilerInputs.Configuration configuration,Documents documents)throws Exception {
+        return peek(configuredInputs(()->files,configuration,documents));
     }
-    public Snapshot peek(SourceFiles sources,List<Path> classpath,Documents documents,String generation)throws Exception {
-        return peek(sources.files(),classpath,documents,generation);
+    public Snapshot peek(SourceFiles sources,CompilerInputs.Configuration configuration,Documents documents)throws Exception {
+        return peek(sources.files(),configuration,documents);
     }
-    public Snapshot get(SourceFiles sources,List<Path> classpath,Documents documents,String generation,long byteBudget,Loader loader)throws Exception {
-        return getBatch(sources,classpath,documents,generation,byteBudget,files->{
+    public Snapshot get(SourceFiles sources,CompilerInputs.Configuration configuration,Documents documents,long byteBudget,Loader loader)throws Exception {
+        return getBatch(sources,configuration,documents,byteBudget,files->{
             var results=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();
             for(var entry:files.entrySet())results.put(entry.getKey(),loader.load(entry.getKey(),entry.getValue()));
             return results;
@@ -139,8 +137,8 @@ public final class WorkspaceBindings implements AutoCloseable {
         if(!consistent){warnings.add("workspace_changed_during_query: retry for a consistent graph");tier=Math.min(tier,1);}
         return new Revision(List.copyOf(diagnostics),tier,List.copyOf(warnings),new Object());
     }
-    public Snapshot getBatch(SourceFiles sources,List<Path> classpath,Documents documents,String generation,long byteBudget,BatchLoader loader)throws Exception {
-        return getBatch(detachedInputs(sources,classpath,documents,generation),documents,byteBudget,loader);
+    public Snapshot getBatch(SourceFiles sources,CompilerInputs.Configuration configuration,Documents documents,long byteBudget,BatchLoader loader)throws Exception {
+        return getBatch(configuredInputs(sources,configuration,documents),documents,byteBudget,loader);
     }
     public Snapshot getBatch(InputSource source,Documents documents,long byteBudget,BatchLoader loader)throws Exception {
         facts().budget(byteBudget);

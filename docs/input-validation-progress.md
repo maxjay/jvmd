@@ -147,3 +147,10 @@ an earlier same-request valid flag. Warm diagnostic cache hits retain one captur
 Counters continue across actual file-manager replacement. Membership invalidation
 remains SemanticUpdatePolicy's responsibility; only environment or non-owned compiler
 source changes invalidate a module's full owned fact set.
+
+Final API cutover: removed WorkspaceBindings' generation/classpath-only overloads
+and their reduced Configuration constructor. Explicit-inventory clients now supply
+CompilerInputs.Configuration; Application supplies compiler-owned module snapshots.
+Test fixtures were migrated, and benchmark-only InputNavigation adapts the old/new
+API reflectively so the same harness runs against all three revisions. No old
+production validator remains. The migrated 140-test phase 3/4 gate passes.

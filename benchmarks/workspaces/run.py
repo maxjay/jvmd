@@ -428,10 +428,6 @@ def run(a, server, repetition, mode, build):
                 client.close()
             except Exception as error:
                 report.update(outcome="failed", close_error=repr(error))
-        if client:
-            from resources import request_resources
-
-            request_resources(report, root / "resource-samples.jsonl")
         if server == "jvmd" and mode != "comparison" and (root / "server.jfr").exists():
             try:
                 report["profiles"] = export_jfr(
@@ -460,8 +456,9 @@ def run(a, server, repetition, mode, build):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    for name in ("repo", "build", "java-home", "jdtls", "resolvers", "root"):
+    for name in ("repo", "build", "java-home", "resolvers", "root"):
         p.add_argument("--" + name, type=Path, required=True)
+    p.add_argument("--jdtls", type=Path)
     p.add_argument("--servers", nargs="+", choices=["jvmd", "jdtls"], default=["jvmd", "jdtls"])
     for name, default in [
         ("runs", 5),
@@ -484,6 +481,8 @@ def main():
         p.error("repetitions, samples, warmup and targets must be positive")
     if a.overhead or a.mode == "attribution":
         a.servers = ["jvmd"]
+    if "jdtls" in a.servers and a.jdtls is None:
+        p.error("--jdtls is required when measuring JDTLS")
     a.root.mkdir(parents=True, exist_ok=False)
     build = json.loads(a.build.read_text())
     metadata = {key: str(value) if isinstance(value, Path) else value for key, value in vars(a).items()}
@@ -493,13 +492,17 @@ def main():
         command=[sys.executable, *sys.argv],
         machine=dict(zip(("system", "node", "release", "version", "machine"), os.uname())),
         harness={f.name: sha(f) for f in Path(__file__).parent.iterdir() if f.is_file()},
-        jdtls={str(f.relative_to(a.jdtls)): sha(f) for f in sorted((a.jdtls / "plugins").glob("*.jar"))},
+        jdtls={str(f.relative_to(a.jdtls)): sha(f) for f in (sorted((a.jdtls / "plugins").glob("*.jar")) if a.jdtls else [])},
         resolver_bundles={f.name: sha(f) for f in sorted(a.resolvers.glob("*.jar"))},
         jdk=subprocess.run(
             [str(a.java_home / "bin/java"), "-version"], capture_output=True, text=True
         ).stderr,
         node=subprocess.check_output(["node", "--version"], text=True).strip(),
         cache="Dependency fixture built before server start; fresh state each worker; OS filesystem cache not flushed; same machine, alternating serial order",
+        runner={"os": os.environ.get("ImageOS", os.uname().sysname),
+                "image": os.environ.get("ImageVersion", os.uname().release),
+                "arch": os.uname().machine, "cpus": os.cpu_count(),
+                "cpu": next((s.split(":", 1)[1].strip() for s in Path("/proc/cpuinfo").read_text().splitlines() if s.startswith("model name")), "unknown")},
         cpu_quota=first_system_value(("/sys/fs/cgroup/cpu.max",)),
         memory_limit=first_system_value(("/sys/fs/cgroup/memory.max",)),
     )

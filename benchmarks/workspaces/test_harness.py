@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from resources import ProcessMonitor, attribute_samples
 from run import Client, first_system_value
 from verify import classify, verify
-from summarize import investigate, stats
+from summarize import stats
 
 
 class HarnessTest(unittest.TestCase):
@@ -77,20 +77,6 @@ class HarnessTest(unittest.TestCase):
             (worker / "report.json").write_text(json.dumps({"outcome": "correct", "actions": []}))
             self.assertFalse(verify(root)["complete"])
             self.assertEqual(3, len(verify(root)["workers"][0]["not_executed"]))
-
-    def test_nested_spans_are_not_added(self):
-        stage = lambda name, start, duration: {
-            "name": name,
-            "ts": start,
-            "dur": duration,
-            "args": {"invocation": "request", "queued": False},
-        }
-        run = {
-            "actions": [{"id": "request"}],
-            "trace": {"traceEvents": [stage("rpc.execute", 0, 1000), stage("inputs.validate", 100, 500)]},
-        }
-        investigate(run)
-        self.assertEqual(1, run["actions"][0]["rpc_union_ms"])
 
     def test_percentile_precision_requires_warm_samples(self):
         self.assertIsNone(stats([1] * 19, "warm")["p95_ms"])

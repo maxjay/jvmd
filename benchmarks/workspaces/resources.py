@@ -106,21 +106,6 @@ class ProcessMonitor:
                 'write_bytes_observed': sum(p['write_bytes'] for p in self.processes.values())}
 
 
-def request_resources(report, file):
-    """Bracket LSP responses with same-controller-clock process samples, not exact attribution."""
-    samples=[json.loads(line) for line in file.read_text().splitlines()]
-    for action in report['actions']:
-        if 'response_ns' not in action:continue
-        before=next((s for s in reversed(samples) if s['monotonic_ns']<=action['start_ns']),None)
-        after=next((s for s in samples if s['monotonic_ns']>=action['response_ns']),None)
-        if before is None or after is None:continue
-        previous={(p['pid'],p['start_ticks']):p['cpu_ticks'] for p in before['processes']}
-        action['resources']={'scope':'Bracketed process work including background activity; short requests share samples, never sum these estimates.',
-            'sample_bracket_ms':(after['monotonic_ns']-before['monotonic_ns'])/1e6,
-            'groups':{role:{'cpu_ms_observed':sum(max(0,p['cpu_ticks']-previous.get((p['pid'],p['start_ticks']),p['cpu_ticks'])) for p in after['processes'] if p['role']==role)*1000/os.sysconf('SC_CLK_TCK'),
-                'rss_bytes_at_response':sum(p['rss_bytes'] for p in after['processes'] if p['role']==role)} for role in ('server','bridge')}}
-
-
 def export_jfr(jfr_tool, recording, output, repo=None, settings="profile"):
     """Selected diagnostic events only. Chrome trace opens in Perfetto; no VM environment export."""
     allowed=['dev.jvmd.Stage','jdk.ExecutionSample','jdk.ObjectAllocationSample','jdk.GarbageCollection',

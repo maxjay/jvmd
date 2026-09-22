@@ -1,192 +1,174 @@
 import assert from "node:assert/strict";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { Framing, encode, type Message } from "../../shim/src/transport.ts";
+import {
+  createMessageConnection,
+  StreamMessageReader,
+  StreamMessageWriter,
+  type MessageConnection,
+} from "vscode-jsonrpc/node";
 
-type Measurement<T> = {
+type Memory = {
+  serverKb: number;
+  adapterKb: number;
+  totalKb: number;
+};
+
+export type Measurement<T> = {
   result: T;
   metrics: {
-    ms: number;
-    rssBeforeKb: number;
-    rssAfterKb: number;
-    rssDeltaKb: number;
+    latencyMs: number;
+    memory: {
+      before: Memory;
+      after: Memory;
+      peak: Memory;
+    };
   };
 };
 
-class LspClient {
-  private nextId = 0;
-  private pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
-  private notifications: Message[] = [];
-
-  constructor(readonly child: ChildProcessWithoutNullStreams) {
-    const framing = new Framing("headers", message => this.receive(message));
-    child.stdout.on("data", chunk => framing.push(chunk));
-    child.on("exit", code => {
-      const error = new Error("Language server exited: " + code);
-      for (const pending of this.pending.values()) pending.reject(error);
-      this.pending.clear();
-    });
-  }
-
-  private receive(message: Message) {
-    if (typeof message.id === "number" && this.pending.has(message.id)) {
-      const pending = this.pending.get(message.id)!;
-      this.pending.delete(message.id);
-      if (message.error) pending.reject(new Error(message.error.message));
-      else pending.resolve(message.result);
-      return;
-    }
-
-    if (message.method && message.id !== undefined) {
-      let result: any = null;
-      if (message.method === "workspace/configuration") {
-        result = (message.params?.items ?? []).map(() => ({}));
-      } else if (message.method === "workspace/applyEdit") {
-        result = { applied: false };
-      }
-      this.send({ jsonrpc: "2.0", id: message.id, result });
-      return;
-    }
-
-    if (message.method) this.notifications.push(message);
-  }
-
-  private send(message: Message) {
-    this.child.stdin.write(encode(message));
-  }
-
-  request<T = any>(method: string, params: any = {}): Promise<T> {
-    const id = ++this.nextId;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.send({ jsonrpc: "2.0", id, method, params });
-    });
-  }
-
-  notify(method: string, params: any = {}) {
-    this.send({ jsonrpc: "2.0", method, params });
-  }
-
-  async waitFor(method: string, predicate: (params: any) => boolean, timeoutMs = 120_000) {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      const index = this.notifications.findIndex(message => message.method === method && predicate(message.params));
-      if (index >= 0) {
-        this.notifications.splice(index, 1);
-        return;
-      }
-      await new Promise(resolve => setTimeout(resolve, 25));
-    }
-    throw new Error("Timed out waiting for " + method);
-  }
-}
+type RunningServer = {
+  connection: MessageConnection;
+  server: ChildProcess;
+  adapter?: ChildProcess;
+};
 
 export abstract class LspScenarioHarness {
-  private static client: LspClient;
   private static fixtureRoot: string;
   private static mode: "record" | "compare";
+  private static running: RunningServer;
   private static openDocuments = new Map<string, number>();
 
   abstract readonly name: string;
-  protected abstract scenario(): Promise<unknown>;
+  protected abstract scenario(): Promise<Record<string, Measurement<unknown>>>;
 
   static async beforeAll() {
-    this.fixtureRoot = path.resolve(process.env.FIXTURE_ROOT ?? "");
-    assert(this.fixtureRoot, "FIXTURE_ROOT is required");
+    assert(process.env.FIXTURE_ROOT, "FIXTURE_ROOT is required");
+    this.fixtureRoot = path.resolve(process.env.FIXTURE_ROOT);
     this.mode = process.env.MODE === "record" ? "record" : "compare";
+    this.running = await startServer(this.fixtureRoot);
 
-    const [command, args, env] = serverCommand(this.fixtureRoot);
-    this.client = new LspClient(spawn(command, args, {
-      cwd: process.cwd(),
-      env: { ...process.env, ...env },
-      stdio: ["pipe", "pipe", "inherit"],
-    }));
+    const ready = new Promise<void>(resolve => {
+      this.running.connection.onNotification("language/status", (params: any) => {
+        if (params?.type === "ServiceReady") resolve();
+      });
+    });
+
+    this.running.connection.onRequest("workspace/configuration", (params: any) =>
+      (params?.items ?? []).map(() => ({})),
+    );
+    this.running.connection.onRequest("client/registerCapability", () => null);
+    this.running.connection.onRequest("client/unregisterCapability", () => null);
+    this.running.connection.onRequest("window/workDoneProgress/create", () => null);
+    this.running.connection.onRequest("workspace/applyEdit", () => ({ applied: false }));
+    this.running.connection.listen();
 
     const rootUri = pathToFileURL(this.fixtureRoot).href;
-    await this.client.request("initialize", {
+    await this.running.connection.sendRequest("initialize", {
       processId: process.pid,
       rootUri,
       workspaceFolders: [{ uri: rootUri, name: "apache-maven" }],
       capabilities: {
         workspace: { configuration: true },
-        textDocument: { completion: { completionItem: { snippetSupport: false } } },
+        textDocument: {
+          completion: { completionItem: { snippetSupport: false } },
+        },
       },
     });
-    this.client.notify("initialized", {});
+    this.running.connection.sendNotification("initialized", {});
 
-    if ((process.env.SERVER ?? "jvmd") === "jdtls") {
-      await this.client.waitFor("language/status", params => params?.type === "ServiceReady");
-    }
+    if ((process.env.SERVER ?? "jvmd") === "jdtls") await ready;
   }
 
   static async afterAll() {
-    const descendants = processTree(this.client.child.pid!);
     try {
-      await this.client.request("shutdown");
-      this.client.notify("exit");
+      await this.running.connection.sendRequest("shutdown");
+      this.running.connection.sendNotification("exit");
     } finally {
-      for (const pid of descendants.reverse()) {
-        try { process.kill(pid, "SIGTERM"); } catch {}
-      }
+      this.running.connection.dispose();
+      stop(this.running.adapter);
+      stop(this.running.server);
     }
   }
 
   async execute() {
     try {
       const actual = await this.scenario();
-      this.recordOrCompare(actual);
+      this.verify(actual);
     } finally {
-      await this.closeDocuments();
+      this.closeDocuments();
     }
   }
 
-  protected async open(relativePath: string) {
+  protected open(relativePath: string) {
     const file = path.resolve(LspScenarioHarness.fixtureRoot, relativePath);
     const uri = pathToFileURL(file).href;
     const text = readFileSync(file, "utf8");
+
     LspScenarioHarness.openDocuments.set(uri, 1);
-    LspScenarioHarness.client.notify("textDocument/didOpen", {
+    LspScenarioHarness.running.connection.sendNotification("textDocument/didOpen", {
       textDocument: { uri, languageId: "java", version: 1, text },
     });
+
     return { uri, text };
   }
 
   protected change(uri: string, text: string) {
     const version = (LspScenarioHarness.openDocuments.get(uri) ?? 1) + 1;
     LspScenarioHarness.openDocuments.set(uri, version);
-    LspScenarioHarness.client.notify("textDocument/didChange", {
+
+    LspScenarioHarness.running.connection.sendNotification("textDocument/didChange", {
       textDocument: { uri, version },
       contentChanges: [{ text }],
     });
   }
 
-  protected request<T = any>(method: string, params: any) {
-    return LspScenarioHarness.client.request<T>(method, params);
+  protected request<T>(method: string, params: unknown): Promise<T> {
+    return LspScenarioHarness.running.connection.sendRequest(method, params);
   }
 
-  protected async measure<T, U = T>(request: () => Promise<T>, normalise: (value: T) => U = value => value as unknown as U): Promise<Measurement<U>> {
-    const pid = LspScenarioHarness.client.child.pid!;
-    const rssBeforeKb = processTreeRssKb(pid);
+  protected async measure<T, U>(
+    request: () => Promise<T>,
+    normalise: (value: T) => U,
+  ): Promise<Measurement<U>> {
+    const running = LspScenarioHarness.running;
+    const before = memory(running);
+    let peak = before;
+
+    const sampler = setInterval(() => {
+      peak = maxMemory(peak, memory(running));
+    }, 20);
+
     const started = performance.now();
-    const raw = await request();
-    const ms = performance.now() - started;
-    const rssAfterKb = processTreeRssKb(pid);
-    return {
-      result: normalise(raw),
-      metrics: { ms, rssBeforeKb, rssAfterKb, rssDeltaKb: rssAfterKb - rssBeforeKb },
-    };
+    try {
+      const raw = await request();
+      const latencyMs = performance.now() - started;
+      const after = memory(running);
+      peak = maxMemory(peak, after);
+
+      return {
+        result: normalise(raw),
+        metrics: {
+          latencyMs,
+          memory: { before, after, peak },
+        },
+      };
+    } finally {
+      clearInterval(sampler);
+    }
   }
 
-  private async closeDocuments() {
+  private closeDocuments() {
     for (const uri of LspScenarioHarness.openDocuments.keys()) {
-      LspScenarioHarness.client.notify("textDocument/didClose", { textDocument: { uri } });
+      LspScenarioHarness.running.connection.sendNotification("textDocument/didClose", {
+        textDocument: { uri },
+      });
     }
     LspScenarioHarness.openDocuments.clear();
   }
 
-  private recordOrCompare(actual: unknown) {
+  private verify(actual: Record<string, Measurement<unknown>>) {
     const expectedDir = path.resolve("benchmarks/lsp-scenarios/expected");
     const file = path.join(expectedDir, this.name + ".json");
 
@@ -197,103 +179,144 @@ export abstract class LspScenarioHarness {
       return;
     }
 
-    const expected = JSON.parse(readFileSync(file, "utf8"));
-    assert.deepEqual(withoutMetrics(actual), withoutMetrics(expected), this.name + " differs from JDTLS");
-    printMetrics(this.name, expected, actual);
+    const expected: Record<string, Measurement<unknown>> =
+      JSON.parse(readFileSync(file, "utf8"));
+
+    assert.deepEqual(Object.keys(actual).sort(), Object.keys(expected).sort());
+    for (const [name, measurement] of Object.entries(actual)) {
+      assert.deepEqual(
+        measurement.result,
+        expected[name].result,
+        this.name + "/" + name + " differs from JDTLS",
+      );
+    }
+
+    console.table(Object.keys(actual).map(name => ({
+      case: name,
+      jdtlsMs: expected[name].metrics.latencyMs.toFixed(2),
+      jvmdMs: actual[name].metrics.latencyMs.toFixed(2),
+      jdtlsPeakMb: mb(expected[name].metrics.memory.peak.totalKb),
+      jvmdPeakMb: mb(actual[name].metrics.memory.peak.totalKb),
+    })));
   }
 }
 
-function withoutMetrics(value: any): any {
-  if (Array.isArray(value)) return value.map(withoutMetrics);
-  if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([key]) => key !== "metrics")
-      .map(([key, item]) => [key, withoutMetrics(item)]),
+async function startServer(root: string): Promise<RunningServer> {
+  return (process.env.SERVER ?? "jvmd") === "jdtls"
+    ? startJdtls()
+    : startJvmd(root);
+}
+
+async function startJvmd(root: string): Promise<RunningServer> {
+  const state = path.resolve("benchmarks/lsp-scenarios/.state/jvmd");
+  rmSync(state, { recursive: true, force: true });
+  mkdirSync(state, { recursive: true });
+
+  const socket = path.join(state, "jvmd.sock");
+  const image = path.resolve("jvmd-dist/target/image");
+  const env = {
+    ...process.env,
+    JVMD_SOCKET: socket,
+    XDG_CACHE_HOME: path.join(state, "cache"),
+    JVMD_CONFIG: path.join(state, "config.json"),
+  };
+
+  const server = spawn(path.join(image, "bin/jvmd"), [], {
+    env,
+    stdio: ["ignore", "ignore", "inherit"],
+  });
+
+  await waitFor(() => existsSync(socket), "JVMD socket");
+
+  const adapter = spawn(
+    path.join(image, "bin/jvmd-lsp"),
+    ["--root", root, "--socket", socket],
+    { env, stdio: ["pipe", "pipe", "inherit"] },
   );
+
+  return {
+    connection: createMessageConnection(
+      new StreamMessageReader(adapter.stdout!),
+      new StreamMessageWriter(adapter.stdin!),
+    ),
+    server,
+    adapter,
+  };
 }
 
-function printMetrics(name: string, expected: any, actual: any) {
-  const rows = Object.keys(actual)
-    .filter(key => actual[key]?.metrics && expected[key]?.metrics)
-    .map(key => ({
-      scenario: name,
-      case: key,
-      jdtlsMs: expected[key].metrics.ms.toFixed(2),
-      jvmdMs: actual[key].metrics.ms.toFixed(2),
-      jdtlsRssDeltaKb: expected[key].metrics.rssDeltaKb,
-      jvmdRssDeltaKb: actual[key].metrics.rssDeltaKb,
-    }));
-  if (rows.length) console.table(rows);
-}
-
-function serverCommand(fixtureRoot: string): [string, string[], NodeJS.ProcessEnv] {
-  if ((process.env.SERVER ?? "jvmd") === "jvmd") {
-    const state = path.resolve("benchmarks/lsp-scenarios/.state/jvmd");
-    rmSync(state, { recursive: true, force: true });
-    mkdirSync(state, { recursive: true });
-    return [
-      path.resolve("jvmd-dist/target/image/bin/jvmd-lsp"),
-      ["--root", fixtureRoot],
-      {
-        JVMD_SOCKET: path.join(state, "jvmd.sock"),
-        XDG_CACHE_HOME: path.join(state, "cache"),
-        JVMD_CONFIG: path.join(state, "config.json"),
-      },
-    ];
-  }
-
-  const home = path.resolve(process.env.JDTLS_HOME ?? "");
-  assert(home, "JDTLS_HOME is required when SERVER=jdtls");
-  const launcher = readdirSync(path.join(home, "plugins")).find(name => name.startsWith("org.eclipse.equinox.launcher_") && name.endsWith(".jar"));
+function startJdtls(): RunningServer {
+  assert(process.env.JDTLS_HOME, "JDTLS_HOME is required when SERVER=jdtls");
+  const home = path.resolve(process.env.JDTLS_HOME);
+  const launcher = readdirSync(path.join(home, "plugins"))
+    .find(name => name.startsWith("org.eclipse.equinox.launcher_") && name.endsWith(".jar"));
   assert(launcher, "JDTLS launcher not found");
+
   const state = path.resolve("benchmarks/lsp-scenarios/.state/jdtls");
   rmSync(state, { recursive: true, force: true });
   mkdirSync(state, { recursive: true });
-  return [
-    process.env.JAVA_HOME ? path.join(process.env.JAVA_HOME, "bin/java") : "java",
-    [
-      "-Declipse.application=org.eclipse.jdt.ls.core.id1",
-      "-Dosgi.bundles.defaultStartLevel=4",
-      "-Declipse.product=org.eclipse.jdt.ls.core.product",
-      "-jar", path.join(home, "plugins", launcher),
-      "-configuration", path.join(home, "config_linux"),
-      "-data", state,
-    ],
-    {},
-  ];
-}
 
-function processTree(rootPid: number) {
-  const pids = readdirSync("/proc").filter(name => /^\d+$/.test(name)).map(Number);
-  const children = new Map<number, number[]>();
-  for (const pid of pids) {
-    try {
-      const status = readFileSync("/proc/" + pid + "/status", "utf8");
-      const parent = Number(status.match(/^PPid:\s+(\d+)/m)?.[1]);
-      if (!children.has(parent)) children.set(parent, []);
-      children.get(parent)!.push(pid);
-    } catch {}
-  }
+  const java = process.env.JAVA_HOME
+    ? path.join(process.env.JAVA_HOME, "bin/java")
+    : "java";
 
-  const result: number[] = [];
-  const visit = (pid: number) => {
-    for (const child of children.get(pid) ?? []) {
-      result.push(child);
-      visit(child);
-    }
+  const server = spawn(java, [
+    "-Declipse.application=org.eclipse.jdt.ls.core.id1",
+    "-Dosgi.bundles.defaultStartLevel=4",
+    "-Declipse.product=org.eclipse.jdt.ls.core.product",
+    "-jar", path.join(home, "plugins", launcher),
+    "-configuration", path.join(home, "config_linux"),
+    "-data", state,
+  ], {
+    stdio: ["pipe", "pipe", "inherit"],
+  });
+
+  return {
+    connection: createMessageConnection(
+      new StreamMessageReader(server.stdout!),
+      new StreamMessageWriter(server.stdin!),
+    ),
+    server,
   };
-  visit(rootPid);
-  return result;
 }
 
-function processTreeRssKb(rootPid: number) {
-  let total = 0;
-  for (const pid of [rootPid, ...processTree(rootPid)]) {
-    try {
-      const status = readFileSync("/proc/" + pid + "/status", "utf8");
-      total += Number(status.match(/^VmRSS:\s+(\d+)\s+kB/m)?.[1] ?? 0);
-    } catch {}
+function memory(running: RunningServer): Memory {
+  const serverKb = rssKb(running.server.pid);
+  const adapterKb = rssKb(running.adapter?.pid);
+  return { serverKb, adapterKb, totalKb: serverKb + adapterKb };
+}
+
+function rssKb(pid?: number) {
+  if (!pid) return 0;
+  try {
+    const status = readFileSync("/proc/" + pid + "/status", "utf8");
+    return Number(status.match(/^VmRSS:\s+(\d+)\s+kB/m)?.[1] ?? 0);
+  } catch {
+    return 0;
   }
-  return total;
+}
+
+function maxMemory(a: Memory, b: Memory): Memory {
+  return {
+    serverKb: Math.max(a.serverKb, b.serverKb),
+    adapterKb: Math.max(a.adapterKb, b.adapterKb),
+    totalKb: Math.max(a.totalKb, b.totalKb),
+  };
+}
+
+async function waitFor(predicate: () => boolean, description: string) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  throw new Error("Timed out waiting for " + description);
+}
+
+function stop(process?: ChildProcess) {
+  if (!process || process.killed) return;
+  process.kill("SIGTERM");
+}
+
+function mb(kb: number) {
+  return (kb / 1024).toFixed(1);
 }

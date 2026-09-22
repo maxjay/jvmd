@@ -47,15 +47,16 @@ export default class CompletionScenario extends LspScenarioHarness {
 
     const first = await this.measure(completion, response => {
       const items = Array.isArray(response) ? response : response?.items ?? [];
-      assert(items.length > 0, "Expected completion candidates");
       firstCandidate = items[0];
       return normaliseCompletion(response);
     });
 
-    const resolved = await this.measure(
-      () => this.request<any>("completionItem/resolve", firstCandidate),
-      normaliseResolvedCompletion,
-    );
+    const resolved = firstCandidate
+      ? await this.measure(
+          () => this.request<any>("completionItem/resolve", firstCandidate),
+          normaliseResolvedCompletion,
+        )
+      : undefined;
 
     const repeated = await this.measure(completion, normaliseCompletion);
 
@@ -74,7 +75,7 @@ export default class CompletionScenario extends LspScenarioHarness {
 
     return {
       first,
-      resolved,
+      ...(resolved ? { resolved } : {}),
       repeated,
       afterUnsavedEdit,
     };

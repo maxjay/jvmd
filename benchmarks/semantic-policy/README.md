@@ -19,4 +19,4 @@ For legacy migration, run `MigrationCheck.java /same/fixture seed` against main'
 then `MigrationCheck.java /same/fixture check` against the changed libraries. It checks
 reverse dependencies, unresolved-name invalidation, and persisted revisions after migration.
 
-Results: [2026-09-21 measurements](../../docs/performance/2026-09-21-semantic-policy.json).
+Keep generated measurements under an ignored `target/` or external results directory.

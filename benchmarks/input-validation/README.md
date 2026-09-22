@@ -2,7 +2,7 @@
 
 This component harness complements the existing workspace benchmark. It does not
 compare JVMD counters with JDTLS, or equate component latency with editor latency.
-See [the measured report](../../docs/performance/2026-09-21-input-validation.md).
+Input ownership is described in [storage.md](../../docs/storage.md).
 
 Use Python 3.11+, JDK 25, the dependency JAR directory built for each revision,
 and fresh output directories. `prepare.py` copies production sources into its
@@ -65,11 +65,10 @@ keeps its separate JVMD/JDTLS comparison and attaches `--input-validation` to th
 existing report/dashboard. JVMD-only work counts remain a separate component
 section and do not contribute to JDTLS win counts.
 
-Raw current records, source/dependency fingerprints, test logs and archived LSP
-messages are in `docs/performance/input-validation/current`. To independently
-verify the archived responses, extract `e2e-raw.tar.gz` into a new directory and
-pass it to `benchmarks/workspaces/verify.py`. Absolute original paths remain in
-manifests for provenance; the verifier relocates workspace source paths.
+Write raw records, profiles and logs to an ignored `target/` directory or an external
+results directory. To independently verify an archived LSP run, extract it into a
+new directory and pass it to `benchmarks/workspaces/verify.py`. Original paths in
+manifests are provenance; the verifier relocates generated workspace sources.
 
 Each build manifest also records dependency hashes. The original before/after
 measurements used identical dependency versions; future upgrades must build the

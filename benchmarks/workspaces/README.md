@@ -294,7 +294,20 @@ python benchmarks/workspaces/compare.py lsp-summary.json comparison.json \
   --markdown comparison.md --semantic-state semantic-summary.json
 ```
 
-The existing recorded component measurements are rendered at
-[`docs/performance/semantic-state/comparison.md`](../../docs/performance/semantic-state/comparison.md),
-with their original measured revisions. They are historical evidence, not values substituted into
-future CI runs.
+For local semantic-state measurements, package both revisions with JDK 25, then run:
+
+```sh
+JAVA_HOME=/path/to/jdk25 benchmarks/semantic-state/run.sh \
+  '/absolute/baseline/*' '/absolute/candidate/*' /absolute/new-results
+```
+
+Include each revision's production and dependency JARs in its classpath directory.
+The harness checks both cache budgets, source results and migration against a
+baseline-written store; it measures component work, not editor latency.
+
+Keep generated results, traces, dashboards, recordings, downloads and copied
+workspaces outside tracked source, normally under `target/workflow-benchmarks/`.
+CI evidence is uploaded as artifacts; inspect the run's retention/expiry before
+linking it. Raw JFRs/heap dumps can contain environment or source data: export only
+selected diagnostic events from sanitized fixtures. Task status belongs in the PR,
+with commands and execution evidence in linked artifacts and commit history.

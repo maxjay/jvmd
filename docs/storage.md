@@ -17,3 +17,39 @@ Status now reports resource, inventory, semantic-state, and admission metrics un
 ## Tests
 
 The former SQLite implementation and schemas live only in `jvmd-tests/src/test`, with a test-scoped JDBC dependency. They are an unregistered historical reference for canonical query comparisons and SQL migration fixtures. Production search, workspace, restart, inventory, and publication tests exercise Rocks. Performance comparisons can also use a pinned historical checkout.
+
+## Semantic state and input ownership
+
+`FileSemanticContribution` is the canonical per-file source/API identity, dependency,
+export and unresolved-target summary. `SemanticUpdatePolicy` owns body/API/namespace
+classification, dependency closure and replacement decisions. Focused or failed
+analysis cannot replace a complete contribution. Module actors exchange detached
+contributions; compiler objects stay on their owner threads.
+
+`FileStateRegistry` owns disk content and directory observations; session `Documents`
+owns unsaved overlays. `CompilerInputs` combines those with ordered module roots,
+classpath, compiler options, JDK and processor/module/patch paths. Content identity
+permits equivalent reuse; observation fences reject work crossing a relevant edit,
+including edit/revert. Overlay text wins over disk. Compiler output and indexed
+navigation must validate captured inputs before publication.
+
+Known files still require metadata checks. Uncertain or unsupported observations,
+eviction and explicit reconciliation conservatively rehash/re-enumerate; they do not
+discard accepted semantic facts. Compiler environment directory traversal follows
+links with cycle checks; ordinary source traversal does not. Reconciliation and
+environment membership reversion must preserve stable observation evidence.
+
+`WorkspaceBindings` keeps completeness, input identities and contributions; detached
+facts live in session-owned `KeyedFacts` records and postings. `FactCodec` encodes
+individual records. Replacements publish owner records/postings atomically. Failed
+rebuilds retain committed owners until replacement commits. Every read view is an
+independent caller-owned lease: close it after use. Decoded-cache eviction does not
+invalidate a pinned revision. Session facts disappear on close; the persisted
+local-source overlay survives restart. Old JSON owners migrate atomically on read.
+Older binaries require regeneration of this source overlay.
+
+`WorkspaceReadView` owns source precedence, deduplication and pagination across
+live facts and persisted dependencies. Only locally declared symbols mask dependency
+results; referenced external symbols do not. Cursors do not promise a transaction
+across RPCs. Heap caches, Rocks block caches/write buffers and native snapshots are
+distinct memory owners; configured cache limits do not bound total process memory.

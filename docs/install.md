@@ -120,7 +120,7 @@ python3 jvmd-dist/release/build.py --version v0.1.0-preview.1
 
 The script downloads checksum-pinned Temurin, Node, and Maven from their publishers, builds the reactor, assembles and trains the runtime, creates the archive, and tests its installation. It writes archives, SHA-256 sidecars, and JSON evidence to `jvmd-dist/target/release/`. JDK legal notices, Node's license, project license, and dependency documentation travel with the archive.
 
-The separate [Distributions workflow](../.github/workflows/releases.yml) builds Linux x64/arm64 and macOS Intel/Apple Silicon artifacts. Merged PRs produce downloadable previews without publishing a release. The existing Checkpoints workflow is unchanged.
+The separate [Distributions workflow](../.github/workflows/releases.yml) builds Linux x64/arm64 and macOS Intel/Apple Silicon artifacts. Merged PRs produce downloadable previews without publishing a release.
 
 After the tested commit is on `main`, tag that exact commit:
 
@@ -129,4 +129,4 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The tag workflow requires successful native archive checks and a successful Checkpoints run for the same commit before publishing GitHub Release assets. Tags containing a suffix, such as `v0.1.0-preview.1`, publish as prereleases. Published assets are not overwritten by reruns.
+The tag workflow requires successful native archive checks and a successful Tests run for the same commit before publishing GitHub Release assets. Tags containing a suffix, such as `v0.1.0-preview.1`, publish as prereleases. Published assets are not overwritten by reruns.

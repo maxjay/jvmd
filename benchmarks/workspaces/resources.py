@@ -29,8 +29,12 @@ def _process_tree(root_pid):
         try:
             # Children launched by actor threads are not necessarily
             # listed on the thread-group leader. Inspect every live task.
-            children = [int(value) for task in Path(f'/proc/{pid}/task').glob('*/children')
-                        for value in task.read_text().split()]
+            children = []
+            for task in Path(f'/proc/{pid}/task').glob('*/children'):
+                try:
+                    children.extend(int(value) for value in task.read_text().split())
+                except (FileNotFoundError, ProcessLookupError, PermissionError, ValueError):
+                    continue
             Path(f'/proc/{pid}/stat').read_text()
         except (FileNotFoundError, ProcessLookupError, PermissionError, ValueError):
             continue

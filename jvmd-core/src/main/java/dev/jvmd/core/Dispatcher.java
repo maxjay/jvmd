@@ -47,7 +47,7 @@ public final class Dispatcher {
         return status;
     }
     public ObjectNode dispatch(JsonNode request) {
-        if(!RequestScope.TRACING)return dispatchRequest(request);
+        if(!RequestScope.TRACING||RequestScope.current()!=null)return dispatchRequest(request);
         var trace=request==null?Json.MAPPER.nullNode():request.path("_jvmdTrace");
         String method=request==null?"":request.path("method").asText("");
         try{return RequestScope.traced(method,trace.path("workflow").asText(""),trace.path("invocation").asText(""),trace.path("revision").asText(""),()->dispatchRequest(request));}

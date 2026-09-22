@@ -165,14 +165,7 @@ def create(root, java_home, targets=3, sources=24):
                 "expected": expected,
             }
         )
-    files = {
-        str(p.relative_to(root)): p.read_text()
-        for p in sorted(root.rglob("*"))
-        if p.suffix in (".java", ".xml", ".prefs", ".project", ".classpath", ".properties")
-    }
-    identity = hashlib.sha256(
-        json.dumps({k: v.replace(str(root), "$FIXTURE") for k, v in files.items()}, sort_keys=True).encode()
-    ).hexdigest()
+    identity, files = fixture_identity(root)
     return {
         "schema": 2,
         "identity": identity,
@@ -188,3 +181,16 @@ def create(root, java_home, targets=3, sources=24):
         },
         "configuration": "Java 17; JVMD Maven graph + workspace roots; JDTLS Eclipse project reference /library + identical binary/source JAR. No installed local library, no generated host/library classes before server preparation.",
     }
+
+
+def fixture_identity(root):
+    files = {
+        str(p.relative_to(root)): p.read_text()
+        for p in sorted(root.rglob("*"))
+        if p.is_file() and (p.suffix in (".java", ".xml", ".prefs", ".properties")
+                           or p.name in (".project", ".classpath")
+                           or p.name == "workspace.json" and p.parent.name == ".jvmd")
+    }
+    return hashlib.sha256(
+        json.dumps({k: v.replace(str(root), "$FIXTURE") for k, v in files.items()}, sort_keys=True).encode()
+    ).hexdigest(), files

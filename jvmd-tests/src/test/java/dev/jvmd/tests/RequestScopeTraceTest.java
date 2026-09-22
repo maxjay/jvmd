@@ -22,6 +22,9 @@ class RequestScopeTraceTest {
         assertThat(events).allMatch(e->e.getString("workflow").equals("workflow-test"));
         assertThat(events).allMatch(e->e.getString("invocation").equals("edit-1"));
         var rpc=events.stream().filter(e->e.getString("stage").equals("rpc.execute")).findFirst().orElseThrow();
+        var nested=events.stream().filter(e->e.getString("stage").equals("test.nested")).findFirst().orElseThrow();
+        assertThat(nested.getLong("parent")).isEqualTo(rpc.getLong("span"));
+        assertThat(nested.getLong("request")).isEqualTo(rpc.getLong("request"));
         var actor=events.stream().filter(e->e.getString("stage").equals("test.actor")).findFirst().orElseThrow();
         assertThat(actor.getLong("parent")).isEqualTo(rpc.getLong("span"));
         assertThat(actor.getLong("request")).isEqualTo(rpc.getLong("request"));
@@ -63,6 +66,18 @@ class RequestScopeTraceTest {
                 recording.enable("dev.jvmd.Stage");recording.start();
                 RequestScope.traced("test","workflow-test","edit-1","B",()->{
                     var context=RequestScope.current();
+                    try(var sessions=new dev.jvmd.core.Sessions()){
+                        var dispatcher=new dev.jvmd.core.Dispatcher(sessions,new dev.jvmd.core.Metrics());
+                        dispatcher.register("daemon.nested",(_,_) -> {
+                            try(var span=RequestScope.stage("test.nested")){
+                                return dev.jvmd.core.Envelope.of(0,"live",Map.of("ok",true));
+                            }
+                        });
+                        var response=dispatcher.dispatch(dev.jvmd.core.Json.MAPPER.readTree("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"daemon.nested\",\"params\":{}}"));
+                        if(response.has("error"))throw new AssertionError(response);
+                        if(RequestScope.current()!=context)throw new AssertionError("Nested dispatch replaced request context");
+                    }
+
                     if(RequestScope.TRACING){
                         RequestScope.memo("retained",()->new byte[1024]);
                         var detached=RequestScope.detached();

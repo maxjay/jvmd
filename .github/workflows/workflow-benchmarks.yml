@@ -4,12 +4,14 @@ on:
     paths:
       - 'benchmarks/workspaces/**'
       - 'jvmd-*/src/main/**'
+      - 'shim/src/**'
       - '.github/workflows/workflow-benchmarks.yml'
   push:
     branches: [main]
     paths:
       - 'benchmarks/workspaces/**'
       - 'jvmd-*/src/main/**'
+      - 'shim/src/**'
       - '.github/workflows/workflow-benchmarks.yml'
   workflow_dispatch:
     inputs:

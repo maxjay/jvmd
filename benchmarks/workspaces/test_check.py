@@ -1,4 +1,5 @@
 """Check contract: correctness gates, advisory deltas and immutable run publication."""
+import copy
 import json
 import os
 import tempfile
@@ -15,6 +16,29 @@ def result(value=10, complete=True):
 
 
 class CheckTest(unittest.TestCase):
+    def test_success_requires_complete_ci_coverage(self):
+        from check import OPERATIONS
+        good = result()
+        good["configuration"] = dict(runs=5, targets=3, samples=20, warmup=2)
+        good["rows"] = [dict(operation=op, state=state, server="jvmd", mode="comparison",
+                             p50_ms=1, p95_ms=2 if state == "warm" else None,
+                             samples=5*count, outcomes={"correct": 5*count}, targets=["0", "1", "2"],
+                             processes=[dict(worker=str(i), samples=count) for i in range(5)])
+                        for op in OPERATIONS for state, count in [("first", 3), ("warm", 60)]]
+        self.assertTrue(validate(copy.deepcopy(good), good["revision"])["complete"])
+        for defect in ("empty", "missing", "duplicate", "wrong", "count", "targets", "processes", "config"):
+            bad = copy.deepcopy(good)
+            if defect == "empty": bad["rows"] = []
+            elif defect == "missing": bad["rows"].pop()
+            elif defect == "duplicate": bad["rows"][-1] = bad["rows"][0]
+            elif defect == "wrong": bad["rows"][0]["outcomes"] = {"wrong": 15}
+            elif defect == "count": bad["rows"][0]["samples"] = 0
+            elif defect == "targets": bad["rows"][0]["targets"] = ["0"]
+            elif defect == "processes": bad["rows"][0]["processes"] = []
+            else: bad["configuration"]["runs"] = 0
+            with self.subTest(defect=defect):
+                self.assertFalse(validate(bad, good["revision"])["complete"])
+
     def test_advisory_colours_and_failed_results(self):
         baseline = result()
         for value, colour in [(5, "🟢"), (15, "🔴"), (10, "⚪")]:

@@ -12,6 +12,54 @@ from summarize import stats
 
 
 class HarnessTest(unittest.TestCase):
+    def test_encoded_uris_on_both_sides(self):
+        expected = {"uri": "file:///space%20and%20%C3%A9/Caller.java",
+                    "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 6}}}
+        for operation in ("definition", "references"):
+            op = dict(operation=operation, symbol="value0", source="value0(1)",
+                      expected=[expected] if operation == "references" else expected)
+            for uri in (expected["uri"], "file:///space and é/Caller.java"):
+                self.assertEqual("correct", classify(op, {"result": [dict(expected, uri=uri)]}))
+
+    def test_jdt_attached_source_uri_from_pinned_server(self):
+        source = "int base0(int input) {}"
+        uri = "jdt://contents/offset-1.jar/external/Offset.java?=library/%5C/repository%5C/offset-1.jar%3Cexternal%28Offset.class"
+        op = dict(operation="dependency_definition", symbol="base0", expected=dict(
+            binary_name="offset-1.jar", source_name="external/Offset.java", source=source))
+        loc = dict(uri=uri, range={"start": {"line": 0, "character": 4}, "end": {"line": 0, "character": 9}})
+        row = dict(result=[loc], source_evidence={uri: {"source": source}})
+        self.assertEqual("correct", classify(op, row))
+        row["source_evidence"][uri]["source"] = "int base0(String input) {}"
+        self.assertEqual("wrong", classify(op, row))
+        row["source_evidence"][uri]["source"] = source
+        loc["uri"] = uri.replace("offset-1.jar", "offset-2.jar")
+        self.assertEqual("wrong", classify(op, row))
+
+    def test_fixture_identity_includes_project_configuration(self):
+        from fixture import fixture_identity
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("library/.project", "library/.classpath", "host/.jvmd/workspace.json"):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                before = fixture_identity(root)
+                path.write_text("configuration")
+                self.assertNotEqual(before, fixture_identity(root))
+                before = fixture_identity(root)
+                path.write_text("changed")
+                self.assertNotEqual(before, fixture_identity(root))
+
+    def test_process_tree_survives_one_task_exiting(self):
+        from resources import _process_tree
+        from unittest.mock import patch
+        def read(path, *args, **kwargs):
+            if str(path).endswith("/exited/children"): raise FileNotFoundError()
+            return "2" if str(path).endswith("/live/children") else ""
+        def glob(path, pattern):
+            return [Path("/proc/1/task/exited/children"), Path("/proc/1/task/live/children")] if str(path) == "/proc/1/task" else []
+        with patch.object(Path, "exists", return_value=True), patch.object(Path, "glob", glob), patch.object(Path, "read_text", read):
+            self.assertEqual({1, 2}, _process_tree(1))
+
     def test_completion_rejects_stale_and_missing_signature(self):
         operation = {"operation": "completion", "symbol": "value0"}
         check = lambda rows: classify(operation, {"result": {"items": rows}})

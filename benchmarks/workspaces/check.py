@@ -29,6 +29,30 @@ def validate(result, revision):
                 raise ValueError("Invalid measurement")
         if any(type(v) is not int or v < 0 for v in row["outcomes"].values()):
             raise ValueError("Invalid correctness counts")
+    # A PR-produced success flag is insufficient: enforce the CI measurement contract.
+    modes = {(r["server"], r["mode"]) for r in result["rows"]}
+    allowed = ({("jvmd", "comparison")}, {("jvmd", "comparison"), ("jdtls", "comparison")},
+               {("jvmd", "attribution")}, {("jvmd", "comparison"), ("jvmd", "stages")})
+    config = result.get("configuration", {})
+    runs = 1 if modes == {("jvmd", "attribution")} else 5
+    expected = {(op, state, server, mode) for op in OPERATIONS for state in ("first", "warm")
+                for server, mode in modes}
+    keys = [(r["operation"], r["state"], r["server"], r["mode"]) for r in result["rows"]]
+    valid = (modes in allowed and len(keys) == len(expected) and set(keys) == expected
+             and all(type(config.get(k)) is int and config[k] == v
+                     for k, v in {"runs": runs, "targets": 3, "samples": 20, "warmup": 2}.items()))
+    for row in result["rows"]:
+        count = 3 * (20 if row["state"] == "warm" else 1)
+        processes = row.get("processes", [])
+        valid = valid and (row["outcomes"] == {"correct": runs * count}
+                           and row.get("samples") == runs * count
+                           and row.get("targets") == ["0", "1", "2"]
+                           and len(processes) == runs
+                           and len({p["worker"] for p in processes}) == runs
+                           and all(p.get("samples") == count for p in processes)
+                           and row["p50_ms"] is not None
+                           and (row["p95_ms"] is not None if row["state"] == "warm" else row["p95_ms"] is None))
+    result["complete"] = bool(result["complete"] and valid)
     return result
 
 

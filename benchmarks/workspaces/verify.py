@@ -46,7 +46,7 @@ def classify(operation, row):
                 return "incomplete" if not actual else "wrong"
             loc = actual[0]
             if name == "definition":
-                return "correct" if loc == expected else "wrong"
+                return "correct" if loc == locations([expected])[0] else "wrong"
             if loc["uri"].startswith("jdt:"):
                 evidence = next(
                     (v for k, v in row.get("source_evidence", {}).items() if unquote(k) == loc["uri"]), {}
@@ -73,7 +73,7 @@ def classify(operation, row):
                 matches = [
                     e
                     for e in expected
-                    if e["uri"] == loc["uri"] and e["range"]["start"] == loc["range"]["start"]
+                    if unquote(e["uri"]) == loc["uri"] and e["range"]["start"] == loc["range"]["start"]
                 ]
                 if not matches:
                     return "wrong"

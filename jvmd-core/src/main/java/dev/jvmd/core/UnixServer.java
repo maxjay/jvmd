@@ -27,6 +27,7 @@ public final class UnixServer implements AutoCloseable {
     private final Dispatcher dispatcher;
     private final AutoCloseable resources;
     private final AtomicBoolean closed = new AtomicBoolean();
+    private final AtomicBoolean idleArmed = new AtomicBoolean();
     private final AtomicInteger active = new AtomicInteger();
     private final CountDownLatch stopped = new CountDownLatch(1);
     private final Set<SocketChannel> clients = ConcurrentHashMap.newKeySet();
@@ -66,6 +67,7 @@ public final class UnixServer implements AutoCloseable {
         });
     }
     public void ready() {
+        if(closed.get()||!idleArmed.compareAndSet(false,true))return;
         lastActivity=System.nanoTime();
         long interval = Math.max(10, Math.min(1000, config.idleTimeout().toMillis() / 4));
         timer.scheduleWithFixedDelay(() -> {

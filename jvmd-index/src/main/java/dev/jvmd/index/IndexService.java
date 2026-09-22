@@ -216,6 +216,7 @@ public final class IndexService implements AutoCloseable {
                 var data=new LinkedHashMap<String,Object>();
                 data.put("doc",member.doc());data.put("source_file","jar:"+sources.toUri()+"!/"+member.file());
                 data.put("line",member.line());data.put("source_start",member.start());data.put("source_end",member.end());
+                if(member.nameStart()>=0)data.put("name_range",Map.of("start",Documents.position(text.get(member.file()),member.nameStart()),"end",Documents.position(text.get(member.file()),member.nameEnd())));
                 data.put("body_start",member.bodyStart());data.put("body_end",member.bodyEnd());data.put("parameters",member.parameters());
                 members.put(key,Collections.unmodifiableMap(data));
             }
@@ -299,6 +300,7 @@ public final class IndexService implements AutoCloseable {
                         var data=new LinkedHashMap<String,Object>();
                         data.put("doc",member.doc());data.put("source_file","jar:"+sourceZip.toUri()+"!/"+entry);
                         data.put("line",member.line());data.put("source_start",member.start());data.put("source_end",member.end());
+                        if(member.nameStart()>=0)data.put("name_range",Map.of("start",Documents.position(text,member.nameStart()),"end",Documents.position(text,member.nameEnd())));
                         data.put("body_start",member.bodyStart());data.put("body_end",member.bodyEnd());data.put("parameters",member.parameters());
                         sourceData.put(memberKey,Collections.unmodifiableMap(data));
                     }

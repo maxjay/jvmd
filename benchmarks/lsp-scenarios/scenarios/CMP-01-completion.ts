@@ -34,13 +34,16 @@ export default class CompletionScenario extends LspScenarioHarness {
       context: { triggerKind: 2, triggerCharacter: "." },
     });
 
-    const firstRaw = await completion();
-    const first = await this.measure(async () => firstRaw, normaliseCompletion);
+    let firstCandidate: any;
+    const first = await this.measure(completion, response => {
+      const items = Array.isArray(response) ? response : response?.items ?? [];
+      assert(items.length > 0, "Expected completion candidates");
+      firstCandidate = items[0];
+      return normaliseCompletion(response);
+    });
 
-    const firstItems = Array.isArray(firstRaw) ? firstRaw : firstRaw?.items ?? [];
-    assert(firstItems.length > 0, "Expected completion candidates");
     const resolved = await this.measure(
-      () => this.request<any>("completionItem/resolve", firstItems[0]),
+      () => this.request<any>("completionItem/resolve", firstCandidate),
       normaliseResolvedCompletion,
     );
 

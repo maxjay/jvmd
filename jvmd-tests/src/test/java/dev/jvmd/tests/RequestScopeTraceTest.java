@@ -19,8 +19,14 @@ class RequestScopeTraceTest {
         Path recording=run(true);
         var events=RecordingFile.readAllEvents(recording).stream().filter(e->e.getEventType().getName().equals("dev.jvmd.Stage")).toList();
         assertThat(events).isNotEmpty();
-        assertThat(events).allMatch(e->e.getString("workflow").equals("workflow-test"));
-        assertThat(events).allMatch(e->e.getString("invocation").equals("edit-1"));
+        assertThat(events.stream().filter(e->!e.getString("stage").equals("index.scan"))).allMatch(e->"workflow-test".equals(e.getString("workflow")));
+        assertThat(events.stream().filter(e->!e.getString("stage").equals("index.scan"))).allMatch(e->"edit-1".equals(e.getString("invocation")));
+        var scans=events.stream().filter(e->e.getString("stage").equals("index.scan")).toList();
+        assertThat(scans).hasSize(2);
+        assertThat(scans.get(0).getString("workflow")).isEqualTo("workflow-test");
+        assertThat(scans.get(1).getString("workflow")).isNull();
+        var failures=events.stream().filter(e->e.getString("stage").equals("rpc.execute")&&e.getString("method").startsWith("daemon.failure")).toList();
+        assertThat(failures).hasSize(3).allMatch(e->e.getString("outcome").equals("failed"));
         var rpc=events.stream().filter(e->e.getString("stage").equals("rpc.execute")).findFirst().orElseThrow();
         var nested=events.stream().filter(e->e.getString("stage").equals("test.nested")).findFirst().orElseThrow();
         assertThat(nested.getLong("parent")).isEqualTo(rpc.getLong("span"));
@@ -103,6 +109,29 @@ class RequestScopeTraceTest {
                     }
                     return null;
                 });
+                try(var sessions=new dev.jvmd.core.Sessions()){
+                    var dispatcher=new dev.jvmd.core.Dispatcher(sessions,new dev.jvmd.core.Metrics());
+                    dispatcher.register("daemon.failure-rpc",(_,_) -> {throw dev.jvmd.core.RpcException.invalid("fixture");});
+                    dispatcher.register("daemon.failure-internal",(_,_) -> {throw new IllegalStateException("fixture");});
+                    for(String method:List.of("daemon.failure-invalid","daemon.failure-rpc","daemon.failure-internal")){
+                        var request=dev.jvmd.core.Json.MAPPER.createObjectNode().put("jsonrpc",method.endsWith("invalid")?"invalid":"2.0").put("id",1).put("method",method);
+                        request.putObject("_jvmdTrace").put("workflow","workflow-test").put("invocation","edit-1");
+                        dispatcher.dispatch(request);
+                    }
+                }
+                Path repository=Files.createDirectory(Path.of(args[0]).resolveSibling("repository"));
+                try(var index=new dev.jvmd.index.IndexService(repository.resolveSibling("trace-index.db"),repository)){
+                    var scheduled=new java.util.concurrent.atomic.AtomicReference<Runnable>();
+                    var replacement=new ScheduledThreadPoolExecutor(1){
+                        @Override public ScheduledFuture<?> scheduleWithFixedDelay(Runnable task,long initial,long delay,TimeUnit unit){
+                            scheduled.set(task);return null;
+                        }
+                    };
+                    var field=dev.jvmd.index.IndexService.class.getDeclaredField("scanner");field.setAccessible(true);
+                    ((ScheduledExecutorService)field.get(index)).shutdownNow();field.set(index,replacement);
+                    RequestScope.traced("test.scan","workflow-test","edit-1","B",()->{index.start();return null;});
+                    scheduled.get().run();scheduled.get().run();
+                }
                 if(RequestScope.current()!=null)throw new AssertionError("Context leaked");
                 recording.stop();recording.dump(Path.of(args[0]));
             }

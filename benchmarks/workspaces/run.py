@@ -504,8 +504,9 @@ def main():
                 "image": os.environ.get("ImageVersion", os.uname().release),
                 "arch": os.uname().machine, "cpus": os.cpu_count(),
                 "cpu": next((s.split(":", 1)[1].strip() for s in Path("/proc/cpuinfo").read_text().splitlines() if s.startswith("model name")), "unknown")},
-        cpu_quota=first_system_value(("/sys/fs/cgroup/cpu.max",)),
-        memory_limit=first_system_value(("/sys/fs/cgroup/memory.max",)),
+        cpu_quota=first_system_value(("/sys/fs/cgroup/cpu.max", "/sys/fs/cgroup/cpu/cpu.cfs_quota_us", "/sys/fs/cgroup/cpu,cpuacct/cpu.cfs_quota_us")),
+        cpu_period=first_system_value(("/sys/fs/cgroup/cpu/cpu.cfs_period_us", "/sys/fs/cgroup/cpu,cpuacct/cpu.cfs_period_us")),
+        memory_limit=first_system_value(("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes")),
     )
     write(a.root / "provenance.json", metadata)
     reports = []

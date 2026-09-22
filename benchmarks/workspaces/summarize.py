@@ -48,10 +48,10 @@ def summarize(root):
                                    for worker in sorted({w for w, _ in actions})]})
     config = {key: provenance.get(key) for key in
               ("jdk", "node", "runs", "samples", "warmup", "targets", "sources", "cache",
-               "cpu_quota", "memory_limit", "runner")}
+               "cpu_quota", "cpu_period", "memory_limit", "runner")}
     config["fixtures"] = sorted(fixtures)
     config["harness"] = {key: provenance["harness"][key] for key in
-                         ("run.py", "fixture.py", "verify.py", "resources.py", "bridge.ts", "StdioApplication.java")}
+                         ("run.py", "fixture.py", "verify.py", "resources.py", "bridge.ts", "StdioApplication.java", "summarize.py", "compile.py")}
     config["dependencies"] = {Path(k).name: v for k, v in provenance["build"]["dependencies"].items()
                               if not Path(k).name.startswith("jvmd-")}
     return {"schema": 2, "revision": provenance["build"]["revision"], "tree": provenance["build"]["tree"],

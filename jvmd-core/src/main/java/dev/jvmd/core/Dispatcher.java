@@ -100,6 +100,10 @@ public final class Dispatcher {
             envelope=Envelope.of(1,"live",Map.of("reason","Error response cannot be paged","detail",String.valueOf(budget.getMessage())));
             response.set("error",Json.MAPPER.valueToTree(Map.of("code",-32005,"message","budget_exceeded","data",envelope)));
         }
+        if(RequestScope.TRACING&&(fault||response.has("error"))){
+            var context=RequestScope.current();
+            if(context!=null&&context.span()!=null)context.span().outcome("failed");
+        }
         metrics.record(method, sessionId, System.nanoTime() - start, envelope, fault);
         return id == null && validRequest ? null : response;
     }

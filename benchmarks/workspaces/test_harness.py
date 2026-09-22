@@ -69,6 +69,25 @@ class HarnessTest(unittest.TestCase):
         with patch.object(Path, "exists", return_value=True), patch.object(Path, "glob", glob), patch.object(Path, "read_text", read):
             self.assertEqual({1, 2}, _process_tree(1))
 
+    def test_compatibility_includes_aggregation_build_and_cpu_period(self):
+        from summarize import summarize
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            provenance = {"build": {"revision": "a", "tree": "b", "dependencies": {}}, "cpu_period": "100000",
+                          "harness": {name: "original" for name in ("run.py", "fixture.py", "verify.py", "resources.py", "bridge.ts", "StdioApplication.java", "compile.py", "summarize.py")}}
+            def summary():
+                (root / "provenance.json").write_text(json.dumps(provenance))
+                return summarize(root)
+            with patch("summarize.verify", return_value={"complete": False, "workers": []}):
+                original = summary()["compatibility"]
+                for name in ("compile.py", "summarize.py"):
+                    provenance["harness"][name] = "changed"
+                    self.assertNotEqual(original, summary()["compatibility"])
+                    provenance["harness"][name] = "original"
+                provenance["cpu_period"] = "200000"
+                self.assertNotEqual(original, summary()["compatibility"])
+
     def test_completion_rejects_stale_and_missing_signature(self):
         operation = {"operation": "completion", "symbol": "value0"}
         check = lambda rows: classify(operation, {"result": {"items": rows}})

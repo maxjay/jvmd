@@ -46,8 +46,9 @@ public final class IndexService implements AutoCloseable {
     public void start(){
         long initialDelaySeconds=Long.getLong("jvmd.index.scan.initial_delay_seconds",2L);
         if(initialDelaySeconds<0)throw new IllegalArgumentException("jvmd.index.scan.initial_delay_seconds must be non-negative");
-        var cause=RequestScope.detached();
+        var initialCause=new java.util.concurrent.atomic.AtomicReference<>(RequestScope.detached());
         scanner.scheduleWithFixedDelay(()->{try{
+            var cause=initialCause.getAndSet(null);
             if(cause==null)scan();else RequestScope.with(cause,()->{scan();return null;});
         }catch(Exception e){warn("index_scan_fault: "+e);}},
                 initialDelaySeconds,60,TimeUnit.SECONDS);

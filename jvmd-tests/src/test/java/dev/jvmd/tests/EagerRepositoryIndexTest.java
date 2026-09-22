@@ -1,6 +1,7 @@
 package dev.jvmd.tests;
 import dev.jvmd.index.*;
 import java.nio.file.*;
+import java.util.Map;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;

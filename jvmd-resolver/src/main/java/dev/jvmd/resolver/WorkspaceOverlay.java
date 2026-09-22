@@ -56,8 +56,14 @@ public final class WorkspaceOverlay implements WorkspaceSource {
         return oldest>=newest;
     }
     public List<Resolution.Module> dependencies(Resolution graph,String owner,boolean test){
+        return dependencies(graph,owner,test?Set.of():Set.of("runtime","test"));
+    }
+    public List<Resolution.Module> runtimeDependencies(Resolution graph,String owner){
+        return dependencies(graph,owner,Set.of("provided","test"));
+    }
+    private List<Resolution.Module> dependencies(Resolution graph,String owner,Set<String> excluded){
         var result=new LinkedHashMap<String,Resolution.Module>();
-        for(var node:graph.nodes())if(node.id().startsWith(owner+"|")&&node.winner()==null&&(test||!Set.of("runtime","test").contains(node.scope()))){
+        for(var node:graph.nodes())if(node.id().startsWith(owner+"|")&&node.winner()==null&&!excluded.contains(node.scope())){
             var module=match(node.gav());if(module!=null&&!module.gav().equals(owner))result.putIfAbsent(module.gav(),module);
         }
         return List.copyOf(result.values());

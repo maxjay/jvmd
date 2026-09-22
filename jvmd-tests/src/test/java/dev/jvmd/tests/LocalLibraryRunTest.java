@@ -12,6 +12,25 @@ import static org.assertj.core.api.Assertions.*;
 @Tag("phase-10")
 class LocalLibraryRunTest {
     @TempDir Path root;
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"runtime","provided","test"})
+    void launchUsesRuntimeScopesForLocalOutputs(String scope) throws Exception {
+        String dependency=MavenFixtures.dependency("plugin","1").replace("</dependency>","<scope>"+scope+"</scope></dependency>");
+        Path host=OverlayFixtures.project(root.resolve("host"),"host","1","<dependencies>"+dependency+"</dependencies>");
+        Path plugin=OverlayFixtures.project(root.resolve("plugin"),"plugin","1","");
+        OverlayFixtures.source(plugin,"Plugin","public class Plugin { public static int value(){return 42;} }");
+        OverlayFixtures.source(host,"Main","public class Main { public static void main(String[] args)throws Exception { String value; try { value=Class.forName(\"p.Plugin\").getMethod(\"value\").invoke(null).toString(); } catch(ClassNotFoundException missing) { value=\"missing\"; } java.nio.file.Files.writeString(java.nio.file.Path.of(args[0]),value); } }");
+        Path marker=host.resolve("observed.txt");
+        try(var app=new Application(TestSupport.config(root,Duration.ofHours(4)))) {
+            var opened=TestSupport.request(app.dispatcher(),"session.open",Map.of("root",host.toString(),"manifest",Map.of("roots",List.of(host.toString(),plugin.toString()),"ignore_versions",false)));
+            String session=opened.path("result").path("result").path("session").asText();
+            var run=TestSupport.request(app.dispatcher(),"run.start",Map.of("session",session,"target","p.Main","args",List.of(marker.toString())));
+            assertThat(run.has("error")).as(run.toString()).isFalse();
+            long deadline=System.nanoTime()+Duration.ofSeconds(10).toNanos();
+            while((!Files.exists(marker)||Files.readString(marker).isEmpty())&&System.nanoTime()<deadline)Thread.sleep(20);
+            assertThat(marker).exists();assertThat(Files.readString(marker)).isEqualTo(scope.equals("runtime")?"42":"missing");
+        }
+    }
     @Test void runCompilesAndExecutesAnUninstalledLocalLibrary() throws Exception {
         Path host=OverlayFixtures.project(root.resolve("host"),"host","1","<dependencies>"+MavenFixtures.dependency("library","1")+"</dependencies>");
         Path library=OverlayFixtures.project(root.resolve("library"),"library","1","");
@@ -28,7 +47,7 @@ class LocalLibraryRunTest {
             assertThat(run.has("error")).as(run.toPrettyString()).isFalse();
             assertThat(run.path("result").path("result").path("pid").asLong()).isPositive();
             long deadline=System.nanoTime()+Duration.ofSeconds(10).toNanos();
-            while(!Files.exists(marker)&&System.nanoTime()<deadline)Thread.sleep(20);
+            while((!Files.exists(marker)||Files.readString(marker).isEmpty())&&System.nanoTime()<deadline)Thread.sleep(20);
             assertThat(marker).as("Actual code must execute; successful launch acceptance is insufficient").exists();
             assertThat(Files.readString(marker)).isEqualTo("READY revision=B value=42");
         }

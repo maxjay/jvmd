@@ -115,7 +115,8 @@ exports.run = async () => {
     }
     if(name==='revert_diagnostics')return 'stale';
     if(name==='api_diagnostics'&&!result.diagnostics?.length)return 'stale';
-    if(name.endsWith('_output'))return result.output?'stale':'incomplete';
+    if(name.endsWith('_output'))return /Exception|Error|fatal/i.test(result.output||'')?'wrong':result.output?.includes('READY revision=')?'stale':'incomplete';
+    if(name.startsWith('debug_')&&result.frames?.length===0)return 'incomplete';
     return 'wrong';
   }
   try{
@@ -183,22 +184,28 @@ exports.run = async () => {
       const expected=config.fixture.expected.references.map(r=>JSON.stringify(r)).sort();
       const locations=rows=>rows.map(r=>({uri:(r.uri||r.targetUri).toString(),range:plainRange(r.range||r.targetSelectionRange)}));
       await check('references',async()=>locations(await vscode.commands.executeCommand('vscode.executeReferenceProvider',consumer.uri,point)||[]),rows=>{
-        const uses=rows.filter(r=>!(vscode.Uri.parse(r.uri).fsPath===files.provider&&JSON.stringify(r.range)===JSON.stringify(config.fixture.expected.definition.range))).map(r=>JSON.stringify(r)).sort();
+        const uses=rows.filter(r=>!(vscode.Uri.parse(r.uri).fsPath===files.provider&&JSON.stringify(r.range)===JSON.stringify(config.fixture.expected.definition.range))).map(row=>{
+          const index=(config.fixture.expected.reference_call_ranges||[]).findIndex(r=>r.uri===row.uri&&JSON.stringify(r.range)===JSON.stringify(row.range));
+          return JSON.stringify(index<0?row:config.fixture.expected.references[index]);
+        }).sort();
         return JSON.stringify(uses)===JSON.stringify(expected);
       });
       await check('rename_preview',async()=>{
         const edit=await vscode.commands.executeCommand('vscode.executeDocumentRenameProvider',consumer.uri,point,'renamedValue');
         return (edit?.entries()||[]).flatMap(([uri,rows])=>rows.map(row=>({uri:uri.toString(),range:plainRange(row.range),newText:row.newText})));
-      },rows=>rows.length===3&&rows.every(r=>r.newText==='renamedValue')&&new Set(rows.map(r=>r.uri)).size===3);
+      },rows=>{
+        const expected=[...config.fixture.expected.references,{uri:provider.uri.toString(),range:config.fixture.expected.definition.range}]
+          .map(r=>JSON.stringify({...r,newText:'renamedValue'})).sort();
+        return JSON.stringify(rows.map(r=>JSON.stringify(r)).sort())===JSON.stringify(expected);
+      });
     }
+    const diagnosticQuery=()=>vscode.languages.getDiagnostics(consumer.uri).map(d=>({message:d.message,severity:d.severity+1,range:plainRange(d.range),code:d.code,source:d.source}));
     if(['language','coverage'].includes(config.workflow)){
     const changed=now();
     await check('api_save',async()=>{await editProvider('API');return {text:provider.getText(),dirty:provider.isDirty,provider_version:provider.version};},r=>!r.dirty&&r.text===config.fixture.versions.API);
     await check('api_completion',completion,completionOracle('String'));
     // JVMD dependent diagnostics are demand-driven; request them through its existing LSP bridge.
     // VS Code Java uses its ordinary automatic dependent build. This difference is recorded.
-    if(adapter){await consumer.save();await adapter.rpc('lsp.diagnostics',{uri:consumer.uri.toString()});}
-    const diagnosticQuery=()=>vscode.languages.getDiagnostics(consumer.uri).map(d=>({message:d.message,severity:d.severity+1,range:plainRange(d.range),code:d.code,source:d.source}));
     if(adapter){
       await check('api_diagnostics',async()=>{const value=await adapter.rpc('lsp.diagnostics',{uri:consumer.uri.toString()});return value.value;},r=>r.diagnostics?.some(d=>d.severity===1));
     }else await check('api_diagnostics',async()=>({uri:consumer.uri.toString(),version:consumer.version,diagnostics:diagnosticQuery()}),r=>r.diagnostics.some(d=>d.severity===1));

@@ -105,6 +105,7 @@ class ProcessMonitor:
                         self.maximum[role+'_rss_bytes']=max(self.maximum[role+'_rss_bytes'],sum(p['rss_bytes'] for p in row['processes'] if p['role']==role))
         values = dict(self.maximum); ticks = os.sysconf('SC_CLK_TCK')
         return {'source': 'Linux /proc, process plus descendants', 'sample_interval_ms': self.interval*1000,
+                'rss_scope':'Sum of process RSS; shared pages can be counted multiple times; not PSS or unique physical memory',
                 'samples': self.samples, 'peak_rss_bytes': values.get('rss_bytes', 0),
                 'cpu_seconds_observed': sum(p['cpu_ticks'] for p in self.processes.values())/ticks,
                 'cpu_scope':'Last observed cumulative CPU of each pid/start-time identity; very short-lived or final unsampled work can be missed',

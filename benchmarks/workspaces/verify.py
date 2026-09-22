@@ -52,6 +52,9 @@ def workflow_oracle(name, result, fixture, revision=None):
             actual=[{'uri':r['uri'],'range':r['range']} for r in result]
         else:actual=[r for r in result if not (unquote(urlparse(r['uri']).path)==fixture['files']['provider'] and r['range']==fixture['expected']['definition']['range'])]
         key=lambda r:json.dumps(r,sort_keys=True)
+        if name=='references':
+            allowed={key(call):expected[i] for i,call in enumerate(fixture['expected'].get('reference_call_ranges',[]))}
+            actual=[allowed.get(key(row),row) for row in actual]
         return sorted(map(key,actual))==sorted(map(key,expected))
     if name in ('run_output','hotswap_output'):
         marker=fixture['expected']['B' if name=='run_output' else 'C']

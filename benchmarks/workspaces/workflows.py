@@ -15,7 +15,7 @@ import time
 from compile import EXPORTS, sha
 from modules import workflow_fixture, project_fixture
 from resources import ProcessMonitor, export_workflow_jfr, workflow_resources
-from run import Client, CAPABILITIES, position
+from run import Client, CAPABILITIES, position, first_system_value
 
 HERE = Path(__file__).resolve().parent
 
@@ -31,13 +31,13 @@ def configuration(a, root, fixture, build, workflow, state=None):
     java = [str(a.java_home/'bin/java'), *EXPORTS, '--enable-native-access=ALL-UNNAMED',
             '-Xmx1024m', f'-Djvmd.config={config}', f'-Djvmd.state={state or root / "state"}',
             f'-Djvmd.resolvers={a.resolvers}', '-Djvmd.index.scan.initial_delay_seconds=0']
-    if a.mode=='retention':java+=['-Djvmd.benchmark.retention=true']
+    if a.mode=='retention':java+=['-Djvmd.benchmark.retention=true','-XX:NativeMemoryTracking=summary']
     if a.mode == 'attribution' or a.instrumentation:
         settings='profile'
         if a.mode!='attribution':
             settings=root/'stages.jfc'
             settings.write_text('<configuration version="2.0" label="JVMD stages" provider="JVMD"><event name="dev.jvmd.Stage"><setting name="enabled">true</setting><setting name="stackTrace">false</setting></event></configuration>')
-        java += ['-Djvmd.trace=true', f'-XX:StartFlightRecording=filename={root / "server.jfr"},settings={settings},dumponexit=true',
+        java += ['-Djvmd.trace=true',f'-Djvmd.benchmark.workflow={workflow}', f'-XX:StartFlightRecording=filename={root / "server.jfr"},settings={settings},dumponexit=true',
                  '-XX:FlightRecorderOptions=stackdepth=128', '-Xlog:jfr*=off']
     java += ['-cp', build['classpath'], 'dev.jvmd.benchmark.StdioApplication']
     bridge = root/'bridge.json'
@@ -122,11 +122,11 @@ def engine(a, root, fixture, build, report):
                 return result['result']
             report['retention']={'boundary':'JVMD engine and actual WorkspaceBindings leases','snapshots':[],
                 'unmeasured':['VS Code product retention','retained object graph','heap after closing the final workspace']}
-            def snapshot(phase,operation='snapshot'):
-                value=rpc('benchmark.retention',{'operation':operation})
+            def snapshot(phase,operation='snapshot',inspect=False):
+                value=rpc('benchmark.retention',{'operation':operation,'inspect_heap':inspect})
                 if value.get('heap_used_bytes',0)<=0:raise AssertionError(value)
                 report['retention']['snapshots'].append({'phase':phase,**value})
-            snapshot('before_edits')
+            snapshot('before_edits',inspect=True)
             for edit in range(a.edits):
                 revision='B' if edit%2==0 else 'API'
                 provider.write_text(fixture['versions'][revision]);version+=1
@@ -134,14 +134,14 @@ def engine(a, root, fixture, build, report):
                 client.notify('textDocument/didSave',{'textDocument':{'uri':provider.as_uri()}})
                 check('body_completion' if revision=='B' else 'api_completion',complete,lambda r:valid_completion(r,'int' if revision=='B' else 'String'))
                 snapshot('held_edit_'+str(edit),'hold')
-            snapshot('views_released','release')
+            snapshot('views_released','release',inspect=True)
             for edit in range(a.edits):
                 revision='B' if edit%2==0 else 'API'
                 provider.write_text(fixture['versions'][revision]);version+=1
                 client.notify('textDocument/didChange',{'textDocument':{'uri':provider.as_uri(),'version':version},'contentChanges':[{'text':provider.read_text()}]})
                 client.notify('textDocument/didSave',{'textDocument':{'uri':provider.as_uri()}})
                 check('body_completion' if revision=='B' else 'api_completion',complete,lambda r:valid_completion(r,'int' if revision=='B' else 'String'))
-                snapshot('released_edit_'+str(edit))
+                snapshot('released_edit_'+str(edit),inspect=edit==a.edits-1)
             opened=[];revision='A'
             for extra in report.get('additional_fixtures',[]):
                 extra=json.loads((root/extra).read_text())
@@ -195,9 +195,10 @@ def product(a,root,fixture,build,report,backend,resume=None):
     write(root/'command.json',command)
     environment=dict(os.environ,JVMD_WORKFLOW_CONFIG=str(root/'driver.json'))
     with (root/'editor.log').open('w') as log:
+        began=time.monotonic()
         process=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT,env=environment,start_new_session=True)
         monitor=ProcessMonitor(process.pid, output=root/"resource-samples.jsonl")
-        began=time.monotonic();deadline=began+a.timeout
+        deadline=began+a.timeout
         ready=None
         try:
             while process.poll() is None:
@@ -272,6 +273,7 @@ def main():
                 'maven':subprocess.check_output([shutil.which('mvn'),'-version'],text=True) if shutil.which('mvn') else 'external Maven unavailable; resolver bundle hashes recorded in build',
                 'node':subprocess.check_output([a.node,'--version'],text=True),'harness':{str(p.relative_to(a.repo)):sha(p) for p in HERE.iterdir() if p.is_file()},
                 'cache':{'project':'fresh tool/project state','dependencies':str(a.dependency_cache) if a.dependency_cache else 'generated external dependency only','downloads':'none during measurement; Maven offline','os':'not flushed'},
+                'hardware':{'logical_cpus':os.cpu_count(),'cpu_models':sorted({line.partition(':')[2].strip() for line in Path('/proc/cpuinfo').read_text().splitlines() if line.startswith('model name')}),'filesystem':subprocess.check_output(['stat','-f','-c','%T',str(a.root)],text=True).strip(),'cpu_quota':first_system_value(('/sys/fs/cgroup/cpu.max',)),'memory_limit':first_system_value(('/sys/fs/cgroup/memory.max',))},
                 'profiles':'attribution timings excluded from comparisons','extensions':{}}
     if a.extensions:
         for p in a.extensions.glob('*/package.json'):
@@ -285,7 +287,7 @@ def main():
             a.instrumentation=instrumentation
             suffix=('-stages' if instrumentation else '-disabled') if a.overhead else ''
             root=a.root/f'{name}-{repetition}{suffix}';root.mkdir()
-            report={'schema':1,'workflow':f'{a.workflow}-{repetition}-{name}','engine':name,'repetition':repetition,'mode':a.mode,'instrumentation':a.instrumentation,'overhead_pair':a.overhead,
+            report={'schema':1,'workflow':f'{a.workflow}-{repetition}-{name}{suffix}','engine':name,'repetition':repetition,'mode':a.mode,'instrumentation':a.instrumentation,'overhead_pair':a.overhead,
                     'boundary':'backend-result' if name=='engine-jvmd' else 'VS Code provider readiness','actions':[],
                     'outcome':'unavailable','cache_state':'fresh project/tool state, dependencies available','scenario':a.workflow,'fixture':'fixture/fixture.json','profiles':[],'unmeasured':['visible UI completion','IntelliJ','retained heap']}
             try:

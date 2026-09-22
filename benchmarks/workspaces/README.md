@@ -108,7 +108,9 @@ uncertainty, not subtraction of unrelated clock origins. External open-to-ready
 includes process startup; driver readiness begins inside the extension host.
 
 Attribution opts into `RequestScope` spans and JFR (`profile`, stack depth 128).
-Actor queues record enqueue and execution separately. Detached publication
+Actor queues record enqueue and execution separately. Startup and background
+artifact scans retain the opening workflow's cause, with actual inventory,
+hash and parsed-class counts. Detached publication
 keeps causal IDs without keeping request memoized values alive. The benchmark
 bridge preserves the dispatch cause of deferred callbacks. `trace.json` is a
 standard Chrome/Perfetto trace; `profile-events.json` contains selected CPU,
@@ -130,7 +132,9 @@ Retention mode holds bounded leases from the actual WorkspaceBindings path
 while making checked edits, releases them, repeats edits, opens additional
 workspaces and closes/reopens them. Explicit GC requests occur only in this
 diagnostic mode. It reports heap, nonheap, GC and workspace counters separately
-from RSS. This is not a dominator/retained-size analysis or proof that all memory
+from RSS. Selected snapshots include live class counts/shallow bytes and HotSpot
+native-memory tracking categories. These exclude object contents; native JNI
+allocations may remain untracked. This is not a dominator/retained-size analysis or proof that all memory
 will remain bounded over arbitrarily long sessions. The final control workspace
 remains open while collecting heap observations.
 

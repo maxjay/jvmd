@@ -8,15 +8,17 @@ const escape = value => String(value).replace(/[&<>"']/g, character => ({
 })[character]);
 
 export function renderWorkflowDashboard(summary) {
+  const labels={open_to_project_ready:'Open projects → correct navigation and completion',api_edit_to_correct:'Change library API → correct caller results',api_save:'Edit and save library API',api_completion:'Complete call after API edit',api_diagnostics:'Check caller diagnostics after API edit',api_definition:'Navigate to edited declaration',run_output:'Save library body → run host → verify output',debug_stop:'Stop in library from host',debug_locals:'Inspect stopped locals',debug_step:'Step back into host',hotswap_output:'Change method body → hot swap → verify same process'};
+  const label=name=>labels[name]||name.replaceAll('_',' ');
   const sourceRevision=summary.provenance.build.revision;
-  const methodLink=([name,method])=>summary.provenance.build.dirty ? escape(name) : `<a href="https://github.com/maxjay/jvmd/blob/${escape(sourceRevision)}/${escape(method.source)}#L${method.line}">${escape(name)}</a>`;
+  const methodLink=([name,method])=>summary.provenance.build.dirty ? escape(name) : `<a href="https://github.com/maxjay/jvmd/blob/${escape(sourceRevision)}/${escape(method.source)}${method.line>0?'#L'+method.line:''}">${escape(name)}</a>`;
   const value = (number, unit = 'ms') => number === null || number === undefined ? 'unavailable' : `${Number(number).toFixed(2)} ${unit}`;
-  const overview = summary.rows.map(row => `<tr><td>${escape(row.action)}</td><td>${escape(row.engine)}</td><td>${escape(row.mode)}</td>
+  const overview = summary.rows.map(row => `<tr><td>${escape(label(row.action))}</td><td>${escape(row.engine)}</td><td>${escape(row.mode)}</td>
 <td>${row.correct} correct / ${row.failures} failed</td><td>${value(row.p50_ms)}</td><td>${value(row.p95_ms)}</td>
-<td>${row.processes.length}</td><td>${value(row.min_process_p50_ms)}–${value(row.max_process_p50_ms)}</td></tr>`).join('');
+<td>${value(row.tooling_cpu_s,'s')}</td><td>${value(row.tooling_rss_mib,'MiB')}</td><td>${value(row.sampled_allocation_mib,'MiB sampled')}</td><td>${row.processes.length}</td><td>${value(row.min_process_p50_ms)}–${value(row.max_process_p50_ms)}</td></tr>`).join('');
   const invocations = [...summary.invocations].sort((a,b) => (b.api_edit_to_correct_ms||0)-(a.api_edit_to_correct_ms||0)).map(run => {
     const stages = run.trace?.traceEvents || [];
-    const actions = run.actions.map(action => `<tr><td>${escape(action.name)}<br><small>${escape(action.id||'')}</small></td><td>${escape(action.outcome)}</td>
+    const actions = run.actions.map(action => `<tr><td>${escape(label(action.name))}<br><small>${escape(action.id||'')}</small></td><td>${escape(action.outcome)}</td>
 <td>${value(action.first_response_ms)}</td><td>${value(action.time_to_correct_ms)}</td><td>${action.retry_count ?? 0}</td>
 <td><details><summary>${action.attempts.length} recorded attempts</summary><pre>${escape(JSON.stringify({attempts:action.attempts,resources:action.resources,trace:action.trace_evidence},null,2))}</pre></details></td></tr>`).join('');
     const profiles=run.attribution?.groups||[];
@@ -25,11 +27,12 @@ export function renderWorkflowDashboard(summary) {
 <td>${value(stage.args.threadCpuNanos<0?null:stage.args.threadCpuNanos/1e6)}</td><td>${value(stage.args.threadAllocatedBytes<0?null:stage.args.threadAllocatedBytes/1048576,'MiB')}</td>
 <td>${escape(stage.args.cache)}</td><td>${escape(JSON.stringify(stage.args.work))}</td><td><details><summary>Matching samples</summary>${profiles.filter(p=>p.span===stage.args.span).flatMap(p=>Object.entries(p.methods)).slice(0,12).map(methodLink).join('<br>')}<pre>${escape(JSON.stringify(profiles.filter(p=>p.span===stage.args.span),null,2))}</pre></details></td></tr>`).join('');
     const base=escape(run.directory);
-    return `<details><summary>${escape(run.workflow)} — ${escape(run.outcome)} — API edit ${value(run.api_edit_to_correct_ms)}</summary>
-<p>${escape(run.boundary)}. ${escape(run.runtime_boundary||'Runtime not measured')}. ${escape(run.error||'')}</p>
+    return `<details id="${escape(run.workflow)}"><summary>${escape(run.workflow)} — ${escape(run.outcome)} — API edit ${value(run.api_edit_to_correct_ms)}</summary>
+<p>${escape(run.boundary)}. First open/reopen: ${value(run.external_open_to_ready_ms)}. ${escape(run.runtime_boundary||'Runtime not measured')}. ${escape(run.error||'')}</p>
+<p>Related diagnostic invocations (separate processes, matching build and fixture): ${(run.related_diagnostics||[]).map(d=>`<a href="${escape(d.url)}">${escape(d.mode+': '+d.workflow+' — '+d.outcome)}</a>`).join(' · ')||'not measured'}</p>
 <p>Whole invocation CPU ${value(run.resources?.cpu_seconds_observed,'s')}; peak combined RSS ${value(run.resources ? run.resources.peak_rss_bytes/1048576 : null,'MiB')}.
 Allocated bytes in comparison: unavailable. Retained heap: unavailable.</p>
-<p><a href="${base}/report.json">Raw results</a> · <a href="${base}/fixture/fixture.json">Fixture and expectations</a> · <a href="${base}/command.json">Reproduction command</a> · <a href="${base}/resources.json">Resource scope</a>
+<p><a href="${base}/report.json">Raw results</a> · <a href="${base}/${escape(run.fixture)}">Fixture and expectations</a> · <a href="${base}/command.json">Reproduction command</a> · <a href="${base}/resources.json">Resource scope</a>
 ${stages.length ? ` · <a href="${base}/trace.json">Perfetto / Chrome timeline</a> · <a href="${base}/profile-events.json">CPU, allocation, GC and waits</a> · <a href="${base}/attribution.json">Samples matched to stages</a>` : ' · Internal stages: not attributed'}</p>
 <div class="scroll"><table><thead><tr><th>Action</th><th>Outcome</th><th>First response</th><th>Time to correct</th><th>Retries</th><th>Evidence</th></tr></thead><tbody>${actions}</tbody></table></div>
 ${stages.length ? `<p>Stages below belong to this invocation. Times use one JVM clock. Parent/child and parallel intervals overlap; durations and inclusive thread counters must not be summed. Queue CPU/allocation and virtual-thread counters are unavailable. Open the standard trace in Perfetto to inspect overlap.</p>
@@ -42,7 +45,8 @@ ${stages.length ? `<p>Stages below belong to this invocation. Times use one JVM 
 <h1>Development actions → verified results → measured work</h1>
 <p class="failed">${summary.verification.complete ? 'All included workers independently verified.' : 'Failures or unavailable runs are present. No winner is inferred.'}</p>
 <p>${escape(summary.aggregation)} Product results use the actual pinned VS Code. Engine rows are separate. Provider and debug-protocol readiness do not measure visible UI completion.</p>
-<div class="scroll"><table><thead><tr><th>Action</th><th>Comparator</th><th>Mode</th><th>Correctness</th><th>p50</th><th>p95</th><th>Processes</th><th>Process p50 range</th></tr></thead><tbody>${overview}</tbody></table></div>
+<div class="scroll"><table><thead><tr><th>Action</th><th>Comparator</th><th>Mode</th><th>Correctness</th><th>p50</th><th>p95</th><th>Tooling CPU observed</th><th>Tooling RSS</th><th>Sampled allocation</th><th>Processes</th><th>Process p50 range</th></tr></thead><tbody>${overview}</tbody></table></div>
+<p>Per-action CPU/RSS cover bracketed process-tree intervals, including concurrent work; details include clock uncertainty. Missing allocation is unavailable, not zero. RSS sums shared pages and is not retained heap.</p>
 <h2>Select an invocation</h2><p>Slow API-edit invocations appear first. Failed attempts remain visible. Profiled timings are excluded from comparison rows.</p>${invocations}
 <h2>Evidence-led next changes</h2><p>Correctness blockers come first. Performance hypotheses refer to a particular measured invocation; their bounds are not predicted whole-product speedups.</p><pre>${escape(JSON.stringify(summary.improvement_backlog||[],null,2))}</pre>
 <h2>Exact provenance</h2><pre>${escape(JSON.stringify(summary.provenance,null,2))}</pre></html>`;

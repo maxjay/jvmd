@@ -46,28 +46,40 @@ public final class IndexService implements AutoCloseable {
     public void start(){
         long initialDelaySeconds=Long.getLong("jvmd.index.scan.initial_delay_seconds",2L);
         if(initialDelaySeconds<0)throw new IllegalArgumentException("jvmd.index.scan.initial_delay_seconds must be non-negative");
-        scanner.scheduleWithFixedDelay(()->{try{scan();}catch(Exception e){warn("index_scan_fault: "+e);}},
+        var cause=RequestScope.detached();
+        scanner.scheduleWithFixedDelay(()->{try{
+            if(cause==null)scan();else RequestScope.with(cause,()->{scan();return null;});
+        }catch(Exception e){warn("index_scan_fault: "+e);}},
                 initialDelaySeconds,60,TimeUnit.SECONDS);
     }
     public synchronized void scan() throws Exception {
         if(closed||!Files.isDirectory(repository))return;
+        try(var trace=RequestScope.stage("index.scan")){
         long start=System.nanoTime();scans.incrementAndGet();phase="discovering";
         long discoveryStarted=System.nanoTime();
         List<Path> jars;try(var files=Files.walk(repository)){jars=files.filter(Files::isRegularFile).filter(p->p.toString().endsWith(".jar")&&!p.getFileName().toString().endsWith("-javadoc.jar")).sorted().toList();}
         discoveryNanos.addAndGet(System.nanoTime()-discoveryStarted);
+        trace.count("jar_inventory_entries",jars.size());
         total=jars.size();scanned.set(0);phase="skeletons";
         long inventoryGeneration=storage.inventory().beginScan();
         var skeletonComplete=new AtomicBoolean(true);
         var jobs=new ArrayList<Future<?>>();
+        var cause=RequestScope.detached();
         for(var jar:jars)if(!jar.getFileName().toString().endsWith("-sources.jar"))jobs.add(readers.submit(()->{
-            try{indexJar(jar,gav(jar),"jar",inventoryGeneration);}
+            try{
+                if(cause==null)indexJar(jar,gav(jar),"jar",inventoryGeneration);
+                else RequestScope.with(cause,()->{try(var span=RequestScope.stage("index.binary")){span.count("jar_requests",1);indexJar(jar,gav(jar),"jar",inventoryGeneration);}return null;});
+            }
             catch(Exception|LinkageError e){skeletonComplete.set(false);warn("artifact_fault: "+jar+": "+e);}
             finally{scanned.incrementAndGet();}
         }));
         for(var job:jobs)job.get();
         jobs.clear();phase="docs";long docsStarted=System.nanoTime();var docsComplete=new AtomicBoolean(true);
         for(var jar:jars)if(jar.getFileName().toString().endsWith("-sources.jar"))jobs.add(readers.submit(()->{
-            try{indexSources(jar);}
+            try{
+                if(cause==null)indexSources(jar);
+                else RequestScope.with(cause,()->{try(var span=RequestScope.stage("index.sources")){span.count("source_jar_requests",1);indexSources(jar);}return null;});
+            }
             catch(Exception|LinkageError e){docsComplete.set(false);warn("source_fault: "+jar+": "+e);}
             finally{scanned.incrementAndGet();}
         }));
@@ -79,6 +91,7 @@ public final class IndexService implements AutoCloseable {
         phase="linking";long linkStarted=System.nanoTime();linkEdges();linkNanos.addAndGet(System.nanoTime()-linkStarted);phase="ready";
         long elapsed=System.nanoTime()-start;scanNanos.addAndGet(elapsed);
         System.getLogger("dev.jvmd.index").log(System.Logger.Level.INFO,"index scan: {0} artifacts in {1} ms",jars.size(),elapsed/1_000_000);
+        }
     }
     private void warn(String warning){faults.incrementAndGet();warnings.add(warning);while(warnings.size()>50)warnings.poll();System.getLogger("dev.jvmd.index").log(System.Logger.Level.WARNING,warning);}
     public Map<String,Object> status() throws Exception {
@@ -119,9 +132,9 @@ public final class IndexService implements AutoCloseable {
                     var key=ArtifactIndexFormat.key(previous.sha256(),"signatures");
                     storage.inventory().observe(inventoryGeneration,new IndexStore.ArtifactInput(new ArtifactContext(gav,kind,location(path)),key,size,mtime));
                 }
-                reused.incrementAndGet();return previous.id();
+                RequestScope.count("metadata_reuses",1);reused.incrementAndGet();return previous.id();
             }
-            active(path,"hash");long hashStarted=System.nanoTime();verifyChecksum(path);String hash=Files.isDirectory(path)?directoryHash(path):Hashing.sha256(path);hashNanos.addAndGet(System.nanoTime()-hashStarted);hashed.incrementAndGet();
+            active(path,"hash");long hashStarted=System.nanoTime();verifyChecksum(path);String hash=Files.isDirectory(path)?directoryHash(path):Hashing.sha256(path);hashNanos.addAndGet(System.nanoTime()-hashStarted);hashed.incrementAndGet();RequestScope.count("artifact_hash_operations",1);
             if(previous!=null&&previous.hasSignatureEdges()&&previous.sha256().equals(hash)){
                 store.publishPath(path,previous.id(),size,mtime);
                 if(inventoryGeneration>0){
@@ -131,6 +144,7 @@ public final class IndexService implements AutoCloseable {
                 reused.incrementAndGet();return previous.id();
             }
             active(path,"parse");long parseStarted=System.nanoTime();var content=new BinaryReader().read(path,kind.equals("local"));parseNanos.addAndGet(System.nanoTime()-parseStarted);content.warnings().forEach(this::warn);
+            RequestScope.count("class_models_parsed",content.models().size());
             active(path,"storage");long storageStarted=System.nanoTime();
             var key=ArtifactIndexFormat.key(hash,kind.equals("local")?"local-signatures":"signatures");
             var input=new IndexStore.ArtifactInput(new ArtifactContext(gav,kind,location(path)),key,size,mtime);

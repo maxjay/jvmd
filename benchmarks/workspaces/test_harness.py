@@ -38,6 +38,19 @@ class HarnessTest(unittest.TestCase):
         self.assertTrue(workflow_oracle('hotswap_output', {'pid': 10, 'original_pid': 10,
             'output': fixture['expected']['C']}, fixture))
 
+    def test_reference_call_ranges_are_valid_but_rename_must_replace_only_identifier(self):
+        token={'uri':'file:///host/Main.java','range':{'start':{'line':2,'character':4},'end':{'line':2,'character':9}}}
+        call={'uri':token['uri'],'range':{'start':token['range']['start'],'end':{'line':2,'character':11}}}
+        declaration={'uri':'file:///library/Library.java','range':token['range']}
+        fixture={'files':{'provider':'/library/Library.java'},'expected':{
+            'references':[token],'reference_call_ranges':[call],'definition':{'range':token['range']}}}
+        for location in (token,call):self.assertTrue(workflow_oracle('references',[location],fixture))
+        self.assertFalse(workflow_oracle('references',[],fixture))
+        self.assertFalse(workflow_oracle('references',[token,call],fixture))
+        edits=lambda location:[dict(location,newText='renamedValue'),dict(declaration,newText='renamedValue')]
+        self.assertTrue(workflow_oracle('rename_preview',edits(token),fixture))
+        self.assertFalse(workflow_oracle('rename_preview',edits(call),fixture))
+
     def test_samples_choose_innermost_matching_thread_and_leave_others_unassigned(self):
         spans = [{'queued': False, 'eventThread': {'javaThreadId': 7},
                   'startTime': '2026-01-01T00:00:00Z', 'duration': 'PT1S',

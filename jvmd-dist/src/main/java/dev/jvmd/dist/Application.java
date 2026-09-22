@@ -673,6 +673,7 @@ public final class Application implements AutoCloseable {
     }
     private synchronized void initializeIndex(boolean scan) {
         if(index!=null)return;
+        var cause=RequestScope.detached();
         index=java.util.concurrent.CompletableFuture.supplyAsync(()->{
             IndexStorage storage=null;
             try {
@@ -687,7 +688,10 @@ public final class Application implements AutoCloseable {
                 if(storage!=null)try{storage.close();}catch(Exception close){e.addSuppressed(close);}
                 throw new java.util.concurrent.CompletionException(e);
             }
-        }, task -> Thread.ofVirtual().name("jvmd-index-start").start(task));
+        }, task -> Thread.ofVirtual().name("jvmd-index-start").start(cause==null?task:()->{
+            try{RequestScope.with(cause,()->{try(var span=RequestScope.stage("index.bootstrap")){task.run();}return null;});}
+            catch(Exception error){throw new java.util.concurrent.CompletionException(error);}
+        }));
     }
     private IndexService index() { initializeIndex(false); return index.join(); }
     private void bindIndex(Session session,IndexService database)throws Exception {

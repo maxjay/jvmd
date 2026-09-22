@@ -26,6 +26,9 @@ def investigate(run):
             'queue_union_ms':union((s['ts'],s['ts']+s['dur']) for s in selected if s['args']['queued'])/1000,
             'causal_tail_after_last_rpc_ms':max(0,max(s['ts']+s['dur'] for s in selected)-max(end for _,end in foreground))/1000,
             'boundary':'Server handler intervals; not frontend pixels or full transport. Background may overlap foreground. Durations are not summed across nested spans.'}
+        allocations=[p['sampled_allocated_bytes'] for p in (run.get('attribution') or {}).get('groups',[])
+                     if p['invocation']==action.get('id') and p['event']=='jdk.ObjectAllocationSample']
+        action['sampled_allocation_mib']=sum(allocations)/1048576 if allocations else None
     backlog=[]
     failed=[a for a in run['actions'] if a['outcome']!='correct']
     if failed:
@@ -63,7 +66,7 @@ def investigate(run):
                             'work':stage['args']['work'],'samples':sum(p['samples'] for p in profiles),'artifact':run['directory']+'/trace.json'},
                 'code':{name:method for p in profiles for name,method in p['methods'].items()},
                 'hypothesis':hypothesis,'candidate':candidate,'constraints':constraints,
-                'benefit':f'For this invocation only, a 10x stage speedup saves at most {bound:.3f} ms if the whole measured interval is serial on the critical path. Inclusive/background overlap can make the benefit smaller.',
+                'benefit':f'For this invocation only, a 10x stage speedup saves at most {bound:.3f} ms if the whole measured interval is serial on the critical path. The complete API edit took {run.get("api_edit_to_correct_ms",action["time_to_correct_ms"]):.3f} ms. Inclusive/background overlap can make the benefit smaller.',
                 'verify':'Repeat the same API edit with independent correctness, unprofiled comparison, identical cache state and stage/work attribution.',
                 'confidence':'One profiled invocation; validate critical-path contribution and repeat before optimizing.'})
     return backlog
@@ -73,24 +76,46 @@ def summarize_workflows(root):
     from verify import verify_workflows
     verification=verify_workflows(root)
     checked={r['worker']:r for r in verification['workflow_workers']}
-    invocations=[];groups={};backlog=[]
+    provenance=json.loads((root/'provenance.json').read_text())
+    invocations=[];groups={};backlog=[];related=[]
+    for directory in sorted(root.parent.iterdir()):
+        if directory==root or not (directory/'provenance.json').exists():continue
+        other=json.loads((directory/'provenance.json').read_text())
+        if other.get('build')!=provenance['build'] or other.get('harness')!=provenance.get('harness'):continue
+        for path in sorted(directory.glob('*/report.json')):
+            item=json.loads(path.read_text())
+            fixture=path.parent/item.get('fixture','fixture/fixture.json')
+            if 'workflow' in item and item['mode']!='comparison' and fixture.exists():
+                related.append({'engine':item['engine'],'scenario':item.get('scenario'),'mode':item['mode'],
+                    'source_hashes':json.loads(fixture.read_text())['source_hashes'],
+                    'workflow':item['workflow'],'outcome':item['outcome'],'url':'../'+directory.name+'/dashboard.html#'+item['workflow']})
     for path in sorted(root.glob('*/report.json')):
         report=json.loads(path.read_text())
         if 'workflow' not in report:continue
         report['directory']=path.parent.name
         report['verification']=checked[path.parent.name]
+        fixture=json.loads((path.parent/report['fixture']).read_text())
+        report['related_diagnostics']=[{k:v for k,v in item.items() if k!='source_hashes'} for item in related
+            if item['engine']==report['engine'] and item['scenario']==report.get('scenario') and item['source_hashes']==fixture['source_hashes']]
         for file,key in [('resources.json','resources'),('trace.json','trace'),('attribution.json','attribution')]:
             report[key]=json.loads((path.parent/file).read_text()) if (path.parent/file).exists() else None
         backlog.extend(investigate(report))
         invocations.append(report)
         mode=report['mode']+' / '+report.get('cache_state','fresh project/tool state')+(' / overhead' if report.get('overhead_pair') else '')+(' / stages enabled' if report.get('instrumentation') else '')
-        for name in sorted({a['name'] for a in report['actions']}):
-            actions=[a for a in report['actions'] if a['name']==name]
+        observations=list(report['actions'])
+        for field,name in [('external_open_to_ready_ms','open_to_project_ready'),('api_edit_to_correct_ms','api_edit_to_correct')]:
+            if report.get(field) is not None:observations.append({'name':name,'outcome':report['outcome'],'time_to_correct_ms':report[field],'attempts':[]})
+        for name in sorted({a['name'] for a in observations}):
+            actions=[a for a in observations if a['name']==name]
             successes=[a['time_to_correct_ms'] for a in actions if a['outcome']=='correct'] if checked[path.parent.name]['verified'] else []
             row={'repetition':report['repetition'],'invocation':report['workflow'],'attempts':sum(len(a['attempts']) for a in actions),
                  'count':len(actions),'correct':len(successes),'failures':len(actions)-len(successes),
                  'p50_ms':med(successes) if successes else None,
                  'p95_ms':sorted(successes)[math.ceil(.95*len(successes))-1] if len(successes)>=20 else None}
+            metrics={'tooling_cpu_s':[a['resources']['cpu_seconds_observed']['tooling'] for a in actions if a.get('resources')],
+                     'tooling_rss_mib':[a['resources']['peak_rss_bytes']['tooling']/1048576 for a in actions if a.get('resources')],
+                     'sampled_allocation_mib':[a['sampled_allocation_mib'] for a in actions if a.get('sampled_allocation_mib') is not None]}
+            row.update({key:med(values) if values and successes else None for key,values in metrics.items()})
             groups.setdefault((report['engine'],mode,name),[]).append(row)
     rows=[]
     for (engine,mode,name),processes in groups.items():
@@ -99,9 +124,12 @@ def summarize_workflows(root):
                      'correct':sum(p['correct'] for p in processes),'failures':sum(p['failures'] for p in processes),
                      'p50_ms':med(values) if values else None,'min_process_p50_ms':min(values) if values else None,'max_process_p50_ms':max(values) if values else None,
                      'p95_ms':med(p['p95_ms'] for p in processes) if all(p['p95_ms'] is not None for p in processes) else None})
+        for key in ('tooling_cpu_s','tooling_rss_mib','sampled_allocation_mib'):
+            observed=[p[key] for p in processes if p[key] is not None]
+            rows[-1][key]=med(observed) if observed else None
     return {'schema':1,'kind':'workflows','rows':rows,'invocations':invocations,'verification':verification,
             'improvement_backlog':sorted(backlog,key=lambda b:b['priority']),
-            'provenance':json.loads((root/'provenance.json').read_text()),
+            'provenance':provenance,
             'aggregation':'Median of per-process medians; p95 only with at least 20 correct samples in every process. Failed workers remain visible and contribute no fast successes. Modes never mixed.'}
 
 def summarize(root):

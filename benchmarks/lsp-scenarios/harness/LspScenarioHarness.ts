@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -176,6 +176,7 @@ export abstract class LspScenarioHarness {
       mkdirSync(expectedDir, { recursive: true });
       writeFileSync(file, JSON.stringify(actual, null, 2) + "\n");
       console.log("recorded", this.id, this.name, file);
+      writeSummary(this.id, this.name, actual);
       return;
     }
 
@@ -198,6 +199,7 @@ export abstract class LspScenarioHarness {
       jdtlsPeakMb: mb(expected[name].metrics.memory.peak.totalKb),
       jvmdPeakMb: mb(actual[name].metrics.memory.peak.totalKb),
     })));
+    writeSummary(this.id, this.name, actual, expected);
   }
 }
 
@@ -326,4 +328,43 @@ function stop(process?: ChildProcess) {
 
 function mb(kb: number) {
   return (kb / 1024).toFixed(1);
+}
+
+
+function writeSummary(
+  id: string,
+  name: string,
+  actual: Record<string, Measurement<unknown>>,
+  expected?: Record<string, Measurement<unknown>>,
+) {
+  const file = process.env.GITHUB_STEP_SUMMARY;
+  if (!file) return;
+
+  const lines = [
+    `## ${id} — ${name}`,
+    "",
+    expected
+      ? "| Case | Correct | JDTLS ms | JVMD ms | JDTLS peak MB | JVMD peak MB |"
+      : "| Case | JDTLS ms | JDTLS peak MB |",
+    expected
+      ? "| --- | --- | ---: | ---: | ---: | ---: |"
+      : "| --- | ---: | ---: |",
+  ];
+
+  for (const caseName of Object.keys(actual)) {
+    const current = actual[caseName];
+    if (expected) {
+      const baseline = expected[caseName];
+      lines.push(
+        `| ${caseName} | ✅ | ${baseline.metrics.latencyMs.toFixed(2)} | ${current.metrics.latencyMs.toFixed(2)} | ${mb(baseline.metrics.memory.peak.totalKb)} | ${mb(current.metrics.memory.peak.totalKb)} |`,
+      );
+    } else {
+      lines.push(
+        `| ${caseName} | ${current.metrics.latencyMs.toFixed(2)} | ${mb(current.metrics.memory.peak.totalKb)} |`,
+      );
+    }
+  }
+
+  lines.push("");
+  appendFileSync(file, lines.join("\n") + "\n");
 }

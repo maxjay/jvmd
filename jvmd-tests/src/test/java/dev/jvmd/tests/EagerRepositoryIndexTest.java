@@ -14,4 +14,25 @@ class EagerRepositoryIndexTest {
    assertThat(index.find("transform",null,false,10,0).getFirst().get("doc")).isNotNull();long indexed=(long)index.status().get("indexed");index.scan();assertThat(index.status()).containsEntry("indexed",indexed);
   }
  }
+ @Test void missingRepositoryCountsAsReadyInitialScan()throws Exception{
+  String key="jvmd.index.scan.initial_delay_seconds",previous=System.getProperty(key);System.setProperty(key,"0");
+  try{
+   Path repository=temp.resolve("missing");
+   try(var index=new IndexService(temp.resolve("missing.db"),repository)){
+    index.start().get(5,java.util.concurrent.TimeUnit.SECONDS);
+    assertThat(index.status()).containsEntry("phase","ready");
+    assertThat(((Map<?,?>)index.status().get("timings")).get("scans")).isEqualTo(1L);
+   }
+  }finally{if(previous==null)System.clearProperty(key);else System.setProperty(key,previous);}
+ }
+ @Test void closeSettlesReadinessBeforeDelayedInitialScan()throws Exception{
+  String key="jvmd.index.scan.initial_delay_seconds",previous=System.getProperty(key);System.setProperty(key,"60");
+  try{
+   var index=new IndexService(temp.resolve("closing.db"),temp.resolve("repository"));
+   var readiness=index.start();
+   index.close();
+   assertThat(readiness).isCompletedExceptionally();
+  }finally{if(previous==null)System.clearProperty(key);else System.setProperty(key,previous);}
+ }
+
 }

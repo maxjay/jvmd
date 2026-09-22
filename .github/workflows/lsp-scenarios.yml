@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/lsp-scenarios.yml'
+      - 'benchmarks/lsp-scenarios/harness/**'
+      - 'benchmarks/lsp-scenarios/scenarios/**'
+      - 'benchmarks/lsp-scenarios/run.ts'
+      - 'benchmarks/lsp-scenarios/package.json'
   workflow_dispatch:
     inputs:
       mode:

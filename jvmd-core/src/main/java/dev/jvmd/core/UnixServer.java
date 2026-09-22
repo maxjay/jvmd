@@ -98,7 +98,11 @@ public final class UnixServer implements AutoCloseable {
     public boolean await(long timeout, TimeUnit unit) throws InterruptedException { return stopped.await(timeout, unit); }
     public void await() throws InterruptedException { stopped.await(); }
     @Override public void close() {
-        if (!closed.compareAndSet(false, true)) return;
+        if (!closed.compareAndSet(false, true)) {
+            try { stopped.await(); }
+            catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            return;
+        }
         timer.shutdownNow();
         try {
             if (server != null) server.close();

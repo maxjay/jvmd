@@ -1,23 +1,18 @@
 name: Distributions
 on:
   pull_request:
-    paths:
-      - '.github/workflows/releases.yml'
-      - 'jvmd-dist/**'
-      - 'jvmd-index-rocks/**'
-      - 'jvmd-index/**'
-      - 'pom.xml'
-      - 'shim/**'
-      - 'docs/install.md'
+    types: [closed]
+    branches: [main]
   push:
     tags: ['v*']
 permissions:
   contents: read
 concurrency:
-  group: distributions-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: distributions-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
 jobs:
   windows-installer:
+    if: github.event_name == 'push' || github.event.pull_request.merged == true
     runs-on: windows-2025
     timeout-minutes: 5
     steps:
@@ -26,6 +21,7 @@ jobs:
         shell: powershell
         run: .\jvmd-dist\release\test-wsl.ps1
   build:
+    if: github.event_name == 'push' || github.event.pull_request.merged == true
     strategy:
       fail-fast: false
       matrix:

@@ -792,7 +792,8 @@ public final class Application implements AutoCloseable {
             finally {
                 var service=bootstrappingIndex;
                 if(service!=null)service.close();
-                else if(index!=null&&index.isDone()&&!index.isCompletedExceptionally())index.join().close();
+                else if(index!=null)try{index.join().close();}
+                catch(java.util.concurrent.CompletionException|java.util.concurrent.CancellationException ignored){}
             }
         }
     }

@@ -1,0 +1,114 @@
+name: LSP scenarios
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [record, compare]
+        default: record
+
+permissions:
+  contents: write
+
+jobs:
+  scenarios:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+
+      - name: Cache third-party Maven dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.m2/repository
+            !~/.m2/repository/dev/jvmd
+          key: maven-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: maven-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Cache pinned JDK archive
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ${{ runner.temp }}/downloads/temurin25.tar.gz
+          key: jdk-${{ runner.os }}-${{ runner.arch }}-dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e
+
+      - name: Install pinned JDK
+        run: |
+          mkdir -p "$RUNNER_TEMP/tools" "$RUNNER_TEMP/downloads"
+          [[ -f "$RUNNER_TEMP/downloads/temurin25.tar.gz" ]] || curl -fsSL --retry 3 \
+            'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz' \
+            -o "$RUNNER_TEMP/downloads/temurin25.tar.gz"
+          printf '%s  %s\n' \
+            dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e \
+            "$RUNNER_TEMP/downloads/temurin25.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/downloads/temurin25.tar.gz" -C "$RUNNER_TEMP/tools"
+          echo "JAVA_HOME=$RUNNER_TEMP/tools/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/tools/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
+
+      - name: Install harness dependency
+        run: npm install --prefix benchmarks/lsp-scenarios --ignore-scripts
+
+      - name: Restore prepared Apache Maven fixture
+        id: fixture
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/apache-maven-fixture
+          key: apache-maven-lsp-v1
+
+      - name: Prepare Apache Maven fixture
+        if: steps.fixture.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/apache/maven.git "$RUNNER_TEMP/apache-maven-fixture"
+          git -C "$RUNNER_TEMP/apache-maven-fixture" checkout 5cd1b60264101080c712accd605180a4bd9222e0
+          cd "$RUNNER_TEMP/apache-maven-fixture"
+          ./mvnw -B -DskipTests install
+
+      - name: Build JVMD
+        if: inputs.mode == 'compare'
+        run: |
+          mvn -B -DskipTests install
+          bash jvmd-dist/assemble.sh
+
+      - name: Cache pinned JDTLS archive
+        if: inputs.mode == 'record'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/jdtls.tar.gz
+          key: jdtls-338e7e73d61836651ba2453919a0d34fa763eb4e7c03342092309bffb8934c64
+
+      - name: Install JDTLS
+        if: inputs.mode == 'record'
+        run: |
+          mkdir -p "$RUNNER_TEMP/jdtls"
+          [[ -f "$RUNNER_TEMP/jdtls.tar.gz" ]] || curl -fsSL --retry 3 \
+            https://download.eclipse.org/jdtls/milestones/1.61.0/jdt-language-server-1.61.0-202609031315.tar.gz \
+            -o "$RUNNER_TEMP/jdtls.tar.gz"
+          printf '%s  %s\n' \
+            338e7e73d61836651ba2453919a0d34fa763eb4e7c03342092309bffb8934c64 \
+            "$RUNNER_TEMP/jdtls.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/jdtls.tar.gz" -C "$RUNNER_TEMP/jdtls"
+
+      - name: Run scenarios
+        env:
+          FIXTURE_ROOT: ${{ runner.temp }}/apache-maven-fixture
+          MODE: ${{ inputs.mode }}
+          SERVER: ${{ inputs.mode == 'record' && 'jdtls' || 'jvmd' }}
+          JDTLS_HOME: ${{ runner.temp }}/jdtls
+        run: node benchmarks/lsp-scenarios/run.ts
+
+      - name: Commit JDTLS baseline
+        if: inputs.mode == 'record'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add benchmarks/lsp-scenarios/expected/
+          git diff --cached --quiet && exit 0
+          git commit -m "bench: record JDTLS LSP baseline"
+          git push

@@ -114,4 +114,46 @@ class InputBoundaryRepairTest {
             assertThat(pool.query(file,docs.text(file),2,(task,units,tier)->"retry").result()).isEqualTo("retry");
         }
     }
+    @Test void evictedDiskObservationsDoNotManufactureSupersession()throws Exception {
+        Path file=Files.writeString(root.resolve("A.java"),"class A {}");var files=new FileStateRegistry();var docs=new Documents(files);
+        var inputs=new CompilerInputs(files);var config=new CompilerInputs.Configuration("module",List.of(root),List.of(),List.of("--release","25"));
+        var before=inputs.capture(config,docs);files.forget(file);
+        assertThat(inputs.capture(config,docs)).isEqualTo(before);
+        files.reconcile();assertThat(inputs.capture(config,docs)).isEqualTo(before);
+        try(var pool=new CompilerPool(files)){
+            pool.configure("module","25",List.of(),List.of(root),null,128L*1024*1024);pool.documents(docs);
+            assertThat(pool.query(file,docs.text(file),2,(task,units,tier)->{files.forget(file);return "stable";}).result()).isEqualTo("stable");
+        }
+        Files.writeString(file,"class A { int n; }");assertThat(inputs.capture(config,docs)).isNotEqualTo(before);
+    }
+    @Test void revertedDirectoryMembershipStillSupersedesCompilerWork()throws Exception {
+        Path src=Files.createDirectory(root.resolve("src")),cp=Files.createDirectory(root.resolve("classes"));
+        Path file=Files.writeString(src.resolve("A.java"),"class A {}");var files=new FileStateRegistry();var docs=new Documents(files);var inputs=new CompilerInputs(files);
+        var config=new CompilerInputs.Configuration("module",List.of(src),List.of(cp),List.of("--release","25"));var before=inputs.capture(config,docs);
+        var time=Files.getLastModifiedTime(cp);Path transientClass=Files.write(cp.resolve("Transient.class"),new byte[]{1});Files.delete(transientClass);
+        Files.setLastModifiedTime(cp,java.nio.file.attribute.FileTime.fromMillis(time.toMillis()+1000));
+        var after=inputs.capture(config,docs);assertThat(after.sameInputs(before)).isTrue();assertThat(after).isNotEqualTo(before);
+        assertThat(inputs.capture(config,docs)).isEqualTo(after);
+        try(var pool=new CompilerPool(files)){
+            pool.configure("module","25",List.of(cp),List.of(src),null,128L*1024*1024);pool.documents(docs);
+            var result=pool.query(file,docs.text(file),2,(task,units,tier)->{
+                var stamp=Files.getLastModifiedTime(cp);Files.write(transientClass,new byte[]{1});Files.delete(transientClass);
+                Files.setLastModifiedTime(cp,java.nio.file.attribute.FileTime.fromMillis(stamp.toMillis()+1000));return "must reject";
+            });
+            assertThat(result.result()).isNull();assertThat(result.warnings()).anyMatch(w->w.startsWith("diagnostics_superseded"));
+            assertThat(pool.query(file,docs.text(file),2,(task,units,tier)->"retry").result()).isEqualTo("retry");
+        }
+    }
+    @Test void observationsReleasePathsRemovedFromEitherRole()throws Exception {
+        Path src=Files.createDirectory(root.resolve("src")),cp=Files.createDirectory(root.resolve("classes"));
+        Path file=Files.writeString(src.resolve("A.java"),"class A {}"),binary=Files.write(cp.resolve("A.class"),new byte[]{1});
+        var files=new FileStateRegistry();var inputs=new CompilerInputs(files);var docs=new Documents(files);
+        var config=new CompilerInputs.Configuration("module",List.of(src),List.of(cp),List.of());inputs.capture(config,docs);
+        Files.delete(file);Files.delete(binary);inputs.capture(config,docs);
+        for(String role:List.of("sourceEvidence","environmentEvidence")){
+            var field=CompilerInputs.class.getDeclaredField(role);field.setAccessible(true);
+            var evidence=(Map<?,?>)field.get(inputs);assertThat(evidence.containsKey(file)).isFalse();assertThat(evidence.containsKey(binary)).isFalse();
+        }
+    }
+
 }

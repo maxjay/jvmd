@@ -172,3 +172,14 @@ and +6.3% versus original. Production net +86 versus immediate (+156 versus orig
 not shrinkage. No remaining reproduced correctness failure; metadata cost and some
 navigation/tail regressions remain documented. This evidence-only checkpoint changes
 no tested production or harness files. PR #21 is updated, not merged.
+
+Late review checkpoint: final thread refresh found three additional inline findings
+posted during the repair. The separate source/environment pruning already addresses
+retained obsolete evidence. Added executable coverage for it, disk-observation eviction,
+and directory create/delete reversion. Reopening the same bounded observation repair;
+no new subsystem. Previously published measurements remain historical and will be
+superseded by measurements of the final corrected production tree.
+
+- [ ] Stabilize evidence after disk-cache eviction and reconciliation.
+- [ ] Propagate directory observation changes independently of final membership.
+- [ ] Verify evidence pruning, rerun gates/benchmarks, resolve the new threads.

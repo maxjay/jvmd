@@ -31,6 +31,12 @@ def workflow_oracle(name, result, fixture, revision=None):
         expected='String' if name=='api_completion' or revision=='API' else fixture.get('expected',{}).get('initial_type','int')
         stale='int' if expected=='String' else 'String'
         return any(re.search(r'\b'+expected+r'\b',json.dumps(r)) for r in rows) and not any(re.search(r'\b'+stale+r'\b',json.dumps(r)) for r in rows)
+    if name=='dependency_definition':
+        if len(result)!=1:return False
+        row=result[0];expected=fixture['expected'];uri=unquote(row['uri'])
+        if row.get('source') is None:
+            return uri==unquote(expected['external_source_uri']) and selected(expected['external_source'],row['range'])=='base'
+        return '/offset-1.jar/external/Offset.class' in uri and row['source'].strip()==expected['external_source'].strip() and selected(row['source'],row['range'])=='base'
     if 'definition' in name:
         rows=[result] if isinstance(result,dict) else result
         if len(rows or [])!=1:return False
@@ -93,7 +99,10 @@ def verify_workflows(root):
             if action['outcome']!='correct' and action.get('time_to_correct_ms') is not None:errors.append(action['name']+': failure has success timing')
         required={'warm_completion','warm_definition'}
         if report.get('scenario','language') in ('language','coverage'):required.update({'api_completion','api_diagnostics','api_definition'})
-        if report.get('scenario')=='coverage':required.update({'prefix_completion','growth_completion','backspace_completion','broadening_completion','references','rename_preview','revert_diagnostics'})
+        if report.get('scenario')=='coverage':
+            required.update({'prefix_completion','growth_completion','backspace_completion','broadening_completion','references','rename_preview','revert_diagnostics'})
+            if 'external_source' in fixture['expected']:required.add('dependency_definition')
+        if report.get('scenario')=='background':required.update({'prefix_completion','growth_completion','backspace_completion','broadening_completion','background_definition'})
         if report.get('scenario')=='runtime':required.update({'run_output','debug_stop','debug_locals','debug_step','hotswap_output'})
         if report['outcome']=='correct' and not required.issubset({a['name'] for a in report['actions']}):errors.append('missing required actions')
         if report.get('mode')=='retention' and report['outcome']=='correct':

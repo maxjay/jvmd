@@ -26,6 +26,9 @@ def investigate(run):
             'queue_union_ms':union((s['ts'],s['ts']+s['dur']) for s in selected if s['args']['queued'])/1000,
             'causal_tail_after_last_rpc_ms':max(0,max(s['ts']+s['dur'] for s in selected)-max(end for _,end in foreground))/1000,
             'boundary':'Server handler intervals; not frontend pixels or full transport. Background may overlap foreground. Durations are not summed across nested spans.'}
+        indexing=[s for s in stages if s['name']=='index.scan']
+        action['trace_evidence']['index_scan_overlap_ms']=union((max(start,s['ts']),min(end,s['ts']+s['dur']))
+            for start,end in foreground for s in indexing if max(start,s['ts'])<min(end,s['ts']+s['dur']))/1000
         allocations=[p['sampled_allocated_bytes'] for p in (run.get('attribution') or {}).get('groups',[])
                      if p['invocation']==action.get('id') and p['event']=='jdk.ObjectAllocationSample']
         action['sampled_allocation_mib']=sum(allocations)/1048576 if allocations else None
@@ -104,6 +107,7 @@ def summarize_workflows(root):
         mode=report['mode']+' / '+report.get('cache_state','fresh project/tool state')+(' / overhead' if report.get('overhead_pair') else '')+(' / stages enabled' if report.get('instrumentation') else '')
         observations=list(report['actions'])
         for field,name in [('external_open_to_ready_ms','open_to_project_ready'),('api_edit_to_correct_ms','api_edit_to_correct')]:
+            if name=='open_to_project_ready' and report.get('scenario')=='background':name='open_with_typing_to_ready'
             if report.get(field) is not None:observations.append({'name':name,'outcome':report['outcome'],'time_to_correct_ms':report[field],'attempts':[]})
         for name in sorted({a['name'] for a in observations}):
             actions=[a for a in observations if a['name']==name]

@@ -80,18 +80,33 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           xvfb-run -a python benchmarks/workspaces/workflows.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --vscode "$RUNNER_TEMP/workflow-tools/VSCode-linux-x64/bin/code" --extensions "$RUNNER_TEMP/extensions" --root "$RUNNER_TEMP/workflow-results/project" --dependency-cache "$HOME/.m2/repository" --workflow project --project "$PWD/jvmd-tests/corpus/petclinic" --timeout 360 --smoke
+      - name: Scaling and observed background-indexing workload
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          failed=0
+          for scenario in scale background background-attribution project-attribution; do
+            options=(--workflow language --sources 128)
+            case "$scenario" in
+              background) options=(--workflow background) ;;
+              background-attribution) options=(--workflow background --engines vscode-jvmd --mode attribution) ;;
+              project-attribution) options=(--workflow project --project "$PWD/jvmd-tests/corpus/petclinic" --engines vscode-jvmd --mode attribution) ;;
+            esac
+            xvfb-run -a python benchmarks/workspaces/workflows.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --vscode "$RUNNER_TEMP/workflow-tools/VSCode-linux-x64/bin/code" --extensions "$RUNNER_TEMP/extensions" --root "$RUNNER_TEMP/workflow-results/$scenario" --dependency-cache "$HOME/.m2/repository" --timeout 360 --smoke "${options[@]}" || failed=1
+          done
+          exit "$failed"
       - name: Independently verify workflow outcomes
         if: ${{ !cancelled() }}
         run: |
           failed=0
-          for mode in comparison attribution runtime coverage runtime-attribution retention overhead project; do
+          for mode in comparison attribution runtime coverage runtime-attribution retention overhead project scale background background-attribution project-attribution; do
             python benchmarks/workspaces/verify.py "$RUNNER_TEMP/workflow-results/$mode" "$RUNNER_TEMP/workflow-results/$mode/verification.json" --workflows || failed=1
           done
           exit "$failed"
       - name: Render checked investigation reports
         if: ${{ !cancelled() }}
         run: |
-          for mode in comparison attribution runtime coverage runtime-attribution retention overhead project; do
+          for mode in comparison attribution runtime coverage runtime-attribution retention overhead project scale background background-attribution project-attribution; do
             python benchmarks/workspaces/summarize.py "$RUNNER_TEMP/workflow-results/$mode" "$RUNNER_TEMP/workflow-results/$mode/summary.json" --workflows
             node benchmarks/workspaces/dashboard.mjs --comparison "$RUNNER_TEMP/workflow-results/$mode/summary.json" --verification "$RUNNER_TEMP/workflow-results/$mode/verification.json" --output "$RUNNER_TEMP/workflow-results/$mode/dashboard.html"
           done

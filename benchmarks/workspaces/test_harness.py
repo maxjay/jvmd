@@ -38,6 +38,18 @@ class HarnessTest(unittest.TestCase):
         self.assertTrue(workflow_oracle('hotswap_output', {'pid': 10, 'original_pid': 10,
             'output': fixture['expected']['C']}, fixture))
 
+    def test_dependency_navigation_rejects_wrong_artifact_and_wrong_source(self):
+        source='public static int base(){return 40;}'
+        fixture={'expected':{'external_source':source,'external_source_uri':'jar:file:///repo/offset-1-sources.jar!/external/Offset.java'}}
+        row={'uri':fixture['expected']['external_source_uri'],'range':{'start':{'line':0,'character':18},'end':{'line':0,'character':22}},'source':None}
+        self.assertTrue(workflow_oracle('dependency_definition',[row],fixture))
+        row['uri']=row['uri'].replace('offset-1-','offset-2-')
+        self.assertFalse(workflow_oracle('dependency_definition',[row],fixture))
+        row.update(uri='jdt://contents/offset-1.jar/external/Offset.class?project',source=source)
+        self.assertTrue(workflow_oracle('dependency_definition',[row],fixture))
+        row['source']=source.replace('40','99')
+        self.assertFalse(workflow_oracle('dependency_definition',[row],fixture))
+
     def test_reference_call_ranges_are_valid_but_rename_must_replace_only_identifier(self):
         token={'uri':'file:///host/Main.java','range':{'start':{'line':2,'character':4},'end':{'line':2,'character':9}}}
         call={'uri':token['uri'],'range':{'start':token['range']['start'],'end':{'line':2,'character':11}}}

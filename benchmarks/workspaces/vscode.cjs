@@ -15,6 +15,11 @@ const plain = value => JSON.parse(JSON.stringify(value));
 const position = (text, offset) => {const before=text.slice(0,offset).split('\n');return new vscode.Position(before.length-1,before.at(-1).length);};
 const plainRange = r => ({start:{line:r.start.line,character:r.start.character},end:{line:r.end.line,character:r.end.character}});
 const range = r => new vscode.Range(r.start.line,r.start.character,r.end.line,r.end.character);
+const selected = (text,r) => {
+  const lines=text.split('\n');
+  const offset=p=>lines.slice(0,p.line).reduce((n,line)=>n+line.length+1,0)+p.character;
+  return text.slice(offset(r.start),offset(r.end));
+};
 
 async function jvmd(config, report) {
   const {RpcClient,encode} = await import(pathToFileURL(path.join(__dirname,'transport.mjs')).href);
@@ -157,7 +162,23 @@ exports.run = async () => {
       const result=await vscode.commands.executeCommand('vscode.executeDefinitionProvider',consumer.uri,point);
       return (result||[]).map(r=>({uri:(r.uri||r.targetUri).toString(),range:plainRange(r.range||r.targetSelectionRange)}));
     }
-    const definitionOracle=result=>result.length===1&&vscode.Uri.parse(result[0].uri).fsPath===files.provider;
+    const definitionOracle=result=>result.length===1&&vscode.Uri.parse(result[0].uri).fsPath===files.provider&&selected(provider.getText(),result[0].range)===method;
+    async function typing(navigate){
+      const original=consumer.getText();
+      for(const [name,prefix] of [['prefix_completion','v'],['growth_completion','va'],['growth_completion','val'],['backspace_completion','v'],['broadening_completion','']]){
+        const text=original.replace('Library.value','Library.'+prefix);
+        const edit=new vscode.WorkspaceEdit();edit.replace(consumer.uri,new vscode.Range(consumer.positionAt(0),consumer.positionAt(consumer.getText().length)),text);
+        if(!await vscode.workspace.applyEdit(edit))throw new Error('typing edit rejected');
+        point=position(text,text.indexOf('Library.')+'Library.'.length+prefix.length);
+        await check(name,completion,completionOracle('int'),navigate?120000:30000);
+      }
+      const restore=new vscode.WorkspaceEdit();restore.replace(consumer.uri,new vscode.Range(consumer.positionAt(0),consumer.positionAt(consumer.getText().length)),original);
+      if(!await vscode.workspace.applyEdit(restore)||!await consumer.save())throw new Error('caller restore failed');
+      point=position(original,original.indexOf('.value')+4);
+      if(navigate)await check('background_definition',definition,definitionOracle);
+    }
+    // Start before readiness. Only a measured trace overlap establishes concurrent indexing.
+    if(config.workflow==='background')for(let i=0;i<config.samples;i++)await typing(true);
     await check('warm_completion',completion,completionOracle(initialType),120000);
     await check('warm_definition',definition,definitionOracle);
     report.open_to_project_ready_ms=now()-start;flush();
@@ -170,17 +191,7 @@ exports.run = async () => {
       await vscode.window.showTextDocument(consumer);
     }
     if(config.workflow==='coverage'){
-      const original=consumer.getText();
-      for(const [name,prefix] of [['prefix_completion','v'],['growth_completion','va'],['growth_completion','val'],['backspace_completion','v'],['broadening_completion','']]){
-        const text=original.replace('Library.value','Library.'+prefix);
-        const edit=new vscode.WorkspaceEdit();edit.replace(consumer.uri,new vscode.Range(consumer.positionAt(0),consumer.positionAt(consumer.getText().length)),text);
-        if(!await vscode.workspace.applyEdit(edit))throw new Error('typing edit rejected');
-        point=position(text,text.indexOf('Library.')+'Library.'.length+prefix.length);
-        await check(name,completion,completionOracle('int'));
-      }
-      const restore=new vscode.WorkspaceEdit();restore.replace(consumer.uri,new vscode.Range(consumer.positionAt(0),consumer.positionAt(consumer.getText().length)),original);
-      if(!await vscode.workspace.applyEdit(restore)||!await consumer.save())throw new Error('caller restore failed');
-      point=position(original,original.indexOf('.value')+4);
+      await typing(false);
       const expected=config.fixture.expected.references.map(r=>JSON.stringify(r)).sort();
       const locations=rows=>rows.map(r=>({uri:(r.uri||r.targetUri).toString(),range:plainRange(r.range||r.targetSelectionRange)}));
       await check('references',async()=>locations(await vscode.commands.executeCommand('vscode.executeReferenceProvider',consumer.uri,point)||[]),rows=>{
@@ -216,6 +227,19 @@ exports.run = async () => {
     await editProvider('A');await check('revert_completion',completion,completionOracle('int'));
     if(adapter)await check('revert_diagnostics',async()=>{const value=await adapter.rpc('lsp.diagnostics',{uri:consumer.uri.toString()});return value.value;},r=>r.diagnostics?.length===0);
     else await check('revert_diagnostics',async()=>({diagnostics:diagnosticQuery()}),r=>r.diagnostics.length===0);
+    await check('dependency_definition',async()=>{
+      const text=provider.getText(),point=position(text,text.indexOf('Offset.base')+'Offset.'.length+2);
+      const locations=await vscode.commands.executeCommand('vscode.executeDefinitionProvider',provider.uri,point)||[];
+      return Promise.all(locations.map(async row=>{
+        const uri=row.uri||row.targetUri,sourceRange=row.range||row.targetSelectionRange;
+        // Java supplies source content; JVMD currently supplies a source-JAR location.
+        const source=adapter?null:(await vscode.workspace.openTextDocument(uri)).getText();
+        return {uri:uri.toString(),range:plainRange(sourceRange),source};
+      }));
+    },rows=>rows.length===1&&selected(rows[0].source??config.fixture.expected.external_source,rows[0].range)==='base'&&
+      (adapter?rows[0].uri===config.fixture.expected.external_source_uri:
+      decodeURIComponent(rows[0].uri).includes('/offset-1.jar/external/Offset.class')&&rows[0].source.trim()===config.fixture.expected.external_source.trim()));
+    report.dependency_navigation_boundary=adapter?'Provider source-JAR location; no JVMD editor content provider is installed':'Provider location and actual Java source-content provider';
     }
     if(config.workflow==='runtime'){
       let run,debugSession,breakpoint,thread,frame,pid;

@@ -256,7 +256,7 @@ def main():
     parser.add_argument('--instrumentation',action='store_true',help='Stage-only JFR in comparison mode for explicit overhead pairs; excluded from ordinary comparisons')
     parser.add_argument('--edits',type=int,default=20)
     parser.add_argument('--workspaces',type=int,default=3)
-    parser.add_argument('--workflow',choices=['language','runtime','coverage','project'],default='language');parser.add_argument('--smoke',action='store_true')
+    parser.add_argument('--workflow',choices=['language','runtime','coverage','background','project'],default='language');parser.add_argument('--smoke',action='store_true')
     a=parser.parse_args()
     for key,value in vars(a).items():
         if isinstance(value,Path):setattr(a,key,value.resolve())

@@ -33,7 +33,10 @@ xvfb-run -a python benchmarks/workspaces/workflows.py --repo "$PWD" \
 # --smoke with --runs 5 --samples 20 --reopen. Products run serially in rotating order.
 # Runtime/debug/hot swap: --workflow runtime (independent fresh process).
 # Prefix/backspace, references, rename preview and revert: --workflow coverage.
+# Coverage also checks the external source JAR and its declaration range.
 # Scaling: --sources 128 increases the independent fixture source population.
+# Typing/navigation before readiness: --workflow background. A separate JVMD
+# attribution run records whether requests actually overlap index.scan spans.
 
 # Attribution: same action, separate process; never headline comparison timings.
 # Add --engines vscode-jvmd --mode attribution, using a new output directory.
@@ -140,11 +143,18 @@ remains open while collecting heap observations.
 
 Known measurement boundaries: there is no IntelliJ adapter, product retained-heap
 adapter, processor/resource-generation
-scenario, forced concurrent-indexing schedule, structural-hot-swap scenario or
+scenario, structural-hot-swap scenario or
 visible-UI oracle yet. Product `--reopen` preserves the same workspace paths, editor profile and server state, then checks the persisted document revision. Engine persisted-reopen coverage also exists in `run.py`. The report schema
 can carry another actual IDE's actions, attempts, resources and provenance;
 there is no speculative comparator plugin interface. Unsupported and unexecuted
 work must be listed explicitly in the PR and results, not replaced with zeroes.
+
+Background mode starts real typing before readiness while ordinary import and
+indexing remain enabled. Attribution reports the union of actual request/index
+overlap; a run with no observed overlap does not establish indexing contention.
+Competitor internal indexing is not attributed. Source-JAR navigation reports
+JVMD's provider location readiness separately from Java's source-content provider;
+the benchmark does not add an editor content provider for JVMD.
 
 ## Controlled engine comparison
 

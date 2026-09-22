@@ -58,6 +58,8 @@ def workflow_fixture(root, java_home, sources=4):
             'expected':{'definition':{'path':str(provider),'range':{'start':{'line':2,'character':20},'end':{'line':2,'character':25}}},
                         'references':[call_range(consumer),call_range(main)],
                         'reference_call_ranges':[call_range(consumer,True),call_range(main,True)],
+                        'external_source':external.read_text(),
+                        'external_source_uri':'jar:'+(artifact/'offset-1-sources.jar').as_uri()+'!/external/Offset.java',
                         'breakpoint_line':6,'locals':{'base':'40','value':'42'},'B':'READY revision=B value=42','C':'READY revision=C value=43'},
             'source_hashes':{str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in root.rglob('*.java')}}
     (root/'fixture.json').write_text(json.dumps(result,indent=2)+'\n')

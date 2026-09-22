@@ -1,0 +1,293 @@
+{
+  "scope": "Pooled post-first operation samples across 3 serial isolated processes and both fresh/restarted workspaces; nearest-rank p95, median p50. Repeated samples are not independent experiments.",
+  "rows": [
+    {
+      "comparison": "paired-editor",
+      "mode": "main",
+      "operation": "hover",
+      "n": 18,
+      "p50_ms": 9.532365502309403,
+      "p95_ms": 15.921370999421924
+    },
+    {
+      "comparison": "paired-editor",
+      "mode": "main",
+      "operation": "binary_hover",
+      "n": 18,
+      "p50_ms": 6.198897501235479,
+      "p95_ms": 24.448002001008717
+    },
+    {
+      "comparison": "paired-editor",
+      "mode": "main",
+      "operation": "binary_completion",
+      "n": 18,
+      "p50_ms": 6.886948000101256,
+      "p95_ms": 13.664653000887483
+    },
+    {
+      "comparison": "paired-editor",
+      "mode": "main",
+      "operation": "signature_help",
+      "n": 18,
+      "p50_ms": 12.002688501524972,
+      "p95_ms": 20.86874399901717
+    },
+    {
+      "comparison": "paired-editor",
+      "mode": "main",
+      "operation": "definition",
+      "n": 18,
+      "p50_ms": 5.330232999767759,
+      "p95_ms": 8.921753000322497
+    },
+    {
+      "comparison": "paired-editor",
+      "mode": "main",
+      "operation": "completion",
+      "n": 18,
+      "p50_ms": 5.319137999322265,
+      "p95_ms": 8.100341998215299
+    },
+    {
+      "comparison": "paired-editor",
+      "mode": "main",
+      "operation": "references",
+      "n": 18,
+      "p50_ms": 9.684230499260593,
+      "p95_ms": 21.05921399925137
+    },
+    {
+      "comparison": "paired-editor",
+      "mode": "main",
+      "operation": "rename_preview",
+      "n": 18,
+      "p50_ms": 13.79801650000445,
+      "p95_ms": 23.052455002471106
+    },
+    {
+      "comparison": "paired-editor",
+      "mode": "main",
+      "operation": "document_symbols",
+      "n": 18,
+      "p50_ms": 4.413982998812571,
+      "p95_ms": 5.9632580014294945
+    },
+    {
+      "comparison": "paired-editor",
+      "mode": "after",
+      "operation": "hover",
+      "n": 18,
+      "p50_ms": 8.168377500624047,
+      "p95_ms": 12.19646099707461
+    },
+    {
+      "comparison": "paired-editor",
+      "mode": "after",
+      "operation": "binary_hover",
+      "n": 18,
+      "p50_ms": 6.323149502350134,
+      "p95_ms": 10.043547001259867
+    },
+    {
+      "comparison": "paired-editor",
+      "mode": "after",
+      "operation": "binary_completion",
+      "n": 18,
+      "p50_ms": 7.93523950233066,
+      "p95_ms": 12.636995001230389
+    },
+    {
+      "comparison": "paired-editor",
+      "mode": "after",
+      "operation": "signature_help",
+      "n": 18,
+      "p50_ms": 13.235843998700147,
+      "p95_ms": 17.31479599766317
+    },
+    {
+      "comparison": "paired-editor",
+      "mode": "after",
+      "operation": "definition",
+      "n": 18,
+      "p50_ms": 5.822696499308222,
+      "p95_ms": 9.529613998893183
+    },
+    {
+      "comparison": "paired-editor",
+      "mode": "after",
+      "operation": "completion",
+      "n": 18,
+      "p50_ms": 5.600939501164248,
+      "p95_ms": 19.279776002804283
+    },
+    {
+      "comparison": "paired-editor",
+      "mode": "after",
+      "operation": "references",
+      "n": 18,
+      "p50_ms": 9.148389999609208,
+      "p95_ms": 20.076824999705423
+    },
+    {
+      "comparison": "paired-editor",
+      "mode": "after",
+      "operation": "rename_preview",
+      "n": 18,
+      "p50_ms": 14.389271002073656,
+      "p95_ms": 16.23150299928966
+    },
+    {
+      "comparison": "paired-editor",
+      "mode": "after",
+      "operation": "document_symbols",
+      "n": 18,
+      "p50_ms": 4.236718499669223,
+      "p95_ms": 8.586602998548187
+    },
+    {
+      "comparison": "original-editor",
+      "mode": "main",
+      "operation": "hover",
+      "n": 18,
+      "p50_ms": 6.546395499753999,
+      "p95_ms": 14.880832997732796
+    },
+    {
+      "comparison": "original-editor",
+      "mode": "main",
+      "operation": "binary_hover",
+      "n": 18,
+      "p50_ms": 5.753577999712434,
+      "p95_ms": 10.12045599782141
+    },
+    {
+      "comparison": "original-editor",
+      "mode": "main",
+      "operation": "binary_completion",
+      "n": 18,
+      "p50_ms": 6.991064499743516,
+      "p95_ms": 16.03765500112786
+    },
+    {
+      "comparison": "original-editor",
+      "mode": "main",
+      "operation": "signature_help",
+      "n": 18,
+      "p50_ms": 11.713328000041656,
+      "p95_ms": 15.835389000130817
+    },
+    {
+      "comparison": "original-editor",
+      "mode": "main",
+      "operation": "definition",
+      "n": 18,
+      "p50_ms": 6.480421501692035,
+      "p95_ms": 16.567251001106342
+    },
+    {
+      "comparison": "original-editor",
+      "mode": "main",
+      "operation": "completion",
+      "n": 18,
+      "p50_ms": 4.649116501241224,
+      "p95_ms": 8.438232998742023
+    },
+    {
+      "comparison": "original-editor",
+      "mode": "main",
+      "operation": "references",
+      "n": 18,
+      "p50_ms": 8.004792001884198,
+      "p95_ms": 23.960922000696883
+    },
+    {
+      "comparison": "original-editor",
+      "mode": "main",
+      "operation": "rename_preview",
+      "n": 18,
+      "p50_ms": 12.433219000740792,
+      "p95_ms": 21.748554998339387
+    },
+    {
+      "comparison": "original-editor",
+      "mode": "main",
+      "operation": "document_symbols",
+      "n": 18,
+      "p50_ms": 4.136387500693672,
+      "p95_ms": 10.048236999864457
+    },
+    {
+      "comparison": "original-editor",
+      "mode": "after",
+      "operation": "hover",
+      "n": 18,
+      "p50_ms": 7.810895000147866,
+      "p95_ms": 11.93613999930676
+    },
+    {
+      "comparison": "original-editor",
+      "mode": "after",
+      "operation": "binary_hover",
+      "n": 18,
+      "p50_ms": 5.346489499061136,
+      "p95_ms": 8.16178800232592
+    },
+    {
+      "comparison": "original-editor",
+      "mode": "after",
+      "operation": "binary_completion",
+      "n": 18,
+      "p50_ms": 7.453331500073546,
+      "p95_ms": 23.87581600123667
+    },
+    {
+      "comparison": "original-editor",
+      "mode": "after",
+      "operation": "signature_help",
+      "n": 18,
+      "p50_ms": 12.267965999853914,
+      "p95_ms": 19.766244000493316
+    },
+    {
+      "comparison": "original-editor",
+      "mode": "after",
+      "operation": "definition",
+      "n": 18,
+      "p50_ms": 4.630060000636149,
+      "p95_ms": 18.89024100091774
+    },
+    {
+      "comparison": "original-editor",
+      "mode": "after",
+      "operation": "completion",
+      "n": 18,
+      "p50_ms": 5.307625999193988,
+      "p95_ms": 10.903955000685528
+    },
+    {
+      "comparison": "original-editor",
+      "mode": "after",
+      "operation": "references",
+      "n": 18,
+      "p50_ms": 11.241229500228656,
+      "p95_ms": 25.890117001836188
+    },
+    {
+      "comparison": "original-editor",
+      "mode": "after",
+      "operation": "rename_preview",
+      "n": 18,
+      "p50_ms": 14.149139999062754,
+      "p95_ms": 25.31463199920836
+    },
+    {
+      "comparison": "original-editor",
+      "mode": "after",
+      "operation": "document_symbols",
+      "n": 18,
+      "p50_ms": 4.774936498506577,
+      "p95_ms": 7.8329930001928005
+    }
+  ]
+}

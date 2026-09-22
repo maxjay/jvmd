@@ -118,11 +118,11 @@ in scratch and will be committed with final evidence. Normal validation command:
 -DargLine=-Xmx1g test. Focused baseline uses -Dtest=InputBoundaryRepairTest
 -Dsurefire.failIfNoSpecifiedTests=false instead of groups.
 
-- [ ] Demonstrate the three new regressions on this baseline.
-- [ ] Repair shared effective environments and per-module fact association.
-- [ ] Repair role evidence and scoped, bounded-lifetime overlay transitions.
-- [ ] Measure and remove redundant observations inside logical operations.
-- [ ] Publish correctness, performance evidence and exact tested trees on PR #21.
+- [x] Demonstrate the three new regressions on this baseline.
+- [x] Repair shared effective environments and per-module fact association.
+- [x] Repair role evidence and scoped, bounded-lifetime overlay transitions.
+- [x] Measure and remove redundant observations inside logical operations.
+- [x] Publish correctness, performance evidence and exact tested trees on PR #21.
 
 Correctness checkpoint: all three original assertions failed on 0347d7a (3 failures,
 0 errors). Repaired tests now pass, plus real-javac ordered-classpath/two-module
@@ -154,3 +154,21 @@ CompilerInputs.Configuration; Application supplies compiler-owned module snapsho
 Test fixtures were migrated, and benchmark-only InputNavigation adapts the old/new
 API reflectively so the same harness runs against all three revisions. No old
 production validator remains. The migrated 140-test phase 3/4 gate passes.
+
+Final verification checkpoint: tested local 67cf8dcef166598ccc40178a5d859cdc60c17d86
+and published production 82bf709b3a70b6b35dfde617dea1eef61eeb80cb have identical
+tree c28aa74d6dea5765772c5b553ce152e21a7941d3. All three production workflows passed:
+Checkpoints 35670736591, Distributions 35670736629, Merge Review 35670736583,
+including semantic-state lifetime and hosted JVMD/JDTLS correctness comparisons.
+Local tests: 140 phase-3/4, 3 Rocks workspace, 4 harness, 3 trend, 4 dashboard pass.
+Three alternating component/editor repetitions against both immediate and original
+baselines completed; each editor comparison and separate JFR run verified 504
+responses and 3120 ranges. Same dependency hashes, JDK and 1 GiB heap throughout.
+Raw evidence, distributions, manifests, failing-baseline and passing-gate logs are
+under docs/performance/input-validation/finish. Latest report section supersedes
+older conclusions: body diagnostics captures 12→3, but warm diagnostics allocation
+remains +74.3% versus original baseline; editor measured work +1.5% versus immediate
+and +6.3% versus original. Production net +86 versus immediate (+156 versus original),
+not shrinkage. No remaining reproduced correctness failure; metadata cost and some
+navigation/tail regressions remain documented. This evidence-only checkpoint changes
+no tested production or harness files. PR #21 is updated, not merged.

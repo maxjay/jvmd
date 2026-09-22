@@ -1,5 +1,7 @@
 # Input identity consolidation — measured delivery
 
+Current result: see **Bounded finish (2026-09-22)** below; preceding sections are historical.
+
 ## Revision and prerequisite evidence
 
 Baseline main: `9ac81c4bdded8de18537569debf02e789c24fe27`.
@@ -275,3 +277,222 @@ repairs; the new CI benchmark will supply its own evidence.
 production Java diff is now +487/-417, net +70; the earlier +25 refers to the
 pre-review delivery. The prior head passed Checkpoints, Distributions and Merge
 Review, including hosted JDTLS correctness. New-head CI is pending publication.
+
+## Bounded finish: complete environments and observation fences (2026-09-22)
+
+This section supersedes earlier implementation counts and performance conclusions;
+older measurements above and in `input-validation/review` remain historical evidence.
+
+### Provenance and correctness
+
+Immediate pre-repair baseline: `0347d7ab58a9c176ac3be027d36c0f2a72209459`, tree
+`b2e3127b4a7102d0f8a79415d753ace3c5d723e5`. Original task-4 baseline:
+`9ac81c4bdded8de18537569debf02e789c24fe27`, tree
+`982af99691d162be5f6e7b9ad578812ff41426d6`. Fetched main:
+`6129dbf445932cf67f8375a4c869c07277285f44`; intervening #20 changes are benchmark
+reporting, not production changes. #17/#18 remain integrated; this repair does not
+replace their policy, owner inventory, fact retention, or caller-lease fixes.
+
+Tested local production: `67cf8dcef166598ccc40178a5d859cdc60c17d86`.
+Published production: `82bf709b3a70b6b35dfde617dea1eef61eeb80cb`.
+Both have exactly tree `c28aa74d6dea5765772c5b553ce152e21a7941d3`;
+GitHub publication creates different commit metadata, not different files.
+Subsequent evidence-only commits do not change measured production.
+
+`InputBoundaryRepairTest` converts the supplied probes to assertions in phase-4:
+
+- `patchModuleChangesInvalidateRealNavigation`: real javac builds the valid java.base
+  patch twice; changed option-path bytes change the environment, navigation replaces
+  its revision and agrees with fresh attribution about the incompatible return type.
+- `navigationKeepsModuleEnvironmentsOrderedAndInvalidatesOnlyTheirOwners`: ordered
+  conflicting API jars, two module contexts, only the affected module reloads.
+- `overlappingSourceAndEnvironmentHaveStableFencesAndCompile`: stable role evidence,
+  successful real compiler query, genuine overlay and disk changes still observed.
+- `closedOverlayTransitionsSupersedeWithoutPreventingCompletedReuse`: lifecycle
+  transitions and edit/revert change fences, content equality still permits reuse,
+  unrelated transitions do not invalidate; callback transition supersedes and retry succeeds.
+- `nestedAnalysisUsesOneStartAndOneEndCapture`: two captures for attribution, one
+  additional capture for the next unchanged diagnostic hit.
+
+The original three tests failed on baseline production (3 assertion failures,
+0 errors, 0 skipped); the final phase-3/4 gate passes 140 tests, including the
+preceding contribution/policy, committed-owner, failed rebuild, eviction, and lease
+regressions. RocksWorkspaceStateTest passes 3 tests. Reporting checks pass 4 Python
+harness tests, 3 trend tests and 4 Node dashboard tests. Exact logs are committed in
+[input-validation/finish](input-validation/finish). Discovery over every `*test*.py`
+was initially an invalid invocation because `test.py` is an argument-driven benchmark
+entrypoint; the named reporting test programs above were then run successfully.
+
+### Surviving ownership and removed work
+
+| Boundary | Responsibility after repair |
+| --- | --- |
+| FileStateRegistry | Shared validated disk contents and inventories; conservative metadata/reconciliation rules retained |
+| Documents | Session overlays; weakly retained module transition subscriptions, no closed-file history |
+| CompilerInputs | Source/membership/environment identities and role-qualified observation evidence |
+| CompilerPool / Analyzer | One configured effective environment, captured start description, fresh end fence before accepting javac output |
+| WorkspaceBindings | Per-module compiler snapshots associated with owned facts; final cross-module fence before committing navigation revision |
+| IndexedFileManager | Validates the complete environment supplied by its owning compiler, not an independent configuration |
+| SemanticUpdatePolicy / FileSemanticContribution | Semantic dependency invalidation and accepted keyed facts, unchanged ownership |
+
+Navigation's ordinary-classpath union and generation-only recipe are gone. Its
+explicit-inventory API now requires complete Configuration; application navigation
+uses the configured analyzers' actual module snapshots. File-manager validation no
+longer constructs an options-empty environment. Compiler options/source roots and
+option-supplied paths are defined once by the existing shared boundary. Module order
+inside each environment remains meaningful; distinct module environments are not
+flattened into an unordered union.
+
+Source-overlay and disk-environment evidence occupy separate roles in the same
+CompilerInputs owner. An unchanged overlapping path cannot overwrite its other role's
+token. Documents subscriptions retain a monotonic transition count while their module
+owner lives; roots/current files define relevance. Weak keys allow discarded module
+owners to be collected and are expunged on subsequent subscription/map operations.
+Closing an overlay does not erase its transition evidence. Input-content equality is
+still distinct from operation-fence equality.
+
+Analyzer now passes its captured immutable description into nested diagnostics,
+bindings and compiler operations. CompilerPool performs the fresh end capture before
+returning accepted output. Navigation's separate end capture is still necessary:
+several module operations can complete before the navigation revision is committed.
+The former per-request boolean freshness memo and repeated nested captures are gone.
+Actual environment replacement recreates javac's standard file-manager delegate too;
+otherwise its retained patch-module option state caused a duplicate-patch failure.
+Cumulative work counters survive that replacement.
+
+Production diff against immediate baseline: **172 added / 86 deleted, net +86**.
+Against original task-4 baseline: **616 added / 460 deleted, net +156**. This is an
+increase, not shrinkage. Per-module fact/environment association, role evidence and
+bounded-lifetime transition subscriptions require additional code; the removed
+consumer recipes and redundant captures are concrete responsibility reductions.
+Benchmark-only InputNavigation bridges old/new APIs for identical harness execution;
+there is no legacy production validator retained beside the repaired contract.
+
+### Measurement method
+
+Three serial, alternating baseline/candidate repetitions in isolated processes for
+each comparison; same fixtures, harness, dependencies, JDK Temurin 25.0.4.1+1,
+`-Xmx1g`, compiler exports and state preparation. Maven 3.9.16; Node 24.19.0.
+Component fixture: 128 sources; 40 unchanged operations. Editor fixture: existing
+`real` workspace matrix, 32 generated sources, 1 workspace plus restart, 3 warm
+samples, 2 edits. Each editor comparison and the separate allocation run checked
+504 responses, 3120 ranges and 12 dependency identity sets across 6 workers.
+Cold costs are reported separately. Build manifests include source/dependency hashes;
+commands, raw results, traces, fixtures and verification summaries are archived.
+
+Component numbers are medians of per-process p50/p95 or work counts, not editor
+latency. Thread allocation is exact for the benchmark owner thread, not total memory.
+Metadata counts instrument selected Java Files calls; instance `toRealPath` work and
+other native syscalls are not included. Internal JVMD counters have no JDTLS analogue.
+Original baseline had no CompilerInputs counter: zero capture counts there mean
+unavailable, not zero work. Editor table uses the existing reporting flow's median
+of worker medians. `editor-warm-distributions.json` additionally retains pooled
+post-first samples (18 per operation/comparison side) and nearest-rank p95; samples
+within a process are not independent experiments. Three repetitions support no claim
+of statistical certainty.
+
+| Immediate baseline → repaired component | Before | After |
+| --- | ---: | ---: |
+| Unchanged input validation p50 / p95, ms | 2.206 / 4.517 | 1.576 / 3.186 |
+| Unchanged detached navigation p50 / p95, ms | 1.151 / 1.821 | 0.998 / 1.788 |
+| Warm real diagnostics p50 / p95, ms | 0.873 / 1.317 | 1.034 / 1.923 |
+| Warm diagnostics owner-thread allocation, bytes / 40 requests | 10,370,664 | 10,312,440 |
+| Warm diagnostics captures / metadata checks | 40 / 5,360 | 40 / 5,360 |
+| Warm source/classpath enumerations, bytes hashed, map rebuilds | 0 | 0 |
+| Body diagnostics captures / metadata checks | 12 / 1,599 | 3 / 402 |
+| Body diagnostics p50, ms / allocated bytes | 19.507 / 3,553,648 | 15.433 / 1,262,720 |
+| API diagnostics captures / metadata checks | 22 / 2,934 | 4 / 540 |
+| API diagnostics p50, ms / allocated bytes | 70.817 / 8,559,712 | 52.248 / 4,015,008 |
+| Membership diagnostics p50, ms | 37.713 | 24.912 |
+| Environment diagnostics p50, ms | 74.109 | 70.651 |
+| Cold diagnostics p50, ms | 900.137 | 817.276 |
+| Cold input validation p50, ms | 228.447 | 236.868 |
+
+Body edits still compile one file and reuse the dependent diagnostic; API changes
+compile two. The full raw component summary includes enumeration, hashed bytes,
+metadata, map reconstruction, captures, allocations and javac counts for every phase.
+Detached body navigation regresses 5.217→7.597 ms (+45.6%) and allocated bytes
+1,094,400→1,226,048; this is not hidden by the validation improvement.
+
+| Real LSP workload (ms unless stated) | Immediate baseline | Repaired | Original baseline | Repaired in original pair |
+| --- | ---: | ---: | ---: | ---: |
+| Warm references | 7.580 | 8.525 | 6.989 | 10.064 |
+| Warm completion | 5.630 | 5.082 | 5.241 | 4.857 |
+| Warm definition | 5.109 | 5.060 | 6.642 | 5.618 |
+| Warm binary completion | 6.623 | 7.901 | 7.283 | 7.711 |
+| Warm rename preview | 10.735 | 13.703 | 12.453 | 13.384 |
+| Diagnostics error / restore | 230.288 / 214.658 | 217.895 / 213.700 | 228.140 / 215.048 | 224.445 / 214.300 |
+| Fresh setup | 2,992.494 | 2,972.465 | 2,909.485 | 3,082.393 |
+| Restart | 2,013.573 | 2,016.584 | 1,823.825 | 2,001.134 |
+| Total measured work | 7,840.015 | 7,957.756 | 7,338.977 | 7,803.627 |
+| Peak process-tree RSS, MiB | 489.016 | 491.355 | 482.797 | 491.930 |
+
+Pooled warm p50/p95 against immediate baseline: references 9.684/21.059→9.148/20.077
+ms; completion 5.319/8.100→5.601/19.280 ms; definition 5.330/8.922→5.823/9.530 ms.
+These include restarted-workspace samples and differ from the existing worker-median
+aggregation; completion's worse tail is visible. All operation distributions and
+per-process min/max remain in raw summaries.
+
+Separate JFR-profiled processes estimate 1,494.019→1,467.593 MiB allocated across
+whole daemon runs (sample weights, all Java threads). Profiled timings are not mixed
+with the unprofiled latency table. Resource summaries preserve recording hashes and
+sample counts; `profile-stacks.json.gz` retains inclusive sampled CPU/allocation stacks.
+Raw JFR recordings are omitted, following the existing reporting flow's data-minimizing
+policy; they can be regenerated with `--profile`. These samples are neither retained
+heap measurements nor proof of per-request allocation reductions.
+
+### Remaining costs and limits
+
+Warm diagnostics allocation versus original baseline remains worse:
+5,917,888→10,312,440 bytes per 40 requests (+74.3%), with p50 0.795→0.901 ms and
+p95 1.086→1.789 ms in that pairing. The shared contract observes all tracked source
+metadata (5,360 checks versus 280 counted calls), replacing the old 40 source
+enumerations and narrower validation. Warm hits already have one capture; deleting
+it or assuming a quiet watcher is sufficient would weaken correctness. Registry
+attribute-map allocation and conservative metadata observation remain real costs.
+Profiles show allocation under CompilerInputs in filesystem attributes/maps and
+missing-path exceptions; inclusive samples cover setup as well as requests, so they
+do not establish a precise cause for each latency regression.
+
+Navigation now captures each actual configured module environment instead of a
+reduced union. It reuses unchanged merged identity maps, but still visits relevant
+module contexts and validates before accepting a combined result. This necessary
+work, metadata allocation and request noise are plausible contributors to references
+and rename costs; no causal percentage is claimed. Total measured editor work is
++1.5% versus immediate baseline and +6.3% versus original. This repair fixes correctness
+and removes redundant nested validation; it does **not** establish an overall editor
+speedup or lower total memory. Further metadata representation work is deferred rather
+than introducing another cross-request cache or weakening freshness guarantees.
+
+Local JDTLS distribution acquisition was unavailable; local alternating measurements
+are JVMD-only. Hosted Merge Review runs the existing JVMD/JDTLS correctness comparison.
+CI results for the exact published production commit are recorded in the final
+progress checkpoint and PR description; prior green CI is not substituted for the
+new regression execution.
+
+### Reproduction
+
+Use the checked-in harness at the tested revision. Create separate checkouts for
+0347d7a, 9ac81c4 and 67cf8dc (or identical-tree published 82bf709), build each checkout's
+runtime dependencies, then run `prepare.py --repo CHECKOUT --dependencies LIB
+--java-home JDK --output BUILD` and `run.py BASE/build.json HEAD/build.json OUTPUT
+--runs 3`; run `summarize.py OUTPUT SUMMARY.json`. Repeat with original baseline. Each archive's
+`commands.json` records exact compiler/JVM invocations and source fixture preparation.
+For LSP use `workspaces/compile.py` per checkout and `workspaces/matrix.py --repo REPO
+--before BASE/build.json --after HEAD/build.json --java-home JDK --jdtls JDTLS
+--resolvers RESOLVERS --fixtures FIXTURES --root OUTPUT --runs 3 --sources 32
+--workspaces 1 --samples 3 --edits 2 --fixture-names real --modes main after`.
+Run `verify.py OUTPUT` and `summarize.py OUTPUT SUMMARY.json`; use a separate output and `--profile`
+for allocation. The archived matrix manifests preserve exact machine paths/flags.
+Run phase-3/4 with `mvn -B -pl jvmd-tests -am -Dgroups=phase-3,phase-4
+-Djvmd.resolvers=RESOLVERS -DargLine=-Xmx1g test`; baseline assertion run substitutes
+`-Dtest=InputBoundaryRepairTest -Dsurefire.failIfNoSpecifiedTests=false` for groups.
+The failing baseline test source is in the first repair commit (published e3c25ae);
+use that source with 0347d7a production to reproduce the original three failures.
+
+Final CI: [Checkpoints](https://github.com/maxjay/jvmd/actions/runs/35670736591),
+[Distributions](https://github.com/maxjay/jvmd/actions/runs/35670736629), and
+[Merge Review](https://github.com/maxjay/jvmd/actions/runs/35670736583) all passed on
+published production 82bf709b3a70b6b35dfde617dea1eef61eeb80cb. The latter includes
+hosted JVMD/JDTLS correctness and semantic-state/input-validation evidence. Raw test
+logs are gzip-compressed without changing their contents.

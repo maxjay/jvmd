@@ -1,0 +1,1415 @@
+{
+  "base_sha": "9ac81c4bdded8de18537569debf02e789c24fe27",
+  "head_sha": "67cf8dcef166598ccc40178a5d859cdc60c17d86",
+  "interpretation": "JVMD-only component measurements: complete input observation and navigation with supplied detached facts. Not editor latency or JDTLS counters. Allocation is the benchmark owner thread, including validation and detached navigation. Metadata counts cover instrumented Java Files calls, not all OS syscalls. Values are medians of per-process percentiles or counts; cold setup is separate.",
+  "rows": [
+    {
+      "metric": "cold/validation_ms/p50",
+      "unit": "ms",
+      "before": 48.373247,
+      "after": 215.104255,
+      "after_over_before": 4.446760727060559,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/validation_ms/p95",
+      "unit": "ms",
+      "before": 48.373247,
+      "after": 215.104255,
+      "after_over_before": 4.446760727060559,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/navigation_ms/p50",
+      "unit": "ms",
+      "before": 302.181211,
+      "after": 279.661943,
+      "after_over_before": 0.9254776035694687,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/navigation_ms/p95",
+      "unit": "ms",
+      "before": 302.181211,
+      "after": 279.661943,
+      "after_over_before": 0.9254776035694687,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 26958520,
+      "after": 19039232,
+      "after_over_before": 0.7062417373060539,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/file_loads",
+      "unit": "count",
+      "before": 128,
+      "after": 128,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/work.source_enumerations",
+      "unit": "count",
+      "before": 4,
+      "after": 1,
+      "after_over_before": 0.25,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/work.classpath_enumerations",
+      "unit": "count",
+      "before": 3,
+      "after": 2,
+      "after_over_before": 0.6666666666666666,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/work.files_hashed",
+      "unit": "count",
+      "before": 256,
+      "after": 131,
+      "after_over_before": 0.51171875,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/work.bytes_hashed",
+      "unit": "bytes",
+      "before": 10532,
+      "after": 156886822,
+      "after_over_before": 14896.204139764528,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/work.metadata_checks",
+      "unit": "count",
+      "before": 646,
+      "after": 802,
+      "after_over_before": 1.241486068111455,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/work.identity_map_rebuilds",
+      "unit": "count",
+      "before": 5,
+      "after": 4,
+      "after_over_before": 0.8,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/work.input_captures",
+      "unit": "count",
+      "before": 0,
+      "after": 4,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/work.environment_observations",
+      "unit": "count",
+      "before": 0,
+      "after": 4,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/validation_ms/p50",
+      "unit": "ms",
+      "before": 1.631897,
+      "after": 1.498717,
+      "after_over_before": 0.9183894571777509,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/validation_ms/p95",
+      "unit": "ms",
+      "before": 3.669795,
+      "after": 2.330048,
+      "after_over_before": 0.6349259291050318,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/navigation_ms/p50",
+      "unit": "ms",
+      "before": 1.339036,
+      "after": 0.959465,
+      "after_over_before": 0.7165341335109736,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/navigation_ms/p95",
+      "unit": "ms",
+      "before": 2.63041,
+      "after": 1.589604,
+      "after_over_before": 0.6043179580369601,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 31611928,
+      "after": 30671952,
+      "after_over_before": 0.9702651480162804,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/file_loads",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/work.source_enumerations",
+      "unit": "count",
+      "before": 120,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/work.classpath_enumerations",
+      "unit": "count",
+      "before": 80,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/work.files_hashed",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/work.bytes_hashed",
+      "unit": "bytes",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/work.metadata_checks",
+      "unit": "count",
+      "before": 15560,
+      "after": 16200,
+      "after_over_before": 1.0411311053984575,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/work.identity_map_rebuilds",
+      "unit": "count",
+      "before": 120,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/work.input_captures",
+      "unit": "count",
+      "before": 0,
+      "after": 120,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/work.environment_observations",
+      "unit": "count",
+      "before": 0,
+      "after": 120,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/validation_ms/p50",
+      "unit": "ms",
+      "before": 1.777706,
+      "after": 1.652648,
+      "after_over_before": 0.929652034700901,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/validation_ms/p95",
+      "unit": "ms",
+      "before": 1.777706,
+      "after": 1.652648,
+      "after_over_before": 0.929652034700901,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/navigation_ms/p50",
+      "unit": "ms",
+      "before": 4.526265,
+      "after": 7.237877,
+      "after_over_before": 1.5990837920448757,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/navigation_ms/p95",
+      "unit": "ms",
+      "before": 4.526265,
+      "after": 7.237877,
+      "after_over_before": 1.5990837920448757,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 1234912,
+      "after": 1226136,
+      "after_over_before": 0.9928934207457697,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/file_loads",
+      "unit": "count",
+      "before": 1,
+      "after": 1,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/work.source_enumerations",
+      "unit": "count",
+      "before": 4,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/work.classpath_enumerations",
+      "unit": "count",
+      "before": 3,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/work.files_hashed",
+      "unit": "count",
+      "before": 2,
+      "after": 1,
+      "after_over_before": 0.5,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/work.bytes_hashed",
+      "unit": "bytes",
+      "before": 80,
+      "after": 40,
+      "after_over_before": 0.5,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/work.metadata_checks",
+      "unit": "count",
+      "before": 519,
+      "after": 541,
+      "after_over_before": 1.0423892100192678,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/work.identity_map_rebuilds",
+      "unit": "count",
+      "before": 5,
+      "after": 2,
+      "after_over_before": 0.4,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/work.input_captures",
+      "unit": "count",
+      "before": 0,
+      "after": 4,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/work.environment_observations",
+      "unit": "count",
+      "before": 0,
+      "after": 4,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/validation_ms/p50",
+      "unit": "ms",
+      "before": 2.21826,
+      "after": 1.8132,
+      "after_over_before": 0.8173974195991452,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/validation_ms/p95",
+      "unit": "ms",
+      "before": 2.21826,
+      "after": 1.8132,
+      "after_over_before": 0.8173974195991452,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/navigation_ms/p50",
+      "unit": "ms",
+      "before": 2.638232,
+      "after": 2.718082,
+      "after_over_before": 1.0302664814921507,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/navigation_ms/p95",
+      "unit": "ms",
+      "before": 2.638232,
+      "after": 2.718082,
+      "after_over_before": 1.0302664814921507,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 1202328,
+      "after": 1080872,
+      "after_over_before": 0.8989826403443986,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/file_loads",
+      "unit": "count",
+      "before": 1,
+      "after": 1,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/work.source_enumerations",
+      "unit": "count",
+      "before": 4,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/work.classpath_enumerations",
+      "unit": "count",
+      "before": 3,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/work.files_hashed",
+      "unit": "count",
+      "before": 2,
+      "after": 1,
+      "after_over_before": 0.5,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/work.bytes_hashed",
+      "unit": "bytes",
+      "before": 82,
+      "after": 41,
+      "after_over_before": 0.5,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/work.metadata_checks",
+      "unit": "count",
+      "before": 519,
+      "after": 541,
+      "after_over_before": 1.0423892100192678,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/work.identity_map_rebuilds",
+      "unit": "count",
+      "before": 5,
+      "after": 2,
+      "after_over_before": 0.4,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/work.input_captures",
+      "unit": "count",
+      "before": 0,
+      "after": 4,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/work.environment_observations",
+      "unit": "count",
+      "before": 0,
+      "after": 4,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/validation_ms/p50",
+      "unit": "ms",
+      "before": 1.546629,
+      "after": 2.96877,
+      "after_over_before": 1.9195101087591142,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/validation_ms/p95",
+      "unit": "ms",
+      "before": 1.546629,
+      "after": 2.96877,
+      "after_over_before": 1.9195101087591142,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/navigation_ms/p50",
+      "unit": "ms",
+      "before": 3.356213,
+      "after": 3.793461,
+      "after_over_before": 1.1302801699415383,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/navigation_ms/p95",
+      "unit": "ms",
+      "before": 3.356213,
+      "after": 3.793461,
+      "after_over_before": 1.1302801699415383,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 1279152,
+      "after": 1322672,
+      "after_over_before": 1.0340225399327054,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/file_loads",
+      "unit": "count",
+      "before": 1,
+      "after": 1,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/work.source_enumerations",
+      "unit": "count",
+      "before": 4,
+      "after": 1,
+      "after_over_before": 0.25,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/work.classpath_enumerations",
+      "unit": "count",
+      "before": 3,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/work.files_hashed",
+      "unit": "count",
+      "before": 2,
+      "after": 1,
+      "after_over_before": 0.5,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/work.bytes_hashed",
+      "unit": "bytes",
+      "before": 28,
+      "after": 14,
+      "after_over_before": 0.5,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/work.metadata_checks",
+      "unit": "count",
+      "before": 523,
+      "after": 675,
+      "after_over_before": 1.2906309751434035,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/work.identity_map_rebuilds",
+      "unit": "count",
+      "before": 5,
+      "after": 2,
+      "after_over_before": 0.4,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/work.input_captures",
+      "unit": "count",
+      "before": 0,
+      "after": 4,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/work.environment_observations",
+      "unit": "count",
+      "before": 0,
+      "after": 4,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/validation_ms/p50",
+      "unit": "ms",
+      "before": 1.333598,
+      "after": 3.428662,
+      "after_over_before": 2.5709861592473895,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/validation_ms/p95",
+      "unit": "ms",
+      "before": 1.333598,
+      "after": 3.428662,
+      "after_over_before": 2.5709861592473895,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/navigation_ms/p50",
+      "unit": "ms",
+      "before": 12.006136,
+      "after": 13.429319,
+      "after_over_before": 1.1185379709175376,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/navigation_ms/p95",
+      "unit": "ms",
+      "before": 12.006136,
+      "after": 13.429319,
+      "after_over_before": 1.1185379709175376,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 2079176,
+      "after": 2073688,
+      "after_over_before": 0.9973604928106135,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/file_loads",
+      "unit": "count",
+      "before": 129,
+      "after": 129,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/work.source_enumerations",
+      "unit": "count",
+      "before": 4,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/work.classpath_enumerations",
+      "unit": "count",
+      "before": 3,
+      "after": 2,
+      "after_over_before": 0.6666666666666666,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/work.files_hashed",
+      "unit": "count",
+      "before": 1,
+      "after": 1,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/work.bytes_hashed",
+      "unit": "bytes",
+      "before": 3,
+      "after": 3,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/work.metadata_checks",
+      "unit": "count",
+      "before": 529,
+      "after": 556,
+      "after_over_before": 1.0510396975425331,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/work.identity_map_rebuilds",
+      "unit": "count",
+      "before": 5,
+      "after": 2,
+      "after_over_before": 0.4,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/work.input_captures",
+      "unit": "count",
+      "before": 0,
+      "after": 4,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/work.environment_observations",
+      "unit": "count",
+      "before": 0,
+      "after": 4,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/validation_ms/p50",
+      "unit": "ms",
+      "before": 2.041053,
+      "after": 131.770419,
+      "after_over_before": 64.56001828467953,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/validation_ms/p95",
+      "unit": "ms",
+      "before": 2.041053,
+      "after": 131.770419,
+      "after_over_before": 64.56001828467953,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/navigation_ms/p50",
+      "unit": "ms",
+      "before": 1.185625,
+      "after": 1.484114,
+      "after_over_before": 1.251756668423827,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/navigation_ms/p95",
+      "unit": "ms",
+      "before": 1.185625,
+      "after": 1.484114,
+      "after_over_before": 1.251756668423827,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 764656,
+      "after": 1490160,
+      "after_over_before": 1.9487978908162624,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/file_loads",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/work.source_enumerations",
+      "unit": "count",
+      "before": 3,
+      "after": 1,
+      "after_over_before": 0.3333333333333333,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/work.classpath_enumerations",
+      "unit": "count",
+      "before": 2,
+      "after": 2,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/work.files_hashed",
+      "unit": "count",
+      "before": 0,
+      "after": 133,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/work.bytes_hashed",
+      "unit": "bytes",
+      "before": 0,
+      "after": 156886840,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/work.metadata_checks",
+      "unit": "count",
+      "before": 398,
+      "after": 678,
+      "after_over_before": 1.7035175879396984,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/work.identity_map_rebuilds",
+      "unit": "count",
+      "before": 3,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/work.input_captures",
+      "unit": "count",
+      "before": 0,
+      "after": 3,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/work.environment_observations",
+      "unit": "count",
+      "before": 0,
+      "after": 3,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/cold/diagnostics_ms/p50",
+      "unit": "ms",
+      "before": 646.664869,
+      "after": 769.357832,
+      "after_over_before": 1.1897319135176339,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/cold/diagnostics_ms/p95",
+      "unit": "ms",
+      "before": 646.664869,
+      "after": 769.357832,
+      "after_over_before": 1.1897319135176339,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/cold/queries",
+      "unit": "count",
+      "before": 2,
+      "after": 2,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/cold/diagnostic_files_analysed",
+      "unit": "count",
+      "before": 2,
+      "after": 2,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/cold/diagnostic_files_reused",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/cold/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 46382952,
+      "after": 45677456,
+      "after_over_before": 0.9847897563742817,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/cold/work.input_captures",
+      "unit": "count",
+      "before": 0,
+      "after": 4,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/cold/work.environment_observations",
+      "unit": "count",
+      "before": 0,
+      "after": 4,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/cold/work.metadata_checks",
+      "unit": "count",
+      "before": 1179,
+      "after": 796,
+      "after_over_before": 0.6751484308736218,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/cold/work.source_enumerations",
+      "unit": "count",
+      "before": 11,
+      "after": 1,
+      "after_over_before": 0.09090909090909091,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/cold/work.classpath_enumerations",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/cold/work.identity_map_rebuilds",
+      "unit": "count",
+      "before": 4,
+      "after": 2,
+      "after_over_before": 0.5,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/cold/work.bytes_hashed",
+      "unit": "bytes",
+      "before": 2107,
+      "after": 156883663,
+      "after_over_before": 74458.31181775035,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/unchanged/diagnostics_ms/p50",
+      "unit": "ms",
+      "before": 0.794617,
+      "after": 0.901116,
+      "after_over_before": 1.1340255745849888,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/unchanged/diagnostics_ms/p95",
+      "unit": "ms",
+      "before": 1.085514,
+      "after": 1.789023,
+      "after_over_before": 1.648088371038973,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/unchanged/queries",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/unchanged/diagnostic_files_analysed",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/unchanged/diagnostic_files_reused",
+      "unit": "count",
+      "before": 40,
+      "after": 40,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/unchanged/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 5917888,
+      "after": 10312440,
+      "after_over_before": 1.7425878962224362,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/unchanged/work.input_captures",
+      "unit": "count",
+      "before": 0,
+      "after": 40,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/unchanged/work.environment_observations",
+      "unit": "count",
+      "before": 0,
+      "after": 40,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/unchanged/work.metadata_checks",
+      "unit": "count",
+      "before": 280,
+      "after": 5360,
+      "after_over_before": 19.142857142857142,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/unchanged/work.source_enumerations",
+      "unit": "count",
+      "before": 40,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/unchanged/work.classpath_enumerations",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/unchanged/work.identity_map_rebuilds",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/unchanged/work.bytes_hashed",
+      "unit": "bytes",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/body/diagnostics_ms/p50",
+      "unit": "ms",
+      "before": 13.714176,
+      "after": 13.312522,
+      "after_over_before": 0.9707124948666256,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/body/diagnostics_ms/p95",
+      "unit": "ms",
+      "before": 13.714176,
+      "after": 13.312522,
+      "after_over_before": 0.9707124948666256,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/body/queries",
+      "unit": "count",
+      "before": 1,
+      "after": 1,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/body/diagnostic_files_analysed",
+      "unit": "count",
+      "before": 1,
+      "after": 1,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/body/diagnostic_files_reused",
+      "unit": "count",
+      "before": 1,
+      "after": 1,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/body/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 1675648,
+      "after": 1265080,
+      "after_over_before": 0.7549795661141242,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/body/work.input_captures",
+      "unit": "count",
+      "before": 0,
+      "after": 3,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/body/work.environment_observations",
+      "unit": "count",
+      "before": 0,
+      "after": 3,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/body/work.metadata_checks",
+      "unit": "count",
+      "before": 532,
+      "after": 402,
+      "after_over_before": 0.7556390977443609,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/body/work.source_enumerations",
+      "unit": "count",
+      "before": 6,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/body/work.classpath_enumerations",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/body/work.identity_map_rebuilds",
+      "unit": "count",
+      "before": 2,
+      "after": 1,
+      "after_over_before": 0.5,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/body/work.bytes_hashed",
+      "unit": "bytes",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/api/diagnostics_ms/p50",
+      "unit": "ms",
+      "before": 44.573947,
+      "after": 44.44301,
+      "after_over_before": 0.9970624768769076,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/api/diagnostics_ms/p95",
+      "unit": "ms",
+      "before": 44.573947,
+      "after": 44.44301,
+      "after_over_before": 0.9970624768769076,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/api/queries",
+      "unit": "count",
+      "before": 2,
+      "after": 2,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/api/diagnostic_files_analysed",
+      "unit": "count",
+      "before": 2,
+      "after": 2,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/api/diagnostic_files_reused",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/api/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 5088776,
+      "after": 4019872,
+      "after_over_before": 0.7899487027921842,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/api/work.input_captures",
+      "unit": "count",
+      "before": 0,
+      "after": 4,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/api/work.environment_observations",
+      "unit": "count",
+      "before": 0,
+      "after": 4,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/api/work.metadata_checks",
+      "unit": "count",
+      "before": 1057,
+      "after": 540,
+      "after_over_before": 0.510879848628193,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/api/work.source_enumerations",
+      "unit": "count",
+      "before": 10,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/api/work.classpath_enumerations",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/api/work.identity_map_rebuilds",
+      "unit": "count",
+      "before": 4,
+      "after": 1,
+      "after_over_before": 0.25,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/api/work.bytes_hashed",
+      "unit": "bytes",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/membership/diagnostics_ms/p50",
+      "unit": "ms",
+      "before": 20.779534,
+      "after": 24.460936,
+      "after_over_before": 1.1771648007120852,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/membership/diagnostics_ms/p95",
+      "unit": "ms",
+      "before": 20.779534,
+      "after": 24.460936,
+      "after_over_before": 1.1771648007120852,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/membership/queries",
+      "unit": "count",
+      "before": 2,
+      "after": 2,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/membership/diagnostic_files_analysed",
+      "unit": "count",
+      "before": 2,
+      "after": 2,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/membership/diagnostic_files_reused",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/membership/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 3351264,
+      "after": 2360496,
+      "after_over_before": 0.7043599071872583,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/membership/work.input_captures",
+      "unit": "count",
+      "before": 0,
+      "after": 4,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/membership/work.environment_observations",
+      "unit": "count",
+      "before": 0,
+      "after": 4,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/membership/work.metadata_checks",
+      "unit": "count",
+      "before": 1067,
+      "after": 674,
+      "after_over_before": 0.6316776007497656,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/membership/work.source_enumerations",
+      "unit": "count",
+      "before": 11,
+      "after": 1,
+      "after_over_before": 0.09090909090909091,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/membership/work.classpath_enumerations",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/membership/work.identity_map_rebuilds",
+      "unit": "count",
+      "before": 4,
+      "after": 1,
+      "after_over_before": 0.25,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/membership/work.bytes_hashed",
+      "unit": "bytes",
+      "before": 14,
+      "after": 14,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/environment/diagnostics_ms/p50",
+      "unit": "ms",
+      "before": 59.26777,
+      "after": 56.696239,
+      "after_over_before": 0.9566116457562011,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/environment/diagnostics_ms/p95",
+      "unit": "ms",
+      "before": 59.26777,
+      "after": 56.696239,
+      "after_over_before": 0.9566116457562011,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/environment/queries",
+      "unit": "count",
+      "before": 2,
+      "after": 2,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/environment/diagnostic_files_analysed",
+      "unit": "count",
+      "before": 2,
+      "after": 2,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/environment/diagnostic_files_reused",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/environment/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 14416184,
+      "after": 13325104,
+      "after_over_before": 0.9243156163933535,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/environment/work.input_captures",
+      "unit": "count",
+      "before": 0,
+      "after": 4,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/environment/work.environment_observations",
+      "unit": "count",
+      "before": 0,
+      "after": 4,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/environment/work.metadata_checks",
+      "unit": "count",
+      "before": 1065,
+      "after": 543,
+      "after_over_before": 0.5098591549295775,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/environment/work.source_enumerations",
+      "unit": "count",
+      "before": 11,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/environment/work.classpath_enumerations",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/environment/work.identity_map_rebuilds",
+      "unit": "count",
+      "before": 4,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/environment/work.bytes_hashed",
+      "unit": "bytes",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    }
+  ]
+}

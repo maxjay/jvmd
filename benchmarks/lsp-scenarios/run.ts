@@ -1,5 +1,5 @@
-import { LspScenarioHarness } from "./harness.ts";
-import CompletionScenario from "./completion.ts";
+import { LspScenarioHarness } from "./harness/LspScenarioHarness.ts";
+import CompletionScenario from "./scenarios/CMP-01-completion.ts";
 
 await LspScenarioHarness.beforeAll();
 try {

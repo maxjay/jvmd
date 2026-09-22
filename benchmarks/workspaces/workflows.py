@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -125,14 +126,16 @@ def product(a,root,fixture,build,report,backend):
         'update.mode':'none','extensions.autoUpdate':False,'telemetry.telemetryLevel':'off'}})
     config={'fixture':fixture,'report':report,'root':str(root),'backend':backend,'bridge':bridge,'samples':a.samples,'runtime':a.runtime}
     write(root/'driver.json',config)
-    command=[str(a.vscode),'--no-sandbox','--disable-gpu','--disable-workspace-trust','--skip-welcome','--skip-release-notes',
+    executable=a.vscode
+    if executable.parent.name=='bin' and (executable.parent.parent/'code').is_file():executable=executable.parent.parent/'code'
+    command=[str(executable),'--no-sandbox','--disable-gpu','--disable-workspace-trust','--skip-welcome','--skip-release-notes',
              '--user-data-dir',str(root/'user-data'),'--extensions-dir',str(a.extensions),
              '--extensionDevelopmentPath='+str(extension),'--extensionTestsPath='+str(extension/'vscode.cjs'),str(workspace)]
     if backend=='jvmd':command+=['--disable-extension','redhat.java','--disable-extension','vscjava.vscode-java-debug','--disable-extension','vscjava.vscode-java-test']
     write(root/'command.json',command)
     environment=dict(os.environ,JVMD_WORKFLOW_CONFIG=str(root/'driver.json'))
     with (root/'editor.log').open('w') as log:
-        process=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT,env=environment)
+        process=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT,env=environment,start_new_session=True)
         monitor=ProcessMonitor(process.pid, output=root/"resource-samples.jsonl")
         try:
             status=process.wait(timeout=a.timeout)
@@ -142,6 +145,8 @@ def product(a,root,fixture,build,report,backend):
             if report.get('outcome')!='correct':raise AssertionError('VS Code did not produce a checked result')
         finally:
             if process.poll() is None:process.kill();process.wait()
+            try:os.killpg(process.pid,signal.SIGTERM)
+            except ProcessLookupError:pass
             write(root/'resources.json',monitor.close())
 
 

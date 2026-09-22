@@ -86,6 +86,7 @@ async function jvmd(config, report) {
   return {rpc,diagnosticVersions,async mark(invocation,revision){
     if(config.report.mode==='attribution'||config.report.instrumentation)await client.call('benchmark/traceContext',{invocation,revision});
   },async close(){
+    client.onNotification=()=>{};
     for(const item of subscriptions)item.dispose();diagnostics.dispose();
     try{await client.call('shutdown');notify('exit');await Promise.race([new Promise(resolve=>child.once('exit',resolve)),sleep(10000)]);}finally{if(child.exitCode===null)child.kill();stream.destroy();log.end();}
   }};

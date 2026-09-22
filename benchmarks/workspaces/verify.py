@@ -30,7 +30,8 @@ def workflow_oracle(name, result, fixture, revision=None):
         rows=[row for row in rows or [] if row.get('label','').startswith(fixture.get('expected',{}).get('method','value'))]
         expected='String' if name=='api_completion' or revision=='API' else fixture.get('expected',{}).get('initial_type','int')
         stale='int' if expected=='String' else 'String'
-        return any(re.search(r'\b'+expected+r'\b',json.dumps(r)) for r in rows) and not any(re.search(r'\b'+stale+r'\b',json.dumps(r)) for r in rows)
+        method=re.escape(fixture.get('expected',{}).get('method','value'))
+        return any(re.search(r'\b'+expected+r'\b',json.dumps(r)) and re.search(r'\b'+method+r'\s*\(\s*\)',json.dumps(r)) for r in rows) and not any(re.search(r'\b'+stale+r'\b',json.dumps(r)) for r in rows)
     if name=='dependency_definition':
         if len(result)!=1:return False
         row=result[0];expected=fixture['expected'];uri=unquote(row['uri'])

@@ -32,6 +32,7 @@ class HarnessTest(unittest.TestCase):
         self.assertFalse(workflow_oracle('api_completion', {'items': [
             {'label': 'value()', 'detail': 'String'}, {'label': 'value()', 'detail': 'int'}]}, {}))
         self.assertTrue(workflow_oracle('api_completion', {'items': [{'label': 'value()', 'detail': 'String'}]}, {}))
+        self.assertFalse(workflow_oracle('api_completion', {'items': [{'label': 'value(String required)', 'detail': 'String'}]}, {}))
 
     def test_definition_checks_source_selection_and_token_range(self):
         fixture = {'files': {'provider': '/library/Library.java'}, 'versions': {'A': 'int value() {}'}}

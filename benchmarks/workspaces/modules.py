@@ -54,6 +54,8 @@ def workflow_fixture(root, java_home, sources=4):
         return {'uri':file.as_uri(),'range':{'start':position(text,start),'end':position(text,end)}}
     files={'provider':str(provider),'consumer':str(consumer),'main':str(main),'independent':str(independent)}
     result={'root':str(root),'roots':[str(host),str(library)],'repository':str(repository),'files':files,
+            'repositories':{project.name:{key:subprocess.check_output(['git','-C',str(project),'rev-parse',ref],text=True).strip()
+                for key,ref in (('revision','HEAD'),('tree','HEAD^{tree}'))} for project in (host,library)},
             'versions':{'A':source_a,'API':source_api,'B':source_b,'C':source_c},
             'expected':{'definition':{'path':str(provider),'range':{'start':{'line':2,'character':20},'end':{'line':2,'character':25}}},
                         'references':[call_range(consumer),call_range(main)],

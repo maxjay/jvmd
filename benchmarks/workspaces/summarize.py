@@ -114,6 +114,7 @@ def summarize_workflows(root):
         if directory==root or not (directory/'provenance.json').exists():continue
         other=json.loads((directory/'provenance.json').read_text())
         if other.get('build')!=provenance['build'] or other.get('harness')!=provenance.get('harness'):continue
+        if other.get('cache',{}).get('artifact_sha256')!=provenance.get('cache',{}).get('artifact_sha256'):continue
         for path in sorted(directory.glob('*/report.json')):
             item=json.loads(path.read_text())
             fixture=path.parent/item.get('fixture','fixture/fixture.json')

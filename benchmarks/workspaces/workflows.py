@@ -89,7 +89,7 @@ def engine(a, root, fixture, build, report):
     def valid_completion(result, required):
         items=result.get('items',[]) if isinstance(result,dict) else result
         rows=[item for item in items or [] if item.get('label','').startswith('value')]
-        return bool(rows) and any(required in json.dumps(item) for item in rows) and not any(('int' if required=='String' else 'String') in json.dumps(item) for item in rows)
+        return bool(rows) and any(required in json.dumps(item) and re.search(r'\bvalue\s*\(\s*\)',json.dumps(item)) for item in rows) and not any(('int' if required=='String' else 'String') in json.dumps(item) for item in rows)
     def definition():
         source=consumer.read_text();offset=source.index('.value')+2
         value=client.call('textDocument/definition',{'textDocument':{'uri':consumer.as_uri()},'position':position(source,offset)})[0]
@@ -285,6 +285,10 @@ def main():
     if a.extensions:
         for p in a.extensions.glob('*/package.json'):
             data=json.loads(p.read_text());provenance['extensions'][data.get('publisher','')+'.'+data['name']]={'version':data['version'],'manifest_sha256':sha(p),'server_jars':{str(jar.relative_to(p.parent)):sha(jar) for jar in p.parent.glob('server/**/*.jar')}}
+    if a.dependency_cache:
+        provenance['cache']['artifact_sha256']={str(p.relative_to(a.dependency_cache)):sha(p)
+            for p in sorted(a.dependency_cache.rglob('*')) if p.is_file() and p.suffix in ('.jar','.pom')}
+        provenance['cache']['inventory_boundary']='Dependency JAR/POM hashes recorded before timing; OS cache is not flushed'
     write(a.root/'provenance.json',provenance)
     a.extension_versions={id_:extension['version'] for id_,extension in provenance['extensions'].items()}
     failures=[]

@@ -17,7 +17,7 @@ The ordinary-Java fixture requires no processors or resource generators.
 Build with the `compile.py` command below, or use `--reuse-production-jars` after
 assembling JVMD. Define `BENCH_JDK`, `BENCH_BUILD`, `JVMD_RESOLVERS`, `VSCODE`,
 `JAVA_EXTENSIONS`, `MAVEN_CACHE` and a new `BENCH_RESULTS` directory. The prepared
-cache is copied equally before timing; local fixture coordinates are removed
+cache is inventoried with JAR/POM hashes and copied equally before timing; local fixture coordinates are removed
 from that copy. Maven is offline during measurement. Do not precompile fixture
 sources to conceal import or runtime compilation costs.
 

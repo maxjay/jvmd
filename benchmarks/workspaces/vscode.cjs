@@ -161,7 +161,7 @@ exports.run = async () => {
     }
     function completionOracle(type){return result=>{
       const values=result.items.filter(i=>i.label.startsWith(method));
-      return result.version===consumer.version&&values.some(i=>new RegExp('\\b'+type+'\\b').test(JSON.stringify(i)))&&!values.some(i=>new RegExp('\\b'+(type==='int'?'String':'int')+'\\b').test(JSON.stringify(i)));
+      return result.version===consumer.version&&values.some(i=>new RegExp('\\b'+type+'\\b').test(JSON.stringify(i))&&new RegExp('\\b'+method+'\\s*\\(\\s*\\)').test(JSON.stringify(i)))&&!values.some(i=>new RegExp('\\b'+(type==='int'?'String':'int')+'\\b').test(JSON.stringify(i)));
     };}
     async function definition(){
       const result=await vscode.commands.executeCommand('vscode.executeDefinitionProvider',consumer.uri,point);

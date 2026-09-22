@@ -68,9 +68,12 @@ jobs:
           JDTLS_HOME: ${{ runner.temp }}/jdtls
         run: node benchmarks/lsp-scenarios/run.ts
 
-      - name: Upload JDTLS baseline
+      - name: Commit JDTLS baseline
         if: inputs.mode == 'record'
-        uses: actions/upload-artifact@v4
-        with:
-          name: lsp-jdtls-baseline
-          path: benchmarks/lsp-scenarios/expected/
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add benchmarks/lsp-scenarios/expected/
+          git diff --cached --quiet && exit 0
+          git commit -m "bench: record JDTLS LSP baseline"
+          git push

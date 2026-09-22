@@ -677,16 +677,18 @@ public final class Application implements AutoCloseable {
         var cause=RequestScope.detached();
         index=java.util.concurrent.CompletableFuture.supplyAsync(()->{
             IndexStorage storage=null;
+            IndexService service=null;
             try {
                 long defaultBudgetMb=Math.max(8L,Math.min(128L,config.heapCeilingMb()/8L));
                 long budgetMb=Long.getLong("jvmd.index.generation_budget_mb",defaultBudgetMb);
                 if(budgetMb<1)throw new IllegalArgumentException("jvmd.index.generation_budget_mb must be positive");
                 storage=IndexStorage.open(config.stateDir().resolve("index-v2"),Math.multiplyExact(budgetMb,1024L*1024L));
-                var service=new IndexService(storage,config.m2Repo());
+                service=new IndexService(storage,config.m2Repo());
                 if(scan)service.start().join();
                 return service;
-            } catch(Exception e){
-                if(storage!=null)try{storage.close();}catch(Exception close){e.addSuppressed(close);}
+            } catch(Exception|LinkageError e){
+                if(service!=null)try{service.close();}catch(Exception close){e.addSuppressed(close);}
+                else if(storage!=null)try{storage.close();}catch(Exception close){e.addSuppressed(close);}
                 throw new java.util.concurrent.CompletionException(e);
             }
         }, task -> Thread.ofVirtual().name("jvmd-index-start").start(cause==null?task:()->{
@@ -822,10 +824,10 @@ public final class Application implements AutoCloseable {
             } finally { app.close(); try (var files = Files.walk(fixture)) { for (Path file : files.sorted(java.util.Comparator.reverseOrder()).toList()) Files.delete(file); } try(var files=Files.walk(config.stateDir())){for(Path path:files.sorted(java.util.Comparator.reverseOrder()).toList())Files.delete(path);} }
             return;
         }
+        app.awaitReady();
         var server = new UnixServer(config, app.dispatcher, app);
         Runtime.getRuntime().addShutdownHook(Thread.ofPlatform().unstarted(server::close));
         server.start();
-        app.awaitReady();
         System.out.println("READY " + config.socket());
         server.await();
     }

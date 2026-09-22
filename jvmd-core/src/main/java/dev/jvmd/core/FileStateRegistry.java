@@ -10,8 +10,8 @@ public final class FileStateRegistry {
     /** Process-wide disk observations only; overlays and accepted analysis never live here. */
     public static FileStateRegistry shared(){return SHARED;}
     private record Stamp(Object size, Object modified, Object changed, Object inode,boolean regular) { }
-    private record Entry(Stamp stamp, String hash) { }
-    private final Map<Path, Entry> files = new LinkedHashMap<>(256, .75f, true);
+    public record Observation(Object stamp, String hash) { }
+    private final Map<Path, Observation> files = new LinkedHashMap<>(256, .75f, true);
     private long hashes, hits, bytes, metadataChecks, enumerations, inventoryEvictions;
 
     public synchronized String hash(Path file) throws IOException {
@@ -40,7 +40,7 @@ public final class FileStateRegistry {
             Stamp after = stamp(file);
             if (before == null || before.equals(after)) {
                 if(after==null&&previous!=null&&hash.equals(previous.hash()))return previous.hash();
-                files.put(file, new Entry(after, hash));
+                files.put(file, new Observation(after, hash));
                 while (files.size() > 32768) files.remove(files.keySet().iterator().next());
                 return hash;
             }
@@ -60,12 +60,33 @@ public final class FileStateRegistry {
         }
     }
 
+    /** Return matching content and observation evidence under the same registry lock. */
+    public synchronized Observation observe(Path file)throws IOException {
+        String hash=hash(file);var observed=files.get(file.toAbsolutePath().normalize());
+        return observed==null?new Observation(null,hash):observed;
+    }
+    public record Inventory(List<Path> members,Object evidence) { }
+    private record DirectoryEvidence(Map<String,Object> stamp,Map<Path,DirectoryEvidence> children) { }
     private record InventoryKey(Path root,String suffix,boolean followLinks) { }
     private static final class Directory {
         Map<String,Object> stamp;
         List<Path> children=List.of(), members=List.of();
         final Map<Path,Directory> directories=new HashMap<>();
         final Set<Path> links=new HashSet<>();
+        DirectoryEvidence evidence;
+        void missing(){stamp=null;children=List.of();members=List.of();directories.clear();links.clear();}
+        void observed(){
+            var prior=evidence==null?Map.<Path,DirectoryEvidence>of():evidence.children();
+            Map<Path,DirectoryEvidence> next=null;
+            for(var child:directories.entrySet())if(!Objects.equals(prior.get(child.getKey()),child.getValue().evidence)){
+                if(next==null)next=new HashMap<>(prior);next.put(child.getKey(),child.getValue().evidence);
+            }
+            for(Path child:prior.keySet())if(!directories.containsKey(child)){
+                if(next==null)next=new HashMap<>(prior);next.remove(child);
+            }
+            if(evidence==null||!Objects.equals(stamp,evidence.stamp())||next!=null)
+                evidence=new DirectoryEvidence(stamp,next==null?prior:Map.copyOf(next));
+        }
     }
     private final Map<InventoryKey,Directory> inventories=new LinkedHashMap<>(16,.75f,true);
     private static final int MAX_INVENTORIES=128;
@@ -76,20 +97,25 @@ public final class FileStateRegistry {
     }
     /** Compiler paths follow links; ordinary source discovery retains its no-follow policy. */
     public synchronized List<Path> inventory(Path root,String suffix,boolean followLinks)throws IOException {
+        return observeInventory(root,suffix,followLinks).members();
+    }
+    /** Membership and directory evidence are distinct: create/delete reversion changes only evidence. */
+    public synchronized Inventory observeInventory(Path root,String suffix,boolean followLinks)throws IOException {
         root=root.toAbsolutePath().normalize();
         var key=new InventoryKey(root,suffix,followLinks);
         var state=inventories.computeIfAbsent(key,ignored->new Directory());
         while(inventories.size()>MAX_INVENTORIES){inventories.remove(inventories.keySet().iterator().next());inventoryEvictions++;}
-        return inventory(root,suffix,state,followLinks,new HashSet<>());
+        var members=inventory(root,suffix,state,followLinks,new HashSet<>());
+        return new Inventory(members,state.evidence);
     }
     private List<Path> inventory(Path root,String suffix,Directory state,boolean followLinks,Set<Path> ancestors)throws IOException {
         Path target=null;
         if(followLinks){
             metadataChecks++;
-            try{target=root.toRealPath();}catch(NoSuchFileException missing){return List.of();}
+            try{target=root.toRealPath();}catch(NoSuchFileException missing){state.missing();state.observed();return state.members;}
             if(!ancestors.add(target))throw new FileSystemLoopException(root.toString());
         }
-        try{return inventory(root,suffix,state,followLinks,ancestors,0);}
+        try{var members=inventory(root,suffix,state,followLinks,ancestors,0);state.observed();return members;}
         finally{if(target!=null)ancestors.remove(target);}
     }
     private List<Path> inventory(Path root,String suffix,Directory state,boolean followLinks,Set<Path> ancestors,int attempt)throws IOException {
@@ -97,9 +123,9 @@ public final class FileStateRegistry {
         metadataChecks++;
         Map<String,Object> before;
         try { before=Files.readAttributes(root,"unix:size,lastModifiedTime,ctime,ino,isDirectory",options); }
-        catch(NoSuchFileException missing){state.stamp=null;state.children=List.of();state.members=List.of();state.directories.clear();return state.members;}
+        catch(NoSuchFileException missing){state.missing();return state.members;}
         catch(UnsupportedOperationException|IllegalArgumentException unsupported){before=null;}
-        if(before!=null&&!Boolean.TRUE.equals(before.get("isDirectory")))return List.of();
+        if(before!=null&&!Boolean.TRUE.equals(before.get("isDirectory"))){state.missing();state.stamp=before;return state.members;}
         boolean changed=before==null||!before.equals(state.stamp);
         if(changed){
             enumerations++;
@@ -152,7 +178,6 @@ public final class FileStateRegistry {
     /** Startup/configuration uncertainty or overflow discards observations, never accepted semantic state. */
     public synchronized void reconcile(){files.clear();inventories.clear();}
 
-    public synchronized Object evidence(Path file){return files.get(file.toAbsolutePath().normalize());}
     public synchronized void forget(Path file) { files.remove(file.toAbsolutePath().normalize()); }
     public synchronized Map<String, Object> status() {
         return Map.of("entries", files.size(), "hashes", hashes, "stat_hits", hits, "bytes_hashed", bytes, "metadata_checks", metadataChecks, "directory_enumerations", enumerations, "inventory_entries", inventories.size(), "inventory_evictions", inventoryEvictions);

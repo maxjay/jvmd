@@ -183,3 +183,14 @@ superseded by measurements of the final corrected production tree.
 - [ ] Stabilize evidence after disk-cache eviction and reconciliation.
 - [ ] Propagate directory observation changes independently of final membership.
 - [ ] Verify evidence pruning, rerun gates/benchmarks, resolve the new threads.
+
+Late correctness checkpoint: the new 8-test focused suite had exactly two assertion
+failures on c2b1669 production; pruning already passed. Final phase-3/4 gate now passes
+143 tests. Registry observations compare by value after eviction and return matching
+hash/evidence atomically. Immutable directory evidence retains relevant environment
+directory stamps even when membership returns to its prior list; equal reconstruction
+after inventory eviction remains equal. Environment evidence has the same module
+lifetime as other inputs. Source inventory retains its existing membership/byte checks:
+tracking every directory stamp there incorrectly counted compiler persistence writes
+under source roots; existing regressions exposed and prevented that broad invalidation.
+Benchmark instrumentation now exposes directory-evidence rebuilds separately.

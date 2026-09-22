@@ -22,6 +22,7 @@ for module in sorted(a.repo.glob('jvmd-*')):
                 value=value.replace('var digest = digest();',f'{probe}.add("files_hashed",1);var digest = digest();')
                 value=value.replace('digest.update(buffer, 0, n);',f'{{digest.update(buffer, 0, n);{probe}.add("bytes_hashed",n);}}')
             if f.stem=='FileStateRegistry':
+                value=value.replace('evidence=new DirectoryEvidence(stamp,next==null?prior:Map.copyOf(next));',f'{{{probe}.add("directory_evidence_rebuilds",1);evidence=new DirectoryEvidence(stamp,next==null?prior:Map.copyOf(next));}}')
                 value=value.replace('hashes++;',f'hashes++;{probe}.add("files_hashed",1);')
                 value=value.replace('bytes += n;',f'bytes += n;{probe}.add("bytes_hashed",n);')
             if f.stem=='Analyzer' and 'var result=new TreeMap<Path,String>();' in value:

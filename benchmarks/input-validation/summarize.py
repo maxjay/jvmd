@@ -5,7 +5,7 @@ p=argparse.ArgumentParser();p.add_argument('raw',type=Path);p.add_argument('outp
 data={label:[json.loads(f.read_text()) for f in sorted(a.raw.glob(label+'-*.json'))] for label in ['baseline','candidate']}
 rows=[]
 for scenario in data['baseline'][0]:
-    for metric in ['validation_ms','navigation_ms','thread_allocated_bytes','file_loads','work.source_enumerations','work.classpath_enumerations','work.files_hashed','work.bytes_hashed','work.metadata_checks','work.identity_map_rebuilds','work.input_captures','work.environment_observations']:
+    for metric in ['validation_ms','navigation_ms','thread_allocated_bytes','file_loads','work.source_enumerations','work.classpath_enumerations','work.files_hashed','work.bytes_hashed','work.metadata_checks','work.identity_map_rebuilds','work.input_captures','work.environment_observations','work.directory_evidence_rebuilds']:
         samples={}
         for label,runs in data.items():
             values=[]
@@ -23,7 +23,7 @@ for scenario in data['baseline'][0]:
             rows.append({'metric':scenario+'/'+metric+(f'/p{percentile}' if percentile else ''),'unit':'ms' if percentile else 'bytes' if 'bytes' in metric else 'count','before':result['baseline'],'after':result['candidate'],'after_over_before':result['candidate']/result['baseline'] if result['baseline'] else None,'repetitions':len(data['baseline'])})
 diagnostics={label:[json.loads(f.read_text()) for f in sorted(a.raw.glob('diagnostics-'+label+'-*.json'))] for label in ['baseline','candidate']}
 for scenario in diagnostics['baseline'][0]:
-    for metric in ['diagnostics_ms','queries','diagnostic_files_analysed','diagnostic_files_reused','thread_allocated_bytes','work.input_captures','work.environment_observations','work.metadata_checks','work.source_enumerations','work.classpath_enumerations','work.identity_map_rebuilds','work.bytes_hashed']:
+    for metric in ['diagnostics_ms','queries','diagnostic_files_analysed','diagnostic_files_reused','thread_allocated_bytes','work.input_captures','work.environment_observations','work.directory_evidence_rebuilds','work.metadata_checks','work.source_enumerations','work.classpath_enumerations','work.identity_map_rebuilds','work.bytes_hashed']:
         for percentile in ([50,95] if metric.endswith('_ms') else [None]):
             values={}
             for label,runs in diagnostics.items():

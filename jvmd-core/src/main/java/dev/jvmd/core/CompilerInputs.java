@@ -55,7 +55,7 @@ public final class CompilerInputs {
     private Set<Path> candidates=Set.of(), overlayPaths=Set.of();
     private List<Path> priorDisk=List.of();
     private Set<Path> environmentPaths=Set.of();
-    private List<List<Path>> environmentInventories=List.of();
+    private List<FileStateRegistry.Inventory> environmentInventories=List.of();
     public CompilerInputs(FileStateRegistry files){this.files=Objects.requireNonNull(files);}
 
     public synchronized Snapshot capture(Configuration config,Documents documents)throws IOException {
@@ -94,10 +94,10 @@ public final class CompilerInputs {
     }
     /** The same environment boundary is usable without rediscovering source inputs. */
     public synchronized EnvironmentIdentity environment(Configuration config)throws IOException {
-        var paths=new ArrayList<List<Path>>();
+        var paths=new ArrayList<FileStateRegistry.Inventory>();
         for(Path path:config.classpath()){
-            if(Files.isDirectory(path)){paths.add(files.inventory(path,".class",true));paths.add(files.inventory(path,".jar",true));}
-            else paths.add(List.of(path));
+            if(Files.isDirectory(path)){paths.add(files.observeInventory(path,".class",true));paths.add(files.observeInventory(path,".jar",true));}
+            else paths.add(new FileStateRegistry.Inventory(List.of(path),null));
         }
         var entries=new ArrayList<Path>();
         var pathOptions=Set.of("--module-path","-p","--upgrade-module-path","--class-path","-classpath","-cp","--processor-path","-processorpath","--processor-module-path","--patch-module","--system",
@@ -113,11 +113,11 @@ public final class CompilerInputs {
             if((name.equals("--patch-module")||name.equals("--module-source-path"))&&value.contains("="))value=value.substring(value.indexOf('=')+1);
             addOptionPaths(entries,value);
         }
-        for(Path path:entries)paths.add(Files.isDirectory(path)?files.inventory(path,"",true):List.of(path));
+        for(Path path:entries)paths.add(Files.isDirectory(path)?files.observeInventory(path,"",true):new FileStateRegistry.Inventory(List.of(path),null));
         Path home=Path.of(System.getProperty("java.home"));
-        paths.add(List.of(home.resolve("release"),home.resolve("lib/modules"),home.resolve("lib/ct.sym")));
+        paths.add(new FileStateRegistry.Inventory(List.of(home.resolve("release"),home.resolve("lib/modules"),home.resolve("lib/ct.sym")),null));
         if(!config.equals(environmentConfiguration)||!paths.equals(environmentInventories)){
-            var keys=new LinkedHashSet<Path>();paths.forEach(keys::addAll);environmentPaths=Collections.unmodifiableSet(keys);environmentInventories=List.copyOf(paths);
+            var keys=new LinkedHashSet<Path>();paths.forEach(p->keys.addAll(p.members()));environmentPaths=Collections.unmodifiableSet(keys);environmentInventories=List.copyOf(paths);observation++;
         }
         var env=observe(environmentPaths,environmentFiles,null);
         if(environmentIdentity==null||!config.equals(environmentConfiguration)||env!=environmentFiles){
@@ -143,10 +143,11 @@ public final class CompilerInputs {
         evidence.keySet().retainAll(paths);
         Map<Path,String> updated=null;
         for(Path file:paths){
-            String hash=documents==null?null:documents.hash(file);if(hash==null)hash=files.hash(file);
-            Object token=documents==null?files.evidence(file):documents.observation(file);
-            if(token==null)token=files.evidence(file);
-            if(evidence.put(file,token)!=token)observation++;
+            String hash=documents==null?null:documents.hash(file);
+            Object token;
+            if(hash==null){var disk=files.observe(file);hash=disk.hash();token=disk;}
+            else token=documents.observation(file);
+            if(!Objects.equals(evidence.put(file,token),token))observation++;
             boolean missing=documents!=null&&"missing".equals(hash);
             if(missing?prior.containsKey(file):!hash.equals(prior.get(file))){
                 if(updated==null)updated=new LinkedHashMap<>(prior);

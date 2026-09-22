@@ -29,6 +29,8 @@ public final class IndexService implements AutoCloseable {
             queryCalls=new AtomicLong(),queryNanos=new AtomicLong(),workspaceResolutionCalls=new AtomicLong(),workspaceResolutionNanos=new AtomicLong();
     private final ConcurrentHashMap<String,String> activeArtifacts=new ConcurrentHashMap<>();
     private final ConcurrentLinkedDeque<String> warnings=new ConcurrentLinkedDeque<>();
+    private final CompletableFuture<Void> readiness=new CompletableFuture<>();
+    private final AtomicBoolean started=new AtomicBoolean();
     private volatile String phase="idle";
     private volatile long total;
     private volatile boolean closed;
@@ -44,26 +46,37 @@ public final class IndexService implements AutoCloseable {
     public IndexStore store(){return store;}
     public long generation(){return indexed.get();}
     public CompletableFuture<Void> start(){
+        if(!started.compareAndSet(false,true))return readiness;
         long initialDelaySeconds=Long.getLong("jvmd.index.scan.initial_delay_seconds",2L);
         if(initialDelaySeconds<0)throw new IllegalArgumentException("jvmd.index.scan.initial_delay_seconds must be non-negative");
-        var firstScan=new CompletableFuture<Void>();
-        var initialCause=new java.util.concurrent.atomic.AtomicReference<>(RequestScope.detached());
-        scanner.scheduleWithFixedDelay(()->{
-            try{
-                var cause=initialCause.getAndSet(null);
-                if(cause==null)scan();else RequestScope.with(cause,()->{scan();return null;});
-                firstScan.complete(null);
-            }catch(Exception e){
-                warn("index_scan_fault: "+e);
-                firstScan.completeExceptionally(e);
+        var initialCause=RequestScope.detached();
+        scanner.schedule(()->{
+            if(closed){
+                readiness.completeExceptionally(new CancellationException("Index closed before initial scan"));
+                return;
             }
-        },initialDelaySeconds,60,TimeUnit.SECONDS);
-        return firstScan;
+            try{
+                if(initialCause==null)scan();else RequestScope.with(initialCause,()->{scan();return null;});
+                readiness.complete(null);
+                if(!closed)scanner.scheduleWithFixedDelay(()->{
+                    try{scan();}
+                    catch(Exception|LinkageError e){warn("index_scan_fault: "+e);}
+                },60,60,TimeUnit.SECONDS);
+            }catch(Exception|LinkageError e){
+                warn("index_scan_fault: "+e);
+                readiness.completeExceptionally(e);
+            }
+        },initialDelaySeconds,TimeUnit.SECONDS);
+        return readiness;
     }
     public synchronized void scan() throws Exception {
-        if(closed||!Files.isDirectory(repository))return;
+        if(closed)return;
         try(var trace=RequestScope.stage("index.scan")){
-        long start=System.nanoTime();scans.incrementAndGet();phase="discovering";
+        long start=System.nanoTime();scans.incrementAndGet();
+        if(!Files.isDirectory(repository)){
+            total=0;scanned.set(0);phase="ready";scanNanos.addAndGet(System.nanoTime()-start);return;
+        }
+        phase="discovering";
         long discoveryStarted=System.nanoTime();
         List<Path> jars;try(var files=Files.walk(repository)){jars=files.filter(Files::isRegularFile).filter(p->p.toString().endsWith(".jar")&&!p.getFileName().toString().endsWith("-javadoc.jar")).sorted().toList();}
         discoveryNanos.addAndGet(System.nanoTime()-discoveryStarted);
@@ -340,7 +353,9 @@ public final class IndexService implements AutoCloseable {
     public static String namePath(BinaryReader.Symbol s){String owner=s.fqn().replace('$','/');if(s.key().equals(s.fqn()))return owner;if(s.kind().equals("method")||s.kind().equals("ctor")){var type=java.lang.constant.MethodTypeDesc.ofDescriptor(s.descriptor());return owner+"/"+s.name()+"("+String.join(",",Arrays.stream(type.parameterArray()).map(p->p.displayName().replace('$','.')).toList())+")";}return owner+"/"+s.name();}
     public static String scip(String gav,BinaryReader.Symbol s){String[] parts=gav.split(":",3);String prefix="maven "+parts[0]+"/"+parts[1]+" "+parts[2]+" ";String owner=s.fqn().replace('.','/').replace('$','#')+"#";if(s.key().equals(s.fqn()))return prefix+owner;if(s.kind().equals("method")||s.kind().equals("ctor")){var type=java.lang.constant.MethodTypeDesc.ofDescriptor(s.descriptor());return prefix+owner+(s.kind().equals("ctor")?"<init>":s.name())+"("+String.join(",",Arrays.stream(type.parameterArray()).map(Signatures::qualified).toList())+").";}return prefix+owner+s.name()+".";}
     @Override public void close()throws Exception {
-        closed=true;scanner.shutdownNow();sourcePublisher.close();readers.shutdown();
+        closed=true;
+        readiness.completeExceptionally(new CancellationException("Index closed"));
+        scanner.shutdownNow();sourcePublisher.close();readers.shutdown();
         if(!readers.awaitTermination(60,TimeUnit.SECONDS)){readers.shutdownNow();
             if(!readers.awaitTermination(5,TimeUnit.SECONDS))throw new IllegalStateException("Index workers did not stop; native handles remain open");}
         if(!scanner.awaitTermination(5,TimeUnit.SECONDS))throw new IllegalStateException("Index scanner did not stop; native handles remain open");

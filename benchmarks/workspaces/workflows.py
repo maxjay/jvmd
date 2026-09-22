@@ -196,6 +196,7 @@ def product(a,root,fixture,build,report,backend,resume=None):
     environment=dict(os.environ,JVMD_WORKFLOW_CONFIG=str(root/'driver.json'))
     with (root/'editor.log').open('w') as log:
         began=time.monotonic()
+        report['external_open_start_ms']=began*1000
         process=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT,env=environment,start_new_session=True)
         monitor=ProcessMonitor(process.pid, output=root/"resource-samples.jsonl")
         deadline=began+a.timeout

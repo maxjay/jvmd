@@ -18,7 +18,7 @@ public final class FileStateRegistry {
         file = file.toAbsolutePath().normalize();
         Stamp before;
         try {before=stamp(file);}catch(NoSuchFileException missing){files.remove(file);return "missing";}
-        if(before==null)metadataChecks++;RequestScope.count("metadata_checks",1);
+        if(before==null){metadataChecks++;RequestScope.count("metadata_checks",1);}
         if(before==null?!Files.isRegularFile(file):!before.regular()){files.remove(file);return "missing";}
         var previous = files.get(file);
         if (before != null && previous != null && before.equals(previous.stamp())) {

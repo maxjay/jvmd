@@ -213,6 +213,7 @@ exports.run = async () => {
     const diagnosticQuery=()=>vscode.languages.getDiagnostics(consumer.uri).map(d=>({message:d.message,severity:d.severity+1,range:plainRange(d.range),code:d.code,source:d.source}));
     if(['language','coverage'].includes(config.workflow)){
     const changed=now();
+    report.api_edit_start_ms=changed;
     await check('api_save',async()=>{await editProvider('API');return {text:provider.getText(),dirty:provider.isDirty,provider_version:provider.version};},r=>!r.dirty&&r.text===config.fixture.versions.API);
     await check('api_completion',completion,completionOracle('String'));
     // JVMD dependent diagnostics are demand-driven; request them through its existing LSP bridge.

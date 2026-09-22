@@ -8,14 +8,19 @@ const escape = value => String(value).replace(/[&<>"']/g, character => ({
 })[character]);
 
 export function renderWorkflowDashboard(summary) {
-  const labels={open_to_project_ready:'Open projects → correct navigation and completion',api_edit_to_correct:'Change library API → correct caller results',api_save:'Edit and save library API',api_completion:'Complete call after API edit',api_diagnostics:'Check caller diagnostics after API edit',api_definition:'Navigate to edited declaration',run_output:'Save library body → run host → verify output',debug_stop:'Stop in library from host',debug_locals:'Inspect stopped locals',debug_step:'Step back into host',hotswap_output:'Change method body → hot swap → verify same process'};
+  const labels={open_to_project_ready:'Open projects → correct navigation and completion',open_with_typing_to_ready:'Open, type and navigate → correct results',api_edit_to_correct:'Change library API → correct caller results',api_save:'Edit and save library API',api_completion:'Complete call after API edit',api_diagnostics:'Check caller diagnostics after API edit',api_definition:'Navigate to edited declaration',dependency_definition:'Navigate to dependency source JAR',run_output:'Save library body → run host → verify output',debug_stop:'Stop in library from host',debug_locals:'Inspect stopped locals',debug_step:'Step back into host',hotswap_output:'Change method body → hot swap → verify same process'};
+  Object.assign(labels,{warm_completion:'First completion',warm_definition:'First project-aware definition',unchanged_completion:'Unchanged warm completion'});
   const label=name=>labels[name]||name.replaceAll('_',' ');
   const sourceRevision=summary.provenance.build.revision;
   const methodLink=([name,method])=>summary.provenance.build.dirty ? escape(name) : `<a href="https://github.com/maxjay/jvmd/blob/${escape(sourceRevision)}/${escape(method.source)}${method.line>0?'#L'+method.line:''}">${escape(name)}</a>`;
   const value = (number, unit = 'ms') => number === null || number === undefined ? 'unavailable' : `${Number(number).toFixed(2)} ${unit}`;
-  const overview = summary.rows.map(row => `<tr><td>${escape(label(row.action))}</td><td>${escape(row.engine)}</td><td>${escape(row.mode)}</td>
+  const primary=['open_to_project_ready','open_with_typing_to_ready','api_edit_to_correct','run_output','debug_stop','debug_locals','debug_step','hotswap_output','references','rename_preview','dependency_definition','revert_completion'];
+  const rows = values => values.map(row => `<tr><td>${escape(label(row.action))}</td><td>${escape(row.engine)}</td><td>${escape(row.mode)}</td>
 <td>${row.correct} correct / ${row.failures} failed</td><td>${value(row.p50_ms)}</td><td>${value(row.p95_ms)}</td>
 <td>${value(row.tooling_cpu_s,'s')}</td><td>${value(row.tooling_rss_mib,'MiB')}</td><td>${value(row.sampled_allocation_mib,'MiB sampled')}</td><td>${row.processes.length}</td><td>${value(row.min_process_p50_ms)}–${value(row.max_process_p50_ms)}</td></tr>`).join('');
+  const table=values=>`<div class="scroll"><table><thead><tr><th>Action</th><th>Comparator</th><th>Mode / cache</th><th>Correctness</th><th>p50</th><th>p95</th><th>Tooling CPU observed</th><th>Tooling RSS</th><th>Sampled allocation</th><th>Processes</th><th>Process p50 range</th></tr></thead><tbody>${rows(values)}</tbody></table></div>`;
+  const overview=table(summary.rows.filter(r=>primary.includes(r.action)).sort((a,b)=>primary.indexOf(a.action)-primary.indexOf(b.action)||a.mode.localeCompare(b.mode)||a.engine.localeCompare(b.engine)));
+  const requests=table(summary.rows.filter(r=>!primary.includes(r.action)));
   const invocations = [...summary.invocations].sort((a,b) => (b.api_edit_to_correct_ms||0)-(a.api_edit_to_correct_ms||0)).map(run => {
     const stages = run.trace?.traceEvents || [];
     const actions = run.actions.map(action => `<tr><td>${escape(label(action.name))}<br><small>${escape(action.id||'')}</small></td><td>${escape(action.outcome)}</td>
@@ -29,6 +34,7 @@ export function renderWorkflowDashboard(summary) {
     const base=escape(run.directory);
     return `<details id="${escape(run.workflow)}"><summary>${escape(run.workflow)} — ${escape(run.outcome)} — API edit ${value(run.api_edit_to_correct_ms)}</summary>
 <p>${escape(run.boundary)}. First open/reopen: ${value(run.external_open_to_ready_ms)}. ${escape(run.runtime_boundary||'Runtime not measured')}. ${escape(run.error||'')}</p>
+${run.dependency_navigation_boundary?`<p>${escape(run.dependency_navigation_boundary)}</p>`:''}
 <p>Related diagnostic invocations (separate processes, matching build and fixture): ${(run.related_diagnostics||[]).map(d=>`<a href="${escape(d.url)}">${escape(d.mode+': '+d.workflow+' — '+d.outcome)}</a>`).join(' · ')||'not measured'}</p>
 <p>Whole invocation CPU ${value(run.resources?.cpu_seconds_observed,'s')}; peak combined RSS ${value(run.resources ? run.resources.peak_rss_bytes/1048576 : null,'MiB')}.
 Allocated bytes in comparison: unavailable. Retained heap: unavailable.</p>
@@ -45,8 +51,9 @@ ${stages.length ? `<p>Stages below belong to this invocation. Times use one JVM 
 <h1>Development actions → verified results → measured work</h1>
 <p class="failed">${summary.verification.complete ? 'All included workers independently verified.' : 'Failures or unavailable runs are present. No winner is inferred.'}</p>
 <p>${escape(summary.aggregation)} Product results use the actual pinned VS Code. Engine rows are separate. Provider and debug-protocol readiness do not measure visible UI completion.</p>
-<div class="scroll"><table><thead><tr><th>Action</th><th>Comparator</th><th>Mode</th><th>Correctness</th><th>p50</th><th>p95</th><th>Tooling CPU observed</th><th>Tooling RSS</th><th>Sampled allocation</th><th>Processes</th><th>Process p50 range</th></tr></thead><tbody>${overview}</tbody></table></div>
+${overview}
 <p>Per-action CPU/RSS cover bracketed process-tree intervals, including concurrent work; details include clock uncertainty. Missing allocation is unavailable, not zero. RSS sums shared pages and is not retained heap.</p>
+<details><summary>Individual provider requests and warm samples</summary>${requests}</details>
 <h2>Select an invocation</h2><p>Slow API-edit invocations appear first. Failed attempts remain visible. Profiled timings are excluded from comparison rows.</p>${invocations}
 <h2>Evidence-led next changes</h2><p>Correctness blockers come first. Performance hypotheses refer to a particular measured invocation; their bounds are not predicted whole-product speedups.</p><pre>${escape(JSON.stringify(summary.improvement_backlog||[],null,2))}</pre>
 <h2>Exact provenance</h2><pre>${escape(JSON.stringify(summary.provenance,null,2))}</pre></html>`;

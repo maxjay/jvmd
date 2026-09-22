@@ -62,11 +62,18 @@ def investigate(run):
         candidates=[s for s in stages if s['args'].get('invocation')==action.get('id') and action.get('id') and s['name'] in interventions]
         if candidates:
             stage=max(candidates,key=lambda s:s['dur']);hypothesis,candidate,constraints=interventions[stage['name']]
-            profiles=[p for p in (run.get('attribution') or {}).get('groups',[]) if p['span']==stage['args']['span']]
+            included={stage['args']['span']}
+            while True:
+                descendants={s['args']['span'] for s in stages if s['args']['parent'] in included}
+                if descendants.issubset(included):break
+                included.update(descendants)
+            profiles=[p for p in (run.get('attribution') or {}).get('groups',[]) if p['span'] in included]
             bound=min(stage['dur']/1000,action['time_to_correct_ms'])*.9
             backlog.append({'priority':2,'workflow':run['workflow'],'action':action['id'],'stage':stage['name'],
                 'evidence':{'span':stage['args']['span'],'inclusive_wall_ms':stage['dur']/1000,'action_ms':action['time_to_correct_ms'],
-                            'work':stage['args']['work'],'samples':sum(p['samples'] for p in profiles),'artifact':run['directory']+'/trace.json'},
+                            'work':stage['args']['work'],'inclusive_samples':sum(p['samples'] for p in profiles),
+                            'child_work':[{s['name']:s['args']['work']} for s in stages if s['args']['span'] in included and s['args']['span']!=stage['args']['span'] and s['args']['work']],
+                            'artifact':run['directory']+'/trace.json'},
                 'code':{name:method for p in profiles for name,method in p['methods'].items()},
                 'hypothesis':hypothesis,'candidate':candidate,'constraints':constraints,
                 'benefit':f'For this invocation only, a 10x stage speedup saves at most {bound:.3f} ms if the whole measured interval is serial on the critical path. The complete API edit took {run.get("api_edit_to_correct_ms",action["time_to_correct_ms"]):.3f} ms. Inclusive/background overlap can make the benefit smaller.',
@@ -107,8 +114,9 @@ def summarize_workflows(root):
         mode=report['mode']+' / '+report.get('cache_state','fresh project/tool state')+(' / overhead' if report.get('overhead_pair') else '')+(' / stages enabled' if report.get('instrumentation') else '')
         observations=list(report['actions'])
         for field,name in [('external_open_to_ready_ms','open_to_project_ready'),('api_edit_to_correct_ms','api_edit_to_correct')]:
+            resources=report.get('workflow_resources',{}).get(name)
             if name=='open_to_project_ready' and report.get('scenario')=='background':name='open_with_typing_to_ready'
-            if report.get(field) is not None:observations.append({'name':name,'outcome':report['outcome'],'time_to_correct_ms':report[field],'attempts':[]})
+            if report.get(field) is not None:observations.append({'name':name,'outcome':report['outcome'],'time_to_correct_ms':report[field],'attempts':[],'resources':resources})
         for name in sorted({a['name'] for a in observations}):
             actions=[a for a in observations if a['name']==name]
             successes=[a['time_to_correct_ms'] for a in actions if a['outcome']=='correct'] if checked[path.parent.name]['verified'] else []

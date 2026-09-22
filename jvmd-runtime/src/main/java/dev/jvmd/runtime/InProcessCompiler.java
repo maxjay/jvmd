@@ -25,7 +25,15 @@ final class InProcessCompiler {
         return version.equals(System.getProperty("java.runtime.version"))&&vendor.equals(System.getProperty("java.vendor"));
     }
     static RuntimeCompiler.Compilation compile(Path javaHome,List<Path> sources,List<Path> classpath,List<Path> roots,List<String> options,Duration timeout)throws Exception{
-        Future<RuntimeCompiler.Compilation> future=WORKER.submit(()->compile(javaHome,sources,classpath,roots,options));
+        var traceCause=RequestScope.detached();long enqueued=traceCause==null?0:System.nanoTime();
+        Future<RuntimeCompiler.Compilation> future=WORKER.submit(traceCause==null?()->compile(javaHome,sources,classpath,roots,options):()->RequestScope.with(traceCause,()->{
+            RequestScope.queued("runtime.compile_queue",enqueued);
+            try(var span=RequestScope.stage("runtime.javac")){
+                span.count("explicit_sources",sources.size());
+                try{var result=compile(javaHome,sources,classpath,roots,options);span.count("classes",result.classes().size());return result;}
+                catch(Exception|Error error){span.outcome("failed");throw error;}
+            }
+        }));
         try{return future.get(timeout.toMillis(),TimeUnit.MILLISECONDS);}
         catch(TimeoutException error){
             // Javac has no force-stop API. Retire this single worker permanently, and use

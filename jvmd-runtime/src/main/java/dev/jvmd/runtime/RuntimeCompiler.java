@@ -16,9 +16,10 @@ public final class RuntimeCompiler {
     private RuntimeCompiler() { }
     public static Compilation compile(Path javaHome,Path directory,List<Path> sources,List<Path> classpath,List<Path> sourceRoots,List<String> options,Duration timeout)throws Exception{
         try(var trace=dev.jvmd.core.RequestScope.stage("runtime.compile")){
-            trace.count("files",sources.size());trace.cache(InProcessCompiler.eligible(javaHome,options)?"in-process":"external");
+            trace.count("files",sources.size());
         if(sources.isEmpty()||sources.size()>1000)throw RpcException.invalid("Compile requires 1..1000 source files");
-        if(InProcessCompiler.eligible(javaHome,options))return InProcessCompiler.compile(javaHome,sources,classpath,sourceRoots,options,timeout);
+        if(InProcessCompiler.eligible(javaHome,options)){trace.cache("in-process");return InProcessCompiler.compile(javaHome,sources,classpath,sourceRoots,options,timeout);}
+        trace.cache("external");
         Path temporary=Files.createTempDirectory("jvmd-runtime-compile-"),output=Files.createDirectories(temporary.resolve("classes")),arguments=temporary.resolve("javac.args");
         var before=new LinkedHashMap<Path,String>();for(Path source:sources)before.put(source,Hashing.sha256(source));
         var args=new ArrayList<String>(options);if(options.stream().noneMatch(option->option.startsWith("-proc:")))args.add("-proc:none");args.addAll(List.of("-g","-parameters","-XDrawDiagnostics","-s",Files.createDirectories(temporary.resolve("generated")).toString(),"-d",output.toString()));

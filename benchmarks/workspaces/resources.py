@@ -134,18 +134,25 @@ def workflow_resources(report, samples):
         rows.append(row)
     alignment=report.get('clock_alignment',{})
     offset=alignment.get('controller_minus_driver_ms',0)
-    for action in report['actions']:
+    composites={}
+    if report.get('external_open_to_ready_ms') is not None and 'external_open_start_ms' in report:
+        composites['open_to_project_ready']={'start_ms':report['external_open_start_ms']-offset,'elapsed_ms':report['external_open_to_ready_ms'],'process_start':True}
+    if report.get('api_edit_to_correct_ms') is not None and 'api_edit_start_ms' in report:
+        composites['api_edit_to_correct']={'start_ms':report['api_edit_start_ms'],'elapsed_ms':report['api_edit_to_correct_ms']}
+    for action in [*report['actions'],*composites.values()]:
         if 'start_ms' not in action or not alignment:continue
         start=(action['start_ms']+offset)*1e6
         end=start+action['elapsed_ms']*1e6
         before=next((r for r in reversed(rows) if r['monotonic_ns']<=start),None)
         after=next((r for r in rows if r['monotonic_ns']>=end),None)
+        if before is None and action.get('process_start'):before={'monotonic_ns':start,'cumulative':{'tooling':0,'debuggee':0}}
         if before is None or after is None:continue
         interval=[r for r in rows if before['monotonic_ns']<=r['monotonic_ns']<=after['monotonic_ns']]
         action['resources']={'scope':'Tooling and debuggee process trees during the bracketed interval, including concurrent work; sampled lower bound for short-lived children',
             'clock_uncertainty_ms':alignment['uncertainty_ms'],'sample_bracket_ms':(after['monotonic_ns']-before['monotonic_ns'])/1e6,
             'cpu_seconds_observed':{role:max(0,after['cumulative'][role]-before['cumulative'][role])/os.sysconf('SC_CLK_TCK') for role in ('tooling','debuggee')},
             'peak_rss_bytes':{role:max(sum(p['rss_bytes'] for p in r['processes'] if p['role']==role) for r in interval) for role in ('tooling','debuggee')}}
+    report['workflow_resources']={name:row['resources'] for name,row in composites.items() if 'resources' in row}
 
 
 def export_workflow_jfr(jfr_tool, recording, output, repo=None, settings="profile"):

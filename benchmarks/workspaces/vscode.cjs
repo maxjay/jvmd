@@ -15,6 +15,7 @@ const plain = value => JSON.parse(JSON.stringify(value));
 const position = (text, offset) => {const before=text.slice(0,offset).split('\n');return new vscode.Position(before.length-1,before.at(-1).length);};
 const plainRange = r => ({start:{line:r.start.line,character:r.start.character},end:{line:r.end.line,character:r.end.character}});
 const range = r => new vscode.Range(r.start.line,r.start.character,r.end.line,r.end.character);
+const write = (file,value) => {fs.writeFileSync(file+'.tmp',JSON.stringify(value,null,2));fs.renameSync(file+'.tmp',file);};
 const selected = (text,r) => {
   const lines=text.split('\n');
   const offset=p=>lines.slice(0,p.line).reduce((n,line)=>n+line.length+1,0)+p.character;
@@ -94,7 +95,7 @@ exports.run = async () => {
   const config=JSON.parse(fs.readFileSync(process.env.JVMD_WORKFLOW_CONFIG,'utf8'));
   const report=config.report;
   let adapter,revision=config.initial_revision||"A",provider,consumer,activeInvocation;
-  const flush=()=>fs.writeFileSync(path.join(config.root,'driver-result.json'),JSON.stringify(report,null,2));
+  const flush=()=>write(path.join(config.root,'driver-result.json'),report);
   async function check(name, action, oracle, timeout=30000){
     const id=report.workflow+':'+report.actions.length+':'+name;
     activeInvocation=id;if(adapter)await adapter.mark(id,revision);
@@ -125,7 +126,7 @@ exports.run = async () => {
     return 'wrong';
   }
   try{
-    const clockStart=now();fs.writeFileSync(path.join(config.root,'clock-request.json'),'{}');
+    const clockStart=now();write(path.join(config.root,'clock-request.json'),{});
     while(!fs.existsSync(path.join(config.root,'clock-response.json'))){
       if(now()-clockStart>10000)throw new Error('controller clock handshake timed out');await sleep(1);
     }
@@ -141,6 +142,9 @@ exports.run = async () => {
     }else{
       const java=vscode.extensions.getExtension('redhat.java');if(!java)throw new Error('redhat.java missing');await java.activate();
       const debug=vscode.extensions.getExtension('vscjava.vscode-java-debug');if(!debug)throw new Error('Java debugger missing');await debug.activate();
+      for(const [id,version] of Object.entries(config.expected_extensions)){
+        if(vscode.extensions.getExtension(id)?.packageJSON.version!==version)throw new Error('Extension version changed: '+id+' expected '+version);
+      }
       report.routing={language:'redhat.java',runtime:'vscjava.vscode-java-debug',java_version:java.packageJSON.version,debug_version:debug.packageJSON.version};
     }
     const files=config.fixture.files;

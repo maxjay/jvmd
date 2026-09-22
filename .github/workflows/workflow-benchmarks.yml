@@ -6,12 +6,20 @@ on:
       - 'jvmd-*/src/main/**'
       - '.github/workflows/workflow-benchmarks.yml'
   workflow_dispatch:
+    inputs:
+      evidence:
+        description: Five independent paired processes with 20 warm samples each
+        type: boolean
+        default: true
 permissions:
   contents: read
 jobs:
   smoke:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
+    env:
+      BENCH_REPETITIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.evidence && '5' || '1' }}
+      BENCH_SAMPLES: ${{ github.event_name == 'workflow_dispatch' && inputs.evidence && '20' || '2' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -52,7 +60,7 @@ jobs:
           python benchmarks/workspaces/compile.py --repo "$PWD" --java-home "$JAVA_HOME" --dependencies "$PWD/jvmd-dist/target/image/lib/jvmd" --output "$RUNNER_TEMP/workflow-build" --reuse-production-jars
       - name: Serial actual VS Code language workflow
         run: |
-          xvfb-run -a python benchmarks/workspaces/workflows.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --vscode "$RUNNER_TEMP/workflow-tools/VSCode-linux-x64/bin/code" --extensions "$RUNNER_TEMP/extensions" --root "$RUNNER_TEMP/workflow-results/comparison" --dependency-cache "$HOME/.m2/repository" --runs 5 --samples 20 --reopen
+          xvfb-run -a python benchmarks/workspaces/workflows.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --vscode "$RUNNER_TEMP/workflow-tools/VSCode-linux-x64/bin/code" --extensions "$RUNNER_TEMP/extensions" --root "$RUNNER_TEMP/workflow-results/comparison" --dependency-cache "$HOME/.m2/repository" --runs "$BENCH_REPETITIONS" --samples "$BENCH_SAMPLES" --reopen
       - name: Independent runtime workflow
         if: ${{ !cancelled() }}
         run: |
@@ -68,7 +76,7 @@ jobs:
           xvfb-run -a python benchmarks/workspaces/workflows.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --vscode "$RUNNER_TEMP/workflow-tools/VSCode-linux-x64/bin/code" --extensions "$RUNNER_TEMP/extensions" --root "$RUNNER_TEMP/workflow-results/coverage" --dependency-cache "$HOME/.m2/repository" --workflow coverage --smoke || failed=1
           xvfb-run -a python benchmarks/workspaces/workflows.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --vscode "$RUNNER_TEMP/workflow-tools/VSCode-linux-x64/bin/code" --extensions "$RUNNER_TEMP/extensions" --root "$RUNNER_TEMP/workflow-results/runtime-attribution" --engines vscode-jvmd --mode attribution --dependency-cache "$HOME/.m2/repository" --workflow runtime --smoke || failed=1
           python benchmarks/workspaces/workflows.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --root "$RUNNER_TEMP/workflow-results/retention" --engines engine-jvmd --mode retention --runs 1 --samples 5 --edits 20 || failed=1
-          python benchmarks/workspaces/workflows.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --root "$RUNNER_TEMP/workflow-results/overhead" --engines engine-jvmd --overhead --runs 5 --samples 20 || failed=1
+          python benchmarks/workspaces/workflows.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --root "$RUNNER_TEMP/workflow-results/overhead" --engines engine-jvmd --overhead --runs "$BENCH_REPETITIONS" --samples "$BENCH_SAMPLES" || failed=1
           exit "$failed"
       - name: Prepare existing pinned Maven corpus dependency cache
         if: ${{ !cancelled() }}

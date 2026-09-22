@@ -104,14 +104,15 @@ def verify_workflows(root):
             if 'external_source' in fixture['expected']:required.add('dependency_definition')
         if report.get('scenario')=='background':required.update({'prefix_completion','growth_completion','backspace_completion','broadening_completion','background_definition'})
         if report.get('scenario')=='runtime':required.update({'run_output','debug_stop','debug_locals','debug_step','hotswap_output'})
-        if report['outcome']=='correct' and not required.issubset({a['name'] for a in report['actions']}):errors.append('missing required actions')
+        not_executed=sorted(required-{a['name'] for a in report['actions']})
+        if report['outcome']=='correct' and not_executed:errors.append('missing required actions')
         if report.get('mode')=='retention' and report['outcome']=='correct':
             snapshots=report.get('retention',{}).get('snapshots',[])
             held=[s['held_views'] for s in snapshots if s['phase'].startswith('held_edit_')]
             released=[s for s in snapshots if s['phase'].startswith('released_edit_')]
             if not held or held!=list(range(1,len(held)+1)) or len(released)!=len(held) or any(s['held_views']!=0 or s['heap_used_bytes']<=0 for s in released):errors.append('invalid retained-view lifecycle')
         workers.append({'worker':path.parent.name,'outcome':report['outcome'],'verified':not errors and report['outcome']=='correct',
-                        'attempts':attempts,'errors':errors})
+                        'attempts':attempts,'errors':errors,'not_executed':not_executed})
     if not workers:raise AssertionError('No workflow reports')
     return {'schema':1,'workflow_workers':workers,'complete':all(w['verified'] for w in workers)}
 

@@ -71,6 +71,11 @@ fixture identities and exact source/build provenance. JVMD engine/adapter JVMs
 use a documented 1 GiB maximum heap. Java uses its ordinary extension settings;
 normal import, autobuild and debug build-before-launch remain enabled. This is a
 Linux configuration; do not combine it with Windows, WSL or other filesystems.
+Pull requests run one-process correctness smoke with two warm requests. Dispatch
+the workflow with `evidence=true` for five paired processes and 20 warm requests;
+the same distinction applies to instrumentation overhead. Timing observations
+have no hard CI thresholds. Application-level editor updates are disabled and
+loaded extension versions must match the recorded manifests.
 
 The JVMD benchmark extension reuses the shipped RpcClient/LspBridge and existing
 `run.start`/`debug.op`. It refuses to run with competing Java providers loaded.

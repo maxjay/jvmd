@@ -48,13 +48,14 @@ def investigate(run):
                 'verify':'--workflow runtime, required B/C markers, breakpoint/locals/step and unchanged PID',
                 'confidence':'High for observed failure; root cause remains a hypothesis.'})
     interventions={
+        'project.resolve':('Project refresh includes resolution and workspace index binding.','Inspect the measured refresh wait/CPU stacks before testing a narrower refresh path.','Preserve selected dependency versions, workspace source precedence, generation publication and memory admission limits.'),
         'inputs.validate':('Repeated input observation may dominate the action.','Examine request-scoped duplicate metadata/hash observations before changing validation.','Preserve document versions, filesystem change detection and current-input agreement.'),
         'inputs.discover':('Input discovery may scan more files than the edit needs.','Test scoped inventory reuse using the recorded files checked/hashed.','Detect additions/deletions and dependency changes; no stale snapshots.'),
         'compiler.prepare':('Compiler preparation and validation may repeat after this edit.','Inspect the recorded cache decision and sample stacks; test avoiding one evidenced redundant preparation.','Keep compiler ownership and input identity checks.'),
         'compiler.parse':('Parsing consumes a material part of this particular request.','Test reducing the evidenced explicit/implicit source set or reusing an already valid compilation.','Required diagnostics, dependencies and edited signatures must agree.'),
         'compiler.enter_attribute':('Combined javac enter/attribute consumes this request interval.','Use source counts and sampled stacks to test a narrower valid compilation for this edit.','Do not skip required attribution or alter processor behavior.'),
         'query.lookup':('Lookup work dominates this selected request.','Use postings/decoded-record counts to test one more selective lookup path.','Preserve complete references, source precedence and pagination.'),
-        'completion.materialize':('Completion construction dominates this selected request.','Inspect candidate/documentation counts and samples before testing deferred optional materialization.','Keep required candidates, signatures and replacement ranges.'),
+        'completion.materialize':('Completion construction has a measured, bounded cost in this request.','Inspect candidate/documentation counts and samples before testing deferred optional materialization.','Keep required candidates, signatures and replacement ranges.'),
         'session.queue':('The request spends measurable time waiting for its session actor.','Test scheduling of the observed competing background work.','Preserve actor isolation and cancellation semantics.')}
     eligible=[a for a in run['actions'] if a['outcome']=='correct' and a['name']=='api_completion']
     if eligible:
@@ -68,17 +69,24 @@ def investigate(run):
                 if descendants.issubset(included):break
                 included.update(descendants)
             profiles=[p for p in (run.get('attribution') or {}).get('groups',[]) if p['span'] in included]
+            admission=[p for p in profiles if p.get('observed_wait_ms',0)>0 and 'dev.jvmd.index.rocks.RocksArtifactAdmission.acquireArtifact' in p['methods']]
+            if admission:
+                hypothesis='Foreground project refresh waits for artifact-memory admission while background indexing consumes permits.'
+                candidate='Test avoiding artifact admission for a verified metadata-only reuse, or prioritizing foreground admission, in a separate bounded change.'
+                constraints='Keep freshness checks, inventory publication and the existing memory limit; never skip admission for parsing/materialization that needs the budget.'
             bound=min(stage['dur']/1000,action['time_to_correct_ms'])*.9
             backlog.append({'priority':2,'workflow':run['workflow'],'action':action['id'],'stage':stage['name'],
                 'evidence':{'span':stage['args']['span'],'inclusive_wall_ms':stage['dur']/1000,'action_ms':action['time_to_correct_ms'],
                             'work':stage['args']['work'],'inclusive_samples':sum(p['samples'] for p in profiles),
+                            'wait_events_ms':sum(p.get('observed_wait_ms',0) for p in profiles),
+                            'overlapping_index_work':[{'span':s['args']['span'],'stage':s['name'],'work':s['args']['work']} for s in stages if s['name']=='index.scan' and s['ts']<stage['ts']+stage['dur'] and stage['ts']<s['ts']+s['dur']],
                             'child_work':[{s['name']:s['args']['work']} for s in stages if s['args']['span'] in included and s['args']['span']!=stage['args']['span'] and s['args']['work']],
                             'artifact':run['directory']+'/trace.json'},
                 'code':{name:method for p in profiles for name,method in p['methods'].items()},
                 'hypothesis':hypothesis,'candidate':candidate,'constraints':constraints,
                 'benefit':f'For this invocation only, a 10x stage speedup saves at most {bound:.3f} ms if the whole measured interval is serial on the critical path. The complete API edit took {run.get("api_edit_to_correct_ms",action["time_to_correct_ms"]):.3f} ms. Inclusive/background overlap can make the benefit smaller.',
                 'verify':'Repeat the same API edit with independent correctness, unprofiled comparison, identical cache state and stage/work attribution.',
-                'confidence':'One profiled invocation; validate critical-path contribution and repeat before optimizing.'})
+                'confidence':'Recorded admission wait stack and overlapping indexing; repeat before changing scheduling.' if admission else 'One profiled invocation; validate critical-path contribution and repeat before optimizing.'})
     return backlog
 
 

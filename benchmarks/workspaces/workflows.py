@@ -21,7 +21,8 @@ HERE = Path(__file__).resolve().parent
 
 
 def write(path, value):
-    path.write_text(json.dumps(value, indent=2)+'\n')
+    temporary=path.with_name(path.name+'.tmp')
+    temporary.write_text(json.dumps(value, indent=2)+'\n');temporary.replace(path)
 
 
 def configuration(a, root, fixture, build, workflow, state=None):
@@ -177,19 +178,24 @@ def product(a,root,fixture,build,report,backend,resume=None):
     settings=root/'settings.xml'
     settings.write_text('<settings><localRepository>'+fixture['repository']+'</localRepository><offline>true</offline></settings>')
     workspace=(resume or root)/'fixture.code-workspace'
+    user_data=(resume or root)/'user-data'
+    if not resume:
+        (user_data/'User').mkdir(parents=True)
+        write(user_data/'User/settings.json',{'update.mode':'none','extensions.autoUpdate':False,
+            'extensions.autoCheckUpdates':False,'telemetry.telemetryLevel':'off'})
     if not resume:write(workspace,{'folders':[{'path':p} for p in fixture['roots']], 'settings':{
         'security.workspace.trust.enabled':False,'java.jdt.ls.java.home':str(a.java_home),
         'java.configuration.maven.userSettings':str(settings),'java.configuration.updateBuildConfiguration':'automatic',
         'java.import.maven.enabled':True,'java.import.gradle.enabled':False,'java.autobuild.enabled':True,
         'java.server.launchMode':'Standard','java.debug.settings.hotCodeReplace':'manual',
-        'java.debug.settings.forceBuildBeforeLaunch':True,
-        'update.mode':'none','extensions.autoUpdate':False,'telemetry.telemetryLevel':'off'}})
+        'java.debug.settings.forceBuildBeforeLaunch':True}})
     config={'fixture':fixture,'report':report,'root':str(root),'backend':backend,'bridge':bridge,'samples':a.samples,'workflow':report['scenario'],'initial_revision':report.get('initial_revision','A')}
+    config['expected_extensions']=a.extension_versions
     write(root/'driver.json',config)
     executable=a.vscode
     if executable.parent.name=='bin' and (executable.parent.parent/'code').is_file():executable=executable.parent.parent/'code'
     command=[str(executable),'--no-sandbox','--disable-gpu','--disable-workspace-trust','--skip-welcome','--skip-release-notes',
-             '--user-data-dir',str((resume or root)/'user-data'),'--extensions-dir',str(a.extensions),
+             '--user-data-dir',str(user_data),'--extensions-dir',str(a.extensions),
              '--extensionDevelopmentPath='+str(extension),'--extensionTestsPath='+str(extension/'vscode.cjs'),str(workspace)]
     if backend=='jvmd':command+=['--disable-extension','redhat.java','--disable-extension','vscjava.vscode-java-debug','--disable-extension','vscjava.vscode-java-test']
     write(root/'command.json',command)
@@ -280,6 +286,7 @@ def main():
         for p in a.extensions.glob('*/package.json'):
             data=json.loads(p.read_text());provenance['extensions'][data.get('publisher','')+'.'+data['name']]={'version':data['version'],'manifest_sha256':sha(p),'server_jars':{str(jar.relative_to(p.parent)):sha(jar) for jar in p.parent.glob('server/**/*.jar')}}
     write(a.root/'provenance.json',provenance)
+    a.extension_versions={id_:extension['version'] for id_,extension in provenance['extensions'].items()}
     failures=[]
     for repetition in range(a.runs):
         order=a.engines[repetition%len(a.engines):]+a.engines[:repetition%len(a.engines)]
@@ -290,7 +297,8 @@ def main():
             root=a.root/f'{name}-{repetition}{suffix}';root.mkdir()
             report={'schema':1,'workflow':f'{a.workflow}-{repetition}-{name}{suffix}','engine':name,'repetition':repetition,'mode':a.mode,'instrumentation':a.instrumentation,'overhead_pair':a.overhead,
                     'boundary':'backend-result' if name=='engine-jvmd' else 'VS Code provider readiness','actions':[],
-                    'outcome':'unavailable','cache_state':'fresh project/tool state, dependencies available','scenario':a.workflow,'fixture':'fixture/fixture.json','profiles':[],'unmeasured':['visible UI completion','IntelliJ','retained heap']}
+                    'outcome':'unavailable','cache_state':'fresh project/tool state, dependencies available','scenario':a.workflow,'fixture':'fixture/fixture.json','profiles':[],
+                    'unmeasured':['visible UI completion','IntelliJ','product retained heap','dominator retained sizes','processor/resource-generation workflows','structural hot swap','IDE test execution']}
             try:
                 if a.workflow=='project':
                     pin=re.search(r'pin=([a-f0-9]{40})',(a.repo/'jvmd-tests/corpus/fetch.sh').read_text()).group(1)

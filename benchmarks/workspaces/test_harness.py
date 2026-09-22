@@ -9,9 +9,23 @@ from compare import compare
 from resources import ProcessMonitor, attribute_samples
 from run import Client, first_system_value
 from verify import workflow_oracle
+from summarize import investigate
 
 
 class HarnessTest(unittest.TestCase):
+    def test_backlog_prioritizes_observed_refresh_wait_over_small_completion_cost(self):
+        stage=lambda name,id_,parent,duration:{'name':name,'ts':0,'dur':duration*1000,
+            'args':{'span':id_,'parent':parent,'invocation':'edit','queued':False,'work':{}}}
+        report={'engine':'vscode-jvmd','workflow':'unit-test','directory':'worker','api_edit_to_correct_ms':1000,
+            'actions':[{'id':'edit','name':'api_completion','outcome':'correct','time_to_correct_ms':1000}],
+            'trace':{'traceEvents':[stage('rpc.execute',1,0,1000),stage('project.resolve',2,1,900),stage('completion.materialize',3,1,20)]},
+            'attribution':{'groups':[{'span':2,'invocation':'edit','event':'jdk.ThreadPark','samples':1,'observed_wait_ms':880,
+                'methods':{'dev.jvmd.index.rocks.RocksArtifactAdmission.acquireArtifact':{'source':'admission.java','line':1}}}]}}
+        backlog=investigate(report)
+        self.assertEqual('project.resolve',backlog[0]['stage'])
+        self.assertEqual(880,backlog[0]['evidence']['wait_events_ms'])
+        self.assertIn('memory admission',backlog[0]['hypothesis'])
+
     def test_completion_rejects_stale_and_incomplete_semantics(self):
         self.assertFalse(workflow_oracle('api_completion', {'items': []}, {}))
         self.assertFalse(workflow_oracle('api_completion', {'items': [{'label': 'value()', 'detail': 'int'}]}, {}))

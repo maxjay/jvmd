@@ -75,7 +75,12 @@ public final class IndexService implements AutoCloseable {
         try(var trace=RequestScope.stage("index.scan")){
         long start=System.nanoTime();scans.incrementAndGet();
         if(!Files.isDirectory(repository)){
-            total=0;scanned.set(0);phase="ready";scanNanos.addAndGet(System.nanoTime()-start);return;
+            total=0;scanned.set(0);phase="reconciling";
+            long inventoryGeneration=storage.inventory().beginScan();
+            storage.inventory().completeScan(inventoryGeneration);
+            if(store.reconcilePaths(repository,Set.of()))indexed.incrementAndGet();
+            phase="linking";long linkStarted=System.nanoTime();linkEdges();linkNanos.addAndGet(System.nanoTime()-linkStarted);
+            phase="ready";scanNanos.addAndGet(System.nanoTime()-start);return;
         }
         phase="discovering";
         long discoveryStarted=System.nanoTime();

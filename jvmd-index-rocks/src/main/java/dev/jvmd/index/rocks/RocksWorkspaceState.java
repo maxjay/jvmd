@@ -33,7 +33,8 @@ public final class RocksWorkspaceState implements AutoCloseable {
     static {RocksDB.loadLibrary();}
     private final Options options;
     private final RocksDB db;
-    private final FileStateRegistry files=new FileStateRegistry();
+    private final FileStateRegistry files=FileStateRegistry.shared();
+    private final Map<String,CompilerInputs> observations=new HashMap<>();
 
     public RocksWorkspaceState(Path root)throws Exception{this(root,null);}
 
@@ -132,19 +133,14 @@ public final class RocksWorkspaceState implements AutoCloseable {
     }
 
     private Map<Path,FileValue> collect(ModuleInput input)throws Exception{
-        var candidates=new LinkedHashSet<Path>();
-        for(Path root:input.sourceRoots())if(Files.isDirectory(root)){
-            for(Path path:FileInventory.matching(root,".java"))candidates.add(path.toAbsolutePath().normalize());
-        }
-        candidates.addAll(input.overlays().keySet());
+        var documents=new Documents();input.overlays().forEach((path,text)->documents.open(path,text,1));
+        var observation=observations.computeIfAbsent(input.moduleId(),ignored->new CompilerInputs(files));
+        var config=new CompilerInputs.Configuration(input.moduleId(),input.sourceRoots(),input.orderedClasspath().stream().map(Path::of).toList(),input.compilerOptions(),input.jdkFingerprint());
+        var snapshot=observation.capture(config,documents);
         var result=new TreeMap<Path,FileValue>();
-        for(Path file:candidates){
-            int rootIndex=rootIndex(input.sourceRoots(),file);if(rootIndex<0)throw new IllegalArgumentException("Source outside roots: "+file);
-            String relative=rootIndex+"/"+normalize(input.sourceRoots().get(rootIndex).relativize(file));
-            String hash=input.overlays().containsKey(file)
-                    ?Hashing.sha256(input.overlays().get(file).getBytes(StandardCharsets.UTF_8))
-                    :files.hash(file);
-            result.put(file,new FileValue(relative,hash));
+        for(var entry:snapshot.sources().entrySet()){
+            Path file=entry.getKey();int rootIndex=rootIndex(input.sourceRoots(),file);
+            result.put(file,new FileValue(rootIndex+"/"+normalize(input.sourceRoots().get(rootIndex).relativize(file)),entry.getValue()));
         }
         return result;
     }
@@ -181,17 +177,13 @@ public final class RocksWorkspaceState implements AutoCloseable {
         return Map.copyOf(result);
     }
 
-    private static String moduleFingerprint(ModuleInput input,Map<String,String> directories){
-        var value=new StringBuilder("module-v1\0").append(input.moduleId()).append('\0');
-        for(int i=0;i<input.sourceRoots().size();i++)value.append("root\0").append(i).append('\0')
-                .append(input.sourceRoots().get(i)).append('\0').append(directories.getOrDefault(i+"/",Hashing.sha256(EMPTY))).append('\0');
-        for(String option:input.compilerOptions())value.append("option\0").append(option).append('\0');
-        for(String processor:input.processors())value.append("processor\0").append(processor).append('\0');
-        input.generatedOutputs().entrySet().stream().sorted(Map.Entry.comparingByKey())
-                .forEach(entry->value.append("generated\0").append(entry.getKey()).append('\0').append(entry.getValue()).append('\0'));
-        for(String classpath:input.orderedClasspath())value.append("classpath\0").append(classpath).append('\0');
-        value.append("jdk\0").append(input.jdkFingerprint());
-        return Hashing.sha256(value.toString().getBytes(StandardCharsets.UTF_8));
+    private String moduleFingerprint(ModuleInput input,Map<String,String> directories)throws IOException{
+        var environment=CompilerInputs.environment(input.moduleId(),input.sourceRoots(),input.compilerOptions(),input.processors(),
+                input.generatedOutputs(),input.orderedClasspath(),input.jdkFingerprint(),Map.of());
+        var live=observations.computeIfAbsent(input.moduleId(),ignored->new CompilerInputs(files)).environment(
+                new CompilerInputs.Configuration(input.moduleId(),input.sourceRoots(),input.orderedClasspath().stream().map(Path::of).toList(),input.compilerOptions(),input.jdkFingerprint()));
+        var roots=new ArrayList<String>();for(int i=0;i<input.sourceRoots().size();i++)roots.add(directories.getOrDefault(i+"/",Hashing.sha256(EMPTY)));
+        return CompilerInputs.compose("module-v2",environment.value(),live.value(),roots);
     }
 
     private Map<String,String> load(String prefix){

@@ -1,0 +1,967 @@
+{
+  "base_sha": "9ac81c4bdded8de18537569debf02e789c24fe27",
+  "head_sha": "5fae72760a4486e9b914c821aa6cdd25aa7b5212",
+  "interpretation": "JVMD-only component measurements: complete input observation and navigation with supplied detached facts. Not editor latency or JDTLS counters. Allocation is the benchmark owner thread, including validation and detached navigation. Metadata counts cover instrumented Java Files calls, not all OS syscalls. Values are medians of per-process percentiles or counts; cold setup is separate.",
+  "rows": [
+    {
+      "metric": "cold/validation_ms/p50",
+      "unit": "ms",
+      "before": 67.897009,
+      "after": 244.225463,
+      "after_over_before": 3.596998845707622,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/validation_ms/p95",
+      "unit": "ms",
+      "before": 67.897009,
+      "after": 244.225463,
+      "after_over_before": 3.596998845707622,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/navigation_ms/p50",
+      "unit": "ms",
+      "before": 332.074299,
+      "after": 297.014233,
+      "after_over_before": 0.8944210193153189,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/navigation_ms/p95",
+      "unit": "ms",
+      "before": 332.074299,
+      "after": 297.014233,
+      "after_over_before": 0.8944210193153189,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 25749248,
+      "after": 18128784,
+      "after_over_before": 0.7040510076255431,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/file_loads",
+      "unit": "count",
+      "before": 128,
+      "after": 128,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/work.source_enumerations",
+      "unit": "count",
+      "before": 4,
+      "after": 1,
+      "after_over_before": 0.25,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/work.classpath_enumerations",
+      "unit": "count",
+      "before": 3,
+      "after": 2,
+      "after_over_before": 0.6666666666666666,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/work.files_hashed",
+      "unit": "count",
+      "before": 256,
+      "after": 131,
+      "after_over_before": 0.51171875,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/work.bytes_hashed",
+      "unit": "bytes",
+      "before": 10532,
+      "after": 156886822,
+      "after_over_before": 14896.204139764528,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/work.metadata_checks",
+      "unit": "count",
+      "before": 646,
+      "after": 808,
+      "after_over_before": 1.2507739938080495,
+      "repetitions": 3
+    },
+    {
+      "metric": "cold/work.identity_map_rebuilds",
+      "unit": "count",
+      "before": 5,
+      "after": 5,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/validation_ms/p50",
+      "unit": "ms",
+      "before": 2.422507,
+      "after": 2.109447,
+      "after_over_before": 0.8707702392604025,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/validation_ms/p95",
+      "unit": "ms",
+      "before": 3.783246,
+      "after": 3.365417,
+      "after_over_before": 0.8895580673315983,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/navigation_ms/p50",
+      "unit": "ms",
+      "before": 1.644526,
+      "after": 0.877411,
+      "after_over_before": 0.5335342828267842,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/navigation_ms/p95",
+      "unit": "ms",
+      "before": 3.502193,
+      "after": 1.52121,
+      "after_over_before": 0.4343592714621952,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 31306208,
+      "after": 30678000,
+      "after_over_before": 0.9799334368442195,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/file_loads",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/work.source_enumerations",
+      "unit": "count",
+      "before": 120,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/work.classpath_enumerations",
+      "unit": "count",
+      "before": 80,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/work.files_hashed",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/work.bytes_hashed",
+      "unit": "bytes",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/work.metadata_checks",
+      "unit": "count",
+      "before": 15560,
+      "after": 16440,
+      "after_over_before": 1.056555269922879,
+      "repetitions": 3
+    },
+    {
+      "metric": "unchanged/work.identity_map_rebuilds",
+      "unit": "count",
+      "before": 120,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/validation_ms/p50",
+      "unit": "ms",
+      "before": 2.169967,
+      "after": 1.794021,
+      "after_over_before": 0.8267503607197713,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/validation_ms/p95",
+      "unit": "ms",
+      "before": 2.169967,
+      "after": 1.794021,
+      "after_over_before": 0.8267503607197713,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/navigation_ms/p50",
+      "unit": "ms",
+      "before": 6.245864,
+      "after": 4.170078,
+      "after_over_before": 0.6676543069141435,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/navigation_ms/p95",
+      "unit": "ms",
+      "before": 6.245864,
+      "after": 4.170078,
+      "after_over_before": 0.6676543069141435,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 1217784,
+      "after": 1088080,
+      "after_over_before": 0.8934917850784704,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/file_loads",
+      "unit": "count",
+      "before": 1,
+      "after": 1,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/work.source_enumerations",
+      "unit": "count",
+      "before": 4,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/work.classpath_enumerations",
+      "unit": "count",
+      "before": 3,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/work.files_hashed",
+      "unit": "count",
+      "before": 2,
+      "after": 1,
+      "after_over_before": 0.5,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/work.bytes_hashed",
+      "unit": "bytes",
+      "before": 80,
+      "after": 40,
+      "after_over_before": 0.5,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/work.metadata_checks",
+      "unit": "count",
+      "before": 519,
+      "after": 547,
+      "after_over_before": 1.0539499036608864,
+      "repetitions": 3
+    },
+    {
+      "metric": "body/work.identity_map_rebuilds",
+      "unit": "count",
+      "before": 5,
+      "after": 2,
+      "after_over_before": 0.4,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/validation_ms/p50",
+      "unit": "ms",
+      "before": 1.846711,
+      "after": 1.855023,
+      "after_over_before": 1.0045009749765936,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/validation_ms/p95",
+      "unit": "ms",
+      "before": 1.846711,
+      "after": 1.855023,
+      "after_over_before": 1.0045009749765936,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/navigation_ms/p50",
+      "unit": "ms",
+      "before": 3.944589,
+      "after": 2.348375,
+      "after_over_before": 0.595340858071652,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/navigation_ms/p95",
+      "unit": "ms",
+      "before": 3.944589,
+      "after": 2.348375,
+      "after_over_before": 0.595340858071652,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 1184880,
+      "after": 1055752,
+      "after_over_before": 0.8910201876983324,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/file_loads",
+      "unit": "count",
+      "before": 1,
+      "after": 1,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/work.source_enumerations",
+      "unit": "count",
+      "before": 4,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/work.classpath_enumerations",
+      "unit": "count",
+      "before": 3,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/work.files_hashed",
+      "unit": "count",
+      "before": 2,
+      "after": 1,
+      "after_over_before": 0.5,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/work.bytes_hashed",
+      "unit": "bytes",
+      "before": 82,
+      "after": 41,
+      "after_over_before": 0.5,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/work.metadata_checks",
+      "unit": "count",
+      "before": 519,
+      "after": 547,
+      "after_over_before": 1.0539499036608864,
+      "repetitions": 3
+    },
+    {
+      "metric": "api/work.identity_map_rebuilds",
+      "unit": "count",
+      "before": 5,
+      "after": 2,
+      "after_over_before": 0.4,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/validation_ms/p50",
+      "unit": "ms",
+      "before": 1.681973,
+      "after": 4.503631,
+      "after_over_before": 2.6775881658028995,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/validation_ms/p95",
+      "unit": "ms",
+      "before": 1.681973,
+      "after": 4.503631,
+      "after_over_before": 2.6775881658028995,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/navigation_ms/p50",
+      "unit": "ms",
+      "before": 5.345488,
+      "after": 4.510752,
+      "after_over_before": 0.8438428820717585,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/navigation_ms/p95",
+      "unit": "ms",
+      "before": 5.345488,
+      "after": 4.510752,
+      "after_over_before": 0.8438428820717585,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 1243760,
+      "after": 1298800,
+      "after_over_before": 1.0442529105293625,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/file_loads",
+      "unit": "count",
+      "before": 1,
+      "after": 1,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/work.source_enumerations",
+      "unit": "count",
+      "before": 4,
+      "after": 1,
+      "after_over_before": 0.25,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/work.classpath_enumerations",
+      "unit": "count",
+      "before": 3,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/work.files_hashed",
+      "unit": "count",
+      "before": 2,
+      "after": 1,
+      "after_over_before": 0.5,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/work.bytes_hashed",
+      "unit": "bytes",
+      "before": 28,
+      "after": 14,
+      "after_over_before": 0.5,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/work.metadata_checks",
+      "unit": "count",
+      "before": 523,
+      "after": 681,
+      "after_over_before": 1.3021032504780115,
+      "repetitions": 3
+    },
+    {
+      "metric": "membership/work.identity_map_rebuilds",
+      "unit": "count",
+      "before": 5,
+      "after": 2,
+      "after_over_before": 0.4,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/validation_ms/p50",
+      "unit": "ms",
+      "before": 2.388557,
+      "after": 2.692364,
+      "after_over_before": 1.1271926941663941,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/validation_ms/p95",
+      "unit": "ms",
+      "before": 2.388557,
+      "after": 2.692364,
+      "after_over_before": 1.1271926941663941,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/navigation_ms/p50",
+      "unit": "ms",
+      "before": 18.401807,
+      "after": 16.255995,
+      "after_over_before": 0.8833912343499742,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/navigation_ms/p95",
+      "unit": "ms",
+      "before": 18.401807,
+      "after": 16.255995,
+      "after_over_before": 0.8833912343499742,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 2082056,
+      "after": 2037248,
+      "after_over_before": 0.9784789650230349,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/file_loads",
+      "unit": "count",
+      "before": 129,
+      "after": 129,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/work.source_enumerations",
+      "unit": "count",
+      "before": 4,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/work.classpath_enumerations",
+      "unit": "count",
+      "before": 3,
+      "after": 2,
+      "after_over_before": 0.6666666666666666,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/work.files_hashed",
+      "unit": "count",
+      "before": 1,
+      "after": 1,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/work.bytes_hashed",
+      "unit": "bytes",
+      "before": 3,
+      "after": 3,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/work.metadata_checks",
+      "unit": "count",
+      "before": 531,
+      "after": 561,
+      "after_over_before": 1.0564971751412429,
+      "repetitions": 3
+    },
+    {
+      "metric": "environment/work.identity_map_rebuilds",
+      "unit": "count",
+      "before": 5,
+      "after": 3,
+      "after_over_before": 0.6,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/validation_ms/p50",
+      "unit": "ms",
+      "before": 2.444881,
+      "after": 132.352543,
+      "after_over_before": 54.13455419711634,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/validation_ms/p95",
+      "unit": "ms",
+      "before": 2.444881,
+      "after": 132.352543,
+      "after_over_before": 54.13455419711634,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/navigation_ms/p50",
+      "unit": "ms",
+      "before": 1.256462,
+      "after": 0.87003,
+      "after_over_before": 0.6924443397412735,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/navigation_ms/p95",
+      "unit": "ms",
+      "before": 1.256462,
+      "after": 0.87003,
+      "after_over_before": 0.6924443397412735,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 769896,
+      "after": 1465432,
+      "after_over_before": 1.9034155262528965,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/file_loads",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/work.source_enumerations",
+      "unit": "count",
+      "before": 3,
+      "after": 1,
+      "after_over_before": 0.3333333333333333,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/work.classpath_enumerations",
+      "unit": "count",
+      "before": 2,
+      "after": 2,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/work.files_hashed",
+      "unit": "count",
+      "before": 0,
+      "after": 133,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/work.bytes_hashed",
+      "unit": "bytes",
+      "before": 0,
+      "after": 156886840,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/work.metadata_checks",
+      "unit": "count",
+      "before": 396,
+      "after": 685,
+      "after_over_before": 1.72979797979798,
+      "repetitions": 3
+    },
+    {
+      "metric": "reconciliation/work.identity_map_rebuilds",
+      "unit": "count",
+      "before": 3,
+      "after": 0,
+      "after_over_before": 0.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/cold/diagnostics_ms/p50",
+      "unit": "ms",
+      "before": 765.584222,
+      "after": 938.858503,
+      "after_over_before": 1.226329482793338,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/cold/diagnostics_ms/p95",
+      "unit": "ms",
+      "before": 765.584222,
+      "after": 938.858503,
+      "after_over_before": 1.226329482793338,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/cold/queries",
+      "unit": "count",
+      "before": 2,
+      "after": 2,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/cold/diagnostic_files_analysed",
+      "unit": "count",
+      "before": 2,
+      "after": 2,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/cold/diagnostic_files_reused",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/cold/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 46321088,
+      "after": 50512464,
+      "after_over_before": 1.0904852666673115,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/unchanged/diagnostics_ms/p50",
+      "unit": "ms",
+      "before": 0.927767,
+      "after": 1.08893,
+      "after_over_before": 1.173710640710437,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/unchanged/diagnostics_ms/p95",
+      "unit": "ms",
+      "before": 2.055535,
+      "after": 1.314419,
+      "after_over_before": 0.6394534756158373,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/unchanged/queries",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/unchanged/diagnostic_files_analysed",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/unchanged/diagnostic_files_reused",
+      "unit": "count",
+      "before": 40,
+      "after": 40,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/unchanged/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 5657872,
+      "after": 10363928,
+      "after_over_before": 1.8317713797696378,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/body/diagnostics_ms/p50",
+      "unit": "ms",
+      "before": 19.698498,
+      "after": 24.619728,
+      "after_over_before": 1.249827677216811,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/body/diagnostics_ms/p95",
+      "unit": "ms",
+      "before": 19.698498,
+      "after": 24.619728,
+      "after_over_before": 1.249827677216811,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/body/queries",
+      "unit": "count",
+      "before": 1,
+      "after": 1,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/body/diagnostic_files_analysed",
+      "unit": "count",
+      "before": 1,
+      "after": 1,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/body/diagnostic_files_reused",
+      "unit": "count",
+      "before": 1,
+      "after": 1,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/body/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 1636104,
+      "after": 3548600,
+      "after_over_before": 2.168933026262389,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/api/diagnostics_ms/p50",
+      "unit": "ms",
+      "before": 85.116625,
+      "after": 77.329039,
+      "after_over_before": 0.9085068751257466,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/api/diagnostics_ms/p95",
+      "unit": "ms",
+      "before": 85.116625,
+      "after": 77.329039,
+      "after_over_before": 0.9085068751257466,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/api/queries",
+      "unit": "count",
+      "before": 2,
+      "after": 2,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/api/diagnostic_files_analysed",
+      "unit": "count",
+      "before": 2,
+      "after": 2,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/api/diagnostic_files_reused",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/api/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 5022504,
+      "after": 8518984,
+      "after_over_before": 1.6961627108709123,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/membership/diagnostics_ms/p50",
+      "unit": "ms",
+      "before": 43.820352,
+      "after": 49.489493,
+      "after_over_before": 1.1293723290949376,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/membership/diagnostics_ms/p95",
+      "unit": "ms",
+      "before": 43.820352,
+      "after": 49.489493,
+      "after_over_before": 1.1293723290949376,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/membership/queries",
+      "unit": "count",
+      "before": 2,
+      "after": 2,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/membership/diagnostic_files_analysed",
+      "unit": "count",
+      "before": 2,
+      "after": 2,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/membership/diagnostic_files_reused",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/membership/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 3277400,
+      "after": 6872976,
+      "after_over_before": 2.097081833160432,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/environment/diagnostics_ms/p50",
+      "unit": "ms",
+      "before": 99.546341,
+      "after": 102.139905,
+      "after_over_before": 1.026053835569908,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/environment/diagnostics_ms/p95",
+      "unit": "ms",
+      "before": 99.546341,
+      "after": 102.139905,
+      "after_over_before": 1.026053835569908,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/environment/queries",
+      "unit": "count",
+      "before": 2,
+      "after": 2,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/environment/diagnostic_files_analysed",
+      "unit": "count",
+      "before": 2,
+      "after": 2,
+      "after_over_before": 1.0,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/environment/diagnostic_files_reused",
+      "unit": "count",
+      "before": 0,
+      "after": 0,
+      "after_over_before": null,
+      "repetitions": 3
+    },
+    {
+      "metric": "real-diagnostics/environment/thread_allocated_bytes",
+      "unit": "bytes",
+      "before": 14342352,
+      "after": 17713320,
+      "after_over_before": 1.2350359271617375,
+      "repetitions": 3
+    }
+  ]
+}

@@ -8,7 +8,7 @@ mkdir -p "$output/classes"
 output=$(cd "$output" && pwd)
 here=$(cd "$(dirname "$0")" && pwd)
 java=${JAVA_HOME:?}/bin/java
-"$JAVA_HOME/bin/javac" -cp "$baseline" -d "$output/classes" "$here/Lifetime.java" "$here/SourceQueries.java"
+"$JAVA_HOME/bin/javac" -cp "$baseline" -d "$output/classes" "$here/InputNavigation.java" "$here/Lifetime.java" "$here/SourceQueries.java"
 for label in baseline after; do
   classpath=$baseline
   if [[ $label == after ]]; then classpath=$revision; fi

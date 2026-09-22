@@ -28,13 +28,13 @@ export function renderDashboard(comparison, verification, allocation = null) {
       `<td>${Number(row.jvmd).toFixed(2)} ${escape(unit)}</td><td>${Number(row.jdtls).toFixed(2)} ${escape(unit)}</td>`+
       `<td class="ratio ${tone}"><span style="width:${width.toFixed(1)}%"></span>${ratioText}</td></tr>`;
   }).join('\n');
-  const semantic = comparison.semantic_state;
-  const semanticSection = semantic ? `<section><h2>JVMD semantic state: base versus candidate</h2>
+  const componentSection = (semantic, title) => semantic ? `<section><h2>${escape(title)}</h2>
 <p class="note">${escape(semantic.interpretation)}</p>
 <p class="note">Base <code>${escape(semantic.base_sha)}</code> · candidate <code>${escape(semantic.head_sha)}</code></p>
 <div class="table"><table><thead><tr><th>Metric</th><th>Unit</th><th>Base JVMD</th><th>Candidate JVMD</th><th>After / before</th><th>Repetitions</th></tr></thead><tbody>
 ${semantic.rows.map(row => `<tr><td>${escape(row.metric)}</td><td>${escape(row.unit)}</td><td>${Number(row.before).toFixed(3)}</td><td>${Number(row.after).toFixed(3)}</td><td>${row.after_over_before === null ? 'n/a' : Number(row.after_over_before).toFixed(3)}</td><td>${Number(row.repetitions)}</td></tr>`).join('\n')}
 </tbody></table></div></section>` : '';
+  const semanticSection = componentSection(comparison.semantic_state, 'JVMD semantic state: base versus candidate') + componentSection(comparison.input_validation, 'JVMD input validation: base versus candidate');
   const generated = new Date().toISOString();
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

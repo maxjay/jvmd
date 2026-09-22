@@ -62,6 +62,8 @@ def markdown(result):
     lines += ['', 'Green: improvement over 5% · Yellow: within ±5% · Red: regression over 5%', '', result['interpretation']]
     if result.get('semantic_state'):
         lines += ['', semantic_markdown(result['semantic_state'])]
+    if result.get('input_validation'):
+        lines += ['', semantic_markdown(result['input_validation']).replace('JVMD semantic state:', 'JVMD input validation:', 1)]
     return '\n'.join(lines)+'\n'
 
 
@@ -84,8 +86,10 @@ if __name__ == '__main__':
     parser.add_argument('--metrics', nargs='+')
     parser.add_argument('--markdown', type=Path)
     parser.add_argument('--semantic-state', type=Path, help='Paired JVMD component evidence, kept separate from LSP ratios')
+    parser.add_argument('--input-validation', type=Path, help='Paired JVMD input validation evidence, separate from editor latency')
     args = parser.parse_args(); result = compare(json.loads(args.summary.read_text()), args.candidate, args.baseline, args.metrics)
     if args.semantic_state: result['semantic_state'] = json.loads(args.semantic_state.read_text())
+    if args.input_validation: result['input_validation'] = json.loads(args.input_validation.read_text())
     args.output.write_text(json.dumps(result, indent=2)+'\n')
     if args.markdown: args.markdown.write_text(markdown(result))
     print(json.dumps({'fixtures': len(result['fixtures'])}))

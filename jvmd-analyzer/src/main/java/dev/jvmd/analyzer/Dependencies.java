@@ -10,7 +10,7 @@ public final class Dependencies {
     public SemanticUpdatePolicy.Live semantic(){return semantic;}
     private final Map<Path,String> hashes=new HashMap<>();
     private java.util.function.Function<Path,String> documentHash=_->null;
-    private dev.jvmd.core.FileStateRegistry files=new dev.jvmd.core.FileStateRegistry();
+    private dev.jvmd.core.FileStateRegistry files=dev.jvmd.core.FileStateRegistry.shared();
     public void fileStates(dev.jvmd.core.FileStateRegistry files){this.files=files;}
     public void documentHash(java.util.function.Function<Path,String> lookup){documentHash=lookup;}
     private final Set<Path> stale=new LinkedHashSet<>();

@@ -1,0 +1,276 @@
+[INFO] Scanning for projects...
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Build Order:
+[INFO] 
+[INFO] jvmd                                                               [pom]
+[INFO] jvmd-core                                                          [jar]
+[INFO] jvmd-index                                                         [jar]
+[INFO] jvmd-analyzer                                                      [jar]
+[INFO] jvmd-resolver                                                      [jar]
+[INFO] jvmd-index-rocks                                                   [jar]
+[INFO] jvmd-runtime                                                       [jar]
+[INFO] jvmd-mcp                                                           [jar]
+[INFO] jvmd-lsp                                                           [jar]
+[INFO] jvmd-dist                                                          [jar]
+[INFO] jvmd-tests                                                         [jar]
+[INFO] 
+[INFO] ---------------------------< dev.jvmd:jvmd >----------------------------
+[INFO] Building jvmd 0.1.0-SNAPSHOT                                      [1/11]
+[INFO]   from pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] -------------------------< dev.jvmd:jvmd-core >-------------------------
+[INFO] Building jvmd-core 0.1.0-SNAPSHOT                                 [2/11]
+[INFO]   from jvmd-core/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ jvmd-core ---
+[INFO] skip non existing resourceDirectory /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-core/src/main/resources
+[INFO] 
+[INFO] --- compiler:3.16.0:compile (default-compile) @ jvmd-core ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ jvmd-core ---
+[INFO] skip non existing resourceDirectory /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-core/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.16.0:testCompile (default-testCompile) @ jvmd-core ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.6.0:test (default-test) @ jvmd-core ---
+[INFO] No tests to run.
+[INFO] 
+[INFO] ------------------------< dev.jvmd:jvmd-index >-------------------------
+[INFO] Building jvmd-index 0.1.0-SNAPSHOT                                [3/11]
+[INFO]   from jvmd-index/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ jvmd-index ---
+[INFO] skip non existing resourceDirectory /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-index/src/main/resources
+[INFO] 
+[INFO] --- compiler:3.16.0:compile (default-compile) @ jvmd-index ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ jvmd-index ---
+[INFO] skip non existing resourceDirectory /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-index/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.16.0:testCompile (default-testCompile) @ jvmd-index ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.6.0:test (default-test) @ jvmd-index ---
+[INFO] No tests to run.
+[INFO] 
+[INFO] -----------------------< dev.jvmd:jvmd-analyzer >-----------------------
+[INFO] Building jvmd-analyzer 0.1.0-SNAPSHOT                             [4/11]
+[INFO]   from jvmd-analyzer/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ jvmd-analyzer ---
+[INFO] skip non existing resourceDirectory /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-analyzer/src/main/resources
+[INFO] 
+[INFO] --- compiler:3.16.0:compile (default-compile) @ jvmd-analyzer ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ jvmd-analyzer ---
+[INFO] skip non existing resourceDirectory /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-analyzer/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.16.0:testCompile (default-testCompile) @ jvmd-analyzer ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.6.0:test (default-test) @ jvmd-analyzer ---
+[INFO] No tests to run.
+[INFO] 
+[INFO] -----------------------< dev.jvmd:jvmd-resolver >-----------------------
+[INFO] Building jvmd-resolver 0.1.0-SNAPSHOT                             [5/11]
+[INFO]   from jvmd-resolver/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ jvmd-resolver ---
+[INFO] skip non existing resourceDirectory /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-resolver/src/main/resources
+[INFO] 
+[INFO] --- compiler:3.16.0:compile (default-compile) @ jvmd-resolver ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ jvmd-resolver ---
+[INFO] skip non existing resourceDirectory /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-resolver/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.16.0:testCompile (default-testCompile) @ jvmd-resolver ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.6.0:test (default-test) @ jvmd-resolver ---
+[INFO] No tests to run.
+[INFO] 
+[INFO] ---------------------< dev.jvmd:jvmd-index-rocks >----------------------
+[INFO] Building jvmd-index-rocks 0.1.0-SNAPSHOT                          [6/11]
+[INFO]   from jvmd-index-rocks/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ jvmd-index-rocks ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] 
+[INFO] --- compiler:3.16.0:compile (default-compile) @ jvmd-index-rocks ---
+[WARNING] ************************************************************************************************************************************************
+[WARNING] * Required filename-based automodules detected: [rocksdbjni-10.10.1.1.jar]. Please don't publish this project to a public artifact repository! *
+[WARNING] ************************************************************************************************************************************************
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ jvmd-index-rocks ---
+[INFO] skip non existing resourceDirectory /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-index-rocks/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.16.0:testCompile (default-testCompile) @ jvmd-index-rocks ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.6.0:test (default-test) @ jvmd-index-rocks ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running dev.jvmd.index.rocks.RocksWorkspaceStateTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.431 s -- in dev.jvmd.index.rocks.RocksWorkspaceStateTest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] 
+[INFO] -----------------------< dev.jvmd:jvmd-runtime >------------------------
+[INFO] Building jvmd-runtime 0.1.0-SNAPSHOT                              [7/11]
+[INFO]   from jvmd-runtime/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ jvmd-runtime ---
+[INFO] skip non existing resourceDirectory /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-runtime/src/main/resources
+[INFO] 
+[INFO] --- compiler:3.16.0:compile (default-compile) @ jvmd-runtime ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ jvmd-runtime ---
+[INFO] skip non existing resourceDirectory /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-runtime/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.16.0:testCompile (default-testCompile) @ jvmd-runtime ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.6.0:test (default-test) @ jvmd-runtime ---
+[INFO] No tests to run.
+[INFO] 
+[INFO] -------------------------< dev.jvmd:jvmd-mcp >--------------------------
+[INFO] Building jvmd-mcp 0.1.0-SNAPSHOT                                  [8/11]
+[INFO]   from jvmd-mcp/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ jvmd-mcp ---
+[INFO] skip non existing resourceDirectory /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-mcp/src/main/resources
+[INFO] 
+[INFO] --- compiler:3.16.0:compile (default-compile) @ jvmd-mcp ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ jvmd-mcp ---
+[INFO] skip non existing resourceDirectory /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-mcp/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.16.0:testCompile (default-testCompile) @ jvmd-mcp ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.6.0:test (default-test) @ jvmd-mcp ---
+[INFO] No tests to run.
+[INFO] 
+[INFO] -------------------------< dev.jvmd:jvmd-lsp >--------------------------
+[INFO] Building jvmd-lsp 0.1.0-SNAPSHOT                                  [9/11]
+[INFO]   from jvmd-lsp/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ jvmd-lsp ---
+[INFO] skip non existing resourceDirectory /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-lsp/src/main/resources
+[INFO] 
+[INFO] --- compiler:3.16.0:compile (default-compile) @ jvmd-lsp ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ jvmd-lsp ---
+[INFO] skip non existing resourceDirectory /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-lsp/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.16.0:testCompile (default-testCompile) @ jvmd-lsp ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.6.0:test (default-test) @ jvmd-lsp ---
+[INFO] No tests to run.
+[INFO] 
+[INFO] -------------------------< dev.jvmd:jvmd-dist >-------------------------
+[INFO] Building jvmd-dist 0.1.0-SNAPSHOT                                [10/11]
+[INFO]   from jvmd-dist/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ jvmd-dist ---
+[INFO] skip non existing resourceDirectory /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-dist/src/main/resources
+[INFO] 
+[INFO] --- compiler:3.16.0:compile (default-compile) @ jvmd-dist ---
+[WARNING] ************************************************************************************************************************************************
+[WARNING] * Required filename-based automodules detected: [rocksdbjni-10.10.1.1.jar]. Please don't publish this project to a public artifact repository! *
+[WARNING] ************************************************************************************************************************************************
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ jvmd-dist ---
+[INFO] skip non existing resourceDirectory /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-dist/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.16.0:testCompile (default-testCompile) @ jvmd-dist ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.6.0:test (default-test) @ jvmd-dist ---
+[INFO] No tests to run.
+[INFO] 
+[INFO] ------------------------< dev.jvmd:jvmd-tests >-------------------------
+[INFO] Building jvmd-tests 0.1.0-SNAPSHOT                               [11/11]
+[INFO]   from jvmd-tests/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ jvmd-tests ---
+[INFO] skip non existing resourceDirectory /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-tests/src/main/resources
+[INFO] 
+[INFO] --- compiler:3.16.0:compile (default-compile) @ jvmd-tests ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- dependency:3.8.1:unpack (maven-383-compatibility-fixture) @ jvmd-tests ---
+[INFO] Configured Artifact: org.apache.maven:apache-maven:bin:3.8.3:zip
+[INFO] apache-maven-3.8.3-bin.zip already unpacked.
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ jvmd-tests ---
+[INFO] Copying 5 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.16.0:testCompile (default-testCompile) @ jvmd-tests ---
+[WARNING] I/O error reading dependency state: /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-tests/target/classes: /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-tests/target/classes
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 133 source files with javac [debug:lines,vars,source parameters release 25] to target/test-classes
+[INFO] /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-tests/src/test/java/dev/jvmd/tests/PersistentDiagnosticsTest.java: /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-tests/src/test/java/dev/jvmd/tests/PersistentDiagnosticsTest.java uses or overrides a deprecated API.
+[INFO] /workspace/scratch/f5e97ff5a9b9/jvmd/jvmd-tests/src/test/java/dev/jvmd/tests/PersistentDiagnosticsTest.java: Recompile with -Xlint:deprecation for details.
+[INFO] 
+[INFO] --- surefire:3.6.0:test (default-test) @ jvmd-tests ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running dev.jvmd.tests.CompilerInputsTest
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.809 s -- in dev.jvmd.tests.CompilerInputsTest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary for jvmd 0.1.0-SNAPSHOT:
+[INFO] 
+[INFO] jvmd ............................................... SUCCESS [  0.001 s]
+[INFO] jvmd-core .......................................... SUCCESS [  0.747 s]
+[INFO] jvmd-index ......................................... SUCCESS [  0.050 s]
+[INFO] jvmd-analyzer ...................................... SUCCESS [  0.039 s]
+[INFO] jvmd-resolver ...................................... SUCCESS [  0.024 s]
+[INFO] jvmd-index-rocks ................................... SUCCESS [  1.187 s]
+[INFO] jvmd-runtime ....................................... SUCCESS [  0.032 s]
+[INFO] jvmd-mcp ........................................... SUCCESS [  0.026 s]
+[INFO] jvmd-lsp ........................................... SUCCESS [  0.022 s]
+[INFO] jvmd-dist .......................................... SUCCESS [  0.030 s]
+[INFO] jvmd-tests ......................................... SUCCESS [  6.102 s]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  8.404 s
+[INFO] Finished at: 2026-09-22T08:11:53+09:00
+[INFO] ------------------------------------------------------------------------

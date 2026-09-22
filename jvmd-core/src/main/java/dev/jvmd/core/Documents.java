@@ -15,14 +15,28 @@ public final class Documents {
     private record Document(String text,int version,String hash) { }
     private static final long MAX_BYTES=64L*1024*1024;
     private final Map<Path,Document> documents=new LinkedHashMap<>();
-    private final FileStateRegistry files=new FileStateRegistry();
+    private final FileStateRegistry files;
+    public Documents(){this(FileStateRegistry.shared());}
+    public Documents(FileStateRegistry files){this.files=Objects.requireNonNull(files);}
     private long bytes,generation;
+    /** A module-owned subscription, weakly retained here; no closed-document history is stored. */
+    static final class Transitions {
+        List<Path> roots=List.of();Set<Path> files=Set.of();long version;
+        boolean relevant(Path file){return files.contains(file)||roots.stream().anyMatch(file::startsWith);}
+    }
+    private final Map<Transitions,Boolean> transitions=new WeakHashMap<>();
+    synchronized Transitions track(Transitions existing,List<Path> roots,Set<Path> files){
+        var tracked=existing==null?new Transitions():existing;
+        tracked.roots=roots;tracked.files=files;transitions.put(tracked,Boolean.TRUE);return tracked;
+    }
+    synchronized long transitionVersion(Transitions tracked){return tracked.version;}
+    private void transitioned(Path file){generation++;for(var tracked:transitions.keySet())if(tracked.relevant(file))tracked.version++;}
     private static Path key(Path path){return path.toAbsolutePath().normalize();}
     public synchronized void open(Path file,String text,int version){if(contains(file))throw RpcException.invalid("Document is already open");set(key(file),text,version);}
     private void set(Path file,String text,int version){
         Objects.requireNonNull(text);var old=documents.get(file);long total=bytes+2L*text.length()-(old==null?0:2L*old.text().length());
         if(total>MAX_BYTES||old==null&&documents.size()>=256)throw RpcException.invalid("Open document memory budget exceeded");
-        documents.put(file,new Document(text,version,Hashing.sha256(text.getBytes(StandardCharsets.UTF_8))));bytes=total;generation++;
+        documents.put(file,new Document(text,version,Hashing.sha256(text.getBytes(StandardCharsets.UTF_8))));bytes=total;transitioned(file);
     }
     public synchronized void change(Path file,int version,List<Change> changes){
         file=key(file);var old=documents.get(file);if(old==null)throw RpcException.invalid("Document is not open: "+file);
@@ -33,18 +47,19 @@ public final class Documents {
             else{if(change.range().start()==null||change.range().end()==null)throw RpcException.invalid("Change range needs start and end");int start=offset(text,change.range().start()),end=offset(text,change.range().end());if(end<start)throw RpcException.invalid("Inverted document range");text=text.substring(0,start)+change.text()+text.substring(end);}
         }set(file,text,version);
     }
-    public synchronized void close(Path file){var previous=documents.remove(key(file));if(previous!=null){bytes-=2L*previous.text().length();generation++;}}
+    public synchronized void close(Path file){var previous=documents.remove(key(file));if(previous!=null){bytes-=2L*previous.text().length();transitioned(key(file));}}
     public synchronized String text(Path file)throws Exception{var document=documents.get(key(file));return document==null?Files.readString(file):document.text();}
     public synchronized String hash(Path file){var document=documents.get(key(file));return document==null?null:document.hash();}
     public synchronized String sourceHash(Path file)throws java.io.IOException{var hash=hash(file);return hash==null?files.hash(file):hash;}
     public FileStateRegistry fileStates(){return files;}
+    public synchronized Object observation(Path file){return documents.get(key(file));}
     public synchronized Integer version(Path file){var document=documents.get(key(file));return document==null?null:document.version();}
     public synchronized boolean contains(Path file){return documents.containsKey(key(file));}
     public synchronized Map<Path,String> snapshots(){var result=new LinkedHashMap<Path,String>();documents.forEach((file,value)->result.put(file,value.text()));return Collections.unmodifiableMap(result);}
     public synchronized Set<Path> paths(){return Set.copyOf(documents.keySet());}
     public synchronized long generation(){return generation;}
     public synchronized boolean dirty(Path root)throws Exception{
-        for(var entry:documents.entrySet())if(entry.getKey().startsWith(root)&&(!Files.isRegularFile(entry.getKey())||!Hashing.sha256(entry.getKey()).equals(entry.getValue().hash())))return true;return false;
+        for(var entry:documents.entrySet())if(entry.getKey().startsWith(root)&&(!Files.isRegularFile(entry.getKey())||!files.hash(entry.getKey()).equals(entry.getValue().hash())))return true;return false;
     }
     public synchronized Map<String,Object> status(){return Map.of("open_documents",documents.size(),"bytes",bytes,"generation",generation);}
     public static Position position(String text,long requested){

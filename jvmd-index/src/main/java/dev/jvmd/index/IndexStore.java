@@ -44,7 +44,10 @@ public interface IndexStore extends AutoCloseable {
     }
     void publishCode(long artifactId,ArtifactContext context,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception;
     void publishClassReferences(long artifactId,Set<String> classReferences)throws Exception;
-    void publishSourceFile(long artifactId,Path file,List<Map<String,Object>> symbols,int tier,
+    default void publishSourceFile(long artifactId,Path file,List<Map<String,Object>> symbols,int tier,List<SourceRelationship> relationships)throws Exception {
+        publishSourceFile(artifactId,file,dev.jvmd.core.Hashing.sha256(file),symbols,tier,relationships);
+    }
+    void publishSourceFile(long artifactId,Path file,String contentHash,List<Map<String,Object>> symbols,int tier,
                            List<SourceRelationship> relationships)throws Exception;
     long publishDocumentation(long binaryArtifactId,ArtifactInput sourceInput,
                               Map<String,Map<String,Object>> members,int unmatchedMembers)throws Exception;

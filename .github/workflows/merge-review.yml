@@ -104,6 +104,14 @@ jobs:
             "$PWD/jvmd-dist/target/*:$PWD/jvmd-dist/target/lib/*" "$RUNNER_TEMP/semantic-state"
           python benchmarks/semantic-state/summarize.py "$RUNNER_TEMP/semantic-state" "$RUNNER_TEMP/semantic-state-summary.json" \
             --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA"
+      - name: Compare input validation against the PR base
+        shell: bash
+        run: |
+          deps="$PWD/jvmd-dist/target/image/lib/jvmd"
+          python benchmarks/input-validation/prepare.py --repo "$RUNNER_TEMP/semantic-base" --dependencies "$RUNNER_TEMP/semantic-base/jvmd-dist/target/lib" --java-home "$JAVA_HOME" --output "$RUNNER_TEMP/input-base"
+          python benchmarks/input-validation/prepare.py --repo "$PWD" --dependencies "$deps" --java-home "$JAVA_HOME" --output "$RUNNER_TEMP/input-candidate"
+          python benchmarks/input-validation/run.py "$RUNNER_TEMP/input-base/build.json" "$RUNNER_TEMP/input-candidate/build.json" "$RUNNER_TEMP/input-validation"
+          python benchmarks/input-validation/summarize.py "$RUNNER_TEMP/input-validation" "$RUNNER_TEMP/input-validation-summary.json"
       - name: Fast JVMD and JDTLS correctness benchmark
         run: |
           python benchmarks/workspaces/matrix.py --repo "$PWD" --before "$RUNNER_TEMP/build/build.json" --after "$RUNNER_TEMP/build/build.json" \
@@ -112,7 +120,7 @@ jobs:
             --fixture-names review --modes after jdtls-shared
           python benchmarks/workspaces/verify.py "$RUNNER_TEMP/results" "$RUNNER_TEMP/verification.json"
           python benchmarks/workspaces/summarize.py "$RUNNER_TEMP/results" "$RUNNER_TEMP/summary.json"
-          python benchmarks/workspaces/compare.py "$RUNNER_TEMP/summary.json" "$RUNNER_TEMP/comparison.json" --markdown "$RUNNER_TEMP/comparison.md" --semantic-state "$RUNNER_TEMP/semantic-state-summary.json"
+          python benchmarks/workspaces/compare.py "$RUNNER_TEMP/summary.json" "$RUNNER_TEMP/comparison.json" --markdown "$RUNNER_TEMP/comparison.md" --semantic-state "$RUNNER_TEMP/semantic-state-summary.json" --input-validation "$RUNNER_TEMP/input-validation-summary.json"
           python benchmarks/workspaces/matrix.py --repo "$PWD" --before "$RUNNER_TEMP/build/build.json" --after "$RUNNER_TEMP/build/build.json" \
             --java-home "$JAVA_HOME" --jdtls "$RUNNER_TEMP/jdtls" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" \
             --fixtures "$RUNNER_TEMP/fixtures" --root "$RUNNER_TEMP/allocation-results" --runs 1 --sources 192 --workspaces 1 --samples 1 --edits 2 \
@@ -152,6 +160,8 @@ jobs:
           name: merge-review-evidence
           if-no-files-found: warn
           path: |
+            ${{ runner.temp }}/input-validation-summary.json
+            ${{ runner.temp }}/input-validation/*.json
             ${{ runner.temp }}/semantic-state-summary.json
             ${{ runner.temp }}/semantic-state/*.json
             ${{ runner.temp }}/semantic-state/disk-kib.txt

@@ -149,7 +149,7 @@ public final class RocksIndexStore implements IndexStore {
         return fqn+"#"+("ctor".equals(symbol.get("kind"))?"<init>":symbol.get("name"))+
                 (Set.of("method","ctor").contains(symbol.get("kind"))?Objects.toString(symbol.get("erased_descriptor"),""):"");
     }
-    @Override public synchronized void publishSourceFile(long id,Path file,List<Map<String,Object>> symbols,int tier,List<SourceRelationship> relationships)throws Exception{
+    @Override public synchronized void publishSourceFile(long id,Path file,String contentHash,List<Map<String,Object>> symbols,int tier,List<SourceRelationship> relationships)throws Exception{
         var old=required(id);String path=location(file);var rows=new ArrayList<Map<String,Object>>();
         for(var symbol:symbols){
             if(symbol.get("scip")==null||!SOURCE_KINDS.contains(symbol.get("kind"))||!path.equals(symbol.get("source_file")))continue;
@@ -157,7 +157,7 @@ public final class RocksIndexStore implements IndexStore {
             var row=new LinkedHashMap<String,Object>(symbol);row.put("id",(id<<32)|nextSource++);row.put("artifact_id",id);row.put("tier",tier);
             row.put("binary_key",binaryKey(symbol));row.putIfAbsent("metadata",Map.of());rows.add(row);
         }
-        var source=new SourceOverlay.FileStamp(path,Hashing.sha256(file));
+        var source=new SourceOverlay.FileStamp(path,contentHash);
         var value=new StoredArtifact(id,old.input(),old.docsKey(),old.codeKey(),old.symbols(),old.edges(),old.classReferences(),old.sourceRevision()+1,old.simpleNames());
         try(var batch=new WriteBatch()){
             sourceOverlay.replace(batch,id,source,rows,relationships);batch.put(bytes("next-source"),bytes(Long.toString(nextSource)));

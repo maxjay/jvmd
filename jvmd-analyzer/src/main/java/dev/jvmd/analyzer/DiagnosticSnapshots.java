@@ -10,7 +10,7 @@ import java.util.*;
 public final class DiagnosticSnapshots implements AutoCloseable {
     private record Pending(String manifest,byte[] payload) { }
     private final Path root;
-    private final FileStateRegistry sources=new FileStateRegistry();
+    private final FileStateRegistry sources=FileStateRegistry.shared();
     private Documents documents=new Documents();
     public void documents(Documents documents){this.documents=documents;}
     private final LinkedHashMap<String,Pending> pending=new LinkedHashMap<>();

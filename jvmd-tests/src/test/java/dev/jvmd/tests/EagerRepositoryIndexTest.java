@@ -2,6 +2,9 @@ package dev.jvmd.tests;
 import dev.jvmd.index.*;
 import java.nio.file.*;
 import java.util.Map;
+import java.util.List;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
@@ -46,6 +49,28 @@ class EagerRepositoryIndexTest {
    index.scan();
    assertThat(index.find("transform",null,false,10,0)).isEmpty();
    assertThat(index.status()).containsEntry("phase","ready");
+  }
+ }
+
+ @Test void failedCloseCanBeRetriedUntilStorageIsReleased()throws Exception{
+  Path database=temp.resolve("retry-close.db"),repository=temp.resolve("retry-repository");
+  var index=new IndexService(database,repository);
+  var waits=new AtomicInteger();
+  var replacement=new AbstractExecutorService(){
+   private volatile boolean shutdown;
+   @Override public void shutdown(){shutdown=true;}
+   @Override public List<Runnable> shutdownNow(){shutdown=true;return List.of();}
+   @Override public boolean isShutdown(){return shutdown;}
+   @Override public boolean isTerminated(){return shutdown&&waits.get()>=3;}
+   @Override public boolean awaitTermination(long timeout,TimeUnit unit){return waits.incrementAndGet()>=3;}
+   @Override public void execute(Runnable command){throw new RejectedExecutionException();}
+  };
+  var field=IndexService.class.getDeclaredField("readers");field.setAccessible(true);
+  ((ExecutorService)field.get(index)).shutdownNow();field.set(index,replacement);
+  assertThatThrownBy(index::close).isInstanceOf(IllegalStateException.class);
+  assertThatCode(index::close).doesNotThrowAnyException();
+  try(var reopened=new IndexService(database,repository)){
+   assertThat(reopened.status()).containsEntry("phase","idle");
   }
  }
 

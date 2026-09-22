@@ -40,6 +40,7 @@ export abstract class LspScenarioHarness {
   private static running: RunningServer;
   private static openDocuments = new Map<string, number>();
 
+  abstract readonly id: string;
   abstract readonly name: string;
   protected abstract scenario(): Promise<Record<string, Measurement<unknown>>>;
 

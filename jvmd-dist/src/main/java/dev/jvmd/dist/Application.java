@@ -26,6 +26,7 @@ public final class Application implements AutoCloseable {
     private volatile dev.jvmd.runtime.JavaRuntime.Selection debuggeeRuntime;
     private volatile java.util.concurrent.CompletableFuture<IndexService> index;
     private volatile IndexService bootstrappingIndex;
+    private final java.util.concurrent.atomic.AtomicBoolean closed=new java.util.concurrent.atomic.AtomicBoolean();
     private static final Set<String> COMPLETION_TYPE_KINDS=Set.of("class","interface","enum","record","annotation");
     private record TypeCompletionCache(String generation,String prefix,List<Map<String,Object>> rows,boolean complete) { }
     public Application(Config config) {
@@ -686,14 +687,13 @@ public final class Application implements AutoCloseable {
                 storage=IndexStorage.open(config.stateDir().resolve("index-v2"),Math.multiplyExact(budgetMb,1024L*1024L));
                 service=new IndexService(storage,config.m2Repo());
                 bootstrappingIndex=service;
+                if(closed.get())throw new java.util.concurrent.CancellationException("Application closed during index bootstrap");
                 if(scan)service.start().join();
                 return service;
             } catch(Exception|LinkageError e){
                 if(service!=null)try{service.close();}catch(Exception close){e.addSuppressed(close);}
                 else if(storage!=null)try{storage.close();}catch(Exception close){e.addSuppressed(close);}
                 throw new java.util.concurrent.CompletionException(e);
-            } finally {
-                if(service!=null && bootstrappingIndex==service && index!=null && index.isDone())bootstrappingIndex=null;
             }
         }, task -> Thread.ofVirtual().name("jvmd-index-start").start(cause==null?task:()->{
             try{RequestScope.with(cause,()->{try(var span=RequestScope.stage("index.bootstrap")){task.run();}return null;});}
@@ -786,6 +786,7 @@ public final class Application implements AutoCloseable {
     }
 
     @Override public void close() throws Exception {
+        if(!closed.compareAndSet(false,true))return;
         try { sessions.close(); } finally {
             try { if (resolver != null) resolver.close(); }
             finally {

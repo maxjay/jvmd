@@ -14,8 +14,8 @@ import java.util.*;
  * source state.
  */
 public final class LiveSourceState implements AutoCloseable {
-    public record Snapshot(LiveStateTree.State state,boolean trusted,long events,long reconciliations,long overflows,String uncertainty) {
-        public Snapshot { Objects.requireNonNull(state);uncertainty=uncertainty==null?"":uncertainty; }
+    public record Snapshot(LiveStateTree.State state,long inputEpoch,boolean trusted,long events,long reconciliations,long overflows,String uncertainty) {
+        public Snapshot { Objects.requireNonNull(state);if(inputEpoch<0)throw new IllegalArgumentException("inputEpoch");uncertainty=uncertainty==null?"":uncertainty; }
     }
     /** Path-derived source lookup retained at mutation time for javac package queries. */
     public record Source(Path file,String binary) {
@@ -30,7 +30,7 @@ public final class LiveSourceState implements AutoCloseable {
     private final Map<Path,Source> sourceByPath=new HashMap<>();
     private final NavigableMap<String,NavigableMap<String,Source>> sourcesByPackage=new TreeMap<>();
     private final ArrayDeque<Change> sourceChanges=new ArrayDeque<>();
-    private long sourceHistoryFloor;
+    private long sourceHistoryFloor,inputEpoch;
     private static final int MAX_SOURCE_CHANGES=32768;
     private final Map<WatchKey,Path> watchKeys=new HashMap<>();
     private final Set<Path> watchedDirectories=new HashSet<>();
@@ -62,14 +62,14 @@ public final class LiveSourceState implements AutoCloseable {
 
     public List<Path> roots(){return roots;}
     public boolean accepts(Path path){path=normalize(path);for(Path root:roots)if(path.startsWith(root))return true;return false;}
-    public synchronized Snapshot snapshot(){return new Snapshot(tree.state(),trusted,events,reconciliations,overflows,uncertainty);}
+    public synchronized Snapshot snapshot(){return new Snapshot(tree.state(),inputEpoch,trusted,events,reconciliations,overflows,uncertainty);}
     public synchronized Optional<LiveStateTree.Leaf> leaf(Path path){return tree.leaf(path);}
     public synchronized String contentHash(Path path){var leaf=tree.leaf(path).orElse(null);return leaf==null?null:leaf.content().value();}
     /** Materialized only at reconciliation/persistence/full-build boundaries; request identity must use snapshot(). */
     public synchronized Set<Path> paths(){return tree.paths();}
     /** Changed source paths since a captured epoch; empty Optional means the bounded journal cannot prove the delta. */
     public synchronized Optional<Set<Path>> changedPathsSince(long epoch){
-        long current=tree.state().epoch();
+        long current=inputEpoch;
         if(epoch==current)return Optional.of(Set.of());
         if(epoch<sourceHistoryFloor)return Optional.empty();
         var changed=new LinkedHashSet<Path>();
@@ -107,13 +107,13 @@ public final class LiveSourceState implements AutoCloseable {
         reconcileContents();
         synchronized(this){
             reconciliations++;
-            if(watcher!=null&&!trusted){tree.uncertainTransition();trusted=true;uncertainty="";}
+            if(watcher!=null&&!trusted){tree.uncertainTransition();inputEpoch++;trusted=true;uncertainty="";}
         }
     }
 
     public synchronized void markUncertain(String reason){
         if(closed)return;
-        if(trusted){tree.uncertainTransition();trusted=false;}
+        if(trusted){tree.uncertainTransition();inputEpoch++;trusted=false;}
         uncertainty=reason==null?"uncertain":reason;
     }
 
@@ -144,19 +144,19 @@ public final class LiveSourceState implements AutoCloseable {
     private void applyContent(Path file,String hash){
         var previous=tree.leaf(file).orElse(null);
         if("missing".equals(hash)){
-            if(previous!=null){var transition=tree.remove(file);removeSource(file);recordSourceChange(file,transition.after().epoch());}
+            if(previous!=null){tree.remove(file);removeSource(file);recordSourceChange(file);}
             return;
         }
         if(previous==null){
-            var transition=tree.put(new LiveStateTree.Leaf(file,new LiveStateTree.Fingerprint(hash),LiveStateTree.UNKNOWN,LiveStateTree.UNKNOWN));
-            addSource(file);recordSourceChange(file,transition.after().epoch());
+            tree.put(new LiveStateTree.Leaf(file,new LiveStateTree.Fingerprint(hash),LiveStateTree.UNKNOWN,LiveStateTree.UNKNOWN));
+            addSource(file);recordSourceChange(file);
         }else if(!previous.content().value().equals(hash)){
-            var transition=tree.put(new LiveStateTree.Leaf(file,new LiveStateTree.Fingerprint(hash),previous.api(),previous.namespace()));
-            recordSourceChange(file,transition.after().epoch());
+            tree.put(new LiveStateTree.Leaf(file,new LiveStateTree.Fingerprint(hash),previous.api(),previous.namespace()));
+            recordSourceChange(file);
         }
     }
-    private void recordSourceChange(Path file,long epoch){
-        sourceChanges.addLast(new Change(epoch,normalize(file)));
+    private void recordSourceChange(Path file){
+        long epoch=++inputEpoch;sourceChanges.addLast(new Change(epoch,normalize(file)));
         while(sourceChanges.size()>MAX_SOURCE_CHANGES){var removed=sourceChanges.removeFirst();sourceHistoryFloor=Math.max(sourceHistoryFloor,removed.epoch());}
     }
     private void addSource(Path file){
@@ -248,7 +248,7 @@ public final class LiveSourceState implements AutoCloseable {
     public synchronized Map<String,Object> status(){
         var state=tree.state();
         return Map.ofEntries(
-                Map.entry("trusted",trusted),Map.entry("epoch",state.epoch()),Map.entry("files",state.files()),
+                Map.entry("trusted",trusted),Map.entry("epoch",state.epoch()),Map.entry("input_epoch",inputEpoch),Map.entry("files",state.files()),
                 Map.entry("merkle",state.merkle().value()),Map.entry("events",events),Map.entry("reconciliations",reconciliations),
                 Map.entry("overflows",overflows),Map.entry("semantic_updates",semanticUpdates),
                 Map.entry("stale_semantic_updates",staleSemanticUpdates),Map.entry("watched_directories",watchedDirectories.size()),

@@ -134,8 +134,52 @@ class CompletionPrefixCacheTest {
             documents.change(file,2,List.of(new Documents.Change(null,text("ge"))));analyzer.changed(file,documents.hash(file));analyzer.documents(documents);
             assertThat(complete(analyzer,file,text("ge"),"ge").path("items").findValuesAsText("name")).contains("getPets");
             assertThat(analyzer.status()).containsEntry("source_catalog_precise",1L).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",1L);
+            @SuppressWarnings("unchecked") var keyWork=(Map<String,Long>)analyzer.status().get("completion_key_work");
+            assertThat(keyWork).containsEntry("entries_visited",0L).containsEntry("entries_sorted",0L);
         }
     }
+    @Test void semanticApiIdentityReusesBodyEditsAndInvalidatesApiEdits()throws Exception{
+        Path api=Files.writeString(root.resolve("Api.java"),"class Api { int getPets(){return 1;} }");
+        Path other=Files.writeString(root.resolve("Other.java"),"class Other { int value(){return 1;} }");
+        Path file=Files.writeString(root.resolve("Use.java"),text("get"));
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);
+            assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
+            long computations=((Number)analyzer.status().get("completion_computations")).longValue();
+
+            Files.writeString(other,"class Other { int value(){int x=1; return x;} }");
+            assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
+            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations);
+
+            Files.writeString(api,"class Api { int getPets(){return 2;} }");
+            assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
+            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations);
+
+            Files.writeString(api,"class Api { int getPets(){return 2;} int getElse(){return 3;} }");
+            assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets","getElse");
+            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations+1);
+        }
+    }
+
+    @Test void sourceMembershipChangesInvalidateSemanticCompletionIdentity()throws Exception{
+        Files.writeString(root.resolve("Api.java"),"class Api { int getPets(){return 1;} }");
+        Path file=Files.writeString(root.resolve("Use.java"),text("get")),added=root.resolve("Added.java");
+        var documents=new Documents();documents.open(file,text("get"),1);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);analyzer.documents(documents);
+            assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
+            long computations=((Number)analyzer.status().get("completion_computations")).longValue();
+
+            documents.open(added,"class Added {}",1);analyzer.documents(documents);
+            assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
+            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations+1);
+
+            documents.close(added);analyzer.documents(documents);
+            assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
+            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations+2);
+        }
+    }
+
     @Test void detachedHitsStillDetectTimestampPreservingJarReplacementAndDeletion()throws Exception{
         Path jar=IndexFixtures.jar(root.resolve("repository"),"api","package lib; public class Sample { public int getPets(){return 1;} }",true);
         Path sources=Files.createDirectories(root.resolve("sources"));String source="class Use { Object call(lib.Sample api){return api.getPets();} }";

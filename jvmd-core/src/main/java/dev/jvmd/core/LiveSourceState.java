@@ -111,10 +111,8 @@ public final class LiveSourceState implements AutoCloseable {
         if(verificationOnly){reconcile();return;}
         WatchService current; synchronized(this){current=watcher;}
         if(current==null){reconcile();return;}
-        WatchKey first=null;
-        try{first=current.poll(2,java.util.concurrent.TimeUnit.MILLISECONDS);}
-        catch(InterruptedException interrupted){Thread.currentThread().interrupt();markUncertain("source watch settlement interrupted");reconcile();return;}
-        if(first!=null)processWatchKey(first);
+        try{RequestScope.settleFilesystemStart(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(2));}
+        catch(Exception failed){markUncertain("source watch settlement failed");reconcile();return;}
         for(WatchKey key;(key=current.poll())!=null;)processWatchKey(key);
         synchronized(this){if(!trusted)reconcile();}
     }

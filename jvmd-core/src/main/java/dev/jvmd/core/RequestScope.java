@@ -11,6 +11,7 @@ public final class RequestScope {
                           String workflow,String invocation,String revision,Span span,long causalSpan){}
     private static final AtomicLong sequence=new AtomicLong();
     private static final ThreadLocal<Context> current=new ThreadLocal<>();
+    private static final Object FILESYSTEM_START_FENCE=new Object(),FILESYSTEM_END_FENCE=new Object();
     private RequestScope(){}
 
     public static <T> T call(String method,ThrowingSupplier<T> supplier)throws Exception{
@@ -62,6 +63,17 @@ public final class RequestScope {
     public static long id(){var value=current.get();return value==null?0:value.id();}
     public static String method(){var value=current.get();return value==null?null:value.method();}
     public static void clearMemo(){var value=current.get();if(value!=null)value.values().clear();}
+    /**
+     * WatchService publication is asynchronous. Pay the bounded publication delay once per RPC
+     * boundary, then let every maintained state drain its own queue without sleeping.
+     */
+    public static void settleFilesystemStart(long nanos)throws Exception{settleFilesystem(FILESYSTEM_START_FENCE,nanos);}
+    public static void settleFilesystemEnd(long nanos)throws Exception{settleFilesystem(FILESYSTEM_END_FENCE,nanos);}
+    private static void settleFilesystem(Object key,long nanos)throws Exception{
+        if(nanos<=0)return;
+        if(current.get()==null){java.util.concurrent.locks.LockSupport.parkNanos(nanos);return;}
+        memo(key,()->{java.util.concurrent.locks.LockSupport.parkNanos(nanos);return Boolean.TRUE;});
+    }
     public static <T> T isolated(ThrowingSupplier<T> work)throws Exception{
         var previous=current.get();current.remove();
         try{return work.get();}finally{if(previous!=null)current.set(previous);}

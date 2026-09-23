@@ -112,7 +112,7 @@ public final class CompilerInputs {
             trace.count("captures",1);captureCalls++;observations++;long started=System.nanoTime();
             try{
                 var live=documents.liveState(config.roots());live.verifyTransactionBoundary();var source=live.snapshot();
-                var environment=environmentSnapshot(config);
+                var environment=environmentSnapshot(config,false);
                 var current=new Snapshot(live,source,environment.identity(),environment.epoch());
                 if(snapshot==null||snapshot.observation()!=current.observation()||snapshot.environmentEpoch()!=current.environmentEpoch()||!snapshot.sameInputs(current)){
                     snapshot=current;rebuilds++;RequestScope.count("snapshot_rebuilds",1);
@@ -135,18 +135,18 @@ public final class CompilerInputs {
         if(expected==null)return false;
         expected.live().verifyTransactionBoundary();
         if(!expected.transactionCurrent())return false;
-        var environment=environmentSnapshot(config);
+        var environment=environmentSnapshot(config,true);
         return expected.environmentEpoch()==environment.epoch()&&expected.environment().equals(environment.identity());
     }
 
     /** The environment boundary is mutation-maintained; warm reads drain only queued filesystem events. */
-    public synchronized EnvironmentIdentity environment(Configuration config)throws IOException{return environmentSnapshot(config).identity();}
-    private synchronized LiveEnvironmentState.Snapshot environmentSnapshot(Configuration config)throws IOException{
+    public synchronized EnvironmentIdentity environment(Configuration config)throws IOException{return environmentSnapshot(config,false).identity();}
+    private synchronized LiveEnvironmentState.Snapshot environmentSnapshot(Configuration config,boolean transactionEnd)throws IOException{
         if(environmentState==null||!config.equals(environmentConfiguration)){
             if(environmentState!=null)environmentState.close();
             environmentState=new LiveEnvironmentState(files,config);environmentConfiguration=config;
         }
-        return environmentState.verifyBoundary();
+        return environmentState.verifyBoundary(transactionEnd);
     }
 
     public static EnvironmentIdentity environment(String generation,List<Path> roots,List<String> options,List<String> processors,

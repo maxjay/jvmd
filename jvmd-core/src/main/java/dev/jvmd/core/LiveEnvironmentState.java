@@ -64,15 +64,17 @@ final class LiveEnvironmentState implements AutoCloseable {
             "tracked_files",state.files(),"epoch",state.epoch(),"trusted",trusted,"verification_only",verificationOnly,
             "watch_events",events,"watch_overflows",overflows,"full_reconciliations",reconciliations);}
 
-    Snapshot verifyBoundary()throws IOException{
+    Snapshot verifyBoundary(boolean transactionEnd)throws IOException{
         synchronized(this){if(closed)throw new IOException("Environment state is closed");}
         if(verificationOnly){reconcileAll();synchronized(this){trusted=true;}return snapshot();}
+        try{
+            if(transactionEnd)RequestScope.settleFilesystemEnd(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(2));
+            else RequestScope.settleFilesystemStart(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(2));
+        }catch(Exception impossible){
+            if(impossible instanceof IOException io)throw io;
+            throw new IOException("Environment settlement failed",impossible);
+        }
         drain(false);
-        synchronized(this){if(!trusted){reconcileAll();trusted=true;return snapshot();}}
-        // Filesystem watch publication is asynchronous to the writer. A bounded settlement
-        // window keeps warm validation O(1)/O(events) while making immediate edit->request
-        // transitions deterministic without re-statting the accepted environment manifest.
-        drainNanos(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(2));
         synchronized(this){if(!trusted){reconcileAll();trusted=true;}return snapshot();}
     }
 
@@ -137,16 +139,11 @@ final class LiveEnvironmentState implements AutoCloseable {
     }
 
     private void drain(boolean settle)throws IOException{
-        if(settle){drainNanos(250_000L);return;}
         WatchService current; synchronized(this){current=watcher;if(current==null){trusted=false;return;}}
-        for(WatchKey key;(key=current.poll())!=null;)process(key);
-    }
-    private void drainNanos(long nanos)throws IOException{
-        WatchService current; synchronized(this){current=watcher;if(current==null){trusted=false;return;}}
-        WatchKey first=null;
-        try{first=current.poll(nanos,java.util.concurrent.TimeUnit.NANOSECONDS);}
-        catch(InterruptedException interrupted){Thread.currentThread().interrupt();synchronized(this){trusted=false;}return;}
-        if(first!=null)process(first);
+        if(settle)try{
+            WatchKey first=current.poll(250_000L,java.util.concurrent.TimeUnit.NANOSECONDS);
+            if(first!=null)process(first);
+        }catch(InterruptedException interrupted){Thread.currentThread().interrupt();synchronized(this){trusted=false;}return;}
         for(WatchKey key;(key=current.poll())!=null;)process(key);
     }
     private void process(WatchKey key)throws IOException{

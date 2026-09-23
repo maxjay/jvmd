@@ -202,19 +202,18 @@ def main():
         evidence["cases"]["remove_source"]=measured(client,"remove_source",revision,complete)
 
         session=session_id(client)
-        diag_params={"session":session,"paths":[str(caller)],"limit":1000}
-        def diagnostics_request():
-            return native_request(client,"diag.get",diag_params)
-        # First request may install/refresh request-scoped Maven state; the repeated one is the
-        # unchanged interactive path this task must remove from Maven validation.
-        evidence["cases"]["project_model_first"]=measured(client,"project_model_first",revision,diagnostics_request)
-        evidence["cases"]["project_model_unchanged"]=measured(client,"project_model_unchanged",revision,diagnostics_request)
+        graph_params={"session":session,"depth":2,"limit":50}
+        def project_model_request():
+            return native_request(client,"deps.graph",graph_params)
+        # deps.graph goes through Application.refresh() without adding compiler/diagnostic work.
+        evidence["cases"]["project_model_first"]=measured(client,"project_model_first",revision,project_model_request)
+        evidence["cases"]["project_model_unchanged"]=measured(client,"project_model_unchanged",revision,project_model_request)
 
         pom=a.fixture/"pom.xml";pom_bytes=pom.read_bytes()
         try:
             pom.write_bytes(pom_bytes+b"\n<!-- live-state-tree project-model probe -->\n")
-            evidence["cases"]["pom_edit"]=measured(client,"pom_edit",revision,diagnostics_request)
-            evidence["cases"]["project_model_after_edit"]=measured(client,"project_model_after_edit",revision,diagnostics_request)
+            evidence["cases"]["pom_edit"]=measured(client,"pom_edit",revision,project_model_request)
+            evidence["cases"]["project_model_after_edit"]=measured(client,"project_model_after_edit",revision,project_model_request)
         finally:
             pom.write_bytes(pom_bytes)
 

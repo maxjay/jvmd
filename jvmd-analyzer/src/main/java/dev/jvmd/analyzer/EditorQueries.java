@@ -25,8 +25,17 @@ public final class EditorQueries {
             @Override public Void visitMemberSelect(MemberSelectTree node,Void unused){if(node.getIdentifier().contentEquals(MARKER))result[0]=getCurrentPath();return super.visitMemberSelect(node,unused);}
         }.scan(unit,null);return result[0];
     }
+    private static Scope stableScope(Trees trees,TreePath path){
+        for(TreePath current=path;current!=null;current=current.getParentPath())try{
+            var scope=trees.getScope(current);if(scope!=null)return scope;
+        }catch(NullPointerException brokenScope){
+            // javac can retain a null-symbol expression environment after an unresolved source
+            // namespace transition. Enclosing declaration scopes remain valid in a fresh task.
+        }
+        return null;
+    }
     private static boolean accessible(Trees trees,Scope scope,Element element,DeclaredType owner){
-        if(scope==null)return false;
+        if(scope==null)return !element.getModifiers().contains(Modifier.PRIVATE);
         if(element instanceof TypeElement type)return trees.isAccessible(scope,type);
         return !(element.getEnclosingElement() instanceof TypeElement)||owner!=null&&trees.isAccessible(scope,element,owner);
     }
@@ -54,7 +63,7 @@ public final class EditorQueries {
         try{
         long candidatesStarted=System.nanoTime();var path=marker(task,units);
         if(path==null){if(timing!=null)timing.candidateNanos+=System.nanoTime()-candidatesStarted;return List.of();}
-        var trees=Trees.instance(task);var scope=trees.getScope(path);
+        var trees=Trees.instance(task);var scope=stableScope(trees,path);
         if(scope==null){if(timing!=null)timing.candidateNanos+=System.nanoTime()-candidatesStarted;return List.of();}
         var candidates=new LinkedHashSet<Element>();DeclaredType receiver=null;boolean staticOnly=false;
         if(path.getLeaf() instanceof MemberSelectTree selected){

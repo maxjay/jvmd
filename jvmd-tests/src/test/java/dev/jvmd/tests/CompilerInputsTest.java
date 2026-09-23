@@ -141,6 +141,22 @@ class CompilerInputsTest {
         assertThat(CompilerInputs.environment("module",List.of(root),List.of(),List.of("processor"),Map.of("generated","1"),List.of(a.toString()),"other-jdk",Map.of())).isNotEqualTo(base);
     }
 
+    @Test void environmentReversionRestoresFingerprintButAdvancesTransactionEpoch()throws Exception {
+        Path jar=Files.write(root.resolve("api.jar"),new byte[]{1,2,3});
+        var files=new FileStateRegistry();try(var docs=new Documents(files)){
+            var inputs=new CompilerInputs(files);var configuration=config(List.of(jar));
+            var before=inputs.capture(configuration,docs);String fingerprint=before.environment().value();long epoch=before.environmentEpoch();
+            var timestamp=Files.getLastModifiedTime(jar);
+            Files.write(jar,new byte[]{3,2,1});Files.setLastModifiedTime(jar,timestamp);
+            var changed=inputs.capture(configuration,docs);assertThat(changed.environment().value()).isNotEqualTo(fingerprint);
+            Files.write(jar,new byte[]{1,2,3});Files.setLastModifiedTime(jar,timestamp);
+            var reverted=inputs.capture(configuration,docs);
+            assertThat(reverted.environment().value()).isEqualTo(fingerprint);
+            assertThat(reverted.environmentEpoch()).isGreaterThan(epoch);
+            assertThat(inputs.current(reverted,configuration,docs)).isTrue();
+        }
+    }
+
     @Test void providerWithoutUnixMetadataRehashesAndReconciles()throws Exception {
         Path zip=root.resolve("provider.zip");
         try(var fs=FileSystems.newFileSystem(java.net.URI.create("jar:"+zip.toUri()),Map.of("create","true"))){

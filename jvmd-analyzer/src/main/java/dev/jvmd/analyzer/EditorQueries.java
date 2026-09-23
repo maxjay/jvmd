@@ -98,7 +98,7 @@ public final class EditorQueries {
         long candidatesStarted=System.nanoTime();var path=marker(task,units);
         if(path==null){if(timing!=null)timing.candidateNanos+=System.nanoTime()-candidatesStarted;return new CompletionResult(List.of(),Set.of(),Set.of());}
         var trees=Trees.instance(task);var scope=stableScope(trees,path);
-        if(scope==null){if(timing!=null)timing.candidateNanos+=System.nanoTime()-candidatesStarted;return new CompletionResult(List.of(),Set.of());}
+        if(scope==null){if(timing!=null)timing.candidateNanos+=System.nanoTime()-candidatesStarted;return new CompletionResult(List.of(),Set.of(),Set.of());}
         var candidates=new LinkedHashSet<Element>();var semanticDependencies=new LinkedHashSet<Path>();var nameResolutionNames=new LinkedHashSet<String>();var hierarchySeen=new HashSet<String>();
         DeclaredType receiver=null;boolean staticOnly=false;
         if(path.getLeaf() instanceof MemberSelectTree selected){

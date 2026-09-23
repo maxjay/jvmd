@@ -195,6 +195,26 @@ class CompletionPrefixCacheTest {
         }
     }
 
+    @Test void negativeNameResolutionChangesInvalidateQualifiedCompletion()throws Exception{
+        Path a=Files.createDirectories(root.resolve("a")),b=Files.createDirectories(root.resolve("b"));
+        Files.writeString(a.resolve("Api.java"),"package a; public class Api { public int getA(){return 1;} }");
+        Path competing=Files.writeString(b.resolve("Api.java"),"package b; class Api { public int getB(){return 2;} }");
+        String source="import a.*; import b.*; class Use { Object call(Api api){return api.get();} }";
+        Path file=Files.writeString(root.resolve("Use.java"),source);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);
+            var before=complete(analyzer,file,source,"get").path("items").findValuesAsText("name");
+            assertThat(before).contains("getA").doesNotContain("getB");
+            long computations=((Number)analyzer.status().get("completion_computations")).longValue();
+
+            Files.writeString(competing,"package b; public class Api { public int getB(){return 2;} }");
+            var after=complete(analyzer,file,source,"get").path("items").findValuesAsText("name");
+
+            assertThat(after).doesNotContain("getA");
+            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations+1);
+        }
+    }
+
     @Test void sourceMembershipChangesInvalidateSemanticCompletionIdentity()throws Exception{
         Files.writeString(root.resolve("Api.java"),"class Api { int getPets(){return 1;} }");
         Path file=Files.writeString(root.resolve("Use.java"),text("get")),added=root.resolve("Added.java");

@@ -22,13 +22,13 @@ A phase is complete only when the previous ownership path is either removed or e
 - [x] No consumer cutover in this phase.
 
 ## Phase 2 — live source state
-- [ ] Feed disk/source membership observations into canonical live state.
-- [ ] Feed Documents open/change/close overlays into canonical live state.
-- [ ] Preserve module/package/subtree identities.
-- [ ] Maintain content/membership/API/namespace independently.
-- [ ] Add uncertainty state and reconciliation path; reconciliation is not a request-time default.
-- [ ] Make existing Rocks workspace persistence derive from/consume the canonical model rather than owning a second Merkle definition.
-- [ ] Prove mutations update only the information domains that changed.
+- [x] Feed disk/source membership observations into canonical live state.
+- [x] Feed Documents open/change/close overlays into canonical live state.
+- [x] Preserve module/package/subtree identities.
+- [x] Maintain content/membership/API/namespace independently.
+- [x] Add uncertainty state and reconciliation path; reconciliation is not a request-time default.
+- [x] Make existing Rocks workspace persistence derive from/consume the canonical model rather than owning a second Merkle definition.
+- [x] Prove mutations update only the information domains that changed.
 
 ## Phase 3 — CompilerInputs cutover
 - [ ] Replace request-time source-universe reconstruction with constant-sized canonical state identities.

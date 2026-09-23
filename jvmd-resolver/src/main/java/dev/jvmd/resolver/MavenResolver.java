@@ -50,7 +50,7 @@ public final class MavenResolver implements AutoCloseable {
             try{
                 watcher=FileSystems.getDefault().newWatchService();
                 for(var input:state.inputs())register(Path.of(input.path()).toAbsolutePath().normalize());
-            }catch(Exception|UnsupportedOperationException unavailable){
+            }catch(Exception unavailable){
                 dirty=true;close();
             }
         }
@@ -58,9 +58,10 @@ public final class MavenResolver implements AutoCloseable {
             Path directory=input.getParent();
             while(directory!=null&&!Files.isDirectory(directory,LinkOption.NOFOLLOW_LINKS))directory=directory.getParent();
             if(directory==null){dirty=true;return;}
-            if(directories.values().stream().noneMatch(directory::equals)){
-                var key=directory.register(watcher,StandardWatchEventKinds.ENTRY_CREATE,StandardWatchEventKinds.ENTRY_MODIFY,StandardWatchEventKinds.ENTRY_DELETE);
-                directories.put(key,directory);
+            Path watched=directory;
+            if(!directories.containsValue(watched)){
+                var key=watched.register(watcher,StandardWatchEventKinds.ENTRY_CREATE,StandardWatchEventKinds.ENTRY_MODIFY,StandardWatchEventKinds.ENTRY_DELETE);
+                directories.put(key,watched);
             }
             for(Path path=input;path!=null&&!path.equals(directory)&&path.startsWith(directory);path=path.getParent())relevant.add(path);
         }

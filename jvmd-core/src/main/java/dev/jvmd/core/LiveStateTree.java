@@ -23,6 +23,7 @@ public final class LiveStateTree {
     private static final BigInteger FIELD=new BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F",16);
     private static final Fingerprint PRESENT=fingerprint("membership-present-v1","present");
     public static final Fingerprint UNKNOWN=fingerprint("semantic-unknown-v1","unknown");
+    public static final Fingerprint UNATTRIBUTED_CONTENT=fingerprint("semantic-content-unattributed-v1","unknown");
     private static final Fingerprint EMPTY_MERKLE_MAP=fingerprint("merkle-map-empty-v1","empty");
 
     public record Fingerprint(String value) {
@@ -31,22 +32,34 @@ public final class LiveStateTree {
     public record AggregateIdentity(Fingerprint fingerprint,long cardinality) {
         public AggregateIdentity { Objects.requireNonNull(fingerprint);if(cardinality<0)throw new IllegalArgumentException("cardinality"); }
     }
-    public record Leaf(Path path,Fingerprint content,Fingerprint api,Fingerprint namespace) {
+    /**
+     * API/namespace are the last accepted semantic identities. semanticContent records the exact
+     * source content from which they were derived; semanticsCurrent() is the proof boundary.
+     */
+    public record Leaf(Path path,Fingerprint content,Fingerprint api,Fingerprint namespace,Fingerprint semanticContent) {
         public Leaf {
             path=normalize(Objects.requireNonNull(path));
-            Objects.requireNonNull(content);Objects.requireNonNull(api);Objects.requireNonNull(namespace);
+            Objects.requireNonNull(content);Objects.requireNonNull(api);Objects.requireNonNull(namespace);Objects.requireNonNull(semanticContent);
         }
+        /** Convenience for already-attributed leaves. */
+        public Leaf(Path path,Fingerprint content,Fingerprint api,Fingerprint namespace){this(path,content,api,namespace,content);}
         public Leaf(Path path,String content,String api,String namespace){
             this(path,new Fingerprint(content),new Fingerprint(api),new Fingerprint(namespace));
         }
+        public boolean semanticsCurrent(){return content.equals(semanticContent);}
     }
+    /**
+     * api()/namespace() are accepted aggregates; they are proven current for all source content
+     * only when semanticsCurrent() is true.
+     */
     public record State(Fingerprint merkle,AggregateIdentity membership,AggregateIdentity content,
-                        AggregateIdentity api,AggregateIdentity namespace,long epoch,int files) {
+                        AggregateIdentity api,AggregateIdentity namespace,long epoch,int files,int pendingSemanticFiles) {
         public State {
             Objects.requireNonNull(merkle);Objects.requireNonNull(membership);Objects.requireNonNull(content);
             Objects.requireNonNull(api);Objects.requireNonNull(namespace);
-            if(epoch<0||files<0)throw new IllegalArgumentException("negative state");
+            if(epoch<0||files<0||pendingSemanticFiles<0)throw new IllegalArgumentException("negative state");
         }
+        public boolean semanticsCurrent(){return pendingSemanticFiles==0;}
     }
     public enum Domain { MEMBERSHIP, CONTENT, API, NAMESPACE, MERKLE }
     public record Transition(State before,State after,Set<Domain> changed) {
@@ -118,7 +131,12 @@ public final class LiveStateTree {
 
     /** Canonical source leaf from the existing source/API/exported-name semantic meanings. */
     public static Leaf source(Path path,String contentFingerprint,String apiFingerprint,Collection<String> exportedNames){
-        return new Leaf(path,new Fingerprint(contentFingerprint),new Fingerprint(apiFingerprint),namespace(exportedNames));
+        var content=new Fingerprint(contentFingerprint);
+        return new Leaf(path,content,new Fingerprint(apiFingerprint),namespace(exportedNames),content);
+    }
+    /** Source content observed before semantic attribution catches up. */
+    public static Leaf unattributed(Path path,String contentFingerprint,Fingerprint acceptedApi,Fingerprint acceptedNamespace,Fingerprint semanticContent){
+        return new Leaf(path,new Fingerprint(contentFingerprint),acceptedApi,acceptedNamespace,semanticContent);
     }
 
     public static Fingerprint namespace(Collection<String> exportedNames){
@@ -161,12 +179,13 @@ public final class LiveStateTree {
         boolean api=old==null||next==null||!old.api().equals(next.api());
         boolean namespace=old==null||next==null||!old.namespace().equals(next.namespace());
         int fileDelta=old==null?1:next==null?-1:0;
+        int pendingDelta=(next!=null&&!next.semanticsCurrent()?1:0)-(old!=null&&!old.semanticsCurrent()?1:0);
         for(Node node:chain){
             if(membership)node.membership.replace(old==null?null:old.path(),old==null?null:PRESENT,next==null?null:next.path(),next==null?null:PRESENT);
             if(content)node.content.replace(old==null?null:old.path(),old==null?null:old.content(),next==null?null:next.path(),next==null?null:next.content());
             if(api)node.api.replace(old==null?null:old.path(),old==null?null:old.api(),next==null?null:next.path(),next==null?null:next.api());
             if(namespace)node.namespace.replace(old==null?null:old.path(),old==null?null:old.namespace(),next==null?null:next.path(),next==null?null:next.namespace());
-            node.files+=fileDelta;node.epoch=epoch;
+            node.files+=fileDelta;node.pendingSemanticFiles+=pendingDelta;node.epoch=epoch;
         }
     }
     private static void markEpoch(Node node,long value){node.epoch=value;for(Node child:node.directories.values())markEpoch(child,value);}
@@ -187,7 +206,7 @@ public final class LiveStateTree {
     private static String fileKey(Path file){return "F|"+file.getFileName();}
     private static Path normalize(Path path){return path.toAbsolutePath().normalize();}
     private static Fingerprint leafMerkle(Leaf leaf){
-        return fingerprint("state-leaf-v1",leaf.path(),leaf.content().value(),leaf.api().value(),leaf.namespace().value());
+        return fingerprint("state-leaf-v2",leaf.path(),leaf.content().value(),leaf.api().value(),leaf.namespace().value(),leaf.semanticContent().value());
     }
 
     private static final class Node {
@@ -195,12 +214,12 @@ public final class LiveStateTree {
         final Map<String,Node> directories=new HashMap<>();
         final MerkleMap children=new MerkleMap();
         final Aggregate membership=new Aggregate("membership"),content=new Aggregate("content"),api=new Aggregate("api"),namespace=new Aggregate("namespace");
-        Fingerprint merkle;long epoch;int files;
+        Fingerprint merkle;long epoch;int files,pendingSemanticFiles;
         Node(String id,Path directory,String keyInParent,boolean sourceRoot){
             this.id=id;this.directory=directory;this.keyInParent=keyInParent;this.sourceRoot=sourceRoot;recompute();
         }
         void recompute(){merkle=fingerprint("state-node-v1",id,children.rootHash().value());}
-        State state(){return new State(merkle,membership.identity(),content.identity(),api.identity(),namespace.identity(),epoch,files);}
+        State state(){return new State(merkle,membership.identity(),content.identity(),api.identity(),namespace.identity(),epoch,files,pendingSemanticFiles);}
     }
 
     private static final class Aggregate {

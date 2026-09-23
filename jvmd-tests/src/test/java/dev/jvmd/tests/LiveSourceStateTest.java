@@ -32,12 +32,19 @@ class LiveSourceStateTest {
         Path file=Files.writeString(root.resolve("A.java"),"class A {}");
         try(var documents=new Documents(new FileStateRegistry())){
             var state=documents.liveState(List.of(root));String first=state.leaf(file).orElseThrow().content().value();
+            assertThat(state.snapshot().state().semanticsCurrent()).isFalse();
             assertThat(state.semantic(file,first,"api-1",List.of("A"))).isTrue();var semantic=state.snapshot().state();
+            assertThat(semantic.semanticsCurrent()).isTrue();assertThat(semantic.pendingSemanticFiles()).isZero();
             documents.open(file,"class A { int body; }",1);String second=documents.hash(file);
-            assertThat(state.snapshot().state().api()).isEqualTo(semantic.api());
+            var pending=state.snapshot().state();
+            assertThat(pending.api()).isEqualTo(semantic.api());
+            assertThat(pending.semanticsCurrent()).isFalse();assertThat(pending.pendingSemanticFiles()).isEqualTo(1);
+            var leaf=state.leaf(file).orElseThrow();assertThat(leaf.semanticContent().value()).isEqualTo(first);assertThat(leaf.content().value()).isEqualTo(second);
             assertThat(state.semantic(file,first,"stale-api",List.of("Stale"))).isFalse();
+            assertThat(state.snapshot().state().semanticsCurrent()).isFalse();
             assertThat(state.semantic(file,second,"api-1",List.of("A"))).isTrue();
             assertThat(state.snapshot().state().api()).isEqualTo(semantic.api());
+            assertThat(state.snapshot().state().semanticsCurrent()).isTrue();
         }
     }
 

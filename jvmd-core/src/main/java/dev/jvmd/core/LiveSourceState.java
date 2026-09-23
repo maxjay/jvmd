@@ -162,7 +162,7 @@ public final class LiveSourceState implements AutoCloseable {
         path=normalize(path);if(!accepts(path))return false;
         var current=tree.leaf(path).orElse(null);
         if(current==null||!current.content().value().equals(sourceHash)){staleSemanticUpdates++;return false;}
-        tree.put(new LiveStateTree.Leaf(path,current.content(),new LiveStateTree.Fingerprint(apiFingerprint),LiveStateTree.namespace(exportedNames)));
+        tree.put(new LiveStateTree.Leaf(path,current.content(),new LiveStateTree.Fingerprint(apiFingerprint),LiveStateTree.namespace(exportedNames),current.content()));
         semanticUpdates++;return true;
     }
 
@@ -212,10 +212,10 @@ public final class LiveSourceState implements AutoCloseable {
             return;
         }
         if(previous==null){
-            tree.put(new LiveStateTree.Leaf(file,new LiveStateTree.Fingerprint(hash),LiveStateTree.UNKNOWN,LiveStateTree.UNKNOWN));
+            tree.put(new LiveStateTree.Leaf(file,new LiveStateTree.Fingerprint(hash),LiveStateTree.UNKNOWN,LiveStateTree.UNKNOWN,LiveStateTree.UNATTRIBUTED_CONTENT));
             addSource(file);recordSourceChange(file);
         }else if(!previous.content().value().equals(hash)){
-            tree.put(new LiveStateTree.Leaf(file,new LiveStateTree.Fingerprint(hash),previous.api(),previous.namespace()));
+            tree.put(new LiveStateTree.Leaf(file,new LiveStateTree.Fingerprint(hash),previous.api(),previous.namespace(),previous.semanticContent()));
             recordSourceChange(file);
         }
     }
@@ -314,7 +314,8 @@ public final class LiveSourceState implements AutoCloseable {
         var state=tree.state();
         return Map.ofEntries(
                 Map.entry("trusted",trusted),Map.entry("epoch",state.epoch()),Map.entry("input_epoch",inputEpoch),Map.entry("files",state.files()),
-                Map.entry("merkle",state.merkle().value()),Map.entry("events",events),Map.entry("reconciliations",reconciliations),
+                Map.entry("merkle",state.merkle().value()),Map.entry("semantic_current",state.semanticsCurrent()),Map.entry("pending_semantic_files",state.pendingSemanticFiles()),
+                Map.entry("events",events),Map.entry("reconciliations",reconciliations),
                 Map.entry("targeted_reconciliations",targetedReconciliations),Map.entry("overflows",overflows),Map.entry("semantic_updates",semanticUpdates),
                 Map.entry("stale_semantic_updates",staleSemanticUpdates),Map.entry("watched_directories",watchedDirectories.size()),
                 Map.entry("uncertainty",uncertainty));

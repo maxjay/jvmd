@@ -133,14 +133,14 @@ Commit: `bb2ffe2` introduced the measurement mechanism; `db3166f` is the accepte
 
 ## Phase 1 — canonical state primitives
 
-Status: **not started**.
+Status: **complete**.
 
-Baseline evidence: pending baseline above.
-Change: pending.
-Tests: pending.
-PR-local measurement: not applicable; no consumers change in Phase 1.
-Remaining discrepancy: all request consumers still use the old state path until Phases 3–5.
-Commit: pending.
+Baseline evidence: baseline above, captured before production changes.
+Change: added `LiveStateTree` as the canonical source-state primitive. Each source leaf is path-bound and carries independent content/API/namespace identity. Package/root/workspace nodes maintain a cryptographic Merkle identity plus membership/content/API/namespace algebraic aggregates and a monotonic epoch. The algebraic accumulator is a domain-separated SHA-256 contribution summed modulo the secp256k1 field prime with cardinality; it is explicitly not raw XOR, and the Merkle identity remains the independent strong structural identity. Aggregate identities are refreshed on mutation, not derived by reads.
+Tests: `LiveStateTreeTest` permanently covers body-only edits, API vs namespace independence, add/remove/rename path binding, A→B→A epoch detection, unaffected subtree identity, deterministic insertion order, and canonical exported-name sets. GitHub Tests run 35805400523 completed the Phase 1 deterministic checkpoint successfully.
+PR-local measurement: not applicable; Phase 1 intentionally changes no consumers.
+Remaining discrepancy: `CompilerInputs`, completion and Maven still use their old request-time ownership paths; Phase 2 must feed actual source mutations into this canonical state before any read-path cutover.
+Commit: `5048399` establishes primitives; `00b6503` places their regression tests in the repository's deterministic Phase 1 group.
 
 ## Phase 2 — live source state
 

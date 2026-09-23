@@ -13,13 +13,13 @@ A phase is complete only when the previous ownership path is either removed or e
 - [x] Record evidence in progress; keep measurement machinery temporary.
 
 ## Phase 1 — canonical state primitives
-- [ ] Define path-bound leaf identities for membership/content/API/namespace.
-- [ ] Define a collision-resistant algebraic aggregate abstraction; document its cancellation/collision semantics. Raw XOR is forbidden.
-- [ ] Define cryptographic Merkle structural identity using the same canonical state, not a parallel state owner.
-- [ ] Define monotonic transition epoch independent of final fingerprint equality.
-- [ ] Reuse existing semantic contribution meaning for API/namespace rather than creating consumer-specific fingerprints.
-- [ ] Add executable update/invariant tests, including body-only, API, add/remove and A→B→A.
-- [ ] No consumer cutover in this phase.
+- [x] Define path-bound leaf identities for membership/content/API/namespace.
+- [x] Define a collision-resistant algebraic aggregate abstraction; document its cancellation/collision semantics. Raw XOR is forbidden.
+- [x] Define cryptographic Merkle structural identity using the same canonical state, not a parallel state owner.
+- [x] Define monotonic transition epoch independent of final fingerprint equality.
+- [x] Reuse existing semantic contribution meaning for API/namespace rather than creating consumer-specific fingerprints.
+- [x] Add executable update/invariant tests, including body-only, API, add/remove and A→B→A.
+- [x] No consumer cutover in this phase.
 
 ## Phase 2 — live source state
 - [ ] Feed disk/source membership observations into canonical live state.

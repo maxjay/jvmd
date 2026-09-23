@@ -36,10 +36,28 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     private Path moduleOutput;
     private Map<Path,String> documents=Map.of();
     private CompilerInputs.Snapshot expectedInputs;
+    private LiveSourceState liveSources;
+    private final Map<Path,String> readSourceHashes=new LinkedHashMap<>();
     private boolean inputsSuperseded;
-    void expectedInputs(CompilerInputs.Snapshot inputs){expectedInputs=inputs;inputsSuperseded=false;}
-    boolean inputsSuperseded(){return inputsSuperseded;}
-    public void documents(Map<Path,String> values){documents=Map.copyOf(values);try{configureModules();}catch(IOException e){throw new UncheckedIOException(e);}}
+    void expectedInputs(CompilerInputs.Snapshot inputs){expectedInputs=inputs;inputsSuperseded=false;readSourceHashes.clear();}
+    boolean inputsSuperseded(){
+        if(inputsSuperseded)return true;
+        if(expectedInputs!=null&&!expectedInputs.transactionCurrent())return true;
+        try{
+            for(var entry:readSourceHashes.entrySet()){
+                String current=documents.containsKey(entry.getKey())
+                        ?Hashing.sha256(documents.get(entry.getKey()).getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                        :files.hash(entry.getKey());
+                if(!Objects.equals(current,entry.getValue()))return true;
+            }
+            return false;
+        }catch(IOException changed){return true;}
+    }
+    public void documents(Map<Path,String> values){documents(values,null);}
+    public void documents(Map<Path,String> values,LiveSourceState liveSources){
+        documents=Map.copyOf(values);this.liveSources=liveSources;
+        try{configureModules();}catch(IOException e){throw new UncheckedIOException(e);}
+    }
     private final Map<Path,Catalog> catalogs=new HashMap<>();
     private final FileStateRegistry files;
     private CompilerInputs.EnvironmentIdentity acceptedEnvironment;
@@ -131,6 +149,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         }catch(IOException error){throw new UncheckedIOException(error);}
     }
     long sourceStateGeneration(){
+        if(liveSources!=null)return liveSources.snapshot().state().epoch();
         try{refreshSourceInventory();return sourceStateGeneration;}
         catch(IOException error){throw new UncheckedIOException(error);}
     }
@@ -140,6 +159,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     }
     private boolean sourceCatalogUsable(){return preciseSourceRoots;}
     private void ensureSourceCatalog()throws IOException{
+        if(liveSources!=null)return;
         refreshSourceInventory();if(!sourceCatalogUsable()||!sourceCatalogDirty)return;
         var packages=new TreeMap<String,List<SourceEntry>>();var files=new LinkedHashSet<Path>();
         files.addAll(sourceInventory);
@@ -153,8 +173,9 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         sourcePackages=Map.copyOf(frozen);sourceCatalogDirty=false;sourceCatalogBuilds++;sourceCatalogFiles=files.size();
     }
     private List<SourceEntry> sourceEntries(List<Path> roots,String packageName,boolean recurse)throws IOException{
-        ensureSourceCatalog();if(!sourceCatalogUsable())return null;
-        var result=new ArrayList<SourceEntry>();
+        if(!sourceCatalogUsable())return null;
+        if(liveSources!=null)return liveSources.sources(roots,packageName,recurse).stream().map(source->new SourceEntry(source.binary(),source.file())).toList();
+        ensureSourceCatalog();var result=new ArrayList<SourceEntry>();
         if(recurse){
             for(var entry:sourcePackages.entrySet())if(packageName.isEmpty()||entry.getKey().equals(packageName)||entry.getKey().startsWith(packageName+"."))
                 for(var source:entry.getValue())if(roots.stream().anyMatch(source.file()::startsWith))result.add(source);
@@ -203,10 +224,15 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     private final class SourceFile extends SimpleJavaFileObject {
         final String binary,text;final Path file;final long generation;
         SourceFile(Path file,String binary,String text){super(file.toUri(),Kind.SOURCE);this.file=file;this.binary=binary;this.text=text;this.generation=sourceStateGeneration;}
-        @Override public CharSequence getCharContent(boolean ignoreEncodingErrors)throws IOException{if(text!=null)return text;
-            String value=Files.readString(file);
-            try{return expectedInputs==null?value:expectedInputs.checkText(file,value);}
-            catch(CompilerInputs.Superseded changed){inputsSuperseded=true;throw changed;}}
+        @Override public CharSequence getCharContent(boolean ignoreEncodingErrors)throws IOException{
+            String value=text!=null?text:Files.readString(file);
+            if(expectedInputs==null)return value;
+            try{
+                String checked=expectedInputs.checkText(file,value);
+                var identity=expectedInputs.source(file);if(identity.value()!=null)readSourceHashes.put(file,identity.value());
+                return checked;
+            }catch(CompilerInputs.Superseded changed){inputsSuperseded=true;throw changed;}
+        }
         @Override public InputStream openInputStream()throws IOException{return new ByteArrayInputStream(getCharContent(false).toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));}
         @Override public long getLastModified(){
             if(text!=null)return Long.MAX_VALUE;
@@ -216,6 +242,9 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     }
     public JavaFileObject source(Path file,String text){
         file=file.toAbsolutePath().normalize();String binary=sourceName(file);
+        if(expectedInputs!=null)try{
+            expectedInputs.checkText(file,text);var identity=expectedInputs.source(file);if(identity.value()!=null)readSourceHashes.put(file,identity.value());
+        }catch(CompilerInputs.Superseded changed){inputsSuperseded=true;}
         return new SourceFile(file,binary==null?file.getFileName().toString().replaceFirst("\\.java$", ""):binary,text);
     }
     private String sourceName(Path file){
@@ -301,7 +330,10 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     @Override public ClassLoader getClassLoader(Location location){return super.getClassLoader(delegate(location));}
     @Override public <S> ServiceLoader<S> getServiceLoader(Location location,Class<S> service)throws IOException{return super.getServiceLoader(delegate(location),service);}
     @Override public boolean hasLocation(Location location){if(location==StandardLocation.MODULE_SOURCE_PATH)return !moduleSources.isEmpty();return location==StandardLocation.CLASS_PATH||location==StandardLocation.SOURCE_PATH&&moduleSources.isEmpty()&&!documents.isEmpty()||super.hasLocation(delegate(location));}
-    void invalidateSourceInventory(){sourceCatalogDirty=true;}
+    void invalidateSourceInventory(){
+        if(liveSources!=null)try{liveSources.reconcile();}catch(IOException changed){liveSources.markUncertain("source reconciliation failed: "+changed.getClass().getSimpleName());}
+        else sourceCatalogDirty=true;
+    }
     public void sourcesChanged(){try{fileManager.flush();configureModules();}catch(IOException e){throw new UncheckedIOException(e);}}
     void inheritWork(IndexedFileManager prior){
         hits+=prior.hits;loads+=prior.loads;environmentChanges+=prior.environmentChanges;
@@ -312,7 +344,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     @Override public void close()throws IOException{
         try{super.close();}finally{
             catalogs.clear();acceptedEnvironment=null;bytes.clear();byteSize=0;
-            sourcePackages=Map.of();sourceCatalogDirty=true;
+            sourcePackages=Map.of();sourceCatalogDirty=true;liveSources=null;readSourceHashes.clear();
             if(moduleOutput!=null)try(var files=Files.walk(moduleOutput)){for(Path file:files.sorted(Comparator.reverseOrder()).toList())Files.delete(file);}
         }
     }

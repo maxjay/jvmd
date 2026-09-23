@@ -399,7 +399,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             // An unresolved receiver can leave javac's pooled scope tied to the old source namespace.
             // Reconcile membership, then discard that task context before retrying discovery.
             compiler.invalidateSourceInventory();
-            compiler.recycle();
+            compiler.resetSourceContext();
             caches.completionSourceEpoch=-1;
             caches.completionNeedsDiscoveryRefresh=false;
         }

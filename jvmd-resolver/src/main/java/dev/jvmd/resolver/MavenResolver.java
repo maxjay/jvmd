@@ -67,20 +67,10 @@ public final class MavenResolver implements AutoCloseable {
         }
         synchronized boolean current(){
             if(closed||dirty)return false;
+            try{RequestScope.settleFilesystemStart(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(2));}
+            catch(Exception failed){dirty=true;return false;}
             drain();
-            if(!dirty)settleDelivery();
             return !dirty;
-        }
-        private void settleDelivery(){
-            if(watcher==null){dirty=true;return;}
-            try{
-                // Linux/macOS WatchService delivery is asynchronous to the write syscall. A tiny
-                // fixed grace period establishes the request boundary without inspecting inputs.
-                WatchKey key=watcher.poll(2,java.util.concurrent.TimeUnit.MILLISECONDS);
-                if(key!=null){process(key);drain();}
-            }catch(InterruptedException interrupted){
-                Thread.currentThread().interrupt();dirty=true;
-            }
         }
         private void drain(){
             if(watcher==null){dirty=true;return;}

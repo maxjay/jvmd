@@ -492,11 +492,25 @@ public final class Application implements AutoCloseable {
                 var enclosing=declarations.stream().filter(s->s.get("source_start") instanceof Number start&&s.get("source_end") instanceof Number end&&start.intValue()<=touched[0]&&end.intValue()>=touched[1]).min(Comparator.comparingInt(s->((Number)s.get("source_end")).intValue()-((Number)s.get("source_start")).intValue()));
                 if(enclosing.isPresent())selected.add(enclosing.get());
             }
-            var result=analyzer.diagnostics(file,text);tier=Math.min(tier,result.tier());warnings.addAll(result.warnings());
-            for(var problem:(List<dev.jvmd.analyzer.CompilerPool.Problem>)((Map<?,?>)result.result()).get("diagnostics")){
-                boolean inSelected=problem.start()>=0&&selected.stream().anyMatch(s->problem.start()>=((Number)s.get("source_start")).longValue()&&problem.start()<=((Number)s.get("source_end")).longValue());
-                boolean inTouched=problem.start()>=0&&touchedRanges.stream().anyMatch(range->problem.start()>=range[0]&&problem.start()<=range[1]);
-                if(problem.start()<0||!selected.isEmpty()&&inSelected||selected.isEmpty()&&inTouched)diagnostics.add(problem);
+            if(!selected.isEmpty()){
+                var seenDiagnostics=new LinkedHashSet<String>();
+                for(var member:selected){
+                    int focus;
+                    if(member.get("body_start") instanceof Number body&&body.intValue()>=0)focus=Math.min(text.length(),body.intValue()+1);
+                    else if(member.get("name_start") instanceof Number name)focus=Math.min(text.length(),name.intValue());
+                    else focus=Math.min(text.length(),((Number)member.get("source_start")).intValue());
+                    var result=analyzer.bindings(file,text,focus);tier=Math.min(tier,result.tier());warnings.addAll(result.warnings());
+                    for(var problem:result.diagnostics()){
+                        String key=problem.code()+"|"+problem.file()+"|"+problem.start()+"|"+problem.end()+"|"+problem.message();
+                        if(seenDiagnostics.add(key))diagnostics.add(problem);
+                    }
+                }
+            }else{
+                var result=analyzer.diagnostics(file,text);tier=Math.min(tier,result.tier());warnings.addAll(result.warnings());
+                for(var problem:(List<dev.jvmd.analyzer.CompilerPool.Problem>)((Map<?,?>)result.result()).get("diagnostics")){
+                    boolean inTouched=problem.start()>=0&&touchedRanges.stream().anyMatch(range->problem.start()>=range[0]&&problem.start()<=range[1]);
+                    if(problem.start()<0||inTouched)diagnostics.add(problem);
+                }
             }
             for(var member:selected){var row=new LinkedHashMap<String,Object>();row.put("path",file.toString());row.put("scip",member.get("scip"));row.put("range",member.get("range"));members.add(row);}
         }

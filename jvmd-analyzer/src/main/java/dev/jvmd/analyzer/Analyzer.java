@@ -467,10 +467,12 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             if(current==null){apiCurrent=false;continue;}
             var contribution=contribution(dependency);
             if(contribution==null||!current.equals(contribution.sourceHash())){
-                long apiChangesBefore=apiFingerprintChanges;
+                String apiBefore=contribution==null?null:contribution.apiFingerprint();
                 var result=bindings(dependency,documents.text(dependency),null);
                 if(result.tier()!=2||result.result()==null||!result.warnings().isEmpty())return null;
-                if(apiFingerprintChanges!=apiChangesBefore)apiCurrent=false;
+                var updated=contribution(dependency);
+                String apiAfter=updated==null?null:updated.apiFingerprint();
+                if(!Objects.equals(apiBefore,apiAfter))apiCurrent=false;
             }
         }
         var refreshed=new CompletionCached(cached.key(),cached.prefix(),live.snapshot().inputEpoch(),cached.dependencies(),cached.result());

@@ -109,7 +109,7 @@ class CompilerInputsTest {
     @Test void sourceReversionRestoresStableIdentityButAdvancesTransactionEpoch()throws Exception {
         Path file=Files.writeString(root.resolve("A.java"),"class A {}");
         var files=new FileStateRegistry();try(var docs=new Documents(files)){
-            var inputs=new CompilerInputs(files),configuration=config(List.of());
+            var inputs=new CompilerInputs(files);var configuration=config(List.of());
             var before=inputs.capture(configuration,docs);
             docs.open(file,"class A {}",1);var opened=inputs.capture(configuration,docs);
             docs.change(file,2,List.of(new Documents.Change(null,"class A { int temporary; }")));

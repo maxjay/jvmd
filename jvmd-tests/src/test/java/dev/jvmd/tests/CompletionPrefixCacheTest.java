@@ -35,7 +35,8 @@ class CompletionPrefixCacheTest {
                 assertThat(result.path("range").path("end").path("character").asInt()-result.path("range").path("start").path("character").asInt()).isEqualTo(prefix.length());
             }
             var status=analyzer.status();
-            assertThat(status).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",6L).containsEntry("completion_requests",7L).containsEntry("queries",1L).containsEntry("focus_layout_parses",1L);
+            // One completion query plus one bounded candidate-API attribution; narrowing hits run no javac work.
+            assertThat(status).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",6L).containsEntry("completion_requests",7L).containsEntry("queries",2L).containsEntry("focus_layout_parses",1L);
             assertThat(status).containsKeys("completion_timing_ms","completion_last_timing_ms","completion_candidates_seen","completion_rows_materialized","completion_doc_lookups");
             @SuppressWarnings("unchecked") var timings=(Map<String,Double>)status.get("completion_timing_ms");
             assertThat(timings).containsKeys("key","source_refresh","focus","compiler_query","editor_total","candidate_discovery","row_materialization","documentation","sort","cache_admission","filter","total");

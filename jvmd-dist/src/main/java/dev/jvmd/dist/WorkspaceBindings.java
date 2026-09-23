@@ -64,7 +64,7 @@ public final class WorkspaceBindings implements AutoCloseable {
                     &&modules.entrySet().stream().allMatch(e->e.getValue().snapshot().sameInputs(other.modules.get(e.getKey()).snapshot()));
         }
         String text(Path file,Documents documents)throws Exception{return modules.get(owners.get(file)).snapshot().text(file,documents);}
-        Set<String> changedContexts(Inputs prior){
+        Set<String> changedContexts(Inputs prior)throws Exception{
             var changed=new HashSet<String>();
             for(var entry:modules.entrySet()){
                 var before=prior.modules.get(entry.getKey());var after=entry.getValue();

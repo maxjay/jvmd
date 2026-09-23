@@ -6,7 +6,7 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
-/** Request-level diagnostics preparation must not repeatedly invoke Maven resolution per source file. */
+/** Unchanged diagnostics must reuse the resident project model without entering Maven. */
 @Tag("phase-2")
 class DiagnosticRequestContextTest {
     @TempDir Path temp;

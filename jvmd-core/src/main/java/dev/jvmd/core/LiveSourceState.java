@@ -29,6 +29,7 @@ public final class LiveSourceState implements AutoCloseable {
     private final LiveStateTree tree;
     private final Map<Path,Source> sourceByPath=new HashMap<>();
     private final NavigableMap<String,NavigableMap<String,Source>> sourcesByPackage=new TreeMap<>();
+    private final Map<Path,Object> packageEvidence=new HashMap<>();
     private final ArrayDeque<Change> sourceChanges=new ArrayDeque<>();
     private long sourceHistoryFloor,inputEpoch;
     private static final int MAX_SOURCE_CHANGES=32768;
@@ -121,10 +122,13 @@ public final class LiveSourceState implements AutoCloseable {
         }
         synchronized(this){targetedReconciliations++;}
     }
+    private record DirectoryListing(Object evidence,List<Path> files) { }
     private void reconcilePackage(Path root,String relative,String packageName)throws IOException{
         Path directory=relative.isEmpty()?root:root.resolve(relative).normalize();
-        var effective=new TreeMap<Path,String>();
-        for(Path file:directJavaFiles(directory))effective.put(file,files.hash(file));
+        Object currentEvidence=directoryEvidence(directory);
+        synchronized(this){if(Objects.equals(packageEvidence.get(directory),currentEvidence))return;}
+        var listing=directJavaFiles(directory);var effective=new TreeMap<Path,String>();
+        for(Path file:listing.files())effective.put(file,files.hash(file));
         for(Path file:documents.paths()){
             Path normalized=normalize(file);
             if(accepts(normalized)&&Objects.equals(normalized.getParent(),directory)){
@@ -136,11 +140,11 @@ public final class LiveSourceState implements AutoCloseable {
             for(var source:sourcesByPackage.getOrDefault(packageName,new TreeMap<>()).values())
                 if(Objects.equals(source.file().getParent(),directory))existing.add(source.file());
             for(Path file:existing)if(!effective.containsKey(file))applyContent(file,"missing");
-            effective.forEach(this::applyContent);
+            effective.forEach(this::applyContent);packageEvidence.put(directory,listing.evidence());
         }
         if(watcher!=null&&Files.isDirectory(directory,LinkOption.NOFOLLOW_LINKS))registerDirectory(directory);
     }
-    private List<Path> directJavaFiles(Path directory)throws IOException{
+    private DirectoryListing directJavaFiles(Path directory)throws IOException{
         for(int attempt=0;attempt<4;attempt++){
             Object before=directoryEvidence(directory);List<Path> files;
             try(var stream=Files.list(directory)){
@@ -149,7 +153,7 @@ public final class LiveSourceState implements AutoCloseable {
                         .map(LiveSourceState::normalize).sorted().toList();
             }catch(NoSuchFileException missing){files=List.of();}
             Object after=directoryEvidence(directory);
-            if(Objects.equals(before,after))return files;
+            if(Objects.equals(before,after))return new DirectoryListing(after,files);
         }
         throw new CompilerInputs.Superseded("Source package changed repeatedly during reconciliation: "+directory);
     }

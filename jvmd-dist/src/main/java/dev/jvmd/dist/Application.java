@@ -264,6 +264,34 @@ public final class Application implements AutoCloseable {
     private static Envelope page(int tier,String source,String key,List<?> values,int offset,int limit,List<String> warnings){
         int from=Math.min(offset,values.size()),to=Math.min(values.size(),from+limit);boolean more=to<values.size();return new Envelope(tier,source,more,more?Integer.toString(to):null,warnings,Map.of(key,List.copyOf(values.subList(from,to))));
     }
+    private Map<String,WorkspaceBindings.ModuleInputs> workspaceModuleInputs(Session session,Resolution graph)throws Exception{
+        var result=new LinkedHashMap<String,WorkspaceBindings.ModuleInputs>();
+        if(graph==null){
+            var roots=workspace(session).roots();
+            if(roots.isEmpty())return Map.of();
+            var worker=analyzer(session,roots.getFirst().resolve("__jvmd_probe__.java"));
+            var snapshot=worker.inputSnapshot();
+            result.put("plain",new WorkspaceBindings.ModuleInputs(snapshot,()->snapshot.live().paths()));
+            return Map.copyOf(result);
+        }
+        for(var module:graph.modules()){
+            if(!module.sources().isEmpty())addWorkspaceModuleInput(result,session,graph,module,false,module.sources());
+            if(!module.testSources().isEmpty())addWorkspaceModuleInput(result,session,graph,module,true,module.testSources());
+        }
+        return Map.copyOf(result);
+    }
+    private void addWorkspaceModuleInput(Map<String,WorkspaceBindings.ModuleInputs> result,Session session,Resolution graph,
+                                         Resolution.Module module,boolean test,List<String> roots)throws Exception{
+        String key=module.directory()+":"+test;
+        Path representative=Path.of(roots.getFirst()).resolve("__jvmd_probe__.java");
+        var worker=analyzer(session,representative);var snapshot=worker.inputSnapshot();
+        result.put(key,new WorkspaceBindings.ModuleInputs(snapshot,()->{
+            var owners=new LinkedHashSet<Path>();
+            for(Path file:snapshot.live().paths())if(key.equals(WorkspaceContextManager.key(file,graph)))owners.add(file);
+            return Set.copyOf(owners);
+        }));
+    }
+
     private List<Path> sourceFiles(Session session)throws Exception{
         var graph=(Resolution)session.state("resolution");var roots=new LinkedHashSet<Path>();var files=new LinkedHashSet<Path>();
         if(graph==null)roots.addAll(workspace(session).roots());else for(var module:graph.modules()){module.sources().forEach(p->roots.add(Path.of(p)));module.testSources().forEach(p->roots.add(Path.of(p)));}
@@ -276,17 +304,7 @@ public final class Application implements AutoCloseable {
         var graph=(Resolution)session.state("resolution");if(graph!=null)graph=refresh(session);
         var cache=session.state("workspace_bindings",()->new WorkspaceBindings(classpathFiles));
         Resolution currentGraph=graph;
-        WorkspaceBindings.InputSource inputSource=()->{
-            var groups=new LinkedHashMap<String,Set<Path>>();
-            for(Path file:sourceFiles(session))groups.computeIfAbsent(WorkspaceContextManager.key(file,currentGraph),_->new LinkedHashSet<>()).add(file);
-            var inputs=new LinkedHashMap<String,WorkspaceBindings.ModuleInputs>();
-            for(var group:groups.entrySet()){
-                var worker=analyzer(session,group.getValue().iterator().next());
-                worker.observeSources(group.getValue());
-                inputs.put(group.getKey(),new WorkspaceBindings.ModuleInputs(worker.inputSnapshot(),group.getValue()));
-            }
-            return inputs;
-        };
+        WorkspaceBindings.InputSource inputSource=()->workspaceModuleInputs(session,currentGraph);
         if(!load)return cache.peek(inputSource);
         return cache.getBatch(inputSource,documents(session),(long)config.heapCeilingMb()*1024*1024/Math.max(1,sessions.list().size())/4,files->{
             var groups=new LinkedHashMap<String,LinkedHashMap<Path,String>>();
@@ -722,12 +740,12 @@ public final class Application implements AutoCloseable {
     private void awaitReady(){if(config.indexOnStart())index();}
     private void bindIndex(Session session,IndexService database)throws Exception {
         var graph=(Resolution)session.state("resolution");if(graph==null)return;
+        String generation=graph.fingerprint()+":"+database.generation();
+        if(generation.equals(session.state("index_generation")))return;
         for(var module:graph.modules()){
             var roots=new ArrayList<Path>();module.sources().forEach(p->roots.add(Path.of(p)));module.testSources().forEach(p->roots.add(Path.of(p)));
             database.registerLocal(new IndexService.LocalModule(Path.of(module.directory()),module.gav(),roots,List.of(Path.of(module.classes()),Path.of(module.testClasses()))));
         }
-        String generation=graph.fingerprint()+":"+database.generation();
-        if(generation.equals(session.state("index_generation")))return;
 
         // A resolved workspace can introduce artifacts after the background repository scan.
         // Publish those signatures before exposing the workspace; unchanged releases reuse

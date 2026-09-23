@@ -53,12 +53,18 @@ public final class WorkspaceBindings implements AutoCloseable {
     private BindingFacts facts;
     private BindingFacts facts()throws Exception{if(facts==null)facts=new BindingFacts();return facts;}
     private final SemanticUpdatePolicy.Live semantic=new SemanticUpdatePolicy.Live();
-    /** Facts retain their owning module and that module's complete captured compiler inputs. */
-    public record ModuleInputs(CompilerInputs.Snapshot snapshot,Set<Path> owners){
-        public ModuleInputs{owners=Set.copyOf(owners);}
+    @FunctionalInterface public interface OwnerSource { Set<Path> owners()throws Exception; }
+    /** Module input identity is eager; owner materialization is cold/membership-change only. */
+    public record ModuleInputs(CompilerInputs.Snapshot snapshot,OwnerSource ownership){
+        public ModuleInputs{Objects.requireNonNull(snapshot);Objects.requireNonNull(ownership);}
+        public ModuleInputs(CompilerInputs.Snapshot snapshot,Set<Path> owners){this(snapshot,()->Set.copyOf(owners));}
+        public Set<Path> owners()throws Exception{return Set.copyOf(ownership.owners());}
+    }
+    private record ResolvedModuleInputs(CompilerInputs.Snapshot snapshot,Set<Path> owners){
+        ResolvedModuleInputs{owners=Set.copyOf(owners);}
     }
     @FunctionalInterface public interface InputSource { Map<String,ModuleInputs> capture()throws Exception; }
-    private record Inputs(Map<String,ModuleInputs> modules,Map<Path,String> sources,Map<Path,String> owners){
+    private record Inputs(Map<String,ResolvedModuleInputs> modules,Map<Path,String> sources,Map<Path,String> owners){
         boolean sameInputs(Inputs other){
             return other!=null&&owners.equals(other.owners)&&modules.keySet().equals(other.modules.keySet())
                     &&modules.entrySet().stream().allMatch(e->e.getValue().snapshot().sameInputs(other.modules.get(e.getKey()).snapshot()));
@@ -77,8 +83,14 @@ public final class WorkspaceBindings implements AutoCloseable {
     }
     private Inputs inputs,observedInputs;
     private Inputs capture(InputSource source)throws Exception{
-        var modules=source.capture();
-        if(observedInputs!=null&&sameModuleInputs(observedInputs.modules(),modules))return observedInputs;
+        var probes=source.capture();
+        if(observedInputs!=null&&sameModuleInputs(observedInputs.modules(),probes))return observedInputs;
+        var modules=new LinkedHashMap<String,ResolvedModuleInputs>();
+        for(var entry:probes.entrySet()){
+            String module=entry.getKey();var probe=entry.getValue();var before=observedInputs==null?null:observedInputs.modules().get(module);
+            boolean membershipStable=before!=null&&before.snapshot().membership().equals(probe.snapshot().membership());
+            modules.put(module,new ResolvedModuleInputs(probe.snapshot(),membershipStable?before.owners():probe.owners()));
+        }
         var hashes=observedInputs==null?new LinkedHashMap<Path,String>():new LinkedHashMap<>(observedInputs.sources());
         var owners=observedInputs==null?new LinkedHashMap<Path,String>():new LinkedHashMap<>(observedInputs.owners());
 
@@ -113,9 +125,9 @@ public final class WorkspaceBindings implements AutoCloseable {
         }
         return observedInputs=new Inputs(Map.copyOf(modules),Collections.unmodifiableMap(hashes),Map.copyOf(owners));
     }
-    private static boolean sameModuleInputs(Map<String,ModuleInputs> before,Map<String,ModuleInputs> after){
+    private static boolean sameModuleInputs(Map<String,ResolvedModuleInputs> before,Map<String,ModuleInputs> after){
         return before.keySet().equals(after.keySet())&&before.entrySet().stream().allMatch(entry->{
-            var next=after.get(entry.getKey());return entry.getValue().owners().equals(next.owners())&&entry.getValue().snapshot().sameInputs(next.snapshot());
+            var next=after.get(entry.getKey());return next!=null&&entry.getValue().snapshot().sameInputs(next.snapshot());
         });
     }
     /** Cache-owned metadata; native read leases belong exclusively to callers. */

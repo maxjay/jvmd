@@ -49,11 +49,11 @@ A phase is complete only when the previous ownership path is either removed or e
 - [x] Record before/after Apache Maven evidence.
 
 ## Phase 5 — project-model identity
-- [ ] Maintain POM/settings/.mvn/config/project-model identity on change.
-- [ ] Retain resident Resolution while accepted project-model identity remains current.
-- [ ] Remove Maven resolution/graph reconstruction/JSON roundtrip from unchanged interactive requests.
-- [ ] POM/model edit refreshes Resolution and installs the new accepted identity.
-- [ ] Record unchanged-request and POM-edit counts.
+- [x] Maintain POM/settings/.mvn/config/project-model identity on change.
+- [x] Retain resident Resolution while accepted project-model identity remains current.
+- [x] Remove Maven resolution/graph reconstruction/JSON roundtrip from unchanged interactive requests.
+- [x] POM/model edit refreshes Resolution and installs the new accepted identity.
+- [x] Record unchanged-request and POM-edit counts.
 
 ## Phase 6 — delete superseded machinery
 - [ ] Remove duplicate exhaustive validation.

@@ -187,14 +187,19 @@ Commits: `e12146f` introduces the fixed-size semantic completion key, `48a8c7f` 
 
 ## Phase 5 — project-model identity
 
-Status: **not started**.
+Status: **complete**.
 
-Baseline evidence: pending.
-Change: pending.
-Tests: pending.
-PR-local measurement: pending.
-Remaining discrepancy: pending.
-Commit: pending.
+Baseline evidence: accepted baseline proof run 35804584433 at `db3166f`. Before the cutover, an unchanged interactive project-model request still entered Maven, validated **195 model inputs**, re-hashed **241,632 B**, and serialized about **1,260,384 B** of Resolution JSON.
+
+Change: the Maven bundle now exports the exact accepted project-model input manifest alongside the resolved graph. `MavenResolver` retains a bounded resident `Resolution` keyed by workspace request and protects it with a watch-backed `ProjectModelWatch` over the accepted POM/settings/`.mvn`/parent-model inputs. On an unchanged request the daemon reads the resident state and returns a cached copy without invoking the resolver bundle, reconstructing the dependency graph, scanning the accepted model-input set, or crossing the JSON graph boundary. A relevant model-file event invalidates that resident once; the changed request resolves and installs the new accepted model state, and subsequent requests return to the resident path. Watch delivery uses the same request-level filesystem publication fence as source/environment state.
+
+Tests: `Maven4ResolutionTest.residentProjectModelSkipsBundleUntilAcceptedInputChanges` permanently verifies that the unchanged path leaves resolver calls, model validation calls, model-input checks and Resolution JSON bytes unchanged, then a `.mvn/maven.config` edit invalidates exactly once and the following request is resident again. Existing POM/settings and daemon diagnostics tests cover parent POM bytes, settings profile changes and live diagnostics after model refresh. Full repository Tests run **35874199469** at `ea5e6cc` passed.
+
+PR-local measurement: final proof run **35874199636** at `ea5e6cc` shows the unchanged `project_model_unchanged` request at **4.750 ms** with only `project_model_fast_hits +1` / `request_cache_hits +1`: **0 new resolver calls, 0 project-model validation calls, 0 model inputs checked, 0 model bytes hashed, and 0 Resolution JSON bytes**. A POM edit cost **1,845.977 ms**, produced exactly **+1 resolver call, +1 invalidation, +1 validation call, 195 inputs checked, 187,564 B hashed, and 1,304,327 B of response JSON**. The immediately following `project_model_after_edit` request was **8.067 ms** and again performed no resolver/validation/hash/JSON work, only one resident fast hit.
+
+Remaining discrepancy: none for the Phase-5 ownership target. Cold/changed Maven resolution is intentionally still O(project-model/dependency graph); only unchanged interactive requests are required to bypass that work.
+
+Commits: `73ac9b5` exposes the accepted model identity, `0763292` exports the accepted input manifest, `91ed12d` returns the accepted model state, `cd01220` installs resident resolution reuse, `f3a9617` / `c325a34` / `f7e22d8` add permanent fast-path regressions, and `27b44eb` plus `ea5e6cc` make watch-event settlement deterministic while sharing one request-level filesystem fence.
 
 ## Phase 6 — delete superseded machinery
 

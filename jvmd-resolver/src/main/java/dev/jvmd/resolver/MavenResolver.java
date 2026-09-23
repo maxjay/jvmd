@@ -18,6 +18,8 @@ public final class MavenResolver implements AutoCloseable {
     private boolean closed;
     private double bootstrapMillis;
     private long resolveCalls,requestCacheHits,lastRequestId;
+    // PR-local live-state-tree evidence. Remove after the final before/after capture.
+    private long resolveRequestJsonBytes,resolveResponseJsonBytes;
     private RequestCacheKey lastRequestKey;
     private Resolution lastRequestResolution;
     private record RequestCacheKey(Path root,List<Path> roots,boolean ignoreVersions){
@@ -61,7 +63,13 @@ public final class MavenResolver implements AutoCloseable {
             } catch(Exception e) { throw new IllegalStateException(e); }
         };
         try {
-            var response=Json.MAPPER.readTree((String)call.invoke(bundle,operation,Json.MAPPER.writeValueAsString(parameters),callback));
+            String requestJson=Json.MAPPER.writeValueAsString(parameters);
+            String responseJson=(String)call.invoke(bundle,operation,requestJson,callback);
+            if(operation.equals("resolve")){
+                resolveRequestJsonBytes+=requestJson.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+                resolveResponseJsonBytes+=responseJson.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+            }
+            var response=Json.MAPPER.readTree(responseJson);
             if(response.has("error")) { var error=response.path("error");throw new RpcException(error.path("code").asInt(),error.path("message").asText(),error.get("data")); }
             return response.path("result");
         } catch(InvocationTargetException e) { throw unwrap(e); }
@@ -72,7 +80,8 @@ public final class MavenResolver implements AutoCloseable {
         return error;
     }
     public synchronized Map<String,Object> status() {
-        try { var result=Json.MAPPER.convertValue(invoke("status",Map.of(),null),new TypeReference<Map<String,Object>>(){});result.put("bootstrap_ms",bootstrapMillis);result.put("resolve_calls",resolveCalls);result.put("request_cache_hits",requestCacheHits);return result; }
+        try { var result=Json.MAPPER.convertValue(invoke("status",Map.of(),null),new TypeReference<Map<String,Object>>(){});result.put("bootstrap_ms",bootstrapMillis);result.put("resolve_calls",resolveCalls);result.put("request_cache_hits",requestCacheHits);
+            result.put("resolve_request_json_bytes",resolveRequestJsonBytes);result.put("resolve_response_json_bytes",resolveResponseJsonBytes);return result; }
         catch(Exception e) { throw new IllegalStateException("Resolver status failed",e); }
     }
     public synchronized Resolution resolve(Path root) throws Exception { return resolveWorkspace(root,List.of(root),true); }

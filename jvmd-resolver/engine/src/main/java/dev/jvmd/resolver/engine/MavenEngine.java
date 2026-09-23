@@ -45,11 +45,24 @@ public final class MavenEngine implements AutoCloseable {
     private final Map<Path, List<String>> versions = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.atomic.AtomicLong collections = new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicLong cacheHits = new java.util.concurrent.atomic.AtomicLong();
+    // PR-local live-state-tree evidence. Remove after the final before/after capture.
+    private final java.util.concurrent.atomic.AtomicLong validationCalls = new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong validatedInputs = new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong validationBytesHashed = new java.util.concurrent.atomic.AtomicLong();
     public MavenEngine(Config config, MavenEnvironment environment, Models models) {
         this.config = config; this.environment = environment; this.models = models; this.system = models.system();
     }
-    public Map<String, Object> status() { return Map.of("maven_major", config.mavenMajor(), "resolver_version", models.resolverVersion(),
-            "maven_version", models.mavenVersion(), "model_builder", models.modelBuilder(), "collections", collections.get(), "cache_hits", cacheHits.get(),"cold_timings",timings,"native_timings",models.timings()); }
+    public Map<String, Object> status() {
+        var result=new LinkedHashMap<String,Object>();
+        result.put("maven_major",config.mavenMajor());result.put("resolver_version",models.resolverVersion());
+        result.put("maven_version",models.mavenVersion());result.put("model_builder",models.modelBuilder());
+        result.put("collections",collections.get());result.put("cache_hits",cacheHits.get());
+        result.put("project_model_validation_calls",validationCalls.get());
+        result.put("project_model_inputs_checked",validatedInputs.get());
+        result.put("project_model_bytes_hashed",validationBytesHashed.get());
+        result.put("cold_timings",timings);result.put("native_timings",models.timings());
+        return Map.copyOf(result);
+    }
     public synchronized Resolution resolve(Path root) throws Exception {
         return resolve(root, (org.eclipse.aether.repository.WorkspaceReader)null);
     }
@@ -265,13 +278,18 @@ public final class MavenEngine implements AutoCloseable {
         var attrs = Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class);
         return new Input(path.toString(), attrs.size(), attrs.lastModifiedTime().to(java.util.concurrent.TimeUnit.NANOSECONDS), Hashing.sha256(path), strong);
     }
-    private static boolean unchanged(List<Input> inputs) throws Exception {
+    private boolean unchanged(List<Input> inputs) throws Exception {
+        validationCalls.incrementAndGet();
         for (Input input : inputs) {
+            validatedInputs.incrementAndGet();
             Path path = Path.of(input.path());
             if (!Files.isRegularFile(path)) { if (input.size() != -1) return false; else continue; }
             var attrs = Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class);
             if (attrs.size() != input.size() || attrs.lastModifiedTime().to(java.util.concurrent.TimeUnit.NANOSECONDS) != input.modified()) return false;
-            if (input.strong() && !Hashing.sha256(path).equals(input.hash())) return false;
+            if (input.strong()) {
+                validationBytesHashed.addAndGet(attrs.size());
+                if (!Hashing.sha256(path).equals(input.hash())) return false;
+            }
         }
         return true;
     }

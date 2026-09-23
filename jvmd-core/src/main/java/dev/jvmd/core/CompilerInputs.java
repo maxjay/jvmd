@@ -45,6 +45,8 @@ public final class CompilerInputs {
     private Snapshot snapshot;
     private Map<Path,String> environmentFiles=Map.of();
     private long observations,rebuilds,validationNanos,observation;
+    // PR-local live-state-tree evidence. Remove after the final before/after capture.
+    private long captureCalls,sourceInventoryCalls,sourceCandidatesInspected,environmentCandidatesInspected;
     // Disk environment and overlaid source are distinct roles even at the same path.
     private final Map<Path,Object> sourceEvidence=new HashMap<>(),environmentEvidence=new HashMap<>();
     private Documents trackedDocuments;
@@ -61,6 +63,7 @@ public final class CompilerInputs {
     public synchronized Snapshot capture(Configuration config,Documents documents)throws IOException {
         try(var trace=dev.jvmd.core.RequestScope.stage("inputs.discover")){
         var paths=new ArrayList<List<Path>>();
+        sourceInventoryCalls+=config.roots().size();
         for(Path root:config.roots())paths.add(files.inventory(root,".java"));
         if(!paths.equals(inventories)){
             discovered=paths.stream().flatMap(Collection::stream).distinct().toList();inventories=List.copyOf(paths);
@@ -73,6 +76,7 @@ public final class CompilerInputs {
     public synchronized Snapshot capture(Configuration config,Documents documents,Collection<Path> diskFiles)throws IOException {
         try(var trace=dev.jvmd.core.RequestScope.stage("inputs.validate")){
             trace.count("captures",1);
+        captureCalls++;
         long start=System.nanoTime();observations++;
         try {
             boolean sameConfig=config.equals(configuration);
@@ -87,6 +91,7 @@ public final class CompilerInputs {
             long version=documents.transitionVersion(transitions);
             if(version!=transitionVersion){observation++;transitionVersion=version;}
             Map<Path,String> prior=snapshot==null?Map.of():snapshot.sources();
+            sourceCandidatesInspected+=candidates.size();
             Map<Path,String> sources=observe(candidates,prior,documents);
             var environment=environment(config);
             MembershipIdentity membership=snapshot!=null&&sameConfig&&sources.keySet().equals(prior.keySet())?snapshot.membership():
@@ -126,6 +131,7 @@ public final class CompilerInputs {
         if(!config.equals(environmentConfiguration)||!paths.equals(environmentInventories)){
             var keys=new LinkedHashSet<Path>();paths.forEach(p->keys.addAll(p.members()));environmentPaths=Collections.unmodifiableSet(keys);environmentInventories=List.copyOf(paths);observation++;
         }
+        environmentCandidatesInspected+=environmentPaths.size();
         var env=observe(environmentPaths,environmentFiles,null);
         if(environmentIdentity==null||!config.equals(environmentConfiguration)||env!=environmentFiles){
             environmentIdentity=environment(config.generation(),config.roots(),config.options(),List.of(),Map.of(),config.classpath().stream().map(Path::toString).toList(),config.platform(),env);
@@ -185,6 +191,10 @@ public final class CompilerInputs {
         else if(value instanceof Collection<?> values){out.writeByte(2);out.writeInt(values.size());for(Object item:values)write(out,item);}
         else {byte[] bytes=Objects.toString(value,"").getBytes(StandardCharsets.UTF_8);out.writeByte(3);out.writeInt(bytes.length);out.write(bytes);}
     }
-    public synchronized Map<String,Object> status(){return Map.of("observations",observations,"snapshot_rebuilds",rebuilds,"validation_ns",validationNanos);}
+    public synchronized Map<String,Object> status(){return Map.of(
+            "observations",observations,"snapshot_rebuilds",rebuilds,"validation_ns",validationNanos,
+            "capture_calls",captureCalls,"source_inventory_calls",sourceInventoryCalls,
+            "source_candidates_inspected",sourceCandidatesInspected,
+            "environment_candidates_inspected",environmentCandidatesInspected);}
     private static List<Path> normalize(List<Path> paths){return paths.stream().map(p->p.toAbsolutePath().normalize()).toList();}
 }

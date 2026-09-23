@@ -44,6 +44,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private final LinkedHashMap<String,SourceText> sourceTexts=new LinkedHashMap<>(16,.75f,true);
     private long cacheHits,bindingComputations,diagnosticFilesAnalysed,diagnosticFilesReused,indexWrites,indexWriteNanos,apiFingerprintChanges,apiFingerprintUnchanged;
     private long completionCacheHits,completionComputations,completionRequests;
+    // PR-local live-state-tree evidence. Remove after the final before/after capture.
+    private long completionKeyEntriesVisited,completionKeyEntriesSorted,completionKeyMaterialBytes;
     private long completionKeyNanos,completionSourceRefreshNanos,completionFocusNanos,completionQueryNanos,completionEditorNanos,
             completionCandidateNanos,completionRowNanos,completionDocNanos,completionSortNanos,completionCacheAdmissionNanos,
             completionFilterNanos,completionTotalNanos,completionCandidatesSeen,completionRowsMaterialized,completionDocLookups;
@@ -396,9 +398,15 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var stamp=new StringBuilder(context.toString()).append('\0').append(file).append(':').append(start).append(':').append(Hashing.sha256(patched.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         stamp.append(inputs.environment().value()).append(inputs.membership().value());
         // Exclude only the explicit token-stripped buffer; all other live source inputs matter.
-        for(var entry:inputs.sources().entrySet().stream().sorted(Map.Entry.comparingByKey()).toList())
+        var entries=inputs.sources().entrySet().stream().sorted(Map.Entry.comparingByKey()).toList();
+        completionKeyEntriesSorted+=entries.size();
+        for(var entry:entries){
+            completionKeyEntriesVisited++;
             if(!entry.getKey().equals(file))stamp.append('\0').append(entry.getKey()).append(':').append(entry.getValue());
-        return Hashing.sha256(stamp.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+        byte[] material=stamp.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        completionKeyMaterialBytes+=material.length;
+        return Hashing.sha256(material);
     }
     public Envelope signatureHelp(Path path,String text,int line,int character)throws Exception{
         int cursor=Documents.offset(text,new Documents.Position(line,character));touch(path,text);var focus=focusing.focus(path,text,cursor);
@@ -428,6 +436,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     public Map<String,Object> status(){
         var result=new LinkedHashMap<String,Object>(compiler.status());if(snapshots!=null)result.put("persistent_snapshots",snapshots.status());result.putAll(focusing.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("binding_computations",bindingComputations);result.put("classpath_fingerprints",classpathFingerprints);result.put("diagnostic_store",diagnosticStore.status());result.put("diagnostic_files_analysed",diagnosticFilesAnalysed);result.put("diagnostic_files_reused",diagnosticFilesReused);result.put("index_record_source_calls",indexWrites);result.put("index_record_source_ms",0.0);result.put("index_publish_enqueue_ms",Math.round(indexWriteNanos/1000.0)/1000.0);if(index!=null)result.put("source_publisher",index.sourcePublisherStatus());result.put("api_fingerprint_changes",apiFingerprintChanges);result.put("api_fingerprint_unchanged",apiFingerprintUnchanged);result.put("pending_api_files",dependencies.semantic().pendingCount());result.put("conditional_files",dependencies.semantic().conditionalCount());result.put("dependencies",dependencies.status());
+        result.put("completion_key_work",Map.of("entries_visited",completionKeyEntriesVisited,"entries_sorted",completionKeyEntriesSorted,"material_bytes",completionKeyMaterialBytes));
         result.put("completion_cache_hits",completionCacheHits);result.put("completion_computations",completionComputations);result.put("completion_requests",completionRequests);
         result.put("completion_candidates_seen",completionCandidatesSeen);result.put("completion_rows_materialized",completionRowsMaterialized);result.put("completion_doc_lookups",completionDocLookups);
         result.put("completion_last_cache_hit",completionLastCacheHit);result.put("completion_last_timing_ms",completionLastTimingMs);

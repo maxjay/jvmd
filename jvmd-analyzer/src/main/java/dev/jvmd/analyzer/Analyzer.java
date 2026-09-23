@@ -39,8 +39,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private final DiagnosticStore diagnosticStore=new DiagnosticStore();
     private LinkedHashMap<String,Envelope> outlines=new LinkedHashMap<>(16,.75f,true);
     private record Cached(Path file,String hash,String stamp,int start,int end,List<Focusing.Span> excluded,CompilerPool.Outcome<Bindings.Snapshot> result) { }
-    private record CompletionCached(String key,String prefix,long sourceEpoch,Set<Path> dependencies,CompilerPool.Outcome<List<Map<String,Object>>> result) {
-        CompletionCached { dependencies=Set.copyOf(dependencies); }
+    private record CompletionCached(String key,String prefix,long sourceEpoch,Set<Path> dependencies,Map<Path,String> dependencyApis,
+                                    CompilerPool.Outcome<List<Map<String,Object>>> result) {
+        CompletionCached { dependencies=Set.copyOf(dependencies);dependencyApis=Map.copyOf(dependencyApis); }
     }
     private record CompletionValidation(CompletionCached cached,boolean apiCurrent) { }
     private record Outline(List<Map<String,Object>> symbols,Set<Path> dependencies) { }
@@ -439,6 +440,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                     dependencies.recordFocused(path,completionDependencies);
                     String admittedKey=completionKey(path,patched,start,qualified,observed);
                     caches.completion=new CompletionCached(admittedKey,prefix,live.snapshot().inputEpoch(),completionDependencies,
+                            completionApiFingerprints(completionDependencies),
                             new CompilerPool.Outcome<>(2,outcome.result(),List.of(),List.of()));
                     caches.completionSourceEpoch=live.snapshot().inputEpoch();
                 }
@@ -469,20 +471,27 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         boolean apiCurrent=true;
         for(Path dependency:changed.get()){
             if(dependency.equals(caller)||!cached.dependencies().contains(dependency))continue;
-            String current=live.contentHash(dependency);
-            if(current==null){apiCurrent=false;continue;}
-            var contribution=contribution(dependency);
-            if(contribution==null||!current.equals(contribution.sourceHash())){
-                String apiBefore=contribution==null?null:contribution.apiFingerprint();
+            var leaf=live.leaf(dependency).orElse(null);
+            if(leaf==null){apiCurrent=false;continue;}
+            if(!leaf.semanticsCurrent()){
                 var result=bindings(dependency,documents.text(dependency),null);
                 if(result.tier()!=2||result.result()==null||!result.warnings().isEmpty())return null;
-                var updated=contribution(dependency);
-                String apiAfter=updated==null?null:updated.apiFingerprint();
-                if(!Objects.equals(apiBefore,apiAfter))apiCurrent=false;
+                leaf=live.leaf(dependency).orElse(null);
+                if(leaf==null||!leaf.semanticsCurrent())return null;
             }
+            if(!Objects.equals(cached.dependencyApis().get(dependency),leaf.api().value()))apiCurrent=false;
         }
-        var refreshed=new CompletionCached(cached.key(),cached.prefix(),live.snapshot().inputEpoch(),cached.dependencies(),cached.result());
+        var refreshed=new CompletionCached(cached.key(),cached.prefix(),live.snapshot().inputEpoch(),cached.dependencies(),cached.dependencyApis(),cached.result());
         return new CompletionValidation(refreshed,apiCurrent);
+    }
+    private Map<Path,String> completionApiFingerprints(Set<Path> dependenciesToCheck){
+        var live=documents.liveState(context.sources());var result=new LinkedHashMap<Path,String>();
+        for(Path dependency:dependenciesToCheck){
+            var leaf=live.leaf(dependency).orElse(null);
+            if(leaf==null||!leaf.semanticsCurrent())throw new IllegalStateException("Completion dependency semantics are not current: "+dependency);
+            result.put(dependency,leaf.api().value());
+        }
+        return Map.copyOf(result);
     }
     private Set<Path> completionDependencies(Path caller,EditorQueries.CompletionResult completion){
         var result=new TreeSet<Path>(Comparator.comparing(Path::toString));var live=documents.liveState(context.sources());

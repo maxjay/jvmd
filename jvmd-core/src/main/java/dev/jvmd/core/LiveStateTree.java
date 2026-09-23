@@ -71,6 +71,10 @@ public final class LiveStateTree {
 
     public synchronized List<Path> roots(){return roots;}
     public synchronized State state(){return workspace.state();}
+    /** Expensive membership materialization for reconciliation/persistence boundaries, never request identity. */
+    public synchronized Set<Path> paths(){return Set.copyOf(leaves.keySet());}
+    /** Record an observed transition whose intermediate content may be unavailable (for example watcher overflow). */
+    public synchronized State uncertainTransition(){long next=++epoch;markEpoch(workspace,next);return state();}
     public synchronized Optional<State> branch(Path directory){
         directory=normalize(directory);Path root=rootFor(directory);
         if(root==null)return Optional.empty();
@@ -165,6 +169,7 @@ public final class LiveStateTree {
             node.files+=fileDelta;node.epoch=epoch;
         }
     }
+    private static void markEpoch(Node node,long value){node.epoch=value;for(Node child:node.directories.values())markEpoch(child,value);}
     private static Set<Domain> domains(Leaf old,Leaf next){
         var changed=EnumSet.of(Domain.MERKLE);
         if(old==null||next==null)changed.add(Domain.MEMBERSHIP);

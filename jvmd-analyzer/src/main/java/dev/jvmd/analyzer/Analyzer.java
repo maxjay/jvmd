@@ -52,6 +52,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private Map<String,Double> completionLastTimingMs=Map.of();private boolean completionLastCacheHit;
     private Context context;
     private IndexService index;
+    private LiveSourceState liveSourceState;
     private DiagnosticSnapshots snapshots;
     public void persistence(Path directory){if(snapshots==null){snapshots=new DiagnosticSnapshots(directory);diagnosticStore.persistence(snapshots);snapshots.documents(documents);}}
     private long budget;
@@ -62,8 +63,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         compiler=compilerPools.computeIfAbsent(context.generation(),_->new CompilerPool(inputFiles));
         compiler.configure(context.generation(),context.release(),context.classpath(),context.sources(),index,budget,context.compilerOptions(),context.preciseSourceRoots());
         compiler.binarySources(context.binarySources());
+        liveSourceState=documents.liveState(context.sources());
     }
-    public void documents(Documents documents){this.documents=documents;if(snapshots!=null)snapshots.documents(documents);compiler.documents(documents);dependencies.documentHash(documents::hash);dependencies.fileStates(documents.fileStates());}
+    public void documents(Documents documents){this.documents=documents;if(snapshots!=null)snapshots.documents(documents);compiler.documents(documents);dependencies.documentHash(documents::hash);dependencies.fileStates(documents.fileStates());if(context!=null)liveSourceState=documents.liveState(context.sources());}
     private List<String> warnings(List<String> query){if(context.warnings().isEmpty())return query;var all=new LinkedHashSet<String>(context.warnings());all.addAll(query);return List.copyOf(all);}
     private String coordinates(String file){return context.coordinates().entrySet().stream().filter(e->file.startsWith(e.getKey())).max(Comparator.comparingInt(e->e.getKey().length())).map(Map.Entry::getValue).orElse(null);}
     public CompilerInputs.Snapshot inputSnapshot()throws Exception {
@@ -161,6 +163,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         diagnosticStore.invalidate(Set.of(path.toAbsolutePath().normalize()));invalidateCompilerCaches(affected);
     }
     private void resolveContribution(FileSemanticContribution contribution){
+        if(liveSourceState!=null)liveSourceState.semantic(contribution.file(),contribution.sourceHash(),contribution.apiFingerprint(),contribution.exportedNames());
         boolean pending=dependencies.semantic().pending(contribution.file());
         var result=dependencies.semantic().resolve(contribution);
         if(pending){if(result.apiChanged().isEmpty())apiFingerprintUnchanged++;else apiFingerprintChanges++;}
@@ -436,6 +439,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     public Map<String,Object> status(){
         var result=new LinkedHashMap<String,Object>(compiler.status());if(snapshots!=null)result.put("persistent_snapshots",snapshots.status());result.putAll(focusing.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("binding_computations",bindingComputations);result.put("classpath_fingerprints",classpathFingerprints);result.put("diagnostic_store",diagnosticStore.status());result.put("diagnostic_files_analysed",diagnosticFilesAnalysed);result.put("diagnostic_files_reused",diagnosticFilesReused);result.put("index_record_source_calls",indexWrites);result.put("index_record_source_ms",0.0);result.put("index_publish_enqueue_ms",Math.round(indexWriteNanos/1000.0)/1000.0);if(index!=null)result.put("source_publisher",index.sourcePublisherStatus());result.put("api_fingerprint_changes",apiFingerprintChanges);result.put("api_fingerprint_unchanged",apiFingerprintUnchanged);result.put("pending_api_files",dependencies.semantic().pendingCount());result.put("conditional_files",dependencies.semantic().conditionalCount());result.put("dependencies",dependencies.status());
+        if(liveSourceState!=null)result.put("live_source_state",liveSourceState.status());
         result.put("completion_key_work",Map.of("entries_visited",completionKeyEntriesVisited,"entries_sorted",completionKeyEntriesSorted,"material_bytes",completionKeyMaterialBytes));
         result.put("completion_cache_hits",completionCacheHits);result.put("completion_computations",completionComputations);result.put("completion_requests",completionRequests);
         result.put("completion_candidates_seen",completionCandidatesSeen);result.put("completion_rows_materialized",completionRowsMaterialized);result.put("completion_doc_lookups",completionDocLookups);

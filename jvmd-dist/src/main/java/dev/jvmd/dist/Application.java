@@ -284,7 +284,7 @@ public final class Application implements AutoCloseable {
                                          Resolution.Module module,boolean test,List<String> roots)throws Exception{
         String key=module.directory()+":"+test;
         Path representative=Path.of(roots.getFirst()).resolve("__jvmd_probe__.java");
-        var worker=analyzer(session,representative);var snapshot=worker.inputSnapshot();
+        var worker=analyzer(session,representative);worker.settleSourceEvents();var snapshot=worker.inputSnapshot();
         result.put(key,new WorkspaceBindings.ModuleInputs(snapshot,()->{
             var owners=new LinkedHashSet<Path>();
             for(Path file:snapshot.live().paths())if(key.equals(WorkspaceContextManager.key(file,graph)))owners.add(file);

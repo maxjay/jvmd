@@ -85,6 +85,9 @@ public final class CompilerPool implements AutoCloseable {
         liveDocuments.liveState(configuredSources).reconcilePackages(packages);
         refreshSourceModules();
     }
+    public void settleSourceEvents()throws IOException{
+        checkThread();ensureDocumentsAttached();liveDocuments.liveState(configuredSources).settleWatchEvents();refreshSourceModules();
+    }
     public CompilerInputs.Snapshot inputSnapshot()throws java.io.IOException {
         checkThread();ensureDocumentsAttached();return inputs.capture(inputConfiguration,liveDocuments);
     }

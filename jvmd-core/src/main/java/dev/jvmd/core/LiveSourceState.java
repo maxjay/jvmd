@@ -102,6 +102,12 @@ public final class LiveSourceState implements AutoCloseable {
      */
     public void observe(Collection<Path> paths){for(Path path:paths)refresh(path);}
     public void observe(Path path){refresh(path);}
+    /** Bounded delivery fence for graph-wide validation; never enumerates source owners. */
+    public void settleWatchEvents()throws IOException{
+        if(verificationOnly){reconcile();return;}
+        java.util.concurrent.locks.LockSupport.parkNanos(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(2));
+        synchronized(this){if(!trusted)reconcile();}
+    }
 
     /**
      * Reconcile only exact source-package directories. This is the synchronous discovery fallback

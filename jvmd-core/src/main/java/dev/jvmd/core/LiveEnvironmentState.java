@@ -144,7 +144,7 @@ final class LiveEnvironmentState implements AutoCloseable {
             if(!(event.context() instanceof Path relative)){uncertain();continue;}
             Path logical=registration.logical().resolve(relative).toAbsolutePath().normalize();
             Path physical=registration.physical().resolve(relative);
-            if(event.kind()==StandardWatchEventKinds.ENTRY_CREATE&&Files.isDirectory(physical,LinkOption.NOFOLLOW_LINKS)){
+            if(event.kind()==StandardWatchEventKinds.ENTRY_CREATE&&Files.isDirectory(physical)){
                 try{registerTree(logical);}catch(FileSystemLoopException loop){uncertain();}
                 reconcileCreatedDirectory(logical);continue;
             }

@@ -93,6 +93,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     public void observeSources(Collection<Path> paths){
         compiler.documents(documents);compiler.observeSources(paths);
     }
+    public void settleSourceEvents()throws Exception{compiler.documents(documents);compiler.settleSourceEvents();}
     /** Observe this source and the source dependency graph already learned from prior attribution. */
     private void synchronizeKnownSources(Path requested)throws Exception{
         requested=requested.toAbsolutePath().normalize();

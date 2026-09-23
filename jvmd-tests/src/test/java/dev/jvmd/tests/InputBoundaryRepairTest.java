@@ -140,14 +140,16 @@ class InputBoundaryRepairTest {
         }
     }
 
-    @Test void removedEnvironmentPathsReleaseEnvironmentEvidence()throws Exception {
+    @Test void removedEnvironmentPathsLeaveTheMaintainedEnvironmentState()throws Exception {
         Path src=Files.createDirectory(root.resolve("src")),cp=Files.createDirectory(root.resolve("classes"));
         Files.writeString(src.resolve("A.java"),"class A {}");Path binary=Files.write(cp.resolve("A.class"),new byte[]{1});
         var files=new FileStateRegistry();var inputs=new CompilerInputs(files);try(var docs=new Documents(files)){
             var config=new CompilerInputs.Configuration("module",List.of(src),List.of(cp),List.of());inputs.capture(config,docs);
+            @SuppressWarnings("unchecked") var before=(Map<String,Object>)inputs.status().get("environment_live");
+            assertThat(((Number)before.get("tracked_files")).longValue()).isPositive();
             Files.delete(binary);inputs.capture(config,docs);
-            var field=CompilerInputs.class.getDeclaredField("environmentEvidence");field.setAccessible(true);
-            var evidence=(Map<?,?>)field.get(inputs);assertThat(evidence.containsKey(binary)).isFalse();
+            @SuppressWarnings("unchecked") var after=(Map<String,Object>)inputs.status().get("environment_live");
+            assertThat(((Number)after.get("tracked_files")).longValue()).isLessThan(((Number)before.get("tracked_files")).longValue());
         }
     }
 }

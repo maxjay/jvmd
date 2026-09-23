@@ -225,7 +225,10 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         final String binary,text;final Path file;final long generation;
         SourceFile(Path file,String binary,String text){super(file.toUri(),Kind.SOURCE);this.file=file;this.binary=binary;this.text=text;this.generation=sourceStateGeneration;}
         @Override public CharSequence getCharContent(boolean ignoreEncodingErrors)throws IOException{
-            String value=text!=null?text:Files.readString(file);
+            // Explicit query buffers may be deliberately transformed (focused bodies, completion marker).
+            // Their bytes are immutable task inputs. Only implicit source reads must match live disk/editor state.
+            if(text!=null)return text;
+            String value=Files.readString(file);
             if(expectedInputs==null)return value;
             try{
                 String checked=expectedInputs.checkText(file,value);
@@ -242,9 +245,6 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     }
     public JavaFileObject source(Path file,String text){
         file=file.toAbsolutePath().normalize();String binary=sourceName(file);
-        if(expectedInputs!=null)try{
-            expectedInputs.checkText(file,text);var identity=expectedInputs.source(file);if(identity.value()!=null)readSourceHashes.put(file,identity.value());
-        }catch(CompilerInputs.Superseded changed){inputsSuperseded=true;}
         return new SourceFile(file,binary==null?file.getFileName().toString().replaceFirst("\\.java$", ""):binary,text);
     }
     private String sourceName(Path file){

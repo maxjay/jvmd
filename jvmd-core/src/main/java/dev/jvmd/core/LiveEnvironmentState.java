@@ -165,7 +165,16 @@ final class LiveEnvironmentState implements AutoCloseable {
                 }
             }
         }
-        if(!key.reset()){synchronized(this){watches.remove(key);watchedPhysical.remove(registration.physical());}uncertain();}
+        if(!key.reset()){
+            synchronized(this){
+                watches.remove(key);watchedPhysical.remove(registration.physical());
+                // A watched directory disappearing can later reappear behind the same logical
+                // path without producing an event on any surviving watch. Degrade permanently
+                // to verification-only correctness for this environment state.
+                verificationOnly=true;
+            }
+            uncertain();
+        }
     }
     private void reconcileCreatedDirectory(Path directory)throws IOException{
         for(var spec:recursive){

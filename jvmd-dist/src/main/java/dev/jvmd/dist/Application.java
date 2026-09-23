@@ -270,7 +270,7 @@ public final class Application implements AutoCloseable {
             var roots=workspace(session).roots();
             if(roots.isEmpty())return Map.of();
             var worker=analyzer(session,roots.getFirst().resolve("__jvmd_probe__.java"));
-            var snapshot=worker.inputSnapshot();
+            worker.settleSourceEvents();var snapshot=worker.inputSnapshot();
             result.put("plain",new WorkspaceBindings.ModuleInputs(snapshot,()->snapshot.live().paths()));
             return Map.copyOf(result);
         }

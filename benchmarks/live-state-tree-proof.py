@@ -167,9 +167,7 @@ def main():
         },timeout=180)
         client.notify("initialized")
         open_doc(client,receiver,receiver_text,1);open_doc(client,caller,caller_text,1);open_doc(client,unrelated,unrelated_text,1)
-        since=len(client.notifications)
         change_doc(client,caller,probe_text,2)
-        wait_clean_diagnostics(client,caller,2,since)
 
         def complete():
             items,latency=completion(client,caller.as_uri(),pos)

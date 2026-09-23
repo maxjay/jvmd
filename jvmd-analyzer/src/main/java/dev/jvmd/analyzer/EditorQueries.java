@@ -33,6 +33,7 @@ public final class EditorQueries {
     private static Map<String,Object> row(JavacTask task,SymbolIdentity identity,Element element,DeclaredType receiver){return row(task,identity,element,receiver,null);}
     private static Map<String,Object> row(JavacTask task,SymbolIdentity identity,Element element,DeclaredType receiver,CompletionTiming timing){
         var value=new LinkedHashMap<String,Object>();value.put("scip",identity.scip(element));value.put("name",identity.displayName(element));value.put("name_path",identity.namePath(element));value.put("kind",SymbolIdentity.kind(element));value.put("signature",identity.signature(element));
+        String sourceFile=identity.sourceFile(element);if(sourceFile!=null)value.put("source_file",sourceFile);
         value.put("modifiers",element.getModifiers().stream().map(Object::toString).sorted().toList());
         TypeMirror member=element.asType();if(receiver!=null&&element.getEnclosingElement() instanceof TypeElement)member=task.getTypes().asMemberOf(receiver,element);
         if(element instanceof ExecutableElement method&&member instanceof ExecutableType executable){

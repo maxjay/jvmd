@@ -91,7 +91,7 @@ class InputBoundaryRepairTest {
     @Test void closedOverlayAndReversionAdvanceEpochAndSupersedeInFlightWork()throws Exception {
         Path src=Files.createDirectory(root.resolve("src")),file=Files.writeString(src.resolve("A.java"),"class A {}");
         var files=new FileStateRegistry();try(var docs=new Documents(files)){
-            var inputs=new CompilerInputs(files),config=new CompilerInputs.Configuration("module",List.of(src),List.of(),List.of("--release","25"));
+            var inputs=new CompilerInputs(files);var config=new CompilerInputs.Configuration("module",List.of(src),List.of(),List.of("--release","25"));
             var before=inputs.capture(config,docs);docs.open(file,"class A { int temporary; }",1);docs.close(file);var after=inputs.capture(config,docs);
             assertThat(after.sameInputs(before)).isTrue();assertThat(after.observation()).isGreaterThan(before.observation());
             docs.open(file,"class A {}",1);var opened=inputs.capture(config,docs);
@@ -109,7 +109,7 @@ class InputBoundaryRepairTest {
     @Test void diskObservationCacheEvictionDoesNotChangeLiveIdentity()throws Exception {
         Path cp=Files.createDirectory(root.resolve("classes")),file=Files.writeString(root.resolve("A.java"),"class A {}");
         var files=new FileStateRegistry();try(var docs=new Documents(files)){
-            var inputs=new CompilerInputs(files),config=new CompilerInputs.Configuration("module",List.of(root),List.of(cp),List.of("--release","25"));
+            var inputs=new CompilerInputs(files);var config=new CompilerInputs.Configuration("module",List.of(root),List.of(cp),List.of("--release","25"));
             var before=inputs.capture(config,docs);files.forget(file);files.reconcile();
             assertThat(inputs.capture(config,docs)).isEqualTo(before);
             Files.writeString(file,"class A { int n; }");docs.liveState(config.roots()).observe(file);

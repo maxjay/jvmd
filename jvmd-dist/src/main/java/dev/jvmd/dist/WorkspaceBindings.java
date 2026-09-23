@@ -125,7 +125,14 @@ public final class WorkspaceBindings implements AutoCloseable {
     private long hits,builds,fullBuilds,incrementalBuilds,filesReanalysed,filesReused,apiInvalidations,fastValidationHits,fullValidations;
     private int lastReanalysedFiles;
     private InputSource configuredInputs(SourceFiles sources,CompilerInputs.Configuration configuration,Documents documents){
-        return ()->{var owners=Set.copyOf(sources.files());var snapshot=observations.capture(configuration,documents);return Map.of(configuration.generation(),new ModuleInputs(snapshot,owners));};
+        return ()->{
+            var owners=Set.copyOf(sources.files());
+            // This compatibility path already enumerated its owners; observe exactly those paths
+            // before capture so direct disk edits become deterministic live-state mutations.
+            documents.liveState(configuration.roots()).observe(owners);
+            var snapshot=observations.capture(configuration,documents);
+            return Map.of(configuration.generation(),new ModuleInputs(snapshot,owners));
+        };
     }
     public Snapshot peek(InputSource source)throws Exception {
         if(snapshot==null)return null;

@@ -70,6 +70,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     public CompilerInputs.Snapshot inputSnapshot()throws Exception {
         return compiler.inputSnapshot();
     }
+    /** Bounded mutation observation for callers that already know the relevant source set. */
+    public void observeSources(Collection<Path> paths){
+        compiler.documents(documents);compiler.observeSources(paths);
+    }
     /** Observe this source and the source dependency graph already learned from prior attribution. */
     private void synchronizeKnownSources(Path requested)throws Exception{
         requested=requested.toAbsolutePath().normalize();

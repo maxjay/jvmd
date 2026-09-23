@@ -97,12 +97,14 @@ public final class CompilerPool implements AutoCloseable {
     private void checkThread(){if(Thread.currentThread()!=owner||owner.isVirtual())throw new IllegalStateException("Compiler access must stay on its session platform executor");}
     public record SourceInput(Path file,String text){public SourceInput{file=file.toAbsolutePath().normalize();}}
     public <T> Outcome<T> query(Path path,String source,int tier,Query<T> query)throws Exception {
+        observeSources(Set.of(path));
         return query(path,source,tier,inputSnapshot(),query);
     }
     public <T> Outcome<T> query(Path path,String source,int tier,CompilerInputs.Snapshot observed,Query<T> query)throws Exception {
         return execute(List.of(new SourceInput(path,source)),tier,observed,query);
     }
     public <T> Outcome<T> batchQuery(List<SourceInput> sources,int tier,Query<T> query)throws Exception {
+        observeSources(sources.stream().map(SourceInput::file).toList());
         return batchQuery(sources,tier,inputSnapshot(),query);
     }
     public <T> Outcome<T> batchQuery(List<SourceInput> sources,int tier,CompilerInputs.Snapshot observed,Query<T> query)throws Exception {
@@ -151,6 +153,9 @@ public final class CompilerPool implements AutoCloseable {
                 finally{resetSourcePackages(task,parsed);}
             });
             int level=actual[0];var problems=diagnostics.getDiagnostics().stream().map(d->new Problem("live",level,d.getCode(),d.getKind().name(),d.getSource()==null?path.toString():d.getSource().toUri().toString(),d.getLineNumber(),Math.max(0,d.getColumnNumber()-1),d.getStartPosition(),d.getEndPosition(),d.getMessage(Locale.ROOT))).toList();
+            // Explicit compilation units are a bounded transaction boundary. Re-observe only
+            // those paths before commit so edits during javac cannot depend on watcher latency.
+            liveDocuments.liveState(configuredSources).observe(sources.stream().map(SourceInput::file).toList());
             if(manager.inputsSuperseded()||!inputs.current(observed,inputConfiguration,liveDocuments))
                 return new Outcome<>(1,null,List.of(),List.of("diagnostics_superseded: inputs changed during analysis"));
             return new Outcome<>(level,value,problems,List.copyOf(warnings));

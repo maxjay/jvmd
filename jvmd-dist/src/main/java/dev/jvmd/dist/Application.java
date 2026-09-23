@@ -282,6 +282,7 @@ public final class Application implements AutoCloseable {
             var inputs=new LinkedHashMap<String,WorkspaceBindings.ModuleInputs>();
             for(var group:groups.entrySet()){
                 var worker=analyzer(session,group.getValue().iterator().next());
+                worker.observeSources(group.getValue());
                 inputs.put(group.getKey(),new WorkspaceBindings.ModuleInputs(worker.inputSnapshot(),group.getValue()));
             }
             return inputs;

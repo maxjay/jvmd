@@ -117,6 +117,29 @@ class InputBoundaryRepairTest {
         }
     }
 
+    @Test void verificationOnlySourceStateRemainsCorrectWithoutWatchService()throws Exception {
+        Path src=Files.createDirectory(root.resolve("verification-only")),file=Files.writeString(src.resolve("A.java"),"class A {}");
+        var files=new FileStateRegistry();
+        try(var docs=new Documents(files,false)){
+            var inputs=new CompilerInputs(files);var config=new CompilerInputs.Configuration("module",List.of(src),List.of(),List.of("--release","25"));
+            var first=inputs.capture(config,docs);
+            assertThat(docs.liveState(config.roots()).status()).containsEntry("verification_only",true).containsEntry("trusted",true);
+
+            var mtime=Files.getLastModifiedTime(file);Files.writeString(file,"class A { int changed; }");Files.setLastModifiedTime(file,mtime);
+            var changed=inputs.capture(config,docs);
+            assertThat(changed.content()).isNotEqualTo(first.content());
+
+            try(var pool=new CompilerPool(files)){
+                pool.configure("module","25",List.of(),List.of(src),null,128L*1024*1024);pool.documents(docs);
+                var result=pool.query(file,Files.readString(file),2,(task,units,tier)->{
+                    Files.writeString(src.resolve("Added.java"),"class Added {}");return "must reject";
+                });
+                assertThat(result.result()).isNull();
+                assertThat(result.warnings()).anyMatch(w->w.startsWith("diagnostics_superseded"));
+            }
+        }
+    }
+
     @Test void removedEnvironmentPathsReleaseEnvironmentEvidence()throws Exception {
         Path src=Files.createDirectory(root.resolve("src")),cp=Files.createDirectory(root.resolve("classes"));
         Files.writeString(src.resolve("A.java"),"class A {}");Path binary=Files.write(cp.resolve("A.class"),new byte[]{1});

@@ -115,8 +115,7 @@ public final class CompilerInputs {
         try(var trace=RequestScope.stage("inputs.validate")){
             trace.count("captures",1);captureCalls++;observations++;long started=System.nanoTime();
             try{
-                var live=documents.liveState(config.roots());var source=live.snapshot();
-                if(!source.trusted()){live.reconcile();source=live.snapshot();}
+                var live=documents.liveState(config.roots());live.verifyTransactionBoundary();var source=live.snapshot();
                 var current=new Snapshot(live,source,environment(config));
                 if(snapshot==null||snapshot.observation()!=current.observation()||!snapshot.sameInputs(current)){
                     snapshot=current;rebuilds++;RequestScope.count("snapshot_rebuilds",1);
@@ -136,7 +135,9 @@ public final class CompilerInputs {
 
     /** Validate a compiler transaction without reconstructing source membership/content. */
     public synchronized boolean current(Snapshot expected,Configuration config,Documents documents)throws IOException{
-        if(expected==null||!expected.transactionCurrent())return false;
+        if(expected==null)return false;
+        expected.live().verifyTransactionBoundary();
+        if(!expected.transactionCurrent())return false;
         return expected.environment().equals(environment(config));
     }
 

@@ -40,24 +40,27 @@ public final class LiveSourceState implements AutoCloseable {
     private String uncertainty="";
     private long events,reconciliations,targetedReconciliations,overflows,semanticUpdates,staleSemanticUpdates;
 
-    LiveSourceState(FileStateRegistry files,Documents documents,Collection<Path> sourceRoots) {
+    private final boolean verificationOnly;
+    LiveSourceState(FileStateRegistry files,Documents documents,Collection<Path> sourceRoots){this(files,documents,sourceRoots,true);}
+    LiveSourceState(FileStateRegistry files,Documents documents,Collection<Path> sourceRoots,boolean watchEnabled) {
         this.files=Objects.requireNonNull(files);this.documents=Objects.requireNonNull(documents);
         roots=sourceRoots.stream().map(LiveSourceState::normalize).distinct().sorted(Comparator.comparing(Path::toString)).toList();
         tree=new LiveStateTree(roots);
-        try {
+        boolean fallback=!watchEnabled;String fallbackReason=watchEnabled?"":"watch disabled";
+        if(watchEnabled)try {
             watcher=FileSystems.getDefault().newWatchService();
             registerRoots();
-            reconcileContents();
-            trusted=true;
-            watchThread=Thread.ofPlatform().daemon(true).name("jvmd-source-state-"+Integer.toHexString(roots.hashCode())).start(this::watchLoop);
         } catch(IOException|UnsupportedOperationException unavailable) {
-            closeWatcher();
-            try { reconcileContents(); } catch(IOException ignored) { }
-            synchronized(this){
-                trusted=false;uncertainty="filesystem watch unavailable: "+unavailable.getClass().getSimpleName();
-                tree.uncertainTransition();
-            }
+            fallback=true;fallbackReason="filesystem watch unavailable: "+unavailable.getClass().getSimpleName();closeWatcher();
         }
+        verificationOnly=fallback;
+        try{
+            reconcileContents();trusted=true;uncertainty="";
+        }catch(IOException initial){
+            trusted=false;uncertainty="initial source verification failed: "+initial.getClass().getSimpleName();
+        }
+        if(!fallback&&trusted)watchThread=Thread.ofPlatform().daemon(true).name("jvmd-source-state-"+Integer.toHexString(roots.hashCode())).start(this::watchLoop);
+        else if(fallback&&trusted)uncertainty=fallbackReason;
     }
 
     public List<Path> roots(){return roots;}
@@ -166,12 +169,21 @@ public final class LiveSourceState implements AutoCloseable {
         semanticUpdates++;return true;
     }
 
-    /** Explicit correctness boundary used after startup uncertainty or watcher overflow. */
+    /**
+     * Prepare/verify a compiler transaction. Watch-backed states usually do no work here; a
+     * verification-only state performs the slower full check at both transaction boundaries.
+     */
+    public void verifyTransactionBoundary()throws IOException{
+        boolean verify; synchronized(this){verify=verificationOnly||!trusted;}
+        if(verify)reconcile();
+    }
+    /** Explicit correctness boundary used after startup uncertainty, watcher overflow, or verification-only fallback. */
     public void reconcile() throws IOException {
         reconcileContents();
         synchronized(this){
             reconciliations++;
-            if(watcher!=null&&!trusted){tree.uncertainTransition();inputEpoch++;trusted=true;uncertainty="";}
+            if(!trusted){tree.uncertainTransition();inputEpoch++;}
+            trusted=true;uncertainty=verificationOnly?"watch unavailable: verification-only":"";
         }
     }
 
@@ -313,7 +325,7 @@ public final class LiveSourceState implements AutoCloseable {
     public synchronized Map<String,Object> status(){
         var state=tree.state();
         return Map.ofEntries(
-                Map.entry("trusted",trusted),Map.entry("epoch",state.epoch()),Map.entry("input_epoch",inputEpoch),Map.entry("files",state.files()),
+                Map.entry("trusted",trusted),Map.entry("verification_only",verificationOnly),Map.entry("epoch",state.epoch()),Map.entry("input_epoch",inputEpoch),Map.entry("files",state.files()),
                 Map.entry("merkle",state.merkle().value()),Map.entry("semantic_current",state.semanticsCurrent()),Map.entry("pending_semantic_files",state.pendingSemanticFiles()),
                 Map.entry("events",events),Map.entry("reconciliations",reconciliations),
                 Map.entry("targeted_reconciliations",targetedReconciliations),Map.entry("overflows",overflows),Map.entry("semantic_updates",semanticUpdates),

@@ -16,10 +16,13 @@ public final class Documents implements AutoCloseable {
     private static final long MAX_BYTES=64L*1024*1024;
     private final Map<Path,Document> documents=new LinkedHashMap<>();
     private final FileStateRegistry files;
+    private final boolean sourceWatchEnabled;
     private final Map<List<Path>,LiveSourceState> liveStates=new HashMap<>();
     private boolean closed;
-    public Documents(){this(FileStateRegistry.shared());}
-    public Documents(FileStateRegistry files){this.files=Objects.requireNonNull(files);}
+    public Documents(){this(FileStateRegistry.shared(),true);}
+    public Documents(FileStateRegistry files){this(files,true);}
+    /** Verification-only mode keeps correctness without depending on WatchService availability. */
+    public Documents(FileStateRegistry files,boolean sourceWatchEnabled){this.files=Objects.requireNonNull(files);this.sourceWatchEnabled=sourceWatchEnabled;}
     private long bytes,generation;
     /** A module-owned subscription, weakly retained here; no closed-document history is stored. */
     static final class Transitions {
@@ -77,7 +80,7 @@ public final class Documents implements AutoCloseable {
     public synchronized LiveSourceState liveState(Collection<Path> sourceRoots){
         if(closed)throw new IllegalStateException("Documents are closed");
         var key=sourceRoots.stream().map(Documents::key).distinct().sorted(Comparator.comparing(Path::toString)).toList();
-        return liveStates.computeIfAbsent(key,roots->new LiveSourceState(files,this,roots));
+        return liveStates.computeIfAbsent(key,roots->new LiveSourceState(files,this,roots,sourceWatchEnabled));
     }
     public synchronized boolean dirty(Path root)throws Exception{
         for(var entry:documents.entrySet())if(entry.getKey().startsWith(root)&&(!Files.isRegularFile(entry.getKey())||!files.hash(entry.getKey()).equals(entry.getValue().hash())))return true;return false;

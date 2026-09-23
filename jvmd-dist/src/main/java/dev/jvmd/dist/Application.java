@@ -485,16 +485,19 @@ public final class Application implements AutoCloseable {
         for(Path file:plan.files()){
             String text=Files.readString(file);var analyzer=analyzer(session,file);var declarations=new ArrayList<Map<String,Object>>();int offset=0;
             do{var outline=analyzer.overview(file,text,10,1000,offset);declarations.addAll((List<Map<String,Object>>)((Map<?,?>)outline.result()).get("symbols"));if(!outline.truncated())break;offset=Integer.parseInt(outline.cursor());}while(true);
-            var selected=new LinkedHashSet<Map<String,Object>>();
-            for(int[] touched:plan.touched(file)){
+            var selected=new LinkedHashSet<Map<String,Object>>();var touchedRanges=plan.touched(file);
+            for(int[] touched:touchedRanges){
                 while(touched[0]<touched[1]&&Character.isWhitespace(text.charAt(touched[0])))touched[0]++;
                 while(touched[1]>touched[0]&&Character.isWhitespace(text.charAt(touched[1]-1)))touched[1]--;
                 var enclosing=declarations.stream().filter(s->s.get("source_start") instanceof Number start&&s.get("source_end") instanceof Number end&&start.intValue()<=touched[0]&&end.intValue()>=touched[1]).min(Comparator.comparingInt(s->((Number)s.get("source_end")).intValue()-((Number)s.get("source_start")).intValue()));
                 if(enclosing.isPresent())selected.add(enclosing.get());
             }
             var result=analyzer.diagnostics(file,text);tier=Math.min(tier,result.tier());warnings.addAll(result.warnings());
-            for(var problem:(List<dev.jvmd.analyzer.CompilerPool.Problem>)((Map<?,?>)result.result()).get("diagnostics"))
-                if(selected.isEmpty()||problem.start()<0||selected.stream().anyMatch(s->problem.start()>=((Number)s.get("source_start")).longValue()&&problem.start()<=((Number)s.get("source_end")).longValue()))diagnostics.add(problem);
+            for(var problem:(List<dev.jvmd.analyzer.CompilerPool.Problem>)((Map<?,?>)result.result()).get("diagnostics")){
+                boolean inSelected=problem.start()>=0&&selected.stream().anyMatch(s->problem.start()>=((Number)s.get("source_start")).longValue()&&problem.start()<=((Number)s.get("source_end")).longValue());
+                boolean inTouched=problem.start()>=0&&touchedRanges.stream().anyMatch(range->problem.start()>=range[0]&&problem.start()<=range[1]);
+                if(problem.start()<0||!selected.isEmpty()&&inSelected||selected.isEmpty()&&inTouched)diagnostics.add(problem);
+            }
             for(var member:selected){var row=new LinkedHashMap<String,Object>();row.put("path",file.toString());row.put("scip",member.get("scip"));row.put("range",member.get("range"));members.add(row);}
         }
         return new Envelope(tier,"live",false,null,List.copyOf(warnings),Map.of("applied",true,"changes",plan.edits(),"changed_files",plan.files().stream().map(Path::toString).toList(),"members",members,"diagnostics",diagnostics,"verified",false));

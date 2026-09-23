@@ -73,7 +73,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private String classpathStamp()throws Exception{return computeClasspathStamp();}
     private CompilerInputs.Snapshot validatedInputs()throws Exception {
         var inputs=inputSnapshot();
-        if(!compiler.cacheValid(inputs)){outlines.clear();focused.clear();}
+        if(!compiler.cacheValid(inputs)){outlines.clear();focused.clear();inputs=inputSnapshot();}
         return inputs;
     }
     private String computeClasspathStamp()throws Exception {
@@ -211,9 +211,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         var focus=cursor==null?null:focusing.focus(path,text,cursor);
         String source=focus==null?text:focus.source();Path file=path;bindingComputations++;
-        var inputHashes=observed.sources();
         var outcome=compiler.query(path,source,2,observed,(task,units,tier)->Bindings.capture(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),file,sourceText(file,text),true,focus==null?null:focus.member().equals("declarations")?new Focusing.Span(cursor,cursor+1):new Focusing.Span(focus.start(),focus.end())));
-        diagnosticStore.inputHashes(inputHashes);
+        diagnosticStore.inputs(observed);
         if(outcome.result()!=null&&outcome.warnings().isEmpty()){
             dependencies.recordFocused(path,outcome.result().dependencies());
             if(cursor==null&&outcome.tier()==2){resolveContribution(SemanticContributions.from(path,hash,outcome.result(),outcome.diagnostics()));publishSource(path,hash,stamp,outcome.result(),outcome.tier());}
@@ -247,7 +246,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     private Envelope cachedDiagnostics(Path path,Documents documents,CompilerInputs.Snapshot observed)throws Exception{
         path=path.toAbsolutePath().normalize();
-        String hash=observed.sources().get(path);if(hash==null)hash=documents.sourceHash(path);
+        String hash=observed.source(path).value();if(hash==null)hash=documents.sourceHash(path);
         reconcileSemanticRevision(path);touchHash(path,hash);invalidateConditionalIfUnresolved(path);
         var cached=restoreDiagnostics(path,hash,observed.environment().value()+":"+observed.membership().value());
         if(cached!=null){
@@ -267,8 +266,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return state.diagnostics();
     }
     public Envelope diagnostics(Path path,Documents documents)throws Exception{
-        var observed=inputSnapshot();var cached=cachedDiagnostics(path,documents,observed);if(cached!=null)return cached;
-        if(!compiler.cacheValid(observed)){outlines.clear();focused.clear();}
+        var observed=validatedInputs();var cached=cachedDiagnostics(path,documents,observed);if(cached!=null)return cached;
         return diagnostics(path,observed.text(path,documents),observed);
     }
     /** One javac task, followed by per-file detached states; no compiler objects escape. */
@@ -276,7 +274,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(sources.isEmpty())return Map.of();
         var inputs=new ArrayList<CompilerPool.SourceInput>();
         for(var entry:sources.entrySet()){reconcileSemanticRevision(entry.getKey());touch(entry.getKey(),entry.getValue());inputs.add(new CompilerPool.SourceInput(entry.getKey(),entry.getValue()));}
-        var observed=validatedInputs();String stamp=observed.environment().value()+":"+observed.membership().value();var inputHashes=observed.sources();
+        var observed=validatedInputs();String stamp=observed.environment().value()+":"+observed.membership().value();
         var result=compiler.batchQuery(inputs,2,observed,(task,units,tier)->{
             var snapshots=new LinkedHashMap<Path,Bindings.Snapshot>();
             for(var unit:units){
@@ -286,7 +284,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             return snapshots;
         });
         bindingComputations+=sources.size();
-        diagnosticStore.inputHashes(inputHashes);
+        diagnosticStore.inputs(observed);
         var values=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();
         // Resolve every API first: invalidation from a later file must not erase an earlier fresh result.
         if(result.result()!=null&&result.tier()==2&&result.warnings().isEmpty())for(var entry:result.result().entrySet()){

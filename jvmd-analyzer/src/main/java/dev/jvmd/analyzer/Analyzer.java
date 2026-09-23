@@ -39,7 +39,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private final DiagnosticStore diagnosticStore=new DiagnosticStore();
     private LinkedHashMap<String,Envelope> outlines=new LinkedHashMap<>(16,.75f,true);
     private record Cached(Path file,String hash,String stamp,int start,int end,List<Focusing.Span> excluded,CompilerPool.Outcome<Bindings.Snapshot> result) { }
-    private record CompletionCached(String key,String apiIdentity,String prefix,long sourceEpoch,Set<Path> dependencies,CompilerPool.Outcome<List<Map<String,Object>>> result) {
+    private record CompletionCached(String key,String prefix,long sourceEpoch,Set<Path> dependencies,CompilerPool.Outcome<List<Map<String,Object>>> result) {
         CompletionCached { dependencies=Set.copyOf(dependencies); }
     }
     private record CompletionValidation(CompletionCached cached,boolean apiCurrent) { }
@@ -433,8 +433,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 if(ensureCompletionSemantics(completionDependencies)){
                     dependencies.recordFocused(path,completionDependencies);
                     String admittedKey=completionKey(path,patched,start,observed);
-                    String apiIdentity=completionApiIdentity(completionDependencies);
-                    caches.completion=new CompletionCached(admittedKey,apiIdentity,prefix,live.snapshot().inputEpoch(),completionDependencies,
+                    caches.completion=new CompletionCached(admittedKey,prefix,live.snapshot().inputEpoch(),completionDependencies,
                             new CompilerPool.Outcome<>(2,outcome.result(),List.of(),List.of()));
                     caches.completionSourceEpoch=live.snapshot().inputEpoch();
                 }
@@ -461,19 +460,21 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         live.observe(cached.dependencies());
         var changed=live.changedPathsSince(cached.sourceEpoch());
         if(changed.isEmpty())return null;
+        boolean apiCurrent=true;
         for(Path dependency:changed.get()){
             if(dependency.equals(caller)||!cached.dependencies().contains(dependency))continue;
             String current=live.contentHash(dependency);
-            if(current==null)continue;
+            if(current==null){apiCurrent=false;continue;}
             var contribution=contribution(dependency);
             if(contribution==null||!current.equals(contribution.sourceHash())){
+                long apiChangesBefore=apiFingerprintChanges;
                 var result=bindings(dependency,documents.text(dependency),null);
                 if(result.tier()!=2||result.result()==null||!result.warnings().isEmpty())return null;
+                if(apiFingerprintChanges!=apiChangesBefore)apiCurrent=false;
             }
         }
-        String currentApi=completionApiIdentity(cached.dependencies());
-        var refreshed=new CompletionCached(cached.key(),cached.apiIdentity(),cached.prefix(),live.snapshot().inputEpoch(),cached.dependencies(),cached.result());
-        return new CompletionValidation(refreshed,Objects.equals(currentApi,cached.apiIdentity()));
+        var refreshed=new CompletionCached(cached.key(),cached.prefix(),live.snapshot().inputEpoch(),cached.dependencies(),cached.result());
+        return new CompletionValidation(refreshed,apiCurrent);
     }
     private Set<Path> completionDependencies(Path caller,List<Map<String,Object>> rows){
         var result=new TreeSet<Path>(Comparator.comparing(Path::toString));var live=documents.liveState(context.sources());
@@ -497,14 +498,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             }
         }
         return true;
-    }
-    private String completionApiIdentity(Set<Path> completionDependencies){
-        var values=new TreeMap<String,String>();
-        for(Path dependency:completionDependencies){
-            var contribution=contribution(dependency);
-            values.put(dependency.toAbsolutePath().normalize().toString(),contribution==null?"unknown":contribution.apiFingerprint());
-        }
-        return CompilerInputs.compose("completion-dependency-api-v1",values);
     }
     private static double millis(long nanos){return Math.round(nanos/1000.0)/1000.0;}
     private String completionKey(Path file,String patched,int start,CompilerInputs.Snapshot inputs){

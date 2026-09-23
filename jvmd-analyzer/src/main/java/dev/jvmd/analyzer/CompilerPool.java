@@ -6,6 +6,7 @@ import com.sun.tools.javac.api.JavacTaskImpl;
 import com.sun.tools.javac.api.JavacTaskPool;
 import dev.jvmd.core.*;
 import dev.jvmd.index.IndexService;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.*;
 import javax.tools.*;

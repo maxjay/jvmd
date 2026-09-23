@@ -56,18 +56,18 @@ A phase is complete only when the previous ownership path is either removed or e
 - [x] Record unchanged-request and POM-edit counts.
 
 ## Phase 6 — delete superseded machinery
-- [ ] Remove duplicate exhaustive validation.
-- [ ] Remove old identity builders.
-- [ ] Remove redundant caches made unnecessary by canonical state.
-- [ ] Remove dead compatibility paths that only served the previous model.
-- [ ] Remove temporary counters/profiling/workflow changes/scripts used only for PR proof.
-- [ ] Keep only lasting correctness/invariant tests and operationally useful observability.
+- [x] Remove duplicate exhaustive validation.
+- [x] Remove old identity builders.
+- [x] Remove redundant caches made unnecessary by canonical state.
+- [x] Remove dead compatibility paths that only served the previous model.
+- [x] Remove temporary counters/profiling/workflow changes/scripts used only for PR proof.
+- [x] Keep only lasting correctness/invariant tests and operationally useful observability.
 
 ## Final acceptance
-- [ ] Warm unchanged request state lookup is O(1) with respect to workspace size.
-- [ ] Global algebraic mutation is O(1).
-- [ ] Merkle update is O(log N) or bounded structural depth.
-- [ ] Semantic invalidation is proportional to the genuinely affected semantic graph.
-- [ ] Warm-path allocation no longer constructs source snapshots, sorted source copies, Context.toString()-sized material, concatenated source/hash keys or unchanged Resolution graphs.
-- [ ] Required scenarios A–H are covered by permanent correctness tests where appropriate and PR-local performance evidence where appropriate.
-- [ ] Final report includes absolute before/after metrics and names every remaining O(workspace), O(module), O(dependency closure) and O(result size) operation.
+- [x] Warm unchanged request state lookup is O(1) with respect to workspace size.
+- [x] Global algebraic mutation is O(1).
+- [x] Merkle update is O(log N) or bounded structural depth.
+- [x] Semantic invalidation is proportional to the genuinely affected semantic graph.
+- [x] Warm-path allocation no longer constructs source snapshots, sorted source copies, Context.toString()-sized material, concatenated source/hash keys or unchanged Resolution graphs.
+- [x] Required scenarios A–H are covered by permanent correctness tests where appropriate and PR-local performance evidence where appropriate.
+- [x] Final report includes absolute before/after metrics and names every remaining O(workspace), O(module), O(dependency closure) and O(result size) operation.

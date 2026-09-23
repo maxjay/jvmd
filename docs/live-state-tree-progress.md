@@ -99,22 +99,22 @@ Evidence: PR-local **Live State Tree Proof** run [35804584433](https://github.co
 
 | Metric | Before | After |
 | --- | ---: | ---: |
-| warm completion latency | 794.375 ms | pending |
-| warm completion allocation | 185,434,528 B inclusive thread allocation | pending |
-| metadata checks/request | 41,408 | pending |
-| source entries visited/request | 2,400 | pending |
-| files hashed/request | 0 | pending |
-| bytes hashed/request | 0 | pending |
-| source inventory calls/request | 218 | pending |
-| directories enumerated/request | 2,172 | pending |
-| completion-key entries visited/sorted | 1,200 / 1,200 | pending |
-| completion-key material bytes | 496,150 B | pending |
-| Maven resolver calls on unchanged `deps.graph` | 1 | pending |
-| project-model inputs validated/request | 195 | pending |
-| project-model bytes hashed/request | 241,632 B | pending |
-| Resolution JSON response bytes/request | 1,260,384 B | pending |
-| relevant API edit latency | 741.699 ms | pending |
-| body-only edit reuse | **no** — recomputed | pending |
+| warm completion latency | 794.375 ms | 366.653 ms |
+| warm completion allocation | 185,434,528 B inclusive thread allocation | 163,838,560 B |
+| metadata checks/request | 41,408 | 2,406 |
+| source entries visited/request | 2,400 | 0 |
+| files hashed/request | 0 | 0 |
+| bytes hashed/request | 0 | 0 |
+| source inventory calls/request | 218 | 0 |
+| directories enumerated/request | 2,172 | 0 |
+| completion-key entries visited/sorted | 1,200 / 1,200 | 0 / 0 |
+| completion-key material bytes | 496,150 B | 415 B |
+| Maven resolver calls on unchanged `deps.graph` | 1 | 0 |
+| project-model inputs validated/request | 195 | 0 |
+| project-model bytes hashed/request | 241,632 B | 0 |
+| Resolution JSON response bytes/request | 1,260,384 B | 0 |
+| relevant API edit latency | 741.699 ms | 421.883 ms |
+| body-only edit reuse | **no** — recomputed | **yes** — permanent semantic regression |
 
 Additional baseline facts:
 
@@ -203,20 +203,50 @@ Commits: `73ac9b5` exposes the accepted model identity, `0763292` exports the ac
 
 ## Phase 6 — delete superseded machinery
 
-Status: **not started**.
+Status: **complete**.
 
-Baseline evidence: n/a.
-Change: pending.
-Tests: full regression suite pending.
-PR-local measurement: final rerun pending.
-Remaining discrepancy: pending.
-Commit: pending.
+Baseline evidence: final PR-local proof was deliberately captured **before** cleanup, in run **35874199636** at `ea5e6cc`. That snapshot is the retained evidence; the proof workflow and script were then deleted rather than becoming permanent benchmark infrastructure.
 
-## Remaining complexity
+Change:
+- `1f3e67f` deletes `.github/workflows/live-state-tree-proof.yml` and `benchmarks/live-state-tree-proof.py`, removes proof-only source/environment/completion/Maven counters, and removes the dead `CompilerInputs.Snapshot.sources()`, explicit-inventory capture overload and unused analyzer source-map helper.
+- Permanent regressions were changed to assert behavior rather than temporary proof counters.
+- `85c9582` removes the last normal request-time source/output tree walk in workspace dependency freshness. `WorkspaceOverlay` now retains a watch-backed freshness decision; unchanged `findArtifact()` / `requiresSource()` reads use resident state, relevant source/output mutations dirty only the affected module state, and watcher uncertainty falls back to reconciliation. The resolver's short-lived cold overlay intentionally keeps one-shot verification semantics.
+- The shared request filesystem fence means source state, environment state, project-model state and workspace-output freshness do not each impose an independent settlement delay.
 
-To be filled from the implemented code, not inferred from percentage changes:
+Tests: cleanup head `1f3e67f` passed full Tests run **35877597630** and its standalone benchmark. On `85c9582`, compile/package and the permanent Phase-6 workspace-reader/overlay checkpoints passed in Tests run **35878800289**; standalone Benchmarks run **35878800495** passed with 300/300 correctness for every warm operation. The final-head benchmark reports warm p50/p95: completion **10.60/13.21 ms**, definition **3.51/5.10 ms**, dependency definition **6.09/8.58 ms**, hover **4.71/6.58 ms**, references **4.77/6.64 ms**.
 
-- O(workspace): pending
-- O(module): pending
-- O(dependency closure): pending
-- O(result size): pending
+PR-local measurement: final architectural proof at `ea5e6cc` shows warm Apache-Maven completion at **366.653 ms** versus **794.375 ms** baseline, inclusive thread allocation **163,838,560 B** versus **185,434,528 B**, **2,406** metadata checks versus **41,408**, **0** source candidate/inventory work, **0** environment candidate sweep, **0/0** completion-key source visits/sorts and **415 B** of key material versus **496,150 B**. The disposable Apache completion probe itself returns an empty candidate result, so it cannot demonstrate cache admission for the body-only case; that property is established by the permanent semantic completion regression, not inferred from the disposable probe.
+
+Remaining discrepancy: none against this task's live-state ownership target. Expensive work still exists where the operation genuinely asks for it or observation confidence is lost; those cases are enumerated below instead of being hidden behind an identity helper.
+
+Commits: `1f3e67f` cleanup and `85c9582` maintained workspace-output freshness, following the Phase 1–5 cutovers documented above.
+
+## Final report
+
+The final architecture now has mutation-maintained source, compiler-environment, semantic, project-model and workspace-output freshness state. A normal unchanged interactive request reads compact identities/resident decisions rather than enumerating unchanged source/environment/project-model inputs.
+
+The final before/after values are the table in **Baseline** above. Two extra architectural counters are important: environment candidates inspected fell from **3,774 to 0**, and unchanged project-model work fell to **0 resolver calls / 0 validation calls / 0 input hashes / 0 Resolution JSON bytes**.
+
+### Remaining complexity
+
+These are intentionally not described as O(1):
+
+- **O(workspace / input-set size):** cold `LiveSourceState` initialization and explicit reconciliation after watcher uncertainty; cold/verification-only `LiveEnvironmentState` reconciliation; cold or dirty `WorkspaceOverlay` freshness reconciliation of the affected module's source/output trees; annotation-processing input fingerprinting when processors are enabled; and explicitly whole-workspace operations such as unscoped whole-workspace diagnostics. None of these is the normal unchanged compiler-state identity lookup.
+- **O(module / project graph):** module ownership/context composition and navigation-coordinate construction iterate module/project graph metadata. Workspace-wide binding operations likewise iterate the participating modules. They no longer enumerate every source merely to decide whether state changed.
+- **O(dependency closure):** semantic invalidation, reverse dependency closure and re-attribution are proportional to the affected semantic graph / recorded completion dependency set.
+- **O(result size):** completion filtering/serialization, diagnostics pages, symbol search, references/hierarchy and similar result-producing operations scale with the rows/edges they return or examine.
+
+### Acceptance scenarios
+
+- **A warm unchanged completion:** PR-local proof; source/environment/key reconstruction removed.
+- **B unrelated body edit:** permanent completion semantic regression proves reuse when relevant API identity is unchanged.
+- **C relevant API edit:** permanent completion regressions prove invalidation/new member visibility and receiver-hierarchy provenance.
+- **D add/remove source:** live-state and completion membership regressions.
+- **E A → B → A:** live-state/source/environment epoch regressions prove the transition despite restored final identity.
+- **F project model unchanged:** resident Maven regression and PR-local zero-work proof.
+- **G POM/model edit:** resident invalidation/refresh/reuse regression plus PR-local changed-request evidence.
+- **H watcher uncertainty/overflow/unavailable:** live source/environment reconciliation regressions plus workspace-output verification fallback.
+
+## Resulting invariant
+
+Normal interactive state lookup is now independent of the number of unchanged source files. State changes update the resident source/environment/project-model/output-freshness representations; compiler and completion consumers read constant-size identities, while semantic invalidation follows only the affected graph. Full scans remain explicit cold/reconciliation/fallback work rather than the default trust mechanism.

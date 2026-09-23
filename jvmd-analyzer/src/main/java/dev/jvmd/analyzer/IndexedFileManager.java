@@ -149,7 +149,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         }catch(IOException error){throw new UncheckedIOException(error);}
     }
     long sourceStateGeneration(){
-        if(liveSources!=null)return liveSources.snapshot().state().epoch();
+        if(liveSources!=null)return liveSources.snapshot().inputEpoch();
         try{refreshSourceInventory();return sourceStateGeneration;}
         catch(IOException error){throw new UncheckedIOException(error);}
     }
@@ -185,7 +185,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     public Map<String,Long> status(){return Map.ofEntries(
             Map.entry("class_bytes",byteSize),Map.entry("class_byte_hits",hits),Map.entry("class_byte_loads",loads),
             Map.entry("classpath_changes",environmentChanges),Map.entry("source_catalog_precise",preciseSourceRoots?1L:0L),
-            Map.entry("source_state_generation",sourceStateGeneration),
+            Map.entry("source_state_generation",liveSources==null?sourceStateGeneration:liveSources.snapshot().inputEpoch()),
             Map.entry("source_catalog_builds",sourceCatalogBuilds),Map.entry("source_catalog_files",sourceCatalogFiles),
             Map.entry("source_list_calls",sourceListCalls),Map.entry("source_list_entries",sourceListEntries));}
     private Stamp stamp(Path path)throws IOException {

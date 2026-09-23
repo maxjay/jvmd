@@ -17,11 +17,21 @@ public final class LiveSourceState implements AutoCloseable {
     public record Snapshot(LiveStateTree.State state,boolean trusted,long events,long reconciliations,long overflows,String uncertainty) {
         public Snapshot { Objects.requireNonNull(state);uncertainty=uncertainty==null?"":uncertainty; }
     }
+    /** Path-derived source lookup retained at mutation time for javac package queries. */
+    public record Source(Path file,String binary) {
+        public Source { file=normalize(file);Objects.requireNonNull(binary); }
+    }
+    private record Change(long epoch,Path file) { }
 
     private final FileStateRegistry files;
     private final Documents documents;
     private final List<Path> roots;
     private final LiveStateTree tree;
+    private final Map<Path,Source> sourceByPath=new HashMap<>();
+    private final NavigableMap<String,NavigableMap<String,Source>> sourcesByPackage=new TreeMap<>();
+    private final ArrayDeque<Change> sourceChanges=new ArrayDeque<>();
+    private long sourceHistoryFloor;
+    private static final int MAX_SOURCE_CHANGES=32768;
     private final Map<WatchKey,Path> watchKeys=new HashMap<>();
     private final Set<Path> watchedDirectories=new HashSet<>();
     private WatchService watcher;
@@ -54,8 +64,34 @@ public final class LiveSourceState implements AutoCloseable {
     public boolean accepts(Path path){path=normalize(path);for(Path root:roots)if(path.startsWith(root))return true;return false;}
     public synchronized Snapshot snapshot(){return new Snapshot(tree.state(),trusted,events,reconciliations,overflows,uncertainty);}
     public synchronized Optional<LiveStateTree.Leaf> leaf(Path path){return tree.leaf(path);}
-    /** Materialized only at reconciliation/persistence boundaries; request identity must use snapshot(). */
+    public synchronized String contentHash(Path path){var leaf=tree.leaf(path).orElse(null);return leaf==null?null:leaf.content().value();}
+    /** Materialized only at reconciliation/persistence/full-build boundaries; request identity must use snapshot(). */
     public synchronized Set<Path> paths(){return tree.paths();}
+    /** Changed source paths since a captured epoch; empty Optional means the bounded journal cannot prove the delta. */
+    public synchronized Optional<Set<Path>> changedPathsSince(long epoch){
+        long current=tree.state().epoch();
+        if(epoch==current)return Optional.of(Set.of());
+        if(epoch<sourceHistoryFloor)return Optional.empty();
+        var changed=new LinkedHashSet<Path>();
+        for(var item:sourceChanges)if(item.epoch()>epoch)changed.add(item.file());
+        return Optional.of(Set.copyOf(changed));
+    }
+    /** Result-size package lookup; membership is maintained on mutations rather than rebuilt on requests. */
+    public synchronized List<Source> sources(Collection<Path> requestedRoots,String packageName,boolean recurse){
+        var selected=requestedRoots.stream().map(LiveSourceState::normalize).toList();
+        var result=new ArrayList<Source>();
+        if(recurse){
+            for(var entry:sourcesByPackage.tailMap(packageName,true).entrySet()){
+                String pkg=entry.getKey();
+                if(!packageName.isEmpty()&&!pkg.equals(packageName)&&!pkg.startsWith(packageName+"."))break;
+                for(var source:entry.getValue().values())if(selected.stream().anyMatch(source.file()::startsWith))result.add(source);
+            }
+        }else{
+            for(var source:sourcesByPackage.getOrDefault(packageName,new TreeMap<>()).values())
+                if(selected.stream().anyMatch(source.file()::startsWith))result.add(source);
+        }
+        return List.copyOf(result);
+    }
 
     /** Feed the canonical API/export identities extracted by the existing semantic contribution path. */
     public synchronized boolean semantic(Path path,String sourceHash,String apiFingerprint,Collection<String> exportedNames){
@@ -106,11 +142,39 @@ public final class LiveSourceState implements AutoCloseable {
     }
 
     private void applyContent(Path file,String hash){
-        if("missing".equals(hash)){tree.remove(file);return;}
         var previous=tree.leaf(file).orElse(null);
-        if(previous==null)tree.put(new LiveStateTree.Leaf(file,new LiveStateTree.Fingerprint(hash),LiveStateTree.UNKNOWN,LiveStateTree.UNKNOWN));
-        else if(!previous.content().value().equals(hash))
-            tree.put(new LiveStateTree.Leaf(file,new LiveStateTree.Fingerprint(hash),previous.api(),previous.namespace()));
+        if("missing".equals(hash)){
+            if(previous!=null){var transition=tree.remove(file);removeSource(file);recordSourceChange(file,transition.after().epoch());}
+            return;
+        }
+        if(previous==null){
+            var transition=tree.put(new LiveStateTree.Leaf(file,new LiveStateTree.Fingerprint(hash),LiveStateTree.UNKNOWN,LiveStateTree.UNKNOWN));
+            addSource(file);recordSourceChange(file,transition.after().epoch());
+        }else if(!previous.content().value().equals(hash)){
+            var transition=tree.put(new LiveStateTree.Leaf(file,new LiveStateTree.Fingerprint(hash),previous.api(),previous.namespace()));
+            recordSourceChange(file,transition.after().epoch());
+        }
+    }
+    private void recordSourceChange(Path file,long epoch){
+        sourceChanges.addLast(new Change(epoch,normalize(file)));
+        while(sourceChanges.size()>MAX_SOURCE_CHANGES){var removed=sourceChanges.removeFirst();sourceHistoryFloor=Math.max(sourceHistoryFloor,removed.epoch());}
+    }
+    private void addSource(Path file){
+        file=normalize(file);String binary=sourceName(file);if(binary==null)return;
+        var source=new Source(file,binary);sourceByPath.put(file,source);
+        int split=binary.lastIndexOf('.');String pkg=split<0?"":binary.substring(0,split);
+        sourcesByPackage.computeIfAbsent(pkg,_ -> new TreeMap<>()).put(binary,source);
+    }
+    private void removeSource(Path file){
+        file=normalize(file);var source=sourceByPath.remove(file);if(source==null)return;
+        int split=source.binary().lastIndexOf('.');String pkg=split<0?"":source.binary().substring(0,split);
+        var values=sourcesByPackage.get(pkg);if(values!=null){values.remove(source.binary());if(values.isEmpty())sourcesByPackage.remove(pkg);}
+    }
+    private String sourceName(Path file){
+        Path root=roots.stream().filter(file::startsWith).max(Comparator.comparingInt(Path::getNameCount)).orElse(null);
+        if(root==null)return null;String relative=root.relativize(file).toString();
+        if(!relative.endsWith(".java"))return null;
+        return relative.substring(0,relative.length()-5).replace(java.io.File.separatorChar,'.');
     }
 
     private void reconcileContents() throws IOException {

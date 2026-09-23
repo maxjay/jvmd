@@ -12,8 +12,10 @@ import javax.lang.model.type.*;
 public final class EditorQueries {
     public static final String MARKER="__jvmd_completion__";
     /** Detached completion rows plus every local source API consulted to derive them. */
-    public record CompletionResult(List<Map<String,Object>> items,Set<Path> semanticDependencies) {
-        public CompletionResult { items=List.copyOf(items);semanticDependencies=Set.copyOf(semanticDependencies); }
+    public record CompletionResult(List<Map<String,Object>> items,Set<Path> semanticDependencies,Set<String> nameResolutionNames) {
+        public CompletionResult {
+            items=List.copyOf(items);semanticDependencies=Set.copyOf(semanticDependencies);nameResolutionNames=Set.copyOf(nameResolutionNames);
+        }
     }
     public static final class CompletionTiming {
         private long candidateNanos,rowNanos,docNanos,sortNanos,totalNanos;
@@ -78,17 +80,30 @@ public final class EditorQueries {
     public static List<Map<String,Object>> completion(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String prefix,CompletionTiming timing){
         return completionResult(task,units,identity,prefix,timing).items();
     }
+    private static String sourceSimpleType(Trees trees,Element element){
+        if(!(element instanceof VariableElement))return null;
+        var declaration=trees.getPath(element);if(declaration==null||!(declaration.getLeaf() instanceof VariableTree variable))return null;
+        Tree type=variable.getType();
+        while(true){
+            if(type instanceof AnnotatedTypeTree annotated){type=annotated.getUnderlyingType();continue;}
+            if(type instanceof ParameterizedTypeTree parameterized){type=parameterized.getType();continue;}
+            if(type instanceof ArrayTypeTree array){type=array.getType();continue;}
+            break;
+        }
+        return type instanceof IdentifierTree identifier?identifier.getName().toString():null;
+    }
     public static CompletionResult completionResult(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String prefix,CompletionTiming timing){
         long totalStarted=System.nanoTime();
         try{
         long candidatesStarted=System.nanoTime();var path=marker(task,units);
-        if(path==null){if(timing!=null)timing.candidateNanos+=System.nanoTime()-candidatesStarted;return new CompletionResult(List.of(),Set.of());}
+        if(path==null){if(timing!=null)timing.candidateNanos+=System.nanoTime()-candidatesStarted;return new CompletionResult(List.of(),Set.of(),Set.of());}
         var trees=Trees.instance(task);var scope=stableScope(trees,path);
         if(scope==null){if(timing!=null)timing.candidateNanos+=System.nanoTime()-candidatesStarted;return new CompletionResult(List.of(),Set.of());}
-        var candidates=new LinkedHashSet<Element>();var semanticDependencies=new LinkedHashSet<Path>();var hierarchySeen=new HashSet<String>();
+        var candidates=new LinkedHashSet<Element>();var semanticDependencies=new LinkedHashSet<Path>();var nameResolutionNames=new LinkedHashSet<String>();var hierarchySeen=new HashSet<String>();
         DeclaredType receiver=null;boolean staticOnly=false;
         if(path.getLeaf() instanceof MemberSelectTree selected){
             var qualifier=new TreePath(path,selected.getExpression());var type=trees.getTypeMirror(qualifier);var selectedElement=trees.getElement(qualifier);
+            String sourceType=sourceSimpleType(trees,selectedElement);if(sourceType!=null)nameResolutionNames.add(sourceType);
             if(type instanceof TypeVariable variable)type=variable.getUpperBound();
             hierarchy(task,identity,type,semanticDependencies,hierarchySeen);
             if(type instanceof DeclaredType declared){receiver=declared;candidates.addAll(task.getElements().getAllMembers((TypeElement)declared.asElement()));staticOnly=selectedElement instanceof TypeElement;}
@@ -115,7 +130,7 @@ public final class EditorQueries {
         }
         long sortStarted=System.nanoTime();var sorted=result.values().stream().sorted(Comparator.comparing(r->r.get("label").toString())).toList();
         if(timing!=null)timing.sortNanos+=System.nanoTime()-sortStarted;
-        return new CompletionResult(sorted,semanticDependencies);
+        return new CompletionResult(sorted,semanticDependencies,nameResolutionNames);
         }finally{if(timing!=null)timing.totalNanos+=System.nanoTime()-totalStarted;}
     }
     public static Map<String,Object> signatures(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,int cursor){

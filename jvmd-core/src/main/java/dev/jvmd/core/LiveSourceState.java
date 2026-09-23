@@ -93,6 +93,13 @@ public final class LiveSourceState implements AutoCloseable {
         return List.copyOf(result);
     }
 
+    /**
+     * Synchronously observe a bounded request-relevant source set.
+     * This is proportional to the requested/known dependency set, never the workspace.
+     */
+    public void observe(Collection<Path> paths){for(Path path:paths)refresh(path);}
+    public void observe(Path path){refresh(path);}
+
     /** Feed the canonical API/export identities extracted by the existing semantic contribution path. */
     public synchronized boolean semantic(Path path,String sourceHash,String apiFingerprint,Collection<String> exportedNames){
         path=normalize(path);if(!accepts(path))return false;

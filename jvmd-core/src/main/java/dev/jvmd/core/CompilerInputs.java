@@ -68,7 +68,11 @@ public final class CompilerInputs {
         /** Identify the bytes actually supplied, never a hash reread after compilation. */
         public String text(Path file,Documents documents)throws Exception{return checkText(file,documents.text(file));}
         public String checkText(Path file,String text)throws Superseded{
-            requireStableSource();String expected=live.contentHash(file);
+            requireStableSource();
+            // Explicit compilation units may intentionally sit outside configured source roots.
+            // Their immutable request bytes are the transaction input, not workspace membership.
+            if(!live.accepts(file))return text;
+            String expected=live.contentHash(file);
             String actual=Hashing.sha256(text.getBytes(StandardCharsets.UTF_8));
             if(expected==null||!expected.equals(actual))throw new Superseded("Source changed before analysis: "+file);
             requireStableSource();return text;

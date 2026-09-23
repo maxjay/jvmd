@@ -39,6 +39,8 @@ public final class CompilerPool implements AutoCloseable {
     private long batchQueries,batchFiles;
     private long budget,baseline,recycles,faults,queries,queryNanos,configureCalls,configureNanos,classpathValidations,classpathValidationNanos;
     private long sourceModuleGeneration;
+    private Documents attachedDocuments;
+    private long attachedDocumentsGeneration=-1;
     public void configure(String generation,String release,List<Path> classpath,List<Path> sources,IndexService index,long budget)throws Exception {
         configure(generation,release,classpath,sources,index,budget,List.of("--release",release),true);
     }
@@ -60,12 +62,24 @@ public final class CompilerPool implements AutoCloseable {
         }finally{configureNanos+=System.nanoTime()-started;}
     }
     public void documents(Documents documents){
-        checkThread();liveDocuments=documents;
-        manager.documents(documents.snapshots(),documents.liveState(configuredSources));
+        checkThread();liveDocuments=Objects.requireNonNull(documents);ensureDocumentsAttached();
+    }
+    private void ensureDocumentsAttached(){
+        if(manager==null)return;
+        long generation=liveDocuments.generation();
+        if(attachedDocuments==liveDocuments&&attachedDocumentsGeneration==generation)return;
+        manager.documents(liveDocuments.snapshots(),liveDocuments.liveState(configuredSources));
+        attachedDocuments=liveDocuments;attachedDocumentsGeneration=generation;
+        refreshSourceModules();
+    }
+    /** Observe only request-relevant sources before capturing the compiler transaction. */
+    public void observeSources(Collection<Path> paths){
+        checkThread();ensureDocumentsAttached();
+        liveDocuments.liveState(configuredSources).observe(paths);
         refreshSourceModules();
     }
     public CompilerInputs.Snapshot inputSnapshot()throws java.io.IOException {
-        checkThread();return inputs.capture(inputConfiguration,liveDocuments);
+        checkThread();ensureDocumentsAttached();return inputs.capture(inputConfiguration,liveDocuments);
     }
     public void documents(Map<Path,String> documents){
         checkThread();var buffers=new Documents(inputFiles);documents.forEach((file,text)->buffers.open(file,text,1));documents(buffers);
@@ -171,7 +185,7 @@ public final class CompilerPool implements AutoCloseable {
         var previous=manager;recycle();manager.close();
         manager=new IndexedFileManager(ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8),configuredClasspath,configuredSources,configuredIndex,
                 Math.min(32L*1024*1024,Math.max(1024*1024,budget/8)),preciseSourceRoots,inputFiles);
-        manager.inheritWork(previous);manager.documents(liveDocuments.snapshots(),liveDocuments.liveState(configuredSources));manager.binarySources(configuredBinarySources);
+        manager.inheritWork(previous);attachedDocuments=null;attachedDocumentsGeneration=-1;ensureDocumentsAttached();manager.binarySources(configuredBinarySources);
         sourceModuleGeneration=manager.sourceModuleGeneration();
     }
     public void recycle(){checkThread();releasePlatform.close();pool=new JavacTaskPool(1);if(manager!=null)manager.invalidate();baseline=heap();recycles++;}

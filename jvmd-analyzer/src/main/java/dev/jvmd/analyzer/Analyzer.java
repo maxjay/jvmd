@@ -70,6 +70,17 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     public CompilerInputs.Snapshot inputSnapshot()throws Exception {
         return compiler.inputSnapshot();
     }
+    /** Observe this source and the source dependency graph already learned from prior attribution. */
+    private void synchronizeKnownSources(Path requested)throws Exception{
+        requested=requested.toAbsolutePath().normalize();
+        var queue=new ArrayDeque<Path>();var seen=new LinkedHashSet<Path>();queue.add(requested);
+        while(!queue.isEmpty()){
+            Path file=queue.removeFirst().toAbsolutePath().normalize();
+            if(!seen.add(file))continue;
+            queue.addAll(dependencies.semantic().dependencies(file));
+        }
+        compiler.observeSources(seen);
+    }
     private String classpathStamp()throws Exception{return computeClasspathStamp();}
     private CompilerInputs.Snapshot validatedInputs()throws Exception {
         var inputs=inputSnapshot();
@@ -83,7 +94,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     private Map<Path,String> sourceIdentities()throws Exception{return inputSnapshot().sources();}
     public Envelope overview(Path path,String text,int depth,int limit,int offset)throws Exception{
-        touch(path,text);
+        synchronizeKnownSources(path);touch(path,text);
         String key=path+":"+Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))+":"+classpathStamp()+":"+depth+":"+limit+":"+offset;
         var cached=outlines.get(key);if(cached!=null)return cached;
         var result=compiler.query(path,text,1,(task,units,tier)->new Outline(declarations(task,units,path,text,depth),Bindings.capture(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),path,sourceText(path,text),false).dependencies()));
@@ -186,17 +197,17 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     public void resolvedContribution(FileSemanticContribution value){if(value!=null)resolveContribution(value);}
     public Set<Path> pendingPrerequisites(Path file){return dependencies.semantic().prerequisites(file);}
     public void changed(Path path,String hash){
-        path=path.toAbsolutePath().normalize();conditionallyInvalidate(path,dependencies.changed(path,hash));
+        path=path.toAbsolutePath().normalize();compiler.observeSources(Set.of(path));conditionallyInvalidate(path,dependencies.changed(path,hash));
     }
     public void changed(Path path){
-        path=path.toAbsolutePath().normalize();conditionallyInvalidate(path,dependencies.changed(path));
+        path=path.toAbsolutePath().normalize();compiler.observeSources(Set.of(path));conditionallyInvalidate(path,dependencies.changed(path));
         // An unresolved lookup has no declaration edge; an API change will invalidate unresolved diagnostic states after attribution.
         focused.entrySet().removeIf(e->e.getValue().result().diagnostics().stream().anyMatch(d->d.kind().equals("ERROR")));
         outlines.entrySet().removeIf(e->Json.MAPPER.valueToTree(e.getValue().result()).path("diagnostics").findValuesAsText("kind").contains("ERROR"));
     }
     public void namespaceChanged(){diagnosticStore.clear();for(var caches:modules.values()){caches.outlines.clear();caches.focused.clear();caches.completion=null;}dependencies.semantic().clear();for(var pool:compilerPools.values())pool.recycle();}
     public CompilerPool.Outcome<Bindings.Snapshot> bindings(Path path,String text,Integer cursor)throws Exception{
-        return bindings(path,text,cursor,validatedInputs());
+        synchronizeKnownSources(path);return bindings(path,text,cursor,validatedInputs());
     }
     private CompilerPool.Outcome<Bindings.Snapshot> bindings(Path path,String text,Integer cursor,CompilerInputs.Snapshot observed)throws Exception{
         path=path.toAbsolutePath().normalize();reconcileSemanticRevision(path);touch(path,text);
@@ -242,7 +253,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     /** Validate identity before reading source text: warm diagnostics need no source bytes. */
     public Envelope cachedDiagnostics(Path path,Documents documents)throws Exception{
-        return cachedDiagnostics(path,documents,inputSnapshot());
+        synchronizeKnownSources(path);return cachedDiagnostics(path,documents,inputSnapshot());
     }
     private Envelope cachedDiagnostics(Path path,Documents documents,CompilerInputs.Snapshot observed)throws Exception{
         path=path.toAbsolutePath().normalize();
@@ -266,12 +277,18 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return state.diagnostics();
     }
     public Envelope diagnostics(Path path,Documents documents)throws Exception{
-        var observed=validatedInputs();var cached=cachedDiagnostics(path,documents,observed);if(cached!=null)return cached;
+        synchronizeKnownSources(path);var observed=validatedInputs();var cached=cachedDiagnostics(path,documents,observed);if(cached!=null)return cached;
         return diagnostics(path,observed.text(path,documents),observed);
     }
     /** One javac task, followed by per-file detached states; no compiler objects escape. */
     public Map<Path,CompilerPool.Outcome<Bindings.Snapshot>> bindingsBatch(Map<Path,String> sources)throws Exception{
         if(sources.isEmpty())return Map.of();
+        var relevant=new LinkedHashSet<Path>();
+        for(Path requested:sources.keySet()){
+            var queue=new ArrayDeque<Path>();queue.add(requested.toAbsolutePath().normalize());
+            while(!queue.isEmpty()){Path file=queue.removeFirst().toAbsolutePath().normalize();if(relevant.add(file))queue.addAll(dependencies.semantic().dependencies(file));}
+        }
+        compiler.observeSources(relevant);
         var inputs=new ArrayList<CompilerPool.SourceInput>();
         for(var entry:sources.entrySet()){reconcileSemanticRevision(entry.getKey());touch(entry.getKey(),entry.getValue());inputs.add(new CompilerPool.SourceInput(entry.getKey(),entry.getValue()));}
         var observed=validatedInputs();String stamp=observed.environment().value()+":"+observed.membership().value();
@@ -317,7 +334,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         catch(Exception invalid){return false;}
     }
     public Envelope diagnostics(Path path,String text)throws Exception{
-        return diagnostics(path,text,validatedInputs());
+        synchronizeKnownSources(path);return diagnostics(path,text,validatedInputs());
     }
     private Envelope diagnostics(Path path,String text,CompilerInputs.Snapshot observed)throws Exception{
         path=path.toAbsolutePath().normalize();reconcileSemanticRevision(path);touch(path,text);invalidateConditionalIfUnresolved(path);
@@ -351,7 +368,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         while(start>0&&Character.isJavaIdentifierPart(text.codePointBefore(start)))start-=Character.charCount(text.codePointBefore(start));
         while(end<text.length()&&Character.isJavaIdentifierPart(text.codePointAt(end)))end+=Character.charCount(text.codePointAt(end));
         String prefix=text.substring(start,cursor),patched=text.substring(0,start)+EditorQueries.MARKER+text.substring(end);int focusCursor=start;
-        touch(path,text);
+        synchronizeKnownSources(path);touch(path,text);
         var caches=modules.get(context.generation());long phaseStarted=System.nanoTime();var observed=inputSnapshot();String key=completionKey(path,patched,start,observed);keyNanos=System.nanoTime()-phaseStarted;
         var cached=caches.completion;CompilerPool.Outcome<List<Map<String,Object>>> outcome;
         if(key!=null&&cached!=null&&key.equals(cached.key())&&prefix.startsWith(cached.prefix())){
@@ -409,7 +426,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return Hashing.sha256(material);
     }
     public Envelope signatureHelp(Path path,String text,int line,int character)throws Exception{
-        int cursor=Documents.offset(text,new Documents.Position(line,character));touch(path,text);var focus=focusing.focus(path,text,cursor);
+        synchronizeKnownSources(path);int cursor=Documents.offset(text,new Documents.Position(line,character));touch(path,text);var focus=focusing.focus(path,text,cursor);
         var outcome=compiler.query(path,focus.source(),2,(task,units,tier)->EditorQueries.signatures(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),cursor));
         return new Envelope(outcome.tier(),"live",false,null,warnings(outcome.warnings()),outcome.result()==null?Map.of("signatures",List.of()):outcome.result());
     }

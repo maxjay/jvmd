@@ -78,15 +78,45 @@ public final class WorkspaceBindings implements AutoCloseable {
     private Inputs inputs,observedInputs;
     private Inputs capture(InputSource source)throws Exception{
         var modules=source.capture();
-        if(observedInputs!=null&&observedInputs.modules().equals(modules))return observedInputs;
-        var hashes=new LinkedHashMap<Path,String>();var owners=new LinkedHashMap<Path,String>();
-        for(var entry:modules.entrySet())for(Path file:entry.getValue().owners()){
-            String hash=entry.getValue().snapshot().sources().get(file);
-            if(hash==null)continue;
-            if(owners.put(file,entry.getKey())!=null)throw new IllegalArgumentException("Multiple fact owners: "+file);
-            hashes.put(file,hash);
+        if(observedInputs!=null&&sameModuleInputs(observedInputs.modules(),modules))return observedInputs;
+        var hashes=observedInputs==null?new LinkedHashMap<Path,String>():new LinkedHashMap<>(observedInputs.sources());
+        var owners=observedInputs==null?new LinkedHashMap<Path,String>():new LinkedHashMap<>(observedInputs.owners());
+
+        // Remove modules no longer present.
+        if(observedInputs!=null)for(String removed:new HashSet<>(observedInputs.modules().keySet()))
+            if(!modules.containsKey(removed)){
+                owners.entrySet().removeIf(e->{if(e.getValue().equals(removed)){hashes.remove(e.getKey());return true;}return false;});
+            }
+
+        for(var entry:modules.entrySet()){
+            String module=entry.getKey();var after=entry.getValue();var before=observedInputs==null?null:observedInputs.modules().get(module);
+            if(before!=null&&before.owners().equals(after.owners())&&before.snapshot().sameInputs(after.snapshot()))continue;
+
+            var currentOwners=after.owners();
+            for(var old:new ArrayList<>(owners.entrySet()))if(old.getValue().equals(module)&&!currentOwners.contains(old.getKey())){
+                owners.remove(old.getKey());hashes.remove(old.getKey());
+            }
+
+            Set<Path> changed;
+            if(before==null)changed=currentOwners;
+            else try{changed=after.snapshot().changedSince(before.snapshot());}
+            catch(CompilerInputs.Superseded history){changed=currentOwners;}
+            var refresh=new LinkedHashSet<Path>(changed);refresh.addAll(currentOwners.stream().filter(file->!owners.containsKey(file)).toList());
+            for(Path file:refresh){
+                if(!currentOwners.contains(file))continue;
+                var identity=after.snapshot().source(file);String hash=identity.value();
+                if(hash==null){owners.remove(file);hashes.remove(file);continue;}
+                String previous=owners.put(file,module);
+                if(previous!=null&&!previous.equals(module))throw new IllegalArgumentException("Multiple fact owners: "+file);
+                hashes.put(file,hash);
+            }
         }
         return observedInputs=new Inputs(Map.copyOf(modules),Collections.unmodifiableMap(hashes),Map.copyOf(owners));
+    }
+    private static boolean sameModuleInputs(Map<String,ModuleInputs> before,Map<String,ModuleInputs> after){
+        return before.keySet().equals(after.keySet())&&before.entrySet().stream().allMatch(entry->{
+            var next=after.get(entry.getKey());return entry.getValue().owners().equals(next.owners())&&entry.getValue().snapshot().sameInputs(next.snapshot());
+        });
     }
     /** Cache-owned metadata; native read leases belong exclusively to callers. */
     private record Revision(List<CompilerPool.Problem> diagnostics,int tier,List<String> warnings,Object identity) { }
@@ -95,7 +125,7 @@ public final class WorkspaceBindings implements AutoCloseable {
     private long hits,builds,fullBuilds,incrementalBuilds,filesReanalysed,filesReused,apiInvalidations,fastValidationHits,fullValidations;
     private int lastReanalysedFiles;
     private InputSource configuredInputs(SourceFiles sources,CompilerInputs.Configuration configuration,Documents documents){
-        return ()->{var snapshot=observations.capture(configuration,documents,sources.files());return Map.of(configuration.generation(),new ModuleInputs(snapshot,snapshot.sources().keySet()));};
+        return ()->{var owners=Set.copyOf(sources.files());var snapshot=observations.capture(configuration,documents);return Map.of(configuration.generation(),new ModuleInputs(snapshot,owners));};
     }
     public Snapshot peek(InputSource source)throws Exception {
         if(snapshot==null)return null;

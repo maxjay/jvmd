@@ -61,6 +61,38 @@ class Maven4ResolutionTest {
         for(String name:List.of("org.apache.maven.api.Session","org.eclipse.aether.RepositorySystem"))
             assertThatThrownBy(()->Class.forName(name,false,MavenResolver.class.getClassLoader())).isInstanceOf(ClassNotFoundException.class);
     }
+    @Test void residentProjectModelSkipsBundleUntilAcceptedInputChanges() throws Exception {
+        var config=config();Path root=reactor();
+        try(var resolver=new MavenResolver(config)){
+            var first=resolver.resolve(root);assertThat(first.cached()).isFalse();
+            var cold=resolver.status();
+            long calls=((Number)cold.get("resolve_calls")).longValue();
+            long validations=((Number)cold.get("project_model_validation_calls")).longValue();
+            long checked=((Number)cold.get("project_model_inputs_checked")).longValue();
+            long json=((Number)cold.get("resolve_response_json_bytes")).longValue();
+
+            var warm=resolver.resolve(root);assertThat(warm.cached()).isTrue();
+            var unchanged=resolver.status();
+            assertThat(((Number)unchanged.get("resolve_calls")).longValue()).isEqualTo(calls);
+            assertThat(((Number)unchanged.get("project_model_validation_calls")).longValue()).isEqualTo(validations);
+            assertThat(((Number)unchanged.get("project_model_inputs_checked")).longValue()).isEqualTo(checked);
+            assertThat(((Number)unchanged.get("resolve_response_json_bytes")).longValue()).isEqualTo(json);
+            assertThat(((Number)unchanged.get("project_model_fast_hits")).longValue()).isPositive();
+
+            Path configFile=root.resolve(".mvn/maven.config");Files.writeString(configFile,"# model identity change\n");
+            var changed=resolver.resolve(root);assertThat(changed.cached()).isFalse();
+            var after=resolver.status();
+            assertThat(((Number)after.get("resolve_calls")).longValue()).isEqualTo(calls+1);
+            assertThat(((Number)after.get("project_model_invalidations")).longValue()).isPositive();
+            long changedCalls=((Number)after.get("resolve_calls")).longValue();
+            long changedValidations=((Number)after.get("project_model_validation_calls")).longValue();
+            resolver.resolve(root);
+            var settled=resolver.status();
+            assertThat(((Number)settled.get("resolve_calls")).longValue()).isEqualTo(changedCalls);
+            assertThat(((Number)settled.get("project_model_validation_calls")).longValue()).isEqualTo(changedValidations);
+        }
+    }
+
     @Test void settingsProfilesBomManagementAndConflictLosersSurviveOfflineCollection() throws Exception {
         var config=config();Path repo=config.m2Repo();
         MavenFixtures.artifact(repo,"base","1","");Path selected=MavenFixtures.artifact(repo,"base","2","");

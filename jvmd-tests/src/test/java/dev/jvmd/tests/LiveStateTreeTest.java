@@ -7,7 +7,7 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
-@Tag("live-state-tree")
+@Tag("phase-1")
 class LiveStateTreeTest {
     @TempDir Path root;
 

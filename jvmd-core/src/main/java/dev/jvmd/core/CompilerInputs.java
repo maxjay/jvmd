@@ -6,9 +6,9 @@ import java.nio.file.*;
 import java.util.*;
 
 /**
- * Compiler input identities. Source identity is read from the mutation-maintained
- * {@link LiveSourceState}; environment identity retains the existing classpath/JDK observation
- * boundary until its own owner is cut over.
+ * Compiler input identities. Source identity comes from mutation-maintained
+ * {@link LiveSourceState}; environment identity comes from mutation-maintained
+ * {@link LiveEnvironmentState}.
  */
 public final class CompilerInputs {
     public record SourceIdentity(String value) { }
@@ -77,15 +77,6 @@ public final class CompilerInputs {
             if(expected==null||!expected.equals(actual))throw new Superseded("Source changed before analysis: "+file);
             requireStableSource();return text;
         }
-        /**
-         * Transitional compatibility for consumers whose own cutover follows this phase.
-         * This is an explicit O(workspace) materialization, not compiler validation state.
-         */
-        public Map<Path,String> sources()throws Superseded{
-            requireStableSource();var result=new TreeMap<Path,String>();
-            for(Path path:live.paths()){String hash=live.contentHash(path);if(hash!=null)result.put(path,hash);}
-            requireStableSource();return Collections.unmodifiableMap(result);
-        }
         /** Incremental changed-path lookup from the maintained source journal. */
         public Set<Path> changedSince(Snapshot prior)throws Superseded{
             if(prior==null)return live.paths();
@@ -101,15 +92,13 @@ public final class CompilerInputs {
     private LiveEnvironmentState environmentState;
     private Snapshot snapshot;
     private long observations,rebuilds,validationNanos;
-    // PR-local live-state-tree evidence. Remove after the final before/after capture.
-    private long captureCalls,sourceInventoryCalls,sourceCandidatesInspected,environmentCandidatesInspected;
 
     public CompilerInputs(FileStateRegistry files){this.files=Objects.requireNonNull(files);}
 
     /** Request path: source membership/content is already maintained; no source inventory is rebuilt here. */
     public synchronized Snapshot capture(Configuration config,Documents documents)throws IOException{
         try(var trace=RequestScope.stage("inputs.validate")){
-            trace.count("captures",1);captureCalls++;observations++;long started=System.nanoTime();
+            trace.count("captures",1);observations++;long started=System.nanoTime();
             try{
                 var live=documents.liveState(config.roots());live.verifyTransactionBoundary();var source=live.snapshot();
                 var environment=environmentSnapshot(config,false);
@@ -120,14 +109,6 @@ public final class CompilerInputs {
                 return snapshot;
             }finally{validationNanos+=System.nanoTime()-started;}
         }
-    }
-
-    /**
-     * Transitional explicit-inventory signature retained for non-compiler callers while their
-     * ownership is removed. The source list is no longer used to construct compiler identity.
-     */
-    public synchronized Snapshot capture(Configuration config,Documents documents,Collection<Path> ignoredDiskFiles)throws IOException{
-        return capture(config,documents);
     }
 
     /** Validate a compiler transaction without reconstructing source membership/content. */
@@ -172,8 +153,6 @@ public final class CompilerInputs {
     public synchronized Map<String,Object> status(){
         var result=new LinkedHashMap<String,Object>();
         result.put("observations",observations);result.put("snapshot_rebuilds",rebuilds);result.put("validation_ns",validationNanos);
-        result.put("capture_calls",captureCalls);result.put("source_inventory_calls",sourceInventoryCalls);result.put("source_candidates_inspected",sourceCandidatesInspected);
-        result.put("environment_candidates_inspected",environmentCandidatesInspected);
         result.put("environment_live",environmentState==null?Map.of("initialized",false):environmentState.status());
         return Map.copyOf(result);
     }

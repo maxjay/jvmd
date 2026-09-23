@@ -50,8 +50,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private final LinkedHashMap<String,SourceText> sourceTexts=new LinkedHashMap<>(16,.75f,true);
     private long cacheHits,bindingComputations,diagnosticFilesAnalysed,diagnosticFilesReused,indexWrites,indexWriteNanos,apiFingerprintChanges,apiFingerprintUnchanged;
     private long completionCacheHits,completionComputations,completionRequests;
-    // PR-local live-state-tree evidence. Remove after the final before/after capture.
-    private long completionKeyEntriesVisited,completionKeyEntriesSorted,completionKeyMaterialBytes;
     private long completionKeyNanos,completionSourceRefreshNanos,completionFocusNanos,completionQueryNanos,completionEditorNanos,
             completionCandidateNanos,completionRowNanos,completionDocNanos,completionSortNanos,completionCacheAdmissionNanos,
             completionFilterNanos,completionTotalNanos,completionCandidatesSeen,completionRowsMaterialized,completionDocLookups;
@@ -119,7 +117,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var inputs=validatedInputs();
         return inputs.environment().value()+":"+inputs.membership().value();
     }
-    private Map<Path,String> sourceIdentities()throws Exception{return inputSnapshot().sources();}
     public Envelope overview(Path path,String text,int depth,int limit,int offset)throws Exception{
         synchronizeKnownSources(path);touch(path,text);
         String key=path+":"+Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))+":"+classpathStamp()+":"+depth+":"+limit+":"+offset;
@@ -535,8 +532,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(patched.length()>256*1024)return null;
         var state=inputs.live().snapshot().state();String patchedHash=Hashing.sha256(patched.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         String namespace=qualified?"qualified":state.namespace().fingerprint().value();
-        completionKeyMaterialBytes+=completionContextIdentity.length()+file.toString().length()+patchedHash.length()+inputs.environment().value().length()
-                +state.membership().fingerprint().value().length()+namespace.length()+24;
         return CompilerInputs.compose("completion-v3",completionContextIdentity,file.toString(),start,patchedHash,inputs.environment().value(),
                 state.membership().fingerprint().value(),namespace);
     }
@@ -570,7 +565,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     public Map<String,Object> status(){
         var result=new LinkedHashMap<String,Object>(compiler.status());if(snapshots!=null)result.put("persistent_snapshots",snapshots.status());result.putAll(focusing.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("binding_computations",bindingComputations);result.put("classpath_fingerprints",classpathFingerprints);result.put("diagnostic_store",diagnosticStore.status());result.put("diagnostic_files_analysed",diagnosticFilesAnalysed);result.put("diagnostic_files_reused",diagnosticFilesReused);result.put("index_record_source_calls",indexWrites);result.put("index_record_source_ms",0.0);result.put("index_publish_enqueue_ms",Math.round(indexWriteNanos/1000.0)/1000.0);if(index!=null)result.put("source_publisher",index.sourcePublisherStatus());result.put("api_fingerprint_changes",apiFingerprintChanges);result.put("api_fingerprint_unchanged",apiFingerprintUnchanged);result.put("pending_api_files",dependencies.semantic().pendingCount());result.put("conditional_files",dependencies.semantic().conditionalCount());result.put("dependencies",dependencies.status());
         if(liveSourceState!=null)result.put("live_source_state",liveSourceState.status());
-        result.put("completion_key_work",Map.of("entries_visited",completionKeyEntriesVisited,"entries_sorted",completionKeyEntriesSorted,"material_bytes",completionKeyMaterialBytes));
         result.put("completion_cache_hits",completionCacheHits);result.put("completion_computations",completionComputations);result.put("completion_requests",completionRequests);
         result.put("completion_candidates_seen",completionCandidatesSeen);result.put("completion_rows_materialized",completionRowsMaterialized);result.put("completion_doc_lookups",completionDocLookups);
         result.put("completion_last_cache_hit",completionLastCacheHit);result.put("completion_last_timing_ms",completionLastTimingMs);

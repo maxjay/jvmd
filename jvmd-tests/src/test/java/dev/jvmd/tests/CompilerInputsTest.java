@@ -75,7 +75,6 @@ class CompilerInputsTest {
             for(int i=0;i<20;i++)assertThat(inputs.capture(configuration,docs)).isSameAs(initial);
             assertThat(files.status()).containsEntry("hashes",work.get("hashes")).containsEntry("directory_enumerations",work.get("directory_enumerations"));
             assertThat(inputs.status()).containsEntry("snapshot_rebuilds",tracked.get("snapshot_rebuilds"));
-            assertThat(inputs.status()).containsEntry("source_inventory_calls",0L).containsEntry("source_candidates_inspected",0L).containsEntry("environment_candidates_inspected",0L);
             @SuppressWarnings("unchecked") var environment=(Map<String,Object>)inputs.status().get("environment_live");
             assertThat(environment).containsEntry("trusted",true);
 

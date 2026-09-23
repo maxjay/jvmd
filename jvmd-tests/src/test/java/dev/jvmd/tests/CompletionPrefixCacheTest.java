@@ -154,8 +154,6 @@ class CompletionPrefixCacheTest {
             documents.change(file,2,List.of(new Documents.Change(null,text("ge"))));analyzer.changed(file,documents.hash(file));analyzer.documents(documents);
             assertThat(complete(analyzer,file,text("ge"),"ge").path("items").findValuesAsText("name")).contains("getPets");
             assertThat(analyzer.status()).containsEntry("source_catalog_precise",1L).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",1L);
-            @SuppressWarnings("unchecked") var keyWork=(Map<String,Long>)analyzer.status().get("completion_key_work");
-            assertThat(keyWork).containsEntry("entries_visited",0L).containsEntry("entries_sorted",0L);
         }
     }
     @Test void semanticApiIdentityReusesBodyEditsAndInvalidatesApiEdits()throws Exception{

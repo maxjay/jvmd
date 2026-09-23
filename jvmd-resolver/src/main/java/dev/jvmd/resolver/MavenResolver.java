@@ -19,8 +19,6 @@ public final class MavenResolver implements AutoCloseable {
     private boolean closed;
     private double bootstrapMillis;
     private long resolveCalls,residentHits,residentInvalidations,retiredWatchEvents,retiredWatchOverflows;
-    // PR-local live-state-tree evidence. Remove after the final before/after capture.
-    private long resolveRequestJsonBytes,resolveResponseJsonBytes;
 
     private record RequestCacheKey(Path root,List<Path> roots,boolean ignoreVersions){
         RequestCacheKey{root=root.toAbsolutePath().normalize();roots=roots.stream().map(path->path.toAbsolutePath().normalize()).toList();}
@@ -139,10 +137,6 @@ public final class MavenResolver implements AutoCloseable {
         try {
             String requestJson=Json.MAPPER.writeValueAsString(parameters);
             String responseJson=(String)call.invoke(bundle,operation,requestJson,callback);
-            if(operation.startsWith("resolve")){
-                resolveRequestJsonBytes+=requestJson.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-                resolveResponseJsonBytes+=responseJson.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-            }
             var response=Json.MAPPER.readTree(responseJson);
             if(response.has("error")) { var error=response.path("error");throw new RpcException(error.path("code").asInt(),error.path("message").asText(),error.get("data")); }
             return response.path("result");
@@ -174,7 +168,6 @@ public final class MavenResolver implements AutoCloseable {
             result.put("request_cache_hits",residentHits);result.put("project_model_fast_hits",residentHits);
             result.put("project_model_invalidations",residentInvalidations);result.put("project_model_residents",residents.size());
             result.put("project_model_watch_events",retiredWatchEvents+activeEvents);result.put("project_model_watch_overflows",retiredWatchOverflows+activeOverflows);
-            result.put("resolve_request_json_bytes",resolveRequestJsonBytes);result.put("resolve_response_json_bytes",resolveResponseJsonBytes);
             return result;
         } catch(Exception e) { throw new IllegalStateException("Resolver status failed",e); }
     }

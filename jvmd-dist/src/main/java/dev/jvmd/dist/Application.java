@@ -719,11 +719,10 @@ public final class Application implements AutoCloseable {
         }
         generation=graph.fingerprint()+":"+database.generation();
 
-        var openDocuments=documents(session).snapshots();
         String jdkFingerprint=Runtime.version()+"|"+config.jdkHome().toAbsolutePath().normalize();
         for(var module:graph.modules()){
-            configureModuleIndexState(database,module,false,graph,openDocuments,jdkFingerprint);
-            configureModuleIndexState(database,module,true,graph,openDocuments,jdkFingerprint);
+            configureModuleIndexState(session,database,module,false,graph,jdkFingerprint);
+            configureModuleIndexState(session,database,module,true,graph,jdkFingerprint);
         }
 
         var paths=new ArrayList<>(graph.nodes().stream().filter(n->n.path()!=null&&n.winner()==null).map(n->new IndexService.WorkspaceArtifact(n.path(),n.scope())).toList());
@@ -759,12 +758,12 @@ public final class Application implements AutoCloseable {
                         "fingerprint", graph.fingerprint(), "cached", graph.cached()));
     }
 
-    private void configureModuleIndexState(IndexService database,Resolution.Module module,boolean test,Resolution graph,
-                                           Map<Path,String> openDocuments,String jdkFingerprint)throws Exception{
+    private void configureModuleIndexState(Session session,IndexService database,Resolution.Module module,boolean test,Resolution graph,
+                                           String jdkFingerprint)throws Exception{
         var roots=(test?module.testSources():module.sources()).stream().map(Path::of).map(path->path.toAbsolutePath().normalize()).toList();
         if(roots.isEmpty())return;
-        var overlays=new LinkedHashMap<Path,String>();
-        openDocuments.forEach((path,text)->{if(roots.stream().anyMatch(path::startsWith))overlays.put(path,text);});
+        var live=documents(session).liveState(roots);var source=live.snapshot();
+        if(!source.trusted()){live.reconcile();source=live.snapshot();}
         var processing=test?module.testProcessing():module.processing();
         var processors=new ArrayList<String>();processors.addAll(processing.path());processors.addAll(processing.names());
         if(processing.lombok())processors.add("lombok");
@@ -776,8 +775,9 @@ public final class Application implements AutoCloseable {
         String key=module.gav()+(test?":test":":main");
         var classpath=graph.classpaths().getOrDefault(key,List.of());
         var options=test?module.testCompilerOptions():module.compilerOptions();
-        database.configureModuleState(new IndexSemanticState.ModuleStateInput(module.directory()+"|"+key,roots,Map.copyOf(overlays),options,
-                List.copyOf(processors),Map.copyOf(generated),classpath,jdkFingerprint+"|release="+module.release()));
+        database.configureModuleState(new IndexSemanticState.ModuleStateInput(module.directory()+"|"+key,roots,options,
+                List.copyOf(processors),Map.copyOf(generated),classpath,jdkFingerprint+"|release="+module.release(),
+                source.state(),live.paths()));
     }
 
     private static String fingerprintDirectory(Path directory)throws Exception{

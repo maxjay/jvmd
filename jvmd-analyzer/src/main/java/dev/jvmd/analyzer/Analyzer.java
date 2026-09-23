@@ -463,7 +463,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var live=documents.liveState(context.sources());
         live.observe(cached.dependencies());
         var changed=live.changedPathsSince(cached.sourceEpoch());
-        if(changed.isEmpty())return null;
+        if(changed.isEmpty())return new CompletionValidation(cached,true);
         boolean apiCurrent=true;
         for(Path dependency:changed.get()){
             if(dependency.equals(caller)||!cached.dependencies().contains(dependency))continue;

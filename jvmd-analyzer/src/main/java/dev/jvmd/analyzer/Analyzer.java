@@ -514,6 +514,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             if(statik&&cut>=0){name=name.substring(0,cut);cut=name.lastIndexOf('.');}
             if(cut>=0)result.add(name.substring(0,cut));else if(!statik)result.add("");
         }
+        // Fully-qualified type references can name a source package without an import.
+        var qualifiedTypes=java.util.regex.Pattern.compile("\\b((?:[A-Za-z_$][\\w$]*\\.)+)([A-Z_$][\\w$]*)\\b").matcher(text);
+        while(qualifiedTypes.find())result.add(qualifiedTypes.group(1).substring(0,qualifiedTypes.group(1).length()-1));
         return Set.copyOf(result);
     }
     private static double millis(long nanos){return Math.round(nanos/1000.0)/1000.0;}

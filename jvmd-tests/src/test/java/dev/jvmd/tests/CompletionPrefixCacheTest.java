@@ -106,6 +106,20 @@ class CompletionPrefixCacheTest {
         }
     }
 
+    @Test void unresolvedFullyQualifiedReceiverReconcilesOnlyItsNamedPackage()throws Exception{
+        Path callerDir=Files.createDirectories(root.resolve("caller")),file=Files.writeString(callerDir.resolve("Use.java"),
+                "package caller; class Use { Object call(foo.Api api){return api.get();} }");
+        String source=Files.readString(file);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);
+            assertThat(complete(analyzer,file,source,"get").path("items").findValuesAsText("name")).doesNotContain("getPets");
+            Path apiDir=Files.createDirectories(root.resolve("foo"));Files.writeString(apiDir.resolve("Api.java"),"package foo; public class Api { public int getPets(){return 1;} }");
+            assertThat(complete(analyzer,file,source,"get").path("items").findValuesAsText("name")).contains("getPets");
+            @SuppressWarnings("unchecked") var state=(Map<String,Object>)analyzer.status().get("live_source_state");
+            assertThat(((Number)state.get("targeted_reconciliations")).longValue()).isPositive();
+        }
+    }
+
     @Test void nonSourceFilesystemChurnDoesNotInvalidateWatcherBackedCandidates()throws Exception{
         Files.writeString(root.resolve("Api.java"),"class Api { int getPets(){return 1;} }");
         Path file=Files.writeString(root.resolve("Use.java"),text("g"));var documents=new Documents();documents.open(file,text("g"),1);

@@ -393,6 +393,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         while(start>0&&Character.isJavaIdentifierPart(text.codePointBefore(start)))start-=Character.charCount(text.codePointBefore(start));
         while(end<text.length()&&Character.isJavaIdentifierPart(text.codePointAt(end)))end+=Character.charCount(text.codePointAt(end));
         String prefix=text.substring(start,cursor),patched=text.substring(0,start)+EditorQueries.MARKER+text.substring(end);int focusCursor=start;
+        int selector=start-1;while(selector>=0&&Character.isWhitespace(text.charAt(selector)))selector--;
+        boolean qualified=selector>=0&&text.charAt(selector)=='.';
         synchronizeKnownSources(path);touch(path,text);
         var caches=modules.get(context.generation());
         if(caches.completionNeedsDiscoveryRefresh){
@@ -409,7 +411,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             cached=validation==null?null:validation.cached();cachedApiCurrent=validation!=null&&validation.apiCurrent();caches.completion=cached;
         }
         long sourceEpoch=compiler.sourceStateGeneration();
-        long phaseStarted=System.nanoTime();var observed=inputSnapshot();String key=completionKey(path,patched,start,observed);keyNanos=System.nanoTime()-phaseStarted;
+        long phaseStarted=System.nanoTime();var observed=inputSnapshot();String key=completionKey(path,patched,start,qualified,observed);keyNanos=System.nanoTime()-phaseStarted;
         CompilerPool.Outcome<List<Map<String,Object>>> outcome;
         if(key!=null&&cached!=null&&cachedApiCurrent&&key.equals(cached.key())&&prefix.startsWith(cached.prefix())){
             completionCacheHits++;cacheHit=true;outcome=cached.result();
@@ -432,7 +434,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 var completionDependencies=completionDependencies(path,outcome.result());
                 if(ensureCompletionSemantics(completionDependencies)){
                     dependencies.recordFocused(path,completionDependencies);
-                    String admittedKey=completionKey(path,patched,start,observed);
+                    String admittedKey=completionKey(path,patched,start,qualified,observed);
                     caches.completion=new CompletionCached(admittedKey,prefix,live.snapshot().inputEpoch(),completionDependencies,
                             new CompilerPool.Outcome<>(2,outcome.result(),List.of(),List.of()));
                     caches.completionSourceEpoch=live.snapshot().inputEpoch();
@@ -502,13 +504,14 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return true;
     }
     private static double millis(long nanos){return Math.round(nanos/1000.0)/1000.0;}
-    private String completionKey(Path file,String patched,int start,CompilerInputs.Snapshot inputs){
+    private String completionKey(Path file,String patched,int start,boolean qualified,CompilerInputs.Snapshot inputs){
         if(patched.length()>256*1024)return null;
         var state=inputs.live().snapshot().state();String patchedHash=Hashing.sha256(patched.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String namespace=qualified?"qualified":state.namespace().fingerprint().value();
         completionKeyMaterialBytes+=completionContextIdentity.length()+file.toString().length()+patchedHash.length()+inputs.environment().value().length()
-                +state.membership().fingerprint().value().length()+state.namespace().fingerprint().value().length()+24;
-        return CompilerInputs.compose("completion-v2",completionContextIdentity,file.toString(),start,patchedHash,inputs.environment().value(),
-                state.membership().fingerprint().value(),state.namespace().fingerprint().value());
+                +state.membership().fingerprint().value().length()+namespace.length()+24;
+        return CompilerInputs.compose("completion-v3",completionContextIdentity,file.toString(),start,patchedHash,inputs.environment().value(),
+                state.membership().fingerprint().value(),namespace);
     }
 
     public Envelope signatureHelp(Path path,String text,int line,int character)throws Exception{

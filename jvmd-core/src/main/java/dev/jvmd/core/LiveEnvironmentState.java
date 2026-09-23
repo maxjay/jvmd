@@ -69,7 +69,10 @@ final class LiveEnvironmentState implements AutoCloseable {
         if(verificationOnly){reconcileAll();synchronized(this){trusted=true;}return snapshot();}
         drain(false);
         synchronized(this){if(!trusted){reconcileAll();trusted=true;return snapshot();}}
-        drainNanos(250_000L);
+        // Filesystem watch publication is asynchronous to the writer. A bounded settlement
+        // window keeps warm validation O(1)/O(events) while making immediate edit->request
+        // transitions deterministic without re-statting the accepted environment manifest.
+        drainNanos(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(2));
         synchronized(this){if(!trusted){reconcileAll();trusted=true;}return snapshot();}
     }
 

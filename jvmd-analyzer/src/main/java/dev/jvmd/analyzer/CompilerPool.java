@@ -59,7 +59,11 @@ public final class CompilerPool implements AutoCloseable {
             sourceModuleGeneration=manager.sourceModuleGeneration();
         }finally{configureNanos+=System.nanoTime()-started;}
     }
-    public void documents(Documents documents){checkThread();liveDocuments=documents;manager.documents(documents.snapshots());refreshSourceModules();}
+    public void documents(Documents documents){
+        checkThread();liveDocuments=documents;
+        manager.documents(documents.snapshots(),documents.liveState(configuredSources));
+        refreshSourceModules();
+    }
     public CompilerInputs.Snapshot inputSnapshot()throws java.io.IOException {
         checkThread();return inputs.capture(inputConfiguration,liveDocuments);
     }
@@ -133,7 +137,8 @@ public final class CompilerPool implements AutoCloseable {
                 finally{resetSourcePackages(task,parsed);}
             });
             int level=actual[0];var problems=diagnostics.getDiagnostics().stream().map(d->new Problem("live",level,d.getCode(),d.getKind().name(),d.getSource()==null?path.toString():d.getSource().toUri().toString(),d.getLineNumber(),Math.max(0,d.getColumnNumber()-1),d.getStartPosition(),d.getEndPosition(),d.getMessage(Locale.ROOT))).toList();
-            if(manager.inputsSuperseded()||!observed.equals(inputSnapshot()))return new Outcome<>(1,null,List.of(),List.of("diagnostics_superseded: inputs changed during analysis"));
+            if(manager.inputsSuperseded()||!inputs.current(observed,inputConfiguration,liveDocuments))
+                return new Outcome<>(1,null,List.of(),List.of("diagnostics_superseded: inputs changed during analysis"));
             return new Outcome<>(level,value,problems,List.copyOf(warnings));
         }catch(QueryFailure e){releasePlatform.close();throw (Exception)e.getCause();}
         catch(AssertionError|RuntimeException e){System.getLogger("jvmd.analyzer").log(System.Logger.Level.ERROR,"Compiler query fault in "+path,e);fault[0]=true;faults++;return new Outcome<>(Math.min(1,tier),null,List.of(),List.of("analyzer_fault: "+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage())));}
@@ -166,7 +171,7 @@ public final class CompilerPool implements AutoCloseable {
         var previous=manager;recycle();manager.close();
         manager=new IndexedFileManager(ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8),configuredClasspath,configuredSources,configuredIndex,
                 Math.min(32L*1024*1024,Math.max(1024*1024,budget/8)),preciseSourceRoots,inputFiles);
-        manager.inheritWork(previous);manager.documents(liveDocuments.snapshots());manager.binarySources(configuredBinarySources);
+        manager.inheritWork(previous);manager.documents(liveDocuments.snapshots(),liveDocuments.liveState(configuredSources));manager.binarySources(configuredBinarySources);
         sourceModuleGeneration=manager.sourceModuleGeneration();
     }
     public void recycle(){checkThread();releasePlatform.close();pool=new JavacTaskPool(1);if(manager!=null)manager.invalidate();baseline=heap();recycles++;}

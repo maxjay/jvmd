@@ -71,6 +71,34 @@ class LiveSourceStateTest {
         }
     }
 
+    @Test void recreatedWatchedRootIsVisibleAtTheNextCorrectnessBoundary()throws Exception{
+        Path sourceRoot=Files.createDirectories(root.resolve("src"));
+        Path first=Files.writeString(sourceRoot.resolve("A.java"),"class A {}");
+        try(var documents=new Documents(new FileStateRegistry())){
+            var state=documents.liveState(List.of(sourceRoot));
+            var initial=state.snapshot();
+            assertThat(state.paths()).contains(first.toAbsolutePath().normalize());
+
+            Files.delete(first);
+            Files.delete(sourceRoot);
+            state.settleWatchEvents();
+            var removed=state.snapshot();
+            assertThat(state.paths()).doesNotContain(first.toAbsolutePath().normalize());
+            assertThat(state.status()).containsEntry("verification_only",true);
+
+            Path recreated=Files.createDirectories(sourceRoot);
+            Path second=Files.writeString(recreated.resolve("B.java"),"class B {}");
+            state.verifyTransactionBoundary();
+            var after=state.snapshot();
+
+            assertThat(after.trusted()).isTrue();
+            assertThat(state.paths()).contains(second.toAbsolutePath().normalize()).doesNotContain(first.toAbsolutePath().normalize());
+            assertThat(after.state().membership()).isNotEqualTo(removed.state().membership());
+            assertThat(after.state().content()).isNotEqualTo(removed.state().content());
+            assertThat(after.state().merkle()).isNotEqualTo(initial.state().merkle());
+        }
+    }
+
     private static void await(Duration timeout,java.util.function.BooleanSupplier condition)throws Exception{
         long deadline=System.nanoTime()+timeout.toNanos();
         while(System.nanoTime()<deadline){if(condition.getAsBoolean())return;Thread.sleep(20);}

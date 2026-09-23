@@ -70,7 +70,7 @@ class CompilerInputsTest {
     @Test void warmCaptureReadsMaintainedSourceIdentityWithoutSourceInventory()throws Exception {
         Path file=Files.writeString(root.resolve("A.java"),"class A { int n=1; }");
         var files=new FileStateRegistry();try(var docs=new Documents(files)){
-            var inputs=new CompilerInputs(files),configuration=config(List.of());
+            var inputs=new CompilerInputs(files);var configuration=config(List.of());
             var initial=inputs.capture(configuration,docs);var work=files.status();var tracked=inputs.status();
             for(int i=0;i<20;i++)assertThat(inputs.capture(configuration,docs)).isSameAs(initial);
             assertThat(files.status()).containsEntry("hashes",work.get("hashes")).containsEntry("directory_enumerations",work.get("directory_enumerations"));
@@ -89,10 +89,10 @@ class CompilerInputsTest {
 
     @Test void overlaysAreSessionLocalAndCloseReturnsToCurrentDisk()throws Exception {
         Path file=Files.writeString(root.resolve("A.java"),"class A {}"),unsaved=root.resolve("New.java");
-        var files=new FileStateRegistry();var first=new CompilerInputs(files),second=new CompilerInputs(files);
+        var files=new FileStateRegistry();var first=new CompilerInputs(files);var second=new CompilerInputs(files);
         try(var left=new Documents(files);var right=new Documents(files)){
             left.open(file,"class A { int x; }",1);right.open(file,"class A { int y; }",1);left.open(unsaved,"class New {}",1);
-            var l=first.capture(config(List.of()),left),r=second.capture(config(List.of()),right);
+            var l=first.capture(config(List.of()),left);var r=second.capture(config(List.of()),right);
             assertThat(l.source(file)).isNotEqualTo(r.source(file));
             assertThat(l.membership()).isNotEqualTo(r.membership());
             assertThat(left.liveState(List.of(root)).paths()).contains(unsaved.toAbsolutePath().normalize());

@@ -250,3 +250,13 @@ These are intentionally not described as O(1):
 ## Resulting invariant
 
 Normal interactive state lookup is now independent of the number of unchanged source files. State changes update the resident source/environment/project-model/output-freshness representations; compiler and completion consumers read constant-size identities, while semantic invalidation follows only the affected graph. Full scans remain explicit cold/reconciliation/fallback work rather than the default trust mechanism.
+
+
+## Post-review correctness repairs
+
+Two bounded correctness gaps were closed without changing the live-state ownership model.
+
+- **Source-root recreation.** If active source watch coverage is lost because a relevant watch key becomes invalid or subtree registration fails, `LiveSourceState` permanently enters verification-only mode. Reconciliation may restore trusted content, but future compiler transaction boundaries explicitly verify the source roots, so a deleted and later recreated generated/source root cannot remain invisible. `LiveSourceStateTest.recreatedWatchedRootIsVisibleAtTheNextCorrectnessBoundary` deletes the watched root, settles through the production watch fence, recreates it with a new source, and proves membership/content identities and maintained source membership update without arbitrary sleeps.
+- **Qualified-completion negative name resolution.** Completion provenance now retains the source-spelled simple receiver type name. At cache admission, JVMD derives only the current-package/import source candidates for that name from maintained source membership and records those existing files in the same semantic dependency/API fence as positive receiver, hierarchy, and candidate provenance. A body-only edit to such a previously non-positive candidate can still reuse the completion when its API is unchanged; a modifier/name/API change is re-attributed against current source bytes and invalidates before reuse. `CompletionPrefixCacheTest.negativeNameResolutionChangesInvalidateQualifiedCompletion` protects both cases.
+
+This repair does not add workspace-wide qualified-completion content/namespace invalidation, restore full-root unresolved-completion reconciliation, or add request-time workspace reconstruction.

@@ -422,7 +422,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             sourceRefreshNanos=System.nanoTime()-phaseStarted;
             phaseStarted=System.nanoTime();var focus=focusing.focus(path,patched,focusCursor);focusNanos=System.nanoTime()-phaseStarted;
             phaseStarted=System.nanoTime();
-            outcome=compiler.query(path,focus.source(),2,observed,(task,units,tier)->EditorQueries.completion(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),prefix,profile));
+            var attributed=compiler.query(path,focus.source(),2,observed,(task,units,tier)->EditorQueries.completionResult(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),prefix,profile));
+            var completionResult=attributed.result();
+            outcome=new CompilerPool.Outcome<>(attributed.tier(),completionResult==null?null:completionResult.items(),attributed.diagnostics(),attributed.warnings());
             queryNanos=System.nanoTime()-phaseStarted;
             phaseStarted=System.nanoTime();
             caches.completionNeedsDiscoveryRefresh=outcome.result()==null||outcome.result().isEmpty();
@@ -431,7 +433,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             caches.completion=null;
             if(key!=null&&outcome.tier()==2&&outcome.warnings().isEmpty()&&outcome.result()!=null&&!outcome.result().isEmpty()
                     &&outcome.result().size()<=256&&Json.MAPPER.writeValueAsBytes(outcome.result()).length<=256*1024){
-                var completionDependencies=completionDependencies(path,outcome.result());
+                var completionDependencies=completionDependencies(path,completionResult);
                 if(ensureCompletionSemantics(completionDependencies)){
                     dependencies.recordFocused(path,completionDependencies);
                     String admittedKey=completionKey(path,patched,start,qualified,observed);
@@ -480,14 +482,12 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var refreshed=new CompletionCached(cached.key(),cached.prefix(),live.snapshot().inputEpoch(),cached.dependencies(),cached.result());
         return new CompletionValidation(refreshed,apiCurrent);
     }
-    private Set<Path> completionDependencies(Path caller,List<Map<String,Object>> rows){
+    private Set<Path> completionDependencies(Path caller,EditorQueries.CompletionResult completion){
         var result=new TreeSet<Path>(Comparator.comparing(Path::toString));var live=documents.liveState(context.sources());
-        for(var row:rows){
-            Object value=row.get("source_file");if(value==null)continue;
-            try{
-                Path file=Path.of(value.toString()).toAbsolutePath().normalize();
-                if(!file.equals(caller)&&live.accepts(file))result.add(file);
-            }catch(InvalidPathException ignored){}
+        if(completion==null)return Set.of();
+        for(Path dependency:completion.semanticDependencies()){
+            Path file=dependency.toAbsolutePath().normalize();
+            if(!file.equals(caller)&&live.accepts(file))result.add(file);
         }
         return Set.copyOf(result);
     }

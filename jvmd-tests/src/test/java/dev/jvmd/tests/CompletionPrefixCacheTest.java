@@ -162,6 +162,22 @@ class CompletionPrefixCacheTest {
         }
     }
 
+    @Test void receiverHierarchyProvenanceInvalidatesInheritedCandidates()throws Exception{
+        Files.writeString(root.resolve("BaseA.java"),"class BaseA { int getA(){return 1;} }");
+        Files.writeString(root.resolve("BaseB.java"),"class BaseB { int getB(){return 2;} }");
+        Path api=Files.writeString(root.resolve("Api.java"),"class Api extends BaseA {}");
+        Path file=Files.writeString(root.resolve("Use.java"),text("get"));
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);
+            assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getA").doesNotContain("getB");
+            long before=((Number)analyzer.status().get("completion_computations")).longValue();
+            Files.writeString(api,"class Api extends BaseB {}");
+            var names=complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name");
+            assertThat(names).contains("getB").doesNotContain("getA");
+            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(before+1);
+        }
+    }
+
     @Test void sourceMembershipChangesInvalidateSemanticCompletionIdentity()throws Exception{
         Files.writeString(root.resolve("Api.java"),"class Api { int getPets(){return 1;} }");
         Path file=Files.writeString(root.resolve("Use.java"),text("get")),added=root.resolve("Added.java");

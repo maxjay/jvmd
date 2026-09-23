@@ -432,7 +432,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             caches.completion=null;
             if(key!=null&&outcome.tier()==2&&outcome.warnings().isEmpty()&&outcome.result()!=null&&!outcome.result().isEmpty()
                     &&outcome.result().size()<=256&&Json.MAPPER.writeValueAsBytes(outcome.result()).length<=256*1024){
-                var completionDependencies=completionDependencies(path,completionResult);
+                var completionDependencies=completionDependencies(path,text,completionResult);
                 if(ensureCompletionSemantics(completionDependencies)){
                     dependencies.recordFocused(path,completionDependencies);
                     String admittedKey=completionKey(path,patched,start,qualified,observed);
@@ -490,12 +490,40 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         return Map.copyOf(result);
     }
-    private Set<Path> completionDependencies(Path caller,EditorQueries.CompletionResult completion){
+    private Set<Path> completionDependencies(Path caller,String text,EditorQueries.CompletionResult completion){
         var result=new TreeSet<Path>(Comparator.comparing(Path::toString));var live=documents.liveState(context.sources());
         if(completion==null)return Set.of();
         for(Path dependency:completion.semanticDependencies()){
             Path file=dependency.toAbsolutePath().normalize();
             if(!file.equals(caller)&&live.accepts(file))result.add(file);
+        }
+        for(String binary:completionNameResolutionBinaries(text,completion.nameResolutionNames())){
+            live.source(binary).map(LiveSourceState.Source::file).filter(file->!file.equals(caller)).ifPresent(result::add);
+        }
+        return Set.copyOf(result);
+    }
+    private static Set<String> completionNameResolutionBinaries(String text,Collection<String> simpleNames){
+        if(simpleNames==null||simpleNames.isEmpty())return Set.of();
+        var names=new LinkedHashSet<>(simpleNames);var result=new LinkedHashSet<String>();
+        var packageMatch=java.util.regex.Pattern.compile("(?m)^\\s*package\\s+([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)\\s*;").matcher(text);
+        String current=packageMatch.find()?packageMatch.group(1):"";
+        for(String name:names)result.add(current.isEmpty()?name:current+"."+name);
+        var imports=java.util.regex.Pattern.compile("\\bimport\\s+(static\\s+)?([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$*][\\w$*]*)*)\\s*;").matcher(text);
+        while(imports.find()){
+            boolean statik=imports.group(1)!=null;String imported=imports.group(2);
+            if(statik){
+                if(imported.endsWith(".*"))result.add(imported.substring(0,imported.length()-2));
+                else{
+                    int cut=imported.lastIndexOf('.');String member=cut<0?imported:imported.substring(cut+1);
+                    if(cut>=0&&names.contains(member))result.add(imported.substring(0,cut));
+                }
+            }else if(imported.endsWith(".*")){
+                String pkg=imported.substring(0,imported.length()-2);
+                for(String name:names)result.add(pkg+"."+name);
+            }else{
+                int cut=imported.lastIndexOf('.');String simple=cut<0?imported:imported.substring(cut+1);
+                if(names.contains(simple))result.add(imported);
+            }
         }
         return Set.copyOf(result);
     }

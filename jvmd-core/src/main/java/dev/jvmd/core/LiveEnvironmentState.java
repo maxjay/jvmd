@@ -114,10 +114,16 @@ final class LiveEnvironmentState implements AutoCloseable {
     }
     private void registerTree(Path logicalRoot)throws IOException{
         logicalRoot=normalize(logicalRoot);if(!Files.isDirectory(logicalRoot))return;
+        // A symlinked recursive environment can change behind an unchanged logical directory entry
+        // (target deletion/recreation). WatchService cannot prove that boundary, so use the
+        // verification-only correctness path for these uncommon configurations.
+        if(Files.isSymbolicLink(logicalRoot))synchronized(this){verificationOnly=true;}
         Path physicalRoot=logicalRoot.toRealPath();
         try(var paths=Files.walk(physicalRoot,FileVisitOption.FOLLOW_LINKS)){
             for(Path physical:paths.filter(Files::isDirectory).toList()){
-                Path relative=physicalRoot.relativize(physical);registerDirectory(physical,logicalRoot.resolve(relative).normalize());
+                Path relative=physicalRoot.relativize(physical);Path logical=logicalRoot.resolve(relative).normalize();
+                if(Files.isSymbolicLink(logical))synchronized(this){verificationOnly=true;}
+                registerDirectory(physical,logical);
             }
         }
     }

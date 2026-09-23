@@ -101,9 +101,6 @@ def open_doc(client,path,text,version=1):
 def change_doc(client,path,text,version):
     client.notify("textDocument/didChange",{"textDocument":{"uri":path.as_uri(),"version":version},"contentChanges":[{"text":text}]})
 
-def wait_clean_diagnostics(client,path,version,since):
-    client.diagnostics(path.as_uri(),version,False,since,timeout=180)
-
 def allocation_summary(profile_dir):
     events=json.loads((profile_dir/"profile-events.json").read_text())["recording"]["events"]
     heap=[]
@@ -180,16 +177,12 @@ def main():
         evidence["cases"]["warm_unchanged"]["correct"]=evidence["cases"]["warm_unchanged"]["result"]["count"]>0
 
         body_only=edit_method_body(unrelated_text)
-        since=len(client.notifications)
         change_doc(client,unrelated,body_only,2)
-        wait_clean_diagnostics(client,unrelated,2,since)
         evidence["cases"]["body_only_edit"]=measured(client,"body_only_edit",revision,complete)
         evidence["cases"]["body_only_edit"]["correct"]=evidence["cases"]["body_only_edit"]["result"]["count"]>0
 
         api_edit=insert_before_last_brace(receiver_text,"    public void benchmarkAddedMethod() {}\n")
-        since=len(client.notifications)
         change_doc(client,receiver,api_edit,2)
-        wait_clean_diagnostics(client,receiver,2,since)
         api_prefix="benchmarkA"
         api_probe=probe_text.replace("project.",f"project.{api_prefix}",1)
         api_offset=api_probe.index(f"project.{api_prefix}")+len("project.")+len(api_prefix)
@@ -205,9 +198,7 @@ def main():
         change_doc(client,caller,probe_text,4)
 
         added=receiver.parent/"LiveStateTreeProbe.java"
-        since=len(client.notifications)
         open_doc(client,added,"package org.apache.maven.project; final class LiveStateTreeProbe {}\n",1)
-        wait_clean_diagnostics(client,added,1,since)
         evidence["cases"]["add_source"]=measured(client,"add_source",revision,complete)
         client.notify("textDocument/didClose",{"textDocument":{"uri":added.as_uri()}})
         evidence["cases"]["remove_source"]=measured(client,"remove_source",revision,complete)

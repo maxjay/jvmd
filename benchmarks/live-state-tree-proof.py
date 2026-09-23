@@ -15,6 +15,7 @@ from resources import export_jfr
 
 RECEIVER="impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java"
 CALLER="impl/maven-core/src/main/java/org/apache/maven/project/DefaultMavenProjectHelper.java"
+UNRELATED="impl/maven-core/src/main/java/org/apache/maven/execution/DefaultMavenExecutionResult.java"
 
 def write_json(path,value):
     path.write_text(json.dumps(value,indent=2,sort_keys=True)+"\n")
@@ -100,6 +101,9 @@ def open_doc(client,path,text,version=1):
 def change_doc(client,path,text,version):
     client.notify("textDocument/didChange",{"textDocument":{"uri":path.as_uri(),"version":version},"contentChanges":[{"text":text}]})
 
+def wait_clean_diagnostics(client,path,version,since):
+    client.diagnostics(path.as_uri(),version,False,since,timeout=180)
+
 def allocation_summary(profile_dir):
     events=json.loads((profile_dir/"profile-events.json").read_text())["recording"]["events"]
     heap=[]
@@ -143,8 +147,8 @@ def main():
     ns=SimpleNamespace(repo=a.repo,java_home=a.java_home.resolve(),resolvers=a.resolvers.resolve())
     client=workspace_run.start(ns,"jvmd",a.output,fixture,build,"attribution")
     evidence={"revision":revision,"fixture":str(a.fixture),"cases":{}}
-    receiver=a.fixture/RECEIVER;caller=a.fixture/CALLER
-    receiver_text=receiver.read_text();caller_text=caller.read_text()
+    receiver=a.fixture/RECEIVER;caller=a.fixture/CALLER;unrelated=a.fixture/UNRELATED
+    receiver_text=receiver.read_text();caller_text=caller.read_text();unrelated_text=unrelated.read_text()
     marker="/*BENCH_CURSOR*/"
     caller_probe=insert_before_last_brace(caller_text,f"""
     private void benchmarkCompletion(MavenProject project) {{
@@ -162,8 +166,10 @@ def main():
                                      "extendedClientCapabilities":{"classFileContentsSupport":True}},
         },timeout=180)
         client.notify("initialized")
-        open_doc(client,receiver,receiver_text,1);open_doc(client,caller,caller_text,1)
+        open_doc(client,receiver,receiver_text,1);open_doc(client,caller,caller_text,1);open_doc(client,unrelated,unrelated_text,1)
+        since=len(client.notifications)
         change_doc(client,caller,probe_text,2)
+        wait_clean_diagnostics(client,caller,2,since)
 
         def complete():
             items,latency=completion(client,caller.as_uri(),pos)
@@ -171,18 +177,23 @@ def main():
             return {"count":len(items),"labels":labels},latency
 
         evidence["cases"]["first_completion"]=measured(client,"first_completion",revision,complete)
+        evidence["cases"]["first_completion"]["correct"]=evidence["cases"]["first_completion"]["result"]["count"]>0
         evidence["cases"]["warm_unchanged"]=measured(client,"warm_unchanged",revision,complete)
-        evidence["cases"]["warm_unchanged"]["correct"]=True
+        evidence["cases"]["warm_unchanged"]["correct"]=evidence["cases"]["warm_unchanged"]["result"]["count"]>0
 
-        body_only=edit_method_body(receiver_text)
-        change_doc(client,receiver,body_only,2)
+        body_only=edit_method_body(unrelated_text)
+        since=len(client.notifications)
+        change_doc(client,unrelated,body_only,2)
+        wait_clean_diagnostics(client,unrelated,2,since)
         evidence["cases"]["body_only_edit"]=measured(client,"body_only_edit",revision,complete)
-        evidence["cases"]["body_only_edit"]["correct"]=True
+        evidence["cases"]["body_only_edit"]["correct"]=evidence["cases"]["body_only_edit"]["result"]["count"]>0
 
-        api_edit=insert_before_last_brace(body_only,"    public void benchmarkAddedMethod() {}\n")
-        change_doc(client,receiver,api_edit,3)
+        api_edit=insert_before_last_brace(receiver_text,"    public void benchmarkAddedMethod() {}\n")
+        since=len(client.notifications)
+        change_doc(client,receiver,api_edit,2)
+        wait_clean_diagnostics(client,receiver,2,since)
         api_prefix="benchmarkA"
-        api_probe=probe_text.replace("project.",f"project.{api_prefix}")
+        api_probe=probe_text.replace("project.",f"project.{api_prefix}",1)
         api_offset=api_probe.index(f"project.{api_prefix}")+len("project.")+len(api_prefix)
         api_pos=position(api_probe,api_offset)
         change_doc(client,caller,api_probe,3)
@@ -196,7 +207,9 @@ def main():
         change_doc(client,caller,probe_text,4)
 
         added=receiver.parent/"LiveStateTreeProbe.java"
+        since=len(client.notifications)
         open_doc(client,added,"package org.apache.maven.project; final class LiveStateTreeProbe {}\n",1)
+        wait_clean_diagnostics(client,added,1,since)
         evidence["cases"]["add_source"]=measured(client,"add_source",revision,complete)
         client.notify("textDocument/didClose",{"textDocument":{"uri":added.as_uri()}})
         evidence["cases"]["remove_source"]=measured(client,"remove_source",revision,complete)

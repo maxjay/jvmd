@@ -144,14 +144,14 @@ Commit: `5048399` establishes primitives; `00b6503` places their regression test
 
 ## Phase 2 — live source state
 
-Status: **not started**.
+Status: **complete**.
 
-Baseline evidence: pending.
-Change: pending.
-Tests: pending.
-PR-local measurement: pending mutation-cost evidence.
-Remaining discrepancy: pending.
-Commit: pending.
+Baseline evidence: baseline above remains the request-path reference; Phase 2 intentionally adds mutation-side maintenance before cutting over readers.
+Change: `81ccee5` adds session-owned `LiveSourceState`: editor open/change/close updates effective content synchronously, filesystem events update disk membership/content through a recursive watcher, semantic attribution feeds the existing `FileSemanticContribution` API/exported-name identities into the same tree, stale semantic results are rejected by source hash, and watcher uncertainty advances the transition epoch before an explicit reconciliation. `230f59e` removes Rocks' duplicate source discovery/directory-Merkle ownership; Rocks now persists the canonical `LiveStateTree.State` plus membership needed to remove persisted semantic contributions. `b826943` fixes a lifecycle issue found by the full suite so live source state is created only from the shared session `Documents`, never an analyzer-private temporary document store.
+Tests: permanent `LiveSourceStateTest` covers editor mutation, semantic-content fencing, preserved-mtime disk edits, and uncertainty/reconciliation. Existing `LiveStateTreeTest` proves independent information-domain updates and unaffected subtree identity. Tests run 35807087303 passed the full repository gate after the ownership fix; Benchmarks run 35807087310 and Live State Tree Proof run 35807087312 also passed.
+PR-local measurement: proof remained green after the mutation-side and Rocks ownership cutover. Request-time costs are expected to remain until Phases 3–5, so no latency win is claimed for Phase 2.
+Remaining discrepancy: `CompilerInputs.capture()`, compiler end-of-query validation, `IndexedFileManager` source inventory, completion-key all-source construction, and Maven model validation still use request-time work. Phase 3 now cuts compiler/source validation over to the maintained state.
+Commit: `81ccee5` live ingestion, `230f59e` canonical Rocks projection, `b826943` session-ownership repair.
 
 ## Phase 3 — CompilerInputs cutover
 

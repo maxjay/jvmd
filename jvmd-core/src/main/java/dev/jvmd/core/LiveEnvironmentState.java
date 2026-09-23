@@ -69,7 +69,7 @@ final class LiveEnvironmentState implements AutoCloseable {
         if(verificationOnly){reconcileAll();synchronized(this){trusted=true;}return snapshot();}
         drain(false);
         synchronized(this){if(!trusted){reconcileAll();trusted=true;return snapshot();}}
-        drain(true);
+        drainNanos(250_000L);
         synchronized(this){if(!trusted){reconcileAll();trusted=true;}return snapshot();}
     }
 
@@ -128,9 +128,14 @@ final class LiveEnvironmentState implements AutoCloseable {
     }
 
     private void drain(boolean settle)throws IOException{
+        if(settle){drainNanos(250_000L);return;}
+        WatchService current; synchronized(this){current=watcher;if(current==null){trusted=false;return;}}
+        for(WatchKey key;(key=current.poll())!=null;)process(key);
+    }
+    private void drainNanos(long nanos)throws IOException{
         WatchService current; synchronized(this){current=watcher;if(current==null){trusted=false;return;}}
         WatchKey first=null;
-        if(settle)try{first=current.poll(1,java.util.concurrent.TimeUnit.MILLISECONDS);}
+        try{first=current.poll(nanos,java.util.concurrent.TimeUnit.NANOSECONDS);}
         catch(InterruptedException interrupted){Thread.currentThread().interrupt();synchronized(this){trusted=false;}return;}
         if(first!=null)process(first);
         for(WatchKey key;(key=current.poll())!=null;)process(key);

@@ -105,7 +105,7 @@ public final class LiveSourceState implements AutoCloseable {
     /** Bounded delivery fence for graph-wide validation; never enumerates source owners. */
     public void settleWatchEvents()throws IOException{
         if(verificationOnly){reconcile();return;}
-        java.util.concurrent.locks.LockSupport.parkNanos(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(2));
+        java.util.concurrent.locks.LockSupport.parkNanos(java.util.concurrent.TimeUnit.MICROSECONDS.toNanos(250));
         synchronized(this){if(!trusted)reconcile();}
     }
 

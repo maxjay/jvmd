@@ -39,14 +39,14 @@ A phase is complete only when the previous ownership path is either removed or e
 - [x] Run the same Apache Maven measurements and record before/after evidence.
 
 ## Phase 4 — completion identity cutover
-- [ ] Remove Context.toString() from completion key construction.
-- [ ] Remove all-source sort/path/hash concatenation from completion key construction.
-- [ ] Use caller identity + environment + membership/namespace + semantic API identity.
-- [ ] Completion key construction is O(1) with respect to workspace file count.
-- [ ] Unrelated body edit can reuse completion where semantic dependencies are unchanged.
-- [ ] Relevant API edit invalidates and exposes the new member.
-- [ ] Add/remove source invalidates membership/namespace as appropriate.
-- [ ] Record before/after Apache Maven evidence.
+- [x] Remove Context.toString() from completion key construction.
+- [x] Remove all-source sort/path/hash concatenation from completion key construction.
+- [x] Use caller identity + environment + membership/namespace + semantic API identity.
+- [x] Completion key construction is O(1) with respect to workspace file count.
+- [x] Unrelated body edit can reuse completion where semantic dependencies are unchanged.
+- [x] Relevant API edit invalidates and exposes the new member.
+- [x] Add/remove source invalidates membership/namespace as appropriate.
+- [x] Record before/after Apache Maven evidence.
 
 ## Phase 5 — project-model identity
 - [ ] Maintain POM/settings/.mvn/config/project-model identity on change.

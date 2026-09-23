@@ -171,14 +171,19 @@ Commits: `e861b6e` through `098e750` perform the source-state cutover; `34a5946`
 
 ## Phase 4 — completion identity cutover
 
-Status: **not started**.
+Status: **complete**.
 
-Baseline evidence: pending.
-Change: pending.
-Tests: pending.
-PR-local measurement: pending.
-Remaining discrepancy: pending.
-Commit: pending.
+Baseline evidence: accepted baseline run 35804584433 at `db3166f`; Phase-4 after-run 35851802155 at `a03b29b`. Normal prepared-workspace Benchmarks run 35851802165 passed; the permanent completion regressions passed the Phase-4 compiler checkpoint in Tests run 35851802181.
+
+Change: completion no longer calls `Context.toString()` or sorts/concatenates the source universe. A configure-time compact context identity is combined at request time with caller/path/position, the token-stripped caller hash, environment identity, and maintained membership/namespace identities. Cached completion additionally records a bounded set of local candidate source dependencies and their canonical `FileSemanticContribution.apiFingerprint` identity. Only changed recorded dependencies are re-attributed before reuse, so an unrelated or dependency body-only edit retains candidates while a relevant API change invalidates them. Candidate source provenance is detached while javac owns the elements. Add/remove source transitions invalidate through the maintained membership identity.
+
+Tests: `CompletionPrefixCacheTest` permanently covers prefix narrowing, preserved-mtime API replacement, release changes, unresolved receiver/new source discovery, unrelated body edits, relevant body-only reuse, relevant API additions, unsaved source membership add/remove, binary replacement/deletion, and a 300-source context asserting zero completion-key source entries visited/sorted. One compiler query computes candidates and one bounded candidate-API attribution admits the cache; prefix narrowing then performs no javac work.
+
+PR-local measurement: warm Apache Maven completion-key traversal fell from **1,200 visited + 1,200 sorted entries to 0 + 0**. Key material fell from **496,150 B to 470 B**. Warm inclusive thread allocation fell from **185,434,528 B to 139,584,392 B**. The proof latency was 495.979 ms versus 794.375 ms at baseline, but—as already documented—the disposable Apache completion probe still returns an empty completion result and is used only for computational-shape counters; correctness is established by the normal benchmark and permanent tests.
+
+Remaining discrepancy: environment validation still inspects 3,774 candidates in the warm proof, and every unchanged project-model request still enters the Maven bundle, validates 195 model inputs, hashes about 241,632 B and serializes about 1,260,384 B of Resolution JSON. Phase 5 removes that ownership path.
+
+Commits: `e12146f` introduces the fixed-size semantic completion key, `48a8c7f` adds permanent semantic/membership regression coverage, and `16f8625`/`a03b29b` bind reuse to recorded dependency API identity and make the one-time semantic-admission cost explicit.
 
 ## Phase 5 — project-model identity
 

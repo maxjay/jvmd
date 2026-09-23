@@ -396,7 +396,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         synchronizeKnownSources(path);touch(path,text);
         var caches=modules.get(context.generation());
         if(caches.completionNeedsDiscoveryRefresh){
+            // An unresolved receiver can leave javac's pooled scope tied to the old source namespace.
+            // Reconcile membership, then discard that task context before retrying discovery.
             compiler.invalidateSourceInventory();
+            compiler.recycle();
+            caches.completionSourceEpoch=-1;
             caches.completionNeedsDiscoveryRefresh=false;
         }
         var cached=caches.completion;boolean cachedApiCurrent=true;

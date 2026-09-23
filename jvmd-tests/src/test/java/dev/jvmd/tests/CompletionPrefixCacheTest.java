@@ -207,6 +207,11 @@ class CompletionPrefixCacheTest {
             assertThat(before).contains("getA").doesNotContain("getB");
             long computations=((Number)analyzer.status().get("completion_computations")).longValue();
 
+            Files.writeString(competing,"package b; class Api { public int getB(){return 3;} }");
+            var bodyOnly=complete(analyzer,file,source,"get").path("items").findValuesAsText("name");
+            assertThat(bodyOnly).contains("getA").doesNotContain("getB");
+            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations);
+
             Files.writeString(competing,"package b; public class Api { public int getB(){return 2;} }");
             var after=complete(analyzer,file,source,"get").path("items").findValuesAsText("name");
 

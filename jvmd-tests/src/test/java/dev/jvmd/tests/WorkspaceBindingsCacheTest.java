@@ -102,14 +102,18 @@ class WorkspaceBindingsCacheTest {
             String session=TestSupport.open(app,project);
             var cold=request(app,"symbol.references",Map.of("session",session,"ref","Api/value()","direction","in"));
             assertThat(cold.path("edges").toString()).contains("User#read().");
-            var before=request(app,"session.status",Map.of("session",session)).path("workspace_bindings");
+            var beforeStatus=request(app,"session.status",Map.of("session",session));
+            var before=beforeStatus.path("workspace_bindings");
             long full=before.path("full_validations").asLong(),fast=before.path("fast_validation_hits").asLong();
+            long inventories=beforeStatus.path("shared_classpath_files").path("directory_enumerations").asLong();
             var warm=request(app,"symbol.references",Map.of("session",session,"ref","Api/value()","direction","in"));
             assertThat(warm.path("edges").toString()).contains("User#read().");
-            var after=request(app,"session.status",Map.of("session",session)).path("workspace_bindings");
+            var afterStatus=request(app,"session.status",Map.of("session",session));
+            var after=afterStatus.path("workspace_bindings");
             assertThat(after.path("full_validations").asLong()).isEqualTo(full);
             assertThat(after.path("fast_validation_hits").asLong()).isEqualTo(fast+1);
             assertThat(after.path("last_reanalysed_files").asLong()).isZero();
+            assertThat(afterStatus.path("shared_classpath_files").path("directory_enumerations").asLong()).as("warm workspace validation must not enumerate owners").isEqualTo(inventories);
         }
     }
     @Test void replacedBinaryAndFailedLookupRecoveryAreObserved()throws Exception{

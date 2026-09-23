@@ -1,7 +1,8 @@
 package dev.jvmd.index.rocks;
 
+import dev.jvmd.core.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
-import java.nio.file.attribute.FileTime;
 import java.util.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
@@ -10,92 +11,62 @@ import static org.assertj.core.api.Assertions.*;
 class RocksWorkspaceStateTest {
     @TempDir Path temp;
 
-    @Test void unchangedUpdateWritesNothingAndOneFileEditIsNarrow()throws Exception{
-        Path src=Files.createDirectories(temp.resolve("src"));
-        Path a=Files.writeString(src.resolve("A.java"),"class A { int value(){ return 1; } }");
-        Path b=Files.writeString(src.resolve("B.java"),"class B {}");
-        Path root=temp.resolve("state");
-        var input=input(src,Map.of(),List.of("-g"),List.of("cp-a","cp-b"),"jdk-25");
+    @Test void persistsCanonicalStateWithoutDiscoveringOrHashingTheFilesystem()throws Exception{
+        Path src=temp.resolve("not-required-to-exist"),a=src.resolve("A.java"),b=src.resolve("p/B.java");
+        var tree=new LiveStateTree(List.of(src));tree.put(leaf(a,"a1","api-a","A"));tree.put(leaf(b,"b1","api-b","p.B"));
+        Path storage=temp.resolve("state");var input=input(src,List.of("-g"),List.of("cp-a","cp-b"),"jdk-25");
         String firstFingerprint;
-        try(var state=new RocksWorkspaceState(root)){
-            var first=state.update(input);firstFingerprint=first.fingerprint();
+        try(var state=new RocksWorkspaceState(storage)){
+            var first=state.update(input,tree.state(),tree.paths());firstFingerprint=first.fingerprint();
             assertThat(first.changedFiles()).containsExactlyInAnyOrder(a.toAbsolutePath().normalize(),b.toAbsolutePath().normalize());
             assertThat(first.fileWrites()).isEqualTo(2);
-
-            var unchanged=state.update(input);
+            var unchanged=state.update(input,tree.state(),tree.paths());
             assertThat(unchanged.fingerprint()).isEqualTo(firstFingerprint);
-            assertThat(unchanged.changedFiles()).isEmpty();assertThat(unchanged.deletedFiles()).isEmpty();
             assertThat(unchanged.fileWrites()+unchanged.directoryWrites()+unchanged.metadataWrites()).isZero();
 
-            Files.writeString(a,"class A { int value(){ return 2; } }");
-            var edited=state.update(input);
-            assertThat(edited.changedFiles()).containsExactly(a.toAbsolutePath().normalize());
-            assertThat(edited.unchangedFiles()).isEqualTo(1);
-            assertThat(edited.fingerprint()).isNotEqualTo(firstFingerprint);
-
-            Files.setLastModifiedTime(src,FileTime.fromMillis(System.currentTimeMillis()+10_000));
-            var directoryOnly=state.update(input);
-            assertThat(directoryOnly.fileWrites()+directoryOnly.directoryWrites()+directoryOnly.metadataWrites()).isZero();
+            tree.put(leaf(a,"a2","api-a","A"));
+            var body=state.update(input,tree.state(),tree.paths());
+            assertThat(body.changedFiles()).isEmpty();assertThat(body.fileWrites()).isZero();
+            assertThat(body.metadataWrites()).isEqualTo(1);assertThat(body.fingerprint()).isNotEqualTo(firstFingerprint);
         }
-
-        try(var reopened=new RocksWorkspaceState(root)){
-            var unchanged=reopened.update(input);
+        try(var reopened=new RocksWorkspaceState(storage)){
+            var unchanged=reopened.update(input,tree.state(),tree.paths());
             assertThat(unchanged.fileWrites()+unchanged.directoryWrites()+unchanged.metadataWrites()).isZero();
         }
     }
 
-    @Test void overlayCreateDeleteRenameAndCompilerInputsChangeMerkleIdentity()throws Exception{
-        Path src=Files.createDirectories(temp.resolve("module"));
-        Path a=Files.writeString(src.resolve("A.java"),"class A {}"),b=Files.writeString(src.resolve("B.java"),"class B {}");
-        try(var state=new RocksWorkspaceState(temp.resolve("state2"))){
-            var base=input(src,Map.of(),List.of("-g"),List.of("cp-a","cp-b"),"jdk-25");
-            String initial=state.update(base).fingerprint();
+    @Test void membershipDiffComesFromCanonicalStateRatherThanASecondRocksTree()throws Exception{
+        Path src=temp.resolve("src"),a=src.resolve("A.java"),b=src.resolve("B.java"),renamed=src.resolve("Renamed.java");
+        var tree=new LiveStateTree(List.of(src));tree.put(leaf(a,"a","api-a","A"));tree.put(leaf(b,"b","api-b","B"));
+        try(var state=new RocksWorkspaceState(temp.resolve("membership"))){
+            var input=input(src,List.of("-g"),List.of(),"jdk-25");state.update(input,tree.state(),tree.paths());
+            tree.remove(b);tree.put(leaf(renamed,"b","api-b","B"));
+            var changed=state.update(input,tree.state(),tree.paths());
+            assertThat(changed.deletedFiles()).containsExactly(b.toAbsolutePath().normalize());
+            assertThat(changed.changedFiles()).containsExactly(renamed.toAbsolutePath().normalize());
+            assertThat(changed.fileWrites()).isEqualTo(2);
+        }
+    }
 
-            Path unsaved=src.resolve("Unsaved.java");
-            var overlay=input(src,Map.of(unsaved,"class Unsaved { int x; }"),List.of("-g"),List.of("cp-a","cp-b"),"jdk-25");
-            var overlaid=state.update(overlay);
-            assertThat(overlaid.changedFiles()).contains(unsaved.toAbsolutePath().normalize());
-            assertThat(overlaid.fingerprint()).isNotEqualTo(initial);
-
-            Path renamed=src.resolve("Renamed.java");Files.move(b,renamed);
-            var renamedState=state.update(input(src,Map.of(),List.of("-g"),List.of("cp-a","cp-b"),"jdk-25"));
-            assertThat(renamedState.deletedFiles()).contains(b.toAbsolutePath().normalize(),unsaved.toAbsolutePath().normalize());
-            assertThat(renamedState.changedFiles()).contains(renamed.toAbsolutePath().normalize());
-
-            String filesStable=renamedState.fingerprint();
-            var option=state.update(input(src,Map.of(),List.of("-g","-parameters"),List.of("cp-a","cp-b"),"jdk-25"));
-            assertThat(option.changedFiles()).isEmpty();assertThat(option.fingerprint()).isNotEqualTo(filesStable);
-
-            var classpath=state.update(input(src,Map.of(),List.of("-g","-parameters"),List.of("cp-b","cp-a"),"jdk-25"));
-            assertThat(classpath.fingerprint()).isNotEqualTo(option.fingerprint());
-            var jdk=state.update(input(src,Map.of(),List.of("-g","-parameters"),List.of("cp-b","cp-a"),"jdk-26"));
+    @Test void moduleEnvironmentStillParticipatesWithoutReconstructingSourceState()throws Exception{
+        Path src=temp.resolve("src");var tree=new LiveStateTree(List.of(src));tree.put(leaf(src.resolve("A.java"),"a","api","A"));
+        try(var state=new RocksWorkspaceState(temp.resolve("environment"))){
+            var base=input(src,List.of("-g"),List.of("cp-a","cp-b"),"jdk-25");
+            String initial=state.update(base,tree.state(),tree.paths()).fingerprint();
+            var options=state.update(input(src,List.of("-g","-parameters"),List.of("cp-a","cp-b"),"jdk-25"),tree.state(),tree.paths());
+            assertThat(options.changedFiles()).isEmpty();assertThat(options.fingerprint()).isNotEqualTo(initial);
+            var classpath=state.update(input(src,List.of("-g","-parameters"),List.of("cp-b","cp-a"),"jdk-25"),tree.state(),tree.paths());
+            assertThat(classpath.fingerprint()).isNotEqualTo(options.fingerprint());
+            var jdk=state.update(input(src,List.of("-g","-parameters"),List.of("cp-b","cp-a"),"jdk-26"),tree.state(),tree.paths());
             assertThat(jdk.fingerprint()).isNotEqualTo(classpath.fingerprint());
         }
     }
 
-    @Test void knownFileChangeUpdatesOnlyAncestorsAndMatchesAFullReconciliation()throws Exception{
-        Path src=Files.createDirectories(temp.resolve("known-src"));
-        Path folder=Files.createDirectories(src.resolve("a/b"));
-        Path file=Files.writeString(folder.resolve("A.java"),"class A {}");
-        Files.writeString(Files.createDirectories(src.resolve("unrelated")).resolve("B.java"),"class B {}");
-        var config=input(src,Map.of(),List.of("-g"),List.of(),"jdk-25");
-        try(var state=new RocksWorkspaceState(temp.resolve("known-state"))){
-            state.update(config);Files.writeString(file,"class A { int value; }");
-            var changed=state.observeFile(config,file,dev.jvmd.core.Hashing.sha256(file));
-            assertThat(changed.fileWrites()).isEqualTo(1);assertThat(changed.directoryWrites()).isEqualTo(6);
-            var reconciled=state.update(config);
-            assertThat(reconciled.fingerprint()).isEqualTo(changed.fingerprint());
-            assertThat(reconciled.fileWrites()+reconciled.directoryWrites()+reconciled.metadataWrites()).isZero();
-            Path created=folder.resolve("Unsaved.java");String text="class Unsaved {}";
-            var known=state.observeFile(config,created,dev.jvmd.core.Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-            var full=state.update(input(src,Map.of(created,text),List.of("-g"),List.of(),"jdk-25"));
-            assertThat(full.fingerprint()).isEqualTo(known.fingerprint());
-            assertThat(full.fileWrites()+full.directoryWrites()+full.metadataWrites()).isZero();
-        }
+    private static LiveStateTree.Leaf leaf(Path path,String content,String api,String... names){
+        return LiveStateTree.source(path,Hashing.sha256(content.getBytes(StandardCharsets.UTF_8)),api,List.of(names));
     }
-
-    private static RocksWorkspaceState.ModuleInput input(Path source,Map<Path,String> overlays,List<String> options,List<String> classpath,String jdk){
-        return new RocksWorkspaceState.ModuleInput("fixture:module",List.of(source),overlays,options,List.of("processor-a"),
+    private static RocksWorkspaceState.ModuleInput input(Path source,List<String> options,List<String> classpath,String jdk){
+        return new RocksWorkspaceState.ModuleInput("fixture:module",List.of(source),options,List.of("processor-a"),
                 Map.of("generated","gen-v1"),classpath,jdk);
     }
 }

@@ -1,0 +1,262 @@
+# Live State Tree — Progress
+
+Base: `4ac68eaf77a9c0ecb271a78366f442ec9fa6e2c5`
+Branch: `refactor/live-state-tree`
+
+## Architectural invariant
+
+### Existing architecture
+
+```text
+REQUEST
+  |
+  v
+reconstruct workspace state
+  |
+  +-- enumerate
+  +-- observe
+  +-- hash
+  +-- sort
+  |
+  v
+derive identity
+```
+
+### Target architecture
+
+```text
+MUTATION
+  |
+  v
+live state tree
+  |
+  +-- Merkle
+  +-- algebraic aggregates
+  +-- semantic fingerprints
+  +-- epoch
+  |
+  v
+REQUEST
+  |
+  v
+read identities
+```
+
+### Combined state node
+
+```text
+             NODE
+    +----------------------+
+    | Merkle               |
+    | MembershipAggregate  |
+    | ContentAggregate     |
+    | ApiAggregate         |
+    | NamespaceAggregate   |
+    | Epoch                |
+    +----------+-----------+
+               |
+         child nodes/leaves
+```
+
+### Mutation propagation
+
+```text
+A.java edit
+    |
+    v
+new leaf contribution
+    |
+    +-- content changed
+    +-- API maybe changed
+    +-- namespace maybe changed
+    |
+    v
+algebraic aggregates update
+    |
+    v
+Merkle ancestors update
+    |
+    v
+epoch increments
+```
+
+## Starting-point findings
+
+The existing implementation already has pieces that must be consolidated rather than duplicated:
+
+- `CompilerInputs.capture()` reconstructs source membership/content identities by inventorying source roots and observing source candidates.
+- `CompilerPool.execute()` validates at the end of a compiler operation by comparing the starting snapshot with a newly captured snapshot.
+- `Analyzer.completionKey()` starts with `Context.toString()`, then sorts and appends every other source path/hash.
+- `FileSemanticContribution` and `SemanticUpdatePolicy` already define canonical source/API/dependency semantics and will remain the semantic source of truth.
+- `RocksWorkspaceState` already implements persistent directory/module Merkle fingerprints, but its full update path still reconstructs source state through `CompilerInputs`. It must become persistence for the canonical live model, not a second live-state owner.
+- `MavenResolver` only memoizes a Resolution within one `RequestScope`; unchanged later RPCs still invoke the resolver boundary.
+
+## Baseline
+
+Status: **complete**.
+
+Evidence: PR-local **Live State Tree Proof** run [35804584433](https://github.com/maxjay/jvmd/actions/runs/35804584433), measured at `db3166f18cfd50c92d4950f9d16ad0a4029434ad`. The proof reuses the pinned Apache Maven source files from `CMP-01`; the temporary workflow/script/counters remain only until the final after-capture in Phase 6.
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| warm completion latency | 794.375 ms | 366.653 ms |
+| warm completion allocation | 185,434,528 B inclusive thread allocation | 163,838,560 B |
+| metadata checks/request | 41,408 | 2,406 |
+| source entries visited/request | 2,400 | 0 |
+| files hashed/request | 0 | 0 |
+| bytes hashed/request | 0 | 0 |
+| source inventory calls/request | 218 | 0 |
+| directories enumerated/request | 2,172 | 0 |
+| completion-key entries visited/sorted | 1,200 / 1,200 | 0 / 0 |
+| completion-key material bytes | 496,150 B | 415 B |
+| Maven resolver calls on unchanged `deps.graph` | 1 | 0 |
+| project-model inputs validated/request | 195 | 0 |
+| project-model bytes hashed/request | 241,632 B | 0 |
+| Resolution JSON response bytes/request | 1,260,384 B | 0 |
+| relevant API edit latency | 741.699 ms | 421.883 ms |
+| body-only edit reuse | **no** — recomputed | **yes** — permanent semantic regression |
+
+Additional baseline facts:
+
+- Warm completion calls `CompilerInputs.capture()` twice, inspects 3,774 environment candidates, and performs one full completion computation.
+- The completion request itself crossed the Maven resolver boundary twice and serialized 2,520,768 response bytes.
+- A relevant unsaved API edit did **not** expose `benchmarkAddedMethod`; the Apache Maven completion result was empty. This is recorded as a pre-existing correctness failure, not hidden or treated as acceptable final behavior.
+- The unrelated body-edit probe also recomputed completion instead of reusing it.
+- A POM edit cost 3,416.834 ms in this run; the next unchanged project-model request still validated 195 inputs and re-hashed 241,678 bytes.
+- Run-wide peak heap observed was 499,862,944 B. Peak process-tree RSS was 1,158,774,784 B (server peak 1,054,912,512 B).
+
+Baseline change: temporary counters plus disposable proof workflow/script only; no production ownership changed.
+Tests: repository Tests and ordinary Benchmarks passed on the baseline branch.
+PR-local measurement: complete; evidence artifact retained by GitHub Actions for the PR evidence window.
+Remaining discrepancy: the request path still reconstructs source/environment identity and the Apache Maven completion correctness mismatch remains to be fixed by the semantic completion cutover.
+Commit: `bb2ffe2` introduced the measurement mechanism; `db3166f` is the accepted baseline evidence revision.
+
+## Phase 1 — canonical state primitives
+
+Status: **complete**.
+
+Baseline evidence: baseline above, captured before production changes.
+Change: added `LiveStateTree` as the canonical source-state primitive. Each source leaf is path-bound and carries independent content/API/namespace identity. Package/root/workspace nodes maintain a cryptographic Merkle identity plus membership/content/API/namespace algebraic aggregates and a monotonic epoch. The algebraic accumulator is a domain-separated SHA-256 contribution summed modulo the secp256k1 field prime with cardinality; it is explicitly not raw XOR, and the Merkle identity remains the independent strong structural identity. Aggregate identities are refreshed on mutation, not derived by reads.
+Tests: `LiveStateTreeTest` permanently covers body-only edits, API vs namespace independence, add/remove/rename path binding, A→B→A epoch detection, unaffected subtree identity, deterministic insertion order, and canonical exported-name sets. GitHub Tests run 35805400523 completed the Phase 1 deterministic checkpoint successfully.
+PR-local measurement: not applicable; Phase 1 intentionally changes no consumers.
+Remaining discrepancy: `CompilerInputs`, completion and Maven still use their old request-time ownership paths; Phase 2 must feed actual source mutations into this canonical state before any read-path cutover.
+Commit: `5048399` establishes primitives; `00b6503` places their regression tests in the repository's deterministic Phase 1 group.
+
+## Phase 2 — live source state
+
+Status: **complete**.
+
+Baseline evidence: baseline above remains the request-path reference; Phase 2 intentionally adds mutation-side maintenance before cutting over readers.
+Change: `81ccee5` adds session-owned `LiveSourceState`: editor open/change/close updates effective content synchronously, filesystem events update disk membership/content through a recursive watcher, semantic attribution feeds the existing `FileSemanticContribution` API/exported-name identities into the same tree, stale semantic results are rejected by source hash, and watcher uncertainty advances the transition epoch before an explicit reconciliation. `230f59e` removes Rocks' duplicate source discovery/directory-Merkle ownership; Rocks now persists the canonical `LiveStateTree.State` plus membership needed to remove persisted semantic contributions. `b826943` fixes a lifecycle issue found by the full suite so live source state is created only from the shared session `Documents`, never an analyzer-private temporary document store.
+Tests: permanent `LiveSourceStateTest` covers editor mutation, semantic-content fencing, preserved-mtime disk edits, and uncertainty/reconciliation. Existing `LiveStateTreeTest` proves independent information-domain updates and unaffected subtree identity. Tests run 35807087303 passed the full repository gate after the ownership fix; Benchmarks run 35807087310 and Live State Tree Proof run 35807087312 also passed.
+PR-local measurement: proof remained green after the mutation-side and Rocks ownership cutover. Request-time costs are expected to remain until Phases 3–5, so no latency win is claimed for Phase 2.
+Remaining discrepancy: `CompilerInputs.capture()`, compiler end-of-query validation, `IndexedFileManager` source inventory, completion-key all-source construction, and Maven model validation still use request-time work. Phase 3 now cuts compiler/source validation over to the maintained state.
+Commit: `81ccee5` live ingestion, `230f59e` canonical Rocks projection, `b826943` session-ownership repair.
+
+## Phase 3 — CompilerInputs cutover
+
+Status: **complete**.
+
+Baseline evidence: accepted baseline proof run 35804584433 at `db3166f`. The post-cutover proof is run 35849676844 at `2917a17`; ordinary prepared-workspace Benchmarks run 35849676837 passed, and the repository Phase-4 compiler checkpoint in Tests run 35849676843 passed.
+
+Change: `CompilerInputs.Snapshot` now captures the canonical `LiveSourceState` identities and source-input epoch instead of a request-built `Map<Path,String>`. `CompilerPool` fences javac transactions on the captured source epoch/membership/content identities, validates implicit source bytes as they are actually read, and synchronously observes only explicit compilation units at transaction boundaries. `IndexedFileManager` reads package/source membership from the mutation-maintained live state. `WorkspaceBindings` updates its retained file facts from the live changed-path journal and only performs explicit owner enumeration at compatibility/cold ownership boundaries.
+
+Tests: permanent live-state, source-transition, preserved-mtime, A→B→A, implicit-read, editor-overlay, cross-root, retry and compiler lifecycle tests all pass through the Phase-4 compiler checkpoint. Two correctness repairs were required by the gate: explicit focused/completion buffers are immutable task inputs and must not be compared to the original file hash; direct request/retry boundaries synchronously observe their bounded relevant source set so correctness does not depend on WatchService scheduling.
+
+PR-local measurement: on Apache Maven warm unchanged proof, compiler source reconstruction fell from 2 captures / 2,400 source entries inspected / 218 source inventory calls to 1 capture / **0 source candidates inspected / 0 source inventory calls**. Directory enumerations in the proof interval fell from 2,172 to 1,155 and metadata checks from 41,408 to 17,044. Warm inclusive thread allocation fell from 185,434,528 B to 143,360,416 B. The proof latency moved from 794.375 ms to 531.788 ms, but this number is retained only as computational-shape evidence because the disposable Apache completion probe itself still returns an empty completion result and is not a correctness oracle. The normal prepared-workspace benchmark is the correctness oracle and is green.
+
+Remaining discrepancy: environment identity is still reconstructed/validated on requests (3,774 environment candidates in the warm proof), completion still sorts/visits 1,200 source entries and materializes ~496 KB of key material, and unchanged Maven project-model requests still cross the resolver boundary and validate 195 inputs / hash ~241 KB / serialize ~1.26 MB. Those are Phase 4 and Phase 5 ownership paths, not source-state work.
+
+Commits: `e861b6e` through `098e750` perform the source-state cutover; `34a5946`, `de5056f`, `6ddc700`, `e14b9d3`, and `2917a17` close deterministic transaction/retry/completion-boundary correctness gaps without restoring workspace scans.
+
+## Phase 4 — completion identity cutover
+
+Status: **complete**.
+
+Baseline evidence: accepted baseline run 35804584433 at `db3166f`; Phase-4 after-run 35851802155 at `a03b29b`. Normal prepared-workspace Benchmarks run 35851802165 passed; the permanent completion regressions passed the Phase-4 compiler checkpoint in Tests run 35851802181.
+
+Change: completion no longer calls `Context.toString()` or sorts/concatenates the source universe. A configure-time compact context identity is combined at request time with caller/path/position, the token-stripped caller hash, environment identity, and maintained membership/namespace identities. Cached completion additionally records a bounded set of local candidate source dependencies and their canonical `FileSemanticContribution.apiFingerprint` identity. Only changed recorded dependencies are re-attributed before reuse, so an unrelated or dependency body-only edit retains candidates while a relevant API change invalidates them. Candidate source provenance is detached while javac owns the elements. Add/remove source transitions invalidate through the maintained membership identity.
+
+Tests: `CompletionPrefixCacheTest` permanently covers prefix narrowing, preserved-mtime API replacement, release changes, unresolved receiver/new source discovery, unrelated body edits, relevant body-only reuse, relevant API additions, unsaved source membership add/remove, binary replacement/deletion, and a 300-source context asserting zero completion-key source entries visited/sorted. One compiler query computes candidates and one bounded candidate-API attribution admits the cache; prefix narrowing then performs no javac work.
+
+PR-local measurement: warm Apache Maven completion-key traversal fell from **1,200 visited + 1,200 sorted entries to 0 + 0**. Key material fell from **496,150 B to 470 B**. Warm inclusive thread allocation fell from **185,434,528 B to 139,584,392 B**. The proof latency was 495.979 ms versus 794.375 ms at baseline, but—as already documented—the disposable Apache completion probe still returns an empty completion result and is used only for computational-shape counters; correctness is established by the normal benchmark and permanent tests.
+
+Remaining discrepancy: environment validation still inspects 3,774 candidates in the warm proof, and every unchanged project-model request still enters the Maven bundle, validates 195 model inputs, hashes about 241,632 B and serializes about 1,260,384 B of Resolution JSON. Phase 5 removes that ownership path.
+
+Commits: `e12146f` introduces the fixed-size semantic completion key, `48a8c7f` adds permanent semantic/membership regression coverage, and `16f8625`/`a03b29b` bind reuse to recorded dependency API identity and make the one-time semantic-admission cost explicit.
+
+## Phase 5 — project-model identity
+
+Status: **complete**.
+
+Baseline evidence: accepted baseline proof run 35804584433 at `db3166f`. Before the cutover, an unchanged interactive project-model request still entered Maven, validated **195 model inputs**, re-hashed **241,632 B**, and serialized about **1,260,384 B** of Resolution JSON.
+
+Change: the Maven bundle now exports the exact accepted project-model input manifest alongside the resolved graph. `MavenResolver` retains a bounded resident `Resolution` keyed by workspace request and protects it with a watch-backed `ProjectModelWatch` over the accepted POM/settings/`.mvn`/parent-model inputs. On an unchanged request the daemon reads the resident state and returns a cached copy without invoking the resolver bundle, reconstructing the dependency graph, scanning the accepted model-input set, or crossing the JSON graph boundary. A relevant model-file event invalidates that resident once; the changed request resolves and installs the new accepted model state, and subsequent requests return to the resident path. Watch delivery uses the same request-level filesystem publication fence as source/environment state.
+
+Tests: `Maven4ResolutionTest.residentProjectModelSkipsBundleUntilAcceptedInputChanges` permanently verifies that the unchanged path leaves resolver calls, model validation calls, model-input checks and Resolution JSON bytes unchanged, then a `.mvn/maven.config` edit invalidates exactly once and the following request is resident again. Existing POM/settings and daemon diagnostics tests cover parent POM bytes, settings profile changes and live diagnostics after model refresh. Full repository Tests run **35874199469** at `ea5e6cc` passed.
+
+PR-local measurement: final proof run **35874199636** at `ea5e6cc` shows the unchanged `project_model_unchanged` request at **4.750 ms** with only `project_model_fast_hits +1` / `request_cache_hits +1`: **0 new resolver calls, 0 project-model validation calls, 0 model inputs checked, 0 model bytes hashed, and 0 Resolution JSON bytes**. A POM edit cost **1,845.977 ms**, produced exactly **+1 resolver call, +1 invalidation, +1 validation call, 195 inputs checked, 187,564 B hashed, and 1,304,327 B of response JSON**. The immediately following `project_model_after_edit` request was **8.067 ms** and again performed no resolver/validation/hash/JSON work, only one resident fast hit.
+
+Remaining discrepancy: none for the Phase-5 ownership target. Cold/changed Maven resolution is intentionally still O(project-model/dependency graph); only unchanged interactive requests are required to bypass that work.
+
+Commits: `73ac9b5` exposes the accepted model identity, `0763292` exports the accepted input manifest, `91ed12d` returns the accepted model state, `cd01220` installs resident resolution reuse, `f3a9617` / `c325a34` / `f7e22d8` add permanent fast-path regressions, and `27b44eb` plus `ea5e6cc` make watch-event settlement deterministic while sharing one request-level filesystem fence.
+
+## Phase 6 — delete superseded machinery
+
+Status: **complete**.
+
+Baseline evidence: final PR-local proof was deliberately captured **before** cleanup, in run **35874199636** at `ea5e6cc`. That snapshot is the retained evidence; the proof workflow and script were then deleted rather than becoming permanent benchmark infrastructure.
+
+Change:
+- `1f3e67f` deletes `.github/workflows/live-state-tree-proof.yml` and `benchmarks/live-state-tree-proof.py`, removes proof-only source/environment/completion/Maven counters, and removes the dead `CompilerInputs.Snapshot.sources()`, explicit-inventory capture overload and unused analyzer source-map helper.
+- Permanent regressions were changed to assert behavior rather than temporary proof counters.
+- `85c9582` removes the last normal request-time source/output tree walk in workspace dependency freshness. `WorkspaceOverlay` now retains a watch-backed freshness decision; unchanged `findArtifact()` / `requiresSource()` reads use resident state, relevant source/output mutations dirty only the affected module state, and watcher uncertainty falls back to reconciliation. The resolver's short-lived cold overlay intentionally keeps one-shot verification semantics.
+- The shared request filesystem fence means source state, environment state, project-model state and workspace-output freshness do not each impose an independent settlement delay.
+
+Tests: cleanup head `1f3e67f` passed full Tests run **35877597630** and its standalone benchmark. On `85c9582`, compile/package and the permanent Phase-6 workspace-reader/overlay checkpoints passed in Tests run **35878800289**; standalone Benchmarks run **35878800495** passed with 300/300 correctness for every warm operation. The final-head benchmark reports warm p50/p95: completion **10.60/13.21 ms**, definition **3.51/5.10 ms**, dependency definition **6.09/8.58 ms**, hover **4.71/6.58 ms**, references **4.77/6.64 ms**.
+
+PR-local measurement: final architectural proof at `ea5e6cc` shows warm Apache-Maven completion at **366.653 ms** versus **794.375 ms** baseline, inclusive thread allocation **163,838,560 B** versus **185,434,528 B**, **2,406** metadata checks versus **41,408**, **0** source candidate/inventory work, **0** environment candidate sweep, **0/0** completion-key source visits/sorts and **415 B** of key material versus **496,150 B**. The disposable Apache completion probe itself returns an empty candidate result, so it cannot demonstrate cache admission for the body-only case; that property is established by the permanent semantic completion regression, not inferred from the disposable probe.
+
+Remaining discrepancy: none against this task's live-state ownership target. Expensive work still exists where the operation genuinely asks for it or observation confidence is lost; those cases are enumerated below instead of being hidden behind an identity helper.
+
+Commits: `1f3e67f` cleanup and `85c9582` maintained workspace-output freshness, following the Phase 1–5 cutovers documented above.
+
+## Final report
+
+The final architecture now has mutation-maintained source, compiler-environment, semantic, project-model and workspace-output freshness state. A normal unchanged interactive request reads compact identities/resident decisions rather than enumerating unchanged source/environment/project-model inputs.
+
+The final before/after values are the table in **Baseline** above. Two extra architectural counters are important: environment candidates inspected fell from **3,774 to 0**, and unchanged project-model work fell to **0 resolver calls / 0 validation calls / 0 input hashes / 0 Resolution JSON bytes**.
+
+### Remaining complexity
+
+These are intentionally not described as O(1):
+
+- **O(workspace / input-set size):** cold `LiveSourceState` initialization and explicit reconciliation after watcher uncertainty; cold/verification-only `LiveEnvironmentState` reconciliation; cold or dirty `WorkspaceOverlay` freshness reconciliation of the affected module's source/output trees; annotation-processing input fingerprinting when processors are enabled; and explicitly whole-workspace operations such as unscoped whole-workspace diagnostics. None of these is the normal unchanged compiler-state identity lookup.
+- **O(module / project graph):** module ownership/context composition and navigation-coordinate construction iterate module/project graph metadata. Workspace-wide binding operations likewise iterate the participating modules. They no longer enumerate every source merely to decide whether state changed.
+- **O(dependency closure):** semantic invalidation, reverse dependency closure and re-attribution are proportional to the affected semantic graph / recorded completion dependency set.
+- **O(result size):** completion filtering/serialization, diagnostics pages, symbol search, references/hierarchy and similar result-producing operations scale with the rows/edges they return or examine.
+
+### Acceptance scenarios
+
+- **A warm unchanged completion:** PR-local proof; source/environment/key reconstruction removed.
+- **B unrelated body edit:** permanent completion semantic regression proves reuse when relevant API identity is unchanged.
+- **C relevant API edit:** permanent completion regressions prove invalidation/new member visibility and receiver-hierarchy provenance.
+- **D add/remove source:** live-state and completion membership regressions.
+- **E A → B → A:** live-state/source/environment epoch regressions prove the transition despite restored final identity.
+- **F project model unchanged:** resident Maven regression and PR-local zero-work proof.
+- **G POM/model edit:** resident invalidation/refresh/reuse regression plus PR-local changed-request evidence.
+- **H watcher uncertainty/overflow/unavailable:** live source/environment reconciliation regressions plus workspace-output verification fallback.
+
+## Resulting invariant
+
+Normal interactive state lookup is now independent of the number of unchanged source files. State changes update the resident source/environment/project-model/output-freshness representations; compiler and completion consumers read constant-size identities, while semantic invalidation follows only the affected graph. Full scans remain explicit cold/reconciliation/fallback work rather than the default trust mechanism.
+
+
+## Post-review correctness repairs
+
+Two bounded correctness gaps were closed without changing the live-state ownership model.
+
+- **Source-root recreation.** If active source watch coverage is lost because a relevant watch key becomes invalid or subtree registration fails, `LiveSourceState` permanently enters verification-only mode. Reconciliation may restore trusted content, but future compiler transaction boundaries explicitly verify the source roots, so a deleted and later recreated generated/source root cannot remain invisible. `LiveSourceStateTest.recreatedWatchedRootIsVisibleAtTheNextCorrectnessBoundary` deletes the watched root, settles through the production watch fence, recreates it with a new source, and proves membership/content identities and maintained source membership update without arbitrary sleeps.
+- **Qualified-completion negative name resolution.** Completion provenance now retains the source-spelled simple receiver type name. At cache admission, JVMD derives only the current-package/import source candidates for that name from maintained source membership and records those existing files in the same semantic dependency/API fence as positive receiver, hierarchy, and candidate provenance. A body-only edit to such a previously non-positive candidate can still reuse the completion when its API is unchanged; a modifier/name/API change is re-attributed against current source bytes and invalidates before reuse. `CompletionPrefixCacheTest.negativeNameResolutionChangesInvalidateQualifiedCompletion` protects both cases.
+
+This repair does not add workspace-wide qualified-completion content/namespace invalidation, restore full-root unresolved-completion reconciliation, or add request-time workspace reconstruction.

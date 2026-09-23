@@ -20,7 +20,7 @@ public final class Bundle implements AutoCloseable {
                 var config=new Config(Path.of(c.path("jdk_home").asText()),null,Path.of(c.path("m2_repo").asText()),c.path("maven_major").asInt(),
                         Duration.ofHours(4),512,false,Path.of(c.path("state").asText()),Path.of(c.path("socket").asText()));
                 var environment=new MavenEnvironment(config,Path.of(c.path("settings").asText()));
-                for(Class<?> type:List.of(MavenEngine.Input.class,MavenEngine.Cached.class,Resolution.class,
+                for(Class<?> type:List.of(MavenEngine.Cached.class,ProjectModelState.class,ProjectModelState.Input.class,ProjectModelState.Resolved.class,Resolution.class,
                         Resolution.Module.class,Resolution.Node.class,Resolution.Edge.class,Resolution.Processing.class))
                     Json.MAPPER.writerFor(type);
                 models=ready.get().create(config,environment);engine=new MavenEngine(config,environment,models);
@@ -47,7 +47,7 @@ public final class Bundle implements AutoCloseable {
                 var params=Json.MAPPER.readTree(request); Path root=Path.of(params.path("root").asText());
                 if(callback==null) {
                     var roots=new ArrayList<Path>(); for(var p:params.path("roots")) roots.add(Path.of(p.asText()));
-                    result=engine.resolveWorkspace(root,roots,params.path("ignore_versions").asBoolean(true));
+                    result=engine.resolveWorkspaceState(root,roots,params.path("ignore_versions").asBoolean(true));
                 } else result=engine.resolve(root,new OverlayReader(new WorkspaceSource() {
                     private String ask(String operation,Artifact a) {
                         try { return callback.apply(operation,Json.MAPPER.writeValueAsString(a)); }

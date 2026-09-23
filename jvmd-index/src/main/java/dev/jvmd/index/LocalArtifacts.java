@@ -9,13 +9,11 @@ final class LocalArtifacts {
     private final class State {
         final IndexService.LocalModule module;
         Map<Path,String> observed=Map.of();long artifact=-1;
-        final CompilerInputs inputs=new CompilerInputs(files);
         State(IndexService.LocalModule module){this.module=module;}
     }
     private final IndexService index;
     private final Map<Path,State> modules=new java.util.concurrent.ConcurrentHashMap<>();
     private final FileStateRegistry files=FileStateRegistry.shared();
-    private final Documents disk=new Documents();
     LocalArtifacts(IndexService index){this.index=index;}
     boolean register(IndexService.LocalModule module){
         var added=new java.util.concurrent.atomic.AtomicBoolean();
@@ -35,9 +33,7 @@ final class LocalArtifacts {
         var module=state.module;long size=0,mtime=0,newestSource=0,oldestClass=Long.MAX_VALUE;
         var sourcePaths=new LinkedHashMap<String,Path>();
         var roots=new ArrayList<>(module.sources());roots.addAll(module.outputs());
-        var configuration=new CompilerInputs.Configuration("local:"+module.gav(),roots,List.of(),List.of());
-        var inventory=new ArrayList<Path>();for(Path root:roots)inventory.addAll(files.inventory(root,""));
-        var snapshot=state.inputs.capture(configuration,disk,inventory);var observed=snapshot.sources();
+        var observed=capture(roots);
         String fingerprint=CompilerInputs.compose("local-artifact-v2",module.directory(),module.gav(),roots,new TreeMap<>(observed));
         var previous=index.artifact(module.directory());
         if(previous!=null&&previous.hasSignatureEdges()&&fingerprint.equals(previous.sha256())){state.observed=observed;state.artifact=previous.id();return previous.id();}
@@ -56,7 +52,12 @@ final class LocalArtifacts {
         }
         var sourceData=new HashMap<String,Map<String,Object>>();
         if(!models.isEmpty()&&!sourcePaths.isEmpty()){
-            var text=new LinkedHashMap<String,String>();for(var source:sourcePaths.entrySet())text.put(source.getKey(),snapshot.text(source.getValue(),disk));
+            var text=new LinkedHashMap<String,String>();for(var source:sourcePaths.entrySet()){
+                String value=Files.readString(source.getValue());
+                if(!Objects.equals(observed.get(source.getValue()),Hashing.sha256(value.getBytes(java.nio.charset.StandardCharsets.UTF_8))))
+                    throw new CompilerInputs.Superseded("Local artifact source changed during refresh: "+source.getValue());
+                text.put(source.getKey(),value);
+            }
             var joined=new SourceJoin().join(models,text);
             for(var member:joined.members()){
                 String key=member.descriptor()==null?member.owner():member.descriptor().equals("field")?member.owner()+"#"+member.name():member.owner()+"#"+member.name()+member.descriptor();
@@ -64,9 +65,13 @@ final class LocalArtifacts {
                 var data=new LinkedHashMap<String,Object>();data.put("source_file",file.toString());data.put("file",file.toString());data.put("line",member.line());data.put("doc",member.doc());data.put("source_start",member.start());data.put("source_end",member.end());data.put("body_start",member.bodyStart());data.put("body_end",member.bodyEnd());data.put("parameters",member.parameters());sourceData.put(key,data);
             }
         }
-        inventory.clear();for(Path root:roots)inventory.addAll(files.inventory(root,""));
-        if(!snapshot.equals(state.inputs.capture(configuration,disk,inventory)))throw new CompilerInputs.Superseded("Local artifact inputs changed during refresh");
+        if(!observed.equals(capture(roots)))throw new CompilerInputs.Superseded("Local artifact inputs changed during refresh");
         state.artifact=index.replaceLocal(module,fingerprint,size,mtime,new BinaryReader.Content(List.copyOf(symbols.values()),List.copyOf(edges),Map.of(),List.copyOf(warnings)),sourceData);state.observed=observed;return state.artifact;
+    }
+    private Map<Path,String> capture(Collection<Path> roots)throws Exception{
+        var observed=new TreeMap<Path,String>();
+        for(Path root:roots)for(Path file:files.inventory(root,""))observed.put(file.toAbsolutePath().normalize(),files.hash(file));
+        return Collections.unmodifiableMap(observed);
     }
     void refreshWorkspace(String workspace)throws Exception{
         for(Path path:index.store().localWorkspaceArtifacts(workspace))refresh(path);

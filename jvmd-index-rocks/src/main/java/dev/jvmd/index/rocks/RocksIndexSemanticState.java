@@ -28,13 +28,6 @@ final class RocksIndexSemanticState implements IndexSemanticState,AutoCloseable 
                 .sorted(Comparator.comparingInt((ModuleStateInput module)->module.sourceRoots().stream().filter(contribution.file()::startsWith).mapToInt(Path::getNameCount).max().orElse(0)).reversed())
                 .map(ModuleStateInput::moduleId).findFirst().orElse(requestedModuleId);
         var result=semanticInvalidation.observeFile(moduleId,contextFingerprint,contribution);
-        var module=moduleInputs.get(moduleId);
-        if(module!=null){
-            var state=workspaceState.observeFile(new RocksWorkspaceState.ModuleInput(module.moduleId(),module.sourceRoots(),module.overlays(),
-                    module.compilerOptions(),module.processors(),module.generatedOutputs(),module.orderedClasspath(),module.jdkFingerprint()),contribution.file(),contribution.sourceHash());
-            workspaceStateUpdates.incrementAndGet();workspaceFileWrites.addAndGet(state.fileWrites());
-            workspaceDirectoryWrites.addAndGet(state.directoryWrites());workspaceMetadataWrites.addAndGet(state.metadataWrites());
-        }
         semanticUpdates.incrementAndGet();semanticReanalyze.addAndGet(result.reanalyze().size());
         semanticApiChanges.addAndGet(result.apiChanged().size());semanticBodyOnly.addAndGet(result.bodyOnly().size());
         lastSemanticResult=Map.of(
@@ -47,8 +40,9 @@ final class RocksIndexSemanticState implements IndexSemanticState,AutoCloseable 
 
     @Override public void configureModuleState(IndexSemanticState.ModuleStateInput input)throws Exception{
         moduleInputs.put(input.moduleId(),input);
-        var state=workspaceState.update(new RocksWorkspaceState.ModuleInput(input.moduleId(),input.sourceRoots(),input.overlays(),
-                input.compilerOptions(),input.processors(),input.generatedOutputs(),input.orderedClasspath(),input.jdkFingerprint()));
+        var state=workspaceState.update(new RocksWorkspaceState.ModuleInput(input.moduleId(),input.sourceRoots(),
+                input.compilerOptions(),input.processors(),input.generatedOutputs(),input.orderedClasspath(),input.jdkFingerprint()),
+                input.sourceState(),input.sourceFiles());
         if(!state.deletedFiles().isEmpty())semanticInvalidation.removeFiles(input.moduleId(),state.deletedFiles());
         workspaceStateUpdates.incrementAndGet();workspaceFileWrites.addAndGet(state.fileWrites());
         workspaceDirectoryWrites.addAndGet(state.directoryWrites());workspaceMetadataWrites.addAndGet(state.metadataWrites());

@@ -32,10 +32,8 @@ import java.util.Set;
 
 /** Implements 4.3: Maven's own models and mediation, offline-first and graph-only caching. */
 public final class MavenEngine implements AutoCloseable {
-    /** Implements 4.3: graph inputs, with content checks for root/parent/settings files. */
-    public record Input(String path, long size, long modified, String hash, boolean strong) { }
     /** Implements 4.3: serialized graph cache without effective models. */
-    public record Cached(String environment, List<Input> inputs, Resolution graph) { }
+    public record Cached(String environment, List<ProjectModelState.Input> inputs, Resolution graph) { }
     private Map<String,Double> timings=Map.of();
     private final Config config;
     private final MavenEnvironment environment;
@@ -48,8 +46,14 @@ public final class MavenEngine implements AutoCloseable {
     public MavenEngine(Config config, MavenEnvironment environment, Models models) {
         this.config = config; this.environment = environment; this.models = models; this.system = models.system();
     }
-    public Map<String, Object> status() { return Map.of("maven_major", config.mavenMajor(), "resolver_version", models.resolverVersion(),
-            "maven_version", models.mavenVersion(), "model_builder", models.modelBuilder(), "collections", collections.get(), "cache_hits", cacheHits.get(),"cold_timings",timings,"native_timings",models.timings()); }
+    public Map<String, Object> status() {
+        var result=new LinkedHashMap<String,Object>();
+        result.put("maven_major",config.mavenMajor());result.put("resolver_version",models.resolverVersion());
+        result.put("maven_version",models.mavenVersion());result.put("model_builder",models.modelBuilder());
+        result.put("collections",collections.get());result.put("cache_hits",cacheHits.get());
+        result.put("cold_timings",timings);result.put("native_timings",models.timings());
+        return Map.copyOf(result);
+    }
     public synchronized Resolution resolve(Path root) throws Exception {
         return resolve(root, (org.eclipse.aether.repository.WorkspaceReader)null);
     }
@@ -58,6 +62,12 @@ public final class MavenEngine implements AutoCloseable {
     }
     public synchronized Resolution resolveWorkspace(Path root,List<Path> roots,boolean ignoreVersions)throws Exception{
         return resolve(root,roots,ignoreVersions,null);
+    }
+    /** Return the accepted graph and exact model-input manifest in the cold/changed crossing. */
+    public synchronized ProjectModelState.Resolved resolveWorkspaceState(Path root,List<Path> roots,boolean ignoreVersions)throws Exception{
+        var graph=resolve(root,roots,ignoreVersions,null);Path canonical=root.toRealPath();var accepted=memory.get(canonical);
+        if(accepted==null)throw new IllegalStateException("Resolved workspace omitted accepted project-model inputs: "+canonical);
+        return new ProjectModelState.Resolved(graph,new ProjectModelState(accepted.graph().fingerprint(),accepted.inputs()));
     }
     private Resolution resolve(Path root,List<Path> roots,boolean ignoreVersions,org.eclipse.aether.repository.WorkspaceReader workspace)throws Exception {
         root=root.toRealPath();var canonical=new ArrayList<Path>();for(Path candidate:roots){candidate=candidate.toRealPath();if(Files.isRegularFile(candidate.resolve("pom.xml"))&&!canonical.contains(candidate))canonical.add(candidate);}
@@ -87,7 +97,7 @@ public final class MavenEngine implements AutoCloseable {
             build = build(root, roots,ignoreVersions,settings, true, workspace, warnings);
             build.warnings.add("offline_miss: completed one online fill pass");
         }
-        long graphAt=System.nanoTime();var inputs = new ArrayList<Input>();
+        long graphAt=System.nanoTime();var inputs = new ArrayList<ProjectModelState.Input>();
         for (Path path : build.inputs.stream().sorted().toList()) inputs.add(input(path, build.strong.contains(path)));
         String fingerprint = Hashing.sha256((context+Json.MAPPER.writeValueAsString(inputs)).getBytes(StandardCharsets.UTF_8));
         var graph = new Resolution(root.toString(), List.copyOf(build.modules), List.copyOf(build.nodes.values()),
@@ -159,7 +169,7 @@ public final class MavenEngine implements AutoCloseable {
             prepared.add(new Prepared(model,remotes,moduleDir,module,properties));
             for (String child : builtModel.children()) queue.add(moduleDir.resolve(child).normalize());
         }
-        var localOverlay=new WorkspaceOverlay(prepared.stream().map(Prepared::module).toList(),ignoreVersions);
+        var localOverlay=new WorkspaceOverlay(prepared.stream().map(Prepared::module).toList(),ignoreVersions,false);
         var overlay = new OverlayReader(localOverlay);
         session.setWorkspaceReader(org.eclipse.aether.util.repository.ChainedWorkspaceReader.newInstance(overlay,org.eclipse.aether.util.repository.ChainedWorkspaceReader.newInstance(workspace,poms)));
         long modelsAt=System.nanoTime();build.modelMillis=(modelsAt-started)/1e6;
@@ -259,14 +269,14 @@ public final class MavenEngine implements AutoCloseable {
         String properties = environment.systemProperties().entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()).sorted().collect(java.util.stream.Collectors.joining("\n"));
         return Hashing.sha256(("workspace-models-v6\n" + models.mavenVersion() + "\n" + config.mavenMajor() + "\n" + config.m2Repo() + "\n" + properties).getBytes(StandardCharsets.UTF_8));
     }
-    private static Input input(Path path, boolean strong) throws Exception {
+    private static ProjectModelState.Input input(Path path, boolean strong) throws Exception {
         path = path.toAbsolutePath().normalize();
-        if (!Files.isRegularFile(path)) return new Input(path.toString(), -1, -1, "absent", strong);
+        if (!Files.isRegularFile(path)) return new ProjectModelState.Input(path.toString(), -1, -1, "absent", strong);
         var attrs = Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class);
-        return new Input(path.toString(), attrs.size(), attrs.lastModifiedTime().to(java.util.concurrent.TimeUnit.NANOSECONDS), Hashing.sha256(path), strong);
+        return new ProjectModelState.Input(path.toString(), attrs.size(), attrs.lastModifiedTime().to(java.util.concurrent.TimeUnit.NANOSECONDS), Hashing.sha256(path), strong);
     }
-    private static boolean unchanged(List<Input> inputs) throws Exception {
-        for (Input input : inputs) {
+    private boolean unchanged(List<ProjectModelState.Input> inputs) throws Exception {
+        for (ProjectModelState.Input input : inputs) {
             Path path = Path.of(input.path());
             if (!Files.isRegularFile(path)) { if (input.size() != -1) return false; else continue; }
             var attrs = Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class);

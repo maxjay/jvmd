@@ -228,7 +228,10 @@ public final class Application implements AutoCloseable {
     private static WorkspaceManifest workspace(Session session){return session.state("workspace_manifest",()->new WorkspaceManifest(List.of(session.root()),true));}
     private static dev.jvmd.resolver.WorkspaceOverlay overlay(Session session,Resolution graph){
         var old=(dev.jvmd.resolver.WorkspaceOverlay)session.state("overlay");
-        if(old==null||!graph.fingerprint().equals(session.state("overlay_generation"))){old=new dev.jvmd.resolver.WorkspaceOverlay(graph.modules(),workspace(session).ignoreVersions());session.put("overlay",old);session.put("overlay_generation",graph.fingerprint());}
+        if(old==null||!graph.fingerprint().equals(session.state("overlay_generation"))){
+            if(old!=null)old.close();
+            old=new dev.jvmd.resolver.WorkspaceOverlay(graph.modules(),workspace(session).ignoreVersions());session.put("overlay",old);session.put("overlay_generation",graph.fingerprint());
+        }
         return old;
     }
     private static Path sourcePath(Session session,String value){return workspace(session).resolve(session.root(),value);}
@@ -264,6 +267,34 @@ public final class Application implements AutoCloseable {
     private static Envelope page(int tier,String source,String key,List<?> values,int offset,int limit,List<String> warnings){
         int from=Math.min(offset,values.size()),to=Math.min(values.size(),from+limit);boolean more=to<values.size();return new Envelope(tier,source,more,more?Integer.toString(to):null,warnings,Map.of(key,List.copyOf(values.subList(from,to))));
     }
+    private Map<String,WorkspaceBindings.ModuleInputs> workspaceModuleInputs(Session session,Resolution graph)throws Exception{
+        var result=new LinkedHashMap<String,WorkspaceBindings.ModuleInputs>();
+        if(graph==null){
+            var roots=workspace(session).roots();
+            if(roots.isEmpty())return Map.of();
+            var worker=analyzer(session,roots.getFirst().resolve("__jvmd_probe__.java"));
+            worker.settleSourceEvents();var snapshot=worker.inputSnapshot();
+            result.put("plain",new WorkspaceBindings.ModuleInputs(snapshot,()->snapshot.live().paths()));
+            return Map.copyOf(result);
+        }
+        for(var module:graph.modules()){
+            if(!module.sources().isEmpty())addWorkspaceModuleInput(result,session,graph,module,false,module.sources());
+            if(!module.testSources().isEmpty())addWorkspaceModuleInput(result,session,graph,module,true,module.testSources());
+        }
+        return Map.copyOf(result);
+    }
+    private void addWorkspaceModuleInput(Map<String,WorkspaceBindings.ModuleInputs> result,Session session,Resolution graph,
+                                         Resolution.Module module,boolean test,List<String> roots)throws Exception{
+        String key=module.directory()+":"+test;
+        Path representative=Path.of(roots.getFirst()).resolve("__jvmd_probe__.java");
+        var worker=analyzer(session,representative);worker.settleSourceEvents();var snapshot=worker.inputSnapshot();
+        result.put(key,new WorkspaceBindings.ModuleInputs(snapshot,()->{
+            var owners=new LinkedHashSet<Path>();
+            for(Path file:snapshot.live().paths())if(key.equals(WorkspaceContextManager.key(file,graph)))owners.add(file);
+            return Set.copyOf(owners);
+        }));
+    }
+
     private List<Path> sourceFiles(Session session)throws Exception{
         var graph=(Resolution)session.state("resolution");var roots=new LinkedHashSet<Path>();var files=new LinkedHashSet<Path>();
         if(graph==null)roots.addAll(workspace(session).roots());else for(var module:graph.modules()){module.sources().forEach(p->roots.add(Path.of(p)));module.testSources().forEach(p->roots.add(Path.of(p)));}
@@ -276,16 +307,7 @@ public final class Application implements AutoCloseable {
         var graph=(Resolution)session.state("resolution");if(graph!=null)graph=refresh(session);
         var cache=session.state("workspace_bindings",()->new WorkspaceBindings(classpathFiles));
         Resolution currentGraph=graph;
-        WorkspaceBindings.InputSource inputSource=()->{
-            var groups=new LinkedHashMap<String,Set<Path>>();
-            for(Path file:sourceFiles(session))groups.computeIfAbsent(WorkspaceContextManager.key(file,currentGraph),_->new LinkedHashSet<>()).add(file);
-            var inputs=new LinkedHashMap<String,WorkspaceBindings.ModuleInputs>();
-            for(var group:groups.entrySet()){
-                var worker=analyzer(session,group.getValue().iterator().next());
-                inputs.put(group.getKey(),new WorkspaceBindings.ModuleInputs(worker.inputSnapshot(),group.getValue()));
-            }
-            return inputs;
-        };
+        WorkspaceBindings.InputSource inputSource=()->workspaceModuleInputs(session,currentGraph);
         if(!load)return cache.peek(inputSource);
         return cache.getBatch(inputSource,documents(session),(long)config.heapCeilingMb()*1024*1024/Math.max(1,sessions.list().size())/4,files->{
             var groups=new LinkedHashMap<String,LinkedHashMap<Path,String>>();
@@ -484,16 +506,33 @@ public final class Application implements AutoCloseable {
         for(Path file:plan.files()){
             String text=Files.readString(file);var analyzer=analyzer(session,file);var declarations=new ArrayList<Map<String,Object>>();int offset=0;
             do{var outline=analyzer.overview(file,text,10,1000,offset);declarations.addAll((List<Map<String,Object>>)((Map<?,?>)outline.result()).get("symbols"));if(!outline.truncated())break;offset=Integer.parseInt(outline.cursor());}while(true);
-            var selected=new LinkedHashSet<Map<String,Object>>();
-            for(int[] touched:plan.touched(file)){
+            var selected=new LinkedHashSet<Map<String,Object>>();var touchedRanges=plan.touched(file);
+            for(int[] touched:touchedRanges){
                 while(touched[0]<touched[1]&&Character.isWhitespace(text.charAt(touched[0])))touched[0]++;
                 while(touched[1]>touched[0]&&Character.isWhitespace(text.charAt(touched[1]-1)))touched[1]--;
                 var enclosing=declarations.stream().filter(s->s.get("source_start") instanceof Number start&&s.get("source_end") instanceof Number end&&start.intValue()<=touched[0]&&end.intValue()>=touched[1]).min(Comparator.comparingInt(s->((Number)s.get("source_end")).intValue()-((Number)s.get("source_start")).intValue()));
                 if(enclosing.isPresent())selected.add(enclosing.get());
             }
-            var result=analyzer.diagnostics(file,text);tier=Math.min(tier,result.tier());warnings.addAll(result.warnings());
-            for(var problem:(List<dev.jvmd.analyzer.CompilerPool.Problem>)((Map<?,?>)result.result()).get("diagnostics"))
-                if(selected.isEmpty()||problem.start()<0||selected.stream().anyMatch(s->problem.start()>=((Number)s.get("source_start")).longValue()&&problem.start()<=((Number)s.get("source_end")).longValue()))diagnostics.add(problem);
+            if(!selected.isEmpty()){
+                var seenDiagnostics=new LinkedHashSet<String>();
+                for(var member:selected){
+                    int focus;
+                    if(member.get("body_start") instanceof Number body&&body.intValue()>=0)focus=Math.min(text.length(),body.intValue()+1);
+                    else if(member.get("name_start") instanceof Number name)focus=Math.min(text.length(),name.intValue());
+                    else focus=Math.min(text.length(),((Number)member.get("source_start")).intValue());
+                    var result=analyzer.bindings(file,text,focus);tier=Math.min(tier,result.tier());warnings.addAll(result.warnings());
+                    for(var problem:result.diagnostics()){
+                        String key=problem.code()+"|"+problem.file()+"|"+problem.start()+"|"+problem.end()+"|"+problem.message();
+                        if(seenDiagnostics.add(key))diagnostics.add(problem);
+                    }
+                }
+            }else{
+                var result=analyzer.diagnostics(file,text);tier=Math.min(tier,result.tier());warnings.addAll(result.warnings());
+                for(var problem:(List<dev.jvmd.analyzer.CompilerPool.Problem>)((Map<?,?>)result.result()).get("diagnostics")){
+                    boolean inTouched=problem.start()>=0&&touchedRanges.stream().anyMatch(range->problem.start()>=range[0]&&problem.start()<=range[1]);
+                    if(problem.start()<0||inTouched)diagnostics.add(problem);
+                }
+            }
             for(var member:selected){var row=new LinkedHashMap<String,Object>();row.put("path",file.toString());row.put("scip",member.get("scip"));row.put("range",member.get("range"));members.add(row);}
         }
         return new Envelope(tier,"live",false,null,List.copyOf(warnings),Map.of("applied",true,"changes",plan.edits(),"changed_files",plan.files().stream().map(Path::toString).toList(),"members",members,"diagnostics",diagnostics,"verified",false));
@@ -704,12 +743,12 @@ public final class Application implements AutoCloseable {
     private void awaitReady(){if(config.indexOnStart())index();}
     private void bindIndex(Session session,IndexService database)throws Exception {
         var graph=(Resolution)session.state("resolution");if(graph==null)return;
+        String generation=graph.fingerprint()+":"+database.generation();
+        if(generation.equals(session.state("index_generation")))return;
         for(var module:graph.modules()){
             var roots=new ArrayList<Path>();module.sources().forEach(p->roots.add(Path.of(p)));module.testSources().forEach(p->roots.add(Path.of(p)));
             database.registerLocal(new IndexService.LocalModule(Path.of(module.directory()),module.gav(),roots,List.of(Path.of(module.classes()),Path.of(module.testClasses()))));
         }
-        String generation=graph.fingerprint()+":"+database.generation();
-        if(generation.equals(session.state("index_generation")))return;
 
         // A resolved workspace can introduce artifacts after the background repository scan.
         // Publish those signatures before exposing the workspace; unchanged releases reuse
@@ -719,11 +758,10 @@ public final class Application implements AutoCloseable {
         }
         generation=graph.fingerprint()+":"+database.generation();
 
-        var openDocuments=documents(session).snapshots();
         String jdkFingerprint=Runtime.version()+"|"+config.jdkHome().toAbsolutePath().normalize();
         for(var module:graph.modules()){
-            configureModuleIndexState(database,module,false,graph,openDocuments,jdkFingerprint);
-            configureModuleIndexState(database,module,true,graph,openDocuments,jdkFingerprint);
+            configureModuleIndexState(session,database,module,false,graph,jdkFingerprint);
+            configureModuleIndexState(session,database,module,true,graph,jdkFingerprint);
         }
 
         var paths=new ArrayList<>(graph.nodes().stream().filter(n->n.path()!=null&&n.winner()==null).map(n->new IndexService.WorkspaceArtifact(n.path(),n.scope())).toList());
@@ -759,12 +797,12 @@ public final class Application implements AutoCloseable {
                         "fingerprint", graph.fingerprint(), "cached", graph.cached()));
     }
 
-    private void configureModuleIndexState(IndexService database,Resolution.Module module,boolean test,Resolution graph,
-                                           Map<Path,String> openDocuments,String jdkFingerprint)throws Exception{
+    private void configureModuleIndexState(Session session,IndexService database,Resolution.Module module,boolean test,Resolution graph,
+                                           String jdkFingerprint)throws Exception{
         var roots=(test?module.testSources():module.sources()).stream().map(Path::of).map(path->path.toAbsolutePath().normalize()).toList();
         if(roots.isEmpty())return;
-        var overlays=new LinkedHashMap<Path,String>();
-        openDocuments.forEach((path,text)->{if(roots.stream().anyMatch(path::startsWith))overlays.put(path,text);});
+        var live=documents(session).liveState(roots);var source=live.snapshot();
+        if(!source.trusted()){live.reconcile();source=live.snapshot();}
         var processing=test?module.testProcessing():module.processing();
         var processors=new ArrayList<String>();processors.addAll(processing.path());processors.addAll(processing.names());
         if(processing.lombok())processors.add("lombok");
@@ -776,8 +814,9 @@ public final class Application implements AutoCloseable {
         String key=module.gav()+(test?":test":":main");
         var classpath=graph.classpaths().getOrDefault(key,List.of());
         var options=test?module.testCompilerOptions():module.compilerOptions();
-        database.configureModuleState(new IndexSemanticState.ModuleStateInput(module.directory()+"|"+key,roots,Map.copyOf(overlays),options,
-                List.copyOf(processors),Map.copyOf(generated),classpath,jdkFingerprint+"|release="+module.release()));
+        database.configureModuleState(new IndexSemanticState.ModuleStateInput(module.directory()+"|"+key,roots,options,
+                List.copyOf(processors),Map.copyOf(generated),classpath,jdkFingerprint+"|release="+module.release(),
+                source.state(),live.paths()));
     }
 
     private static String fingerprintDirectory(Path directory)throws Exception{

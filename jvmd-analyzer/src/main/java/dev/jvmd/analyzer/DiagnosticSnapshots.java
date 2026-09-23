@@ -51,13 +51,13 @@ public final class DiagnosticSnapshots implements AutoCloseable {
     }
 
     /** Called on the owner thread with detached state; disk writes are asynchronous. */
-    public void save(DiagnosticStore.Key key,DiagnosticStore.State state,Map<Path,String> inputs){
+    public void save(DiagnosticStore.Key key,DiagnosticStore.State state,CompilerInputs.Snapshot inputs){
         try{
             // Buffer-only states must never be mistaken for saved on-disk snapshots after restart.
             if(!sources.hash(key.file()).equals(key.sourceHash()))return;
             var dependencies=new TreeMap<String,String>();
             for(Path dependency:state.dependencies()){
-                String hash=inputs.get(dependency);if(hash==null)return;
+                var identity=inputs.source(dependency);String hash=identity.value();if(hash==null)return;
                 if(!sources.hash(dependency).equals(hash))return;
                 dependencies.put(dependency.toString(),hash);
             }

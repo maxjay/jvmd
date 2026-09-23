@@ -6,6 +6,7 @@ import com.sun.tools.javac.api.JavacTaskImpl;
 import com.sun.tools.javac.api.JavacTaskPool;
 import dev.jvmd.core.*;
 import dev.jvmd.index.IndexService;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.*;
 import javax.tools.*;
@@ -39,6 +40,8 @@ public final class CompilerPool implements AutoCloseable {
     private long batchQueries,batchFiles;
     private long budget,baseline,recycles,faults,queries,queryNanos,configureCalls,configureNanos,classpathValidations,classpathValidationNanos;
     private long sourceModuleGeneration;
+    private Documents attachedDocuments;
+    private long attachedDocumentsGeneration=-1;
     public void configure(String generation,String release,List<Path> classpath,List<Path> sources,IndexService index,long budget)throws Exception {
         configure(generation,release,classpath,sources,index,budget,List.of("--release",release),true);
     }
@@ -59,9 +62,34 @@ public final class CompilerPool implements AutoCloseable {
             sourceModuleGeneration=manager.sourceModuleGeneration();
         }finally{configureNanos+=System.nanoTime()-started;}
     }
-    public void documents(Documents documents){checkThread();liveDocuments=documents;manager.documents(documents.snapshots());refreshSourceModules();}
+    public void documents(Documents documents){
+        checkThread();liveDocuments=Objects.requireNonNull(documents);ensureDocumentsAttached();
+    }
+    private void ensureDocumentsAttached(){
+        if(manager==null)return;
+        long generation=liveDocuments.generation();
+        if(attachedDocuments==liveDocuments&&attachedDocumentsGeneration==generation)return;
+        manager.documents(liveDocuments.snapshots(),liveDocuments.liveState(configuredSources));
+        attachedDocuments=liveDocuments;attachedDocumentsGeneration=generation;
+        refreshSourceModules();
+    }
+    /** Observe only request-relevant sources before capturing the compiler transaction. */
+    public void observeSources(Collection<Path> paths){
+        checkThread();ensureDocumentsAttached();
+        liveDocuments.liveState(configuredSources).observe(paths);
+        refreshSourceModules();
+    }
+    /** Targeted unresolved-source discovery; package directories only, never all source roots. */
+    public void discoverSourcePackages(Collection<String> packages)throws IOException{
+        checkThread();ensureDocumentsAttached();
+        liveDocuments.liveState(configuredSources).reconcilePackages(packages);
+        refreshSourceModules();
+    }
+    public void settleSourceEvents()throws IOException{
+        checkThread();ensureDocumentsAttached();liveDocuments.liveState(configuredSources).settleWatchEvents();refreshSourceModules();
+    }
     public CompilerInputs.Snapshot inputSnapshot()throws java.io.IOException {
-        checkThread();return inputs.capture(inputConfiguration,liveDocuments);
+        checkThread();ensureDocumentsAttached();return inputs.capture(inputConfiguration,liveDocuments);
     }
     public void documents(Map<Path,String> documents){
         checkThread();var buffers=new Documents(inputFiles);documents.forEach((file,text)->buffers.open(file,text,1));documents(buffers);
@@ -79,12 +107,14 @@ public final class CompilerPool implements AutoCloseable {
     private void checkThread(){if(Thread.currentThread()!=owner||owner.isVirtual())throw new IllegalStateException("Compiler access must stay on its session platform executor");}
     public record SourceInput(Path file,String text){public SourceInput{file=file.toAbsolutePath().normalize();}}
     public <T> Outcome<T> query(Path path,String source,int tier,Query<T> query)throws Exception {
+        observeSources(Set.of(path));
         return query(path,source,tier,inputSnapshot(),query);
     }
     public <T> Outcome<T> query(Path path,String source,int tier,CompilerInputs.Snapshot observed,Query<T> query)throws Exception {
         return execute(List.of(new SourceInput(path,source)),tier,observed,query);
     }
     public <T> Outcome<T> batchQuery(List<SourceInput> sources,int tier,Query<T> query)throws Exception {
+        observeSources(sources.stream().map(SourceInput::file).toList());
         return batchQuery(sources,tier,inputSnapshot(),query);
     }
     public <T> Outcome<T> batchQuery(List<SourceInput> sources,int tier,CompilerInputs.Snapshot observed,Query<T> query)throws Exception {
@@ -133,7 +163,11 @@ public final class CompilerPool implements AutoCloseable {
                 finally{resetSourcePackages(task,parsed);}
             });
             int level=actual[0];var problems=diagnostics.getDiagnostics().stream().map(d->new Problem("live",level,d.getCode(),d.getKind().name(),d.getSource()==null?path.toString():d.getSource().toUri().toString(),d.getLineNumber(),Math.max(0,d.getColumnNumber()-1),d.getStartPosition(),d.getEndPosition(),d.getMessage(Locale.ROOT))).toList();
-            if(manager.inputsSuperseded()||!observed.equals(inputSnapshot()))return new Outcome<>(1,null,List.of(),List.of("diagnostics_superseded: inputs changed during analysis"));
+            // Explicit compilation units are a bounded transaction boundary. Re-observe only
+            // those paths before commit so edits during javac cannot depend on watcher latency.
+            liveDocuments.liveState(configuredSources).observe(sources.stream().map(SourceInput::file).toList());
+            if(manager.inputsSuperseded()||!inputs.current(observed,inputConfiguration,liveDocuments))
+                return new Outcome<>(1,null,List.of(),List.of("diagnostics_superseded: inputs changed during analysis"));
             return new Outcome<>(level,value,problems,List.copyOf(warnings));
         }catch(QueryFailure e){releasePlatform.close();throw (Exception)e.getCause();}
         catch(AssertionError|RuntimeException e){System.getLogger("jvmd.analyzer").log(System.Logger.Level.ERROR,"Compiler query fault in "+path,e);fault[0]=true;faults++;return new Outcome<>(Math.min(1,tier),null,List.of(),List.of("analyzer_fault: "+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage())));}
@@ -166,13 +200,15 @@ public final class CompilerPool implements AutoCloseable {
         var previous=manager;recycle();manager.close();
         manager=new IndexedFileManager(ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8),configuredClasspath,configuredSources,configuredIndex,
                 Math.min(32L*1024*1024,Math.max(1024*1024,budget/8)),preciseSourceRoots,inputFiles);
-        manager.inheritWork(previous);manager.documents(liveDocuments.snapshots());manager.binarySources(configuredBinarySources);
+        manager.inheritWork(previous);attachedDocuments=null;attachedDocumentsGeneration=-1;ensureDocumentsAttached();manager.binarySources(configuredBinarySources);
         sourceModuleGeneration=manager.sourceModuleGeneration();
     }
     public void recycle(){checkThread();releasePlatform.close();pool=new JavacTaskPool(1);if(manager!=null)manager.invalidate();baseline=heap();recycles++;}
     /** JavacTaskPool clears source symbols after each task; refresh source discovery without dropping binary state. */
     public void invalidateSourceInventory(){checkThread();if(manager!=null)manager.invalidateSourceInventory();}
     public void sourcesChanged(){checkThread();if(manager!=null){manager.sourcesChanged();refreshSourceModules();}}
+    /** Recreate javac's file-manager/context boundary after a source namespace transition. */
+    public void resetSourceContext()throws Exception{checkThread();if(manager!=null)resetEnvironment();}
     /** Cheap source namespace/content epoch when the platform watcher is reliable; -1 requests conservative validation. */
     public long sourceStateGeneration(){checkThread();return manager==null?-1L:manager.sourceStateGeneration();}
     private void refreshSourceModules(){
@@ -190,5 +226,5 @@ public final class CompilerPool implements AutoCloseable {
         status.put("recycles",recycles);status.put("faults",faults);status.put("heap_growth_bytes",Math.max(0,heap()-baseline));status.put("heap_budget_bytes",budget);if(manager!=null)status.putAll(manager.status());var output=new java.io.ByteArrayOutputStream();pool.printStatistics(new java.io.PrintStream(output));status.put("pool_statistics",output.toString(java.nio.charset.StandardCharsets.UTF_8));return status;
     }
     private static double nanosToMillis(long nanos){return Math.round(nanos/1000.0)/1000.0;}
-    @Override public void close()throws Exception{checkThread();releasePlatform.close();if(manager!=null)manager.close();pool=new JavacTaskPool(1);}
+    @Override public void close()throws Exception{checkThread();releasePlatform.close();inputs.close();if(manager!=null)manager.close();pool=new JavacTaskPool(1);}
 }

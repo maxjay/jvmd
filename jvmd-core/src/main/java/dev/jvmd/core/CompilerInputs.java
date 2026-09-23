@@ -5,10 +5,17 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
 
-/** Live input observations. Instances are module/session scoped; only disk observations may be shared. */
+/**
+ * Compiler input identities. Source identity comes from mutation-maintained
+ * {@link LiveSourceState}; environment identity comes from mutation-maintained
+ * {@link LiveEnvironmentState}.
+ */
 public final class CompilerInputs {
     public record SourceIdentity(String value) { }
     public record MembershipIdentity(String value) { }
+    public record ContentIdentity(String value) { }
+    public record ApiIdentity(String value) { }
+    public record NamespaceIdentity(String value) { }
     public record EnvironmentIdentity(String value) { }
     public record Configuration(String generation,List<Path> roots,List<Path> classpath,List<String> options,String platform) {
         public Configuration {
@@ -19,172 +26,136 @@ public final class CompilerInputs {
             this(generation,roots,classpath,options,System.getProperty("java.home")+"|"+Runtime.version());
         }
     }
-    public record Snapshot(Map<Path,String> sources,MembershipIdentity membership,EnvironmentIdentity environment,long observation) {
-        public boolean sameInputs(Snapshot other){return other!=null&&sources.equals(other.sources)&&membership.equals(other.membership)&&environment.equals(other.environment);}
-        public SourceIdentity source(Path file){return new SourceIdentity(sources.get(file.toAbsolutePath().normalize()));}
+
+    /**
+     * Constant-sized captured compiler source state. Stable cache equality intentionally compares
+     * source membership/content plus environment, while transactionCurrent() additionally fences on
+     * the monotonic epoch so A→B→A during one javac transaction is still detected.
+     */
+    public record Snapshot(LiveSourceState live,LiveSourceState.Snapshot sourceState,EnvironmentIdentity environment,long environmentEpoch) {
+        public Snapshot {
+            Objects.requireNonNull(live);Objects.requireNonNull(sourceState);Objects.requireNonNull(environment);
+        }
+        private LiveStateTree.State state(){return sourceState.state();}
+        public MembershipIdentity membership(){return new MembershipIdentity(state().membership().fingerprint().value());}
+        public ContentIdentity content(){return new ContentIdentity(state().content().fingerprint().value());}
+        public ApiIdentity api(){return new ApiIdentity(state().api().fingerprint().value());}
+        public NamespaceIdentity namespace(){return new NamespaceIdentity(state().namespace().fingerprint().value());}
+        public String merkle(){return state().merkle().value();}
+        public long observation(){return sourceState.inputEpoch();}
+        public boolean trusted(){return sourceState.trusted();}
+        public boolean sameInputs(Snapshot other){
+            return other!=null&&membership().equals(other.membership())&&content().equals(other.content())&&environment.equals(other.environment);
+        }
+        /** Strict compiler transaction fence: any intervening live transition supersedes the task. */
+        public boolean transactionCurrent(){
+            var current=live.snapshot();
+            return sourceState.trusted()&&current.trusted()&&current.inputEpoch()==sourceState.inputEpoch()
+                    &&current.state().membership().equals(state().membership())
+                    &&current.state().content().equals(state().content());
+        }
+        private void requireStableSource()throws Superseded{
+            var current=live.snapshot();
+            if(!sourceState.trusted()||!current.trusted()
+                    ||!current.state().membership().equals(state().membership())
+                    ||!current.state().content().equals(state().content()))
+                throw new Superseded("Source state changed after compiler input capture");
+        }
+        public SourceIdentity source(Path file)throws Superseded{
+            requireStableSource();String value=live.contentHash(file);
+            return new SourceIdentity(value);
+        }
         /** Identify the bytes actually supplied, never a hash reread after compilation. */
-        public String text(Path file,Documents documents)throws Exception {
-            return checkText(file,documents.text(file));
+        public String text(Path file,Documents documents)throws Exception{return checkText(file,documents.text(file));}
+        public String checkText(Path file,String text)throws Superseded{
+            requireStableSource();
+            // Explicit compilation units may intentionally sit outside configured source roots.
+            // Their immutable request bytes are the transaction input, not workspace membership.
+            if(!live.accepts(file))return text;
+            String expected=live.contentHash(file);
+            String actual=Hashing.sha256(text.getBytes(StandardCharsets.UTF_8));
+            if(expected==null||!expected.equals(actual))throw new Superseded("Source changed before analysis: "+file);
+            requireStableSource();return text;
         }
-        public String checkText(Path file,String text)throws Superseded {
-            if(!Objects.equals(sources.get(file.toAbsolutePath().normalize()),Hashing.sha256(text.getBytes(StandardCharsets.UTF_8))))
-                throw new Superseded("Source changed before analysis: "+file);
-            return text;
-        }
-        public Set<Path> changedSince(Snapshot prior){
-            var changed=new LinkedHashSet<Path>();
-            sources.forEach((file,hash)->{if(prior==null||!hash.equals(prior.sources.get(file)))changed.add(file);});
-            if(prior!=null)for(Path file:prior.sources.keySet())if(!sources.containsKey(file))changed.add(file);
-            return Set.copyOf(changed);
+        /** Incremental changed-path lookup from the maintained source journal. */
+        public Set<Path> changedSince(Snapshot prior)throws Superseded{
+            if(prior==null)return live.paths();
+            if(membership().equals(prior.membership())&&content().equals(prior.content()))return Set.of();
+            if(live!=prior.live())throw new Superseded("Source-state owner changed");
+            return live.changedPathsSince(prior.observation()).orElseThrow(()->new Superseded("Source change history requires reconciliation"));
         }
     }
+
     public static final class Superseded extends IOException { public Superseded(String message){super(message);} }
     private final FileStateRegistry files;
-    private Configuration configuration,environmentConfiguration;
-    private EnvironmentIdentity environmentIdentity;
+    private Configuration environmentConfiguration;
+    private LiveEnvironmentState environmentState;
     private Snapshot snapshot;
-    private Map<Path,String> environmentFiles=Map.of();
-    private long observations,rebuilds,validationNanos,observation;
-    // Disk environment and overlaid source are distinct roles even at the same path.
-    private final Map<Path,Object> sourceEvidence=new HashMap<>(),environmentEvidence=new HashMap<>();
-    private Documents trackedDocuments;
-    private Documents.Transitions transitions;
-    private long transitionVersion;
-    private List<List<Path>> inventories=List.of();
-    private List<Path> discovered=List.of();
-    private Set<Path> candidates=Set.of(), overlayPaths=Set.of();
-    private List<Path> priorDisk=List.of();
-    private Set<Path> environmentPaths=Set.of();
-    private List<FileStateRegistry.Inventory> environmentInventories=List.of();
+    private long observations,rebuilds,validationNanos;
+
     public CompilerInputs(FileStateRegistry files){this.files=Objects.requireNonNull(files);}
 
-    public synchronized Snapshot capture(Configuration config,Documents documents)throws IOException {
-        try(var trace=dev.jvmd.core.RequestScope.stage("inputs.discover")){
-        var paths=new ArrayList<List<Path>>();
-        for(Path root:config.roots())paths.add(files.inventory(root,".java"));
-        if(!paths.equals(inventories)){
-            discovered=paths.stream().flatMap(Collection::stream).distinct().toList();inventories=List.copyOf(paths);
-        }
-        return capture(config,documents,discovered);
-    
-        }
-    }
-    /** Explicit inventories are for callers which already own discovery, not a second freshness policy. */
-    public synchronized Snapshot capture(Configuration config,Documents documents,Collection<Path> diskFiles)throws IOException {
-        try(var trace=dev.jvmd.core.RequestScope.stage("inputs.validate")){
-            trace.count("captures",1);
-        long start=System.nanoTime();observations++;
-        try {
-            boolean sameConfig=config.equals(configuration);
-            var open=documents.paths();
-            if(!sameConfig||!diskFiles.equals(priorDisk)||!open.equals(overlayPaths)){
-                var paths=new LinkedHashSet<Path>();diskFiles.forEach(p->paths.add(p.toAbsolutePath().normalize()));
-                for(Path file:open)if(config.roots().isEmpty()||config.roots().stream().anyMatch(file::startsWith))paths.add(file);
-                candidates=Collections.unmodifiableSet(paths);priorDisk=List.copyOf(diskFiles);overlayPaths=open;
-            }
-            if(trackedDocuments!=documents){transitions=null;trackedDocuments=documents;observation++;}
-            transitions=documents.track(transitions,config.roots(),candidates);
-            long version=documents.transitionVersion(transitions);
-            if(version!=transitionVersion){observation++;transitionVersion=version;}
-            Map<Path,String> prior=snapshot==null?Map.of():snapshot.sources();
-            Map<Path,String> sources=observe(candidates,prior,documents);
-            var environment=environment(config);
-            MembershipIdentity membership=snapshot!=null&&sameConfig&&sources.keySet().equals(prior.keySet())?snapshot.membership():
-                    new MembershipIdentity(compose("membership-v1",config.roots(),new TreeSet<>(sources.keySet())));
-            if(snapshot==null||sources!=prior||!environment.equals(snapshot.environment())||!membership.equals(snapshot.membership())||snapshot.observation()!=observation){
-                snapshot=new Snapshot(sources,membership,environment,observation);rebuilds++;RequestScope.count("snapshot_rebuilds",1);
-            }
-            configuration=config;return snapshot;
-        } finally {validationNanos+=System.nanoTime()-start;}
-    
+    /** Request path: source membership/content is already maintained; no source inventory is rebuilt here. */
+    public synchronized Snapshot capture(Configuration config,Documents documents)throws IOException{
+        try(var trace=RequestScope.stage("inputs.validate")){
+            trace.count("captures",1);observations++;long started=System.nanoTime();
+            try{
+                var live=documents.liveState(config.roots());live.verifyTransactionBoundary();var source=live.snapshot();
+                var environment=environmentSnapshot(config,false);
+                var current=new Snapshot(live,source,environment.identity(),environment.epoch());
+                if(snapshot==null||snapshot.observation()!=current.observation()||snapshot.environmentEpoch()!=current.environmentEpoch()||!snapshot.sameInputs(current)){
+                    snapshot=current;rebuilds++;RequestScope.count("snapshot_rebuilds",1);
+                }
+                return snapshot;
+            }finally{validationNanos+=System.nanoTime()-started;}
         }
     }
-    /** The same environment boundary is usable without rediscovering source inputs. */
-    public synchronized EnvironmentIdentity environment(Configuration config)throws IOException {
-        var paths=new ArrayList<FileStateRegistry.Inventory>();
-        for(Path path:config.classpath()){
-            if(Files.isDirectory(path)){paths.add(files.observeInventory(path,".class",true));paths.add(files.observeInventory(path,".jar",true));}
-            else paths.add(new FileStateRegistry.Inventory(List.of(path),null));
-        }
-        var entries=new ArrayList<Path>();
-        var pathOptions=Set.of("--module-path","-p","--upgrade-module-path","--class-path","-classpath","-cp","--processor-path","-processorpath","--processor-module-path","--patch-module","--system",
-                "--source-path","-sourcepath","--module-source-path","--boot-class-path","-bootclasspath",
-                "-extdirs","-endorseddirs","-Djava.ext.dirs","-Djava.endorsed.dirs");
-        for(int i=0;i<config.options().size();i++){
-            String option=config.options().get(i),name=option.contains("=")?option.substring(0,option.indexOf('=')):option;
-            if(option.startsWith("-Xbootclasspath:")||option.startsWith("-Xbootclasspath/a:")||option.startsWith("-Xbootclasspath/p:")){
-                addOptionPaths(entries,option.substring(option.indexOf(':')+1));continue;
-            }
-            if(!pathOptions.contains(name))continue;
-            String value=option.contains("=")?option.substring(option.indexOf('=')+1):i+1<config.options().size()?config.options().get(++i):"";
-            if((name.equals("--patch-module")||name.equals("--module-source-path"))&&value.contains("="))value=value.substring(value.indexOf('=')+1);
-            addOptionPaths(entries,value);
-        }
-        for(Path path:entries)paths.add(Files.isDirectory(path)?files.observeInventory(path,"",true):new FileStateRegistry.Inventory(List.of(path),null));
-        Path home=Path.of(System.getProperty("java.home"));
-        paths.add(new FileStateRegistry.Inventory(List.of(home.resolve("release"),home.resolve("lib/modules"),home.resolve("lib/ct.sym")),null));
-        if(!config.equals(environmentConfiguration)||!paths.equals(environmentInventories)){
-            var keys=new LinkedHashSet<Path>();paths.forEach(p->keys.addAll(p.members()));environmentPaths=Collections.unmodifiableSet(keys);environmentInventories=List.copyOf(paths);observation++;
-        }
-        var env=observe(environmentPaths,environmentFiles,null);
-        if(environmentIdentity==null||!config.equals(environmentConfiguration)||env!=environmentFiles){
-            environmentIdentity=environment(config.generation(),config.roots(),config.options(),List.of(),Map.of(),config.classpath().stream().map(Path::toString).toList(),config.platform(),env);
-        }
-        environmentConfiguration=config;environmentFiles=env;return environmentIdentity;
+
+    /** Validate a compiler transaction without reconstructing source membership/content. */
+    public synchronized boolean current(Snapshot expected,Configuration config,Documents documents)throws IOException{
+        if(expected==null)return false;
+        expected.live().verifyTransactionBoundary();
+        if(!expected.transactionCurrent())return false;
+        var environment=environmentSnapshot(config,true);
+        return expected.environmentEpoch()==environment.epoch()&&expected.environment().equals(environment.identity());
     }
-    private static void addOptionPaths(List<Path> entries,String value){
-        for(String entry:value.split(java.util.regex.Pattern.quote(File.pathSeparator))){
-            if(entry.isBlank()||entry.equals("none"))continue;
-            // Module-source-path patterns select descendants; observe their containing tree.
-            int wildcard=entry.indexOf('*'), group=entry.indexOf('{');
-            if(group>=0&&(wildcard<0||group<wildcard))wildcard=group;
-            if(wildcard>=0){
-                int separator=Math.max(entry.lastIndexOf('/',wildcard),entry.lastIndexOf('\\',wildcard));
-                entry=separator<0?".":entry.substring(0,separator+1);
-            }
-            entries.add(Path.of(entry.isEmpty()?".":entry).toAbsolutePath().normalize());
+
+    /** The environment boundary is mutation-maintained; warm reads drain only queued filesystem events. */
+    public synchronized EnvironmentIdentity environment(Configuration config)throws IOException{return environmentSnapshot(config,false).identity();}
+    private synchronized LiveEnvironmentState.Snapshot environmentSnapshot(Configuration config,boolean transactionEnd)throws IOException{
+        if(environmentState==null||!config.equals(environmentConfiguration)){
+            if(environmentState!=null)environmentState.close();
+            environmentState=new LiveEnvironmentState(files,config);environmentConfiguration=config;
         }
+        return environmentState.verifyBoundary(transactionEnd);
     }
-    private Map<Path,String> observe(Set<Path> paths,Map<Path,String> prior,Documents documents)throws IOException {
-        var evidence=documents==null?environmentEvidence:sourceEvidence;
-        evidence.keySet().retainAll(paths);
-        Map<Path,String> updated=null;
-        for(Path file:paths){
-            String hash=documents==null?null:documents.hash(file);
-            Object token;
-            if(hash==null){var disk=files.observe(file);hash=disk.hash();token=disk;}
-            else token=documents.observation(file);
-            if(!Objects.equals(evidence.put(file,token),token))observation++;
-            boolean missing=documents!=null&&"missing".equals(hash);
-            if(missing?prior.containsKey(file):!hash.equals(prior.get(file))){
-                if(updated==null)updated=new LinkedHashMap<>(prior);
-                if(missing)updated.remove(file);else updated.put(file,hash);
-            }
-        }
-        for(Path file:prior.keySet())if(!paths.contains(file)){
-            if(updated==null)updated=new LinkedHashMap<>(prior);updated.remove(file);
-        }
-        return updated==null?prior:Collections.unmodifiableMap(updated);
-    }
-    public boolean current(Snapshot expected,Configuration config,Documents documents)throws IOException{return expected.equals(capture(config,documents));}
+
     public static EnvironmentIdentity environment(String generation,List<Path> roots,List<String> options,List<String> processors,
             Map<String,String> generated,List<String> classpath,String platform,Map<Path,String> contents){
         return new EnvironmentIdentity(compose("environment-v1",generation,roots,options,processors,new TreeMap<>(generated),classpath,platform,new TreeMap<>(contents)));
     }
+
     /** Deterministic length-prefixed composition. Lists retain order; callers canonicalize genuine sets. */
     public static String compose(String version,Object... components){
-        try {
+        try{
             var digest=java.security.MessageDigest.getInstance("SHA-256");
             var out=new DataOutputStream(new java.security.DigestOutputStream(OutputStream.nullOutputStream(),digest));write(out,version);
             for(Object value:components)write(out,value);
             return HexFormat.of().formatHex(digest.digest());
         }catch(IOException|java.security.NoSuchAlgorithmException impossible){throw new AssertionError(impossible);}
     }
-    private static void write(DataOutputStream out,Object value)throws IOException {
+    private static void write(DataOutputStream out,Object value)throws IOException{
         if(value instanceof Map<?,?> map){out.writeByte(1);out.writeInt(map.size());for(var entry:map.entrySet()){write(out,entry.getKey());write(out,entry.getValue());}}
         else if(value instanceof Collection<?> values){out.writeByte(2);out.writeInt(values.size());for(Object item:values)write(out,item);}
-        else {byte[] bytes=Objects.toString(value,"").getBytes(StandardCharsets.UTF_8);out.writeByte(3);out.writeInt(bytes.length);out.write(bytes);}
+        else{byte[] bytes=Objects.toString(value,"").getBytes(StandardCharsets.UTF_8);out.writeByte(3);out.writeInt(bytes.length);out.write(bytes);}
     }
-    public synchronized Map<String,Object> status(){return Map.of("observations",observations,"snapshot_rebuilds",rebuilds,"validation_ns",validationNanos);}
+
+    public synchronized Map<String,Object> status(){
+        var result=new LinkedHashMap<String,Object>();
+        result.put("observations",observations);result.put("snapshot_rebuilds",rebuilds);result.put("validation_ns",validationNanos);
+        result.put("environment_live",environmentState==null?Map.of("initialized",false):environmentState.status());
+        return Map.copyOf(result);
+    }
+    public synchronized void close(){if(environmentState!=null){environmentState.close();environmentState=null;}}
     private static List<Path> normalize(List<Path> paths){return paths.stream().map(p->p.toAbsolutePath().normalize()).toList();}
 }

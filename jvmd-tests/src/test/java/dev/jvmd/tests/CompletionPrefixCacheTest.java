@@ -35,7 +35,8 @@ class CompletionPrefixCacheTest {
                 assertThat(result.path("range").path("end").path("character").asInt()-result.path("range").path("start").path("character").asInt()).isEqualTo(prefix.length());
             }
             var status=analyzer.status();
-            assertThat(status).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",6L).containsEntry("completion_requests",7L).containsEntry("queries",1L).containsEntry("focus_layout_parses",1L);
+            // One completion query plus one bounded candidate-API attribution; narrowing hits run no javac work.
+            assertThat(status).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",6L).containsEntry("completion_requests",7L).containsEntry("queries",2L).containsEntry("focus_layout_parses",1L);
             assertThat(status).containsKeys("completion_timing_ms","completion_last_timing_ms","completion_candidates_seen","completion_rows_materialized","completion_doc_lookups");
             @SuppressWarnings("unchecked") var timings=(Map<String,Double>)status.get("completion_timing_ms");
             assertThat(timings).containsKeys("key","source_refresh","focus","compiler_query","editor_total","candidate_discovery","row_materialization","documentation","sort","cache_admission","filter","total");
@@ -88,15 +89,34 @@ class CompletionPrefixCacheTest {
             assertThat(analyzer.status().get("completion_computations")).isEqualTo(4L);
         }
     }
-    @Test void unresolvedReceiverRetriesSourceDiscoveryWithoutAWatchEvent()throws Exception{
+    @Test void unresolvedReceiverRetriesOnlyRelevantPackageWithoutAWatchEvent()throws Exception{
         Path file=Files.writeString(root.resolve("Use.java"),text("get"));
         try(var analyzer=new Analyzer()){
             analyzer.configure(context(),null,256L*1024*1024);
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).doesNotContain("getPets");
-            // No WatchService participates: discovery must observe directory metadata directly.
+            @SuppressWarnings("unchecked") var before=(Map<String,Object>)analyzer.status().get("live_source_state");
+            long fullBefore=((Number)before.get("reconciliations")).longValue(),targetedBefore=((Number)before.get("targeted_reconciliations")).longValue();
+            // Do not wait for WatchService: request-side recovery must inspect only this package directory.
             Files.writeString(root.resolve("Api.java"),"class Api { int getPets(){return 1;} }");
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
+            @SuppressWarnings("unchecked") var after=(Map<String,Object>)analyzer.status().get("live_source_state");
+            assertThat(((Number)after.get("reconciliations")).longValue()).isEqualTo(fullBefore);
+            assertThat(((Number)after.get("targeted_reconciliations")).longValue()).isGreaterThan(targetedBefore);
             assertThat(analyzer.status()).containsEntry("completion_computations",2L);
+        }
+    }
+
+    @Test void unresolvedFullyQualifiedReceiverReconcilesOnlyItsNamedPackage()throws Exception{
+        Path callerDir=Files.createDirectories(root.resolve("caller")),file=Files.writeString(callerDir.resolve("Use.java"),
+                "package caller; class Use { Object call(foo.Api api){return api.get();} }");
+        String source=Files.readString(file);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);
+            assertThat(complete(analyzer,file,source,"get").path("items").findValuesAsText("name")).doesNotContain("getPets");
+            Path apiDir=Files.createDirectories(root.resolve("foo"));Files.writeString(apiDir.resolve("Api.java"),"package foo; public class Api { public int getPets(){return 1;} }");
+            assertThat(complete(analyzer,file,source,"get").path("items").findValuesAsText("name")).contains("getPets");
+            @SuppressWarnings("unchecked") var state=(Map<String,Object>)analyzer.status().get("live_source_state");
+            assertThat(((Number)state.get("targeted_reconciliations")).longValue()).isPositive();
         }
     }
 
@@ -136,6 +156,89 @@ class CompletionPrefixCacheTest {
             assertThat(analyzer.status()).containsEntry("source_catalog_precise",1L).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",1L);
         }
     }
+    @Test void semanticApiIdentityReusesBodyEditsAndInvalidatesApiEdits()throws Exception{
+        Path api=Files.writeString(root.resolve("Api.java"),"class Api { int getPets(){return 1;} }");
+        Path other=Files.writeString(root.resolve("Other.java"),"class Other { int value(){return 1;} }");
+        Path file=Files.writeString(root.resolve("Use.java"),text("get"));
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);
+            assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
+            long computations=((Number)analyzer.status().get("completion_computations")).longValue();
+
+            Files.writeString(other,"class Other { int value(){int x=1; return x;} }");
+            assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
+            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations);
+
+            Files.writeString(api,"class Api { int getPets(){return 2;} }");
+            assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
+            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations);
+
+            Files.writeString(api,"class Api { int getPets(){return 2;} int getElse(){return 3;} }");
+            assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets","getElse");
+            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations+1);
+        }
+    }
+
+    @Test void receiverHierarchyProvenanceInvalidatesInheritedCandidates()throws Exception{
+        Files.writeString(root.resolve("BaseA.java"),"class BaseA { int getA(){return 1;} }");
+        Files.writeString(root.resolve("BaseB.java"),"class BaseB { int getB(){return 2;} }");
+        Path api=Files.writeString(root.resolve("Api.java"),"class Api extends BaseA {}");
+        Path file=Files.writeString(root.resolve("Use.java"),text("get"));
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);
+            assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getA").doesNotContain("getB");
+            long before=((Number)analyzer.status().get("completion_computations")).longValue();
+            Files.writeString(api,"class Api extends BaseB {}");
+            var names=complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name");
+            assertThat(names).contains("getB").doesNotContain("getA");
+            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(before+1);
+        }
+    }
+
+    @Test void negativeNameResolutionChangesInvalidateQualifiedCompletion()throws Exception{
+        Path a=Files.createDirectories(root.resolve("a")),b=Files.createDirectories(root.resolve("b"));
+        Files.writeString(a.resolve("Api.java"),"package a; public class Api { public int getA(){return 1;} }");
+        Path competing=Files.writeString(b.resolve("Api.java"),"package b; class Api { public int getB(){return 2;} }");
+        String source="import a.*; import b.*; class Use { Object call(Api api){return api.get();} }";
+        Path file=Files.writeString(root.resolve("Use.java"),source);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);
+            var before=complete(analyzer,file,source,"get").path("items").findValuesAsText("name");
+            assertThat(before).contains("getA").doesNotContain("getB");
+            long computations=((Number)analyzer.status().get("completion_computations")).longValue();
+
+            Files.writeString(competing,"package b; class Api { public int getB(){return 3;} }");
+            var bodyOnly=complete(analyzer,file,source,"get").path("items").findValuesAsText("name");
+            assertThat(bodyOnly).contains("getA").doesNotContain("getB");
+            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations);
+
+            Files.writeString(competing,"package b; public class Api { public int getB(){return 2;} }");
+            var after=complete(analyzer,file,source,"get").path("items").findValuesAsText("name");
+
+            assertThat(after).doesNotContain("getA");
+            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations+1);
+        }
+    }
+
+    @Test void sourceMembershipChangesInvalidateSemanticCompletionIdentity()throws Exception{
+        Files.writeString(root.resolve("Api.java"),"class Api { int getPets(){return 1;} }");
+        Path file=Files.writeString(root.resolve("Use.java"),text("get")),added=root.resolve("Added.java");
+        var documents=new Documents();documents.open(file,text("get"),1);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);analyzer.documents(documents);
+            assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
+            long computations=((Number)analyzer.status().get("completion_computations")).longValue();
+
+            documents.open(added,"class Added {}",1);analyzer.documents(documents);
+            assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
+            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations+1);
+
+            documents.close(added);analyzer.documents(documents);
+            assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
+            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations+2);
+        }
+    }
+
     @Test void detachedHitsStillDetectTimestampPreservingJarReplacementAndDeletion()throws Exception{
         Path jar=IndexFixtures.jar(root.resolve("repository"),"api","package lib; public class Sample { public int getPets(){return 1;} }",true);
         Path sources=Files.createDirectories(root.resolve("sources"));String source="class Use { Object call(lib.Sample api){return api.getPets();} }";

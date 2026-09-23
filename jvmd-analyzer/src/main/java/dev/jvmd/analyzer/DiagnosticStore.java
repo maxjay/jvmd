@@ -1,6 +1,6 @@
 package dev.jvmd.analyzer;
 
-import dev.jvmd.core.Envelope;
+import dev.jvmd.core.*;
 import dev.jvmd.index.FileSemanticContribution;
 import java.nio.file.Path;
 import java.util.*;
@@ -29,8 +29,8 @@ public final class DiagnosticStore {
     private long budget=32L*1024*1024,bytes,evictions;
     private long hits,misses,puts,invalidations;
     private DiagnosticSnapshots snapshots;
-    private Map<Path,String> inputHashes=Map.of();
-    public void inputHashes(Map<Path,String> hashes){inputHashes=hashes;}
+    private CompilerInputs.Snapshot inputs;
+    public void inputs(CompilerInputs.Snapshot inputs){this.inputs=inputs;}
     public void persistence(DiagnosticSnapshots snapshots){this.snapshots=snapshots;}
     public void budget(long bytes){budget=Math.max(1024,bytes);trim();}
     private void remove(Key key){files.remove(key);bytes-=weights.getOrDefault(key,0L);weights.remove(key);}
@@ -66,7 +66,7 @@ public final class DiagnosticStore {
         long size;
         try{size=512L+2L*dev.jvmd.core.Json.MAPPER.writeValueAsBytes(diagnostics).length+2L*key.toString().length()+dependencies.stream().mapToLong(p->128L+2L*p.toString().length()).sum();}
         catch(Exception error){throw new IllegalArgumentException("Diagnostic state is not detached",error);}
-        files.put(key,state);weights.put(key,size);bytes+=size;puts++;trim();if(persist&&snapshots!=null)snapshots.save(key,state,inputHashes);
+        files.put(key,state);weights.put(key,size);bytes+=size;puts++;trim();if(persist&&snapshots!=null&&inputs!=null)snapshots.save(key,state,inputs);
     }
 
     public void invalidate(Collection<Path> paths){

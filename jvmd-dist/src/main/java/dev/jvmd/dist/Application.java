@@ -228,7 +228,10 @@ public final class Application implements AutoCloseable {
     private static WorkspaceManifest workspace(Session session){return session.state("workspace_manifest",()->new WorkspaceManifest(List.of(session.root()),true));}
     private static dev.jvmd.resolver.WorkspaceOverlay overlay(Session session,Resolution graph){
         var old=(dev.jvmd.resolver.WorkspaceOverlay)session.state("overlay");
-        if(old==null||!graph.fingerprint().equals(session.state("overlay_generation"))){old=new dev.jvmd.resolver.WorkspaceOverlay(graph.modules(),workspace(session).ignoreVersions());session.put("overlay",old);session.put("overlay_generation",graph.fingerprint());}
+        if(old==null||!graph.fingerprint().equals(session.state("overlay_generation"))){
+            if(old!=null)old.close();
+            old=new dev.jvmd.resolver.WorkspaceOverlay(graph.modules(),workspace(session).ignoreVersions());session.put("overlay",old);session.put("overlay_generation",graph.fingerprint());
+        }
         return old;
     }
     private static Path sourcePath(Session session,String value){return workspace(session).resolve(session.root(),value);}

@@ -50,7 +50,7 @@ class Maven4ResolutionTest {
             var app=graph.modules().stream().filter(m->m.gav().equals("fixture:app:7")).findFirst().orElseThrow();
             assertThat(app.dependencies()).contains("fixture:library:7");
             assertThat(app.compilerOptions()).containsSubsequence("--release","25");
-            assertThat(new WorkspaceOverlay(graph.modules(),true).dependencies(graph,app.gav(),false)).extracting(Resolution.Module::gav).contains("fixture:library:7");
+            try(var overlay=new WorkspaceOverlay(graph.modules(),true,false)){assertThat(overlay.dependencies(graph,app.gav(),false)).extracting(Resolution.Module::gav).contains("fixture:library:7");}
             assertThat(resolver.resolve(root).cached()).isTrue();
             Path pom=root.resolve("pom.xml");var timestamp=Files.getLastModifiedTime(pom);
             Files.writeString(pom,Files.readString(pom).replace("<version>7</version>","<version>8</version>"));Files.setLastModifiedTime(pom,timestamp);

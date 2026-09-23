@@ -184,7 +184,7 @@ public final class LiveSourceState implements AutoCloseable {
             String overlay=documents.hash(file);if(overlay!=null)effective.put(normalize(file),overlay);
         }
         synchronized(this){
-            for(Path existing:new ArrayList<>(tree.paths()))if(!effective.containsKey(existing))tree.remove(existing);
+            for(Path existing:new ArrayList<>(tree.paths()))if(!effective.containsKey(existing))applyContent(existing,"missing");
             effective.forEach(this::applyContent);
         }
     }

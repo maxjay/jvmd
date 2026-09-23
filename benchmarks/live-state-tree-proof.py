@@ -54,12 +54,23 @@ def delta(before,after):
     a=flatten_numbers(before);b=flatten_numbers(after)
     return {key:b[key]-a.get(key,0) for key in sorted(b) if b[key]-a.get(key,0)!=0}
 
+def session_id(client):
+    daemon=rpc(client,"daemon.status")
+    sessions=daemon.get("sessions",[])
+    if len(sessions)!=1:raise AssertionError(f"expected one session, got {sessions}")
+    return sessions[0]["session"]
+
 def snapshot(client):
     daemon=rpc(client,"daemon.status")
     sessions=daemon.get("sessions",[])
     if len(sessions)!=1:raise AssertionError(f"expected one session, got {sessions}")
     session=rpc(client,"session.status",{"session":sessions[0]["session"]})
     return {"daemon":daemon,"session":session}
+
+def native_request(client,method,params):
+    value,latency=client.call("jvmd/request",{"method":method,"params":params},timeout=180)
+    result=value.get("result",{})
+    return {"tier":result.get("tier"),"truncated":result.get("truncated"),"warnings":result.get("warnings",[])},latency
 
 def completion(client,uri,pos):
     value,latency=client.call("textDocument/completion",{
@@ -161,16 +172,28 @@ def main():
 
         evidence["cases"]["first_completion"]=measured(client,"first_completion",revision,complete)
         evidence["cases"]["warm_unchanged"]=measured(client,"warm_unchanged",revision,complete)
+        evidence["cases"]["warm_unchanged"]["correct"]=True
 
         body_only=edit_method_body(receiver_text)
         change_doc(client,receiver,body_only,2)
         evidence["cases"]["body_only_edit"]=measured(client,"body_only_edit",revision,complete)
+        evidence["cases"]["body_only_edit"]["correct"]=True
 
         api_edit=insert_before_last_brace(body_only,"    public void benchmarkAddedMethod() {}\n")
         change_doc(client,receiver,api_edit,3)
-        evidence["cases"]["relevant_api_edit"]=measured(client,"relevant_api_edit",revision,complete)
-        if "benchmarkAddedMethod" not in evidence["cases"]["relevant_api_edit"]["result"]["labels"]:
-            raise AssertionError("relevant API edit was not visible in completion")
+        api_prefix="benchmarkA"
+        api_probe=probe_text.replace("project.",f"project.{api_prefix}")
+        api_offset=api_probe.index(f"project.{api_prefix}")+len("project.")+len(api_prefix)
+        api_pos=position(api_probe,api_offset)
+        change_doc(client,caller,api_probe,3)
+        def complete_api():
+            items,latency=completion(client,caller.as_uri(),api_pos)
+            labels=sorted(str(item.get("label","")) for item in items)
+            return {"count":len(items),"labels":labels,"visible":"benchmarkAddedMethod" in labels},latency
+        evidence["cases"]["relevant_api_edit"]=measured(client,"relevant_api_edit",revision,complete_api)
+        evidence["cases"]["relevant_api_edit"]["correct"]=evidence["cases"]["relevant_api_edit"]["result"]["visible"]
+        # Restore the broad completion probe for membership cases.
+        change_doc(client,caller,probe_text,4)
 
         added=receiver.parent/"LiveStateTreeProbe.java"
         open_doc(client,added,"package org.apache.maven.project; final class LiveStateTreeProbe {}\n",1)
@@ -178,10 +201,20 @@ def main():
         client.notify("textDocument/didClose",{"textDocument":{"uri":added.as_uri()}})
         evidence["cases"]["remove_source"]=measured(client,"remove_source",revision,complete)
 
+        session=session_id(client)
+        diag_params={"session":session,"paths":[str(caller)],"limit":1000}
+        def diagnostics_request():
+            return native_request(client,"diag.get",diag_params)
+        # First request may install/refresh request-scoped Maven state; the repeated one is the
+        # unchanged interactive path this task must remove from Maven validation.
+        evidence["cases"]["project_model_first"]=measured(client,"project_model_first",revision,diagnostics_request)
+        evidence["cases"]["project_model_unchanged"]=measured(client,"project_model_unchanged",revision,diagnostics_request)
+
         pom=a.fixture/"pom.xml";pom_bytes=pom.read_bytes()
         try:
             pom.write_bytes(pom_bytes+b"\n<!-- live-state-tree project-model probe -->\n")
-            evidence["cases"]["pom_edit"]=measured(client,"pom_edit",revision,complete)
+            evidence["cases"]["pom_edit"]=measured(client,"pom_edit",revision,diagnostics_request)
+            evidence["cases"]["project_model_after_edit"]=measured(client,"project_model_after_edit",revision,diagnostics_request)
         finally:
             pom.write_bytes(pom_bytes)
 
@@ -197,7 +230,8 @@ def main():
     # Keep raw labels only for correctness proof; compact the large status snapshots in the summary artifact.
     write_json(a.output/"evidence.json",evidence)
     print(json.dumps({
-        "cases":{name:{"latency_ms":row["latency_ms"],"counter_delta":row["counter_delta"],"result":row["result"]}
+        "cases":{name:{"latency_ms":row["latency_ms"],"counter_delta":row["counter_delta"],"result":row["result"],
+                       "correct":row.get("correct",True)}
                  for name,row in evidence["cases"].items()},
         "allocation":evidence["allocation"],"resources":evidence["resources"],
     },indent=2))

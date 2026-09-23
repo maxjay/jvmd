@@ -39,9 +39,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private final DiagnosticStore diagnosticStore=new DiagnosticStore();
     private LinkedHashMap<String,Envelope> outlines=new LinkedHashMap<>(16,.75f,true);
     private record Cached(Path file,String hash,String stamp,int start,int end,List<Focusing.Span> excluded,CompilerPool.Outcome<Bindings.Snapshot> result) { }
-    private record CompletionCached(String key,String prefix,long sourceEpoch,Set<Path> dependencies,CompilerPool.Outcome<List<Map<String,Object>>> result) {
+    private record CompletionCached(String key,String apiIdentity,String prefix,long sourceEpoch,Set<Path> dependencies,CompilerPool.Outcome<List<Map<String,Object>>> result) {
         CompletionCached { dependencies=Set.copyOf(dependencies); }
     }
+    private record CompletionValidation(CompletionCached cached,boolean apiCurrent) { }
     private record Outline(List<Map<String,Object>> symbols,Set<Path> dependencies) { }
     private LinkedHashMap<String,Cached> focused=new LinkedHashMap<>(32,.75f,true);
     private final Dependencies dependencies=new Dependencies();
@@ -65,7 +66,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var caches=modules.computeIfAbsent(context.generation(),_->new ModuleCaches());
         outlines=caches.outlines;focused=caches.focused;
         this.context=context;this.index=index;this.budget=budget;diagnosticStore.budget(Math.max(1024*1024,budget/8));
-        completionContextIdentity=CompilerInputs.compose("completion-context-v1",
+        String newCompletionContextIdentity=CompilerInputs.compose("completion-context-v1",
                 context.gav(),context.release(),context.generation(),
                 context.classpath().stream().map(p->p.toAbsolutePath().normalize().toString()).toList(),
                 context.sources().stream().map(p->p.toAbsolutePath().normalize().toString()).toList(),
@@ -74,6 +75,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 new TreeMap<>(context.coordinates()),
                 context.navigationSources().stream().map(p->p.toAbsolutePath().normalize().toString()).toList(),
                 context.preciseSourceRoots());
+        if(!newCompletionContextIdentity.equals(completionContextIdentity)){
+            caches.completion=null;caches.completionSourceEpoch=-1;caches.completionNeedsDiscoveryRefresh=false;
+        }
+        completionContextIdentity=newCompletionContextIdentity;
         compiler=compilerPools.computeIfAbsent(context.generation(),_->new CompilerPool(inputFiles));
         compiler.configure(context.generation(),context.release(),context.classpath(),context.sources(),index,budget,context.compilerOptions(),context.preciseSourceRoots());
         compiler.binarySources(context.binarySources());
@@ -92,7 +97,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private void synchronizeKnownSources(Path requested)throws Exception{
         requested=requested.toAbsolutePath().normalize();
         // Analyzer-owned/session-owned documents are the sole live source owner for compiler reads.
-        compiler.documents(documents);
+        compiler.documents(documents);liveSourceState=documents.liveState(context.sources());
         var queue=new ArrayDeque<Path>();var seen=new LinkedHashSet<Path>();queue.add(requested);
         while(!queue.isEmpty()){
             Path file=queue.removeFirst().toAbsolutePath().normalize();
@@ -394,12 +399,15 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             compiler.invalidateSourceInventory();
             caches.completionNeedsDiscoveryRefresh=false;
         }
-        var cached=caches.completion;
-        if(cached!=null){cached=refreshCompletionDependencies(path,cached);caches.completion=cached;}
+        var cached=caches.completion;boolean cachedApiCurrent=true;
+        if(cached!=null){
+            var validation=refreshCompletionDependencies(path,cached);
+            cached=validation==null?null:validation.cached();cachedApiCurrent=validation!=null&&validation.apiCurrent();caches.completion=cached;
+        }
         long sourceEpoch=compiler.sourceStateGeneration();
         long phaseStarted=System.nanoTime();var observed=inputSnapshot();String key=completionKey(path,patched,start,observed);keyNanos=System.nanoTime()-phaseStarted;
         CompilerPool.Outcome<List<Map<String,Object>>> outcome;
-        if(key!=null&&cached!=null&&key.equals(cached.key())&&prefix.startsWith(cached.prefix())){
+        if(key!=null&&cached!=null&&cachedApiCurrent&&key.equals(cached.key())&&prefix.startsWith(cached.prefix())){
             completionCacheHits++;cacheHit=true;outcome=cached.result();
         }else{
             completionComputations++;phaseStarted=System.nanoTime();
@@ -421,7 +429,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 if(ensureCompletionSemantics(completionDependencies)){
                     dependencies.recordFocused(path,completionDependencies);
                     String admittedKey=completionKey(path,patched,start,observed);
-                    caches.completion=new CompletionCached(admittedKey,prefix,live.snapshot().inputEpoch(),completionDependencies,
+                    String apiIdentity=completionApiIdentity(completionDependencies);
+                    caches.completion=new CompletionCached(admittedKey,apiIdentity,prefix,live.snapshot().inputEpoch(),completionDependencies,
                             new CompilerPool.Outcome<>(2,outcome.result(),List.of(),List.of()));
                     caches.completionSourceEpoch=live.snapshot().inputEpoch();
                 }
@@ -443,7 +452,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return new Envelope(outcome.tier(),"live",to<values.size(),to<values.size()?Integer.toString(to):null,warnings(outcome.warnings()),Map.of("items",values.subList(from,to),"range",new SourceText(text).range(start,end)));
         }
     }
-    private CompletionCached refreshCompletionDependencies(Path caller,CompletionCached cached)throws Exception{
+    private CompletionValidation refreshCompletionDependencies(Path caller,CompletionCached cached)throws Exception{
         var live=documents.liveState(context.sources());
         live.observe(cached.dependencies());
         var changed=live.changedPathsSince(cached.sourceEpoch());
@@ -458,7 +467,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 if(result.tier()!=2||result.result()==null||!result.warnings().isEmpty())return null;
             }
         }
-        return new CompletionCached(cached.key(),cached.prefix(),live.snapshot().inputEpoch(),cached.dependencies(),cached.result());
+        String currentApi=completionApiIdentity(cached.dependencies());
+        var refreshed=new CompletionCached(cached.key(),cached.apiIdentity(),cached.prefix(),live.snapshot().inputEpoch(),cached.dependencies(),cached.result());
+        return new CompletionValidation(refreshed,Objects.equals(currentApi,cached.apiIdentity()));
     }
     private Set<Path> completionDependencies(Path caller,List<Map<String,Object>> rows){
         var result=new TreeSet<Path>(Comparator.comparing(Path::toString));var live=documents.liveState(context.sources());
@@ -483,14 +494,22 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         return true;
     }
+    private String completionApiIdentity(Set<Path> completionDependencies){
+        var values=new TreeMap<String,String>();
+        for(Path dependency:completionDependencies){
+            var contribution=contribution(dependency);
+            values.put(dependency.toAbsolutePath().normalize().toString(),contribution==null?"unknown":contribution.apiFingerprint());
+        }
+        return CompilerInputs.compose("completion-dependency-api-v1",values);
+    }
     private static double millis(long nanos){return Math.round(nanos/1000.0)/1000.0;}
     private String completionKey(Path file,String patched,int start,CompilerInputs.Snapshot inputs){
         if(patched.length()>256*1024)return null;
         var state=inputs.live().snapshot().state();String patchedHash=Hashing.sha256(patched.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         completionKeyMaterialBytes+=completionContextIdentity.length()+file.toString().length()+patchedHash.length()+inputs.environment().value().length()
-                +state.membership().fingerprint().value().length()+state.namespace().fingerprint().value().length()+state.api().fingerprint().value().length()+32;
+                +state.membership().fingerprint().value().length()+state.namespace().fingerprint().value().length()+24;
         return CompilerInputs.compose("completion-v2",completionContextIdentity,file.toString(),start,patchedHash,inputs.environment().value(),
-                state.membership().fingerprint().value(),state.namespace().fingerprint().value(),state.api().fingerprint().value());
+                state.membership().fingerprint().value(),state.namespace().fingerprint().value());
     }
 
     public Envelope signatureHelp(Path path,String text,int line,int character)throws Exception{

@@ -80,12 +80,12 @@ public final class LiveSourceState implements AutoCloseable {
         for(var item:sourceChanges)if(item.epoch()>epoch)changed.add(item.file());
         return Optional.of(Set.copyOf(changed));
     }
-    /** Result-size package lookup; membership is maintained on mutations rather than rebuilt on requests. */
     /** Path-derived binary lookup from maintained package membership; does not inventory the workspace. */
     public synchronized Optional<Source> source(String binary){
         Objects.requireNonNull(binary);int split=binary.lastIndexOf('.');String pkg=split<0?"":binary.substring(0,split);
-        return Optional.ofNullable(sourcesByPackage.getOrDefault(pkg,new TreeMap<>()).get(binary));
+        var values=sourcesByPackage.get(pkg);return Optional.ofNullable(values==null?null:values.get(binary));
     }
+    /** Result-size package lookup; membership is maintained on mutations rather than rebuilt on requests. */
     public synchronized List<Source> sources(Collection<Path> requestedRoots,String packageName,boolean recurse){
         var selected=requestedRoots.stream().map(LiveSourceState::normalize).toList();
         var result=new ArrayList<Source>();

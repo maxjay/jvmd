@@ -93,28 +93,43 @@ The existing implementation already has pieces that must be consolidated rather 
 
 ## Baseline
 
-Status: **in progress**.
+Status: **complete**.
 
-Evidence must come from the existing real Apache Maven `CMP-01` completion scenario. Temporary instrumentation may be added only to measure the current computational shape and will be removed in Phase 6.
+Evidence: PR-local **Live State Tree Proof** run [35804584433](https://github.com/maxjay/jvmd/actions/runs/35804584433), measured at `db3166f18cfd50c92d4950f9d16ad0a4029434ad`. The proof reuses the pinned Apache Maven source files from `CMP-01`; the temporary workflow/script/counters remain only until the final after-capture in Phase 6.
 
 | Metric | Before | After |
 | --- | ---: | ---: |
-| warm completion latency | pending | pending |
-| warm completion allocation | pending | pending |
-| metadata checks/request | pending | pending |
-| source entries visited/request | pending | pending |
-| hashes/request | pending | pending |
-| completion-key entries visited | pending | pending |
-| Maven resolver calls on unchanged request | pending | pending |
-| project-model inputs validated/request | pending | pending |
-| relevant API edit latency | pending | pending |
-| body-only edit reuse | pending | pending |
+| warm completion latency | 794.375 ms | pending |
+| warm completion allocation | 185,434,528 B inclusive thread allocation | pending |
+| metadata checks/request | 41,408 | pending |
+| source entries visited/request | 2,400 | pending |
+| files hashed/request | 0 | pending |
+| bytes hashed/request | 0 | pending |
+| source inventory calls/request | 218 | pending |
+| directories enumerated/request | 2,172 | pending |
+| completion-key entries visited/sorted | 1,200 / 1,200 | pending |
+| completion-key material bytes | 496,150 B | pending |
+| Maven resolver calls on unchanged `deps.graph` | 1 | pending |
+| project-model inputs validated/request | 195 | pending |
+| project-model bytes hashed/request | 241,632 B | pending |
+| Resolution JSON response bytes/request | 1,260,384 B | pending |
+| relevant API edit latency | 741.699 ms | pending |
+| body-only edit reuse | **no** — recomputed | pending |
 
-Baseline change: none yet.
-Tests: none yet.
-PR-local measurement: pending.
-Remaining discrepancy: current request path still reconstructs identities.
-Commit: pending.
+Additional baseline facts:
+
+- Warm completion calls `CompilerInputs.capture()` twice, inspects 3,774 environment candidates, and performs one full completion computation.
+- The completion request itself crossed the Maven resolver boundary twice and serialized 2,520,768 response bytes.
+- A relevant unsaved API edit did **not** expose `benchmarkAddedMethod`; the Apache Maven completion result was empty. This is recorded as a pre-existing correctness failure, not hidden or treated as acceptable final behavior.
+- The unrelated body-edit probe also recomputed completion instead of reusing it.
+- A POM edit cost 3,416.834 ms in this run; the next unchanged project-model request still validated 195 inputs and re-hashed 241,678 bytes.
+- Run-wide peak heap observed was 499,862,944 B. Peak process-tree RSS was 1,158,774,784 B (server peak 1,054,912,512 B).
+
+Baseline change: temporary counters plus disposable proof workflow/script only; no production ownership changed.
+Tests: repository Tests and ordinary Benchmarks passed on the baseline branch.
+PR-local measurement: complete; evidence artifact retained by GitHub Actions for the PR evidence window.
+Remaining discrepancy: the request path still reconstructs source/environment identity and the Apache Maven completion correctness mismatch remains to be fixed by the semantic completion cutover.
+Commit: `bb2ffe2` introduced the measurement mechanism; `db3166f` is the accepted baseline evidence revision.
 
 ## Phase 1 — canonical state primitives
 

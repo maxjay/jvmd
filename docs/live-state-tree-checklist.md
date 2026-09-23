@@ -5,12 +5,12 @@ Base: `4ac68eaf77a9c0ecb271a78366f442ec9fa6e2c5`
 A phase is complete only when the previous ownership path is either removed or explicitly marked temporary with the next removal step.
 
 ## Baseline — real Apache Maven
-- [ ] Instrument the existing Apache Maven completion scenario without adding a new permanent scenario.
-- [ ] Capture CompilerInputs capture calls, source candidates inspected, metadata checks, files/bytes hashed, inventory calls and directory enumerations.
-- [ ] Capture completion-key source entries visited/sorted and key material bytes.
-- [ ] Capture Maven resolver calls/cache hits, project-model inputs checked/bytes hashed, Resolution JSON bytes where measurable.
-- [ ] Capture request latency, request allocation and peak heap/RSS with the same mechanism used after the change.
-- [ ] Record evidence in progress; keep measurement machinery temporary.
+- [x] Instrument the existing Apache Maven completion scenario without adding a new permanent scenario.
+- [x] Capture CompilerInputs capture calls, source candidates inspected, metadata checks, files/bytes hashed, inventory calls and directory enumerations.
+- [x] Capture completion-key source entries visited/sorted and key material bytes.
+- [x] Capture Maven resolver calls/cache hits, project-model inputs checked/bytes hashed, Resolution JSON bytes where measurable.
+- [x] Capture request latency, request allocation and peak heap/RSS with the same mechanism used after the change.
+- [x] Record evidence in progress; keep measurement machinery temporary.
 
 ## Phase 1 — canonical state primitives
 - [ ] Define path-bound leaf identities for membership/content/API/namespace.

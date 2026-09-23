@@ -63,7 +63,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         compiler=compilerPools.computeIfAbsent(context.generation(),_->new CompilerPool(inputFiles));
         compiler.configure(context.generation(),context.release(),context.classpath(),context.sources(),index,budget,context.compilerOptions(),context.preciseSourceRoots());
         compiler.binarySources(context.binarySources());
-        liveSourceState=documents.liveState(context.sources());
     }
     public void documents(Documents documents){this.documents=documents;if(snapshots!=null)snapshots.documents(documents);compiler.documents(documents);dependencies.documentHash(documents::hash);dependencies.fileStates(documents.fileStates());if(context!=null)liveSourceState=documents.liveState(context.sources());}
     private List<String> warnings(List<String> query){if(context.warnings().isEmpty())return query;var all=new LinkedHashSet<String>(context.warnings());all.addAll(query);return List.copyOf(all);}

@@ -103,10 +103,19 @@ public final class LiveSourceState implements AutoCloseable {
      */
     public void observe(Collection<Path> paths){for(Path path:paths)refresh(path);}
     public void observe(Path path){refresh(path);}
-    /** Bounded delivery fence for graph-wide validation; never enumerates source owners. */
+    /**
+     * Delivery fence for graph-wide validation. Drain WatchService keys directly instead of
+     * sleeping for the background watcher; cost is proportional to queued mutations, never owners.
+     */
     public void settleWatchEvents()throws IOException{
         if(verificationOnly){reconcile();return;}
-        java.util.concurrent.locks.LockSupport.parkNanos(java.util.concurrent.TimeUnit.MICROSECONDS.toNanos(250));
+        WatchService current; synchronized(this){current=watcher;}
+        if(current==null){reconcile();return;}
+        WatchKey first=null;
+        try{first=current.poll(2,java.util.concurrent.TimeUnit.MILLISECONDS);}
+        catch(InterruptedException interrupted){Thread.currentThread().interrupt();markUncertain("source watch settlement interrupted");reconcile();return;}
+        if(first!=null)processWatchKey(first);
+        for(WatchKey key;(key=current.poll())!=null;)processWatchKey(key);
         synchronized(this){if(!trusted)reconcile();}
     }
 
@@ -304,29 +313,37 @@ public final class LiveSourceState implements AutoCloseable {
             try{key=watcher.take();}
             catch(InterruptedException stopped){Thread.currentThread().interrupt();return;}
             catch(ClosedWatchServiceException stopped){return;}
-            Path directory=watchKeys.get(key);boolean reconcile=false;
-            if(directory==null){key.reset();continue;}
-            for(WatchEvent<?> event:key.pollEvents()){
-                if(event.kind()==StandardWatchEventKinds.OVERFLOW){
-                    synchronized(this){overflows++;}markUncertain("filesystem watch overflow");reconcile=true;continue;
-                }
-                if(!(event.context() instanceof Path relative))continue;
-                Path changed=normalize(directory.resolve(relative));
-                try{
-                    if(event.kind()==StandardWatchEventKinds.ENTRY_CREATE&&Files.isDirectory(changed,LinkOption.NOFOLLOW_LINKS)){
-                        registerTree(changed);reconcile=true;
-                    }else if(event.kind()==StandardWatchEventKinds.ENTRY_DELETE&&watchedDirectories.contains(changed))reconcile=true;
+            try{processWatchKey(key);}catch(IOException failed){markUncertain("filesystem watch processing failed: "+failed.getClass().getSimpleName());}
+        }
+    }
+    private void processWatchKey(WatchKey key)throws IOException{
+        Path directory; synchronized(this){directory=watchKeys.get(key);}
+        boolean reconcile=false;
+        if(directory==null){key.reset();return;}
+        for(WatchEvent<?> event:key.pollEvents()){
+            if(event.kind()==StandardWatchEventKinds.OVERFLOW){
+                synchronized(this){overflows++;}markUncertain("filesystem watch overflow");reconcile=true;continue;
+            }
+            if(!(event.context() instanceof Path relative))continue;
+            Path changed=normalize(directory.resolve(relative));
+            try{
+                if(event.kind()==StandardWatchEventKinds.ENTRY_CREATE&&Files.isDirectory(changed,LinkOption.NOFOLLOW_LINKS)){
+                    registerTree(changed);reconcile=true;
+                }else{
+                    boolean watched; synchronized(this){watched=watchedDirectories.contains(changed);}
+                    if(event.kind()==StandardWatchEventKinds.ENTRY_DELETE&&watched)reconcile=true;
                     else if(changed.toString().endsWith(".java"))refresh(changed);
                     else if(relevantBoundary(changed))reconcile=true;
-                }catch(IOException observation){
-                    markUncertain("filesystem watch registration failed: "+changed);reconcile=true;
                 }
+            }catch(IOException observation){
+                markUncertain("filesystem watch registration failed: "+changed);reconcile=true;
             }
-            if(!key.reset()){
-                watchKeys.remove(key);watchedDirectories.remove(directory);markUncertain("filesystem watch key invalid: "+directory);reconcile=true;
-            }
-            if(reconcile)try{reconcile();}catch(IOException ignored){}
         }
+        if(!key.reset()){
+            synchronized(this){watchKeys.remove(key);watchedDirectories.remove(directory);}
+            markUncertain("filesystem watch key invalid: "+directory);reconcile=true;
+        }
+        if(reconcile)reconcile();
     }
     private boolean relevantBoundary(Path path){
         for(Path root:roots)if(path.startsWith(root)||root.startsWith(path))return true;return false;

@@ -31,12 +31,12 @@ A phase is complete only when the previous ownership path is either removed or e
 - [x] Prove mutations update only the information domains that changed.
 
 ## Phase 3 — CompilerInputs cutover
-- [ ] Replace request-time source-universe reconstruction with constant-sized canonical state identities.
-- [ ] Capture state + epoch at compiler transaction start.
-- [ ] Validate at compiler-safe boundary using identities/epoch, not Map<Path,String> reconstruction.
-- [ ] Remove source-wide warm request validation.
-- [ ] Keep source text correctness for javac reads without rebuilding the world.
-- [ ] Run the same Apache Maven measurements and record before/after evidence.
+- [x] Replace request-time source-universe reconstruction with constant-sized canonical state identities.
+- [x] Capture state + epoch at compiler transaction start.
+- [x] Validate at compiler-safe boundary using identities/epoch, not Map<Path,String> reconstruction.
+- [x] Remove source-wide warm request validation.
+- [x] Keep source text correctness for javac reads without rebuilding the world.
+- [x] Run the same Apache Maven measurements and record before/after evidence.
 
 ## Phase 4 — completion identity cutover
 - [ ] Remove Context.toString() from completion key construction.

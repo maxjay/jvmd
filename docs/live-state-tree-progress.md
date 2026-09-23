@@ -155,14 +155,19 @@ Commit: `81ccee5` live ingestion, `230f59e` canonical Rocks projection, `b826943
 
 ## Phase 3 — CompilerInputs cutover
 
-Status: **not started**.
+Status: **complete**.
 
-Baseline evidence: pending.
-Change: pending.
-Tests: pending.
-PR-local measurement: pending.
-Remaining discrepancy: pending.
-Commit: pending.
+Baseline evidence: accepted baseline proof run 35804584433 at `db3166f`. The post-cutover proof is run 35849676844 at `2917a17`; ordinary prepared-workspace Benchmarks run 35849676837 passed, and the repository Phase-4 compiler checkpoint in Tests run 35849676843 passed.
+
+Change: `CompilerInputs.Snapshot` now captures the canonical `LiveSourceState` identities and source-input epoch instead of a request-built `Map<Path,String>`. `CompilerPool` fences javac transactions on the captured source epoch/membership/content identities, validates implicit source bytes as they are actually read, and synchronously observes only explicit compilation units at transaction boundaries. `IndexedFileManager` reads package/source membership from the mutation-maintained live state. `WorkspaceBindings` updates its retained file facts from the live changed-path journal and only performs explicit owner enumeration at compatibility/cold ownership boundaries.
+
+Tests: permanent live-state, source-transition, preserved-mtime, A→B→A, implicit-read, editor-overlay, cross-root, retry and compiler lifecycle tests all pass through the Phase-4 compiler checkpoint. Two correctness repairs were required by the gate: explicit focused/completion buffers are immutable task inputs and must not be compared to the original file hash; direct request/retry boundaries synchronously observe their bounded relevant source set so correctness does not depend on WatchService scheduling.
+
+PR-local measurement: on Apache Maven warm unchanged proof, compiler source reconstruction fell from 2 captures / 2,400 source entries inspected / 218 source inventory calls to 1 capture / **0 source candidates inspected / 0 source inventory calls**. Directory enumerations in the proof interval fell from 2,172 to 1,155 and metadata checks from 41,408 to 17,044. Warm inclusive thread allocation fell from 185,434,528 B to 143,360,416 B. The proof latency moved from 794.375 ms to 531.788 ms, but this number is retained only as computational-shape evidence because the disposable Apache completion probe itself still returns an empty completion result and is not a correctness oracle. The normal prepared-workspace benchmark is the correctness oracle and is green.
+
+Remaining discrepancy: environment identity is still reconstructed/validated on requests (3,774 environment candidates in the warm proof), completion still sorts/visits 1,200 source entries and materializes ~496 KB of key material, and unchanged Maven project-model requests still cross the resolver boundary and validate 195 inputs / hash ~241 KB / serialize ~1.26 MB. Those are Phase 4 and Phase 5 ownership paths, not source-state work.
+
+Commits: `e861b6e` through `098e750` perform the source-state cutover; `34a5946`, `de5056f`, `6ddc700`, `e14b9d3`, and `2917a17` close deterministic transaction/retry/completion-boundary correctness gaps without restoring workspace scans.
 
 ## Phase 4 — completion identity cutover
 

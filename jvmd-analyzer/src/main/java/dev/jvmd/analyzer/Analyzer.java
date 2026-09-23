@@ -73,6 +73,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     /** Observe this source and the source dependency graph already learned from prior attribution. */
     private void synchronizeKnownSources(Path requested)throws Exception{
         requested=requested.toAbsolutePath().normalize();
+        // Analyzer-owned/session-owned documents are the sole live source owner for compiler reads.
+        compiler.documents(documents);
         var queue=new ArrayDeque<Path>();var seen=new LinkedHashSet<Path>();queue.add(requested);
         while(!queue.isEmpty()){
             Path file=queue.removeFirst().toAbsolutePath().normalize();

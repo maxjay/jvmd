@@ -42,7 +42,7 @@ public final class CompilerInputs {
         public ApiIdentity api(){return new ApiIdentity(state().api().fingerprint().value());}
         public NamespaceIdentity namespace(){return new NamespaceIdentity(state().namespace().fingerprint().value());}
         public String merkle(){return state().merkle().value();}
-        public long observation(){return state().epoch();}
+        public long observation(){return sourceState.inputEpoch();}
         public boolean trusted(){return sourceState.trusted();}
         public boolean sameInputs(Snapshot other){
             return other!=null&&membership().equals(other.membership())&&content().equals(other.content())&&environment.equals(other.environment);
@@ -50,7 +50,7 @@ public final class CompilerInputs {
         /** Strict compiler transaction fence: any intervening live transition supersedes the task. */
         public boolean transactionCurrent(){
             var current=live.snapshot();
-            return sourceState.trusted()&&current.trusted()&&current.state().epoch()==state().epoch()
+            return sourceState.trusted()&&current.trusted()&&current.inputEpoch()==sourceState.inputEpoch()
                     &&current.state().membership().equals(state().membership())
                     &&current.state().content().equals(state().content());
         }

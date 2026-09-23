@@ -399,8 +399,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var caches=modules.get(context.generation());
         if(caches.completionNeedsDiscoveryRefresh){
             // An unresolved receiver can leave javac's pooled scope tied to the old source namespace.
-            // Reconcile membership, then discard that task context before retrying discovery.
-            compiler.invalidateSourceInventory();
+            // Reconcile only packages this caller can name, then discard that task context.
+            compiler.discoverSourcePackages(completionDiscoveryPackages(text));
             compiler.resetSourceContext();
             caches.completionSourceEpoch=-1;
             caches.completionNeedsDiscoveryRefresh=false;
@@ -502,6 +502,19 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             }
         }
         return true;
+    }
+    private static Set<String> completionDiscoveryPackages(String text){
+        var result=new LinkedHashSet<String>();var packageMatch=java.util.regex.Pattern.compile("(?m)^\\s*package\\s+([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)\\s*;").matcher(text);
+        String current=packageMatch.find()?packageMatch.group(1):"";result.add(current);
+        var imports=java.util.regex.Pattern.compile("(?m)^\\s*import\\s+(static\\s+)?([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$*][\\w$*]*)*)\\s*;").matcher(text);
+        while(imports.find()){
+            boolean statik=imports.group(1)!=null;String name=imports.group(2);
+            if(name.endsWith(".*"))name=name.substring(0,name.length()-2);
+            int cut=name.lastIndexOf('.');
+            if(statik&&cut>=0){name=name.substring(0,cut);cut=name.lastIndexOf('.');}
+            if(cut>=0)result.add(name.substring(0,cut));else if(!statik)result.add("");
+        }
+        return Set.copyOf(result);
     }
     private static double millis(long nanos){return Math.round(nanos/1000.0)/1000.0;}
     private String completionKey(Path file,String patched,int start,boolean qualified,CompilerInputs.Snapshot inputs){

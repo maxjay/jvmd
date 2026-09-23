@@ -38,7 +38,7 @@ public final class LiveSourceState implements AutoCloseable {
     private Thread watchThread;
     private boolean trusted,closed;
     private String uncertainty="";
-    private long events,reconciliations,overflows,semanticUpdates,staleSemanticUpdates;
+    private long events,reconciliations,targetedReconciliations,overflows,semanticUpdates,staleSemanticUpdates;
 
     LiveSourceState(FileStateRegistry files,Documents documents,Collection<Path> sourceRoots) {
         this.files=Objects.requireNonNull(files);this.documents=Objects.requireNonNull(documents);
@@ -99,6 +99,63 @@ public final class LiveSourceState implements AutoCloseable {
      */
     public void observe(Collection<Path> paths){for(Path path:paths)refresh(path);}
     public void observe(Path path){refresh(path);}
+
+    /**
+     * Reconcile only exact source-package directories. This is the synchronous discovery fallback
+     * for an unresolved completion; it never inventories an entire source root.
+     */
+    public void reconcilePackages(Collection<String> packageNames)throws IOException{
+        var packages=packageNames.stream().filter(Objects::nonNull).distinct().toList();
+        for(String packageName:packages){
+            String relative=packageName.replace('.',java.io.File.separatorChar);
+            for(Path root:roots)reconcilePackage(root,relative,packageName);
+        }
+        synchronized(this){targetedReconciliations++;}
+    }
+    private void reconcilePackage(Path root,String relative,String packageName)throws IOException{
+        Path directory=relative.isEmpty()?root:root.resolve(relative).normalize();
+        var effective=new TreeMap<Path,String>();
+        for(Path file:directJavaFiles(directory))effective.put(file,files.hash(file));
+        for(Path file:documents.paths()){
+            Path normalized=normalize(file);
+            if(accepts(normalized)&&Objects.equals(normalized.getParent(),directory)){
+                String overlay=documents.hash(normalized);if(overlay!=null)effective.put(normalized,overlay);
+            }
+        }
+        synchronized(this){
+            var existing=new ArrayList<Path>();
+            for(var source:sourcesByPackage.getOrDefault(packageName,new TreeMap<>()).values())
+                if(Objects.equals(source.file().getParent(),directory))existing.add(source.file());
+            for(Path file:existing)if(!effective.containsKey(file))applyContent(file,"missing");
+            effective.forEach(this::applyContent);
+        }
+        if(watcher!=null&&Files.isDirectory(directory,LinkOption.NOFOLLOW_LINKS))registerDirectory(directory);
+    }
+    private List<Path> directJavaFiles(Path directory)throws IOException{
+        for(int attempt=0;attempt<4;attempt++){
+            Object before=directoryEvidence(directory);List<Path> files;
+            try(var stream=Files.list(directory)){
+                files=stream.filter(path->path.getFileName().toString().endsWith(".java"))
+                        .filter(path->Files.isRegularFile(path,LinkOption.NOFOLLOW_LINKS))
+                        .map(LiveSourceState::normalize).sorted().toList();
+            }catch(NoSuchFileException missing){files=List.of();}
+            Object after=directoryEvidence(directory);
+            if(Objects.equals(before,after))return files;
+        }
+        throw new CompilerInputs.Superseded("Source package changed repeatedly during reconciliation: "+directory);
+    }
+    private static Object directoryEvidence(Path directory)throws IOException{
+        try{
+            var attrs=Files.readAttributes(directory,"unix:size,lastModifiedTime,ctime,ino,isDirectory",LinkOption.NOFOLLOW_LINKS);
+            return Map.copyOf(attrs);
+        }catch(NoSuchFileException missing){return "missing";}
+        catch(UnsupportedOperationException|IllegalArgumentException unsupported){
+            try{
+                var attrs=Files.readAttributes(directory,java.nio.file.attribute.BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS);
+                return List.of(attrs.isDirectory(),attrs.size(),attrs.lastModifiedTime().toMillis(),Objects.toString(attrs.fileKey(),""));
+            }catch(NoSuchFileException missing){return "missing";}
+        }
+    }
 
     /** Feed the canonical API/export identities extracted by the existing semantic contribution path. */
     public synchronized boolean semantic(Path path,String sourceHash,String apiFingerprint,Collection<String> exportedNames){
@@ -212,7 +269,8 @@ public final class LiveSourceState implements AutoCloseable {
             for(Path path:paths.filter(p->Files.isDirectory(p,LinkOption.NOFOLLOW_LINKS)).toList())registerDirectory(path);
         }
     }
-    private void registerDirectory(Path directory) throws IOException {
+    private synchronized void registerDirectory(Path directory) throws IOException {
+        if(watcher==null)return;
         directory=normalize(directory);if(!watchedDirectories.add(directory))return;
         WatchKey key=directory.register(watcher,StandardWatchEventKinds.ENTRY_CREATE,StandardWatchEventKinds.ENTRY_MODIFY,StandardWatchEventKinds.ENTRY_DELETE);
         watchKeys.put(key,directory);
@@ -257,7 +315,7 @@ public final class LiveSourceState implements AutoCloseable {
         return Map.ofEntries(
                 Map.entry("trusted",trusted),Map.entry("epoch",state.epoch()),Map.entry("input_epoch",inputEpoch),Map.entry("files",state.files()),
                 Map.entry("merkle",state.merkle().value()),Map.entry("events",events),Map.entry("reconciliations",reconciliations),
-                Map.entry("overflows",overflows),Map.entry("semantic_updates",semanticUpdates),
+                Map.entry("targeted_reconciliations",targetedReconciliations),Map.entry("overflows",overflows),Map.entry("semantic_updates",semanticUpdates),
                 Map.entry("stale_semantic_updates",staleSemanticUpdates),Map.entry("watched_directories",watchedDirectories.size()),
                 Map.entry("uncertainty",uncertainty));
     }

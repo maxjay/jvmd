@@ -89,14 +89,19 @@ class CompletionPrefixCacheTest {
             assertThat(analyzer.status().get("completion_computations")).isEqualTo(4L);
         }
     }
-    @Test void unresolvedReceiverRetriesSourceDiscoveryWithoutAWatchEvent()throws Exception{
+    @Test void unresolvedReceiverRetriesOnlyRelevantPackageWithoutAWatchEvent()throws Exception{
         Path file=Files.writeString(root.resolve("Use.java"),text("get"));
         try(var analyzer=new Analyzer()){
             analyzer.configure(context(),null,256L*1024*1024);
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).doesNotContain("getPets");
-            // No WatchService participates: discovery must observe directory metadata directly.
+            @SuppressWarnings("unchecked") var before=(Map<String,Object>)analyzer.status().get("live_source_state");
+            long fullBefore=((Number)before.get("reconciliations")).longValue(),targetedBefore=((Number)before.get("targeted_reconciliations")).longValue();
+            // Do not wait for WatchService: request-side recovery must inspect only this package directory.
             Files.writeString(root.resolve("Api.java"),"class Api { int getPets(){return 1;} }");
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
+            @SuppressWarnings("unchecked") var after=(Map<String,Object>)analyzer.status().get("live_source_state");
+            assertThat(((Number)after.get("reconciliations")).longValue()).isEqualTo(fullBefore);
+            assertThat(((Number)after.get("targeted_reconciliations")).longValue()).isGreaterThan(targetedBefore);
             assertThat(analyzer.status()).containsEntry("completion_computations",2L);
         }
     }

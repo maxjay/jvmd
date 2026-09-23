@@ -78,6 +78,12 @@ public final class CompilerPool implements AutoCloseable {
         liveDocuments.liveState(configuredSources).observe(paths);
         refreshSourceModules();
     }
+    /** Targeted unresolved-source discovery; package directories only, never all source roots. */
+    public void discoverSourcePackages(Collection<String> packages)throws IOException{
+        checkThread();ensureDocumentsAttached();
+        liveDocuments.liveState(configuredSources).reconcilePackages(packages);
+        refreshSourceModules();
+    }
     public CompilerInputs.Snapshot inputSnapshot()throws java.io.IOException {
         checkThread();ensureDocumentsAttached();return inputs.capture(inputConfiguration,liveDocuments);
     }

@@ -41,7 +41,7 @@ public final class LiveSourceState implements AutoCloseable {
     private String uncertainty="";
     private long events,reconciliations,targetedReconciliations,overflows,semanticUpdates,staleSemanticUpdates;
 
-    private final boolean verificationOnly;
+    private volatile boolean verificationOnly;
     LiveSourceState(FileStateRegistry files,Documents documents,Collection<Path> sourceRoots){this(files,documents,sourceRoots,true);}
     LiveSourceState(FileStateRegistry files,Documents documents,Collection<Path> sourceRoots,boolean watchEnabled) {
         this.files=Objects.requireNonNull(files);this.documents=Objects.requireNonNull(documents);
@@ -81,6 +81,11 @@ public final class LiveSourceState implements AutoCloseable {
         return Optional.of(Set.copyOf(changed));
     }
     /** Result-size package lookup; membership is maintained on mutations rather than rebuilt on requests. */
+    /** Path-derived binary lookup from maintained package membership; does not inventory the workspace. */
+    public synchronized Optional<Source> source(String binary){
+        Objects.requireNonNull(binary);int split=binary.lastIndexOf('.');String pkg=split<0?"":binary.substring(0,split);
+        return Optional.ofNullable(sourcesByPackage.getOrDefault(pkg,new TreeMap<>()).get(binary));
+    }
     public synchronized List<Source> sources(Collection<Path> requestedRoots,String packageName,boolean recurse){
         var selected=requestedRoots.stream().map(LiveSourceState::normalize).toList();
         var result=new ArrayList<Source>();
@@ -334,14 +339,18 @@ public final class LiveSourceState implements AutoCloseable {
                     else if(relevantBoundary(changed))reconcile=true;
                 }
             }catch(IOException observation){
-                markUncertain("filesystem watch registration failed: "+changed);reconcile=true;
+                enterVerificationOnly("filesystem watch registration failed: "+changed);reconcile=true;
             }
         }
         if(!key.reset()){
             synchronized(this){watchKeys.remove(key);watchedDirectories.remove(directory);}
-            markUncertain("filesystem watch key invalid: "+directory);reconcile=true;
+            enterVerificationOnly("filesystem watch key invalid: "+directory);reconcile=true;
         }
         if(reconcile)reconcile();
+    }
+    private void enterVerificationOnly(String reason){
+        verificationOnly=true;
+        markUncertain(reason);
     }
     private boolean relevantBoundary(Path path){
         for(Path root:roots)if(path.startsWith(root)||root.startsWith(path))return true;return false;

@@ -114,7 +114,7 @@ public final class CompilerInputs {
                 var live=documents.liveState(config.roots());live.verifyTransactionBoundary();var source=live.snapshot();
                 var environment=environmentSnapshot(config);
                 var current=new Snapshot(live,source,environment.identity(),environment.epoch());
-                if(snapshot==null||snapshot.observation()!=current.observation()||!snapshot.sameInputs(current)){
+                if(snapshot==null||snapshot.observation()!=current.observation()||snapshot.environmentEpoch()!=current.environmentEpoch()||!snapshot.sameInputs(current)){
                     snapshot=current;rebuilds++;RequestScope.count("snapshot_rebuilds",1);
                 }
                 return snapshot;

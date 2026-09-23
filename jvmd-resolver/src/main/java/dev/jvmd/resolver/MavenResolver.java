@@ -67,21 +67,35 @@ public final class MavenResolver implements AutoCloseable {
         }
         synchronized boolean current(){
             if(closed||dirty)return false;
-            drain();return !dirty;
+            drain();
+            if(!dirty)settleDelivery();
+            return !dirty;
+        }
+        private void settleDelivery(){
+            if(watcher==null){dirty=true;return;}
+            try{
+                // Linux/macOS WatchService delivery is asynchronous to the write syscall. A tiny
+                // fixed grace period establishes the request boundary without inspecting inputs.
+                WatchKey key=watcher.poll(2,java.util.concurrent.TimeUnit.MILLISECONDS);
+                if(key!=null){process(key);drain();}
+            }catch(InterruptedException interrupted){
+                Thread.currentThread().interrupt();dirty=true;
+            }
         }
         private void drain(){
             if(watcher==null){dirty=true;return;}
-            for(WatchKey key;(key=watcher.poll())!=null;){
-                Path directory=directories.get(key);
-                for(var event:key.pollEvents()){
-                    events++;
-                    if(event.kind()==StandardWatchEventKinds.OVERFLOW){overflows++;dirty=true;continue;}
-                    if(directory==null||!(event.context() instanceof Path relative)){dirty=true;continue;}
-                    Path changed=directory.resolve(relative).toAbsolutePath().normalize();
-                    if(relevant.contains(changed))dirty=true;
-                }
-                if(!key.reset()){directories.remove(key);dirty=true;}
+            for(WatchKey key;(key=watcher.poll())!=null;)process(key);
+        }
+        private void process(WatchKey key){
+            Path directory=directories.get(key);
+            for(var event:key.pollEvents()){
+                events++;
+                if(event.kind()==StandardWatchEventKinds.OVERFLOW){overflows++;dirty=true;continue;}
+                if(directory==null||!(event.context() instanceof Path relative)){dirty=true;continue;}
+                Path changed=directory.resolve(relative).toAbsolutePath().normalize();
+                if(relevant.contains(changed))dirty=true;
             }
+            if(!key.reset()){directories.remove(key);dirty=true;}
         }
         synchronized long events(){drain();return events;}
         synchronized long overflows(){drain();return overflows;}

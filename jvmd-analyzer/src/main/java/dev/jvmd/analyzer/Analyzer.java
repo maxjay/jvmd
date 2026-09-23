@@ -24,6 +24,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         final LinkedHashMap<String,Cached> focused=new LinkedHashMap<>(32,.75f,true);
         final Set<Path> files=new HashSet<>();
         CompletionCached completion;
+        long completionSourceEpoch=-1;
+        boolean completionNeedsDiscoveryRefresh;
     }
     private final Map<String,ModuleCaches> modules=new LinkedHashMap<>();
     private long classpathFingerprints;
@@ -375,14 +377,23 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         while(end<text.length()&&Character.isJavaIdentifierPart(text.codePointAt(end)))end+=Character.charCount(text.codePointAt(end));
         String prefix=text.substring(start,cursor),patched=text.substring(0,start)+EditorQueries.MARKER+text.substring(end);int focusCursor=start;
         synchronizeKnownSources(path);touch(path,text);
-        var caches=modules.get(context.generation());long phaseStarted=System.nanoTime();var observed=inputSnapshot();String key=completionKey(path,patched,start,observed);keyNanos=System.nanoTime()-phaseStarted;
+        var caches=modules.get(context.generation());
+        if(caches.completionNeedsDiscoveryRefresh){
+            compiler.invalidateSourceInventory();
+            caches.completionNeedsDiscoveryRefresh=false;
+        }
+        long sourceEpoch=compiler.sourceStateGeneration();
+        long phaseStarted=System.nanoTime();var observed=inputSnapshot();String key=completionKey(path,patched,start,observed);keyNanos=System.nanoTime()-phaseStarted;
         var cached=caches.completion;CompilerPool.Outcome<List<Map<String,Object>>> outcome;
         if(key!=null&&cached!=null&&key.equals(cached.key())&&prefix.startsWith(cached.prefix())){
             completionCacheHits++;cacheHit=true;outcome=cached.result();
         }else{
             // Completion may discover sources with no reverse-dependency edge yet.
             // Refresh javac's disk content cache before reading those declarations.
-            completionComputations++;phaseStarted=System.nanoTime();compiler.sourcesChanged();sourceRefreshNanos=System.nanoTime()-phaseStarted;
+            completionComputations++;phaseStarted=System.nanoTime();
+            if(caches.completionSourceEpoch>=0&&caches.completionSourceEpoch!=sourceEpoch)compiler.recycle();
+            else compiler.sourcesChanged();
+            sourceRefreshNanos=System.nanoTime()-phaseStarted;
             phaseStarted=System.nanoTime();var focus=focusing.focus(path,patched,focusCursor);focusNanos=System.nanoTime()-phaseStarted;
             phaseStarted=System.nanoTime();
             outcome=compiler.query(path,focus.source(),2,observed,(task,units,tier)->EditorQueries.completion(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),prefix,profile));
@@ -394,7 +405,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             // created source may make that receiver resolvable before a WatchService event arrives.
             // Also discard the discovery catalog: flushing javac alone still leaves a newly
             // created receiver invisible when its filesystem event has not arrived yet.
-            if(outcome.result()==null||outcome.result().isEmpty())compiler.invalidateSourceInventory();
+            caches.completionNeedsDiscoveryRefresh=outcome.result()==null||outcome.result().isEmpty();
+            caches.completionSourceEpoch=sourceEpoch;
             caches.completion=key!=null&&outcome.tier()==2&&outcome.warnings().isEmpty()&&outcome.result()!=null&&!outcome.result().isEmpty()&&outcome.result().size()<=256
                     &&Json.MAPPER.writeValueAsBytes(outcome.result()).length<=256*1024?new CompletionCached(key,prefix,new CompilerPool.Outcome<>(2,outcome.result(),List.of(),List.of())):null;
             cacheAdmissionNanos=System.nanoTime()-phaseStarted;

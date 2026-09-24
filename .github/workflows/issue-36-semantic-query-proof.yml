@@ -1,0 +1,185 @@
+name: Issue 36 semantic query proof
+
+on:
+  push:
+    branches: [issue-36-semantic-query]
+    paths:
+      - '.github/workflows/issue-36-semantic-query-proof.yml'
+      - 'benchmarks/issue-36-proof/**'
+      - 'docs/issue-36-semantic-query-checklist.md'
+      - 'docs/issue-36-semantic-query-progress.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-36-semantic-query-proof
+  cancel-in-progress: true
+
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+
+    steps:
+      - name: Checkout frozen proof harness
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 1
+
+      - name: Resolve measured subject
+        id: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(tr -d '[:space:]' < benchmarks/issue-36-proof/subject-sha.txt)"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "ISSUE36_SUBJECT_SHA=$sha" >> "$GITHUB_ENV"
+
+      - name: Checkout exact measured subject
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: maxjay/jvmd
+          ref: ${{ steps.subject.outputs.sha }}
+          path: measured-subject
+          fetch-depth: 1
+
+      - name: Verify subject and frozen LSP dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C measured-subject rev-parse HEAD)" = "$ISSUE36_SUBJECT_SHA"
+          test "$(git -C measured-subject hash-object benchmarks/lsp-scenarios/harness/LspScenarioHarness.ts)" = c03aaf64125e6f8a5bcf9c1ca913d888016639e5
+          test "$(git -C measured-subject hash-object benchmarks/lsp-scenarios/harness/phases.ts)" = f34dcab8b75fca873b6f3b36faaad5179af79d54
+          test "$(git -C measured-subject hash-object benchmarks/lsp-scenarios/run.ts)" = 9c3d68325c1998d244de299779a025bbf40764bc
+          test "$(git -C measured-subject hash-object benchmarks/lsp-scenarios/scenarios/CMP-01-completion.ts)" = 54a1f2b90de331971be6a12d7bffe3584dd6d807
+          test "$(git -C measured-subject hash-object benchmarks/lsp-scenarios/expected/CMP-01.json)" = ecd13e7f2ea627675eeb3dca9100601d7f826c6a
+          test "$(git -C measured-subject hash-object benchmarks/lsp-scenarios/package.json)" = 7e9e4f923abdfe37d771f9a6ca65f2190144b682
+          {
+            echo "subject=$ISSUE36_SUBJECT_SHA"
+            sha256sum benchmarks/issue-36-proof/Issue36SemanticProofTest.java
+            git hash-object .github/workflows/issue-36-semantic-query-proof.yml
+          } | tee "$RUNNER_TEMP/issue36-harness-identity.txt"
+
+      - name: Install pinned JDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tools" "$RUNNER_TEMP/downloads"
+          if [[ ! -f "$RUNNER_TEMP/downloads/temurin25.tar.gz" ]]; then
+            curl -fsSL --retry 3               'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz'               -o "$RUNNER_TEMP/downloads/temurin25.tar.gz"
+          fi
+          printf '%s  %s\n'             dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e             "$RUNNER_TEMP/downloads/temurin25.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/downloads/temurin25.tar.gz" -C "$RUNNER_TEMP/tools"
+          echo "JAVA_HOME=$RUNNER_TEMP/tools/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/tools/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.m2/repository
+            !~/.m2/repository/dev/jvmd
+          key: issue36-maven-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('measured-subject/**/pom.xml') }}
+          restore-keys: issue36-maven-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+
+      - name: Install frozen LSP harness dependency
+        working-directory: measured-subject
+        run: npm install --prefix benchmarks/lsp-scenarios --ignore-scripts
+
+      - name: Restore prepared Apache Maven fixture
+        id: fixture
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/apache-maven-issue36
+          key: issue36-apache-maven-5cd1b60264101080c712accd605180a4bd9222e0-v1
+
+      - name: Prepare Apache Maven fixture
+        if: steps.fixture.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/apache/maven.git "$RUNNER_TEMP/apache-maven-issue36"
+          git -C "$RUNNER_TEMP/apache-maven-issue36" checkout 5cd1b60264101080c712accd605180a4bd9222e0
+          mvn -B -f "$RUNNER_TEMP/apache-maven-issue36/pom.xml" -DskipTests install
+
+      - name: Build exact subject
+        working-directory: measured-subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          mvn -B -DskipTests install
+          bash jvmd-dist/assemble.sh
+          test "$(git rev-parse HEAD)" = "$ISSUE36_SUBJECT_SHA"
+
+      - name: CMP-01 incomplete receiver baseline
+        working-directory: measured-subject
+        shell: bash
+        env:
+          FIXTURE_ROOT: ${{ runner.temp }}/apache-maven-issue36
+          MODE: compare
+          SERVER: jvmd
+          REPORT_FILE: ${{ runner.temp }}/issue36-cmp01.json
+        run: |
+          set -euo pipefail
+          export GITHUB_SHA="$ISSUE36_SUBJECT_SHA"
+          export JAVA_TOOL_OPTIONS="-XX:StartFlightRecording=filename=$RUNNER_TEMP/issue36-cmp01.jfr,settings=profile,dumponexit=true -XX:FlightRecorderOptions=stackdepth=128"
+          node benchmarks/lsp-scenarios/run.ts
+          "$JAVA_HOME/bin/jfr" summary "$RUNNER_TEMP/issue36-cmp01.jfr" > "$RUNNER_TEMP/issue36-cmp01-jfr-summary.txt"
+          "$JAVA_HOME/bin/jfr" print --events jdk.ObjectAllocationSample --stack-depth 24 "$RUNNER_TEMP/issue36-cmp01.jfr" > "$RUNNER_TEMP/issue36-cmp01-allocations.txt"
+
+      - name: Inject frozen semantic proof test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp benchmarks/issue-36-proof/Issue36SemanticProofTest.java             measured-subject/jvmd-tests/src/test/java/dev/jvmd/tests/Issue36SemanticProofTest.java
+
+      - name: Run semantic proof matrix with JFR
+        working-directory: measured-subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          for scenario in query-matrix semantic-mutations dependency-proofs namespace-negative classpath-composition; do
+            report="$RUNNER_TEMP/issue36-$scenario.json"
+            recording="$RUNNER_TEMP/issue36-$scenario.jfr"
+            mvn -B -pl jvmd-tests               -Dtest=Issue36SemanticProofTest               -Dissue36.scenario="$scenario"               -Dissue36.report="$report"               -DargLine="-XX:StartFlightRecording=filename=$recording,settings=profile,dumponexit=true -XX:FlightRecorderOptions=stackdepth=128"               test
+            "$JAVA_HOME/bin/jfr" summary "$recording" > "$RUNNER_TEMP/issue36-$scenario-jfr-summary.txt"
+            "$JAVA_HOME/bin/jfr" print --events jdk.ObjectAllocationSample --stack-depth 24 "$recording" > "$RUNNER_TEMP/issue36-$scenario-allocations.txt"
+          done
+
+      - name: Emit proof evidence
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          echo "## Issue #36 proof subject"
+          cat "$RUNNER_TEMP/issue36-harness-identity.txt" || true
+          for file in "$RUNNER_TEMP"/issue36-*.json; do
+            [[ -f "$file" ]] || continue
+            echo "===== $(basename "$file") ====="
+            cat "$file"
+          done
+          for file in "$RUNNER_TEMP"/issue36-*-jfr-summary.txt; do
+            [[ -f "$file" ]] || continue
+            echo "===== $(basename "$file") ====="
+            cat "$file"
+          done
+
+      - name: Upload Issue #36 proof evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: issue-36-semantic-query-proof-${{ steps.subject.outputs.sha }}
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/issue36-harness-identity.txt
+            ${{ runner.temp }}/issue36-*.json
+            ${{ runner.temp }}/issue36-*.jfr
+            ${{ runner.temp }}/issue36-*-jfr-summary.txt
+            ${{ runner.temp }}/issue36-*-allocations.txt

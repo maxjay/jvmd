@@ -739,7 +739,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             int selector=start-1;while(selector>=0&&Character.isWhitespace(text.charAt(selector)))selector--;
             boolean qualified=selector>=0&&text.charAt(selector)=='.';
             synchronizeKnownSources(path);touch(path,text);
-            var observed=inputSnapshot();String residentKey=residentContextKey(path,patched,start,observed,qualified);
+            var observed=validatedInputs();String residentKey=residentContextKey(path,patched,start,observed,qualified);
             Envelope resident;
             try{
                 resident=qualified

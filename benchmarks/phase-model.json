@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "states": [
+    "startup",
+    "initialize",
+    "workspace_ready",
+    "document_admission",
+    "first_use",
+    "warmup",
+    "steady"
+  ],
+  "defaults": {
+    "warmup": 2,
+    "steady_samples": 20
+  },
+  "rules": {
+    "startup": "Process launch to observable protocol/service milestones; never counted as query latency.",
+    "initialize": "LSP initialize request send to initialize response receive, followed by initialized notification.",
+    "workspace_ready": "Server-specific normal service-ready boundary. Target operations must not run to establish readiness.",
+    "document_admission": "Open/change notifications through an explicit server-observed current-document boundary. Any diagnostics used as the boundary are recorded as preparation.",
+    "first_use": "First request of the measured operation/target after documented preparation. No operation-specific warmup may precede it.",
+    "warmup": "Symmetric operation-specific requests whose rows are retained but excluded from steady statistics.",
+    "steady": "Measured operation samples after the configured warmup count; only correct samples contribute to latency percentiles."
+  }
+}

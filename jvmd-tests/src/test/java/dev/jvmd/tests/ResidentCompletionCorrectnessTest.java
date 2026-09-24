@@ -89,6 +89,39 @@ class ResidentCompletionCorrectnessTest {
         }
     }
 
+    @Test void subtypeDeclarationsSuppressOverriddenAndHiddenInheritedMembers()throws Exception{
+        Files.writeString(root.resolve("Base.java"),"""
+                class Base {
+                    Number value(){return 1;}
+                    int field;
+                    int overload(int x){return x;}
+                    int overload(String x){return x.length();}
+                }
+                """);
+        Files.writeString(root.resolve("Api.java"),"""
+                class Api extends Base {
+                    @Override Integer value(){return 2;}
+                    int field;
+                    @Override int overload(int x){return x+1;}
+                }
+                """);
+        String source="class Use { Object f(Api api){ return api.; } }";
+        Path use=Files.writeString(root.resolve("Use.java"),source);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);
+            var items=complete(analyzer,use,source,"api.");
+            var values=new ArrayList<JsonNode>();var fields=new ArrayList<JsonNode>(),overloads=new ArrayList<JsonNode>();
+            for(var item:items){
+                if(item.path("name").asText().equals("value"))values.add(item);
+                if(item.path("name").asText().equals("field"))fields.add(item);
+                if(item.path("name").asText().equals("overload"))overloads.add(item);
+            }
+            assertThat(values).hasSize(1);assertThat(values.getFirst().path("label").asText()).contains("java.lang.Integer");
+            assertThat(fields).hasSize(1);
+            assertThat(overloads).hasSize(2);
+        }
+    }
+
     @Test void documentationOnlyEditPreservesCandidatesWhileRemovalAndRenameChangeThem()throws Exception{
         Path api=Files.writeString(root.resolve("Api.java"),"""
                 class Api {

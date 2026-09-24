@@ -44,6 +44,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         DocumentSemanticCached { resolutionIdentities=Map.copyOf(resolutionIdentities);dependencyApis=Map.copyOf(dependencyApis);hierarchyApi=Objects.requireNonNullElse(hierarchyApi,""); }
     }
     private record Outline(List<Map<String,Object>> symbols,Set<Path> dependencies) { }
+    private static final class CompletionAdvanceFailure extends Exception {
+        final List<String> warnings;
+        CompletionAdvanceFailure(List<String> warnings){super(String.join("; ",warnings));this.warnings=List.copyOf(warnings);}
+    }
     private LinkedHashMap<String,Cached> focused=new LinkedHashMap<>(32,.75f,true);
     private final Dependencies dependencies=new Dependencies();
     private final LinkedHashMap<String,SourceText> sourceTexts=new LinkedHashMap<>(16,.75f,true);
@@ -479,7 +483,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             boolean superseded=attributed.warnings().stream().allMatch(w->w.startsWith("diagnostics_superseded"));
             if(superseded&&supersededRetries<1)
                 return qualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,inputSnapshot(),true,discovered,supersededRetries+1);
-            throw new IllegalStateException(String.join("; ",attributed.warnings()));
+            throw new CompletionAdvanceFailure(attributed.warnings());
         }
         if(attributed.tier()!=2)return null;
         if(result==null&&!discovered){
@@ -539,7 +543,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             boolean superseded=attributed.warnings().stream().allMatch(w->w.startsWith("diagnostics_superseded"));
             if(superseded&&supersededRetries<1)
                 return unqualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,inputSnapshot(),true,discovered,supersededRetries+1);
-            throw new IllegalStateException(String.join("; ",attributed.warnings()));
+            throw new CompletionAdvanceFailure(attributed.warnings());
         }
         if(attributed.tier()!=2)return null;
         if(result==null&&!discovered){
@@ -598,9 +602,16 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             boolean qualified=selector>=0&&text.charAt(selector)=='.';
             synchronizeKnownSources(path);touch(path,text);
             var observed=inputSnapshot();String residentKey=residentContextKey(path,patched,start,observed,qualified);
-            var resident=qualified
-                    ?residentQualifiedCompletion(path,text,patched,start,end,focusCursor,prefix,limit,offset,residentKey,observed)
-                    :residentUnqualifiedCompletion(path,text,patched,start,end,focusCursor,prefix,limit,offset,residentKey,observed);
+            Envelope resident;
+            try{
+                resident=qualified
+                        ?residentQualifiedCompletion(path,text,patched,start,end,focusCursor,prefix,limit,offset,residentKey,observed)
+                        :residentUnqualifiedCompletion(path,text,patched,start,end,focusCursor,prefix,limit,offset,residentKey,observed);
+            }catch(CompletionAdvanceFailure failure){
+                completionRequests++;
+                return new Envelope(1,"live",false,null,warnings(failure.warnings),
+                        Map.of("items",List.of(),"range",new SourceText(text).range(start,end)));
+            }
             if(resident!=null)return resident;
 
             completionRequests++;

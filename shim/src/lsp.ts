@@ -65,7 +65,14 @@ export class LspBridge {
   private activeRequests=new Set<string|number|null>();
   private rootAliases:{canonical:string;client:string}[]=[];
   private documentUris=new Map<string,string>();
-  constructor(getClient:()=>Promise<RpcCaller>,root:string,send:(message:Message)=>void,exit:(code:number)=>void=code=>{process.exitCode=code;}){this.getClient=getClient;this.root=root;this.send=send;this.exit=exit;}
+  private timing:{diagnosticDebounceMs:number;maxDiagnosticDeferralMs:number};
+  constructor(
+    getClient:()=>Promise<RpcCaller>,root:string,send:(message:Message)=>void,
+    exit:(code:number)=>void=code=>{process.exitCode=code;},
+    timing={diagnosticDebounceMs:DIAGNOSTIC_DEBOUNCE_MS,maxDiagnosticDeferralMs:MAX_DIAGNOSTIC_DEFERRAL_MS},
+  ){
+    this.getClient=getClient;this.root=root;this.send=send;this.exit=exit;this.timing=timing;
+  }
   getClient:()=>Promise<RpcCaller>;root:string;send:(message:Message)=>void;exit:(code:number)=>void;
   handle(message:Message):Promise<void>{
     const method=message.method||"",uri=message.params?.textDocument?.uri;
@@ -198,11 +205,11 @@ export class LspBridge {
   }
   private finishInteractive(){
     this.activeInteractive=Math.max(0,this.activeInteractive-1);if(this.activeInteractive)return;
-    // The daemon session has one analyzer owner. Give already-arrived editor work a quiet
-    // window before admitting background diagnostics, without starving diagnostics forever.
+    // Re-arm only within the original absolute deferral deadline. Repeated short
+    // interactive calls may move the quiet-window timer, but never move that deadline.
     for(const [uri,plan] of this.diagnosticPlans){
       if(!this.diagnosticCurrent(uri,plan.generation,plan.version))continue;
-      this.clearTimer(uri);this.armDiagnostic(uri,plan,DIAGNOSTIC_DEBOUNCE_MS);
+      this.clearTimer(uri);this.armDiagnostic(uri,plan,this.diagnosticDelay(plan));
     }
   }
   private async notification(message:Message){
@@ -245,13 +252,20 @@ export class LspBridge {
   }
   private schedule(uri:string,generation:number,version:number){
     this.clearTimer(uri);if(this.shutdownRequested)return;
-    const plan={generation,version,dueSince:Date.now()};this.diagnosticPlans.set(uri,plan);this.armDiagnostic(uri,plan,DIAGNOSTIC_DEBOUNCE_MS);
+    const plan={generation,version,dueSince:Date.now()};this.diagnosticPlans.set(uri,plan);
+    this.armDiagnostic(uri,plan,this.diagnosticDelay(plan));
+  }
+  private diagnosticDelay(plan:{dueSince:number}){
+    const remaining=this.timing.maxDiagnosticDeferralMs-(Date.now()-plan.dueSince);
+    return Math.max(0,Math.min(this.timing.diagnosticDebounceMs,remaining));
   }
   private armDiagnostic(uri:string,plan:{generation:number;version:number;dueSince:number},delay:number){
     const timer=setTimeout(()=>{
       this.timers.delete(uri);
       if(this.diagnosticPlans.get(uri)!==plan||!this.diagnosticCurrent(uri,plan.generation,plan.version)){if(this.diagnosticPlans.get(uri)===plan)this.diagnosticPlans.delete(uri);return;}
-      if(this.activeInteractive>0&&Date.now()-plan.dueSince<MAX_DIAGNOSTIC_DEFERRAL_MS){this.armDiagnostic(uri,plan,DIAGNOSTIC_DEBOUNCE_MS);return;}
+      if(this.activeInteractive>0&&Date.now()-plan.dueSince<this.timing.maxDiagnosticDeferralMs){
+        this.armDiagnostic(uri,plan,this.diagnosticDelay(plan));return;
+      }
       this.diagnosticPlans.delete(uri);
       const barrier=this.mutationTails.get(uri),work=this.diagnostic(uri,plan.generation,plan.version,barrier);
       this.diagnosticJobs.set(uri,work);this.track(work);void work.then(()=>{if(this.diagnosticJobs.get(uri)===work)this.diagnosticJobs.delete(uri);});

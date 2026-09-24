@@ -52,7 +52,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private long completionCacheHits,completionComputations,completionRequests;
     private long completionKeyNanos,completionSourceRefreshNanos,completionFocusNanos,completionQueryNanos,completionEditorNanos,
             completionCandidateNanos,completionRowNanos,completionDocNanos,completionSortNanos,completionCacheAdmissionNanos,
-            completionFilterNanos,completionTotalNanos,completionCandidatesSeen,completionRowsMaterialized,completionDocLookups;
+            completionFilterNanos,completionTotalNanos,completionCandidatesSeen,completionRowsMaterialized,completionDocLookups,
+            completionGetAllMembersCalls,completionScopeTraversals,completionScipComputations,completionSignatureComputations,
+            completionAsMemberOfCalls,completionSorts,completionSortInputs,completionRowsReturned,completionRowsDiscardedAfterLimit,completionResultBytes;
     private Map<String,Double> completionLastTimingMs=Map.of();private boolean completionLastCacheHit;
     private Context context;
     private String completionContextIdentity="";
@@ -444,19 +446,23 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             }
             cacheAdmissionNanos=System.nanoTime()-phaseStarted;
         }
-        phaseStarted=System.nanoTime();var values=outcome.result()==null?List.<Map<String,Object>>of():outcome.result().stream().filter(row->row.get("name").toString().startsWith(prefix)).toList();int from=Math.min(offset,values.size()),to=Math.min(values.size(),from+limit);filterNanos=System.nanoTime()-phaseStarted;
+        phaseStarted=System.nanoTime();var values=outcome.result()==null?List.<Map<String,Object>>of():outcome.result().stream().filter(row->row.get("name").toString().startsWith(prefix)).toList();int from=Math.min(offset,values.size()),to=Math.min(values.size(),from+limit);var returned=values.subList(from,to);long resultBytes=Json.MAPPER.writeValueAsBytes(returned).length;filterNanos=System.nanoTime()-phaseStarted;
         long totalNanos=System.nanoTime()-requestStarted;
         completionRequests++;completionKeyNanos+=keyNanos;completionSourceRefreshNanos+=sourceRefreshNanos;completionFocusNanos+=focusNanos;completionQueryNanos+=queryNanos;
         completionEditorNanos+=profile.totalNanos();completionCandidateNanos+=profile.candidateNanos();completionRowNanos+=profile.rowNanos();completionDocNanos+=profile.docNanos();
         completionSortNanos+=profile.sortNanos();completionCacheAdmissionNanos+=cacheAdmissionNanos;completionFilterNanos+=filterNanos;completionTotalNanos+=totalNanos;
-        completionCandidatesSeen+=profile.candidates();completionRowsMaterialized+=profile.rows();completionDocLookups+=profile.docs();completionLastCacheHit=cacheHit;
+        completionCandidatesSeen+=profile.candidates();completionRowsMaterialized+=profile.rows();completionDocLookups+=profile.docs();
+        completionGetAllMembersCalls+=profile.getAllMembersCalls();completionScopeTraversals+=profile.scopeTraversals();completionScipComputations+=profile.scipComputations();
+        completionSignatureComputations+=profile.signatureComputations();completionAsMemberOfCalls+=profile.asMemberOfCalls();completionSorts+=profile.sorts();completionSortInputs+=profile.sortInputs();
+        completionRowsReturned+=returned.size();completionRowsDiscardedAfterLimit+=Math.max(0,values.size()-to);completionResultBytes+=resultBytes;completionLastCacheHit=cacheHit;
         trace.cache(cacheHit?"prefix-hit":"recompute");trace.count("candidates_examined",profile.candidates());trace.count("rows_built",profile.rows());trace.count("documentation_lookups",profile.docs());
+        trace.count("get_all_members_calls",profile.getAllMembersCalls());trace.count("scope_traversals",profile.scopeTraversals());trace.count("as_member_of_calls",profile.asMemberOfCalls());
         completionLastTimingMs=Map.ofEntries(
                 Map.entry("key",millis(keyNanos)),Map.entry("source_refresh",millis(sourceRefreshNanos)),Map.entry("focus",millis(focusNanos)),
                 Map.entry("compiler_query",millis(queryNanos)),Map.entry("editor_total",millis(profile.totalNanos())),Map.entry("candidate_discovery",millis(profile.candidateNanos())),
                 Map.entry("row_materialization",millis(profile.rowNanos())),Map.entry("documentation",millis(profile.docNanos())),Map.entry("sort",millis(profile.sortNanos())),
                 Map.entry("cache_admission",millis(cacheAdmissionNanos)),Map.entry("filter",millis(filterNanos)),Map.entry("total",millis(totalNanos)));
-        return new Envelope(outcome.tier(),"live",to<values.size(),to<values.size()?Integer.toString(to):null,warnings(outcome.warnings()),Map.of("items",values.subList(from,to),"range",new SourceText(text).range(start,end)));
+        return new Envelope(outcome.tier(),"live",to<values.size(),to<values.size()?Integer.toString(to):null,warnings(outcome.warnings()),Map.of("items",returned,"range",new SourceText(text).range(start,end)));
         }
     }
     private CompletionValidation refreshCompletionDependencies(Path caller,CompletionCached cached)throws Exception{
@@ -595,6 +601,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(liveSourceState!=null)result.put("live_source_state",liveSourceState.status());
         result.put("completion_cache_hits",completionCacheHits);result.put("completion_computations",completionComputations);result.put("completion_requests",completionRequests);
         result.put("completion_candidates_seen",completionCandidatesSeen);result.put("completion_rows_materialized",completionRowsMaterialized);result.put("completion_doc_lookups",completionDocLookups);
+        result.put("completion_get_all_members_calls",completionGetAllMembersCalls);result.put("completion_scope_traversals",completionScopeTraversals);
+        result.put("completion_scip_computations",completionScipComputations);result.put("completion_signature_computations",completionSignatureComputations);
+        result.put("completion_as_member_of_calls",completionAsMemberOfCalls);result.put("completion_sort_count",completionSorts);result.put("completion_sort_input_size",completionSortInputs);
+        result.put("completion_rows_returned",completionRowsReturned);result.put("completion_rows_discarded_after_limit",completionRowsDiscardedAfterLimit);result.put("completion_result_bytes",completionResultBytes);
         result.put("completion_last_cache_hit",completionLastCacheHit);result.put("completion_last_timing_ms",completionLastTimingMs);
         result.put("completion_timing_ms",Map.ofEntries(
                 Map.entry("key",millis(completionKeyNanos)),Map.entry("source_refresh",millis(completionSourceRefreshNanos)),Map.entry("focus",millis(completionFocusNanos)),

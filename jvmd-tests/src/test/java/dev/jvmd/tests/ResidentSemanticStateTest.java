@@ -29,6 +29,14 @@ class ResidentSemanticStateTest {
                 "file-api","file-ns",facts.length==0?"":String.join(",",Arrays.stream(facts).map(SemanticFact::documentationIdentity).toList()),Set.of());
     }
 
+    @Test void canonicalFactIdentityIsStableAndFieldSensitive(){
+        var first=member("A#m().","A#","m","api-m","doc-a");
+        var same=member("A#m().","A#","m","api-m","doc-a");
+        var changed=member("A#m().","A#","m","api-m","doc-b");
+        assertThat(first.factIdentity()).isEqualTo(same.factIdentity());
+        assertThat(changed.factIdentity()).isNotEqualTo(first.factIdentity());
+    }
+
     @Test void algebraicDomainsBindSemanticKeyAndCardinality(){
         var first=new ResidentSemanticState();
         first.admit(snapshot("one",member("A#m().","A#","m","api-shared","doc-shared"),member("A#n().","A#","n","api-other","doc-other")));

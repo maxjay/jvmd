@@ -37,7 +37,7 @@ public record SemanticDelta(
         for(var entry:next.facts().entrySet()){
             var old=oldFacts.get(entry.getKey());
             if(old==null)added.put(entry.getKey(),entry.getValue());
-            else if(!old.equals(entry.getValue()))changed.put(entry.getKey(),entry.getValue());
+            else if(!old.factIdentity().equals(entry.getValue().factIdentity()))changed.put(entry.getKey(),entry.getValue());
         }
         var removed=new LinkedHashSet<String>(oldFacts.keySet());removed.removeAll(next.facts().keySet());
 

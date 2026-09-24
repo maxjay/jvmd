@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.*;
 
+@Tag("phase-1")
 class QueryProofTest {
     private static Hash256 hash(String value){
         return Hash256.sha256(value.getBytes(StandardCharsets.UTF_8));

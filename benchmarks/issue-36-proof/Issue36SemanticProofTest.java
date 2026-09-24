@@ -3,7 +3,7 @@ package dev.jvmd.tests;
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.jvmd.analyzer.Analyzer;
 import dev.jvmd.core.Documents;
-import dev.jvmd.core.Json;
+import dev.jvmd.core.Json;\nimport dev.jvmd.index.IndexService;
 import java.lang.management.ManagementFactory;
 import java.nio.file.*;
 import java.util.*;
@@ -23,6 +23,8 @@ public final class Issue36SemanticProofTest {
             case "dependency-proofs" -> dependencyProofs(root);
             case "namespace-negative" -> namespaceNegative(root);
             case "classpath-composition" -> classpathComposition(root);
+            case "hierarchy-mutation" -> hierarchyMutation(root);
+            case "machine-workspace-composition" -> machineWorkspaceComposition(root);
             default -> throw new IllegalArgumentException("Unknown Issue #36 proof scenario: "+scenario);
         };
         var result=new LinkedHashMap<String,Object>();
@@ -219,6 +221,82 @@ public final class Issue36SemanticProofTest {
             out.put("remove_unreferenced_d",measured(analyzer,()->completion(analyzer,use,useText,"value.get")));
             return out;
         }
+    }
+
+    private static Map<String,Object> hierarchyMutation(Path root)throws Exception{
+        Files.createDirectories(root);
+        Path baseA=Files.writeString(root.resolve("BaseA.java"),"class BaseA { int getShared(){return 1;} }");
+        Path baseB=Files.writeString(root.resolve("BaseB.java"),"class BaseB { int getShared(){return 2;} }");
+        Path mid=Files.writeString(root.resolve("Mid.java"),"class Mid extends BaseA {}");
+        String leafText="class Leaf extends Mid {}";Path leaf=Files.writeString(root.resolve("Leaf.java"),leafText);
+        String useText="class Use { int f(Leaf value){ return value.getShared(); } }";Path use=Files.writeString(root.resolve("Use.java"),useText);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(root,List.of(),"hierarchy-mutation"),null,BUDGET);
+            analyzer.bindings(baseA,Files.readString(baseA),null);
+            analyzer.bindings(baseB,Files.readString(baseB),null);
+            analyzer.bindings(mid,Files.readString(mid),null);
+            analyzer.bindings(leaf,leafText,null);
+            analyzer.bindings(use,useText,null);
+            var out=new LinkedHashMap<String,Object>();
+
+            Files.writeString(mid,"class Mid extends BaseB {}");analyzer.changed(mid);
+            out.put("direct_parent_change",measured(analyzer,()->bindingSummary(analyzer,use,useText)));
+
+            Files.writeString(baseB,"class BaseB { int getShared(){return 2;} private int unrelatedPrivate(){return 3;} }");analyzer.changed(baseB);
+            out.put("ancestor_irrelevant_member",measured(analyzer,()->bindingSummary(analyzer,use,useText)));
+
+            out.put("downstream_after_equal_surface",measured(analyzer,()->bindingSummary(analyzer,leaf,leafText)));
+            return out;
+        }
+    }
+
+    private static Map<String,Object> machineWorkspaceComposition(Path root)throws Exception{
+        Path repository=Files.createDirectories(root.resolve("repository"));
+        Path state=Files.createDirectories(root.resolve("state"));
+        Path a=IndexFixtures.jar(repository.resolve("g/a/1"),"a","package machine.a; public class Sample { public int getA(){return 1;} }",true);
+        Path b=IndexFixtures.jar(repository.resolve("g/b/1"),"b","package machine.b; public class Sample { public int getB(){return 1;} }",true);
+        Path c=IndexFixtures.jar(repository.resolve("g/c/1"),"c","package machine.c; public class Sample { public int getC(){return 1;} }",true);
+        try(var index=new IndexService(state.resolve("index.db"),repository)){
+            index.indexJar(a,"g:a:1","jar");index.indexJar(b,"g:b:1","jar");index.indexJar(c,"g:c:1","jar");
+            index.loadWorkspace("workspace-ab",List.of(
+                    new IndexService.WorkspaceArtifact(a.toString(),"compile"),
+                    new IndexService.WorkspaceArtifact(b.toString(),"compile")),List.of());
+            index.loadWorkspace("workspace-c",List.of(new IndexService.WorkspaceArtifact(c.toString(),"compile")),List.of());
+
+            var before=index.status();
+            var abBefore=index.findNamePrefix("Sample","workspace-ab",20,Set.of("class"));
+            var cBefore=index.findNamePrefix("Sample","workspace-c",20,Set.of("class"));
+
+            Path replacement=IndexFixtures.jar(repository.resolve("replacement"),"c","package machine.c; public class Sample { public int getC2(){return 2;} }",true);
+            Files.copy(replacement,c,StandardCopyOption.REPLACE_EXISTING);
+            index.indexJar(c,"g:c:1","jar");
+
+            var after=index.status();
+            var abAfter=index.findNamePrefix("Sample","workspace-ab",20,Set.of("class"));
+            var cAfter=index.findNamePrefix("Sample","workspace-c",20,Set.of("class"));
+            return Map.of(
+                    "machine_status_before",before,
+                    "machine_status_after",after,
+                    "machine_root_before",findValue(before,"machine_dependency_root"),
+                    "machine_root_after",findValue(after,"machine_dependency_root"),
+                    "workspace_ab_root_before",findValue(before,"workspace_ab_dependency_root"),
+                    "workspace_ab_root_after",findValue(after,"workspace_ab_dependency_root"),
+                    "workspace_ab_before_gavs",abBefore.stream().map(row->Objects.toString(row.get("gav"),"")).toList(),
+                    "workspace_ab_after_gavs",abAfter.stream().map(row->Objects.toString(row.get("gav"),"")).toList(),
+                    "workspace_c_before",cBefore,
+                    "workspace_c_after",cAfter,
+                    "baseline_identity_note","null roots mean the baseline exposes no compositional machine/workspace semantic identity");
+        }
+    }
+
+    private static Object findValue(Object value,String key){
+        if(value instanceof Map<?,?> map){
+            if(map.containsKey(key))return map.get(key);
+            for(Object nested:map.values()){Object found=findValue(nested,key);if(found!=null)return found;}
+        }else if(value instanceof Collection<?> values){
+            for(Object nested:values){Object found=findValue(nested,key);if(found!=null)return found;}
+        }
+        return null;
     }
 
     private static Object bindingSummary(Analyzer analyzer,Path file,String text)throws Exception{

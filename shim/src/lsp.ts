@@ -56,6 +56,7 @@ export class LspBridge {
   private diagnosticPlans=new Map<string,{generation:number;version:number;dueSince:number}>();
   private activeInteractive=0;
   private mutationTails=new Map<string,Promise<void>>();
+  private workspaceMutationFence:Promise<void>=Promise.resolve();
   private active=new Set<Promise<void>>();
   private versions=new Map<string,number>();
   private generations=new Map<string,number>();
@@ -140,10 +141,19 @@ export class LspBridge {
     this.initialized=true;this.send({jsonrpc:"2.0",id,result:result.result.value});
   }
   private enqueueMutation(message:Message,uri?:string,generation?:number){
-    if(!uri)return this.track(this.safe(message,()=>this.mutation(message,uri,generation)));
-    const previous=this.mutationTails.get(uri)||Promise.resolve();
-    const work=previous.then(()=>this.safe(message,()=>this.mutation(message,uri,generation)));
-    this.mutationTails.set(uri,work);void work.then(()=>{if(this.mutationTails.get(uri)===work)this.mutationTails.delete(uri);});
+    let work:Promise<void>;
+    if(!uri)work=this.safe(message,()=>this.mutation(message,uri,generation));
+    else{
+      const previous=this.mutationTails.get(uri)||Promise.resolve();
+      work=previous.then(()=>this.safe(message,()=>this.mutation(message,uri,generation)));
+      this.mutationTails.set(uri,work);void work.then(()=>{if(this.mutationTails.get(uri)===work)this.mutationTails.delete(uri);});
+    }
+    // Interactive Java queries may depend on any source in the workspace. Capture every
+    // preceding mutation without serializing independent document mutations with each other.
+    const prior=this.workspaceMutationFence;
+    const fence=Promise.all([prior,work]).then(()=>{});
+    this.workspaceMutationFence=fence;
+    void fence.then(()=>{if(this.workspaceMutationFence===fence)this.workspaceMutationFence=Promise.resolve();});
     return this.track(work);
   }
   private async mutation(message:Message,uri?:string,generation?:number){
@@ -164,7 +174,9 @@ export class LspBridge {
     }else throw rpcError(-32601,"Method not found: "+method);
   }
   private interactive(message:Message,uri?:string,completionGeneration?:number){
-    const barrier=uri?this.mutationTails.get(uri):undefined;
+    // Snapshot the workspace mutation frontier at request arrival. Later mutations need not
+    // delay this request, but every earlier didOpen/didChange/didClose/didSave must be visible.
+    const barrier=this.workspaceMutationFence;
     this.activeInteractive++;
     return this.track(this.safe(message,async()=>{
       const id=message.id,method=message.method||"",params=message.params||{};

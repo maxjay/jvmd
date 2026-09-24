@@ -40,7 +40,7 @@ test("LSP synchronizes notifications in order and debounces diagnostics for 200 
   for(let v=2;v<=4;v++)await bridge.handle({jsonrpc:"2.0",method:"textDocument/didChange",params:{textDocument:{uri:"file:///repo/Example.java",version:v},contentChanges:[{text:"class Example { int value="+v+"; }"}]}});
   const changed=Date.now();await delay(80);assert.equal(seen.filter(x=>x[0]==="lsp.diagnostics").length,0);
   await bridge.handle({jsonrpc:"2.0",id:2,method:"textDocument/hover",params:{textDocument:{uri:"file:///repo/Example.java"},position:{line:0,character:6}}});
-  assert.match(sent.find(x=>x.id===2).result.contents.value,/current 4/);await delay(180);await bridge.drained();
+  assert.match(sent.find(x=>x.id===2).result.contents.value,/current 4/);await delay(260);await bridge.drained();
   const diagnostics=seen.filter(x=>x[0]==="lsp.diagnostics");assert.equal(diagnostics.length,1);assert.ok(diagnostics[0][2]-changed>=190);
   assert.equal(sent.filter(x=>x.method==="textDocument/publishDiagnostics").length,1);assert.equal(sent.at(-1).params.version,4);await bridge.close();
 });

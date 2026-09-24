@@ -27,6 +27,8 @@ SETTINGS = {
         "references": {"includeDecompiledSources": False},
     }
 }
+PHASE_MODEL = json.loads((Path(__file__).parents[1] / "phase-model.json").read_text())
+STATE_ALIASES = {"first": "first_use", "warm": "steady"}
 
 
 class Client:
@@ -40,11 +42,14 @@ class Client:
         self.next = 0
         self.responses = {}
         self.notifications = []
+        self.notification_records = []
         self.failure = None
+        self.spawn_ns = time.monotonic_ns()
         self.started = time.perf_counter()
         self.process = subprocess.Popen(
             command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log
         )
+        self.process_started_ns = time.monotonic_ns()
         self.monitor = ProcessMonitor(self.process.pid, output=root / "resource-samples.jsonl")
         (root / "command.json").write_text(json.dumps(command, indent=2) + "\n")
         self.reader = threading.Thread(target=self.read, daemon=True)
@@ -56,6 +61,7 @@ class Client:
                 json.dumps(
                     {
                         "elapsed_ms": (time.perf_counter() - self.started) * 1000,
+                        "monotonic_ns": time.monotonic_ns(),
                         "direction": direction,
                         "message": message,
                     }
@@ -105,6 +111,9 @@ class Client:
                             self.responses[message["id"]] = message
                         else:
                             self.notifications.append(message)
+                            self.notification_records.append(
+                                {"message": message, "monotonic_ns": time.monotonic_ns()}
+                            )
                         self.condition.notify_all()
         except BaseException as e:
             with self.condition:
@@ -165,6 +174,25 @@ class Client:
         with self.condition:
             if not self.condition.wait_for(lambda: matching() is not None or self.failure, timeout):
                 raise TimeoutError(("diagnostics", uri, version, error))
+            result = matching()
+            if result is None:
+                raise RuntimeError(self.failure)
+            return result
+
+    def memory_snapshot(self):
+        return self.monitor.snapshot()
+
+    def notification(self, method, predicate=lambda _: True, since=0, timeout=180):
+        def matching():
+            for row in self.notification_records[since:]:
+                message = row["message"]
+                if message.get("method") == method and predicate(message.get("params", {})):
+                    return row
+            return None
+
+        with self.condition:
+            if not self.condition.wait_for(lambda: matching() is not None or self.failure, timeout):
+                raise TimeoutError(("notification", method))
             result = matching()
             if result is None:
                 raise RuntimeError(self.failure)

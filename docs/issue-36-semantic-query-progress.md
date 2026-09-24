@@ -198,3 +198,40 @@ Deviations:
 Remaining:
 - Rerun the exact baseline subject with the corrected companion driver.
 - Do not complete Checkpoint 0 until the expanded hierarchy and machine/workspace scenarios plus compiler-status/JFR evidence all succeed in one accepted frozen-harness run.
+
+
+## Checkpoint 0 — baseline attempt 7: CMP status driver declaration ordering
+
+Starting SHA: `eb45487f08a986d3a5ef2acd3666177e332cdc9b`
+Ending SHA: `eb45487f08a986d3a5ef2acd3666177e332cdc9b`
+
+Changes:
+- Reran the exact baseline after removing the unsupported TypeScript parameter property.
+- The ordinary production CMP-01 phase again completed successfully.
+- The companion native-status probe launched the production daemon and reached machine-index readiness, then failed before LSP initialization because the disposable `Driver` class was referenced before its declaration.
+
+Architecture:
+- The measured production subject remained unchanged.
+- The failure occurred entirely in proof-script JavaScript declaration ordering.
+
+Correctness proof:
+- GitHub Actions run https://github.com/maxjay/jvmd/actions/runs/36069775087 reproduced CMP-01 through the production LSP stack with an empty completion result.
+- The status step failed with `ReferenceError: Cannot access 'Driver' before initialization`.
+
+Performance proof:
+- CMP latency/RSS/JFR evidence was produced, but this run is not accepted as the complete Stage-0 baseline because the status and expanded matrix steps did not execute.
+
+Findings:
+- Class declarations are subject to the JavaScript temporal dead zone even after TypeScript syntax is stripped.
+- The companion driver does not need a class; an inline object is simpler and removes this harness-only ordering risk.
+
+Failed/deprecated approaches:
+- Do not use a bottom-declared class for the disposable status driver.
+- Replacement: an inline driver object closes over the already-created LSP bridge.
+
+Deviations:
+- None to production semantics or the measured subject.
+
+Remaining:
+- Rerun the exact baseline with the inline status driver.
+- Complete Checkpoint 0 only after one accepted run contains all required scenario and measurement evidence.

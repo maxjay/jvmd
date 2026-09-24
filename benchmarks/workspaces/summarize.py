@@ -36,13 +36,20 @@ def markdown_summary(result):
     servers = sorted({row["server"] for row in result["preparation"]})
     if not servers:
         return ""
-    lines = ["## Workspace benchmark phases", "", "### Startup / readiness", ""]
+    lines = [
+        "## Prepared-workspace benchmark phases",
+        "",
+        "This suite is a controlled architecture-comparison harness. Its preparation boundary is not the JVMD machine-daemon lifecycle; machine_cold / daemon_restart / resident_daemon are measured separately.",
+        "",
+        "### Harness preparation",
+        ""
+    ]
     lines += ["| Metric | " + " | ".join(servers) + " |",
               "| --- | " + " | ".join("---:" for _ in servers) + " |"]
     metrics = [
         ("Initialize request", "initialize_ms"),
         ("Process → initialize response", "process_to_initialize_response_ms"),
-        ("Process → workspace ready", "process_to_workspace_ready_ms"),
+        ("Process → prepared-harness ready", "process_to_workspace_ready_ms"),
         ("Document admission", "document_admission_ms"),
         ("Process → first correct result", "cold_end_to_end_ms"),
     ]
@@ -62,7 +69,7 @@ def markdown_summary(result):
               "| State | " + " | ".join(server + " RSS MB" for server in servers) + " |",
               "| --- | " + " | ".join("---:" for _ in servers) + " |"]
     for label, phase in [
-        ("Workspace ready", "workspace_ready"),
+        ("Prepared-harness ready", "workspace_ready"),
         ("Documents admitted", "documents_admitted"),
         ("After first use", "post_first_use"),
         ("After steady", "post_steady"),

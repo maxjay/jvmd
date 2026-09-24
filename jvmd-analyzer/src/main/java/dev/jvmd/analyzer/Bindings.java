@@ -1,6 +1,5 @@
 package dev.jvmd.analyzer;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.sun.source.tree.*;
 import com.sun.source.util.*;
 import dev.jvmd.index.DocMarkdown;
@@ -22,18 +21,13 @@ public final class Bindings {
     public record Edge(String src,String dst,String kind) { }
     /** Implements 4.2: detached declarations, references and source dependencies. */
     public record Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies,
-                           Map<String,SemanticFact> semanticFacts,@JsonIgnore int semanticFactReuses,@JsonIgnore int semanticFactBuilds) {
+                           Map<String,SemanticFact> semanticFacts) {
         public Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies){
-            this(symbols,occurrences,edges,dependencies,Map.of(),0,0);
-        }
-        public Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies,
-                        Map<String,SemanticFact> semanticFacts){
-            this(symbols,occurrences,edges,dependencies,semanticFacts,0,0);
+            this(symbols,occurrences,edges,dependencies,Map.of());
         }
         public Snapshot {
             symbols=Map.copyOf(symbols);occurrences=List.copyOf(occurrences);edges=List.copyOf(edges);
             dependencies=Set.copyOf(dependencies);semanticFacts=Map.copyOf(semanticFacts);
-            if(semanticFactReuses<0||semanticFactBuilds<0)throw new IllegalArgumentException("negative semantic fact counters");
         }
         public Map<String,Object> at(int offset){
             var occurrence=occurrences.stream().filter(o->o.start()<=offset&&offset<o.end()).min(Comparator.comparingInt(o->o.end()-o.start())).orElse(null);if(occurrence==null)return null;
@@ -58,7 +52,6 @@ public final class Bindings {
                                    boolean bodies,Focusing.Span focus,java.util.function.Function<String,SemanticFact> reusableFacts){
         Objects.requireNonNull(reusableFacts);
         var trees=Trees.instance(task);var symbols=new LinkedHashMap<String,Map<String,Object>>();var semanticFacts=new LinkedHashMap<String,SemanticFact>();var occurrences=new LinkedHashMap<String,Occurrence>();var edges=new LinkedHashSet<Edge>();var dependencies=new LinkedHashSet<Path>();
-        int[] semanticFactReuses={0},semanticFactBuilds={0};
         var texts=new HashMap<String,SourceText>();texts.put(requested.toUri().toString(),original);
         class Capture {
             SourceText source(CompilationUnitTree unit){return texts.computeIfAbsent(unit.getSourceFile().toUri().toString(),key->{try{return new SourceText(unit.getSourceFile().getCharContent(true).toString());}catch(Exception e){return new SourceText("");}});}
@@ -81,7 +74,6 @@ public final class Bindings {
                 SemanticDeclaration declaration;
                 try{
                     declaration=identity.declaration(element,reusableFacts.apply(scip));
-                    if(declaration.factReused())semanticFactReuses[0]++;else semanticFactBuilds[0]++;
                 }
                 catch(IllegalArgumentException unresolved){
                     var row=new LinkedHashMap<String,Object>();row.put("scip",scip);row.put("name",identity.displayName(element));
@@ -198,7 +190,6 @@ public final class Bindings {
                 if(role.equals("writes")&&(parent instanceof CompoundAssignmentTree||parent instanceof UnaryTree)){String target=capture.symbol(e);if(container!=null&&target!=null)edges.add(new Edge(container,target,"reads"));}
             }
         }.scan(unit,null);
-        return new Snapshot(symbols,List.copyOf(occurrences.values()),List.copyOf(edges),Set.copyOf(dependencies),semanticFacts,
-                semanticFactReuses[0],semanticFactBuilds[0]);
+        return new Snapshot(symbols,List.copyOf(occurrences.values()),List.copyOf(edges),Set.copyOf(dependencies),semanticFacts);
     }
 }

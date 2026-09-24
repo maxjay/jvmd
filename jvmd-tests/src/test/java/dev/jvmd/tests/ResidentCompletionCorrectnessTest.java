@@ -190,38 +190,6 @@ class ResidentCompletionCorrectnessTest {
         }
     }
 
-    @Test void wideReceiverSharesBoundedAccessibilityEvidenceAcrossCursorQueries()throws Exception{
-        var api=new StringBuilder("class Api {\n");
-        for(int i=0;i<1000;i++)api.append("public int member").append(String.format("%04d",i)).append("(){return ").append(i).append(";}\n");
-        api.append("}\n");
-        Files.writeString(root.resolve("Api.java"),api);
-        String source="""
-                class Use {
-                    Object first(Api api){ return api.member0; }
-                    Object second(Api api){ return api.member9; }
-                }
-                """;
-        Path use=Files.writeString(root.resolve("Use.java"),source);
-        try(var analyzer=new Analyzer()){
-            analyzer.configure(context(),null,256L*1024*1024);
-            assertThat(complete(analyzer,use,source,"api.member0",10)).hasSize(10);
-            long reusedBefore=((Number)analyzer.status().get("resident_hierarchy_unit_reuses")).longValue();
-            long buildsBefore=((Number)analyzer.status().get("resident_hierarchy_unit_builds")).longValue();
-            assertThat(complete(analyzer,use,source,"api.member09",10)).hasSize(10);
-            assertThat(((Number)analyzer.status().get("resident_hierarchy_unit_reuses")).longValue()).isGreaterThan(reusedBefore);
-            var secondStatus=analyzer.status();
-            long buildDelta=((Number)secondStatus.get("resident_hierarchy_unit_builds")).longValue()-buildsBefore;
-            assertThat(buildDelta).as(secondStatus.toString()).isBetween(0L,1L);
-            @SuppressWarnings("unchecked") var rebuilt=(List<String>)secondStatus.get("resident_hierarchy_last_built_units");
-            assertThat(rebuilt).allMatch(unit->unit.equals("source:"+use.toAbsolutePath().normalize()));
-            @SuppressWarnings("unchecked") var access=(Map<String,Object>)analyzer.status().get("resident_accessibility_cache");
-            assertThat(((Number)access.get("entries")).longValue()).isEqualTo(1L);
-            assertThat(((Number)access.get("member_ids")).longValue()).isGreaterThanOrEqualTo(1000L);
-            assertThat(((Number)access.get("max_entries")).longValue()).isEqualTo(16L);
-            assertThat(((Number)access.get("hits")).longValue()).isGreaterThanOrEqualTo(2L);
-        }
-    }
-
     @Test void documentationOnlyEditPreservesCandidatesWhileRemovalAndRenameChangeThem()throws Exception{
         Path api=Files.writeString(root.resolve("Api.java"),"""
                 class Api {

@@ -16,11 +16,10 @@ public final class SemanticFacts {
     private SemanticFacts(){}
 
     public record CompletionContext(DocumentSemanticSnapshot.QueryContext query,List<SemanticSnapshot> semanticSnapshots,
-                                    Set<String> nameResolutionNames,Set<String> accessibleMemberIds,int hierarchyUnitsReused) {
+                                    Set<String> nameResolutionNames,Set<String> accessibleMemberIds) {
         public CompletionContext {
             Objects.requireNonNull(query);semanticSnapshots=List.copyOf(semanticSnapshots);
             nameResolutionNames=Set.copyOf(nameResolutionNames);accessibleMemberIds=Set.copyOf(accessibleMemberIds);
-            if(hierarchyUnitsReused<0)throw new IllegalArgumentException("hierarchyUnitsReused");
         }
     }
 
@@ -60,13 +59,13 @@ public final class SemanticFacts {
             staticContext=method!=null&&method.getModifiers().contains(Modifier.STATIC);
         }else if(found[0].getCompilationUnit().getPackageName()!=null)packageName=found[0].getCompilationUnit().getPackageName().toString();
 
-        var snapshots=new LinkedHashMap<String,SemanticSnapshot>();int[] reused={0};
-        hierarchySnapshots(task,identity,receiver,new HashSet<>(),snapshots,residentTypeCurrent,reused);
+        var snapshots=new LinkedHashMap<String,SemanticSnapshot>();
+        hierarchySnapshots(task,identity,receiver,new HashSet<>(),snapshots,residentTypeCurrent);
         var names=new LinkedHashSet<String>();String sourceType=sourceSimpleType(trees,selectedElement);if(sourceType!=null)names.add(sourceType);
         var accessible=accessibleMembers(task,identity,scope,receiver);
         var query=new DocumentSemanticSnapshot.QueryContext(selectorOffset,type(identity,receiver),receiverId,
                 selectedElement instanceof TypeElement,packageName,enclosingTypeId,staticContext,List.of(),"");
-        return new CompletionContext(query,List.copyOf(snapshots.values()),names,accessible,reused[0]);
+        return new CompletionContext(query,List.copyOf(snapshots.values()),names,accessible);
     }
 
     /** Detach the cursor-visible lexical/import scope and enclosing-type semantic context. */
@@ -104,13 +103,13 @@ public final class SemanticFacts {
             }catch(IllegalArgumentException unresolved){/* no detached identity */}
         }
 
-        var snapshots=new LinkedHashMap<String,SemanticSnapshot>();int[] reused={0};
-        if(receiver!=null)hierarchySnapshots(task,identity,receiver,new HashSet<>(),snapshots,residentTypeCurrent,reused);
+        var snapshots=new LinkedHashMap<String,SemanticSnapshot>();
+        if(receiver!=null)hierarchySnapshots(task,identity,receiver,new HashSet<>(),snapshots,residentTypeCurrent);
         SemanticType receiverType=receiver==null?new SemanticType.Unknown("?"):type(identity,receiver);
         var accessible=receiver==null?Set.<String>of():accessibleMembers(task,identity,scope,receiver);
         var query=new DocumentSemanticSnapshot.QueryContext(selectorOffset,receiverType,receiverId,false,packageName,enclosingTypeId,staticContext,
                 List.copyOf(visible.values()),"");
-        return new CompletionContext(query,List.copyOf(snapshots.values()),Set.of(),accessible,reused[0]);
+        return new CompletionContext(query,List.copyOf(snapshots.values()),Set.of(),accessible);
     }
 
     private static CompletionCandidate scopeCandidate(JavacTask task,SymbolIdentity identity,Element element,DeclaredType receiver){
@@ -173,19 +172,17 @@ public final class SemanticFacts {
     }
 
     private static void hierarchySnapshots(JavacTask task,SymbolIdentity identity,TypeMirror mirror,Set<String> seen,
-                                           Map<String,SemanticSnapshot> snapshots,java.util.function.BiPredicate<String,String> residentTypeCurrent,
-                                           int[] reused)throws Exception{
-        if(mirror instanceof TypeVariable variable){hierarchySnapshots(task,identity,variable.getUpperBound(),seen,snapshots,residentTypeCurrent,reused);return;}
-        if(mirror instanceof IntersectionType intersection){for(var bound:intersection.getBounds())hierarchySnapshots(task,identity,bound,seen,snapshots,residentTypeCurrent,reused);return;}
+                                           Map<String,SemanticSnapshot> snapshots,java.util.function.BiPredicate<String,String> residentTypeCurrent)throws Exception{
+        if(mirror instanceof TypeVariable variable){hierarchySnapshots(task,identity,variable.getUpperBound(),seen,snapshots,residentTypeCurrent);return;}
+        if(mirror instanceof IntersectionType intersection){for(var bound:intersection.getBounds())hierarchySnapshots(task,identity,bound,seen,snapshots,residentTypeCurrent);return;}
         if(!(mirror instanceof DeclaredType declared)||!(declared.asElement() instanceof TypeElement type))return;
         String id;try{id=identity.scip(type);}catch(IllegalArgumentException unresolved){return;}
         if(!seen.add(id))return;
         String binary=identity.binaryName(type);
-        if(residentTypeCurrent.test(id,binary))reused[0]++;
-        else{
+        if(!residentTypeCurrent.test(id,binary)){
             var snapshot=snapshotForType(task,identity,type);snapshots.putIfAbsent(snapshot.unit(),snapshot);
         }
-        for(var parent:task.getTypes().directSupertypes(declared))hierarchySnapshots(task,identity,parent,seen,snapshots,residentTypeCurrent,reused);
+        for(var parent:task.getTypes().directSupertypes(declared))hierarchySnapshots(task,identity,parent,seen,snapshots,residentTypeCurrent);
     }
 
     public static SemanticSnapshot snapshotForType(JavacTask task,SymbolIdentity identity,TypeElement type)throws Exception{

@@ -15,9 +15,7 @@ public record SemanticDelta(
         String apiIdentity,
         String namespaceIdentity,
         String documentationIdentity,
-        Set<String> dependencies,
-        int factBucketsVisited,
-        int factEntriesCompared) {
+        Set<String> dependencies) {
 
     public SemanticDelta {
         Objects.requireNonNull(unit);contentIdentity=Objects.requireNonNullElse(contentIdentity,"");
@@ -27,7 +25,6 @@ public record SemanticDelta(
         namespaceIdentity=Objects.requireNonNullElse(namespaceIdentity,"");
         documentationIdentity=Objects.requireNonNullElse(documentationIdentity,"");
         dependencies=Set.copyOf(dependencies);
-        if(factBucketsVisited<0||factEntriesCompared<0)throw new IllegalArgumentException("negative diff counters");
     }
 
     public int factMutations(){return added.size()+changed.size()+removed.size();}
@@ -46,7 +43,6 @@ public record SemanticDelta(
         for(String id:factDiff.changed()){var fact=next.facts().get(id);if(fact!=null)changed.add(fact);}
 
         return new SemanticDelta(next.unit(),next.sourceFile(),next.contentIdentity(),nextFacts,added,changed,factDiff.removed(),
-                next.apiIdentity(),next.namespaceIdentity(),next.documentationIdentity(),next.dependencies(),
-                factDiff.bucketsVisited(),factDiff.entriesCompared());
+                next.apiIdentity(),next.namespaceIdentity(),next.documentationIdentity(),next.dependencies());
     }
 }

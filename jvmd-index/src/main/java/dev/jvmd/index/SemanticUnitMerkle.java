@@ -17,7 +17,7 @@ public final class SemanticUnitMerkle {
     private static final Hash256 EMPTY=CanonicalDigestWriter.digest("semantic-unit-empty-v1");
     private static final SemanticUnitMerkle EMPTY_STATE=new SemanticUnitMerkle(Map.of(),EMPTY,0);
 
-    public record Diff(Set<String> added,Set<String> changed,Set<String> removed,int bucketsVisited,int entriesCompared) {
+    public record Diff(Set<String> added,Set<String> changed,Set<String> removed) {
         public Diff {
             added=Set.copyOf(added);changed=Set.copyOf(changed);removed=Set.copyOf(removed);
         }
@@ -88,19 +88,16 @@ public final class SemanticUnitMerkle {
 
     public Diff diff(SemanticUnitMerkle next){
         Objects.requireNonNull(next);
-        if(root.equals(next.root)&&size==next.size)return new Diff(Set.of(),Set.of(),Set.of(),0,0);
+        if(root.equals(next.root)&&size==next.size)return new Diff(Set.of(),Set.of(),Set.of());
         var added=new LinkedHashSet<String>();var changed=new LinkedHashSet<String>();var removed=new LinkedHashSet<String>();
         var keys=new TreeSet<Integer>();keys.addAll(buckets.keySet());keys.addAll(next.buckets.keySet());
-        int bucketsVisited=0,entriesCompared=0;
         for(int key:keys){
             var before=buckets.get(key);var after=next.buckets.get(key);
             if(before!=null&&after!=null&&before.root.equals(after.root)&&before.ids.length==after.ids.length)continue;
-            bucketsVisited++;
             if(before==null){Collections.addAll(added,after.ids);continue;}
             if(after==null){Collections.addAll(removed,before.ids);continue;}
             int i=0,j=0;
             while(i<before.ids.length||j<after.ids.length){
-                entriesCompared++;
                 if(i>=before.ids.length){added.add(after.ids[j++]);continue;}
                 if(j>=after.ids.length){removed.add(before.ids[i++]);continue;}
                 int order=before.ids[i].compareTo(after.ids[j]);
@@ -110,7 +107,7 @@ public final class SemanticUnitMerkle {
                 i++;j++;
             }
         }
-        return new Diff(added,changed,removed,bucketsVisited,entriesCompared);
+        return new Diff(added,changed,removed);
     }
 
     private static int bucket(String id){

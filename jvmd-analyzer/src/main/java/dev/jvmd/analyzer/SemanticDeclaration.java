@@ -15,8 +15,7 @@ public record SemanticDeclaration(
         List<String> typeParameterDisplays,
         Map<String,Object> apiDeclaration,
         String documentation,
-        boolean signatureComplete,
-        boolean factReused) {
+        boolean signatureComplete) {
 
     public SemanticDeclaration {
         Objects.requireNonNull(fact);Objects.requireNonNull(gav);
@@ -72,7 +71,7 @@ public record SemanticDeclaration(
                 &&reusable.apiIdentity().equals(api)
                 &&reusable.namespaceIdentity().equals(namespace)
                 &&reusable.documentationIdentity().equals(documentationIdentity)){
-            return new SemanticDeclaration(reusable,gav,declaring,typeParameterDisplays,apiDeclaration,documentation,signatureComplete,true);
+            return new SemanticDeclaration(reusable,gav,declaring,typeParameterDisplays,apiDeclaration,documentation,signatureComplete);
         }
 
         var typeParameters=element instanceof Parameterizable p?p.getTypeParameters().stream().map(identity::scip).toList():List.<String>of();
@@ -83,6 +82,6 @@ public record SemanticDeclaration(
         var fact=new SemanticFact(id,owner,name,kind,signature,erased,modifiers,source,pkg,namePath,fqn,
                 SemanticFacts.type(identity,element.asType()),typeParameters,supertypes,parameterNames,varargs,
                 api,namespace,documentationIdentity);
-        return new SemanticDeclaration(fact,gav,declaring,typeParameterDisplays,apiDeclaration,documentation,signatureComplete,false);
+        return new SemanticDeclaration(fact,gav,declaring,typeParameterDisplays,apiDeclaration,documentation,signatureComplete);
     }
 }

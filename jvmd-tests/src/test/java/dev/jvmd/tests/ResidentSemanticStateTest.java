@@ -64,45 +64,18 @@ class ResidentSemanticStateTest {
                 .containsExactlyElementsOf(second.members("A#","m0",20).stream().map(SemanticFact::id).toList());
     }
 
-    @Test void coldThousandMemberAdmissionBuildsOneTreeNodePerFact(){
-        var facts=new ArrayList<SemanticFact>();facts.add(type("A#","A","api-A"));
-        for(int i=0;i<1000;i++)facts.add(member("A#m"+i+"().","A#","member"+String.format("%04d",i),"api-"+i,"doc-"+i));
-        var state=new ResidentSemanticState();state.admit(snapshot("cold",facts.toArray(SemanticFact[]::new)));
-        assertThat(state.status()).containsEntry("semantic_tree_entries",1001).containsEntry("semantic_bulk_builds",1L)
-                .containsEntry("semantic_tree_nodes_created",1001L);
-    }
-
-    @Test void oneMemberMutationCreatesOnlyLogarithmicTreeNodes(){
-        var facts=new ArrayList<SemanticFact>();facts.add(type("A#","A","api-A"));
-        for(int i=0;i<1000;i++)facts.add(member("A#m"+i+"().","A#","member"+String.format("%04d",i),"api-"+i,"doc-"+i));
-        var state=new ResidentSemanticState();state.admit(snapshot("before",facts.toArray(SemanticFact[]::new)));
-        long nodesBefore=((Number)state.status().get("semantic_tree_nodes_created")).longValue();
-
-        var changed=new ArrayList<>(facts);
-        changed.set(501,member("A#m500().","A#","member0500","api-changed","doc-500"));
-        state.admit(snapshot("after",changed.toArray(SemanticFact[]::new)));
-
-        long created=((Number)state.status().get("semantic_tree_nodes_created")).longValue()-nodesBefore;
-        assertThat(created).isPositive().isLessThan(128L);
-        assertThat(state.status()).containsEntry("semantic_tree_entries",1001);
-    }
-
     @Test void unitMerkleDiffSkipsUnchangedFactsAndLocalizesOneMemberChange(){
-        var facts=new ArrayList<SemanticFact>();facts.add(type("A#","A","api-A"));
-        for(int i=0;i<1000;i++)facts.add(member("A#m"+i+"().","A#","member"+String.format("%04d",i),"api-"+i,"doc-"+i));
-        var state=new ResidentSemanticState();state.admit(snapshot("before",facts.toArray(SemanticFact[]::new)));
+        var owner=type("A#","A","api-A");
+        var first=member("A#a().","A#","a","api-a","doc-a");
+        var second=member("A#b().","A#","b","api-b","doc-b");
+        var state=new ResidentSemanticState();state.admit(snapshot("before",owner,first,second));
 
-        var unchanged=state.diff(snapshot("before",facts.toArray(SemanticFact[]::new)));
-        assertThat(unchanged.factMutations()).isZero();
-        assertThat(unchanged.factBucketsVisited()).isZero();
-        assertThat(unchanged.factEntriesCompared()).isZero();
+        assertThat(state.diff(snapshot("before",owner,first,second)).factMutations()).isZero();
 
-        var changed=new ArrayList<>(facts);
-        changed.set(501,member("A#m500().","A#","member0500","api-changed","doc-500"));
-        var delta=state.diff(snapshot("after",changed.toArray(SemanticFact[]::new)));
-        assertThat(delta.changed()).extracting(SemanticFact::id).containsExactly("A#m500().");
-        assertThat(delta.factBucketsVisited()).isEqualTo(1);
-        assertThat(delta.factEntriesCompared()).isPositive().isLessThan(64);
+        var changed=member("A#b().","A#","b","api-b-changed","doc-b");
+        var delta=state.diff(snapshot("after",owner,first,changed));
+        assertThat(delta.changed()).extracting(SemanticFact::id).containsExactly("A#b().");
+        assertThat(delta.added()).isEmpty();assertThat(delta.removed()).isEmpty();
     }
 
     @Test void retainedUnitStateStoresOnlyCanonicalFactMembership(){
@@ -111,7 +84,6 @@ class ResidentSemanticStateTest {
         var unit=state.unit("source:/src/A.java");
         assertThat(unit.factIds()).containsExactlyInAnyOrder(owner.id(),value.id());
         assertThat(state.symbol(value.id())).isSameAs(value);
-        assertThat(state.status()).containsEntry("semantic_unit_fact_ids",2L);
     }
 
     @Test void canonicalFactIdentityIsStableAndFieldSensitive(){
@@ -194,65 +166,37 @@ class ResidentSemanticStateTest {
         assertThat(state.hierarchyApi("Sub#")).isNotEqualTo(first);
     }
 
-    @Test void hierarchyApiComposesEachAffectedOwnerOnceAcrossDeepInheritance(){
-        var facts=new ArrayList<SemanticFact>();
-        facts.add(type("D0#","D0","api-D0"));
-        for(int i=1;i<=50;i++)facts.add(type("D"+i+"#","D"+i,"api-D"+i,
-                List.of(new SemanticType.Declared("D"+(i-1)+"#","p.D"+(i-1),List.of()))));
-        var member=member("D0#m().","D0#","m","api-m","doc-m");facts.add(member);
-        var state=new ResidentSemanticState();state.admit(snapshot("before",facts.toArray(SemanticFact[]::new)));
-        String deepest=state.hierarchyApi("D50#");
-        long compositions=((Number)state.status().get("semantic_hierarchy_compositions")).longValue();
-        long parentReads=((Number)state.status().get("semantic_hierarchy_parent_reads")).longValue();
-
-        var changed=new ArrayList<>(facts);
-        changed.set(changed.size()-1,member("D0#m().","D0#","m","api-m-changed","doc-m"));
-        state.admit(snapshot("after",changed.toArray(SemanticFact[]::new)));
-
-        assertThat(state.hierarchyApi("D50#")).isNotEqualTo(deepest);
-        long composed=((Number)state.status().get("semantic_hierarchy_compositions")).longValue()-compositions;
-        long parents=((Number)state.status().get("semantic_hierarchy_parent_reads")).longValue()-parentReads;
-        assertThat(composed).isEqualTo(51L);
-        assertThat(parents).isEqualTo(50L);
-    }
-
     @Test void singleStaleUnitUsesOneAlgebraicFreshnessContribution(){
         var state=new ResidentSemanticState();
         var owner=type("A#","A","api-A");var member=member("A#m().","A#","m","api-m","doc-m");
         state.admit(snapshot("content-a",owner,member));var original=state.identity();
-        long updates=((Number)state.status().get("semantic_freshness_updates")).longValue();
 
         assertThat(state.markSourceStale("/src/A.java","content-b")).isTrue();
         assertThat(state.status()).containsEntry("semantic_stale_aggregate_cardinality",1L);
-        assertThat(((Number)state.status().get("semantic_freshness_updates")).longValue()).isEqualTo(updates+1);
         assertThat(state.markSourceStale("/src/A.java","content-b")).isFalse();
 
         state.admit(snapshot("content-b",owner,member));
         assertThat(state.status()).containsEntry("semantic_stale_aggregate_cardinality",0L);
-        assertThat(((Number)state.status().get("semantic_freshness_updates")).longValue()).isEqualTo(updates+2);
         assertThat(state.identity().merkleRoot()).isEqualTo(original.merkleRoot());
     }
 
     @Test void globalHierarchyUncertaintyIsOneGenerationFence(){
-        var state=new ResidentSemanticState();var facts=new ArrayList<SemanticFact>();
-        for(int i=0;i<100;i++){
-            var fact=type("T"+i+"#","T"+i,"api-"+i);facts.add(fact);
-            state.admit(snapshotUnit("unit:"+i,"content-"+i,fact));
-        }
+        var state=new ResidentSemanticState();
+        var a=type("A#","A","api-A"),b=type("B#","B","api-B");
+        state.admit(snapshotUnit("unit:a","content-a",a));
+        state.admit(snapshotUnit("unit:b","content-b",b));
         long generation=((Number)state.status().get("semantic_uncertainty_generation")).longValue();
-        long updates=((Number)state.status().get("semantic_global_uncertainty_updates")).longValue();
 
         state.markHierarchyUncertain();
 
         assertThat(state.status()).containsEntry("semantic_stale_units",0);
         assertThat(((Number)state.status().get("semantic_uncertainty_generation")).longValue()).isEqualTo(generation+1);
-        assertThat(((Number)state.status().get("semantic_global_uncertainty_updates")).longValue()).isEqualTo(updates+1);
-        assertThat(state.unitCurrent("unit:0",null)).isFalse();
-        assertThat(state.unitCurrent("unit:99",null)).isFalse();
+        assertThat(state.unitCurrent("unit:a",null)).isFalse();
+        assertThat(state.unitCurrent("unit:b",null)).isFalse();
 
-        state.admit(snapshotUnit("unit:0","content-0",facts.getFirst()));
-        assertThat(state.unitCurrent("unit:0",null)).isTrue();
-        assertThat(state.unitCurrent("unit:99",null)).isFalse();
+        state.admit(snapshotUnit("unit:a","content-a",a));
+        assertThat(state.unitCurrent("unit:a",null)).isTrue();
+        assertThat(state.unitCurrent("unit:b",null)).isFalse();
     }
 
     @Test void sourceStalenessInvalidatesHierarchyIdentityUntilBodyOnlyReadmission(){

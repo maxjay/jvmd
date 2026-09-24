@@ -56,12 +56,10 @@ public final class ResidentSemanticState {
     private final Map<String,String> staleUnits=new HashMap<>();
     private AlgebraicAccumulator staleAggregate=new AlgebraicAccumulator("semantic-stale-v2");
     private long uncertaintyGeneration;
-    private long epoch,rangeEntriesRead,factMutations,treeNodesCreated,bulkBuilds,unitDiffBucketsRead,unitDiffEntriesRead;
-    private long hierarchyCompositions,hierarchyParentReads,freshnessUpdates,globalUncertaintyUpdates;
+    private long epoch,rangeEntriesRead,factMutations;
 
     public synchronized SemanticDelta diff(SemanticSnapshot next){
-        var delta=SemanticDelta.between(units.get(next.unit()),next,symbols::get);
-        unitDiffBucketsRead+=delta.factBucketsVisited();unitDiffEntriesRead+=delta.factEntriesCompared();return delta;
+        return SemanticDelta.between(units.get(next.unit()),next,symbols::get);
     }
 
     public synchronized SemanticDelta admit(SemanticSnapshot next){
@@ -119,14 +117,14 @@ public final class ResidentSemanticState {
         root=bulkBuild(ordered);
         units.put(delta.unit(),nextUnitState(delta));
         recomputeHierarchyApis(hierarchyAffected);
-        factMutations+=delta.factMutations();bulkBuilds++;epoch++;
+        factMutations+=delta.factMutations();epoch++;
     }
 
     public synchronized SemanticDelta removeUnit(String unit){
         var previous=units.get(unit);
-        if(previous==null)return new SemanticDelta(unit,null,"",SemanticUnitMerkle.empty(),List.of(),List.of(),Set.of(),"","","",Set.of(),0,0);
+        if(previous==null)return new SemanticDelta(unit,null,"",SemanticUnitMerkle.empty(),List.of(),List.of(),Set.of(),"","","",Set.of());
         var removed=previous.facts().ids();
-        var delta=new SemanticDelta(unit,previous.sourceFile(),"",SemanticUnitMerkle.empty(),List.of(),List.of(),removed,"","","",Set.of(),0,removed.size());
+        var delta=new SemanticDelta(unit,previous.sourceFile(),"",SemanticUnitMerkle.empty(),List.of(),List.of(),removed,"","","",Set.of());
         apply(delta);units.remove(unit);return delta;
     }
 
@@ -139,7 +137,6 @@ public final class ResidentSemanticState {
                 &&previous.uncertaintyGeneration()==uncertaintyGeneration)return false;
         String old=staleUnits.put(unit,content);if(Objects.equals(old,content))return false;
         if(old==null)staleAggregate.add(unit,content);else staleAggregate.replace(unit,old,unit,content);
-        freshnessUpdates++;
         var affected=new LinkedHashSet<String>();
         previous.facts().forEachId(id->{
             var fact=symbols.get(id);if(fact!=null&&fact.typeDeclaration()){
@@ -152,7 +149,7 @@ public final class ResidentSemanticState {
     /** Lost source-change history invalidates every retained unit with one generation fence. */
     public synchronized void markHierarchyUncertain(){
         if(units.isEmpty())return;
-        uncertaintyGeneration++;globalUncertaintyUpdates++;epoch++;
+        uncertaintyGeneration++;epoch++;
     }
 
     public synchronized SemanticFact symbol(String id){return symbols.get(id);}
@@ -262,14 +259,9 @@ public final class ResidentSemanticState {
                 Map.entry("semantic_units",units.size()),Map.entry("semantic_member_aggregates",memberAggregates.size()),
                 Map.entry("semantic_hierarchy_aggregates",hierarchyApis.size()),Map.entry("semantic_stale_units",staleUnits.size()),
                 Map.entry("semantic_fact_mutations",factMutations),Map.entry("semantic_tree_range_entries_read",rangeEntriesRead),
-                Map.entry("semantic_tree_nodes_created",treeNodesCreated),Map.entry("semantic_bulk_builds",bulkBuilds),
-                Map.entry("semantic_descriptions",0),Map.entry("semantic_unit_fact_ids",units.values().stream().mapToLong(unit->unit.facts().size()).sum()),
-                Map.entry("semantic_unit_diff_buckets_read",unitDiffBucketsRead),Map.entry("semantic_unit_diff_entries_read",unitDiffEntriesRead),
-                Map.entry("semantic_hierarchy_compositions",hierarchyCompositions),Map.entry("semantic_hierarchy_parent_reads",hierarchyParentReads),
-                Map.entry("semantic_estimated_bytes",estimatedBytes()),
+                Map.entry("semantic_descriptions",0),Map.entry("semantic_estimated_bytes",estimatedBytes()),
                 Map.entry("semantic_stale_aggregate",staleAggregate.identity().hex()),Map.entry("semantic_stale_aggregate_cardinality",staleAggregate.cardinality()),
-                Map.entry("semantic_uncertainty_generation",uncertaintyGeneration),Map.entry("semantic_freshness_updates",freshnessUpdates),
-                Map.entry("semantic_global_uncertainty_updates",globalUncertaintyUpdates));
+                Map.entry("semantic_uncertainty_generation",uncertaintyGeneration));
     }
 
     private SemanticUnitState nextUnitState(SemanticDelta delta){
@@ -283,7 +275,7 @@ public final class ResidentSemanticState {
     }
     private void clearExplicitStale(String unit){
         String old=staleUnits.remove(unit);
-        if(old!=null){staleAggregate.remove(unit,old);freshnessUpdates++;}
+        if(old!=null)staleAggregate.remove(unit,old);
     }
 
     private void beforeHierarchyMutation(SemanticFact fact,Set<String> affected){
@@ -353,13 +345,12 @@ public final class ResidentSemanticState {
         var parentParts=new ArrayList<Object>();
         var parents=new ArrayList<>(directSupers.getOrDefault(typeId,Set.of()));parents.sort(String::compareTo);
         for(String parent:parents){
-            hierarchyParentReads++;
             parentParts.add(new Object[]{parent,composeHierarchyApi(parent,affected,memo,visiting)});
         }
         visiting.remove(typeId);
         String value=CanonicalDigestWriter.digest("hierarchy-api-v2",typeId,typeApi,
                 members.apiIdentity(),members.api().cardinality(),parentParts).hex();
-        hierarchyApis.put(typeId,value);memo.put(typeId,value);hierarchyCompositions++;return value;
+        hierarchyApis.put(typeId,value);memo.put(typeId,value);return value;
     }
 
     private void indexType(SemanticFact fact){
@@ -398,7 +389,7 @@ public final class ResidentSemanticState {
         return Hash256.sha256((domain+"\0"+Objects.requireNonNullElse(value,"")).getBytes(StandardCharsets.UTF_8)).unsignedInteger().mod(FIELD);
     }
 
-    private Node newNode(Entry entry,Node left,Node right){treeNodesCreated++;return new Node(entry,left,right);}
+    private Node newNode(Entry entry,Node left,Node right){return new Node(entry,left,right);}
 
     /**
      * Build the deterministic priority treap in linear structural time from already ordered facts.

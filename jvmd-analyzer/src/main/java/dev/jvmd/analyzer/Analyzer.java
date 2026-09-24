@@ -82,9 +82,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private final Dependencies dependencies=new Dependencies();
     private final LinkedHashMap<String,SourceText> sourceTexts=new LinkedHashMap<>(16,.75f,true);
     private long cacheHits,bindingComputations,diagnosticFilesAnalysed,diagnosticFilesReused,indexWrites,indexWriteNanos,apiFingerprintChanges,apiFingerprintUnchanged;
-    private long completionRequests,residentDescriptionLoads,residentDescriptionCacheHits,residentHierarchyUnitReuses,residentHierarchyUnitBuilds;
-    private List<String> residentHierarchyLastBuiltUnits=List.of();
-    private long residentDeclarationFactReuses,residentDeclarationFactBuilds;
+    private long completionRequests,residentDescriptionLoads,residentDescriptionCacheHits;
     private Context context;
     private IndexService index;
     private LiveSourceState liveSourceState;
@@ -383,8 +381,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         });
         diagnosticStore.inputs(observed);
         if(outcome.result()!=null&&outcome.warnings().isEmpty()){
-            residentDeclarationFactReuses+=outcome.result().semanticFactReuses();
-            residentDeclarationFactBuilds+=outcome.result().semanticFactBuilds();
             dependencies.recordFocused(path,outcome.result().dependencies());
             if(cursor==null&&outcome.tier()==2){
                 var contribution=SemanticContributions.from(path,hash,outcome.result(),outcome.diagnostics());
@@ -468,10 +464,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             return snapshots;
         });
         bindingComputations+=sources.size();
-        if(result.result()!=null&&result.warnings().isEmpty())for(var snapshot:result.result().values()){
-            residentDeclarationFactReuses+=snapshot.semanticFactReuses();
-            residentDeclarationFactBuilds+=snapshot.semanticFactBuilds();
-        }
         diagnosticStore.inputs(observed);
         var values=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();
         // Resolve every API first: invalidation from a later file must not erase an earlier fresh result.
@@ -636,8 +628,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             return qualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,inputSnapshot(),true,true,supersededRetries);
         }
         if(result==null)return null;
-        residentHierarchyUnitReuses+=result.hierarchyUnitsReused();residentHierarchyUnitBuilds+=result.semanticSnapshots().size();
-        residentHierarchyLastBuiltUnits=result.semanticSnapshots().stream().map(SemanticSnapshot::unit).toList();
         for(var snapshot:result.semanticSnapshots())admitDetachedSemantic(snapshot);
         var query=registerAccessibility(caches,result);
         var binaries=completionNameResolutionBinaries(text,result.nameResolutionNames());
@@ -700,8 +690,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             return unqualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,inputSnapshot(),true,true,supersededRetries);
         }
         if(result==null)return null;
-        residentHierarchyUnitReuses+=result.hierarchyUnitsReused();residentHierarchyUnitBuilds+=result.semanticSnapshots().size();
-        residentHierarchyLastBuiltUnits=result.semanticSnapshots().stream().map(SemanticSnapshot::unit).toList();
         for(var snapshot:result.semanticSnapshots())admitDetachedSemantic(snapshot);
         var query=registerAccessibility(caches,result);
         var dependencyApis=documentDependencyApis(query,path);if(dependencyApis==null)return null;
@@ -1123,9 +1111,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(liveSourceState!=null)result.put("live_source_state",liveSourceState.status());
         if(context!=null)result.put("resident_semantic_state",semanticState().status());
         result.put("completion_requests",completionRequests);result.put("resident_description_loads",residentDescriptionLoads);result.put("resident_description_cache_hits",residentDescriptionCacheHits);
-        result.put("resident_hierarchy_unit_reuses",residentHierarchyUnitReuses);result.put("resident_hierarchy_unit_builds",residentHierarchyUnitBuilds);
-        result.put("resident_hierarchy_last_built_units",residentHierarchyLastBuiltUnits);
-        result.put("resident_declaration_fact_reuses",residentDeclarationFactReuses);result.put("resident_declaration_fact_builds",residentDeclarationFactBuilds);
         if(context!=null){
             result.put("resident_description_cache_entries",modules.get(context.generation()).descriptions.size());
             result.put("resident_accessibility_cache",modules.get(context.generation()).accessibility.status());

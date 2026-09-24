@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 
 export type Message = { jsonrpc: string; id?: string | number | null; method?: string; params?: any; result?: any; error?: any };
+export type RpcCaller = { call(method:string,params?:any):Promise<any> };
 export class Framing {
   private buffer = Buffer.alloc(0);
   private length: number | null = null;
@@ -73,6 +74,34 @@ export class RpcClient {
     return response.result;
   }
   close(){this.socket.destroy();}
+}
+/**
+ * LSP calls may overlap. Each busy daemon connection is kept out of the idle set so
+ * concurrent calls use independent Unix connections instead of inheriting a socket FIFO.
+ */
+export class RpcPool implements RpcCaller {
+  private idle:RpcClient[]=[];
+  private all=new Set<RpcClient>();
+  private closed=false;
+  constructor(private create:()=>Promise<RpcClient>,private maxIdle=4){}
+  async call(method:string,params:any={}){
+    const client=this.idle.pop()||await this.open();
+    try{return await client.call(method,params);}
+    finally{this.release(client);}
+  }
+  private async open(){
+    if(this.closed)throw new Error("RPC pool is closed");
+    const client=await this.create();
+    if(this.closed){client.close();throw new Error("RPC pool is closed");}
+    this.all.add(client);return client;
+  }
+  private release(client:RpcClient){
+    if(this.closed||client.socket.destroyed||this.idle.length>=this.maxIdle){
+      this.all.delete(client);client.close();return;
+    }
+    this.idle.push(client);
+  }
+  close(){if(this.closed)return;this.closed=true;for(const client of this.all)client.close();this.all.clear();this.idle=[];}
 }
 export async function defaults() {
   let config:any={};

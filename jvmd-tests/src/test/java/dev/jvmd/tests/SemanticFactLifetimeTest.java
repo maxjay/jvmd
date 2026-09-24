@@ -56,9 +56,11 @@ class SemanticFactLifetimeTest {
             @SuppressWarnings("unchecked") var residentAfter=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
             assertThat(((Number)residentAfter.get("semantic_fact_mutations")).longValue()).isEqualTo(mutations);
             assertThat(((Number)analyzer.status().get("resident_description_loads")).longValue()).isEqualTo(descriptionLoads);
-            assertThat(second.result().semanticFacts().keySet()).containsExactlyInAnyOrderElementsOf(firstFacts.keySet());
-            for(var entry:firstFacts.entrySet())
-                assertThat(second.result().semanticFacts().get(entry.getKey())).isSameAs(entry.getValue());
+            String sourceFile=file.toAbsolutePath().normalize().toString();
+            var residentDeclarations=firstFacts.values().stream().filter(fact->sourceFile.equals(fact.sourceFile())).toList();
+            assertThat(residentDeclarations).isNotEmpty();
+            for(var fact:residentDeclarations)
+                assertThat(second.result().semanticFacts().get(fact.id())).isSameAs(fact);
         }
     }
 

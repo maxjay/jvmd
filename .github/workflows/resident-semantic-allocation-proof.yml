@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      PROOF_SUBJECT_SHA: 7163f408ce17dc4f7f29407c042d708ed6206aea
+      PROOF_SUBJECT_SHA: 393398972d980fcf0c4ef9cf3f92b9edd1a2f207
     steps:
       - name: Checkout proof machinery
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262

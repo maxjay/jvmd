@@ -17,10 +17,12 @@ function timing(report:any,state:"firstUse"|"steady"){
 function displayTiming(report:any,state:"firstUse"|"steady"){
   const correct=completionCorrect(report,state);
   if(state==="firstUse"){
-    const value=fmt(timing(report,state));
+    const value=fmt(report.operations.completion.firstUse.metrics.latencyMs);
     return correct?value:value+" diagnostic";
   }
-  const stats=timing(report,state);
+  const stats=correct
+    ?(report.operations.completion.correctStats??report.operations.completion.stats)
+    :report.operations.completion.stats;
   const value="p50 "+fmt(stats.p50Ms)+" / p95 "+fmt(stats.p95Ms);
   return correct?value:value+" diagnostic";
 }
@@ -31,7 +33,8 @@ if(jdtls.phaseModel.defaults.steady_samples!==jvmd.phaseModel.defaults.steady_sa
   throw new Error("asymmetric steady sample count");
 
 const startup=[
-  ["Initialize",jdtls.lifecycle.initializeMs,jvmd.lifecycle.initializeMs],
+  ["Initialize request",jdtls.lifecycle.initializeMs,jvmd.lifecycle.initializeMs],
+  ["Process → initialize response",jdtls.lifecycle.processToInitializeResponseMs,jvmd.lifecycle.processToInitializeResponseMs],
   ["Process → workspace ready",jdtls.lifecycle.processToWorkspaceReadyMs,jvmd.lifecycle.processToWorkspaceReadyMs],
   ["Workspace ready → documents admitted",jdtls.lifecycle.documentAdmissionMs,jvmd.lifecycle.documentAdmissionMs],
   ["Process → first correct completion",jdtls.coldEndToEnd.firstCorrectResultMs,jvmd.coldEndToEnd.firstCorrectResultMs],
@@ -49,6 +52,7 @@ const memory=[
   ["Workspace ready RSS",jdtls.lifecycle.memory.workspace_ready.totalKb,jvmd.lifecycle.memory.workspace_ready.totalKb],
   ["After first-use RSS",jdtls.lifecycle.memory.post_first_use.totalKb,jvmd.lifecycle.memory.post_first_use.totalKb],
   ["After steady RSS",jdtls.lifecycle.memory.post_steady.totalKb,jvmd.lifecycle.memory.post_steady.totalKb],
+  ["Steady peak RSS",jdtls.lifecycle.memory.steady_peak.totalKb,jvmd.lifecycle.memory.steady_peak.totalKb],
 ];
 
 const lines=[

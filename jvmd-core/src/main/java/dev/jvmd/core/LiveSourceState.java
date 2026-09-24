@@ -2,6 +2,7 @@ package dev.jvmd.core;
 
 import java.io.IOException;
 import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 
 /**
@@ -299,15 +300,23 @@ public final class LiveSourceState implements AutoCloseable {
     }
     private void registerTree(Path directory) throws IOException {
         if(!Files.isDirectory(directory,LinkOption.NOFOLLOW_LINKS))return;
-        try(var paths=Files.walk(directory)){
-            for(Path path:paths.filter(p->Files.isDirectory(p,LinkOption.NOFOLLOW_LINKS)).toList())registerDirectory(path);
-        }
+        Files.walkFileTree(directory,new SimpleFileVisitor<>(){
+            @Override public FileVisitResult preVisitDirectory(Path path,BasicFileAttributes attributes)throws IOException{
+                try{registerDirectory(path);}
+                catch(NoSuchFileException|NotDirectoryException vanished){return FileVisitResult.SKIP_SUBTREE;}
+                return FileVisitResult.CONTINUE;
+            }
+            @Override public FileVisitResult visitFileFailed(Path path,IOException failure)throws IOException{
+                if(failure instanceof NoSuchFileException||failure instanceof NotDirectoryException)return FileVisitResult.CONTINUE;
+                throw failure;
+            }
+        });
     }
     private synchronized void registerDirectory(Path directory) throws IOException {
         if(watcher==null)return;
-        directory=normalize(directory);if(!watchedDirectories.add(directory))return;
+        directory=normalize(directory);if(watchedDirectories.contains(directory))return;
         WatchKey key=directory.register(watcher,StandardWatchEventKinds.ENTRY_CREATE,StandardWatchEventKinds.ENTRY_MODIFY,StandardWatchEventKinds.ENTRY_DELETE);
-        watchKeys.put(key,directory);
+        watchedDirectories.add(directory);watchKeys.put(key,directory);
     }
 
     private void watchLoop(){

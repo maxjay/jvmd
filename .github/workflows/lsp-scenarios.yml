@@ -1,4 +1,5 @@
 name: LSP scenarios
+# Scheduler changes under shim/** are part of this integration gate.
 
 on:
   pull_request:

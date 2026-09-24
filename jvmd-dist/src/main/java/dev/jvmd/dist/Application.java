@@ -449,7 +449,8 @@ public final class Application implements AutoCloseable {
                 default->throw RpcException.invalid("position must be before, after or into");
             }end=start;
         }
-        return finishEdit(session,TextEdits.prepare(List.of(new TextEdits.Edit(file,start,end,replacement)),Map.of(),documents(session).snapshots()),params.path("dry_run").asBoolean(),symbol);
+        var plan=TextEdits.prepare(List.of(new TextEdits.Edit(file,start,end,replacement)),Map.of(),documents(session).snapshots());
+        return operation.equals("body")?finishEdit(session,plan,params.path("dry_run").asBoolean(),symbol):finishEdit(session,plan,params.path("dry_run").asBoolean());
     }
     private Envelope editText(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
         var values=params.path("text_edits");if(!values.isArray()||values.isEmpty())throw RpcException.invalid("text_edits must be a nonempty array");

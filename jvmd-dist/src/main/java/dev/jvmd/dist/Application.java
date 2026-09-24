@@ -390,6 +390,10 @@ public final class Application implements AutoCloseable {
                 }else return Envelope.of(2,"live",symbol);
             }
         }
+        if((ref.startsWith("maven ")||ref.startsWith("local "))&&analyzer!=null){
+            var resident=analyzer.residentDescription(ref);
+            if(resident!=null)return Envelope.of(2,"live",resident);
+        }
         var local=workspaceFind(session,ref,false);
         if(local.size()==1)return Envelope.of(1,"live",local.getFirst());
         if(local.size()>1)return page(1,"live","candidates",local,0,20,List.of("ambiguous"));

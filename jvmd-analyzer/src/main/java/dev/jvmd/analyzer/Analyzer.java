@@ -476,7 +476,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         long resultBytes=Json.MAPPER.writeValueAsBytes(returned).length,total=System.nanoTime()-requestStarted;
         completionRequests++;completionRowsReturned+=returned.size();completionRowsDiscardedAfterLimit+=Math.max(0,rows.size()-to);
         completionResultBytes+=resultBytes;completionLastCacheHit=true;
-        completionLastTimingMs=Map.of("total",millis(total),"resident_query",millis(total));
+        completionLastTimingMs=Map.ofEntries(
+                Map.entry("key",0d),Map.entry("source_refresh",0d),Map.entry("focus",0d),Map.entry("compiler_query",0d),
+                Map.entry("editor_total",0d),Map.entry("candidate_discovery",0d),Map.entry("row_materialization",0d),
+                Map.entry("documentation",0d),Map.entry("sort",0d),Map.entry("cache_admission",0d),Map.entry("filter",0d),
+                Map.entry("resident_query",millis(total)),Map.entry("total",millis(total)));
         try(var trace=dev.jvmd.core.RequestScope.stage("completion.resident")){
             trace.cache("resident");trace.count("rows_returned",returned.size());trace.count("javac_candidate_discovery",0);
         }
@@ -512,6 +516,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         long sourceEpoch=compiler.sourceStateGeneration();
         long phaseStarted=System.nanoTime();var observed=inputSnapshot();String key=completionKey(path,patched,start,qualified,observed);keyNanos=System.nanoTime()-phaseStarted;
+        if(qualified){
+            String residentKey=residentQualifiedKey(path,patched,start,observed);
+            var resident=residentQualifiedCompletion(path,text,patched,start,end,focusCursor,prefix,limit,offset,residentKey,observed,requestStarted);
+            if(resident!=null)return resident;
+        }
         CompilerPool.Outcome<List<Map<String,Object>>> outcome;
         if(key!=null&&cached!=null&&cachedApiCurrent&&key.equals(cached.key())&&prefix.startsWith(cached.prefix())){
             completionCacheHits++;cacheHit=true;outcome=cached.result();

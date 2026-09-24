@@ -46,8 +46,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         CompletionCached { dependencies=Set.copyOf(dependencies);dependencyApis=Map.copyOf(dependencyApis); }
     }
     private record CompletionValidation(CompletionCached cached,boolean apiCurrent) { }
-    private record DocumentSemanticCached(String key,DocumentSemanticSnapshot snapshot,Map<String,String> resolutionIdentities) {
-        DocumentSemanticCached { resolutionIdentities=Map.copyOf(resolutionIdentities); }
+    private record DocumentSemanticCached(String key,DocumentSemanticSnapshot snapshot,Map<String,String> resolutionIdentities,Map<Path,String> dependencyApis) {
+        DocumentSemanticCached { resolutionIdentities=Map.copyOf(resolutionIdentities);dependencyApis=Map.copyOf(dependencyApis); }
     }
     private record Outline(List<Map<String,Object>> symbols,Set<Path> dependencies) { }
     private LinkedHashMap<String,Cached> focused=new LinkedHashMap<>(32,.75f,true);
@@ -441,7 +441,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             if(current.equals(cached.resolutionIdentities())){
                 var rebased=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
                         cached.snapshot().queries(),cached.snapshot().locals());
-                var reused=new DocumentSemanticCached(key,rebased,current);caches.documentSemantics.put(path,reused);return reused;
+                var reused=new DocumentSemanticCached(key,rebased,current,cached.dependencyApis());caches.documentSemantics.put(path,reused);return reused;
             }
         }
         var focus=focusing.focus(path,patched,focusCursor);
@@ -458,7 +458,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var resolution=completionResolutionIdentities(binaries);
         var snapshot=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
                 Map.of(start,result.query()),List.of());
-        var next=new DocumentSemanticCached(key,snapshot,resolution);caches.documentSemantics.put(path,next);return next;
+        var next=new DocumentSemanticCached(key,snapshot,resolution,Map.of());caches.documentSemantics.put(path,next);return next;
     }
 
     private Envelope residentQualifiedCompletion(Path path,String text,String patched,int start,int end,int focusCursor,String prefix,

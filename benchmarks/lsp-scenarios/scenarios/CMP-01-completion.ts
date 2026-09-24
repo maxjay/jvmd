@@ -68,8 +68,10 @@ export default class CompletionScenario extends LspScenarioHarness {
       },
       operations:{completion:completionSeries},
       metadata:{
-        firstUsePreparation:"workspace ready; receiver/caller opened; caller edit admitted through versioned diagnostics; no completion request before first_use",
-        afterUnsavedEditPreparation:"receiver API edit admitted through versioned diagnostics before the post-edit completion",
+        firstUsePreparation:"workspace ready; receiver/caller opened; caller edit sent; no completion request before first_use",
+        firstUseDocumentAdmission:this.documentAdmissionBoundary(),
+        afterUnsavedEditPreparation:"receiver API edit sent before the post-edit completion",
+        afterUnsavedEditDocumentAdmission:this.documentAdmissionBoundary(),
       },
     };
   }

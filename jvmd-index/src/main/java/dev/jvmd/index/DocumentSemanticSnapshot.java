@@ -39,12 +39,14 @@ public record DocumentSemanticSnapshot(
             String packageName,
             String enclosingTypeId,
             boolean staticContext,
-            List<CompletionCandidate> scopedCandidates) {
+            List<CompletionCandidate> scopedCandidates,
+            Set<String> accessibleMemberIds) {
         public QueryContext {
             if(selectorOffset<0)throw new IllegalArgumentException("selectorOffset");
             Objects.requireNonNull(receiverType);
             packageName=Objects.requireNonNullElse(packageName,"");
             scopedCandidates=List.copyOf(scopedCandidates);
+            accessibleMemberIds=Set.copyOf(accessibleMemberIds);
         }
     }
 

@@ -274,18 +274,19 @@ public final class Issue36SemanticProofTest {
             var after=index.status();
             var abAfter=index.findNamePrefix("Sample","workspace-ab",20,Set.of("class"));
             var cAfter=index.findNamePrefix("Sample","workspace-c",20,Set.of("class"));
-            return Map.of(
-                    "machine_status_before",before,
-                    "machine_status_after",after,
-                    "machine_root_before",findValue(before,"machine_dependency_root"),
-                    "machine_root_after",findValue(after,"machine_dependency_root"),
-                    "workspace_ab_root_before",findValue(before,"workspace_ab_dependency_root"),
-                    "workspace_ab_root_after",findValue(after,"workspace_ab_dependency_root"),
-                    "workspace_ab_before_gavs",abBefore.stream().map(row->Objects.toString(row.get("gav"),"")).toList(),
-                    "workspace_ab_after_gavs",abAfter.stream().map(row->Objects.toString(row.get("gav"),"")).toList(),
-                    "workspace_c_before",cBefore,
-                    "workspace_c_after",cAfter,
-                    "baseline_identity_note","null roots mean the baseline exposes no compositional machine/workspace semantic identity");
+            var out=new LinkedHashMap<String,Object>();
+            out.put("machine_status_before",before);
+            out.put("machine_status_after",after);
+            out.put("machine_root_before",findValue(before,"machine_dependency_root"));
+            out.put("machine_root_after",findValue(after,"machine_dependency_root"));
+            out.put("workspace_ab_root_before",findValue(before,"workspace_ab_dependency_root"));
+            out.put("workspace_ab_root_after",findValue(after,"workspace_ab_dependency_root"));
+            out.put("workspace_ab_before_gavs",abBefore.stream().map(row->Objects.toString(row.get("gav"),"")).toList());
+            out.put("workspace_ab_after_gavs",abAfter.stream().map(row->Objects.toString(row.get("gav"),"")).toList());
+            out.put("workspace_c_before",cBefore);
+            out.put("workspace_c_after",cAfter);
+            out.put("baseline_identity_note","null roots mean the baseline exposes no compositional machine/workspace semantic identity");
+            return out;
         }
     }
 

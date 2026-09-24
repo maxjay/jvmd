@@ -552,6 +552,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         return semanticState().unitCurrent(unit,null);
     }
+    private boolean residentSemanticTypeCurrent(String typeId){
+        return residentSemanticUnitCurrent(semanticState().unitForFact(typeId));
+    }
 
     private String queryHierarchyApi(DocumentSemanticSnapshot.QueryContext query){
         var identities=new ArrayList<String>();var queue=new ArrayDeque<SemanticType>();addDeclaredTypes(queue,query.receiverType());var seen=new HashSet<String>();
@@ -609,7 +612,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             if(tier!=2)return null;
             return SemanticFacts.qualifiedCompletion(task,units,
                     new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),
-                    EditorQueries.MARKER,start,this::residentSemanticUnitCurrent);
+                    EditorQueries.MARKER,start,this::residentSemanticTypeCurrent);
         });
         var result=attributed.result();
         if(!attributed.warnings().isEmpty()){
@@ -672,7 +675,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             if(tier!=2)return null;
             return SemanticFacts.unqualifiedCompletion(task,units,
                     new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),
-                    EditorQueries.MARKER,start,this::residentSemanticUnitCurrent);
+                    EditorQueries.MARKER,start,this::residentSemanticTypeCurrent);
         });
         var result=attributed.result();
         if(!attributed.warnings().isEmpty()){

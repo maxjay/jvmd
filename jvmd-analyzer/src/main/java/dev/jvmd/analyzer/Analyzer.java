@@ -206,7 +206,16 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private String classpathStamp()throws Exception{return computeClasspathStamp();}
     private CompilerInputs.Snapshot validatedInputs()throws Exception {
         var inputs=inputSnapshot();
-        if(!compiler.cacheValid(inputs)){outlines.clear();focused.clear();inputs=inputSnapshot();}
+        if(!compiler.cacheValid(inputs)){
+            outlines.clear();focused.clear();
+            var caches=modules.get(context.generation());
+            caches.documentSemantics.clear();caches.accessibility.clear();
+            // A classpath/environment replacement invalidates detached binary/JDK declaration
+            // currency even when the source membership is unchanged. Preserve facts for reuse, but
+            // fence every retained unit until javac re-admits it from the new environment.
+            caches.semantic.markHierarchyUncertain();
+            inputs=inputSnapshot();
+        }
         return inputs;
     }
     private String computeClasspathStamp()throws Exception {

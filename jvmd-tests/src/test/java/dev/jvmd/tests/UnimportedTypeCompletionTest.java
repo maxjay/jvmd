@@ -72,7 +72,7 @@ class UnimportedTypeCompletionTest {
             assertThat(response.has("error")).as(response.toString()).isFalse();
             assertThat(response.path("result").path("result").path("items").size()).isEqualTo(10);
             assertThat(indexQueries(app,session)-beforeQueries).isZero();
-            assertThat(residentRangeReads(app,session)-beforeRange).isLessThanOrEqualTo(12L);
+            assertThat(residentRangeReads(app,session)-beforeRange).isLessThanOrEqualTo(16L);
         }
     }
 

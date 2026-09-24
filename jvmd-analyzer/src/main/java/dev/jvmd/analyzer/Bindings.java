@@ -1,5 +1,6 @@
 package dev.jvmd.analyzer;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.sun.source.tree.*;
 import com.sun.source.util.*;
 import dev.jvmd.index.DocMarkdown;
@@ -21,7 +22,7 @@ public final class Bindings {
     public record Edge(String src,String dst,String kind) { }
     /** Implements 4.2: detached declarations, references and source dependencies. */
     public record Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies,
-                           Map<String,SemanticFact> semanticFacts,int semanticFactReuses,int semanticFactBuilds) {
+                           Map<String,SemanticFact> semanticFacts,@JsonIgnore int semanticFactReuses,@JsonIgnore int semanticFactBuilds) {
         public Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies){
             this(symbols,occurrences,edges,dependencies,Map.of(),0,0);
         }

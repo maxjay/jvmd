@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 
 export type Message = { jsonrpc: string; id?: string | number | null; method?: string; params?: any; result?: any; error?: any };
+export type RpcCaller = { call(method:string,params?:any):Promise<any> };
 export class Framing {
   private buffer = Buffer.alloc(0);
   private length: number | null = null;
@@ -73,6 +74,78 @@ export class RpcClient {
     return response.result;
   }
   close(){this.socket.destroy();}
+}
+/**
+ * LSP calls may overlap. Each busy daemon connection is kept out of the idle set so
+ * concurrent calls use independent Unix connections instead of inheriting a socket FIFO.
+ */
+export class RpcPool implements RpcCaller {
+  private idle:RpcClient[]=[];
+  private all=new Set<RpcClient>();
+  private waiters:Array<{resolve:(client:RpcClient)=>void;reject:(error:Error)=>void}>=[];
+  private closed=false;
+  private create:()=>Promise<RpcClient>;
+  private maxIdle:number;
+  private maxLive:number;
+  private live=0;
+  constructor(create:()=>Promise<RpcClient>,maxIdle=4,maxLive=8){
+    if(maxIdle<0)throw new Error("RPC pool maxIdle must be non-negative");
+    if(maxLive<1)throw new Error("RPC pool maxLive must be positive");
+    this.create=create;this.maxLive=maxLive;this.maxIdle=Math.min(maxIdle,maxLive);
+  }
+  async call(method:string,params:any={}){
+    const client=await this.acquire();
+    try{return await client.call(method,params);}
+    finally{this.release(client);}
+  }
+  private async acquire(){
+    if(this.closed)throw new Error("RPC pool is closed");
+    while(this.idle.length){
+      const client=this.idle.pop()!;
+      if(!client.socket.destroyed)return client;
+      this.discard(client);
+    }
+    if(this.live<this.maxLive)return this.open();
+    return new Promise<RpcClient>((resolve,reject)=>this.waiters.push({resolve,reject}));
+  }
+  private async open(){
+    if(this.closed)throw new Error("RPC pool is closed");
+    if(this.live>=this.maxLive)throw new Error("RPC pool live capacity exceeded");
+    this.live++;
+    try{
+      const client=await this.create();
+      if(this.closed){client.close();throw new Error("RPC pool is closed");}
+      this.all.add(client);return client;
+    }catch(error){
+      this.live--;this.drain();
+      throw error;
+    }
+  }
+  private release(client:RpcClient){
+    if(this.closed||client.socket.destroyed){this.discard(client);return;}
+    const waiter=this.waiters.shift();
+    if(waiter){waiter.resolve(client);return;}
+    if(this.idle.length<this.maxIdle){this.idle.push(client);return;}
+    this.discard(client);
+  }
+  private discard(client:RpcClient){
+    if(this.all.delete(client))this.live=Math.max(0,this.live-1);
+    client.close();this.drain();
+  }
+  private drain(){
+    if(this.closed)return;
+    while(this.waiters.length&&this.live<this.maxLive){
+      const waiter=this.waiters.shift()!;
+      void this.open().then(waiter.resolve,waiter.reject);
+    }
+  }
+  close(){
+    if(this.closed)return;this.closed=true;
+    const error=new Error("RPC pool is closed");
+    for(const waiter of this.waiters.splice(0))waiter.reject(error);
+    for(const client of this.all)client.close();
+    this.all.clear();this.idle=[];this.live=0;
+  }
 }
 export async function defaults() {
   let config:any={};

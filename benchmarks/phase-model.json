@@ -1,0 +1,34 @@
+{
+  "schema": 2,
+
+  "states": [
+    "startup",
+    "machine_index",
+    "initialize",
+    "service_ready",
+    "session_open",
+    "workspace_resolution",
+    "workspace_index",
+    "document_admission",
+    "first_use",
+    "warmup",
+    "steady"
+  ],
+  "defaults": {
+    "warmup": 2,
+    "steady_samples": 20
+  },
+  "rules": {
+    "startup": "Process launch and architecture-specific transport availability. This is process lifecycle, not query latency.",
+    "machine_index": "Machine-global dependency/JDK index lifecycle. JVMD reports machine_cold, daemon_restart and resident_daemon separately; servers without an equivalent report n/a.",
+    "initialize": "LSP initialize request send to initialize response receive, followed by initialized notification.",
+    "service_ready": "A server-native normal-service readiness signal such as JDTLS ServiceReady. It is not assumed equivalent to machine indexing or target semantic warmup.",
+    "session_open": "Workspace session establishment. For JVMD this is distinct from daemon startup and machine-index readiness.",
+    "workspace_resolution": "Project/model/module/classpath/source-root resolution. Exact boundaries may be unavailable; server-native resolver evidence must be reported instead of substituted.",
+    "workspace_index": "Workspace-local source/build-artifact indexing or reconciliation. Machine dependency indexing is explicitly excluded. If no authoritative completion barrier exists, readiness is reported unavailable.",
+    "document_admission": "Open/change notifications through an observable current-document/version boundary. Diagnostics and other work occurring here are attributed rather than silently treated as query latency.",
+    "first_use": "First request of the measured operation/target after declared preparation. No operation-specific warmup may precede it.",
+    "warmup": "Symmetric operation-specific requests retained in raw reports but excluded from steady statistics.",
+    "steady": "Measured operation samples after warmup; only correct samples contribute to comparative latency percentiles."
+  }
+}

@@ -1,14 +1,15 @@
-/** Implements 4.9: LSP lifecycle, native replies and debounced diagnostics over the same daemon. */
+/** Implements 4.9: LSP lifecycle, causal document ordering and background diagnostics over the same daemon. */
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { realpath } from "node:fs/promises";
 import path from "node:path";
-import { RpcClient, type Message } from "./transport.ts";
+import type { Message, RpcCaller } from "./transport.ts";
 
 const MAX_BYTES=64*1024;
+const DIAGNOSTIC_DEBOUNCE_MS=200,MAX_DIAGNOSTIC_DEFERRAL_MS=30_000;
 function rpcError(code:number,message:string,data?:any){return Object.assign(new Error(message),{rpc:{code,message,data}});}
 function pointer(parts:string[]){return "/"+parts.map(p=>p.replaceAll("~","~0").replaceAll("/","~1")).join("/");}
 /** Reconstructs bounded daemon fragments by their declared UTF-16 or array offsets. */
-export async function collect(client:RpcClient,method:string,params:any) {
+export async function collect(client:RpcCaller,method:string,params:any) {
   let response:any,firstCursor:string|undefined,total=0,pages=0;
   const result:any={payload:{},warnings:[]},strings=new Map<string,Map<number,string>>();
   function merge(target:any,source:any,local:string[],absolute:string[],segments:any):any {
@@ -41,91 +42,185 @@ export async function collect(client:RpcClient,method:string,params:any) {
   }
   return {...response,result:result.payload,warnings:result.warnings,firstCursor};
 }
+type MessageClass="lifecycle"|"mutation"|"interactive"|"notification";
 export class LspBridge {
-  private queue:Promise<unknown>=Promise.resolve();
+  private lifecycle:Promise<void>=Promise.resolve();
+  private initializing?:Promise<void>;
   private session?:string;
   private initialized=false;
+  private shutdownRequested=false;
   private stopping=false;
   private capabilities:any={};
   private timers=new Map<string,ReturnType<typeof setTimeout>>();
+  private diagnosticJobs=new Map<string,Promise<void>>();
+  private diagnosticPlans=new Map<string,{generation:number;version:number;dueSince:number}>();
+  private activeInteractive=0;
+  private mutationTails=new Map<string,Promise<void>>();
+  private workspaceMutationFence:Promise<void>=Promise.resolve();
+  private active=new Set<Promise<void>>();
   private versions=new Map<string,number>();
   private generations=new Map<string,number>();
   private completionGenerations=new Map<string,number>();
   private cancelledRequests=new Set<string|number|null>();
+  private activeRequests=new Set<string|number|null>();
   private rootAliases:{canonical:string;client:string}[]=[];
   private documentUris=new Map<string,string>();
-  constructor(getClient:()=>Promise<RpcClient>,root:string,send:(message:Message)=>void,exit:(code:number)=>void=code=>{process.exitCode=code;}){this.getClient=getClient;this.root=root;this.send=send;this.exit=exit;}
-  getClient:()=>Promise<RpcClient>;root:string;send:(message:Message)=>void;exit:(code:number)=>void;
+  private timing:{diagnosticDebounceMs:number;maxDiagnosticDeferralMs:number};
+  constructor(
+    getClient:()=>Promise<RpcCaller>,root:string,send:(message:Message)=>void,
+    exit:(code:number)=>void=code=>{process.exitCode=code;},
+    timing={diagnosticDebounceMs:DIAGNOSTIC_DEBOUNCE_MS,maxDiagnosticDeferralMs:MAX_DIAGNOSTIC_DEFERRAL_MS},
+  ){
+    this.getClient=getClient;this.root=root;this.send=send;this.exit=exit;this.timing=timing;
+  }
+  getClient:()=>Promise<RpcCaller>;root:string;send:(message:Message)=>void;exit:(code:number)=>void;
   handle(message:Message):Promise<void>{
-    const uri=message.params?.textDocument?.uri,method=message.method||"";
-    if(uri&&["textDocument/didOpen","textDocument/didChange","textDocument/didClose","textDocument/didSave"].includes(method)){
-      this.generations.set(uri,(this.generations.get(uri)||0)+1);
+    const method=message.method||"",uri=message.params?.textDocument?.uri;
+    if(method==="$/cancelRequest"){
+      const id=message.params?.id;if(id!==undefined&&this.activeRequests.has(id))this.cancelledRequests.add(id);return Promise.resolve();
+    }
+    let mutationGeneration:number|undefined,completionGeneration:number|undefined;
+    if(typeof uri==="string"&&["textDocument/didOpen","textDocument/didChange","textDocument/didClose","textDocument/didSave"].includes(method)){
+      mutationGeneration=(this.generations.get(uri)||0)+1;this.generations.set(uri,mutationGeneration);
       this.completionGenerations.set(uri,(this.completionGenerations.get(uri)||0)+1);
     }
-    if(method==="$/cancelRequest"){
-      const id=message.params?.id;if(id!==undefined)this.cancelledRequests.add(id);return Promise.resolve();
-    }
-    let completionGeneration:number|undefined;
     if(method==="textDocument/completion"&&typeof uri==="string"){
       completionGeneration=(this.completionGenerations.get(uri)||0)+1;this.completionGenerations.set(uri,completionGeneration);
     }
-    const work=this.queue.then(()=>this.process(message,uri,completionGeneration));this.queue=work.catch(()=>{});return work;
+    if(message.id!==undefined)this.activeRequests.add(message.id);
+    const kind=this.classify(method,message.id!==undefined);
+    if(this.shutdownRequested&&(kind!=="lifecycle"||method==="initialize"))return this.track(this.safe(message,async()=>{throw rpcError(-32600,"Server has shut down");}));
+    if(kind==="lifecycle")return this.lifecycleMessage(message);
+    if(kind==="mutation")return this.enqueueMutation(message,typeof uri==="string"?uri:undefined,mutationGeneration);
+    if(kind==="interactive")return this.interactive(message,typeof uri==="string"?uri:undefined,completionGeneration);
+    return this.track(this.safe(message,()=>this.notification(message)));
   }
-  private stale(id:Message["id"],uri?:string,completionGeneration?:number){
-    return id!==undefined&&this.cancelledRequests.has(id)
-      || uri!==undefined&&completionGeneration!==undefined&&this.completionGenerations.get(uri)!==completionGeneration;
+  private classify(method:string,request:boolean):MessageClass{
+    if(["initialize","shutdown","exit"].includes(method))return "lifecycle";
+    if(["textDocument/didOpen","textDocument/didChange","textDocument/didClose","textDocument/didSave"].includes(method))return "mutation";
+    return request?"interactive":"notification";
   }
-  private cancel(id:Message["id"]){
-    if(id!==undefined)this.send({jsonrpc:"2.0",id,error:{code:-32800,message:"Request cancelled"}});
+  private track(work:Promise<void>){
+    this.active.add(work);void work.then(()=>this.active.delete(work),()=>this.active.delete(work));return work;
   }
-  private async process(message:Message,uri?:string,completionGeneration?:number) {
-    const id=message.id,method=message.method||"",params=message.params||{};const request=id!==undefined;
-    if(this.stale(id,uri,completionGeneration)){this.cancel(id);if(id!==undefined)this.cancelledRequests.delete(id);return;}
-    try{
-      if(method==="exit"){await this.close();this.exit(this.stopping?0:1);return;}
-      if(method==="initialize"){
-        if(this.initialized)throw rpcError(-32600,"LSP is already initialized");
-        if(params.capabilities?.general?.positionEncodings&&!params.capabilities.general.positionEncodings.includes("utf-16"))throw rpcError(-32602,"jvmd requires the LSP UTF-16 position encoding");
-        this.capabilities=params.capabilities||{};if(params.rootUri)this.root=fileURLToPath(params.rootUri);else if(params.rootPath)this.root=path.resolve(params.rootPath);
-        const client=await this.getClient();const openParams:any={root:this.root};if(params.workspaceFolders?.length)openParams.manifest={roots:params.workspaceFolders.map((folder:any)=>fileURLToPath(folder.uri))};
-        const opened=(await client.call("session.open",openParams)).result;this.session=opened.session;
-        const roots=[this.root,...(openParams.manifest?.roots||[])];
-        this.rootAliases=(await Promise.all(roots.map(async(root:string)=>({client:path.resolve(root),canonical:await realpath(root).catch(()=>root===this.root?(opened.root||root):root)}))))
-          .filter(root=>root.client!==root.canonical).sort((a,b)=>b.canonical.length-a.canonical.length);
-        const result=await collect(client,"lsp.request",{session:this.session,method:"initialize",params,client:this.capabilities});
-        this.initialized=true;this.send({jsonrpc:"2.0",id,result:result.result.value});return;
-      }
-      if(!this.initialized)throw rpcError(-32002,"Server not initialized");
-      if(method==="shutdown"){this.stopping=true;this.clearTimers();this.send({jsonrpc:"2.0",id,result:null});return;}
-      if(this.stopping)throw rpcError(-32600,"Server has shut down");
-      if(method==="initialized"||method==="$/setTrace")return;
-      const client=await this.getClient();
-      if(method.startsWith("textDocument/did")){
-        const document=params.textDocument||{},uri=document.uri;if(typeof uri!=="string")throw rpcError(-32602,"Document URI is required");
-        const common={session:this.session,path:fileURLToPath(uri)};
-        if(method==="textDocument/didOpen"){
-          if(document.languageId!=="java")return;const opened=await client.call("document.open",{...common,text:document.text,version:document.version});
-          if(opened.result?.path){const canonical=pathToFileURL(opened.result.path).href;if(canonical!==uri)this.documentUris.set(canonical,uri);}
-          this.versions.set(uri,document.version);this.schedule(uri);
-        }else if(method==="textDocument/didChange"){
-          await client.call("document.change",{...common,version:document.version,changes:params.contentChanges});this.versions.set(uri,document.version);this.schedule(uri);
-        }else if(method==="textDocument/didClose"){
-          const timer=this.timers.get(uri);if(timer)clearTimeout(timer);this.timers.delete(uri);await client.call("document.close",common);this.versions.delete(uri);for(const [canonical,original] of this.documentUris)if(original===uri)this.documentUris.delete(canonical);this.send({jsonrpc:"2.0",method:"textDocument/publishDiagnostics",params:{uri,diagnostics:[]}});
-        }else if(method==="textDocument/didSave"){this.schedule(uri);}
-        else throw rpcError(-32601,"Method not found: "+method);return;
-      }
-      if(!request)return;
-      const response=await collect(client,"lsp.request",{session:this.session,method,params,client:this.capabilities});
-      if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
-      this.reply(id,method,params,response.result.value,response.firstCursor);
-    }catch(error){
+  private lifecycleMessage(message:Message){
+    const method=message.method||"";
+    if(method==="initialize"){
+      const work=this.lifecycle.then(()=>this.safe(message,()=>this.initialize(message)));this.initializing=work;this.lifecycle=work;return this.track(work);
+    }
+    if(method==="shutdown"){
+      this.shutdownRequested=true;this.clearTimers();const pending=[...this.active];
+      const work=this.lifecycle.then(()=>this.safe(message,async()=>{
+        await this.ready();await Promise.allSettled(pending);this.stopping=true;this.send({jsonrpc:"2.0",id:message.id,result:null});
+      }));this.lifecycle=work;return this.track(work);
+    }
+    this.shutdownRequested=true;this.clearTimers();const pending=[...this.active];
+    const work=this.lifecycle.then(()=>this.safe(message,async()=>{
+      await Promise.allSettled(pending);await this.close();this.exit(this.stopping?0:1);
+    }));this.lifecycle=work;return this.track(work);
+  }
+  private async safe(message:Message,body:()=>Promise<void>){
+    const id=message.id,request=id!==undefined;
+    try{await body();}
+    catch(error){
       const problem=(error as any).rpc||{code:-32603,message:(error as Error).message};
       if(request)this.send({jsonrpc:"2.0",id,error:problem});
       else this.send({jsonrpc:"2.0",method:"window/logMessage",params:{type:1,message:problem.message}});
     }finally{
-      if(id!==undefined)this.cancelledRequests.delete(id);
+      if(id!==undefined){this.cancelledRequests.delete(id);this.activeRequests.delete(id);}
     }
   }
+  private async ready(){
+    if(this.initializing)await this.initializing;
+    if(!this.initialized)throw rpcError(-32002,"Server not initialized");
+  }
+  private async initialize(message:Message){
+    const id=message.id,params=message.params||{};
+    if(this.initialized)throw rpcError(-32600,"LSP is already initialized");
+    if(params.capabilities?.general?.positionEncodings&&!params.capabilities.general.positionEncodings.includes("utf-16"))throw rpcError(-32602,"jvmd requires the LSP UTF-16 position encoding");
+    this.capabilities=params.capabilities||{};if(params.rootUri)this.root=fileURLToPath(params.rootUri);else if(params.rootPath)this.root=path.resolve(params.rootPath);
+    const client=await this.getClient();const openParams:any={root:this.root};if(params.workspaceFolders?.length)openParams.manifest={roots:params.workspaceFolders.map((folder:any)=>fileURLToPath(folder.uri))};
+    const opened=(await client.call("session.open",openParams)).result;this.session=opened.session;
+    const roots=[this.root,...(openParams.manifest?.roots||[])];
+    this.rootAliases=(await Promise.all(roots.map(async(root:string)=>({client:path.resolve(root),canonical:await realpath(root).catch(()=>root===this.root?(opened.root||root):root)}))))
+      .filter(root=>root.client!==root.canonical).sort((a,b)=>b.canonical.length-a.canonical.length);
+    const result=await collect(client,"lsp.request",{session:this.session,method:"initialize",params,client:this.capabilities});
+    this.initialized=true;this.send({jsonrpc:"2.0",id,result:result.result.value});
+  }
+  private enqueueMutation(message:Message,uri?:string,generation?:number){
+    let work:Promise<void>;
+    if(!uri)work=this.safe(message,()=>this.mutation(message,uri,generation));
+    else{
+      const previous=this.mutationTails.get(uri)||Promise.resolve();
+      work=previous.then(()=>this.safe(message,()=>this.mutation(message,uri,generation)));
+      this.mutationTails.set(uri,work);void work.then(()=>{if(this.mutationTails.get(uri)===work)this.mutationTails.delete(uri);});
+    }
+    // Interactive Java queries may depend on any source in the workspace. Capture every
+    // preceding mutation without serializing independent document mutations with each other.
+    const prior=this.workspaceMutationFence;
+    const fence=Promise.all([prior,work]).then(()=>{});
+    this.workspaceMutationFence=fence;
+    void fence.then(()=>{if(this.workspaceMutationFence===fence)this.workspaceMutationFence=Promise.resolve();});
+    return this.track(work);
+  }
+  private async mutation(message:Message,uri?:string,generation?:number){
+    await this.ready();
+    const method=message.method||"",params=message.params||{},document=params.textDocument||{};
+    if(typeof uri!=="string")throw rpcError(-32602,"Document URI is required");
+    const common={session:this.session,path:fileURLToPath(uri)},client=await this.getClient();
+    if(method==="textDocument/didOpen"){
+      if(document.languageId!=="java")return;const opened=await client.call("document.open",{...common,text:document.text,version:document.version});
+      if(opened.result?.path){const canonical=pathToFileURL(opened.result.path).href;if(canonical!==uri)this.documentUris.set(canonical,uri);}
+      this.versions.set(uri,document.version);this.schedule(uri,generation!,document.version);
+    }else if(method==="textDocument/didChange"){
+      await client.call("document.change",{...common,version:document.version,changes:params.contentChanges});this.versions.set(uri,document.version);this.schedule(uri,generation!,document.version);
+    }else if(method==="textDocument/didClose"){
+      this.clearDiagnostic(uri);await client.call("document.close",common);this.versions.delete(uri);for(const [canonical,original] of this.documentUris)if(original===uri)this.documentUris.delete(canonical);this.send({jsonrpc:"2.0",method:"textDocument/publishDiagnostics",params:{uri,diagnostics:[]}});
+    }else if(method==="textDocument/didSave"){
+      const version=this.versions.get(uri);if(version!==undefined)this.schedule(uri,generation!,version);
+    }else throw rpcError(-32601,"Method not found: "+method);
+  }
+  private interactive(message:Message,uri?:string,completionGeneration?:number){
+    // Snapshot the workspace mutation frontier at request arrival. Later mutations need not
+    // delay this request, but every earlier didOpen/didChange/didClose/didSave must be visible.
+    const barrier=this.workspaceMutationFence;
+    this.activeInteractive++;
+    return this.track(this.safe(message,async()=>{
+      const id=message.id,method=message.method||"",params=message.params||{};
+      try{
+        if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
+        await this.ready();
+        if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
+        if(barrier)await barrier;
+        if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
+        const client=await this.getClient();
+        if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
+        let response:any;
+        try{response=await collect(client,"lsp.request",{session:this.session,method,params,client:this.capabilities});}
+        catch(error){if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}throw error;}
+        if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
+        this.reply(id,method,params,response.result.value,response.firstCursor);
+      }finally{this.finishInteractive();}
+    }));
+  }
+  private finishInteractive(){
+    this.activeInteractive=Math.max(0,this.activeInteractive-1);if(this.activeInteractive)return;
+    // Re-arm only within the original absolute deferral deadline. Repeated short
+    // interactive calls may move the quiet-window timer, but never move that deadline.
+    for(const [uri,plan] of this.diagnosticPlans){
+      if(!this.diagnosticCurrent(uri,plan.generation,plan.version))continue;
+      this.clearTimer(uri);this.armDiagnostic(uri,plan,this.diagnosticDelay(plan));
+    }
+  }
+  private async notification(message:Message){
+    await this.ready();
+    const method=message.method||"";if(method==="initialized"||method==="$/setTrace")return;
+  }
+  private stale(id:Message["id"],uri?:string,completionGeneration?:number){
+    return (id!==undefined&&this.cancelledRequests.has(id))
+      ||(uri!==undefined&&completionGeneration!==undefined&&this.completionGenerations.get(uri)!==completionGeneration);
+  }
+  private cancel(id:Message["id"]){if(id!==undefined)this.send({jsonrpc:"2.0",id,error:{code:-32800,message:"Request cancelled"}});}
   private reply(id:Message["id"],method:string,params:any,value:any,cursor?:string){
     if((this.rootAliases.length||this.documentUris.size)&&["textDocument/definition","textDocument/references","textDocument/documentSymbol","textDocument/rename"].includes(method))value=this.clientUris(value);
     const response={jsonrpc:"2.0",id,result:value};
@@ -155,23 +250,54 @@ export class LspBridge {
     if(value&&typeof value==="object")return Object.fromEntries(Object.entries(value).map(([key,item])=>[key.startsWith("file:")?this.clientUris(key):key,this.clientUris(item)]));
     return value;
   }
-  private schedule(uri:string){
-    const previous=this.timers.get(uri);if(previous)clearTimeout(previous);const generation=this.generations.get(uri),version=this.versions.get(uri);
+  private schedule(uri:string,generation:number,version:number){
+    this.clearTimer(uri);if(this.shutdownRequested)return;
+    const plan={generation,version,dueSince:Date.now()};this.diagnosticPlans.set(uri,plan);
+    this.armDiagnostic(uri,plan,this.diagnosticDelay(plan));
+  }
+  private diagnosticDelay(plan:{dueSince:number}){
+    const remaining=this.timing.maxDiagnosticDeferralMs-(Date.now()-plan.dueSince);
+    return Math.max(0,Math.min(this.timing.diagnosticDebounceMs,remaining));
+  }
+  private armDiagnostic(uri:string,plan:{generation:number;version:number;dueSince:number},delay:number){
     const timer=setTimeout(()=>{
       this.timers.delete(uri);
-      const work=this.queue.then(async()=>{
-        if(this.stopping||this.generations.get(uri)!==generation||!this.versions.has(uri))return;
-        const result=await collect(await this.getClient(),"lsp.diagnostics",{session:this.session,uri});
-        if(this.generations.get(uri)!==generation||this.versions.get(uri)!==version)return;
-        const value=result.result.value;const diagnostics:any[]=[];
-        for(const diagnostic of value.diagnostics){diagnostics.push(diagnostic);if(Buffer.byteLength(JSON.stringify({jsonrpc:"2.0",method:"textDocument/publishDiagnostics",params:{...value,diagnostics}}))>MAX_BYTES-2048){diagnostics.pop();break;}}
-        if(diagnostics.length<value.diagnostics.length)diagnostics.push({range:{start:{line:0,character:0},end:{line:0,character:0}},severity:2,code:"jvmd.diagnosticBudget",source:"jvmd",message:(value.diagnostics.length-diagnostics.length)+" further diagnostics exceed the display budget; fix the displayed problems to see more."});
-        this.send({jsonrpc:"2.0",method:"textDocument/publishDiagnostics",params:{...value,diagnostics}});
-      });
-      this.queue=work.catch(error=>{this.send({jsonrpc:"2.0",method:"window/logMessage",params:{type:1,message:"Diagnostics failed: "+error.message}});});
-    },200);this.timers.set(uri,timer);
+      if(this.diagnosticPlans.get(uri)!==plan||!this.diagnosticCurrent(uri,plan.generation,plan.version)){if(this.diagnosticPlans.get(uri)===plan)this.diagnosticPlans.delete(uri);return;}
+      if(this.activeInteractive>0&&Date.now()-plan.dueSince<this.timing.maxDiagnosticDeferralMs){
+        this.armDiagnostic(uri,plan,this.diagnosticDelay(plan));return;
+      }
+      this.diagnosticPlans.delete(uri);
+      const barrier=this.mutationTails.get(uri),work=this.diagnostic(uri,plan.generation,plan.version,barrier);
+      this.diagnosticJobs.set(uri,work);this.track(work);void work.then(()=>{if(this.diagnosticJobs.get(uri)===work)this.diagnosticJobs.delete(uri);});
+    },delay);this.timers.set(uri,timer);
   }
-  private clearTimers(){for(const timer of this.timers.values())clearTimeout(timer);this.timers.clear();}
-  async close(){this.clearTimers();if(this.session){const client=await this.getClient();for(const uri of this.versions.keys())await client.call("document.close",{session:this.session,path:fileURLToPath(uri)});this.versions.clear();}}
-  async drained(){await this.queue;}
+  private diagnosticCurrent(uri:string,generation:number,version:number){
+    return !this.shutdownRequested&&!this.stopping&&this.generations.get(uri)===generation&&this.versions.get(uri)===version;
+  }
+  private async diagnostic(uri:string,generation:number,version:number,barrier?:Promise<void>){
+    try{
+      if(!this.diagnosticCurrent(uri,generation,version))return;
+      if(barrier)await barrier;
+      if(!this.diagnosticCurrent(uri,generation,version))return;
+      const result=await collect(await this.getClient(),"lsp.diagnostics",{session:this.session,uri});
+      if(!this.diagnosticCurrent(uri,generation,version))return;
+      const value=result.result.value;const diagnostics:any[]=[];
+      for(const diagnostic of value.diagnostics){diagnostics.push(diagnostic);if(Buffer.byteLength(JSON.stringify({jsonrpc:"2.0",method:"textDocument/publishDiagnostics",params:{...value,diagnostics}}))>MAX_BYTES-2048){diagnostics.pop();break;}}
+      if(diagnostics.length<value.diagnostics.length)diagnostics.push({range:{start:{line:0,character:0},end:{line:0,character:0}},severity:2,code:"jvmd.diagnosticBudget",source:"jvmd",message:(value.diagnostics.length-diagnostics.length)+" further diagnostics exceed the display budget; fix the displayed problems to see more."});
+      if(this.diagnosticCurrent(uri,generation,version))this.send({jsonrpc:"2.0",method:"textDocument/publishDiagnostics",params:{...value,diagnostics}});
+    }catch(error){
+      if(this.diagnosticCurrent(uri,generation,version))this.send({jsonrpc:"2.0",method:"window/logMessage",params:{type:1,message:"Diagnostics failed: "+(error as Error).message}});
+    }
+  }
+  private clearTimer(uri:string){const timer=this.timers.get(uri);if(timer)clearTimeout(timer);this.timers.delete(uri);}
+  private clearDiagnostic(uri:string){this.clearTimer(uri);this.diagnosticPlans.delete(uri);}
+  private clearTimers(){for(const timer of this.timers.values())clearTimeout(timer);this.timers.clear();this.diagnosticPlans.clear();}
+  async close(){
+    this.clearTimers();await Promise.allSettled([...this.mutationTails.values()]);
+    if(this.session){const client=await this.getClient();for(const uri of this.versions.keys())await client.call("document.close",{session:this.session,path:fileURLToPath(uri)});this.versions.clear();this.documentUris.clear();}
+  }
+  async drained(){
+    for(;;){const pending=[...this.active];if(!pending.length)break;await Promise.allSettled(pending);}
+    await this.lifecycle;
+  }
 }

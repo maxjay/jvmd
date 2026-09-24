@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import net from "node:net";
 import { RpcClient } from "../../../shim/src/transport.ts";
+import { PHASE_MODEL, elapsedMs, latencyStats, orderedMilestones } from "./phases.ts";
 import {
   createMessageConnection,
   StreamMessageReader,
@@ -13,528 +15,583 @@ import {
   type MessageConnection,
 } from "vscode-jsonrpc/node";
 
-type Memory = {
-  serverKb: number;
-  adapterKb: number;
-  totalKb: number;
-};
-
+export type Memory = { serverKb:number; adapterKb:number; totalKb:number };
 export type Measurement<T> = {
-  result: T;
-  metrics: {
-    latencyMs: number;
-    memory: {
-      before: Memory;
-      after: Memory;
-      peak: Memory;
-    };
-  };
+  result:T;
+  metrics:{ latencyMs:number; memory:{ before:Memory; after:Memory; peak:Memory } };
+};
+export type OperationSeries<T> = {
+  firstUse:Measurement<T>;
+  warmup:Measurement<T>[];
+  steady:Measurement<T>[];
+  stats:ReturnType<typeof latencyStats>;
+  correctStats?:ReturnType<typeof latencyStats>;
+};
+export type ScenarioPayload = {
+  legacy:Record<string,Measurement<unknown>|undefined>;
+  operations:Record<string,OperationSeries<unknown>>;
+  metadata?:Record<string,unknown>;
+};
+type RunningServer = {
+  connection:MessageConnection;
+  server:ChildProcess;
+  adapter?:ChildProcess;
+  milestones:Record<string,number>;
+  metadata:Record<string,unknown>;
+};
+type DiagnosticRecord = { params:any; sequence:number; receivedNs:number };
+export type DiagnosticVersionMode="unknown"|"versioned"|"versionless";
+export type DiagnosticAdmissionDecision={
+  kind:"ignore"|"verified"|"unavailable";
+  mode:DiagnosticVersionMode;
+};
+type DiagnosticAdmissionResult={
+  status:"verified"|"unavailable";
+  params?:any;
+  reason?:string;
+};
+type DiagnosticWaiter = {
+  uri:string;
+  version:number;
+  afterSequence:number;
+  resolve:(result:DiagnosticAdmissionResult)=>void;
+  reject:(error:Error)=>void;
+  timer:ReturnType<typeof setTimeout>;
 };
 
-type RunningServer = {
-  connection: MessageConnection;
-  server: ChildProcess;
-  adapter?: ChildProcess;
-};
+export function diagnosticAdmissionDecision(
+  mode:DiagnosticVersionMode,params:any,uri:string,version:number,
+):DiagnosticAdmissionDecision{
+  if(params?.uri!==uri)return {kind:"ignore",mode};
+  if(params?.version===version)return {kind:"verified",mode:"versioned"};
+  if(params?.version===undefined&&mode==="unknown")return {kind:"unavailable",mode:"versionless"};
+  return {kind:"ignore",mode};
+}
+
+function nowNs(){ return Number(process.hrtime.bigint()); }
 
 export abstract class LspScenarioHarness {
-  private static fixtureRoot: string;
-  private static mode: "record" | "compare";
-  private static running: RunningServer;
-  private static openDocuments = new Map<string, number>();
+  private static fixtureRoot:string;
+  private static mode:"record"|"compare";
+  private static serverId:"jvmd"|"jdtls";
+  private static running:RunningServer;
+  private static openDocuments=new Map<string,number>();
+  private static diagnostics:DiagnosticRecord[]=[];
+  private static diagnosticWaiters:DiagnosticWaiter[]=[];
+  private static diagnosticSequence=0;
+  private static diagnosticVersionMode:DiagnosticVersionMode="unknown";
+  private static milestones:Record<string,number>={};
+  private static phaseMemory:Record<string,Memory>={};
+  private static documentAdmissionStarted=false;
 
-  abstract readonly id: string;
-  abstract readonly name: string;
-  protected abstract scenario(): Promise<Record<string, Measurement<unknown>>>;
+  abstract readonly id:string;
+  abstract readonly name:string;
+  protected abstract scenario():Promise<ScenarioPayload>;
 
-  static async beforeAll() {
-    assert(process.env.FIXTURE_ROOT, "FIXTURE_ROOT is required");
-    this.fixtureRoot = path.resolve(process.env.FIXTURE_ROOT);
-    this.mode = process.env.MODE === "record" ? "record" : "compare";
-    this.running = await startServer(this.fixtureRoot);
+  static async beforeAll(){
+    assert(process.env.FIXTURE_ROOT,"FIXTURE_ROOT is required");
+    this.fixtureRoot=path.resolve(process.env.FIXTURE_ROOT);
+    this.mode=process.env.MODE==="record"?"record":"compare";
+    this.serverId=(process.env.SERVER??"jvmd")==="jdtls"?"jdtls":"jvmd";
+    this.running=await startServer(this.fixtureRoot);
+    this.milestones={...this.running.milestones};
+    this.diagnostics=[];this.diagnosticWaiters=[];this.diagnosticSequence=0;this.diagnosticVersionMode="unknown";this.openDocuments.clear();
+    this.phaseMemory={};this.documentAdmissionStarted=false;
 
-    const ready = new Promise<void>(resolve => {
-      this.running.connection.onNotification("language/status", (params: any) => {
-        if (params?.type === "ServiceReady") resolve();
-      });
+    let serviceReadyResolve:()=>void=()=>{};
+    const serviceReady=new Promise<void>(resolve=>serviceReadyResolve=resolve);
+    this.running.connection.onNotification("language/status",(params:any)=>{
+      if(params?.type==="ServiceReady"){
+        this.milestones.service_ready=nowNs();
+        serviceReadyResolve();
+      }
     });
-
-    this.running.connection.onRequest("workspace/configuration", (params: any) =>
-      (params?.items ?? []).map(() => ({})),
-    );
-    this.running.connection.onRequest("client/registerCapability", () => null);
-    this.running.connection.onRequest("client/unregisterCapability", () => null);
-    this.running.connection.onRequest("window/workDoneProgress/create", () => null);
-    this.running.connection.onRequest("workspace/applyEdit", () => ({ applied: false }));
+    this.running.connection.onNotification("textDocument/publishDiagnostics",(params:any)=>{
+      const record={params,sequence:++this.diagnosticSequence,receivedNs:nowNs()};
+      this.diagnostics.push(record);
+      for(const waiter of [...this.diagnosticWaiters]){
+        if(record.sequence<=waiter.afterSequence)continue;
+        const decision=diagnosticAdmissionDecision(this.diagnosticVersionMode,params,waiter.uri,waiter.version);
+        if(decision.kind==="ignore")continue;
+        this.diagnosticVersionMode=decision.mode;
+        clearTimeout(waiter.timer);
+        this.diagnosticWaiters.splice(this.diagnosticWaiters.indexOf(waiter),1);
+        if(decision.kind==="verified")waiter.resolve({status:"verified",params});
+        else waiter.resolve({
+          status:"unavailable",
+          reason:"publishDiagnostics omitted the document version; current-version admission cannot be verified",
+        });
+      }
+    });
+    this.running.connection.onRequest("workspace/configuration",(params:any)=>(params?.items??[]).map(()=>({})));
+    this.running.connection.onRequest("client/registerCapability",()=>null);
+    this.running.connection.onRequest("client/unregisterCapability",()=>null);
+    this.running.connection.onRequest("window/workDoneProgress/create",()=>null);
+    this.running.connection.onRequest("workspace/applyEdit",()=>({applied:false}));
     this.running.connection.listen();
 
-    const rootUri = pathToFileURL(this.fixtureRoot).href;
-    await this.running.connection.sendRequest("initialize", {
-      processId: process.pid,
+    const rootUri=pathToFileURL(this.fixtureRoot).href;
+    this.milestones.initialize_sent=nowNs();
+    await this.running.connection.sendRequest("initialize",{
+      processId:process.pid,
       rootUri,
-      workspaceFolders: [{ uri: rootUri, name: "apache-maven" }],
-      capabilities: {
-        workspace: { configuration: true },
-        textDocument: {
-          completion: { completionItem: { snippetSupport: false } },
+      workspaceFolders:[{uri:rootUri,name:"apache-maven"}],
+      capabilities:{
+        workspace:{configuration:true},
+        textDocument:{
+          publishDiagnostics:{versionSupport:true},
+          completion:{completionItem:{snippetSupport:false}},
         },
       },
     });
-    this.running.connection.sendNotification("initialized", {});
+    this.milestones.initialize_received=nowNs();
+    this.running.connection.sendNotification("initialized",{});
+    this.milestones.initialized_sent=nowNs();
 
-    if ((process.env.SERVER ?? "jvmd") === "jdtls") await ready;
+    if(this.serverId==="jdtls")await serviceReady;
+    this.phaseMemory.pre_document_admission=memory(this.running);
   }
 
-  static async afterAll() {
-    try {
+  static async afterAll(){
+    try{
       await this.running.connection.sendRequest("shutdown");
       this.running.connection.sendNotification("exit");
-    } finally {
+    }finally{
       this.running.connection.dispose();
       stop(this.running.adapter);
       stop(this.running.server);
     }
   }
 
-  async execute() {
-    try {
-      const actual = await this.scenario();
-      this.verify(actual);
-    } finally {
-      this.closeDocuments();
-    }
-  }
-
-  protected open(relativePath: string) {
-    const file = path.resolve(LspScenarioHarness.fixtureRoot, relativePath);
-    const uri = pathToFileURL(file).href;
-    const text = readFileSync(file, "utf8");
-
-    LspScenarioHarness.openDocuments.set(uri, 1);
-    LspScenarioHarness.running.connection.sendNotification("textDocument/didOpen", {
-      textDocument: { uri, languageId: "java", version: 1, text },
-    });
-
-    return { uri, text };
-  }
-
-  protected change(uri: string, text: string) {
-    const version = (LspScenarioHarness.openDocuments.get(uri) ?? 1) + 1;
-    LspScenarioHarness.openDocuments.set(uri, version);
-
-    LspScenarioHarness.running.connection.sendNotification("textDocument/didChange", {
-      textDocument: { uri, version },
-      contentChanges: [{ text }],
-    });
-  }
-
-  protected request<T>(method: string, params: unknown): Promise<T> {
-    return LspScenarioHarness.running.connection.sendRequest(method, params);
-  }
-
-  protected async measure<T, U>(
-    request: () => Promise<T>,
-    normalise: (value: T) => U,
-  ): Promise<Measurement<U>> {
-    const running = LspScenarioHarness.running;
-    const before = memory(running);
-    let peak = before;
-
-    const sampler = setInterval(() => {
-      peak = maxMemory(peak, memory(running));
-    }, 20);
-
-    const started = performance.now();
-    try {
-      const raw = await request();
-      const latencyMs = performance.now() - started;
-      const after = memory(running);
-      peak = maxMemory(peak, after);
-
-      return {
-        result: normalise(raw),
-        metrics: {
-          latencyMs,
-          memory: { before, after, peak },
+  async execute(){
+    try{
+      const payload=await this.scenario();
+      const verification=this.verify(payload);
+      const completionCorrectness=verification.operationCorrectness.completion;
+      if(payload.operations.completion&&completionCorrectness){
+        payload.operations.completion.correctStats=latencyStats(
+          payload.operations.completion.steady
+            .filter((_,index)=>completionCorrectness.steady[index])
+            .map(row=>row.metrics.latencyMs),
+        );
+      }
+      const spawn=LspScenarioHarness.milestones.process_spawn;
+      const firstUseEnd=LspScenarioHarness.milestones.first_use_finished;
+      const diagnosticCold=spawn!==undefined&&firstUseEnd!==undefined?(firstUseEnd-spawn)/1e6:null;
+      const report={
+        schema:3,
+        phaseModel:PHASE_MODEL,
+        scenario:{id:this.id,name:this.name},
+        server:LspScenarioHarness.serverId,
+        lifecycle:this.lifecycleReport(),
+        operations:payload.operations,
+        legacy:payload.legacy,
+        correctness:verification,
+        coldEndToEnd:{
+          diagnosticMs:diagnosticCold,
+          correct:verification.operationCorrectness.completion?.firstUse??false,
+          firstCorrectResultMs:(verification.operationCorrectness.completion?.firstUse??false)?diagnosticCold:null,
         },
+        provenance:this.provenance(),
+        metadata:payload.metadata??{},
       };
-    } finally {
-      clearInterval(sampler);
+      const reportFile=process.env.REPORT_FILE
+        ?path.resolve(process.env.REPORT_FILE)
+        :path.resolve("benchmarks/lsp-scenarios/.state",LspScenarioHarness.serverId,this.id+"-report.json");
+      mkdirSync(path.dirname(reportFile),{recursive:true});
+      writeFileSync(reportFile,JSON.stringify(report,null,2)+"\n");
+      writeSummary(report);
+    }finally{
+      await this.closeDocuments();
     }
   }
 
-  private closeDocuments() {
-    for (const uri of LspScenarioHarness.openDocuments.keys()) {
-      LspScenarioHarness.running.connection.sendNotification("textDocument/didClose", {
-        textDocument: { uri },
-      });
+  protected beginDocumentAdmission(){
+    if(!LspScenarioHarness.documentAdmissionStarted){
+      LspScenarioHarness.documentAdmissionStarted=true;
+      LspScenarioHarness.milestones.document_admission_started=nowNs();
+    }
+  }
+
+  protected async endDocumentAdmission(){
+    const finished=nowNs();
+    LspScenarioHarness.milestones.document_setup_finished=finished;
+    const snapshot=memory(LspScenarioHarness.running);
+    LspScenarioHarness.phaseMemory.document_setup_finished=snapshot;
+    if(LspScenarioHarness.diagnosticVersionMode==="versioned"){
+      LspScenarioHarness.milestones.documents_admitted=finished;
+      LspScenarioHarness.phaseMemory.documents_admitted=snapshot;
+    }
+  }
+
+  protected documentAdmissionBoundary(){
+    return LspScenarioHarness.diagnosticVersionMode==="versioned"
+      ?"verified by exact-version publishDiagnostics"
+      :"unavailable: versionless publishDiagnostics cannot prove the current document version";
+  }
+
+  protected async open(relativePath:string){
+    this.beginDocumentAdmission();
+    const file=path.resolve(LspScenarioHarness.fixtureRoot,relativePath);
+    const uri=pathToFileURL(file).href;
+    const text=readFileSync(file,"utf8");
+    LspScenarioHarness.openDocuments.set(uri,1);
+    const sequence=LspScenarioHarness.diagnosticSequence;
+    LspScenarioHarness.running.connection.sendNotification("textDocument/didOpen",{
+      textDocument:{uri,languageId:"java",version:1,text},
+    });
+    await this.waitForDiagnostics(uri,1,sequence);
+    return {uri,text,version:1};
+  }
+
+  protected async change(uri:string,text:string){
+    this.beginDocumentAdmission();
+    const version=(LspScenarioHarness.openDocuments.get(uri)??1)+1;
+    LspScenarioHarness.openDocuments.set(uri,version);
+    const sequence=LspScenarioHarness.diagnosticSequence;
+    LspScenarioHarness.running.connection.sendNotification("textDocument/didChange",{
+      textDocument:{uri,version},
+      contentChanges:[{text}],
+    });
+    await this.waitForDiagnostics(uri,version,sequence);
+    return version;
+  }
+
+  protected request<T>(method:string,params:unknown):Promise<T>{
+    return LspScenarioHarness.running.connection.sendRequest(method,params);
+  }
+
+  protected async measure<T,U>(request:()=>Promise<T>,normalise:(value:T)=>U):Promise<Measurement<U>>{
+    const running=LspScenarioHarness.running;
+    const before=memory(running);let peak=before;
+    const sampler=setInterval(()=>{peak=maxMemory(peak,memory(running));},20);
+    const started=performance.now();
+    try{
+      const raw=await request();
+      const latencyMs=performance.now()-started;
+      const after=memory(running);peak=maxMemory(peak,after);
+      return {result:normalise(raw),metrics:{latencyMs,memory:{before,after,peak}}};
+    }finally{clearInterval(sampler);}
+  }
+
+  protected beginFirstUse(){
+    if(LspScenarioHarness.milestones.first_use_started===undefined)
+      LspScenarioHarness.milestones.first_use_started=nowNs();
+  }
+
+  protected finishFirstUse(){
+    if(LspScenarioHarness.milestones.first_use_finished===undefined){
+      LspScenarioHarness.milestones.first_use_finished=nowNs();
+      LspScenarioHarness.phaseMemory.post_first_use=memory(LspScenarioHarness.running);
+    }
+  }
+
+  protected async measureWarmupAndSteady<T,U>(request:()=>Promise<T>,normalise:(value:T)=>U){
+    const warmup:Measurement<U>[]=[];
+    for(let i=0;i<PHASE_MODEL.defaults.warmup;i++)warmup.push(await this.measure(request,normalise));
+    LspScenarioHarness.phaseMemory.post_warmup=memory(LspScenarioHarness.running);
+    const steady:Measurement<U>[]=[];
+    for(let i=0;i<PHASE_MODEL.defaults.steady_samples;i++)steady.push(await this.measure(request,normalise));
+    LspScenarioHarness.phaseMemory.post_steady=memory(LspScenarioHarness.running);
+    LspScenarioHarness.phaseMemory.steady_peak=steady
+      .map(row=>row.metrics.memory.peak)
+      .reduce((peak,current)=>maxMemory(peak,current),{serverKb:0,adapterKb:0,totalKb:0});
+    return {warmup,steady,stats:latencyStats(steady.map(row=>row.metrics.latencyMs))};
+  }
+
+  protected async measureSeries<T,U>(request:()=>Promise<T>,normalise:(value:T)=>U):Promise<OperationSeries<U>>{
+    this.beginFirstUse();
+    const firstUse=await this.measure(request,normalise);
+    this.finishFirstUse();
+    const rest=await this.measureWarmupAndSteady(request,normalise);
+    return {firstUse,...rest};
+  }
+
+  private async waitForDiagnostics(uri:string,version:number,afterSequence:number):Promise<DiagnosticAdmissionResult>{
+    if(LspScenarioHarness.diagnosticVersionMode==="versionless")return {
+      status:"unavailable",
+      reason:"server diagnostics are versionless; current-version admission cannot be verified",
+    };
+    for(const row of LspScenarioHarness.diagnostics){
+      if(row.sequence<=afterSequence)continue;
+      const decision=diagnosticAdmissionDecision(LspScenarioHarness.diagnosticVersionMode,row.params,uri,version);
+      if(decision.kind==="ignore")continue;
+      LspScenarioHarness.diagnosticVersionMode=decision.mode;
+      if(decision.kind==="verified")return {status:"verified",params:row.params};
+      return {
+        status:"unavailable",
+        reason:"publishDiagnostics omitted the document version; current-version admission cannot be verified",
+      };
+    }
+    return new Promise<DiagnosticAdmissionResult>((resolve,reject)=>{
+      const waiter:DiagnosticWaiter={
+        uri,version,afterSequence,resolve,reject,
+        timer:setTimeout(()=>{
+          const index=LspScenarioHarness.diagnosticWaiters.indexOf(waiter);
+          if(index>=0)LspScenarioHarness.diagnosticWaiters.splice(index,1);
+          reject(new Error("Timed out waiting for diagnostics "+uri+" v"+version));
+        },180000),
+      };
+      LspScenarioHarness.diagnosticWaiters.push(waiter);
+    });
+  }
+
+  private async closeDocuments(){
+    for(const uri of LspScenarioHarness.openDocuments.keys()){
+      LspScenarioHarness.running.connection.sendNotification("textDocument/didClose",{textDocument:{uri}});
     }
     LspScenarioHarness.openDocuments.clear();
   }
 
-  private verify(actual: Record<string, Measurement<unknown>>) {
-    const expectedDir = path.resolve("benchmarks/lsp-scenarios/expected");
-    const file = path.join(expectedDir, this.id + ".json");
-
-    if (LspScenarioHarness.mode === "record") {
-      mkdirSync(expectedDir, { recursive: true });
-      writeFileSync(file, JSON.stringify(actual, null, 2) + "\n");
-      console.log("recorded", this.id, this.name, file);
-      writeSummary(this.id, this.name, actual);
-      return;
+  private verify(payload:ScenarioPayload){
+    const expectedDir=path.resolve(process.env.EXPECTED_DIR??"benchmarks/lsp-scenarios/expected");
+    const file=path.join(expectedDir,this.id+".json");
+    const legacy=Object.fromEntries(Object.entries(payload.legacy).filter(([,value])=>value!==undefined));
+    if(LspScenarioHarness.mode==="record"){
+      mkdirSync(expectedDir,{recursive:true});
+      writeFileSync(file,JSON.stringify(legacy,null,2)+"\n");
     }
-
-    const expected: Record<string, Measurement<unknown>> =
-      JSON.parse(readFileSync(file, "utf8"));
-
-    const cases = [...new Set([...Object.keys(expected), ...Object.keys(actual)])];
-    const correctness = Object.fromEntries(
-      cases.map(name => [
+    const expected:Record<string,Measurement<unknown>>=JSON.parse(readFileSync(file,"utf8"));
+    const legacyCorrectness=Object.fromEntries(
+      [...new Set([...Object.keys(expected),...Object.keys(legacy)])].map(name=>[
         name,
-        expected[name] !== undefined &&
-          actual[name] !== undefined &&
-          isDeepStrictEqual(actual[name].result, expected[name].result),
+        expected[name]!==undefined&&legacy[name]!==undefined&&isDeepStrictEqual(legacy[name].result,expected[name].result),
       ]),
     );
-
-    console.table(cases.map(name => ({
-      case: name,
-      correct: correctness[name] ? "yes" : "NO",
-      jdtlsMs: expected[name] ? expected[name].metrics.latencyMs.toFixed(2) : "-",
-      jvmdMs: actual[name] ? actual[name].metrics.latencyMs.toFixed(2) : "-",
-      jdtlsPeakMb: expected[name] ? mb(expected[name].metrics.memory.peak.totalKb) : "-",
-      jvmdPeakMb: actual[name] ? mb(actual[name].metrics.memory.peak.totalKb) : "-",
-    })));
-
-    for (const caseName of cases) {
-      if (!correctness[caseName]) {
-        console.log(formatMismatch(caseName, expected[caseName], actual[caseName]));
-      }
+    const completion=payload.operations.completion;
+    const repeatedOracle=expected.repeated?.result??expected.first?.result;
+    const operationCorrectness:any={};
+    if(completion){
+      operationCorrectness.completion={
+        firstUse:isDeepStrictEqual(completion.firstUse.result,expected.first?.result),
+        warmup:completion.warmup.map(row=>isDeepStrictEqual(row.result,repeatedOracle)),
+        steady:completion.steady.map(row=>isDeepStrictEqual(row.result,repeatedOracle)),
+      };
     }
+    return {legacy:legacyCorrectness,operationCorrectness};
+  }
 
-    writeSummary(this.id, this.name, actual, expected, correctness);
+  private lifecycleReport(){
+    const origin=LspScenarioHarness.milestones.process_spawn;
+    const m=LspScenarioHarness.milestones;
+    const documentBoundary=m.documents_admitted??m.document_setup_finished;
+    assert(
+      orderedMilestones(
+        {...m,document_boundary:documentBoundary},
+        ["process_spawn","initialize_received","document_boundary","first_use_started","first_use_finished"],
+      ),
+      "benchmark lifecycle milestones are out of order",
+    );
+    const admissionVerified=m.documents_admitted!==undefined;
+    return {
+      milestonesNs:m,
+      milestonesMs:Object.fromEntries(Object.entries(m).map(([name,value])=>[name,elapsedMs(origin,value)])),
+      initializeMs:(m.initialize_received-m.initialize_sent)/1e6,
+      processToInitializeResponseMs:(m.initialize_received-m.process_spawn)/1e6,
+      serviceReadyMs:m.service_ready===undefined?null:(m.service_ready-m.process_spawn)/1e6,
+      machineIndexReadyMs:m.daemon_index_ready===undefined?null:(m.daemon_index_ready-m.process_spawn)/1e6,
+      documentsAdmittedFromProcessMs:admissionVerified?(m.documents_admitted-m.process_spawn)/1e6:null,
+      documentAdmissionMs:admissionVerified?(m.documents_admitted-m.document_admission_started)/1e6:null,
+      documentSetupFinishedFromProcessMs:(documentBoundary-m.process_spawn)/1e6,
+      documentSetupMs:(documentBoundary-m.document_admission_started)/1e6,
+      sessionOpen:"not directly observable through the external jvmd-lsp process; see jvmd-machine-lifecycle report for exact native RPC timing",
+      workspaceResolution:"not directly timestamped by CMP-01; see jvmd-machine-lifecycle resolver evidence",
+      workspaceIndexReady:"unavailable for JVMD: local module refresh is asynchronous and no all-current barrier is exposed",
+      memory:LspScenarioHarness.phaseMemory,
+      nativeReadiness:{
+        jdtlsServiceReady:m.service_ready===undefined?null:elapsedMs(origin,m.service_ready),
+        jvmdMachineIndexReady:m.daemon_index_ready===undefined?null:elapsedMs(origin,m.daemon_index_ready),
+        equivalence:"none claimed; these are server-native milestones at different architectural layers",
+        targetQueried:false,
+      },
+      documentAdmission:admissionVerified?{
+        boundary:"exact-version publishDiagnostics observed for each requested document version",
+        diagnosticsWaited:true,
+        versionVerification:"verified",
+        mode:"settled editor admission",
+      }:{
+        boundary:"unavailable: versionless publishDiagnostics cannot prove the requested document version",
+        diagnosticsWaited:true,
+        versionVerification:"unavailable",
+        mode:"document setup completed; current-version admission not claimed",
+      },
+    };
+  }
+
+  private provenance(){
+    return {
+      server:LspScenarioHarness.serverId,
+      serverRevision:LspScenarioHarness.serverId==="jvmd"?(process.env.GITHUB_SHA??"working-tree"):"JDTLS 1.61.0",
+      node:process.version,
+      jdk:process.env.JAVA_HOME??"system",
+      fixture:{
+        identity:"apache/maven@5cd1b60264101080c712accd605180a4bd9222e0",
+        preparedBeforeServerStart:true,
+      },
+      lifecycle:{
+        process:"fresh",
+        daemon:LspScenarioHarness.serverId==="jvmd"?"fresh machine daemon":"fresh language-server process",
+        machineIndex:LspScenarioHarness.serverId==="jvmd"?"empty benchmark state (machine_cold)":"n/a",
+        workspace:"first open",
+        localWorkspaceState:"fresh/unknown",
+        documents:"opened after server-native readiness; admission is measured only when exact diagnostic versions make it verifiable",
+        semanticTarget:"not queried before first_use",
+        diagnosticsWaitedBeforeFirstUse:true,
+        diagnosticAdmissionBoundary:this.documentAdmissionBoundary(),
+        warmupCount:PHASE_MODEL.defaults.warmup,
+        steadySamples:PHASE_MODEL.defaults.steady_samples,
+        filesystemCache:"OS cache uncontrolled and not flushed",
+      },
+      launch:LspScenarioHarness.running.metadata,
+      runner:{platform:process.platform,arch:process.arch,cpus:os.cpus().length},
+    };
   }
 }
 
-async function startServer(root: string): Promise<RunningServer> {
-  return (process.env.SERVER ?? "jvmd") === "jdtls"
-    ? startJdtls()
-    : startJvmd(root);
+async function startServer(root:string):Promise<RunningServer>{
+  return (process.env.SERVER??"jvmd")==="jdtls"?startJdtls():startJvmd(root);
 }
 
-async function startJvmd(root: string): Promise<RunningServer> {
-  const state = path.resolve("benchmarks/lsp-scenarios/.state/jvmd");
-  rmSync(state, { recursive: true, force: true });
-  mkdirSync(state, { recursive: true });
-
-  const socket = path.join(state, "jvmd.sock");
-  const image = path.resolve("jvmd-dist/target/image");
-  const env = {
-    ...process.env,
-    JVMD_SOCKET: socket,
-    XDG_CACHE_HOME: path.join(state, "cache"),
-    JVMD_CONFIG: path.join(state, "config.json"),
-  };
-
-  writeFileSync(path.join(state, "config.json"), "{}\n");
-  const server = spawn(path.join(image, "bin/java"), [
-    "-Djvmd.socket=" + socket,
-    "-Djvmd.state=" + path.join(state, "state"),
-    "-Djvmd.config=" + path.join(state, "config.json"),
-    "-cp", path.join(image, "lib/jvmd/*"),
+async function startJvmd(root:string):Promise<RunningServer>{
+  const state=path.resolve("benchmarks/lsp-scenarios/.state/jvmd");
+  rmSync(state,{recursive:true,force:true});mkdirSync(state,{recursive:true});
+  const socket=path.join(state,"jvmd.sock"),image=path.resolve("jvmd-dist/target/image");
+  const env={...process.env,JVMD_SOCKET:socket,XDG_CACHE_HOME:path.join(state,"cache"),JVMD_CONFIG:path.join(state,"config.json")};
+  writeFileSync(path.join(state,"config.json"),"{}\n");
+  const milestones:Record<string,number>={process_spawn:nowNs()};
+  const server=spawn(path.join(image,"bin/java"),[
+    "-Djvmd.socket="+socket,
+    "-Djvmd.state="+path.join(state,"state"),
+    "-Djvmd.config="+path.join(state,"config.json"),
+    "-cp",path.join(image,"lib/jvmd/*"),
     "dev.jvmd.dist.Application",
-  ], {
-    env,
-    stdio: ["ignore", "ignore", "inherit"],
-  });
-
-  await waitFor(() => existsSync(socket), "JVMD socket");
-  await waitForJvmdIndex(socket);
-
-  const adapter = spawn(
-    path.join(image, "bin/jvmd-lsp"),
-    ["--root", root, "--socket", socket],
-    { env, stdio: ["pipe", "pipe", "inherit"] },
-  );
-
+  ],{env,stdio:["ignore","ignore","inherit"]});
+  const readinessClient=await waitForJvmdTransport(socket);
+  milestones.transport_available=nowNs();
+  try{await waitForJvmdIndex(readinessClient);}
+  finally{readinessClient.close();}
+  milestones.daemon_index_ready=nowNs();
+  const adapter=spawn(path.join(image,"bin/jvmd-lsp"),["--root",root,"--socket",socket],{env,stdio:["pipe","pipe","inherit"]});
+  milestones.adapter_spawned=nowNs();
   return {
-    connection: createMessageConnection(
-      new StreamMessageReader(adapter.stdout!),
-      new StreamMessageWriter(adapter.stdin!),
-    ),
-    server,
-    adapter,
+    connection:createMessageConnection(new StreamMessageReader(adapter.stdout!),new StreamMessageWriter(adapter.stdin!)),
+    server,adapter,milestones,
+    metadata:{mode:"distributed-image JVM plus LSP adapter; AOT cache not enabled",aotCacheUsed:false,residentDaemon:false},
   };
 }
 
-function startJdtls(): RunningServer {
-  assert(process.env.JDTLS_HOME, "JDTLS_HOME is required when SERVER=jdtls");
-  const home = path.resolve(process.env.JDTLS_HOME);
-  const launcher = readdirSync(path.join(home, "plugins"))
-    .find(name => name.startsWith("org.eclipse.equinox.launcher_") && name.endsWith(".jar"));
-  assert(launcher, "JDTLS launcher not found");
-
-  const state = path.resolve("benchmarks/lsp-scenarios/.state/jdtls");
-  rmSync(state, { recursive: true, force: true });
-  mkdirSync(state, { recursive: true });
-
-  const java = process.env.JAVA_HOME
-    ? path.join(process.env.JAVA_HOME, "bin/java")
-    : "java";
-
-  const server = spawn(java, [
+function startJdtls():RunningServer{
+  assert(process.env.JDTLS_HOME,"JDTLS_HOME is required when SERVER=jdtls");
+  const home=path.resolve(process.env.JDTLS_HOME);
+  const launcher=readdirSync(path.join(home,"plugins")).find(name=>name.startsWith("org.eclipse.equinox.launcher_")&&name.endsWith(".jar"));
+  assert(launcher,"JDTLS launcher not found");
+  const state=path.resolve("benchmarks/lsp-scenarios/.state/jdtls");
+  rmSync(state,{recursive:true,force:true});mkdirSync(state,{recursive:true});
+  const java=process.env.JAVA_HOME?path.join(process.env.JAVA_HOME,"bin/java"):"java";
+  const milestones:Record<string,number>={process_spawn:nowNs()};
+  const server=spawn(java,[
     "-Declipse.application=org.eclipse.jdt.ls.core.id1",
     "-Dosgi.bundles.defaultStartLevel=4",
     "-Declipse.product=org.eclipse.jdt.ls.core.product",
-    "-jar", path.join(home, "plugins", launcher),
-    "-configuration", path.join(home, "config_linux"),
-    "-data", state,
-  ], {
-    stdio: ["pipe", "pipe", "inherit"],
-  });
-
+    "-jar",path.join(home,"plugins",launcher),
+    "-configuration",path.join(home,"config_linux"),
+    "-data",state,
+  ],{stdio:["pipe","pipe","inherit"]});
+  milestones.transport_available=nowNs();
   return {
-    connection: createMessageConnection(
-      new StreamMessageReader(server.stdout!),
-      new StreamMessageWriter(server.stdin!),
-    ),
-    server,
+    connection:createMessageConnection(new StreamMessageReader(server.stdout!),new StreamMessageWriter(server.stdin!)),
+    server,milestones,
+    metadata:{mode:"fresh direct JDTLS process",aotCacheUsed:false,residentDaemon:false},
   };
 }
 
-async function waitForJvmdIndex(socketPath: string) {
-  const socket = await new Promise<net.Socket>((resolve, reject) => {
-    const connection = net.createConnection(socketPath);
-    connection.once("connect", () => resolve(connection));
-    connection.once("error", reject);
-  });
-
-  const client = new RpcClient(socket);
-  const deadline = Date.now() + 120_000;
-
-  try {
-    while (Date.now() < deadline) {
-      const status = await client.call("daemon.status");
-      const index = status?.result?.index;
-
-      if (
-        index?.phase === "ready" &&
-        Number(index?.timings?.scans ?? 0) >= 1
-      ) {
-        return;
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 50));
+async function waitForJvmdTransport(socketPath:string){
+  const deadline=Date.now()+10000;
+  while(Date.now()<deadline){
+    try{
+      const socket=await new Promise<net.Socket>((resolve,reject)=>{
+        const connection=net.createConnection(socketPath);
+        connection.once("connect",()=>resolve(connection));
+        connection.once("error",reject);
+      });
+      return new RpcClient(socket);
+    }catch(error){
+      const code=(error as NodeJS.ErrnoException).code;
+      if(code!=="ENOENT"&&code!=="ECONNREFUSED")throw error;
+      await new Promise(resolve=>setTimeout(resolve,25));
     }
-  } finally {
-    client.close();
   }
-
+  throw new Error("Timed out waiting for connectable JVMD transport");
+}
+async function waitForJvmdIndex(client:RpcClient){
+  const deadline=Date.now()+120000;
+  while(Date.now()<deadline){
+    const status=await client.call("daemon.status"),index=status?.result?.index;
+    if(index?.phase==="ready"&&Number(index?.timings?.scans??0)>=1)return;
+    await new Promise(resolve=>setTimeout(resolve,50));
+  }
   throw new Error("Timed out waiting for JVMD repository index");
 }
 
-function memory(running: RunningServer): Memory {
-  const serverKb = rssKb(running.server.pid);
-  const adapterKb = rssKb(running.adapter?.pid);
-  return { serverKb, adapterKb, totalKb: serverKb + adapterKb };
+function memory(running:RunningServer):Memory{
+  const serverKb=rssKb(running.server.pid),adapterKb=rssKb(running.adapter?.pid);
+  return {serverKb,adapterKb,totalKb:serverKb+adapterKb};
 }
-
-function rssKb(pid?: number) {
-  if (!pid) return 0;
-  try {
-    const status = readFileSync("/proc/" + pid + "/status", "utf8");
-    return Number(status.match(/^VmRSS:\s+(\d+)\s+kB/m)?.[1] ?? 0);
-  } catch {
-    return 0;
-  }
+function rssKb(pid?:number){
+  if(!pid)return 0;
+  try{
+    const status=readFileSync("/proc/"+pid+"/status","utf8");
+    return Number(status.match(/^VmRSS:\s+(\d+)\s+kB/m)?.[1]??0);
+  }catch{return 0;}
 }
-
-function maxMemory(a: Memory, b: Memory): Memory {
+function maxMemory(a:Memory,b:Memory):Memory{
   return {
-    serverKb: Math.max(a.serverKb, b.serverKb),
-    adapterKb: Math.max(a.adapterKb, b.adapterKb),
-    totalKb: Math.max(a.totalKb, b.totalKb),
+    serverKb:Math.max(a.serverKb,b.serverKb),
+    adapterKb:Math.max(a.adapterKb,b.adapterKb),
+    totalKb:Math.max(a.totalKb,b.totalKb),
   };
 }
+function stop(process?:ChildProcess){if(!process||process.killed)return;process.kill("SIGTERM");}
+function mb(kb:number){return (kb/1024).toFixed(1);}
 
-async function waitFor(predicate: () => boolean, description: string) {
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline) {
-    if (predicate()) return;
-    await new Promise(resolve => setTimeout(resolve, 25));
-  }
-  throw new Error("Timed out waiting for " + description);
-}
-
-function stop(process?: ChildProcess) {
-  if (!process || process.killed) return;
-  process.kill("SIGTERM");
-}
-
-function mb(kb: number) {
-  return (kb / 1024).toFixed(1);
-}
-
-function formatMismatch(
-  caseName: string,
-  expected?: Measurement<unknown>,
-  actual?: Measurement<unknown>,
-) {
-  const lines = [`\n=== mismatch: ${caseName} ===`];
-
-  if (!expected) {
-    lines.push("JDTLS case: missing");
-    lines.push("JVMD:", JSON.stringify(actual?.result, null, 2));
-    return lines.join("\n");
-  }
-
-  if (!actual) {
-    lines.push("JVMD case: missing");
-    lines.push("JDTLS:", JSON.stringify(expected.result, null, 2));
-    return lines.join("\n");
-  }
-
-  if (Array.isArray(expected.result) && Array.isArray(actual.result)) {
-    const diff = arrayDiff(expected.result, actual.result);
-    lines.push(`JDTLS items: ${expected.result.length}`);
-    lines.push(`JVMD items: ${actual.result.length}`);
-    lines.push(`Missing from JVMD: ${diff.missing.length}`);
-    lines.push(JSON.stringify(diff.missing.slice(0, 20), null, 2));
-    lines.push(`Extra in JVMD: ${diff.extra.length}`);
-    lines.push(JSON.stringify(diff.extra.slice(0, 20), null, 2));
-    return lines.join("\n");
-  }
-
-  lines.push("JDTLS:", JSON.stringify(expected.result, null, 2));
-  lines.push("JVMD:", JSON.stringify(actual.result, null, 2));
-  return lines.join("\n");
-}
-
-function arrayDiff(expected: unknown[], actual: unknown[]) {
-  const actualCounts = counts(actual);
-  const missing: unknown[] = [];
-  for (const item of expected) {
-    const key = stableKey(item);
-    const remaining = actualCounts.get(key) ?? 0;
-    if (remaining > 0) actualCounts.set(key, remaining - 1);
-    else missing.push(item);
-  }
-
-  const expectedCounts = counts(expected);
-  const extra: unknown[] = [];
-  for (const item of actual) {
-    const key = stableKey(item);
-    const remaining = expectedCounts.get(key) ?? 0;
-    if (remaining > 0) expectedCounts.set(key, remaining - 1);
-    else extra.push(item);
-  }
-
-  return { missing, extra };
-}
-
-function counts(values: unknown[]) {
-  const result = new Map<string, number>();
-  for (const value of values) {
-    const key = stableKey(value);
-    result.set(key, (result.get(key) ?? 0) + 1);
-  }
-  return result;
-}
-
-function stableKey(value: unknown) {
-  return JSON.stringify(value);
-}
-
-function writeSummary(
-  id: string,
-  name: string,
-  actual: Record<string, Measurement<unknown>>,
-  expected?: Record<string, Measurement<unknown>>,
-  correctness: Record<string, boolean> = {},
-) {
-  const file = process.env.GITHUB_STEP_SUMMARY;
-  if (!file) return;
-
-  const lines = [
-    `## ${id} — ${name}`,
+function writeSummary(report:any){
+  const correctness=report.correctness.operationCorrectness.completion;
+  const lines=[
+    "## "+report.scenario.id+" — "+report.server,
     "",
-    expected
-      ? "| Case | Correct | JDTLS ms | JVMD ms | JDTLS peak MB | JVMD peak MB |"
-      : "| Case | JDTLS ms | JDTLS peak MB |",
-    expected
-      ? "| --- | --- | ---: | ---: | ---: | ---: |"
-      : "| --- | ---: | ---: |",
+    "### Startup / readiness",
+    "",
+    "| Metric | ms |",
+    "| --- | ---: |",
+    "| Initialize request | "+report.lifecycle.initializeMs.toFixed(2)+" |",
+    "| Process → initialize response | "+report.lifecycle.processToInitializeResponseMs.toFixed(2)+" |",
+    "| JDTLS ServiceReady | "+(report.lifecycle.serviceReadyMs?.toFixed(2)??"n/a")+" |",
+    "| JVMD machine index ready | "+(report.lifecycle.machineIndexReadyMs?.toFixed(2)??"n/a")+" |",
+    "| Process → documents admitted | "+(report.lifecycle.documentsAdmittedFromProcessMs?.toFixed(2)??"unavailable")+" |",
+    "| Document admission interval | "+(report.lifecycle.documentAdmissionMs?.toFixed(2)??"unavailable")+" |",
+    "| Process → first-use response (diagnostic timing) | "+(report.coldEndToEnd.diagnosticMs?.toFixed(2)??"-")+" |",
+    "",
+    "### Completion",
+    "",
+    "| State | latency | correctness |",
+    "| --- | ---: | --- |",
+    "| first_use | "+(correctness.firstUse?report.operations.completion.firstUse.metrics.latencyMs.toFixed(2)+" ms":"diagnostic "+report.operations.completion.firstUse.metrics.latencyMs.toFixed(2)+" ms")+" | "+(correctness.firstUse?"correct":"INCORRECT")+" |",
+    "| warmup | "+report.operations.completion.warmup.map((x:any)=>x.metrics.latencyMs.toFixed(2)).join(", ")+" ms | discarded |",
+    "| steady | "+(correctness.steady.every(Boolean)?("p50 "+(report.operations.completion.correctStats?.p50Ms?.toFixed(2)??"-")+" / p95 "+(report.operations.completion.correctStats?.p95Ms?.toFixed(2)??"-")+" ms"):("diagnostic p50 "+(report.operations.completion.stats.p50Ms?.toFixed(2)??"-")+" / p95 "+(report.operations.completion.stats.p95Ms?.toFixed(2)??"-")+" ms"))+" | "+(correctness.steady.every(Boolean)?"correct":"INCORRECT")+" |",
+    "",
+    "### Memory",
+    "",
+    "| State | RSS MB |",
+    "| --- | ---: |",
+    "| Pre-document admission | "+mb(report.lifecycle.memory.pre_document_admission.totalKb)+" |",
+    "| Document setup finished | "+mb((report.lifecycle.memory.documents_admitted??report.lifecycle.memory.document_setup_finished).totalKb)+" |",
+    "| After first use | "+mb(report.lifecycle.memory.post_first_use.totalKb)+" |",
+    "| After steady | "+mb(report.lifecycle.memory.post_steady.totalKb)+" |",
+    "| Steady peak | "+mb(report.lifecycle.memory.steady_peak.totalKb)+" |",
+    "",
+    "Document admission boundary: "+report.lifecycle.documentAdmission.boundary,
+    "",
   ];
-
-  const cases = expected
-    ? [...new Set([...Object.keys(expected), ...Object.keys(actual)])]
-    : Object.keys(actual);
-
-  for (const caseName of cases) {
-    const current = actual[caseName];
-    if (expected) {
-      const baseline = expected[caseName];
-      lines.push(
-        `| ${caseName} | ${correctness[caseName] ? "✅" : "❌"} | ${baseline ? baseline.metrics.latencyMs.toFixed(2) : "-"} | ${current ? current.metrics.latencyMs.toFixed(2) : "-"} | ${baseline ? mb(baseline.metrics.memory.peak.totalKb) : "-"} | ${current ? mb(current.metrics.memory.peak.totalKb) : "-"} |`,
-      );
-    } else if (current) {
-      lines.push(
-        `| ${caseName} | ${current.metrics.latencyMs.toFixed(2)} | ${mb(current.metrics.memory.peak.totalKb)} |`,
-      );
-    }
-  }
-
-  if (expected) {
-    const mismatches = cases.filter(caseName => !correctness[caseName]);
-    if (mismatches.length) {
-      lines.push("", "### Correctness mismatches", "");
-      for (const caseName of mismatches) {
-        const baseline = expected[caseName];
-        const current = actual[caseName];
-        lines.push(`#### ${caseName}`, "");
-
-        if (!baseline) {
-          lines.push("JDTLS case is missing.", "");
-          continue;
-        }
-
-        if (!current) {
-          lines.push("JVMD case is missing.", "");
-          lines.push("JDTLS result:", "", "    " + JSON.stringify(baseline.result, null, 2).replace(/\n/g, "\n    "), "");
-          continue;
-        }
-
-        if (Array.isArray(baseline.result) && Array.isArray(current.result)) {
-          const diff = arrayDiff(baseline.result, current.result);
-          lines.push(
-            `- JDTLS items: **${baseline.result.length}**`,
-            `- JVMD items: **${current.result.length}**`,
-            `- Missing from JVMD: **${diff.missing.length}**`,
-            `- Extra in JVMD: **${diff.extra.length}**`,
-            "",
-          );
-          if (diff.missing.length) {
-            lines.push("Missing from JVMD (first 20):", "", "    " + JSON.stringify(diff.missing.slice(0, 20), null, 2).replace(/\n/g, "\n    "), "");
-          }
-          if (diff.extra.length) {
-            lines.push("Extra in JVMD (first 20):", "", "    " + JSON.stringify(diff.extra.slice(0, 20), null, 2).replace(/\n/g, "\n    "), "");
-          }
-        } else {
-          lines.push(
-            "JDTLS result:",
-            "",
-            "    " + JSON.stringify(baseline.result, null, 2).replace(/\n/g, "\n    "),
-            "",
-            "JVMD result:",
-            "",
-            "    " + JSON.stringify(current.result, null, 2).replace(/\n/g, "\n    "),
-            "",
-          );
-        }
-      }
-    }
-  }
-
-  lines.push("");
-  appendFileSync(file, lines.join("\n") + "\n");
+  console.log(lines.join("\n"));
+  if(process.env.GITHUB_STEP_SUMMARY)appendFileSync(process.env.GITHUB_STEP_SUMMARY,lines.join("\n")+"\n");
 }

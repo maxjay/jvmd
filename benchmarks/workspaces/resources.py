@@ -93,6 +93,23 @@ class ProcessMonitor:
             for key, value in values.items(): self.maximum[key] = max(self.maximum[key], value)
             self.stop_event.wait(self.interval)
 
+    def snapshot(self):
+        """Current external process-tree memory at a benchmark phase boundary."""
+        values = _sample(self.pid)
+        processes = values.pop('process_samples', [])
+        return {
+            'monotonic_ns': time.monotonic_ns(),
+            'rss_bytes': values.get('rss_bytes', 0),
+            'groups': {
+                role: {
+                    'rss_bytes': sum(p['rss_bytes'] for p in processes if p['role'] == role)
+                }
+                for role in ('server', 'bridge')
+            },
+            'processes': values.get('processes', len(processes)),
+            'threads': values.get('threads', 0),
+        }
+
     def close(self):
         self.stop_event.set(); self.thread.join(timeout=2)
         if self.output:self.output.close()

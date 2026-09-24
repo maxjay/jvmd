@@ -608,10 +608,12 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             if(source==null){result.put(binary,"<missing>");continue;}
             Path file=source.file().toAbsolutePath().normalize();
             if(!ensureSourceSemanticCurrent(file)){result.put(binary,"<missing>");continue;}
-            var contribution=contribution(file);
             var unit=semanticState().unit("source:"+file);
-            String api=contribution!=null?contribution.apiFingerprint():unit==null?"":unit.apiIdentity();
-            result.put(binary,file+"\0"+api);
+            SemanticFact declaration=null;
+            if(unit!=null)for(var fact:unit.facts().values())if(fact.typeDeclaration()&&binary.equals(fact.fqn())){declaration=fact;break;}
+            String resolution=declaration==null?"<missing-declaration>":
+                    declaration.kind()+"\0"+String.join(",",declaration.modifiers().stream().sorted().toList())+"\0"+Objects.toString(declaration.ownerId(),"");
+            result.put(binary,file+"\0"+resolution);
         }
         return Map.copyOf(result);
     }

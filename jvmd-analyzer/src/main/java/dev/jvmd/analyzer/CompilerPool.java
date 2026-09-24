@@ -38,7 +38,7 @@ public final class CompilerPool implements AutoCloseable {
     private boolean preciseSourceRoots=true;
     private List<Path> configuredClasspath=List.of(),configuredSources=List.of();
     private long batchQueries,batchFiles;
-    private long budget,baseline,recycles,faults,queries,queryNanos,configureCalls,configureNanos,classpathValidations,classpathValidationNanos;
+    private long budget,baseline,recycles,faults,queries,attributionInvocations,queryNanos,configureCalls,configureNanos,classpathValidations,classpathValidationNanos;
     private long sourceModuleGeneration;
     private Documents attachedDocuments;
     private long attachedDocumentsGeneration=-1;
@@ -130,7 +130,7 @@ public final class CompilerPool implements AutoCloseable {
         if(tier<0||tier>2)throw new IllegalArgumentException("tier");
         if(heap()-baseline>budget)recycle();
         long queryStarted=System.nanoTime();
-        var diagnostics=new DiagnosticCollector<JavaFileObject>();var warnings=new ArrayList<String>();int[] actual={tier};boolean[] fault={false},implicitSource={false};queries++;
+        var diagnostics=new DiagnosticCollector<JavaFileObject>();var warnings=new ArrayList<String>();int[] actual={tier};boolean[] fault={false},implicitSource={false};queries++;if(tier>=1)attributionInvocations++;
         var options=new ArrayList<String>(compilerOptions);
         for(String option:options)if(option.startsWith("-proc")||option.startsWith("-processor")||option.startsWith("--processor")||option.startsWith("-Xplugin"))throw new IllegalArgumentException("Compiler extensions run only in the external processor process: "+option);
         options.addAll(List.of("-proc:none","--should-stop=ifError=FLOW","-Xprefer:source","-parameters","-g"));
@@ -219,7 +219,7 @@ public final class CompilerPool implements AutoCloseable {
     }
     public Map<String,Object> status(){
         checkThread();var status=new LinkedHashMap<String,Object>();
-        status.put("input_validation",inputs.status());status.put("queries",queries);status.put("batch_queries",batchQueries);status.put("batch_files",batchFiles);status.put("query_ms",nanosToMillis(queryNanos));
+        status.put("input_validation",inputs.status());status.put("queries",queries);status.put("attribution_invocations",attributionInvocations);status.put("batch_queries",batchQueries);status.put("batch_files",batchFiles);status.put("query_ms",nanosToMillis(queryNanos));
         status.put("configure_calls",configureCalls);status.put("configure_ms",nanosToMillis(configureNanos));
         status.put("classpath_validations",classpathValidations);status.put("classpath_validation_ms",nanosToMillis(classpathValidationNanos));
         status.put("release_platform_initializations",releasePlatform.initializations());status.put("release_platform_reuses",releasePlatform.reuses());

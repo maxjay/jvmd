@@ -603,8 +603,8 @@ def main():
     p.add_argument("--servers", nargs="+", choices=["jvmd", "jdtls"], default=["jvmd", "jdtls"])
     for name, default in [
         ("runs", 5),
-        ("samples", 20),
-        ("warmup", 2),
+        ("samples", PHASE_MODEL["defaults"]["steady_samples"]),
+        ("warmup", PHASE_MODEL["defaults"]["warmup"]),
         ("targets", 3),
         ("sources", 24),
         ("timeout", 180),
@@ -628,7 +628,8 @@ def main():
     build = json.loads(a.build.read_text())
     metadata = {key: str(value) if isinstance(value, Path) else value for key, value in vars(a).items()}
     metadata.update(
-        schema=2,
+        schema=3,
+        phase_model=PHASE_MODEL,
         build=build,
         command=[sys.executable, *sys.argv],
         machine=dict(zip(("system", "node", "release", "version", "machine"), os.uname())),
@@ -640,6 +641,20 @@ def main():
         ).stderr,
         node=subprocess.check_output(["node", "--version"], text=True).strip(),
         cache="Dependency fixture built before server start; fresh state each worker; OS filesystem cache not flushed; same machine, alternating serial order",
+        lifecycle={
+            "process": "fresh per worker",
+            "state_directory": "fresh per worker",
+            "fixture": "prepared before process start",
+            "documents": "freshly opened after workspace readiness",
+            "workspace_index": "fresh server state",
+            "semantic_state": "not target-warmed before first_use",
+            "operation_warmup": a.warmup,
+            "steady_samples": a.samples,
+            "operation_ordering": "deterministic rotation by repetition",
+            "filesystem_cache": "OS cache uncontrolled and not flushed",
+            "jvmd_aot_cache": "not used by this controlled architecture-comparison launcher",
+            "jdtls_process": "fresh per worker",
+        },
         runner={"os": os.environ.get("ImageOS", os.uname().sysname),
                 "image": os.environ.get("ImageVersion", os.uname().release),
                 "arch": os.uname().machine, "cpus": os.cpu_count(),

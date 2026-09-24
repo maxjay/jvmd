@@ -872,17 +872,23 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     private List<Map<String,Object>> residentUnqualifiedRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target){
         if(target<=0)return List.of();
-        var rows=new LinkedHashMap<String,Map<String,Object>>();
+        var rows=new LinkedHashMap<String,Map<String,Object>>();var variableNames=new HashSet<String>();
+        var localKinds=Set.of("local_variable","resource_variable","exception_parameter","binding_variable","parameter");
         for(var candidate:query.scopedCandidates()){
             if(!candidate.name().startsWith(prefix)||candidate.name().equals(EditorQueries.MARKER))continue;
+            boolean local=localKinds.contains(candidate.kind());
+            if(local&&!variableNames.add(candidate.name()))continue;
+            if(!local&&Set.of("field","enumconst").contains(candidate.kind())&&variableNames.contains(candidate.name()))continue;
             if(query.staticContext()&&candidate.declaringType()!=null&&!candidate.modifiers().contains("static")
                     &&semanticState().symbol(candidate.declaringType())!=null)continue;
             rows.putIfAbsent(candidate.id(),residentCompletionRow(candidate,candidate.name()));
             if(rows.size()>=target*4)break;
         }
         if(query.receiverType() instanceof SemanticType.Declared||query.receiverType() instanceof SemanticType.Intersection)
-            for(var row:residentHierarchyRows(query,prefix,target,query.staticContext()))
+            for(var row:residentHierarchyRows(query,prefix,target,query.staticContext())){
+                if(Set.of("field","enumconst").contains(Objects.toString(row.get("kind"),""))&&variableNames.contains(Objects.toString(row.get("name"),"")))continue;
                 rows.put(Objects.toString(row.get("scip"),""),row);
+            }
         return rows.values().stream().sorted(Comparator.comparing(row->row.get("label").toString())).limit(target).toList();
     }
 

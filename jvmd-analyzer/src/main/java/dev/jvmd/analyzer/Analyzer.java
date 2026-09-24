@@ -468,7 +468,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             var query=cached.snapshot().query(start);var current=completionResolutionIdentities(cached.resolutionIdentities().keySet());
             if(current.equals(cached.resolutionIdentities())&&cachedHierarchyCurrent(cached,query)){
                 var rebased=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
-                        cached.snapshot().queries(),cached.snapshot().locals());
+                        cached.snapshot().queries());
                 var reused=new DocumentSemanticCached(key,rebased,current,cached.dependencyApis(),cached.hierarchyApi());caches.documentSemantics.put(path,reused);return reused;
             }
         }
@@ -496,7 +496,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var binaries=completionNameResolutionBinaries(text,result.nameResolutionNames());
         var resolution=completionResolutionIdentities(binaries);
         var snapshot=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
-                Map.of(start,result.query()),List.of());
+                Map.of(start,result.query()));
         var next=new DocumentSemanticCached(key,snapshot,resolution,Map.of(),queryHierarchyApi(result.query()));caches.documentSemantics.put(path,next);return next;
     }
 
@@ -529,7 +529,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(!force&&key!=null&&cached!=null&&key.equals(cached.key())&&cached.snapshot().query(start)!=null
                 &&documentDependenciesCurrent(cached)&&cachedHierarchyCurrent(cached,cached.snapshot().query(start))){
             var rebased=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
-                    cached.snapshot().queries(),cached.snapshot().locals());
+                    cached.snapshot().queries());
             var reused=new DocumentSemanticCached(key,rebased,Map.of(),cached.dependencyApis(),cached.hierarchyApi());caches.documentSemantics.put(path,reused);return reused;
         }
         var focus=focusing.focus(path,patched,focusCursor);
@@ -555,7 +555,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         for(var snapshot:result.semanticSnapshots())admitDetachedSemantic(snapshot);
         var dependencyApis=documentDependencyApis(result.query(),path);if(dependencyApis==null)return null;
         var snapshot=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
-                Map.of(start,result.query()),List.of());
+                Map.of(start,result.query()));
         var next=new DocumentSemanticCached(key,snapshot,Map.of(),dependencyApis,queryHierarchyApi(result.query()));caches.documentSemantics.put(path,next);return next;
     }
 

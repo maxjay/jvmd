@@ -54,7 +54,7 @@ export class LspBridge {
   private timers=new Map<string,ReturnType<typeof setTimeout>>();
   private diagnosticJobs=new Map<string,Promise<void>>();
   private diagnosticPlans=new Map<string,{generation:number;version:number;dueSince:number}>();
-  private interactiveByUri=new Map<string,number>();
+  private activeInteractive=0;
   private mutationTails=new Map<string,Promise<void>>();
   private active=new Set<Promise<void>>();
   private versions=new Map<string,number>();
@@ -165,7 +165,7 @@ export class LspBridge {
   }
   private interactive(message:Message,uri?:string,completionGeneration?:number){
     const barrier=uri?this.mutationTails.get(uri):undefined;
-    if(uri)this.interactiveByUri.set(uri,(this.interactiveByUri.get(uri)||0)+1);
+    this.activeInteractive++;
     return this.track(this.safe(message,async()=>{
       const id=message.id,method=message.method||"",params=message.params||{};
       try{
@@ -181,15 +181,15 @@ export class LspBridge {
         catch(error){if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}throw error;}
         if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
         this.reply(id,method,params,response.result.value,response.firstCursor);
-      }finally{if(uri)this.finishInteractive(uri);}
+      }finally{this.finishInteractive();}
     }));
   }
-  private finishInteractive(uri:string){
-    const remaining=(this.interactiveByUri.get(uri)||1)-1;
-    if(remaining>0){this.interactiveByUri.set(uri,remaining);return;}
-    this.interactiveByUri.delete(uri);
-    const plan=this.diagnosticPlans.get(uri);
-    if(plan&&this.diagnosticCurrent(uri,plan.generation,plan.version)){
+  private finishInteractive(){
+    this.activeInteractive=Math.max(0,this.activeInteractive-1);if(this.activeInteractive)return;
+    // The daemon session has one analyzer owner. Give already-arrived editor work a quiet
+    // window before admitting background diagnostics, without starving diagnostics forever.
+    for(const [uri,plan] of this.diagnosticPlans){
+      if(!this.diagnosticCurrent(uri,plan.generation,plan.version))continue;
       this.clearTimer(uri);this.armDiagnostic(uri,plan,DIAGNOSTIC_DEBOUNCE_MS);
     }
   }
@@ -239,7 +239,7 @@ export class LspBridge {
     const timer=setTimeout(()=>{
       this.timers.delete(uri);
       if(this.diagnosticPlans.get(uri)!==plan||!this.diagnosticCurrent(uri,plan.generation,plan.version)){if(this.diagnosticPlans.get(uri)===plan)this.diagnosticPlans.delete(uri);return;}
-      if((this.interactiveByUri.get(uri)||0)>0&&Date.now()-plan.dueSince<MAX_DIAGNOSTIC_DEFERRAL_MS){this.armDiagnostic(uri,plan,DIAGNOSTIC_DEBOUNCE_MS);return;}
+      if(this.activeInteractive>0&&Date.now()-plan.dueSince<MAX_DIAGNOSTIC_DEFERRAL_MS){this.armDiagnostic(uri,plan,DIAGNOSTIC_DEBOUNCE_MS);return;}
       this.diagnosticPlans.delete(uri);
       const barrier=this.mutationTails.get(uri),work=this.diagnostic(uri,plan.generation,plan.version,barrier);
       this.diagnosticJobs.set(uri,work);this.track(work);void work.then(()=>{if(this.diagnosticJobs.get(uri)===work)this.diagnosticJobs.delete(uri);});

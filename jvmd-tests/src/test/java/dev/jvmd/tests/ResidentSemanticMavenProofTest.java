@@ -45,7 +45,7 @@ class ResidentSemanticMavenProofTest {
     }
 
     private static Map<String,Long> analyzerCounters(Application app,String session){
-        var status=TestSupport.request(app.dispatcher(),"session.status",Map.of("session",session))
+        var status=TestSupport.complete(app.dispatcher(),"session.status",Map.of("session",session))
                 .path("result").path("result").path("analyzer");
         var result=new LinkedHashMap<String,Long>();
         for(String key:COUNTERS)result.put(key,status.path(key).asLong());
@@ -53,7 +53,7 @@ class ResidentSemanticMavenProofTest {
     }
 
     private static Map<String,Long> budgetCounters(Application app){
-        var status=TestSupport.request(app.dispatcher(),"daemon.status",Map.of())
+        var status=TestSupport.complete(app.dispatcher(),"daemon.status",Map.of())
                 .path("result").path("result").path("response_budget");
         return Map.of(
                 "activations",status.path("activations").asLong(),
@@ -96,7 +96,9 @@ class ResidentSemanticMavenProofTest {
         report.put("heap_before_bytes",heapBefore);report.put("heap_after_bytes",heapAfter);
         report.put("rss_before_bytes",rssBefore);report.put("rss_after_bytes",rssAfter);
         report.put("serialized_response_bytes",Json.MAPPER.writeValueAsBytes(response).length);
-        report.put("items",result.path("items").size());report.put("warnings",envelope.path("warnings"));
+        report.put("items",result.path("items").size());
+        var warnings=envelope.path("warnings");report.put("warning_count",warnings.size());
+        report.put("warnings_sample",java.util.stream.StreamSupport.stream(warnings.spliterator(),false).limit(3).map(JsonNode::asText).toList());
         report.put("counters",delta(before,after));report.put("response_budget",delta(budgetBefore,budgetAfter));
         return report;
     }

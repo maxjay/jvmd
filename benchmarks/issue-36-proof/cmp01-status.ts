@@ -9,7 +9,7 @@ const subjectRoot=path.resolve(process.env.SUBJECT_ROOT??"measured-subject");
 const fixtureRoot=path.resolve(process.env.FIXTURE_ROOT!);
 const reportFile=path.resolve(process.env.REPORT_FILE!);
 const subjectSha=process.env.ISSUE36_SUBJECT_SHA??"unknown";
-const {LspBridge}=await import(pathToFileURL(path.join(subjectRoot,"shim/src/lsp.ts")).href);
+const {LspBridge,collect}=await import(pathToFileURL(path.join(subjectRoot,"shim/src/lsp.ts")).href);
 const {RpcClient,RpcPool}=await import(pathToFileURL(path.join(subjectRoot,"shim/src/transport.ts")).href);
 
 const state=path.join(path.dirname(reportFile),"issue36-cmp-status-state");
@@ -72,13 +72,13 @@ const admitted=withMarker.replace(marker,"");
 const position=positionAt(withMarker,offset);
 await driver.notify("textDocument/didChange",{textDocument:{uri:callerUri,version:2},contentChanges:[{text:admitted}]});
 
-const before=sessionValue(await control.call("session.status",{session}));
+const before=sessionValue(await collect(control,"session.status",{session}));
 const started=performance.now();
 const response=await driver.request("textDocument/completion",{
   textDocument:{uri:callerUri},position,context:{triggerKind:2,triggerCharacter:"."},
 });
 const latencyMs=performance.now()-started;
-const after=sessionValue(await control.call("session.status",{session}));
+const after=sessionValue(await collect(control,"session.status",{session}));
 
 const beforeAnalyzer=before.analyzer??{},afterAnalyzer=after.analyzer??{};
 const result={

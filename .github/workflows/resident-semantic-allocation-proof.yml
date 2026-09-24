@@ -97,6 +97,7 @@ jobs:
             --add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED
             --add-exports=jdk.compiler/com.sun.tools.javac.platform=ALL-UNNAMED
             "-Djvmd.proof.subject=$PROOF_SUBJECT_SHA"
+            "-Djvmd.resolvers=$GITHUB_WORKSPACE/subject/jvmd-resolver/maven3/target"
             "-Dbasedir=$GITHUB_WORKSPACE/subject/jvmd-tests"
           )
           scenarios=(

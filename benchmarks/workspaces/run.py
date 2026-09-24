@@ -303,10 +303,30 @@ def start(a, server, root, fixture, build, mode):
     return Client(command, root)
 
 
+def _offset_ms(client, value):
+    return (value - client.spawn_ns) / 1e6 if value is not None else None
+
+
+def _milestone(client, milestones, name, value=None):
+    value = value or time.monotonic_ns()
+    milestones[name] = value
+    return value
+
+
 def prepare(client, fixture, server, timeout, report):
-    began = time.monotonic_ns()
     probes = []
-    report["preparation"] = {"queries": probes, "outcome": "failed"}
+    milestones = {
+        "process_spawn": client.spawn_ns,
+        "transport_available": client.process_started_ns,
+    }
+    memory = {"process_started": client.memory_snapshot()}
+    report["preparation"] = {
+        "phase_model": PHASE_MODEL["schema"],
+        "queries": probes,
+        "milestones_ns": milestones,
+        "memory": memory,
+        "outcome": "failed",
+    }
 
     def query(method, params):
         result, elapsed = client.call(method, params, timeout)
@@ -315,6 +335,8 @@ def prepare(client, fixture, server, timeout, report):
 
     roots = [{"uri": Path(p).as_uri(), "name": Path(p).name} for p in fixture["roots"]]
     client.workspace_folders = roots
+
+    _milestone(client, milestones, "initialize_sent")
     query(
         "initialize",
         {
@@ -329,26 +351,38 @@ def prepare(client, fixture, server, timeout, report):
             },
         },
     )
+    _milestone(client, milestones, "initialize_received")
     client.notify("initialized")
+    _milestone(client, milestones, "initialized_sent")
     client.notify("workspace/didChangeConfiguration", {"settings": SETTINGS})
-    # Opening documents and diagnostics may prepare their compiler state. No timed query is used.
-    documents = {op["params"]["textDocument"]["uri"]: op["source"] for op in fixture["operations"]}
+
+    # Readiness uses a separate sentinel. The measured operation/target is never invoked here.
     sentinel = Path(fixture["sentinel"])
-    documents[sentinel.as_uri()] = sentinel.read_text()
-    for uri, source in documents.items():
-        since = len(client.notifications)
-        client.notify(
-            "textDocument/didOpen",
-            {"textDocument": {"uri": uri, "languageId": "java", "version": 1, "text": source}},
+    sentinel_uri, sentinel_source = sentinel.as_uri(), sentinel.read_text()
+    since = len(client.notifications)
+    client.notify(
+        "textDocument/didOpen",
+        {"textDocument": {"uri": sentinel_uri, "languageId": "java", "version": 1, "text": sentinel_source}},
+    )
+    client.diagnostics(sentinel_uri, 1, False, since, timeout)
+
+    service_ready = None
+    if server == "jdtls":
+        ready_row = client.notification(
+            "language/status",
+            lambda params: params.get("type") == "ServiceReady",
+            timeout=timeout,
         )
-        client.diagnostics(uri, 1, False, since, timeout)
+        service_ready = ready_row["monotonic_ns"]
+        milestones["service_ready"] = service_ready
+
     deadline = time.monotonic() + timeout
     while True:
         hover = query(
             "textDocument/hover",
             {
-                "textDocument": {"uri": sentinel.as_uri()},
-                "position": position(sentinel.read_text(), sentinel.read_text().index("ready") + 2),
+                "textDocument": {"uri": sentinel_uri},
+                "position": position(sentinel_source, sentinel_source.index("ready") + 2),
             },
         )
         ready = "ready" in json.dumps(hover) and "int" in json.dumps(hover)
@@ -357,21 +391,66 @@ def prepare(client, fixture, server, timeout, report):
             ready = (
                 ready and status.get("phase") == "ready" and status.get("timings", {}).get("scans", 0) >= 1
             )
+            if ready and service_ready is None:
+                service_ready = time.monotonic_ns()
+                milestones["service_ready"] = service_ready
         else:
             symbols = query("workspace/symbol", {"query": "PrepSentinel"})
             ready = ready and any(row.get("name") == "PrepSentinel" for row in symbols or [])
         if ready:
             break
         if time.monotonic() > deadline:
-            raise TimeoutError("preparation readiness")
+            raise TimeoutError("workspace readiness")
         time.sleep(0.05)
+
+    _milestone(client, milestones, "workspace_ready")
+    memory["workspace_ready"] = client.memory_snapshot()
+
+    # Query documents are admitted only after workspace readiness. Versioned diagnostics are the
+    # explicit cross-server admission boundary; this is therefore settled editor preparation.
+    documents = {op["params"]["textDocument"]["uri"]: op["source"] for op in fixture["operations"]}
+    _milestone(client, milestones, "document_admission_started")
+    for uri, source in documents.items():
+        since = len(client.notifications)
+        client.notify(
+            "textDocument/didOpen",
+            {"textDocument": {"uri": uri, "languageId": "java", "version": 1, "text": source}},
+        )
+        client.diagnostics(uri, 1, False, since, timeout)
+    _milestone(client, milestones, "documents_admitted")
+    memory["documents_admitted"] = client.memory_snapshot()
+
+    offsets = {name + "_ms": _offset_ms(client, value) for name, value in milestones.items()}
     return {
         "outcome": "correct",
-        "duration_ms": (time.monotonic_ns() - began) / 1e6,
+        "phase_model": PHASE_MODEL["schema"],
+        "milestones_ns": milestones,
+        "milestones_ms": offsets,
+        "initialize_ms": (milestones["initialize_received"] - milestones["initialize_sent"]) / 1e6,
+        "process_to_workspace_ready_ms": _offset_ms(client, milestones["workspace_ready"]),
+        "initialize_to_workspace_ready_ms": (
+            milestones["workspace_ready"] - milestones["initialize_received"]
+        ) / 1e6,
+        "document_admission_ms": (
+            milestones["documents_admitted"] - milestones["document_admission_started"]
+        ) / 1e6,
         "queries": probes,
-        "opened_documents": list(documents),
-        "state": "fresh server/project state, dependency JARs available; zero-error diagnostics for every query document and separate PrepSentinel hover; JVMD initial repository scan complete; JDTLS sentinel workspace search completes its index barrier",
-        "first_lookup_note": "No timed symbol was queried during readiness. Document opening, diagnostics, indexing and prior operations may share compiler/index caches.",
+        "opened_documents": [sentinel_uri, *documents.keys()],
+        "readiness": {
+            "contract": "normal workspace/service readiness without querying a measured target",
+            "server_evidence": (
+                ["ServiceReady", "PrepSentinel hover", "PrepSentinel workspace symbol"]
+                if server == "jdtls"
+                else ["daemon index phase=ready with initial scan", "PrepSentinel hover"]
+            ),
+            "target_queried": False,
+        },
+        "document_admission": {
+            "boundary": "versioned zero-error publishDiagnostics for every measured query document",
+            "diagnostics_waited": True,
+            "mode": "settled editor admission",
+        },
+        "memory": memory,
     }
 
 

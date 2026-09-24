@@ -122,6 +122,11 @@ public final class ResidentSemanticState {
                 aggregate.namespaceIdentity(),aggregate.documentationIdentity());
     }
 
+    public synchronized void clear(){
+        if(root==null&&symbols.isEmpty()&&descriptions.isEmpty()&&units.isEmpty())return;
+        root=null;symbols.clear();descriptions.clear();units.clear();memberAggregates.clear();epoch++;
+    }
+
     public synchronized Map<String,Object> status(){
         var identity=identity();
         return Map.ofEntries(

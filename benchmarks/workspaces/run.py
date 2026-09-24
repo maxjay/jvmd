@@ -239,6 +239,13 @@ def write(path, value):
     path.write_text(json.dumps(value, indent=2) + "\n")
 
 
+def rotate_operations(operations, repetition):
+    if not operations:
+        return []
+    shift = repetition % len(operations)
+    return operations[shift:] + operations[:shift]
+
+
 def start(a, server, root, fixture, build, mode):
     java = [str(a.java_home / "bin/java"), "-Xmx1024m"]
     if mode != "comparison":
@@ -479,9 +486,7 @@ def run(a, server, repetition, mode, build):
     try:
         client = start(a, server, root, fixture, build, mode)
         report["preparation"] = prepare(client, fixture, server, a.timeout, report)
-        operations = fixture["operations"]
-        shift = repetition % len(operations)
-        operations = operations[shift:] + operations[:shift]
+        operations = rotate_operations(fixture["operations"], repetition)
         report["operation_order"] = [
             {"operation": operation["operation"], "target": operation["target"]} for operation in operations
         ]

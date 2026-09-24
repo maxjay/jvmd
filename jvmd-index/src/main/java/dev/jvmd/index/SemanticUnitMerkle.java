@@ -89,11 +89,11 @@ public final class SemanticUnitMerkle {
     public Diff diff(SemanticUnitMerkle next){
         Objects.requireNonNull(next);
         if(root.equals(next.root)&&size==next.size)return new Diff(Set.of(),Set.of(),Set.of(),0,0);
-        var added=new LinkedHashSet<String>(),changed=new LinkedHashSet<String>(),removed=new LinkedHashSet<String>();
+        var added=new LinkedHashSet<String>();var changed=new LinkedHashSet<String>();var removed=new LinkedHashSet<String>();
         var keys=new TreeSet<Integer>();keys.addAll(buckets.keySet());keys.addAll(next.buckets.keySet());
         int bucketsVisited=0,entriesCompared=0;
         for(int key:keys){
-            var before=buckets.get(key),after=next.buckets.get(key);
+            var before=buckets.get(key);var after=next.buckets.get(key);
             if(before!=null&&after!=null&&before.root.equals(after.root)&&before.ids.length==after.ids.length)continue;
             bucketsVisited++;
             if(before==null){Collections.addAll(added,after.ids);continue;}

@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'benchmarks/workspaces/**'
+      - 'benchmarks/phase-model.json'
       - 'jvmd-*/src/main/**'
       - 'shim/src/**'
       - '.github/workflows/workflow-benchmarks.yml'
@@ -10,6 +11,7 @@ on:
     branches: [main]
     paths:
       - 'benchmarks/workspaces/**'
+      - 'benchmarks/phase-model.json'
       - 'jvmd-*/src/main/**'
       - 'shim/src/**'
       - '.github/workflows/workflow-benchmarks.yml'
@@ -60,14 +62,14 @@ jobs:
           echo "JAVA_HOME=$RUNNER_TEMP/tools/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/tools/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
       - name: Cache pinned JDTLS archive
-        if: inputs.mode == 'jdtls'
+        if: github.event_name == 'pull_request' || inputs.mode == 'jdtls'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
             ${{ runner.temp }}/jdtls.tar.gz
           key: jdtls-338e7e73d61836651ba2453919a0d34fa763eb4e7c03342092309bffb8934c64
       - name: Install JDTLS for requested comparison
-        if: inputs.mode == 'jdtls'
+        if: github.event_name == 'pull_request' || inputs.mode == 'jdtls'
         run: |
           [[ -f "$RUNNER_TEMP/jdtls.tar.gz" ]] || curl -fsSL --retry 3 'https://download.eclipse.org/jdtls/milestones/1.61.0/jdt-language-server-1.61.0-202609031315.tar.gz' -o "$RUNNER_TEMP/jdtls.tar.gz"
           printf '%s  %s\n' 338e7e73d61836651ba2453919a0d34fa763eb4e7c03342092309bffb8934c64 "$RUNNER_TEMP/jdtls.tar.gz" | sha256sum -c -
@@ -100,11 +102,15 @@ jobs:
           MODE: ${{ inputs.mode || 'comparison' }}
         run: |
           options=(--servers jvmd --runs 5)
-          case "$MODE" in
-            jdtls) options=(--servers jvmd jdtls --runs 5 --jdtls "$RUNNER_TEMP/jdtls");;
-            attribution) options=(--mode attribution --runs 1);;
-            overhead) options=(--overhead --runs 5);;
-          esac
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            options=(--servers jvmd jdtls --runs 5 --jdtls "$RUNNER_TEMP/jdtls")
+          else
+            case "$MODE" in
+              jdtls) options=(--servers jvmd jdtls --runs 5 --jdtls "$RUNNER_TEMP/jdtls");;
+              attribution) options=(--mode attribution --runs 1);;
+              overhead) options=(--overhead --runs 5);;
+            esac
+          fi
           python benchmarks/workspaces/run.py --repo "$PWD" --build "$RUNNER_TEMP/workflow-build/build.json" --java-home "$JAVA_HOME" --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers" --root "$RUNNER_TEMP/results" --samples 20 "${options[@]}"
       - name: Verify and summarize
         if: ${{ !cancelled() }}

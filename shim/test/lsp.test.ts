@@ -260,3 +260,23 @@ test("LSP defers same-document diagnostics while interactive work is active",asy
   await delay(260);assert.equal(diagnosticCalls,1);
   await bridge.close();
 });
+
+test("LSP does not pre-admit unrelated diagnostics ahead of active interactive work",async()=>{
+  let release:(value:any)=>void=()=>{},started:(value?:unknown)=>void=()=>{},diagnosticCalls=0;
+  const completionStarted=new Promise(resolve=>started=resolve);
+  const client:any={call:async(method:string,params:any)=>{
+    if(method==="session.open")return {result:{session:"s1"}};
+    if(method==="lsp.request"&&params.method==="initialize")return envelope({capabilities:{}});
+    if(method==="lsp.request"&&params.method==="textDocument/completion"){started();return new Promise(resolve=>release=resolve);}
+    if(method==="lsp.diagnostics"){diagnosticCalls++;return envelope({uri:params.uri,version:1,diagnostics:[]});}
+    return envelope({});
+  }};
+  const bridge=new LspBridge(async()=>client,"/repo",()=>{});
+  await bridge.handle({jsonrpc:"2.0",id:1,method:"initialize",params:{}});
+  await bridge.handle({jsonrpc:"2.0",method:"textDocument/didOpen",params:{textDocument:{uri:"file:///repo/A.java",languageId:"java",version:1,text:"class A {}"}}});
+  const completion=bridge.handle({jsonrpc:"2.0",id:2,method:"textDocument/completion",params:{textDocument:{uri:"file:///repo/B.java"},position:{line:0,character:0}}});
+  await completionStarted;await delay(260);assert.equal(diagnosticCalls,0);
+  release(envelope({isIncomplete:false,items:[{label:"B"}]}));await completion;
+  await delay(260);assert.equal(diagnosticCalls,1);
+  await bridge.close();
+});

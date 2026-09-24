@@ -40,7 +40,8 @@ def markdown_summary(result):
     lines += ["| Metric | " + " | ".join(servers) + " |",
               "| --- | " + " | ".join("---:" for _ in servers) + " |"]
     metrics = [
-        ("Initialize", "initialize_ms"),
+        ("Initialize request", "initialize_ms"),
+        ("Process → initialize response", "process_to_initialize_response_ms"),
         ("Process → workspace ready", "process_to_workspace_ready_ms"),
         ("Document admission", "document_admission_ms"),
         ("Process → first correct result", "cold_end_to_end_ms"),
@@ -56,7 +57,26 @@ def markdown_summary(result):
         correct = row["outcomes"].get("correct", 0)
         total = sum(row["outcomes"].values())
         lines.append("| " + row["operation"] + " | " + row["state"] + " | " + row["server"] + " | " + _fmt(row["p50_ms"]) + " | " + _fmt(row["p95_ms"]) + " | " + str(correct) + "/" + str(total) + " |")
-    lines += ["", "Warmup rows are retained in raw reports and excluded from steady statistics.", ""]
+    lines += ["", "Warmup rows are retained in raw reports and excluded from steady statistics.", "",
+              "### Memory", "",
+              "| State | " + " | ".join(server + " RSS MB" for server in servers) + " |",
+              "| --- | " + " | ".join("---:" for _ in servers) + " |"]
+    for label, phase in [
+        ("Workspace ready", "workspace_ready"),
+        ("Documents admitted", "documents_admitted"),
+        ("After first use", "post_first_use"),
+        ("After steady", "post_steady"),
+    ]:
+        values = []
+        for server in servers:
+            samples = [
+                row["snapshots"][phase]["rss_bytes"] / (1024 * 1024)
+                for row in result["phase_memory"]
+                if row["server"] == server and phase in row["snapshots"]
+            ]
+            values.append(_fmt(statistics.median(samples) if samples else None))
+        lines.append("| " + label + " | " + " | ".join(values) + " |")
+    lines += [""]
     return "\n".join(lines)
 
 def summarize(root):
@@ -72,6 +92,7 @@ def summarize(root):
             "worker": path.parent.name,
             "server": run["server"],
             "initialize_ms": prep.get("initialize_ms"),
+            "process_to_initialize_response_ms": prep.get("process_to_initialize_response_ms"),
             "process_to_workspace_ready_ms": prep.get(
                 "process_to_workspace_ready_ms", prep.get("process_start_to_ready_ms")
             ),

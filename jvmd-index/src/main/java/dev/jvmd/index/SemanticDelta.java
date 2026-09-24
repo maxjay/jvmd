@@ -33,7 +33,7 @@ public record SemanticDelta(
     public static SemanticDelta between(SemanticSnapshot previous,SemanticSnapshot next){
         Objects.requireNonNull(next);
         var oldFacts=previous==null?Map.<String,SemanticFact>of():previous.facts();
-        var added=new LinkedHashMap<String,SemanticFact>(),changed=new LinkedHashMap<String,SemanticFact>();
+        var added=new LinkedHashMap<String,SemanticFact>();var changed=new LinkedHashMap<String,SemanticFact>();
         for(var entry:next.facts().entrySet()){
             var old=oldFacts.get(entry.getKey());
             if(old==null)added.put(entry.getKey(),entry.getValue());

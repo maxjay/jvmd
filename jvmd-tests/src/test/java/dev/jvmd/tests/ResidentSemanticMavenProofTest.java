@@ -30,7 +30,7 @@ class ResidentSemanticMavenProofTest {
             "completion_as_member_of_calls","completion_doc_lookups",
             "completion_sort_count","completion_sort_input_size",
             "completion_rows_returned","completion_rows_discarded_after_limit",
-            "completion_result_bytes");
+            "completion_result_bytes","resident_semantic_fact_mutations","resident_semantic_tree_range_entries_read");
 
     private Config config(){
         return new Config(Path.of(System.getProperty("java.home")),null,
@@ -47,8 +47,12 @@ class ResidentSemanticMavenProofTest {
     private static Map<String,Long> analyzerCounters(Application app,String session)throws Exception{
         var status=TestSupport.complete(app.dispatcher(),"session.status",Map.of("session",session))
                 .path("result").path("result").path("analyzer");
-        var result=new LinkedHashMap<String,Long>();
-        for(String key:COUNTERS)result.put(key,status.path(key).asLong());
+        var resident=status.path("resident_semantic_state");var result=new LinkedHashMap<String,Long>();
+        for(String key:COUNTERS){
+            if(key.equals("resident_semantic_fact_mutations"))result.put(key,resident.path("semantic_fact_mutations").asLong());
+            else if(key.equals("resident_semantic_tree_range_entries_read"))result.put(key,resident.path("semantic_tree_range_entries_read").asLong());
+            else result.put(key,status.path(key).asLong());
+        }
         return result;
     }
 

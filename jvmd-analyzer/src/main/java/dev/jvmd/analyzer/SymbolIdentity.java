@@ -2,6 +2,7 @@ package dev.jvmd.analyzer;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
 import com.sun.tools.javac.code.Symbol.ClassSymbol;
+import dev.jvmd.index.SemanticFact;
 import java.util.*;
 import java.util.function.Function;
 import javax.lang.model.element.*;
@@ -9,6 +10,7 @@ import javax.lang.model.type.*;
 import javax.lang.model.util.*;
 /** Implements 4.2: javac-resolved SCIP identity, erased descriptors and name paths. */
 public final class SymbolIdentity {
+    private final JavacTask task;
     private final Elements elements;
     private final Types types;
     private final Trees trees;
@@ -18,11 +20,18 @@ public final class SymbolIdentity {
     private final Map<String,String> sourceLocations=new HashMap<>();
     private final Map<Element,String> scips=new IdentityHashMap<>(),namePaths=new IdentityHashMap<>();
     private final Map<Element,String> gavs=new IdentityHashMap<>();
+    private final Map<Element,SemanticDeclaration> declarations=new IdentityHashMap<>();
     private final Map<Element,com.sun.source.util.TreePath> paths=new IdentityHashMap<>();
     public com.sun.source.util.TreePath path(Element element){if(!paths.containsKey(element))paths.put(element,trees.getPath(element));return paths.get(element);}
     public void remember(Element element,com.sun.source.util.TreePath path){if(element!=null)paths.put(element,path);}
     public SymbolIdentity(JavacTask task,String defaultGav,String jdkVersion,Function<String,String> coordinates){this(task,defaultGav,jdkVersion,coordinates,List.of());}
-    public SymbolIdentity(JavacTask task,String defaultGav,String jdkVersion,Function<String,String> coordinates,List<java.nio.file.Path> sources){this.sources=List.copyOf(sources);elements=task.getElements();types=task.getTypes();trees=Trees.instance(task);this.defaultGav=defaultGav;this.jdkVersion=jdkVersion;this.coordinates=coordinates;}
+    public SymbolIdentity(JavacTask task,String defaultGav,String jdkVersion,Function<String,String> coordinates,List<java.nio.file.Path> sources){this.task=Objects.requireNonNull(task);this.sources=List.copyOf(sources);elements=task.getElements();types=task.getTypes();trees=Trees.instance(task);this.defaultGav=defaultGav;this.jdkVersion=jdkVersion;this.coordinates=coordinates;}
+    public SemanticDeclaration declaration(Element element){return declaration(element,null);}
+    public SemanticDeclaration declaration(Element element,SemanticFact reusable){
+        var value=declarations.get(element);
+        if(value==null){value=SemanticDeclaration.extract(task,this,element,reusable);declarations.put(element,value);}
+        return value;
+    }
     public String descriptor(TypeMirror type){
         type=types.erasure(type);
         return switch(type.getKind()){
@@ -50,17 +59,35 @@ public final class SymbolIdentity {
     }
     public String sourceFile(Element element){
         var declaring=declaring(element);if(declaring==null)return null;String sourceKey=binaryName(declaring);if(sourceLocations.containsKey(sourceKey)){String prior=sourceLocations.get(sourceKey);return prior.isEmpty()?null:prior;}
-        var path=path(element);
-        if(path==null){var type=declaring(element);if(type!=null)path=path(type);}
-        java.net.URI uri=path==null?null:path.getCompilationUnit().getSourceFile().toUri();
-        if(uri==null&&declaring(element) instanceof ClassSymbol symbol&&symbol.sourcefile!=null)uri=symbol.sourcefile.toUri();
-        if(uri!=null&&"file".equals(uri.getScheme())&&uri.getPath().endsWith(".java")&&(path!=null||java.nio.file.Files.isRegularFile(java.nio.file.Path.of(uri)))){String file=java.nio.file.Path.of(uri).toAbsolutePath().normalize().toString();sourceLocations.put(sourceKey,file);return file;}
-        var type=declaring(element);if(type==null)return null;
-        String key=binaryName(type),cached=sourceLocations.get(key);if(cached!=null)return cached.isEmpty()?null:cached;
-        String filename=type instanceof ClassSymbol symbol&&symbol.sourcefile!=null?symbol.sourcefile.getName():key.substring(key.lastIndexOf('.')+1).split("\\$",2)[0]+".java";filename=filename.substring(filename.lastIndexOf('/')+1);
-        String pkg=elements.getPackageOf(type).getQualifiedName().toString().replace('.','/');String relative=(pkg.isEmpty()?"":pkg+"/")+filename;
-        for(var root:sources){var file=root.resolve(relative);if(java.nio.file.Files.isRegularFile(file)){String found=file.toAbsolutePath().normalize().toString();sourceLocations.put(key,found);return found;}}
-        sourceLocations.put(key,"");return null;
+
+        // Source roots are maintained input state and are more stable than javac's focused TreePath /
+        // ClassSymbol.sourcefile metadata. Resolve the conventional top-level source location first.
+        String pkg=elements.getPackageOf(declaring).getQualifiedName().toString().replace('.','/');
+        String binarySimple=sourceKey.substring(sourceKey.lastIndexOf('.')+1),topLevel=binarySimple.split("\\$",2)[0]+".java";
+        String relative=(pkg.isEmpty()?"":pkg+"/")+topLevel;
+        for(var root:sources){
+            var candidate=root.resolve(relative);
+            if(java.nio.file.Files.isRegularFile(candidate)){
+                String found=candidate.toAbsolutePath().normalize().toString();sourceLocations.put(sourceKey,found);return found;
+            }
+        }
+
+        var path=path(element);if(path==null)path=path(declaring);
+        java.net.URI uri=null;
+        // Fall back to javac provenance for unsaved sources and legal secondary top-level declarations.
+        if(declaring instanceof ClassSymbol symbol&&symbol.sourcefile!=null)uri=symbol.sourcefile.toUri();
+        if(uri==null&&path!=null)uri=path.getCompilationUnit().getSourceFile().toUri();
+        if(uri!=null&&"file".equals(uri.getScheme())&&uri.getPath().endsWith(".java")){
+            var file=java.nio.file.Path.of(uri).toAbsolutePath().normalize();
+            boolean knownSource=java.nio.file.Files.isRegularFile(file)||sources.stream().anyMatch(root->file.startsWith(root.toAbsolutePath().normalize()));
+            if(knownSource){String found=file.toString();sourceLocations.put(sourceKey,found);return found;}
+        }
+
+        String filename=declaring instanceof ClassSymbol symbol&&symbol.sourcefile!=null?symbol.sourcefile.getName():topLevel;
+        filename=filename.substring(filename.lastIndexOf('/')+1);
+        String fallbackRelative=(pkg.isEmpty()?"":pkg+"/")+filename;
+        for(var root:sources){var file=root.resolve(fallbackRelative);if(java.nio.file.Files.isRegularFile(file)){String found=file.toAbsolutePath().normalize().toString();sourceLocations.put(sourceKey,found);return found;}}
+        sourceLocations.put(sourceKey,"");return null;
     }
     public String displayName(Element e){return e.getKind()==ElementKind.CONSTRUCTOR?e.getEnclosingElement().getSimpleName().toString():e.getSimpleName().toString();}
     public String namePath(Element e){String value=namePaths.get(e);if(value==null){value=resolveNamePath(e);namePaths.put(e,value);}return value;}

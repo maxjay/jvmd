@@ -2,6 +2,7 @@ package dev.jvmd.analyzer;
 
 import com.sun.source.tree.*;
 import com.sun.source.util.*;
+import dev.jvmd.core.AlgebraicAccumulator;
 import dev.jvmd.core.Hashing;
 import dev.jvmd.index.*;
 import java.nio.charset.StandardCharsets;
@@ -14,12 +15,20 @@ import javax.lang.model.type.*;
 public final class SemanticFacts {
     private SemanticFacts(){}
 
-    public record CompletionContext(DocumentSemanticSnapshot.QueryContext query,List<SemanticSnapshot> semanticSnapshots,Set<String> nameResolutionNames) {
-        public CompletionContext { Objects.requireNonNull(query);semanticSnapshots=List.copyOf(semanticSnapshots);nameResolutionNames=Set.copyOf(nameResolutionNames); }
+    public record CompletionContext(DocumentSemanticSnapshot.QueryContext query,List<SemanticSnapshot> semanticSnapshots,
+                                    Set<String> nameResolutionNames,Set<String> accessibleMemberIds) {
+        public CompletionContext {
+            Objects.requireNonNull(query);semanticSnapshots=List.copyOf(semanticSnapshots);
+            nameResolutionNames=Set.copyOf(nameResolutionNames);accessibleMemberIds=Set.copyOf(accessibleMemberIds);
+        }
     }
 
     /** Detach one qualified-completion context and the canonical declaration units it can query. */
     public static CompletionContext qualifiedCompletion(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String marker,int selectorOffset)throws Exception{
+        return qualifiedCompletion(task,units,identity,marker,selectorOffset,(_, _)->false);
+    }
+    public static CompletionContext qualifiedCompletion(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String marker,
+                                                         int selectorOffset,java.util.function.BiPredicate<String,String> residentTypeCurrent)throws Exception{
         TreePath[] found={null};
         for(var unit:units)new TreePathScanner<Void,Void>(){
             @Override public Void visitMemberSelect(MemberSelectTree node,Void unused){
@@ -51,16 +60,20 @@ public final class SemanticFacts {
         }else if(found[0].getCompilationUnit().getPackageName()!=null)packageName=found[0].getCompilationUnit().getPackageName().toString();
 
         var snapshots=new LinkedHashMap<String,SemanticSnapshot>();
-        hierarchySnapshots(task,identity,receiver,new HashSet<>(),snapshots);
+        hierarchySnapshots(task,identity,receiver,new HashSet<>(),snapshots,residentTypeCurrent);
         var names=new LinkedHashSet<String>();String sourceType=sourceSimpleType(trees,selectedElement);if(sourceType!=null)names.add(sourceType);
+        var accessible=accessibleMembers(task,identity,scope,receiver);
         var query=new DocumentSemanticSnapshot.QueryContext(selectorOffset,type(identity,receiver),receiverId,
-                selectedElement instanceof TypeElement,packageName,enclosingTypeId,staticContext,List.of(),
-                accessibleMembers(task,identity,scope,receiver));
-        return new CompletionContext(query,List.copyOf(snapshots.values()),names);
+                selectedElement instanceof TypeElement,packageName,enclosingTypeId,staticContext,List.of(),"");
+        return new CompletionContext(query,List.copyOf(snapshots.values()),names,accessible);
     }
 
     /** Detach the cursor-visible lexical/import scope and enclosing-type semantic context. */
     public static CompletionContext unqualifiedCompletion(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String marker,int selectorOffset)throws Exception{
+        return unqualifiedCompletion(task,units,identity,marker,selectorOffset,(_, _)->false);
+    }
+    public static CompletionContext unqualifiedCompletion(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String marker,
+                                                           int selectorOffset,java.util.function.BiPredicate<String,String> residentTypeCurrent)throws Exception{
         TreePath[] found={null};
         for(var unit:units)new TreePathScanner<Void,Void>(){
             @Override public Void visitIdentifier(IdentifierTree node,Void unused){
@@ -91,11 +104,12 @@ public final class SemanticFacts {
         }
 
         var snapshots=new LinkedHashMap<String,SemanticSnapshot>();
-        if(receiver!=null)hierarchySnapshots(task,identity,receiver,new HashSet<>(),snapshots);
+        if(receiver!=null)hierarchySnapshots(task,identity,receiver,new HashSet<>(),snapshots,residentTypeCurrent);
         SemanticType receiverType=receiver==null?new SemanticType.Unknown("?"):type(identity,receiver);
+        var accessible=receiver==null?Set.<String>of():accessibleMembers(task,identity,scope,receiver);
         var query=new DocumentSemanticSnapshot.QueryContext(selectorOffset,receiverType,receiverId,false,packageName,enclosingTypeId,staticContext,
-                List.copyOf(visible.values()),receiver==null?Set.of():accessibleMembers(task,identity,scope,receiver));
-        return new CompletionContext(query,List.copyOf(snapshots.values()),Set.of());
+                List.copyOf(visible.values()),"");
+        return new CompletionContext(query,List.copyOf(snapshots.values()),Set.of(),accessible);
     }
 
     private static CompletionCandidate scopeCandidate(JavacTask task,SymbolIdentity identity,Element element,DeclaredType receiver){
@@ -157,21 +171,28 @@ public final class SemanticFacts {
         return type instanceof IdentifierTree identifier?identifier.getName().toString():null;
     }
 
-    private static void hierarchySnapshots(JavacTask task,SymbolIdentity identity,TypeMirror mirror,Set<String> seen,Map<String,SemanticSnapshot> snapshots)throws Exception{
-        if(mirror instanceof TypeVariable variable){hierarchySnapshots(task,identity,variable.getUpperBound(),seen,snapshots);return;}
-        if(mirror instanceof IntersectionType intersection){for(var bound:intersection.getBounds())hierarchySnapshots(task,identity,bound,seen,snapshots);return;}
+    private static void hierarchySnapshots(JavacTask task,SymbolIdentity identity,TypeMirror mirror,Set<String> seen,
+                                           Map<String,SemanticSnapshot> snapshots,java.util.function.BiPredicate<String,String> residentTypeCurrent)throws Exception{
+        if(mirror instanceof TypeVariable variable){hierarchySnapshots(task,identity,variable.getUpperBound(),seen,snapshots,residentTypeCurrent);return;}
+        if(mirror instanceof IntersectionType intersection){for(var bound:intersection.getBounds())hierarchySnapshots(task,identity,bound,seen,snapshots,residentTypeCurrent);return;}
         if(!(mirror instanceof DeclaredType declared)||!(declared.asElement() instanceof TypeElement type))return;
         String id;try{id=identity.scip(type);}catch(IllegalArgumentException unresolved){return;}
         if(!seen.add(id))return;
-        var snapshot=snapshotForType(task,identity,type);snapshots.putIfAbsent(snapshot.unit(),snapshot);
-        for(var parent:task.getTypes().directSupertypes(declared))hierarchySnapshots(task,identity,parent,seen,snapshots);
+        String binary=identity.binaryName(type);
+        if(!residentTypeCurrent.test(id,binary)){
+            var snapshot=snapshotForType(task,identity,type);snapshots.putIfAbsent(snapshot.unit(),snapshot);
+        }
+        for(var parent:task.getTypes().directSupertypes(declared))hierarchySnapshots(task,identity,parent,seen,snapshots,residentTypeCurrent);
     }
 
     public static SemanticSnapshot snapshotForType(JavacTask task,SymbolIdentity identity,TypeElement type)throws Exception{
-        var path=identity.path(type);
-        if(path!=null&&path.getCompilationUnit()!=null){
+        var path=identity.path(type);String source=identity.sourceFile(type);
+        if(path!=null&&path.getCompilationUnit()!=null&&source!=null){
             var uri=path.getCompilationUnit().getSourceFile().toUri();
-            if("file".equals(uri.getScheme())&&uri.getPath()!=null&&uri.getPath().endsWith(".java"))return sourceSnapshot(task,identity,path.getCompilationUnit());
+            if("file".equals(uri.getScheme())&&uri.getPath()!=null&&uri.getPath().endsWith(".java")){
+                String pathSource=Path.of(uri).toAbsolutePath().normalize().toString();
+                if(pathSource.equals(source))return sourceSnapshot(task,identity,path.getCompilationUnit());
+            }
         }
         return typeSnapshot(task,identity,type);
     }
@@ -179,7 +200,7 @@ public final class SemanticFacts {
     public static SemanticSnapshot sourceSnapshot(JavacTask task,SymbolIdentity identity,CompilationUnitTree unit)throws Exception{
         String text=unit.getSourceFile().getCharContent(true).toString();
         String source=sourcePath(unit),content=Hashing.sha256(text.getBytes(StandardCharsets.UTF_8));
-        var facts=new LinkedHashMap<String,SemanticFact>();var descriptions=new LinkedHashMap<String,SymbolDescription>();
+        var facts=new LinkedHashMap<String,SemanticFact>();
         var trees=Trees.instance(task);
         new TreePathScanner<Void,Void>(){
             private void add(Element element){
@@ -188,7 +209,6 @@ public final class SemanticFacts {
                         ElementKind.BINDING_VARIABLE,ElementKind.PARAMETER,ElementKind.TYPE_PARAMETER).contains(element.getKind()))return;
                 try{
                     var fact=fact(task,identity,element);facts.put(fact.id(),fact);
-                    descriptions.put(fact.id(),description(task,identity,element));
                 }catch(IllegalArgumentException unresolved){/* no stable semantic identity yet */}
             }
             @Override public Void visitClass(ClassTree tree,Void unused){add(trees.getElement(getCurrentPath()));return super.visitClass(tree,unused);}
@@ -199,63 +219,51 @@ public final class SemanticFacts {
                 return null;
             }
         }.scan(unit,null);
-        return snapshot("source:"+source,source,content,facts,descriptions);
+        return snapshot("source:"+source,source,content,facts);
+    }
+
+    /** Build a source unit from canonical declarations already extracted by Bindings in this attribution. */
+    public static SemanticSnapshot sourceSnapshot(CompilationUnitTree unit,Collection<SemanticFact> captured)throws Exception{
+        String text=unit.getSourceFile().getCharContent(true).toString();
+        String source=sourcePath(unit),content=Hashing.sha256(text.getBytes(StandardCharsets.UTF_8));
+        var facts=new LinkedHashMap<String,SemanticFact>();
+        var excluded=Set.of("local","local_variable","resource_variable","exception_parameter","binding_variable","parameter","type_parameter");
+        for(var fact:captured)if(source.equals(fact.sourceFile())&&!excluded.contains(fact.kind()))facts.put(fact.id(),fact);
+        return snapshot("source:"+source,source,content,facts);
     }
 
     /** Classfile/JDK fallback: one detached declaration unit without retaining compiler objects. */
     public static SemanticSnapshot typeSnapshot(JavacTask task,SymbolIdentity identity,TypeElement type){
-        var facts=new LinkedHashMap<String,SemanticFact>();var descriptions=new LinkedHashMap<String,SymbolDescription>();
+        var facts=new LinkedHashMap<String,SemanticFact>();
         try{
-            var declaration=fact(task,identity,type);facts.put(declaration.id(),declaration);descriptions.put(declaration.id(),description(task,identity,type));
+            var declaration=fact(task,identity,type);facts.put(declaration.id(),declaration);
             for(var element:type.getEnclosedElements()){
                 if(Set.of(ElementKind.STATIC_INIT,ElementKind.INSTANCE_INIT).contains(element.getKind()))continue;
                 try{
-                    var member=fact(task,identity,element);facts.put(member.id(),member);descriptions.put(member.id(),description(task,identity,element));
+                    var member=fact(task,identity,element);facts.put(member.id(),member);
                 }catch(IllegalArgumentException unresolved){/* no stable semantic identity yet */}
             }
             String unit="type:"+declaration.id();
-            String content=Hashing.sha256(facts.values().stream().map(f->f.id()+"\0"+f.apiIdentity()+"\0"+f.documentationIdentity())
-                    .sorted().reduce("",(a,b)->a+"\n"+b).getBytes(StandardCharsets.UTF_8));
-            return snapshot(unit,declaration.sourceFile(),content,facts,descriptions);
+            var contentAggregate=new AlgebraicAccumulator("semantic-type-content-v2");for(var fact:facts.values())contentAggregate.add(fact.id(),fact.factIdentity());
+            String content=contentAggregate.identity().hex();
+            return snapshot(unit,declaration.sourceFile(),content,facts);
         }catch(IllegalArgumentException unresolved){
             return new SemanticSnapshot("type:unresolved:"+type.getQualifiedName(),null,"",Map.of(),Map.of(),"","","",Set.of());
         }
     }
 
     public static SemanticFact fact(JavacTask task,SymbolIdentity identity,Element element){
-        String id=identity.scip(element);
-        String owner=element.getEnclosingElement() instanceof TypeElement parent?identity.scip(parent):null;
-        String source=identity.sourceFile(element);
-        String pkg=task.getElements().getPackageOf(element).getQualifiedName().toString();
-        String erased=null;
-        try{
-            if(element instanceof ExecutableElement method)erased=identity.descriptor(method);
-            else if(element instanceof VariableElement variable)erased=identity.descriptor(variable.asType());
-        }catch(IllegalArgumentException ignored){}
-        var modifiers=new TreeSet<String>();element.getModifiers().forEach(value->modifiers.add(value.toString()));
-        var typeParameters=element instanceof Parameterizable p?p.getTypeParameters().stream().map(identity::scip).toList():List.<String>of();
-        var supertypes=element instanceof TypeElement t?task.getTypes().directSupertypes(t.asType()).stream().map(value->type(identity,value)).toList():List.<SemanticType>of();
-        var parameterNames=element instanceof ExecutableElement method?method.getParameters().stream().map(p->p.getSimpleName().toString()).toList():List.<String>of();
-        boolean varargs=element instanceof ExecutableElement method&&method.isVarArgs();
-        String signature=identity.signature(element);
-        String api=Hashing.sha256((id+"\0"+signature+"\0"+ApiFingerprint.declaration(element)).getBytes(StandardCharsets.UTF_8));
-        String namespace=Hashing.sha256((Objects.toString(owner,"")+"\0"+pkg+"\0"+identity.displayName(element)+"\0"+SymbolIdentity.kind(element)).getBytes(StandardCharsets.UTF_8));
-        String doc=Objects.requireNonNullElse(task.getElements().getDocComment(element),"");
-        String docIdentity=Hashing.sha256(doc.getBytes(StandardCharsets.UTF_8));
-        TypeElement declaring=identity.declaring(element);
-        String fqn=declaring==null?null:identity.binaryName(declaring);
-        return new SemanticFact(id,owner,identity.displayName(element),SymbolIdentity.kind(element),signature,erased,modifiers,source,pkg,
-                identity.namePath(element),fqn,type(identity,element.asType()),typeParameters,supertypes,parameterNames,varargs,api,namespace,docIdentity);
+        return identity.declaration(element).fact();
     }
 
     public static SymbolDescription description(JavacTask task,SymbolIdentity identity,Element element){
-        String id=identity.scip(element),doc=Objects.requireNonNullElse(task.getElements().getDocComment(element),"");
+        var declaration=identity.declaration(element);var fact=declaration.fact();
         SymbolDescription.DeclarationLocation location=null;var path=identity.path(element);
         if(path!=null){
             var positions=Trees.instance(task).getSourcePositions();long start=positions.getStartPosition(path.getCompilationUnit(),path.getLeaf()),end=positions.getEndPosition(path.getCompilationUnit(),path.getLeaf());
             if(start>=0&&end>=start)location=new SymbolDescription.DeclarationLocation(sourcePath(path.getCompilationUnit()),(int)start,(int)end);
         }
-        return new SymbolDescription(id,doc,identity.signature(element),location,Hashing.sha256(doc.getBytes(StandardCharsets.UTF_8)));
+        return new SymbolDescription(fact.id(),declaration.documentation(),fact.structuralSignature(),location,fact.documentationIdentity());
     }
 
     public static SemanticType type(SymbolIdentity identity,TypeMirror mirror){
@@ -289,16 +297,16 @@ public final class SemanticFacts {
         };
     }
 
-    private static SemanticSnapshot snapshot(String unit,String source,String content,Map<String,SemanticFact> facts,Map<String,SymbolDescription> descriptions){
-        String api=aggregate(facts.values().stream().map(SemanticFact::apiIdentity).toList());
-        String namespace=aggregate(facts.values().stream().map(SemanticFact::namespaceIdentity).toList());
-        String documentation=aggregate(facts.values().stream().map(SemanticFact::documentationIdentity).toList());
+    private static SemanticSnapshot snapshot(String unit,String source,String content,Map<String,SemanticFact> facts){
+        String api=aggregate("semantic-unit-api-v2",facts.values(),SemanticFact::apiIdentity);
+        String namespace=aggregate("semantic-unit-namespace-v2",facts.values(),SemanticFact::namespaceIdentity);
+        String documentation=aggregate("semantic-unit-documentation-v2",facts.values(),SemanticFact::documentationIdentity);
         var dependencies=new LinkedHashSet<String>();
         for(var fact:facts.values()){
             collect(fact.type(),dependencies);fact.directSupertypes().forEach(type->collect(type,dependencies));
         }
         facts.keySet().forEach(dependencies::remove);
-        return new SemanticSnapshot(unit,source,content,facts,descriptions,api,namespace,documentation,dependencies);
+        return new SemanticSnapshot(unit,source,content,facts,Map.of(),api,namespace,documentation,dependencies);
     }
 
     private static void collect(SemanticType type,Set<String> result){
@@ -309,8 +317,8 @@ public final class SemanticFacts {
         else if(type instanceof SemanticType.Intersection intersection)intersection.bounds().forEach(value->collect(value,result));
     }
 
-    private static String aggregate(List<String> identities){
-        return Hashing.sha256(String.join("\n",identities.stream().sorted().toList()).getBytes(StandardCharsets.UTF_8));
+    private static String aggregate(String domain,Collection<SemanticFact> facts,java.util.function.Function<SemanticFact,String> identity){
+        var aggregate=new AlgebraicAccumulator(domain);for(var fact:facts)aggregate.add(fact.id(),identity.apply(fact));return aggregate.identity().hex();
     }
     private static String sourcePath(CompilationUnitTree unit){
         try{return Path.of(unit.getSourceFile().toUri()).toAbsolutePath().normalize().toString();}

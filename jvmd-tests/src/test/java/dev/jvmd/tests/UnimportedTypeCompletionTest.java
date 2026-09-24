@@ -49,6 +49,31 @@ class UnimportedTypeCompletionTest {
         }
     }
 
+    @Test void fullLiveUnqualifiedPageDoesNotQueryIndex()throws Exception{
+        var config=TestSupport.config(root,Duration.ofHours(4));
+        Path project=MavenFixtures.project(root.resolve("broad-project"),
+                "<properties><maven.compiler.release>25</maven.compiler.release></properties>");
+        Path sourceRoot=Files.createDirectories(project.resolve("src/main/java/app"));
+        Path file=sourceRoot.resolve("Use.java");
+        var code=new StringBuilder("package app; class Use { ");
+        for(int i=0;i<20;i++)code.append("int alpha").append(String.format("%02d",i)).append("; ");
+        code.append("Object read(){ return al; } }");
+        String source=code.toString();Files.writeString(file,source);
+
+        try(var app=new Application(config)){
+            String session=TestSupport.open(app,project);
+            TestSupport.request(app.dispatcher(),"document.open",Map.of("session",session,"path",file.toString(),"version",1,"text",source));
+            long beforeQueries=indexQueries(app,session);
+            int offset=source.indexOf("return al")+"return al".length();
+            var position=dev.jvmd.core.Documents.position(source,offset);
+            var response=TestSupport.request(app.dispatcher(),"symbol.completion",Map.of(
+                    "session",session,"path",file.toString(),"line",position.line(),"character",position.character(),"limit",10));
+            assertThat(response.has("error")).as(response.toString()).isFalse();
+            assertThat(response.path("result").path("result").path("items").size()).isEqualTo(10);
+            assertThat(indexQueries(app,session)-beforeQueries).isZero();
+        }
+    }
+
     private static JsonNode lspCompletion(Application app,String session,Path file,String source,int offset){
         var params=Map.of("textDocument",Map.of("uri",file.toUri().toString()),"position",dev.jvmd.core.Documents.position(source,offset));
         var response=TestSupport.request(app.dispatcher(),"lsp.request",Map.of("session",session,"method","textDocument/completion","params",params,"client",Map.of()));

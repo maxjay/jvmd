@@ -45,7 +45,13 @@ class UnsavedDocumentsTest {
         Path b=root.resolve("B.java"),created=root.resolve("Created.java");Files.writeString(b,"class B { int value(){return Created.answer();} }");
         try(var app=new Application(TestSupport.config(root,Duration.ofHours(4)))){
             String session=TestSupport.open(app,root);assertThat(diagnostics(app,session,b)).isNotEmpty();
+            long residentBefore=request(app,session,"session.status",Map.of()).path("result").path("result").path("analyzer")
+                    .path("resident_semantic_state").path("semantic_facts").asLong();
+            assertThat(residentBefore).isPositive();
             request(app,session,"document.open",Map.of("path",created.toString(),"version",1,"text","class Created { static int answer(){return 42;} }"));
+            long residentAfterOpen=request(app,session,"session.status",Map.of()).path("result").path("result").path("analyzer")
+                    .path("resident_semantic_state").path("semantic_facts").asLong();
+            assertThat(residentAfterOpen).isEqualTo(residentBefore);
             assertThat(diagnostics(app,session,b)).isEmpty();assertThat(Files.exists(created)).isFalse();
             var found=request(app,session,"symbol.describe",Map.of("ref","Created/answer"));
             assertThat(found.has("error")).as(found.toString()).isFalse();assertThat(found.path("result").path("result").path("source_file").asText()).isEqualTo(created.toString());

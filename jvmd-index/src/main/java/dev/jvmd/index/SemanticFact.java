@@ -1,5 +1,7 @@
 package dev.jvmd.index;
 
+import dev.jvmd.core.CanonicalDigestWriter;
+import dev.jvmd.core.Hash256;
 import java.util.*;
 
 /** Canonical detached declaration fact shared by semantic query consumers. */
@@ -22,9 +24,19 @@ public record SemanticFact(
         boolean varargs,
         String apiIdentity,
         String namespaceIdentity,
-        String documentationIdentity) {
+        String documentationIdentity,
+        Hash256 factIdentity) {
 
     private static final Set<String> TYPES=Set.of("class","interface","enum","record","annotation");
+
+    /** Source-compatible constructor; the canonical leaf identity is produced exactly once here. */
+    public SemanticFact(String id,String ownerId,String name,String kind,String structuralSignature,String erasedDescriptor,
+                        Set<String> modifiers,String sourceFile,String packageName,String namePath,String fqn,SemanticType type,
+                        List<String> typeParameters,List<SemanticType> directSupertypes,List<String> parameterNames,boolean varargs,
+                        String apiIdentity,String namespaceIdentity,String documentationIdentity){
+        this(id,ownerId,name,kind,structuralSignature,erasedDescriptor,modifiers,sourceFile,packageName,namePath,fqn,type,
+                typeParameters,directSupertypes,parameterNames,varargs,apiIdentity,namespaceIdentity,documentationIdentity,null);
+    }
 
     public SemanticFact {
         Objects.requireNonNull(id);Objects.requireNonNull(name);Objects.requireNonNull(kind);
@@ -39,6 +51,19 @@ public record SemanticFact(
         apiIdentity=Objects.requireNonNullElse(apiIdentity,"");
         namespaceIdentity=Objects.requireNonNullElse(namespaceIdentity,"");
         documentationIdentity=Objects.requireNonNullElse(documentationIdentity,"");
+        if(factIdentity==null)factIdentity=identity(id,ownerId,name,kind,structuralSignature,erasedDescriptor,modifiers,sourceFile,
+                packageName,namePath,fqn,type,typeParameters,directSupertypes,parameterNames,varargs,apiIdentity,namespaceIdentity,documentationIdentity);
+    }
+
+    private static Hash256 identity(String id,String ownerId,String name,String kind,String structuralSignature,String erasedDescriptor,
+                                    Set<String> modifiers,String sourceFile,String packageName,String namePath,String fqn,SemanticType type,
+                                    List<String> typeParameters,List<SemanticType> directSupertypes,List<String> parameterNames,boolean varargs,
+                                    String apiIdentity,String namespaceIdentity,String documentationIdentity){
+        return CanonicalDigestWriter.digest("semantic-fact-v1",
+                id,ownerId,name,kind,structuralSignature,erasedDescriptor,modifiers.stream().sorted().toList(),
+                sourceFile,packageName,namePath,fqn,type.identity(),typeParameters,
+                directSupertypes.stream().map(SemanticType::identity).toList(),parameterNames,varargs,
+                apiIdentity,namespaceIdentity,documentationIdentity);
     }
 
     public boolean typeDeclaration(){return TYPES.contains(kind);}

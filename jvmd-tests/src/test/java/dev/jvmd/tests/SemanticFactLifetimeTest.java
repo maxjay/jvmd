@@ -12,6 +12,58 @@ import static org.assertj.core.api.Assertions.*;
 @Tag("phase-4")
 class SemanticFactLifetimeTest {
     @TempDir Path root;
+    @Test void bindingsAndResidentSnapshotShareCanonicalDeclarationObjects()throws Exception {
+        Path file=root.resolve("Canonical.java");
+        String text="class Canonical<T> { /** docs */ T value(T input){return input;} int field; }";Files.writeString(file,text);
+        try(var pool=new CompilerPool()){
+            pool.configure("canonical","25",List.of(),List.of(root),null,128L*1024*1024);
+            var outcome=pool.query(file,text,2,(task,units,tier)->{
+                var identity=new SymbolIdentity(task,"test:app:1","25",_->"test:app:1",List.of(root));
+                var captured=Bindings.capture(task,units,identity,file,new SourceText(text),true);
+                var semantic=SemanticFacts.sourceSnapshot(units.getFirst(),captured.semanticFacts().values());
+                boolean same=semantic.facts().entrySet().stream().allMatch(entry->captured.semanticFacts().get(entry.getKey())==entry.getValue());
+                return Map.of("same",same,"resident",semantic.facts().size(),"captured",captured.semanticFacts().size());
+            });
+            assertThat(outcome.warnings()).isEmpty();
+            assertThat(outcome.result()).containsEntry("same",true);
+            assertThat(((Number)outcome.result().get("resident")).intValue()).isPositive();
+            assertThat(((Number)outcome.result().get("captured")).intValue()).isGreaterThanOrEqualTo(((Number)outcome.result().get("resident")).intValue());
+        }
+    }
+
+    @Test void bodyOnlyEditReusesResidentDeclarationFactsWithoutTreeMutation()throws Exception {
+        Path file=root.resolve("BodyOnly.java");
+        String before="class BodyOnly { int first(){return 1;} int changed(){return 2;} int last(){return 3;} }";
+        String after=before.replace("int changed(){return 2;}","int changed(){return 999999;}");
+        Files.writeString(file,before);
+
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(new Analyzer.Context("test:body-only:1","25",List.of(),List.of(root),"body-only",Map.of(root.toUri().toString(),"test:body-only:1")),null,256L*1024*1024);
+            var first=analyzer.bindings(file,before,null);
+            assertThat(first.warnings()).isEmpty();
+            assertThat(first.result()).isNotNull();
+            var firstFacts=first.result().semanticFacts();
+
+            @SuppressWarnings("unchecked") var residentBefore=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            long mutations=((Number)residentBefore.get("semantic_fact_mutations")).longValue();
+            long descriptionLoads=((Number)analyzer.status().get("resident_description_loads")).longValue();
+
+            Files.writeString(file,after);analyzer.changed(file);
+            var second=analyzer.bindings(file,after,null);
+            assertThat(second.warnings()).isEmpty();
+            assertThat(second.result()).isNotNull();
+
+            @SuppressWarnings("unchecked") var residentAfter=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            assertThat(((Number)residentAfter.get("semantic_fact_mutations")).longValue()).isEqualTo(mutations);
+            assertThat(((Number)analyzer.status().get("resident_description_loads")).longValue()).isEqualTo(descriptionLoads);
+            String sourceFile=file.toAbsolutePath().normalize().toString();
+            var residentDeclarations=firstFacts.values().stream().filter(fact->sourceFile.equals(fact.sourceFile())).toList();
+            assertThat(residentDeclarations).isNotEmpty();
+            for(var fact:residentDeclarations)
+                assertThat(second.result().semanticFacts().get(fact.id())).isSameAs(fact);
+        }
+    }
+
     @Test void zeroDecodedBudgetRetainsFactsAndOldReadRevisionAcrossEditsAndDeletion()throws Exception {
         Path api=root.resolve("Api.java"),use=root.resolve("Use.java"),other=root.resolve("Other.java");
         Files.writeString(api,"class Api { static int a(){return 1;} static int b(){return 2;} }");

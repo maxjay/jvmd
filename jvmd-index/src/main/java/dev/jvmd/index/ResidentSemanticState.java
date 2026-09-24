@@ -1,5 +1,8 @@
 package dev.jvmd.index;
 
+import dev.jvmd.core.AlgebraicAccumulator;
+import dev.jvmd.core.CanonicalDigestWriter;
+import dev.jvmd.core.Hash256;
 import dev.jvmd.core.Hashing;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
@@ -9,103 +12,120 @@ import java.util.*;
  * Resident ordered semantic state.
  *
  * The content-derived treap is a prolly-style persistent ordered Merkle tree: key hashes determine
- * structure, every path-copy update recalculates both Merkle identity and algebraic domain
- * aggregates, and exact symbols are indexed directly from the same canonical facts.
+ * structure, path-copy updates recalculate only structural Merkle identity, semantic-domain
+ * aggregates are maintained once outside the tree, and exact symbols share the same canonical facts.
  */
 public final class ResidentSemanticState {
     private static final BigInteger FIELD=new BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F",16);
     private static final String EMPTY=Hashing.sha256(new byte[0]);
+    private static final Hash256 EMPTY_HASH=Hash256.fromHex(EMPTY);
 
-    public record Aggregate(BigInteger membership,BigInteger api,BigInteger namespace,BigInteger documentation) {
-        static final Aggregate ZERO=new Aggregate(BigInteger.ZERO,BigInteger.ZERO,BigInteger.ZERO,BigInteger.ZERO);
-        Aggregate add(Aggregate other){return new Aggregate(
-                membership.add(other.membership).mod(FIELD),api.add(other.api).mod(FIELD),
-                namespace.add(other.namespace).mod(FIELD),documentation.add(other.documentation).mod(FIELD));}
-        Aggregate subtract(Aggregate other){return new Aggregate(
-                membership.subtract(other.membership).mod(FIELD),api.subtract(other.api).mod(FIELD),
-                namespace.subtract(other.namespace).mod(FIELD),documentation.subtract(other.documentation).mod(FIELD));}
-        public String membershipIdentity(){return hex(membership);}
-        public String apiIdentity(){return hex(api);}
-        public String namespaceIdentity(){return hex(namespace);}
-        public String documentationIdentity(){return hex(documentation);}
-        private static String hex(BigInteger value){return String.format("%064x",value);}
+    public record Aggregate(AlgebraicAccumulator.Value membership,AlgebraicAccumulator.Value api,
+                            AlgebraicAccumulator.Value namespace,AlgebraicAccumulator.Value documentation) {
+        static final Aggregate ZERO=new Aggregate(AlgebraicAccumulator.Value.ZERO,AlgebraicAccumulator.Value.ZERO,
+                AlgebraicAccumulator.Value.ZERO,AlgebraicAccumulator.Value.ZERO);
+        Aggregate add(Aggregate other){return new Aggregate(membership.plus(other.membership),api.plus(other.api),
+                namespace.plus(other.namespace),documentation.plus(other.documentation));}
+        Aggregate subtract(Aggregate other){return new Aggregate(membership.minus(other.membership),api.minus(other.api),
+                namespace.minus(other.namespace),documentation.minus(other.documentation));}
+        public String membershipIdentity(){return membership.identity("membership").hex();}
+        public String apiIdentity(){return api.identity("api").hex();}
+        public String namespaceIdentity(){return namespace.identity("namespace").hex();}
+        public String documentationIdentity(){return documentation.identity("documentation").hex();}
     }
 
     public record Identity(long epoch,String merkleRoot,String membership,String api,String namespace,String documentation) { }
 
-    private record Entry(String key,String symbolId,String valueIdentity,Aggregate contribution) { }
+    private record Entry(String key,SemanticFact fact,Hash256 valueIdentity,Aggregate contribution,BigInteger priority) { }
     private static final class Node {
-        final Entry entry;final Node left,right;final BigInteger priority;final String merkle,min,max;final Aggregate aggregate;final int size;
+        final Entry entry;final Node left,right;final Hash256 merkle;
         Node(Entry entry,Node left,Node right){
-            this.entry=entry;this.left=left;this.right=right;priority=point("priority",entry.key());
-            min=left==null?entry.key():left.min;max=right==null?entry.key():right.max;
-            aggregate=(left==null?Aggregate.ZERO:left.aggregate).add(entry.contribution()).add(right==null?Aggregate.ZERO:right.aggregate);
-            size=1+(left==null?0:left.size)+(right==null?0:right.size);
-            String material=(left==null?EMPTY:left.merkle)+"\0"+entry.key()+"\0"+entry.valueIdentity()+"\0"+(right==null?EMPTY:right.merkle);
-            merkle=Hashing.sha256(material.getBytes(StandardCharsets.UTF_8));
+            this.entry=entry;this.left=left;this.right=right;
+            merkle=CanonicalDigestWriter.digest("resident-node-v1",left==null?EMPTY_HASH:left.merkle,entry.key(),entry.valueIdentity(),right==null?EMPTY_HASH:right.merkle);
         }
     }
 
     private Node root;
     private final Map<String,SemanticFact> symbols=new HashMap<>();
-    private final Map<String,SymbolDescription> descriptions=new HashMap<>();
-    private final Map<String,SemanticSnapshot> units=new HashMap<>();
+    private final Map<String,String> typesByFqn=new HashMap<>();
+    private final Map<String,SemanticUnitState> units=new HashMap<>();
     private final Map<String,Aggregate> memberAggregates=new HashMap<>();
+    private Aggregate semanticAggregate=Aggregate.ZERO;
     private final Map<String,Set<String>> directSupers=new HashMap<>(),directSubs=new HashMap<>();
     private final Map<String,String> hierarchyApis=new HashMap<>();
     private final Map<String,String> staleUnits=new HashMap<>();
-    private String freshnessMerkle=EMPTY;
+    private AlgebraicAccumulator staleAggregate=new AlgebraicAccumulator("semantic-stale-v2");
+    private long uncertaintyGeneration;
     private long epoch,rangeEntriesRead,factMutations;
 
-    public synchronized SemanticDelta diff(SemanticSnapshot next){return SemanticDelta.between(units.get(next.unit()),next);}
+    public synchronized SemanticDelta diff(SemanticSnapshot next){
+        return SemanticDelta.between(units.get(next.unit()),next,symbols::get);
+    }
 
     public synchronized SemanticDelta admit(SemanticSnapshot next){
         var delta=diff(next);apply(delta);return delta;
     }
 
     public synchronized void apply(SemanticDelta delta){
-        var previous=units.get(delta.unit());boolean wasStale=staleUnits.containsKey(delta.unit());
+        var previous=units.get(delta.unit());
+        boolean generationStale=previous!=null&&previous.uncertaintyGeneration()!=uncertaintyGeneration;
+        boolean wasStale=staleUnits.containsKey(delta.unit())||generationStale;
+        if(previous==null&&root==null&&symbols.isEmpty()&&units.isEmpty()&&delta.changed().isEmpty()&&delta.removed().isEmpty()){
+            applyInitial(delta);return;
+        }
         boolean transition=previous==null||!Objects.equals(previous.contentIdentity(),delta.contentIdentity())
                 ||!Objects.equals(previous.apiIdentity(),delta.apiIdentity())
                 ||!Objects.equals(previous.namespaceIdentity(),delta.namespaceIdentity())
                 ||!Objects.equals(previous.documentationIdentity(),delta.documentationIdentity())
-                ||!delta.emptyFacts()||!delta.descriptionsChanged().isEmpty()||!delta.descriptionsRemoved().isEmpty();
+                ||generationStale||!delta.emptyFacts();
         if(!transition)return;
 
         var hierarchyAffected=new LinkedHashSet<String>();
-        if(wasStale&&previous!=null)for(var fact:previous.facts().values())if(fact.typeDeclaration()){
-            hierarchyAffected.add(fact.id());collectDescendants(fact.id(),hierarchyAffected);
-        }
+        if(wasStale&&previous!=null)previous.facts().forEachId(id->{
+            var fact=symbols.get(id);if(fact!=null&&fact.typeDeclaration()){
+                hierarchyAffected.add(fact.id());collectDescendants(fact.id(),hierarchyAffected);
+            }
+        });
         for(String id:delta.removed()){
             var old=symbols.remove(id);if(old!=null){beforeHierarchyMutation(old,hierarchyAffected);removeFact(old);}
         }
-        for(var entry:delta.changed().entrySet()){
-            var old=symbols.get(entry.getKey());if(old!=null){beforeHierarchyMutation(old,hierarchyAffected);removeFact(old);}
-            symbols.put(entry.getKey(),entry.getValue());addFact(entry.getValue());afterHierarchyMutation(entry.getValue(),hierarchyAffected);
+        for(var fact:delta.changed()){
+            var old=symbols.get(fact.id());if(old!=null){beforeHierarchyMutation(old,hierarchyAffected);removeFact(old);}
+            symbols.put(fact.id(),fact);addFact(fact);afterHierarchyMutation(fact,hierarchyAffected);
         }
-        for(var entry:delta.added().entrySet()){
-            var old=symbols.put(entry.getKey(),entry.getValue());if(old!=null){beforeHierarchyMutation(old,hierarchyAffected);removeFact(old);}
-            addFact(entry.getValue());afterHierarchyMutation(entry.getValue(),hierarchyAffected);
+        for(var fact:delta.added()){
+            var old=symbols.put(fact.id(),fact);if(old!=null){beforeHierarchyMutation(old,hierarchyAffected);removeFact(old);}
+            addFact(fact);afterHierarchyMutation(fact,hierarchyAffected);
         }
+        clearExplicitStale(delta.unit());
+        units.put(delta.unit(),nextUnitState(delta));
         recomputeHierarchyApis(hierarchyAffected);
-        if(staleUnits.remove(delta.unit())!=null)refreshFreshness();
-        delta.descriptionsRemoved().forEach(descriptions::remove);
-        descriptions.putAll(delta.descriptionsChanged());
+        factMutations+=delta.factMutations();epoch++;
+    }
 
-        var facts=new LinkedHashMap<String,SemanticFact>();
-        var desc=new LinkedHashMap<String,SymbolDescription>();
-        if(previous!=null){facts.putAll(previous.facts());desc.putAll(previous.descriptions());}
-        delta.removed().forEach(facts::remove);facts.putAll(delta.changed());facts.putAll(delta.added());
-        delta.descriptionsRemoved().forEach(desc::remove);desc.putAll(delta.descriptionsChanged());
-        units.put(delta.unit(),new SemanticSnapshot(delta.unit(),delta.sourceFile(),delta.contentIdentity(),facts,desc,
-                delta.apiIdentity(),delta.namespaceIdentity(),delta.documentationIdentity(),delta.dependencies()));
+    private void applyInitial(SemanticDelta delta){
+        var ordered=new ArrayList<Entry>(delta.added().size());
+        var hierarchyAffected=new LinkedHashSet<String>();
+        for(var fact:delta.added()){
+            symbols.put(fact.id(),fact);indexType(fact);
+            var contribution=contribution(fact);
+            ordered.add(entry(fact,contribution));semanticAggregate=semanticAggregate.add(contribution);
+            if(fact.member())memberAggregates.merge(fact.ownerId(),contribution,Aggregate::add);
+            if(fact.typeDeclaration()){linkHierarchy(fact);hierarchyAffected.add(fact.id());}
+        }
+        ordered.sort(Comparator.comparing(Entry::key));
+        root=bulkBuild(ordered);
+        units.put(delta.unit(),nextUnitState(delta));
+        recomputeHierarchyApis(hierarchyAffected);
         factMutations+=delta.factMutations();epoch++;
     }
 
     public synchronized SemanticDelta removeUnit(String unit){
-        var previous=units.get(unit);if(previous==null)return new SemanticDelta(unit,null,"",Map.of(),Map.of(),Set.of(),Map.of(),Set.of(),"","","",Set.of());
-        var empty=new SemanticSnapshot(unit,previous.sourceFile(),"",Map.of(),Map.of(),"","","",Set.of());
-        var delta=SemanticDelta.between(previous,empty);apply(delta);units.remove(unit);return delta;
+        var previous=units.get(unit);
+        if(previous==null)return new SemanticDelta(unit,null,"",SemanticUnitMerkle.empty(),List.of(),List.of(),Set.of(),"","","",Set.of());
+        var removed=previous.facts().ids();
+        var delta=new SemanticDelta(unit,previous.sourceFile(),"",SemanticUnitMerkle.empty(),List.of(),List.of(),removed,"","","",Set.of());
+        apply(delta);units.remove(unit);return delta;
     }
 
     /** Mark a source unit stale from mutation-maintained source identity without discarding reusable facts. */
@@ -113,34 +133,89 @@ public final class ResidentSemanticState {
         if(sourceFile==null)return false;
         String unit="source:"+sourceFile;var previous=units.get(unit);if(previous==null)return false;
         String content=Objects.requireNonNullElse(contentIdentity,"");
-        if(content.equals(previous.contentIdentity())&&!staleUnits.containsKey(unit))return false;
+        if(content.equals(previous.contentIdentity())&&!staleUnits.containsKey(unit)
+                &&previous.uncertaintyGeneration()==uncertaintyGeneration)return false;
         String old=staleUnits.put(unit,content);if(Objects.equals(old,content))return false;
+        if(old==null)staleAggregate.add(unit,content);else staleAggregate.replace(unit,old,unit,content);
         var affected=new LinkedHashSet<String>();
-        for(var fact:previous.facts().values())if(fact.typeDeclaration()){
-            affected.add(fact.id());collectDescendants(fact.id(),affected);
-        }
-        affected.forEach(hierarchyApis::remove);refreshFreshness();epoch++;return true;
+        previous.facts().forEachId(id->{
+            var fact=symbols.get(id);if(fact!=null&&fact.typeDeclaration()){
+                affected.add(fact.id());collectDescendants(fact.id(),affected);
+            }
+        });
+        affected.forEach(hierarchyApis::remove);epoch++;return true;
     }
 
-    /** Lost source-change history invalidates hierarchy identities without rebuilding facts. */
+    /** Lost source-change history invalidates every retained unit with one generation fence. */
     public synchronized void markHierarchyUncertain(){
         if(units.isEmpty())return;
-        String marker="<uncertain:"+(epoch+1)+">";
-        for(String unit:units.keySet())staleUnits.put(unit,marker);
-        hierarchyApis.clear();refreshFreshness();epoch++;
+        uncertaintyGeneration++;epoch++;
     }
 
     public synchronized SemanticFact symbol(String id){return symbols.get(id);}
-    public synchronized SymbolDescription describe(String id){return descriptions.get(id);}
-    public synchronized SemanticSnapshot unit(String unit){return units.get(unit);}
+    public synchronized SemanticUnitState unit(String unit){return units.get(unit);}
+    /** Resolve a canonical declaration to the retained semantic unit that owns it. */
+    public synchronized String unitForFact(String id){
+        var fact=symbols.get(id);if(fact==null)return null;
+        if(fact.sourceFile()!=null&&!fact.sourceFile().isBlank()){
+            String sourceUnit="source:"+fact.sourceFile();
+            if(units.containsKey(sourceUnit))return sourceUnit;
+        }
+        String typeUnit="type:"+id;
+        if(units.containsKey(typeUnit))return typeUnit;
+        for(var entry:units.entrySet())if(entry.getValue().facts().contains(id))return entry.getKey();
+        return null;
+    }
+    public synchronized String unitForType(String fqn){
+        String id=typesByFqn.get(fqn);return id==null?null:unitForFact(id);
+    }
+    public synchronized boolean unitCurrent(String unit,String contentIdentity){
+        var state=units.get(unit);if(state==null||staleUnits.containsKey(unit)
+                ||state.uncertaintyGeneration()!=uncertaintyGeneration)return false;
+        return contentIdentity==null||Objects.equals(contentIdentity,state.contentIdentity());
+    }
+    public synchronized SemanticFact unitType(String unit,String fqn){
+        var state=units.get(unit);if(state==null)return null;
+        String id=state.facts().findId(candidate->{
+            var fact=symbols.get(candidate);return fact!=null&&fact.typeDeclaration()&&Objects.equals(fqn,fact.fqn());
+        });
+        return id==null?null:symbols.get(id);
+    }
 
-    public synchronized List<SemanticFact> members(String ownerId,String namePrefix,int limit){
+    /**
+     * Immutable range cursor over one owner/prefix slice. The cursor captures the persistent root
+     * visible when it is created, so later mutations cannot change the sequence already being read.
+     */
+    public final class MemberCursor {
+        private final String lower,upper;
+        private final ArrayDeque<Node> stack=new ArrayDeque<>();
+        private MemberCursor(Node snapshot,String lower,String upper){this.lower=lower;this.upper=upper;push(snapshot);}
+        private void push(Node node){
+            while(node!=null){
+                int low=node.entry.key().compareTo(lower),high=node.entry.key().compareTo(upper);
+                if(low<0){node=node.right;continue;}
+                if(high>0){node=node.left;continue;}
+                stack.push(node);node=node.left;
+            }
+        }
+        /** Returns the next ordered fact, or null when the requested range is exhausted. */
+        public SemanticFact next(){
+            synchronized(ResidentSemanticState.this){
+                if(stack.isEmpty())return null;
+                var node=stack.pop();push(node.right);rangeEntriesRead++;return node.entry.fact();
+            }
+        }
+    }
+
+    public synchronized MemberCursor memberCursor(String ownerId,String namePrefix){
+        String prefix=SemanticFact.memberPrefix(ownerId,namePrefix);
+        return new MemberCursor(root,prefix,prefix+"\uffff");
+    }
+
+    public List<SemanticFact> members(String ownerId,String namePrefix,int limit){
         if(limit<=0)return List.of();
-        String prefix=SemanticFact.memberPrefix(ownerId,namePrefix);var entries=new ArrayList<Entry>(Math.min(limit,64));
-        range(root,prefix,prefix+"\uffff",limit,entries);
-        rangeEntriesRead+=entries.size();
-        var result=new ArrayList<SemanticFact>(entries.size());
-        for(var entry:entries){var fact=symbols.get(entry.symbolId());if(fact!=null)result.add(fact);}
+        var cursor=memberCursor(ownerId,namePrefix);var result=new ArrayList<SemanticFact>(Math.min(limit,64));
+        SemanticFact fact;while(result.size()<limit&&(fact=cursor.next())!=null)result.add(fact);
         return List.copyOf(result);
     }
 
@@ -148,18 +223,30 @@ public final class ResidentSemanticState {
         return memberAggregates.getOrDefault(ownerId,Aggregate.ZERO);
     }
     /** Constant-time validity identity for the effective API reachable from a receiver type. */
-    public synchronized String hierarchyApi(String typeId){return hierarchyApis.getOrDefault(typeId,EMPTY);}
+    public synchronized String hierarchyApi(String typeId){
+        return CanonicalDigestWriter.digest("hierarchy-validity-v2",uncertaintyGeneration,
+                hierarchyApis.getOrDefault(typeId,EMPTY)).hex();
+    }
 
     public synchronized Identity identity(){
-        var aggregate=root==null?Aggregate.ZERO:root.aggregate;String structural=root==null?EMPTY:root.merkle;
-        String merkle=Hashing.sha256((structural+"\0"+freshnessMerkle).getBytes(StandardCharsets.UTF_8));
-        return new Identity(epoch,merkle,aggregate.membershipIdentity(),aggregate.apiIdentity(),
-                aggregate.namespaceIdentity(),aggregate.documentationIdentity());
+        String structural=root==null?EMPTY:root.merkle.hex();
+        String merkle=CanonicalDigestWriter.digest("resident-state-v2",structural,freshnessIdentity()).hex();
+        return new Identity(epoch,merkle,semanticAggregate.membershipIdentity(),semanticAggregate.apiIdentity(),
+                semanticAggregate.namespaceIdentity(),semanticAggregate.documentationIdentity());
     }
 
     public synchronized void clear(){
-        if(root==null&&symbols.isEmpty()&&descriptions.isEmpty()&&units.isEmpty())return;
-        root=null;symbols.clear();descriptions.clear();units.clear();memberAggregates.clear();directSupers.clear();directSubs.clear();hierarchyApis.clear();staleUnits.clear();freshnessMerkle=EMPTY;epoch++;
+        if(root==null&&symbols.isEmpty()&&units.isEmpty())return;
+        root=null;symbols.clear();typesByFqn.clear();units.clear();memberAggregates.clear();semanticAggregate=Aggregate.ZERO;directSupers.clear();directSubs.clear();hierarchyApis.clear();staleUnits.clear();staleAggregate=new AlgebraicAccumulator("semantic-stale-v2");uncertaintyGeneration=0;epoch++;
+    }
+
+    /** Conservative retained-size estimate used only for semantic cache budgeting/retirement. */
+    public synchronized long estimatedBytes(){
+        long factCount=symbols.size();
+        long unitRefs=units.values().stream().mapToLong(unit->unit.facts().size()).sum();
+        long hierarchyEdges=directSupers.values().stream().mapToLong(Set::size).sum();
+        return factCount*960L+unitRefs*48L+units.size()*256L+memberAggregates.size()*256L
+                +hierarchyEdges*64L+hierarchyApis.size()*160L+staleUnits.size()*128L;
     }
 
     public synchronized Map<String,Object> status(){
@@ -168,18 +255,27 @@ public final class ResidentSemanticState {
                 Map.entry("semantic_epoch",epoch),Map.entry("semantic_root",identity.merkleRoot()),
                 Map.entry("semantic_membership",identity.membership()),Map.entry("semantic_api",identity.api()),
                 Map.entry("semantic_namespace",identity.namespace()),Map.entry("semantic_documentation",identity.documentation()),
-                Map.entry("semantic_facts",symbols.size()),Map.entry("semantic_tree_entries",root==null?0:root.size),
+                Map.entry("semantic_facts",symbols.size()),Map.entry("semantic_tree_entries",symbols.size()),
                 Map.entry("semantic_units",units.size()),Map.entry("semantic_member_aggregates",memberAggregates.size()),
                 Map.entry("semantic_hierarchy_aggregates",hierarchyApis.size()),Map.entry("semantic_stale_units",staleUnits.size()),
-                Map.entry("semantic_fact_mutations",factMutations),Map.entry("semantic_tree_range_entries_read",rangeEntriesRead));
+                Map.entry("semantic_fact_mutations",factMutations),Map.entry("semantic_tree_range_entries_read",rangeEntriesRead),
+                Map.entry("semantic_descriptions",0),Map.entry("semantic_estimated_bytes",estimatedBytes()),
+                Map.entry("semantic_stale_aggregate",staleAggregate.identity().hex()),Map.entry("semantic_stale_aggregate_cardinality",staleAggregate.cardinality()),
+                Map.entry("semantic_uncertainty_generation",uncertaintyGeneration));
     }
 
-    private void refreshFreshness(){
-        if(staleUnits.isEmpty()){freshnessMerkle=EMPTY;return;}
-        var material=new StringBuilder("semantic-freshness-v1");
-        staleUnits.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry->
-                material.append('\0').append(entry.getKey()).append('\0').append(entry.getValue()));
-        freshnessMerkle=Hashing.sha256(material.toString().getBytes(StandardCharsets.UTF_8));
+    private SemanticUnitState nextUnitState(SemanticDelta delta){
+        return new SemanticUnitState(delta.unit(),delta.sourceFile(),delta.contentIdentity(),delta.facts(),
+                delta.apiIdentity(),delta.namespaceIdentity(),delta.documentationIdentity(),delta.dependencies(),uncertaintyGeneration);
+    }
+
+    private String freshnessIdentity(){
+        return CanonicalDigestWriter.digest("semantic-freshness-v2",staleAggregate.identity(),
+                staleAggregate.cardinality(),uncertaintyGeneration).hex();
+    }
+    private void clearExplicitStale(String unit){
+        String old=staleUnits.remove(unit);
+        if(old!=null)staleAggregate.remove(unit,old);
     }
 
     private void beforeHierarchyMutation(SemanticFact fact,Set<String> affected){
@@ -224,99 +320,130 @@ public final class ResidentSemanticState {
             children.add(fact.id());directSubs.put(parent,Set.copyOf(children));
         }
     }
+    /**
+     * Compose hierarchy validity from direct DAG dependencies. A batch memoizes each affected
+     * owner once, so a base API edit propagates through descendants without repeatedly walking
+     * every transitive ancestor closure.
+     */
     private void recomputeHierarchyApis(Collection<String> affected){
-        for(String typeId:affected){
-            var type=symbols.get(typeId);
-            if(type==null||!type.typeDeclaration()){hierarchyApis.remove(typeId);continue;}
-            var reachable=new LinkedHashSet<String>();var queue=new ArrayDeque<String>();queue.add(typeId);
-            BigInteger sum=BigInteger.ZERO;long count=0;
-            while(!queue.isEmpty()){
-                String current=queue.removeFirst();if(!reachable.add(current))continue;
-                var declaration=symbols.get(current);
-                if(declaration!=null&&declaration.typeDeclaration()){
-                    sum=sum.add(point("hierarchy-type-api",declaration.apiIdentity().isBlank()?declaration.structuralSignature():declaration.apiIdentity())).mod(FIELD);count++;
-                }
-                var members=memberAggregates.get(current);
-                if(members!=null){sum=sum.add(members.api()).mod(FIELD);count++;}
-                for(String parent:directSupers.getOrDefault(current,Set.of())){
-                    sum=sum.add(point("hierarchy-edge",current+"\0"+parent)).mod(FIELD);count++;queue.addLast(parent);
-                }
-            }
-            String material="hierarchy-api-v1\0"+count+"\0"+String.format("%064x",sum);
-            hierarchyApis.put(typeId,Hashing.sha256(material.getBytes(StandardCharsets.UTF_8)));
-        }
+        var affectedSet=new LinkedHashSet<String>(affected);
+        var memo=new HashMap<String,String>();var visiting=new HashSet<String>();
+        for(String typeId:affectedSet)composeHierarchyApi(typeId,affectedSet,memo,visiting);
     }
 
+    private String composeHierarchyApi(String typeId,Set<String> affected,Map<String,String> memo,Set<String> visiting){
+        String cached=memo.get(typeId);if(cached!=null)return cached;
+        if(!affected.contains(typeId)){
+            cached=hierarchyApis.get(typeId);if(cached!=null)return cached;
+        }
+        var type=symbols.get(typeId);
+        if(type==null||!type.typeDeclaration()){hierarchyApis.remove(typeId);memo.put(typeId,EMPTY);return EMPTY;}
+        if(!visiting.add(typeId))return EMPTY;
+
+        String typeApi=type.apiIdentity().isBlank()?type.structuralSignature():type.apiIdentity();
+        var members=memberAggregates.getOrDefault(typeId,Aggregate.ZERO);
+        var parentParts=new ArrayList<Object>();
+        var parents=new ArrayList<>(directSupers.getOrDefault(typeId,Set.of()));parents.sort(String::compareTo);
+        for(String parent:parents){
+            parentParts.add(new Object[]{parent,composeHierarchyApi(parent,affected,memo,visiting)});
+        }
+        visiting.remove(typeId);
+        String value=CanonicalDigestWriter.digest("hierarchy-api-v2",typeId,typeApi,
+                members.apiIdentity(),members.api().cardinality(),parentParts).hex();
+        hierarchyApis.put(typeId,value);memo.put(typeId,value);return value;
+    }
+
+    private void indexType(SemanticFact fact){
+        if(fact.typeDeclaration()&&fact.fqn()!=null&&!fact.fqn().isBlank())typesByFqn.put(fact.fqn(),fact.id());
+    }
+    private void unindexType(SemanticFact fact){
+        if(fact.typeDeclaration()&&fact.fqn()!=null&&!fact.fqn().isBlank())typesByFqn.remove(fact.fqn(),fact.id());
+    }
     private void addFact(SemanticFact fact){
-        var contribution=contribution(fact);root=put(root,new Entry(fact.orderedKey(),fact.id(),valueIdentity(fact),contribution));
+        indexType(fact);
+        var contribution=contribution(fact);root=put(root,entry(fact,contribution));semanticAggregate=semanticAggregate.add(contribution);
         if(fact.member())memberAggregates.merge(fact.ownerId(),contribution,Aggregate::add);
     }
 
     private void removeFact(SemanticFact fact){
-        root=remove(root,fact.orderedKey());if(fact.member())memberAggregates.compute(fact.ownerId(),(_,old)->{
-            if(old==null)return null;var next=old.subtract(contribution(fact));return next.equals(Aggregate.ZERO)?null:next;
+        unindexType(fact);
+        var contribution=contribution(fact);root=remove(root,fact.orderedKey());semanticAggregate=semanticAggregate.subtract(contribution);
+        if(fact.member())memberAggregates.compute(fact.ownerId(),(_,old)->{
+            if(old==null)return null;var next=old.subtract(contribution);return next.equals(Aggregate.ZERO)?null:next;
         });
+    }
+
+    private static Entry entry(SemanticFact fact,Aggregate contribution){
+        String key=fact.orderedKey();return new Entry(key,fact,fact.factIdentity(),contribution,point("priority",key));
     }
 
     private static Aggregate contribution(SemanticFact fact){
         return new Aggregate(
-                point("membership",fact.id()),
-                point("api",fact.apiIdentity().isBlank()?fact.structuralSignature():fact.apiIdentity()),
-                point("namespace",fact.namespaceIdentity().isBlank()?fact.packageName()+"\0"+fact.name()+"\0"+fact.kind():fact.namespaceIdentity()),
-                point("documentation",fact.documentationIdentity()));
-    }
-
-    private static String valueIdentity(SemanticFact fact){
-        String value=String.join("\0",
-                fact.id(),Objects.toString(fact.ownerId(),""),fact.name(),fact.kind(),fact.structuralSignature(),
-                Objects.toString(fact.erasedDescriptor(),""),String.join(",",fact.modifiers().stream().sorted().toList()),
-                Objects.toString(fact.sourceFile(),""),fact.packageName(),fact.namePath(),Objects.toString(fact.fqn(),""),
-                fact.type().display(),String.join(",",fact.typeParameters()),
-                String.join(",",fact.directSupertypes().stream().map(SemanticType::display).toList()),
-                String.join(",",fact.parameterNames()),Boolean.toString(fact.varargs()),fact.apiIdentity(),fact.namespaceIdentity(),fact.documentationIdentity());
-        return Hashing.sha256(value.getBytes(StandardCharsets.UTF_8));
+                AlgebraicAccumulator.contribution("membership",fact.id(),"present"),
+                AlgebraicAccumulator.contribution("api",fact.id(),fact.apiIdentity().isBlank()?fact.structuralSignature():fact.apiIdentity()),
+                AlgebraicAccumulator.contribution("namespace",fact.id(),fact.namespaceIdentity().isBlank()?fact.packageName()+"\0"+fact.name()+"\0"+fact.kind():fact.namespaceIdentity()),
+                AlgebraicAccumulator.contribution("documentation",fact.id(),fact.documentationIdentity()));
     }
 
     private static BigInteger point(String domain,String value){
-        byte[] bytes=Hashing.sha256((domain+"\0"+Objects.requireNonNullElse(value,"")).getBytes(StandardCharsets.UTF_8)).getBytes(StandardCharsets.US_ASCII);
-        return new BigInteger(new String(bytes,StandardCharsets.US_ASCII),16).mod(FIELD);
+        return Hash256.sha256((domain+"\0"+Objects.requireNonNullElse(value,"")).getBytes(StandardCharsets.UTF_8)).unsignedInteger().mod(FIELD);
     }
 
-    private static Node put(Node node,Entry entry){
-        if(node==null)return new Node(entry,null,null);
-        int compare=entry.key().compareTo(node.entry.key());
-        if(compare==0)return new Node(entry,node.left,node.right);
-        if(compare<0){
-            var next=new Node(node.entry,put(node.left,entry),node.right);
-            return next.left.priority.compareTo(next.priority)>0?rotateRight(next):next;
+    private Node newNode(Entry entry,Node left,Node right){return new Node(entry,left,right);}
+
+    /**
+     * Build the deterministic priority treap in linear structural time from already ordered facts.
+     * The Cartesian-tree shape is exactly the shape produced by incremental inserts with the same
+     * strict priority comparison, but without persistent path-copying during first admission.
+     */
+    private Node bulkBuild(List<Entry> ordered){
+        int size=ordered.size();if(size==0)return null;
+        var left=new int[size];var right=new int[size];var stack=new int[size];
+        Arrays.fill(left,-1);Arrays.fill(right,-1);int top=-1;
+        for(int i=0;i<size;i++){
+            int previous=-1;
+            while(top>=0&&ordered.get(stack[top]).priority().compareTo(ordered.get(i).priority())<0)previous=stack[top--];
+            left[i]=previous;if(top>=0)right[stack[top]]=i;stack[++top]=i;
         }
-        var next=new Node(node.entry,node.left,put(node.right,entry));
-        return next.right.priority.compareTo(next.priority)>0?rotateLeft(next):next;
+        return freezeBulk(ordered,left,right,stack[0]);
     }
 
-    private static Node remove(Node node,String key){
+    private Node freezeBulk(List<Entry> ordered,int[] left,int[] right,int index){
+        if(index<0)return null;
+        var leftNode=freezeBulk(ordered,left,right,left[index]);
+        var rightNode=freezeBulk(ordered,left,right,right[index]);
+        return newNode(ordered.get(index),leftNode,rightNode);
+    }
+
+    private Node put(Node node,Entry entry){
+        if(node==null)return newNode(entry,null,null);
+        int compare=entry.key().compareTo(node.entry.key());
+        if(compare==0)return newNode(entry,node.left,node.right);
+        if(compare<0){
+            var next=newNode(node.entry,put(node.left,entry),node.right);
+            return next.left.entry.priority().compareTo(next.entry.priority())>0?rotateRight(next):next;
+        }
+        var next=newNode(node.entry,node.left,put(node.right,entry));
+        return next.right.entry.priority().compareTo(next.entry.priority())>0?rotateLeft(next):next;
+    }
+
+    private Node remove(Node node,String key){
         if(node==null)return null;int compare=key.compareTo(node.entry.key());
         if(compare==0)return merge(node.left,node.right);
-        return compare<0?new Node(node.entry,remove(node.left,key),node.right):new Node(node.entry,node.left,remove(node.right,key));
+        return compare<0?newNode(node.entry,remove(node.left,key),node.right):newNode(node.entry,node.left,remove(node.right,key));
     }
 
-    private static Node merge(Node left,Node right){
+    private Node merge(Node left,Node right){
         if(left==null)return right;if(right==null)return left;
-        if(left.priority.compareTo(right.priority)>0)return new Node(left.entry,left.left,merge(left.right,right));
-        return new Node(right.entry,merge(left,right.left),right.right);
+        if(left.entry.priority().compareTo(right.entry.priority())>0)return newNode(left.entry,left.left,merge(left.right,right));
+        return newNode(right.entry,merge(left,right.left),right.right);
     }
 
-    private static Node rotateRight(Node node){
-        var top=node.left;var lower=new Node(node.entry,top.right,node.right);return new Node(top.entry,top.left,lower);
+    private Node rotateRight(Node node){
+        var top=node.left;var lower=newNode(node.entry,top.right,node.right);return newNode(top.entry,top.left,lower);
     }
-    private static Node rotateLeft(Node node){
-        var top=node.right;var lower=new Node(node.entry,node.left,top.left);return new Node(top.entry,lower,top.right);
+    private Node rotateLeft(Node node){
+        var top=node.right;var lower=newNode(node.entry,node.left,top.left);return newNode(top.entry,lower,top.right);
     }
 
-    private static void range(Node node,String lower,String upper,int limit,List<Entry> output){
-        if(node==null||output.size()>=limit||node.max.compareTo(lower)<0||node.min.compareTo(upper)>0)return;
-        range(node.left,lower,upper,limit,output);
-        if(output.size()<limit&&node.entry.key().compareTo(lower)>=0&&node.entry.key().compareTo(upper)<=0)output.add(node.entry);
-        range(node.right,lower,upper,limit,output);
-    }
 }

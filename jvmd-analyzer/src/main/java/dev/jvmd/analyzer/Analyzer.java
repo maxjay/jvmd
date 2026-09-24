@@ -19,15 +19,45 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     private final Map<String,CompilerPool> compilerPools=new LinkedHashMap<>();
     private CompilerPool compiler;
+    private static final class AccessibilityCache {
+        private static final int MAX_ENTRIES=16,MAX_MEMBER_IDS=32768;
+        private final LinkedHashMap<String,Set<String>> entries=new LinkedHashMap<>(16,.75f,true);
+        private long memberIds,hits,misses,evictions;
+        void put(String key,Set<String> members){
+            if(key==null||key.isBlank())return;
+            var copy=Set.copyOf(members);var old=entries.remove(key);
+            if(old!=null)memberIds-=old.size();
+            entries.put(key,copy);memberIds+=copy.size();
+            while((entries.size()>MAX_ENTRIES||memberIds>MAX_MEMBER_IDS)&&entries.size()>1){
+                var first=entries.entrySet().iterator().next();entries.remove(first.getKey());memberIds-=first.getValue().size();evictions++;
+            }
+        }
+        Set<String> get(String key){
+            var value=entries.get(key);
+            if(value==null)misses++;else hits++;
+            return value;
+        }
+        boolean contains(String key){return key!=null&&!key.isBlank()&&entries.containsKey(key);}
+        void clear(){entries.clear();memberIds=0;}
+        Map<String,Object> status(){return Map.of("entries",entries.size(),"member_ids",memberIds,"hits",hits,"misses",misses,"evictions",evictions,
+                "max_entries",MAX_ENTRIES,"max_member_ids",MAX_MEMBER_IDS);}
+    }
     private static final class ModuleCaches {
         final LinkedHashMap<String,Envelope> outlines=new LinkedHashMap<>(16,.75f,true);
         final LinkedHashMap<String,Cached> focused=new LinkedHashMap<>(32,.75f,true);
         final Set<Path> files=new HashSet<>();
         final ResidentSemanticState semantic=new ResidentSemanticState();
         final Map<Path,DocumentSemanticCached> documentSemantics=new HashMap<>();
+        final LinkedHashMap<String,SymbolDescription> descriptions=new LinkedHashMap<>(16,.75f,true);
+        final AccessibilityCache accessibility=new AccessibilityCache();
         long semanticSourceEpoch=-1;
+        String completionContextIdentity="";
     }
+    private static final int MAX_GENERATION_FAMILIES=2;
     private final Map<String,ModuleCaches> modules=new LinkedHashMap<>();
+    private final Map<String,String> generationFamilies=new HashMap<>();
+    private final LinkedHashMap<String,Boolean> generationFamilyLru=new LinkedHashMap<>(4,.75f,true);
+    private long retiredModuleGenerations,retiredCompilerGenerations,retiredSemanticBytes,semanticBudgetBytes;
     private long classpathFingerprints;
     private final FileStateRegistry inputFiles;
     public Analyzer(){this(FileStateRegistry.shared());}
@@ -52,18 +82,19 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private final Dependencies dependencies=new Dependencies();
     private final LinkedHashMap<String,SourceText> sourceTexts=new LinkedHashMap<>(16,.75f,true);
     private long cacheHits,bindingComputations,diagnosticFilesAnalysed,diagnosticFilesReused,indexWrites,indexWriteNanos,apiFingerprintChanges,apiFingerprintUnchanged;
-    private long completionRequests;
+    private long completionRequests,residentDescriptionLoads,residentDescriptionCacheHits;
     private Context context;
-    private String completionContextIdentity="";
     private IndexService index;
     private LiveSourceState liveSourceState;
     private DiagnosticSnapshots snapshots;
     public void persistence(Path directory){if(snapshots==null){snapshots=new DiagnosticSnapshots(directory);diagnosticStore.persistence(snapshots);snapshots.documents(documents);}}
     private long budget;
     public void configure(Context context,IndexService index,long budget)throws Exception{
+        String family=generationFamily(context);generationFamilies.put(context.generation(),family);generationFamilyLru.put(family,Boolean.TRUE);
         var caches=modules.computeIfAbsent(context.generation(),_->new ModuleCaches());
         outlines=caches.outlines;focused=caches.focused;
-        this.context=context;this.index=index;this.budget=budget;diagnosticStore.budget(Math.max(1024*1024,budget/8));
+        this.context=context;this.index=index;this.budget=budget;semanticBudgetBytes=Math.max(8L*1024*1024,budget/2);
+        diagnosticStore.budget(Math.max(1024*1024,budget/8));
         String newCompletionContextIdentity=CompilerInputs.compose("completion-context-v1",
                 context.gav(),context.release(),context.generation(),
                 context.classpath().stream().map(p->p.toAbsolutePath().normalize().toString()).toList(),
@@ -73,13 +104,46 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 new TreeMap<>(context.coordinates()),
                 context.navigationSources().stream().map(p->p.toAbsolutePath().normalize().toString()).toList(),
                 context.preciseSourceRoots());
-        if(!newCompletionContextIdentity.equals(completionContextIdentity)){
-            caches.documentSemantics.clear();caches.semantic.clear();caches.semanticSourceEpoch=-1;
+        if(!newCompletionContextIdentity.equals(caches.completionContextIdentity)){
+            caches.documentSemantics.clear();caches.descriptions.clear();caches.accessibility.clear();caches.semantic.clear();caches.semanticSourceEpoch=-1;
         }
-        completionContextIdentity=newCompletionContextIdentity;
+        caches.completionContextIdentity=newCompletionContextIdentity;
         compiler=compilerPools.computeIfAbsent(context.generation(),_->new CompilerPool(inputFiles));
         compiler.configure(context.generation(),context.release(),context.classpath(),context.sources(),index,budget,context.compilerOptions(),context.preciseSourceRoots());
         compiler.binarySources(context.binarySources());
+        retireOldGenerationFamilies(family);
+    }
+
+    private static String generationFamily(Context context){
+        String marker=":"+context.gav();int split=context.generation().indexOf(marker);
+        return split>0?context.generation().substring(0,split):context.generation();
+    }
+    private long retainedSemanticBytes(){return modules.values().stream().mapToLong(caches->caches.semantic.estimatedBytes()).sum();}
+    private void retireOldGenerationFamilies(String currentFamily)throws Exception{
+        while(true){
+            long retained=retainedSemanticBytes();
+            boolean tooMany=generationFamilyLru.size()>MAX_GENERATION_FAMILIES;
+            boolean overBudget=retained>semanticBudgetBytes;
+            if(!tooMany&&!overBudget)return;
+            String victim=null;
+            for(String family:generationFamilyLru.keySet())if(!family.equals(currentFamily)){victim=family;break;}
+            if(victim==null)return;
+            retireGenerationFamily(victim);
+        }
+    }
+    private void retireGenerationFamily(String family)throws Exception{
+        var generations=new ArrayList<String>();
+        for(var entry:generationFamilies.entrySet())if(entry.getValue().equals(family))generations.add(entry.getKey());
+        Exception failure=null;
+        for(String generation:generations){
+            var caches=modules.remove(generation);
+            if(caches!=null){retiredSemanticBytes+=caches.semantic.estimatedBytes();retiredModuleGenerations++;}
+            var pool=compilerPools.remove(generation);
+            if(pool!=null)try{pool.close();retiredCompilerGenerations++;}catch(Exception e){failure=e;}
+            generationFamilies.remove(generation);
+        }
+        generationFamilyLru.remove(family);
+        if(failure!=null)throw failure;
     }
     public void documents(Documents documents){this.documents=documents;if(snapshots!=null)snapshots.documents(documents);compiler.documents(documents);dependencies.documentHash(documents::hash);dependencies.fileStates(documents.fileStates());if(context!=null)liveSourceState=documents.liveState(context.sources());}
     private ResidentSemanticState semanticState(){return modules.get(context.generation()).semantic;}
@@ -141,7 +205,16 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private String classpathStamp()throws Exception{return computeClasspathStamp();}
     private CompilerInputs.Snapshot validatedInputs()throws Exception {
         var inputs=inputSnapshot();
-        if(!compiler.cacheValid(inputs)){outlines.clear();focused.clear();inputs=inputSnapshot();}
+        if(!compiler.cacheValid(inputs)){
+            outlines.clear();focused.clear();
+            var caches=modules.get(context.generation());
+            caches.documentSemantics.clear();caches.accessibility.clear();
+            // A classpath/environment replacement invalidates detached binary/JDK declaration
+            // currency even when the source membership is unchanged. Preserve facts for reuse, but
+            // fence every retained unit until javac re-admits it from the new environment.
+            caches.semantic.markHierarchyUncertain();
+            inputs=inputSnapshot();
+        }
         return inputs;
     }
     private String computeClasspathStamp()throws Exception {
@@ -261,7 +334,25 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         focused.entrySet().removeIf(e->e.getValue().result().diagnostics().stream().anyMatch(d->d.kind().equals("ERROR")));
         outlines.entrySet().removeIf(e->Json.MAPPER.valueToTree(e.getValue().result()).path("diagnostics").findValuesAsText("kind").contains("ERROR"));
     }
-    public void namespaceChanged(){diagnosticStore.clear();for(var caches:modules.values()){caches.outlines.clear();caches.focused.clear();caches.documentSemantics.clear();caches.semantic.clear();caches.semanticSourceEpoch=-1;}dependencies.semantic().clear();for(var pool:compilerPools.values())pool.recycle();}
+    /**
+     * A source appears or disappears from the editor overlay. Preserve already-admitted semantic
+     * facts and reset only this module's javac source namespace. Negative resolutions have no
+     * declaration edge, so invalidate the unresolved-name posting set and its reverse closure.
+     */
+    public void sourceMembershipChanged(Path path)throws Exception{
+        path=path.toAbsolutePath().normalize();
+        compiler.documents(documents);compiler.observeSources(Set.of(path));
+        var affected=new LinkedHashSet<Path>(SemanticUpdatePolicy.closure(dependencies.semantic().unresolved(),dependencies.semantic()));
+        boolean present=documents.contains(path)||Files.isRegularFile(path);
+        if(!present){
+            var removed=dependencies.semantic().remove(path);affected.addAll(removed.reanalyze());
+            semanticState().removeUnit("source:"+path);
+        }
+        if(!affected.isEmpty())invalidate(affected);
+        compiler.resetSourceContext();
+    }
+    /** Broad project-model namespace reset; editor source membership must use sourceMembershipChanged. */
+    public void namespaceChanged(){diagnosticStore.clear();for(var caches:modules.values()){caches.outlines.clear();caches.focused.clear();caches.documentSemantics.clear();caches.descriptions.clear();caches.accessibility.clear();caches.semantic.clear();caches.semanticSourceEpoch=-1;}dependencies.semantic().clear();for(var pool:compilerPools.values())pool.recycle();}
     public CompilerPool.Outcome<Bindings.Snapshot> bindings(Path path,String text,Integer cursor)throws Exception{
         synchronizeKnownSources(path);return bindings(path,text,cursor,validatedInputs());
     }
@@ -280,9 +371,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         String source=focus==null?text:focus.source();Path file=path;bindingComputations++;SemanticSnapshot[] semantic={null};
         var outcome=compiler.query(path,source,2,observed,(task,units,tier)->{
             var identity=new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources());
-            var captured=Bindings.capture(task,units,identity,file,sourceText(file,text),true,focus==null?null:focus.member().equals("declarations")?new Focusing.Span(cursor,cursor+1):new Focusing.Span(focus.start(),focus.end()));
+            var captured=Bindings.capture(task,units,identity,file,sourceText(file,text),true,
+                    focus==null?null:focus.member().equals("declarations")?new Focusing.Span(cursor,cursor+1):new Focusing.Span(focus.start(),focus.end()),
+                    semanticState()::symbol);
             if(tier==2&&focus==null)for(var unit:units)try{
-                if(Path.of(unit.getSourceFile().toUri()).toAbsolutePath().normalize().equals(file)){semantic[0]=SemanticFacts.sourceSnapshot(task,identity,unit);break;}
+                if(Path.of(unit.getSourceFile().toUri()).toAbsolutePath().normalize().equals(file)){semantic[0]=SemanticFacts.sourceSnapshot(unit,captured.semanticFacts().values());break;}
             }catch(Exception ignored){}
             return captured;
         });
@@ -364,8 +457,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             for(var unit:units){
                 Path file=Path.of(unit.getSourceFile().toUri()).toAbsolutePath().normalize();String text=sources.get(file);
                 if(text!=null){
-                    snapshots.put(file,Bindings.capture(task,List.of(unit),identity,file,new SourceText(text),true));
-                    if(tier==2)semanticSnapshots.put(file,SemanticFacts.sourceSnapshot(task,identity,unit));
+                    var captured=Bindings.capture(task,List.of(unit),identity,file,new SourceText(text),true,null,semanticState()::symbol);snapshots.put(file,captured);
+                    if(tier==2)semanticSnapshots.put(file,SemanticFacts.sourceSnapshot(unit,captured.semanticFacts().values()));
                 }
             }
             return snapshots;
@@ -436,7 +529,32 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         String patchedHash=Hashing.sha256(patched.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         String namespace=qualified?"qualified":inputs.live().snapshot().state().namespace().fingerprint().value();
         return CompilerInputs.compose(qualified?"resident-qualified-v2":"resident-unqualified-v2",
-                completionContextIdentity,file.toString(),start,patchedHash,inputs.environment().value(),namespace);
+                modules.get(context.generation()).completionContextIdentity,file.toString(),start,patchedHash,inputs.environment().value(),namespace);
+    }
+
+    private boolean residentSemanticUnitCurrent(String unit){
+        if(unit==null||unit.isBlank())return false;
+        if(unit.startsWith("source:")){
+            if(liveSourceState==null)return false;
+            try{
+                Path file=Path.of(unit.substring("source:".length())).toAbsolutePath().normalize();
+                if(!liveSourceState.accepts(file))return false;
+                String current=liveSourceState.contentHash(file);
+                return current!=null&&semanticState().unitCurrent(unit,current);
+            }catch(Exception ignored){return false;}
+        }
+        return semanticState().unitCurrent(unit,null);
+    }
+    private boolean residentSemanticTypeCurrent(String typeId,String binaryName){
+        if(residentSemanticUnitCurrent(semanticState().unitForFact(typeId)))return true;
+        if(binaryName!=null&&!binaryName.isBlank()){
+            if(residentSemanticUnitCurrent(semanticState().unitForType(binaryName)))return true;
+            if(liveSourceState!=null){
+                var source=liveSourceState.source(binaryName).orElse(null);
+                if(source!=null&&residentSemanticUnitCurrent("source:"+source.file().toAbsolutePath().normalize()))return true;
+            }
+        }
+        return typeId!=null&&!typeId.isBlank()&&residentSemanticUnitCurrent("type:"+typeId);
     }
 
     private String queryHierarchyApi(DocumentSemanticSnapshot.QueryContext query){
@@ -448,6 +566,24 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(identities.isEmpty())return "";
         identities.sort(String::compareTo);return Hashing.sha256(String.join("\n",identities).getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
+    private String accessibilityKey(DocumentSemanticSnapshot.QueryContext query){
+        var caches=modules.get(context.generation());
+        return CompilerInputs.compose("completion-access-v1",caches.completionContextIdentity,
+                query.receiverType().identity().hex(),Objects.toString(query.receiverSymbolId(),""),
+                query.staticReceiver(),query.packageName(),Objects.toString(query.enclosingTypeId(),""),
+                query.staticContext(),queryHierarchyApi(query));
+    }
+    private DocumentSemanticSnapshot.QueryContext registerAccessibility(ModuleCaches caches,SemanticFacts.CompletionContext result){
+        String key=accessibilityKey(result.query());caches.accessibility.put(key,result.accessibleMemberIds());
+        return result.query().withAccessibilityKey(key);
+    }
+    private boolean accessibilityCurrent(DocumentSemanticSnapshot.QueryContext query){
+        return modules.get(context.generation()).accessibility.contains(query.accessibilityKey());
+    }
+    private Set<String> accessibility(DocumentSemanticSnapshot.QueryContext query){
+        return modules.get(context.generation()).accessibility.get(query.accessibilityKey());
+    }
+
     private boolean cachedHierarchyCurrent(DocumentSemanticCached cached,DocumentSemanticSnapshot.QueryContext query)throws Exception{
         if(!context.preciseSourceRoots()||liveSourceState==null||!liveSourceState.snapshot().trusted()){
             if(!ensureHierarchySemanticCurrent(query))return false;
@@ -466,7 +602,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var cached=caches.documentSemantics.get(path);
         if(!force&&key!=null&&cached!=null&&key.equals(cached.key())&&cached.snapshot().query(start)!=null){
             var query=cached.snapshot().query(start);var current=completionResolutionIdentities(cached.resolutionIdentities().keySet());
-            if(current.equals(cached.resolutionIdentities())&&cachedHierarchyCurrent(cached,query)){
+            if(current.equals(cached.resolutionIdentities())&&accessibilityCurrent(query)&&cachedHierarchyCurrent(cached,query)){
                 var rebased=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
                         cached.snapshot().queries());
                 var reused=new DocumentSemanticCached(key,rebased,current,cached.dependencyApis(),cached.hierarchyApi());caches.documentSemantics.put(path,reused);return reused;
@@ -477,7 +613,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             if(tier!=2)return null;
             return SemanticFacts.qualifiedCompletion(task,units,
                     new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),
-                    EditorQueries.MARKER,start);
+                    EditorQueries.MARKER,start,this::residentSemanticTypeCurrent);
         });
         var result=attributed.result();
         if(!attributed.warnings().isEmpty()){
@@ -493,11 +629,12 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         if(result==null)return null;
         for(var snapshot:result.semanticSnapshots())admitDetachedSemantic(snapshot);
+        var query=registerAccessibility(caches,result);
         var binaries=completionNameResolutionBinaries(text,result.nameResolutionNames());
         var resolution=completionResolutionIdentities(binaries);
         var snapshot=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
-                Map.of(start,result.query()));
-        var next=new DocumentSemanticCached(key,snapshot,resolution,Map.of(),queryHierarchyApi(result.query()));caches.documentSemantics.put(path,next);return next;
+                Map.of(start,query));
+        var next=new DocumentSemanticCached(key,snapshot,resolution,Map.of(),queryHierarchyApi(query));caches.documentSemantics.put(path,next);return next;
     }
 
     private Map<Path,String> documentDependencyApis(DocumentSemanticSnapshot.QueryContext query,Path caller)throws Exception{
@@ -527,6 +664,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         String content=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         var cached=caches.documentSemantics.get(path);
         if(!force&&key!=null&&cached!=null&&key.equals(cached.key())&&cached.snapshot().query(start)!=null
+                &&accessibilityCurrent(cached.snapshot().query(start))
                 &&documentDependenciesCurrent(cached)&&cachedHierarchyCurrent(cached,cached.snapshot().query(start))){
             var rebased=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
                     cached.snapshot().queries());
@@ -537,7 +675,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             if(tier!=2)return null;
             return SemanticFacts.unqualifiedCompletion(task,units,
                     new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),
-                    EditorQueries.MARKER,start);
+                    EditorQueries.MARKER,start,this::residentSemanticTypeCurrent);
         });
         var result=attributed.result();
         if(!attributed.warnings().isEmpty()){
@@ -553,10 +691,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         if(result==null)return null;
         for(var snapshot:result.semanticSnapshots())admitDetachedSemantic(snapshot);
-        var dependencyApis=documentDependencyApis(result.query(),path);if(dependencyApis==null)return null;
+        var query=registerAccessibility(caches,result);
+        var dependencyApis=documentDependencyApis(query,path);if(dependencyApis==null)return null;
         var snapshot=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
-                Map.of(start,result.query()));
-        var next=new DocumentSemanticCached(key,snapshot,Map.of(),dependencyApis,queryHierarchyApi(result.query()));caches.documentSemantics.put(path,next);return next;
+                Map.of(start,query));
+        var next=new DocumentSemanticCached(key,snapshot,Map.of(),dependencyApis,queryHierarchyApi(query));caches.documentSemantics.put(path,next);return next;
     }
 
     private Envelope residentQualifiedCompletion(Path path,String text,String patched,int start,int end,int focusCursor,String prefix,
@@ -602,7 +741,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             int selector=start-1;while(selector>=0&&Character.isWhitespace(text.charAt(selector)))selector--;
             boolean qualified=selector>=0&&text.charAt(selector)=='.';
             synchronizeKnownSources(path);touch(path,text);
-            var observed=inputSnapshot();String residentKey=residentContextKey(path,patched,start,observed,qualified);
+            var observed=validatedInputs();String residentKey=residentContextKey(path,patched,start,observed,qualified);
             Envelope resident;
             try{
                 resident=qualified
@@ -692,9 +831,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             if(source==null){result.put(binary,"<missing>");continue;}
             Path file=source.file().toAbsolutePath().normalize();
             if(!ensureSourceSemanticCurrent(file)){result.put(binary,"<missing>");continue;}
-            var unit=semanticState().unit("source:"+file);
-            SemanticFact declaration=null;
-            if(unit!=null)for(var fact:unit.facts().values())if(fact.typeDeclaration()&&binary.equals(fact.fqn())){declaration=fact;break;}
+            SemanticFact declaration=semanticState().unitType("source:"+file,binary);
             String resolution=declaration==null?"<missing-declaration>":
                     declaration.kind()+"\0"+String.join(",",declaration.modifiers().stream().sorted().toList())+"\0"+Objects.toString(declaration.ownerId(),"");
             result.put(binary,file+"\0"+resolution);
@@ -762,48 +899,104 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return fact.kind()+"\0"+fact.name()+"\0"+Objects.requireNonNullElse(fact.erasedDescriptor(),"");
     }
 
-    private List<Map<String,Object>> residentHierarchyRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target,boolean staticOnly){
-        if(target<=0)return List.of();
+    private static final Comparator<Map<String,Object>> COMPLETION_ORDER=Comparator
+            .comparing((Map<String,Object> row)->Objects.toString(row.get("name"),""))
+            .thenComparing(row->Objects.toString(row.get("label"),""))
+            .thenComparing(row->Objects.toString(row.get("scip"),""));
+    private record HierarchyOwner(String id,Map<String,SemanticType> substitutions,int order) { }
+    private record HierarchyChoice(int ownerOrder,Map<String,Object> row) { }
+    private static final class HierarchyStream {
+        final ResidentSemanticState.MemberCursor cursor;final Map<String,SemanticType> substitutions;final int ownerOrder;
+        SemanticFact current;
+        HierarchyStream(ResidentSemanticState.MemberCursor cursor,Map<String,SemanticType> substitutions,int ownerOrder){
+            this.cursor=cursor;this.substitutions=substitutions;this.ownerOrder=ownerOrder;
+        }
+        boolean advance(){current=cursor.next();return current!=null;}
+    }
+
+    private List<HierarchyOwner> hierarchyOwners(DocumentSemanticSnapshot.QueryContext query){
         var queue=new ArrayDeque<SemanticType>();addDeclaredTypes(queue,query.receiverType());
-        var seenTypes=new HashSet<String>();var seenMembers=new HashSet<String>();var rows=new LinkedHashMap<String,Map<String,Object>>();
-        while(!queue.isEmpty()&&rows.size()<target*8){
-            var next=queue.removeFirst();if(!(next instanceof SemanticType.Declared declared)||!seenTypes.add(declared.symbolId()))continue;
+        var seen=new HashSet<String>();var result=new ArrayList<HierarchyOwner>();
+        while(!queue.isEmpty()){
+            var next=queue.removeFirst();if(!(next instanceof SemanticType.Declared declared)||!seen.add(declared.symbolId()))continue;
             var owner=semanticState().symbol(declared.symbolId());if(owner==null)continue;
             var substitutions=typeSubstitutions(owner,declared);
-            for(var member:semanticState().members(declared.symbolId(),prefix,target)){
-                if(member.kind().equals("ctor")||member.kind().equals("package")||member.kind().equals("module"))continue;
-                if(!seenMembers.add(inheritedMemberShape(member)))continue;
-                if(staticOnly&&!member.typeDeclaration()&&!member.modifiers().contains("static"))continue;
-                if(!query.accessibleMemberIds().contains(member.id()))continue;
-                rows.putIfAbsent(member.id(),residentCompletionRow(member,member.candidate(substitutions)));
-            }
+            result.add(new HierarchyOwner(declared.symbolId(),substitutions,result.size()));
             for(var parent:owner.directSupertypes())addDeclaredTypes(queue,parent.substitute(substitutions));
         }
-        return rows.values().stream().sorted(Comparator.comparing(row->row.get("label").toString())).limit(target).toList();
+        return List.copyOf(result);
+    }
+
+    private List<Map<String,Object>> residentHierarchyRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target,boolean staticOnly,
+                                                           Set<String> excludedIds,Set<String> shadowedFieldNames){
+        if(target<=0)return List.of();
+        var accessible=accessibility(query);if(accessible==null)return List.of();
+        var streams=new PriorityQueue<HierarchyStream>(Comparator
+                .comparing((HierarchyStream stream)->stream.current.name())
+                .thenComparing(stream->stream.current.id())
+                .thenComparingInt(stream->stream.ownerOrder));
+        for(var owner:hierarchyOwners(query)){
+            var stream=new HierarchyStream(semanticState().memberCursor(owner.id(),prefix),owner.substitutions(),owner.order());
+            if(stream.advance())streams.add(stream);
+        }
+        var rows=new ArrayList<Map<String,Object>>(Math.min(target,64));
+        while(!streams.isEmpty()&&rows.size()<target){
+            String name=streams.peek().current.name();
+            var choices=new HashMap<String,HierarchyChoice>();
+            while(!streams.isEmpty()&&streams.peek().current.name().equals(name)){
+                var stream=streams.poll();
+                do{
+                    var member=stream.current;
+                    if(!excludedIds.contains(member.id())
+                            &&!member.kind().equals("ctor")&&!member.kind().equals("package")&&!member.kind().equals("module")
+                            &&(!staticOnly||member.typeDeclaration()||member.modifiers().contains("static"))
+                            &&accessible.contains(member.id())
+                            &&!(Set.of("field","enumconst").contains(member.kind())&&shadowedFieldNames.contains(member.name()))){
+                        String shape=inheritedMemberShape(member);var row=residentCompletionRow(member,member.candidate(stream.substitutions));
+                        var previous=choices.get(shape);
+                        if(previous==null||stream.ownerOrder<previous.ownerOrder())choices.put(shape,new HierarchyChoice(stream.ownerOrder,row));
+                    }
+                }while(stream.advance()&&stream.current.name().equals(name));
+                if(stream.current!=null)streams.add(stream);
+            }
+            var group=choices.values().stream().map(HierarchyChoice::row).sorted(COMPLETION_ORDER).toList();
+            for(var row:group){if(rows.size()>=target)break;rows.add(row);}
+        }
+        return List.copyOf(rows);
     }
     private List<Map<String,Object>> residentQualifiedRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target){
-        return residentHierarchyRows(query,prefix,target,query.staticReceiver());
+        return residentHierarchyRows(query,prefix,target,query.staticReceiver(),Set.of(),Set.of());
     }
     private List<Map<String,Object>> residentUnqualifiedRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target){
         if(target<=0)return List.of();
-        var rows=new LinkedHashMap<String,Map<String,Object>>();var variableNames=new HashSet<String>();
         var localKinds=Set.of("local_variable","resource_variable","exception_parameter","binding_variable","parameter");
+        var variableNames=new HashSet<String>();
+        for(var candidate:query.scopedCandidates())
+            if(candidate.name().startsWith(prefix)&&!candidate.name().equals(EditorQueries.MARKER)&&localKinds.contains(candidate.kind()))
+                variableNames.add(candidate.name());
+
+        var scopeRows=new LinkedHashMap<String,Map<String,Object>>();var seenLocalNames=new HashSet<String>();
         for(var candidate:query.scopedCandidates()){
             if(!candidate.name().startsWith(prefix)||candidate.name().equals(EditorQueries.MARKER))continue;
             boolean local=localKinds.contains(candidate.kind());
-            if(local&&!variableNames.add(candidate.name()))continue;
+            if(local&&!seenLocalNames.add(candidate.name()))continue;
             if(!local&&Set.of("field","enumconst").contains(candidate.kind())&&variableNames.contains(candidate.name()))continue;
             if(query.staticContext()&&candidate.declaringType()!=null&&!candidate.modifiers().contains("static")
                     &&semanticState().symbol(candidate.declaringType())!=null)continue;
-            rows.putIfAbsent(candidate.id(),residentCompletionRow(candidate,candidate.name()));
-            if(rows.size()>=target*4)break;
+            scopeRows.putIfAbsent(candidate.id(),residentCompletionRow(candidate,candidate.name()));
         }
-        if(query.receiverType() instanceof SemanticType.Declared||query.receiverType() instanceof SemanticType.Intersection)
-            for(var row:residentHierarchyRows(query,prefix,target,query.staticContext())){
-                if(Set.of("field","enumconst").contains(Objects.toString(row.get("kind"),""))&&variableNames.contains(Objects.toString(row.get("name"),"")))continue;
-                rows.put(Objects.toString(row.get("scip"),""),row);
-            }
-        return rows.values().stream().sorted(Comparator.comparing(row->row.get("label").toString())).limit(target).toList();
+        var lexical=scopeRows.values().stream().sorted(COMPLETION_ORDER).toList();
+        var hierarchy=(query.receiverType() instanceof SemanticType.Declared||query.receiverType() instanceof SemanticType.Intersection)
+                ?residentHierarchyRows(query,prefix,target,query.staticContext(),scopeRows.keySet(),variableNames):List.<Map<String,Object>>of();
+
+        var rows=new ArrayList<Map<String,Object>>(Math.min(target,64));int lexicalIndex=0,hierarchyIndex=0;
+        while(rows.size()<target&&(lexicalIndex<lexical.size()||hierarchyIndex<hierarchy.size())){
+            if(hierarchyIndex>=hierarchy.size()
+                    ||lexicalIndex<lexical.size()&&COMPLETION_ORDER.compare(lexical.get(lexicalIndex),hierarchy.get(hierarchyIndex))<=0)
+                rows.add(lexical.get(lexicalIndex++));
+            else rows.add(hierarchy.get(hierarchyIndex++));
+        }
+        return List.copyOf(rows);
     }
 
     private static Set<String> completionDiscoveryPackages(String text){
@@ -839,13 +1032,54 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         return new Envelope(outcome.tier(),"live",to<values.size(),to<values.size()?Integer.toString(to):null,warnings(outcome.warnings()),Map.of("data",data,"resultId",Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))));
     }
+    private SymbolDescription loadResidentDescription(SemanticFact fact)throws Exception{
+        if(fact.sourceFile()==null)return null;
+        Path source;
+        try{source=Path.of(fact.sourceFile()).toAbsolutePath().normalize();}
+        catch(Exception invalid){return null;}
+        if(!documents.contains(source)&&!Files.isRegularFile(source))return null;
+        String text=documents.text(source);
+        String sourceHash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var caches=modules.get(context.generation());
+        String key=fact.id()+"\0"+fact.factIdentity().hex()+"\0"+sourceHash;
+        var cached=caches.descriptions.get(key);
+        if(cached!=null){residentDescriptionCacheHits++;return cached;}
+
+        String wanted=fact.id();var observed=inputSnapshot();
+        var outcome=compiler.query(source,text,2,observed,(task,units,tier)->{
+            if(tier!=2)return null;
+            var identity=new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources());
+            SymbolDescription[] found={null};var trees=Trees.instance(task);
+            for(var unit:units){
+                new TreePathScanner<Void,Void>(){
+                    private void capture(Element element){
+                        if(found[0]!=null||element==null)return;
+                        try{if(wanted.equals(identity.scip(element)))found[0]=SemanticFacts.description(task,identity,element);}
+                        catch(IllegalArgumentException unresolved){/* selected identity not present in this task */}
+                    }
+                    @Override public Void visitClass(ClassTree node,Void unused){capture(trees.getElement(getCurrentPath()));return found[0]==null?super.visitClass(node,unused):null;}
+                    @Override public Void visitMethod(MethodTree node,Void unused){capture(trees.getElement(getCurrentPath()));return null;}
+                    @Override public Void visitVariable(VariableTree node,Void unused){
+                        var element=trees.getElement(getCurrentPath());if(element!=null&&element.getKind().isField())capture(element);return null;
+                    }
+                }.scan(unit,null);
+                if(found[0]!=null)break;
+            }
+            return found[0];
+        });
+        if(outcome.result()==null||!outcome.warnings().isEmpty())return null;
+        residentDescriptionLoads++;caches.descriptions.put(key,outcome.result());
+        while(caches.descriptions.size()>64)caches.descriptions.remove(caches.descriptions.keySet().iterator().next());
+        return outcome.result();
+    }
+
     public Map<String,Object> residentDescription(String ref)throws Exception{
         var fact=semanticState().symbol(ref);if(fact==null)return null;
         if(fact.sourceFile()!=null&&liveSourceState!=null)try{
             Path source=Path.of(fact.sourceFile()).toAbsolutePath().normalize();
             if(liveSourceState.accepts(source)){ensureSourceSemanticCurrent(source);fact=semanticState().symbol(ref);if(fact==null)return null;}
         }catch(Exception ignored){}
-        var description=semanticState().describe(ref);var value=new LinkedHashMap<String,Object>();
+        var description=loadResidentDescription(fact);var value=new LinkedHashMap<String,Object>();
         value.put("scip",fact.id());value.put("name",fact.name());value.put("name_path",fact.namePath());value.put("kind",fact.kind());
         value.put("signature",description==null?fact.structuralSignature():description.detailedSignature());value.put("resolved",true);
         value.put("modifiers",fact.modifiers().stream().sorted().toList());value.put("fqn",fact.fqn());
@@ -876,8 +1110,31 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var result=new LinkedHashMap<String,Object>(compiler.status());if(snapshots!=null)result.put("persistent_snapshots",snapshots.status());result.putAll(focusing.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("binding_computations",bindingComputations);result.put("classpath_fingerprints",classpathFingerprints);result.put("diagnostic_store",diagnosticStore.status());result.put("diagnostic_files_analysed",diagnosticFilesAnalysed);result.put("diagnostic_files_reused",diagnosticFilesReused);result.put("index_record_source_calls",indexWrites);result.put("index_record_source_ms",0.0);result.put("index_publish_enqueue_ms",Math.round(indexWriteNanos/1000.0)/1000.0);if(index!=null)result.put("source_publisher",index.sourcePublisherStatus());result.put("api_fingerprint_changes",apiFingerprintChanges);result.put("api_fingerprint_unchanged",apiFingerprintUnchanged);result.put("pending_api_files",dependencies.semantic().pendingCount());result.put("conditional_files",dependencies.semantic().conditionalCount());result.put("dependencies",dependencies.status());
         if(liveSourceState!=null)result.put("live_source_state",liveSourceState.status());
         if(context!=null)result.put("resident_semantic_state",semanticState().status());
-        result.put("completion_requests",completionRequests);
-        var modules=new LinkedHashMap<String,Object>();for(var entry:compilerPools.entrySet())modules.put(entry.getKey(),entry.getValue().status());result.put("module_compilers",modules);return result;
+        result.put("completion_requests",completionRequests);result.put("resident_description_loads",residentDescriptionLoads);result.put("resident_description_cache_hits",residentDescriptionCacheHits);
+        if(context!=null){
+            result.put("resident_description_cache_entries",modules.get(context.generation()).descriptions.size());
+            result.put("resident_accessibility_cache",modules.get(context.generation()).accessibility.status());
+        }
+        long retainedSemantic=retainedSemanticBytes();
+        var semanticGenerations=new LinkedHashMap<String,Object>();
+        for(var entry:modules.entrySet()){
+            var semanticStatus=entry.getValue().semantic.status();
+            semanticGenerations.put(entry.getKey(),Map.of(
+                    "family",generationFamilies.getOrDefault(entry.getKey(),entry.getKey()),
+                    "estimated_bytes",entry.getValue().semantic.estimatedBytes(),
+                    "facts",semanticStatus.get("semantic_facts"),
+                    "units",semanticStatus.get("semantic_units")));
+        }
+        result.put("resident_semantic_generations",semanticGenerations);
+        result.put("resident_semantic_generation_count",modules.size());
+        result.put("resident_semantic_generation_families",generationFamilyLru.size());
+        result.put("resident_semantic_budget_bytes",semanticBudgetBytes);
+        result.put("resident_semantic_estimated_bytes",retainedSemantic);
+        result.put("resident_semantic_over_budget_bytes",Math.max(0,retainedSemantic-semanticBudgetBytes));
+        result.put("resident_semantic_retired_generations",retiredModuleGenerations);
+        result.put("resident_semantic_retired_bytes",retiredSemanticBytes);
+        result.put("compiler_retired_generations",retiredCompilerGenerations);
+        var moduleStatus=new LinkedHashMap<String,Object>();for(var entry:compilerPools.entrySet())moduleStatus.put(entry.getKey(),entry.getValue().status());result.put("module_compilers",moduleStatus);return result;
     }
-    @Override public void close()throws Exception{if(snapshots!=null)snapshots.close();diagnosticStore.clear();outlines.clear();focused.clear();focusing.close();sourceTexts.clear();dependencies.semantic().clear();for(var pool:compilerPools.values())pool.close();compilerPools.clear();modules.clear();compiler=null;}
+    @Override public void close()throws Exception{if(snapshots!=null)snapshots.close();diagnosticStore.clear();outlines.clear();focused.clear();focusing.close();sourceTexts.clear();dependencies.semantic().clear();for(var pool:compilerPools.values())pool.close();compilerPools.clear();modules.clear();generationFamilies.clear();generationFamilyLru.clear();compiler=null;}
 }

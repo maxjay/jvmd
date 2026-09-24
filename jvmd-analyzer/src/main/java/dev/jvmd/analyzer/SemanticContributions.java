@@ -9,7 +9,12 @@ public final class SemanticContributions {
         var symbols=List.copyOf(snapshot.symbols().values());
         var exports=new LinkedHashSet<String>();
         String source=file.toAbsolutePath().normalize().toString();
-        for(var symbol:symbols){
+        if(!snapshot.semanticFacts().isEmpty())for(var fact:snapshot.semanticFacts().values()){
+            if(!source.equals(Objects.toString(fact.sourceFile(),"")))continue;
+            if(Set.of("local","local_variable","resource_variable","exception_parameter","binding_variable","parameter","type_parameter").contains(fact.kind()))continue;
+            if(fact.modifiers().contains("private"))continue;
+            for(String value:List.of(fact.id(),Objects.toString(fact.fqn(),""),fact.namePath()))if(!value.isBlank())exports.add(value);
+        }else for(var symbol:symbols){
             if(!source.equals(Objects.toString(symbol.get("source_file"),"")))continue;
             String kind=Objects.toString(symbol.get("kind"),"");
             if(kind.equals("local")||kind.equals("parameter"))continue;

@@ -13,14 +13,19 @@ import static org.assertj.core.api.Assertions.*;
 class ResidentCompletionCorrectnessTest {
     @TempDir Path root;
 
-    private Analyzer.Context context(){
-        return new Analyzer.Context("fixture:resident-completion:1","25",List.of(),List.of(root),"resident-completion",Map.of());
+    private Analyzer.Context context(){return context(root,"resident-completion");}
+    private static Analyzer.Context context(Path sourceRoot,String generation){
+        return new Analyzer.Context("fixture:"+generation+":1","25",List.of(),List.of(sourceRoot),generation,Map.of());
     }
 
     private static JsonNode complete(Analyzer analyzer,Path file,String text,String needle)throws Exception{
+        return complete(analyzer,file,text,needle,200);
+    }
+
+    private static JsonNode complete(Analyzer analyzer,Path file,String text,String needle,int limit)throws Exception{
         int cursor=text.indexOf(needle)+needle.length();
         var position=dev.jvmd.core.Documents.position(text,cursor);
-        var answer=analyzer.completion(file,text,position.line(),position.character(),200,0);
+        var answer=analyzer.completion(file,text,position.line(),position.character(),limit,0);
         assertThat(answer.warnings()).as(answer.toString()).isEmpty();
         return Json.MAPPER.valueToTree(answer.result()).path("items");
     }
@@ -28,6 +33,65 @@ class ResidentCompletionCorrectnessTest {
     private static JsonNode named(JsonNode items,String name){
         for(var item:items)if(item.path("name").asText().equals(name))return item;
         fail("Missing completion "+name+" in "+items);return null;
+    }
+
+    @Test void moduleSwitchingPreservesResidentSemanticState()throws Exception{
+        Path a=Files.createDirectories(root.resolve("module-a")),b=Files.createDirectories(root.resolve("module-b"));
+        Files.writeString(a.resolve("Api.java"),"class Api { int alpha(){return 1;} }");
+        String useA="class UseA { Object f(Api api){ return api.al; } }";Path fileA=Files.writeString(a.resolve("UseA.java"),useA);
+        Files.writeString(b.resolve("Other.java"),"class Other { int beta(){return 2;} }");
+        String useB="class UseB { Object f(Other other){ return other.be; } }";Path fileB=Files.writeString(b.resolve("UseB.java"),useB);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(a,"module-a"),null,256L*1024*1024);
+            assertThat(complete(analyzer,fileA,useA,"api.al").findValuesAsText("name")).contains("alpha");
+            @SuppressWarnings("unchecked") var stateA=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            String rootA=stateA.get("semantic_root").toString();long factsA=((Number)stateA.get("semantic_facts")).longValue();
+            assertThat(factsA).isPositive();
+
+            analyzer.configure(context(b,"module-b"),null,256L*1024*1024);
+            assertThat(complete(analyzer,fileB,useB,"other.be").findValuesAsText("name")).contains("beta");
+
+            analyzer.configure(context(a,"module-a"),null,256L*1024*1024);
+            @SuppressWarnings("unchecked") var restored=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            assertThat(restored.get("semantic_root")).isEqualTo(rootA);
+            assertThat(((Number)restored.get("semantic_facts")).longValue()).isEqualTo(factsA);
+        }
+    }
+
+    @Test void historicalProjectGenerationsAreRetiredAndBudgeted()throws Exception{
+        String source="class Api { int value(){return 1;} } class Use { Object f(Api api){ return api.val; } }";
+        Path file=Files.writeString(root.resolve("Use.java"),source);
+        try(var analyzer=new Analyzer()){
+            for(int i=0;i<6;i++){
+                analyzer.configure(context(root,"generation-"+i),null,256L*1024*1024);
+                assertThat(complete(analyzer,file,source,"api.val").findValuesAsText("name")).contains("value");
+                assertThat(((Number)analyzer.status().get("resident_semantic_generation_count")).longValue()).isLessThanOrEqualTo(2L);
+                assertThat(((Number)analyzer.status().get("resident_semantic_generation_families")).longValue()).isLessThanOrEqualTo(2L);
+                @SuppressWarnings("unchecked") var compilers=(Map<String,Object>)analyzer.status().get("module_compilers");
+                assertThat(compilers).hasSizeLessThanOrEqualTo(2);
+            }
+            assertThat(((Number)analyzer.status().get("resident_semantic_retired_generations")).longValue()).isGreaterThanOrEqualTo(4L);
+            assertThat(((Number)analyzer.status().get("compiler_retired_generations")).longValue()).isGreaterThanOrEqualTo(4L);
+            assertThat(((Number)analyzer.status().get("resident_semantic_budget_bytes")).longValue()).isPositive();
+            assertThat(((Number)analyzer.status().get("resident_semantic_estimated_bytes")).longValue())
+                    .isLessThanOrEqualTo(((Number)analyzer.status().get("resident_semantic_budget_bytes")).longValue());
+        }
+    }
+
+    @Test void qualifiedCompletionReadsPastFilteredRangeEntries()throws Exception{
+        var api=new StringBuilder("class Api {\n");
+        for(int i=0;i<16;i++)api.append("private int a").append(String.format("%02d",i)).append("(){return ").append(i).append(";}\n");
+        api.append("public int azVisible0(){return 100;}\n");
+        api.append("public int azVisible1(){return 101;}\n");
+        api.append("public int azVisible2(){return 102;}\n}");
+        Files.writeString(root.resolve("Api.java"),api);
+        String source="class Use { Object f(Api api){ return api.a; } }";
+        Path use=Files.writeString(root.resolve("Use.java"),source);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);
+            var names=complete(analyzer,use,source,"api.a",2).findValuesAsText("name");
+            assertThat(names).containsExactly("azVisible0","azVisible1");
+        }
     }
 
     @Test void inheritedAndJdkGenericMembersUseInstantiatedReceiverTypes()throws Exception{
@@ -139,8 +203,14 @@ class ResidentCompletionCorrectnessTest {
             var first=complete(analyzer,use,source,"api.");
             JsonNode old=named(first,"oldName");
             assertThat(first.findValuesAsText("name")).contains("removed");
+            @SuppressWarnings("unchecked") var admitted=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            assertThat(admitted).containsEntry("semantic_descriptions",0);
+            assertThat(((Number)analyzer.status().get("resident_description_loads")).longValue()).isZero();
             String scip=old.path("scip").asText();
             assertThat(analyzer.residentDescription(scip).get("doc").toString()).contains("before documentation");
+            assertThat(((Number)analyzer.status().get("resident_description_loads")).longValue()).isEqualTo(1L);
+            assertThat(analyzer.residentDescription(scip).get("doc").toString()).contains("before documentation");
+            assertThat(((Number)analyzer.status().get("resident_description_cache_hits")).longValue()).isPositive();
             @SuppressWarnings("unchecked") var beforeState=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
             String apiIdentity=beforeState.get("semantic_api").toString();
 

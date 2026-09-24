@@ -223,15 +223,12 @@ public final class LiveStateTree {
     }
 
     private static final class Aggregate {
-        final String domain;BigInteger sum=BigInteger.ZERO;long count;AggregateIdentity identity;
-        Aggregate(String domain){this.domain=domain;refresh();}
+        final AlgebraicAccumulator values;
+        Aggregate(String domain){values=new AlgebraicAccumulator(domain);}
         void replace(Path oldPath,Fingerprint oldValue,Path newPath,Fingerprint newValue){
-            if(oldValue!=null){sum=sum.subtract(contribution(domain,oldPath,oldValue)).mod(FIELD);count--;}
-            if(newValue!=null){sum=sum.add(contribution(domain,newPath,newValue)).mod(FIELD);count++;}
-            if(count<0)throw new IllegalStateException("Negative aggregate cardinality");refresh();
+            values.replace(oldPath,oldValue==null?null:oldValue.value(),newPath,newValue==null?null:newValue.value());
         }
-        void refresh(){identity=new AggregateIdentity(fingerprint("aggregate-v1",domain,count,fixedHex(sum)),count);}
-        AggregateIdentity identity(){return identity;}
+        AggregateIdentity identity(){return new AggregateIdentity(new Fingerprint(values.identity().hex()),values.cardinality());}
     }
 
     /** Deterministic treap: priorities are derived from the key, so shape does not depend on mutation history. */

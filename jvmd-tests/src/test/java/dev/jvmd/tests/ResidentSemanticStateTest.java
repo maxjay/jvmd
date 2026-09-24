@@ -23,10 +23,88 @@ class ResidentSemanticStateTest {
                 api,"ns-"+name,"doc-"+name);
     }
     private static SemanticSnapshot snapshot(String content,SemanticFact... facts){
+        return snapshotUnit("source:/src/A.java",content,facts);
+    }
+    private static SemanticSnapshot snapshotUnit(String unit,String content,SemanticFact... facts){
         var values=new LinkedHashMap<String,SemanticFact>();var descriptions=new LinkedHashMap<String,SymbolDescription>();
         for(var fact:facts){values.put(fact.id(),fact);descriptions.put(fact.id(),new SymbolDescription(fact.id(),"doc",fact.structuralSignature(),null,fact.documentationIdentity()));}
-        return new SemanticSnapshot("source:/src/A.java","/src/A.java",content,values,descriptions,
+        return new SemanticSnapshot(unit,"/src/A.java",content,values,descriptions,
                 "file-api","file-ns",facts.length==0?"":String.join(",",Arrays.stream(facts).map(SemanticFact::documentationIdentity).toList()),Set.of());
+    }
+
+    @Test void bulkConstructionMatchesIncrementalIdentityAndMemberQueries(){
+        var facts=new ArrayList<SemanticFact>();facts.add(type("A#","A","api-A"));
+        for(int i=0;i<32;i++)facts.add(member("A#m"+i+"().","A#","member"+String.format("%03d",i),"api-"+i,"doc-"+i));
+
+        var bulk=new ResidentSemanticState();
+        bulk.admit(snapshot("bulk",facts.toArray(SemanticFact[]::new)));
+
+        var incremental=new ResidentSemanticState();
+        for(int i=0;i<facts.size();i++)incremental.admit(snapshotUnit("unit:"+i,"part-"+i,facts.get(i)));
+
+        assertThat(bulk.identity().merkleRoot()).isEqualTo(incremental.identity().merkleRoot());
+        assertThat(bulk.identity().membership()).isEqualTo(incremental.identity().membership());
+        assertThat(bulk.identity().api()).isEqualTo(incremental.identity().api());
+        assertThat(bulk.identity().namespace()).isEqualTo(incremental.identity().namespace());
+        assertThat(bulk.members("A#","member1",25)).extracting(SemanticFact::id)
+                .containsExactlyElementsOf(incremental.members("A#","member1",25).stream().map(SemanticFact::id).toList());
+    }
+
+    @Test void bulkConstructionIsIndependentOfInputIterationOrder(){
+        var facts=new ArrayList<SemanticFact>();facts.add(type("A#","A","api-A"));
+        for(int i=0;i<24;i++)facts.add(member("A#m"+i+"().","A#","m"+String.format("%03d",i),"api-"+i,"doc-"+i));
+        var reversed=new ArrayList<>(facts);Collections.reverse(reversed);
+
+        var first=new ResidentSemanticState();first.admit(snapshot("first",facts.toArray(SemanticFact[]::new)));
+        var second=new ResidentSemanticState();second.admit(snapshot("second",reversed.toArray(SemanticFact[]::new)));
+
+        assertThat(first.identity().merkleRoot()).isEqualTo(second.identity().merkleRoot());
+        assertThat(first.identity().membership()).isEqualTo(second.identity().membership());
+        assertThat(first.members("A#","m0",20)).extracting(SemanticFact::id)
+                .containsExactlyElementsOf(second.members("A#","m0",20).stream().map(SemanticFact::id).toList());
+    }
+
+    @Test void unitMerkleDiffSkipsUnchangedFactsAndLocalizesOneMemberChange(){
+        var owner=type("A#","A","api-A");
+        var first=member("A#a().","A#","a","api-a","doc-a");
+        var second=member("A#b().","A#","b","api-b","doc-b");
+        var state=new ResidentSemanticState();state.admit(snapshot("before",owner,first,second));
+
+        assertThat(state.diff(snapshot("before",owner,first,second)).factMutations()).isZero();
+
+        var changed=member("A#b().","A#","b","api-b-changed","doc-b");
+        var delta=state.diff(snapshot("after",owner,first,changed));
+        assertThat(delta.changed()).extracting(SemanticFact::id).containsExactly("A#b().");
+        assertThat(delta.added()).isEmpty();assertThat(delta.removed()).isEmpty();
+    }
+
+    @Test void retainedUnitStateStoresOnlyCanonicalFactMembership(){
+        var state=new ResidentSemanticState();var owner=type("A#","A","api-A");var value=member("A#m().","A#","m","api-m","doc-m");
+        state.admit(snapshot("unit-state",owner,value));
+        var unit=state.unit("source:/src/A.java");
+        assertThat(unit.factIds()).containsExactlyInAnyOrder(owner.id(),value.id());
+        assertThat(state.symbol(value.id())).isSameAs(value);
+    }
+
+    @Test void canonicalFactIdentityIsStableAndFieldSensitive(){
+        var first=member("A#m().","A#","m","api-m","doc-a");
+        var same=member("A#m().","A#","m","api-m","doc-a");
+        var changed=member("A#m().","A#","m","api-m","doc-b");
+        assertThat(first.factIdentity()).isEqualTo(same.factIdentity());
+        assertThat(changed.factIdentity()).isNotEqualTo(first.factIdentity());
+    }
+
+    @Test void algebraicDomainsBindSemanticKeyAndCardinality(){
+        var first=new ResidentSemanticState();
+        first.admit(snapshot("one",member("A#m().","A#","m","api-shared","doc-shared"),member("A#n().","A#","n","api-other","doc-other")));
+        var second=new ResidentSemanticState();
+        second.admit(snapshot("two",member("A#m().","A#","m","api-other","doc-other"),member("A#n().","A#","n","api-shared","doc-shared")));
+        assertThat(first.identity().api()).isNotEqualTo(second.identity().api());
+        assertThat(first.identity().documentation()).isNotEqualTo(second.identity().documentation());
+
+        var fewer=new ResidentSemanticState();
+        fewer.admit(snapshot("three",member("A#m().","A#","m","api-shared","doc-shared")));
+        assertThat(first.identity().membership()).isNotEqualTo(fewer.identity().membership());
     }
 
     @Test void bodyOnlyTransitionAdvancesEpochWithoutChangingSemanticTree(){
@@ -47,7 +125,7 @@ class ResidentSemanticStateTest {
         var afterFact=member("A#m().","A#","m","api-m","doc-b");
         var delta=state.admit(snapshot("content-b",afterFact));var after=state.identity();
 
-        assertThat(delta.changed()).containsKey(afterFact.id());
+        assertThat(delta.changed()).extracting(SemanticFact::id).containsExactly(afterFact.id());
         assertThat(after.api()).isEqualTo(before.api());
         assertThat(after.documentation()).isNotEqualTo(before.documentation());
         assertThat(after.merkleRoot()).isNotEqualTo(before.merkleRoot());
@@ -65,7 +143,7 @@ class ResidentSemanticStateTest {
         var renamed=member("A#alpine().","A#","alpine","api-alpine","doc-alpine");
         var delta=state.admit(snapshot("two",type("A#","A","api-A"),renamed,beta));
         assertThat(delta.removed()).containsExactly("A#alpha().");
-        assertThat(delta.added()).containsKey("A#alpine().");
+        assertThat(delta.added()).extracting(SemanticFact::id).containsExactly("A#alpine().");
         assertThat(state.members("A#","al",10)).extracting(SemanticFact::name).containsExactly("alpine");
 
         state.admit(snapshot("three",type("A#","A","api-A"),renamed));
@@ -86,6 +164,40 @@ class ResidentSemanticStateTest {
         var changed=member("Base#m().","Base#","m","api-m-2","doc-m");
         state.admit(snapshot("content-c",base,sub,changed));
         assertThat(state.hierarchyApi("Sub#")).isNotEqualTo(first);
+    }
+
+    @Test void singleStaleUnitUsesOneAlgebraicFreshnessContribution(){
+        var state=new ResidentSemanticState();
+        var owner=type("A#","A","api-A");var member=member("A#m().","A#","m","api-m","doc-m");
+        state.admit(snapshot("content-a",owner,member));var original=state.identity();
+
+        assertThat(state.markSourceStale("/src/A.java","content-b")).isTrue();
+        assertThat(state.status()).containsEntry("semantic_stale_aggregate_cardinality",1L);
+        assertThat(state.markSourceStale("/src/A.java","content-b")).isFalse();
+
+        state.admit(snapshot("content-b",owner,member));
+        assertThat(state.status()).containsEntry("semantic_stale_aggregate_cardinality",0L);
+        assertThat(state.identity().merkleRoot()).isEqualTo(original.merkleRoot());
+    }
+
+    @Test void globalHierarchyUncertaintyIsOneGenerationFence(){
+        var state=new ResidentSemanticState();
+        var a=type("A#","A","api-A");
+        var b=type("B#","B","api-B");
+        state.admit(snapshotUnit("unit:a","content-a",a));
+        state.admit(snapshotUnit("unit:b","content-b",b));
+        long generation=((Number)state.status().get("semantic_uncertainty_generation")).longValue();
+
+        state.markHierarchyUncertain();
+
+        assertThat(state.status()).containsEntry("semantic_stale_units",0);
+        assertThat(((Number)state.status().get("semantic_uncertainty_generation")).longValue()).isEqualTo(generation+1);
+        assertThat(state.unitCurrent("unit:a",null)).isFalse();
+        assertThat(state.unitCurrent("unit:b",null)).isFalse();
+
+        state.admit(snapshotUnit("unit:a","content-a",a));
+        assertThat(state.unitCurrent("unit:a",null)).isTrue();
+        assertThat(state.unitCurrent("unit:b",null)).isFalse();
     }
 
     @Test void sourceStalenessInvalidatesHierarchyIdentityUntilBodyOnlyReadmission(){

@@ -40,6 +40,14 @@ type RunningServer = {
   metadata:Record<string,unknown>;
 };
 type DiagnosticRecord = { params:any; sequence:number; receivedNs:number };
+type DiagnosticWaiter = {
+  uri:string;
+  version:number;
+  afterSequence:number;
+  resolve:(params:any)=>void;
+  reject:(error:Error)=>void;
+  timer:ReturnType<typeof setTimeout>;
+};
 
 function nowNs(){ return Number(process.hrtime.bigint()); }
 
@@ -50,6 +58,7 @@ export abstract class LspScenarioHarness {
   private static running:RunningServer;
   private static openDocuments=new Map<string,number>();
   private static diagnostics:DiagnosticRecord[]=[];
+  private static diagnosticWaiters:DiagnosticWaiter[]=[];
   private static diagnosticSequence=0;
   private static milestones:Record<string,number>={};
   private static phaseMemory:Record<string,Memory>={};
@@ -66,7 +75,7 @@ export abstract class LspScenarioHarness {
     this.serverId=(process.env.SERVER??"jvmd")==="jdtls"?"jdtls":"jvmd";
     this.running=await startServer(this.fixtureRoot);
     this.milestones={...this.running.milestones};
-    this.diagnostics=[];this.diagnosticSequence=0;this.openDocuments.clear();
+    this.diagnostics=[];this.diagnosticWaiters=[];this.diagnosticSequence=0;this.openDocuments.clear();
     this.phaseMemory={};this.documentAdmissionStarted=false;
 
     let serviceReadyResolve:()=>void=()=>{};
@@ -78,7 +87,19 @@ export abstract class LspScenarioHarness {
       }
     });
     this.running.connection.onNotification("textDocument/publishDiagnostics",(params:any)=>{
-      this.diagnostics.push({params,sequence:++this.diagnosticSequence,receivedNs:nowNs()});
+      const record={params,sequence:++this.diagnosticSequence,receivedNs:nowNs()};
+      this.diagnostics.push(record);
+      for(const waiter of [...this.diagnosticWaiters]){
+        if(
+          record.sequence>waiter.afterSequence
+          &&params?.uri===waiter.uri
+          &&(params?.version===undefined||params.version===waiter.version)
+        ){
+          clearTimeout(waiter.timer);
+          this.diagnosticWaiters.splice(this.diagnosticWaiters.indexOf(waiter),1);
+          waiter.resolve(params);
+        }
+      }
     });
     this.running.connection.onRequest("workspace/configuration",(params:any)=>(params?.items??[]).map(()=>({})));
     this.running.connection.onRequest("client/registerCapability",()=>null);
@@ -255,17 +276,23 @@ export abstract class LspScenarioHarness {
   }
 
   private async waitForDiagnostics(uri:string,version:number,afterSequence:number){
-    const deadline=Date.now()+180000;
-    for(;;){
-      const found=LspScenarioHarness.diagnostics.find(row=>
-        row.sequence>afterSequence
-        &&row.params?.uri===uri
-        &&(row.params?.version===undefined||row.params.version===version)
-      );
-      if(found)return found.params;
-      if(Date.now()>deadline)throw new Error("Timed out waiting for diagnostics "+uri+" v"+version);
-      await new Promise(resolve=>setTimeout(resolve,10));
-    }
+    const existing=LspScenarioHarness.diagnostics.find(row=>
+      row.sequence>afterSequence
+      &&row.params?.uri===uri
+      &&(row.params?.version===undefined||row.params.version===version)
+    );
+    if(existing)return existing.params;
+    return new Promise<any>((resolve,reject)=>{
+      const waiter:DiagnosticWaiter={
+        uri,version,afterSequence,resolve,reject,
+        timer:setTimeout(()=>{
+          const index=LspScenarioHarness.diagnosticWaiters.indexOf(waiter);
+          if(index>=0)LspScenarioHarness.diagnosticWaiters.splice(index,1);
+          reject(new Error("Timed out waiting for diagnostics "+uri+" v"+version));
+        },180000),
+      };
+      LspScenarioHarness.diagnosticWaiters.push(waiter);
+    });
   }
 
   private async closeDocuments(){

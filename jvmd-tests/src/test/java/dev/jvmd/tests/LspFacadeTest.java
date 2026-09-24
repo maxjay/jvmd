@@ -50,7 +50,7 @@ class LspFacadeTest {
             String session=TestSupport.open(app,root);
             var completion=call(app,session,"textDocument/completion",use,useSource,useSource.indexOf("api.gre")+7,Map.of());
             JsonNode item=null;for(var candidate:completion.path("items"))if(candidate.path("label").asText().equals("greet")){item=candidate;break;}
-            assertThat(item).isNotNull();assertThat(item.has("documentation")).isFalse();assertThat(item.has("detail")).isFalse();
+            assertThat(item).isNotNull();assertThat(item.has("documentation")).isFalse();assertThat(item.path("detail").asText()).contains("greet");
             assertThat(((Map<?,?>)dev.jvmd.lsp.LspFacade.capabilities().get("completionProvider")).get("resolveProvider")).isEqualTo(true);
             var response=TestSupport.request(app.dispatcher(),"lsp.request",Map.of("session",session,"method","completionItem/resolve","params",item,"client",CLIENT));
             assertThat(response.has("error")).as(response.toPrettyString()).isFalse();

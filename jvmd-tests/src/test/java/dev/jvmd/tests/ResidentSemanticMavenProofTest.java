@@ -162,11 +162,17 @@ class ResidentSemanticMavenProofTest {
                     "changes",List.of(Map.of("text",narrowed))));
             scenarios.add(measure("maven_project_prefix_get",app,session,()->complete(app,session,caller,narrowed,"get")));
 
-            var budgetBeforeLsp=budgetCounters(app);
-            scenarios.add(measure("maven_project_lsp_initial_completion",app,session,()->lspComplete(app,session,caller,narrowed,"get")));
-            var budgetAfterLsp=budgetCounters(app);
-            assertThat(budgetAfterLsp.get("activations")-budgetBeforeLsp.get("activations"))
-                    .as("initial LSP completion must not require ResponseBudget paging").isZero();
+            var budgetBeforeLsp=budgetCounters(app);long lspAllocatedBefore=allocatedBytes(),lspStarted=System.nanoTime();
+            var lspResponse=lspComplete(app,session,caller,narrowed,"get");
+            long lspElapsed=System.nanoTime()-lspStarted,lspAllocatedAfter=allocatedBytes();var budgetAfterLsp=budgetCounters(app);
+            long lspActivations=budgetAfterLsp.get("activations")-budgetBeforeLsp.get("activations");
+            assertThat(lspActivations).as("initial LSP completion must not require ResponseBudget paging").isZero();
+            var lspProof=new LinkedHashMap<String,Object>();
+            lspProof.put("latency_ns",lspElapsed);
+            lspProof.put("thread_allocation_bytes",lspAllocatedBefore<0||lspAllocatedAfter<0?-1:lspAllocatedAfter-lspAllocatedBefore);
+            lspProof.put("serialized_response_bytes",Json.MAPPER.writeValueAsBytes(lspResponse).length);
+            lspProof.put("items",lspResponse.path("result").path("result").path("value").path("items").size());
+            lspProof.put("response_budget",delta(budgetBeforeLsp,budgetAfterLsp));
 
             String editedReceiver=insertMethod(receiverOriginal,"    public void benchmarkAddedMethod() {}");
             request(app,"document.open",Map.of("session",session,"path",receiver.toString(),"version",1,"text",editedReceiver));
@@ -176,6 +182,7 @@ class ResidentSemanticMavenProofTest {
             report.put("fixture",root.toString());report.put("receiver",receiver.toString());report.put("caller",caller.toString());
             report.put("baseline_main","3867271bf083c6c5b31be7b622fe4ef1f8a6e021");
             report.put("scenarios",scenarios);
+            report.put("lsp_initial_completion",lspProof);
             report.put("final_analyzer_counters",analyzerCounters(app,session));
             report.put("final_response_budget",budgetCounters(app));
             System.out.println("RESIDENT_SEMANTIC_MAVEN_BASELINE="+Json.MAPPER.writeValueAsString(report));

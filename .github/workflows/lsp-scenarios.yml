@@ -89,6 +89,12 @@ jobs:
           mvn -B -DskipTests install
           bash jvmd-dist/assemble.sh
 
+      - name: Measure JVMD machine daemon lifecycle
+        env:
+          FIXTURE_ROOT: ${{ runner.temp }}/apache-maven-fixture
+          MACHINE_REPORT_FILE: ${{ runner.temp }}/jvmd-machine-lifecycle.json
+        run: node benchmarks/lsp-scenarios/jvmd-machine-lifecycle.ts
+
       - name: Cache pinned JDTLS archive
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
@@ -130,6 +136,7 @@ jobs:
           path: |
             ${{ runner.temp }}/jdtls-report.json
             ${{ runner.temp }}/jvmd-report.json
+            ${{ runner.temp }}/jvmd-machine-lifecycle.json
 
       - name: Commit JDTLS semantic baseline
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

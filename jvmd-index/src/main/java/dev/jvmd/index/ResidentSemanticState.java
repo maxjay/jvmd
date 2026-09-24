@@ -51,6 +51,8 @@ public final class ResidentSemanticState {
     private final Map<String,SymbolDescription> descriptions=new HashMap<>();
     private final Map<String,SemanticSnapshot> units=new HashMap<>();
     private final Map<String,Aggregate> memberAggregates=new HashMap<>();
+    private final Map<String,Set<String>> directSupers=new HashMap<>(),directSubs=new HashMap<>();
+    private final Map<String,String> hierarchyApis=new HashMap<>();
     private long epoch,rangeEntriesRead,factMutations;
 
     public synchronized SemanticDelta diff(SemanticSnapshot next){return SemanticDelta.between(units.get(next.unit()),next);}
@@ -68,17 +70,19 @@ public final class ResidentSemanticState {
                 ||!delta.emptyFacts()||!delta.descriptionsChanged().isEmpty()||!delta.descriptionsRemoved().isEmpty();
         if(!transition)return;
 
+        var hierarchyAffected=new LinkedHashSet<String>();
         for(String id:delta.removed()){
-            var old=symbols.remove(id);if(old!=null)removeFact(old);
+            var old=symbols.remove(id);if(old!=null){beforeHierarchyMutation(old,hierarchyAffected);removeFact(old);}
         }
         for(var entry:delta.changed().entrySet()){
-            var old=symbols.get(entry.getKey());if(old!=null)removeFact(old);
-            symbols.put(entry.getKey(),entry.getValue());addFact(entry.getValue());
+            var old=symbols.get(entry.getKey());if(old!=null){beforeHierarchyMutation(old,hierarchyAffected);removeFact(old);}
+            symbols.put(entry.getKey(),entry.getValue());addFact(entry.getValue());afterHierarchyMutation(entry.getValue(),hierarchyAffected);
         }
         for(var entry:delta.added().entrySet()){
-            var old=symbols.put(entry.getKey(),entry.getValue());if(old!=null)removeFact(old);
-            addFact(entry.getValue());
+            var old=symbols.put(entry.getKey(),entry.getValue());if(old!=null){beforeHierarchyMutation(old,hierarchyAffected);removeFact(old);}
+            addFact(entry.getValue());afterHierarchyMutation(entry.getValue(),hierarchyAffected);
         }
+        recomputeHierarchyApis(hierarchyAffected);
         delta.descriptionsRemoved().forEach(descriptions::remove);
         descriptions.putAll(delta.descriptionsChanged());
 
@@ -115,6 +119,8 @@ public final class ResidentSemanticState {
     public synchronized Aggregate memberAggregate(String ownerId){
         return memberAggregates.getOrDefault(ownerId,Aggregate.ZERO);
     }
+    /** Constant-time validity identity for the effective API reachable from a receiver type. */
+    public synchronized String hierarchyApi(String typeId){return hierarchyApis.getOrDefault(typeId,EMPTY);}
 
     public synchronized Identity identity(){
         var aggregate=root==null?Aggregate.ZERO:root.aggregate;
@@ -124,7 +130,7 @@ public final class ResidentSemanticState {
 
     public synchronized void clear(){
         if(root==null&&symbols.isEmpty()&&descriptions.isEmpty()&&units.isEmpty())return;
-        root=null;symbols.clear();descriptions.clear();units.clear();memberAggregates.clear();epoch++;
+        root=null;symbols.clear();descriptions.clear();units.clear();memberAggregates.clear();directSupers.clear();directSubs.clear();hierarchyApis.clear();epoch++;
     }
 
     public synchronized Map<String,Object> status(){
@@ -135,7 +141,73 @@ public final class ResidentSemanticState {
                 Map.entry("semantic_namespace",identity.namespace()),Map.entry("semantic_documentation",identity.documentation()),
                 Map.entry("semantic_facts",symbols.size()),Map.entry("semantic_tree_entries",root==null?0:root.size),
                 Map.entry("semantic_units",units.size()),Map.entry("semantic_member_aggregates",memberAggregates.size()),
+                Map.entry("semantic_hierarchy_aggregates",hierarchyApis.size()),
                 Map.entry("semantic_fact_mutations",factMutations),Map.entry("semantic_tree_range_entries_read",rangeEntriesRead));
+    }
+
+    private void beforeHierarchyMutation(SemanticFact fact,Set<String> affected){
+        if(fact.member()&&fact.ownerId()!=null){affected.add(fact.ownerId());collectDescendants(fact.ownerId(),affected);}
+        if(fact.typeDeclaration()){affected.add(fact.id());collectDescendants(fact.id(),affected);unlinkHierarchy(fact.id());}
+    }
+    private void afterHierarchyMutation(SemanticFact fact,Set<String> affected){
+        if(fact.typeDeclaration()){linkHierarchy(fact);affected.add(fact.id());collectDescendants(fact.id(),affected);}
+        if(fact.member()&&fact.ownerId()!=null){affected.add(fact.ownerId());collectDescendants(fact.ownerId(),affected);}
+    }
+    private void collectDescendants(String root,Set<String> result){
+        var queue=new ArrayDeque<String>();queue.add(root);
+        while(!queue.isEmpty()){
+            String current=queue.removeFirst();
+            for(String child:directSubs.getOrDefault(current,Set.of()))if(result.add(child))queue.addLast(child);
+        }
+    }
+    private static Set<String> superIds(SemanticFact fact){
+        var result=new LinkedHashSet<String>();
+        for(var type:fact.directSupertypes()){
+            if(type instanceof SemanticType.Declared declared)result.add(declared.symbolId());
+            else if(type instanceof SemanticType.Intersection intersection)for(var bound:intersection.bounds())
+                if(bound instanceof SemanticType.Declared declared)result.add(declared.symbolId());
+        }
+        return Set.copyOf(result);
+    }
+    private void unlinkHierarchy(String typeId){
+        var old=directSupers.remove(typeId);
+        if(old!=null)for(String parent:old){
+            var children=directSubs.get(parent);
+            if(children!=null){
+                var next=new LinkedHashSet<>(children);next.remove(typeId);
+                if(next.isEmpty())directSubs.remove(parent);else directSubs.put(parent,Set.copyOf(next));
+            }
+        }
+        hierarchyApis.remove(typeId);
+    }
+    private void linkHierarchy(SemanticFact fact){
+        var parents=superIds(fact);directSupers.put(fact.id(),parents);
+        for(String parent:parents){
+            var children=new LinkedHashSet<>(directSubs.getOrDefault(parent,Set.of()));
+            children.add(fact.id());directSubs.put(parent,Set.copyOf(children));
+        }
+    }
+    private void recomputeHierarchyApis(Collection<String> affected){
+        for(String typeId:affected){
+            var type=symbols.get(typeId);
+            if(type==null||!type.typeDeclaration()){hierarchyApis.remove(typeId);continue;}
+            var reachable=new LinkedHashSet<String>();var queue=new ArrayDeque<String>();queue.add(typeId);
+            BigInteger sum=BigInteger.ZERO;long count=0;
+            while(!queue.isEmpty()){
+                String current=queue.removeFirst();if(!reachable.add(current))continue;
+                var declaration=symbols.get(current);
+                if(declaration!=null&&declaration.typeDeclaration()){
+                    sum=sum.add(point("hierarchy-type-api",declaration.apiIdentity().isBlank()?declaration.structuralSignature():declaration.apiIdentity())).mod(FIELD);count++;
+                }
+                var members=memberAggregates.get(current);
+                if(members!=null){sum=sum.add(members.api()).mod(FIELD);count++;}
+                for(String parent:directSupers.getOrDefault(current,Set.of())){
+                    sum=sum.add(point("hierarchy-edge",current+"\0"+parent)).mod(FIELD);count++;queue.addLast(parent);
+                }
+            }
+            String material="hierarchy-api-v1\0"+count+"\0"+String.format("%064x",sum);
+            hierarchyApis.put(typeId,Hashing.sha256(material.getBytes(StandardCharsets.UTF_8)));
+        }
     }
 
     private void addFact(SemanticFact fact){

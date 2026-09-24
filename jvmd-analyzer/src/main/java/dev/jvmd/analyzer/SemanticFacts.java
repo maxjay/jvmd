@@ -180,8 +180,8 @@ public final class SemanticFacts {
         if(!(mirror instanceof DeclaredType declared)||!(declared.asElement() instanceof TypeElement type))return;
         String id;try{id=identity.scip(type);}catch(IllegalArgumentException unresolved){return;}
         if(!seen.add(id))return;
-        String source=identity.sourceFile(type);
-        if(residentTypeCurrent.test(id,source))reused[0]++;
+        String binary=identity.binaryName(type);
+        if(residentTypeCurrent.test(id,binary))reused[0]++;
         else{
             var snapshot=snapshotForType(task,identity,type);snapshots.putIfAbsent(snapshot.unit(),snapshot);
         }

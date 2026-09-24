@@ -458,6 +458,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
 
     private DocumentSemanticCached qualifiedDocumentSemantic(Path path,String text,String patched,int start,int focusCursor,
                                                                String key,CompilerInputs.Snapshot observed,boolean force)throws Exception{
+        return qualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,observed,force,false,0);
+    }
+    private DocumentSemanticCached qualifiedDocumentSemantic(Path path,String text,String patched,int start,int focusCursor,
+                                                               String key,CompilerInputs.Snapshot observed,boolean force,boolean discovered,int supersededRetries)throws Exception{
         var caches=modules.get(context.generation());int version=Objects.requireNonNullElse(documents.version(path),-1);
         String content=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         var cached=caches.documentSemantics.get(path);
@@ -477,11 +481,16 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                     EditorQueries.MARKER,start);
         });
         var result=attributed.result();
-        if(!attributed.warnings().isEmpty())throw new IllegalStateException(String.join("; ",attributed.warnings()));
+        if(!attributed.warnings().isEmpty()){
+            boolean superseded=attributed.warnings().stream().allMatch(w->w.startsWith("diagnostics_superseded"));
+            if(superseded&&supersededRetries<1)
+                return qualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,inputSnapshot(),true,discovered,supersededRetries+1);
+            throw new IllegalStateException(String.join("; ",attributed.warnings()));
+        }
         if(attributed.tier()!=2)return null;
-        if(result==null&&!force){
+        if(result==null&&!discovered){
             compiler.discoverSourcePackages(completionDiscoveryPackages(text));compiler.resetSourceContext();
-            return qualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,inputSnapshot(),true);
+            return qualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,inputSnapshot(),true,true,supersededRetries);
         }
         if(result==null)return null;
         for(var snapshot:result.semanticSnapshots())admitDetachedSemantic(snapshot);
@@ -511,6 +520,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
 
     private DocumentSemanticCached unqualifiedDocumentSemantic(Path path,String text,String patched,int start,int focusCursor,
                                                                  String key,CompilerInputs.Snapshot observed,boolean force)throws Exception{
+        return unqualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,observed,force,false,0);
+    }
+    private DocumentSemanticCached unqualifiedDocumentSemantic(Path path,String text,String patched,int start,int focusCursor,
+                                                                 String key,CompilerInputs.Snapshot observed,boolean force,boolean discovered,int supersededRetries)throws Exception{
         var caches=modules.get(context.generation());int version=Objects.requireNonNullElse(documents.version(path),-1);
         String content=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         var cached=caches.documentSemantics.get(path);
@@ -528,11 +541,16 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                     EditorQueries.MARKER,start);
         });
         var result=attributed.result();
-        if(!attributed.warnings().isEmpty())throw new IllegalStateException(String.join("; ",attributed.warnings()));
+        if(!attributed.warnings().isEmpty()){
+            boolean superseded=attributed.warnings().stream().allMatch(w->w.startsWith("diagnostics_superseded"));
+            if(superseded&&supersededRetries<1)
+                return unqualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,inputSnapshot(),true,discovered,supersededRetries+1);
+            throw new IllegalStateException(String.join("; ",attributed.warnings()));
+        }
         if(attributed.tier()!=2)return null;
-        if(result==null&&!force){
+        if(result==null&&!discovered){
             compiler.discoverSourcePackages(completionDiscoveryPackages(text));compiler.resetSourceContext();
-            return unqualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,inputSnapshot(),true);
+            return unqualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,inputSnapshot(),true,true,supersededRetries);
         }
         if(result==null)return null;
         for(var snapshot:result.semanticSnapshots())admitDetachedSemantic(snapshot);

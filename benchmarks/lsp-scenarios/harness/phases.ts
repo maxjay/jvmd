@@ -3,8 +3,12 @@ import path from "node:path";
 
 export type PhaseName =
   | "startup"
+  | "machine_index"
   | "initialize"
-  | "workspace_ready"
+  | "service_ready"
+  | "session_open"
+  | "workspace_resolution"
+  | "workspace_index"
   | "document_admission"
   | "first_use"
   | "warmup"

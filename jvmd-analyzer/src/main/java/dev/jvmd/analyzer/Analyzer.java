@@ -553,8 +553,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         return semanticState().unitCurrent(unit,null);
     }
-    private boolean residentSemanticTypeCurrent(String typeId){
-        return residentSemanticUnitCurrent(semanticState().unitForFact(typeId));
+    private boolean residentSemanticTypeCurrent(String typeId,String sourceFile){
+        if(residentSemanticUnitCurrent(semanticState().unitForFact(typeId)))return true;
+        if(sourceFile!=null&&!sourceFile.isBlank()&&residentSemanticUnitCurrent("source:"+sourceFile))return true;
+        return typeId!=null&&!typeId.isBlank()&&residentSemanticUnitCurrent("type:"+typeId);
     }
 
     private String queryHierarchyApi(DocumentSemanticSnapshot.QueryContext query){

@@ -9,6 +9,7 @@ import javax.lang.model.type.*;
 import javax.lang.model.util.*;
 /** Implements 4.2: javac-resolved SCIP identity, erased descriptors and name paths. */
 public final class SymbolIdentity {
+    private final JavacTask task;
     private final Elements elements;
     private final Types types;
     private final Trees trees;
@@ -18,11 +19,17 @@ public final class SymbolIdentity {
     private final Map<String,String> sourceLocations=new HashMap<>();
     private final Map<Element,String> scips=new IdentityHashMap<>(),namePaths=new IdentityHashMap<>();
     private final Map<Element,String> gavs=new IdentityHashMap<>();
+    private final Map<Element,SemanticDeclaration> declarations=new IdentityHashMap<>();
     private final Map<Element,com.sun.source.util.TreePath> paths=new IdentityHashMap<>();
     public com.sun.source.util.TreePath path(Element element){if(!paths.containsKey(element))paths.put(element,trees.getPath(element));return paths.get(element);}
     public void remember(Element element,com.sun.source.util.TreePath path){if(element!=null)paths.put(element,path);}
     public SymbolIdentity(JavacTask task,String defaultGav,String jdkVersion,Function<String,String> coordinates){this(task,defaultGav,jdkVersion,coordinates,List.of());}
-    public SymbolIdentity(JavacTask task,String defaultGav,String jdkVersion,Function<String,String> coordinates,List<java.nio.file.Path> sources){this.sources=List.copyOf(sources);elements=task.getElements();types=task.getTypes();trees=Trees.instance(task);this.defaultGav=defaultGav;this.jdkVersion=jdkVersion;this.coordinates=coordinates;}
+    public SymbolIdentity(JavacTask task,String defaultGav,String jdkVersion,Function<String,String> coordinates,List<java.nio.file.Path> sources){this.task=Objects.requireNonNull(task);this.sources=List.copyOf(sources);elements=task.getElements();types=task.getTypes();trees=Trees.instance(task);this.defaultGav=defaultGav;this.jdkVersion=jdkVersion;this.coordinates=coordinates;}
+    public SemanticDeclaration declaration(Element element){
+        var value=declarations.get(element);
+        if(value==null){value=SemanticDeclaration.extract(task,this,element);declarations.put(element,value);}
+        return value;
+    }
     public String descriptor(TypeMirror type){
         type=types.erasure(type);
         return switch(type.getKind()){

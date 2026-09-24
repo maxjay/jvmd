@@ -2,6 +2,7 @@ package dev.jvmd.analyzer;
 
 import com.sun.source.tree.*;
 import com.sun.source.util.*;
+import dev.jvmd.core.AlgebraicAccumulator;
 import dev.jvmd.core.Hashing;
 import dev.jvmd.index.*;
 import java.nio.charset.StandardCharsets;
@@ -213,8 +214,8 @@ public final class SemanticFacts {
                 }catch(IllegalArgumentException unresolved){/* no stable semantic identity yet */}
             }
             String unit="type:"+declaration.id();
-            String content=Hashing.sha256(facts.values().stream().map(f->f.id()+"\0"+f.apiIdentity()+"\0"+f.documentationIdentity())
-                    .sorted().reduce("",(a,b)->a+"\n"+b).getBytes(StandardCharsets.UTF_8));
+            var contentAggregate=new AlgebraicAccumulator("semantic-type-content-v2");for(var fact:facts.values())contentAggregate.add(fact.id(),fact.factIdentity());
+            String content=contentAggregate.identity().hex();
             return snapshot(unit,declaration.sourceFile(),content,facts);
         }catch(IllegalArgumentException unresolved){
             return new SemanticSnapshot("type:unresolved:"+type.getQualifiedName(),null,"",Map.of(),Map.of(),"","","",Set.of());
@@ -289,9 +290,9 @@ public final class SemanticFacts {
     }
 
     private static SemanticSnapshot snapshot(String unit,String source,String content,Map<String,SemanticFact> facts){
-        String api=aggregate(facts.values().stream().map(SemanticFact::apiIdentity).toList());
-        String namespace=aggregate(facts.values().stream().map(SemanticFact::namespaceIdentity).toList());
-        String documentation=aggregate(facts.values().stream().map(SemanticFact::documentationIdentity).toList());
+        String api=aggregate("semantic-unit-api-v2",facts.values(),SemanticFact::apiIdentity);
+        String namespace=aggregate("semantic-unit-namespace-v2",facts.values(),SemanticFact::namespaceIdentity);
+        String documentation=aggregate("semantic-unit-documentation-v2",facts.values(),SemanticFact::documentationIdentity);
         var dependencies=new LinkedHashSet<String>();
         for(var fact:facts.values()){
             collect(fact.type(),dependencies);fact.directSupertypes().forEach(type->collect(type,dependencies));
@@ -308,8 +309,8 @@ public final class SemanticFacts {
         else if(type instanceof SemanticType.Intersection intersection)intersection.bounds().forEach(value->collect(value,result));
     }
 
-    private static String aggregate(List<String> identities){
-        return Hashing.sha256(String.join("\n",identities.stream().sorted().toList()).getBytes(StandardCharsets.UTF_8));
+    private static String aggregate(String domain,Collection<SemanticFact> facts,java.util.function.Function<SemanticFact,String> identity){
+        var aggregate=new AlgebraicAccumulator(domain);for(var fact:facts)aggregate.add(fact.id(),identity.apply(fact));return aggregate.identity().hex();
     }
     private static String sourcePath(CompilationUnitTree unit){
         try{return Path.of(unit.getSourceFile().toUri()).toAbsolutePath().normalize().toString();}

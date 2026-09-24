@@ -3,6 +3,7 @@ package dev.jvmd.analyzer;
 import com.sun.source.tree.*;
 import com.sun.source.util.*;
 import dev.jvmd.index.DocMarkdown;
+import dev.jvmd.index.SemanticFact;
 import java.nio.file.*;
 import java.util.*;
 import javax.lang.model.element.*;
@@ -19,7 +20,15 @@ public final class Bindings {
     /** Implements 4.4: resolved structural and source-code relationships. */
     public record Edge(String src,String dst,String kind) { }
     /** Implements 4.2: detached declarations, references and source dependencies. */
-    public record Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies) {
+    public record Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies,
+                           Map<String,SemanticFact> semanticFacts) {
+        public Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies){
+            this(symbols,occurrences,edges,dependencies,Map.of());
+        }
+        public Snapshot {
+            symbols=Map.copyOf(symbols);occurrences=List.copyOf(occurrences);edges=List.copyOf(edges);
+            dependencies=Set.copyOf(dependencies);semanticFacts=Map.copyOf(semanticFacts);
+        }
         public Map<String,Object> at(int offset){
             var occurrence=occurrences.stream().filter(o->o.start()<=offset&&offset<o.end()).min(Comparator.comparingInt(o->o.end()-o.start())).orElse(null);if(occurrence==null)return null;
             if(occurrence.importSite()!=null){
@@ -37,7 +46,7 @@ public final class Bindings {
         return capture(task,units,identity,requested,original,bodies,null);
     }
     public static Snapshot capture(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,Path requested,SourceText original,boolean bodies,Focusing.Span focus){
-        var trees=Trees.instance(task);var docs=DocTrees.instance(task);var symbols=new LinkedHashMap<String,Map<String,Object>>();var occurrences=new LinkedHashMap<String,Occurrence>();var edges=new LinkedHashSet<Edge>();var dependencies=new LinkedHashSet<Path>();
+        var trees=Trees.instance(task);var symbols=new LinkedHashMap<String,Map<String,Object>>();var semanticFacts=new LinkedHashMap<String,SemanticFact>();var occurrences=new LinkedHashMap<String,Occurrence>();var edges=new LinkedHashSet<Edge>();var dependencies=new LinkedHashSet<Path>();
         var texts=new HashMap<String,SourceText>();texts.put(requested.toUri().toString(),original);
         class Capture {
             SourceText source(CompilationUnitTree unit){return texts.computeIfAbsent(unit.getSourceFile().toUri().toString(),key->{try{return new SourceText(unit.getSourceFile().getCharContent(true).toString());}catch(Exception e){return new SourceText("");}});}
@@ -57,19 +66,32 @@ public final class Bindings {
                 if(element==null||element.asType().getKind()==TypeKind.ERROR)return null;
                 final String scip;try{scip=identity.scip(element);}catch(IllegalArgumentException unresolved){return null;}
                 if(symbols.containsKey(scip))return scip;
-                var row=new LinkedHashMap<String,Object>();row.put("scip",scip);row.put("name",identity.displayName(element));try{row.put("name_path",identity.namePath(element));}catch(IllegalArgumentException unresolved){row.put("name_path",identity.displayName(element));row.put("signature_complete",false);}row.put("kind",SymbolIdentity.kind(element));row.put("signature",identity.signature(element));row.put("gav",identity.gav(element));row.put("artifact",identity.gav(element));row.put("resolved",true);row.put("modifiers",element.getModifiers().stream().map(Object::toString).sorted().toList());
-                var declaring=identity.declaring(element);row.put("declaring",declaring==null?null:declaring.getQualifiedName().toString());row.put("fqn",declaring==null?null:identity.binaryName(declaring));
-                row.put("api",ApiFingerprint.declaration(element));
-                row.put("parameters",element instanceof ExecutableElement m?m.getParameters().stream().map(p->p.getSimpleName().toString()).toList():List.of());
-                row.put("type_parameters",element instanceof Parameterizable generic?generic.getTypeParameters().stream().map(Object::toString).toList():List.of());
-                try{row.put("erased_descriptor",element instanceof ExecutableElement method?identity.descriptor(method):element instanceof VariableElement variable?identity.descriptor(variable.asType()):null);}catch(IllegalArgumentException unresolved){row.put("erased_descriptor",null);row.put("signature_complete",false);}
+                SemanticDeclaration declaration;
+                try{declaration=identity.declaration(element);}
+                catch(IllegalArgumentException unresolved){
+                    var row=new LinkedHashMap<String,Object>();row.put("scip",scip);row.put("name",identity.displayName(element));
+                    try{row.put("name_path",identity.namePath(element));}catch(IllegalArgumentException ignored){row.put("name_path",identity.displayName(element));}
+                    row.put("kind",SymbolIdentity.kind(element));row.put("signature",identity.signature(element));row.put("gav",identity.gav(element));row.put("artifact",identity.gav(element));row.put("resolved",true);
+                    row.put("modifiers",element.getModifiers().stream().map(Object::toString).sorted().toList());row.put("signature_complete",false);
+                    var declaring=identity.declaring(element);row.put("declaring",declaring==null?null:declaring.getQualifiedName().toString());row.put("fqn",declaring==null?null:identity.binaryName(declaring));
+                    row.put("parameters",element instanceof ExecutableElement m?m.getParameters().stream().map(p->p.getSimpleName().toString()).toList():List.of());
+                    row.put("type_parameters",element instanceof Parameterizable generic?generic.getTypeParameters().stream().map(Object::toString).toList():List.of());
+                    row.put("erased_descriptor",null);String sourceFile=identity.sourceFile(element);row.put("file",sourceFile);row.put("source_file",sourceFile);row.put("doc",null);
+                    symbols.put(scip,Collections.unmodifiableMap(row));return scip;
+                }
+                var fact=declaration.fact();semanticFacts.putIfAbsent(fact.id(),fact);
+                var row=new LinkedHashMap<String,Object>();row.put("scip",fact.id());row.put("name",fact.name());row.put("name_path",fact.namePath());
+                row.put("kind",fact.kind());row.put("signature",fact.structuralSignature());row.put("gav",declaration.gav());row.put("artifact",declaration.gav());row.put("resolved",true);
+                row.put("modifiers",fact.modifiers().stream().sorted().toList());row.put("declaring",declaration.declaring());row.put("fqn",fact.fqn());
+                row.put("api",declaration.apiDeclaration());row.put("parameters",fact.parameterNames());row.put("type_parameters",declaration.typeParameterDisplays());
+                row.put("erased_descriptor",fact.erasedDescriptor());if(!declaration.signatureComplete())row.put("signature_complete",false);
                 if(element.getEnclosingElement() instanceof ExecutableElement)try{row.put("qualified_name_path",identity.qualifiedNamePath(element));}catch(IllegalArgumentException unresolved){}
-                var path=identity.path(element);String sourceFile=identity.sourceFile(element);if(sourceFile!=null)dependencies.add(Path.of(sourceFile));row.put("file",sourceFile);row.put("source_file",sourceFile);
+                var path=identity.path(element);String sourceFile=fact.sourceFile();if(sourceFile!=null)dependencies.add(Path.of(sourceFile));row.put("file",sourceFile);row.put("source_file",sourceFile);
                 if(path!=null){var unit=path.getCompilationUnit();var text=source(unit);int begin=start(unit,path.getLeaf()),finish=end(unit,path.getLeaf());var token=declaration(path,element);
                     row.put("start",begin);row.put("end",finish);row.put("source_start",begin);row.put("source_end",finish);row.put("range",text.range(begin,finish));
                     if(token!=null){row.put("name_start",token.start());row.put("name_end",token.end());row.put("name_range",text.range(token.start(),token.end()));row.put("line",text.position(token.start()).line()+1);row.put("character",text.position(token.start()).character());}
                     if(path.getLeaf() instanceof MethodTree method&&method.getBody()!=null){row.put("body_start",start(unit,method.getBody()));row.put("body_end",end(unit,method.getBody()));}
-                    var comment=docs.getDocCommentTree(path);row.put("doc",comment==null?null:DocMarkdown.render(comment.toString()));
+                    row.put("doc",declaration.documentation().isBlank()?null:DocMarkdown.render(declaration.documentation()));
                 }else row.put("doc",null);
                 symbols.put(scip,Collections.unmodifiableMap(row));return scip;
             }
@@ -161,6 +183,6 @@ public final class Bindings {
                 if(role.equals("writes")&&(parent instanceof CompoundAssignmentTree||parent instanceof UnaryTree)){String target=capture.symbol(e);if(container!=null&&target!=null)edges.add(new Edge(container,target,"reads"));}
             }
         }.scan(unit,null);
-        return new Snapshot(Collections.unmodifiableMap(symbols),List.copyOf(occurrences.values()),List.copyOf(edges),Set.copyOf(dependencies));
+        return new Snapshot(symbols,List.copyOf(occurrences.values()),List.copyOf(edges),Set.copyOf(dependencies),semanticFacts);
     }
 }

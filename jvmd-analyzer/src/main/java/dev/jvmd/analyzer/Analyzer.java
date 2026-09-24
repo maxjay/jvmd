@@ -301,7 +301,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             var identity=new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources());
             var captured=Bindings.capture(task,units,identity,file,sourceText(file,text),true,focus==null?null:focus.member().equals("declarations")?new Focusing.Span(cursor,cursor+1):new Focusing.Span(focus.start(),focus.end()));
             if(tier==2&&focus==null)for(var unit:units)try{
-                if(Path.of(unit.getSourceFile().toUri()).toAbsolutePath().normalize().equals(file)){semantic[0]=SemanticFacts.sourceSnapshot(task,identity,unit);break;}
+                if(Path.of(unit.getSourceFile().toUri()).toAbsolutePath().normalize().equals(file)){semantic[0]=SemanticFacts.sourceSnapshot(unit,captured.semanticFacts().values());break;}
             }catch(Exception ignored){}
             return captured;
         });
@@ -383,8 +383,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             for(var unit:units){
                 Path file=Path.of(unit.getSourceFile().toUri()).toAbsolutePath().normalize();String text=sources.get(file);
                 if(text!=null){
-                    snapshots.put(file,Bindings.capture(task,List.of(unit),identity,file,new SourceText(text),true));
-                    if(tier==2)semanticSnapshots.put(file,SemanticFacts.sourceSnapshot(task,identity,unit));
+                    var captured=Bindings.capture(task,List.of(unit),identity,file,new SourceText(text),true);snapshots.put(file,captured);
+                    if(tier==2)semanticSnapshots.put(file,SemanticFacts.sourceSnapshot(unit,captured.semanticFacts().values()));
                 }
             }
             return snapshots;

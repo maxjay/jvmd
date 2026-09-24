@@ -12,6 +12,25 @@ import static org.assertj.core.api.Assertions.*;
 @Tag("phase-4")
 class SemanticFactLifetimeTest {
     @TempDir Path root;
+    @Test void bindingsAndResidentSnapshotShareCanonicalDeclarationObjects()throws Exception {
+        Path file=root.resolve("Canonical.java");
+        String text="class Canonical<T> { /** docs */ T value(T input){return input;} int field; }";Files.writeString(file,text);
+        try(var pool=new CompilerPool()){
+            pool.configure("canonical","25",List.of(),List.of(root),null,128L*1024*1024);
+            var outcome=pool.query(file,text,2,(task,units,tier)->{
+                var identity=new SymbolIdentity(task,"test:app:1","25",_->"test:app:1",List.of(root));
+                var captured=Bindings.capture(task,units,identity,file,new SourceText(text),true);
+                var semantic=SemanticFacts.sourceSnapshot(units.getFirst(),captured.semanticFacts().values());
+                boolean same=semantic.facts().entrySet().stream().allMatch(entry->captured.semanticFacts().get(entry.getKey())==entry.getValue());
+                return Map.of("same",same,"resident",semantic.facts().size(),"captured",captured.semanticFacts().size());
+            });
+            assertThat(outcome.warnings()).isEmpty();
+            assertThat(outcome.result()).containsEntry("same",true);
+            assertThat(((Number)outcome.result().get("resident")).intValue()).isPositive();
+            assertThat(((Number)outcome.result().get("captured")).intValue()).isGreaterThanOrEqualTo(((Number)outcome.result().get("resident")).intValue());
+        }
+    }
+
     @Test void zeroDecodedBudgetRetainsFactsAndOldReadRevisionAcrossEditsAndDeletion()throws Exception {
         Path api=root.resolve("Api.java"),use=root.resolve("Use.java"),other=root.resolve("Other.java");
         Files.writeString(api,"class Api { static int a(){return 1;} static int b(){return 2;} }");

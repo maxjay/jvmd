@@ -1,5 +1,6 @@
 package dev.jvmd.analyzer;
 
+import dev.jvmd.core.AlgebraicAccumulator;
 import dev.jvmd.core.Hashing;
 import dev.jvmd.core.Json;
 import java.nio.file.Path;
@@ -13,6 +14,17 @@ public final class ApiFingerprint {
     private ApiFingerprint(){}
 
     public static String of(Bindings.Snapshot snapshot,Path source){
+        if(!snapshot.semanticFacts().isEmpty()){
+            String file=source.toAbsolutePath().normalize().toString();var aggregate=new AlgebraicAccumulator("source-api-v2");
+            for(var fact:snapshot.semanticFacts().values()){
+                if(fact.sourceFile()==null)continue;
+                Path candidate;try{candidate=Path.of(fact.sourceFile()).toAbsolutePath().normalize();}catch(Exception ignored){continue;}
+                if(!candidate.toString().equals(file)||Set.of("local","local_variable","resource_variable","exception_parameter","binding_variable","parameter","type_parameter").contains(fact.kind()))continue;
+                if(fact.modifiers().contains("private"))continue;
+                aggregate.add(fact.id(),fact.apiIdentity());
+            }
+            return aggregate.identity().hex();
+        }
         String file=source.toAbsolutePath().normalize().toString();var declarations=new ArrayList<Map<String,Object>>();
         for(var symbol:snapshot.symbols().values()){
             Object sourceFile=symbol.get("source_file");if(sourceFile==null)continue;

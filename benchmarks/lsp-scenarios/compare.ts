@@ -12,7 +12,17 @@ function completionCorrect(report:any,state:"firstUse"|"steady"){
 }
 function timing(report:any,state:"firstUse"|"steady"){
   if(state==="firstUse")return report.operations.completion.firstUse.metrics.latencyMs;
-  return report.operations.completion.stats;
+  return report.operations.completion.correctStats??report.operations.completion.stats;
+}
+function displayTiming(report:any,state:"firstUse"|"steady"){
+  const correct=completionCorrect(report,state);
+  if(state==="firstUse"){
+    const value=fmt(timing(report,state));
+    return correct?value:value+" diagnostic";
+  }
+  const stats=timing(report,state);
+  const value="p50 "+fmt(stats.p50Ms)+" / p95 "+fmt(stats.p95Ms);
+  return correct?value:value+" diagnostic";
 }
 
 if(jdtls.phaseModel.defaults.warmup!==jvmd.phaseModel.defaults.warmup)
@@ -28,12 +38,10 @@ const startup=[
   ["Process → first completion (diagnostic timing)",jdtls.coldEndToEnd.diagnosticMs,jvmd.coldEndToEnd.diagnosticMs],
 ];
 const query=[
-  ["completion","first_use",fmt(timing(jdtls,"firstUse")),fmt(timing(jvmd,"firstUse")),
+  ["completion","first_use",displayTiming(jdtls,"firstUse"),displayTiming(jvmd,"firstUse"),
     completionCorrect(jdtls,"firstUse")?"correct":"incorrect",
     completionCorrect(jvmd,"firstUse")?"correct":"incorrect"],
-  ["completion","steady",
-    "p50 "+fmt(timing(jdtls,"steady").p50Ms)+" / p95 "+fmt(timing(jdtls,"steady").p95Ms),
-    "p50 "+fmt(timing(jvmd,"steady").p50Ms)+" / p95 "+fmt(timing(jvmd,"steady").p95Ms),
+  ["completion","steady",displayTiming(jdtls,"steady"),displayTiming(jvmd,"steady"),
     completionCorrect(jdtls,"steady")?"correct":"incorrect",
     completionCorrect(jvmd,"steady")?"correct":"incorrect"],
 ];

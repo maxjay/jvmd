@@ -302,3 +302,33 @@ test("LSP does not pre-admit unrelated diagnostics ahead of active interactive w
   await delay(260);assert.equal(diagnosticCalls,1);
   await bridge.close();
 });
+
+test("LSP admits diagnostics by the absolute max deferral under sustained short interactive traffic",async()=>{
+  const sent:any[]=[];let completionCalls=0,diagnosticCalls=0,diagnosticAtCompletion=-1;
+  const client:any={call:async(method:string,params:any)=>{
+    if(method==="session.open")return {result:{session:"s1"}};
+    if(method==="lsp.request"&&params.method==="initialize")return envelope({capabilities:{}});
+    if(method==="lsp.request"&&params.method==="textDocument/completion"){
+      completionCalls++;await delay(5);return envelope({isIncomplete:false,items:[{label:"ok"}]});
+    }
+    if(method==="lsp.diagnostics"){
+      diagnosticCalls++;diagnosticAtCompletion=completionCalls;
+      return envelope({uri:params.uri,version:1,diagnostics:[]});
+    }
+    return envelope({});
+  }};
+  const bridge=new LspBridge(
+    async()=>client,"/repo",message=>sent.push(message),undefined,
+    {diagnosticDebounceMs:20,maxDiagnosticDeferralMs:60},
+  );
+  await bridge.handle({jsonrpc:"2.0",id:1,method:"initialize",params:{}});
+  await bridge.handle({jsonrpc:"2.0",method:"textDocument/didOpen",params:{textDocument:{uri:"file:///repo/A.java",languageId:"java",version:1,text:"class A {}"}}});
+  for(let id=2;id<22;id++){
+    await bridge.handle({jsonrpc:"2.0",id,method:"textDocument/completion",params:{textDocument:{uri:"file:///repo/A.java"},position:{line:0,character:5}}});
+  }
+  assert.equal(diagnosticCalls,1);
+  assert.ok(diagnosticAtCompletion>0&&diagnosticAtCompletion<20,
+    "diagnostics must be admitted before sustained short interactive traffic ends");
+  assert.ok(sent.some(x=>x.method==="textDocument/publishDiagnostics"));
+  await bridge.close();
+});

@@ -144,11 +144,11 @@ class ResidentSemanticBaselineProofTest {
             scenarios.add(measure("initial_large_member_completion",analyzer,()->complete(analyzer,use,source,"member")));
             scenarios.add(measure("warm_unchanged_repeat",analyzer,()->complete(analyzer,use,source,"member")));
 
-            String narrowed=caller("member0",2);
+            String narrowed=caller("member0",1);
             documents.change(use,2,List.of(new Documents.Change(null,narrowed)));analyzer.changed(use,documents.hash(use));analyzer.documents(documents);
             scenarios.add(measure("prefix_narrowing_member0",analyzer,()->complete(analyzer,use,narrowed,"member0")));
 
-            String narrower=caller("member09",3);
+            String narrower=caller("member09",1);
             documents.change(use,3,List.of(new Documents.Change(null,narrower)));analyzer.changed(use,documents.hash(use));analyzer.documents(documents);
             scenarios.add(measure("prefix_narrowing_member09",analyzer,()->complete(analyzer,use,narrower,"member09")));
 

@@ -300,6 +300,17 @@ public final class Issue36SemanticProofTest {
         return null;
     }
 
+    private static Object findMapValue(Object value,String mapKey,String entryKey){
+        if(value instanceof Map<?,?> map){
+            Object candidate=map.get(mapKey);
+            if(candidate instanceof Map<?,?> values&&values.containsKey(entryKey))return values.get(entryKey);
+            for(Object nested:map.values()){Object found=findMapValue(nested,mapKey,entryKey);if(found!=null)return found;}
+        }else if(value instanceof Collection<?> values){
+            for(Object nested:values){Object found=findMapValue(nested,mapKey,entryKey);if(found!=null)return found;}
+        }
+        return null;
+    }
+
     private static Object bindingSummary(Analyzer analyzer,Path file,String text)throws Exception{
         var answer=analyzer.bindings(file,text,null);
         var out=new LinkedHashMap<String,Object>();out.put("tier",answer.tier());out.put("warnings",answer.warnings());

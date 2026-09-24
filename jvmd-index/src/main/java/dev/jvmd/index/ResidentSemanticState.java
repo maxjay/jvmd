@@ -156,6 +156,18 @@ public final class ResidentSemanticState {
 
     public synchronized SemanticFact symbol(String id){return symbols.get(id);}
     public synchronized SemanticUnitState unit(String unit){return units.get(unit);}
+    /** Resolve a canonical declaration to the retained semantic unit that owns it. */
+    public synchronized String unitForFact(String id){
+        var fact=symbols.get(id);if(fact==null)return null;
+        if(fact.sourceFile()!=null&&!fact.sourceFile().isBlank()){
+            String sourceUnit="source:"+fact.sourceFile();
+            if(units.containsKey(sourceUnit))return sourceUnit;
+        }
+        String typeUnit="type:"+id;
+        if(units.containsKey(typeUnit))return typeUnit;
+        for(var entry:units.entrySet())if(entry.getValue().facts().contains(id))return entry.getKey();
+        return null;
+    }
     public synchronized boolean unitCurrent(String unit,String contentIdentity){
         var state=units.get(unit);if(state==null||staleUnits.containsKey(unit)
                 ||state.uncertaintyGeneration()!=uncertaintyGeneration)return false;

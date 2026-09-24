@@ -464,7 +464,8 @@ def run(a, server, repetition, mode, build):
     fixture = create(root / "fixture", a.java_home, a.targets, a.sources)
     write(root / "fixture.json", fixture)
     report = {
-        "schema": 2,
+        "schema": 3,
+        "phase_model": PHASE_MODEL["schema"],
         "server": server,
         "mode": mode,
         "iteration": repetition,
@@ -476,14 +477,20 @@ def run(a, server, repetition, mode, build):
     }
     client = None
     try:
-        before = time.monotonic_ns()
         client = start(a, server, root, fixture, build, mode)
         report["preparation"] = prepare(client, fixture, server, a.timeout, report)
-        report["preparation"]["process_start_to_ready_ms"] = (time.monotonic_ns() - before) / 1e6
         operations = fixture["operations"]
         shift = repetition % len(operations)
         operations = operations[shift:] + operations[:shift]
-        for state, count in [("first", 1), ("warmup", a.warmup), ("warm", a.samples)]:
+        report["operation_order"] = [
+            {"operation": operation["operation"], "target": operation["target"]} for operation in operations
+        ]
+
+        first_use_seen = []
+        first_action = None
+        phase_counts = [("first_use", 1), ("warmup", a.warmup), ("steady", a.samples)]
+        for state, count in phase_counts:
+            report["preparation"]["milestones_ns"][state + "_started"] = time.monotonic_ns()
             for sample in range(count):
                 for operation in operations:
                     ident = f'{root.name}:{state}:{sample}:{operation["operation"]}:{operation["target"]}'
@@ -501,6 +508,8 @@ def run(a, server, repetition, mode, build):
                         "start_ns": began,
                         "outcome": "error",
                     }
+                    if state == "first_use":
+                        row["preceding_first_use_operations"] = list(first_use_seen)
                     try:
                         result, elapsed = client.call(operation["method"], operation["params"], a.timeout)
                         row.update(result=result, latency_ms=elapsed, response_ns=time.monotonic_ns())
@@ -523,8 +532,32 @@ def run(a, server, repetition, mode, build):
                     except Exception as error:
                         row.update(outcome="error", error=repr(error))
                     row["end_ns"] = time.monotonic_ns()
+                    if first_action is None:
+                        first_action = row
                     report["actions"].append(row)
+                    if state == "first_use":
+                        first_use_seen.append(
+                            {"operation": operation["operation"], "target": operation["target"]}
+                        )
                     write(root / "report.json", report)
+            finished = time.monotonic_ns()
+            report["preparation"]["milestones_ns"][state + "_finished"] = finished
+            report["preparation"]["memory"]["post_" + state] = client.memory_snapshot()
+
+        milestones = report["preparation"]["milestones_ns"]
+        report["preparation"]["milestones_ms"] = {
+            name + "_ms": _offset_ms(client, value) for name, value in milestones.items()
+        }
+        if first_action and first_action.get("response_ns"):
+            report["diagnostic_cold_end_to_end_ms"] = (
+                first_action["response_ns"] - client.spawn_ns
+            ) / 1e6
+            report["cold_end_to_end_ms"] = (
+                report["diagnostic_cold_end_to_end_ms"]
+                if first_action["outcome"] == "correct"
+                else None
+            )
+            report["cold_end_to_end_correct"] = first_action["outcome"] == "correct"
         report["outcome"] = (
             "correct" if all(row["outcome"] == "correct" for row in report["actions"]) else "failed"
         )

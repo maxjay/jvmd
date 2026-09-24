@@ -253,10 +253,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     public void resolvedContribution(FileSemanticContribution value){if(value!=null)resolveContribution(value);}
     public Set<Path> pendingPrerequisites(Path file){return dependencies.semantic().prerequisites(file);}
     public void changed(Path path,String hash){
-        path=path.toAbsolutePath().normalize();compiler.observeSources(Set.of(path));conditionallyInvalidate(path,dependencies.changed(path,hash));
+        path=path.toAbsolutePath().normalize();compiler.observeSources(Set.of(path));observeResidentSourceTransitions();conditionallyInvalidate(path,dependencies.changed(path,hash));
     }
     public void changed(Path path){
-        path=path.toAbsolutePath().normalize();compiler.observeSources(Set.of(path));conditionallyInvalidate(path,dependencies.changed(path));
+        path=path.toAbsolutePath().normalize();compiler.observeSources(Set.of(path));observeResidentSourceTransitions();conditionallyInvalidate(path,dependencies.changed(path));
         // An unresolved lookup has no declaration edge; an API change will invalidate unresolved diagnostic states after attribution.
         focused.entrySet().removeIf(e->e.getValue().result().diagnostics().stream().anyMatch(d->d.kind().equals("ERROR")));
         outlines.entrySet().removeIf(e->Json.MAPPER.valueToTree(e.getValue().result()).path("diagnostics").findValuesAsText("kind").contains("ERROR"));

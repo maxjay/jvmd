@@ -19,10 +19,13 @@ public final class EditorQueries {
     }
     public static final class CompletionTiming {
         private long candidateNanos,rowNanos,docNanos,sortNanos,totalNanos;
-        private int candidates,rows,docs;
+        private int candidates,rows,docs,getAllMembersCalls,scopeTraversals,scipComputations,signatureComputations,asMemberOfCalls,sorts,sortInputs;
         long candidateNanos(){return candidateNanos;} long rowNanos(){return rowNanos;} long docNanos(){return docNanos;}
         long sortNanos(){return sortNanos;} long totalNanos(){return totalNanos;}
         int candidates(){return candidates;} int rows(){return rows;} int docs(){return docs;}
+        int getAllMembersCalls(){return getAllMembersCalls;} int scopeTraversals(){return scopeTraversals;}
+        int scipComputations(){return scipComputations;} int signatureComputations(){return signatureComputations;}
+        int asMemberOfCalls(){return asMemberOfCalls;} int sorts(){return sorts;} int sortInputs(){return sortInputs;}
     }
     private EditorQueries() { }
     private static TreePath marker(JavacTask task,List<CompilationUnitTree> units){
@@ -60,10 +63,11 @@ public final class EditorQueries {
     }
     private static Map<String,Object> row(JavacTask task,SymbolIdentity identity,Element element,DeclaredType receiver){return row(task,identity,element,receiver,null);}
     private static Map<String,Object> row(JavacTask task,SymbolIdentity identity,Element element,DeclaredType receiver,CompletionTiming timing){
-        var value=new LinkedHashMap<String,Object>();value.put("scip",identity.scip(element));value.put("name",identity.displayName(element));value.put("name_path",identity.namePath(element));value.put("kind",SymbolIdentity.kind(element));value.put("signature",identity.signature(element));
+        var value=new LinkedHashMap<String,Object>();String scip=identity.scip(element);if(timing!=null)timing.scipComputations++;String signature=identity.signature(element);if(timing!=null)timing.signatureComputations++;
+        value.put("scip",scip);value.put("name",identity.displayName(element));value.put("name_path",identity.namePath(element));value.put("kind",SymbolIdentity.kind(element));value.put("signature",signature);
         String sourceFile=identity.sourceFile(element);if(sourceFile!=null)value.put("source_file",sourceFile);
         value.put("modifiers",element.getModifiers().stream().map(Object::toString).sorted().toList());
-        TypeMirror member=element.asType();if(receiver!=null&&element.getEnclosingElement() instanceof TypeElement)member=task.getTypes().asMemberOf(receiver,element);
+        TypeMirror member=element.asType();if(receiver!=null&&element.getEnclosingElement() instanceof TypeElement){if(timing!=null)timing.asMemberOfCalls++;member=task.getTypes().asMemberOf(receiver,element);}
         if(element instanceof ExecutableElement method&&member instanceof ExecutableType executable){
             var parameters=new ArrayList<Map<String,Object>>();var label=new StringBuilder(identity.displayName(element)).append('(');
             for(int i=0;i<method.getParameters().size();i++){
@@ -106,10 +110,10 @@ public final class EditorQueries {
             String sourceType=sourceSimpleType(trees,selectedElement);if(sourceType!=null)nameResolutionNames.add(sourceType);
             if(type instanceof TypeVariable variable)type=variable.getUpperBound();
             hierarchy(task,identity,type,semanticDependencies,hierarchySeen);
-            if(type instanceof DeclaredType declared){receiver=declared;candidates.addAll(task.getElements().getAllMembers((TypeElement)declared.asElement()));staticOnly=selectedElement instanceof TypeElement;}
+            if(type instanceof DeclaredType declared){receiver=declared;if(timing!=null)timing.getAllMembersCalls++;candidates.addAll(task.getElements().getAllMembers((TypeElement)declared.asElement()));staticOnly=selectedElement instanceof TypeElement;}
         }else{
-            for(Scope current=scope;current!=null;current=current.getEnclosingScope())current.getLocalElements().forEach(candidates::add);
-            if(scope.getEnclosingClass()!=null){receiver=(DeclaredType)scope.getEnclosingClass().asType();hierarchy(task,identity,receiver,semanticDependencies,hierarchySeen);candidates.addAll(task.getElements().getAllMembers(scope.getEnclosingClass()));}
+            for(Scope current=scope;current!=null;current=current.getEnclosingScope()){if(timing!=null)timing.scopeTraversals++;current.getLocalElements().forEach(candidates::add);}
+            if(scope.getEnclosingClass()!=null){receiver=(DeclaredType)scope.getEnclosingClass().asType();hierarchy(task,identity,receiver,semanticDependencies,hierarchySeen);if(timing!=null)timing.getAllMembersCalls++;candidates.addAll(task.getElements().getAllMembers(scope.getEnclosingClass()));}
             staticOnly=scope.getEnclosingMethod()!=null&&scope.getEnclosingMethod().getModifiers().contains(Modifier.STATIC);
         }
         if(timing!=null){timing.candidateNanos+=System.nanoTime()-candidatesStarted;timing.candidates+=candidates.size();}
@@ -128,7 +132,7 @@ public final class EditorQueries {
             catch(IllegalArgumentException unresolved){/* Incomplete error types do not have a stable identity. */}
             finally{if(timing!=null)timing.rowNanos+=System.nanoTime()-rowStarted;}
         }
-        long sortStarted=System.nanoTime();var sorted=result.values().stream().sorted(Comparator.comparing(r->r.get("label").toString())).toList();
+        long sortStarted=System.nanoTime();if(timing!=null){timing.sorts++;timing.sortInputs+=result.size();}var sorted=result.values().stream().sorted(Comparator.comparing(r->r.get("label").toString())).toList();
         if(timing!=null)timing.sortNanos+=System.nanoTime()-sortStarted;
         return new CompletionResult(sorted,semanticDependencies,nameResolutionNames);
         }finally{if(timing!=null)timing.totalNanos+=System.nanoTime()-totalStarted;}

@@ -110,7 +110,9 @@ class ResidentCompletionCorrectnessTest {
         try(var analyzer=new Analyzer()){
             analyzer.configure(context(),null,256L*1024*1024);
             var items=complete(analyzer,use,source,"api.");
-            var values=new ArrayList<JsonNode>();var fields=new ArrayList<JsonNode>(),overloads=new ArrayList<JsonNode>();
+            var values=new ArrayList<JsonNode>();
+            var fields=new ArrayList<JsonNode>();
+            var overloads=new ArrayList<JsonNode>();
             for(var item:items){
                 if(item.path("name").asText().equals("value"))values.add(item);
                 if(item.path("name").asText().equals("field"))fields.add(item);

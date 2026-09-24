@@ -127,12 +127,7 @@ export abstract class LspScenarioHarness {
     this.milestones.initialized_sent=nowNs();
 
     if(this.serverId==="jdtls")await serviceReady;
-    else this.milestones.service_ready=Math.max(
-      this.milestones.daemon_index_ready??this.milestones.initialize_received,
-      this.milestones.initialize_received,
-    );
-    this.milestones.workspace_ready=nowNs();
-    this.phaseMemory.workspace_ready=memory(this.running);
+    this.phaseMemory.pre_document_admission=memory(this.running);
   }
 
   static async afterAll(){
@@ -337,7 +332,7 @@ export abstract class LspScenarioHarness {
     const origin=LspScenarioHarness.milestones.process_spawn;
     const m=LspScenarioHarness.milestones;
     assert(
-      orderedMilestones(m,["process_spawn","initialize_received","workspace_ready","documents_admitted","first_use_started","first_use_finished"]),
+      orderedMilestones(m,["process_spawn","initialize_received","documents_admitted","first_use_started","first_use_finished"]),
       "benchmark lifecycle milestones are out of order",
     );
     return {
@@ -345,15 +340,18 @@ export abstract class LspScenarioHarness {
       milestonesMs:Object.fromEntries(Object.entries(m).map(([name,value])=>[name,elapsedMs(origin,value)])),
       initializeMs:(m.initialize_received-m.initialize_sent)/1e6,
       processToInitializeResponseMs:(m.initialize_received-m.process_spawn)/1e6,
-      processToWorkspaceReadyMs:(m.workspace_ready-m.process_spawn)/1e6,
-      initializeToWorkspaceReadyMs:(m.workspace_ready-m.initialize_received)/1e6,
+      serviceReadyMs:m.service_ready===undefined?null:(m.service_ready-m.process_spawn)/1e6,
+      machineIndexReadyMs:m.daemon_index_ready===undefined?null:(m.daemon_index_ready-m.process_spawn)/1e6,
+      documentsAdmittedFromProcessMs:(m.documents_admitted-m.process_spawn)/1e6,
       documentAdmissionMs:(m.documents_admitted-m.document_admission_started)/1e6,
+      sessionOpen:"not directly observable through the external jvmd-lsp process; see jvmd-machine-lifecycle report for exact native RPC timing",
+      workspaceResolution:"not directly timestamped by CMP-01; see jvmd-machine-lifecycle resolver evidence",
+      workspaceIndexReady:"unavailable for JVMD: local module refresh is asynchronous and no all-current barrier is exposed",
       memory:LspScenarioHarness.phaseMemory,
-      readiness:{
-        contract:"normal service/workspace-ready boundary without querying the measured completion target",
-        evidence:LspScenarioHarness.serverId==="jdtls"
-          ?["language/status ServiceReady"]
-          :["JVMD daemon index ready with initial scan","LSP initialize/session open complete"],
+      nativeReadiness:{
+        jdtlsServiceReady:m.service_ready===undefined?null:elapsedMs(origin,m.service_ready),
+        jvmdMachineIndexReady:m.daemon_index_ready===undefined?null:elapsedMs(origin,m.daemon_index_ready),
+        equivalence:"none claimed; these are server-native milestones at different architectural layers",
         targetQueried:false,
       },
       documentAdmission:{
@@ -376,10 +374,12 @@ export abstract class LspScenarioHarness {
       },
       lifecycle:{
         process:"fresh",
-        stateDirectory:"fresh",
-        workspaceIndex:"fresh server state",
-        documents:"freshly admitted after workspace readiness",
-        semanticTarget:"not queried during readiness",
+        daemon:LspScenarioHarness.serverId==="jvmd"?"fresh machine daemon":"fresh language-server process",
+        machineIndex:LspScenarioHarness.serverId==="jvmd"?"empty benchmark state (machine_cold)":"n/a",
+        workspace:"first open",
+        localWorkspaceState:"fresh/unknown",
+        documents:"opened after server-native readiness; admission is measured separately",
+        semanticTarget:"not queried before first_use",
         diagnosticsWaitedBeforeFirstUse:true,
         warmupCount:PHASE_MODEL.defaults.warmup,
         steadySamples:PHASE_MODEL.defaults.steady_samples,
@@ -504,8 +504,10 @@ function writeSummary(report:any){
     "| --- | ---: |",
     "| Initialize request | "+report.lifecycle.initializeMs.toFixed(2)+" |",
     "| Process → initialize response | "+report.lifecycle.processToInitializeResponseMs.toFixed(2)+" |",
-    "| Process → workspace ready | "+report.lifecycle.processToWorkspaceReadyMs.toFixed(2)+" |",
-    "| Document admission | "+report.lifecycle.documentAdmissionMs.toFixed(2)+" |",
+    "| JDTLS ServiceReady | "+(report.lifecycle.serviceReadyMs?.toFixed(2)??"n/a")+" |",
+    "| JVMD machine index ready | "+(report.lifecycle.machineIndexReadyMs?.toFixed(2)??"n/a")+" |",
+    "| Process → documents admitted | "+report.lifecycle.documentsAdmittedFromProcessMs.toFixed(2)+" |",
+    "| Document admission interval | "+report.lifecycle.documentAdmissionMs.toFixed(2)+" |",
     "| Process → first-use response (diagnostic timing) | "+(report.coldEndToEnd.diagnosticMs?.toFixed(2)??"-")+" |",
     "",
     "### Completion",
@@ -520,7 +522,7 @@ function writeSummary(report:any){
     "",
     "| State | RSS MB |",
     "| --- | ---: |",
-    "| Workspace ready | "+mb(report.lifecycle.memory.workspace_ready.totalKb)+" |",
+    "| Pre-document admission | "+mb(report.lifecycle.memory.pre_document_admission.totalKb)+" |",
     "| Documents admitted | "+mb(report.lifecycle.memory.documents_admitted.totalKb)+" |",
     "| After first use | "+mb(report.lifecycle.memory.post_first_use.totalKb)+" |",
     "| After steady | "+mb(report.lifecycle.memory.post_steady.totalKb)+" |",

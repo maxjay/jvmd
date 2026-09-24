@@ -15,8 +15,11 @@ class ResidentSemanticStateTest {
                 "p.A/"+name+"()","p.A",type,List.of(),List.of(),List.of(),false,api,"ns-"+name,doc);
     }
     private static SemanticFact type(String id,String name,String api){
+        return type(id,name,api,List.of());
+    }
+    private static SemanticFact type(String id,String name,String api,List<SemanticType> supers){
         return new SemanticFact(id,null,name,"class","class "+name,null,Set.of("public"),"/src/"+name+".java","p",
-                "p."+name,"p."+name,new SemanticType.Declared(id,"p."+name,List.of()),List.of(),List.of(),List.of(),false,
+                "p."+name,"p."+name,new SemanticType.Declared(id,"p."+name,List.of()),List.of(),supers,List.of(),false,
                 api,"ns-"+name,"doc-"+name);
     }
     private static SemanticSnapshot snapshot(String content,SemanticFact... facts){
@@ -68,6 +71,21 @@ class ResidentSemanticStateTest {
         state.admit(snapshot("three",type("A#","A","api-A"),renamed));
         assertThat(state.members("A#","b",10)).isEmpty();
         assertThat(((Number)state.status().get("semantic_fact_mutations")).longValue()).isGreaterThan(mutations);
+    }
+
+    @Test void receiverHierarchyAggregateChangesOnlyWithEffectiveApi(){
+        var state=new ResidentSemanticState();
+        var base=type("Base#","Base","api-base");
+        var sub=type("Sub#","Sub","api-sub",List.of(new SemanticType.Declared("Base#","p.Base",List.of())));
+        var member=member("Base#m().","Base#","m","api-m","doc-m");
+        state.admit(snapshot("content-a",base,sub,member));String first=state.hierarchyApi("Sub#");
+
+        state.admit(snapshot("content-b",base,sub,member));
+        assertThat(state.hierarchyApi("Sub#")).isEqualTo(first);
+
+        var changed=member("Base#m().","Base#","m","api-m-2","doc-m");
+        state.admit(snapshot("content-c",base,sub,changed));
+        assertThat(state.hierarchyApi("Sub#")).isNotEqualTo(first);
     }
 
     @Test void aToBToARestoresIdentityButEpochProvesTransition(){

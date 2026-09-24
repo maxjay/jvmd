@@ -31,7 +31,7 @@ public final class LspFacade {
     public static Map<String,Object> capabilities(){
         return Map.of("positionEncoding","utf-16","textDocumentSync",Map.of("openClose",true,"change",2,"save",Map.of("includeText",false)),
                 "hoverProvider",true,"definitionProvider",true,"referencesProvider",true,"renameProvider",Map.of("prepareProvider",true),
-                "documentSymbolProvider",true,"completionProvider",Map.of("triggerCharacters",List.of("."),"resolveProvider",false),
+                "documentSymbolProvider",true,"completionProvider",Map.of("triggerCharacters",List.of("."),"resolveProvider",true),
                 "signatureHelpProvider",Map.of("triggerCharacters",List.of("(",",","<"),"retriggerCharacters",List.of(",")),
                 "semanticTokensProvider",Map.of("legend",Map.of("tokenTypes",TOKEN_TYPES,"tokenModifiers",TOKEN_MODIFIERS),"full",true,"range",false));
     }
@@ -68,7 +68,17 @@ public final class LspFacade {
     public static Envelope request(Dispatcher dispatcher,Session session,Documents documents,JsonNode request)throws Exception{
         String method=Dispatcher.required(request,"method");JsonNode nativeParams=request.path("params");var query=new Query(dispatcher,session);
         if(method.equals("initialize"))return query.finish(Json.MAPPER.valueToTree(Map.of("capabilities",capabilities(),"serverInfo",Map.of("name","jvmd","version","0.1.0"))));
-        if(!Set.of("textDocument/documentSymbol","textDocument/semanticTokens/full","textDocument/completion","textDocument/signatureHelp","textDocument/hover","textDocument/definition","textDocument/references","textDocument/rename","textDocument/prepareRename").contains(method))throw new RpcException(-32601,"Method not found",Map.of("method",method));
+        if(!Set.of("textDocument/documentSymbol","textDocument/semanticTokens/full","textDocument/completion","completionItem/resolve","textDocument/signatureHelp","textDocument/hover","textDocument/definition","textDocument/references","textDocument/rename","textDocument/prepareRename").contains(method))throw new RpcException(-32601,"Method not found",Map.of("method",method));
+        if(method.equals("completionItem/resolve")){
+            if(!nativeParams.isObject())throw RpcException.invalid("Completion item must be an object");
+            String ref=Dispatcher.required(nativeParams.path("data"),"scip");
+            var described=query.one("symbol.describe",Json.MAPPER.createObjectNode().put("ref",ref).put("detail","summary").put("doc_depth",0));
+            var item=(ObjectNode)nativeParams.deepCopy();
+            if(!item.hasNonNull("detail")&&described.hasNonNull("signature"))item.put("detail",described.path("signature").asText());
+            String doc=described.path("doc").asText("");
+            if(!doc.isEmpty())item.set("documentation",Json.MAPPER.valueToTree(Map.of("kind","markdown","value",doc)));
+            return query.finish(item);
+        }
         Path file=path(session,Dispatcher.required(nativeParams.path("textDocument"),"uri"));var arguments=params(file);
         if(method.equals("textDocument/documentSymbol")){
             var outline=query.all("symbol.overview",arguments.put("depth",10).put("limit",1000),"symbols");var output=Json.MAPPER.createArrayNode();var parents=new ArrayDeque<JsonNode>();
@@ -94,7 +104,7 @@ public final class LspFacade {
                 var item=Json.MAPPER.createObjectNode().put("label",symbol.path("name").asText()).put("detail",symbol.path("label").asText()).put("kind",completionKind(symbol.path("kind").asText()));
                 item.set("textEdit",Json.MAPPER.valueToTree(Map.of("range",completion.path("range"),"newText",symbol.path("name").asText())));item.set("data",Json.MAPPER.valueToTree(Map.of("scip",symbol.path("scip").asText())));
                 if(symbol.hasNonNull("import"))item.set("additionalTextEdits",Json.MAPPER.valueToTree(List.of(importEdit(documents.text(file),symbol.path("import").asText()))));
-                if(symbol.hasNonNull("doc")&&!symbol.path("doc").asText().isEmpty())item.set("documentation",Json.MAPPER.valueToTree(Map.of("kind","markdown","value",symbol.path("doc").asText())));items.add(item);
+                items.add(item);
             }return query.finish(Json.MAPPER.valueToTree(Map.of("isIncomplete",answer.truncated(),"items",items)));
         }
         if(method.equals("textDocument/signatureHelp")){

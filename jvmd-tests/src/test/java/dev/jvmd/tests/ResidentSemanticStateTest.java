@@ -182,7 +182,8 @@ class ResidentSemanticStateTest {
 
     @Test void globalHierarchyUncertaintyIsOneGenerationFence(){
         var state=new ResidentSemanticState();
-        var a=type("A#","A","api-A"),b=type("B#","B","api-B");
+        var a=type("A#","A","api-A");
+        var b=type("B#","B","api-B");
         state.admit(snapshotUnit("unit:a","content-a",a));
         state.admit(snapshotUnit("unit:b","content-b",b));
         long generation=((Number)state.status().get("semantic_uncertainty_generation")).longValue();

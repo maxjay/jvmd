@@ -83,6 +83,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private final LinkedHashMap<String,SourceText> sourceTexts=new LinkedHashMap<>(16,.75f,true);
     private long cacheHits,bindingComputations,diagnosticFilesAnalysed,diagnosticFilesReused,indexWrites,indexWriteNanos,apiFingerprintChanges,apiFingerprintUnchanged;
     private long completionRequests,residentDescriptionLoads,residentDescriptionCacheHits,residentHierarchyUnitReuses,residentHierarchyUnitBuilds;
+    private List<String> residentHierarchyLastBuiltUnits=List.of();
     private long residentDeclarationFactReuses,residentDeclarationFactBuilds;
     private Context context;
     private IndexService index;
@@ -628,6 +629,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         if(result==null)return null;
         residentHierarchyUnitReuses+=result.hierarchyUnitsReused();residentHierarchyUnitBuilds+=result.semanticSnapshots().size();
+        residentHierarchyLastBuiltUnits=result.semanticSnapshots().stream().map(SemanticSnapshot::unit).toList();
         for(var snapshot:result.semanticSnapshots())admitDetachedSemantic(snapshot);
         var query=registerAccessibility(caches,result);
         var binaries=completionNameResolutionBinaries(text,result.nameResolutionNames());
@@ -691,6 +693,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         if(result==null)return null;
         residentHierarchyUnitReuses+=result.hierarchyUnitsReused();residentHierarchyUnitBuilds+=result.semanticSnapshots().size();
+        residentHierarchyLastBuiltUnits=result.semanticSnapshots().stream().map(SemanticSnapshot::unit).toList();
         for(var snapshot:result.semanticSnapshots())admitDetachedSemantic(snapshot);
         var query=registerAccessibility(caches,result);
         var dependencyApis=documentDependencyApis(query,path);if(dependencyApis==null)return null;
@@ -1113,6 +1116,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(context!=null)result.put("resident_semantic_state",semanticState().status());
         result.put("completion_requests",completionRequests);result.put("resident_description_loads",residentDescriptionLoads);result.put("resident_description_cache_hits",residentDescriptionCacheHits);
         result.put("resident_hierarchy_unit_reuses",residentHierarchyUnitReuses);result.put("resident_hierarchy_unit_builds",residentHierarchyUnitBuilds);
+        result.put("resident_hierarchy_last_built_units",residentHierarchyLastBuiltUnits);
         result.put("resident_declaration_fact_reuses",residentDeclarationFactReuses);result.put("resident_declaration_fact_builds",residentDeclarationFactBuilds);
         if(context!=null){
             result.put("resident_description_cache_entries",modules.get(context.generation()).descriptions.size());

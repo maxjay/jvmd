@@ -337,3 +337,44 @@ Deviations:
 Remaining:
 - Checkpoint 1: introduce the canonical compact `QueryProof` representation with deterministic domain-separated identity and changed-component diffing.
 - Preserve this proof harness byte-for-byte until Checkpoint 17; only the measured subject SHA may change.
+
+
+## Checkpoint 1 — canonical proof representation
+
+Starting SHA: `efed1b4472c59f79f4a361c924686489206073ac`
+Ending SHA: `83457fee8c68f7279c98108522b3e4f287ccb104`
+
+Changes:
+- Added `QueryProof` as the canonical immutable certificate for reusable semantic conclusions.
+- Added typed proof domains for document scope, receiver, exact symbol, member range, overload group, hierarchy, namespace, resolution path, negative resolution, accessibility, classpath and workspace evidence.
+- Each dependency is a structured `(domain, key, Hash256 identity)` value; constructor input is canonically sorted and duplicate semantic keys are rejected.
+- Added a domain-separated whole-proof identity and a deterministic `diff()` that identifies precise added, changed and removed dependency keys.
+- Added focused deterministic regressions and placed them in the repository Phase-1 gate.
+
+Architecture:
+- `QueryProof` owns no semantic state and retains no javac objects. It is only an equality-oriented certificate over identities produced by maintained state.
+- Identity uses the accepted `Hash256` and `CanonicalDigestWriter` primitives with the `query-proof-v1` domain; no parallel hashing framework was introduced.
+- The representation remains structured rather than an opaque serialized blob, so later propagation can identify the exact proof dependency that changed.
+
+Correctness proof:
+- Exact-head Tests run https://github.com/maxjay/jvmd/actions/runs/36071974357 compiled the repository successfully and passed the **Phase 1 deterministic checkpoints**, including `QueryProofTest`.
+- Focused regressions prove canonical identity across input order, semantic-domain separation, value-sensitive identity, deterministic added/changed/removed diffing, duplicate-key rejection, immutability and stable empty proof identity.
+- An earlier integration attempt failed compilation because the new `@Tag` annotation was not imported; commit `83457fee` repaired the test import and the deterministic gate then passed.
+
+Performance proof:
+- No query/read path consumes `QueryProof` yet, so this checkpoint intentionally makes no latency or allocation claim.
+- The proof value is compact: one immutable ordered vector of semantic keys and 32-byte identities plus one 32-byte aggregate identity. No javac or workspace material is retained.
+
+Findings:
+- Existing `Hash256`/`CanonicalDigestWriter` are sufficient for the canonical proof layer; no new hash primitive or serialized certificate format is needed.
+- Domain separation belongs in the proof key as well as the whole-proof digest: identical key/value bytes in different semantic domains correctly produce different proofs.
+
+Failed/deprecated approaches:
+- The first focused-test integration omitted the JUnit `Tag` import and failed compilation before tests. It was repaired without changing `QueryProof` semantics.
+- No semantic design experiment was discarded.
+
+Deviations:
+- None.
+
+Remaining:
+- Checkpoint 2: represent ordered classpath semantics with a canonical Merkle sequence that supports exact equality, narrow same-position content diffs, insertion/removal and reorder diffs without using a commutative accumulator.

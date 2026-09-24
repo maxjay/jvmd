@@ -47,6 +47,46 @@ class ModularAnalysisTest {
             assertThat(pool.status().get("faults")).isEqualTo(0L);
         }
     }
+    @Test void residentCompletionUsesJavacModuleVisibility()throws Exception{
+        Path dependency=Files.createDirectories(root.resolve("completion-dependency"));
+        Path exported=Files.createDirectories(dependency.resolve("api")).resolve("Api.java");
+        Path hidden=Files.createDirectories(dependency.resolve("internal")).resolve("Hidden.java");
+        Path descriptor=dependency.resolve("module-info.java");
+        Files.writeString(descriptor,"module fixture.dependency { exports api; }");
+        Files.writeString(exported,"package api; public class Api { public int visibleMember(){return 1;} }");
+        Files.writeString(hidden,"package internal; public class Hidden { public int secretMember(){return 1;} }");
+        Path output=Files.createDirectories(root.resolve("completion-classes"));
+        assertThat(javax.tools.ToolProvider.getSystemJavaCompiler().run(null,null,null,"--release","25","-d",output.toString(),
+                descriptor.toString(),exported.toString(),hidden.toString())).isZero();
+        Path jar=root.resolve("completion-dependency.jar");
+        try(var stream=new java.util.jar.JarOutputStream(Files.newOutputStream(jar));var files=Files.walk(output)){
+            for(Path file:files.filter(Files::isRegularFile).sorted().toList()){
+                stream.putNextEntry(new java.util.jar.JarEntry(output.relativize(file).toString().replace(java.io.File.separatorChar,'/')));
+                Files.copy(file,stream);stream.closeEntry();
+            }
+        }
+
+        Path source=Files.createDirectories(root.resolve("completion-source"));
+        Files.writeString(source.resolve("module-info.java"),"module fixture.application { requires fixture.dependency; }");
+        Path app=Files.createDirectories(source.resolve("app"));
+        String visibleText="package app; class Visible { Object f(api.Api api){ return api.vis; } }";
+        String hiddenText="package app; class HiddenUse { Object f(internal.Hidden hidden){ return hidden.sec; } }";
+        Path visibleFile=Files.writeString(app.resolve("Visible.java"),visibleText);
+        Path hiddenFile=Files.writeString(app.resolve("HiddenUse.java"),hiddenText);
+
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(new Analyzer.Context("fixture:application:1","25",List.of(jar),List.of(source),"modules-completion",Map.of()),
+                    null,256L*1024*1024);
+            int visibleOffset=visibleText.indexOf("api.vis")+"api.vis".length();
+            var visibleResult=dev.jvmd.core.Json.MAPPER.valueToTree(analyzer.completion(visibleFile,visibleText,0,visibleOffset,100,0).result());
+            assertThat(visibleResult.path("items").findValuesAsText("name")).contains("visibleMember");
+
+            int hiddenOffset=hiddenText.indexOf("hidden.sec")+"hidden.sec".length();
+            var hiddenResult=dev.jvmd.core.Json.MAPPER.valueToTree(analyzer.completion(hiddenFile,hiddenText,0,hiddenOffset,100,0).result());
+            assertThat(hiddenResult.path("items").findValuesAsText("name")).doesNotContain("secretMember");
+        }
+    }
+
     @Test void unbuiltSourceModulesKeepTheirOwnIdentityAndObserveUnsavedDependencyChanges()throws Exception{
         Path library=Files.createDirectories(root.resolve("library/src/main/java"));
         Path application=Files.createDirectories(root.resolve("app/src/main/java"));

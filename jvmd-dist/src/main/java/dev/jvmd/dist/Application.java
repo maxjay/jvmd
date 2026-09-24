@@ -168,7 +168,7 @@ public final class Application implements AutoCloseable {
             if(!candidatePackage.equals(packageName)&&!publicType)continue;
             var row=new LinkedHashMap<String,Object>();
             for(String key:List.of("scip","name","name_path","kind","signature","fqn"))if(symbol.get(key)!=null)row.put(key,symbol.get(key));
-            row.put("label",fqn);row.put("doc",dev.jvmd.index.DocMarkdown.summary((String)symbol.get("doc")));
+            row.put("label",fqn);
             if(needsImport(fqn,packageName,imported))row.put("import",fqn);
             types.putIfAbsent(fqn,Collections.unmodifiableMap(row));
         }
@@ -390,6 +390,10 @@ public final class Application implements AutoCloseable {
                 }else return Envelope.of(2,"live",symbol);
             }
         }
+        if((ref.startsWith("maven ")||ref.startsWith("local "))&&analyzer!=null){
+            var resident=analyzer.residentDescription(ref);
+            if(resident!=null)return Envelope.of(2,"live",resident);
+        }
         var local=workspaceFind(session,ref,false);
         if(local.size()==1)return Envelope.of(1,"live",local.getFirst());
         if(local.size()>1)return page(1,"live","candidates",local,0,20,List.of("ambiguous"));
@@ -445,7 +449,8 @@ public final class Application implements AutoCloseable {
                 default->throw RpcException.invalid("position must be before, after or into");
             }end=start;
         }
-        return finishEdit(session,TextEdits.prepare(List.of(new TextEdits.Edit(file,start,end,replacement)),Map.of(),documents(session).snapshots()),params.path("dry_run").asBoolean());
+        var plan=TextEdits.prepare(List.of(new TextEdits.Edit(file,start,end,replacement)),Map.of(),documents(session).snapshots());
+        return operation.equals("body")?finishEdit(session,plan,params.path("dry_run").asBoolean(),symbol):finishEdit(session,plan,params.path("dry_run").asBoolean());
     }
     private Envelope editText(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
         var values=params.path("text_edits");if(!values.isArray()||values.isEmpty())throw RpcException.invalid("text_edits must be a nonempty array");
@@ -495,8 +500,11 @@ public final class Application implements AutoCloseable {
             return finishEdit(session,TextEdits.prepare(List.copyOf(edits.values()),renames,documents(session).snapshots()),params.path("dry_run").asBoolean());
         }
     }
-    @SuppressWarnings("unchecked")
     private Envelope finishEdit(Session session,TextEdits.Plan plan,boolean dryRun)throws Exception{
+        return finishEdit(session,plan,dryRun,null);
+    }
+    @SuppressWarnings("unchecked")
+    private Envelope finishEdit(Session session,TextEdits.Plan plan,boolean dryRun,Map<?,?> preferredMember)throws Exception{
         if(dryRun)return Envelope.of(2,"live",Map.of("applied",false,"changes",plan.edits(),"diagnostics",List.of(),"verified",false));
         for(var change:plan.edits())if(documents(session).contains(Path.of(change.get("path").toString())))throw new RpcException(-32003,"unsupported_capability",Map.of("capability","edit","reason","This file is open in an editor; apply its dry-run edit plan through the editor"));
         TextEdits.apply(plan);
@@ -512,6 +520,10 @@ public final class Application implements AutoCloseable {
                 while(touched[1]>touched[0]&&Character.isWhitespace(text.charAt(touched[1]-1)))touched[1]--;
                 var enclosing=declarations.stream().filter(s->s.get("source_start") instanceof Number start&&s.get("source_end") instanceof Number end&&start.intValue()<=touched[0]&&end.intValue()>=touched[1]).min(Comparator.comparingInt(s->((Number)s.get("source_end")).intValue()-((Number)s.get("source_start")).intValue()));
                 if(enclosing.isPresent())selected.add(enclosing.get());
+            }
+            if(selected.isEmpty()&&preferredMember!=null){
+                String preferredScip=Objects.toString(preferredMember.get("scip"),"");
+                declarations.stream().filter(member->preferredScip.equals(Objects.toString(member.get("scip"),""))).findFirst().ifPresent(selected::add);
             }
             if(!selected.isEmpty()){
                 var seenDiagnostics=new LinkedHashSet<String>();

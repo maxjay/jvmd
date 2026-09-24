@@ -95,3 +95,32 @@ Failed/deprecated approaches:
 Replacement:
 - Use the JFR `allocation-by-site` view for stable object/allocation attribution while retaining the raw recording and summary.
 - Rerun the exact same baseline subject. Production implementation remains untouched until the complete Stage-0 matrix succeeds.
+
+
+## Baseline attempt 4 — JFR view formatter
+
+Run: https://github.com/maxjay/jvmd/actions/runs/36065256630
+
+Subject SHA: `eb45487f08a986d3a5ef2acd3666177e332cdc9b`
+
+Correctness proof:
+- CMP-01 again returned zero candidates on the exact starting subject.
+- Exact-version document admission remained verifiable.
+
+Performance proof:
+- First completion: 670.85 ms.
+- Steady completion: p50 233.50 ms, p95 295.25 ms across 20 samples.
+- Pre-document total RSS: 987.0 MB.
+- Document setup finished: 1339.3 MB.
+- After first use: 1350.9 MB.
+- Steady peak: 1378.9 MB.
+- The raw JFR recording and `jfr summary` were valid.
+
+Failed/deprecated approaches:
+- JDK 25's `jfr view allocation-by-site` uses the same broken method formatter as `jfr print` for this recording and crashed in `ValueFormatter.formatMethod`.
+- The semantic matrix was therefore still correctly skipped; no production code had been changed.
+
+Replacement:
+- The harness now reads `jdk.ObjectAllocationSample` events directly with `jdk.jfr.consumer.RecordingFile`.
+- Allocation attribution is grouped by allocated object class and top Java allocation site, weighted by the event's byte weight.
+- This avoids all JDK CLI pretty-printing while retaining the raw recording and independent JFR event summary.

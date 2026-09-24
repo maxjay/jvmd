@@ -276,3 +276,64 @@ Deviations:
 Remaining:
 - Rerun the exact baseline with complete status collection and the repaired matrix source.
 - Accept Checkpoint 0 only after the full matrix and compiler/JFR evidence complete in one run.
+
+
+## Checkpoint 0 — exact baseline
+
+Starting SHA: `eb45487f08a986d3a5ef2acd3666177e332cdc9b`
+Ending SHA: `eb45487f08a986d3a5ef2acd3666177e332cdc9b`
+
+Changes:
+- Completed the dedicated Issue #36 proof on the exact current-`main` subject without production edits.
+- Froze the accepted proof components at:
+  - `Issue36SemanticProofTest.java` SHA-256 `6f4a2cc3a9462f7b7c21c2e7824dd609f55e67db873f6618eb82848051991da8`
+  - `JfrAllocationSummary.java` SHA-256 `4b8919940dc519d7421acb9baf9254c3f00ffffe2a6749dcde4ca181a34b216d`
+  - `cmp01-status.ts` SHA-256 `f794e4ed4eb35fc8dae3c40e063265c4b73a34d0f0e1b216270169282479d608`
+  - workflow blob `5cfa00d9de83faccdb641f5c38776b7719dc991c`
+- Accepted GitHub Actions run: https://github.com/maxjay/jvmd/actions/runs/36070534515
+- Accepted artifact: `10837938429`, digest `sha256:56a1bac58b1b9d7e3b69e0acb7375303fd5e9fb31c9b4208348fdb8692570f7b`.
+
+Architecture:
+- Baseline confirms the existing split described by the task: candidate materialization can already read resident ordered semantic facts after context establishment, and prefix narrowing can reuse detached state; however ordinary first-use receiver/context establishment is still javac-driven and broad invalidation remains file/environment oriented.
+- Machine dependency facts are queryable through the persistent index, but the baseline exposes no canonical machine dependency root or workspace dependency root. Both identities are intentionally recorded as unavailable rather than invented.
+- This harness is now frozen. The final before/after proof will change only `benchmarks/issue-36-proof/subject-sha.txt`.
+
+Correctness proof:
+- Real Apache Maven CMP-01 `project.` remains incorrect: first-use, resolve, repeated, unsaved-edit, warmup and all 20 steady samples disagree with the unchanged JDTLS semantic oracle; JVMD returns an empty completion result.
+- Exact-version `publishDiagnostics` admission was observed before the measured CMP request.
+- Query matrix successfully exercised parameter, field, static, chained, generic, deep/wide hierarchy, access filtering, prefix narrowing and unsaved-overlay states.
+- Mutation matrix exercised body-only, unrelated/relevant API member, exact-symbol, overload, hierarchy, namespace/negative lookup, classpath content/order and machine/workspace composition.
+- Workspace A/B selection remained `[g:a:1, g:b:1]` across a C artifact replacement while the C workspace continued to resolve C. The baseline has no compositional root with which to prove that stability.
+
+Performance proof:
+- Real CMP-01 first-use completion: **1261.506 ms**. Its 20 incorrect steady samples have diagnostic p50 **529.359 ms**, p95 **665.684 ms**, min **476.814 ms**, max **712.473 ms**. Incorrect samples are deliberately excluded from any "correct latency" statistic.
+- CMP steady peak process-tree RSS: **1,270,144 KiB**. JFR sampled-allocation weight: **33,816,215,040 B** across 16,931 samples. GC heap summaries show maximum post-GC heap **723,517,440 B** and last post-GC heap **177,465,816 B**; maximum pre-GC heap was **1,399,710,392 B**.
+- Direct incomplete-statement probe: **902.316 ms**, **2 compiler queries**, zero semantic fact mutations, zero resident range reads, **55,570,680 B** request-thread allocation and **58,147,192 B** all-live-thread allocation.
+- Simple parameter receiver: **160.180 ms**, **1 compiler query**, 19 fact mutations, 14 resident range reads, **17,396,920 B** request-thread allocation.
+- Prefix narrowing: `g` costs 1 compiler query; `get` and `getM` cost **0 compiler queries**, **3.515/3.175 ms**, and only 258,072/252,560 B request-thread allocation respectively. Detached prefix reuse therefore already exists.
+- Body-only edit: semantic fact mutations **0**, but still **1 compiler query** and **38.643 ms**. Unrelated API member: **2 compiler queries**, 1 fact mutation, **31.196 ms**. Relevant queried-range member: **2 compiler queries**, 1 fact mutation, **31.318 ms**.
+- Exact-symbol irrelevant/relevant, overload irrelevant/relevant and the downstream consumer each still perform **1 compiler query**. An unrelated namespace edit still performs **1 compiler query**. Hierarchy direct-parent, irrelevant-ancestor and downstream-after-equal-surface probes each still perform **1 compiler query**.
+- Unreferenced C classpath change still performs **1 compiler query**. Reorder, insertion and removal after an earlier winner each perform **1 compiler query** and republish 16 semantic facts.
+- Raw JFR `dev.jvmd.Stage` evidence (post-processed directly from the accepted artifact with `jfr print --json --events dev.jvmd.Stage`) records parse/enter-attribution invocations, not inferred latency: query matrix **12 parse / 12 enter_attribute / 12 compiler.prepare**; semantic mutations **6/6/6**; dependency proofs **8/8/8**; namespace **3/3/3**; hierarchy mutation **8/8/8**; classpath **6/6/6**. The machine/workspace index scenario performs no compiler stages.
+- The companion real-CMP status probe starts before the interactive analyzer exists and ends with `queries=4`, `completion_requests=1`, `binding_computations=2`, 265 resident fact mutations and zero range reads. Absence of a pre-request analyzer is retained as an explicit baseline state rather than fabricated as a status row.
+- Direct JFR sampled-allocation weights: query matrix **280,620,096 B**, semantic mutations **113,460,736 B**, dependency proofs **108,969,736 B**, namespace **122,706,200 B**, hierarchy **105,754,048 B**, classpath **273,209,912 B**, machine/workspace composition **151,983,320 B**.
+- Direct JFR retained/post-GC maxima: query matrix **38,177,512 B**, semantic mutations **21,906,640 B**, dependency proofs **19,735,128 B**, namespace **20,777,144 B**, hierarchy **18,967,760 B**, classpath **48,679,408 B**, machine/workspace **19,679,496 B**.
+
+Findings:
+- The immediate incomplete-source bug is real and expensive, but the broader baseline validates the architectural task: simple first-use contexts repeatedly invoke javac, broad API/namespace/classpath events still cause semantic work, and there are no proof counters/roots because the proof model does not yet exist.
+- Existing resident semantic range reuse is valuable and must be preserved rather than replaced.
+- Body-only resident facts can already remain unchanged while higher-level query work is still repeated; proof-driven validity therefore belongs above the resident storage layer.
+- Machine/workspace composition has observable selection stability but no mathematical identity boundary yet.
+- Raw JFR contains the requested compiler-stage events even though the small allocation TSV reader does not render them; the raw recordings are the authoritative evidence and will be post-processed identically in the final proof.
+
+Failed/deprecated approaches:
+- All earlier Stage-0 harness failures remain above in this append-only log. None changed the measured production subject.
+- No failed measurement is substituted for the accepted run.
+
+Deviations:
+- The baseline cannot report proof validation/invalidation, range-proof, classpath-diff-leaf or proof-DAG counters because those concepts do not exist yet. Their sentinel/unavailable state is itself baseline evidence; they will be measured after implementation.
+- The real CMP jlink image cannot enable the optional `RequestScope` thread-allocation tracer because it omits `jdk.management`; CMP uses production-image JFR plus native session status, while direct semantic scenarios use the full pinned JDK.
+
+Remaining:
+- Checkpoint 1: introduce the canonical compact `QueryProof` representation with deterministic domain-separated identity and changed-component diffing.
+- Preserve this proof harness byte-for-byte until Checkpoint 17; only the measured subject SHA may change.

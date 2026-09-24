@@ -14,6 +14,68 @@ import javax.lang.model.type.*;
 public final class SemanticFacts {
     private SemanticFacts(){}
 
+    public record CompletionContext(DocumentSemanticSnapshot.QueryContext query,List<SemanticSnapshot> semanticSnapshots) {
+        public CompletionContext { Objects.requireNonNull(query);semanticSnapshots=List.copyOf(semanticSnapshots); }
+    }
+
+    /** Detach one qualified-completion context and the canonical declaration units it can query. */
+    public static CompletionContext qualifiedCompletion(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String marker,int selectorOffset)throws Exception{
+        TreePath[] found={null};
+        for(var unit:units)new TreePathScanner<Void,Void>(){
+            @Override public Void visitMemberSelect(MemberSelectTree node,Void unused){
+                if(node.getIdentifier().contentEquals(marker))found[0]=getCurrentPath();
+                return super.visitMemberSelect(node,unused);
+            }
+        }.scan(unit,null);
+        if(found[0]==null||!(found[0].getLeaf() instanceof MemberSelectTree selected))return null;
+        var trees=Trees.instance(task);var qualifier=new TreePath(found[0],selected.getExpression());
+        TypeMirror receiver=trees.getTypeMirror(qualifier);
+        if(receiver instanceof TypeVariable variable)receiver=variable.getUpperBound();
+        if(receiver==null||receiver.getKind()==TypeKind.ERROR)return null;
+        String receiverId=null;
+        if(receiver instanceof DeclaredType declared)try{receiverId=identity.scip(declared.asElement());}catch(IllegalArgumentException ignored){}
+
+        Scope scope=null;
+        for(TreePath current=found[0];current!=null&&scope==null;current=current.getParentPath())try{scope=trees.getScope(current);}catch(NullPointerException ignored){}
+        String packageName="";
+        String enclosingTypeId=null;
+        boolean staticContext=false;
+        if(scope!=null){
+            var enclosing=scope.getEnclosingClass();
+            if(enclosing!=null){
+                packageName=task.getElements().getPackageOf(enclosing).getQualifiedName().toString();
+                try{enclosingTypeId=identity.scip(enclosing);}catch(IllegalArgumentException ignored){}
+            }
+            var method=scope.getEnclosingMethod();
+            staticContext=method!=null&&method.getModifiers().contains(Modifier.STATIC);
+        }else if(found[0].getCompilationUnit().getPackageName()!=null)packageName=found[0].getCompilationUnit().getPackageName().toString();
+
+        var snapshots=new LinkedHashMap<String,SemanticSnapshot>();
+        hierarchySnapshots(task,identity,receiver,new HashSet<>(),snapshots);
+        var query=new DocumentSemanticSnapshot.QueryContext(selectorOffset,type(identity,receiver),receiverId,
+                trees.getElement(qualifier) instanceof TypeElement,packageName,enclosingTypeId,staticContext);
+        return new CompletionContext(query,List.copyOf(snapshots.values()));
+    }
+
+    private static void hierarchySnapshots(JavacTask task,SymbolIdentity identity,TypeMirror mirror,Set<String> seen,Map<String,SemanticSnapshot> snapshots)throws Exception{
+        if(mirror instanceof TypeVariable variable){hierarchySnapshots(task,identity,variable.getUpperBound(),seen,snapshots);return;}
+        if(mirror instanceof IntersectionType intersection){for(var bound:intersection.getBounds())hierarchySnapshots(task,identity,bound,seen,snapshots);return;}
+        if(!(mirror instanceof DeclaredType declared)||!(declared.asElement() instanceof TypeElement type))return;
+        String id;try{id=identity.scip(type);}catch(IllegalArgumentException unresolved){return;}
+        if(!seen.add(id))return;
+        var snapshot=snapshotForType(task,identity,type);snapshots.putIfAbsent(snapshot.unit(),snapshot);
+        for(var parent:task.getTypes().directSupertypes(declared))hierarchySnapshots(task,identity,parent,seen,snapshots);
+    }
+
+    public static SemanticSnapshot snapshotForType(JavacTask task,SymbolIdentity identity,TypeElement type)throws Exception{
+        var path=identity.path(type);
+        if(path!=null&&path.getCompilationUnit()!=null){
+            var uri=path.getCompilationUnit().getSourceFile().toUri();
+            if("file".equals(uri.getScheme())&&uri.getPath()!=null&&uri.getPath().endsWith(".java"))return sourceSnapshot(task,identity,path.getCompilationUnit());
+        }
+        return typeSnapshot(task,identity,type);
+    }
+
     public static SemanticSnapshot sourceSnapshot(JavacTask task,SymbolIdentity identity,CompilationUnitTree unit)throws Exception{
         String text=unit.getSourceFile().getCharContent(true).toString();
         String source=sourcePath(unit),content=Hashing.sha256(text.getBytes(StandardCharsets.UTF_8));

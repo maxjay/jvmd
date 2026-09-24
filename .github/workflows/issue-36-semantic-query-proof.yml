@@ -133,7 +133,7 @@ jobs:
           node benchmarks/lsp-scenarios/run.ts
           unset JAVA_TOOL_OPTIONS
           "$JAVA_HOME/bin/jfr" summary "$RUNNER_TEMP/issue36-cmp01.jfr" > "$RUNNER_TEMP/issue36-cmp01-jfr-summary.txt"
-          "$JAVA_HOME/bin/jfr" print --events jdk.ObjectAllocationSample --stack-depth 24 "$RUNNER_TEMP/issue36-cmp01.jfr" > "$RUNNER_TEMP/issue36-cmp01-allocations.txt"
+          "$JAVA_HOME/bin/jfr" view allocation-by-site "$RUNNER_TEMP/issue36-cmp01.jfr" > "$RUNNER_TEMP/issue36-cmp01-allocations.txt"
 
       - name: Inject frozen semantic proof test
         shell: bash
@@ -151,7 +151,7 @@ jobs:
             recording="$RUNNER_TEMP/issue36-$scenario.jfr"
             mvn -B -pl jvmd-tests               -Dtest=Issue36SemanticProofTest               -Dissue36.scenario="$scenario"               -Dissue36.report="$report"               -DargLine="-XX:StartFlightRecording=filename=$recording,settings=profile,dumponexit=true -XX:FlightRecorderOptions=stackdepth=128"               test
             "$JAVA_HOME/bin/jfr" summary "$recording" > "$RUNNER_TEMP/issue36-$scenario-jfr-summary.txt"
-            "$JAVA_HOME/bin/jfr" print --events jdk.ObjectAllocationSample --stack-depth 24 "$recording" > "$RUNNER_TEMP/issue36-$scenario-allocations.txt"
+            "$JAVA_HOME/bin/jfr" view allocation-by-site "$recording" > "$RUNNER_TEMP/issue36-$scenario-allocations.txt"
           done
 
       - name: Emit proof evidence

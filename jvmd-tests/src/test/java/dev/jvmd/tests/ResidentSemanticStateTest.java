@@ -23,10 +23,53 @@ class ResidentSemanticStateTest {
                 api,"ns-"+name,"doc-"+name);
     }
     private static SemanticSnapshot snapshot(String content,SemanticFact... facts){
+        return snapshotUnit("source:/src/A.java",content,facts);
+    }
+    private static SemanticSnapshot snapshotUnit(String unit,String content,SemanticFact... facts){
         var values=new LinkedHashMap<String,SemanticFact>();var descriptions=new LinkedHashMap<String,SymbolDescription>();
         for(var fact:facts){values.put(fact.id(),fact);descriptions.put(fact.id(),new SymbolDescription(fact.id(),"doc",fact.structuralSignature(),null,fact.documentationIdentity()));}
-        return new SemanticSnapshot("source:/src/A.java","/src/A.java",content,values,descriptions,
+        return new SemanticSnapshot(unit,"/src/A.java",content,values,descriptions,
                 "file-api","file-ns",facts.length==0?"":String.join(",",Arrays.stream(facts).map(SemanticFact::documentationIdentity).toList()),Set.of());
+    }
+
+    @Test void bulkConstructionMatchesIncrementalIdentityAndMemberQueries(){
+        var facts=new ArrayList<SemanticFact>();facts.add(type("A#","A","api-A"));
+        for(int i=0;i<200;i++)facts.add(member("A#m"+i+"().","A#","member"+String.format("%03d",i),"api-"+i,"doc-"+i));
+
+        var bulk=new ResidentSemanticState();
+        bulk.admit(snapshot("bulk",facts.toArray(SemanticFact[]::new)));
+
+        var incremental=new ResidentSemanticState();
+        for(int i=0;i<facts.size();i++)incremental.admit(snapshotUnit("unit:"+i,"part-"+i,facts.get(i)));
+
+        assertThat(bulk.identity().merkleRoot()).isEqualTo(incremental.identity().merkleRoot());
+        assertThat(bulk.identity().membership()).isEqualTo(incremental.identity().membership());
+        assertThat(bulk.identity().api()).isEqualTo(incremental.identity().api());
+        assertThat(bulk.identity().namespace()).isEqualTo(incremental.identity().namespace());
+        assertThat(bulk.members("A#","member1",25)).extracting(SemanticFact::id)
+                .containsExactlyElementsOf(incremental.members("A#","member1",25).stream().map(SemanticFact::id).toList());
+    }
+
+    @Test void bulkConstructionIsIndependentOfInputIterationOrder(){
+        var facts=new ArrayList<SemanticFact>();facts.add(type("A#","A","api-A"));
+        for(int i=0;i<128;i++)facts.add(member("A#m"+i+"().","A#","m"+String.format("%03d",i),"api-"+i,"doc-"+i));
+        var reversed=new ArrayList<>(facts);Collections.reverse(reversed);
+
+        var first=new ResidentSemanticState();first.admit(snapshot("first",facts.toArray(SemanticFact[]::new)));
+        var second=new ResidentSemanticState();second.admit(snapshot("second",reversed.toArray(SemanticFact[]::new)));
+
+        assertThat(first.identity().merkleRoot()).isEqualTo(second.identity().merkleRoot());
+        assertThat(first.identity().membership()).isEqualTo(second.identity().membership());
+        assertThat(first.members("A#","m0",20)).extracting(SemanticFact::id)
+                .containsExactlyElementsOf(second.members("A#","m0",20).stream().map(SemanticFact::id).toList());
+    }
+
+    @Test void coldThousandMemberAdmissionBuildsOneTreeNodePerFact(){
+        var facts=new ArrayList<SemanticFact>();facts.add(type("A#","A","api-A"));
+        for(int i=0;i<1000;i++)facts.add(member("A#m"+i+"().","A#","member"+String.format("%04d",i),"api-"+i,"doc-"+i));
+        var state=new ResidentSemanticState();state.admit(snapshot("cold",facts.toArray(SemanticFact[]::new)));
+        assertThat(state.status()).containsEntry("semantic_tree_entries",1001).containsEntry("semantic_bulk_builds",1L)
+                .containsEntry("semantic_tree_nodes_created",1001L);
     }
 
     @Test void canonicalFactIdentityIsStableAndFieldSensitive(){

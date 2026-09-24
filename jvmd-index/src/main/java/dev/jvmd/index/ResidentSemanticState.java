@@ -39,8 +39,9 @@ public final class ResidentSemanticState {
     private record Entry(String key,SemanticFact fact,Hash256 valueIdentity,Aggregate contribution) { }
     private static final class Node {
         final Entry entry;final Node left,right;final BigInteger priority;final Hash256 merkle;final String min,max;final Aggregate aggregate;final int size;
-        Node(Entry entry,Node left,Node right){
-            this.entry=entry;this.left=left;this.right=right;priority=point("priority",entry.key());
+        Node(Entry entry,Node left,Node right){this(entry,left,right,point("priority",entry.key()));}
+        Node(Entry entry,Node left,Node right,BigInteger priority){
+            this.entry=entry;this.left=left;this.right=right;this.priority=priority;
             min=left==null?entry.key():left.min;max=right==null?entry.key():right.max;
             aggregate=(left==null?Aggregate.ZERO:left.aggregate).add(entry.contribution()).add(right==null?Aggregate.ZERO:right.aggregate);
             size=1+(left==null?0:left.size)+(right==null?0:right.size);
@@ -57,7 +58,7 @@ public final class ResidentSemanticState {
     private final Map<String,String> hierarchyApis=new HashMap<>();
     private final Map<String,String> staleUnits=new HashMap<>();
     private String freshnessMerkle=EMPTY;
-    private long epoch,rangeEntriesRead,factMutations;
+    private long epoch,rangeEntriesRead,factMutations,treeNodesCreated,bulkBuilds;
 
     public synchronized SemanticDelta diff(SemanticSnapshot next){return SemanticDelta.between(units.get(next.unit()),next);}
 
@@ -67,6 +68,9 @@ public final class ResidentSemanticState {
 
     public synchronized void apply(SemanticDelta delta){
         var previous=units.get(delta.unit());boolean wasStale=staleUnits.containsKey(delta.unit());
+        if(previous==null&&root==null&&symbols.isEmpty()&&units.isEmpty()&&delta.changed().isEmpty()&&delta.removed().isEmpty()){
+            applyInitial(delta);return;
+        }
         boolean transition=previous==null||!Objects.equals(previous.contentIdentity(),delta.contentIdentity())
                 ||!Objects.equals(previous.apiIdentity(),delta.apiIdentity())
                 ||!Objects.equals(previous.namespaceIdentity(),delta.namespaceIdentity())
@@ -102,6 +106,26 @@ public final class ResidentSemanticState {
         units.put(delta.unit(),new SemanticSnapshot(delta.unit(),delta.sourceFile(),delta.contentIdentity(),facts,desc,
                 delta.apiIdentity(),delta.namespaceIdentity(),delta.documentationIdentity(),delta.dependencies()));
         factMutations+=delta.factMutations();epoch++;
+    }
+
+    private void applyInitial(SemanticDelta delta){
+        var ordered=new ArrayList<Entry>(delta.added().size());
+        var hierarchyAffected=new LinkedHashSet<String>();
+        for(var fact:delta.added().values()){
+            symbols.put(fact.id(),fact);
+            var contribution=contribution(fact);
+            ordered.add(new Entry(fact.orderedKey(),fact,fact.factIdentity(),contribution));
+            if(fact.member())memberAggregates.merge(fact.ownerId(),contribution,Aggregate::add);
+            if(fact.typeDeclaration()){linkHierarchy(fact);hierarchyAffected.add(fact.id());}
+        }
+        ordered.sort(Comparator.comparing(Entry::key));
+        root=bulkBuild(ordered);
+        recomputeHierarchyApis(hierarchyAffected);
+        descriptions.putAll(delta.descriptionsChanged());
+        units.put(delta.unit(),new SemanticSnapshot(delta.unit(),delta.sourceFile(),delta.contentIdentity(),
+                delta.added(),delta.descriptionsChanged(),delta.apiIdentity(),delta.namespaceIdentity(),
+                delta.documentationIdentity(),delta.dependencies()));
+        factMutations+=delta.factMutations();bulkBuilds++;epoch++;
     }
 
     public synchronized SemanticDelta removeUnit(String unit){
@@ -200,7 +224,8 @@ public final class ResidentSemanticState {
                 Map.entry("semantic_facts",symbols.size()),Map.entry("semantic_tree_entries",root==null?0:root.size),
                 Map.entry("semantic_units",units.size()),Map.entry("semantic_member_aggregates",memberAggregates.size()),
                 Map.entry("semantic_hierarchy_aggregates",hierarchyApis.size()),Map.entry("semantic_stale_units",staleUnits.size()),
-                Map.entry("semantic_fact_mutations",factMutations),Map.entry("semantic_tree_range_entries_read",rangeEntriesRead));
+                Map.entry("semantic_fact_mutations",factMutations),Map.entry("semantic_tree_range_entries_read",rangeEntriesRead),
+                Map.entry("semantic_tree_nodes_created",treeNodesCreated),Map.entry("semantic_bulk_builds",bulkBuilds));
     }
 
     private void refreshFreshness(){
@@ -299,35 +324,62 @@ public final class ResidentSemanticState {
         return Hash256.sha256((domain+"\0"+Objects.requireNonNullElse(value,"")).getBytes(StandardCharsets.UTF_8)).unsignedInteger().mod(FIELD);
     }
 
-    private static Node put(Node node,Entry entry){
-        if(node==null)return new Node(entry,null,null);
+    private Node newNode(Entry entry,Node left,Node right){treeNodesCreated++;return new Node(entry,left,right);}
+    private Node newNode(Entry entry,Node left,Node right,BigInteger priority){treeNodesCreated++;return new Node(entry,left,right,priority);}
+
+    /**
+     * Build the deterministic priority treap in linear structural time from already ordered facts.
+     * The Cartesian-tree shape is exactly the shape produced by incremental inserts with the same
+     * strict priority comparison, but without persistent path-copying during first admission.
+     */
+    private Node bulkBuild(List<Entry> ordered){
+        int size=ordered.size();if(size==0)return null;
+        var priorities=new BigInteger[size];var left=new int[size];var right=new int[size];var stack=new int[size];
+        Arrays.fill(left,-1);Arrays.fill(right,-1);int top=-1;
+        for(int i=0;i<size;i++){
+            priorities[i]=point("priority",ordered.get(i).key());int previous=-1;
+            while(top>=0&&priorities[stack[top]].compareTo(priorities[i])<0)previous=stack[top--];
+            left[i]=previous;if(top>=0)right[stack[top]]=i;stack[++top]=i;
+        }
+        return freezeBulk(ordered,priorities,left,right,stack[0]);
+    }
+
+    private Node freezeBulk(List<Entry> ordered,BigInteger[] priorities,int[] left,int[] right,int index){
+        if(index<0)return null;
+        var leftNode=freezeBulk(ordered,priorities,left,right,left[index]);
+        var rightNode=freezeBulk(ordered,priorities,left,right,right[index]);
+        return newNode(ordered.get(index),leftNode,rightNode,priorities[index]);
+    }
+
+    private Node put(Node node,Entry entry){
+        if(node==null)return newNode(entry,null,null);
         int compare=entry.key().compareTo(node.entry.key());
-        if(compare==0)return new Node(entry,node.left,node.right);
+        if(compare==0)return newNode(entry,node.left,node.right);
         if(compare<0){
-            var next=new Node(node.entry,put(node.left,entry),node.right);
+            var next=newNode(node.entry,put(node.left,entry),node.right);
             return next.left.priority.compareTo(next.priority)>0?rotateRight(next):next;
         }
-        var next=new Node(node.entry,node.left,put(node.right,entry));
+        var next=newNode(node.entry,node.left,put(node.right,entry));
         return next.right.priority.compareTo(next.priority)>0?rotateLeft(next):next;
     }
 
-    private static Node remove(Node node,String key){
+    private Node remove(Node node,String key){
         if(node==null)return null;int compare=key.compareTo(node.entry.key());
         if(compare==0)return merge(node.left,node.right);
-        return compare<0?new Node(node.entry,remove(node.left,key),node.right):new Node(node.entry,node.left,remove(node.right,key));
+        return compare<0?newNode(node.entry,remove(node.left,key),node.right):newNode(node.entry,node.left,remove(node.right,key));
     }
 
-    private static Node merge(Node left,Node right){
+    private Node merge(Node left,Node right){
         if(left==null)return right;if(right==null)return left;
-        if(left.priority.compareTo(right.priority)>0)return new Node(left.entry,left.left,merge(left.right,right));
-        return new Node(right.entry,merge(left,right.left),right.right);
+        if(left.priority.compareTo(right.priority)>0)return newNode(left.entry,left.left,merge(left.right,right));
+        return newNode(right.entry,merge(left,right.left),right.right);
     }
 
-    private static Node rotateRight(Node node){
-        var top=node.left;var lower=new Node(node.entry,top.right,node.right);return new Node(top.entry,top.left,lower);
+    private Node rotateRight(Node node){
+        var top=node.left;var lower=newNode(node.entry,top.right,node.right);return newNode(top.entry,top.left,lower);
     }
-    private static Node rotateLeft(Node node){
-        var top=node.right;var lower=new Node(node.entry,node.left,top.left);return new Node(top.entry,lower,top.right);
+    private Node rotateLeft(Node node){
+        var top=node.right;var lower=newNode(node.entry,node.left,top.left);return newNode(top.entry,lower,top.right);
     }
 
 }

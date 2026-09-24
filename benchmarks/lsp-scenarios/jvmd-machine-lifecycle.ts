@@ -68,6 +68,17 @@ function inventoryRepository(root:string){
   if(!firstBinary)throw new Error("No binary JAR available for controlled lifecycle mutation");
   return {jars,sources,firstBinary};
 }
+
+async function waitForRepositoryInventory(daemon:Daemon,expectedArtifacts:number,afterScans:number,timeoutMs=90000){
+  const deadline=Date.now()+timeoutMs;
+  while(Date.now()<deadline){
+    const status=await daemon.status();
+    const index=indexSummary(status);
+    if(index.phase==="ready"&&index.artifactsDiscovered===expectedArtifacts&&index.timings.scans>afterScans)return status;
+    await sleep(100);
+  }
+  throw new Error("Timed out waiting for machine repository reconciliation to "+expectedArtifacts+" artifacts");
+}
 async function connectClient(socketPath:string){
   const socket=await new Promise<net.Socket>((resolve,reject)=>{
     const connection=net.createConnection(socketPath);
@@ -242,6 +253,7 @@ function machineReport(mode:string,daemon:Daemon,repository:any,indexStatus:any)
       sourceJarArtifacts:repository.sources,
     },
     index,
+    aotStatus:daemonResult(indexStatus).aot_cache??"unavailable",
     sourceArtifactUpdateCount:"unavailable: current daemon status exposes aggregate reuse/hash counters and docs_ms, not source-JAR update counts",
     jdkIndexReadiness:"not part of the current repository machine-index-ready barrier; no separate eager-JDK readiness milestone is exposed",
   };
@@ -463,25 +475,59 @@ async function main(){
   const restart=await Daemon.start(image,stateDir,"daemon-restart");
   const daemonRestart=machineReport("daemon_restart",restart,inventory,restart.machineReadyStatus);
   const residentBaselineRss=restart.machineReadyRssKb;
+  const residentIndexBefore=indexSummary(restart.machineReadyStatus);
+  const repositoryBeforeSessions=inventoryRepository(repository);
   const session1=await runDefinitionSession(restart,root,"first_workspace_open",false);
   const session2=await runDefinitionSession(restart,root,"workspace_reopen",true);
+
+  const repositoryAfterSessions=inventoryRepository(repository);
+  let settledStatus=await restart.status();
+  let settledIndex=indexSummary(settledStatus);
+  if(settledIndex.artifactsDiscovered!==repositoryAfterSessions.jars){
+    settledStatus=await waitForRepositoryInventory(
+      restart,repositoryAfterSessions.jars,settledIndex.timings.scans,
+    );
+    settledIndex=indexSummary(settledStatus);
+  }
   const residentDaemon={
     mode:"resident_daemon",
-    machineIndexReconcileMs:0,
     machineIndexReadyBeforeSessions:true,
     daemonBaselineRssKb:residentBaselineRss,
+    repositoryBeforeSessions:{jarArtifacts:repositoryBeforeSessions.jars,sourceJarArtifacts:repositoryBeforeSessions.sources},
+    repositoryAfterSessions:{jarArtifacts:repositoryAfterSessions.jars,sourceJarArtifacts:repositoryAfterSessions.sources},
+    machineIndexDeltaDuringSessions:deltaIndex(settledIndex,residentIndexBefore),
     sessions:[session1,session2],
   };
-  await restart.stop();
 
+  const incrementalBeforeStatus=settledStatus;
+  const incrementalBefore=indexSummary(incrementalBeforeStatus);
   mkdirSync(path.dirname(path.join(controlledRoot,"1.0","benchmark-lifecycle-1.0.jar")),{recursive:true});
   const controlledArtifact=path.join(controlledRoot,"1.0","benchmark-lifecycle-1.0.jar");
   copyFileSync(inventory.firstBinary,controlledArtifact);
-  const incrementalInventory={...inventory,jars:inventory.jars+1};
-  const incremental=await Daemon.start(image,stateDir,"incremental-reconcile");
-  const incrementalReconcile=machineReport("incremental_reconcile",incremental,incrementalInventory,incremental.machineReadyStatus);
-  await incremental.stop();
+  const incrementalInventory=inventoryRepository(repository);
+  const incrementalStartedNs=nowNs();
+  const incrementalAfterStatus=await waitForRepositoryInventory(
+    restart,incrementalInventory.jars,incrementalBefore.timings.scans,
+  );
+  const incrementalFinishedNs=nowNs();
+  const incrementalAfter=indexSummary(incrementalAfterStatus);
+  const incrementalDelta=deltaIndex(incrementalAfter,incrementalBefore);
+  const incrementalReconcile={
+    mode:"incremental_reconcile",
+    daemon:"resident",
+    controlledArtifact,
+    artifactAddedToReadyMs:ms(incrementalStartedNs,incrementalFinishedNs),
+    machineIndexReconcileMs:incrementalDelta.scanMs,
+    repositoryBefore:{jarArtifacts:repositoryAfterSessions.jars,sourceJarArtifacts:repositoryAfterSessions.sources},
+    repositoryAfter:{jarArtifacts:incrementalInventory.jars,sourceJarArtifacts:incrementalInventory.sources},
+    indexBefore:incrementalBefore,
+    indexAfter:incrementalAfter,
+    indexDelta:incrementalDelta,
+    sourceArtifactUpdateCount:"unavailable: current status does not expose source-JAR update counts separately",
+    aotStatus:daemonResult(incrementalAfterStatus).aot_cache??"unavailable",
+  };
   rmSync(controlledRoot,{recursive:true,force:true});
+  await restart.stop();
 
   const report={
     schema:1,phaseModel:PHASE_MODEL,
@@ -489,12 +535,12 @@ async function main(){
     revision:process.env.GITHUB_SHA??"working-tree",
     fixture:"apache/maven@5cd1b60264101080c712accd605180a4bd9222e0",
     provenance:{
-      daemon:"machine_cold → daemon_restart/resident sessions → incremental persisted-index restart",
-      machineIndex:{cold:"empty",restart:"persisted",resident:"persisted/current",incremental:"persisted + one controlled binary JAR"},
+      daemon:"machine_cold → daemon_restart with persisted index → resident sessions → one-artifact incremental reconciliation on the resident daemon",
+      machineIndex:{cold:"empty",restart:"persisted",resident:"persisted/current",incremental:"persisted/current + one controlled binary JAR"},
       workspace:{session1:"first open",session2:"reopen on same resident daemon"},
       localWorkspaceState:"resident in daemon; persisted-local readiness not assumed",
       machineRepository:{baseline:"unchanged",incremental:"one controlled binary JAR added after resident sessions"},
-      aot:"disabled in controlled direct-image JVM launch",
+      aot:{machineCold:machineCold.aotStatus,daemonRestart:daemonRestart.aotStatus,incremental:incrementalReconcile.aotStatus},
       filesystemCache:"uncontrolled; not flushed",
       jdk:process.env.JAVA_HOME??"system",node:process.version,
       runner:{platform:process.platform,arch:process.arch,cpus:os.cpus().length},

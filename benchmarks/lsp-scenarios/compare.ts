@@ -35,8 +35,10 @@ if(jdtls.phaseModel.defaults.steady_samples!==jvmd.phaseModel.defaults.steady_sa
 const startup=[
   ["Initialize request",jdtls.lifecycle.initializeMs,jvmd.lifecycle.initializeMs],
   ["Process → initialize response",jdtls.lifecycle.processToInitializeResponseMs,jvmd.lifecycle.processToInitializeResponseMs],
-  ["Process → workspace ready",jdtls.lifecycle.processToWorkspaceReadyMs,jvmd.lifecycle.processToWorkspaceReadyMs],
-  ["Workspace ready → documents admitted",jdtls.lifecycle.documentAdmissionMs,jvmd.lifecycle.documentAdmissionMs],
+  ["JDTLS ServiceReady",jdtls.lifecycle.serviceReadyMs,null],
+  ["JVMD machine index ready",null,jvmd.lifecycle.machineIndexReadyMs],
+  ["Process → documents admitted",jdtls.lifecycle.documentsAdmittedFromProcessMs,jvmd.lifecycle.documentsAdmittedFromProcessMs],
+  ["Document admission interval",jdtls.lifecycle.documentAdmissionMs,jvmd.lifecycle.documentAdmissionMs],
   ["Process → first correct completion",jdtls.coldEndToEnd.firstCorrectResultMs,jvmd.coldEndToEnd.firstCorrectResultMs],
   ["Process → first completion (diagnostic timing)",jdtls.coldEndToEnd.diagnosticMs,jvmd.coldEndToEnd.diagnosticMs],
 ];
@@ -49,7 +51,7 @@ const query=[
     completionCorrect(jvmd,"steady")?"correct":"incorrect"],
 ];
 const memory=[
-  ["Workspace ready RSS",jdtls.lifecycle.memory.workspace_ready.totalKb,jvmd.lifecycle.memory.workspace_ready.totalKb],
+  ["Pre-document admission RSS",jdtls.lifecycle.memory.pre_document_admission.totalKb,jvmd.lifecycle.memory.pre_document_admission.totalKb],
   ["After first-use RSS",jdtls.lifecycle.memory.post_first_use.totalKb,jvmd.lifecycle.memory.post_first_use.totalKb],
   ["After steady RSS",jdtls.lifecycle.memory.post_steady.totalKb,jvmd.lifecycle.memory.post_steady.totalKb],
   ["Steady peak RSS",jdtls.lifecycle.memory.steady_peak.totalKb,jvmd.lifecycle.memory.steady_peak.totalKb],
@@ -70,7 +72,7 @@ const lines=[
   "| --- | --- | ---: | ---: | --- | --- |",
   ...query.map(row=>"| "+row.join(" | ")+" |"),
   "",
-  "Warmup samples are retained in each raw report and excluded from steady p50/p95. An incorrect result is never treated as an equivalent performance result; its timing is diagnostic only.",
+  "JDTLS ServiceReady and JVMD machine-index-ready are intentionally shown as separate native milestones; no equivalence is claimed. Warmup samples are retained in each raw report and excluded from steady p50/p95. An incorrect result is never treated as equivalent performance; its timing is diagnostic only.",
   "",
   "### Memory",
   "",

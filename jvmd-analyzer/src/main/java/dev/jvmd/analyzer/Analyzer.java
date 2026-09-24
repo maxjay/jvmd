@@ -435,8 +435,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private String residentContextKey(Path file,String patched,int start,CompilerInputs.Snapshot inputs,boolean qualified){
         if(patched.length()>256*1024)return null;
         String patchedHash=Hashing.sha256(patched.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        return CompilerInputs.compose(qualified?"resident-qualified-v1":"resident-unqualified-v1",
-                completionContextIdentity,file.toString(),start,patchedHash,inputs.environment().value());
+        String namespace=qualified?"qualified":inputs.live().snapshot().state().namespace().fingerprint().value();
+        return CompilerInputs.compose(qualified?"resident-qualified-v2":"resident-unqualified-v2",
+                completionContextIdentity,file.toString(),start,patchedHash,inputs.environment().value(),namespace);
     }
 
     private String queryHierarchyApi(DocumentSemanticSnapshot.QueryContext query){

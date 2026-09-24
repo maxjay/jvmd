@@ -124,3 +124,40 @@ Replacement:
 - The harness now reads `jdk.ObjectAllocationSample` events directly with `jdk.jfr.consumer.RecordingFile`.
 - Allocation attribution is grouped by allocated object class and top Java allocation site, weighted by the event's byte weight.
 - This avoids all JDK CLI pretty-printing while retaining the raw recording and independent JFR event summary.
+
+
+## Checkpoint 0 — baseline attempt 5: jlink tracing incompatibility
+
+Starting SHA: `eb45487f08a986d3a5ef2acd3666177e332cdc9b`
+Ending SHA: `eb45487f08a986d3a5ef2acd3666177e332cdc9b`
+
+Changes:
+- Extended the frozen matrix with hierarchy mutation/fixed-point and persistent machine/workspace composition scenarios.
+- Extended the direct JFR reader to count existing `dev.jvmd.Stage` events so parse/enter-attribution work can be measured without production counters.
+- Attempted to enable `RequestScope` tracing for the real distribution-image CMP-01 run.
+
+Architecture:
+- Production source remained unchanged. The measured subject was still the exact baseline SHA.
+- The failure exposed a runtime-image boundary: the production jlink image does not contain `com.sun.management.ThreadMXBean`/`jdk.management`, while opt-in `RequestScope` allocation counters reference that class when tracing is enabled.
+
+Correctness proof:
+- GitHub Actions run https://github.com/maxjay/jvmd/actions/runs/36068507983 failed before the CMP-01 request because `session.open` threw `NoClassDefFoundError: com/sun/management/ThreadMXBean`.
+- The failure is therefore proof-harness-induced and does not change the already-established baseline completion defect.
+
+Performance proof:
+- No valid measurements from this attempt are accepted because the traced distribution process failed before the target request.
+
+Findings:
+- `-Djvmd.trace=true` is not a valid measurement mechanism inside the current production jlink image.
+- JFR itself remains valid there; the incompatibility is specifically the opt-in thread-allocation counter used by `RequestScope.Span`.
+
+Failed/deprecated approaches:
+- Do not enable `RequestScope` tracing in the distribution-image CMP proof.
+- Replacement: keep the ordinary production-image CMP JFR recording unchanged, and use a frozen companion LSP driver over the same production daemon/LspBridge to sample native `session.status` immediately before and after `project.`. Direct semantic proof scenarios continue to use `RequestScope` stage events under the full pinned JDK, where `jdk.management` is present.
+
+Deviations:
+- None to production semantics. The companion status probe exists only because the production image cannot safely expose the opt-in tracing counters.
+
+Remaining:
+- Rerun the exact baseline with the repaired frozen harness.
+- Accept Checkpoint 0 only after CMP correctness/latency/allocation, compiler-query deltas, hierarchy mutation, classpath, namespace, dependency, and machine/workspace composition artifacts all exist.

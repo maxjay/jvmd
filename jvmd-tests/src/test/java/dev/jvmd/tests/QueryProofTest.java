@@ -4,6 +4,7 @@ import dev.jvmd.core.Hash256;
 import dev.jvmd.index.QueryProof;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.*;

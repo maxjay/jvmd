@@ -44,7 +44,7 @@ class ResidentSemanticMavenProofTest {
         return response;
     }
 
-    private static Map<String,Long> analyzerCounters(Application app,String session){
+    private static Map<String,Long> analyzerCounters(Application app,String session)throws Exception{
         var status=TestSupport.complete(app.dispatcher(),"session.status",Map.of("session",session))
                 .path("result").path("result").path("analyzer");
         var result=new LinkedHashMap<String,Long>();
@@ -52,7 +52,7 @@ class ResidentSemanticMavenProofTest {
         return result;
     }
 
-    private static Map<String,Long> budgetCounters(Application app){
+    private static Map<String,Long> budgetCounters(Application app)throws Exception{
         var status=TestSupport.complete(app.dispatcher(),"daemon.status",Map.of())
                 .path("result").path("result").path("response_budget");
         return Map.of(

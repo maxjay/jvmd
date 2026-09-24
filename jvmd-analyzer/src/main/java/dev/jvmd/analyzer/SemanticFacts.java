@@ -202,6 +202,16 @@ public final class SemanticFacts {
         return snapshot("source:"+source,source,content,facts);
     }
 
+    /** Build a source unit from canonical declarations already extracted by Bindings in this attribution. */
+    public static SemanticSnapshot sourceSnapshot(CompilationUnitTree unit,Collection<SemanticFact> captured)throws Exception{
+        String text=unit.getSourceFile().getCharContent(true).toString();
+        String source=sourcePath(unit),content=Hashing.sha256(text.getBytes(StandardCharsets.UTF_8));
+        var facts=new LinkedHashMap<String,SemanticFact>();
+        var excluded=Set.of("local","local_variable","resource_variable","exception_parameter","binding_variable","parameter","type_parameter");
+        for(var fact:captured)if(source.equals(fact.sourceFile())&&!excluded.contains(fact.kind()))facts.put(fact.id(),fact);
+        return snapshot("source:"+source,source,content,facts);
+    }
+
     /** Classfile/JDK fallback: one detached declaration unit without retaining compiler objects. */
     public static SemanticSnapshot typeSnapshot(JavacTask task,SymbolIdentity identity,TypeElement type){
         var facts=new LinkedHashMap<String,SemanticFact>();
@@ -223,39 +233,17 @@ public final class SemanticFacts {
     }
 
     public static SemanticFact fact(JavacTask task,SymbolIdentity identity,Element element){
-        String id=identity.scip(element);
-        String owner=element.getEnclosingElement() instanceof TypeElement parent?identity.scip(parent):null;
-        String source=identity.sourceFile(element);
-        String pkg=task.getElements().getPackageOf(element).getQualifiedName().toString();
-        String erased=null;
-        try{
-            if(element instanceof ExecutableElement method)erased=identity.descriptor(method);
-            else if(element instanceof VariableElement variable)erased=identity.descriptor(variable.asType());
-        }catch(IllegalArgumentException ignored){}
-        var modifiers=new TreeSet<String>();element.getModifiers().forEach(value->modifiers.add(value.toString()));
-        var typeParameters=element instanceof Parameterizable p?p.getTypeParameters().stream().map(identity::scip).toList():List.<String>of();
-        var supertypes=element instanceof TypeElement t?task.getTypes().directSupertypes(t.asType()).stream().map(value->type(identity,value)).toList():List.<SemanticType>of();
-        var parameterNames=element instanceof ExecutableElement method?method.getParameters().stream().map(p->p.getSimpleName().toString()).toList():List.<String>of();
-        boolean varargs=element instanceof ExecutableElement method&&method.isVarArgs();
-        String signature=identity.signature(element);
-        String api=Hashing.sha256((id+"\0"+signature+"\0"+ApiFingerprint.declaration(element)).getBytes(StandardCharsets.UTF_8));
-        String namespace=Hashing.sha256((Objects.toString(owner,"")+"\0"+pkg+"\0"+identity.displayName(element)+"\0"+SymbolIdentity.kind(element)).getBytes(StandardCharsets.UTF_8));
-        String doc=Objects.requireNonNullElse(task.getElements().getDocComment(element),"");
-        String docIdentity=Hashing.sha256(doc.getBytes(StandardCharsets.UTF_8));
-        TypeElement declaring=identity.declaring(element);
-        String fqn=declaring==null?null:identity.binaryName(declaring);
-        return new SemanticFact(id,owner,identity.displayName(element),SymbolIdentity.kind(element),signature,erased,modifiers,source,pkg,
-                identity.namePath(element),fqn,type(identity,element.asType()),typeParameters,supertypes,parameterNames,varargs,api,namespace,docIdentity);
+        return identity.declaration(element).fact();
     }
 
     public static SymbolDescription description(JavacTask task,SymbolIdentity identity,Element element){
-        String id=identity.scip(element),doc=Objects.requireNonNullElse(task.getElements().getDocComment(element),"");
+        var declaration=identity.declaration(element);var fact=declaration.fact();
         SymbolDescription.DeclarationLocation location=null;var path=identity.path(element);
         if(path!=null){
             var positions=Trees.instance(task).getSourcePositions();long start=positions.getStartPosition(path.getCompilationUnit(),path.getLeaf()),end=positions.getEndPosition(path.getCompilationUnit(),path.getLeaf());
             if(start>=0&&end>=start)location=new SymbolDescription.DeclarationLocation(sourcePath(path.getCompilationUnit()),(int)start,(int)end);
         }
-        return new SymbolDescription(id,doc,identity.signature(element),location,Hashing.sha256(doc.getBytes(StandardCharsets.UTF_8)));
+        return new SymbolDescription(fact.id(),declaration.documentation(),fact.structuralSignature(),location,fact.documentationIdentity());
     }
 
     public static SemanticType type(SymbolIdentity identity,TypeMirror mirror){

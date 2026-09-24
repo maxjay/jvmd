@@ -81,6 +81,8 @@ public final class ResidentSemanticAllocationProof {
                 while(events.hasMoreEvents()){
                     RecordedEvent event=events.readEvent();
                     if(!event.getEventType().getName().equals("jdk.ObjectAllocationSample"))continue;
+                    var thread=event.getThread();String threadName=thread==null?"":thread.getJavaName();
+                    if(!threadName.equals("main")&&!threadName.startsWith("jvmd-session-"))continue;
                     RecordedClass type=event.getClass("objectClass");long weight=event.getLong("weight");
                     String key=type==null?"<unknown>":type.getName();
                     weights.merge(key,weight,Long::sum);samples++;totalWeight+=weight;
@@ -189,16 +191,24 @@ public final class ResidentSemanticAllocationProof {
 
     private static Scenario unsavedScenario()throws Exception{
         Path root=Files.createTempDirectory("jvmd-proof-unsaved-"),use=root.resolve("Use.java"),created=root.resolve("Created.java");
-        Files.writeString(use,"class Stable { int stable(){return 1;} } class Use { int f(){ return Created.answer(); } }");
+        String source="class Stable { int stable(){return 1;} } class Use { Object f(Stable stable){ return stable.sta; } Object g(){ return Created.an; } }";
+        Files.writeString(use,source);
         var app=new Application(TestSupport.config(root,Duration.ofHours(4)));String session=TestSupport.open(app,root);
-        diagnostics(app,session,use);long beforeFacts=residentFacts(app,session);
+        int stableOffset=source.indexOf("stable.sta")+"stable.sta".length();var stablePos=Documents.position(source,stableOffset);
+        request(app,session,"symbol.completion",Map.of("path",use.toString(),"line",stablePos.line(),"character",stablePos.character(),"limit",100));
+        long beforeFacts=residentFacts(app,session);
         return new Scenario(app,()->{
             request(app,session,"document.open",Map.of("path",created.toString(),"version",1,"text","class Created { static int answer(){return 42;} }"));
-            long afterOpen=residentFacts(app,session);int openErrors=diagnostics(app,session,use);
+            long afterOpen=residentFacts(app,session);
+            int createdOffset=source.indexOf("Created.an")+"Created.an".length();var createdPos=Documents.position(source,createdOffset);
+            JsonNode open=request(app,session,"symbol.completion",Map.of("path",use.toString(),"line",createdPos.line(),"character",createdPos.character(),"limit",100));
+            boolean answerVisible=open.path("result").path("result").path("items").findValuesAsText("name").contains("answer");
             request(app,session,"document.close",Map.of("path",created.toString()));
-            long afterClose=residentFacts(app,session);int closeErrors=diagnostics(app,session,use);
+            long afterClose=residentFacts(app,session);
+            JsonNode closed=request(app,session,"symbol.completion",Map.of("path",use.toString(),"line",createdPos.line(),"character",createdPos.character(),"limit",100));
+            boolean answerAfterClose=closed.path("result").path("result").path("items").findValuesAsText("name").contains("answer");
             return new LinkedHashMap<>(Map.of("resident_facts_before",beforeFacts,"resident_facts_after_open",afterOpen,
-                    "resident_facts_after_close",afterClose,"open_errors",openErrors,"close_errors",closeErrors,
+                    "resident_facts_after_close",afterClose,"answer_visible_after_open",answerVisible,"answer_visible_after_close",answerAfterClose,
                     "unrelated_state_survived_open",afterOpen>=beforeFacts));
         });
     }
@@ -245,9 +255,10 @@ public final class ResidentSemanticAllocationProof {
         request(app,session,"document.open",Map.of("path",file.toString(),"version",1,"text",source));
         return new Scenario(app,()->{
             int offset=source.indexOf("Samp")+4;var pos=Documents.position(source,offset);
-            JsonNode response=request(app,session,"symbol.completion",Map.of("path",file.toString(),"line",pos.line(),"character",pos.character(),"limit",100));
-            JsonNode items=response.path("result").path("result").path("items");
-            boolean sample=false;for(var item:items)if(item.path("name").asText().equals("Sample"))sample=true;
+            var lspParams=Map.of("textDocument",Map.of("uri",file.toUri().toString()),"position",pos);
+            JsonNode response=request(app,session,"lsp.request",Map.of("method","textDocument/completion","params",lspParams,"client",Map.of()));
+            JsonNode value=response.path("result").path("result").path("value"),items=value.path("items");
+            boolean sample=false;for(var item:items)if(item.path("label").asText().equals("Sample"))sample=true;
             return new LinkedHashMap<>(Map.of("items",items.size(),"contains_indexed_sample",sample));
         });
     }

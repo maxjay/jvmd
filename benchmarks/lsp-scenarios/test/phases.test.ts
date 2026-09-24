@@ -4,7 +4,8 @@ import { PHASE_MODEL, elapsedMs, latencyStats, orderedMilestones } from "../harn
 
 test("canonical phase model preserves first use before warmup and steady",()=>{
   assert.deepEqual(PHASE_MODEL.states,[
-    "startup","initialize","workspace_ready","document_admission","first_use","warmup","steady",
+    "startup","machine_index","initialize","service_ready","session_open","workspace_resolution",
+    "workspace_index","document_admission","first_use","warmup","steady",
   ]);
   assert.equal(PHASE_MODEL.defaults.warmup,2);
   assert.equal(PHASE_MODEL.defaults.steady_samples,20);

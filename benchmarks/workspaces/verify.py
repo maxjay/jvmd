@@ -6,6 +6,12 @@ import re
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
+STATE_ALIASES = {"first": "first_use", "warm": "steady"}
+
+
+def canonical_state(state):
+    return STATE_ALIASES.get(state, state)
+
 
 def selected(text, range_):
     if isinstance(range_, list):
@@ -129,17 +135,46 @@ def verify(root):
                 errors.append("misclassified invocation " + row["id"])
             if row["outcome"] == "correct" and (row.get("latency_ms") is None or row["latency_ms"] < 0):
                 errors.append("missing timing")
-        required = {
-            (op, target, state, sample)
-            for op, target in operations
-            for state, count in [
+        if report.get("schema", 2) >= 3:
+            state_counts = [
+                ("first_use", 1),
+                ("warmup", provenance["warmup"]),
+                ("steady", provenance["samples"]),
+            ]
+        else:
+            state_counts = [
                 ("first", 1),
                 ("warmup", provenance["warmup"]),
                 ("warm", provenance["samples"]),
             ]
+        required = {
+            (op, target, state, sample)
+            for op, target in operations
+            for state, count in state_counts
             for sample in range(count)
         }
         missing = sorted(required - seen)
+        if report.get("schema", 2) >= 3:
+            milestones = report.get("preparation", {}).get("milestones_ns", {})
+            ordered = [
+                "process_spawn",
+                "initialize_received",
+                "workspace_ready",
+                "documents_admitted",
+                "first_use_started",
+                "first_use_finished",
+            ]
+            values = [milestones.get(name) for name in ordered]
+            if any(value is None for value in values) or values != sorted(values):
+                errors.append("benchmark milestones are missing or out of order")
+            if report.get("preparation", {}).get("readiness", {}).get("target_queried") is not False:
+                errors.append("measured target was queried during readiness")
+            first = next((row for row in report["actions"] if row["state"] == "first_use"), None)
+            diagnostic = report.get("diagnostic_cold_end_to_end_ms")
+            if first and first.get("response_ns") and diagnostic is not None:
+                expected = (first["response_ns"] - milestones["process_spawn"]) / 1e6
+                if abs(expected - diagnostic) > 1e-6:
+                    errors.append("cold end-to-end timing does not match milestone arithmetic")
         passed = (
             not errors
             and not missing

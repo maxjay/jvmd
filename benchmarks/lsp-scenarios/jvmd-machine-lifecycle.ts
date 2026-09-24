@@ -279,6 +279,7 @@ function recursiveStatusDelta(before:any,after:any,key:string){
 }
 
 async function runDefinitionSession(daemon:Daemon,root:string,label:string,localChange:boolean){
+  const sessionBaselineRss=rssKb(daemon.process.pid);
   const beforeDaemon=await daemon.status();
   const pool=new RpcPool(()=>connectClient(daemon.socketPath));
   const tracing=new TracingCaller(pool);
@@ -381,6 +382,7 @@ async function runDefinitionSession(daemon:Daemon,root:string,label:string,local
   await bridge.drained();await bridge.close();
   await daemon.call("session.close",{session});
   pool.close();
+  const afterSessionCloseRss=rssKb(daemon.process.pid);
 
   return {
     label,session,
@@ -407,6 +409,7 @@ async function runDefinitionSession(daemon:Daemon,root:string,label:string,local
       ready:"unavailable: registerLocal refresh is asynchronous and no all-current barrier is exposed",
       loadCalls:numericDelta(afterIndex.timings,beforeIndex.timings,"workspaceIndexLoads"),
       loadMs:numericDelta(afterIndex.timings,beforeIndex.timings,"workspaceIndexLoadMs"),
+      machineIndexWorkDuringSessionOpen:deltaIndex(afterIndex,beforeIndex),
       activeArtifactsAfter:afterIndex.activeArtifacts,
       sourcePublisherAfter:afterIndex.sourcePublisher,
     },
@@ -433,9 +436,11 @@ async function runDefinitionSession(daemon:Daemon,root:string,label:string,local
     },
     memory:{
       daemonMachineReadyKb:machineReadyRss,
+      daemonBaselineBeforeSessionKb:sessionBaselineRss,
       sessionOpenedKb:sessionOpenedRss,
-      sessionIncrementKb:sessionOpenedRss-machineReadyRss,
+      sessionOpenIncrementKb:sessionOpenedRss-sessionBaselineRss,
       afterSteadyKb:afterSteadyRss,
+      afterSessionCloseKb:afterSessionCloseRss,
     },
     statusEvidence:{
       before:statusEvidence(beforeDaemon),

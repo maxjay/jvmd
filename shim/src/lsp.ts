@@ -5,6 +5,7 @@ import path from "node:path";
 import type { Message, RpcCaller } from "./transport.ts";
 
 const MAX_BYTES=64*1024;
+const DIAGNOSTIC_DEBOUNCE_MS=200,MAX_DIAGNOSTIC_DEFERRAL_MS=30_000;
 function rpcError(code:number,message:string,data?:any){return Object.assign(new Error(message),{rpc:{code,message,data}});}
 function pointer(parts:string[]){return "/"+parts.map(p=>p.replaceAll("~","~0").replaceAll("/","~1")).join("/");}
 /** Reconstructs bounded daemon fragments by their declared UTF-16 or array offsets. */
@@ -52,6 +53,8 @@ export class LspBridge {
   private capabilities:any={};
   private timers=new Map<string,ReturnType<typeof setTimeout>>();
   private diagnosticJobs=new Map<string,Promise<void>>();
+  private diagnosticPlans=new Map<string,{generation:number;version:number;dueSince:number}>();
+  private interactiveByUri=new Map<string,number>();
   private mutationTails=new Map<string,Promise<void>>();
   private active=new Set<Promise<void>>();
   private versions=new Map<string,number>();
@@ -155,26 +158,40 @@ export class LspBridge {
     }else if(method==="textDocument/didChange"){
       await client.call("document.change",{...common,version:document.version,changes:params.contentChanges});this.versions.set(uri,document.version);this.schedule(uri,generation!,document.version);
     }else if(method==="textDocument/didClose"){
-      this.clearTimer(uri);await client.call("document.close",common);this.versions.delete(uri);for(const [canonical,original] of this.documentUris)if(original===uri)this.documentUris.delete(canonical);this.send({jsonrpc:"2.0",method:"textDocument/publishDiagnostics",params:{uri,diagnostics:[]}});
+      this.clearDiagnostic(uri);await client.call("document.close",common);this.versions.delete(uri);for(const [canonical,original] of this.documentUris)if(original===uri)this.documentUris.delete(canonical);this.send({jsonrpc:"2.0",method:"textDocument/publishDiagnostics",params:{uri,diagnostics:[]}});
     }else if(method==="textDocument/didSave"){
       const version=this.versions.get(uri);if(version!==undefined)this.schedule(uri,generation!,version);
     }else throw rpcError(-32601,"Method not found: "+method);
   }
   private interactive(message:Message,uri?:string,completionGeneration?:number){
     const barrier=uri?this.mutationTails.get(uri):undefined;
+    if(uri)this.interactiveByUri.set(uri,(this.interactiveByUri.get(uri)||0)+1);
     return this.track(this.safe(message,async()=>{
       const id=message.id,method=message.method||"",params=message.params||{};
-      if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
-      await this.ready();
-      if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
-      if(barrier)await barrier;
-      if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
-      const client=await this.getClient();
-      if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
-      const response=await collect(client,"lsp.request",{session:this.session,method,params,client:this.capabilities});
-      if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
-      this.reply(id,method,params,response.result.value,response.firstCursor);
+      try{
+        if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
+        await this.ready();
+        if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
+        if(barrier)await barrier;
+        if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
+        const client=await this.getClient();
+        if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
+        let response:any;
+        try{response=await collect(client,"lsp.request",{session:this.session,method,params,client:this.capabilities});}
+        catch(error){if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}throw error;}
+        if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
+        this.reply(id,method,params,response.result.value,response.firstCursor);
+      }finally{if(uri)this.finishInteractive(uri);}
     }));
+  }
+  private finishInteractive(uri:string){
+    const remaining=(this.interactiveByUri.get(uri)||1)-1;
+    if(remaining>0){this.interactiveByUri.set(uri,remaining);return;}
+    this.interactiveByUri.delete(uri);
+    const plan=this.diagnosticPlans.get(uri);
+    if(plan&&this.diagnosticCurrent(uri,plan.generation,plan.version)){
+      this.clearTimer(uri);this.armDiagnostic(uri,plan,DIAGNOSTIC_DEBOUNCE_MS);
+    }
   }
   private async notification(message:Message){
     await this.ready();
@@ -216,12 +233,17 @@ export class LspBridge {
   }
   private schedule(uri:string,generation:number,version:number){
     this.clearTimer(uri);if(this.shutdownRequested)return;
+    const plan={generation,version,dueSince:Date.now()};this.diagnosticPlans.set(uri,plan);this.armDiagnostic(uri,plan,DIAGNOSTIC_DEBOUNCE_MS);
+  }
+  private armDiagnostic(uri:string,plan:{generation:number;version:number;dueSince:number},delay:number){
     const timer=setTimeout(()=>{
       this.timers.delete(uri);
-      if(!this.diagnosticCurrent(uri,generation,version))return;
-      const barrier=this.mutationTails.get(uri),work=this.diagnostic(uri,generation,version,barrier);
+      if(this.diagnosticPlans.get(uri)!==plan||!this.diagnosticCurrent(uri,plan.generation,plan.version)){if(this.diagnosticPlans.get(uri)===plan)this.diagnosticPlans.delete(uri);return;}
+      if((this.interactiveByUri.get(uri)||0)>0&&Date.now()-plan.dueSince<MAX_DIAGNOSTIC_DEFERRAL_MS){this.armDiagnostic(uri,plan,DIAGNOSTIC_DEBOUNCE_MS);return;}
+      this.diagnosticPlans.delete(uri);
+      const barrier=this.mutationTails.get(uri),work=this.diagnostic(uri,plan.generation,plan.version,barrier);
       this.diagnosticJobs.set(uri,work);this.track(work);void work.then(()=>{if(this.diagnosticJobs.get(uri)===work)this.diagnosticJobs.delete(uri);});
-    },200);this.timers.set(uri,timer);
+    },delay);this.timers.set(uri,timer);
   }
   private diagnosticCurrent(uri:string,generation:number,version:number){
     return !this.shutdownRequested&&!this.stopping&&this.generations.get(uri)===generation&&this.versions.get(uri)===version;
@@ -242,7 +264,8 @@ export class LspBridge {
     }
   }
   private clearTimer(uri:string){const timer=this.timers.get(uri);if(timer)clearTimeout(timer);this.timers.delete(uri);}
-  private clearTimers(){for(const timer of this.timers.values())clearTimeout(timer);this.timers.clear();}
+  private clearDiagnostic(uri:string){this.clearTimer(uri);this.diagnosticPlans.delete(uri);}
+  private clearTimers(){for(const timer of this.timers.values())clearTimeout(timer);this.timers.clear();this.diagnosticPlans.clear();}
   async close(){
     this.clearTimers();await Promise.allSettled([...this.mutationTails.values()]);
     if(this.session){const client=await this.getClient();for(const uri of this.versions.keys())await client.call("document.close",{session:this.session,path:fileURLToPath(uri)});this.versions.clear();this.documentUris.clear();}

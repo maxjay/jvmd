@@ -161,3 +161,40 @@ Deviations:
 Remaining:
 - Rerun the exact baseline with the repaired frozen harness.
 - Accept Checkpoint 0 only after CMP correctness/latency/allocation, compiler-query deltas, hierarchy mutation, classpath, namespace, dependency, and machine/workspace composition artifacts all exist.
+
+
+## Checkpoint 0 — baseline attempt 6: CMP status driver type-strip regression
+
+Starting SHA: `eb45487f08a986d3a5ef2acd3666177e332cdc9b`
+Ending SHA: `eb45487f08a986d3a5ef2acd3666177e332cdc9b`
+
+Changes:
+- Ran the complete frozen baseline harness after separating RequestScope tracing from the production jlink image.
+- The ordinary production LSP CMP-01 phase completed successfully and reproduced the empty completion result.
+- The new companion native-status probe failed before launching its daemon because Node 24 strip-only TypeScript mode rejected a constructor parameter property.
+
+Architecture:
+- Production source remained unchanged and the exact measured subject remained `eb45487f08a986d3a5ef2acd3666177e332cdc9b`.
+- No semantic result from the failing companion probe is accepted.
+
+Correctness proof:
+- GitHub Actions run https://github.com/maxjay/jvmd/actions/runs/36069338869 completed the real CMP-01 step successfully: `project.` remained incorrect with an empty result, exact-version document admission was observed, and the semantic oracle was not changed.
+- The following companion step failed with `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` at `constructor(private bridge:any)`.
+
+Performance proof:
+- The real CMP run produced valid latency/RSS/JFR evidence, but the run is not accepted as the complete Stage-0 baseline because compiler status and the expanded semantic matrix did not run.
+
+Findings:
+- The failure was entirely in disposable proof code. Node's built-in TypeScript stripper supports erasable type annotations but not TypeScript parameter properties.
+- A later harness edit had accidentally restored the older parameter-property form after it had previously been corrected.
+
+Failed/deprecated approaches:
+- Constructor parameter properties are forbidden in the frozen Node proof scripts.
+- Replacement: use an explicit `bridge` field plus ordinary constructor assignment.
+
+Deviations:
+- None to production semantics or the measured subject.
+
+Remaining:
+- Rerun the exact baseline subject with the corrected companion driver.
+- Do not complete Checkpoint 0 until the expanded hierarchy and machine/workspace scenarios plus compiler-status/JFR evidence all succeed in one accepted frozen-harness run.

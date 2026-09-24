@@ -69,6 +69,8 @@ def summarize(root):
               ("jdk", "node", "runs", "samples", "warmup", "targets", "sources", "cache",
                "cpu_quota", "cpu_period", "memory_limit", "runner")}
     config["fixtures"] = sorted(fixtures)
+    config["phase_model"] = provenance.get("phase_model")
+    config["lifecycle"] = provenance.get("lifecycle")
     config["harness"] = {key: provenance["harness"][key] for key in
                          ("run.py", "fixture.py", "verify.py", "resources.py", "bridge.ts", "StdioApplication.java", "summarize.py", "compile.py")}
     config["dependencies"] = {Path(k).name: v for k, v in provenance["build"]["dependencies"].items()

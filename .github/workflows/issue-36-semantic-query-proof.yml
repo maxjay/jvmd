@@ -71,8 +71,7 @@ jobs:
           if [[ ! -f "$RUNNER_TEMP/downloads/temurin25.tar.gz" ]]; then
             curl -fsSL --retry 3               'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz'               -o "$RUNNER_TEMP/downloads/temurin25.tar.gz"
           fi
-          printf '%s  %s
-'             dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e             "$RUNNER_TEMP/downloads/temurin25.tar.gz" | sha256sum -c -
+          echo "dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e  $RUNNER_TEMP/downloads/temurin25.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/downloads/temurin25.tar.gz" -C "$RUNNER_TEMP/tools"
           echo "JAVA_HOME=$RUNNER_TEMP/tools/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/tools/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"

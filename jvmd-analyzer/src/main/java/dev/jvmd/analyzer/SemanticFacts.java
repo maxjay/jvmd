@@ -26,10 +26,10 @@ public final class SemanticFacts {
 
     /** Detach one qualified-completion context and the canonical declaration units it can query. */
     public static CompletionContext qualifiedCompletion(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String marker,int selectorOffset)throws Exception{
-        return qualifiedCompletion(task,units,identity,marker,selectorOffset,_->false);
+        return qualifiedCompletion(task,units,identity,marker,selectorOffset,(_, _)->false);
     }
     public static CompletionContext qualifiedCompletion(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String marker,
-                                                         int selectorOffset,java.util.function.Predicate<String> residentTypeCurrent)throws Exception{
+                                                         int selectorOffset,java.util.function.BiPredicate<String,String> residentTypeCurrent)throws Exception{
         TreePath[] found={null};
         for(var unit:units)new TreePathScanner<Void,Void>(){
             @Override public Void visitMemberSelect(MemberSelectTree node,Void unused){
@@ -71,10 +71,10 @@ public final class SemanticFacts {
 
     /** Detach the cursor-visible lexical/import scope and enclosing-type semantic context. */
     public static CompletionContext unqualifiedCompletion(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String marker,int selectorOffset)throws Exception{
-        return unqualifiedCompletion(task,units,identity,marker,selectorOffset,_->false);
+        return unqualifiedCompletion(task,units,identity,marker,selectorOffset,(_, _)->false);
     }
     public static CompletionContext unqualifiedCompletion(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String marker,
-                                                           int selectorOffset,java.util.function.Predicate<String> residentTypeCurrent)throws Exception{
+                                                           int selectorOffset,java.util.function.BiPredicate<String,String> residentTypeCurrent)throws Exception{
         TreePath[] found={null};
         for(var unit:units)new TreePathScanner<Void,Void>(){
             @Override public Void visitIdentifier(IdentifierTree node,Void unused){
@@ -173,14 +173,15 @@ public final class SemanticFacts {
     }
 
     private static void hierarchySnapshots(JavacTask task,SymbolIdentity identity,TypeMirror mirror,Set<String> seen,
-                                           Map<String,SemanticSnapshot> snapshots,java.util.function.Predicate<String> residentTypeCurrent,
+                                           Map<String,SemanticSnapshot> snapshots,java.util.function.BiPredicate<String,String> residentTypeCurrent,
                                            int[] reused)throws Exception{
         if(mirror instanceof TypeVariable variable){hierarchySnapshots(task,identity,variable.getUpperBound(),seen,snapshots,residentTypeCurrent,reused);return;}
         if(mirror instanceof IntersectionType intersection){for(var bound:intersection.getBounds())hierarchySnapshots(task,identity,bound,seen,snapshots,residentTypeCurrent,reused);return;}
         if(!(mirror instanceof DeclaredType declared)||!(declared.asElement() instanceof TypeElement type))return;
         String id;try{id=identity.scip(type);}catch(IllegalArgumentException unresolved){return;}
         if(!seen.add(id))return;
-        if(residentTypeCurrent.test(id))reused[0]++;
+        String source=identity.sourceFile(type);
+        if(residentTypeCurrent.test(id,source))reused[0]++;
         else{
             var snapshot=snapshotForType(task,identity,type);snapshots.putIfAbsent(snapshot.unit(),snapshot);
         }

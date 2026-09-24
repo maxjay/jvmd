@@ -127,11 +127,21 @@ jobs:
         run: |
           set -euo pipefail
           export GITHUB_SHA="$ISSUE36_SUBJECT_SHA"
-          export JAVA_TOOL_OPTIONS="-Djvmd.trace=true -XX:StartFlightRecording=filename=$RUNNER_TEMP/issue36-cmp01.jfr,settings=profile,dumponexit=true -XX:FlightRecorderOptions=stackdepth=128"
+          export JAVA_TOOL_OPTIONS="-XX:StartFlightRecording=filename=$RUNNER_TEMP/issue36-cmp01.jfr,settings=profile,dumponexit=true -XX:FlightRecorderOptions=stackdepth=128"
           node benchmarks/lsp-scenarios/run.ts
           unset JAVA_TOOL_OPTIONS
           "$JAVA_HOME/bin/jfr" summary "$RUNNER_TEMP/issue36-cmp01.jfr" > "$RUNNER_TEMP/issue36-cmp01-jfr-summary.txt"
           "$JAVA_HOME/bin/java" ../benchmarks/issue-36-proof/JfrAllocationSummary.java "$RUNNER_TEMP/issue36-cmp01.jfr" "$RUNNER_TEMP/issue36-cmp01-allocations.txt"
+
+      - name: Measure CMP-01 compiler status
+        shell: bash
+        env:
+          SUBJECT_ROOT: ${{ github.workspace }}/measured-subject
+          FIXTURE_ROOT: ${{ runner.temp }}/apache-maven-issue36
+          REPORT_FILE: ${{ runner.temp }}/issue36-cmp01-status.json
+        run: |
+          set -euo pipefail
+          node benchmarks/issue-36-proof/cmp01-status.ts
 
       - name: Inject frozen semantic proof test
         shell: bash

@@ -89,6 +89,53 @@ class ResidentCompletionCorrectnessTest {
         }
     }
 
+    @Test void documentationOnlyEditPreservesCandidatesWhileRemovalAndRenameChangeThem()throws Exception{
+        Path api=Files.writeString(root.resolve("Api.java"),"""
+                class Api {
+                    /** before documentation */
+                    int oldName(){return 1;}
+                    int removed(){return 2;}
+                }
+                """);
+        String source="class Use { Object f(Api api){ return api.; } }";
+        Path use=Files.writeString(root.resolve("Use.java"),source);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);
+            var first=complete(analyzer,use,source,"api.");
+            JsonNode old=named(first,"oldName");
+            assertThat(first.findValuesAsText("name")).contains("removed");
+            String scip=old.path("scip").asText();
+            assertThat(analyzer.residentDescription(scip).get("doc").toString()).contains("before documentation");
+            @SuppressWarnings("unchecked") var beforeState=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            String apiIdentity=beforeState.get("semantic_api").toString();
+
+            Files.writeString(api,"""
+                    class Api {
+                        /** after documentation */
+                        int oldName(){return 1;}
+                        int removed(){return 2;}
+                    }
+                    """);
+            analyzer.changed(api);
+            var docOnly=complete(analyzer,use,source,"api.");
+            assertThat(docOnly.findValuesAsText("name")).contains("oldName","removed");
+            assertThat(analyzer.residentDescription(scip).get("doc").toString()).contains("after documentation");
+            @SuppressWarnings("unchecked") var docState=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            assertThat(docState.get("semantic_api").toString()).isEqualTo(apiIdentity);
+            assertThat(docState.get("semantic_documentation")).isNotEqualTo(beforeState.get("semantic_documentation"));
+
+            Files.writeString(api,"""
+                    class Api {
+                        /** after documentation */
+                        int newName(){return 1;}
+                    }
+                    """);
+            analyzer.changed(api);
+            var changed=complete(analyzer,use,source,"api.").findValuesAsText("name");
+            assertThat(changed).contains("newName").doesNotContain("oldName","removed");
+        }
+    }
+
     @Test void localVariableWinsOverShadowedFieldInUnqualifiedCompletion()throws Exception{
         String source="class Use { int value; Object f(){ String value=\"x\"; return val; } }";
         Path file=Files.writeString(root.resolve("Use.java"),source);

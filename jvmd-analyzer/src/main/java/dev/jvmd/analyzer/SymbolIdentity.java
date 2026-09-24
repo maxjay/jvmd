@@ -59,15 +59,20 @@ public final class SymbolIdentity {
     }
     public String sourceFile(Element element){
         var declaring=declaring(element);if(declaring==null)return null;String sourceKey=binaryName(declaring);if(sourceLocations.containsKey(sourceKey)){String prior=sourceLocations.get(sourceKey);return prior.isEmpty()?null:prior;}
-        var path=path(element);
-        if(path==null){var type=declaring(element);if(type!=null)path=path(type);}
-        java.net.URI uri=path==null?null:path.getCompilationUnit().getSourceFile().toUri();
-        if(uri==null&&declaring(element) instanceof ClassSymbol symbol&&symbol.sourcefile!=null)uri=symbol.sourcefile.toUri();
-        if(uri!=null&&"file".equals(uri.getScheme())&&uri.getPath().endsWith(".java")&&(path!=null||java.nio.file.Files.isRegularFile(java.nio.file.Path.of(uri)))){String file=java.nio.file.Path.of(uri).toAbsolutePath().normalize().toString();sourceLocations.put(sourceKey,file);return file;}
-        var type=declaring(element);if(type==null)return null;
-        String key=binaryName(type),cached=sourceLocations.get(key);if(cached!=null)return cached.isEmpty()?null:cached;
-        String filename=type instanceof ClassSymbol symbol&&symbol.sourcefile!=null?symbol.sourcefile.getName():key.substring(key.lastIndexOf('.')+1).split("\\$",2)[0]+".java";filename=filename.substring(filename.lastIndexOf('/')+1);
-        String pkg=elements.getPackageOf(type).getQualifiedName().toString().replace('.','/');String relative=(pkg.isEmpty()?"":pkg+"/")+filename;
+        var path=path(element);if(path==null)path=path(declaring);
+        java.net.URI uri=null;
+        // ClassSymbol.sourcefile belongs to the declaring type. In focused javac queries Trees.getPath(type)
+        // can transiently point at the caller compilation unit, so never let that path override canonical provenance.
+        if(declaring instanceof ClassSymbol symbol&&symbol.sourcefile!=null)uri=symbol.sourcefile.toUri();
+        if(uri==null&&path!=null)uri=path.getCompilationUnit().getSourceFile().toUri();
+        if(uri!=null&&"file".equals(uri.getScheme())&&uri.getPath().endsWith(".java")){
+            var file=java.nio.file.Path.of(uri).toAbsolutePath().normalize();
+            boolean knownSource=java.nio.file.Files.isRegularFile(file)||sources.stream().anyMatch(root->file.startsWith(root.toAbsolutePath().normalize()));
+            if(knownSource){String found=file.toString();sourceLocations.put(sourceKey,found);return found;}
+        }
+        String key=binaryName(declaring),cached=sourceLocations.get(key);if(cached!=null)return cached.isEmpty()?null:cached;
+        String filename=declaring instanceof ClassSymbol symbol&&symbol.sourcefile!=null?symbol.sourcefile.getName():key.substring(key.lastIndexOf('.')+1).split("\\$",2)[0]+".java";filename=filename.substring(filename.lastIndexOf('/')+1);
+        String pkg=elements.getPackageOf(declaring).getQualifiedName().toString().replace('.','/');String relative=(pkg.isEmpty()?"":pkg+"/")+filename;
         for(var root:sources){var file=root.resolve(relative);if(java.nio.file.Files.isRegularFile(file)){String found=file.toAbsolutePath().normalize().toString();sourceLocations.put(key,found);return found;}}
         sourceLocations.put(key,"");return null;
     }

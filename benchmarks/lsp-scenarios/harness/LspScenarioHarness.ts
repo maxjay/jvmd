@@ -344,6 +344,7 @@ export abstract class LspScenarioHarness {
       milestonesNs:m,
       milestonesMs:Object.fromEntries(Object.entries(m).map(([name,value])=>[name,elapsedMs(origin,value)])),
       initializeMs:(m.initialize_received-m.initialize_sent)/1e6,
+      processToInitializeResponseMs:(m.initialize_received-m.process_spawn)/1e6,
       processToWorkspaceReadyMs:(m.workspace_ready-m.process_spawn)/1e6,
       initializeToWorkspaceReadyMs:(m.workspace_ready-m.initialize_received)/1e6,
       documentAdmissionMs:(m.documents_admitted-m.document_admission_started)/1e6,
@@ -417,7 +418,7 @@ async function startJvmd(root:string):Promise<RunningServer>{
   return {
     connection:createMessageConnection(new StreamMessageReader(adapter.stdout!),new StreamMessageWriter(adapter.stdin!)),
     server,adapter,milestones,
-    metadata:{mode:"product-style daemon plus distributed LSP adapter",aotCacheUsed:false,residentDaemon:false},
+    metadata:{mode:"distributed-image JVM plus LSP adapter; AOT cache not enabled",aotCacheUsed:false,residentDaemon:false},
   };
 }
 
@@ -501,7 +502,8 @@ function writeSummary(report:any){
     "",
     "| Metric | ms |",
     "| --- | ---: |",
-    "| Initialize | "+report.lifecycle.initializeMs.toFixed(2)+" |",
+    "| Initialize request | "+report.lifecycle.initializeMs.toFixed(2)+" |",
+    "| Process → initialize response | "+report.lifecycle.processToInitializeResponseMs.toFixed(2)+" |",
     "| Process → workspace ready | "+report.lifecycle.processToWorkspaceReadyMs.toFixed(2)+" |",
     "| Document admission | "+report.lifecycle.documentAdmissionMs.toFixed(2)+" |",
     "| Process → first-use response (diagnostic timing) | "+(report.coldEndToEnd.diagnosticMs?.toFixed(2)??"-")+" |",

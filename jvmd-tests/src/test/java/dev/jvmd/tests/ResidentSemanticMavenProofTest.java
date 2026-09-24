@@ -89,7 +89,7 @@ class ResidentSemanticMavenProofTest {
         JsonNode response=action.run();
         long elapsed=System.nanoTime()-started,rssAfter=rssBytes(),heapAfter=ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed(),allocationAfter=allocatedBytes();
         var after=analyzerCounters(app,session);var budgetAfter=budgetCounters(app);
-        var envelope=response.path("result"),result=envelope.path("result");
+        var envelope=response.path("result");var result=envelope.path("result");
         var report=new LinkedHashMap<String,Object>();
         report.put("scenario",scenario);report.put("latency_ns",elapsed);
         report.put("thread_allocation_bytes",allocationBefore<0||allocationAfter<0?-1:allocationAfter-allocationBefore);

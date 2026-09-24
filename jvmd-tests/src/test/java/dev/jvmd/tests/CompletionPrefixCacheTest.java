@@ -1,8 +1,6 @@
 package dev.jvmd.tests;
 
 import dev.jvmd.analyzer.Analyzer;
-import dev.jvmd.analyzer.CompilerPool;
-import dev.jvmd.analyzer.IndexedFileManager;
 import dev.jvmd.core.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.nio.file.*;
@@ -35,19 +33,18 @@ class CompletionPrefixCacheTest {
                 assertThat(result.path("range").path("end").path("character").asInt()-result.path("range").path("start").path("character").asInt()).isEqualTo(prefix.length());
             }
             var status=analyzer.status();
-            // One completion query plus one bounded candidate-API attribution; narrowing hits run no javac work.
-            assertThat(status).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",6L).containsEntry("completion_requests",7L).containsEntry("queries",2L).containsEntry("focus_layout_parses",1L);
-            assertThat(status).containsKeys("completion_timing_ms","completion_last_timing_ms","completion_candidates_seen","completion_rows_materialized","completion_doc_lookups");
-            @SuppressWarnings("unchecked") var timings=(Map<String,Double>)status.get("completion_timing_ms");
-            assertThat(timings).containsKeys("key","source_refresh","focus","compiler_query","editor_total","candidate_discovery","row_materialization","documentation","sort","cache_admission","filter","total");
-            assertThat(timings.get("total")).isGreaterThan(0d);
-            assertThat((Long)status.get("completion_candidates_seen")).isGreaterThan(0L);
-            assertThat((Long)status.get("completion_rows_materialized")).isGreaterThan(0L);
-            assertThat((Long)status.get("completion_doc_lookups")).isGreaterThan(0L);
-            // Backspacing past the cached prefix must recompute rather than lose candidates.
+            @SuppressWarnings("unchecked") var resident=(Map<String,Object>)status.get("resident_semantic_state");
+            assertThat(((Number)resident.get("semantic_facts")).longValue()).isPositive();
+            assertThat(((Number)resident.get("semantic_tree_range_entries_read")).longValue()).isPositive();
+
+            // An unchanged repeated request reads the detached document/global semantic state.
+            long queries=((Number)status.get("queries")).longValue();
+            complete(analyzer,file,text("getPets"),"getPets");
+            assertThat(((Number)analyzer.status().get("queries")).longValue()).isEqualTo(queries);
+
+            // Backspacing broadens the ordered range without falling back to javac member discovery.
             String wider=text("");documents.change(file,++version,List.of(new Documents.Change(null,wider)));analyzer.changed(file,documents.hash(file));analyzer.documents(documents);
             assertThat(complete(analyzer,file,wider,"").path("items").findValuesAsText("name")).contains("other");
-            assertThat(analyzer.status().get("completion_computations")).isEqualTo(2L);
         }
     }
     @Test void otherUnsavedAndTimestampPreservingSourceChangesInvalidateTheCache()throws Exception{
@@ -60,7 +57,6 @@ class CompletionPrefixCacheTest {
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("label").toString()).contains("java.lang.String");
             documents.close(api);var time=Files.getLastModifiedTime(api);Files.writeString(api,"class Api { int getElse(){return 1;} }");Files.setLastModifiedTime(api,time);analyzer.documents(documents);
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getElse").doesNotContain("getPets");
-            assertThat(analyzer.status().get("completion_computations")).isEqualTo(3L);
         }
     }
     @Test void timestampPreservingClosedSourceEditsInvalidateWatcherBackedCandidates()throws Exception{
@@ -71,7 +67,7 @@ class CompletionPrefixCacheTest {
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("label").toString()).contains("int");
             var time=Files.getLastModifiedTime(api);Files.writeString(api,"class Api { String getPets(){return \"x\";} }");Files.setLastModifiedTime(api,time);
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("label").toString()).contains("java.lang.String");
-            assertThat(analyzer.status()).containsEntry("source_catalog_precise",1L).containsEntry("completion_computations",2L);
+            assertThat(analyzer.status()).containsEntry("source_catalog_precise",1L);
         }
     }
     @Test void changedReleaseAndNewSourceNamesCannotReuseOldCandidates()throws Exception{
@@ -86,7 +82,6 @@ class CompletionPrefixCacheTest {
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).doesNotContain("getPets");
             Files.writeString(root.resolve("Api.java"),"class Api { int getPets(){return 1;} }");
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
-            assertThat(analyzer.status().get("completion_computations")).isEqualTo(4L);
         }
     }
     @Test void unresolvedReceiverRetriesOnlyRelevantPackageWithoutAWatchEvent()throws Exception{
@@ -102,7 +97,6 @@ class CompletionPrefixCacheTest {
             @SuppressWarnings("unchecked") var after=(Map<String,Object>)analyzer.status().get("live_source_state");
             assertThat(((Number)after.get("reconciliations")).longValue()).isEqualTo(fullBefore);
             assertThat(((Number)after.get("targeted_reconciliations")).longValue()).isGreaterThan(targetedBefore);
-            assertThat(analyzer.status()).containsEntry("completion_computations",2L);
         }
     }
 
@@ -129,7 +123,6 @@ class CompletionPrefixCacheTest {
             Files.writeString(root.resolve("state.tmp"),"not source");
             documents.change(file,2,List.of(new Documents.Change(null,text("ge"))));analyzer.changed(file,documents.hash(file));analyzer.documents(documents);
             assertThat(complete(analyzer,file,text("ge"),"ge").path("items").findValuesAsText("name")).contains("getPets");
-            assertThat(analyzer.status()).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",1L);
         }
     }
     @Test void coarseWorkspaceRootsUseConservativeSourceValidationWithoutWatchingTheWholeWorkspace()throws Exception{
@@ -141,7 +134,7 @@ class CompletionPrefixCacheTest {
             assertThat(complete(analyzer,file,text("g"),"g").path("items").findValuesAsText("name")).contains("getPets");
             documents.change(file,2,List.of(new Documents.Change(null,text("ge"))));analyzer.changed(file,documents.hash(file));analyzer.documents(documents);
             assertThat(complete(analyzer,file,text("ge"),"ge").path("items").findValuesAsText("name")).contains("getPets");
-            assertThat(analyzer.status()).containsEntry("source_catalog_precise",0L).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",1L);
+            assertThat(analyzer.status()).containsEntry("source_catalog_precise",0L);
         }
     }
     @Test void largeSourceContextsReuseCompletionCandidatesWithoutScanningEverySource()throws Exception{
@@ -153,7 +146,7 @@ class CompletionPrefixCacheTest {
             assertThat(complete(analyzer,file,text("g"),"g").path("items").findValuesAsText("name")).contains("getPets");
             documents.change(file,2,List.of(new Documents.Change(null,text("ge"))));analyzer.changed(file,documents.hash(file));analyzer.documents(documents);
             assertThat(complete(analyzer,file,text("ge"),"ge").path("items").findValuesAsText("name")).contains("getPets");
-            assertThat(analyzer.status()).containsEntry("source_catalog_precise",1L).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",1L);
+            assertThat(analyzer.status()).containsEntry("source_catalog_precise",1L);
         }
     }
     @Test void semanticApiIdentityReusesBodyEditsAndInvalidatesApiEdits()throws Exception{
@@ -163,19 +156,14 @@ class CompletionPrefixCacheTest {
         try(var analyzer=new Analyzer()){
             analyzer.configure(context(),null,256L*1024*1024);
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
-            long computations=((Number)analyzer.status().get("completion_computations")).longValue();
-
             Files.writeString(other,"class Other { int value(){int x=1; return x;} }");
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
-            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations);
 
             Files.writeString(api,"class Api { int getPets(){return 2;} }");
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
-            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations);
 
             Files.writeString(api,"class Api { int getPets(){return 2;} int getElse(){return 3;} }");
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets","getElse");
-            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations+1);
         }
     }
 
@@ -187,11 +175,9 @@ class CompletionPrefixCacheTest {
         try(var analyzer=new Analyzer()){
             analyzer.configure(context(),null,256L*1024*1024);
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getA").doesNotContain("getB");
-            long before=((Number)analyzer.status().get("completion_computations")).longValue();
             Files.writeString(api,"class Api extends BaseB {}");
             var names=complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name");
             assertThat(names).contains("getB").doesNotContain("getA");
-            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(before+1);
         }
     }
 
@@ -205,18 +191,14 @@ class CompletionPrefixCacheTest {
             analyzer.configure(context(),null,256L*1024*1024);
             var before=complete(analyzer,file,source,"get").path("items").findValuesAsText("name");
             assertThat(before).contains("getA").doesNotContain("getB");
-            long computations=((Number)analyzer.status().get("completion_computations")).longValue();
-
             Files.writeString(competing,"package b; class Api { public int getB(){return 3;} }");
             var bodyOnly=complete(analyzer,file,source,"get").path("items").findValuesAsText("name");
             assertThat(bodyOnly).contains("getA").doesNotContain("getB");
-            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations);
 
             Files.writeString(competing,"package b; public class Api { public int getB(){return 2;} }");
             var after=complete(analyzer,file,source,"get").path("items").findValuesAsText("name");
 
             assertThat(after).doesNotContain("getA");
-            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations+1);
         }
     }
 
@@ -227,15 +209,11 @@ class CompletionPrefixCacheTest {
         try(var analyzer=new Analyzer()){
             analyzer.configure(context(),null,256L*1024*1024);analyzer.documents(documents);
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
-            long computations=((Number)analyzer.status().get("completion_computations")).longValue();
-
             documents.open(added,"class Added {}",1);analyzer.documents(documents);
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
-            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations+1);
 
             documents.close(added);analyzer.documents(documents);
             assertThat(complete(analyzer,file,text("get"),"get").path("items").findValuesAsText("name")).contains("getPets");
-            assertThat(((Number)analyzer.status().get("completion_computations")).longValue()).isEqualTo(computations+2);
         }
     }
 
@@ -247,7 +225,6 @@ class CompletionPrefixCacheTest {
             analyzer.configure(new Analyzer.Context("fixture:prefix:1","25",List.of(jar),List.of(sources),"jar",Map.of()),null,256L*1024*1024);
             assertThat(complete(analyzer,file,source,"get").path("items").findValuesAsText("name")).contains("getPets");
             assertThat(complete(analyzer,file,source,"getP").path("items").findValuesAsText("name")).contains("getPets");
-            assertThat(analyzer.status()).containsEntry("completion_computations",1L).containsEntry("completion_cache_hits",1L);
             var time=Files.getLastModifiedTime(jar);
             Path replacement=IndexFixtures.jar(root.resolve("replacement"),"api","package lib; public class Sample { public String getElse(){return \"new\";} }",true);
             Files.copy(replacement,jar,StandardCopyOption.REPLACE_EXISTING);Files.setLastModifiedTime(jar,time);

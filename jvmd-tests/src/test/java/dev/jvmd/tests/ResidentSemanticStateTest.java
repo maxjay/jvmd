@@ -29,6 +29,19 @@ class ResidentSemanticStateTest {
                 "file-api","file-ns",facts.length==0?"":String.join(",",Arrays.stream(facts).map(SemanticFact::documentationIdentity).toList()),Set.of());
     }
 
+    @Test void algebraicDomainsBindSemanticKeyAndCardinality(){
+        var first=new ResidentSemanticState();
+        first.admit(snapshot("one",member("A#m().","A#","m","api-shared","doc-shared"),member("A#n().","A#","n","api-other","doc-other")));
+        var second=new ResidentSemanticState();
+        second.admit(snapshot("two",member("A#m().","A#","m","api-other","doc-other"),member("A#n().","A#","n","api-shared","doc-shared")));
+        assertThat(first.identity().api()).isNotEqualTo(second.identity().api());
+        assertThat(first.identity().documentation()).isNotEqualTo(second.identity().documentation());
+
+        var fewer=new ResidentSemanticState();
+        fewer.admit(snapshot("three",member("A#m().","A#","m","api-shared","doc-shared")));
+        assertThat(first.identity().membership()).isNotEqualTo(fewer.identity().membership());
+    }
+
     @Test void bodyOnlyTransitionAdvancesEpochWithoutChangingSemanticTree(){
         var state=new ResidentSemanticState();var a=member("A#m().","A#","m","api-m","doc-m");
         state.admit(snapshot("content-a",a));var before=state.identity();

@@ -1,5 +1,7 @@
 package dev.jvmd.index;
 
+import dev.jvmd.core.AlgebraicAccumulator;
+import dev.jvmd.core.Hash256;
 import dev.jvmd.core.Hashing;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
@@ -16,19 +18,18 @@ public final class ResidentSemanticState {
     private static final BigInteger FIELD=new BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F",16);
     private static final String EMPTY=Hashing.sha256(new byte[0]);
 
-    public record Aggregate(BigInteger membership,BigInteger api,BigInteger namespace,BigInteger documentation) {
-        static final Aggregate ZERO=new Aggregate(BigInteger.ZERO,BigInteger.ZERO,BigInteger.ZERO,BigInteger.ZERO);
-        Aggregate add(Aggregate other){return new Aggregate(
-                membership.add(other.membership).mod(FIELD),api.add(other.api).mod(FIELD),
-                namespace.add(other.namespace).mod(FIELD),documentation.add(other.documentation).mod(FIELD));}
-        Aggregate subtract(Aggregate other){return new Aggregate(
-                membership.subtract(other.membership).mod(FIELD),api.subtract(other.api).mod(FIELD),
-                namespace.subtract(other.namespace).mod(FIELD),documentation.subtract(other.documentation).mod(FIELD));}
-        public String membershipIdentity(){return hex(membership);}
-        public String apiIdentity(){return hex(api);}
-        public String namespaceIdentity(){return hex(namespace);}
-        public String documentationIdentity(){return hex(documentation);}
-        private static String hex(BigInteger value){return String.format("%064x",value);}
+    public record Aggregate(AlgebraicAccumulator.Value membership,AlgebraicAccumulator.Value api,
+                            AlgebraicAccumulator.Value namespace,AlgebraicAccumulator.Value documentation) {
+        static final Aggregate ZERO=new Aggregate(AlgebraicAccumulator.Value.ZERO,AlgebraicAccumulator.Value.ZERO,
+                AlgebraicAccumulator.Value.ZERO,AlgebraicAccumulator.Value.ZERO);
+        Aggregate add(Aggregate other){return new Aggregate(membership.plus(other.membership),api.plus(other.api),
+                namespace.plus(other.namespace),documentation.plus(other.documentation));}
+        Aggregate subtract(Aggregate other){return new Aggregate(membership.minus(other.membership),api.minus(other.api),
+                namespace.minus(other.namespace),documentation.minus(other.documentation));}
+        public String membershipIdentity(){return membership.identity("membership").hex();}
+        public String apiIdentity(){return api.identity("api").hex();}
+        public String namespaceIdentity(){return namespace.identity("namespace").hex();}
+        public String documentationIdentity(){return documentation.identity("documentation").hex();}
     }
 
     public record Identity(long epoch,String merkleRoot,String membership,String api,String namespace,String documentation) { }
@@ -264,7 +265,7 @@ public final class ResidentSemanticState {
                     sum=sum.add(point("hierarchy-type-api",declaration.apiIdentity().isBlank()?declaration.structuralSignature():declaration.apiIdentity())).mod(FIELD);count++;
                 }
                 var members=memberAggregates.get(current);
-                if(members!=null){sum=sum.add(members.api()).mod(FIELD);count++;}
+                if(members!=null){sum=sum.add(members.api().sum()).mod(FIELD);count+=members.api().cardinality();}
                 for(String parent:directSupers.getOrDefault(current,Set.of())){
                     sum=sum.add(point("hierarchy-edge",current+"\0"+parent)).mod(FIELD);count++;queue.addLast(parent);
                 }
@@ -287,10 +288,10 @@ public final class ResidentSemanticState {
 
     private static Aggregate contribution(SemanticFact fact){
         return new Aggregate(
-                point("membership",fact.id()),
-                point("api",fact.apiIdentity().isBlank()?fact.structuralSignature():fact.apiIdentity()),
-                point("namespace",fact.namespaceIdentity().isBlank()?fact.packageName()+"\0"+fact.name()+"\0"+fact.kind():fact.namespaceIdentity()),
-                point("documentation",fact.documentationIdentity()));
+                AlgebraicAccumulator.contribution("membership",fact.id(),"present"),
+                AlgebraicAccumulator.contribution("api",fact.id(),fact.apiIdentity().isBlank()?fact.structuralSignature():fact.apiIdentity()),
+                AlgebraicAccumulator.contribution("namespace",fact.id(),fact.namespaceIdentity().isBlank()?fact.packageName()+"\0"+fact.name()+"\0"+fact.kind():fact.namespaceIdentity()),
+                AlgebraicAccumulator.contribution("documentation",fact.id(),fact.documentationIdentity()));
     }
 
     private static String valueIdentity(SemanticFact fact){
@@ -305,8 +306,7 @@ public final class ResidentSemanticState {
     }
 
     private static BigInteger point(String domain,String value){
-        byte[] bytes=Hashing.sha256((domain+"\0"+Objects.requireNonNullElse(value,"")).getBytes(StandardCharsets.UTF_8)).getBytes(StandardCharsets.US_ASCII);
-        return new BigInteger(new String(bytes,StandardCharsets.US_ASCII),16).mod(FIELD);
+        return Hash256.sha256((domain+"\0"+Objects.requireNonNullElse(value,"")).getBytes(StandardCharsets.UTF_8)).unsignedInteger().mod(FIELD);
     }
 
     private static Node put(Node node,Entry entry){

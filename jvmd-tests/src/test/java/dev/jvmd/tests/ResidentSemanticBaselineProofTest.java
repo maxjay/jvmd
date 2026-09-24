@@ -173,9 +173,13 @@ class ResidentSemanticBaselineProofTest {
 
             @SuppressWarnings("unchecked")
             var first=(Map<String,Object>)scenarios.getFirst().get("counters");
-            assertThat(((Number)first.get("completion_get_all_members_calls")).longValue()).isPositive();
-            assertThat(((Number)first.get("completion_candidates_seen")).longValue()).isGreaterThan(1000);
-            assertThat(((Number)first.get("completion_doc_lookups")).longValue()).isGreaterThanOrEqualTo(1000);
+            @SuppressWarnings("unchecked")
+            var warm=(Map<String,Object>)scenarios.get(1).get("counters");
+            assertThat(((Number)first.get("completion_get_all_members_calls")).longValue()).isZero();
+            assertThat(((Number)first.get("completion_doc_lookups")).longValue()).isZero();
+            assertThat(((Number)warm.get("queries")).longValue()).isZero();
+            assertThat(((Number)warm.get("attribution_invocations")).longValue()).isZero();
+            assertThat(((Number)warm.get("completion_get_all_members_calls")).longValue()).isZero();
             assertThat(base).exists(); // keep the hierarchy source explicitly part of the fixture
         }
     }

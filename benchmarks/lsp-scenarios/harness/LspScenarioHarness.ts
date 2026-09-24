@@ -215,21 +215,34 @@ export abstract class LspScenarioHarness {
     }finally{clearInterval(sampler);}
   }
 
-  protected async measureSeries<T,U>(request:()=>Promise<T>,normalise:(value:T)=>U):Promise<OperationSeries<U>>{
+  protected beginFirstUse(){
     if(LspScenarioHarness.milestones.first_use_started===undefined)
       LspScenarioHarness.milestones.first_use_started=nowNs();
-    const firstUse=await this.measure(request,normalise);
+  }
+
+  protected finishFirstUse(){
     if(LspScenarioHarness.milestones.first_use_finished===undefined){
       LspScenarioHarness.milestones.first_use_finished=nowNs();
       LspScenarioHarness.phaseMemory.post_first_use=memory(LspScenarioHarness.running);
     }
+  }
+
+  protected async measureWarmupAndSteady<T,U>(request:()=>Promise<T>,normalise:(value:T)=>U){
     const warmup:Measurement<U>[]=[];
     for(let i=0;i<PHASE_MODEL.defaults.warmup;i++)warmup.push(await this.measure(request,normalise));
     LspScenarioHarness.phaseMemory.post_warmup=memory(LspScenarioHarness.running);
     const steady:Measurement<U>[]=[];
     for(let i=0;i<PHASE_MODEL.defaults.steady_samples;i++)steady.push(await this.measure(request,normalise));
     LspScenarioHarness.phaseMemory.post_steady=memory(LspScenarioHarness.running);
-    return {firstUse,warmup,steady,stats:latencyStats(steady.map(row=>row.metrics.latencyMs))};
+    return {warmup,steady,stats:latencyStats(steady.map(row=>row.metrics.latencyMs))};
+  }
+
+  protected async measureSeries<T,U>(request:()=>Promise<T>,normalise:(value:T)=>U):Promise<OperationSeries<U>>{
+    this.beginFirstUse();
+    const firstUse=await this.measure(request,normalise);
+    this.finishFirstUse();
+    const rest=await this.measureWarmupAndSteady(request,normalise);
+    return {firstUse,...rest};
   }
 
   private async waitForDiagnostics(uri:string,version:number,afterSequence:number){

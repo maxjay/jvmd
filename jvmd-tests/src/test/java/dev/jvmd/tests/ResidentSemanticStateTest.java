@@ -72,6 +72,21 @@ class ResidentSemanticStateTest {
                 .containsEntry("semantic_tree_nodes_created",1001L);
     }
 
+    @Test void oneMemberMutationCreatesOnlyLogarithmicTreeNodes(){
+        var facts=new ArrayList<SemanticFact>();facts.add(type("A#","A","api-A"));
+        for(int i=0;i<1000;i++)facts.add(member("A#m"+i+"().","A#","member"+String.format("%04d",i),"api-"+i,"doc-"+i));
+        var state=new ResidentSemanticState();state.admit(snapshot("before",facts.toArray(SemanticFact[]::new)));
+        long nodesBefore=((Number)state.status().get("semantic_tree_nodes_created")).longValue();
+
+        var changed=new ArrayList<>(facts);
+        changed.set(501,member("A#m500().","A#","member0500","api-changed","doc-500"));
+        state.admit(snapshot("after",changed.toArray(SemanticFact[]::new)));
+
+        long created=((Number)state.status().get("semantic_tree_nodes_created")).longValue()-nodesBefore;
+        assertThat(created).isPositive().isLessThan(128L);
+        assertThat(state.status()).containsEntry("semantic_tree_entries",1001);
+    }
+
     @Test void canonicalFactIdentityIsStableAndFieldSensitive(){
         var first=member("A#m().","A#","m","api-m","doc-a");
         var same=member("A#m().","A#","m","api-m","doc-a");

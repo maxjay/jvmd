@@ -12,8 +12,8 @@ import java.util.*;
  * Resident ordered semantic state.
  *
  * The content-derived treap is a prolly-style persistent ordered Merkle tree: key hashes determine
- * structure, every path-copy update recalculates both Merkle identity and algebraic domain
- * aggregates, and exact symbols are indexed directly from the same canonical facts.
+ * structure, path-copy updates recalculate only structural Merkle identity, semantic-domain
+ * aggregates are maintained once outside the tree, and exact symbols share the same canonical facts.
  */
 public final class ResidentSemanticState {
     private static final BigInteger FIELD=new BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F",16);
@@ -36,15 +36,11 @@ public final class ResidentSemanticState {
 
     public record Identity(long epoch,String merkleRoot,String membership,String api,String namespace,String documentation) { }
 
-    private record Entry(String key,SemanticFact fact,Hash256 valueIdentity,Aggregate contribution) { }
+    private record Entry(String key,SemanticFact fact,Hash256 valueIdentity,Aggregate contribution,BigInteger priority) { }
     private static final class Node {
-        final Entry entry;final Node left,right;final BigInteger priority;final Hash256 merkle;final String min,max;final Aggregate aggregate;final int size;
-        Node(Entry entry,Node left,Node right){this(entry,left,right,point("priority",entry.key()));}
-        Node(Entry entry,Node left,Node right,BigInteger priority){
-            this.entry=entry;this.left=left;this.right=right;this.priority=priority;
-            min=left==null?entry.key():left.min;max=right==null?entry.key():right.max;
-            aggregate=(left==null?Aggregate.ZERO:left.aggregate).add(entry.contribution()).add(right==null?Aggregate.ZERO:right.aggregate);
-            size=1+(left==null?0:left.size)+(right==null?0:right.size);
+        final Entry entry;final Node left,right;final Hash256 merkle;
+        Node(Entry entry,Node left,Node right){
+            this.entry=entry;this.left=left;this.right=right;
             merkle=CanonicalDigestWriter.digest("resident-node-v1",left==null?EMPTY_HASH:left.merkle,entry.key(),entry.valueIdentity(),right==null?EMPTY_HASH:right.merkle);
         }
     }
@@ -54,6 +50,7 @@ public final class ResidentSemanticState {
     private final Map<String,SymbolDescription> descriptions=new HashMap<>();
     private final Map<String,SemanticSnapshot> units=new HashMap<>();
     private final Map<String,Aggregate> memberAggregates=new HashMap<>();
+    private Aggregate semanticAggregate=Aggregate.ZERO;
     private final Map<String,Set<String>> directSupers=new HashMap<>(),directSubs=new HashMap<>();
     private final Map<String,String> hierarchyApis=new HashMap<>();
     private final Map<String,String> staleUnits=new HashMap<>();
@@ -114,7 +111,7 @@ public final class ResidentSemanticState {
         for(var fact:delta.added().values()){
             symbols.put(fact.id(),fact);
             var contribution=contribution(fact);
-            ordered.add(new Entry(fact.orderedKey(),fact,fact.factIdentity(),contribution));
+            ordered.add(entry(fact,contribution));semanticAggregate=semanticAggregate.add(contribution);
             if(fact.member())memberAggregates.merge(fact.ownerId(),contribution,Aggregate::add);
             if(fact.typeDeclaration()){linkHierarchy(fact);hierarchyAffected.add(fact.id());}
         }
@@ -204,15 +201,15 @@ public final class ResidentSemanticState {
     public synchronized String hierarchyApi(String typeId){return hierarchyApis.getOrDefault(typeId,EMPTY);}
 
     public synchronized Identity identity(){
-        var aggregate=root==null?Aggregate.ZERO:root.aggregate;String structural=root==null?EMPTY:root.merkle.hex();
+        String structural=root==null?EMPTY:root.merkle.hex();
         String merkle=Hashing.sha256((structural+"\0"+freshnessMerkle).getBytes(StandardCharsets.UTF_8));
-        return new Identity(epoch,merkle,aggregate.membershipIdentity(),aggregate.apiIdentity(),
-                aggregate.namespaceIdentity(),aggregate.documentationIdentity());
+        return new Identity(epoch,merkle,semanticAggregate.membershipIdentity(),semanticAggregate.apiIdentity(),
+                semanticAggregate.namespaceIdentity(),semanticAggregate.documentationIdentity());
     }
 
     public synchronized void clear(){
         if(root==null&&symbols.isEmpty()&&descriptions.isEmpty()&&units.isEmpty())return;
-        root=null;symbols.clear();descriptions.clear();units.clear();memberAggregates.clear();directSupers.clear();directSubs.clear();hierarchyApis.clear();staleUnits.clear();freshnessMerkle=EMPTY;epoch++;
+        root=null;symbols.clear();descriptions.clear();units.clear();memberAggregates.clear();semanticAggregate=Aggregate.ZERO;directSupers.clear();directSubs.clear();hierarchyApis.clear();staleUnits.clear();freshnessMerkle=EMPTY;epoch++;
     }
 
     public synchronized Map<String,Object> status(){
@@ -221,7 +218,7 @@ public final class ResidentSemanticState {
                 Map.entry("semantic_epoch",epoch),Map.entry("semantic_root",identity.merkleRoot()),
                 Map.entry("semantic_membership",identity.membership()),Map.entry("semantic_api",identity.api()),
                 Map.entry("semantic_namespace",identity.namespace()),Map.entry("semantic_documentation",identity.documentation()),
-                Map.entry("semantic_facts",symbols.size()),Map.entry("semantic_tree_entries",root==null?0:root.size),
+                Map.entry("semantic_facts",symbols.size()),Map.entry("semantic_tree_entries",symbols.size()),
                 Map.entry("semantic_units",units.size()),Map.entry("semantic_member_aggregates",memberAggregates.size()),
                 Map.entry("semantic_hierarchy_aggregates",hierarchyApis.size()),Map.entry("semantic_stale_units",staleUnits.size()),
                 Map.entry("semantic_fact_mutations",factMutations),Map.entry("semantic_tree_range_entries_read",rangeEntriesRead),
@@ -302,14 +299,19 @@ public final class ResidentSemanticState {
     }
 
     private void addFact(SemanticFact fact){
-        var contribution=contribution(fact);root=put(root,new Entry(fact.orderedKey(),fact,fact.factIdentity(),contribution));
+        var contribution=contribution(fact);root=put(root,entry(fact,contribution));semanticAggregate=semanticAggregate.add(contribution);
         if(fact.member())memberAggregates.merge(fact.ownerId(),contribution,Aggregate::add);
     }
 
     private void removeFact(SemanticFact fact){
-        root=remove(root,fact.orderedKey());if(fact.member())memberAggregates.compute(fact.ownerId(),(_,old)->{
-            if(old==null)return null;var next=old.subtract(contribution(fact));return next.equals(Aggregate.ZERO)?null:next;
+        var contribution=contribution(fact);root=remove(root,fact.orderedKey());semanticAggregate=semanticAggregate.subtract(contribution);
+        if(fact.member())memberAggregates.compute(fact.ownerId(),(_,old)->{
+            if(old==null)return null;var next=old.subtract(contribution);return next.equals(Aggregate.ZERO)?null:next;
         });
+    }
+
+    private static Entry entry(SemanticFact fact,Aggregate contribution){
+        String key=fact.orderedKey();return new Entry(key,fact,fact.factIdentity(),contribution,point("priority",key));
     }
 
     private static Aggregate contribution(SemanticFact fact){
@@ -325,7 +327,6 @@ public final class ResidentSemanticState {
     }
 
     private Node newNode(Entry entry,Node left,Node right){treeNodesCreated++;return new Node(entry,left,right);}
-    private Node newNode(Entry entry,Node left,Node right,BigInteger priority){treeNodesCreated++;return new Node(entry,left,right,priority);}
 
     /**
      * Build the deterministic priority treap in linear structural time from already ordered facts.
@@ -334,21 +335,21 @@ public final class ResidentSemanticState {
      */
     private Node bulkBuild(List<Entry> ordered){
         int size=ordered.size();if(size==0)return null;
-        var priorities=new BigInteger[size];var left=new int[size];var right=new int[size];var stack=new int[size];
+        var left=new int[size];var right=new int[size];var stack=new int[size];
         Arrays.fill(left,-1);Arrays.fill(right,-1);int top=-1;
         for(int i=0;i<size;i++){
-            priorities[i]=point("priority",ordered.get(i).key());int previous=-1;
-            while(top>=0&&priorities[stack[top]].compareTo(priorities[i])<0)previous=stack[top--];
+            int previous=-1;
+            while(top>=0&&ordered.get(stack[top]).priority().compareTo(ordered.get(i).priority())<0)previous=stack[top--];
             left[i]=previous;if(top>=0)right[stack[top]]=i;stack[++top]=i;
         }
-        return freezeBulk(ordered,priorities,left,right,stack[0]);
+        return freezeBulk(ordered,left,right,stack[0]);
     }
 
-    private Node freezeBulk(List<Entry> ordered,BigInteger[] priorities,int[] left,int[] right,int index){
+    private Node freezeBulk(List<Entry> ordered,int[] left,int[] right,int index){
         if(index<0)return null;
-        var leftNode=freezeBulk(ordered,priorities,left,right,left[index]);
-        var rightNode=freezeBulk(ordered,priorities,left,right,right[index]);
-        return newNode(ordered.get(index),leftNode,rightNode,priorities[index]);
+        var leftNode=freezeBulk(ordered,left,right,left[index]);
+        var rightNode=freezeBulk(ordered,left,right,right[index]);
+        return newNode(ordered.get(index),leftNode,rightNode);
     }
 
     private Node put(Node node,Entry entry){
@@ -357,10 +358,10 @@ public final class ResidentSemanticState {
         if(compare==0)return newNode(entry,node.left,node.right);
         if(compare<0){
             var next=newNode(node.entry,put(node.left,entry),node.right);
-            return next.left.priority.compareTo(next.priority)>0?rotateRight(next):next;
+            return next.left.entry.priority().compareTo(next.entry.priority())>0?rotateRight(next):next;
         }
         var next=newNode(node.entry,node.left,put(node.right,entry));
-        return next.right.priority.compareTo(next.priority)>0?rotateLeft(next):next;
+        return next.right.entry.priority().compareTo(next.entry.priority())>0?rotateLeft(next):next;
     }
 
     private Node remove(Node node,String key){
@@ -371,7 +372,7 @@ public final class ResidentSemanticState {
 
     private Node merge(Node left,Node right){
         if(left==null)return right;if(right==null)return left;
-        if(left.priority.compareTo(right.priority)>0)return newNode(left.entry,left.left,merge(left.right,right));
+        if(left.entry.priority().compareTo(right.entry.priority())>0)return newNode(left.entry,left.left,merge(left.right,right));
         return newNode(right.entry,merge(left,right.left),right.right);
     }
 

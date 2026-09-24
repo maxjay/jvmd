@@ -4,6 +4,7 @@ import dev.jvmd.index.*;
 
 import java.util.*;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Tag;
 import static org.assertj.core.api.Assertions.*;
 
 @Tag("phase-4")

@@ -129,34 +129,75 @@ public final class Application implements AutoCloseable {
         if(prefix.length()<2||qualified||session.state("resolution")==null)
             return analyzer(session,path).completion(path,text,line,character,limit,offset);
 
-        // One full live page lets us merge and paginate deterministically. Extremely broad
-        // live scopes retain the old behavior rather than silently dropping live candidates.
-        var live=analyzer(session,path).completion(path,text,line,character,1000,0);
-        if(live.truncated())return analyzer(session,path).completion(path,text,line,character,limit,offset);
+        // Fetch only enough resident rows to cover this page plus one sentinel. If the
+        // resident result is broader than that, the whole page is live and the index is untouched.
+        int liveTarget=(int)Math.min(Integer.MAX_VALUE,(long)offset+limit+1L);
+        var live=analyzer(session,path).completion(path,text,line,character,liveTarget,0);
         var liveResult=(Map<String,Object>)live.result();
         var liveItems=(List<Map<String,Object>>)liveResult.getOrDefault("items",List.of());
-
-        List<Map<String,Object>> indexed;
-        try{
-            IndexService searchIndex=index();bindIndex(session,searchIndex);
-            String generation=Objects.toString(session.state("index_generation"),"");
-            var cached=(TypeCompletionCache)session.state("completion_type_cache");
-            if(cached!=null&&cached.complete()&&cached.generation().equals(generation)&&prefix.startsWith(cached.prefix())){
-                indexed=cached.rows().stream().filter(row->Objects.toString(row.get("name"),"").startsWith(prefix)).toList();
-            }else{
-                var found=searchIndex.findNamePrefix(prefix,session.id(),257,COMPLETION_TYPE_KINDS);
-                boolean complete=found.size()<257;indexed=List.copyOf(found.subList(0,Math.min(256,found.size())));
-                session.put("completion_type_cache",new TypeCompletionCache(generation,prefix,indexed,complete));
-            }
-        }catch(Exception indexFailure){
-            int from=Math.min(offset,liveItems.size()),to=Math.min(liveItems.size(),from+limit);boolean more=to<liveItems.size();
-            var warnings=new ArrayList<>(live.warnings());warnings.add("index_completion_fault: "+indexFailure.getClass().getSimpleName()+": "+Objects.toString(indexFailure.getMessage(),""));
-            return new Envelope(live.tier(),"live",more,more?Integer.toString(to):null,warnings,
+        if(live.truncated()){
+            int from=Math.min(offset,liveItems.size()),to=Math.min(liveItems.size(),from+limit);
+            return new Envelope(live.tier(),"live",true,Integer.toString(to),live.warnings(),
                     Map.of("items",List.copyOf(liveItems.subList(from,to)),"range",liveResult.get("range")));
         }
 
-        String packageName=sourcePackage(text);var imported=sourceImports(text);
-        var liveNames=new HashSet<String>();for(var row:liveItems)liveNames.add(Objects.toString(row.get("name"),""));
+        int liveFrom=Math.min(offset,liveItems.size()),liveTo=Math.min(liveItems.size(),liveFrom+limit);
+        var page=new ArrayList<Map<String,Object>>(limit);
+        page.addAll(liveItems.subList(liveFrom,liveTo));
+        int remaining=limit-page.size();
+        int indexedOffset=Math.max(0,offset-liveItems.size());
+        int indexedTarget=(int)Math.min(257L,(long)indexedOffset+remaining+1L);
+
+        List<Map<String,Object>> typeRows;
+        boolean indexedComplete;
+        try{
+            IndexService searchIndex=index();bindIndex(session,searchIndex);
+            String generation=Objects.toString(session.state("index_generation"),"");
+            String packageName=sourcePackage(text);var imported=sourceImports(text);
+            var liveNames=new HashSet<String>();for(var row:liveItems)liveNames.add(Objects.toString(row.get("name"),""));
+
+            var cached=(TypeCompletionCache)session.state("completion_type_cache");
+            List<Map<String,Object>> raw=List.of();boolean complete=false;boolean reusable=false;
+            if(cached!=null&&cached.generation().equals(generation)){
+                if(cached.complete()&&prefix.startsWith(cached.prefix())){
+                    raw=cached.rows().stream().filter(row->Objects.toString(row.get("name"),"").startsWith(prefix)).toList();
+                    complete=true;reusable=true;
+                }else if(prefix.equals(cached.prefix())){
+                    raw=cached.rows();complete=cached.complete();reusable=true;
+                }
+            }
+
+            typeRows=reusable?completionTypeRows(raw,prefix,packageName,imported,liveNames):List.of();
+            int fetchLimit=reusable?Math.min(257,Math.max(indexedTarget,Math.max(16,raw.size()*2))):Math.min(257,Math.max(16,indexedTarget));
+            while(typeRows.size()<indexedTarget&&!complete){
+                var found=searchIndex.findNamePrefix(prefix,session.id(),fetchLimit,COMPLETION_TYPE_KINDS);
+                complete=found.size()<fetchLimit;raw=List.copyOf(found);
+                session.put("completion_type_cache",new TypeCompletionCache(generation,prefix,raw,complete));
+                typeRows=completionTypeRows(raw,prefix,packageName,imported,liveNames);
+                if(typeRows.size()>=indexedTarget||complete||fetchLimit>=257)break;
+                fetchLimit=Math.min(257,Math.max(fetchLimit+1,fetchLimit*2));
+            }
+            indexedComplete=complete;
+        }catch(Exception indexFailure){
+            boolean more=liveTo<liveItems.size();
+            var warnings=new ArrayList<>(live.warnings());warnings.add("index_completion_fault: "+indexFailure.getClass().getSimpleName()+": "+Objects.toString(indexFailure.getMessage(),""));
+            return new Envelope(live.tier(),"live",more,more?Integer.toString(liveTo):null,warnings,
+                    Map.of("items",List.copyOf(page),"range",liveResult.get("range")));
+        }
+
+        int typeFrom=Math.min(indexedOffset,typeRows.size()),typeTo=Math.min(typeRows.size(),typeFrom+remaining);
+        if(typeTo>typeFrom)page.addAll(typeRows.subList(typeFrom,typeTo));
+        boolean more=typeTo<typeRows.size()||!indexedComplete;
+        int next=offset+page.size();
+        // Never emit a non-advancing continuation if the bounded index prefix cannot supply
+        // another accepted row from its retained window.
+        if(page.isEmpty())more=false;
+        return new Envelope(live.tier(),"live",more,more?Integer.toString(next):null,live.warnings(),
+                Map.of("items",List.copyOf(page),"range",liveResult.get("range")));
+    }
+
+    private static List<Map<String,Object>> completionTypeRows(List<Map<String,Object>> indexed,String prefix,String packageName,
+                                                               Set<String> imported,Set<String> liveNames){
         var types=new LinkedHashMap<String,Map<String,Object>>();
         for(var symbol:indexed){
             String name=Objects.toString(symbol.get("name"),""),fqn=Objects.toString(symbol.get("fqn"),"").replace('$','.');
@@ -172,11 +213,10 @@ public final class Application implements AutoCloseable {
             if(needsImport(fqn,packageName,imported))row.put("import",fqn);
             types.putIfAbsent(fqn,Collections.unmodifiableMap(row));
         }
-        var typeRows=new ArrayList<Map<String,Object>>(types.values());typeRows.sort(Comparator.comparing((Map<String,Object> row)->Objects.toString(row.get("name"),"")).thenComparing(row->Objects.toString(row.get("fqn"),"")));
-        var all=new ArrayList<Map<String,Object>>(liveItems.size()+typeRows.size());all.addAll(liveItems);all.addAll(typeRows);
-        int from=Math.min(offset,all.size()),to=Math.min(all.size(),from+limit);boolean more=to<all.size();
-        return new Envelope(live.tier(),"live",more,more?Integer.toString(to):null,live.warnings(),
-                Map.of("items",List.copyOf(all.subList(from,to)),"range",liveResult.get("range")));
+        var rows=new ArrayList<Map<String,Object>>(types.values());
+        rows.sort(Comparator.comparing((Map<String,Object> row)->Objects.toString(row.get("name"),""))
+                .thenComparing(row->Objects.toString(row.get("fqn"),"")));
+        return List.copyOf(rows);
     }
 
     private static String sourcePackage(String text){

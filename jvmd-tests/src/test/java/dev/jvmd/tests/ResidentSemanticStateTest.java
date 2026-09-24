@@ -87,6 +87,16 @@ class ResidentSemanticStateTest {
         assertThat(state.status()).containsEntry("semantic_tree_entries",1001);
     }
 
+    @Test void retainedUnitStateStoresOnlyCanonicalFactMembership(){
+        var state=new ResidentSemanticState();var owner=type("A#","A","api-A"),value=member("A#m().","A#","m","api-m","doc-m");
+        state.admit(snapshot("unit-state",owner,value));
+        var unit=state.unit("source:/src/A.java");
+        assertThat(unit.factIds()).containsExactlyInAnyOrder(owner.id(),value.id());
+        assertThat(unit.descriptionIds()).containsExactlyInAnyOrder(owner.id(),value.id());
+        assertThat(state.symbol(value.id())).isSameAs(value);
+        assertThat(state.status()).containsEntry("semantic_unit_fact_ids",2L);
+    }
+
     @Test void canonicalFactIdentityIsStableAndFieldSensitive(){
         var first=member("A#m().","A#","m","api-m","doc-a");
         var same=member("A#m().","A#","m","api-m","doc-a");
@@ -126,7 +136,7 @@ class ResidentSemanticStateTest {
         var afterFact=member("A#m().","A#","m","api-m","doc-b");
         var delta=state.admit(snapshot("content-b",afterFact));var after=state.identity();
 
-        assertThat(delta.changed()).containsKey(afterFact.id());
+        assertThat(delta.changed()).extracting(SemanticFact::id).containsExactly(afterFact.id());
         assertThat(after.api()).isEqualTo(before.api());
         assertThat(after.documentation()).isNotEqualTo(before.documentation());
         assertThat(after.merkleRoot()).isNotEqualTo(before.merkleRoot());
@@ -144,7 +154,7 @@ class ResidentSemanticStateTest {
         var renamed=member("A#alpine().","A#","alpine","api-alpine","doc-alpine");
         var delta=state.admit(snapshot("two",type("A#","A","api-A"),renamed,beta));
         assertThat(delta.removed()).containsExactly("A#alpha().");
-        assertThat(delta.added()).containsKey("A#alpine().");
+        assertThat(delta.added()).extracting(SemanticFact::id).containsExactly("A#alpine().");
         assertThat(state.members("A#","al",10)).extracting(SemanticFact::name).containsExactly("alpine");
 
         state.admit(snapshot("three",type("A#","A","api-A"),renamed));

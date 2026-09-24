@@ -710,9 +710,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             if(source==null){result.put(binary,"<missing>");continue;}
             Path file=source.file().toAbsolutePath().normalize();
             if(!ensureSourceSemanticCurrent(file)){result.put(binary,"<missing>");continue;}
-            var unit=semanticState().unit("source:"+file);
-            SemanticFact declaration=null;
-            if(unit!=null)for(var fact:unit.facts().values())if(fact.typeDeclaration()&&binary.equals(fact.fqn())){declaration=fact;break;}
+            SemanticFact declaration=semanticState().unitType("source:"+file,binary);
             String resolution=declaration==null?"<missing-declaration>":
                     declaration.kind()+"\0"+String.join(",",declaration.modifiers().stream().sorted().toList())+"\0"+Objects.toString(declaration.ownerId(),"");
             result.put(binary,file+"\0"+resolution);

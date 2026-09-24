@@ -124,8 +124,10 @@ public final class ResidentSemanticState {
 
     /** Lost source-change history invalidates hierarchy identities without rebuilding facts. */
     public synchronized void markHierarchyUncertain(){
-        if(hierarchyApis.isEmpty())return;
-        hierarchyApis.clear();freshnessMerkle=Hashing.sha256(("semantic-freshness-uncertain-v1\0"+epoch).getBytes(StandardCharsets.UTF_8));epoch++;
+        if(units.isEmpty())return;
+        String marker="<uncertain:"+(epoch+1)+">";
+        for(String unit:units.keySet())staleUnits.put(unit,marker);
+        hierarchyApis.clear();refreshFreshness();epoch++;
     }
 
     public synchronized SemanticFact symbol(String id){return symbols.get(id);}

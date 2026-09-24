@@ -5,12 +5,16 @@ on:
     paths:
       - 'benchmarks/phase-model.json'
       - 'benchmarks/lsp-scenarios/**'
+      - 'shim/src/**'
+      - 'shim/test/**'
       - '.github/workflows/lsp-scenarios.yml'
   push:
     branches: [main]
     paths:
       - 'benchmarks/phase-model.json'
       - 'benchmarks/lsp-scenarios/**'
+      - 'shim/src/**'
+      - 'shim/test/**'
       - '.github/workflows/lsp-scenarios.yml'
   workflow_dispatch:
     inputs:

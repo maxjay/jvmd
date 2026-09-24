@@ -61,8 +61,9 @@ public final class EditorQueries {
         provenance(result,identity,type);
         for(var parent:task.getTypes().directSupertypes(declared))hierarchy(task,identity,parent,result,seen);
     }
-    private static Map<String,Object> row(JavacTask task,SymbolIdentity identity,Element element,DeclaredType receiver){return row(task,identity,element,receiver,null);}
-    private static Map<String,Object> row(JavacTask task,SymbolIdentity identity,Element element,DeclaredType receiver,CompletionTiming timing){
+    private static Map<String,Object> row(JavacTask task,SymbolIdentity identity,Element element,DeclaredType receiver){return row(task,identity,element,receiver,null,true);}
+    private static Map<String,Object> row(JavacTask task,SymbolIdentity identity,Element element,DeclaredType receiver,CompletionTiming timing){return row(task,identity,element,receiver,timing,true);}
+    private static Map<String,Object> row(JavacTask task,SymbolIdentity identity,Element element,DeclaredType receiver,CompletionTiming timing,boolean includeDocumentation){
         var value=new LinkedHashMap<String,Object>();String scip=identity.scip(element);if(timing!=null)timing.scipComputations++;String signature=identity.signature(element);if(timing!=null)timing.signatureComputations++;
         value.put("scip",scip);value.put("name",identity.displayName(element));value.put("name_path",identity.namePath(element));value.put("kind",SymbolIdentity.kind(element));value.put("signature",signature);
         String sourceFile=identity.sourceFile(element);if(sourceFile!=null)value.put("source_file",sourceFile);
@@ -77,8 +78,11 @@ public final class EditorQueries {
             }label.append(')');if(method.getKind()!=ElementKind.CONSTRUCTOR)label.append(": ").append(executable.getReturnType());
             value.put("label",label.toString());value.put("parameters",parameters);
         }else value.put("label",identity.displayName(element)+": "+member);
-        long docsStarted=System.nanoTime();value.put("doc",DocMarkdown.summary(task.getElements().getDocComment(element)));
-        if(timing!=null){timing.docNanos+=System.nanoTime()-docsStarted;timing.docs++;}return value;
+        if(includeDocumentation){
+            long docsStarted=System.nanoTime();value.put("doc",DocMarkdown.summary(task.getElements().getDocComment(element)));
+            if(timing!=null){timing.docNanos+=System.nanoTime()-docsStarted;timing.docs++;}
+        }
+        return value;
     }
     public static List<Map<String,Object>> completion(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String prefix){return completion(task,units,identity,prefix,null);}
     public static List<Map<String,Object>> completion(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String prefix,CompletionTiming timing){
@@ -126,7 +130,7 @@ public final class EditorQueries {
             if(!accessible(trees,scope,element,accessOwner))continue;
             long rowStarted=System.nanoTime();
             try{
-                var value=row(task,identity,element,receiver!=null&&element.getEnclosingElement() instanceof TypeElement ownerType&&task.getTypes().isSubtype(task.getTypes().erasure(receiver),task.getTypes().erasure(ownerType.asType()))?receiver:null,timing);
+                var value=row(task,identity,element,receiver!=null&&element.getEnclosingElement() instanceof TypeElement ownerType&&task.getTypes().isSubtype(task.getTypes().erasure(receiver),task.getTypes().erasure(ownerType.asType()))?receiver:null,timing,false);
                 if(result.putIfAbsent(value.get("scip").toString(),value)==null){provenance(semanticDependencies,identity,element);if(timing!=null)timing.rows++;}
             }
             catch(IllegalArgumentException unresolved){/* Incomplete error types do not have a stable identity. */}

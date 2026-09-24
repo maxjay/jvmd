@@ -56,13 +56,13 @@ class ResidentSemanticMavenProofTest {
         return result;
     }
 
-    private static Map<String,Long> budgetCounters(Application app)throws Exception{
-        var status=TestSupport.complete(app.dispatcher(),"daemon.status",Map.of())
-                .path("result").path("result").path("response_budget");
+    @SuppressWarnings("unchecked")
+    private static Map<String,Long> budgetCounters(Application app){
+        var status=(Map<String,Object>)app.dispatcher().status().get("response_budget");
         return Map.of(
-                "activations",status.path("activations").asLong(),
-                "continuation_pages",status.path("continuation_pages").asLong(),
-                "resumes",status.path("resumes").asLong());
+                "activations",((Number)status.get("activations")).longValue(),
+                "continuation_pages",((Number)status.get("continuation_pages")).longValue(),
+                "resumes",((Number)status.get("resumes")).longValue());
     }
 
     private static Map<String,Long> delta(Map<String,Long> before,Map<String,Long> after){
@@ -131,6 +131,16 @@ class ResidentSemanticMavenProofTest {
                 "line",pos.line(),"character",pos.character(),"limit",1000));
     }
 
+    private static JsonNode lspComplete(Application app,String session,Path caller,String text,String prefix)throws Exception{
+        int offset=completionOffset(text,prefix);var pos=Documents.position(text,offset);
+        var nativeParams=Map.of(
+                "textDocument",Map.of("uri",caller.toUri().toString()),
+                "position",Map.of("line",pos.line(),"character",pos.character()),
+                "context",Map.of("triggerKind",2,"triggerCharacter","."));
+        return request(app,"lsp.request",Map.of(
+                "session",session,"method","textDocument/completion","params",nativeParams,"client",Map.of()));
+    }
+
     @Test void recordsApacheMavenCompletionBaseline()throws Exception{
         Path root=Path.of(System.getenv("JVMD_RESIDENT_PROOF_MAVEN_ROOT")).toAbsolutePath().normalize();
         Path receiver=root.resolve("impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java");
@@ -151,6 +161,12 @@ class ResidentSemanticMavenProofTest {
             request(app,"document.change",Map.of("session",session,"path",caller.toString(),"version",2,
                     "changes",List.of(Map.of("text",narrowed))));
             scenarios.add(measure("maven_project_prefix_get",app,session,()->complete(app,session,caller,narrowed,"get")));
+
+            var budgetBeforeLsp=budgetCounters(app);
+            scenarios.add(measure("maven_project_lsp_initial_completion",app,session,()->lspComplete(app,session,caller,narrowed,"get")));
+            var budgetAfterLsp=budgetCounters(app);
+            assertThat(budgetAfterLsp.get("activations")-budgetBeforeLsp.get("activations"))
+                    .as("initial LSP completion must not require ResponseBudget paging").isZero();
 
             String editedReceiver=insertMethod(receiverOriginal,"    public void benchmarkAddedMethod() {}");
             request(app,"document.open",Map.of("session",session,"path",receiver.toString(),"version",1,"text",editedReceiver));

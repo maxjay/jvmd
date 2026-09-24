@@ -169,7 +169,15 @@ def verify(root):
                 errors.append("benchmark milestones are missing or out of order")
             if report.get("preparation", {}).get("readiness", {}).get("target_queried") is not False:
                 errors.append("measured target was queried during readiness")
-            first = next((row for row in report["actions"] if row["state"] == "first_use"), None)
+            for key in operations:
+                states = [
+                    canonical_state(row["state"])
+                    for row in report["actions"]
+                    if (row["operation"], row["target"]) == key
+                ]
+                if not states or states[0] != "first_use":
+                    errors.append("operation-specific warmup preceded first use")
+            first = next((row for row in report["actions"] if canonical_state(row["state"]) == "first_use"), None)
             diagnostic = report.get("diagnostic_cold_end_to_end_ms")
             if first and first.get("response_ns") and diagnostic is not None:
                 expected = (first["response_ns"] - milestones["process_spawn"]) / 1e6

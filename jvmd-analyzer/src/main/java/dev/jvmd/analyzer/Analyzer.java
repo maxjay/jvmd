@@ -592,12 +592,12 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         String unit="source:"+file;
         if(current==null){semanticState().removeUnit(unit);return false;}
         var resident=semanticState().unit(unit);var contribution=contribution(file);
-        if(resident!=null&&current.equals(resident.contentIdentity())&&contribution!=null&&current.equals(contribution.sourceHash()))return true;
+        if(resident!=null&&current.equals(resident.contentIdentity())&&(contribution==null||current.equals(contribution.sourceHash())))return true;
         var outcome=bindings(file,documents.text(file),null);
         resident=semanticState().unit(unit);contribution=contribution(file);
         return outcome.tier()==2&&outcome.result()!=null&&outcome.warnings().isEmpty()
                 &&resident!=null&&current.equals(resident.contentIdentity())
-                &&contribution!=null&&current.equals(contribution.sourceHash());
+                &&(contribution==null||current.equals(contribution.sourceHash()));
     }
 
     private Map<String,String> completionResolutionIdentities(Collection<String> binaries)throws Exception{

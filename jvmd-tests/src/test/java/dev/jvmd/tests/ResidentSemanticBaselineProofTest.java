@@ -28,7 +28,7 @@ class ResidentSemanticBaselineProofTest {
             "completion_as_member_of_calls","completion_doc_lookups",
             "completion_sort_count","completion_sort_input_size",
             "completion_rows_returned","completion_rows_discarded_after_limit",
-            "completion_result_bytes");
+            "completion_result_bytes","resident_semantic_fact_mutations","resident_semantic_tree_range_entries_read");
 
     private Analyzer.Context context(){
         return new Analyzer.Context("fixture:resident-proof:1","25",List.of(),List.of(root),"resident-proof",Map.of());
@@ -70,7 +70,12 @@ class ResidentSemanticBaselineProofTest {
 
     private static Map<String,Long> counters(Analyzer analyzer){
         var status=analyzer.status();var result=new LinkedHashMap<String,Long>();
-        for(String key:COUNTERS)result.put(key,((Number)status.getOrDefault(key,0L)).longValue());
+        @SuppressWarnings("unchecked") var resident=(Map<String,Object>)status.getOrDefault("resident_semantic_state",Map.of());
+        for(String key:COUNTERS){
+            if(key.equals("resident_semantic_fact_mutations"))result.put(key,((Number)resident.getOrDefault("semantic_fact_mutations",0L)).longValue());
+            else if(key.equals("resident_semantic_tree_range_entries_read"))result.put(key,((Number)resident.getOrDefault("semantic_tree_range_entries_read",0L)).longValue());
+            else result.put(key,((Number)status.getOrDefault(key,0L)).longValue());
+        }
         return result;
     }
 

@@ -83,7 +83,9 @@ export class RpcPool implements RpcCaller {
   private idle:RpcClient[]=[];
   private all=new Set<RpcClient>();
   private closed=false;
-  constructor(private create:()=>Promise<RpcClient>,private maxIdle=4){}
+  private create:()=>Promise<RpcClient>;
+  private maxIdle:number;
+  constructor(create:()=>Promise<RpcClient>,maxIdle=4){this.create=create;this.maxIdle=maxIdle;}
   async call(method:string,params:any={}){
     const client=this.idle.pop()||await this.open();
     try{return await client.call(method,params);}

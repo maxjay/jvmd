@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.LongAdder;
 
 /** Implements 4.1 and phase 8: byte-bounded response fragments and replayable, scoped continuations. */
 public final class ResponseBudget {
@@ -13,6 +14,7 @@ public final class ResponseBudget {
     private record Candidate(List<String> path,JsonNode node,long weight) { }
     private final LinkedHashMap<String,Snapshot> snapshots=new LinkedHashMap<>(16,.75f,true);
     private long stored;
+    private final LongAdder activations=new LongAdder(),continuationPages=new LongAdder(),resumes=new LongAdder();
     private static String suppliedCursor(JsonNode params){String cursor=params.path("cursor").asText("");if(cursor.isEmpty())cursor=params.path("args").path("cursor").asText("");return cursor;}
     private static JsonNode canonical(JsonNode value){
         if(value.isObject()){var result=Json.MAPPER.createObjectNode();var fields=new TreeMap<String,JsonNode>();value.properties().forEach(e->{if(!e.getKey().equals("cursor"))fields.put(e.getKey(),e.getValue());});fields.forEach((key,child)->result.set(key,canonical(child)));return result;}
@@ -26,13 +28,13 @@ public final class ResponseBudget {
         String cursor=suppliedCursor(params);if(!cursor.startsWith("budget:"))return null;expire();int split=cursor.lastIndexOf(':');String key=cursor.substring(0,split);int page;
         try{page=Integer.parseInt(cursor.substring(split+1));}catch(NumberFormatException e){throw RpcException.invalid("Invalid response cursor");}
         var snapshot=snapshots.get(key);if(snapshot==null||page<0||page>=snapshot.pages().size()||!snapshot.identity().equals(identity(method,params)))throw RpcException.invalid("Unknown, expired or mismatched response cursor");
-        var response=snapshot.pages().get(page).deepCopy();response.set("id",id==null?Json.MAPPER.nullNode():id);return response;
+        resumes.increment();var response=snapshot.pages().get(page).deepCopy();response.set("id",id==null?Json.MAPPER.nullNode():id);return response;
     }
     private static ObjectNode envelope(ObjectNode response){return (ObjectNode)(response.has("error")?response.path("error").path("data"):response.path("result"));}
     public ObjectNode enforce(ObjectNode response,String method,JsonNode params)throws Exception{
         int maximum=Dispatcher.bounded(params,"_response_bytes",MAX_BYTES,MAX_BYTES);if(maximum<4096)throw RpcException.invalid("_response_bytes must be at least 4096");
         if(Json.MAPPER.writeValueAsBytes(response).length<=maximum)return response;
-        int payloadBudget=maximum-2048;
+        activations.increment();int payloadBudget=maximum-2048;
         ObjectNode original=envelope(response);var document=Json.MAPPER.createObjectNode();document.set("payload",original.path("result"));document.set("warnings",original.path("warnings"));
         var pending=new ArrayDeque<JsonNode>();pending.add(document);var fragments=new ArrayList<JsonNode>();long bytes=0;
         while(!pending.isEmpty()){
@@ -53,12 +55,14 @@ public final class ResponseBudget {
             value.set("result",result);value.set("warnings",fragment.path("warnings").isArray()?fragment.path("warnings"):Json.MAPPER.createArrayNode());boolean more=i+1<fragments.size();
             if(more){value.put("truncated",true);value.put("cursor",key+":"+(i+1));}pages.add(page);
         }
+        continuationPages.add(pages.size());
         synchronized(this){
             expire();while(stored+bytes>MAX_STORED_BYTES||snapshots.size()>=64){var oldest=snapshots.keySet().iterator().next();stored-=snapshots.remove(oldest).bytes();}
             snapshots.put(key,new Snapshot(identity(method,params),List.copyOf(pages),System.nanoTime()+TimeUnit.SECONDS.toNanos(60),bytes));stored+=bytes;
         }
         return pages.getFirst();
     }
+    public Map<String,Object> status(){return Map.of("activations",activations.sum(),"continuation_pages",continuationPages.sum(),"resumes",resumes.sum());}
     private static Candidate independentFields(JsonNode node,List<String> path,int budget)throws Exception{
         if(node.isObject()){
             int large=0;for(var entry:node.properties())if(!entry.getKey().equals("_jvmd_segments")&&Json.MAPPER.writeValueAsBytes(entry.getValue()).length>=Math.max(1024,budget/4))large++;

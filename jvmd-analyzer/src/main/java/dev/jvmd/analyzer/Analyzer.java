@@ -778,16 +778,29 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return Collections.unmodifiableMap(value);
     }
 
+    private static String inheritedMemberShape(SemanticFact fact){
+        if(fact.kind().equals("method")){
+            String descriptor=Objects.requireNonNullElse(fact.erasedDescriptor(),"");
+            int close=descriptor.indexOf(')');
+            String parameters=close>=0?descriptor.substring(0,close+1):descriptor;
+            return "method\0"+fact.name()+"\0"+parameters;
+        }
+        if(Set.of("field","enumconst").contains(fact.kind()))return "field\0"+fact.name();
+        if(fact.typeDeclaration())return "type\0"+fact.name();
+        return fact.kind()+"\0"+fact.name()+"\0"+Objects.requireNonNullElse(fact.erasedDescriptor(),"");
+    }
+
     private List<Map<String,Object>> residentHierarchyRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target,boolean staticOnly){
         if(target<=0)return List.of();
         var queue=new ArrayDeque<SemanticType>();addDeclaredTypes(queue,query.receiverType());
-        var seenTypes=new HashSet<String>();var rows=new LinkedHashMap<String,Map<String,Object>>();
+        var seenTypes=new HashSet<String>();var seenMembers=new HashSet<String>();var rows=new LinkedHashMap<String,Map<String,Object>>();
         while(!queue.isEmpty()&&rows.size()<target*8){
             var next=queue.removeFirst();if(!(next instanceof SemanticType.Declared declared)||!seenTypes.add(declared.symbolId()))continue;
             var owner=semanticState().symbol(declared.symbolId());if(owner==null)continue;
             var substitutions=typeSubstitutions(owner,declared);
             for(var member:semanticState().members(declared.symbolId(),prefix,target)){
                 if(member.kind().equals("ctor")||member.kind().equals("package")||member.kind().equals("module"))continue;
+                if(!seenMembers.add(inheritedMemberShape(member)))continue;
                 if(staticOnly&&!member.typeDeclaration()&&!member.modifiers().contains("static"))continue;
                 if(!residentAccessible(member,query))continue;
                 rows.putIfAbsent(member.id(),residentCompletionRow(member,member.candidate(substitutions)));

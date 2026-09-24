@@ -185,8 +185,14 @@ class ResidentCompletionCorrectnessTest {
             var first=complete(analyzer,use,source,"api.");
             JsonNode old=named(first,"oldName");
             assertThat(first.findValuesAsText("name")).contains("removed");
+            @SuppressWarnings("unchecked") var admitted=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            assertThat(admitted).containsEntry("semantic_descriptions",0);
+            assertThat(((Number)analyzer.status().get("resident_description_loads")).longValue()).isZero();
             String scip=old.path("scip").asText();
             assertThat(analyzer.residentDescription(scip).get("doc").toString()).contains("before documentation");
+            assertThat(((Number)analyzer.status().get("resident_description_loads")).longValue()).isEqualTo(1L);
+            assertThat(analyzer.residentDescription(scip).get("doc").toString()).contains("before documentation");
+            assertThat(((Number)analyzer.status().get("resident_description_cache_hits")).longValue()).isPositive();
             @SuppressWarnings("unchecked") var beforeState=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
             String apiIdentity=beforeState.get("semantic_api").toString();
 

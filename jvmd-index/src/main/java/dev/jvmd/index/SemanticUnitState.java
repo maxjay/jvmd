@@ -8,7 +8,6 @@ public record SemanticUnitState(
         String sourceFile,
         String contentIdentity,
         SemanticUnitMerkle facts,
-        Set<String> descriptionIds,
         String apiIdentity,
         String namespaceIdentity,
         String documentationIdentity,
@@ -18,7 +17,6 @@ public record SemanticUnitState(
         Objects.requireNonNull(unit);
         contentIdentity=Objects.requireNonNullElse(contentIdentity,"");
         facts=Objects.requireNonNull(facts);
-        descriptionIds=Set.copyOf(descriptionIds);
         apiIdentity=Objects.requireNonNullElse(apiIdentity,"");
         namespaceIdentity=Objects.requireNonNullElse(namespaceIdentity,"");
         documentationIdentity=Objects.requireNonNullElse(documentationIdentity,"");

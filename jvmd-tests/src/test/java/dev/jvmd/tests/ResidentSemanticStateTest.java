@@ -110,7 +110,6 @@ class ResidentSemanticStateTest {
         state.admit(snapshot("unit-state",owner,value));
         var unit=state.unit("source:/src/A.java");
         assertThat(unit.factIds()).containsExactlyInAnyOrder(owner.id(),value.id());
-        assertThat(unit.descriptionIds()).containsExactlyInAnyOrder(owner.id(),value.id());
         assertThat(state.symbol(value.id())).isSameAs(value);
         assertThat(state.status()).containsEntry("semantic_unit_fact_ids",2L);
     }

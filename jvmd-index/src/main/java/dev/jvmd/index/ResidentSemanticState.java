@@ -47,7 +47,6 @@ public final class ResidentSemanticState {
 
     private Node root;
     private final Map<String,SemanticFact> symbols=new HashMap<>();
-    private final Map<String,SymbolDescription> descriptions=new HashMap<>();
     private final Map<String,SemanticUnitState> units=new HashMap<>();
     private final Map<String,Aggregate> memberAggregates=new HashMap<>();
     private Aggregate semanticAggregate=Aggregate.ZERO;
@@ -58,7 +57,7 @@ public final class ResidentSemanticState {
     private long epoch,rangeEntriesRead,factMutations,treeNodesCreated,bulkBuilds,unitDiffBucketsRead,unitDiffEntriesRead;
 
     public synchronized SemanticDelta diff(SemanticSnapshot next){
-        var delta=SemanticDelta.between(units.get(next.unit()),next,symbols::get,descriptions::get);
+        var delta=SemanticDelta.between(units.get(next.unit()),next,symbols::get);
         unitDiffBucketsRead+=delta.factBucketsVisited();unitDiffEntriesRead+=delta.factEntriesCompared();return delta;
     }
 
@@ -75,7 +74,7 @@ public final class ResidentSemanticState {
                 ||!Objects.equals(previous.apiIdentity(),delta.apiIdentity())
                 ||!Objects.equals(previous.namespaceIdentity(),delta.namespaceIdentity())
                 ||!Objects.equals(previous.documentationIdentity(),delta.documentationIdentity())
-                ||!delta.emptyFacts()||!delta.descriptionsChanged().isEmpty()||!delta.descriptionsRemoved().isEmpty();
+                ||!delta.emptyFacts();
         if(!transition)return;
 
         var hierarchyAffected=new LinkedHashSet<String>();
@@ -97,9 +96,7 @@ public final class ResidentSemanticState {
         }
         recomputeHierarchyApis(hierarchyAffected);
         if(staleUnits.remove(delta.unit())!=null)refreshFreshness();
-        delta.descriptionsRemoved().forEach(descriptions::remove);
-        for(var description:delta.descriptionsChanged())descriptions.put(description.id(),description);
-        units.put(delta.unit(),nextUnitState(previous,delta));
+        units.put(delta.unit(),nextUnitState(delta));
         factMutations+=delta.factMutations();epoch++;
     }
 
@@ -116,16 +113,15 @@ public final class ResidentSemanticState {
         ordered.sort(Comparator.comparing(Entry::key));
         root=bulkBuild(ordered);
         recomputeHierarchyApis(hierarchyAffected);
-        for(var description:delta.descriptionsChanged())descriptions.put(description.id(),description);
-        units.put(delta.unit(),nextUnitState(null,delta));
+        units.put(delta.unit(),nextUnitState(delta));
         factMutations+=delta.factMutations();bulkBuilds++;epoch++;
     }
 
     public synchronized SemanticDelta removeUnit(String unit){
         var previous=units.get(unit);
-        if(previous==null)return new SemanticDelta(unit,null,"",SemanticUnitMerkle.empty(),List.of(),List.of(),Set.of(),List.of(),Set.of(),"","","",Set.of(),0,0);
+        if(previous==null)return new SemanticDelta(unit,null,"",SemanticUnitMerkle.empty(),List.of(),List.of(),Set.of(),"","","",Set.of(),0,0);
         var removed=previous.facts().ids();
-        var delta=new SemanticDelta(unit,previous.sourceFile(),"",SemanticUnitMerkle.empty(),List.of(),List.of(),removed,List.of(),previous.descriptionIds(),"","","",Set.of(),0,removed.size());
+        var delta=new SemanticDelta(unit,previous.sourceFile(),"",SemanticUnitMerkle.empty(),List.of(),List.of(),removed,"","","",Set.of(),0,removed.size());
         apply(delta);units.remove(unit);return delta;
     }
 
@@ -154,7 +150,6 @@ public final class ResidentSemanticState {
     }
 
     public synchronized SemanticFact symbol(String id){return symbols.get(id);}
-    public synchronized SymbolDescription describe(String id){return descriptions.get(id);}
     public synchronized SemanticUnitState unit(String unit){return units.get(unit);}
     public synchronized SemanticFact unitType(String unit,String fqn){
         var state=units.get(unit);if(state==null)return null;
@@ -215,8 +210,8 @@ public final class ResidentSemanticState {
     }
 
     public synchronized void clear(){
-        if(root==null&&symbols.isEmpty()&&descriptions.isEmpty()&&units.isEmpty())return;
-        root=null;symbols.clear();descriptions.clear();units.clear();memberAggregates.clear();semanticAggregate=Aggregate.ZERO;directSupers.clear();directSubs.clear();hierarchyApis.clear();staleUnits.clear();freshnessMerkle=EMPTY;epoch++;
+        if(root==null&&symbols.isEmpty()&&units.isEmpty())return;
+        root=null;symbols.clear();units.clear();memberAggregates.clear();semanticAggregate=Aggregate.ZERO;directSupers.clear();directSubs.clear();hierarchyApis.clear();staleUnits.clear();freshnessMerkle=EMPTY;epoch++;
     }
 
     public synchronized Map<String,Object> status(){
@@ -230,15 +225,12 @@ public final class ResidentSemanticState {
                 Map.entry("semantic_hierarchy_aggregates",hierarchyApis.size()),Map.entry("semantic_stale_units",staleUnits.size()),
                 Map.entry("semantic_fact_mutations",factMutations),Map.entry("semantic_tree_range_entries_read",rangeEntriesRead),
                 Map.entry("semantic_tree_nodes_created",treeNodesCreated),Map.entry("semantic_bulk_builds",bulkBuilds),
-                Map.entry("semantic_unit_fact_ids",units.values().stream().mapToLong(unit->unit.facts().size()).sum()),
+                Map.entry("semantic_descriptions",0),Map.entry("semantic_unit_fact_ids",units.values().stream().mapToLong(unit->unit.facts().size()).sum()),
                 Map.entry("semantic_unit_diff_buckets_read",unitDiffBucketsRead),Map.entry("semantic_unit_diff_entries_read",unitDiffEntriesRead));
     }
 
-    private SemanticUnitState nextUnitState(SemanticUnitState previous,SemanticDelta delta){
-        var descriptionIds=new LinkedHashSet<String>();
-        if(previous!=null)descriptionIds.addAll(previous.descriptionIds());
-        descriptionIds.removeAll(delta.descriptionsRemoved());for(var description:delta.descriptionsChanged())descriptionIds.add(description.id());
-        return new SemanticUnitState(delta.unit(),delta.sourceFile(),delta.contentIdentity(),delta.facts(),descriptionIds,
+    private SemanticUnitState nextUnitState(SemanticDelta delta){
+        return new SemanticUnitState(delta.unit(),delta.sourceFile(),delta.contentIdentity(),delta.facts(),
                 delta.apiIdentity(),delta.namespaceIdentity(),delta.documentationIdentity(),delta.dependencies());
     }
 

@@ -179,7 +179,7 @@ public final class SemanticFacts {
     public static SemanticSnapshot sourceSnapshot(JavacTask task,SymbolIdentity identity,CompilationUnitTree unit)throws Exception{
         String text=unit.getSourceFile().getCharContent(true).toString();
         String source=sourcePath(unit),content=Hashing.sha256(text.getBytes(StandardCharsets.UTF_8));
-        var facts=new LinkedHashMap<String,SemanticFact>();var descriptions=new LinkedHashMap<String,SymbolDescription>();
+        var facts=new LinkedHashMap<String,SemanticFact>();
         var trees=Trees.instance(task);
         new TreePathScanner<Void,Void>(){
             private void add(Element element){
@@ -188,7 +188,6 @@ public final class SemanticFacts {
                         ElementKind.BINDING_VARIABLE,ElementKind.PARAMETER,ElementKind.TYPE_PARAMETER).contains(element.getKind()))return;
                 try{
                     var fact=fact(task,identity,element);facts.put(fact.id(),fact);
-                    descriptions.put(fact.id(),description(task,identity,element));
                 }catch(IllegalArgumentException unresolved){/* no stable semantic identity yet */}
             }
             @Override public Void visitClass(ClassTree tree,Void unused){add(trees.getElement(getCurrentPath()));return super.visitClass(tree,unused);}
@@ -199,24 +198,24 @@ public final class SemanticFacts {
                 return null;
             }
         }.scan(unit,null);
-        return snapshot("source:"+source,source,content,facts,descriptions);
+        return snapshot("source:"+source,source,content,facts);
     }
 
     /** Classfile/JDK fallback: one detached declaration unit without retaining compiler objects. */
     public static SemanticSnapshot typeSnapshot(JavacTask task,SymbolIdentity identity,TypeElement type){
-        var facts=new LinkedHashMap<String,SemanticFact>();var descriptions=new LinkedHashMap<String,SymbolDescription>();
+        var facts=new LinkedHashMap<String,SemanticFact>();
         try{
-            var declaration=fact(task,identity,type);facts.put(declaration.id(),declaration);descriptions.put(declaration.id(),description(task,identity,type));
+            var declaration=fact(task,identity,type);facts.put(declaration.id(),declaration);
             for(var element:type.getEnclosedElements()){
                 if(Set.of(ElementKind.STATIC_INIT,ElementKind.INSTANCE_INIT).contains(element.getKind()))continue;
                 try{
-                    var member=fact(task,identity,element);facts.put(member.id(),member);descriptions.put(member.id(),description(task,identity,element));
+                    var member=fact(task,identity,element);facts.put(member.id(),member);
                 }catch(IllegalArgumentException unresolved){/* no stable semantic identity yet */}
             }
             String unit="type:"+declaration.id();
             String content=Hashing.sha256(facts.values().stream().map(f->f.id()+"\0"+f.apiIdentity()+"\0"+f.documentationIdentity())
                     .sorted().reduce("",(a,b)->a+"\n"+b).getBytes(StandardCharsets.UTF_8));
-            return snapshot(unit,declaration.sourceFile(),content,facts,descriptions);
+            return snapshot(unit,declaration.sourceFile(),content,facts);
         }catch(IllegalArgumentException unresolved){
             return new SemanticSnapshot("type:unresolved:"+type.getQualifiedName(),null,"",Map.of(),Map.of(),"","","",Set.of());
         }
@@ -289,7 +288,7 @@ public final class SemanticFacts {
         };
     }
 
-    private static SemanticSnapshot snapshot(String unit,String source,String content,Map<String,SemanticFact> facts,Map<String,SymbolDescription> descriptions){
+    private static SemanticSnapshot snapshot(String unit,String source,String content,Map<String,SemanticFact> facts){
         String api=aggregate(facts.values().stream().map(SemanticFact::apiIdentity).toList());
         String namespace=aggregate(facts.values().stream().map(SemanticFact::namespaceIdentity).toList());
         String documentation=aggregate(facts.values().stream().map(SemanticFact::documentationIdentity).toList());
@@ -298,7 +297,7 @@ public final class SemanticFacts {
             collect(fact.type(),dependencies);fact.directSupertypes().forEach(type->collect(type,dependencies));
         }
         facts.keySet().forEach(dependencies::remove);
-        return new SemanticSnapshot(unit,source,content,facts,descriptions,api,namespace,documentation,dependencies);
+        return new SemanticSnapshot(unit,source,content,facts,Map.of(),api,namespace,documentation,dependencies);
     }
 
     private static void collect(SemanticType type,Set<String> result){

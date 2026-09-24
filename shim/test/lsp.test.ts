@@ -147,6 +147,28 @@ test("LSP completion waits for its own pending document mutation",async()=>{
   assert.equal(completionCalls,1);assert.equal(sent.find(x=>x.id===2).result.items[0].label,"after-change");
   await bridge.close();
 });
+test("LSP interactive request in B waits for a preceding mutation in A",async()=>{
+  const sent:any[]=[];let release:(value:any)=>void=()=>{},started:(value?:unknown)=>void=()=>{},definitionCalls=0;
+  const changing=new Promise(resolve=>started=resolve);
+  const client:any={call:async(method:string,params:any)=>{
+    if(method==="session.open")return {result:{session:"s1"}};
+    if(method==="lsp.request"&&params.method==="initialize")return envelope({capabilities:{}});
+    if(method==="document.change"&&params.path==="/repo/A.java"){started();return new Promise(resolve=>release=resolve);}
+    if(method==="lsp.request"&&params.method==="textDocument/definition"){definitionCalls++;return envelope([]);}
+    return envelope({});
+  }};
+  const bridge=new LspBridge(async()=>client,"/repo",message=>sent.push(message));
+  await bridge.handle({jsonrpc:"2.0",id:1,method:"initialize",params:{}});
+  await bridge.handle({jsonrpc:"2.0",method:"textDocument/didOpen",params:{textDocument:{uri:"file:///repo/A.java",languageId:"java",version:1,text:"class A {}"}}});
+  const change=bridge.handle({jsonrpc:"2.0",method:"textDocument/didChange",params:{textDocument:{uri:"file:///repo/A.java",version:2},contentChanges:[{text:"class A { int value; }"}]}});
+  await changing;
+  const definition=bridge.handle({jsonrpc:"2.0",id:2,method:"textDocument/definition",params:{textDocument:{uri:"file:///repo/B.java"},position:{line:0,character:0}}});
+  await delay(20);assert.equal(definitionCalls,0,"B must not query before the preceding A mutation is accepted");
+  release(envelope({}));await Promise.all([change,definition]);
+  assert.equal(definitionCalls,1);assert.deepEqual(sent.find(x=>x.id===2).result,[]);
+  await bridge.close();
+});
+
 test("LSP preserves rapid same-document mutation order without a global lane",async()=>{
   const finished:number[]=[];
   const client:any={call:async(method:string,params:any)=>{

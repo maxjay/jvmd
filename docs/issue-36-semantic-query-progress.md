@@ -235,3 +235,44 @@ Deviations:
 Remaining:
 - Rerun the exact baseline with the inline status driver.
 - Complete Checkpoint 0 only after one accepted run contains all required scenario and measurement evidence.
+
+
+## Checkpoint 0 — baseline attempt 8: expanded-matrix import and paged status
+
+Starting SHA: `eb45487f08a986d3a5ef2acd3666177e332cdc9b`
+Ending SHA: `eb45487f08a986d3a5ef2acd3666177e332cdc9b`
+
+Changes:
+- Reran the exact baseline with the inline CMP status driver.
+- The production CMP-01 scenario completed successfully.
+- The companion status driver completed, but its selected analyzer counters were null because `session.status` exceeded one response-budget page and the probe read only the first page.
+- The expanded semantic matrix then failed test compilation because the newly added `IndexService` import contained a literal backslash-n sequence.
+
+Architecture:
+- Production source and the exact baseline subject remained unchanged.
+- Both defects were confined to the disposable frozen proof harness.
+
+Correctness proof:
+- GitHub Actions run https://github.com/maxjay/jvmd/actions/runs/36070090312 reproduced the empty CMP-01 result and successfully exercised the companion production-daemon completion request.
+- The semantic matrix did not execute because its injected test source failed javac parsing at the malformed import.
+
+Performance proof:
+- Valid CMP latency/RSS/JFR evidence exists for this attempt.
+- The status probe measured the completion request but did not expose usable compiler counters because its status payload was incomplete.
+- No expanded-matrix performance evidence from this run is accepted.
+
+Findings:
+- `session.status` must use the existing continuation-aware `collect()` helper; a single raw RPC page is insufficient for large workspace status.
+- The matrix source failure was a string-edit mistake, not a measured-code compilation problem.
+
+Failed/deprecated approaches:
+- Do not read `session.status` with one raw `RpcClient.call` in the proof harness.
+- Do not inject escaped newline text into Java imports.
+- Replacements: use `collect(control,"session.status",...)` and a real newline in the injected import.
+
+Deviations:
+- None to production semantics or the measured subject.
+
+Remaining:
+- Rerun the exact baseline with complete status collection and the repaired matrix source.
+- Accept Checkpoint 0 only after the full matrix and compiler/JFR evidence complete in one run.

@@ -762,8 +762,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
 
     private Map<String,Object> residentCompletionRow(SemanticFact fact,CompletionCandidate candidate){
+        return residentCompletionRow(candidate,fact.namePath());
+    }
+    private Map<String,Object> residentCompletionRow(CompletionCandidate candidate,String namePath){
         var value=new LinkedHashMap<String,Object>();
-        value.put("scip",candidate.id());value.put("name",candidate.name());value.put("name_path",fact.namePath());
+        value.put("scip",candidate.id());value.put("name",candidate.name());value.put("name_path",Objects.requireNonNullElse(namePath,candidate.name()));
         value.put("kind",candidate.kind());value.put("signature",candidate.structuralSignature());value.put("label",candidate.label());
         value.put("modifiers",candidate.modifiers().stream().sorted().toList());
         if(candidate.sourceFile()!=null)value.put("source_file",candidate.sourceFile());
@@ -773,7 +776,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return Collections.unmodifiableMap(value);
     }
 
-    private List<Map<String,Object>> residentQualifiedRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target){
+    private List<Map<String,Object>> residentHierarchyRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target,boolean staticOnly){
         if(target<=0)return List.of();
         var queue=new ArrayDeque<SemanticType>();addDeclaredTypes(queue,query.receiverType());
         var seenTypes=new HashSet<String>();var rows=new LinkedHashMap<String,Map<String,Object>>();
@@ -783,12 +786,30 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             var substitutions=typeSubstitutions(owner,declared);
             for(var member:semanticState().members(declared.symbolId(),prefix,target)){
                 if(member.kind().equals("ctor")||member.kind().equals("package")||member.kind().equals("module"))continue;
-                if(query.staticReceiver()&&!member.typeDeclaration()&&!member.modifiers().contains("static"))continue;
+                if(staticOnly&&!member.typeDeclaration()&&!member.modifiers().contains("static"))continue;
                 if(!residentAccessible(member,query))continue;
                 rows.putIfAbsent(member.id(),residentCompletionRow(member,member.candidate(substitutions)));
             }
             for(var parent:owner.directSupertypes())addDeclaredTypes(queue,parent.substitute(substitutions));
         }
+        return rows.values().stream().sorted(Comparator.comparing(row->row.get("label").toString())).limit(target).toList();
+    }
+    private List<Map<String,Object>> residentQualifiedRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target){
+        return residentHierarchyRows(query,prefix,target,query.staticReceiver());
+    }
+    private List<Map<String,Object>> residentUnqualifiedRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target){
+        if(target<=0)return List.of();
+        var rows=new LinkedHashMap<String,Map<String,Object>>();
+        for(var candidate:query.scopedCandidates()){
+            if(!candidate.name().startsWith(prefix)||candidate.name().equals(EditorQueries.MARKER))continue;
+            if(query.staticContext()&&candidate.declaringType()!=null&&!candidate.modifiers().contains("static")
+                    &&semanticState().symbol(candidate.declaringType())!=null)continue;
+            rows.putIfAbsent(candidate.id(),residentCompletionRow(candidate,candidate.name()));
+            if(rows.size()>=target*4)break;
+        }
+        if(query.receiverType() instanceof SemanticType.Declared||query.receiverType() instanceof SemanticType.Intersection)
+            for(var row:residentHierarchyRows(query,prefix,target,query.staticContext()))
+                rows.put(Objects.toString(row.get("scip"),""),row);
         return rows.values().stream().sorted(Comparator.comparing(row->row.get("label").toString())).limit(target).toList();
     }
 

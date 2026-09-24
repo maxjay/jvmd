@@ -36,7 +36,17 @@ const caller={
 };
 let driver:any;
 const bridge=new LspBridge(async()=>caller,fixtureRoot,(message:any)=>driver.send(message),()=>{});
-driver=new Driver(bridge);
+driver={
+  responses:new Map<number,any>(),
+  next:0,
+  send(message:any){if(typeof message.id==="number")this.responses.set(message.id,message);},
+  async request(method:string,params:any){
+    const id=++this.next;await bridge.handle({jsonrpc:"2.0",id,method,params});
+    const response=this.responses.get(id);if(!response)throw new Error("missing response "+method);
+    this.responses.delete(id);if(response.error)throw new Error(method+": "+response.error.message);return response.result;
+  },
+  async notify(method:string,params:any){await bridge.handle({jsonrpc:"2.0",method,params});},
+};
 
 const rootUri=pathToFileURL(fixtureRoot).href;
 await driver.request("initialize",{
@@ -143,15 +153,4 @@ async function waitExit(process:ChildProcess){
     const timer=setTimeout(()=>reject(new Error("daemon did not exit")),10000);
     process.once("exit",()=>{clearTimeout(timer);resolve();});
   });
-}
-class Driver {
-  responses=new Map<number,any>();next=0;bridge:any;
-  constructor(bridge:any){this.bridge=bridge;}
-  send=(message:any)=>{if(typeof message.id==="number")this.responses.set(message.id,message);};
-  async request(method:string,params:any){
-    const id=++this.next;await this.bridge.handle({jsonrpc:"2.0",id,method,params});
-    const response=this.responses.get(id);if(!response)throw new Error("missing response "+method);
-    this.responses.delete(id);if(response.error)throw new Error(method+": "+response.error.message);return response.result;
-  }
-  async notify(method:string,params:any){await this.bridge.handle({jsonrpc:"2.0",method,params});}
 }

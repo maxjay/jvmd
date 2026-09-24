@@ -25,6 +25,7 @@ export type OperationSeries<T> = {
   warmup:Measurement<T>[];
   steady:Measurement<T>[];
   stats:ReturnType<typeof latencyStats>;
+  correctStats?:ReturnType<typeof latencyStats>;
 };
 export type ScenarioPayload = {
   legacy:Record<string,Measurement<unknown>|undefined>;
@@ -128,6 +129,14 @@ export abstract class LspScenarioHarness {
     try{
       const payload=await this.scenario();
       const verification=this.verify(payload);
+      const completionCorrectness=verification.operationCorrectness.completion;
+      if(payload.operations.completion&&completionCorrectness){
+        payload.operations.completion.correctStats=latencyStats(
+          payload.operations.completion.steady
+            .filter((_,index)=>completionCorrectness.steady[index])
+            .map(row=>row.metrics.latencyMs),
+        );
+      }
       const spawn=LspScenarioHarness.milestones.process_spawn;
       const firstUseEnd=LspScenarioHarness.milestones.first_use_finished;
       const diagnosticCold=spawn!==undefined&&firstUseEnd!==undefined?(firstUseEnd-spawn)/1e6:null;
@@ -471,9 +480,9 @@ function writeSummary(report:any){
     "",
     "| State | latency | correctness |",
     "| --- | ---: | --- |",
-    "| first_use | "+report.operations.completion.firstUse.metrics.latencyMs.toFixed(2)+" ms | "+(correctness.firstUse?"correct":"INCORRECT")+" |",
+    "| first_use | "+(correctness.firstUse?report.operations.completion.firstUse.metrics.latencyMs.toFixed(2)+" ms":"diagnostic "+report.operations.completion.firstUse.metrics.latencyMs.toFixed(2)+" ms")+" | "+(correctness.firstUse?"correct":"INCORRECT")+" |",
     "| warmup | "+report.operations.completion.warmup.map((x:any)=>x.metrics.latencyMs.toFixed(2)).join(", ")+" ms | discarded |",
-    "| steady | p50 "+(report.operations.completion.stats.p50Ms?.toFixed(2)??"-")+" / p95 "+(report.operations.completion.stats.p95Ms?.toFixed(2)??"-")+" ms | "+(correctness.steady.every(Boolean)?"correct":"INCORRECT")+" |",
+    "| steady | "+(correctness.steady.every(Boolean)?("p50 "+(report.operations.completion.correctStats?.p50Ms?.toFixed(2)??"-")+" / p95 "+(report.operations.completion.correctStats?.p95Ms?.toFixed(2)??"-")+" ms"):("diagnostic p50 "+(report.operations.completion.stats.p50Ms?.toFixed(2)??"-")+" / p95 "+(report.operations.completion.stats.p95Ms?.toFixed(2)??"-")+" ms"))+" | "+(correctness.steady.every(Boolean)?"correct":"INCORRECT")+" |",
     "",
     "### Memory",
     "",

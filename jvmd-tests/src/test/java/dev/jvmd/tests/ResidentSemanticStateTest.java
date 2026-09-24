@@ -88,6 +88,26 @@ class ResidentSemanticStateTest {
         assertThat(state.hierarchyApi("Sub#")).isNotEqualTo(first);
     }
 
+    @Test void sourceStalenessInvalidatesHierarchyIdentityUntilBodyOnlyReadmission(){
+        var state=new ResidentSemanticState();
+        var owner=type("A#","A","api-A");
+        var member=member("A#m().","A#","m","api-m","doc-m");
+        state.admit(snapshot("content-a",owner,member));
+        String hierarchy=state.hierarchyApi("A#");var before=state.identity();
+        long mutations=((Number)state.status().get("semantic_fact_mutations")).longValue();
+
+        assertThat(state.markSourceStale("/src/A.java","content-b")).isTrue();
+        assertThat(state.hierarchyApi("A#")).isNotEqualTo(hierarchy);
+        assertThat(state.identity().merkleRoot()).isNotEqualTo(before.merkleRoot());
+        assertThat(state.status()).containsEntry("semantic_stale_units",1);
+
+        var delta=state.admit(snapshot("content-b",owner,member));
+        assertThat(delta.factMutations()).isZero();
+        assertThat(state.hierarchyApi("A#")).isEqualTo(hierarchy);
+        assertThat(state.status()).containsEntry("semantic_stale_units",0);
+        assertThat(((Number)state.status().get("semantic_fact_mutations")).longValue()).isEqualTo(mutations);
+    }
+
     @Test void aToBToARestoresIdentityButEpochProvesTransition(){
         var state=new ResidentSemanticState();
         var a=member("A#m().","A#","m","api-a","doc");

@@ -104,7 +104,8 @@ Only workspace `file:` documents are accepted as query inputs. All positions and
 | `textDocument/prepareRename` | Checks whether the selected symbol can be renamed |
 | `textDocument/rename` | Returns an edit plan for the client to apply |
 | `textDocument/documentSymbol` | Hierarchical symbols when the client supports them |
-| `textDocument/completion` | Trigger: `.`; no separate resolve request |
+| `textDocument/completion` | Trigger: `.`; returns cheap completion items with semantic identity |
+| `completionItem/resolve` | Enriches the selected completion item with signature/documentation |
 | `textDocument/signatureHelp` | Triggers: `(`, `,`, `<` |
 | `textDocument/semanticTokens/full` | Read the legend from initialization; no delta or range endpoint |
 | `textDocument/publishDiagnostics` | Server notification with document version |

@@ -82,28 +82,70 @@ export class RpcClient {
 export class RpcPool implements RpcCaller {
   private idle:RpcClient[]=[];
   private all=new Set<RpcClient>();
+  private waiters:Array<{resolve:(client:RpcClient)=>void;reject:(error:Error)=>void}>=[];
   private closed=false;
   private create:()=>Promise<RpcClient>;
   private maxIdle:number;
-  constructor(create:()=>Promise<RpcClient>,maxIdle=4){this.create=create;this.maxIdle=maxIdle;}
+  private maxLive:number;
+  private live=0;
+  constructor(create:()=>Promise<RpcClient>,maxIdle=4,maxLive=8){
+    if(maxIdle<0)throw new Error("RPC pool maxIdle must be non-negative");
+    if(maxLive<1)throw new Error("RPC pool maxLive must be positive");
+    this.create=create;this.maxLive=maxLive;this.maxIdle=Math.min(maxIdle,maxLive);
+  }
   async call(method:string,params:any={}){
-    const client=this.idle.pop()||await this.open();
+    const client=await this.acquire();
     try{return await client.call(method,params);}
     finally{this.release(client);}
   }
+  private async acquire(){
+    if(this.closed)throw new Error("RPC pool is closed");
+    while(this.idle.length){
+      const client=this.idle.pop()!;
+      if(!client.socket.destroyed)return client;
+      this.discard(client);
+    }
+    if(this.live<this.maxLive)return this.open();
+    return new Promise<RpcClient>((resolve,reject)=>this.waiters.push({resolve,reject}));
+  }
   private async open(){
     if(this.closed)throw new Error("RPC pool is closed");
-    const client=await this.create();
-    if(this.closed){client.close();throw new Error("RPC pool is closed");}
-    this.all.add(client);return client;
+    if(this.live>=this.maxLive)throw new Error("RPC pool live capacity exceeded");
+    this.live++;
+    try{
+      const client=await this.create();
+      if(this.closed){client.close();throw new Error("RPC pool is closed");}
+      this.all.add(client);return client;
+    }catch(error){
+      this.live--;this.drain();
+      throw error;
+    }
   }
   private release(client:RpcClient){
-    if(this.closed||client.socket.destroyed||this.idle.length>=this.maxIdle){
-      this.all.delete(client);client.close();return;
-    }
-    this.idle.push(client);
+    if(this.closed||client.socket.destroyed){this.discard(client);return;}
+    const waiter=this.waiters.shift();
+    if(waiter){waiter.resolve(client);return;}
+    if(this.idle.length<this.maxIdle){this.idle.push(client);return;}
+    this.discard(client);
   }
-  close(){if(this.closed)return;this.closed=true;for(const client of this.all)client.close();this.all.clear();this.idle=[];}
+  private discard(client:RpcClient){
+    if(this.all.delete(client))this.live=Math.max(0,this.live-1);
+    client.close();this.drain();
+  }
+  private drain(){
+    if(this.closed)return;
+    while(this.waiters.length&&this.live<this.maxLive){
+      const waiter=this.waiters.shift()!;
+      void this.open().then(waiter.resolve,waiter.reject);
+    }
+  }
+  close(){
+    if(this.closed)return;this.closed=true;
+    const error=new Error("RPC pool is closed");
+    for(const waiter of this.waiters.splice(0))waiter.reject(error);
+    for(const client of this.all)client.close();
+    this.all.clear();this.idle=[];this.live=0;
+  }
 }
 export async function defaults() {
   let config:any={};

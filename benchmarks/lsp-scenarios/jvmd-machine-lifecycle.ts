@@ -117,12 +117,17 @@ class Daemon {
     child.stderr?.setEncoding("utf8");
     child.stderr?.on("data",(chunk:string)=>{if(daemon)daemon.consumeStderr(chunk,label);});
     const deadline=Date.now()+30000;
-    while(Date.now()<deadline&&!existsSync(socketPath)){
-      if(child.exitCode!==null)throw new Error(label+" daemon exited before socket");
-      await sleep(10);
+    let control:RpcClient|undefined;
+    while(Date.now()<deadline&&!control){
+      if(child.exitCode!==null)throw new Error(label+" daemon exited before transport became available");
+      try{control=await connectClient(socketPath);}
+      catch(error){
+        const code=(error as NodeJS.ErrnoException).code;
+        if(code!=="ENOENT"&&code!=="ECONNREFUSED")throw error;
+        await sleep(10);
+      }
     }
-    if(!existsSync(socketPath))throw new Error(label+" daemon did not create socket");
-    const control=await connectClient(socketPath);
+    if(!control)throw new Error(label+" daemon transport did not become available");
     daemon=new Daemon(child,socketPath,stateDir,control,startedNs);
     daemon.transportAvailableNs=nowNs();
     await daemon.waitMachineReady();

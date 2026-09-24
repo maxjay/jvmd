@@ -74,7 +74,11 @@ public final class SemanticUpdatePolicy {
         public Set<Path> dependants(Path path){return Set.copyOf(reverse.getOrDefault(normalize(path),Set.of()));}
         public Set<Path> files(){var result=new HashSet<>(complete.keySet());result.addAll(focused.keySet());return Set.copyOf(result);}
         public Set<Path> unresolved(Set<String> exports){
-            var result=new LinkedHashSet<Path>();complete.forEach((file,value)->{if(matches(value.unresolvedTargets(),exports))result.add(file);});return result;
+            var result=new LinkedHashSet<Path>();complete.forEach((file,value)->{if(matches(value.unresolvedTargets(),exports))result.add(file);});return Set.copyOf(result);
+        }
+        /** Files carrying negative/unresolved name evidence; used when source membership itself changes. */
+        public Set<Path> unresolved(){
+            var result=new LinkedHashSet<Path>();complete.forEach((file,value)->{if(!value.unresolvedTargets().isEmpty())result.add(file);});return Set.copyOf(result);
         }
         /** Initial attribution discovers existing files; only an observed edit is a change during bootstrap. */
         public Result resolve(FileSemanticContribution value){

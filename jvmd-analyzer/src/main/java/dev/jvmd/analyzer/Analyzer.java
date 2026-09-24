@@ -26,6 +26,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         final ResidentSemanticState semantic=new ResidentSemanticState();
         final Map<Path,DocumentSemanticCached> documentSemantics=new HashMap<>();
         long semanticSourceEpoch=-1;
+        String completionContextIdentity="";
     }
     private final Map<String,ModuleCaches> modules=new LinkedHashMap<>();
     private long classpathFingerprints;
@@ -54,7 +55,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private long cacheHits,bindingComputations,diagnosticFilesAnalysed,diagnosticFilesReused,indexWrites,indexWriteNanos,apiFingerprintChanges,apiFingerprintUnchanged;
     private long completionRequests;
     private Context context;
-    private String completionContextIdentity="";
     private IndexService index;
     private LiveSourceState liveSourceState;
     private DiagnosticSnapshots snapshots;
@@ -73,10 +73,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 new TreeMap<>(context.coordinates()),
                 context.navigationSources().stream().map(p->p.toAbsolutePath().normalize().toString()).toList(),
                 context.preciseSourceRoots());
-        if(!newCompletionContextIdentity.equals(completionContextIdentity)){
+        if(!newCompletionContextIdentity.equals(caches.completionContextIdentity)){
             caches.documentSemantics.clear();caches.semantic.clear();caches.semanticSourceEpoch=-1;
         }
-        completionContextIdentity=newCompletionContextIdentity;
+        caches.completionContextIdentity=newCompletionContextIdentity;
         compiler=compilerPools.computeIfAbsent(context.generation(),_->new CompilerPool(inputFiles));
         compiler.configure(context.generation(),context.release(),context.classpath(),context.sources(),index,budget,context.compilerOptions(),context.preciseSourceRoots());
         compiler.binarySources(context.binarySources());
@@ -261,6 +261,24 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         focused.entrySet().removeIf(e->e.getValue().result().diagnostics().stream().anyMatch(d->d.kind().equals("ERROR")));
         outlines.entrySet().removeIf(e->Json.MAPPER.valueToTree(e.getValue().result()).path("diagnostics").findValuesAsText("kind").contains("ERROR"));
     }
+    /**
+     * A source appears or disappears from the editor overlay. Preserve already-admitted semantic
+     * facts and reset only this module's javac source namespace. Negative resolutions have no
+     * declaration edge, so invalidate the unresolved-name posting set and its reverse closure.
+     */
+    public void sourceMembershipChanged(Path path)throws Exception{
+        path=path.toAbsolutePath().normalize();
+        compiler.documents(documents);compiler.observeSources(Set.of(path));
+        var affected=new LinkedHashSet<Path>(SemanticUpdatePolicy.closure(dependencies.semantic().unresolved(),dependencies.semantic()));
+        boolean present=documents.contains(path)||Files.isRegularFile(path);
+        if(!present){
+            var removed=dependencies.semantic().remove(path);affected.addAll(removed.reanalyze());
+            semanticState().removeUnit("source:"+path);
+        }
+        if(!affected.isEmpty())invalidate(affected);
+        compiler.resetSourceContext();
+    }
+    /** Broad project-model namespace reset; editor source membership must use sourceMembershipChanged. */
     public void namespaceChanged(){diagnosticStore.clear();for(var caches:modules.values()){caches.outlines.clear();caches.focused.clear();caches.documentSemantics.clear();caches.semantic.clear();caches.semanticSourceEpoch=-1;}dependencies.semantic().clear();for(var pool:compilerPools.values())pool.recycle();}
     public CompilerPool.Outcome<Bindings.Snapshot> bindings(Path path,String text,Integer cursor)throws Exception{
         synchronizeKnownSources(path);return bindings(path,text,cursor,validatedInputs());
@@ -436,7 +454,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         String patchedHash=Hashing.sha256(patched.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         String namespace=qualified?"qualified":inputs.live().snapshot().state().namespace().fingerprint().value();
         return CompilerInputs.compose(qualified?"resident-qualified-v2":"resident-unqualified-v2",
-                completionContextIdentity,file.toString(),start,patchedHash,inputs.environment().value(),namespace);
+                modules.get(context.generation()).completionContextIdentity,file.toString(),start,patchedHash,inputs.environment().value(),namespace);
     }
 
     private String queryHierarchyApi(DocumentSemanticSnapshot.QueryContext query){

@@ -13,8 +13,9 @@ import static org.assertj.core.api.Assertions.*;
 class ResidentCompletionCorrectnessTest {
     @TempDir Path root;
 
-    private Analyzer.Context context(){
-        return new Analyzer.Context("fixture:resident-completion:1","25",List.of(),List.of(root),"resident-completion",Map.of());
+    private Analyzer.Context context(){return context(root,"resident-completion");}
+    private static Analyzer.Context context(Path sourceRoot,String generation){
+        return new Analyzer.Context("fixture:"+generation+":1","25",List.of(),List.of(sourceRoot),generation,Map.of());
     }
 
     private static JsonNode complete(Analyzer analyzer,Path file,String text,String needle)throws Exception{
@@ -32,6 +33,29 @@ class ResidentCompletionCorrectnessTest {
     private static JsonNode named(JsonNode items,String name){
         for(var item:items)if(item.path("name").asText().equals(name))return item;
         fail("Missing completion "+name+" in "+items);return null;
+    }
+
+    @Test void moduleSwitchingPreservesResidentSemanticState()throws Exception{
+        Path a=Files.createDirectories(root.resolve("module-a")),b=Files.createDirectories(root.resolve("module-b"));
+        Files.writeString(a.resolve("Api.java"),"class Api { int alpha(){return 1;} }");
+        String useA="class UseA { Object f(Api api){ return api.al; } }";Path fileA=Files.writeString(a.resolve("UseA.java"),useA);
+        Files.writeString(b.resolve("Other.java"),"class Other { int beta(){return 2;} }");
+        String useB="class UseB { Object f(Other other){ return other.be; } }";Path fileB=Files.writeString(b.resolve("UseB.java"),useB);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(a,"module-a"),null,256L*1024*1024);
+            assertThat(complete(analyzer,fileA,useA,"api.al").findValuesAsText("name")).contains("alpha");
+            @SuppressWarnings("unchecked") var stateA=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            String rootA=stateA.get("semantic_root").toString();long factsA=((Number)stateA.get("semantic_facts")).longValue();
+            assertThat(factsA).isPositive();
+
+            analyzer.configure(context(b,"module-b"),null,256L*1024*1024);
+            assertThat(complete(analyzer,fileB,useB,"other.be").findValuesAsText("name")).contains("beta");
+
+            analyzer.configure(context(a,"module-a"),null,256L*1024*1024);
+            @SuppressWarnings("unchecked") var restored=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            assertThat(restored.get("semantic_root")).isEqualTo(rootA);
+            assertThat(((Number)restored.get("semantic_facts")).longValue()).isEqualTo(factsA);
+        }
     }
 
     @Test void qualifiedCompletionReadsPastFilteredRangeEntries()throws Exception{

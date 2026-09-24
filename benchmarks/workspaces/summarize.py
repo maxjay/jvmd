@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import statistics
+import os
 from pathlib import Path
 from verify import verify, canonical_state
 
@@ -20,6 +21,43 @@ def stats(values, state):
         "max_ms": max(values) if values else None,
     }
 
+
+
+def _median(rows, server, key):
+    values = [row.get(key) for row in rows if row.get("server") == server and row.get(key) is not None]
+    return statistics.median(values) if values else None
+
+
+def _fmt(value):
+    return "-" if value is None else f"{value:.2f}"
+
+
+def markdown_summary(result):
+    servers = sorted({row["server"] for row in result["preparation"]})
+    if not servers:
+        return ""
+    lines = ["## Workspace benchmark phases", "", "### Startup / readiness", ""]
+    lines += ["| Metric | " + " | ".join(servers) + " |",
+              "| --- | " + " | ".join("---:" for _ in servers) + " |"]
+    metrics = [
+        ("Initialize", "initialize_ms"),
+        ("Process → workspace ready", "process_to_workspace_ready_ms"),
+        ("Document admission", "document_admission_ms"),
+        ("Process → first correct result", "cold_end_to_end_ms"),
+    ]
+    for label, key in metrics:
+        lines.append("| " + label + " | " + " | ".join(_fmt(_median(result["preparation"], server, key)) for server in servers) + " |")
+    lines += ["", "### Query latency", "",
+              "| Operation | State | Server | p50 ms | p95 ms | Correct / total |",
+              "| --- | --- | --- | ---: | ---: | ---: |"]
+    for row in result["rows"]:
+        if row["state"] not in ("first_use", "steady"):
+            continue
+        correct = row["outcomes"].get("correct", 0)
+        total = sum(row["outcomes"].values())
+        lines.append("| " + row["operation"] + " | " + row["state"] + " | " + row["server"] + " | " + _fmt(row["p50_ms"]) + " | " + _fmt(row["p95_ms"]) + " | " + str(correct) + "/" + str(total) + " |")
+    lines += ["", "Warmup rows are retained in raw reports and excluded from steady statistics.", ""]
+    return "\n".join(lines)
 
 def summarize(root):
     provenance = json.loads((root / "provenance.json").read_text())
@@ -91,4 +129,10 @@ if __name__ == "__main__":
     a = p.parse_args()
     result = summarize(a.root)
     a.output.write_text(json.dumps(result, separators=(",", ":")) + "\n")
+    summary = markdown_summary(result)
+    if summary:
+        print(summary)
+        if os.environ.get("GITHUB_STEP_SUMMARY"):
+            with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
+                out.write(summary + "\n")
     raise SystemExit(0 if result["complete"] else 1)

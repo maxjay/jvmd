@@ -47,6 +47,7 @@ public final class ResidentSemanticState {
 
     private Node root;
     private final Map<String,SemanticFact> symbols=new HashMap<>();
+    private final Map<String,String> typesByFqn=new HashMap<>();
     private final Map<String,SemanticUnitState> units=new HashMap<>();
     private final Map<String,Aggregate> memberAggregates=new HashMap<>();
     private Aggregate semanticAggregate=Aggregate.ZERO;
@@ -108,7 +109,7 @@ public final class ResidentSemanticState {
         var ordered=new ArrayList<Entry>(delta.added().size());
         var hierarchyAffected=new LinkedHashSet<String>();
         for(var fact:delta.added()){
-            symbols.put(fact.id(),fact);
+            symbols.put(fact.id(),fact);indexType(fact);
             var contribution=contribution(fact);
             ordered.add(entry(fact,contribution));semanticAggregate=semanticAggregate.add(contribution);
             if(fact.member())memberAggregates.merge(fact.ownerId(),contribution,Aggregate::add);
@@ -167,6 +168,9 @@ public final class ResidentSemanticState {
         if(units.containsKey(typeUnit))return typeUnit;
         for(var entry:units.entrySet())if(entry.getValue().facts().contains(id))return entry.getKey();
         return null;
+    }
+    public synchronized String unitForType(String fqn){
+        String id=typesByFqn.get(fqn);return id==null?null:unitForFact(id);
     }
     public synchronized boolean unitCurrent(String unit,String contentIdentity){
         var state=units.get(unit);if(state==null||staleUnits.containsKey(unit)
@@ -236,7 +240,7 @@ public final class ResidentSemanticState {
 
     public synchronized void clear(){
         if(root==null&&symbols.isEmpty()&&units.isEmpty())return;
-        root=null;symbols.clear();units.clear();memberAggregates.clear();semanticAggregate=Aggregate.ZERO;directSupers.clear();directSubs.clear();hierarchyApis.clear();staleUnits.clear();staleAggregate=new AlgebraicAccumulator("semantic-stale-v2");uncertaintyGeneration=0;epoch++;
+        root=null;symbols.clear();typesByFqn.clear();units.clear();memberAggregates.clear();semanticAggregate=Aggregate.ZERO;directSupers.clear();directSubs.clear();hierarchyApis.clear();staleUnits.clear();staleAggregate=new AlgebraicAccumulator("semantic-stale-v2");uncertaintyGeneration=0;epoch++;
     }
 
     /** Conservative retained-size estimate used only for semantic cache budgeting/retirement. */
@@ -358,12 +362,20 @@ public final class ResidentSemanticState {
         hierarchyApis.put(typeId,value);memo.put(typeId,value);hierarchyCompositions++;return value;
     }
 
+    private void indexType(SemanticFact fact){
+        if(fact.typeDeclaration()&&fact.fqn()!=null&&!fact.fqn().isBlank())typesByFqn.put(fact.fqn(),fact.id());
+    }
+    private void unindexType(SemanticFact fact){
+        if(fact.typeDeclaration()&&fact.fqn()!=null&&!fact.fqn().isBlank())typesByFqn.remove(fact.fqn(),fact.id());
+    }
     private void addFact(SemanticFact fact){
+        indexType(fact);
         var contribution=contribution(fact);root=put(root,entry(fact,contribution));semanticAggregate=semanticAggregate.add(contribution);
         if(fact.member())memberAggregates.merge(fact.ownerId(),contribution,Aggregate::add);
     }
 
     private void removeFact(SemanticFact fact){
+        unindexType(fact);
         var contribution=contribution(fact);root=remove(root,fact.orderedKey());semanticAggregate=semanticAggregate.subtract(contribution);
         if(fact.member())memberAggregates.compute(fact.ownerId(),(_,old)->{
             if(old==null)return null;var next=old.subtract(contribution);return next.equals(Aggregate.ZERO)?null:next;

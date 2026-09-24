@@ -7,7 +7,7 @@ import java.util.*;
 import javax.lang.model.element.*;
 import javax.lang.model.type.*;
 
-/** Implements 4.9: detached scope completions and invocation signatures from public javac APIs. */
+/** Implements 4.9: invocation signature help from public javac APIs. Completion queries resident detached semantics. */
 public final class EditorQueries {
     public static final String MARKER="__jvmd_completion__";
     private EditorQueries() { }

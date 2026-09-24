@@ -264,6 +264,9 @@ export abstract class LspScenarioHarness {
     const steady:Measurement<U>[]=[];
     for(let i=0;i<PHASE_MODEL.defaults.steady_samples;i++)steady.push(await this.measure(request,normalise));
     LspScenarioHarness.phaseMemory.post_steady=memory(LspScenarioHarness.running);
+    LspScenarioHarness.phaseMemory.steady_peak=steady
+      .map(row=>row.metrics.memory.peak)
+      .reduce((peak,current)=>maxMemory(peak,current),{serverKb:0,adapterKb:0,totalKb:0});
     return {warmup,steady,stats:latencyStats(steady.map(row=>row.metrics.latencyMs))};
   }
 
@@ -519,6 +522,7 @@ function writeSummary(report:any){
     "| Documents admitted | "+mb(report.lifecycle.memory.documents_admitted.totalKb)+" |",
     "| After first use | "+mb(report.lifecycle.memory.post_first_use.totalKb)+" |",
     "| After steady | "+mb(report.lifecycle.memory.post_steady.totalKb)+" |",
+    "| Steady peak | "+mb(report.lifecycle.memory.steady_peak.totalKb)+" |",
     "",
   ];
   console.log(lines.join("\n"));

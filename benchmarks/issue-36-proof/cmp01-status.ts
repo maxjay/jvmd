@@ -145,8 +145,8 @@ async function waitExit(process:ChildProcess){
   });
 }
 class Driver {
-  responses=new Map<number,any>();next=0;
-  constructor(private bridge:any){}
+  responses=new Map<number,any>();next=0;bridge:any;
+  constructor(bridge:any){this.bridge=bridge;}
   send=(message:any)=>{if(typeof message.id==="number")this.responses.set(message.id,message);};
   async request(method:string,params:any){
     const id=++this.next;await this.bridge.handle({jsonrpc:"2.0",id,method,params});

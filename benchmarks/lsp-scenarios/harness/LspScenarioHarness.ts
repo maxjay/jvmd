@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -409,9 +409,10 @@ async function startJvmd(root:string):Promise<RunningServer>{
     "-cp",path.join(image,"lib/jvmd/*"),
     "dev.jvmd.dist.Application",
   ],{env,stdio:["ignore","ignore","inherit"]});
-  await waitFor(()=>existsSync(socket),"JVMD socket");
+  const readinessClient=await waitForJvmdTransport(socket);
   milestones.transport_available=nowNs();
-  await waitForJvmdIndex(socket);
+  try{await waitForJvmdIndex(readinessClient);}
+  finally{readinessClient.close();}
   milestones.daemon_index_ready=nowNs();
   const adapter=spawn(path.join(image,"bin/jvmd-lsp"),["--root",root,"--socket",socket],{env,stdio:["pipe","pipe","inherit"]});
   milestones.adapter_spawned=nowNs();
@@ -447,20 +448,31 @@ function startJdtls():RunningServer{
   };
 }
 
-async function waitForJvmdIndex(socketPath:string){
-  const socket=await new Promise<net.Socket>((resolve,reject)=>{
-    const connection=net.createConnection(socketPath);
-    connection.once("connect",()=>resolve(connection));
-    connection.once("error",reject);
-  });
-  const client=new RpcClient(socket),deadline=Date.now()+120000;
-  try{
-    while(Date.now()<deadline){
-      const status=await client.call("daemon.status"),index=status?.result?.index;
-      if(index?.phase==="ready"&&Number(index?.timings?.scans??0)>=1)return;
-      await new Promise(resolve=>setTimeout(resolve,50));
+async function waitForJvmdTransport(socketPath:string){
+  const deadline=Date.now()+10000;
+  while(Date.now()<deadline){
+    try{
+      const socket=await new Promise<net.Socket>((resolve,reject)=>{
+        const connection=net.createConnection(socketPath);
+        connection.once("connect",()=>resolve(connection));
+        connection.once("error",reject);
+      });
+      return new RpcClient(socket);
+    }catch(error){
+      const code=(error as NodeJS.ErrnoException).code;
+      if(code!=="ENOENT"&&code!=="ECONNREFUSED")throw error;
+      await new Promise(resolve=>setTimeout(resolve,25));
     }
-  }finally{client.close();}
+  }
+  throw new Error("Timed out waiting for connectable JVMD transport");
+}
+async function waitForJvmdIndex(client:RpcClient){
+  const deadline=Date.now()+120000;
+  while(Date.now()<deadline){
+    const status=await client.call("daemon.status"),index=status?.result?.index;
+    if(index?.phase==="ready"&&Number(index?.timings?.scans??0)>=1)return;
+    await new Promise(resolve=>setTimeout(resolve,50));
+  }
   throw new Error("Timed out waiting for JVMD repository index");
 }
 
@@ -481,14 +493,6 @@ function maxMemory(a:Memory,b:Memory):Memory{
     adapterKb:Math.max(a.adapterKb,b.adapterKb),
     totalKb:Math.max(a.totalKb,b.totalKb),
   };
-}
-async function waitFor(predicate:()=>boolean,description:string){
-  const deadline=Date.now()+10000;
-  while(Date.now()<deadline){
-    if(predicate())return;
-    await new Promise(resolve=>setTimeout(resolve,25));
-  }
-  throw new Error("Timed out waiting for "+description);
 }
 function stop(process?:ChildProcess){if(!process||process.killed)return;process.kill("SIGTERM");}
 function mb(kb:number){return (kb/1024).toFixed(1);}

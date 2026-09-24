@@ -13,14 +13,12 @@ public record DocumentSemanticSnapshot(
         int documentVersion,
         String contentIdentity,
         long globalEpoch,
-        Map<Integer,QueryContext> queries,
-        List<LocalDeclaration> locals) {
+        Map<Integer,QueryContext> queries) {
 
     public DocumentSemanticSnapshot {
         Objects.requireNonNull(file);
         contentIdentity=Objects.requireNonNullElse(contentIdentity,"");
         queries=Map.copyOf(queries);
-        locals=List.copyOf(locals);
     }
 
     public QueryContext query(int selectorOffset){return queries.get(selectorOffset);}
@@ -28,7 +26,7 @@ public record DocumentSemanticSnapshot(
     public DocumentSemanticSnapshot withQuery(QueryContext query,long epoch){
         var next=new LinkedHashMap<Integer,QueryContext>(queries);
         next.put(query.selectorOffset(),query);
-        return new DocumentSemanticSnapshot(file,documentVersion,contentIdentity,epoch,next,locals);
+        return new DocumentSemanticSnapshot(file,documentVersion,contentIdentity,epoch,next);
     }
 
     public record QueryContext(
@@ -50,18 +48,4 @@ public record DocumentSemanticSnapshot(
         }
     }
 
-    public record LocalDeclaration(
-            String id,
-            String name,
-            String kind,
-            SemanticType type,
-            int scopeStart,
-            int scopeEnd,
-            int declarationStart) {
-        public LocalDeclaration {
-            Objects.requireNonNull(id);Objects.requireNonNull(name);Objects.requireNonNull(kind);Objects.requireNonNull(type);
-            if(scopeStart<0||scopeEnd<scopeStart||declarationStart<0)throw new IllegalArgumentException("Invalid local range");
-        }
-        public boolean visibleAt(int offset){return scopeStart<=offset&&offset<=scopeEnd&&declarationStart<=offset;}
-    }
 }

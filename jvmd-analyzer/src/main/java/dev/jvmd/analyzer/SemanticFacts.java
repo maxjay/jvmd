@@ -54,7 +54,8 @@ public final class SemanticFacts {
         hierarchySnapshots(task,identity,receiver,new HashSet<>(),snapshots);
         var names=new LinkedHashSet<String>();String sourceType=sourceSimpleType(trees,selectedElement);if(sourceType!=null)names.add(sourceType);
         var query=new DocumentSemanticSnapshot.QueryContext(selectorOffset,type(identity,receiver),receiverId,
-                selectedElement instanceof TypeElement,packageName,enclosingTypeId,staticContext,List.of());
+                selectedElement instanceof TypeElement,packageName,enclosingTypeId,staticContext,List.of(),
+                accessibleMembers(task,identity,scope,receiver));
         return new CompletionContext(query,List.copyOf(snapshots.values()),names);
     }
 
@@ -92,7 +93,8 @@ public final class SemanticFacts {
         var snapshots=new LinkedHashMap<String,SemanticSnapshot>();
         if(receiver!=null)hierarchySnapshots(task,identity,receiver,new HashSet<>(),snapshots);
         SemanticType receiverType=receiver==null?new SemanticType.Unknown("?"):type(identity,receiver);
-        var query=new DocumentSemanticSnapshot.QueryContext(selectorOffset,receiverType,receiverId,false,packageName,enclosingTypeId,staticContext,List.copyOf(visible.values()));
+        var query=new DocumentSemanticSnapshot.QueryContext(selectorOffset,receiverType,receiverId,false,packageName,enclosingTypeId,staticContext,
+                List.copyOf(visible.values()),receiver==null?Set.of():accessibleMembers(task,identity,scope,receiver));
         return new CompletionContext(query,List.copyOf(snapshots.values()),Set.of());
     }
 
@@ -109,6 +111,37 @@ public final class SemanticFacts {
                 modifiers,identity.sourceFile(element),task.getElements().getPackageOf(element).getQualifiedName().toString(),identity.displayName(element),null,
                 type(identity,semantic),List.of(),List.of(),parameterNames,varargs,"","","");
         return fact.candidate(Map.of());
+    }
+
+    private static Set<String> accessibleMembers(JavacTask task,SymbolIdentity identity,Scope scope,TypeMirror receiver){
+        var result=new LinkedHashSet<String>();var seen=new HashSet<String>();
+        DeclaredType top=receiver instanceof DeclaredType declared?declared:null;
+        collectAccessible(task,identity,Trees.instance(task),scope,receiver,top,seen,result);
+        return Set.copyOf(result);
+    }
+
+    private static void collectAccessible(JavacTask task,SymbolIdentity identity,Trees trees,Scope scope,TypeMirror mirror,
+                                          DeclaredType top,Set<String> seen,Set<String> result){
+        if(mirror instanceof TypeVariable variable){collectAccessible(task,identity,trees,scope,variable.getUpperBound(),top,seen,result);return;}
+        if(mirror instanceof IntersectionType intersection){for(var bound:intersection.getBounds())collectAccessible(task,identity,trees,scope,bound,top,seen,result);return;}
+        if(!(mirror instanceof DeclaredType declared)||!(declared.asElement() instanceof TypeElement type))return;
+        String typeId;try{typeId=identity.scip(type);}catch(IllegalArgumentException unresolved){return;}
+        if(!seen.add(typeId))return;
+        for(var element:type.getEnclosedElements()){
+            if(Set.of(ElementKind.CONSTRUCTOR,ElementKind.STATIC_INIT,ElementKind.INSTANCE_INIT,ElementKind.PACKAGE,ElementKind.MODULE).contains(element.getKind()))continue;
+            boolean accessible;
+            if(scope==null)accessible=!element.getModifiers().contains(Modifier.PRIVATE);
+            else if(element instanceof TypeElement nested)accessible=trees.isAccessible(scope,nested);
+            else{
+                DeclaredType accessOwner=declared;
+                if(top!=null)try{
+                    if(task.getTypes().isSubtype(task.getTypes().erasure(top),task.getTypes().erasure(type.asType())))accessOwner=top;
+                }catch(IllegalArgumentException ignored){}
+                accessible=trees.isAccessible(scope,element,accessOwner);
+            }
+            if(accessible)try{result.add(identity.scip(element));}catch(IllegalArgumentException ignored){}
+        }
+        for(var parent:task.getTypes().directSupertypes(declared))collectAccessible(task,identity,trees,scope,parent,top,seen,result);
     }
 
     private static String sourceSimpleType(Trees trees,Element element){

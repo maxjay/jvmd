@@ -57,7 +57,10 @@ jobs:
           test "$(git -C measured-subject hash-object benchmarks/lsp-scenarios/package.json)" = 7e9e4f923abdfe37d771f9a6ca65f2190144b682
           {
             echo "subject=$ISSUE36_SUBJECT_SHA"
-            sha256sum benchmarks/issue-36-proof/Issue36SemanticProofTest.java
+            sha256sum \
+              benchmarks/issue-36-proof/Issue36SemanticProofTest.java \
+              benchmarks/issue-36-proof/JfrAllocationSummary.java \
+              benchmarks/issue-36-proof/cmp01-status.ts
             git hash-object .github/workflows/issue-36-semantic-query-proof.yml
           } | tee "$RUNNER_TEMP/issue36-harness-identity.txt"
 

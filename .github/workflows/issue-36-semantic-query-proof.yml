@@ -127,7 +127,7 @@ jobs:
         run: |
           set -euo pipefail
           export GITHUB_SHA="$ISSUE36_SUBJECT_SHA"
-          export JAVA_TOOL_OPTIONS="-XX:StartFlightRecording=filename=$RUNNER_TEMP/issue36-cmp01.jfr,settings=profile,dumponexit=true -XX:FlightRecorderOptions=stackdepth=128"
+          export JAVA_TOOL_OPTIONS="-Djvmd.trace=true -XX:StartFlightRecording=filename=$RUNNER_TEMP/issue36-cmp01.jfr,settings=profile,dumponexit=true -XX:FlightRecorderOptions=stackdepth=128"
           node benchmarks/lsp-scenarios/run.ts
           unset JAVA_TOOL_OPTIONS
           "$JAVA_HOME/bin/jfr" summary "$RUNNER_TEMP/issue36-cmp01.jfr" > "$RUNNER_TEMP/issue36-cmp01-jfr-summary.txt"
@@ -144,10 +144,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for scenario in query-matrix semantic-mutations dependency-proofs namespace-negative classpath-composition; do
+          for scenario in query-matrix semantic-mutations dependency-proofs namespace-negative hierarchy-mutation classpath-composition machine-workspace-composition; do
             report="$RUNNER_TEMP/issue36-$scenario.json"
             recording="$RUNNER_TEMP/issue36-$scenario.jfr"
-            mvn -B -pl jvmd-tests               -Dtest=Issue36SemanticProofTest               -Dissue36.scenario="$scenario"               -Dissue36.report="$report"               -DargLine="-XX:StartFlightRecording=filename=$recording,settings=profile,dumponexit=true -XX:FlightRecorderOptions=stackdepth=128"               test
+            mvn -B -pl jvmd-tests               -Dtest=Issue36SemanticProofTest               -Dissue36.scenario="$scenario"               -Dissue36.report="$report"               -DargLine="-Djvmd.trace=true -XX:StartFlightRecording=filename=$recording,settings=profile,dumponexit=true -XX:FlightRecorderOptions=stackdepth=128"               test
             "$JAVA_HOME/bin/jfr" summary "$recording" > "$RUNNER_TEMP/issue36-$scenario-jfr-summary.txt"
             "$JAVA_HOME/bin/java" ../benchmarks/issue-36-proof/JfrAllocationSummary.java "$recording" "$RUNNER_TEMP/issue36-$scenario-allocations.txt"
           done

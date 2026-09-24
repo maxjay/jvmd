@@ -106,7 +106,7 @@ class ResidentSemanticStateTest {
     }
 
     @Test void retainedUnitStateStoresOnlyCanonicalFactMembership(){
-        var state=new ResidentSemanticState();var owner=type("A#","A","api-A"),value=member("A#m().","A#","m","api-m","doc-m");
+        var state=new ResidentSemanticState();var owner=type("A#","A","api-A");var value=member("A#m().","A#","m","api-m","doc-m");
         state.admit(snapshot("unit-state",owner,value));
         var unit=state.unit("source:/src/A.java");
         assertThat(unit.factIds()).containsExactlyInAnyOrder(owner.id(),value.id());

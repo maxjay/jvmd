@@ -101,7 +101,7 @@ public final class LspFacade {
         if(method.equals("textDocument/completion")){
             var answer=query.call("symbol.completion",arguments.put("limit",100));JsonNode completion=Json.MAPPER.valueToTree(answer.result());var items=Json.MAPPER.createArrayNode();
             for(var symbol:completion.path("items")){
-                var item=Json.MAPPER.createObjectNode().put("label",symbol.path("name").asText()).put("detail",symbol.path("label").asText()).put("kind",completionKind(symbol.path("kind").asText()));
+                var item=Json.MAPPER.createObjectNode().put("label",symbol.path("name").asText()).put("kind",completionKind(symbol.path("kind").asText()));
                 item.set("textEdit",Json.MAPPER.valueToTree(Map.of("range",completion.path("range"),"newText",symbol.path("name").asText())));item.set("data",Json.MAPPER.valueToTree(Map.of("scip",symbol.path("scip").asText())));
                 if(symbol.hasNonNull("import"))item.set("additionalTextEdits",Json.MAPPER.valueToTree(List.of(importEdit(documents.text(file),symbol.path("import").asText()))));
                 items.add(item);

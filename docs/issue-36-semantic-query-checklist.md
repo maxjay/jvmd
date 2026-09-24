@@ -6,18 +6,18 @@ Branch: `issue-36-semantic-query`
 This checklist is authoritative. A box is checked only when the implementation exists, focused correctness tests pass, required proof/benchmark evidence exists, and the corresponding progress entry has been appended.
 
 ## Checkpoint 0 — exact baseline
-- [ ] Current `main` SHA recorded and measured as the exact subject.
-- [ ] Dedicated Issue #36 proof harness/workflow frozen before production edits.
-- [ ] CMP-01 incomplete `project.` failure reproduced.
-- [ ] Query scenarios measured: prefix narrowing, parameter, field, static, chained, generic fallback, deep/wide hierarchy, access filtering, unsaved edit.
-- [ ] Semantic mutation scenarios measured: body-only, unrelated/relevant API range, exact-symbol, overload, hierarchy.
-- [ ] Namespace and negative-resolution scenarios measured.
-- [ ] Ordered classpath scenarios measured: content change, irrelevant/relevant dependency, insert/remove/reorder.
-- [ ] Machine/workspace composition scenarios measured.
-- [ ] Query-side javac counters captured.
-- [ ] Allocation/JFR and retained/peak memory evidence captured.
-- [ ] Baseline progress entry appended with run/artifact links.
-- [ ] PR body contains the frozen baseline evidence.
+- [x] Current `main` SHA recorded and measured as the exact subject.
+- [x] Dedicated Issue #36 proof harness/workflow frozen before production edits.
+- [x] CMP-01 incomplete `project.` failure reproduced.
+- [x] Query scenarios measured: prefix narrowing, parameter, field, static, chained, generic fallback, deep/wide hierarchy, access filtering, unsaved edit.
+- [x] Semantic mutation scenarios measured: body-only, unrelated/relevant API range, exact-symbol, overload, hierarchy.
+- [x] Namespace and negative-resolution scenarios measured.
+- [x] Ordered classpath scenarios measured: content change, irrelevant/relevant dependency, insert/remove/reorder.
+- [x] Machine/workspace composition scenarios measured.
+- [x] Query-side javac counters captured.
+- [x] Allocation/JFR and retained/peak memory evidence captured.
+- [x] Baseline progress entry appended with run/artifact links.
+- [x] PR body contains the frozen baseline evidence.
 
 ## Checkpoint 1 — canonical proof representation
 - [ ] Canonical immutable proof primitives defined.

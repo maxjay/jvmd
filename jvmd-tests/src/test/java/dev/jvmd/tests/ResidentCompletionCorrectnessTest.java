@@ -171,6 +171,34 @@ class ResidentCompletionCorrectnessTest {
         }
     }
 
+    @Test void sourceMutationMarksResidentSemanticsStaleBeforeTheNextQuery()throws Exception{
+        Path api=Files.writeString(root.resolve("Api.java"),"class Api { int getValue(){return 1;} }");
+        String source="class Use { Object f(Api api){ return api.getV; } }";
+        Path use=Files.writeString(root.resolve("Use.java"),source);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);
+            assertThat(named(complete(analyzer,use,source,"api.getV"),"getValue")).isNotNull();
+
+            @SuppressWarnings("unchecked")
+            var before=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            String rootBefore=before.get("semantic_root").toString();
+            assertThat(((Number)before.get("semantic_stale_units")).longValue()).isZero();
+
+            Files.writeString(api,"class Api { int getValue(){return 2;} }");
+            analyzer.changed(api);
+
+            @SuppressWarnings("unchecked")
+            var stale=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            assertThat(stale.get("semantic_root").toString()).isNotEqualTo(rootBefore);
+            assertThat(((Number)stale.get("semantic_stale_units")).longValue()).isPositive();
+
+            assertThat(named(complete(analyzer,use,source,"api.getV"),"getValue")).isNotNull();
+            @SuppressWarnings("unchecked")
+            var current=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            assertThat(((Number)current.get("semantic_stale_units")).longValue()).isZero();
+        }
+    }
+
     @Test void localVariableWinsOverShadowedFieldInUnqualifiedCompletion()throws Exception{
         String source="class Use { int value; Object f(){ String value=\"x\"; return val; } }";
         Path file=Files.writeString(root.resolve("Use.java"),source);

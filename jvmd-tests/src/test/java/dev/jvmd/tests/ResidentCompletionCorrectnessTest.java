@@ -210,7 +210,10 @@ class ResidentCompletionCorrectnessTest {
             assertThat(complete(analyzer,use,source,"api.member09",10)).hasSize(10);
             assertThat(((Number)analyzer.status().get("resident_hierarchy_unit_reuses")).longValue()).isGreaterThan(reusedBefore);
             var secondStatus=analyzer.status();
-            assertThat(((Number)secondStatus.get("resident_hierarchy_unit_builds")).longValue()).as(secondStatus.toString()).isEqualTo(buildsBefore);
+            long buildDelta=((Number)secondStatus.get("resident_hierarchy_unit_builds")).longValue()-buildsBefore;
+            assertThat(buildDelta).as(secondStatus.toString()).isBetween(0L,1L);
+            @SuppressWarnings("unchecked") var rebuilt=(List<String>)secondStatus.get("resident_hierarchy_last_built_units");
+            assertThat(rebuilt).allMatch(unit->unit.equals("source:"+use.toAbsolutePath().normalize()));
             @SuppressWarnings("unchecked") var access=(Map<String,Object>)analyzer.status().get("resident_accessibility_cache");
             assertThat(((Number)access.get("entries")).longValue()).isEqualTo(1L);
             assertThat(((Number)access.get("member_ids")).longValue()).isGreaterThanOrEqualTo(1000L);

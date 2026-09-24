@@ -553,9 +553,15 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         return semanticState().unitCurrent(unit,null);
     }
-    private boolean residentSemanticTypeCurrent(String typeId,String sourceFile){
+    private boolean residentSemanticTypeCurrent(String typeId,String binaryName){
         if(residentSemanticUnitCurrent(semanticState().unitForFact(typeId)))return true;
-        if(sourceFile!=null&&!sourceFile.isBlank()&&residentSemanticUnitCurrent("source:"+sourceFile))return true;
+        if(binaryName!=null&&!binaryName.isBlank()){
+            if(residentSemanticUnitCurrent(semanticState().unitForType(binaryName)))return true;
+            if(liveSourceState!=null){
+                var source=liveSourceState.source(binaryName).orElse(null);
+                if(source!=null&&residentSemanticUnitCurrent("source:"+source.file().toAbsolutePath().normalize()))return true;
+            }
+        }
         return typeId!=null&&!typeId.isBlank()&&residentSemanticUnitCurrent("type:"+typeId);
     }
 

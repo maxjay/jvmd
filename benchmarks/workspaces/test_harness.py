@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from resources import ProcessMonitor, attribute_samples
-from run import Client, first_system_value
+from run import Client, first_system_value, rotate_operations
 from verify import classify, verify
 from summarize import stats
 
@@ -154,10 +154,83 @@ class HarnessTest(unittest.TestCase):
             self.assertFalse(verify(root)["complete"])
             self.assertEqual(3, len(verify(root)["workers"][0]["not_executed"]))
 
-    def test_percentile_precision_requires_warm_samples(self):
-        self.assertIsNone(stats([1] * 19, "warm")["p95_ms"])
-        self.assertIsNone(stats([1] * 100, "first")["p95_ms"])
+    def test_percentile_precision_requires_steady_samples_with_legacy_compatibility(self):
+        self.assertIsNone(stats([1] * 19, "steady")["p95_ms"])
+        self.assertIsNone(stats([1] * 100, "first_use")["p95_ms"])
+        self.assertEqual(1, stats([1] * 20, "steady")["p95_ms"])
         self.assertEqual(1, stats([1] * 20, "warm")["p95_ms"])
+
+    def test_operation_rotation_is_deterministic(self):
+        operations = list("abcd")
+        self.assertEqual(list("abcd"), rotate_operations(operations, 0))
+        self.assertEqual(list("bcda"), rotate_operations(operations, 1))
+        self.assertEqual(list("abcd"), rotate_operations(operations, 4))
+
+    def test_phase_schema_preserves_first_use_and_cold_arithmetic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            worker = root / "worker"
+            worker.mkdir()
+            (root / "provenance.json").write_text(json.dumps({
+                "runs": 1, "servers": ["jvmd"], "overhead": False, "samples": 1, "warmup": 1
+            }))
+            operation = {
+                "operation": "hover", "target": "0", "symbol": "value0",
+                "source": "int value0(int input) { return input; }",
+            }
+            (worker / "fixture.json").write_text(json.dumps({
+                "identity": "fixture", "operations": [operation]
+            }))
+            result = {"contents": {"value": "int value0(int input)"}}
+            actions = [
+                {"id": state, "operation": "hover", "target": "0", "state": state,
+                 "sample": 0, "outcome": "correct", "latency_ms": 1.0, "result": result,
+                 "start_ns": start, "response_ns": start + 1_000_000, "end_ns": start + 1_000_000}
+                for state, start in (("first_use", 50), ("warmup", 60), ("steady", 70))
+            ]
+            milestones = {
+                "process_spawn": 0, "initialize_received": 10, "workspace_ready": 20,
+                "documents_admitted": 30, "first_use_started": 40, "first_use_finished": 55,
+            }
+            (worker / "report.json").write_text(json.dumps({
+                "schema": 3, "outcome": "correct", "actions": actions,
+                "diagnostic_cold_end_to_end_ms": (actions[0]["response_ns"] - milestones["process_spawn"]) / 1e6,
+                "preparation": {
+                    "milestones_ns": milestones,
+                    "readiness": {"target_queried": False},
+                },
+            }))
+            self.assertTrue(verify(root)["complete"])
+
+    def test_phase_schema_rejects_hidden_warmup_before_first_use(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            worker = root / "worker"
+            worker.mkdir()
+            (root / "provenance.json").write_text(json.dumps({
+                "runs": 1, "servers": ["jvmd"], "overhead": False, "samples": 1, "warmup": 1
+            }))
+            operation = {"operation": "hover", "target": "0", "symbol": "value0"}
+            (worker / "fixture.json").write_text(json.dumps({"identity": "fixture", "operations": [operation]}))
+            result = {"contents": {"value": "int value0(int input)"}}
+            actions = [
+                {"id": state, "operation": "hover", "target": "0", "state": state,
+                 "sample": 0, "outcome": "correct", "latency_ms": 1.0, "result": result,
+                 "start_ns": 50, "response_ns": 51, "end_ns": 51}
+                for state in ("warmup", "first_use", "steady")
+            ]
+            (worker / "report.json").write_text(json.dumps({
+                "schema": 3, "outcome": "correct", "actions": actions,
+                "diagnostic_cold_end_to_end_ms": 0.000051,
+                "preparation": {
+                    "milestones_ns": {
+                        "process_spawn": 0, "initialize_received": 10, "workspace_ready": 20,
+                        "documents_admitted": 30, "first_use_started": 40, "first_use_finished": 55,
+                    },
+                    "readiness": {"target_queried": False},
+                },
+            }))
+            self.assertFalse(verify(root)["complete"])
 
     def test_samples_choose_innermost_matching_thread_and_leave_others_unassigned(self):
         spans = [

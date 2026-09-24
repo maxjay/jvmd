@@ -424,6 +424,66 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(outcome.warnings().isEmpty())diagnosticStore.put(path,sourceHash,generation,stamp,envelope,apiFingerprint(path),outcome.result()==null?Set.of():outcome.result().dependencies(),outcome.tier()==2?contribution(path):null);
         return envelope;
     }
+    private String residentQualifiedKey(Path file,String patched,int start,CompilerInputs.Snapshot inputs){
+        if(patched.length()>256*1024)return null;
+        String patchedHash=Hashing.sha256(patched.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return CompilerInputs.compose("resident-qualified-v1",completionContextIdentity,file.toString(),start,patchedHash,inputs.environment().value());
+    }
+
+    private DocumentSemanticCached qualifiedDocumentSemantic(Path path,String text,String patched,int start,int focusCursor,
+                                                               String key,CompilerInputs.Snapshot observed,boolean force)throws Exception{
+        var caches=modules.get(context.generation());int version=Objects.requireNonNullElse(documents.version(path),-1);
+        String content=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var cached=caches.documentSemantics.get(path);
+        if(!force&&key!=null&&cached!=null&&key.equals(cached.key())&&cached.snapshot().query(start)!=null){
+            var current=completionResolutionIdentities(cached.resolutionIdentities().keySet());
+            if(current.equals(cached.resolutionIdentities())){
+                var rebased=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
+                        cached.snapshot().queries(),cached.snapshot().locals());
+                var reused=new DocumentSemanticCached(key,rebased,current);caches.documentSemantics.put(path,reused);return reused;
+            }
+        }
+        var focus=focusing.focus(path,patched,focusCursor);
+        var attributed=compiler.query(path,focus.source(),2,observed,(task,units,tier)->{
+            if(tier!=2)return null;
+            return SemanticFacts.qualifiedCompletion(task,units,
+                    new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),
+                    EditorQueries.MARKER,start);
+        });
+        var result=attributed.result();
+        if(attributed.tier()!=2||result==null||!attributed.warnings().isEmpty())return null;
+        for(var snapshot:result.semanticSnapshots())admitDetachedSemantic(snapshot);
+        var binaries=completionNameResolutionBinaries(text,result.nameResolutionNames());
+        var resolution=completionResolutionIdentities(binaries);
+        var snapshot=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
+                Map.of(start,result.query()),List.of());
+        var next=new DocumentSemanticCached(key,snapshot,resolution);caches.documentSemantics.put(path,next);return next;
+    }
+
+    private Envelope residentQualifiedCompletion(Path path,String text,String patched,int start,int end,int focusCursor,String prefix,
+                                                  int limit,int offset,String key,CompilerInputs.Snapshot observed,long requestStarted)throws Exception{
+        if(key==null)return null;
+        var cached=qualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,observed,false);if(cached==null)return null;
+        var query=cached.snapshot().query(start);if(query==null)return null;
+        if(!(query.receiverType() instanceof SemanticType.Declared||query.receiverType() instanceof SemanticType.Intersection))return null;
+        if(!ensureHierarchySemanticCurrent(query)){
+            cached=qualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,observed,true);if(cached==null)return null;
+            query=cached.snapshot().query(start);if(query==null||!ensureHierarchySemanticCurrent(query))return null;
+        }
+        int target=(int)Math.min(Integer.MAX_VALUE,(long)offset+limit+1L);
+        var rows=residentQualifiedRows(query,prefix,target);int from=Math.min(offset,rows.size()),to=Math.min(rows.size(),from+limit);
+        var returned=List.copyOf(rows.subList(from,to));boolean more=rows.size()>to;
+        long resultBytes=Json.MAPPER.writeValueAsBytes(returned).length,total=System.nanoTime()-requestStarted;
+        completionRequests++;completionRowsReturned+=returned.size();completionRowsDiscardedAfterLimit+=Math.max(0,rows.size()-to);
+        completionResultBytes+=resultBytes;completionLastCacheHit=true;
+        completionLastTimingMs=Map.of("total",millis(total),"resident_query",millis(total));
+        try(var trace=dev.jvmd.core.RequestScope.stage("completion.resident")){
+            trace.cache("resident");trace.count("rows_returned",returned.size());trace.count("javac_candidate_discovery",0);
+        }
+        return new Envelope(2,"live",more,more?Integer.toString(to):null,List.of(),
+                Map.of("items",returned,"range",new SourceText(text).range(start,end)));
+    }
+
     public Envelope completion(Path path,String text,int line,int character,int limit,int offset)throws Exception{
         try(var trace=dev.jvmd.core.RequestScope.stage("completion.materialize")){
         long requestStarted=System.nanoTime(),keyNanos=0,sourceRefreshNanos=0,focusNanos=0,queryNanos=0,cacheAdmissionNanos=0,filterNanos=0;

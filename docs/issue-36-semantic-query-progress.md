@@ -60,3 +60,38 @@ Deviations:
 Remaining:
 - Unset `JAVA_TOOL_OPTIONS` before invoking the JFR CLI.
 - Rerun the exact same subject and complete the semantic/query/mutation/classpath matrix before any production implementation.
+
+
+## Baseline harness attempts 2–3 — workflow syntax and JFR PrettyWriter
+
+Invalid-workflow runs:
+- https://github.com/maxjay/jvmd/actions/runs/36064595160
+- https://github.com/maxjay/jvmd/actions/runs/36064597392
+
+The first JFR fix accidentally embedded a newline inside the checksum `printf`, making the temporary workflow invalid. No jobs or product measurements ran. The workflow was repaired before rerunning the baseline.
+
+Baseline attempt 3:
+- Run: https://github.com/maxjay/jvmd/actions/runs/36064655064
+- Subject SHA: `eb45487f08a986d3a5ef2acd3666177e332cdc9b`
+
+Correctness proof:
+- CMP-01 again returned zero candidates for first use, all warm/steady requests, resolve, and the post-unsaved-edit request.
+- Exact-version `publishDiagnostics` again established the document-admission boundary.
+
+Performance proof:
+- First completion: 987.63 ms.
+- Steady completion: p50 311.12 ms, p95 368.62 ms across 20 samples.
+- Pre-document total RSS: 889.0 MB.
+- Document setup finished: 1262.2 MB.
+- After first use: 1273.5 MB.
+- Steady RSS: 1260.2 MB.
+- The JFR recording is valid: 88 seconds, 15,092 `jdk.ObjectAllocationSample` events.
+
+Failed/deprecated approaches:
+- `jfr summary` succeeds, but JDK 25.0.4.1's `jfr print --events jdk.ObjectAllocationSample` crashes in `PrettyWriter.formatMethod` with `StringIndexOutOfBoundsException` on one sampled frame.
+- This failure is in the JFR presentation tool after the measured server exited; it is not JVMD product behavior.
+- Raw JFR and CMP-01 JSON were uploaded. The semantic matrix was skipped because the attribution command returned non-zero.
+
+Replacement:
+- Use the JFR `allocation-by-site` view for stable object/allocation attribution while retaining the raw recording and summary.
+- Rerun the exact same baseline subject. Production implementation remains untouched until the complete Stage-0 matrix succeeds.

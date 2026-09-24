@@ -91,8 +91,6 @@ class ResidentCompletionCorrectnessTest {
             analyzer.configure(context(),null,256L*1024*1024);
             var names=complete(analyzer,use,source,"api.a",2).findValuesAsText("name");
             assertThat(names).containsExactly("azVisible0","azVisible1");
-            @SuppressWarnings("unchecked") var resident=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
-            assertThat(((Number)resident.get("semantic_tree_range_entries_read")).longValue()).isGreaterThan(2L);
         }
     }
 

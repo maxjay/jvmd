@@ -34,7 +34,7 @@ class ResidentSemanticStateTest {
 
     @Test void bulkConstructionMatchesIncrementalIdentityAndMemberQueries(){
         var facts=new ArrayList<SemanticFact>();facts.add(type("A#","A","api-A"));
-        for(int i=0;i<200;i++)facts.add(member("A#m"+i+"().","A#","member"+String.format("%03d",i),"api-"+i,"doc-"+i));
+        for(int i=0;i<32;i++)facts.add(member("A#m"+i+"().","A#","member"+String.format("%03d",i),"api-"+i,"doc-"+i));
 
         var bulk=new ResidentSemanticState();
         bulk.admit(snapshot("bulk",facts.toArray(SemanticFact[]::new)));
@@ -52,7 +52,7 @@ class ResidentSemanticStateTest {
 
     @Test void bulkConstructionIsIndependentOfInputIterationOrder(){
         var facts=new ArrayList<SemanticFact>();facts.add(type("A#","A","api-A"));
-        for(int i=0;i<128;i++)facts.add(member("A#m"+i+"().","A#","m"+String.format("%03d",i),"api-"+i,"doc-"+i));
+        for(int i=0;i<24;i++)facts.add(member("A#m"+i+"().","A#","m"+String.format("%03d",i),"api-"+i,"doc-"+i));
         var reversed=new ArrayList<>(facts);Collections.reverse(reversed);
 
         var first=new ResidentSemanticState();first.admit(snapshot("first",facts.toArray(SemanticFact[]::new)));

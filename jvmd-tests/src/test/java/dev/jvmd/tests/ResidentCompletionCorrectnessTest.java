@@ -209,8 +209,7 @@ class ResidentCompletionCorrectnessTest {
             long buildsBefore=((Number)analyzer.status().get("resident_hierarchy_unit_builds")).longValue();
             assertThat(complete(analyzer,use,source,"api.member09",10)).hasSize(10);
             assertThat(((Number)analyzer.status().get("resident_hierarchy_unit_reuses")).longValue()).isGreaterThan(reusedBefore);
-            var secondStatus=analyzer.status();
-            assertThat(((Number)secondStatus.get("resident_hierarchy_unit_builds")).longValue()).as(secondStatus.toString()).isEqualTo(buildsBefore);
+            assertThat(((Number)analyzer.status().get("resident_hierarchy_unit_builds")).longValue()).isEqualTo(buildsBefore);
             @SuppressWarnings("unchecked") var access=(Map<String,Object>)analyzer.status().get("resident_accessibility_cache");
             assertThat(((Number)access.get("entries")).longValue()).isEqualTo(1L);
             assertThat(((Number)access.get("member_ids")).longValue()).isGreaterThanOrEqualTo(1000L);

@@ -6,8 +6,6 @@ on:
     paths:
       - '.github/workflows/issue-36-semantic-query-proof.yml'
       - 'benchmarks/issue-36-proof/**'
-      - 'docs/issue-36-semantic-query-checklist.md'
-      - 'docs/issue-36-semantic-query-progress.md'
   workflow_dispatch:
 
 permissions:

@@ -87,6 +87,24 @@ class ResidentSemanticStateTest {
         assertThat(state.status()).containsEntry("semantic_tree_entries",1001);
     }
 
+    @Test void unitMerkleDiffSkipsUnchangedFactsAndLocalizesOneMemberChange(){
+        var facts=new ArrayList<SemanticFact>();facts.add(type("A#","A","api-A"));
+        for(int i=0;i<1000;i++)facts.add(member("A#m"+i+"().","A#","member"+String.format("%04d",i),"api-"+i,"doc-"+i));
+        var state=new ResidentSemanticState();state.admit(snapshot("before",facts.toArray(SemanticFact[]::new)));
+
+        var unchanged=state.diff(snapshot("before",facts.toArray(SemanticFact[]::new)));
+        assertThat(unchanged.factMutations()).isZero();
+        assertThat(unchanged.factBucketsVisited()).isZero();
+        assertThat(unchanged.factEntriesCompared()).isZero();
+
+        var changed=new ArrayList<>(facts);
+        changed.set(501,member("A#m500().","A#","member0500","api-changed","doc-500"));
+        var delta=state.diff(snapshot("after",changed.toArray(SemanticFact[]::new)));
+        assertThat(delta.changed()).extracting(SemanticFact::id).containsExactly("A#m500().");
+        assertThat(delta.factBucketsVisited()).isEqualTo(1);
+        assertThat(delta.factEntriesCompared()).isPositive().isLessThan(64);
+    }
+
     @Test void retainedUnitStateStoresOnlyCanonicalFactMembership(){
         var state=new ResidentSemanticState();var owner=type("A#","A","api-A"),value=member("A#m().","A#","m","api-m","doc-m");
         state.admit(snapshot("unit-state",owner,value));

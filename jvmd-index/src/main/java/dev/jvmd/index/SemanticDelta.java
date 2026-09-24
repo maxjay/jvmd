@@ -8,6 +8,7 @@ public record SemanticDelta(
         String unit,
         String sourceFile,
         String contentIdentity,
+        SemanticUnitMerkle facts,
         List<SemanticFact> added,
         List<SemanticFact> changed,
         Set<String> removed,
@@ -16,16 +17,20 @@ public record SemanticDelta(
         String apiIdentity,
         String namespaceIdentity,
         String documentationIdentity,
-        Set<String> dependencies) {
+        Set<String> dependencies,
+        int factBucketsVisited,
+        int factEntriesCompared) {
 
     public SemanticDelta {
         Objects.requireNonNull(unit);contentIdentity=Objects.requireNonNullElse(contentIdentity,"");
+        facts=Objects.requireNonNull(facts);
         added=List.copyOf(added);changed=List.copyOf(changed);removed=Set.copyOf(removed);
         descriptionsChanged=List.copyOf(descriptionsChanged);descriptionsRemoved=Set.copyOf(descriptionsRemoved);
         apiIdentity=Objects.requireNonNullElse(apiIdentity,"");
         namespaceIdentity=Objects.requireNonNullElse(namespaceIdentity,"");
         documentationIdentity=Objects.requireNonNullElse(documentationIdentity,"");
         dependencies=Set.copyOf(dependencies);
+        if(factBucketsVisited<0||factEntriesCompared<0)throw new IllegalArgumentException("negative diff counters");
     }
 
     public int factMutations(){return added.size()+changed.size()+removed.size();}
@@ -35,14 +40,14 @@ public record SemanticDelta(
                                         Function<String,SemanticFact> factLookup,
                                         Function<String,SymbolDescription> descriptionLookup){
         Objects.requireNonNull(next);Objects.requireNonNull(factLookup);Objects.requireNonNull(descriptionLookup);
-        var oldFactIds=previous==null?Set.<String>of():previous.factIds();
-        var added=new ArrayList<SemanticFact>();var changed=new ArrayList<SemanticFact>();
-        for(var entry:next.facts().entrySet()){
-            var old=oldFactIds.contains(entry.getKey())?factLookup.apply(entry.getKey()):null;
-            if(old==null)added.add(entry.getValue());
-            else if(!old.factIdentity().equals(entry.getValue().factIdentity()))changed.add(entry.getValue());
-        }
-        var removed=new LinkedHashSet<String>(oldFactIds);removed.removeAll(next.facts().keySet());
+        var previousFacts=previous==null?SemanticUnitMerkle.empty():previous.facts();
+        var nextFacts=SemanticUnitMerkle.from(next.facts().values());
+        var factDiff=previousFacts.diff(nextFacts);
+
+        var added=new ArrayList<SemanticFact>(factDiff.added().size());
+        for(String id:factDiff.added()){var fact=next.facts().get(id);if(fact!=null)added.add(fact);}
+        var changed=new ArrayList<SemanticFact>(factDiff.changed().size());
+        for(String id:factDiff.changed()){var fact=next.facts().get(id);if(fact!=null)changed.add(fact);}
 
         var oldDescriptionIds=previous==null?Set.<String>of():previous.descriptionIds();
         var descriptionsChanged=new ArrayList<SymbolDescription>();
@@ -52,8 +57,8 @@ public record SemanticDelta(
         }
         var descriptionsRemoved=new LinkedHashSet<String>(oldDescriptionIds);descriptionsRemoved.removeAll(next.descriptions().keySet());
 
-        return new SemanticDelta(next.unit(),next.sourceFile(),next.contentIdentity(),added,changed,removed,
+        return new SemanticDelta(next.unit(),next.sourceFile(),next.contentIdentity(),nextFacts,added,changed,factDiff.removed(),
                 descriptionsChanged,descriptionsRemoved,next.apiIdentity(),next.namespaceIdentity(),
-                next.documentationIdentity(),next.dependencies());
+                next.documentationIdentity(),next.dependencies(),factDiff.bucketsVisited(),factDiff.entriesCompared());
     }
 }

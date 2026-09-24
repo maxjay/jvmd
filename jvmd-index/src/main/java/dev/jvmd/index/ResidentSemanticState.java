@@ -33,7 +33,7 @@ public final class ResidentSemanticState {
 
     public record Identity(long epoch,String merkleRoot,String membership,String api,String namespace,String documentation) { }
 
-    private record Entry(String key,String symbolId,String valueIdentity,Aggregate contribution) { }
+    private record Entry(String key,SemanticFact fact,String valueIdentity,Aggregate contribution) { }
     private static final class Node {
         final Entry entry;final Node left,right;final BigInteger priority;final String merkle,min,max;final Aggregate aggregate;final int size;
         Node(Entry entry,Node left,Node right){
@@ -134,13 +134,40 @@ public final class ResidentSemanticState {
     public synchronized SymbolDescription describe(String id){return descriptions.get(id);}
     public synchronized SemanticSnapshot unit(String unit){return units.get(unit);}
 
-    public synchronized List<SemanticFact> members(String ownerId,String namePrefix,int limit){
+    /**
+     * Immutable range cursor over one owner/prefix slice. The cursor captures the persistent root
+     * visible when it is created, so later mutations cannot change the sequence already being read.
+     */
+    public final class MemberCursor {
+        private final String lower,upper;
+        private final ArrayDeque<Node> stack=new ArrayDeque<>();
+        private MemberCursor(Node snapshot,String lower,String upper){this.lower=lower;this.upper=upper;push(snapshot);}
+        private void push(Node node){
+            while(node!=null){
+                int low=node.entry.key().compareTo(lower),high=node.entry.key().compareTo(upper);
+                if(low<0){node=node.right;continue;}
+                if(high>0){node=node.left;continue;}
+                stack.push(node);node=node.left;
+            }
+        }
+        /** Returns the next ordered fact, or null when the requested range is exhausted. */
+        public SemanticFact next(){
+            synchronized(ResidentSemanticState.this){
+                if(stack.isEmpty())return null;
+                var node=stack.pop();push(node.right);rangeEntriesRead++;return node.entry.fact();
+            }
+        }
+    }
+
+    public synchronized MemberCursor memberCursor(String ownerId,String namePrefix){
+        String prefix=SemanticFact.memberPrefix(ownerId,namePrefix);
+        return new MemberCursor(root,prefix,prefix+"\uffff");
+    }
+
+    public List<SemanticFact> members(String ownerId,String namePrefix,int limit){
         if(limit<=0)return List.of();
-        String prefix=SemanticFact.memberPrefix(ownerId,namePrefix);var entries=new ArrayList<Entry>(Math.min(limit,64));
-        range(root,prefix,prefix+"\uffff",limit,entries);
-        rangeEntriesRead+=entries.size();
-        var result=new ArrayList<SemanticFact>(entries.size());
-        for(var entry:entries){var fact=symbols.get(entry.symbolId());if(fact!=null)result.add(fact);}
+        var cursor=memberCursor(ownerId,namePrefix);var result=new ArrayList<SemanticFact>(Math.min(limit,64));
+        SemanticFact fact;while(result.size()<limit&&(fact=cursor.next())!=null)result.add(fact);
         return List.copyOf(result);
     }
 
@@ -248,7 +275,7 @@ public final class ResidentSemanticState {
     }
 
     private void addFact(SemanticFact fact){
-        var contribution=contribution(fact);root=put(root,new Entry(fact.orderedKey(),fact.id(),valueIdentity(fact),contribution));
+        var contribution=contribution(fact);root=put(root,new Entry(fact.orderedKey(),fact,valueIdentity(fact),contribution));
         if(fact.member())memberAggregates.merge(fact.ownerId(),contribution,Aggregate::add);
     }
 
@@ -313,10 +340,4 @@ public final class ResidentSemanticState {
         var top=node.right;var lower=new Node(node.entry,node.left,top.left);return new Node(top.entry,lower,top.right);
     }
 
-    private static void range(Node node,String lower,String upper,int limit,List<Entry> output){
-        if(node==null||output.size()>=limit||node.max.compareTo(lower)<0||node.min.compareTo(upper)>0)return;
-        range(node.left,lower,upper,limit,output);
-        if(output.size()<limit&&node.entry.key().compareTo(lower)>=0&&node.entry.key().compareTo(upper)<=0)output.add(node.entry);
-        range(node.right,lower,upper,limit,output);
-    }
 }

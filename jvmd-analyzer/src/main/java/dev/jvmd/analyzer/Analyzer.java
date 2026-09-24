@@ -762,48 +762,103 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return fact.kind()+"\0"+fact.name()+"\0"+Objects.requireNonNullElse(fact.erasedDescriptor(),"");
     }
 
-    private List<Map<String,Object>> residentHierarchyRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target,boolean staticOnly){
-        if(target<=0)return List.of();
+    private static final Comparator<Map<String,Object>> COMPLETION_ORDER=Comparator
+            .comparing((Map<String,Object> row)->Objects.toString(row.get("name"),""))
+            .thenComparing(row->Objects.toString(row.get("label"),""))
+            .thenComparing(row->Objects.toString(row.get("scip"),""));
+    private record HierarchyOwner(String id,Map<String,SemanticType> substitutions,int order) { }
+    private record HierarchyChoice(int ownerOrder,Map<String,Object> row) { }
+    private static final class HierarchyStream {
+        final ResidentSemanticState.MemberCursor cursor;final Map<String,SemanticType> substitutions;final int ownerOrder;
+        SemanticFact current;
+        HierarchyStream(ResidentSemanticState.MemberCursor cursor,Map<String,SemanticType> substitutions,int ownerOrder){
+            this.cursor=cursor;this.substitutions=substitutions;this.ownerOrder=ownerOrder;
+        }
+        boolean advance(){current=cursor.next();return current!=null;}
+    }
+
+    private List<HierarchyOwner> hierarchyOwners(DocumentSemanticSnapshot.QueryContext query){
         var queue=new ArrayDeque<SemanticType>();addDeclaredTypes(queue,query.receiverType());
-        var seenTypes=new HashSet<String>();var seenMembers=new HashSet<String>();var rows=new LinkedHashMap<String,Map<String,Object>>();
-        while(!queue.isEmpty()&&rows.size()<target*8){
-            var next=queue.removeFirst();if(!(next instanceof SemanticType.Declared declared)||!seenTypes.add(declared.symbolId()))continue;
+        var seen=new HashSet<String>();var result=new ArrayList<HierarchyOwner>();
+        while(!queue.isEmpty()){
+            var next=queue.removeFirst();if(!(next instanceof SemanticType.Declared declared)||!seen.add(declared.symbolId()))continue;
             var owner=semanticState().symbol(declared.symbolId());if(owner==null)continue;
             var substitutions=typeSubstitutions(owner,declared);
-            for(var member:semanticState().members(declared.symbolId(),prefix,target)){
-                if(member.kind().equals("ctor")||member.kind().equals("package")||member.kind().equals("module"))continue;
-                if(!seenMembers.add(inheritedMemberShape(member)))continue;
-                if(staticOnly&&!member.typeDeclaration()&&!member.modifiers().contains("static"))continue;
-                if(!query.accessibleMemberIds().contains(member.id()))continue;
-                rows.putIfAbsent(member.id(),residentCompletionRow(member,member.candidate(substitutions)));
-            }
+            result.add(new HierarchyOwner(declared.symbolId(),substitutions,result.size()));
             for(var parent:owner.directSupertypes())addDeclaredTypes(queue,parent.substitute(substitutions));
         }
-        return rows.values().stream().sorted(Comparator.comparing(row->row.get("label").toString())).limit(target).toList();
+        return List.copyOf(result);
+    }
+
+    private List<Map<String,Object>> residentHierarchyRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target,boolean staticOnly,
+                                                           Set<String> excludedIds,Set<String> shadowedFieldNames){
+        if(target<=0)return List.of();
+        var streams=new PriorityQueue<HierarchyStream>(Comparator
+                .comparing((HierarchyStream stream)->stream.current.name())
+                .thenComparing(stream->stream.current.id())
+                .thenComparingInt(stream->stream.ownerOrder));
+        for(var owner:hierarchyOwners(query)){
+            var stream=new HierarchyStream(semanticState().memberCursor(owner.id(),prefix),owner.substitutions(),owner.order());
+            if(stream.advance())streams.add(stream);
+        }
+        var rows=new ArrayList<Map<String,Object>>(Math.min(target,64));
+        while(!streams.isEmpty()&&rows.size()<target){
+            String name=streams.peek().current.name();
+            var choices=new HashMap<String,HierarchyChoice>();
+            while(!streams.isEmpty()&&streams.peek().current.name().equals(name)){
+                var stream=streams.poll();
+                do{
+                    var member=stream.current;
+                    if(!excludedIds.contains(member.id())
+                            &&!member.kind().equals("ctor")&&!member.kind().equals("package")&&!member.kind().equals("module")
+                            &&(!staticOnly||member.typeDeclaration()||member.modifiers().contains("static"))
+                            &&query.accessibleMemberIds().contains(member.id())
+                            &&!(Set.of("field","enumconst").contains(member.kind())&&shadowedFieldNames.contains(member.name()))){
+                        String shape=inheritedMemberShape(member);var row=residentCompletionRow(member,member.candidate(stream.substitutions));
+                        var previous=choices.get(shape);
+                        if(previous==null||stream.ownerOrder<previous.ownerOrder())choices.put(shape,new HierarchyChoice(stream.ownerOrder,row));
+                    }
+                }while(stream.advance()&&stream.current.name().equals(name));
+                if(stream.current!=null)streams.add(stream);
+            }
+            var group=choices.values().stream().map(HierarchyChoice::row).sorted(COMPLETION_ORDER).toList();
+            for(var row:group){if(rows.size()>=target)break;rows.add(row);}
+        }
+        return List.copyOf(rows);
     }
     private List<Map<String,Object>> residentQualifiedRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target){
-        return residentHierarchyRows(query,prefix,target,query.staticReceiver());
+        return residentHierarchyRows(query,prefix,target,query.staticReceiver(),Set.of(),Set.of());
     }
     private List<Map<String,Object>> residentUnqualifiedRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target){
         if(target<=0)return List.of();
-        var rows=new LinkedHashMap<String,Map<String,Object>>();var variableNames=new HashSet<String>();
         var localKinds=Set.of("local_variable","resource_variable","exception_parameter","binding_variable","parameter");
+        var variableNames=new HashSet<String>();
+        for(var candidate:query.scopedCandidates())
+            if(candidate.name().startsWith(prefix)&&!candidate.name().equals(EditorQueries.MARKER)&&localKinds.contains(candidate.kind()))
+                variableNames.add(candidate.name());
+
+        var scopeRows=new LinkedHashMap<String,Map<String,Object>>();var seenLocalNames=new HashSet<String>();
         for(var candidate:query.scopedCandidates()){
             if(!candidate.name().startsWith(prefix)||candidate.name().equals(EditorQueries.MARKER))continue;
             boolean local=localKinds.contains(candidate.kind());
-            if(local&&!variableNames.add(candidate.name()))continue;
+            if(local&&!seenLocalNames.add(candidate.name()))continue;
             if(!local&&Set.of("field","enumconst").contains(candidate.kind())&&variableNames.contains(candidate.name()))continue;
             if(query.staticContext()&&candidate.declaringType()!=null&&!candidate.modifiers().contains("static")
                     &&semanticState().symbol(candidate.declaringType())!=null)continue;
-            rows.putIfAbsent(candidate.id(),residentCompletionRow(candidate,candidate.name()));
-            if(rows.size()>=target*4)break;
+            scopeRows.putIfAbsent(candidate.id(),residentCompletionRow(candidate,candidate.name()));
         }
-        if(query.receiverType() instanceof SemanticType.Declared||query.receiverType() instanceof SemanticType.Intersection)
-            for(var row:residentHierarchyRows(query,prefix,target,query.staticContext())){
-                if(Set.of("field","enumconst").contains(Objects.toString(row.get("kind"),""))&&variableNames.contains(Objects.toString(row.get("name"),"")))continue;
-                rows.put(Objects.toString(row.get("scip"),""),row);
-            }
-        return rows.values().stream().sorted(Comparator.comparing(row->row.get("label").toString())).limit(target).toList();
+        var lexical=scopeRows.values().stream().sorted(COMPLETION_ORDER).toList();
+        var hierarchy=(query.receiverType() instanceof SemanticType.Declared||query.receiverType() instanceof SemanticType.Intersection)
+                ?residentHierarchyRows(query,prefix,target,query.staticContext(),scopeRows.keySet(),variableNames):List.<Map<String,Object>>of();
+
+        var rows=new ArrayList<Map<String,Object>>(Math.min(target,64));int lexicalIndex=0,hierarchyIndex=0;
+        while(rows.size()<target&&(lexicalIndex<lexical.size()||hierarchyIndex<hierarchy.size())){
+            if(hierarchyIndex>=hierarchy.size()
+                    ||lexicalIndex<lexical.size()&&COMPLETION_ORDER.compare(lexical.get(lexicalIndex),hierarchy.get(hierarchyIndex))<=0)
+                rows.add(lexical.get(lexicalIndex++));
+            else rows.add(hierarchy.get(hierarchyIndex++));
+        }
+        return List.copyOf(rows);
     }
 
     private static Set<String> completionDiscoveryPackages(String text){

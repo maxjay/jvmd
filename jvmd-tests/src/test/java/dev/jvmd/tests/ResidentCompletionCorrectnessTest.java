@@ -18,9 +18,13 @@ class ResidentCompletionCorrectnessTest {
     }
 
     private static JsonNode complete(Analyzer analyzer,Path file,String text,String needle)throws Exception{
+        return complete(analyzer,file,text,needle,200);
+    }
+
+    private static JsonNode complete(Analyzer analyzer,Path file,String text,String needle,int limit)throws Exception{
         int cursor=text.indexOf(needle)+needle.length();
         var position=dev.jvmd.core.Documents.position(text,cursor);
-        var answer=analyzer.completion(file,text,position.line(),position.character(),200,0);
+        var answer=analyzer.completion(file,text,position.line(),position.character(),limit,0);
         assertThat(answer.warnings()).as(answer.toString()).isEmpty();
         return Json.MAPPER.valueToTree(answer.result()).path("items");
     }
@@ -28,6 +32,24 @@ class ResidentCompletionCorrectnessTest {
     private static JsonNode named(JsonNode items,String name){
         for(var item:items)if(item.path("name").asText().equals(name))return item;
         fail("Missing completion "+name+" in "+items);return null;
+    }
+
+    @Test void qualifiedCompletionReadsPastFilteredRangeEntries()throws Exception{
+        var api=new StringBuilder("class Api {\n");
+        for(int i=0;i<16;i++)api.append("private int a").append(String.format("%02d",i)).append("(){return ").append(i).append(";}\n");
+        api.append("public int azVisible0(){return 100;}\n");
+        api.append("public int azVisible1(){return 101;}\n");
+        api.append("public int azVisible2(){return 102;}\n}");
+        Files.writeString(root.resolve("Api.java"),api);
+        String source="class Use { Object f(Api api){ return api.a; } }";
+        Path use=Files.writeString(root.resolve("Use.java"),source);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);
+            var names=complete(analyzer,use,source,"api.a",2).findValuesAsText("name");
+            assertThat(names).containsExactly("azVisible0","azVisible1");
+            @SuppressWarnings("unchecked") var resident=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            assertThat(((Number)resident.get("semantic_tree_range_entries_read")).longValue()).isGreaterThan(2L);
+        }
     }
 
     @Test void inheritedAndJdkGenericMembersUseInstantiatedReceiverTypes()throws Exception{

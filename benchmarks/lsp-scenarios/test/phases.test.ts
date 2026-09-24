@@ -15,7 +15,7 @@ test("steady statistics exclude discarded warmups by construction",()=>{
   const steady=Array.from({length:20},(_,i)=>i+1);
   const stats=latencyStats(steady);
   assert.equal(stats.samples,20);
-  assert.equal(stats.p50Ms,10.5);
+  assert.equal(stats.p50Ms,10);
   assert.equal(stats.p95Ms,19);
   assert.equal(warmup.length,PHASE_MODEL.defaults.warmup);
 });

@@ -54,8 +54,61 @@ public final class SemanticFacts {
         hierarchySnapshots(task,identity,receiver,new HashSet<>(),snapshots);
         var names=new LinkedHashSet<String>();String sourceType=sourceSimpleType(trees,selectedElement);if(sourceType!=null)names.add(sourceType);
         var query=new DocumentSemanticSnapshot.QueryContext(selectorOffset,type(identity,receiver),receiverId,
-                selectedElement instanceof TypeElement,packageName,enclosingTypeId,staticContext);
+                selectedElement instanceof TypeElement,packageName,enclosingTypeId,staticContext,List.of());
         return new CompletionContext(query,List.copyOf(snapshots.values()),names);
+    }
+
+    /** Detach the cursor-visible lexical/import scope and enclosing-type semantic context. */
+    public static CompletionContext unqualifiedCompletion(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String marker,int selectorOffset)throws Exception{
+        TreePath[] found={null};
+        for(var unit:units)new TreePathScanner<Void,Void>(){
+            @Override public Void visitIdentifier(IdentifierTree node,Void unused){
+                if(node.getName().contentEquals(marker))found[0]=getCurrentPath();
+                return super.visitIdentifier(node,unused);
+            }
+        }.scan(unit,null);
+        if(found[0]==null)return null;
+        var trees=Trees.instance(task);Scope scope=null;
+        for(TreePath current=found[0];current!=null&&scope==null;current=current.getParentPath())try{scope=trees.getScope(current);}catch(NullPointerException ignored){}
+        if(scope==null)return null;
+        TypeElement enclosing=scope.getEnclosingClass();DeclaredType receiver=enclosing!=null&&enclosing.asType() instanceof DeclaredType declared?declared:null;
+        String receiverId=null,enclosingTypeId=null,packageName="";
+        if(enclosing!=null){
+            packageName=task.getElements().getPackageOf(enclosing).getQualifiedName().toString();
+            try{receiverId=identity.scip(enclosing);enclosingTypeId=receiverId;}catch(IllegalArgumentException ignored){}
+        }else if(found[0].getCompilationUnit().getPackageName()!=null)packageName=found[0].getCompilationUnit().getPackageName().toString();
+        boolean staticContext=scope.getEnclosingMethod()!=null&&scope.getEnclosingMethod().getModifiers().contains(Modifier.STATIC);
+
+        var visible=new LinkedHashMap<String,CompletionCandidate>();
+        for(Scope current=scope;current!=null;current=current.getEnclosingScope())for(var element:current.getLocalElements()){
+            String name=identity.displayName(element);
+            if(name.equals(marker)||name.equals("this")||name.equals("super")||Set.of(ElementKind.CONSTRUCTOR,ElementKind.PACKAGE,ElementKind.MODULE).contains(element.getKind()))continue;
+            try{
+                var candidate=scopeCandidate(task,identity,element,receiver);
+                visible.putIfAbsent(candidate.id(),candidate);
+            }catch(IllegalArgumentException unresolved){/* no detached identity */}
+        }
+
+        var snapshots=new LinkedHashMap<String,SemanticSnapshot>();
+        if(receiver!=null)hierarchySnapshots(task,identity,receiver,new HashSet<>(),snapshots);
+        SemanticType receiverType=receiver==null?new SemanticType.Unknown("?"):type(identity,receiver);
+        var query=new DocumentSemanticSnapshot.QueryContext(selectorOffset,receiverType,receiverId,false,packageName,enclosingTypeId,staticContext,List.copyOf(visible.values()));
+        return new CompletionContext(query,List.copyOf(snapshots.values()),Set.of());
+    }
+
+    private static CompletionCandidate scopeCandidate(JavacTask task,SymbolIdentity identity,Element element,DeclaredType receiver){
+        TypeMirror semantic=element.asType();
+        if(receiver!=null&&element.getEnclosingElement() instanceof TypeElement owner)try{
+            if(task.getTypes().isSubtype(task.getTypes().erasure(receiver),task.getTypes().erasure(owner.asType())))semantic=task.getTypes().asMemberOf(receiver,element);
+        }catch(IllegalArgumentException ignored){}
+        String owner=element.getEnclosingElement() instanceof TypeElement parent?identity.scip(parent):null;
+        var modifiers=new TreeSet<String>();element.getModifiers().forEach(value->modifiers.add(value.toString()));
+        var parameterNames=element instanceof ExecutableElement method?method.getParameters().stream().map(p->p.getSimpleName().toString()).toList():List.<String>of();
+        boolean varargs=element instanceof ExecutableElement method&&method.isVarArgs();
+        var fact=new SemanticFact(identity.scip(element),owner,identity.displayName(element),SymbolIdentity.kind(element),identity.signature(element),null,
+                modifiers,identity.sourceFile(element),task.getElements().getPackageOf(element).getQualifiedName().toString(),identity.displayName(element),null,
+                type(identity,semantic),List.of(),List.of(),parameterNames,varargs,"","","");
+        return fact.candidate(Map.of());
     }
 
     private static String sourceSimpleType(Trees trees,Element element){

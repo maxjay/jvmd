@@ -25,9 +25,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         final Set<Path> files=new HashSet<>();
         final ResidentSemanticState semantic=new ResidentSemanticState();
         final Map<Path,DocumentSemanticCached> documentSemantics=new HashMap<>();
-        CompletionCached completion;
-        long completionSourceEpoch=-1;
-        boolean completionNeedsDiscoveryRefresh;
     }
     private final Map<String,ModuleCaches> modules=new LinkedHashMap<>();
     private long classpathFingerprints;
@@ -41,11 +38,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private final DiagnosticStore diagnosticStore=new DiagnosticStore();
     private LinkedHashMap<String,Envelope> outlines=new LinkedHashMap<>(16,.75f,true);
     private record Cached(Path file,String hash,String stamp,int start,int end,List<Focusing.Span> excluded,CompilerPool.Outcome<Bindings.Snapshot> result) { }
-    private record CompletionCached(String key,String prefix,long sourceEpoch,Set<Path> dependencies,Map<Path,String> dependencyApis,
-                                    CompilerPool.Outcome<List<Map<String,Object>>> result) {
-        CompletionCached { dependencies=Set.copyOf(dependencies);dependencyApis=Map.copyOf(dependencyApis); }
-    }
-    private record CompletionValidation(CompletionCached cached,boolean apiCurrent) { }
     private record DocumentSemanticCached(String key,DocumentSemanticSnapshot snapshot,Map<String,String> resolutionIdentities,Map<Path,String> dependencyApis) {
         DocumentSemanticCached { resolutionIdentities=Map.copyOf(resolutionIdentities);dependencyApis=Map.copyOf(dependencyApis); }
     }
@@ -82,7 +74,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 context.navigationSources().stream().map(p->p.toAbsolutePath().normalize().toString()).toList(),
                 context.preciseSourceRoots());
         if(!newCompletionContextIdentity.equals(completionContextIdentity)){
-            caches.completion=null;caches.completionSourceEpoch=-1;caches.completionNeedsDiscoveryRefresh=false;
             caches.documentSemantics.clear();caches.semantic.clear();
         }
         completionContextIdentity=newCompletionContextIdentity;
@@ -255,7 +246,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         focused.entrySet().removeIf(e->e.getValue().result().diagnostics().stream().anyMatch(d->d.kind().equals("ERROR")));
         outlines.entrySet().removeIf(e->Json.MAPPER.valueToTree(e.getValue().result()).path("diagnostics").findValuesAsText("kind").contains("ERROR"));
     }
-    public void namespaceChanged(){diagnosticStore.clear();for(var caches:modules.values()){caches.outlines.clear();caches.focused.clear();caches.completion=null;caches.completionSourceEpoch=-1;caches.completionNeedsDiscoveryRefresh=false;caches.documentSemantics.clear();caches.semantic.clear();}dependencies.semantic().clear();for(var pool:compilerPools.values())pool.recycle();}
+    public void namespaceChanged(){diagnosticStore.clear();for(var caches:modules.values()){caches.outlines.clear();caches.focused.clear();caches.documentSemantics.clear();caches.semantic.clear();}dependencies.semantic().clear();for(var pool:compilerPools.values())pool.recycle();}
     public CompilerPool.Outcome<Bindings.Snapshot> bindings(Path path,String text,Integer cursor)throws Exception{
         synchronizeKnownSources(path);return bindings(path,text,cursor,validatedInputs());
     }
@@ -453,7 +444,13 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                     EditorQueries.MARKER,start);
         });
         var result=attributed.result();
-        if(attributed.tier()!=2||result==null||!attributed.warnings().isEmpty())return null;
+        if(!attributed.warnings().isEmpty())throw new IllegalStateException(String.join("; ",attributed.warnings()));
+        if(attributed.tier()!=2)return null;
+        if(result==null&&!force){
+            compiler.discoverSourcePackages(completionDiscoveryPackages(text));compiler.resetSourceContext();
+            return qualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,inputSnapshot(),true);
+        }
+        if(result==null)return null;
         for(var snapshot:result.semanticSnapshots())admitDetachedSemantic(snapshot);
         var binaries=completionNameResolutionBinaries(text,result.nameResolutionNames());
         var resolution=completionResolutionIdentities(binaries);
@@ -498,7 +495,13 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                     EditorQueries.MARKER,start);
         });
         var result=attributed.result();
-        if(attributed.tier()!=2||result==null||!attributed.warnings().isEmpty())return null;
+        if(!attributed.warnings().isEmpty())throw new IllegalStateException(String.join("; ",attributed.warnings()));
+        if(attributed.tier()!=2)return null;
+        if(result==null&&!force){
+            compiler.discoverSourcePackages(completionDiscoveryPackages(text));compiler.resetSourceContext();
+            return unqualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,inputSnapshot(),true);
+        }
+        if(result==null)return null;
         for(var snapshot:result.semanticSnapshots())admitDetachedSemantic(snapshot);
         var dependencyApis=documentDependencyApis(result.query(),path);if(dependencyApis==null)return null;
         var snapshot=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
@@ -564,111 +567,29 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
 
     public Envelope completion(Path path,String text,int line,int character,int limit,int offset)throws Exception{
         try(var trace=dev.jvmd.core.RequestScope.stage("completion.materialize")){
-        long requestStarted=System.nanoTime(),keyNanos=0,sourceRefreshNanos=0,focusNanos=0,queryNanos=0,cacheAdmissionNanos=0,filterNanos=0;
-        var profile=new EditorQueries.CompletionTiming();boolean cacheHit=false;
-        path=path.toAbsolutePath().normalize();
-        int cursor=Documents.offset(text,new Documents.Position(line,character)),start=cursor,end=cursor;
-        while(start>0&&Character.isJavaIdentifierPart(text.codePointBefore(start)))start-=Character.charCount(text.codePointBefore(start));
-        while(end<text.length()&&Character.isJavaIdentifierPart(text.codePointAt(end)))end+=Character.charCount(text.codePointAt(end));
-        String prefix=text.substring(start,cursor),patched=text.substring(0,start)+EditorQueries.MARKER+text.substring(end);int focusCursor=start;
-        int selector=start-1;while(selector>=0&&Character.isWhitespace(text.charAt(selector)))selector--;
-        boolean qualified=selector>=0&&text.charAt(selector)=='.';
-        synchronizeKnownSources(path);touch(path,text);
-        var caches=modules.get(context.generation());
-        if(caches.completionNeedsDiscoveryRefresh){
-            // An unresolved receiver can leave javac's pooled scope tied to the old source namespace.
-            // Reconcile only packages this caller can name, then discard that task context.
-            compiler.discoverSourcePackages(completionDiscoveryPackages(text));
-            compiler.resetSourceContext();
-            caches.completionSourceEpoch=-1;
-            caches.completionNeedsDiscoveryRefresh=false;
-        }
-        var cached=caches.completion;boolean cachedApiCurrent=true;
-        if(cached!=null){
-            var validation=refreshCompletionDependencies(path,cached);
-            cached=validation==null?null:validation.cached();cachedApiCurrent=validation!=null&&validation.apiCurrent();caches.completion=cached;
-        }
-        long sourceEpoch=compiler.sourceStateGeneration();
-        long phaseStarted=System.nanoTime();var observed=inputSnapshot();String key=completionKey(path,patched,start,qualified,observed);keyNanos=System.nanoTime()-phaseStarted;
-        String residentKey=residentContextKey(path,patched,start,observed,qualified);
-        var resident=qualified
-                ?residentQualifiedCompletion(path,text,patched,start,end,focusCursor,prefix,limit,offset,residentKey,observed,requestStarted)
-                :residentUnqualifiedCompletion(path,text,patched,start,end,focusCursor,prefix,limit,offset,residentKey,observed,requestStarted);
-        if(resident!=null)return resident;
-        CompilerPool.Outcome<List<Map<String,Object>>> outcome;
-        if(key!=null&&cached!=null&&cachedApiCurrent&&key.equals(cached.key())&&prefix.startsWith(cached.prefix())){
-            completionCacheHits++;cacheHit=true;outcome=cached.result();
-        }else{
-            completionComputations++;phaseStarted=System.nanoTime();
-            if(caches.completionSourceEpoch>=0&&caches.completionSourceEpoch!=sourceEpoch)compiler.recycle();
-            else compiler.sourcesChanged();
-            sourceRefreshNanos=System.nanoTime()-phaseStarted;
-            phaseStarted=System.nanoTime();var focus=focusing.focus(path,patched,focusCursor);focusNanos=System.nanoTime()-phaseStarted;
-            phaseStarted=System.nanoTime();
-            var attributed=compiler.query(path,focus.source(),2,observed,(task,units,tier)->EditorQueries.completionResult(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),prefix,profile));
-            var completionResult=attributed.result();
-            outcome=new CompilerPool.Outcome<>(attributed.tier(),completionResult==null?null:completionResult.items(),attributed.diagnostics(),attributed.warnings());
-            queryNanos=System.nanoTime()-phaseStarted;
-            phaseStarted=System.nanoTime();
-            caches.completionNeedsDiscoveryRefresh=outcome.result()==null||outcome.result().isEmpty();
-            var live=documents.liveState(context.sources());
-            caches.completionSourceEpoch=live.snapshot().inputEpoch();
-            caches.completion=null;
-            if(key!=null&&outcome.tier()==2&&outcome.warnings().isEmpty()&&outcome.result()!=null&&!outcome.result().isEmpty()
-                    &&outcome.result().size()<=256&&Json.MAPPER.writeValueAsBytes(outcome.result()).length<=256*1024){
-                var completionDependencies=completionDependencies(path,text,completionResult);
-                if(ensureCompletionSemantics(completionDependencies)){
-                    dependencies.recordFocused(path,completionDependencies);
-                    String admittedKey=completionKey(path,patched,start,qualified,observed);
-                    caches.completion=new CompletionCached(admittedKey,prefix,live.snapshot().inputEpoch(),completionDependencies,
-                            completionApiFingerprints(completionDependencies),
-                            new CompilerPool.Outcome<>(2,outcome.result(),List.of(),List.of()));
-                    caches.completionSourceEpoch=live.snapshot().inputEpoch();
-                }
-            }
-            cacheAdmissionNanos=System.nanoTime()-phaseStarted;
-        }
-        phaseStarted=System.nanoTime();var values=outcome.result()==null?List.<Map<String,Object>>of():outcome.result().stream().filter(row->row.get("name").toString().startsWith(prefix)).toList();int from=Math.min(offset,values.size()),to=Math.min(values.size(),from+limit);var returned=values.subList(from,to);long resultBytes=Json.MAPPER.writeValueAsBytes(returned).length;filterNanos=System.nanoTime()-phaseStarted;
-        long totalNanos=System.nanoTime()-requestStarted;
-        completionRequests++;completionKeyNanos+=keyNanos;completionSourceRefreshNanos+=sourceRefreshNanos;completionFocusNanos+=focusNanos;completionQueryNanos+=queryNanos;
-        completionEditorNanos+=profile.totalNanos();completionCandidateNanos+=profile.candidateNanos();completionRowNanos+=profile.rowNanos();completionDocNanos+=profile.docNanos();
-        completionSortNanos+=profile.sortNanos();completionCacheAdmissionNanos+=cacheAdmissionNanos;completionFilterNanos+=filterNanos;completionTotalNanos+=totalNanos;
-        completionCandidatesSeen+=profile.candidates();completionRowsMaterialized+=profile.rows();completionDocLookups+=profile.docs();
-        completionGetAllMembersCalls+=profile.getAllMembersCalls();completionScopeTraversals+=profile.scopeTraversals();completionScipComputations+=profile.scipComputations();
-        completionSignatureComputations+=profile.signatureComputations();completionAsMemberOfCalls+=profile.asMemberOfCalls();completionSorts+=profile.sorts();completionSortInputs+=profile.sortInputs();
-        completionRowsReturned+=returned.size();completionRowsDiscardedAfterLimit+=Math.max(0,values.size()-to);completionResultBytes+=resultBytes;completionLastCacheHit=cacheHit;
-        trace.cache(cacheHit?"prefix-hit":"recompute");trace.count("candidates_examined",profile.candidates());trace.count("rows_built",profile.rows());trace.count("documentation_lookups",profile.docs());
-        trace.count("get_all_members_calls",profile.getAllMembersCalls());trace.count("scope_traversals",profile.scopeTraversals());trace.count("as_member_of_calls",profile.asMemberOfCalls());
-        completionLastTimingMs=Map.ofEntries(
-                Map.entry("key",millis(keyNanos)),Map.entry("source_refresh",millis(sourceRefreshNanos)),Map.entry("focus",millis(focusNanos)),
-                Map.entry("compiler_query",millis(queryNanos)),Map.entry("editor_total",millis(profile.totalNanos())),Map.entry("candidate_discovery",millis(profile.candidateNanos())),
-                Map.entry("row_materialization",millis(profile.rowNanos())),Map.entry("documentation",millis(profile.docNanos())),Map.entry("sort",millis(profile.sortNanos())),
-                Map.entry("cache_admission",millis(cacheAdmissionNanos)),Map.entry("filter",millis(filterNanos)),Map.entry("total",millis(totalNanos)));
-        return new Envelope(outcome.tier(),"live",to<values.size(),to<values.size()?Integer.toString(to):null,warnings(outcome.warnings()),Map.of("items",returned,"range",new SourceText(text).range(start,end)));
+            long requestStarted=System.nanoTime();
+            path=path.toAbsolutePath().normalize();
+            int cursor=Documents.offset(text,new Documents.Position(line,character)),start=cursor,end=cursor;
+            while(start>0&&Character.isJavaIdentifierPart(text.codePointBefore(start)))start-=Character.charCount(text.codePointBefore(start));
+            while(end<text.length()&&Character.isJavaIdentifierPart(text.codePointAt(end)))end+=Character.charCount(text.codePointAt(end));
+            String prefix=text.substring(start,cursor),patched=text.substring(0,start)+EditorQueries.MARKER+text.substring(end);int focusCursor=start;
+            int selector=start-1;while(selector>=0&&Character.isWhitespace(text.charAt(selector)))selector--;
+            boolean qualified=selector>=0&&text.charAt(selector)=='.';
+            synchronizeKnownSources(path);touch(path,text);
+            var observed=inputSnapshot();String residentKey=residentContextKey(path,patched,start,observed,qualified);
+            var resident=qualified
+                    ?residentQualifiedCompletion(path,text,patched,start,end,focusCursor,prefix,limit,offset,residentKey,observed,requestStarted)
+                    :residentUnqualifiedCompletion(path,text,patched,start,end,focusCursor,prefix,limit,offset,residentKey,observed,requestStarted);
+            if(resident!=null)return resident;
+
+            long total=System.nanoTime()-requestStarted;completionRequests++;completionLastCacheHit=false;
+            completionLastTimingMs=Map.of("resident_query",millis(total),"total",millis(total),"compiler_query",0d,"candidate_discovery",0d);
+            trace.cache("resident-unresolved");trace.count("javac_candidate_discovery",0);
+            return new Envelope(2,"live",false,null,List.of(),
+                    Map.of("items",List.of(),"range",new SourceText(text).range(start,end)));
         }
     }
-    private CompletionValidation refreshCompletionDependencies(Path caller,CompletionCached cached)throws Exception{
-        var live=documents.liveState(context.sources());
-        live.observe(cached.dependencies());
-        var changed=live.changedPathsSince(cached.sourceEpoch());
-        if(changed.isEmpty())return null; // journal no longer proves the delta
-        if(changed.get().isEmpty())return new CompletionValidation(cached,true);
-        boolean apiCurrent=true;
-        for(Path dependency:changed.get()){
-            if(dependency.equals(caller)||!cached.dependencies().contains(dependency))continue;
-            var leaf=live.leaf(dependency).orElse(null);
-            if(leaf==null){apiCurrent=false;continue;}
-            if(!leaf.semanticsCurrent()){
-                var result=bindings(dependency,documents.text(dependency),null);
-                if(result.tier()!=2||result.result()==null||!result.warnings().isEmpty())return null;
-                leaf=live.leaf(dependency).orElse(null);
-                if(leaf==null||!leaf.semanticsCurrent())return null;
-            }
-            if(!Objects.equals(cached.dependencyApis().get(dependency),leaf.api().value()))apiCurrent=false;
-        }
-        var refreshed=new CompletionCached(cached.key(),cached.prefix(),live.snapshot().inputEpoch(),cached.dependencies(),cached.dependencyApis(),cached.result());
-        return new CompletionValidation(refreshed,apiCurrent);
-    }
+
     private Map<Path,String> completionApiFingerprints(Set<Path> dependenciesToCheck){
         var live=documents.liveState(context.sources());var result=new LinkedHashMap<Path,String>();
         for(Path dependency:dependenciesToCheck){
@@ -677,18 +598,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             result.put(dependency,leaf.api().value());
         }
         return Map.copyOf(result);
-    }
-    private Set<Path> completionDependencies(Path caller,String text,EditorQueries.CompletionResult completion){
-        var result=new TreeSet<Path>(Comparator.comparing(Path::toString));var live=documents.liveState(context.sources());
-        if(completion==null)return Set.of();
-        for(Path dependency:completion.semanticDependencies()){
-            Path file=dependency.toAbsolutePath().normalize();
-            if(!file.equals(caller)&&live.accepts(file))result.add(file);
-        }
-        for(String binary:completionNameResolutionBinaries(text,completion.nameResolutionNames())){
-            live.source(binary).map(LiveSourceState.Source::file).filter(file->!file.equals(caller)).ifPresent(result::add);
-        }
-        return Set.copyOf(result);
     }
     private static Set<String> completionNameResolutionBinaries(String text,Collection<String> simpleNames){
         if(simpleNames==null||simpleNames.isEmpty())return Set.of();
@@ -909,14 +818,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return Set.copyOf(result);
     }
     private static double millis(long nanos){return Math.round(nanos/1000.0)/1000.0;}
-    private String completionKey(Path file,String patched,int start,boolean qualified,CompilerInputs.Snapshot inputs){
-        if(patched.length()>256*1024)return null;
-        var state=inputs.live().snapshot().state();String patchedHash=Hashing.sha256(patched.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        String namespace=qualified?"qualified":state.namespace().fingerprint().value();
-        return CompilerInputs.compose("completion-v3",completionContextIdentity,file.toString(),start,patchedHash,inputs.environment().value(),
-                state.membership().fingerprint().value(),namespace);
-    }
-
     public Envelope signatureHelp(Path path,String text,int line,int character)throws Exception{
         synchronizeKnownSources(path);int cursor=Documents.offset(text,new Documents.Position(line,character));touch(path,text);var focus=focusing.focus(path,text,cursor);
         var outcome=compiler.query(path,focus.source(),2,(task,units,tier)->EditorQueries.signatures(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),cursor));

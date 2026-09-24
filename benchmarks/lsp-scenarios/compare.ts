@@ -74,6 +74,8 @@ const lines=[
   "",
   "JDTLS ServiceReady and JVMD machine-index-ready are intentionally shown as separate native milestones; no equivalence is claimed. Warmup samples are retained in each raw report and excluded from steady p50/p95. An incorrect result is never treated as equivalent performance; its timing is diagnostic only.",
   "",
+  "Document admission boundary — JDTLS: "+jdtls.lifecycle.documentAdmission.boundary+"; JVMD: "+jvmd.lifecycle.documentAdmission.boundary+".",
+  "",
   "### Memory",
   "",
   "| State | JDTLS MB | JVMD MB |",

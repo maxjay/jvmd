@@ -38,11 +38,13 @@ public record DocumentSemanticSnapshot(
             boolean staticReceiver,
             String packageName,
             String enclosingTypeId,
-            boolean staticContext) {
+            boolean staticContext,
+            List<CompletionCandidate> scopedCandidates) {
         public QueryContext {
             if(selectorOffset<0)throw new IllegalArgumentException("selectorOffset");
             Objects.requireNonNull(receiverType);
             packageName=Objects.requireNonNullElse(packageName,"");
+            scopedCandidates=List.copyOf(scopedCandidates);
         }
     }
 

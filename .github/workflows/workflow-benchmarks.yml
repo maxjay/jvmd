@@ -115,10 +115,31 @@ jobs:
       - name: Verify and summarize
         if: ${{ !cancelled() }}
         run: python benchmarks/workspaces/summarize.py "$RUNNER_TEMP/results" "$RUNNER_TEMP/result.json"
+      - name: Write trusted-check compatibility projection
+        if: ${{ !cancelled() }}
+        run: |
+          python - <<'PYCODE'
+          import json, os
+          from pathlib import Path
+          source = json.loads((Path(os.environ["RUNNER_TEMP"]) / "result.json").read_text())
+          state = {"first_use": "first", "steady": "warm"}
+          projection = dict(source)
+          projection["schema"] = 2
+          projection["rows"] = [{**row, "state": state[row["state"]]} for row in source["rows"]]
+          target = Path(os.environ["RUNNER_TEMP"]) / "benchmark-check" / "result.json"
+          target.parent.mkdir(parents=True, exist_ok=True)
+          target.write_text(json.dumps(projection, separators=(",", ":")) + "\n")
+          PYCODE
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: ${{ !cancelled() }}
         with:
           name: benchmark-result-${{ github.run_attempt }}
+          retention-days: 7
+          path: ${{ runner.temp }}/benchmark-check/result.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ !cancelled() }}
+        with:
+          name: benchmark-phase-result-${{ github.run_attempt }}
           retention-days: 7
           path: ${{ runner.temp }}/result.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

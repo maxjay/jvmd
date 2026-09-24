@@ -31,6 +31,40 @@ class SemanticFactLifetimeTest {
         }
     }
 
+    @Test void bodyOnlyEditReusesResidentDeclarationFactsWithoutTreeMutation()throws Exception {
+        Path file=root.resolve("BodyOnly.java");
+        var source=new StringBuilder("class BodyOnly {\n");
+        for(int i=0;i<200;i++)source.append("int member").append(i).append("(){return ").append(i).append(";}\n");
+        source.append("}\n");
+        String before=source.toString(),after=before.replace("int member100(){return 100;}","int member100(){return 999999;}");
+        Files.writeString(file,before);
+
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(new Analyzer.Context("test:body-only:1","25",List.of(),List.of(root),"body-only",Map.of(root.toUri().toString(),"test:body-only:1")),null,256L*1024*1024);
+            var first=analyzer.bindings(file,before,null);
+            assertThat(first.warnings()).isEmpty();
+
+            @SuppressWarnings("unchecked") var residentBefore=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            long mutations=((Number)residentBefore.get("semantic_fact_mutations")).longValue();
+            long nodes=((Number)residentBefore.get("semantic_tree_nodes_created")).longValue();
+            long reuses=((Number)analyzer.status().get("resident_declaration_fact_reuses")).longValue();
+            long builds=((Number)analyzer.status().get("resident_declaration_fact_builds")).longValue();
+            long descriptionLoads=((Number)analyzer.status().get("resident_description_loads")).longValue();
+
+            Files.writeString(file,after);analyzer.changed(file);
+            var second=analyzer.bindings(file,after,null);
+            assertThat(second.warnings()).isEmpty();
+
+            @SuppressWarnings("unchecked") var residentAfter=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            assertThat(((Number)residentAfter.get("semantic_fact_mutations")).longValue()).isEqualTo(mutations);
+            assertThat(((Number)residentAfter.get("semantic_tree_nodes_created")).longValue()).isEqualTo(nodes);
+            assertThat(((Number)analyzer.status().get("resident_description_loads")).longValue()).isEqualTo(descriptionLoads);
+            assertThat(((Number)analyzer.status().get("resident_declaration_fact_reuses")).longValue()-reuses).isGreaterThanOrEqualTo(201L);
+            assertThat(((Number)analyzer.status().get("resident_declaration_fact_builds")).longValue()-builds).isLessThan(10L);
+            assertThat(second.result().semanticFactReuses()).isGreaterThanOrEqualTo(201);
+        }
+    }
+
     @Test void zeroDecodedBudgetRetainsFactsAndOldReadRevisionAcrossEditsAndDeletion()throws Exception {
         Path api=root.resolve("Api.java"),use=root.resolve("Use.java"),other=root.resolve("Other.java");
         Files.writeString(api,"class Api { static int a(){return 1;} static int b(){return 2;} }");

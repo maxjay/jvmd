@@ -79,6 +79,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private final LinkedHashMap<String,SourceText> sourceTexts=new LinkedHashMap<>(16,.75f,true);
     private long cacheHits,bindingComputations,diagnosticFilesAnalysed,diagnosticFilesReused,indexWrites,indexWriteNanos,apiFingerprintChanges,apiFingerprintUnchanged;
     private long completionRequests,residentDescriptionLoads,residentDescriptionCacheHits,residentHierarchyUnitReuses,residentHierarchyUnitBuilds;
+    private long residentDeclarationFactReuses,residentDeclarationFactBuilds;
     private Context context;
     private IndexService index;
     private LiveSourceState liveSourceState;
@@ -304,7 +305,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         compiler.resetSourceContext();
     }
     /** Broad project-model namespace reset; editor source membership must use sourceMembershipChanged. */
-    public void namespaceChanged(){diagnosticStore.clear();for(var caches:modules.values()){caches.outlines.clear();caches.focused.clear();caches.documentSemantics.clear();caches.descriptions.clear();caches.semantic.clear();caches.semanticSourceEpoch=-1;}dependencies.semantic().clear();for(var pool:compilerPools.values())pool.recycle();}
+    public void namespaceChanged(){diagnosticStore.clear();for(var caches:modules.values()){caches.outlines.clear();caches.focused.clear();caches.documentSemantics.clear();caches.descriptions.clear();caches.accessibility.clear();caches.semantic.clear();caches.semanticSourceEpoch=-1;}dependencies.semantic().clear();for(var pool:compilerPools.values())pool.recycle();}
     public CompilerPool.Outcome<Bindings.Snapshot> bindings(Path path,String text,Integer cursor)throws Exception{
         synchronizeKnownSources(path);return bindings(path,text,cursor,validatedInputs());
     }
@@ -323,7 +324,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         String source=focus==null?text:focus.source();Path file=path;bindingComputations++;SemanticSnapshot[] semantic={null};
         var outcome=compiler.query(path,source,2,observed,(task,units,tier)->{
             var identity=new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources());
-            var captured=Bindings.capture(task,units,identity,file,sourceText(file,text),true,focus==null?null:focus.member().equals("declarations")?new Focusing.Span(cursor,cursor+1):new Focusing.Span(focus.start(),focus.end()));
+            var captured=Bindings.capture(task,units,identity,file,sourceText(file,text),true,
+                    focus==null?null:focus.member().equals("declarations")?new Focusing.Span(cursor,cursor+1):new Focusing.Span(focus.start(),focus.end()),
+                    semanticState()::symbol);
             if(tier==2&&focus==null)for(var unit:units)try{
                 if(Path.of(unit.getSourceFile().toUri()).toAbsolutePath().normalize().equals(file)){semantic[0]=SemanticFacts.sourceSnapshot(unit,captured.semanticFacts().values());break;}
             }catch(Exception ignored){}
@@ -331,6 +334,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         });
         diagnosticStore.inputs(observed);
         if(outcome.result()!=null&&outcome.warnings().isEmpty()){
+            residentDeclarationFactReuses+=outcome.result().semanticFactReuses();
+            residentDeclarationFactBuilds+=outcome.result().semanticFactBuilds();
             dependencies.recordFocused(path,outcome.result().dependencies());
             if(cursor==null&&outcome.tier()==2){
                 var contribution=SemanticContributions.from(path,hash,outcome.result(),outcome.diagnostics());
@@ -407,13 +412,17 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             for(var unit:units){
                 Path file=Path.of(unit.getSourceFile().toUri()).toAbsolutePath().normalize();String text=sources.get(file);
                 if(text!=null){
-                    var captured=Bindings.capture(task,List.of(unit),identity,file,new SourceText(text),true);snapshots.put(file,captured);
+                    var captured=Bindings.capture(task,List.of(unit),identity,file,new SourceText(text),true,null,semanticState()::symbol);snapshots.put(file,captured);
                     if(tier==2)semanticSnapshots.put(file,SemanticFacts.sourceSnapshot(unit,captured.semanticFacts().values()));
                 }
             }
             return snapshots;
         });
         bindingComputations+=sources.size();
+        if(result.result()!=null&&result.warnings().isEmpty())for(var snapshot:result.result().values()){
+            residentDeclarationFactReuses+=snapshot.semanticFactReuses();
+            residentDeclarationFactBuilds+=snapshot.semanticFactBuilds();
+        }
         diagnosticStore.inputs(observed);
         var values=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();
         // Resolve every API first: invalidation from a later file must not erase an earlier fresh result.
@@ -1053,6 +1062,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(context!=null)result.put("resident_semantic_state",semanticState().status());
         result.put("completion_requests",completionRequests);result.put("resident_description_loads",residentDescriptionLoads);result.put("resident_description_cache_hits",residentDescriptionCacheHits);
         result.put("resident_hierarchy_unit_reuses",residentHierarchyUnitReuses);result.put("resident_hierarchy_unit_builds",residentHierarchyUnitBuilds);
+        result.put("resident_declaration_fact_reuses",residentDeclarationFactReuses);result.put("resident_declaration_fact_builds",residentDeclarationFactBuilds);
         if(context!=null){
             result.put("resident_description_cache_entries",modules.get(context.generation()).descriptions.size());
             result.put("resident_accessibility_cache",modules.get(context.generation()).accessibility.status());

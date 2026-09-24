@@ -2,6 +2,7 @@ package dev.jvmd.analyzer;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
 import com.sun.tools.javac.code.Symbol.ClassSymbol;
+import dev.jvmd.index.SemanticFact;
 import java.util.*;
 import java.util.function.Function;
 import javax.lang.model.element.*;
@@ -25,9 +26,10 @@ public final class SymbolIdentity {
     public void remember(Element element,com.sun.source.util.TreePath path){if(element!=null)paths.put(element,path);}
     public SymbolIdentity(JavacTask task,String defaultGav,String jdkVersion,Function<String,String> coordinates){this(task,defaultGav,jdkVersion,coordinates,List.of());}
     public SymbolIdentity(JavacTask task,String defaultGav,String jdkVersion,Function<String,String> coordinates,List<java.nio.file.Path> sources){this.task=Objects.requireNonNull(task);this.sources=List.copyOf(sources);elements=task.getElements();types=task.getTypes();trees=Trees.instance(task);this.defaultGav=defaultGav;this.jdkVersion=jdkVersion;this.coordinates=coordinates;}
-    public SemanticDeclaration declaration(Element element){
+    public SemanticDeclaration declaration(Element element){return declaration(element,null);}
+    public SemanticDeclaration declaration(Element element,SemanticFact reusable){
         var value=declarations.get(element);
-        if(value==null){value=SemanticDeclaration.extract(task,this,element);declarations.put(element,value);}
+        if(value==null){value=SemanticDeclaration.extract(task,this,element,reusable);declarations.put(element,value);}
         return value;
     }
     public String descriptor(TypeMirror type){

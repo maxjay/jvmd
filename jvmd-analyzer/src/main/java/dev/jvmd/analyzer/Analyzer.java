@@ -555,7 +555,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
 
     private Envelope residentQualifiedCompletion(Path path,String text,String patched,int start,int end,int focusCursor,String prefix,
-                                                  int limit,int offset,String key,CompilerInputs.Snapshot observed,long requestStarted)throws Exception{
+                                                  int limit,int offset,String key,CompilerInputs.Snapshot observed)throws Exception{
         if(key==null)return null;
         var cached=qualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,observed,false);if(cached==null)return null;
         var query=cached.snapshot().query(start);if(query==null)return null;
@@ -565,14 +565,14 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var returned=List.copyOf(rows.subList(from,to));boolean more=rows.size()>to;
         completionRequests++;
         try(var trace=dev.jvmd.core.RequestScope.stage("completion.resident")){
-            trace.cache("resident");trace.count("rows_returned",returned.size());trace.count("javac_candidate_discovery",0);
+            trace.cache("resident");trace.count("rows_returned",returned.size());
         }
         return new Envelope(2,"live",more,more?Integer.toString(to):null,List.of(),
                 Map.of("items",returned,"range",new SourceText(text).range(start,end)));
     }
 
     private Envelope residentUnqualifiedCompletion(Path path,String text,String patched,int start,int end,int focusCursor,String prefix,
-                                                    int limit,int offset,String key,CompilerInputs.Snapshot observed,long requestStarted)throws Exception{
+                                                    int limit,int offset,String key,CompilerInputs.Snapshot observed)throws Exception{
         if(key==null)return null;
         var cached=unqualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,observed,false);if(cached==null)return null;
         var query=cached.snapshot().query(start);if(query==null)return null;
@@ -581,7 +581,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var returned=List.copyOf(rows.subList(from,to));boolean more=rows.size()>to;
         completionRequests++;
         try(var trace=dev.jvmd.core.RequestScope.stage("completion.resident")){
-            trace.cache("resident-scope");trace.count("rows_returned",returned.size());trace.count("javac_candidate_discovery",0);
+            trace.cache("resident-scope");trace.count("rows_returned",returned.size());
         }
         return new Envelope(2,"live",more,more?Integer.toString(to):null,List.of(),
                 Map.of("items",returned,"range",new SourceText(text).range(start,end)));
@@ -589,7 +589,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
 
     public Envelope completion(Path path,String text,int line,int character,int limit,int offset)throws Exception{
         try(var trace=dev.jvmd.core.RequestScope.stage("completion.materialize")){
-            long requestStarted=System.nanoTime();
             path=path.toAbsolutePath().normalize();
             int cursor=Documents.offset(text,new Documents.Position(line,character)),start=cursor,end=cursor;
             while(start>0&&Character.isJavaIdentifierPart(text.codePointBefore(start)))start-=Character.charCount(text.codePointBefore(start));
@@ -600,12 +599,12 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             synchronizeKnownSources(path);touch(path,text);
             var observed=inputSnapshot();String residentKey=residentContextKey(path,patched,start,observed,qualified);
             var resident=qualified
-                    ?residentQualifiedCompletion(path,text,patched,start,end,focusCursor,prefix,limit,offset,residentKey,observed,requestStarted)
-                    :residentUnqualifiedCompletion(path,text,patched,start,end,focusCursor,prefix,limit,offset,residentKey,observed,requestStarted);
+                    ?residentQualifiedCompletion(path,text,patched,start,end,focusCursor,prefix,limit,offset,residentKey,observed)
+                    :residentUnqualifiedCompletion(path,text,patched,start,end,focusCursor,prefix,limit,offset,residentKey,observed);
             if(resident!=null)return resident;
 
             completionRequests++;
-            trace.cache("resident-unresolved");trace.count("javac_candidate_discovery",0);
+            trace.cache("resident-unresolved");
             return new Envelope(2,"live",false,null,List.of(),
                     Map.of("items",List.of(),"range",new SourceText(text).range(start,end)));
         }

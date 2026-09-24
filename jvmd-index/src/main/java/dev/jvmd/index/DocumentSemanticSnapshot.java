@@ -38,13 +38,17 @@ public record DocumentSemanticSnapshot(
             String enclosingTypeId,
             boolean staticContext,
             List<CompletionCandidate> scopedCandidates,
-            Set<String> accessibleMemberIds) {
+            String accessibilityKey) {
         public QueryContext {
             if(selectorOffset<0)throw new IllegalArgumentException("selectorOffset");
             Objects.requireNonNull(receiverType);
             packageName=Objects.requireNonNullElse(packageName,"");
             scopedCandidates=List.copyOf(scopedCandidates);
-            accessibleMemberIds=Set.copyOf(accessibleMemberIds);
+            accessibilityKey=Objects.requireNonNullElse(accessibilityKey,"");
+        }
+        public QueryContext withAccessibilityKey(String key){
+            return new QueryContext(selectorOffset,receiverType,receiverSymbolId,staticReceiver,packageName,enclosingTypeId,
+                    staticContext,scopedCandidates,key);
         }
     }
 

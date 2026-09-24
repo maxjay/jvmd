@@ -15,8 +15,12 @@ import javax.lang.model.type.*;
 public final class SemanticFacts {
     private SemanticFacts(){}
 
-    public record CompletionContext(DocumentSemanticSnapshot.QueryContext query,List<SemanticSnapshot> semanticSnapshots,Set<String> nameResolutionNames) {
-        public CompletionContext { Objects.requireNonNull(query);semanticSnapshots=List.copyOf(semanticSnapshots);nameResolutionNames=Set.copyOf(nameResolutionNames); }
+    public record CompletionContext(DocumentSemanticSnapshot.QueryContext query,List<SemanticSnapshot> semanticSnapshots,
+                                    Set<String> nameResolutionNames,Set<String> accessibleMemberIds) {
+        public CompletionContext {
+            Objects.requireNonNull(query);semanticSnapshots=List.copyOf(semanticSnapshots);
+            nameResolutionNames=Set.copyOf(nameResolutionNames);accessibleMemberIds=Set.copyOf(accessibleMemberIds);
+        }
     }
 
     /** Detach one qualified-completion context and the canonical declaration units it can query. */
@@ -54,10 +58,10 @@ public final class SemanticFacts {
         var snapshots=new LinkedHashMap<String,SemanticSnapshot>();
         hierarchySnapshots(task,identity,receiver,new HashSet<>(),snapshots);
         var names=new LinkedHashSet<String>();String sourceType=sourceSimpleType(trees,selectedElement);if(sourceType!=null)names.add(sourceType);
+        var accessible=accessibleMembers(task,identity,scope,receiver);
         var query=new DocumentSemanticSnapshot.QueryContext(selectorOffset,type(identity,receiver),receiverId,
-                selectedElement instanceof TypeElement,packageName,enclosingTypeId,staticContext,List.of(),
-                accessibleMembers(task,identity,scope,receiver));
-        return new CompletionContext(query,List.copyOf(snapshots.values()),names);
+                selectedElement instanceof TypeElement,packageName,enclosingTypeId,staticContext,List.of(),"");
+        return new CompletionContext(query,List.copyOf(snapshots.values()),names,accessible);
     }
 
     /** Detach the cursor-visible lexical/import scope and enclosing-type semantic context. */
@@ -94,9 +98,10 @@ public final class SemanticFacts {
         var snapshots=new LinkedHashMap<String,SemanticSnapshot>();
         if(receiver!=null)hierarchySnapshots(task,identity,receiver,new HashSet<>(),snapshots);
         SemanticType receiverType=receiver==null?new SemanticType.Unknown("?"):type(identity,receiver);
+        var accessible=receiver==null?Set.<String>of():accessibleMembers(task,identity,scope,receiver);
         var query=new DocumentSemanticSnapshot.QueryContext(selectorOffset,receiverType,receiverId,false,packageName,enclosingTypeId,staticContext,
-                List.copyOf(visible.values()),receiver==null?Set.of():accessibleMembers(task,identity,scope,receiver));
-        return new CompletionContext(query,List.copyOf(snapshots.values()),Set.of());
+                List.copyOf(visible.values()),"");
+        return new CompletionContext(query,List.copyOf(snapshots.values()),Set.of(),accessible);
     }
 
     private static CompletionCandidate scopeCandidate(JavacTask task,SymbolIdentity identity,Element element,DeclaredType receiver){

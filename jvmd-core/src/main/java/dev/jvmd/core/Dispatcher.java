@@ -43,6 +43,7 @@ public final class Dispatcher {
         var status = new java.util.LinkedHashMap<String, Object>();
         status.put("sessions", sessions.list().stream().map(s -> Map.of("session", s.id(), "root", s.root().toString())).toList());
         status.put("metrics", metrics.snapshot());
+        status.put("response_budget",budgets.status());
         statusProviders.forEach((name, provider) -> status.put(name, provider.get()));
         return status;
     }

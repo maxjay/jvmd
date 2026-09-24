@@ -6,6 +6,8 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Objects;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
 
 /** Immutable raw SHA-256 value. Hex is a presentation/serialization boundary, not storage. */
 public final class Hash256 implements Comparable<Hash256> {
@@ -23,9 +25,11 @@ public final class Hash256 implements Comparable<Hash256> {
         try{return new Hash256(MessageDigest.getInstance("SHA-256").digest(value));}
         catch(NoSuchAlgorithmException impossible){throw new AssertionError(impossible);}
     }
+    @JsonCreator(mode=JsonCreator.Mode.DELEGATING)
     public static Hash256 fromHex(String value){return new Hash256(HEX.parseHex(Objects.requireNonNull(value)));}
     public byte[] bytes(){return bytes.clone();}
     public BigInteger unsignedInteger(){return new BigInteger(1,bytes);}
+    @JsonValue
     public String hex(){return HEX.formatHex(bytes);}
     @Override public String toString(){return hex();}
     @Override public boolean equals(Object other){return other instanceof Hash256 hash&&Arrays.equals(bytes,hash.bytes);}

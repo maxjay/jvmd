@@ -2,7 +2,7 @@ name: LSP scenarios
 
 on:
   push:
-    branches: [main]
+    branches: [main, perf/lsp-interactive-scheduling]
     paths:
       - '.github/workflows/lsp-scenarios.yml'
       - 'benchmarks/lsp-scenarios/harness/**'

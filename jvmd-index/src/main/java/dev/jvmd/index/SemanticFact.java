@@ -32,7 +32,7 @@ public record SemanticFact(
         modifiers=Set.copyOf(modifiers);
         packageName=Objects.requireNonNullElse(packageName,"");
         namePath=Objects.requireNonNullElse(namePath,name);
-        type=Objects.requireNonNullElseGet(type,()->new SemanticType.Unknown(structuralSignature));
+        if(type==null)type=new SemanticType.Unknown(structuralSignature);
         typeParameters=List.copyOf(typeParameters);
         directSupertypes=List.copyOf(directSupertypes);
         parameterNames=List.copyOf(parameterNames);

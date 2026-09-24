@@ -20,10 +20,10 @@ This checklist is authoritative. A box is checked only when the implementation e
 - [x] PR body contains the frozen baseline evidence.
 
 ## Checkpoint 1 — canonical proof representation
-- [ ] Canonical immutable proof primitives defined.
-- [ ] Deterministic, domain-separated identities.
-- [ ] Compact structured representation; no opaque javac-owned state retained.
-- [ ] Equality and changed-component tests.
+- [x] Canonical immutable proof primitives defined.
+- [x] Deterministic, domain-separated identities.
+- [x] Compact structured representation; no opaque javac-owned state retained.
+- [x] Equality and changed-component tests.
 
 ## Checkpoint 2 — ordered classpath Merkle sequence
 - [ ] Canonical exact-order sequence root.

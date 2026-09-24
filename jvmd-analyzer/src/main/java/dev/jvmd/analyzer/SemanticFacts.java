@@ -189,10 +189,13 @@ public final class SemanticFacts {
     }
 
     public static SemanticSnapshot snapshotForType(JavacTask task,SymbolIdentity identity,TypeElement type)throws Exception{
-        var path=identity.path(type);
-        if(path!=null&&path.getCompilationUnit()!=null){
+        var path=identity.path(type);String source=identity.sourceFile(type);
+        if(path!=null&&path.getCompilationUnit()!=null&&source!=null){
             var uri=path.getCompilationUnit().getSourceFile().toUri();
-            if("file".equals(uri.getScheme())&&uri.getPath()!=null&&uri.getPath().endsWith(".java"))return sourceSnapshot(task,identity,path.getCompilationUnit());
+            if("file".equals(uri.getScheme())&&uri.getPath()!=null&&uri.getPath().endsWith(".java")){
+                String pathSource=Path.of(uri).toAbsolutePath().normalize().toString();
+                if(pathSource.equals(source))return sourceSnapshot(task,identity,path.getCompilationUnit());
+            }
         }
         return typeSnapshot(task,identity,type);
     }

@@ -131,6 +131,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var changed=liveSourceState.changedPathsSince(caches.semanticSourceEpoch);
         if(changed.isEmpty()){caches.semantic.markHierarchyUncertain();caches.documentSemantics.clear();}
         else for(Path file:changed.get()){
+            if(file.getFileName()!=null&&file.getFileName().toString().equals("module-info.java"))caches.documentSemantics.clear();
             String content=liveSourceState.contentHash(file);
             if(content==null)caches.semantic.removeUnit("source:"+file.toAbsolutePath().normalize());
             else caches.semantic.markSourceStale(file.toAbsolutePath().normalize().toString(),content);

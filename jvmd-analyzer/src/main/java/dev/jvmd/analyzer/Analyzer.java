@@ -53,7 +53,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         long semanticSourceEpoch=-1;
         String completionContextIdentity="";
     }
+    private static final int MAX_GENERATION_FAMILIES=2;
     private final Map<String,ModuleCaches> modules=new LinkedHashMap<>();
+    private final Map<String,String> generationFamilies=new HashMap<>();
+    private final LinkedHashMap<String,Boolean> generationFamilyLru=new LinkedHashMap<>(4,.75f,true);
+    private long retiredModuleGenerations,retiredCompilerGenerations,retiredSemanticBytes,semanticBudgetBytes;
     private long classpathFingerprints;
     private final FileStateRegistry inputFiles;
     public Analyzer(){this(FileStateRegistry.shared());}
@@ -87,9 +91,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     public void persistence(Path directory){if(snapshots==null){snapshots=new DiagnosticSnapshots(directory);diagnosticStore.persistence(snapshots);snapshots.documents(documents);}}
     private long budget;
     public void configure(Context context,IndexService index,long budget)throws Exception{
+        String family=generationFamily(context);generationFamilies.put(context.generation(),family);generationFamilyLru.put(family,Boolean.TRUE);
         var caches=modules.computeIfAbsent(context.generation(),_->new ModuleCaches());
         outlines=caches.outlines;focused=caches.focused;
-        this.context=context;this.index=index;this.budget=budget;diagnosticStore.budget(Math.max(1024*1024,budget/8));
+        this.context=context;this.index=index;this.budget=budget;semanticBudgetBytes=Math.max(8L*1024*1024,budget/2);
+        diagnosticStore.budget(Math.max(1024*1024,budget/8));
         String newCompletionContextIdentity=CompilerInputs.compose("completion-context-v1",
                 context.gav(),context.release(),context.generation(),
                 context.classpath().stream().map(p->p.toAbsolutePath().normalize().toString()).toList(),
@@ -106,6 +112,39 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         compiler=compilerPools.computeIfAbsent(context.generation(),_->new CompilerPool(inputFiles));
         compiler.configure(context.generation(),context.release(),context.classpath(),context.sources(),index,budget,context.compilerOptions(),context.preciseSourceRoots());
         compiler.binarySources(context.binarySources());
+        retireOldGenerationFamilies(family);
+    }
+
+    private static String generationFamily(Context context){
+        String marker=":"+context.gav();int split=context.generation().indexOf(marker);
+        return split>0?context.generation().substring(0,split):context.generation();
+    }
+    private long retainedSemanticBytes(){return modules.values().stream().mapToLong(caches->caches.semantic.estimatedBytes()).sum();}
+    private void retireOldGenerationFamilies(String currentFamily)throws Exception{
+        while(true){
+            long retained=retainedSemanticBytes();
+            boolean tooMany=generationFamilyLru.size()>MAX_GENERATION_FAMILIES;
+            boolean overBudget=retained>semanticBudgetBytes;
+            if(!tooMany&&!overBudget)return;
+            String victim=null;
+            for(String family:generationFamilyLru.keySet())if(!family.equals(currentFamily)){victim=family;break;}
+            if(victim==null)return;
+            retireGenerationFamily(victim);
+        }
+    }
+    private void retireGenerationFamily(String family)throws Exception{
+        var generations=new ArrayList<String>();
+        for(var entry:generationFamilies.entrySet())if(entry.getValue().equals(family))generations.add(entry.getKey());
+        Exception failure=null;
+        for(String generation:generations){
+            var caches=modules.remove(generation);
+            if(caches!=null){retiredSemanticBytes+=caches.semantic.estimatedBytes();retiredModuleGenerations++;}
+            var pool=compilerPools.remove(generation);
+            if(pool!=null)try{pool.close();retiredCompilerGenerations++;}catch(Exception e){failure=e;}
+            generationFamilies.remove(generation);
+        }
+        generationFamilyLru.remove(family);
+        if(failure!=null)throw failure;
     }
     public void documents(Documents documents){this.documents=documents;if(snapshots!=null)snapshots.documents(documents);compiler.documents(documents);dependencies.documentHash(documents::hash);dependencies.fileStates(documents.fileStates());if(context!=null)liveSourceState=documents.liveState(context.sources());}
     private ResidentSemanticState semanticState(){return modules.get(context.generation()).semantic;}
@@ -1067,7 +1106,26 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             result.put("resident_description_cache_entries",modules.get(context.generation()).descriptions.size());
             result.put("resident_accessibility_cache",modules.get(context.generation()).accessibility.status());
         }
+        long retainedSemantic=retainedSemanticBytes();
+        var semanticGenerations=new LinkedHashMap<String,Object>();
+        for(var entry:modules.entrySet()){
+            var semanticStatus=entry.getValue().semantic.status();
+            semanticGenerations.put(entry.getKey(),Map.of(
+                    "family",generationFamilies.getOrDefault(entry.getKey(),entry.getKey()),
+                    "estimated_bytes",entry.getValue().semantic.estimatedBytes(),
+                    "facts",semanticStatus.get("semantic_facts"),
+                    "units",semanticStatus.get("semantic_units")));
+        }
+        result.put("resident_semantic_generations",semanticGenerations);
+        result.put("resident_semantic_generation_count",modules.size());
+        result.put("resident_semantic_generation_families",generationFamilyLru.size());
+        result.put("resident_semantic_budget_bytes",semanticBudgetBytes);
+        result.put("resident_semantic_estimated_bytes",retainedSemantic);
+        result.put("resident_semantic_over_budget_bytes",Math.max(0,retainedSemantic-semanticBudgetBytes));
+        result.put("resident_semantic_retired_generations",retiredModuleGenerations);
+        result.put("resident_semantic_retired_bytes",retiredSemanticBytes);
+        result.put("compiler_retired_generations",retiredCompilerGenerations);
         var moduleStatus=new LinkedHashMap<String,Object>();for(var entry:compilerPools.entrySet())moduleStatus.put(entry.getKey(),entry.getValue().status());result.put("module_compilers",moduleStatus);return result;
     }
-    @Override public void close()throws Exception{if(snapshots!=null)snapshots.close();diagnosticStore.clear();outlines.clear();focused.clear();focusing.close();sourceTexts.clear();dependencies.semantic().clear();for(var pool:compilerPools.values())pool.close();compilerPools.clear();modules.clear();compiler=null;}
+    @Override public void close()throws Exception{if(snapshots!=null)snapshots.close();diagnosticStore.clear();outlines.clear();focused.clear();focusing.close();sourceTexts.clear();dependencies.semantic().clear();for(var pool:compilerPools.values())pool.close();compilerPools.clear();modules.clear();generationFamilies.clear();generationFamilyLru.clear();compiler=null;}
 }

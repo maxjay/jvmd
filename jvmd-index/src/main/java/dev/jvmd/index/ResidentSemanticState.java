@@ -227,6 +227,15 @@ public final class ResidentSemanticState {
         root=null;symbols.clear();units.clear();memberAggregates.clear();semanticAggregate=Aggregate.ZERO;directSupers.clear();directSubs.clear();hierarchyApis.clear();staleUnits.clear();staleAggregate=new AlgebraicAccumulator("semantic-stale-v2");uncertaintyGeneration=0;epoch++;
     }
 
+    /** Conservative retained-size estimate used only for semantic cache budgeting/retirement. */
+    public synchronized long estimatedBytes(){
+        long factCount=symbols.size();
+        long unitRefs=units.values().stream().mapToLong(unit->unit.facts().size()).sum();
+        long hierarchyEdges=directSupers.values().stream().mapToLong(Set::size).sum();
+        return factCount*960L+unitRefs*48L+units.size()*256L+memberAggregates.size()*256L
+                +hierarchyEdges*64L+hierarchyApis.size()*160L+staleUnits.size()*128L;
+    }
+
     public synchronized Map<String,Object> status(){
         var identity=identity();
         return Map.ofEntries(
@@ -241,6 +250,7 @@ public final class ResidentSemanticState {
                 Map.entry("semantic_descriptions",0),Map.entry("semantic_unit_fact_ids",units.values().stream().mapToLong(unit->unit.facts().size()).sum()),
                 Map.entry("semantic_unit_diff_buckets_read",unitDiffBucketsRead),Map.entry("semantic_unit_diff_entries_read",unitDiffEntriesRead),
                 Map.entry("semantic_hierarchy_compositions",hierarchyCompositions),Map.entry("semantic_hierarchy_parent_reads",hierarchyParentReads),
+                Map.entry("semantic_estimated_bytes",estimatedBytes()),
                 Map.entry("semantic_stale_aggregate",staleAggregate.identity().hex()),Map.entry("semantic_stale_aggregate_cardinality",staleAggregate.cardinality()),
                 Map.entry("semantic_uncertainty_generation",uncertaintyGeneration),Map.entry("semantic_freshness_updates",freshnessUpdates),
                 Map.entry("semantic_global_uncertainty_updates",globalUncertaintyUpdates));

@@ -58,6 +58,26 @@ class ResidentCompletionCorrectnessTest {
         }
     }
 
+    @Test void historicalProjectGenerationsAreRetiredAndBudgeted()throws Exception{
+        String source="class Api { int value(){return 1;} } class Use { Object f(Api api){ return api.val; } }";
+        Path file=Files.writeString(root.resolve("Use.java"),source);
+        try(var analyzer=new Analyzer()){
+            for(int i=0;i<6;i++){
+                analyzer.configure(context(root,"generation-"+i),null,256L*1024*1024);
+                assertThat(complete(analyzer,file,source,"api.val").findValuesAsText("name")).contains("value");
+                assertThat(((Number)analyzer.status().get("resident_semantic_generation_count")).longValue()).isLessThanOrEqualTo(2L);
+                assertThat(((Number)analyzer.status().get("resident_semantic_generation_families")).longValue()).isLessThanOrEqualTo(2L);
+                @SuppressWarnings("unchecked") var compilers=(Map<String,Object>)analyzer.status().get("module_compilers");
+                assertThat(compilers).hasSizeLessThanOrEqualTo(2);
+            }
+            assertThat(((Number)analyzer.status().get("resident_semantic_retired_generations")).longValue()).isGreaterThanOrEqualTo(4L);
+            assertThat(((Number)analyzer.status().get("compiler_retired_generations")).longValue()).isGreaterThanOrEqualTo(4L);
+            assertThat(((Number)analyzer.status().get("resident_semantic_budget_bytes")).longValue()).isPositive();
+            assertThat(((Number)analyzer.status().get("resident_semantic_estimated_bytes")).longValue())
+                    .isLessThanOrEqualTo(((Number)analyzer.status().get("resident_semantic_budget_bytes")).longValue());
+        }
+    }
+
     @Test void qualifiedCompletionReadsPastFilteredRangeEntries()throws Exception{
         var api=new StringBuilder("class Api {\n");
         for(int i=0;i<16;i++)api.append("private int a").append(String.format("%02d",i)).append("(){return ").append(i).append(";}\n");

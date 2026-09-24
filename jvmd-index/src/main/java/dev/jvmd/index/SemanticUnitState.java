@@ -11,7 +11,8 @@ public record SemanticUnitState(
         String apiIdentity,
         String namespaceIdentity,
         String documentationIdentity,
-        Set<String> dependencies) {
+        Set<String> dependencies,
+        long uncertaintyGeneration) {
 
     public SemanticUnitState {
         Objects.requireNonNull(unit);
@@ -21,6 +22,7 @@ public record SemanticUnitState(
         namespaceIdentity=Objects.requireNonNullElse(namespaceIdentity,"");
         documentationIdentity=Objects.requireNonNullElse(documentationIdentity,"");
         dependencies=Set.copyOf(dependencies);
+        if(uncertaintyGeneration<0)throw new IllegalArgumentException("uncertaintyGeneration");
     }
 
     public Set<String> factIds(){return facts.ids();}

@@ -53,9 +53,10 @@ public final class ResidentSemanticState {
     private final Map<String,Set<String>> directSupers=new HashMap<>(),directSubs=new HashMap<>();
     private final Map<String,String> hierarchyApis=new HashMap<>();
     private final Map<String,String> staleUnits=new HashMap<>();
-    private String freshnessMerkle=EMPTY;
+    private AlgebraicAccumulator staleAggregate=new AlgebraicAccumulator("semantic-stale-v2");
+    private long uncertaintyGeneration;
     private long epoch,rangeEntriesRead,factMutations,treeNodesCreated,bulkBuilds,unitDiffBucketsRead,unitDiffEntriesRead;
-    private long hierarchyCompositions,hierarchyParentReads;
+    private long hierarchyCompositions,hierarchyParentReads,freshnessUpdates,globalUncertaintyUpdates;
 
     public synchronized SemanticDelta diff(SemanticSnapshot next){
         var delta=SemanticDelta.between(units.get(next.unit()),next,symbols::get);
@@ -67,7 +68,9 @@ public final class ResidentSemanticState {
     }
 
     public synchronized void apply(SemanticDelta delta){
-        var previous=units.get(delta.unit());boolean wasStale=staleUnits.containsKey(delta.unit());
+        var previous=units.get(delta.unit());
+        boolean generationStale=previous!=null&&previous.uncertaintyGeneration()!=uncertaintyGeneration;
+        boolean wasStale=staleUnits.containsKey(delta.unit())||generationStale;
         if(previous==null&&root==null&&symbols.isEmpty()&&units.isEmpty()&&delta.changed().isEmpty()&&delta.removed().isEmpty()){
             applyInitial(delta);return;
         }
@@ -75,7 +78,7 @@ public final class ResidentSemanticState {
                 ||!Objects.equals(previous.apiIdentity(),delta.apiIdentity())
                 ||!Objects.equals(previous.namespaceIdentity(),delta.namespaceIdentity())
                 ||!Objects.equals(previous.documentationIdentity(),delta.documentationIdentity())
-                ||!delta.emptyFacts();
+                ||generationStale||!delta.emptyFacts();
         if(!transition)return;
 
         var hierarchyAffected=new LinkedHashSet<String>();
@@ -95,9 +98,9 @@ public final class ResidentSemanticState {
             var old=symbols.put(fact.id(),fact);if(old!=null){beforeHierarchyMutation(old,hierarchyAffected);removeFact(old);}
             addFact(fact);afterHierarchyMutation(fact,hierarchyAffected);
         }
-        recomputeHierarchyApis(hierarchyAffected);
-        if(staleUnits.remove(delta.unit())!=null)refreshFreshness();
+        clearExplicitStale(delta.unit());
         units.put(delta.unit(),nextUnitState(delta));
+        recomputeHierarchyApis(hierarchyAffected);
         factMutations+=delta.factMutations();epoch++;
     }
 
@@ -113,8 +116,8 @@ public final class ResidentSemanticState {
         }
         ordered.sort(Comparator.comparing(Entry::key));
         root=bulkBuild(ordered);
-        recomputeHierarchyApis(hierarchyAffected);
         units.put(delta.unit(),nextUnitState(delta));
+        recomputeHierarchyApis(hierarchyAffected);
         factMutations+=delta.factMutations();bulkBuilds++;epoch++;
     }
 
@@ -131,29 +134,31 @@ public final class ResidentSemanticState {
         if(sourceFile==null)return false;
         String unit="source:"+sourceFile;var previous=units.get(unit);if(previous==null)return false;
         String content=Objects.requireNonNullElse(contentIdentity,"");
-        if(content.equals(previous.contentIdentity())&&!staleUnits.containsKey(unit))return false;
+        if(content.equals(previous.contentIdentity())&&!staleUnits.containsKey(unit)
+                &&previous.uncertaintyGeneration()==uncertaintyGeneration)return false;
         String old=staleUnits.put(unit,content);if(Objects.equals(old,content))return false;
+        if(old==null)staleAggregate.add(unit,content);else staleAggregate.replace(unit,old,unit,content);
+        freshnessUpdates++;
         var affected=new LinkedHashSet<String>();
         previous.facts().forEachId(id->{
             var fact=symbols.get(id);if(fact!=null&&fact.typeDeclaration()){
                 affected.add(fact.id());collectDescendants(fact.id(),affected);
             }
         });
-        affected.forEach(hierarchyApis::remove);refreshFreshness();epoch++;return true;
+        affected.forEach(hierarchyApis::remove);epoch++;return true;
     }
 
-    /** Lost source-change history invalidates hierarchy identities without rebuilding facts. */
+    /** Lost source-change history invalidates every retained unit with one generation fence. */
     public synchronized void markHierarchyUncertain(){
         if(units.isEmpty())return;
-        String marker="<uncertain:"+(epoch+1)+">";
-        for(String unit:units.keySet())staleUnits.put(unit,marker);
-        hierarchyApis.clear();refreshFreshness();epoch++;
+        uncertaintyGeneration++;globalUncertaintyUpdates++;epoch++;
     }
 
     public synchronized SemanticFact symbol(String id){return symbols.get(id);}
     public synchronized SemanticUnitState unit(String unit){return units.get(unit);}
     public synchronized boolean unitCurrent(String unit,String contentIdentity){
-        var state=units.get(unit);if(state==null||staleUnits.containsKey(unit))return false;
+        var state=units.get(unit);if(state==null||staleUnits.containsKey(unit)
+                ||state.uncertaintyGeneration()!=uncertaintyGeneration)return false;
         return contentIdentity==null||Objects.equals(contentIdentity,state.contentIdentity());
     }
     public synchronized SemanticFact unitType(String unit,String fqn){
@@ -205,18 +210,21 @@ public final class ResidentSemanticState {
         return memberAggregates.getOrDefault(ownerId,Aggregate.ZERO);
     }
     /** Constant-time validity identity for the effective API reachable from a receiver type. */
-    public synchronized String hierarchyApi(String typeId){return hierarchyApis.getOrDefault(typeId,EMPTY);}
+    public synchronized String hierarchyApi(String typeId){
+        return CanonicalDigestWriter.digest("hierarchy-validity-v2",uncertaintyGeneration,
+                hierarchyApis.getOrDefault(typeId,EMPTY)).hex();
+    }
 
     public synchronized Identity identity(){
         String structural=root==null?EMPTY:root.merkle.hex();
-        String merkle=Hashing.sha256((structural+"\0"+freshnessMerkle).getBytes(StandardCharsets.UTF_8));
+        String merkle=CanonicalDigestWriter.digest("resident-state-v2",structural,freshnessIdentity()).hex();
         return new Identity(epoch,merkle,semanticAggregate.membershipIdentity(),semanticAggregate.apiIdentity(),
                 semanticAggregate.namespaceIdentity(),semanticAggregate.documentationIdentity());
     }
 
     public synchronized void clear(){
         if(root==null&&symbols.isEmpty()&&units.isEmpty())return;
-        root=null;symbols.clear();units.clear();memberAggregates.clear();semanticAggregate=Aggregate.ZERO;directSupers.clear();directSubs.clear();hierarchyApis.clear();staleUnits.clear();freshnessMerkle=EMPTY;epoch++;
+        root=null;symbols.clear();units.clear();memberAggregates.clear();semanticAggregate=Aggregate.ZERO;directSupers.clear();directSubs.clear();hierarchyApis.clear();staleUnits.clear();staleAggregate=new AlgebraicAccumulator("semantic-stale-v2");uncertaintyGeneration=0;epoch++;
     }
 
     public synchronized Map<String,Object> status(){
@@ -232,20 +240,24 @@ public final class ResidentSemanticState {
                 Map.entry("semantic_tree_nodes_created",treeNodesCreated),Map.entry("semantic_bulk_builds",bulkBuilds),
                 Map.entry("semantic_descriptions",0),Map.entry("semantic_unit_fact_ids",units.values().stream().mapToLong(unit->unit.facts().size()).sum()),
                 Map.entry("semantic_unit_diff_buckets_read",unitDiffBucketsRead),Map.entry("semantic_unit_diff_entries_read",unitDiffEntriesRead),
-                Map.entry("semantic_hierarchy_compositions",hierarchyCompositions),Map.entry("semantic_hierarchy_parent_reads",hierarchyParentReads));
+                Map.entry("semantic_hierarchy_compositions",hierarchyCompositions),Map.entry("semantic_hierarchy_parent_reads",hierarchyParentReads),
+                Map.entry("semantic_stale_aggregate",staleAggregate.identity().hex()),Map.entry("semantic_stale_aggregate_cardinality",staleAggregate.cardinality()),
+                Map.entry("semantic_uncertainty_generation",uncertaintyGeneration),Map.entry("semantic_freshness_updates",freshnessUpdates),
+                Map.entry("semantic_global_uncertainty_updates",globalUncertaintyUpdates));
     }
 
     private SemanticUnitState nextUnitState(SemanticDelta delta){
         return new SemanticUnitState(delta.unit(),delta.sourceFile(),delta.contentIdentity(),delta.facts(),
-                delta.apiIdentity(),delta.namespaceIdentity(),delta.documentationIdentity(),delta.dependencies());
+                delta.apiIdentity(),delta.namespaceIdentity(),delta.documentationIdentity(),delta.dependencies(),uncertaintyGeneration);
     }
 
-    private void refreshFreshness(){
-        if(staleUnits.isEmpty()){freshnessMerkle=EMPTY;return;}
-        var material=new StringBuilder("semantic-freshness-v1");
-        staleUnits.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry->
-                material.append('\0').append(entry.getKey()).append('\0').append(entry.getValue()));
-        freshnessMerkle=Hashing.sha256(material.toString().getBytes(StandardCharsets.UTF_8));
+    private String freshnessIdentity(){
+        return CanonicalDigestWriter.digest("semantic-freshness-v2",staleAggregate.identity(),
+                staleAggregate.cardinality(),uncertaintyGeneration).hex();
+    }
+    private void clearExplicitStale(String unit){
+        String old=staleUnits.remove(unit);
+        if(old!=null){staleAggregate.remove(unit,old);freshnessUpdates++;}
     }
 
     private void beforeHierarchyMutation(SemanticFact fact,Set<String> affected){

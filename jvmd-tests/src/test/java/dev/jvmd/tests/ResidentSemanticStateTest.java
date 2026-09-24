@@ -216,6 +216,45 @@ class ResidentSemanticStateTest {
         assertThat(parents).isEqualTo(50L);
     }
 
+    @Test void singleStaleUnitUsesOneAlgebraicFreshnessContribution(){
+        var state=new ResidentSemanticState();
+        var owner=type("A#","A","api-A");var member=member("A#m().","A#","m","api-m","doc-m");
+        state.admit(snapshot("content-a",owner,member));var original=state.identity();
+        long updates=((Number)state.status().get("semantic_freshness_updates")).longValue();
+
+        assertThat(state.markSourceStale("/src/A.java","content-b")).isTrue();
+        assertThat(state.status()).containsEntry("semantic_stale_aggregate_cardinality",1L);
+        assertThat(((Number)state.status().get("semantic_freshness_updates")).longValue()).isEqualTo(updates+1);
+        assertThat(state.markSourceStale("/src/A.java","content-b")).isFalse();
+
+        state.admit(snapshot("content-b",owner,member));
+        assertThat(state.status()).containsEntry("semantic_stale_aggregate_cardinality",0L);
+        assertThat(((Number)state.status().get("semantic_freshness_updates")).longValue()).isEqualTo(updates+2);
+        assertThat(state.identity().merkleRoot()).isEqualTo(original.merkleRoot());
+    }
+
+    @Test void globalHierarchyUncertaintyIsOneGenerationFence(){
+        var state=new ResidentSemanticState();var facts=new ArrayList<SemanticFact>();
+        for(int i=0;i<100;i++){
+            var fact=type("T"+i+"#","T"+i,"api-"+i);facts.add(fact);
+            state.admit(snapshotUnit("unit:"+i,"content-"+i,fact));
+        }
+        long generation=((Number)state.status().get("semantic_uncertainty_generation")).longValue();
+        long updates=((Number)state.status().get("semantic_global_uncertainty_updates")).longValue();
+
+        state.markHierarchyUncertain();
+
+        assertThat(state.status()).containsEntry("semantic_stale_units",0);
+        assertThat(((Number)state.status().get("semantic_uncertainty_generation")).longValue()).isEqualTo(generation+1);
+        assertThat(((Number)state.status().get("semantic_global_uncertainty_updates")).longValue()).isEqualTo(updates+1);
+        assertThat(state.unitCurrent("unit:0",null)).isFalse();
+        assertThat(state.unitCurrent("unit:99",null)).isFalse();
+
+        state.admit(snapshotUnit("unit:0","content-0",facts.getFirst()));
+        assertThat(state.unitCurrent("unit:0",null)).isTrue();
+        assertThat(state.unitCurrent("unit:99",null)).isFalse();
+    }
+
     @Test void sourceStalenessInvalidatesHierarchyIdentityUntilBodyOnlyReadmission(){
         var state=new ResidentSemanticState();
         var owner=type("A#","A","api-A");

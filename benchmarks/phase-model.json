@@ -1,5 +1,6 @@
 {
   "schema": 2,
+
   "states": [
     "startup",
     "machine_index",

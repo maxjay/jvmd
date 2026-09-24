@@ -16,15 +16,20 @@ public final class SemanticFacts {
     private SemanticFacts(){}
 
     public record CompletionContext(DocumentSemanticSnapshot.QueryContext query,List<SemanticSnapshot> semanticSnapshots,
-                                    Set<String> nameResolutionNames,Set<String> accessibleMemberIds) {
+                                    Set<String> nameResolutionNames,Set<String> accessibleMemberIds,int hierarchyUnitsReused) {
         public CompletionContext {
             Objects.requireNonNull(query);semanticSnapshots=List.copyOf(semanticSnapshots);
             nameResolutionNames=Set.copyOf(nameResolutionNames);accessibleMemberIds=Set.copyOf(accessibleMemberIds);
+            if(hierarchyUnitsReused<0)throw new IllegalArgumentException("hierarchyUnitsReused");
         }
     }
 
     /** Detach one qualified-completion context and the canonical declaration units it can query. */
     public static CompletionContext qualifiedCompletion(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String marker,int selectorOffset)throws Exception{
+        return qualifiedCompletion(task,units,identity,marker,selectorOffset,_->false);
+    }
+    public static CompletionContext qualifiedCompletion(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String marker,
+                                                         int selectorOffset,java.util.function.Predicate<String> residentUnitCurrent)throws Exception{
         TreePath[] found={null};
         for(var unit:units)new TreePathScanner<Void,Void>(){
             @Override public Void visitMemberSelect(MemberSelectTree node,Void unused){
@@ -55,17 +60,21 @@ public final class SemanticFacts {
             staticContext=method!=null&&method.getModifiers().contains(Modifier.STATIC);
         }else if(found[0].getCompilationUnit().getPackageName()!=null)packageName=found[0].getCompilationUnit().getPackageName().toString();
 
-        var snapshots=new LinkedHashMap<String,SemanticSnapshot>();
-        hierarchySnapshots(task,identity,receiver,new HashSet<>(),snapshots);
+        var snapshots=new LinkedHashMap<String,SemanticSnapshot>();int[] reused={0};
+        hierarchySnapshots(task,identity,receiver,new HashSet<>(),snapshots,residentUnitCurrent,reused);
         var names=new LinkedHashSet<String>();String sourceType=sourceSimpleType(trees,selectedElement);if(sourceType!=null)names.add(sourceType);
         var accessible=accessibleMembers(task,identity,scope,receiver);
         var query=new DocumentSemanticSnapshot.QueryContext(selectorOffset,type(identity,receiver),receiverId,
                 selectedElement instanceof TypeElement,packageName,enclosingTypeId,staticContext,List.of(),"");
-        return new CompletionContext(query,List.copyOf(snapshots.values()),names,accessible);
+        return new CompletionContext(query,List.copyOf(snapshots.values()),names,accessible,reused[0]);
     }
 
     /** Detach the cursor-visible lexical/import scope and enclosing-type semantic context. */
     public static CompletionContext unqualifiedCompletion(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String marker,int selectorOffset)throws Exception{
+        return unqualifiedCompletion(task,units,identity,marker,selectorOffset,_->false);
+    }
+    public static CompletionContext unqualifiedCompletion(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,String marker,
+                                                           int selectorOffset,java.util.function.Predicate<String> residentUnitCurrent)throws Exception{
         TreePath[] found={null};
         for(var unit:units)new TreePathScanner<Void,Void>(){
             @Override public Void visitIdentifier(IdentifierTree node,Void unused){
@@ -95,13 +104,13 @@ public final class SemanticFacts {
             }catch(IllegalArgumentException unresolved){/* no detached identity */}
         }
 
-        var snapshots=new LinkedHashMap<String,SemanticSnapshot>();
-        if(receiver!=null)hierarchySnapshots(task,identity,receiver,new HashSet<>(),snapshots);
+        var snapshots=new LinkedHashMap<String,SemanticSnapshot>();int[] reused={0};
+        if(receiver!=null)hierarchySnapshots(task,identity,receiver,new HashSet<>(),snapshots,residentUnitCurrent,reused);
         SemanticType receiverType=receiver==null?new SemanticType.Unknown("?"):type(identity,receiver);
         var accessible=receiver==null?Set.<String>of():accessibleMembers(task,identity,scope,receiver);
         var query=new DocumentSemanticSnapshot.QueryContext(selectorOffset,receiverType,receiverId,false,packageName,enclosingTypeId,staticContext,
                 List.copyOf(visible.values()),"");
-        return new CompletionContext(query,List.copyOf(snapshots.values()),Set.of(),accessible);
+        return new CompletionContext(query,List.copyOf(snapshots.values()),Set.of(),accessible,reused[0]);
     }
 
     private static CompletionCandidate scopeCandidate(JavacTask task,SymbolIdentity identity,Element element,DeclaredType receiver){
@@ -163,14 +172,30 @@ public final class SemanticFacts {
         return type instanceof IdentifierTree identifier?identifier.getName().toString():null;
     }
 
-    private static void hierarchySnapshots(JavacTask task,SymbolIdentity identity,TypeMirror mirror,Set<String> seen,Map<String,SemanticSnapshot> snapshots)throws Exception{
-        if(mirror instanceof TypeVariable variable){hierarchySnapshots(task,identity,variable.getUpperBound(),seen,snapshots);return;}
-        if(mirror instanceof IntersectionType intersection){for(var bound:intersection.getBounds())hierarchySnapshots(task,identity,bound,seen,snapshots);return;}
+    private static void hierarchySnapshots(JavacTask task,SymbolIdentity identity,TypeMirror mirror,Set<String> seen,
+                                           Map<String,SemanticSnapshot> snapshots,java.util.function.Predicate<String> residentUnitCurrent,
+                                           int[] reused)throws Exception{
+        if(mirror instanceof TypeVariable variable){hierarchySnapshots(task,identity,variable.getUpperBound(),seen,snapshots,residentUnitCurrent,reused);return;}
+        if(mirror instanceof IntersectionType intersection){for(var bound:intersection.getBounds())hierarchySnapshots(task,identity,bound,seen,snapshots,residentUnitCurrent,reused);return;}
         if(!(mirror instanceof DeclaredType declared)||!(declared.asElement() instanceof TypeElement type))return;
         String id;try{id=identity.scip(type);}catch(IllegalArgumentException unresolved){return;}
         if(!seen.add(id))return;
-        var snapshot=snapshotForType(task,identity,type);snapshots.putIfAbsent(snapshot.unit(),snapshot);
-        for(var parent:task.getTypes().directSupertypes(declared))hierarchySnapshots(task,identity,parent,seen,snapshots);
+        String unit=unitForType(identity,type,id);
+        if(unit!=null&&residentUnitCurrent.test(unit))reused[0]++;
+        else{
+            var snapshot=snapshotForType(task,identity,type);snapshots.putIfAbsent(snapshot.unit(),snapshot);
+        }
+        for(var parent:task.getTypes().directSupertypes(declared))hierarchySnapshots(task,identity,parent,seen,snapshots,residentUnitCurrent,reused);
+    }
+
+    private static String unitForType(SymbolIdentity identity,TypeElement type,String id){
+        var path=identity.path(type);
+        if(path!=null&&path.getCompilationUnit()!=null){
+            var uri=path.getCompilationUnit().getSourceFile().toUri();
+            if("file".equals(uri.getScheme())&&uri.getPath()!=null&&uri.getPath().endsWith(".java"))
+                return "source:"+sourcePath(path.getCompilationUnit());
+        }
+        return id==null?null:"type:"+id;
     }
 
     public static SemanticSnapshot snapshotForType(JavacTask task,SymbolIdentity identity,TypeElement type)throws Exception{

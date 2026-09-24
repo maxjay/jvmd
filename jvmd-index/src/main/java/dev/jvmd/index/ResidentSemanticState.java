@@ -151,6 +151,10 @@ public final class ResidentSemanticState {
 
     public synchronized SemanticFact symbol(String id){return symbols.get(id);}
     public synchronized SemanticUnitState unit(String unit){return units.get(unit);}
+    public synchronized boolean unitCurrent(String unit,String contentIdentity){
+        var state=units.get(unit);if(state==null||staleUnits.containsKey(unit))return false;
+        return contentIdentity==null||Objects.equals(contentIdentity,state.contentIdentity());
+    }
     public synchronized SemanticFact unitType(String unit,String fqn){
         var state=units.get(unit);if(state==null)return null;
         String id=state.facts().findId(candidate->{

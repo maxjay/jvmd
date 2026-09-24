@@ -78,7 +78,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private final Dependencies dependencies=new Dependencies();
     private final LinkedHashMap<String,SourceText> sourceTexts=new LinkedHashMap<>(16,.75f,true);
     private long cacheHits,bindingComputations,diagnosticFilesAnalysed,diagnosticFilesReused,indexWrites,indexWriteNanos,apiFingerprintChanges,apiFingerprintUnchanged;
-    private long completionRequests,residentDescriptionLoads,residentDescriptionCacheHits;
+    private long completionRequests,residentDescriptionLoads,residentDescriptionCacheHits,residentHierarchyUnitReuses,residentHierarchyUnitBuilds;
     private Context context;
     private IndexService index;
     private LiveSourceState liveSourceState;
@@ -482,6 +482,20 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 modules.get(context.generation()).completionContextIdentity,file.toString(),start,patchedHash,inputs.environment().value(),namespace);
     }
 
+    private boolean residentSemanticUnitCurrent(String unit){
+        if(unit==null||unit.isBlank())return false;
+        if(unit.startsWith("source:")){
+            if(liveSourceState==null)return false;
+            try{
+                Path file=Path.of(unit.substring("source:".length())).toAbsolutePath().normalize();
+                if(!liveSourceState.accepts(file))return false;
+                String current=liveSourceState.contentHash(file);
+                return current!=null&&semanticState().unitCurrent(unit,current);
+            }catch(Exception ignored){return false;}
+        }
+        return semanticState().unitCurrent(unit,null);
+    }
+
     private String queryHierarchyApi(DocumentSemanticSnapshot.QueryContext query){
         var identities=new ArrayList<String>();var queue=new ArrayDeque<SemanticType>();addDeclaredTypes(queue,query.receiverType());var seen=new HashSet<String>();
         while(!queue.isEmpty()){
@@ -538,7 +552,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             if(tier!=2)return null;
             return SemanticFacts.qualifiedCompletion(task,units,
                     new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),
-                    EditorQueries.MARKER,start);
+                    EditorQueries.MARKER,start,this::residentSemanticUnitCurrent);
         });
         var result=attributed.result();
         if(!attributed.warnings().isEmpty()){
@@ -553,6 +567,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             return qualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,inputSnapshot(),true,true,supersededRetries);
         }
         if(result==null)return null;
+        residentHierarchyUnitReuses+=result.hierarchyUnitsReused();residentHierarchyUnitBuilds+=result.semanticSnapshots().size();
         for(var snapshot:result.semanticSnapshots())admitDetachedSemantic(snapshot);
         var query=registerAccessibility(caches,result);
         var binaries=completionNameResolutionBinaries(text,result.nameResolutionNames());
@@ -600,7 +615,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             if(tier!=2)return null;
             return SemanticFacts.unqualifiedCompletion(task,units,
                     new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),
-                    EditorQueries.MARKER,start);
+                    EditorQueries.MARKER,start,this::residentSemanticUnitCurrent);
         });
         var result=attributed.result();
         if(!attributed.warnings().isEmpty()){
@@ -615,6 +630,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             return unqualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,inputSnapshot(),true,true,supersededRetries);
         }
         if(result==null)return null;
+        residentHierarchyUnitReuses+=result.hierarchyUnitsReused();residentHierarchyUnitBuilds+=result.semanticSnapshots().size();
         for(var snapshot:result.semanticSnapshots())admitDetachedSemantic(snapshot);
         var query=registerAccessibility(caches,result);
         var dependencyApis=documentDependencyApis(query,path);if(dependencyApis==null)return null;
@@ -1036,6 +1052,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(liveSourceState!=null)result.put("live_source_state",liveSourceState.status());
         if(context!=null)result.put("resident_semantic_state",semanticState().status());
         result.put("completion_requests",completionRequests);result.put("resident_description_loads",residentDescriptionLoads);result.put("resident_description_cache_hits",residentDescriptionCacheHits);
+        result.put("resident_hierarchy_unit_reuses",residentHierarchyUnitReuses);result.put("resident_hierarchy_unit_builds",residentHierarchyUnitBuilds);
         if(context!=null){
             result.put("resident_description_cache_entries",modules.get(context.generation()).descriptions.size());
             result.put("resident_accessibility_cache",modules.get(context.generation()).accessibility.status());

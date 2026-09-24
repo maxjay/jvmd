@@ -185,7 +185,11 @@ class ResidentCompletionCorrectnessTest {
         try(var analyzer=new Analyzer()){
             analyzer.configure(context(),null,256L*1024*1024);
             assertThat(complete(analyzer,use,source,"api.member0",10)).hasSize(10);
+            long reusedBefore=((Number)analyzer.status().get("resident_hierarchy_unit_reuses")).longValue();
+            long buildsBefore=((Number)analyzer.status().get("resident_hierarchy_unit_builds")).longValue();
             assertThat(complete(analyzer,use,source,"api.member9",10)).hasSize(10);
+            assertThat(((Number)analyzer.status().get("resident_hierarchy_unit_reuses")).longValue()).isGreaterThan(reusedBefore);
+            assertThat(((Number)analyzer.status().get("resident_hierarchy_unit_builds")).longValue()).isEqualTo(buildsBefore);
             @SuppressWarnings("unchecked") var access=(Map<String,Object>)analyzer.status().get("resident_accessibility_cache");
             assertThat(((Number)access.get("entries")).longValue()).isEqualTo(1L);
             assertThat(((Number)access.get("member_ids")).longValue()).isGreaterThanOrEqualTo(1000L);

@@ -194,6 +194,28 @@ class ResidentSemanticStateTest {
         assertThat(state.hierarchyApi("Sub#")).isNotEqualTo(first);
     }
 
+    @Test void hierarchyApiComposesEachAffectedOwnerOnceAcrossDeepInheritance(){
+        var facts=new ArrayList<SemanticFact>();
+        facts.add(type("D0#","D0","api-D0"));
+        for(int i=1;i<=50;i++)facts.add(type("D"+i+"#","D"+i,"api-D"+i,
+                List.of(new SemanticType.Declared("D"+(i-1)+"#","p.D"+(i-1),List.of()))));
+        var member=member("D0#m().","D0#","m","api-m","doc-m");facts.add(member);
+        var state=new ResidentSemanticState();state.admit(snapshot("before",facts.toArray(SemanticFact[]::new)));
+        String deepest=state.hierarchyApi("D50#");
+        long compositions=((Number)state.status().get("semantic_hierarchy_compositions")).longValue();
+        long parentReads=((Number)state.status().get("semantic_hierarchy_parent_reads")).longValue();
+
+        var changed=new ArrayList<>(facts);
+        changed.set(changed.size()-1,member("D0#m().","D0#","m","api-m-changed","doc-m"));
+        state.admit(snapshot("after",changed.toArray(SemanticFact[]::new)));
+
+        assertThat(state.hierarchyApi("D50#")).isNotEqualTo(deepest);
+        long composed=((Number)state.status().get("semantic_hierarchy_compositions")).longValue()-compositions;
+        long parents=((Number)state.status().get("semantic_hierarchy_parent_reads")).longValue()-parentReads;
+        assertThat(composed).isEqualTo(51L);
+        assertThat(parents).isEqualTo(50L);
+    }
+
     @Test void sourceStalenessInvalidatesHierarchyIdentityUntilBodyOnlyReadmission(){
         var state=new ResidentSemanticState();
         var owner=type("A#","A","api-A");

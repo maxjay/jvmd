@@ -55,6 +55,7 @@ public final class ResidentSemanticState {
     private final Map<String,String> staleUnits=new HashMap<>();
     private String freshnessMerkle=EMPTY;
     private long epoch,rangeEntriesRead,factMutations,treeNodesCreated,bulkBuilds,unitDiffBucketsRead,unitDiffEntriesRead;
+    private long hierarchyCompositions,hierarchyParentReads;
 
     public synchronized SemanticDelta diff(SemanticSnapshot next){
         var delta=SemanticDelta.between(units.get(next.unit()),next,symbols::get);
@@ -230,7 +231,8 @@ public final class ResidentSemanticState {
                 Map.entry("semantic_fact_mutations",factMutations),Map.entry("semantic_tree_range_entries_read",rangeEntriesRead),
                 Map.entry("semantic_tree_nodes_created",treeNodesCreated),Map.entry("semantic_bulk_builds",bulkBuilds),
                 Map.entry("semantic_descriptions",0),Map.entry("semantic_unit_fact_ids",units.values().stream().mapToLong(unit->unit.facts().size()).sum()),
-                Map.entry("semantic_unit_diff_buckets_read",unitDiffBucketsRead),Map.entry("semantic_unit_diff_entries_read",unitDiffEntriesRead));
+                Map.entry("semantic_unit_diff_buckets_read",unitDiffBucketsRead),Map.entry("semantic_unit_diff_entries_read",unitDiffEntriesRead),
+                Map.entry("semantic_hierarchy_compositions",hierarchyCompositions),Map.entry("semantic_hierarchy_parent_reads",hierarchyParentReads));
     }
 
     private SemanticUnitState nextUnitState(SemanticDelta delta){
@@ -288,27 +290,38 @@ public final class ResidentSemanticState {
             children.add(fact.id());directSubs.put(parent,Set.copyOf(children));
         }
     }
+    /**
+     * Compose hierarchy validity from direct DAG dependencies. A batch memoizes each affected
+     * owner once, so a base API edit propagates through descendants without repeatedly walking
+     * every transitive ancestor closure.
+     */
     private void recomputeHierarchyApis(Collection<String> affected){
-        for(String typeId:affected){
-            var type=symbols.get(typeId);
-            if(type==null||!type.typeDeclaration()){hierarchyApis.remove(typeId);continue;}
-            var reachable=new LinkedHashSet<String>();var queue=new ArrayDeque<String>();queue.add(typeId);
-            BigInteger sum=BigInteger.ZERO;long count=0;
-            while(!queue.isEmpty()){
-                String current=queue.removeFirst();if(!reachable.add(current))continue;
-                var declaration=symbols.get(current);
-                if(declaration!=null&&declaration.typeDeclaration()){
-                    sum=sum.add(point("hierarchy-type-api",declaration.apiIdentity().isBlank()?declaration.structuralSignature():declaration.apiIdentity())).mod(FIELD);count++;
-                }
-                var members=memberAggregates.get(current);
-                if(members!=null){sum=sum.add(members.api().sum()).mod(FIELD);count+=members.api().cardinality();}
-                for(String parent:directSupers.getOrDefault(current,Set.of())){
-                    sum=sum.add(point("hierarchy-edge",current+"\0"+parent)).mod(FIELD);count++;queue.addLast(parent);
-                }
-            }
-            String material="hierarchy-api-v1\0"+count+"\0"+String.format("%064x",sum);
-            hierarchyApis.put(typeId,Hashing.sha256(material.getBytes(StandardCharsets.UTF_8)));
+        var affectedSet=new LinkedHashSet<String>(affected);
+        var memo=new HashMap<String,String>();var visiting=new HashSet<String>();
+        for(String typeId:affectedSet)composeHierarchyApi(typeId,affectedSet,memo,visiting);
+    }
+
+    private String composeHierarchyApi(String typeId,Set<String> affected,Map<String,String> memo,Set<String> visiting){
+        String cached=memo.get(typeId);if(cached!=null)return cached;
+        if(!affected.contains(typeId)){
+            cached=hierarchyApis.get(typeId);if(cached!=null)return cached;
         }
+        var type=symbols.get(typeId);
+        if(type==null||!type.typeDeclaration()){hierarchyApis.remove(typeId);memo.put(typeId,EMPTY);return EMPTY;}
+        if(!visiting.add(typeId))return EMPTY;
+
+        String typeApi=type.apiIdentity().isBlank()?type.structuralSignature():type.apiIdentity();
+        var members=memberAggregates.getOrDefault(typeId,Aggregate.ZERO);
+        var parentParts=new ArrayList<Object>();
+        var parents=new ArrayList<>(directSupers.getOrDefault(typeId,Set.of()));parents.sort(String::compareTo);
+        for(String parent:parents){
+            hierarchyParentReads++;
+            parentParts.add(new Object[]{parent,composeHierarchyApi(parent,affected,memo,visiting)});
+        }
+        visiting.remove(typeId);
+        String value=CanonicalDigestWriter.digest("hierarchy-api-v2",typeId,typeApi,
+                members.apiIdentity(),members.api().cardinality(),parentParts).hex();
+        hierarchyApis.put(typeId,value);memo.put(typeId,value);hierarchyCompositions++;return value;
     }
 
     private void addFact(SemanticFact fact){

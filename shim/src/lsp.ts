@@ -78,7 +78,7 @@ export class LspBridge {
     }
     if(message.id!==undefined)this.activeRequests.add(message.id);
     const kind=this.classify(method,message.id!==undefined);
-    if(kind!=="lifecycle"&&this.shutdownRequested)return this.track(this.safe(message,async()=>{throw rpcError(-32600,"Server has shut down");}));
+    if(this.shutdownRequested&&(kind!=="lifecycle"||method==="initialize"))return this.track(this.safe(message,async()=>{throw rpcError(-32600,"Server has shut down");}));
     if(kind==="lifecycle")return this.lifecycleMessage(message);
     if(kind==="mutation")return this.enqueueMutation(message,typeof uri==="string"?uri:undefined,mutationGeneration);
     if(kind==="interactive")return this.interactive(message,typeof uri==="string"?uri:undefined,completionGeneration);
@@ -126,7 +126,6 @@ export class LspBridge {
   private async initialize(message:Message){
     const id=message.id,params=message.params||{};
     if(this.initialized)throw rpcError(-32600,"LSP is already initialized");
-    if(this.shutdownRequested)throw rpcError(-32600,"Server has shut down");
     if(params.capabilities?.general?.positionEncodings&&!params.capabilities.general.positionEncodings.includes("utf-16"))throw rpcError(-32602,"jvmd requires the LSP UTF-16 position encoding");
     this.capabilities=params.capabilities||{};if(params.rootUri)this.root=fileURLToPath(params.rootUri);else if(params.rootPath)this.root=path.resolve(params.rootPath);
     const client=await this.getClient();const openParams:any={root:this.root};if(params.workspaceFolders?.length)openParams.manifest={roots:params.workspaceFolders.map((folder:any)=>fileURLToPath(folder.uri))};
@@ -145,7 +144,7 @@ export class LspBridge {
     return this.track(work);
   }
   private async mutation(message:Message,uri?:string,generation?:number){
-    await this.ready();if(this.shutdownRequested)throw rpcError(-32600,"Server has shut down");
+    await this.ready();
     const method=message.method||"",params=message.params||{},document=params.textDocument||{};
     if(typeof uri!=="string")throw rpcError(-32602,"Document URI is required");
     const common={session:this.session,path:fileURLToPath(uri)},client=await this.getClient();
@@ -166,7 +165,7 @@ export class LspBridge {
     return this.track(this.safe(message,async()=>{
       const id=message.id,method=message.method||"",params=message.params||{};
       if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
-      await this.ready();if(this.shutdownRequested)throw rpcError(-32600,"Server has shut down");
+      await this.ready();
       if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
       if(barrier)await barrier;
       if(this.stale(id,uri,completionGeneration)){this.cancel(id);return;}
@@ -178,7 +177,7 @@ export class LspBridge {
     }));
   }
   private async notification(message:Message){
-    await this.ready();if(this.shutdownRequested)throw rpcError(-32600,"Server has shut down");
+    await this.ready();
     const method=message.method||"";if(method==="initialized"||method==="$/setTrace")return;
   }
   private stale(id:Message["id"],uri?:string,completionGeneration?:number){

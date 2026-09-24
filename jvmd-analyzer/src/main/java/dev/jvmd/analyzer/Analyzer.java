@@ -834,6 +834,30 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         return new Envelope(outcome.tier(),"live",to<values.size(),to<values.size()?Integer.toString(to):null,warnings(outcome.warnings()),Map.of("data",data,"resultId",Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))));
     }
+    public Map<String,Object> residentDescription(String ref)throws Exception{
+        var fact=semanticState().symbol(ref);if(fact==null)return null;
+        if(fact.sourceFile()!=null&&liveSourceState!=null)try{
+            Path source=Path.of(fact.sourceFile()).toAbsolutePath().normalize();
+            if(liveSourceState.accepts(source)){ensureSourceSemanticCurrent(source);fact=semanticState().symbol(ref);if(fact==null)return null;}
+        }catch(Exception ignored){}
+        var description=semanticState().describe(ref);var value=new LinkedHashMap<String,Object>();
+        value.put("scip",fact.id());value.put("name",fact.name());value.put("name_path",fact.namePath());value.put("kind",fact.kind());
+        value.put("signature",description==null?fact.structuralSignature():description.detailedSignature());value.put("resolved",true);
+        value.put("modifiers",fact.modifiers().stream().sorted().toList());value.put("fqn",fact.fqn());
+        if(fact.sourceFile()!=null){value.put("file",fact.sourceFile());value.put("source_file",fact.sourceFile());}
+        var owner=fact.ownerId()==null?null:semanticState().symbol(fact.ownerId());
+        if(owner!=null)value.put("declaring",owner.fqn()==null?owner.name():owner.fqn());
+        if(description!=null){
+            String doc=DocMarkdown.render(description.documentation());if(doc!=null)value.put("doc",doc);
+            var location=description.declaration();
+            if(location!=null){
+                value.put("source_start",location.start());value.put("source_end",location.end());
+                value.put("start",location.start());value.put("end",location.end());
+            }
+        }
+        return Collections.unmodifiableMap(value);
+    }
+
     public List<Map<String,Object>> known(String ref){
         var found=new LinkedHashMap<String,Map<String,Object>>();
         for(var cached:focused.values())if(cached.result().result()!=null)for(var symbol:cached.result().result().symbols().values())if(matches(symbol,ref,false))found.put(symbol.get("scip").toString(),symbol);

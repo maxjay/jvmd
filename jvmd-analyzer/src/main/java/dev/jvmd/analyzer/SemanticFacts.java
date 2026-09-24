@@ -14,8 +14,8 @@ import javax.lang.model.type.*;
 public final class SemanticFacts {
     private SemanticFacts(){}
 
-    public record CompletionContext(DocumentSemanticSnapshot.QueryContext query,List<SemanticSnapshot> semanticSnapshots) {
-        public CompletionContext { Objects.requireNonNull(query);semanticSnapshots=List.copyOf(semanticSnapshots); }
+    public record CompletionContext(DocumentSemanticSnapshot.QueryContext query,List<SemanticSnapshot> semanticSnapshots,Set<String> nameResolutionNames) {
+        public CompletionContext { Objects.requireNonNull(query);semanticSnapshots=List.copyOf(semanticSnapshots);nameResolutionNames=Set.copyOf(nameResolutionNames); }
     }
 
     /** Detach one qualified-completion context and the canonical declaration units it can query. */
@@ -28,7 +28,7 @@ public final class SemanticFacts {
             }
         }.scan(unit,null);
         if(found[0]==null||!(found[0].getLeaf() instanceof MemberSelectTree selected))return null;
-        var trees=Trees.instance(task);var qualifier=new TreePath(found[0],selected.getExpression());
+        var trees=Trees.instance(task);var qualifier=new TreePath(found[0],selected.getExpression());var selectedElement=trees.getElement(qualifier);
         TypeMirror receiver=trees.getTypeMirror(qualifier);
         if(receiver instanceof TypeVariable variable)receiver=variable.getUpperBound();
         if(receiver==null||receiver.getKind()==TypeKind.ERROR)return null;
@@ -52,9 +52,23 @@ public final class SemanticFacts {
 
         var snapshots=new LinkedHashMap<String,SemanticSnapshot>();
         hierarchySnapshots(task,identity,receiver,new HashSet<>(),snapshots);
+        var names=new LinkedHashSet<String>();String sourceType=sourceSimpleType(trees,selectedElement);if(sourceType!=null)names.add(sourceType);
         var query=new DocumentSemanticSnapshot.QueryContext(selectorOffset,type(identity,receiver),receiverId,
-                trees.getElement(qualifier) instanceof TypeElement,packageName,enclosingTypeId,staticContext);
-        return new CompletionContext(query,List.copyOf(snapshots.values()));
+                selectedElement instanceof TypeElement,packageName,enclosingTypeId,staticContext);
+        return new CompletionContext(query,List.copyOf(snapshots.values()),names);
+    }
+
+    private static String sourceSimpleType(Trees trees,Element element){
+        if(!(element instanceof VariableElement))return null;
+        var declaration=trees.getPath(element);if(declaration==null||!(declaration.getLeaf() instanceof VariableTree variable))return null;
+        Tree type=variable.getType();
+        while(true){
+            if(type instanceof AnnotatedTypeTree annotated){type=annotated.getUnderlyingType();continue;}
+            if(type instanceof ParameterizedTypeTree parameterized){type=parameterized.getType();continue;}
+            if(type instanceof ArrayTypeTree array){type=array.getType();continue;}
+            break;
+        }
+        return type instanceof IdentifierTree identifier?identifier.getName().toString():null;
     }
 
     private static void hierarchySnapshots(JavacTask task,SymbolIdentity identity,TypeMirror mirror,Set<String> seen,Map<String,SemanticSnapshot> snapshots)throws Exception{

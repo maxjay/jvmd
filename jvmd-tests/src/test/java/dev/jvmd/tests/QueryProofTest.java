@@ -26,7 +26,7 @@ class QueryProofTest {
 
         assertThat(first).isEqualTo(second);
         assertThat(first.identity()).isEqualTo(second.identity());
-        assertThat(first.dependencies()).containsExactly(exact,hierarchy,range);
+        assertThat(first.dependencies()).containsExactly(exact,range,hierarchy);
         assertThatThrownBy(()->first.dependencies().add(exact)).isInstanceOf(UnsupportedOperationException.class);
     }
 

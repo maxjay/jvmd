@@ -99,13 +99,9 @@ for(const prefix of ["","g","get","getM"]){
   states.push({prefix,oracle_matches_jdtls:oracle,count:first.length,names:first.map((x:any)=>x.label),samples});
 }
 
-const firstResponse:any=await connection.sendRequest("textDocument/completion",{
-  textDocument:{uri:caller.uri},
-  position:positionFor(insertBeforeLastBrace(caller.text,"\n    private void benchmarkCompletion(MavenProject project) {\n        project./*CUR*/\n    }\n"),"/*CUR*/"),
-  context:{triggerKind:2,triggerCharacter:"."},
-}).catch(()=>null);
-const firstItem=Array.isArray(firstResponse)?firstResponse[0]:firstResponse?.items?.[0];
-const resolved=firstItem?await connection.sendRequest("completionItem/resolve",firstItem).catch((e:any)=>({error:String(e)})):null;
+const resolved=firstCompletionItem
+  ?await connection.sendRequest("completionItem/resolve",firstCompletionItem).catch((e:any)=>({error:String(e)}))
+  :null;
 
 const receiverEdit=insertBeforeLastBrace(receiver.text,"\n    public void issue36AddedMethod() {}\n");
 connection.sendNotification("textDocument/didChange",{textDocument:{uri:receiver.uri,version:2},contentChanges:[{text:receiverEdit}]});

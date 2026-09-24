@@ -434,6 +434,7 @@ def prepare(client, fixture, server, timeout, report):
         "milestones_ns": milestones,
         "milestones_ms": offsets,
         "initialize_ms": (milestones["initialize_received"] - milestones["initialize_sent"]) / 1e6,
+        "process_to_initialize_response_ms": _offset_ms(client, milestones["initialize_received"]),
         "process_to_workspace_ready_ms": _offset_ms(client, milestones["workspace_ready"]),
         "initialize_to_workspace_ready_ms": (
             milestones["workspace_ready"] - milestones["initialize_received"]

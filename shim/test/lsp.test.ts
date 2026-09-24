@@ -240,3 +240,23 @@ test("LSP shutdown suppresses an in-flight stale diagnostic publication",async()
   assert.equal(sent.filter(x=>x.method==="textDocument/publishDiagnostics").length,0);
   assert.equal(sent.find(x=>x.id===2).result,null);await bridge.close();
 });
+
+test("LSP defers same-document diagnostics while interactive work is active",async()=>{
+  const sent:any[]=[];let release:(value:any)=>void=()=>{},started:(value?:unknown)=>void=()=>{},diagnosticCalls=0;
+  const completionStarted=new Promise(resolve=>started=resolve);
+  const client:any={call:async(method:string,params:any)=>{
+    if(method==="session.open")return {result:{session:"s1"}};
+    if(method==="lsp.request"&&params.method==="initialize")return envelope({capabilities:{}});
+    if(method==="lsp.request"&&params.method==="textDocument/completion"){started();return new Promise(resolve=>release=resolve);}
+    if(method==="lsp.diagnostics"){diagnosticCalls++;return envelope({uri:params.uri,version:1,diagnostics:[]});}
+    return envelope({});
+  }};
+  const bridge=new LspBridge(async()=>client,"/repo",message=>sent.push(message));
+  await bridge.handle({jsonrpc:"2.0",id:1,method:"initialize",params:{}});
+  await bridge.handle({jsonrpc:"2.0",method:"textDocument/didOpen",params:{textDocument:{uri:"file:///repo/A.java",languageId:"java",version:1,text:"class A {}"}}});
+  const completion=bridge.handle({jsonrpc:"2.0",id:2,method:"textDocument/completion",params:{textDocument:{uri:"file:///repo/A.java"},position:{line:0,character:5}}});
+  await completionStarted;await delay(260);assert.equal(diagnosticCalls,0);
+  release(envelope({isIncomplete:false,items:[{label:"done"}]}));await completion;
+  await delay(260);assert.equal(diagnosticCalls,1);
+  await bridge.close();
+});

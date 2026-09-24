@@ -723,46 +723,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return true;
     }
 
-    private String semanticNestRoot(String typeId){
-        String current=typeId,last=typeId;var seen=new HashSet<String>();
-        while(current!=null&&seen.add(current)){
-            var fact=semanticState().symbol(current);if(fact==null||!fact.typeDeclaration())break;
-            last=current;
-            String owner=fact.ownerId();
-            if(owner==null||semanticState().symbol(owner)==null||!semanticState().symbol(owner).typeDeclaration())break;
-            current=owner;
-        }
-        return last;
-    }
-
-    private boolean semanticSubtype(String subtype,String supertype){
-        if(subtype==null||supertype==null)return false;if(subtype.equals(supertype))return true;
-        var queue=new ArrayDeque<String>();var seen=new HashSet<String>();queue.add(subtype);
-        while(!queue.isEmpty()){
-            String id=queue.removeFirst();if(!seen.add(id))continue;
-            var fact=semanticState().symbol(id);if(fact==null)continue;
-            for(var parent:fact.directSupertypes()){
-                var declared=parent instanceof SemanticType.Declared value?value:null;
-                if(declared==null)continue;
-                if(declared.symbolId().equals(supertype))return true;queue.addLast(declared.symbolId());
-            }
-        }
-        return false;
-    }
-
-    private boolean residentAccessible(SemanticFact member,DocumentSemanticSnapshot.QueryContext query){
-        var modifiers=member.modifiers();String callerPackage=query.packageName(),memberPackage=member.packageName();
-        if(modifiers.contains("public"))return true;
-        if(modifiers.contains("private")){
-            if(query.enclosingTypeId()==null||member.ownerId()==null)return false;
-            return Objects.equals(semanticNestRoot(query.enclosingTypeId()),semanticNestRoot(member.ownerId()));
-        }
-        if(Objects.equals(callerPackage,memberPackage))return true;
-        if(!modifiers.contains("protected")||query.enclosingTypeId()==null||member.ownerId()==null)return false;
-        if(!semanticSubtype(query.enclosingTypeId(),member.ownerId()))return false;
-        return modifiers.contains("static")||query.receiverSymbolId()==null||semanticSubtype(query.receiverSymbolId(),query.enclosingTypeId());
-    }
-
     private Map<String,Object> residentCompletionRow(SemanticFact fact,CompletionCandidate candidate){
         return residentCompletionRow(candidate,fact.namePath());
     }
@@ -802,7 +762,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 if(member.kind().equals("ctor")||member.kind().equals("package")||member.kind().equals("module"))continue;
                 if(!seenMembers.add(inheritedMemberShape(member)))continue;
                 if(staticOnly&&!member.typeDeclaration()&&!member.modifiers().contains("static"))continue;
-                if(!residentAccessible(member,query))continue;
+                if(!query.accessibleMemberIds().contains(member.id()))continue;
                 rows.putIfAbsent(member.id(),residentCompletionRow(member,member.candidate(substitutions)));
             }
             for(var parent:owner.directSupertypes())addDeclaredTypes(queue,parent.substitute(substitutions));

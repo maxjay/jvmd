@@ -40,14 +40,33 @@ type RunningServer = {
   metadata:Record<string,unknown>;
 };
 type DiagnosticRecord = { params:any; sequence:number; receivedNs:number };
+export type DiagnosticVersionMode="unknown"|"versioned"|"versionless";
+export type DiagnosticAdmissionDecision={
+  kind:"ignore"|"verified"|"unavailable";
+  mode:DiagnosticVersionMode;
+};
+type DiagnosticAdmissionResult={
+  status:"verified"|"unavailable";
+  params?:any;
+  reason?:string;
+};
 type DiagnosticWaiter = {
   uri:string;
   version:number;
   afterSequence:number;
-  resolve:(params:any)=>void;
+  resolve:(result:DiagnosticAdmissionResult)=>void;
   reject:(error:Error)=>void;
   timer:ReturnType<typeof setTimeout>;
 };
+
+export function diagnosticAdmissionDecision(
+  mode:DiagnosticVersionMode,params:any,uri:string,version:number,
+):DiagnosticAdmissionDecision{
+  if(params?.uri!==uri)return {kind:"ignore",mode};
+  if(params?.version===version)return {kind:"verified",mode:"versioned"};
+  if(params?.version===undefined&&mode==="unknown")return {kind:"unavailable",mode:"versionless"};
+  return {kind:"ignore",mode};
+}
 
 function nowNs(){ return Number(process.hrtime.bigint()); }
 
@@ -60,6 +79,7 @@ export abstract class LspScenarioHarness {
   private static diagnostics:DiagnosticRecord[]=[];
   private static diagnosticWaiters:DiagnosticWaiter[]=[];
   private static diagnosticSequence=0;
+  private static diagnosticVersionMode:DiagnosticVersionMode="unknown";
   private static milestones:Record<string,number>={};
   private static phaseMemory:Record<string,Memory>={};
   private static documentAdmissionStarted=false;
@@ -75,7 +95,7 @@ export abstract class LspScenarioHarness {
     this.serverId=(process.env.SERVER??"jvmd")==="jdtls"?"jdtls":"jvmd";
     this.running=await startServer(this.fixtureRoot);
     this.milestones={...this.running.milestones};
-    this.diagnostics=[];this.diagnosticWaiters=[];this.diagnosticSequence=0;this.openDocuments.clear();
+    this.diagnostics=[];this.diagnosticWaiters=[];this.diagnosticSequence=0;this.diagnosticVersionMode="unknown";this.openDocuments.clear();
     this.phaseMemory={};this.documentAdmissionStarted=false;
 
     let serviceReadyResolve:()=>void=()=>{};
@@ -90,15 +110,17 @@ export abstract class LspScenarioHarness {
       const record={params,sequence:++this.diagnosticSequence,receivedNs:nowNs()};
       this.diagnostics.push(record);
       for(const waiter of [...this.diagnosticWaiters]){
-        if(
-          record.sequence>waiter.afterSequence
-          &&params?.uri===waiter.uri
-          &&(params?.version===undefined||params.version===waiter.version)
-        ){
-          clearTimeout(waiter.timer);
-          this.diagnosticWaiters.splice(this.diagnosticWaiters.indexOf(waiter),1);
-          waiter.resolve(params);
-        }
+        if(record.sequence<=waiter.afterSequence)continue;
+        const decision=diagnosticAdmissionDecision(this.diagnosticVersionMode,params,waiter.uri,waiter.version);
+        if(decision.kind==="ignore")continue;
+        this.diagnosticVersionMode=decision.mode;
+        clearTimeout(waiter.timer);
+        this.diagnosticWaiters.splice(this.diagnosticWaiters.indexOf(waiter),1);
+        if(decision.kind==="verified")waiter.resolve({status:"verified",params});
+        else waiter.resolve({
+          status:"unavailable",
+          reason:"publishDiagnostics omitted the document version; current-version admission cannot be verified",
+        });
       }
     });
     this.running.connection.onRequest("workspace/configuration",(params:any)=>(params?.items??[]).map(()=>({})));
@@ -192,8 +214,20 @@ export abstract class LspScenarioHarness {
   }
 
   protected async endDocumentAdmission(){
-    LspScenarioHarness.milestones.documents_admitted=nowNs();
-    LspScenarioHarness.phaseMemory.documents_admitted=memory(LspScenarioHarness.running);
+    const finished=nowNs();
+    LspScenarioHarness.milestones.document_setup_finished=finished;
+    const snapshot=memory(LspScenarioHarness.running);
+    LspScenarioHarness.phaseMemory.document_setup_finished=snapshot;
+    if(LspScenarioHarness.diagnosticVersionMode==="versioned"){
+      LspScenarioHarness.milestones.documents_admitted=finished;
+      LspScenarioHarness.phaseMemory.documents_admitted=snapshot;
+    }
+  }
+
+  protected documentAdmissionBoundary(){
+    return LspScenarioHarness.diagnosticVersionMode==="versioned"
+      ?"verified by exact-version publishDiagnostics"
+      :"unavailable: versionless publishDiagnostics cannot prove the current document version";
   }
 
   protected async open(relativePath:string){
@@ -273,14 +307,23 @@ export abstract class LspScenarioHarness {
     return {firstUse,...rest};
   }
 
-  private async waitForDiagnostics(uri:string,version:number,afterSequence:number){
-    const existing=LspScenarioHarness.diagnostics.find(row=>
-      row.sequence>afterSequence
-      &&row.params?.uri===uri
-      &&(row.params?.version===undefined||row.params.version===version)
-    );
-    if(existing)return existing.params;
-    return new Promise<any>((resolve,reject)=>{
+  private async waitForDiagnostics(uri:string,version:number,afterSequence:number):Promise<DiagnosticAdmissionResult>{
+    if(LspScenarioHarness.diagnosticVersionMode==="versionless")return {
+      status:"unavailable",
+      reason:"server diagnostics are versionless; current-version admission cannot be verified",
+    };
+    for(const row of LspScenarioHarness.diagnostics){
+      if(row.sequence<=afterSequence)continue;
+      const decision=diagnosticAdmissionDecision(LspScenarioHarness.diagnosticVersionMode,row.params,uri,version);
+      if(decision.kind==="ignore")continue;
+      LspScenarioHarness.diagnosticVersionMode=decision.mode;
+      if(decision.kind==="verified")return {status:"verified",params:row.params};
+      return {
+        status:"unavailable",
+        reason:"publishDiagnostics omitted the document version; current-version admission cannot be verified",
+      };
+    }
+    return new Promise<DiagnosticAdmissionResult>((resolve,reject)=>{
       const waiter:DiagnosticWaiter={
         uri,version,afterSequence,resolve,reject,
         timer:setTimeout(()=>{
@@ -331,10 +374,15 @@ export abstract class LspScenarioHarness {
   private lifecycleReport(){
     const origin=LspScenarioHarness.milestones.process_spawn;
     const m=LspScenarioHarness.milestones;
+    const documentBoundary=m.documents_admitted??m.document_setup_finished;
     assert(
-      orderedMilestones(m,["process_spawn","initialize_received","documents_admitted","first_use_started","first_use_finished"]),
+      orderedMilestones(
+        {...m,document_boundary:documentBoundary},
+        ["process_spawn","initialize_received","document_boundary","first_use_started","first_use_finished"],
+      ),
       "benchmark lifecycle milestones are out of order",
     );
+    const admissionVerified=m.documents_admitted!==undefined;
     return {
       milestonesNs:m,
       milestonesMs:Object.fromEntries(Object.entries(m).map(([name,value])=>[name,elapsedMs(origin,value)])),
@@ -342,8 +390,10 @@ export abstract class LspScenarioHarness {
       processToInitializeResponseMs:(m.initialize_received-m.process_spawn)/1e6,
       serviceReadyMs:m.service_ready===undefined?null:(m.service_ready-m.process_spawn)/1e6,
       machineIndexReadyMs:m.daemon_index_ready===undefined?null:(m.daemon_index_ready-m.process_spawn)/1e6,
-      documentsAdmittedFromProcessMs:(m.documents_admitted-m.process_spawn)/1e6,
-      documentAdmissionMs:(m.documents_admitted-m.document_admission_started)/1e6,
+      documentsAdmittedFromProcessMs:admissionVerified?(m.documents_admitted-m.process_spawn)/1e6:null,
+      documentAdmissionMs:admissionVerified?(m.documents_admitted-m.document_admission_started)/1e6:null,
+      documentSetupFinishedFromProcessMs:(documentBoundary-m.process_spawn)/1e6,
+      documentSetupMs:(documentBoundary-m.document_admission_started)/1e6,
       sessionOpen:"not directly observable through the external jvmd-lsp process; see jvmd-machine-lifecycle report for exact native RPC timing",
       workspaceResolution:"not directly timestamped by CMP-01; see jvmd-machine-lifecycle resolver evidence",
       workspaceIndexReady:"unavailable for JVMD: local module refresh is asynchronous and no all-current barrier is exposed",
@@ -354,10 +404,16 @@ export abstract class LspScenarioHarness {
         equivalence:"none claimed; these are server-native milestones at different architectural layers",
         targetQueried:false,
       },
-      documentAdmission:{
-        boundary:"publishDiagnostics observed for each current document version",
+      documentAdmission:admissionVerified?{
+        boundary:"exact-version publishDiagnostics observed for each requested document version",
         diagnosticsWaited:true,
+        versionVerification:"verified",
         mode:"settled editor admission",
+      }:{
+        boundary:"unavailable: versionless publishDiagnostics cannot prove the requested document version",
+        diagnosticsWaited:true,
+        versionVerification:"unavailable",
+        mode:"document setup completed; current-version admission not claimed",
       },
     };
   }
@@ -378,9 +434,10 @@ export abstract class LspScenarioHarness {
         machineIndex:LspScenarioHarness.serverId==="jvmd"?"empty benchmark state (machine_cold)":"n/a",
         workspace:"first open",
         localWorkspaceState:"fresh/unknown",
-        documents:"opened after server-native readiness; admission is measured separately",
+        documents:"opened after server-native readiness; admission is measured only when exact diagnostic versions make it verifiable",
         semanticTarget:"not queried before first_use",
         diagnosticsWaitedBeforeFirstUse:true,
+        diagnosticAdmissionBoundary:this.documentAdmissionBoundary(),
         warmupCount:PHASE_MODEL.defaults.warmup,
         steadySamples:PHASE_MODEL.defaults.steady_samples,
         filesystemCache:"OS cache uncontrolled and not flushed",
@@ -510,8 +567,8 @@ function writeSummary(report:any){
     "| Process → initialize response | "+report.lifecycle.processToInitializeResponseMs.toFixed(2)+" |",
     "| JDTLS ServiceReady | "+(report.lifecycle.serviceReadyMs?.toFixed(2)??"n/a")+" |",
     "| JVMD machine index ready | "+(report.lifecycle.machineIndexReadyMs?.toFixed(2)??"n/a")+" |",
-    "| Process → documents admitted | "+report.lifecycle.documentsAdmittedFromProcessMs.toFixed(2)+" |",
-    "| Document admission interval | "+report.lifecycle.documentAdmissionMs.toFixed(2)+" |",
+    "| Process → documents admitted | "+(report.lifecycle.documentsAdmittedFromProcessMs?.toFixed(2)??"unavailable")+" |",
+    "| Document admission interval | "+(report.lifecycle.documentAdmissionMs?.toFixed(2)??"unavailable")+" |",
     "| Process → first-use response (diagnostic timing) | "+(report.coldEndToEnd.diagnosticMs?.toFixed(2)??"-")+" |",
     "",
     "### Completion",
@@ -527,10 +584,12 @@ function writeSummary(report:any){
     "| State | RSS MB |",
     "| --- | ---: |",
     "| Pre-document admission | "+mb(report.lifecycle.memory.pre_document_admission.totalKb)+" |",
-    "| Documents admitted | "+mb(report.lifecycle.memory.documents_admitted.totalKb)+" |",
+    "| Document setup finished | "+mb((report.lifecycle.memory.documents_admitted??report.lifecycle.memory.document_setup_finished).totalKb)+" |",
     "| After first use | "+mb(report.lifecycle.memory.post_first_use.totalKb)+" |",
     "| After steady | "+mb(report.lifecycle.memory.post_steady.totalKb)+" |",
     "| Steady peak | "+mb(report.lifecycle.memory.steady_peak.totalKb)+" |",
+    "",
+    "Document admission boundary: "+report.lifecycle.documentAdmission.boundary,
     "",
   ];
   console.log(lines.join("\n"));

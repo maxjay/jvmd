@@ -16,6 +16,16 @@ public final class SemanticReadViews {
             @Override public Symbol symbol(String id){
                 SemanticFact fact=state.symbol(id);return fact==null?null:fromResident(fact);
             }
+            @Override public MemberPage members(String ownerId,String prefix,int limit,String cursor){
+                if(limit<=0)return new MemberPage(List.of(),null);
+                var values=new ArrayList<SemanticReadView.Symbol>(Math.min(limit+1,64));
+                var range=state.memberCursor(ownerId,prefix,cursor);
+                SemanticFact fact;while(values.size()<=limit&&(fact=range.next())!=null)values.add(fromResident(fact));
+                boolean more=values.size()>limit;
+                if(more)values.removeLast();
+                String next=more?state.symbol(values.getLast().id()).orderedKey():null;
+                return new MemberPage(values,next);
+            }
             @Override public List<String> directSupertypes(String typeId){
                 return state.directSupertypeIds(typeId);
             }
@@ -49,6 +59,10 @@ public final class SemanticReadViews {
             @Override public Symbol symbol(String id)throws Exception{
                 for(var layer:layers){var value=layer.symbol(id);if(value!=null)return value;}return null;
             }
+            @Override public MemberPage members(String ownerId,String prefix,int limit,String cursor)throws Exception{
+                for(var layer:layers)if(layer.symbol(ownerId)!=null)return layer.members(ownerId,prefix,limit,cursor);
+                return new MemberPage(List.of(),null);
+            }
             @Override public List<String> directSupertypes(String typeId)throws Exception{
                 for(var layer:layers)if(layer.symbol(typeId)!=null)return layer.directSupertypes(typeId);
                 return List.of();
@@ -72,6 +86,13 @@ public final class SemanticReadViews {
             @Override public Symbol symbol(String id)throws Exception{
                 var row=store.byScip(id,workspace);
                 return row==null||isLocal(row)!=local?null:fromIndexed(row,local?SemanticReadView.Origin.LOCAL:SemanticReadView.Origin.MACHINE);
+            }
+            @Override public MemberPage members(String ownerId,String prefix,int limit,String cursor)throws Exception{
+                if(symbol(ownerId)==null||limit<=0)return new MemberPage(List.of(),null);
+                var page=store.membersByOwner(ownerId,prefix,workspace,limit,cursor);
+                var values=new ArrayList<SemanticReadView.Symbol>(page.symbols().size());
+                for(var row:page.symbols())if(isLocal(row)==local)values.add(fromIndexed(row,local?SemanticReadView.Origin.LOCAL:SemanticReadView.Origin.MACHINE));
+                return new MemberPage(values,page.cursor());
             }
             @Override public List<String> directSupertypes(String typeId)throws Exception{
                 if(symbol(typeId)==null)return List.of();

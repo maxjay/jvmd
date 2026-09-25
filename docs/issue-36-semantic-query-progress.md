@@ -1042,3 +1042,54 @@ Result:
 
 Remaining:
 - Resume Checkpoint 14 javac-minimization work from this repaired lifecycle boundary; do not revisit the accepted classpath proof model.
+
+
+## Checkpoint 14 — javac minimization
+
+Starting subject for the bounded work: `01a046506f1890132f7ea1ba30e4588ed8930355`  
+Accepted exact-head evidence subject: `91c2a36253e55e62fcb1c7f7938b665443b12145`
+
+Evidence:
+- Exact-head Tests: https://github.com/maxjay/jvmd/actions/runs/36152625085 — **success**.
+  - Phase 4: 164 tests, 0 failures/errors.
+  - `MaintainedCompletionContextTest`: 3/3 green.
+  - `DocumentContextProofTest`: green.
+  - `CompletionPrefixCacheTest`: 16/16 green.
+- Exact-head Benchmarks: https://github.com/maxjay/jvmd/actions/runs/36152625150 — **success**.
+- No Checkpoint-17 frozen proof was run.
+
+Javac-minimization proof:
+- **Simple dependency receiver = zero query-side javac.**
+  - `MaintainedCompletionContextTest.simpleIndexedReceiversNeedNoQuerySideJavacAndNoResidentPromotion` proves parameter, field, static receiver and straightforward zero-argument chain completion from the persisted semantic read view.
+  - The parameter case includes an inherited `Base.inherited()` member, proving the dependency hierarchy is read from maintained/indexed supertypes rather than rediscovered through javac.
+  - Resident dependency fact count remains zero; full dependency promotion is not required.
+- **Simple local receiver = zero query-side javac where maintained facts suffice.**
+  - `admittedLocalReceiverCompletesFromResidentFactsWithZeroQuerySideJavac` admits the local declaration once, then completes the dependent receiver from resident postings with no query count increase.
+- **Prefix narrowing = zero additional javac.**
+  - `CompletionPrefixCacheTest.prefixNarrowingReusesDetachedCandidatesAndKeepsTheCurrentEditRange` asserts the compiler query counter is constant from `g` through `getPets`.
+- **Warm unchanged completion = zero javac.**
+  - The same regression repeats the unchanged request and proves the query counter remains unchanged.
+- **Complex expression = exactly one bounded semantic-context fallback.**
+  - `DocumentContextProofTest` uses `choose(value).`, which Tier 1 intentionally does not prove.
+  - The first request increments the compiler query counter by exactly one; the next unchanged request reuses the detached proof-backed context with no second query.
+- **No completion-time `Elements.getAllMembers()`.**
+  - Static call-path audit on the accepted head finds exactly two `getAllMembers()` call sites:
+    1. `EditorQueries.signatures(...)`, which is the signature-help API;
+    2. `Bindings.visitImport(...)`, used for full/focused binding capture of explicit static imports.
+  - `Analyzer.completion()` routes either through `maintainedQualifiedCompletion(...)` or the bounded `qualifiedDocumentSemantic` / `unqualifiedDocumentSemantic` extraction path in `SemanticFacts`.
+  - Those completion paths do not call `EditorQueries.signatures` or `Bindings.capture`; ordinary completion candidate enumeration therefore does not use `Elements.getAllMembers()`.
+- **No dependency hierarchy discovery through javac when indexed proof suffices.**
+  - Maintained qualified completion walks `SemanticReadView.directSupertypes()` and bounded owner/member ranges.
+  - The inherited dependency regression above completes `Base.inherited()` with query-side javac unchanged.
+  - javac `Types.directSupertypes` remains only inside bounded semantic extraction/fallback paths and unrelated binding/index extraction; it is not the ordinary indexed dependency hierarchy database.
+
+Architecture:
+- javac remains authoritative when Java typing genuinely cannot be proven from detached state.
+- Avoiding javac is not achieved by implementing an incomplete Java engine: uncertain access/module/generic/complex cases still take one bounded context-attribution fallback.
+- Member candidate discovery for ordinary simple completion is now maintained-state work.
+
+Failed/deprecated approaches:
+- None for this checkpoint. The accepted classpath lifecycle repair landed after the Checkpoint-14 test commits and did not weaken their assertions.
+
+Remaining:
+- Checkpoint 15: run the real CMP-01 LSP scenario against normal incomplete `project.`, verify the JDTLS semantic oracle, `completionItem/resolve`, and repeated maintained-state reuse.

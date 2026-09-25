@@ -45,12 +45,26 @@ export default class CompletionScenario extends LspScenarioHarness {
     this.finishFirstUse();
     const nativeAfterFirst=analyzerEvidence(await this.nativeAnalyzerStatus());
 
+    const nativeBeforeResolve=analyzerEvidence(await this.nativeAnalyzerStatus());
     const resolved=firstCandidate
       ?await this.measure(
           ()=>this.request<any>("completionItem/resolve",firstCandidate),
           normaliseResolvedCompletion,
         )
       :undefined;
+    const nativeAfterResolve=analyzerEvidence(await this.nativeAnalyzerStatus());
+    if(firstCandidate&&nativeBeforeResolve&&nativeAfterResolve){
+      assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"queries"),0,
+        "MACHINE completionItem/resolve must not enter javac");
+      assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.workspace_find_calls"),0,
+        "MACHINE completionItem/resolve must not enter generic workspaceFind");
+      assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.workspace_find_files_scanned"),0,
+        "MACHINE completionItem/resolve must scan zero workspace source files");
+      assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.workspace_bindings_builds"),0,
+        "MACHINE completionItem/resolve must not construct workspace bindings");
+      assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.dependency_exact_describe_hits"),1,
+        "MACHINE completionItem/resolve must use exactly one exact indexed identity lookup");
+    }
 
     const nativeBeforeRepeated=analyzerEvidence(await this.nativeAnalyzerStatus());
     const rest=await this.measureWarmupAndSteady(completion,normaliseCompletion);
@@ -83,6 +97,9 @@ export default class CompletionScenario extends LspScenarioHarness {
           beforeFirst:nativeBeforeFirst,
           afterFirst:nativeAfterFirst,
           firstUseDelta:counterDiff(nativeBeforeFirst,nativeAfterFirst),
+          beforeResolve:nativeBeforeResolve,
+          afterResolve:nativeAfterResolve,
+          resolveDelta:counterDiff(nativeBeforeResolve,nativeAfterResolve),
           beforeRepeated:nativeBeforeRepeated,
           afterRepeated:nativeAfterRepeated,
           repeatedDelta:counterDiff(nativeBeforeRepeated,nativeAfterRepeated),
@@ -134,6 +151,9 @@ function analyzerEvidence(value:any){
   const resident=value?.resident_semantic_state??{};
   for(const key of ["semantic_fact_mutations","semantic_tree_range_entries_read","semantic_units","semantic_stale_units"])
     result["resident."+key]=typeof resident?.[key]==="number"?resident[key]:null;
+  const resolve=value?.resolve_evidence??{};
+  for(const key of ["workspace_find_calls","workspace_find_files_scanned","workspace_bindings_builds","dependency_exact_describe_hits"])
+    result["resolve."+key]=typeof resolve?.[key]==="number"?resolve[key]:null;
   return result;
 }
 

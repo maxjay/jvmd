@@ -116,11 +116,11 @@ This checklist is authoritative. A box is checked only when the implementation e
 - [x] Winning search-prefix proof retained when later changes cannot affect the winner.
 
 ## Checkpoint 13 — uncertainty/generation audit
-- [ ] Lost-history/overflow/corruption paths inspected.
-- [ ] Unnecessary broad epoch walks identified.
-- [ ] O(1) generation fences used where safe.
-- [ ] Conservative correctness preserved.
-- [ ] No unrelated tree redesign.
+- [x] Lost-history/overflow/corruption paths inspected.
+- [x] Unnecessary broad epoch walks identified.
+- [x] O(1) generation fences used where safe.
+- [x] Conservative correctness preserved.
+- [x] No unrelated tree redesign.
 
 ## Checkpoint 14 — javac minimization
 - [ ] Simple dependency receiver: zero query-side javac.

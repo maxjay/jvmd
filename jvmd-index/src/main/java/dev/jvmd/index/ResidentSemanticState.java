@@ -190,7 +190,7 @@ public final class ResidentSemanticState {
         var ids=typesBySimpleName.getOrDefault(Objects.requireNonNullElse(simpleName,""),Set.of());
         if(ids.isEmpty())return List.of();
         return ids.stream().map(symbols::get).filter(Objects::nonNull)
-                .sorted(Comparator.comparing(fact->Objects.requireNonNullElse(fact.fqn(),"")).thenComparing(SemanticFact::id))
+                .sorted(Comparator.comparing((SemanticFact fact)->Objects.requireNonNullElse(fact.fqn(),"")).thenComparing(SemanticFact::id))
                 .toList();
     }
     public synchronized boolean unitCurrent(String unit,String contentIdentity){

@@ -38,7 +38,8 @@ class SemanticProofDagTest {
         var exact=SemanticQueryProofs.exactSymbol("A#foo()I");
         var bOutput=new QueryProof.Key(QueryProof.Domain.HIERARCHY,"B");
         var cOutput=new QueryProof.Key(QueryProof.Domain.HIERARCHY,"C");
-        var b=consumer(root,"B.java","B.semantic"),c=consumer(root,"C.java","C.semantic");
+        var b=consumer(root,"B.java","B.semantic");
+        var c=consumer(root,"C.java","C.semantic");
 
         live.proofs().register(b,evaluation(exact,"foo-v1",bOutput,"b-v1"));
         live.proofs().register(c,evaluation(bOutput,"b-v1",cOutput,"c-v1"));
@@ -68,7 +69,8 @@ class SemanticProofDagTest {
         var bar=SemanticQueryProofs.overloadGroup("A","bar");
         var bOutput=new QueryProof.Key(QueryProof.Domain.EXACT_SYMBOL,"derived:B");
         var cOutput=new QueryProof.Key(QueryProof.Domain.EXACT_SYMBOL,"derived:C");
-        var b=consumer(root,"B.java","B.call"),c=consumer(root,"C.java","C.call");
+        var b=consumer(root,"B.java","B.call");
+        var c=consumer(root,"C.java","C.call");
 
         live.proofs().register(b,evaluation(foo,"foo-v1",bOutput,"b-v1"));
         live.proofs().register(c,evaluation(bOutput,"b-v1",cOutput,"c-v1"));
@@ -95,7 +97,8 @@ class SemanticProofDagTest {
         var base=new QueryProof.Key(QueryProof.Domain.HIERARCHY,"Base");
         var middleOutput=new QueryProof.Key(QueryProof.Domain.HIERARCHY,"Middle");
         var downstreamOutput=new QueryProof.Key(QueryProof.Domain.EXACT_SYMBOL,"Downstream.result");
-        var middle=consumer(root,"Middle.java","hierarchy"),downstream=consumer(root,"Downstream.java","use-middle");
+        var middle=consumer(root,"Middle.java","hierarchy");
+        var downstream=consumer(root,"Downstream.java","use-middle");
 
         live.proofs().register(middle,evaluation(base,"base-v1",middleOutput,"surface-v1"));
         live.proofs().register(downstream,evaluation(middleOutput,"surface-v1",downstreamOutput,"downstream-v1"));
@@ -138,7 +141,8 @@ class SemanticProofDagTest {
 
     @Test void cyclesAndDuplicateOutputsAreRejected(){
         var live=new SemanticUpdatePolicy.Live();
-        var a=consumer(root,"A.java","a"),b=consumer(root,"B.java","b");
+        var a=consumer(root,"A.java","a");
+        var b=consumer(root,"B.java","b");
         var aOut=new QueryProof.Key(QueryProof.Domain.EXACT_SYMBOL,"derived:A");
         var bOut=new QueryProof.Key(QueryProof.Domain.EXACT_SYMBOL,"derived:B");
         live.proofs().register(a,evaluation(bOut,"b-v1",aOut,"a-v1"));

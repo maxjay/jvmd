@@ -81,6 +81,7 @@ export abstract class LspScenarioHarness {
   private static diagnosticWaiters:DiagnosticWaiter[]=[];
   private static diagnosticSequence=0;
   private static diagnosticVersionMode:DiagnosticVersionMode="unknown";
+  private static diagnosticAdmissionUnavailableReason?:string;
   private static milestones:Record<string,number>={};
   private static phaseMemory:Record<string,Memory>={};
   private static documentAdmissionStarted=false;
@@ -96,7 +97,8 @@ export abstract class LspScenarioHarness {
     this.serverId=(process.env.SERVER??"jvmd")==="jdtls"?"jdtls":"jvmd";
     this.running=await startServer(this.fixtureRoot);
     this.milestones={...this.running.milestones};
-    this.diagnostics=[];this.diagnosticWaiters=[];this.diagnosticSequence=0;this.diagnosticVersionMode="unknown";this.openDocuments.clear();
+    this.diagnostics=[];this.diagnosticWaiters=[];this.diagnosticSequence=0;this.diagnosticVersionMode="unknown";
+    this.diagnosticAdmissionUnavailableReason=undefined;this.openDocuments.clear();
     this.phaseMemory={};this.documentAdmissionStarted=false;
 
     let serviceReadyResolve:()=>void=()=>{};
@@ -237,7 +239,10 @@ export abstract class LspScenarioHarness {
   protected documentAdmissionBoundary(){
     return LspScenarioHarness.diagnosticVersionMode==="versioned"
       ?"verified by exact-version publishDiagnostics"
-      :"unavailable: versionless publishDiagnostics cannot prove the current document version";
+      :"unavailable: "+(LspScenarioHarness.diagnosticAdmissionUnavailableReason
+          ??(LspScenarioHarness.diagnosticVersionMode==="versionless"
+            ?"versionless publishDiagnostics cannot prove the current document version"
+            :"no exact-version diagnostic boundary was established"));
   }
 
   protected async open(relativePath:string){
@@ -329,6 +334,11 @@ export abstract class LspScenarioHarness {
   }
 
   private async waitForDiagnostics(uri:string,version:number,afterSequence:number):Promise<DiagnosticAdmissionResult>{
+    if(LspScenarioHarness.serverId==="jvmd"){
+      const reason="JVMD request visibility is guaranteed by its workspace mutation fence; exact-version publishDiagnostics is not awaited before first use";
+      LspScenarioHarness.diagnosticAdmissionUnavailableReason=reason;
+      return {status:"unavailable",reason};
+    }
     if(LspScenarioHarness.diagnosticVersionMode==="versionless")return {
       status:"unavailable",
       reason:"server diagnostics are versionless; current-version admission cannot be verified",
@@ -431,10 +441,12 @@ export abstract class LspScenarioHarness {
         versionVerification:"verified",
         mode:"settled editor admission",
       }:{
-        boundary:"unavailable: versionless publishDiagnostics cannot prove the requested document version",
-        diagnosticsWaited:true,
+        boundary:this.documentAdmissionBoundary(),
+        diagnosticsWaited:LspScenarioHarness.serverId!=="jvmd",
         versionVerification:"unavailable",
-        mode:"document setup completed; current-version admission not claimed",
+        mode:LspScenarioHarness.serverId==="jvmd"
+          ?"document setup sent; request visibility is mutation-fenced; diagnostic admission not claimed"
+          :"document setup completed; current-version diagnostic admission not claimed",
       },
     };
   }
@@ -457,7 +469,7 @@ export abstract class LspScenarioHarness {
         localWorkspaceState:"fresh/unknown",
         documents:"opened after server-native readiness; admission is measured only when exact diagnostic versions make it verifiable",
         semanticTarget:"not queried before first_use",
-        diagnosticsWaitedBeforeFirstUse:true,
+        diagnosticsWaitedBeforeFirstUse:LspScenarioHarness.serverId!=="jvmd",
         diagnosticAdmissionBoundary:this.documentAdmissionBoundary(),
         warmupCount:PHASE_MODEL.defaults.warmup,
         steadySamples:PHASE_MODEL.defaults.steady_samples,

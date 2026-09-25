@@ -275,6 +275,9 @@ public final class ResidentSemanticState {
                 hierarchyApis.getOrDefault(typeId,EMPTY)).hex();
     }
 
+    /** O(1) uncertainty fence generation for proof-backed cache keys. */
+    public synchronized long uncertaintyGeneration(){return uncertaintyGeneration;}
+
     public synchronized Identity identity(){
         String structural=root==null?EMPTY:root.merkle.hex();
         String merkle=CanonicalDigestWriter.digest("resident-state-v2",structural,freshnessIdentity()).hex();

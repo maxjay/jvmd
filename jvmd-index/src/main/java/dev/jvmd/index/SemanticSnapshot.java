@@ -12,13 +12,21 @@ public record SemanticSnapshot(
         String apiIdentity,
         String namespaceIdentity,
         String documentationIdentity,
-        Set<String> dependencies) {
+        Set<String> dependencies,
+        SemanticCompleteness completeness) {
+    public SemanticSnapshot(String unit,String sourceFile,String contentIdentity,Map<String,SemanticFact> facts,
+                            Map<String,SymbolDescription> descriptions,String apiIdentity,String namespaceIdentity,
+                            String documentationIdentity,Set<String> dependencies){
+        this(unit,sourceFile,contentIdentity,facts,descriptions,apiIdentity,namespaceIdentity,documentationIdentity,
+                dependencies,SemanticCompleteness.COMPLETE);
+    }
+
     public SemanticSnapshot {
         Objects.requireNonNull(unit);contentIdentity=Objects.requireNonNullElse(contentIdentity,"");
         facts=Map.copyOf(facts);descriptions=Map.copyOf(descriptions);
         apiIdentity=Objects.requireNonNullElse(apiIdentity,"");
         namespaceIdentity=Objects.requireNonNullElse(namespaceIdentity,"");
         documentationIdentity=Objects.requireNonNullElse(documentationIdentity,"");
-        dependencies=Set.copyOf(dependencies);
+        dependencies=Set.copyOf(dependencies);completeness=Objects.requireNonNull(completeness);
     }
 }

@@ -46,6 +46,44 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         Map<String,Object> status(){return Map.of("entries",entries.size(),"member_ids",memberIds,"hits",hits,"misses",misses,"evictions",evictions,
                 "max_entries",MAX_ENTRIES,"max_member_ids",MAX_MEMBER_IDS);}
     }
+    private static final class ClasspathProofEvidence {
+        long transitions,intervals,reconsidered,equal,changed,unavailable,consumersVisited,consumersChanged,consumersEqual,
+                consumersFallback,broadContextInvalidations,coarseFallbacks,validatedInputReconciliations;
+        List<String> lastIntervals=List.of();
+        long lastReconsidered,lastEqual,lastChanged,lastUnavailable,lastConsumersVisited,lastConsumersChanged,lastConsumersEqual,
+                lastConsumersFallback,lastBroadContextInvalidations;
+        void record(ClasspathSearchProofs.Update update){
+            transitions++;lastIntervals=update.structuralDiff().intervals().stream().map(Object::toString).toList();
+            intervals+=lastIntervals.size();lastReconsidered=update.reconsidered().size();lastEqual=update.equal().size();
+            lastChanged=update.changed().size();lastUnavailable=update.unavailable().size();
+            reconsidered+=lastReconsidered;equal+=lastEqual;changed+=lastChanged;unavailable+=lastUnavailable;
+            lastConsumersVisited=lastConsumersChanged=lastConsumersEqual=lastConsumersFallback=lastBroadContextInvalidations=0;
+        }
+        void propagation(SemanticUpdatePolicy.ProofPropagation value){
+            lastConsumersVisited=value.recomputed().size();lastConsumersChanged=value.changed().size();
+            lastConsumersEqual=value.equal().size();lastConsumersFallback=value.fallback().size();
+            consumersVisited+=lastConsumersVisited;consumersChanged+=lastConsumersChanged;
+            consumersEqual+=lastConsumersEqual;consumersFallback+=lastConsumersFallback;
+        }
+        void broadContexts(long count){lastBroadContextInvalidations=count;broadContextInvalidations+=count;}
+        Map<String,Object> status(){
+            return Map.ofEntries(
+                    Map.entry("transitions",transitions),Map.entry("structural_intervals",intervals),
+                    Map.entry("search_proofs_reconsidered",reconsidered),Map.entry("search_proofs_equal",equal),
+                    Map.entry("search_proofs_changed",changed),Map.entry("search_proofs_unavailable",unavailable),
+                    Map.entry("proof_consumers_visited",consumersVisited),Map.entry("proof_consumers_changed",consumersChanged),
+                    Map.entry("proof_consumers_equal",consumersEqual),Map.entry("proof_consumers_fallback",consumersFallback),
+                    Map.entry("broad_context_invalidations",broadContextInvalidations),Map.entry("coarse_fallbacks",coarseFallbacks),
+                    Map.entry("validated_input_reconciliations",validatedInputReconciliations),
+                    Map.entry("last_intervals",lastIntervals),Map.entry("last_reconsidered",lastReconsidered),
+                    Map.entry("last_equal",lastEqual),Map.entry("last_changed",lastChanged),
+                    Map.entry("last_unavailable",lastUnavailable),Map.entry("last_consumers_visited",lastConsumersVisited),
+                    Map.entry("last_consumers_changed",lastConsumersChanged),Map.entry("last_consumers_equal",lastConsumersEqual),
+                    Map.entry("last_consumers_fallback",lastConsumersFallback),
+                    Map.entry("last_broad_context_invalidations",lastBroadContextInvalidations));
+        }
+    }
+
     private static final class ModuleCaches {
         final LinkedHashMap<String,Envelope> outlines=new LinkedHashMap<>(16,.75f,true);
         final LinkedHashMap<String,Cached> focused=new LinkedHashMap<>(32,.75f,true);
@@ -55,8 +93,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         final LinkedHashMap<String,SymbolDescription> descriptions=new LinkedHashMap<>(16,.75f,true);
         final AccessibilityCache accessibility=new AccessibilityCache();
         final Map<String,IndexStore.ClasspathSearchProof> classpathSearchProofs=new TreeMap<>();
+        final ClasspathProofEvidence classpathProofEvidence=new ClasspathProofEvidence();
         long semanticSourceEpoch=-1;
-        String completionContextIdentity="",semanticOwnerIdentity="";
+        String completionContextIdentity="",semanticOwnerIdentity="",platformFingerprint="";
         ClasspathSequence classpathSequence;
         boolean classpathPrecise;
     }

@@ -35,6 +35,16 @@ public final class SemanticReadViews {
                 return switch(domain){
                     case EXACT_SYMBOL -> Optional.ofNullable(state.symbol(key)).map(SemanticFact::resolutionIdentity);
                     case HIERARCHY -> state.symbol(key)==null?Optional.empty():Optional.of(Hash256.fromHex(state.hierarchyApi(key)));
+                    case MEMBER_RANGE -> {
+                        var member=SemanticReadView.parseMemberIdentityKey(key);
+                        yield state.completeness(member.ownerId())==SemanticCompleteness.UNKNOWN
+                                ?Optional.empty():Optional.of(state.memberRangeIdentity(member.ownerId(),member.name()));
+                    }
+                    case OVERLOAD_GROUP -> {
+                        var member=SemanticReadView.parseMemberIdentityKey(key);
+                        yield state.completeness(member.ownerId())==SemanticCompleteness.UNKNOWN
+                                ?Optional.empty():Optional.of(state.overloadGroupIdentity(member.ownerId(),member.name()));
+                    }
                     default -> Optional.empty();
                 };
             }
@@ -124,6 +134,23 @@ public final class SemanticReadViews {
                     for(var layer:layers)if(layer.symbol(key)!=null)return layer.identity(domain,key);
                     return Optional.empty();
                 }
+                if(domain==QueryProof.Domain.MEMBER_RANGE||domain==QueryProof.Domain.OVERLOAD_GROUP){
+                    var member=SemanticReadView.parseMemberIdentityKey(key);
+                    var parts=new ArrayList<Object>();boolean saw=false;
+                    for(int i=0;i<layers.size();i++){
+                        var layer=layers.get(i);
+                        if(layer.symbol(member.ownerId())==null)continue;
+                        var completeness=layer.completeness(member.ownerId());
+                        var value=layer.identity(domain,key);
+                        if(value.isEmpty())return Optional.empty();
+                        parts.add(new Object[]{i,completeness.name(),value.get()});saw=true;
+                        if(completeness==SemanticCompleteness.COMPLETE)break;
+                        if(completeness==SemanticCompleteness.UNKNOWN)return Optional.empty();
+                    }
+                    return saw?Optional.of(CanonicalDigestWriter.digest(
+                            domain==QueryProof.Domain.MEMBER_RANGE?"semantic-overlay-member-range-v1":"semantic-overlay-overload-group-v1",
+                            key,parts)):Optional.empty();
+                }
                 for(var layer:layers){
                     var value=layer.identity(domain,key);if(value.isPresent())return value;
                 }
@@ -174,8 +201,22 @@ public final class SemanticReadViews {
                 return List.copyOf(result);
             }
             @Override public Optional<Hash256> identity(QueryProof.Domain domain,String key)throws Exception{
-                if(domain!=QueryProof.Domain.EXACT_SYMBOL)return Optional.empty();
-                var symbol=symbol(key);return symbol==null?Optional.empty():Optional.of(symbol.resolutionIdentity());
+                return switch(domain){
+                    case EXACT_SYMBOL -> {
+                        var value=symbol(key);yield value==null?Optional.empty():Optional.of(value.resolutionIdentity());
+                    }
+                    case MEMBER_RANGE -> {
+                        var member=SemanticReadView.parseMemberIdentityKey(key);
+                        yield symbol(member.ownerId())==null?Optional.empty()
+                                :Optional.of(store.semanticMemberRangeIdentity(member.ownerId(),member.name(),workspace,layer));
+                    }
+                    case OVERLOAD_GROUP -> {
+                        var member=SemanticReadView.parseMemberIdentityKey(key);
+                        yield symbol(member.ownerId())==null?Optional.empty()
+                                :Optional.of(store.semanticOverloadGroupIdentity(member.ownerId(),member.name(),workspace,layer));
+                    }
+                    default -> Optional.empty();
+                };
             }
         };
     }

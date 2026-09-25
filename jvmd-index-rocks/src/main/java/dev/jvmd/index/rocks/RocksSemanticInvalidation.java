@@ -40,7 +40,9 @@ public final class RocksSemanticInvalidation implements AutoCloseable {
         String priorContext=textOrNull(db.get(contextKey(moduleKey)));
         boolean contextChanged=priorContext!=null&&!priorContext.equals(contextFingerprint);
 
-        var result=SemanticUpdatePolicy.decide(List.of(new SemanticUpdatePolicy.Change(old,contribution)),contextChanged,postings(moduleKey));
+        var result=SemanticUpdatePolicy.decide(List.of(new SemanticUpdatePolicy.Change(old,contribution)),
+                contextChanged?SemanticUpdatePolicy.EnvironmentTransition.UNKNOWN:SemanticUpdatePolicy.EnvironmentTransition.NONE,
+                postings(moduleKey));
 
         var invalid=new LinkedHashSet<>(result.reanalyze());invalid.remove(contribution.file());
         if(!Objects.equals(old,contribution)||!Objects.equals(priorContext,contextFingerprint))

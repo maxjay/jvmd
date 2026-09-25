@@ -37,7 +37,7 @@ public record CompletionCandidate(
                 var arguments=compactNested
                         ?value.arguments().stream().map(argument->typeLabel(argument,true)).toList()
                         :value.arguments().stream().map(SemanticType::display).toList();
-                yield simple+"<"+String.join(", ",arguments)+">";
+                yield simple+"<"+String.join(compactNested?",":", ",arguments)+">";
             }
             case SemanticType.Variable value -> value.name();
             case SemanticType.Array value -> typeLabel(value.component(),compactNested)+"[]";

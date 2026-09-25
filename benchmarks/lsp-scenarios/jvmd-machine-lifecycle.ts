@@ -11,6 +11,10 @@ import { LspBridge } from "../../shim/src/lsp.ts";
 import { RpcClient, RpcPool, type Message, type RpcCaller } from "../../shim/src/transport.ts";
 import { latencyStats, PHASE_MODEL } from "./harness/phases.ts";
 import {
+  diagnosticAdmissionDecision,
+  type DiagnosticVersionMode,
+} from "./harness/LspScenarioHarness.ts";
+import {
   compilerEvidence, definitionCorrect, fileStateEvidence, indexSummary, methodBreakdown,
   numericDelta, resolverSummary, sumNumeric,
 } from "./harness/jvmdLifecycle.ts";
@@ -18,6 +22,16 @@ import {
 type RpcMetric={method:string;latencyMs:number;receivedNs:number;session?:string};
 type RpcCall={method:string;params:any;startedNs:number;finishedNs:number;result?:any;error?:string};
 type Diagnostic={uri:string;version?:number;receivedNs:number;params:any};
+type DiagnosticEvidence={
+  status:"verified"|"unavailable";
+  receivedNs?:number;
+  durationMs?:number;
+  reason?:string;
+};
+type MutationSpan={
+  method:string;uri:string;version:number;startedNs:number;finishedNs:number;durationMs:number;
+  diagnosticAfter:number;diagnostic:DiagnosticEvidence;
+};
 type Operation={latencyMs:number;correct:boolean;result:any};
 
 function nowNs(){return Number(process.hrtime.bigint());}
@@ -199,6 +213,7 @@ class TracingCaller implements RpcCaller {
 
 class BridgeDriver {
   bridge:LspBridge;responses=new Map<number,Message>();diagnostics:Diagnostic[]=[];nextId=0;
+  diagnosticVersionMode:DiagnosticVersionMode="unknown";
   constructor(bridge:LspBridge){this.bridge=bridge;}
   send=(message:Message)=>{
     if(typeof message.id==="number")this.responses.set(message.id,message);
@@ -219,20 +234,33 @@ class BridgeDriver {
   async notify(method:string,params:any={}){
     await this.bridge.handle({jsonrpc:"2.0",method,params});
   }
-  async mutation(method:string,params:any,uri:string,version:number){
-    const before=this.diagnostics.length,startedNs=nowNs();
+  async mutation(method:string,params:any,uri:string,version:number):Promise<MutationSpan>{
+    const diagnosticAfter=this.diagnostics.length,startedNs=nowNs();
+    // Awaiting the bridge mutation is the admission boundary for subsequent interactive
+    // requests: LspBridge also snapshots all preceding mutations into workspaceMutationFence.
+    // Diagnostics are an asynchronous side channel and are never required to prove visibility.
     await this.notify(method,params);
-    const diagnostic=await this.waitDiagnostic(uri,version,before);
-    return {method,uri,version,startedNs,finishedNs:diagnostic.receivedNs,durationMs:ms(startedNs,diagnostic.receivedNs)};
+    const finishedNs=nowNs();
+    return {
+      method,uri,version,startedNs,finishedNs,durationMs:ms(startedNs,finishedNs),diagnosticAfter,
+      diagnostic:this.diagnosticEvidence(uri,version,diagnosticAfter,startedNs),
+    };
   }
-  private async waitDiagnostic(uri:string,version:number,after:number){
-    const deadline=Date.now()+180000;
-    for(;;){
-      const found=this.diagnostics.slice(after).find(row=>row.uri===uri&&(row.version===undefined||row.version===version));
-      if(found)return found;
-      if(Date.now()>deadline)throw new Error("Timed out waiting for diagnostics "+uri+" v"+version);
-      await sleep(10);
+  refreshDiagnosticEvidence(span:MutationSpan){
+    span.diagnostic=this.diagnosticEvidence(span.uri,span.version,span.diagnosticAfter,span.startedNs);
+    return span;
+  }
+  private diagnosticEvidence(uri:string,version:number,after:number,startedNs:number):DiagnosticEvidence{
+    let unavailable:string|undefined;
+    for(const row of this.diagnostics.slice(after)){
+      const decision=diagnosticAdmissionDecision(this.diagnosticVersionMode,row.params,uri,version);
+      this.diagnosticVersionMode=decision.mode;
+      if(decision.kind==="verified")
+        return {status:"verified",receivedNs:row.receivedNs,durationMs:ms(startedNs,row.receivedNs)};
+      if(decision.kind==="unavailable")
+        unavailable="versionless diagnostics cannot prove current document version";
     }
+    return {status:"unavailable",reason:unavailable??"no exact-version diagnostic observed"};
   }
 }
 
@@ -379,6 +407,8 @@ async function runDefinitionSession(daemon:Daemon,root:string,label:string,local
     };
   }
 
+  for(const span of spans)driver.refreshDiagnosticEvidence(span);
+  if(localChangeReport?.mutation)driver.refreshDiagnosticEvidence(localChangeReport.mutation);
   await bridge.drained();await bridge.close();
   await daemon.call("session.close",{session});
   pool.close();
@@ -434,7 +464,8 @@ async function runDefinitionSession(daemon:Daemon,root:string,label:string,local
       sourceObservation:fileStates,
       compilerAndSemanticEvidence:internalCompiler,
       javacPhaseSplit:"unavailable: current session status exposes aggregate compiler query_ms, not separate parse/enter/attribute durations",
-      diagnosticsNote:"compiler/semantic counters are nested evidence inside the lsp.diagnostics wall time and must not be summed with top-level RPC time",
+      admissionBoundary:"bridge mutation acknowledgement + workspace mutation fence; exact-version diagnostics are optional evidence only",
+      diagnosticsNote:"diagnostic timing is reported only when an exact requested document version was observed; versionless/missing diagnostics are unavailable and never satisfy admission",
     },
     definition:{
       firstUse:first,warmup,steady,
@@ -611,7 +642,7 @@ function markdown(report:any){
     "| IndexService publications during session open (dependency/local split unavailable) | "+sessions[0].workspaceIndex.indexServiceWorkDuringSessionOpen.indexedPublications+" | "+sessions[1].workspaceIndex.indexServiceWorkDuringSessionOpen.indexedPublications+" |",
     "| IndexService parse worker-time during session open ms (dependency/local split unavailable) | "+fmt(sessions[0].workspaceIndex.indexServiceWorkDuringSessionOpen.parseMs)+" | "+fmt(sessions[1].workspaceIndex.indexServiceWorkDuringSessionOpen.parseMs)+" |",
     "| IndexService storage worker-time during session open ms (dependency/local split unavailable) | "+fmt(sessions[0].workspaceIndex.indexServiceWorkDuringSessionOpen.storageMs)+" | "+fmt(sessions[1].workspaceIndex.indexServiceWorkDuringSessionOpen.storageMs)+" |",
-    "| Document admission | "+fmt(sessions[0].admission.wallMs)+" | "+fmt(sessions[1].admission.wallMs)+" |",
+    "| Document mutation admission | "+fmt(sessions[0].admission.wallMs)+" | "+fmt(sessions[1].admission.wallMs)+" |",
     "| Session open → first correct definition | "+fmt(sessions[0].sessionOpenToFirstCorrectResultMs)+" | "+fmt(sessions[1].sessionOpenToFirstCorrectResultMs)+" |",
     "| Definition first use | "+fmt(sessions[0].definition.firstUse.latencyMs)+" | "+fmt(sessions[1].definition.firstUse.latencyMs)+" |",
     "| Definition steady p50 | "+fmt(sessions[0].definition.steadyStats.p50Ms)+" | "+fmt(sessions[1].definition.steadyStats.p50Ms)+" |",
@@ -623,9 +654,12 @@ function markdown(report:any){
     "",
     "| Evidence | first workspace open | workspace reopen |",
     "| --- | ---: | ---: |",
-    "| MavenProject.java open→diagnostics ms | "+fmt(sessions[0].admission.documents[0].durationMs)+" | "+fmt(sessions[1].admission.documents[0].durationMs)+" |",
-    "| DefaultMavenProjectHelper.java open→diagnostics ms | "+fmt(sessions[0].admission.documents[1].durationMs)+" | "+fmt(sessions[1].admission.documents[1].durationMs)+" |",
-    "| DefaultMavenProjectHelper.java change→diagnostics ms | "+fmt(sessions[0].admission.documents[2].durationMs)+" | "+fmt(sessions[1].admission.documents[2].durationMs)+" |",
+    "| MavenProject.java open mutation ms | "+fmt(sessions[0].admission.documents[0].durationMs)+" | "+fmt(sessions[1].admission.documents[0].durationMs)+" |",
+    "| MavenProject.java diagnostic admission | "+sessions[0].admission.documents[0].diagnostic.status+" | "+sessions[1].admission.documents[0].diagnostic.status+" |",
+    "| DefaultMavenProjectHelper.java open mutation ms | "+fmt(sessions[0].admission.documents[1].durationMs)+" | "+fmt(sessions[1].admission.documents[1].durationMs)+" |",
+    "| DefaultMavenProjectHelper.java open diagnostic admission | "+sessions[0].admission.documents[1].diagnostic.status+" | "+sessions[1].admission.documents[1].diagnostic.status+" |",
+    "| DefaultMavenProjectHelper.java change mutation ms | "+fmt(sessions[0].admission.documents[2].durationMs)+" | "+fmt(sessions[1].admission.documents[2].durationMs)+" |",
+    "| DefaultMavenProjectHelper.java change diagnostic admission | "+sessions[0].admission.documents[2].diagnostic.status+" | "+sessions[1].admission.documents[2].diagnostic.status+" |",
     "| Mutation RPC ms | "+fmt(sessions[0].admission.topLevelDaemon.documentMutationRpcMs)+" | "+fmt(sessions[1].admission.topLevelDaemon.documentMutationRpcMs)+" |",
     "| Diagnostics RPC ms | "+fmt(sessions[0].admission.topLevelDaemon.diagnosticsRpcMs)+" | "+fmt(sessions[1].admission.topLevelDaemon.diagnosticsRpcMs)+" |",
     "| Adapter/other remainder ms | "+fmt(sessions[0].admission.topLevelDaemon.otherOrAdapterMs)+" | "+fmt(sessions[1].admission.topLevelDaemon.otherOrAdapterMs)+" |",

@@ -51,7 +51,9 @@ public final class CompletionContextResolver {
     private CompletionContextResolver(){}
 
     public static Resolved resolve(String text,CompletionProbe.Shape probe,SemanticReadView view,TypeLookup lookup)throws Exception{
+        try(var trace=dev.jvmd.core.RequestScope.stage("completion.tier1.resolve")){
         Objects.requireNonNull(text);Objects.requireNonNull(probe);Objects.requireNonNull(view);Objects.requireNonNull(lookup);
+        trace.count("calls",1);trace.count("source_chars",text.length());
         if(!probe.qualified())return null;
         int dot=previousCode(text,probe.selectorStart()-1);
         if(dot<0||text.charAt(dot)!='.')return null;
@@ -72,6 +74,7 @@ public final class CompletionContextResolver {
         }
         return new Resolved(state.owner(),state.type(),state.staticReceiver(),pkg,
                 enclosing==null?null:enclosing.id(),enclosingName,staticContext,resolutionNames(text,pkg));
+        }
     }
 
     private static State base(String segment,String text,int receiverEnd,String pkg,SemanticReadView.Symbol enclosing,
@@ -144,7 +147,7 @@ public final class CompletionContextResolver {
             return values.stream().filter(value->matchesTypeName(value,raw)).toList();
 
         var explicit=new LinkedHashSet<String>();var wildcard=new LinkedHashSet<String>();
-        var imports=IMPORT.matcher(codeMask(text));
+        var imports=matcher(IMPORT,codeMask(text));
         while(imports.find()){
             String value=imports.group(1);
             if(value.endsWith(".*"))wildcard.add(value.substring(0,value.length()-2));
@@ -170,7 +173,7 @@ public final class CompletionContextResolver {
         String masked=codeMask(text.substring(0,receiverEnd));
         String identifier=Pattern.quote(name);
         var pattern=Pattern.compile("(?<![\\w$])([A-Za-z_$][\\w$]*(?:\\s*\\.\\s*[A-Za-z_$][\\w$]*)*(?:\\s*\\[\\s*\\])*)\\s+"+identifier+"\\b");
-        var matches=new ArrayList<Declaration>();var matcher=pattern.matcher(masked);
+        var matches=new ArrayList<Declaration>();var matcher=matcher(pattern,masked);
         while(matcher.find()){
             String candidate=matcher.group(1).replaceAll("\\s+","");
             String first=candidate.replace("[]","");int dot=first.indexOf('.');if(dot>=0)first=first.substring(0,dot);
@@ -188,7 +191,7 @@ public final class CompletionContextResolver {
             if(depth>cursorDepth||dropsBelow(braces,value.end(),receiverEnd,depth))continue;
             if(depthAt(parens,value.start())>0&&!parameterScopeContains(masked,braces,value.end(),receiverEnd,depth))continue;
             boolean field=classBodyDepth>=0&&depth==classBodyDepth&&depthAt(parens,value.start())==0;
-            boolean statik=field&&Pattern.compile("\\bstatic\\b").matcher(memberPrefix(masked,classOpen,value.start())).find();
+            boolean statik=field&&matcher(Pattern.compile("\\bstatic\\b"),memberPrefix(masked,classOpen,value.start())).find();
             return new Declaration(value.type(),value.start(),value.end(),field,statik);
         }
         return null;
@@ -288,14 +291,17 @@ public final class CompletionContextResolver {
         return List.copyOf(result);
     }
 
+    private static java.util.regex.Matcher matcher(Pattern pattern,CharSequence input){
+        dev.jvmd.core.RequestScope.count("regex_matchers",1);return pattern.matcher(input);
+    }
     private static String receiverExpression(String text,int dot){
         String prefix=text.substring(0,dot);
-        var matcher=Pattern.compile("((?:this|super|[A-Za-z_$][\\w$]*)(?:\\s*\\.\\s*[A-Za-z_$][\\w$]*(?:\\s*\\(\\s*\\))?)*)\\s*$").matcher(codeMask(prefix));
+        var matcher=matcher(Pattern.compile("((?:this|super|[A-Za-z_$][\\w$]*)(?:\\s*\\.\\s*[A-Za-z_$][\\w$]*(?:\\s*\\(\\s*\\))?)*)\\s*$"),codeMask(prefix));
         return matcher.find()?prefix.substring(matcher.start(1),matcher.end(1)):null;
     }
 
     private static String packageName(String text){
-        var matcher=PACKAGE.matcher(codeMask(text));return matcher.find()?matcher.group(1):"";
+        var matcher=matcher(PACKAGE,codeMask(text));return matcher.find()?matcher.group(1):"";
     }
 
     private static Set<String> resolutionNames(String text,String pkg){
@@ -306,7 +312,7 @@ public final class CompletionContextResolver {
     }
 
     private static String enclosingTypeName(String text,int cursor,String pkg){
-        String masked=codeMask(text);var matcher=CLASS.matcher(masked);String selected=null;int selectedStart=-1;
+        String masked=codeMask(text);var matcher=matcher(CLASS,masked);String selected=null;int selectedStart=-1;
         while(matcher.find()&&matcher.start()<cursor){
             int open=masked.indexOf('{',matcher.end());if(open<0||open>=cursor)continue;
             int close=matchingBrace(masked,open);if(close>=0&&cursor>close)continue;
@@ -327,7 +333,7 @@ public final class CompletionContextResolver {
             int equals=segment.indexOf('=');
             if(equals>=0){
                 String declaration=segment.substring(0,equals);
-                return Pattern.compile("\\bstatic\\b").matcher(declaration).find()
+                return matcher(Pattern.compile("\\bstatic\\b"),declaration).find()
                         ?StaticContext.STATIC:StaticContext.INSTANCE;
             }
         }
@@ -345,7 +351,7 @@ public final class CompletionContextResolver {
             if(header.equals("static"))return StaticContext.STATIC;
             if(header.isEmpty())return StaticContext.INSTANCE;
             if(header.indexOf(')')>=0&&!controlHeader(header))
-                return Pattern.compile("\\bstatic\\b").matcher(header).find()
+                return matcher(Pattern.compile("\\bstatic\\b"),header).find()
                         ?StaticContext.STATIC:StaticContext.INSTANCE;
         }
         return StaticContext.UNKNOWN;
@@ -353,7 +359,7 @@ public final class CompletionContextResolver {
 
     private static boolean controlHeader(String header){
         String value=header.stripLeading();
-        return Pattern.compile("^(if|for|while|switch|catch|try|else|do|synchronized)\\b").matcher(value).find()
+        return matcher(Pattern.compile("^(if|for|while|switch|catch|try|else|do|synchronized)\\b"),value).find()
                 ||value.contains("->");
     }
 
@@ -414,6 +420,7 @@ public final class CompletionContextResolver {
 
     /** Replace comments and literals with spaces while preserving offsets and line breaks. */
     private static String codeMask(String source){
+        dev.jvmd.core.RequestScope.count("mask_calls",1);dev.jvmd.core.RequestScope.count("masked_chars",source.length());
         var out=new StringBuilder(source);int i=0;
         while(i<source.length()){
             char c=source.charAt(i);

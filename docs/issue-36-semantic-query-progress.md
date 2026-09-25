@@ -480,3 +480,34 @@ Deviations:
 
 Remaining:
 - Checkpoint 4: converge live, workspace/local and machine/JDK semantic reads behind one deterministic semantic read view.
+
+
+## Checkpoints 4–7 gating repair pass — failed exact-head attempt
+
+Subject: `db5020a8b53c0ab287fd230d69cc52246fa79dc1`
+
+Evidence: Tests run https://github.com/maxjay/jvmd/actions/runs/36086055272
+
+This run was intentionally **not** accepted for Checkpoints 4–7.
+
+What passed:
+- compile/package;
+- Phase 1 deterministic semantic/proof tests;
+- Phase 2;
+- standalone RocksDB immutable-generation tests;
+- expanded `CompletionProbeTest` (13/13);
+- Phase 5, Phase 6 prerequisite, Phase 7, runtime/agent/LSP-adjacent later gates.
+
+What failed and what it established:
+- Phase 3 and Phase 6: `LocalModuleIndexTest` proved an existing navigation contract that an installed binary-skeleton private member is not returned by generic `find`, even though #36 must retain that declaration for semantic reasoning. The separate code-enrichment integration contract requires private code-enriched callers to remain searchable. The repair therefore must distinguish navigation visibility from the complete semantic declaration surface rather than globally hiding or globally exposing private declarations.
+- Phase 4: `CompletionContextResolverTest` exposed a lexical false positive where text such as `return project` / `return Api` was accepted as a declaration with `return` as the type. This correctly forced the conservative resolver to return null, but prevented the intended simple Tier-1 path.
+- Phase 4: the `MavenProject` zero-javac regression used a helper that compiled every fixture as `Sample.java`; a public `MavenProject` therefore failed before the semantic path was exercised.
+- Phase 4: the simple indexed receiver regression showed one query-side compiler query, confirming Checkpoint 7 was not complete at this subject.
+
+Repairs following this run preserve the review constraints:
+- semantic reads remain typed and separate from navigation maps;
+- binary-skeleton private navigation visibility follows the established contract, while code-enriched private navigation remains available;
+- keyword pseudo-declarations are rejected rather than broadening the hand-written Java resolver;
+- the fixture helper supports a correctly named public Java source file.
+
+No checkpoint boxes were changed for this failed run.

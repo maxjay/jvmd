@@ -91,9 +91,12 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 lastCoarseFiles,lastSourceConsumersInvalidated,lastPreProofDependantInvalidations;
         String lastCoverageFile="";
         List<String> lastCoverageFailures=List.of();
+        final Map<String,List<String>> coverageFailuresByFile=new TreeMap<>();
         void coverage(Path file,Collection<String> failures){
             lastCoverageFile=file.toAbsolutePath().normalize().toString();
             lastCoverageFailures=List.copyOf(failures);
+            if(failures.isEmpty())coverageFailuresByFile.remove(lastCoverageFile);
+            else coverageFailuresByFile.put(lastCoverageFile,lastCoverageFailures);
         }
         void beginMutation(int dependantInvalidations){
             lastPreProofDependantInvalidations=dependantInvalidations;
@@ -122,7 +125,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                     Map.entry("last_source_consumers_invalidated",lastSourceConsumersInvalidated),
                     Map.entry("last_pre_proof_dependant_invalidations",lastPreProofDependantInvalidations),
                     Map.entry("last_coverage_file",lastCoverageFile),
-                    Map.entry("last_coverage_failures",lastCoverageFailures));
+                    Map.entry("last_coverage_failures",lastCoverageFailures),
+                    Map.entry("coverage_failures_by_file",Collections.unmodifiableMap(new TreeMap<>(coverageFailuresByFile))));
         }
     }
 

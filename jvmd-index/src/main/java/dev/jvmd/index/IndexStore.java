@@ -1,6 +1,7 @@
 package dev.jvmd.index;
 
 import dev.jvmd.core.Hash256;
+import dev.jvmd.core.AlgebraicAccumulator;
 import java.nio.file.Path;
 import java.util.*;
 
@@ -136,6 +137,30 @@ public interface IndexStore extends AutoCloseable {
             if(binaryName.equals(value.fqn())||binaryName.equals(value.binaryKey())||binaryName.equals(value.fqn().replace((char)36,'.')))
                 return value;
         return null;
+    }
+    /** Resolution-only identity of one direct owner/name-prefix semantic range. */
+    default Hash256 semanticMemberRangeIdentity(String ownerScip,String prefix,String workspace,SemanticLayer layer)throws Exception{
+        var aggregate=new AlgebraicAccumulator("semantic-member-range-v1");
+        String cursor=null;
+        do{
+            var page=semanticMembersByOwner(ownerScip,Objects.requireNonNullElse(prefix,""),workspace,256,cursor,layer);
+            for(var symbol:page.symbols())
+                aggregate.add(symbol.resolution().symbolKey(),symbol.resolution().identity());
+            cursor=page.cursor();
+        }while(cursor!=null);
+        return aggregate.identity();
+    }
+    /** Resolution-only identity of the exact overload group for one direct member name. */
+    default Hash256 semanticOverloadGroupIdentity(String ownerScip,String name,String workspace,SemanticLayer layer)throws Exception{
+        var aggregate=new AlgebraicAccumulator("semantic-overload-group-v1");
+        String cursor=null;
+        do{
+            var page=semanticMembersByOwner(ownerScip,Objects.requireNonNullElse(name,""),workspace,256,cursor,layer);
+            for(var symbol:page.symbols())if(symbol.name().equals(name))
+                aggregate.add(symbol.resolution().symbolKey(),symbol.resolution().identity());
+            cursor=page.cursor();
+        }while(cursor!=null);
+        return aggregate.identity();
     }
     List<ArtifactCandidate> binaryArtifacts(String workspace)throws Exception;
     List<ArtifactWork> pendingSignatureArtifacts(String workspace)throws Exception;

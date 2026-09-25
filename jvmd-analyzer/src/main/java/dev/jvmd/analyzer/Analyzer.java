@@ -321,7 +321,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var referencesByTarget=new HashMap<String,List<Bindings.ReferenceProof>>();
         for(var reference:snapshot.referenceProofs())
             referencesByTarget.computeIfAbsent(reference.target(),ignored->new ArrayList<>()).add(reference);
-        boolean precise=liveSourceState!=null&&contribution.unresolvedTargets().isEmpty();
+        boolean precise=liveSourceState!=null;
 
         for(var edge:snapshot.edges()){
             var fact=snapshot.semanticFacts().get(edge.dst());if(fact==null)continue;
@@ -364,6 +364,16 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             if(!javax.lang.model.SourceVersion.isIdentifier(simple))continue;
             String binary=fact.fqn()==null||fact.fqn().isBlank()?fact.resolutionFact().symbolKey():fact.fqn();
             var plan=NamespaceResolutionProofs.plan(text,simple,binary);
+            if(!plan.precise()){precise=false;continue;}
+            for(var dependency:NamespaceResolutionProofs.dependencies(plan,b->maintainedNamespaceTypeIdentity(view,b)))
+                addProofDependency(values,dependency);
+        }
+
+        for(String unresolved:new TreeSet<>(contribution.unresolvedTargets())){
+            if(unresolved.equals("*")||!javax.lang.model.SourceVersion.isIdentifier(unresolved)){
+                precise=false;continue;
+            }
+            var plan=NamespaceResolutionProofs.plan(text,unresolved,null);
             if(!plan.precise()){precise=false;continue;}
             for(var dependency:NamespaceResolutionProofs.dependencies(plan,b->maintainedNamespaceTypeIdentity(view,b)))
                 addProofDependency(values,dependency);

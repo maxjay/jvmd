@@ -240,7 +240,7 @@ public final class SemanticUpdatePolicy {
             var coarseRoots=new LinkedHashSet<Path>(propagation.fallbackFiles());
             coarseRoots.addAll(propagation.changedFiles());
             coarseRoots.add(changedFile);
-            var reanalyze=coarseUnprovenClosure(coarseRoots);
+            var reanalyze=new LinkedHashSet<Path>(coarseUnprovenClosure(coarseRoots));
             reanalyze.remove(changedFile);
             return new ProofInvalidation(propagation,reanalyze);
         }

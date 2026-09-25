@@ -1,5 +1,6 @@
 package dev.jvmd.index;
 
+import dev.jvmd.core.Hash256;
 import java.util.*;
 
 /** Cheap semantic projection used for discovery before optional description enrichment. */
@@ -13,10 +14,15 @@ public record CompletionCandidate(
         Set<String> modifiers,
         String label,
         String editorLabel,
-        List<ParameterLabel> parameters) {
+        List<ParameterLabel> parameters,
+        Hash256 resolutionIdentity) {
     public CompletionCandidate(String id,String name,String kind,String structuralSignature,String declaringType,
                                String sourceFile,Set<String> modifiers,String label,List<ParameterLabel> parameters){
-        this(id,name,kind,structuralSignature,declaringType,sourceFile,modifiers,label,label,parameters);
+        this(id,name,kind,structuralSignature,declaringType,sourceFile,modifiers,label,label,parameters,null);
+    }
+    public CompletionCandidate(String id,String name,String kind,String structuralSignature,String declaringType,
+                               String sourceFile,Set<String> modifiers,String label,String editorLabel,List<ParameterLabel> parameters){
+        this(id,name,kind,structuralSignature,declaringType,sourceFile,modifiers,label,editorLabel,parameters,null);
     }
     public CompletionCandidate {
         Objects.requireNonNull(id);Objects.requireNonNull(name);Objects.requireNonNull(kind);

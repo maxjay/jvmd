@@ -8,6 +8,7 @@ import java.util.*;
 public final class SemanticUpdatePolicy {
     private SemanticUpdatePolicy() {}
     public enum Completeness { COMPLETE, FOCUSED, FAILED }
+    public enum EnvironmentTransition { NONE, PRECISE_CLASSPATH, UNKNOWN }
     public record Change(FileSemanticContribution before,FileSemanticContribution after) {
         public Change {
             if(before==null&&after==null)throw new IllegalArgumentException("Empty change");
@@ -26,8 +27,14 @@ public final class SemanticUpdatePolicy {
         Set<Path> files();
     }
     public static Result decide(Collection<Change> changes,boolean environmentChanged,Postings postings){
+        return decide(changes,environmentChanged?EnvironmentTransition.UNKNOWN:EnvironmentTransition.NONE,postings);
+    }
+    public static Result decide(Collection<Change> changes,EnvironmentTransition environment,Postings postings){
+        Objects.requireNonNull(environment);Objects.requireNonNull(postings);
         try(var trace=dev.jvmd.core.RequestScope.stage("semantic.invalidate")){
             trace.count("changed_files",changes.size());
+            trace.count("environment_unknown",environment==EnvironmentTransition.UNKNOWN?1:0);
+            trace.count("environment_precise_classpath",environment==EnvironmentTransition.PRECISE_CLASSPATH?1:0);
         var api=new LinkedHashSet<Path>();var body=new LinkedHashSet<Path>();var deleted=new LinkedHashSet<Path>();
         var exports=new LinkedHashSet<String>();boolean namespace=false;
         for(var change:changes){
@@ -39,14 +46,17 @@ public final class SemanticUpdatePolicy {
             }else if(!old.equals(now))body.add(file);
         }
         var affected=new LinkedHashSet<Path>(body);affected.addAll(api);
-        if(environmentChanged)affected.addAll(postings.files());
+        // PRECISE_CLASSPATH means ordered classpath search leaves were already reconciled and
+        // propagated through ProofDag. Only an unsupported/unknown environment transition widens
+        // to every file. Source API changes still use the ordinary reverse dependency closure.
+        if(environment==EnvironmentTransition.UNKNOWN)affected.addAll(postings.files());
         else if(!api.isEmpty()){
             var roots=new LinkedHashSet<>(api);roots.addAll(postings.unresolved(exports));
             affected.addAll(closure(roots,postings));
         }
         affected.removeAll(deleted);
         trace.count("affected_files",affected.size());trace.count("api_files",api.size());trace.count("body_files",body.size());
-        return new Result(affected,api,body,deleted,environmentChanged,namespace);
+        return new Result(affected,api,body,deleted,environment==EnvironmentTransition.UNKNOWN,namespace);
     
         }
     }

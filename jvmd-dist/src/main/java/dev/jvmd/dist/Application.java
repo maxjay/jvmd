@@ -49,12 +49,21 @@ public final class Application implements AutoCloseable {
             awaitReady();
             var session = sessions.open(Path.of(Dispatcher.required(p, "root")));
             session.put("documents",new Documents(classpathFiles));
-            var manifest=p.get("manifest");
-            if(manifest==null){Path file=session.root().resolve(".jvmd/workspace.json");manifest=Files.isRegularFile(file)?Json.MAPPER.readTree(file.toFile()):Json.MAPPER.createObjectNode();}
-            else if(manifest.isTextual())manifest=Json.MAPPER.readTree(session.root().resolve(manifest.asText()).toFile());
+            var manifest=p.get("manifest");Path manifestPath=null;boolean optionalManifest=false;
+            if(manifest==null){
+                manifestPath=session.root().resolve(".jvmd/workspace.json").toAbsolutePath().normalize();optionalManifest=true;
+                manifest=Files.isRegularFile(manifestPath)?Json.MAPPER.readTree(manifestPath.toFile()):Json.MAPPER.createObjectNode();
+            }else if(manifest.isTextual()){
+                manifestPath=session.root().resolve(manifest.asText()).toAbsolutePath().normalize();
+                manifest=Json.MAPPER.readTree(manifestPath.toFile());
+            }
             if(!manifest.isObject())throw RpcException.invalid("manifest must be an object or path");
             session.put("manifest",manifest);
             session.put("workspace_manifest",WorkspaceManifest.read(session.root(),manifest));
+            if(manifestPath!=null){
+                session.put("workspace_manifest_path",manifestPath);
+                session.put("workspace_manifest_optional",optionalManifest);
+            }
             return session.execute(() -> {
                 Resolution graph = workspace(session).roots().stream().anyMatch(root->Files.isRegularFile(root.resolve("pom.xml"))) ? refresh(session) : null;
                 return new Envelope(0, "live", false, null, session.warnings(), java.util.Map.of("session", session.id(),
@@ -133,7 +142,7 @@ public final class Application implements AutoCloseable {
                 if(verified.exitCode()!=0)throw new RpcException(-32004,"verify_failed",verified);
                 return new Envelope(2,"verified",false,null,verified.warnings(),Map.of("diagnostics",verified.diagnostics(),"exit_code",verified.exitCode(),"elapsed_ms",verified.elapsedMillis()));
             }
-            RequestScope.memo(List.of(s,"analysis-resolution"),()->s.state("resolution")==null?null:refresh(s));
+            maintainedResolution(s);
             var files=new ArrayList<Path>();for(var value:p.path("paths"))files.add(sourcePath(s,value.asText()));boolean whole=files.isEmpty();if(whole)files.addAll(sourceFiles(s));
             return diagnostics(s).get(files,whole,cursor(p),Dispatcher.limit(p,200,1000),s.warnings());
         });
@@ -260,7 +269,7 @@ public final class Application implements AutoCloseable {
     }
     private ModuleAnalyzerRegistry diagnosticActors(Session session){return session.state("diagnostic_actors",()->new ModuleAnalyzerRegistry(classpathFiles));}
     private DiagnosticEngine diagnosticAnalyzer(Session session,Path path)throws Exception{
-        var graph=RequestScope.memo(List.of(session,"analysis-resolution"),()->session.state("resolution")==null?null:refresh(session));
+        var graph=maintainedResolution(session);
         var contexts=session.state("analysis_contexts",WorkspaceContextManager::new);
         var context=contexts.context(path,graph,file->createAnalyzerContext(session,file,graph));
         var availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
@@ -320,6 +329,50 @@ public final class Application implements AutoCloseable {
         return Envelope.of(0,"live",Map.of("path",file.toString(),"open",documents.contains(file),"generation",documents.generation()));
     }
 
+    private List<Path> projectLifecycleInputs(Session session){
+        var inputs=new LinkedHashSet<Path>();
+        Object manifest=session.state("workspace_manifest_path");
+        if(manifest instanceof Path path)inputs.add(path.toAbsolutePath().normalize());
+        for(Path root:workspace(session).roots())inputs.add(root.resolve("pom.xml").toAbsolutePath().normalize());
+        return List.copyOf(inputs);
+    }
+    private void reloadWorkspaceManifest(Session session)throws Exception{
+        Object value=session.state("workspace_manifest_path");if(!(value instanceof Path path))return;
+        boolean optional=Boolean.TRUE.equals(session.state("workspace_manifest_optional"));
+        com.fasterxml.jackson.databind.JsonNode manifest;
+        if(Files.isRegularFile(path))manifest=Json.MAPPER.readTree(path.toFile());
+        else if(optional)manifest=Json.MAPPER.createObjectNode();
+        else throw new java.nio.file.NoSuchFileException(path.toString());
+        if(!manifest.isObject())throw RpcException.invalid("manifest must be an object or path");
+        session.put("manifest",manifest);session.put("workspace_manifest",WorkspaceManifest.read(session.root(),manifest));
+    }
+    private Runnable projectModelInvalidation(Session session){
+        var pending=session.state("project_model_refresh_pending",java.util.concurrent.atomic.AtomicBoolean::new);
+        return ()->{
+            if(!pending.compareAndSet(false,true))return;
+            try{
+                session.execute(0,()->{
+                    try{
+                        reloadWorkspaceManifest(session);
+                        refresh(session);
+                    }catch(Exception failure){
+                        session.put("project_model_request_fallback",Boolean.TRUE);
+                        session.warn("project_model_refresh_failed: "+failure.getClass().getSimpleName()+": "+Objects.toString(failure.getMessage(),""));
+                    }finally{pending.set(false);}
+                    return null;
+                });
+            }catch(Exception unavailable){pending.set(false);}
+        };
+    }
+    private Resolution maintainedResolution(Session session)throws Exception{
+        var current=(Resolution)session.state("resolution");
+        if(Boolean.TRUE.equals(session.state("project_model_request_fallback"))&&current!=null){
+            reloadWorkspaceManifest(session);
+            return refresh(session);
+        }
+        return current;
+    }
+
     private static int cursor(com.fasterxml.jackson.databind.JsonNode params){
         try{int value=Integer.parseInt(params.path("cursor").asText("0"));if(value<0)throw new NumberFormatException();return value;}catch(NumberFormatException e){throw RpcException.invalid("Invalid cursor");}
     }
@@ -367,7 +420,7 @@ public final class Application implements AutoCloseable {
         return List.copyOf(files);
     }
     private WorkspaceBindings.Snapshot workspaceBindings(Session session,boolean load)throws Exception{
-        var graph=(Resolution)session.state("resolution");if(graph!=null)graph=refresh(session);
+        var graph=maintainedResolution(session);
         var cache=session.state("workspace_bindings",()->new WorkspaceBindings(classpathFiles));
         Resolution currentGraph=graph;
         WorkspaceBindings.InputSource inputSource=()->workspaceModuleInputs(session,currentGraph);
@@ -669,7 +722,7 @@ public final class Application implements AutoCloseable {
     private static <T> List<T> slice(List<T> list,int offset,int limit){return List.copyOf(list.subList(Math.min(offset,list.size()),Math.min(list.size(),offset+limit)));}
     private Analyzer analyzer(Session session,Path path)throws Exception{
         try(var trace=RequestScope.stage("application.analyzer")){
-            var graph=RequestScope.memo(List.of(session,"analysis-resolution"),()->session.state("resolution")==null?null:refresh(session));
+            var graph=maintainedResolution(session);
             var contexts=session.state("analysis_contexts",WorkspaceContextManager::new);
             var context=contexts.context(path,graph,file->createAnalyzerContext(session,file,graph));
             var analyzer=session.state("analyzer",()->new Analyzer(classpathFiles));

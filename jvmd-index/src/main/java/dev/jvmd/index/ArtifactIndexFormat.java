@@ -33,7 +33,8 @@ public final class ArtifactIndexFormat {
         public SymbolRecord(int id,int ownerId,String key,String fqn,String name,String kind,String signature,
                             String descriptor,int flags,String entry,List<String> parameters,String metadataJson){
             this(id,ownerId,key,fqn,name,kind,signature,descriptor,flags,entry,parameters,metadataJson,
-                    ResolutionFact.legacy(key,fqn,name,kind,descriptor,flags));
+                    ResolutionFact.legacy(Objects.toString(key,"<invalid>"),Objects.toString(fqn,""),
+                            Objects.toString(name,""),Objects.toString(kind,"unknown"),descriptor,flags));
         }
         public SymbolRecord{parameters=List.copyOf(parameters);Objects.requireNonNull(resolution);}
     }

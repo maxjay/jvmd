@@ -440,6 +440,18 @@ public final class Application implements AutoCloseable {
             var symbol=validated.symbol(ref);if(symbol!=null)return new Envelope(validated.tier(),"live",false,null,validated.warnings(),symbol);
             var direct=validated.lookup(ref);if(direct.size()==1)return new Envelope(validated.tier(),"live",false,null,validated.warnings(),direct.getFirst());
         }
+        // A canonical Maven SCIP can name an exact MACHINE declaration even when the same symbol
+        // was observed incidentally in a focused javac binding. Prefer the indexed declaration
+        // before any source-position freshness work; LOCAL/source artifacts still fall through to
+        // the live path below.
+        if(ref.startsWith("maven ")){
+            var database=index();bindIndex(session,database);
+            var indexed=database.store().byScip(ref,session.state("resolution")==null?null:session.id());
+            if(indexed!=null&&!Objects.equals(indexed.get("artifact_kind"),"local")){
+                dependencyExactDescribeHits.incrementAndGet();
+                return Envelope.of(2,"index",indexed);
+            }
+        }
         var analyzer=(Analyzer)session.state("analyzer");
         if((ref.startsWith("maven ")||ref.startsWith("local "))&&analyzer!=null){
             var known=analyzer.known(ref);if(known.size()==1){var symbol=known.getFirst();var file=symbol.get("source_file");
@@ -459,14 +471,6 @@ public final class Application implements AutoCloseable {
         if((ref.startsWith("maven ")||ref.startsWith("local "))&&analyzer!=null){
             var resident=analyzer.residentDescription(ref);
             if(resident!=null)return Envelope.of(2,"live",resident);
-        }
-        // A canonical dependency SCIP already names the exact machine declaration. Do not scan
-        // workspace source merely to prove that a dependency identity is not locally declared.
-        // This keeps completionItem/resolve on the same maintained semantic boundary as completion.
-        if(ref.startsWith("maven ")){
-            var database=index();bindIndex(session,database);
-            var indexed=database.store().byScip(ref,session.state("resolution")==null?null:session.id());
-            if(indexed!=null){dependencyExactDescribeHits.incrementAndGet();return Envelope.of(2,"index",indexed);}
         }
         var local=workspaceFind(session,ref,false);
         if(local.size()==1)return Envelope.of(1,"live",local.getFirst());

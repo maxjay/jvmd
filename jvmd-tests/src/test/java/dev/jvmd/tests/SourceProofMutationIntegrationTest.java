@@ -97,6 +97,48 @@ class SourceProofMutationIntegrationTest {
         }
     }
 
+    @Test void namespaceMutationReconsidersOnlySearchedDomains()throws Exception{
+        Path q=Files.createDirectories(root.resolve("q")).resolve("Widget.java");
+        Path r=Files.createDirectories(root.resolve("r")).resolve("Types.java");
+        Path other=Files.createDirectories(root.resolve("s")).resolve("Types.java");
+        Path use=Files.createDirectories(root.resolve("p")).resolve("Use.java");
+        String qSource="package q; public class Widget { public int get(){return 1;} protected int hidden(){return 2;} }";
+        String rSource="package r; class Other {}";
+        String otherSource="package s; class Other {}";
+        String useSource="package p; import q.*; import r.*; class Use { Object f(Widget value){ return value.; } }";
+        Files.writeString(q,qSource);Files.writeString(r,rSource);Files.writeString(other,otherSource);Files.writeString(use,useSource);
+        var documents=new Documents();documents.open(q,qSource,1);documents.open(r,rSource,1);documents.open(other,otherSource,1);
+
+        try(var analyzer=analyzer(documents)){
+            assertThat(diagnostics(analyzer,q,qSource)).isEmpty();
+            assertThat(diagnostics(analyzer,r,rSource)).isEmpty();
+            assertThat(diagnostics(analyzer,other,otherSource)).isEmpty();
+            assertThat(completionAt(analyzer,use,useSource,"value.").path("items").findValuesAsText("name")).contains("get");
+            long warm=queries(analyzer);
+
+            String unrelated="package s; class Random {}";
+            mutate(analyzer,documents,other,2,unrelated);
+            assertThat(evidence(analyzer)).containsEntry("last_proof_consumers_visited",0L)
+                    .containsEntry("last_coarse_fallback_files",0L);
+            long beforeUnrelated=queries(analyzer);
+            assertThat(completionAt(analyzer,use,useSource,"value.").path("items").findValuesAsText("name")).contains("get");
+            assertThat(queries(analyzer)).as("unrelated package mutation must not re-run name resolution javac")
+                    .isEqualTo(beforeUnrelated);
+            assertThat(beforeUnrelated).isEqualTo(warm+1);
+
+            String relevant="package r; class Widget {}";
+            mutate(analyzer,documents,r,2,relevant);
+            var proof=evidence(analyzer);
+            assertThat(((Number)proof.get("last_proof_consumers_visited")).longValue()).isPositive();
+            assertThat(((Number)proof.get("last_proof_consumers_changed")).longValue()).isPositive();
+            assertThat(proof).containsEntry("last_coarse_fallback_files",0L);
+            long beforeRelevant=queries(analyzer);
+            completionAt(analyzer,use,useSource,"value.");
+            assertThat(queries(analyzer)).as("new Widget in a searched wildcard namespace must re-run semantic resolution")
+                    .isGreaterThan(beforeRelevant);
+        }
+    }
+
     private static String insertBeforeLastBrace(String source,String text){
         int end=source.lastIndexOf('}');if(end<0)throw new IllegalArgumentException("missing class brace");
         return source.substring(0,end)+text+source.substring(end);
@@ -120,7 +162,11 @@ class SourceProofMutationIntegrationTest {
     }
 
     private static JsonNode completion(Analyzer analyzer,Path file,String source)throws Exception{
-        int cursor=source.indexOf("project.get")+"project.get".length();
+        return completionAt(analyzer,file,source,"project.get");
+    }
+
+    private static JsonNode completionAt(Analyzer analyzer,Path file,String source,String needle)throws Exception{
+        int cursor=source.indexOf(needle)+needle.length();
         var position=Documents.position(source,cursor);
         var answer=analyzer.completion(file,source,position.line(),position.character(),100,0);
         assertThat(answer.warnings()).as(answer.toString()).isEmpty();

@@ -1047,7 +1047,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private List<Map<String,Object>> semanticQualifiedRows(SemanticReadView view,CompletionContextResolver.Resolved resolved,
                                                             String prefix,int target)throws Exception{
         if(target<=0)return List.of();
-        SemanticReadView.Symbol enclosing=resolved.enclosingTypeId()==null?null:view.symbol(resolved.enclosingTypeId());
         int perOwnerBudget=Math.max(64,Math.min(4096,target*8));
         var selected=new HashMap<String,HierarchyChoice>();var typeNames=new HashMap<String,String>();
         var owners=semanticHierarchyOwners(view,resolved);if(owners==null)return null;
@@ -1060,7 +1059,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                     examined++;
                     if(member.kind().equals("ctor")||member.kind().equals("package")||member.kind().equals("module"))continue;
                     if(resolved.staticReceiver()&&!member.staticMember()&&!Set.of("class","interface","enum","record","annotation").contains(member.kind()))continue;
-                    if(!CompletionContextResolver.accessible(member,resolved.packageName(),enclosing,view))continue;
+                    var access=CompletionContextResolver.access(member,resolved.packageName());
+                    if(access==CompletionContextResolver.Access.UNKNOWN)return null;
+                    if(access==CompletionContextResolver.Access.DENIED)continue;
                     String shape=inheritedMemberShape(member);
                     var row=residentCompletionRow(semanticCandidate(member,owner.substitutions(),typeNames),member.name());
                     var previous=selected.get(shape);
@@ -1072,8 +1073,20 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return selected.values().stream().map(HierarchyChoice::row).sorted(COMPLETION_ORDER).limit(target).toList();
     }
 
+    private boolean moduleSensitiveCompletion(){
+        for(String option:context.compilerOptions()){
+            if(Set.of("--module-path","-p","--module","-m","--add-exports","--add-reads","--patch-module",
+                    "--limit-modules","--upgrade-module-path").contains(option)
+                    ||option.startsWith("--add-exports=")||option.startsWith("--add-reads=")
+                    ||option.startsWith("--patch-module=")||option.startsWith("--module-path=")
+                    ||option.startsWith("--upgrade-module-path="))return true;
+        }
+        return false;
+    }
+
     private Envelope maintainedQualifiedCompletion(Path path,String text,int start,int end,String prefix,
                                                     CompletionProbe.Shape probe,int limit,int offset)throws Exception{
+        if(moduleSensitiveCompletion())return null;
         var view=semanticReadView();
         var resolved=CompletionContextResolver.resolve(text,probe,view,this::semanticTypes);
         if(resolved==null)return null;

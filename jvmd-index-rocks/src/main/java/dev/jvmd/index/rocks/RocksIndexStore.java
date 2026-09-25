@@ -229,7 +229,8 @@ public final class RocksIndexStore implements IndexStore {
         Integer original=repository.binaryId(artifact.input().key().cacheKey(),symbol.key());
         return (artifact.id()<<32)|(original==null?0x40000000L|Integer.toUnsignedLong(symbol.id()):Integer.toUnsignedLong(original));
     }
-    private Map<String,Object> row(StoredArtifact artifact,ArtifactIndexFormat.SymbolRecord symbol)throws Exception{
+    /** Semantic row without documentation/source enrichment. */
+    private Map<String,Object> semanticRow(StoredArtifact artifact,ArtifactIndexFormat.SymbolRecord symbol)throws Exception{
         var context=artifact.input().context();var result=new LinkedHashMap<String,Object>();
         result.put("id",symbolId(artifact,symbol));result.put("artifact_id",artifact.id());
         result.put("owner_id",symbol.ownerId()<0?null:artifact.codeKey()==null?(artifact.id()<<32)|Integer.toUnsignedLong(symbol.ownerId()):symbolId(artifact,repository.symbol(symbolsKey(artifact),symbol.ownerId())));result.put("flags",symbol.flags());result.put("line",null);
@@ -238,6 +239,10 @@ public final class RocksIndexStore implements IndexStore {
         result.put("signature",symbol.signature());result.put("erased_descriptor",symbol.descriptor());result.put("source_file",null);result.put("doc",null);
         result.put("fqn",symbol.fqn());result.put("binary_key",symbol.key());result.put("class_entry",symbol.entry());result.put("parameters",Json.MAPPER.valueToTree(symbol.parameters()));
         result.put("metadata",Json.MAPPER.readTree(symbol.metadataJson()));result.put("tier",2);
+        return contextual(artifact,result);
+    }
+    private Map<String,Object> row(StoredArtifact artifact,ArtifactIndexFormat.SymbolRecord symbol)throws Exception{
+        var result=new LinkedHashMap<String,Object>(semanticRow(artifact,symbol));
         if(artifact.docsKey()!=null){
             var overlay=new LinkedHashMap<>(repository.documentation(artifact.docsKey(),symbol.key()));
             Object names=overlay.remove("parameters");
@@ -248,7 +253,7 @@ public final class RocksIndexStore implements IndexStore {
             }
             result.putAll(overlay);
         }
-        return contextual(artifact,result);
+        return result;
     }
     private static Map<String,Object> contextual(StoredArtifact artifact,Map<String,Object> value){
         var result=new LinkedHashMap<>(value);var context=artifact.input().context();
@@ -321,6 +326,37 @@ public final class RocksIndexStore implements IndexStore {
         }
         return List.copyOf(found.values());
     }
+    @Override public synchronized MemberPage membersByOwner(String ownerScip,String prefix,String workspace,int limit,String cursor)throws Exception{
+        if(limit<=0)return new MemberPage(List.of(),null);
+        var owner=byScip(ownerScip,workspace);if(owner==null)return new MemberPage(List.of(),null);
+        long artifactId=((Number)owner.get("artifact_id")).longValue();var artifact=required(artifactId);
+        String ownerFqn=Objects.toString(owner.get("fqn"),Objects.toString(owner.get("binary_key"),""));
+
+        // Current local source facts already have a bounded name posting in SourceOverlay.
+        if(sourceOverlay.contains(artifactId,ownerScip)){
+            long after=0;
+            if(cursor!=null){
+                if(!cursor.startsWith("source:"))throw new IllegalArgumentException("Invalid local member cursor");
+                after=Long.parseUnsignedLong(cursor.substring("source:".length()));
+            }
+            var values=sourceOverlay.select(artifactId,Objects.requireNonNullElse(prefix,""),false,true,limit+1,after,
+                    value->ownerFqn.equals(Objects.toString(value.get("fqn"),""))
+                            &&Set.of("method","ctor","field","enumconst","class","interface","record","enum","annotation").contains(Objects.toString(value.get("kind"),"")));
+            boolean more=values.size()>limit;var page=new ArrayList<Map<String,Object>>(values.subList(0,Math.min(limit,values.size())));
+            String next=more?"source:"+Long.toUnsignedString(((Number)page.getLast().get("id")).longValue()&0xffffffffL):null;
+            return new MemberPage(page.stream().map(value->contextual(artifact,value)).toList(),next);
+        }
+
+        String generation=artifact.input().key().cacheKey();
+        String binaryOwner=Objects.toString(owner.get("binary_key"),"");
+        String token=cursor==null?null:cursor.startsWith("binary:")?cursor.substring("binary:".length()):null;
+        if(cursor!=null&&token==null)throw new IllegalArgumentException("Invalid binary member cursor");
+        var page=repository.ownerMembers(generation,binaryOwner,Objects.requireNonNullElse(prefix,""),limit,token);
+        var rows=new ArrayList<Map<String,Object>>(page.symbols().size());
+        for(var symbol:page.symbols())rows.add(semanticRow(artifact,symbol));
+        return new MemberPage(rows,page.cursor()==null?null:"binary:"+page.cursor());
+    }
+
     @Override public synchronized List<Map<String,Object>> descendants(String path,String workspace,int depth,int limit,long after,Set<String> kinds)throws Exception{
         long parentDepth=path.chars().filter(c->c=='/').count();
         return findMatching(path+"/",workspace,true,limit,after,kinds,s->{String candidate=Objects.toString(s.get("name_path"),"");return candidate.startsWith(path+"/")&&candidate.chars().filter(c->c=='/').count()-parentDepth<=depth;});

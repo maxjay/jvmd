@@ -139,21 +139,34 @@ public record SemanticFact(
 
     public CompletionCandidate candidate(Map<String,SemanticType> substitutions){
         SemanticType contextual=type.substitute(substitutions);
-        String label=name+" : "+CompletionCandidate.typeLabel(contextual,false);var labels=new ArrayList<CompletionCandidate.ParameterLabel>();
+        String label=name+": "+contextual.display();
+        String editorLabel=name+" : "+CompletionCandidate.typeLabel(contextual,false);
+        var labels=new ArrayList<CompletionCandidate.ParameterLabel>();
         if(contextual instanceof SemanticType.Executable executable){
             var value=new StringBuilder(name).append('(');
+            var editor=new StringBuilder(name).append('(');
             for(int i=0;i<executable.parameters().size();i++){
-                if(i>0)value.append(", ");
-                String parameter=CompletionCandidate.typeLabel(executable.parameters().get(i),true);
-                if(varargs&&i==executable.parameters().size()-1&&parameter.endsWith("[]"))parameter=parameter.substring(0,parameter.length()-2)+"...";
-                int start=value.length();value.append(parameter);
-                if(i<parameterNames.size()&&!parameterNames.get(i).isBlank())value.append(' ').append(parameterNames.get(i));
+                if(i>0){value.append(", ");editor.append(", ");}
+                String parameter=executable.parameters().get(i).display();
+                String editorParameter=CompletionCandidate.typeLabel(executable.parameters().get(i),true);
+                if(varargs&&i==executable.parameters().size()-1&&parameter.endsWith("[]"))
+                    parameter=parameter.substring(0,parameter.length()-2)+"...";
+                if(varargs&&i==executable.parameters().size()-1&&editorParameter.endsWith("[]"))
+                    editorParameter=editorParameter.substring(0,editorParameter.length()-2)+"...";
+                int start=value.length();value.append(parameter);editor.append(editorParameter);
+                if(i<parameterNames.size()&&!parameterNames.get(i).isBlank()){
+                    value.append(' ').append(parameterNames.get(i));
+                    editor.append(' ').append(parameterNames.get(i));
+                }
                 labels.add(new CompletionCandidate.ParameterLabel(start,value.length()));
             }
-            value.append(')');
-            if(!kind.equals("ctor"))value.append(" : ").append(CompletionCandidate.typeLabel(executable.returns(),true));
-            label=value.toString();
+            value.append(')');editor.append(')');
+            if(!kind.equals("ctor")){
+                value.append(": ").append(executable.returns().display());
+                editor.append(" : ").append(CompletionCandidate.typeLabel(executable.returns(),true));
+            }
+            label=value.toString();editorLabel=editor.toString();
         }
-        return new CompletionCandidate(id,name,kind,structuralSignature,ownerId,sourceFile,modifiers,label,labels);
+        return new CompletionCandidate(id,name,kind,structuralSignature,ownerId,sourceFile,modifiers,label,editorLabel,labels);
     }
 }

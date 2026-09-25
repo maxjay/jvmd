@@ -14,6 +14,8 @@ public final class CompletionContextResolver {
     public interface TypeLookup {
         List<SemanticReadView.Symbol> find(String simpleOrQualifiedName)throws Exception;
     }
+    public enum Access { ALLOWED, DENIED, UNKNOWN }
+    public enum StaticContext { STATIC, INSTANCE, UNKNOWN }
 
     public record Resolved(
             SemanticReadView.Symbol receiver,
@@ -21,7 +23,7 @@ public final class CompletionContextResolver {
             boolean staticReceiver,
             String packageName,
             String enclosingTypeId,
-            boolean staticContext,
+            StaticContext staticContext,
             Set<String> resolutionNames) {
         public Resolved {
             Objects.requireNonNull(receiver);
@@ -32,7 +34,7 @@ public final class CompletionContextResolver {
     }
 
     private record State(SemanticReadView.Symbol owner,SemanticType type,boolean staticReceiver) { }
-    private record Declaration(String type,int start,int end) { }
+    private record Declaration(String type,int start,int end,boolean field,boolean staticField) { }
     private static final Set<String> TYPE_KINDS=Set.of("class","interface","enum","record","annotation");
     private static final Pattern PACKAGE=Pattern.compile("(?m)\\bpackage\\s+([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)\\s*;");
     private static final Pattern IMPORT=Pattern.compile("(?m)\\bimport\\s+(?!static\\b)([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$*][\\w$*]*)*)\\s*;");
@@ -52,9 +54,9 @@ public final class CompletionContextResolver {
         String pkg=packageName(text);
         String enclosingName=enclosingTypeName(text,dot,pkg);
         SemanticReadView.Symbol enclosing=enclosingName==null?null:unique(resolveType(enclosingName,text,pkg,lookup));
-        boolean staticContext=staticContext(text,dot);
+        StaticContext staticContext=staticContext(text,dot);
 
-        State state=base(segments.getFirst(),text,dot,pkg,enclosing,view,lookup);
+        State state=base(segments.getFirst(),text,dot,pkg,enclosing,staticContext,view,lookup);
         if(state==null)return null;
         for(int i=1;i<segments.size();i++){
             state=advance(state,segments.get(i),pkg,enclosing,view,lookup);
@@ -65,12 +67,12 @@ public final class CompletionContextResolver {
     }
 
     private static State base(String segment,String text,int receiverEnd,String pkg,SemanticReadView.Symbol enclosing,
-                              SemanticReadView view,TypeLookup lookup)throws Exception{
+                              StaticContext staticContext,SemanticReadView view,TypeLookup lookup)throws Exception{
         if(segment.equals("this")){
-            return enclosing==null?null:new State(enclosing,enclosing.semanticType(),false);
+            return enclosing==null||staticContext!=StaticContext.INSTANCE?null:new State(enclosing,enclosing.semanticType(),false);
         }
         if(segment.equals("super")){
-            if(enclosing==null)return null;
+            if(enclosing==null||staticContext!=StaticContext.INSTANCE)return null;
             var parents=view.directSupertypes(enclosing.id());
             if(parents.size()!=1)return null;
             var parent=view.symbol(parents.getFirst());
@@ -79,6 +81,8 @@ public final class CompletionContextResolver {
         if(segment.endsWith("()"))return null;
         Declaration declaration=declaration(text,segment,receiverEnd);
         if(declaration!=null){
+            if(staticContext==StaticContext.UNKNOWN)return null;
+            if(declaration.field()&&staticContext==StaticContext.STATIC&&!declaration.staticField())return null;
             var type=unique(resolveType(declaration.type(),text,pkg,lookup));
             return type==null?null:new State(type,type.semanticType(),false);
         }
@@ -96,7 +100,9 @@ public final class CompletionContextResolver {
         for(var member:candidates){
             if(!member.name().equals(name))continue;
             if(state.staticReceiver()&&!member.staticMember())continue;
-            if(!accessible(member,pkg,enclosing,view))continue;
+            var access=access(member,pkg);
+            if(access==Access.UNKNOWN)return null;
+            if(access==Access.DENIED)continue;
             if(call){
                 if(!(member.semanticType() instanceof SemanticType.Executable executable)||!executable.parameters().isEmpty())continue;
             }else if(member.semanticType() instanceof SemanticType.Executable)continue;
@@ -119,8 +125,6 @@ public final class CompletionContextResolver {
             return declaredOwner(intersection.bounds().getFirst(),lookup);
         return null;
     }
-    private static String textForLookup(SemanticType type){return type instanceof SemanticType.Declared d?d.name():"";}
-
     private static List<SemanticReadView.Symbol> resolveType(String sourceName,String text,String pkg,TypeLookup lookup)throws Exception{
         String raw=sourceName.replaceAll("\\s+","").replace("[]","");
         if(raw.isBlank()||raw.equals("var")||raw.indexOf('<')>=0||primitive(raw))return List.of();
@@ -158,14 +162,18 @@ public final class CompletionContextResolver {
         String identifier=Pattern.quote(name);
         var pattern=Pattern.compile("(?<![\\w$])([A-Za-z_$][\\w$]*(?:\\s*\\.\\s*[A-Za-z_$][\\w$]*)*(?:\\s*\\[\\s*\\])*)\\s+"+identifier+"\\b");
         var matches=new ArrayList<Declaration>();var matcher=pattern.matcher(masked);
-        while(matcher.find())matches.add(new Declaration(matcher.group(1),matcher.start(),matcher.end()));
+        while(matcher.find())matches.add(new Declaration(matcher.group(1),matcher.start(),matcher.end(),false,false));
         if(matches.isEmpty())return null;
         int[] braces=braceDepths(masked),parens=parenDepths(masked);int cursorDepth=depthAt(braces,Math.max(0,receiverEnd-1));
+        int classOpen=enclosingTypeOpen(masked,receiverEnd);
+        int classBodyDepth=classOpen<0?-1:depthAt(braces,classOpen)+1;
         for(int i=matches.size()-1;i>=0;i--){
             var value=matches.get(i);int depth=depthAt(braces,value.start());
             if(depth>cursorDepth||dropsBelow(braces,value.end(),receiverEnd,depth))continue;
             if(depthAt(parens,value.start())>0&&!parameterScopeContains(masked,braces,value.end(),receiverEnd,depth))continue;
-            return value;
+            boolean field=classBodyDepth>=0&&depth==classBodyDepth&&depthAt(parens,value.start())==0;
+            boolean statik=field&&Pattern.compile("\\bstatic\\b").matcher(memberPrefix(masked,classOpen,value.start())).find();
+            return new Declaration(value.type(),value.start(),value.end(),field,statik);
         }
         return null;
     }
@@ -198,24 +206,18 @@ public final class CompletionContextResolver {
         return List.copyOf(result.values());
     }
 
-    public static boolean accessible(SemanticReadView.Symbol member,String callerPackage,SemanticReadView.Symbol enclosing,
-                                      SemanticReadView view)throws Exception{
+    /**
+     * Detached Tier-1 access proof. Context-sensitive cases are deliberately UNKNOWN so javac
+     * remains authoritative for protected qualification, private nestmates and module semantics.
+     */
+    public static Access access(SemanticReadView.Symbol member,String callerPackage){
         var modifiers=member.modifiers();
-        if(modifiers.contains("public"))return true;
+        if(modifiers.contains("public"))return Access.ALLOWED;
         String ownerPackage=member.resolution().packageName();
-        if(modifiers.contains("private"))
-            return enclosing!=null&&Objects.equals(member.resolution().ownerKey(),enclosing.resolution().symbolKey());
-        if(Objects.equals(ownerPackage,callerPackage))return true;
-        if(!modifiers.contains("protected")||enclosing==null)return false;
-        String wanted=member.resolution().ownerKey();
-        var queue=new ArrayDeque<String>();queue.add(enclosing.id());var seen=new HashSet<String>();
-        while(!queue.isEmpty()){
-            String id=queue.removeFirst();if(!seen.add(id))continue;
-            var symbol=view.symbol(id);
-            if(symbol!=null&&(Objects.equals(symbol.resolution().symbolKey(),wanted)||Objects.equals(symbol.fqn(),wanted)))return true;
-            queue.addAll(view.directSupertypes(id));
-        }
-        return false;
+        if(modifiers.contains("private"))return Access.UNKNOWN;
+        if(Objects.equals(ownerPackage,callerPackage))return Access.ALLOWED;
+        if(modifiers.contains("protected"))return Access.UNKNOWN;
+        return Access.DENIED;
     }
 
     private static List<String> segments(String expression){
@@ -255,16 +257,66 @@ public final class CompletionContextResolver {
         return selected==null?null:pkg.isBlank()?selected:pkg+"."+selected;
     }
 
-    private static boolean staticContext(String text,int cursor){
-        String masked=codeMask(text);int[] depths=braceDepths(masked);int depth=depthAt(depths,Math.max(0,cursor-1));
-        for(int i=cursor-1;i>=0;i--){
-            if(masked.charAt(i)=='{'&&depthAt(depths,i)==depth-1){
-                int start=i-1;while(start>=0&&masked.charAt(start)!='}'&&masked.charAt(start)!=';'&&masked.charAt(start)!='{')start--;
-                String header=masked.substring(start+1,i);
-                return header.indexOf('(')>=0&&Pattern.compile("\\bstatic\\b").matcher(header).find();
+    private static StaticContext staticContext(String text,int cursor){
+        String masked=codeMask(text);int classOpen=enclosingTypeOpen(masked,cursor);
+        if(classOpen<0)return StaticContext.UNKNOWN;
+        int[] depths=braceDepths(masked);int classBodyDepth=depthAt(depths,classOpen)+1;
+        int cursorDepth=depthAt(depths,Math.max(0,cursor-1));
+
+        // Class-level field initializer.
+        if(cursorDepth==classBodyDepth){
+            String segment=memberPrefix(masked,classOpen,cursor);
+            int equals=segment.indexOf('=');
+            if(equals>=0){
+                String declaration=segment.substring(0,equals);
+                return Pattern.compile("\\bstatic\\b").matcher(declaration).find()
+                        ?StaticContext.STATIC:StaticContext.INSTANCE;
             }
         }
-        return false;
+
+        // Walk enclosing blocks outward; control-flow/lambda blocks defer to their parent context.
+        var opens=new ArrayDeque<Integer>();
+        for(int i=classOpen+1;i<Math.min(cursor,masked.length());i++){
+            char ch=masked.charAt(i);
+            if(ch=='{')opens.push(i);
+            else if(ch=='}'&&!opens.isEmpty())opens.pop();
+        }
+        for(int open:opens){
+            if(depthAt(depths,open)!=classBodyDepth)continue;
+            String header=memberPrefix(masked,classOpen,open).trim();
+            if(header.equals("static"))return StaticContext.STATIC;
+            if(header.isEmpty())return StaticContext.INSTANCE;
+            if(header.indexOf(')')>=0&&!controlHeader(header))
+                return Pattern.compile("\\bstatic\\b").matcher(header).find()
+                        ?StaticContext.STATIC:StaticContext.INSTANCE;
+        }
+        return StaticContext.UNKNOWN;
+    }
+
+    private static boolean controlHeader(String header){
+        String value=header.stripLeading();
+        return Pattern.compile("^(if|for|while|switch|catch|try|else|do|synchronized)\\b").matcher(value).find()
+                ||value.contains("->");
+    }
+
+    private static int enclosingTypeOpen(String masked,int cursor){
+        var matcher=CLASS.matcher(masked);int selected=-1;
+        while(matcher.find()&&matcher.start()<cursor){
+            int open=masked.indexOf('{',matcher.end());if(open<0||open>=cursor)continue;
+            int close=matchingBrace(masked,open);if(close>=0&&cursor>close)continue;
+            if(open>selected)selected=open;
+        }
+        return selected;
+    }
+
+    private static String memberPrefix(String source,int classOpen,int end){
+        int start=Math.max(0,classOpen+1);
+        int[] depths=braceDepths(source);int classBodyDepth=depthAt(depths,classOpen)+1;
+        for(int i=Math.min(end-1,source.length()-1);i>classOpen;i--){
+            char ch=source.charAt(i);
+            if((ch==';'||ch=='}'||ch=='{')&&depthAt(depths,i)<=classBodyDepth){start=i+1;break;}
+        }
+        return source.substring(Math.min(start,end),end);
     }
 
     private static int previousCode(String text,int from){

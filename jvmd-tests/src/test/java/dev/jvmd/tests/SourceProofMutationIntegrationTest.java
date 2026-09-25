@@ -32,7 +32,8 @@ class SourceProofMutationIntegrationTest {
             long afterTwo=queries(analyzer);
             assertThat(evidence(analyzer)).containsEntry("last_proof_consumers_visited",0L)
                     .containsEntry("last_source_consumers_invalidated",0L)
-                    .containsEntry("last_coarse_fallback_files",0L);
+                    .containsEntry("last_coarse_fallback_files",0L)
+                    .containsEntry("last_pre_proof_dependant_invalidations",0L);
             assertThat(diagnostics(analyzer,b,caller)).isEmpty();
             assertThat(queries(analyzer)).as("A.two must not reanalyse B which depends on A.one/A.foo").isEqualTo(afterTwo);
 
@@ -41,7 +42,8 @@ class SourceProofMutationIntegrationTest {
             long afterBar=queries(analyzer);
             assertThat(evidence(analyzer)).containsEntry("last_proof_consumers_visited",0L)
                     .containsEntry("last_source_consumers_invalidated",0L)
-                    .containsEntry("last_coarse_fallback_files",0L);
+                    .containsEntry("last_coarse_fallback_files",0L)
+                    .containsEntry("last_pre_proof_dependant_invalidations",0L);
             assertThat(diagnostics(analyzer,b,caller)).isEmpty();
             assertThat(queries(analyzer)).as("A.bar must not reanalyse a caller of A.foo").isEqualTo(afterBar);
 
@@ -57,6 +59,56 @@ class SourceProofMutationIntegrationTest {
             long beforeCaller=queries(analyzer);
             assertThat(diagnostics(analyzer,b,caller)).isEmpty();
             assertThat(queries(analyzer)).as("new A.foo(String) must reconsider B's resolved call").isEqualTo(beforeCaller+1);
+        }
+    }
+
+    @Test void bodyOnlyMutationAttributesOnlyChangedSource()throws Exception{
+        Path a=root.resolve("A.java"),b=root.resolve("B.java");
+        String first="class A { int one(){return 1;} }";
+        String caller="class B { int f(A a){return a.one();} }";
+        Files.writeString(a,first);Files.writeString(b,caller);
+        var documents=new Documents();documents.open(a,first,1);
+
+        try(var analyzer=analyzer(documents)){
+            assertThat(diagnostics(analyzer,a,first)).isEmpty();
+            assertThat(diagnostics(analyzer,b,caller)).isEmpty();
+            long before=queries(analyzer);
+            String changed=first.replace("return 1","return 2");
+            mutate(analyzer,documents,a,2,changed);
+            var proof=evidence(analyzer);
+            assertThat(proof).containsEntry("last_pre_proof_dependant_invalidations",0L)
+                    .containsEntry("last_leaves_published",0L)
+                    .containsEntry("last_source_consumers_invalidated",0L)
+                    .containsEntry("last_coarse_fallback_files",0L)
+                    .containsEntry("last_pre_proof_dependant_invalidations",0L);
+            long afterSource=queries(analyzer);
+            assertThat(afterSource).isEqualTo(before+1);
+            assertThat(diagnostics(analyzer,b,caller)).isEmpty();
+            assertThat(queries(analyzer)).as("body-only edit must not attribute dependant B").isEqualTo(afterSource);
+        }
+    }
+
+    @Test void relevantExactInstanceMemberChangeReconsidersDirectConsumer()throws Exception{
+        Path a=root.resolve("A.java"),b=root.resolve("B.java");
+        String first="class A { int one(){return 1;} int two(){return 2;} }";
+        String caller="class B { int f(A a){return a.one();} }";
+        Files.writeString(a,first);Files.writeString(b,caller);
+        var documents=new Documents();documents.open(a,first,1);
+
+        try(var analyzer=analyzer(documents)){
+            assertThat(diagnostics(analyzer,a,first)).isEmpty();
+            assertThat(diagnostics(analyzer,b,caller)).isEmpty();
+            String changed=first.replace("int one(){return 1;}","String one(){return \"one\";}");
+            mutate(analyzer,documents,a,2,changed);
+            var proof=evidence(analyzer);
+            assertThat(proof).containsEntry("last_pre_proof_dependant_invalidations",0L)
+                    .containsEntry("last_source_consumers_invalidated",1L)
+                    .containsEntry("last_coarse_fallback_files",0L);
+            assertThat(((Number)proof.get("last_proof_consumers_visited")).longValue()).isPositive();
+            assertThat(((Number)proof.get("last_proof_consumers_changed")).longValue()).isPositive();
+            long beforeCaller=queries(analyzer);
+            assertThat(diagnostics(analyzer,b,caller)).anyMatch(problem->problem.code().startsWith("compiler.err.prob.found.req"));
+            assertThat(queries(analyzer)).as("changed A.one exact fact must reconsider B").isEqualTo(beforeCaller+1);
         }
     }
 
@@ -76,7 +128,8 @@ class SourceProofMutationIntegrationTest {
             mutate(analyzer,documents,project,2,disjoint);
             assertThat(evidence(analyzer)).containsEntry("last_proof_consumers_visited",0L)
                     .containsEntry("last_source_consumers_invalidated",0L)
-                    .containsEntry("last_coarse_fallback_files",0L);
+                    .containsEntry("last_coarse_fallback_files",0L)
+                    .containsEntry("last_pre_proof_dependant_invalidations",0L);
             assertThat(completion(analyzer,use,source).path("items").findValuesAsText("name"))
                     .contains("getOne").doesNotContain("setSomething");
             assertThat(queries(analyzer)).as("disjoint set* mutation must keep maintained get* completion zero-javac")
@@ -88,7 +141,8 @@ class SourceProofMutationIntegrationTest {
             assertThat(((Number)proof.get("last_proof_consumers_visited")).longValue()).isPositive();
             assertThat(((Number)proof.get("last_proof_consumers_changed")).longValue()).isPositive();
             assertThat(proof).containsEntry("last_source_consumers_invalidated",0L)
-                    .containsEntry("last_coarse_fallback_files",0L);
+                    .containsEntry("last_coarse_fallback_files",0L)
+                    .containsEntry("last_pre_proof_dependant_invalidations",0L);
             long beforeCompletion=queries(analyzer);
             assertThat(completion(analyzer,use,source).path("items").findValuesAsText("name"))
                     .contains("getOne","getSomething").doesNotContain("setSomething");

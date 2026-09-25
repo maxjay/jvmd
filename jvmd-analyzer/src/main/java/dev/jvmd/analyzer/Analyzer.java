@@ -847,9 +847,12 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             };
             if(affected)leaves.put(key,currentSourceLeafIdentity(key));
         }
+        return changedSourceLeaves(leaves);
+    }
+    private SourceLeafChanges changedSourceLeaves(Map<QueryProof.Key,Hash256> candidates){
         var changed=new TreeMap<QueryProof.Key,Hash256>();var changedConsumers=new HashSet<SemanticUpdatePolicy.ProofConsumer>();
         var equalCandidates=new HashSet<SemanticUpdatePolicy.ProofConsumer>();
-        for(var entry:leaves.entrySet()){
+        for(var entry:candidates.entrySet()){
             boolean keyChanged=false;
             for(var consumer:dependencies.semantic().proofs().consumers(entry.getKey())){
                 var evaluation=dependencies.semantic().proofs().evaluation(consumer);if(evaluation.isEmpty())continue;
@@ -863,9 +866,83 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         equalCandidates.removeAll(changedConsumers);
         return new SourceLeafChanges(changed,equalCandidates.size());
     }
+    private String sourceBinary(Path file){
+        file=file.toAbsolutePath().normalize();Path owner=null;
+        for(Path root:context.sources()){
+            Path normalized=root.toAbsolutePath().normalize();
+            if(file.startsWith(normalized)&&(owner==null||normalized.getNameCount()>owner.getNameCount()))owner=normalized;
+        }
+        if(owner==null||!file.toString().endsWith(".java"))return null;
+        String relative=owner.relativize(file).toString();
+        return relative.substring(0,relative.length()-5).replace(java.io.File.separatorChar,'.');
+    }
+    private Optional<Hash256> membershipTypeIdentity(String binary,boolean present){
+        if(!present)return Optional.empty();
+        if(liveSourceState==null)return Optional.empty();
+        var source=liveSourceState.source(binary).orElse(null);if(source==null)return Optional.empty();
+        String content=Objects.requireNonNullElse(liveSourceState.contentHash(source.file()),"<unknown>");
+        var resident=semanticState().type(binary);
+        if(resident!=null&&semanticState().unitCurrent("source:"+source.file().toAbsolutePath().normalize(),content))
+            return Optional.of(resident.resolutionIdentity());
+        return Optional.of(CanonicalDigestWriter.digest("source-namespace-candidate-v1",
+                binary,source.file().toAbsolutePath().normalize().toString(),content));
+    }
+    private SourceLeafChanges sourceMembershipLeaves(String binary,boolean present)throws Exception{
+        if(binary==null||binary.isBlank())return new SourceLeafChanges(Map.of(),0);
+        var leaves=new TreeMap<QueryProof.Key,Hash256>();Hash256 declaration=membershipTypeIdentity(binary,present).orElse(null);
+        for(var key:dependencies.semantic().proofs().dependencyKeys()){
+            switch(key.domain()){
+                case NAMESPACE -> {
+                    if(key.value().equals("type:"+binary))
+                        leaves.put(key,CanonicalDigestWriter.digest("namespace-search-domain-v1",binary,declaration));
+                }
+                case NEGATIVE_RESOLUTION -> {
+                    int split=key.value().lastIndexOf('@');
+                    if(split>0&&key.value().substring(split+1).replace((char)36,'.').equals(binary)){
+                        String simple=key.value().substring(0,split);
+                        Hash256 domain=CanonicalDigestWriter.digest("namespace-search-domain-v1",binary,declaration);
+                        leaves.put(key,CanonicalDigestWriter.digest("negative-resolution-domain-v1",simple,binary,domain));
+                    }
+                }
+                case RESOLUTION_PATH -> {
+                    if(key.value().equals("type:"+binary))
+                        leaves.put(key,CanonicalDigestWriter.digest("document-resolution-path-v1",binary,
+                                declaration==null?null:binary,declaration));
+                }
+                default -> {}
+            }
+        }
+        return changedSourceLeaves(leaves);
+    }
     private static boolean sourceProofConsumer(SemanticUpdatePolicy.ProofConsumer consumer){
         return consumer.id().equals("source-semantic");
     }
+    private record SourcePropagation(Set<Path> affected,Set<Path> coarse,SemanticUpdatePolicy.ProofPropagation propagation) {
+        SourcePropagation { affected=Set.copyOf(affected);coarse=Set.copyOf(coarse); }
+    }
+    private SourcePropagation propagateSourceLeaves(SourceLeafChanges leafChanges,Collection<Path> initialCoarse)throws Exception{
+        var leaves=leafChanges.changed();
+        var propagation=dependencies.semantic().proofs().propagate(leaves,consumer->rebaseProof(consumer,leaves));
+        var queryInvalid=new LinkedHashSet<SemanticUpdatePolicy.ProofConsumer>();
+        propagation.changed().stream().filter(consumer->!sourceProofConsumer(consumer)).forEach(queryInvalid::add);
+        propagation.fallback().stream().filter(consumer->!sourceProofConsumer(consumer)).forEach(queryInvalid::add);
+        var caches=modules.get(context.generation());if(caches!=null&&!queryInvalid.isEmpty())invalidateDocumentProofConsumers(caches,queryInvalid);
+
+        var sourceChanged=new LinkedHashSet<Path>();
+        propagation.changed().stream().filter(Analyzer::sourceProofConsumer).map(SemanticUpdatePolicy.ProofConsumer::file).forEach(sourceChanged::add);
+        var sourceFallback=new LinkedHashSet<Path>();
+        propagation.fallback().stream().filter(Analyzer::sourceProofConsumer).map(SemanticUpdatePolicy.ProofConsumer::file).forEach(sourceFallback::add);
+        for(Path file:sourceChanged)dependencies.semantic().proofCoverage(file,false);
+        for(Path file:sourceFallback)dependencies.semantic().proofCoverage(file,false);
+
+        var coarse=new LinkedHashSet<Path>(initialCoarse);var affected=new LinkedHashSet<Path>(initialCoarse);
+        affected.addAll(sourceChanged);affected.addAll(sourceFallback);
+        var fallbackClosure=dependencies.semantic().coarseFallback(sourceFallback);
+        affected.addAll(fallbackClosure);coarse.addAll(fallbackClosure);
+        sourceProofEvidence.record(leaves.size(),propagation,leafChanges.consumersStoppedEqual(),coarse.size(),sourceChanged.size()+sourceFallback.size());
+        return new SourcePropagation(affected,coarse,propagation);
+    }
+
     private void resolveContribution(FileSemanticContribution contribution){
         try{resolveContribution(contribution,null);}
         catch(RuntimeException failure){throw failure;}
@@ -878,27 +955,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(pending){if(result.apiChanged().isEmpty())apiFingerprintUnchanged++;else apiFingerprintChanges++;}
 
         var coarse=new LinkedHashSet<>(result.reanalyze());coarse.remove(contribution.file());
-        var affected=new LinkedHashSet<Path>(coarse);
-        if(admission!=null){
-            var leafChanges=sourceMutationLeaves(admission,contribution.file());
-            var leaves=leafChanges.changed();
-            var propagation=dependencies.semantic().proofs().propagate(leaves,consumer->rebaseProof(consumer,leaves));
-
-            var queryInvalid=new LinkedHashSet<SemanticUpdatePolicy.ProofConsumer>();
-            propagation.changed().stream().filter(consumer->!sourceProofConsumer(consumer)).forEach(queryInvalid::add);
-            propagation.fallback().stream().filter(consumer->!sourceProofConsumer(consumer)).forEach(queryInvalid::add);
-            var caches=modules.get(context.generation());if(caches!=null&&!queryInvalid.isEmpty())invalidateDocumentProofConsumers(caches,queryInvalid);
-
-            var sourceChanged=new LinkedHashSet<Path>();
-            propagation.changed().stream().filter(Analyzer::sourceProofConsumer).map(SemanticUpdatePolicy.ProofConsumer::file).forEach(sourceChanged::add);
-            var sourceFallback=new LinkedHashSet<Path>();
-            propagation.fallback().stream().filter(Analyzer::sourceProofConsumer).map(SemanticUpdatePolicy.ProofConsumer::file).forEach(sourceFallback::add);
-            for(Path file:sourceChanged)dependencies.semantic().proofCoverage(file,false);
-            for(Path file:sourceFallback)dependencies.semantic().proofCoverage(file,false);
-            affected.addAll(sourceChanged);affected.addAll(sourceFallback);
-            var fallbackClosure=dependencies.semantic().coarseFallback(sourceFallback);affected.addAll(fallbackClosure);coarse.addAll(fallbackClosure);
-            sourceProofEvidence.record(leaves.size(),propagation,leafChanges.consumersStoppedEqual(),coarse.size(),sourceChanged.size()+sourceFallback.size());
-        }
+        Set<Path> affected=Set.copyOf(coarse);
+        if(admission!=null)affected=propagateSourceLeaves(sourceMutationLeaves(admission,contribution.file()),coarse).affected();
         diagnosticStore.invalidate(affected,DiagnosticStore.Reason.DEPENDENCY_API_CHANGED);invalidateCompilerCaches(affected);
     }
     private void invalidateConditionalIfUnresolved(Path path){

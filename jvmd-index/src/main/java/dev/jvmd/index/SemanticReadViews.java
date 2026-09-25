@@ -71,7 +71,7 @@ public final class SemanticReadViews {
         return new SemanticReadView(){
             @Override public Symbol symbol(String id)throws Exception{
                 var row=store.byScip(id,workspace);
-                return row==null||isLocal(row)!=local?null:fromIndexed(row,local?Origin.LOCAL:Origin.MACHINE);
+                return row==null||isLocal(row)!=local?null:fromIndexed(row,local?SemanticReadView.Origin.LOCAL:SemanticReadView.Origin.MACHINE);
             }
             @Override public List<String> directSupertypes(String typeId)throws Exception{
                 if(symbol(typeId)==null)return List.of();
@@ -88,12 +88,12 @@ public final class SemanticReadViews {
         };
     }
 
-    private static Symbol fromResident(SemanticFact fact){
-        return new Symbol(fact.id(),fact.name(),fact.kind(),fact.fqn(),fact.id(),fact.structuralSignature(),
-                fact.erasedDescriptor(),fact.modifiers(),fact.resolutionIdentity(),Origin.LIVE);
+    private static SemanticReadView.Symbol fromResident(SemanticFact fact){
+        return new SemanticReadView.Symbol(fact.id(),fact.name(),fact.kind(),fact.fqn(),fact.id(),fact.structuralSignature(),
+                fact.erasedDescriptor(),fact.modifiers(),fact.resolutionIdentity(),SemanticReadView.Origin.LIVE);
     }
 
-    private static Symbol fromIndexed(Map<String,Object> row,Origin origin)throws Exception{
+    private static SemanticReadView.Symbol fromIndexed(Map<String,Object> row,SemanticReadView.Origin origin)throws Exception{
         String id=Objects.toString(row.get("scip"),"");
         String binary=Objects.toString(row.get("binary_key"),id);
         String fqn=Objects.toString(row.get("fqn"),"");
@@ -105,7 +105,7 @@ public final class SemanticReadViews {
         String metadata=Json.MAPPER.writeValueAsString(row.getOrDefault("metadata",Map.of()));
         var persisted=new ArtifactIndexFormat.SymbolRecord(
                 0,-1,binary,fqn,name,kind,signature,descriptor,flags,null,List.of(),metadata);
-        return new Symbol(id,name,kind,fqn,binary,signature,descriptor,modifiers(row,flags),
+        return new SemanticReadView.Symbol(id,name,kind,fqn,binary,signature,descriptor,modifiers(row,flags),
                 ArtifactIndexFormat.symbolResolutionIdentity(persisted),origin);
     }
 

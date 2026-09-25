@@ -449,7 +449,7 @@ public final class SqliteIndexStore implements IndexStore {
                 else{statement.setString(i++,name.leaf());statement.setString(i++,query);statement.setString(i++,query);}
                 if(workspace!=null)statement.setString(i,workspace);
                 try(var rows=statement.executeQuery()){while(rows.next()&&result.size()<limit){
-                    var value=symbol(rows);if(!searchVisible(value)||!kinds.isEmpty()&&!kinds.contains(value.get("kind")))continue;
+                    var value=symbol(rows);if(!kinds.isEmpty()&&!kinds.contains(value.get("kind")))continue;
                     if((substring||name.matches(value)||query.equals(value.get("binary_key")))&&filter.test(value))result.add(value);
                 }}
             }

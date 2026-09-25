@@ -57,74 +57,98 @@ public final class SemanticReadViews {
     public static SemanticReadView precedence(SemanticReadView live,SemanticReadView local,SemanticReadView machine){
         var layers=List.of(Objects.requireNonNull(live),Objects.requireNonNull(local),Objects.requireNonNull(machine));
         return new SemanticReadView(){
-            private SemanticReadView ownerLayer(String ownerId)throws Exception{
-                SemanticReadView partial=null;
-                for(var layer:layers){
-                    if(layer.symbol(ownerId)==null)continue;
-                    var completeness=layer.completeness(ownerId);
-                    if(completeness.authoritative())return layer;
-                    if(completeness==SemanticCompleteness.UNKNOWN)return null;
-                    if(partial==null)partial=layer;
-                }
-                return partial;
-            }
             @Override public Symbol symbol(String id)throws Exception{
-                for(var layer:layers){var value=layer.symbol(id);if(value!=null)return value;}return null;
+                for(var layer:layers){var value=layer.symbol(id);if(value!=null)return value;}
+                return null;
             }
+
             @Override public SemanticCompleteness completeness(String ownerId)throws Exception{
-                SemanticCompleteness partial=SemanticCompleteness.UNKNOWN;
+                boolean sawPartial=false;
                 for(var layer:layers){
                     if(layer.symbol(ownerId)==null)continue;
                     var value=layer.completeness(ownerId);
-                    if(value.authoritative())return value;
-                    if(value==SemanticCompleteness.UNKNOWN)return value;
-                    partial=value;
+                    if(value==SemanticCompleteness.COMPLETE)return SemanticCompleteness.COMPLETE;
+                    if(value==SemanticCompleteness.UNKNOWN)return SemanticCompleteness.UNKNOWN;
+                    sawPartial=true;
                 }
-                return partial;
+                return sawPartial?SemanticCompleteness.PARTIAL:SemanticCompleteness.UNKNOWN;
             }
+
             @Override public MemberPage members(String ownerId,String prefix,int limit,String cursor)throws Exception{
-                var layer=ownerLayer(ownerId);return layer==null?new MemberPage(List.of(),null):layer.members(ownerId,prefix,limit,cursor);
+                if(limit<=0)return new MemberPage(List.of(),null);
+                int offset=overlayOffset(cursor);
+                int target=Math.addExact(Math.addExact(offset,limit),1);
+                var merged=new LinkedHashMap<String,Symbol>();
+                boolean lowerMayContainMore=false;
+                for(var layer:layers){
+                    if(layer.symbol(ownerId)==null)continue;
+                    var page=layer.members(ownerId,prefix,target,null);
+                    for(var value:page.symbols())merged.putIfAbsent(value.resolution().symbolKey(),value);
+                    if(page.cursor()!=null)lowerMayContainMore=true;
+                    var completeness=layer.completeness(ownerId);
+                    if(completeness==SemanticCompleteness.COMPLETE||completeness==SemanticCompleteness.UNKNOWN)break;
+                }
+                var ordered=new ArrayList<>(merged.values());
+                ordered.sort(Comparator.comparing(Symbol::name)
+                        .thenComparing(value->value.resolution().symbolKey()));
+                int from=Math.min(offset,ordered.size()),to=Math.min(ordered.size(),Math.addExact(from,limit));
+                boolean more=to<ordered.size()||lowerMayContainMore;
+                return new MemberPage(List.copyOf(ordered.subList(from,to)),more?"overlay:"+to:null);
             }
+
             @Override public List<String> directSupertypes(String typeId)throws Exception{
-                var layer=ownerLayer(typeId);return layer==null?List.of():layer.directSupertypes(typeId);
+                // Hierarchy is part of the type declaration fact itself: the highest-precedence
+                // declaration fact wins even when its owner/member surface is only partial.
+                for(var layer:layers)if(layer.symbol(typeId)!=null)return layer.directSupertypes(typeId);
+                return List.of();
             }
+
             @Override public Optional<Hash256> identity(QueryProof.Domain domain,String key)throws Exception{
-                if(domain==QueryProof.Domain.EXACT_SYMBOL){
+                if(domain==QueryProof.Domain.EXACT_SYMBOL||domain==QueryProof.Domain.HIERARCHY){
                     for(var layer:layers)if(layer.symbol(key)!=null)return layer.identity(domain,key);
                     return Optional.empty();
-                }
-                if(domain==QueryProof.Domain.HIERARCHY){
-                    var layer=ownerLayer(key);return layer==null?Optional.empty():layer.identity(domain,key);
                 }
                 for(var layer:layers){
                     var value=layer.identity(domain,key);if(value.isPresent())return value;
                 }
                 return Optional.empty();
             }
+
+            private int overlayOffset(String cursor){
+                if(cursor==null)return 0;
+                if(!cursor.startsWith("overlay:"))throw new IllegalArgumentException("Invalid semantic overlay cursor");
+                try{
+                    int value=Integer.parseInt(cursor.substring("overlay:".length()));
+                    if(value<0)throw new NumberFormatException();
+                    return value;
+                }catch(NumberFormatException invalid){throw new IllegalArgumentException("Invalid semantic overlay cursor",invalid);}
+            }
         };
     }
 
     private static SemanticReadView indexed(IndexStore store,String workspace,boolean local){
         Objects.requireNonNull(store);
+        var layer=local?IndexStore.SemanticLayer.LOCAL:IndexStore.SemanticLayer.MACHINE;
+        var origin=local?SemanticReadView.Origin.LOCAL:SemanticReadView.Origin.MACHINE;
         return new SemanticReadView(){
             @Override public Symbol symbol(String id)throws Exception{
-                var row=store.byScip(id,workspace);
-                return row==null||isLocal(row)!=local?null:fromIndexed(row,local?SemanticReadView.Origin.LOCAL:SemanticReadView.Origin.MACHINE);
+                var row=store.byScip(id,workspace,layer);
+                return row==null?null:fromIndexed(row,origin);
             }
             @Override public SemanticCompleteness completeness(String ownerId)throws Exception{
                 return symbol(ownerId)==null?SemanticCompleteness.UNKNOWN:SemanticCompleteness.COMPLETE;
             }
             @Override public MemberPage members(String ownerId,String prefix,int limit,String cursor)throws Exception{
                 if(symbol(ownerId)==null||limit<=0)return new MemberPage(List.of(),null);
-                var page=store.membersByOwner(ownerId,prefix,workspace,limit,cursor);
+                var page=store.membersByOwner(ownerId,prefix,workspace,limit,cursor,layer);
                 var values=new ArrayList<SemanticReadView.Symbol>(page.symbols().size());
-                for(var row:page.symbols())if(isLocal(row)==local)values.add(fromIndexed(row,local?SemanticReadView.Origin.LOCAL:SemanticReadView.Origin.MACHINE));
+                for(var row:page.symbols())values.add(fromIndexed(row,origin));
                 return new MemberPage(values,page.cursor());
             }
             @Override public List<String> directSupertypes(String typeId)throws Exception{
                 if(symbol(typeId)==null)return List.of();
                 var result=new TreeSet<String>();
-                for(var edge:store.relationships(List.of(typeId),true,Set.of("extends","implements"),workspace)){
+                for(var edge:store.relationships(List.of(typeId),true,Set.of("extends","implements"),workspace,layer)){
                     Object target=edge.target().get("scip");if(target!=null)result.add(target.toString());
                 }
                 return List.copyOf(result);

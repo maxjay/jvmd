@@ -1417,7 +1417,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private CompletionCandidate semanticCandidate(SemanticReadView.Symbol fact,Map<String,SemanticType> substitutions,
                                                   Map<String,String> typeNames)throws Exception{
         SemanticType contextual=fact.semanticType().substitute(substitutions);
-        String label=fact.name()+": "+CompletionCandidate.typeLabel(contextual,false);
+        String label=fact.name()+" : "+CompletionCandidate.typeLabel(contextual,false);
         var labels=new ArrayList<CompletionCandidate.ParameterLabel>();
         if(contextual instanceof SemanticType.Executable executable){
             var value=new StringBuilder(fact.name()).append('(');

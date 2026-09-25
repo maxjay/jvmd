@@ -1,5 +1,6 @@
 package dev.jvmd.index;
 
+import dev.jvmd.core.Hash256;
 import java.nio.file.Path;
 import java.util.*;
 
@@ -79,6 +80,12 @@ public interface IndexStore extends AutoCloseable {
     Map<String,Long> counts()throws Exception;
     Map<String,Object> status();
     List<String> loadWorkspace(String workspace,List<WorkspaceEntry> paths,List<Map.Entry<String,String>> dependencies)throws Exception;
+    /**
+     * Resolution-scoped identity of the selected ordered dependency classpath for one workspace.
+     * Empty means the backend cannot provide this proof; callers may conservatively fall back to
+     * their compiler environment identity, but must not substitute a global machine root.
+     */
+    default Optional<Hash256> semanticClasspathIdentity(String workspace)throws Exception{return Optional.empty();}
     List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds)throws Exception;
     /** Prefix-only simple-name lookup used by editor completion; implementations should avoid substring scans. */
     List<Map<String,Object>> findNamePrefix(String prefix,String workspace,int limit,Set<String> kinds)throws Exception;

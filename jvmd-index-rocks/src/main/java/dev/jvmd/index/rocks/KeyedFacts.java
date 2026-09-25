@@ -16,7 +16,10 @@ public final class KeyedFacts {
     public void replace(WriteBatch batch,String owner,List<Fact> facts)throws Exception {
         try(var trace=dev.jvmd.core.RequestScope.stage("facts.publish")){
             trace.count("owners_replaced",1);trace.count("records_written",facts.size());
-        String group=namespace+"g/"+part(owner);byte[] prior=db.get(bytes(group));
+        String group=namespace+"g/"+part(owner);byte[] prior;
+        // Replacement needs the prior owner manifest, but this bookkeeping read must not compete
+        // with pinned machine-index blocks in the shared strict Rocks cache.
+        try(var read=new ReadOptions().setFillCache(false)){prior=db.get(read,bytes(group));}
         if(prior!=null)for(Object key:FactCodec.decode(prior,List.class))batch.delete(bytes(key.toString()));
         var keys=new ArrayList<String>();
         for(var fact:facts){

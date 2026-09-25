@@ -19,7 +19,8 @@ public final class CompletionProbe {
     private CompletionProbe(){}
 
     public static Shape create(String text,int cursor){
-        Objects.requireNonNull(text);
+        try(var trace=dev.jvmd.core.RequestScope.stage("completion.probe")){
+        Objects.requireNonNull(text);trace.count("source_chars",text.length());
         if(cursor<0||cursor>text.length())throw new IndexOutOfBoundsException(cursor);
         int start=cursor,end=cursor;
         while(start>0&&Character.isJavaIdentifierPart(text.codePointBefore(start)))
@@ -36,6 +37,7 @@ public final class CompletionProbe {
         if(qualified&&needsTerminator(text,start,end))replacement+=";";
         String source=text.substring(0,start)+replacement+text.substring(end);
         return new Shape(source,start,end,start,prefix,qualified);
+        }
     }
 
     /**

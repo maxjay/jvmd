@@ -73,10 +73,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private final DiagnosticStore diagnosticStore=new DiagnosticStore();
     private LinkedHashMap<String,Envelope> outlines=new LinkedHashMap<>(16,.75f,true);
     private record Cached(Path file,String hash,String stamp,int start,int end,List<Focusing.Span> excluded,CompilerPool.Outcome<Bindings.Snapshot> result) { }
-    private record DocumentSemanticCached(String key,DocumentSemanticSnapshot snapshot,Map<String,String> resolutionIdentities,
-                                          Map<Path,String> dependencyApis,String hierarchyApi) {
-        DocumentSemanticCached { resolutionIdentities=Map.copyOf(resolutionIdentities);dependencyApis=Map.copyOf(dependencyApis);hierarchyApi=Objects.requireNonNullElse(hierarchyApi,""); }
-    }
+    private record DocumentSemanticCached(String key,DocumentSemanticSnapshot snapshot) { }
     private record Outline(List<Map<String,Object>> symbols,Set<Path> dependencies) { }
     private static final class CompletionAdvanceFailure extends Exception {
         final List<String> warnings;

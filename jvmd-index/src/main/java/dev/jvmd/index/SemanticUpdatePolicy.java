@@ -305,18 +305,35 @@ public final class SemanticUpdatePolicy {
         }
         /** Initial attribution discovers existing files; only an observed edit is a change during bootstrap. */
         public Result resolve(FileSemanticContribution value){
+            return resolve(value,false);
+        }
+        /**
+         * Resolve a complete contribution when the caller has already admitted the corresponding
+         * detached semantic facts and will propagate their changed proof leaves immediately.
+         */
+        public Result resolvePrecise(FileSemanticContribution value){
+            return resolve(value,true);
+        }
+        private Result resolve(FileSemanticContribution value,boolean preciseLeavesAvailable){
             boolean initial=contribution(value.file())==null&&!pending(value.file());
             if(initial){replace(value);return new Result(Set.of(),Set.of(),Set.of(),Set.of(),false,false);}
-            return update(value,Completeness.COMPLETE);
+            return update(value,Completeness.COMPLETE,preciseLeavesAvailable);
         }
         public Result update(FileSemanticContribution value,Completeness completeness){
+            return update(value,completeness,false);
+        }
+        private Result update(FileSemanticContribution value,Completeness completeness,boolean preciseLeavesAvailable){
             Objects.requireNonNull(value);Objects.requireNonNull(completeness);
             Path file=value.file();
             if(completeness==Completeness.FAILED)return new Result(Set.of(file),Set.of(),Set.of(),Set.of(),false,false);
             if(completeness==Completeness.FOCUSED){recordFocused(file,value.dependencies());return new Result(Set.of(),Set.of(),Set.of(),Set.of(),false,false);}
             var before=complete.get(file);
             // Decide with old edges still present, then replace exactly, including empty sets.
-            var result=decide(List.of(new Change(before,value)),EnvironmentTransition.NONE,this,this::proofCovered);
+            // Proof-covered dependants are skipped only when the caller can immediately publish
+            // precise semantic leaves from the corresponding detached semantic delta.
+            var result=preciseLeavesAvailable
+                    ?decide(List.of(new Change(before,value)),EnvironmentTransition.NONE,this,this::proofCovered)
+                    :decide(List.of(new Change(before,value)),EnvironmentTransition.NONE,this);
             replace(value);pending.remove(file);
             return result;
         }

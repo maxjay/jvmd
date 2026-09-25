@@ -16,6 +16,7 @@ public final class SemanticReadViews {
             @Override public Symbol symbol(String id){
                 SemanticFact fact=state.symbol(id);return fact==null?null:fromResident(fact);
             }
+            @Override public SemanticCompleteness completeness(String ownerId){return state.completeness(ownerId);}
             @Override public MemberPage members(String ownerId,String prefix,int limit,String cursor){
                 if(limit<=0)return new MemberPage(List.of(),null);
                 var values=new ArrayList<SemanticReadView.Symbol>(Math.min(limit+1,64));
@@ -56,21 +57,41 @@ public final class SemanticReadViews {
     public static SemanticReadView precedence(SemanticReadView live,SemanticReadView local,SemanticReadView machine){
         var layers=List.of(Objects.requireNonNull(live),Objects.requireNonNull(local),Objects.requireNonNull(machine));
         return new SemanticReadView(){
+            private SemanticReadView ownerLayer(String ownerId)throws Exception{
+                SemanticReadView fallback=null;
+                for(var layer:layers){
+                    if(layer.symbol(ownerId)==null)continue;
+                    if(fallback==null)fallback=layer;
+                    if(layer.completeness(ownerId).authoritative())return layer;
+                }
+                return fallback;
+            }
             @Override public Symbol symbol(String id)throws Exception{
                 for(var layer:layers){var value=layer.symbol(id);if(value!=null)return value;}return null;
             }
+            @Override public SemanticCompleteness completeness(String ownerId)throws Exception{
+                SemanticCompleteness fallback=SemanticCompleteness.UNKNOWN;
+                for(var layer:layers){
+                    if(layer.symbol(ownerId)==null)continue;
+                    var value=layer.completeness(ownerId);
+                    if(value.authoritative())return value;
+                    if(fallback==SemanticCompleteness.UNKNOWN)fallback=value;
+                }
+                return fallback;
+            }
             @Override public MemberPage members(String ownerId,String prefix,int limit,String cursor)throws Exception{
-                for(var layer:layers)if(layer.symbol(ownerId)!=null)return layer.members(ownerId,prefix,limit,cursor);
-                return new MemberPage(List.of(),null);
+                var layer=ownerLayer(ownerId);return layer==null?new MemberPage(List.of(),null):layer.members(ownerId,prefix,limit,cursor);
             }
             @Override public List<String> directSupertypes(String typeId)throws Exception{
-                for(var layer:layers)if(layer.symbol(typeId)!=null)return layer.directSupertypes(typeId);
-                return List.of();
+                var layer=ownerLayer(typeId);return layer==null?List.of():layer.directSupertypes(typeId);
             }
             @Override public Optional<Hash256> identity(QueryProof.Domain domain,String key)throws Exception{
-                if(domain==QueryProof.Domain.EXACT_SYMBOL||domain==QueryProof.Domain.HIERARCHY){
+                if(domain==QueryProof.Domain.EXACT_SYMBOL){
                     for(var layer:layers)if(layer.symbol(key)!=null)return layer.identity(domain,key);
                     return Optional.empty();
+                }
+                if(domain==QueryProof.Domain.HIERARCHY){
+                    var layer=ownerLayer(key);return layer==null?Optional.empty():layer.identity(domain,key);
                 }
                 for(var layer:layers){
                     var value=layer.identity(domain,key);if(value.isPresent())return value;
@@ -86,6 +107,9 @@ public final class SemanticReadViews {
             @Override public Symbol symbol(String id)throws Exception{
                 var row=store.byScip(id,workspace);
                 return row==null||isLocal(row)!=local?null:fromIndexed(row,local?SemanticReadView.Origin.LOCAL:SemanticReadView.Origin.MACHINE);
+            }
+            @Override public SemanticCompleteness completeness(String ownerId)throws Exception{
+                return symbol(ownerId)==null?SemanticCompleteness.UNKNOWN:SemanticCompleteness.COMPLETE;
             }
             @Override public MemberPage members(String ownerId,String prefix,int limit,String cursor)throws Exception{
                 if(symbol(ownerId)==null||limit<=0)return new MemberPage(List.of(),null);
@@ -110,8 +134,9 @@ public final class SemanticReadViews {
     }
 
     private static SemanticReadView.Symbol fromResident(SemanticFact fact){
-        return new SemanticReadView.Symbol(fact.id(),fact.name(),fact.kind(),fact.fqn(),fact.id(),fact.structuralSignature(),
-                fact.erasedDescriptor(),fact.modifiers(),fact.resolutionIdentity(),SemanticReadView.Origin.LIVE);
+        var resolution=fact.resolutionFact();
+        return new SemanticReadView.Symbol(fact.id(),fact.name(),fact.kind(),fact.fqn(),resolution.symbolKey(),fact.structuralSignature(),
+                fact.erasedDescriptor(),fact.modifiers(),resolution,SemanticReadView.Origin.LIVE);
     }
 
     private static SemanticReadView.Symbol fromIndexed(Map<String,Object> row,SemanticReadView.Origin origin)throws Exception{
@@ -123,11 +148,10 @@ public final class SemanticReadViews {
         String signature=Objects.toString(row.get("signature"),"");
         String descriptor=Objects.toString(row.get("erased_descriptor"),"");
         int flags=row.get("flags") instanceof Number value?value.intValue():0;
-        String metadata=Json.MAPPER.writeValueAsString(row.getOrDefault("metadata",Map.of()));
-        var persisted=new ArtifactIndexFormat.SymbolRecord(
-                0,-1,binary,fqn,name,kind,signature,descriptor,flags,null,List.of(),metadata);
-        return new SemanticReadView.Symbol(id,name,kind,fqn,binary,signature,descriptor,modifiers(row,flags),
-                ArtifactIndexFormat.symbolResolutionIdentity(persisted),origin);
+        ResolutionFact resolution=row.get("resolution_fact") instanceof String encoded
+                ?ResolutionFact.decode(encoded)
+                :ResolutionFact.legacy(binary,fqn,name,kind,descriptor,flags);
+        return new SemanticReadView.Symbol(id,name,kind,fqn,binary,signature,descriptor,modifiers(row,flags),resolution,origin);
     }
 
     private static boolean isLocal(Map<String,Object> row){
@@ -139,13 +163,6 @@ public final class SemanticReadViews {
         if(explicit instanceof Collection<?> values){
             var result=new TreeSet<String>();for(Object value:values)result.add(value.toString());return Set.copyOf(result);
         }
-        var result=new TreeSet<String>();
-        if((flags&ClassFile.ACC_PUBLIC)!=0)result.add("public");
-        if((flags&ClassFile.ACC_PROTECTED)!=0)result.add("protected");
-        if((flags&ClassFile.ACC_PRIVATE)!=0)result.add("private");
-        if((flags&ClassFile.ACC_STATIC)!=0)result.add("static");
-        if((flags&ClassFile.ACC_FINAL)!=0)result.add("final");
-        if((flags&ClassFile.ACC_ABSTRACT)!=0)result.add("abstract");
-        return Set.copyOf(result);
+        return ResolutionFact.modifiers(flags);
     }
 }

@@ -72,7 +72,7 @@ class SourceProofMutationIntegrationTest {
             assertThat(completion(analyzer,use,source).path("items").findValuesAsText("name")).contains("getOne");
             long afterWarmCompletion=queries(analyzer);
 
-            String disjoint=first.replace("}"," int setSomething(){return 3;} }");
+            String disjoint=insertBeforeLastBrace(first," int setSomething(){return 3;} ");
             mutate(analyzer,documents,project,2,disjoint);
             assertThat(evidence(analyzer)).containsEntry("last_proof_consumers_visited",0L)
                     .containsEntry("last_source_consumers_invalidated",0L)
@@ -82,7 +82,7 @@ class SourceProofMutationIntegrationTest {
             assertThat(queries(analyzer)).as("disjoint set* mutation must keep maintained get* completion zero-javac")
                     .isEqualTo(afterWarmCompletion+1); // only Project mutation attribution
 
-            String relevant=disjoint.replace("}"," int getSomething(){return 4;} }");
+            String relevant=insertBeforeLastBrace(disjoint," int getSomething(){return 4;} ");
             mutate(analyzer,documents,project,3,relevant);
             var proof=evidence(analyzer);
             assertThat(((Number)proof.get("last_proof_consumers_visited")).longValue()).isPositive();
@@ -95,6 +95,11 @@ class SourceProofMutationIntegrationTest {
             assertThat(queries(analyzer)).as("matching get* range update remains maintained-state query")
                     .isEqualTo(beforeCompletion);
         }
+    }
+
+    private static String insertBeforeLastBrace(String source,String text){
+        int end=source.lastIndexOf('}');if(end<0)throw new IllegalArgumentException("missing class brace");
+        return source.substring(0,end)+text+source.substring(end);
     }
 
     private Analyzer analyzer(Documents documents)throws Exception{

@@ -71,6 +71,24 @@ class LiveSourceStateTest {
         }
     }
 
+    @Test void boundedSourceHistoryLossReportsUncertaintyWithoutWorkspaceReconciliation()throws Exception{
+        Path file=Files.writeString(root.resolve("A.java"),"class A { int value; }");
+        try(var documents=new Documents(new FileStateRegistry())){
+            var state=documents.liveState(List.of(root));
+            var before=state.snapshot();
+            documents.open(file,"class A { int value=1; }",1);
+            for(int version=2;version<32775;version++)
+                documents.change(file,version,List.of(new Documents.Change(null,"class A { int value="+version+"; }")));
+
+            var after=state.snapshot();
+            assertThat(after.inputEpoch()).isGreaterThan(before.inputEpoch());
+            assertThat(state.changedPathsSince(before.inputEpoch())).isEmpty();
+            assertThat(after.reconciliations()).isEqualTo(before.reconciliations());
+            assertThat(after.trusted()).isTrue();
+            assertThat(state.paths()).contains(file.toAbsolutePath().normalize());
+        }
+    }
+
     @Test void recreatedWatchedRootIsVisibleAtTheNextCorrectnessBoundary()throws Exception{
         Path sourceRoot=Files.createDirectories(root.resolve("src"));
         Path first=Files.writeString(sourceRoot.resolve("A.java"),"class A {}");

@@ -582,13 +582,16 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     public void documents(Documents documents){this.documents=documents;if(snapshots!=null)snapshots.documents(documents);compiler.documents(documents);dependencies.documentHash(documents::hash);dependencies.fileStates(documents.fileStates());if(context!=null)liveSourceState=documents.liveState(context.sources());}
     private ResidentSemanticState semanticState(){return modules.get(context.generation()).semantic;}
     private SemanticReadView semanticReadView(){
-        var live=SemanticReadViews.resident(semanticState());
-        if(index==null||context.workspace().isBlank())return live;
-        return SemanticReadViews.precedence(
-                live,
-                SemanticReadViews.local(index.store(),context.workspace()),
-                SemanticReadViews.machine(index.store(),context.workspace()),
-                this::workspaceSourceOwnsBinary);
+        try(var trace=RequestScope.stage("semantic.read.view")){
+            var live=SemanticReadViews.resident(semanticState());
+            if(index==null||context.workspace().isBlank()){trace.cache("live");return live;}
+            trace.cache("composed");
+            return SemanticReadViews.precedence(
+                    live,
+                    SemanticReadViews.local(index.store(),context.workspace()),
+                    SemanticReadViews.machine(index.store(),context.workspace()),
+                    this::workspaceSourceOwnsBinary);
+        }
     }
     private boolean workspaceSourceOwnsBinary(String binaryName){
         return liveSourceState!=null&&binaryName!=null&&!binaryName.isBlank()
@@ -596,6 +599,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
 
     private List<SemanticReadView.Symbol> semanticTypes(String name)throws Exception{
+        try(var trace=RequestScope.stage("completion.semanticTypes")){
         String requested=Objects.requireNonNullElse(name,"").trim();
         if(requested.isBlank())return List.of();
         var result=new LinkedHashMap<String,SemanticReadView.Symbol>();
@@ -622,7 +626,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 result.putIfAbsent(symbol.id(),symbol);
             }
         }
+        trace.count("results",result.size());
         return List.copyOf(result.values());
+        }
     }
     private SemanticAdmission admitSemanticMutation(SemanticSnapshot snapshot,FileSemanticContribution contribution){
         if(snapshot==null||contribution==null)return null;
@@ -1946,6 +1952,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
 
     private List<Map<String,Object>> semanticQualifiedRows(SemanticReadView view,CompletionContextResolver.Resolved resolved,
                                                             String prefix,int target)throws Exception{
+        try(var trace=RequestScope.stage("completion.semanticRows")){
         if(target<=0)return List.of();
         SemanticReadView.Symbol enclosing=resolved.enclosingTypeId()==null?null:view.symbol(resolved.enclosingTypeId());
         int perOwnerBudget=Math.max(64,Math.min(4096,target*8));
@@ -1972,8 +1979,12 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 cursor=page.cursor();
             }while(cursor!=null&&examined<perOwnerBudget);
         }
-        return selected.values().stream().map(HierarchyChoice::row)
+        var rows=selected.values().stream().map(HierarchyChoice::row)
                 .sorted(qualifiedCompletionOrder(resolved.staticReceiver())).limit(target).toList();
+        trace.count("hierarchy_owners",owners.size());trace.count("rows_materialized",selected.size());
+        trace.count("rows_sorted",selected.size());trace.count("rows_returned",rows.size());
+        return rows;
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -2007,6 +2018,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
 
     private Envelope maintainedQualifiedCompletion(Path path,String text,int start,int end,String prefix,
                                                     CompletionProbe.Shape probe,int limit,int offset)throws Exception{
+        try(var total=RequestScope.stage("completion.tier1.total")){
         if(moduleSensitiveCompletion())return null;
         var view=semanticReadView();
         var resolved=CompletionContextResolver.resolve(text,probe,view,this::semanticTypes);
@@ -2022,6 +2034,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         return new Envelope(2,"live",more,more?Integer.toString(to):null,warnings(List.of()),
                 Map.of("items",returned,"range",new SourceText(text).range(start,end)));
+        }
     }
     private static final Comparator<Map<String,Object>> COMPLETION_ORDER=Comparator
             .comparing((Map<String,Object> row)->Objects.toString(row.get("name"),""))
@@ -2092,11 +2105,18 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return List.copyOf(rows);
     }
     private List<Map<String,Object>> residentQualifiedRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target){
-        if(query.staticReceiver())
-            return residentHierarchyRows(query,prefix,target,QualifiedMemberMode.STATIC_ONLY,Set.of(),Set.of());
-        int scanTarget=Math.max(target,Math.min(4096,target*8));
-        return residentHierarchyRows(query,prefix,scanTarget,QualifiedMemberMode.ALL,Set.of(),Set.of()).stream()
-                .sorted(qualifiedCompletionOrder(false)).limit(target).toList();
+        try(var trace=RequestScope.stage("completion.tier0.memberRows")){
+            if(query.staticReceiver()){
+                var rows=residentHierarchyRows(query,prefix,target,QualifiedMemberMode.STATIC_ONLY,Set.of(),Set.of());
+                trace.count("scan_target",target);trace.count("rows_returned",rows.size());return rows;
+            }
+            int scanTarget=Math.max(target,Math.min(4096,target*8));
+            var materialized=residentHierarchyRows(query,prefix,scanTarget,QualifiedMemberMode.ALL,Set.of(),Set.of());
+            var rows=materialized.stream().sorted(qualifiedCompletionOrder(false)).limit(target).toList();
+            trace.count("scan_target",scanTarget);trace.count("rows_materialized",materialized.size());
+            trace.count("rows_sorted",materialized.size());trace.count("rows_returned",rows.size());
+            return rows;
+        }
     }
     private List<Map<String,Object>> residentUnqualifiedRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target){
         if(target<=0)return List.of();

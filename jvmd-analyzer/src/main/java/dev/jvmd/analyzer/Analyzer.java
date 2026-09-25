@@ -296,15 +296,17 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
 
             String owner=fact.ownerId();
             if(owner!=null&&!owner.isBlank()){
-                var hierarchy=view.identity(QueryProof.Domain.HIERARCHY,owner);
-                if(hierarchy.isEmpty())precise=false;else addProofDependency(values,
-                        new QueryProof.Dependency(QueryProof.Domain.HIERARCHY,owner,hierarchy.get()));
+                // Direct static member resolution is fully represented by the selected declaration
+                // plus its exact overload domain. Instance lookup can additionally depend on a
+                // receiver hierarchy that Bindings does not yet detach per call site; keep that
+                // case on the conservative file-closure fallback rather than claiming coverage.
+                if(!fact.modifiers().contains("static"))precise=false;
                 if(edge.kind().equals("calls")){
                     var overload=SemanticQueryProofs.overload(view,owner,fact.name());
                     if(overload.isEmpty())precise=false;
                     else for(var dependency:overload.get().dependencies())addProofDependency(values,dependency);
                 }
-            }else if(fact.typeDeclaration()){
+            }else if(fact.typeDeclaration()&&(edge.kind().equals("extends")||edge.kind().equals("implements"))){
                 var hierarchy=view.identity(QueryProof.Domain.HIERARCHY,fact.id());
                 if(hierarchy.isEmpty())precise=false;else addProofDependency(values,
                         new QueryProof.Dependency(QueryProof.Domain.HIERARCHY,fact.id(),hierarchy.get()));

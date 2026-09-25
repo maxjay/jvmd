@@ -556,7 +556,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         compiler.resetSourceContext();
     }
     /** Broad project-model namespace reset; editor source membership must use sourceMembershipChanged. */
-    public void namespaceChanged(){diagnosticStore.clear();for(var caches:modules.values()){caches.outlines.clear();caches.focused.clear();caches.documentSemantics.clear();caches.descriptions.clear();caches.accessibility.clear();caches.semantic.clear();caches.semanticSourceEpoch=-1;}dependencies.semantic().clear();for(var pool:compilerPools.values())pool.recycle();}
+    public void namespaceChanged(){diagnosticStore.clear();for(var caches:modules.values()){caches.outlines.clear();caches.focused.clear();clearSemanticCaches(caches);}dependencies.semantic().clear();for(var pool:compilerPools.values())pool.recycle();}
     public CompilerPool.Outcome<Bindings.Snapshot> bindings(Path path,String text,Integer cursor)throws Exception{
         synchronizeKnownSources(path);return bindings(path,text,cursor,validatedInputs());
     }
@@ -588,25 +588,32 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             dependencies.recordFocused(path,outcome.result().dependencies());
             if(cursor==null&&outcome.tier()==2){
                 var contribution=SemanticContributions.from(path,hash,outcome.result(),outcome.diagnostics());
-                resolveContribution(contribution);admitSemantic(semantic[0],contribution);publishSource(path,hash,stamp,outcome.result(),outcome.tier());
+                resolveContribution(contribution);admitSemantic(semantic[0],contribution);publishSource(path,hash,stamp,semanticPublisherContextFingerprint(observed,stamp),outcome.result(),outcome.tier());
             }
             String member=focus==null?"full":focus.member();focused.put(path+":"+hash+":"+stamp+":"+member,new Cached(path,hash,stamp,focus==null?0:focus.member().equals("declarations")?cursor:focus.start(),focus==null?text.length():focus.member().equals("declarations")?cursor+1:focus.end(),focus==null?List.of():focus.replaced(),outcome));
             while(focused.size()>32)focused.remove(focused.keySet().iterator().next());
         }return outcome;
     }
-    private void publishSource(Path file,String hash,String stamp,Bindings.Snapshot snapshot,int tier)throws Exception{
+    private String semanticPublisherContextFingerprint(CompilerInputs.Snapshot observed,String broadStamp){
+        var caches=modules.get(context.generation());
+        if(caches==null||!caches.classpathPrecise)return broadStamp;
+        return CompilerInputs.compose("semantic-publisher-context-v2",
+                caches.semanticOwnerIdentity,observed.membership().value());
+    }
+    private void publishSource(Path file,String hash,String stamp,String semanticContext,Bindings.Snapshot snapshot,int tier)throws Exception{
         if(index==null)return;
         long started=System.nanoTime();
         var symbols=List.copyOf(snapshot.symbols().values());
         var edges=snapshot.edges().stream().map(e->new IndexService.SourceEdge(e.src(),e.dst(),e.kind())).toList();
         var contribution=dependencies.semantic().contribution(file);
         // A dependency or unresolved-target replacement must survive publisher coalescing even
-        // when this file's source and exported API did not change.
-        String semantic=Hashing.sha256(Json.MAPPER.writeValueAsBytes(List.of(hash,contribution.apiFingerprint(),stamp,
+        // when this file's source and exported API did not change. A precisely-covered classpath
+        // mutation is excluded here because its search leaves are propagated separately.
+        String semantic=Hashing.sha256(Json.MAPPER.writeValueAsBytes(List.of(hash,contribution.apiFingerprint(),semanticContext,
                 contribution.dependencies().stream().map(Path::toString).sorted().toList(),
                 contribution.exportedNames().stream().sorted().toList(),contribution.unresolvedTargets().stream().sorted().toList())));
         long bytes=512L+2L*Json.MAPPER.writeValueAsBytes(symbols).length+edges.size()*192L;
-        index.publishSource(new SourceIndexPublisher.Delta(contribution,semantic,symbols,tier,edges,bytes,context.gav(),stamp));
+        index.publishSource(new SourceIndexPublisher.Delta(contribution,semantic,symbols,tier,edges,bytes,context.gav(),semanticContext));
         indexWriteNanos+=System.nanoTime()-started;
     }
     public Envelope atPosition(Path path,String text,int line,int character)throws Exception{
@@ -686,7 +693,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 focused.put(file+":"+hash+":"+stamp+":full",new Cached(file,hash,stamp,0,input.text().length(),List.of(),outcome));
                 while(focused.size()>32)focused.remove(focused.keySet().iterator().next());
                 diagnosticStore.put(file,hash,context.generation(),stamp,envelope,apiFingerprint(file),snapshot.dependencies(),contribution(file));
-                publishSource(file,hash,stamp,snapshot,result.tier());
+                publishSource(file,hash,stamp,semanticPublisherContextFingerprint(observed,stamp),snapshot,result.tier());
             }
         }
         return values;
@@ -865,7 +872,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(qualified&&query.receiverType() instanceof SemanticType.Declared declared
                 &&index!=null&&!context.workspace().isBlank()){
             var proof=index.store().semanticClasspathSearch(context.workspace(),declared.name());
-            if(proof.isPresent())return new QueryProof.Dependency(proof.get().key(),proof.get().identity());
+            if(proof.isPresent()){
+                var caches=modules.get(context.generation());
+                if(caches!=null&&caches.classpathPrecise)caches.classpathSearchProofs.put(declared.name(),proof.get());
+                return new QueryProof.Dependency(proof.get().key(),proof.get().identity());
+            }
         }
         var key=new QueryProof.Key(QueryProof.Domain.CLASSPATH_SEARCH,
                 context.workspace().isBlank()?"compiler":"workspace:"+context.workspace());
@@ -1020,7 +1031,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         query=query.withProof(documentContextProof(path,text,focus,query,true,result.nameResolutionNames(),List.of(),observed));
         var snapshot=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
                 Map.of(start,query));
-        var next=new DocumentSemanticCached(key,snapshot);caches.documentSemantics.put(path,next);return next;
+        var next=new DocumentSemanticCached(key,snapshot);caches.documentSemantics.put(path,next);registerDocumentProof(path,query);return next;
     }
 
     private Map<Path,String> documentDependencyApis(DocumentSemanticSnapshot.QueryContext query,Path caller)throws Exception{
@@ -1077,7 +1088,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         query=query.withProof(documentContextProof(path,text,focus,query,false,List.of(),dependencyApis.keySet(),observed));
         var snapshot=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
                 Map.of(start,query));
-        var next=new DocumentSemanticCached(key,snapshot);caches.documentSemantics.put(path,next);return next;
+        var next=new DocumentSemanticCached(key,snapshot);caches.documentSemantics.put(path,next);registerDocumentProof(path,query);return next;
     }
 
     private Envelope residentQualifiedCompletion(Path path,String text,String patched,int start,int end,int focusCursor,String prefix,

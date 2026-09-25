@@ -79,24 +79,28 @@ public final class QueryProof {
     private final Hash256 identity;
 
     public QueryProof(Collection<Dependency> dependencies){
-        Objects.requireNonNull(dependencies);
-        var ordered=new TreeMap<Key,Hash256>();
-        for(var dependency:dependencies){
-            Objects.requireNonNull(dependency);
-            if(ordered.putIfAbsent(dependency.key(),dependency.identity())!=null)
-                throw new IllegalArgumentException("Duplicate proof dependency: "+dependency.key());
+        try(var trace=dev.jvmd.core.RequestScope.stage("proof.construct")){
+            Objects.requireNonNull(dependencies);trace.count("dependencies",dependencies.size());
+            var ordered=new TreeMap<Key,Hash256>();
+            for(var dependency:dependencies){
+                Objects.requireNonNull(dependency);
+                if(ordered.putIfAbsent(dependency.key(),dependency.identity())!=null)
+                    throw new IllegalArgumentException("Duplicate proof dependency: "+dependency.key());
+            }
+            var canonical=new ArrayList<Dependency>(ordered.size());
+            ordered.forEach((key,value)->canonical.add(new Dependency(key,value)));
+            this.dependencies=List.copyOf(canonical);
+            this.identities=Collections.unmodifiableMap(new TreeMap<>(ordered));
+            try(var digest=dev.jvmd.core.RequestScope.stage("proof.canonicalDigest")){
+                this.identity=CanonicalDigestWriter.digest("query-proof-v1",
+                        this.dependencies.stream()
+                                .map(dependency->new Object[]{
+                                        dependency.key().domain().name(),
+                                        dependency.key().value(),
+                                        dependency.identity()})
+                                .toList());
+            }
         }
-        var canonical=new ArrayList<Dependency>(ordered.size());
-        ordered.forEach((key,value)->canonical.add(new Dependency(key,value)));
-        this.dependencies=List.copyOf(canonical);
-        this.identities=Collections.unmodifiableMap(new TreeMap<>(ordered));
-        this.identity=CanonicalDigestWriter.digest("query-proof-v1",
-                this.dependencies.stream()
-                        .map(dependency->new Object[]{
-                                dependency.key().domain().name(),
-                                dependency.key().value(),
-                                dependency.identity()})
-                        .toList());
     }
 
     public static QueryProof empty(){return new QueryProof(List.of());}

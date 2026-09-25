@@ -14,6 +14,9 @@ public final class SemanticReadViews {
             @Override public Symbol symbol(String id){
                 SemanticFact fact=state.symbol(id);return fact==null?null:fromResident(fact);
             }
+            @Override public Symbol type(String binaryName){
+                SemanticFact fact=state.type(binaryName);return fact==null?null:fromResident(fact);
+            }
             @Override public SemanticCompleteness completeness(String ownerId){return state.completeness(ownerId);}
             @Override public MemberPage members(String ownerId,String prefix,int limit,String cursor){
                 if(limit<=0)return new MemberPage(List.of(),null);
@@ -56,7 +59,22 @@ public final class SemanticReadViews {
         var layers=List.of(Objects.requireNonNull(live),Objects.requireNonNull(local),Objects.requireNonNull(machine));
         return new SemanticReadView(){
             @Override public Symbol symbol(String id)throws Exception{
-                for(var layer:layers){var value=layer.symbol(id);if(value!=null)return value;}
+                Symbol found=null;int foundLayer=-1;
+                for(int i=0;i<layers.size();i++){
+                    var value=layers.get(i).symbol(id);
+                    if(value!=null){found=value;foundLayer=i;break;}
+                }
+                if(found==null)return null;
+                String ownerKey=found.resolution().ownerKey();
+                if(ownerKey!=null)for(int i=0;i<foundLayer;i++){
+                    var owner=layers.get(i).type(ownerKey);
+                    if(owner!=null&&layers.get(i).completeness(owner.id())==SemanticCompleteness.COMPLETE)return null;
+                }
+                return found;
+            }
+
+            @Override public Symbol type(String binaryName)throws Exception{
+                for(var layer:layers){var value=layer.type(binaryName);if(value!=null)return value;}
                 return null;
             }
 
@@ -131,6 +149,10 @@ public final class SemanticReadViews {
         return new SemanticReadView(){
             @Override public Symbol symbol(String id)throws Exception{
                 var value=store.semanticByScip(id,workspace,layer);
+                return value==null?null:fromIndexed(value,origin);
+            }
+            @Override public Symbol type(String binaryName)throws Exception{
+                var value=store.semanticType(binaryName,workspace,layer);
                 return value==null?null:fromIndexed(value,origin);
             }
             @Override public SemanticCompleteness completeness(String ownerId)throws Exception{

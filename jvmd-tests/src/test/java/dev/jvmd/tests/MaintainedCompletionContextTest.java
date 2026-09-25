@@ -146,7 +146,7 @@ class MaintainedCompletionContextTest {
 
     @Test void knownWorkspaceSourceShadowsMachineTypeBeforeLiveOrLocalPublication()throws Exception{
         Path repo=Files.createDirectories(root.resolve("shadow-repo"));
-        Path jar=IndexFixtures.jar(repo,"shadow-api","""
+        Path jar=IndexFixtures.jar(repo,"shadow-api","Foo.java","""
                 package p;
                 public class Foo { public int machineOnly(){return 1;} }
                 """,true);

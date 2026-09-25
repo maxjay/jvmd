@@ -46,6 +46,9 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
         return actor.handle;
     }
 
+    public void sourceChanged(Path path,String hash)throws Exception{
+        changed(path,hash);
+    }
     private void changed(Path path,String hash)throws Exception{
         path=path.toAbsolutePath().normalize();FileSemanticContribution previous;
         List<Actor> snapshot;

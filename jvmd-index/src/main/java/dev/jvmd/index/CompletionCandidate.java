@@ -12,11 +12,17 @@ public record CompletionCandidate(
         String sourceFile,
         Set<String> modifiers,
         String label,
+        String editorLabel,
         List<ParameterLabel> parameters) {
+    public CompletionCandidate(String id,String name,String kind,String structuralSignature,String declaringType,
+                               String sourceFile,Set<String> modifiers,String label,List<ParameterLabel> parameters){
+        this(id,name,kind,structuralSignature,declaringType,sourceFile,modifiers,label,label,parameters);
+    }
     public CompletionCandidate {
         Objects.requireNonNull(id);Objects.requireNonNull(name);Objects.requireNonNull(kind);
         structuralSignature=Objects.requireNonNullElse(structuralSignature,"");
-        modifiers=Set.copyOf(modifiers);label=Objects.requireNonNullElse(label,name);parameters=List.copyOf(parameters);
+        modifiers=Set.copyOf(modifiers);label=Objects.requireNonNullElse(label,name);
+        editorLabel=Objects.requireNonNullElse(editorLabel,label);parameters=List.copyOf(parameters);
     }
     public record ParameterLabel(int start,int end) { }
 

@@ -526,11 +526,16 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         return List.copyOf(result.values());
     }
-    private void admitSemantic(SemanticSnapshot snapshot,FileSemanticContribution contribution){
-        if(snapshot==null||contribution==null)return;
+    private SemanticAdmission admitSemanticMutation(SemanticSnapshot snapshot,FileSemanticContribution contribution){
+        if(snapshot==null||contribution==null)return null;
         var canonical=new SemanticSnapshot(snapshot.unit(),snapshot.sourceFile(),snapshot.contentIdentity(),snapshot.facts(),snapshot.descriptions(),
                 contribution.apiFingerprint(),LiveStateTree.namespace(contribution.exportedNames()).value(),snapshot.documentationIdentity(),snapshot.dependencies());
-        semanticState().admit(canonical);
+        var delta=semanticState().diff(canonical);var removed=new ArrayList<SemanticFact>();
+        for(String id:delta.removed()){var fact=semanticState().symbol(id);if(fact!=null)removed.add(fact);}
+        semanticState().apply(delta);return new SemanticAdmission(delta,removed);
+    }
+    private void admitSemantic(SemanticSnapshot snapshot,FileSemanticContribution contribution){
+        admitSemanticMutation(snapshot,contribution);
     }
     private void admitDetachedSemantic(SemanticSnapshot snapshot){
         if(snapshot==null)return;

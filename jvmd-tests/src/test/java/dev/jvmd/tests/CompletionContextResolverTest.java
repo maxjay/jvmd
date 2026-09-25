@@ -48,6 +48,62 @@ class CompletionContextResolverTest {
         assertThat(resolved.staticReceiver()).isFalse();
     }
 
+    @Test void classifiesStaticAndInstanceContextsWithoutGuessing()throws Exception{
+        var fixture=fixture();
+
+        String staticMethod="package p; class Use { static Object f(Api value){ return value.; } }";
+        assertThat(resolve(staticMethod,"value.",fixture).staticContext())
+                .isEqualTo(CompletionContextResolver.StaticContext.STATIC);
+
+        String instanceMethod="package p; class Use { Object f(Api value){ return value.; } }";
+        assertThat(resolve(instanceMethod,"value.",fixture).staticContext())
+                .isEqualTo(CompletionContextResolver.StaticContext.INSTANCE);
+
+        String staticBlock="package p; class Use { static { Api value; value.; } }";
+        assertThat(resolve(staticBlock,"value.",fixture).staticContext())
+                .isEqualTo(CompletionContextResolver.StaticContext.STATIC);
+
+        String staticField="package p; class Use { static Api value; static Object x = value.; }";
+        assertThat(resolve(staticField,"value.",fixture).staticContext())
+                .isEqualTo(CompletionContextResolver.StaticContext.STATIC);
+
+        String instanceField="package p; class Use { Api value; Object x = value.; }";
+        assertThat(resolve(instanceField,"value.",fixture).staticContext())
+                .isEqualTo(CompletionContextResolver.StaticContext.INSTANCE);
+    }
+
+    @Test void staticContextRejectsThisAndInstanceFieldButAllowsStaticField()throws Exception{
+        var fixture=fixture();
+        String thisInStatic="package p; class Use { Api project; static Object f(){ return this.project.; } }";
+        assertThat(resolve(thisInStatic,"this.project.",fixture)).isNull();
+
+        String instanceField="package p; class Use { Api project; static Object f(){ return project.; } }";
+        assertThat(resolve(instanceField,"project.",fixture)).isNull();
+
+        String staticField="package p; class Use { static Api project; static Object f(){ return project.; } }";
+        assertThat(resolve(staticField,"project.",fixture)).isNotNull();
+    }
+
+    @Test void detachedAccessProofFallsBackForContextSensitiveJavaAccess(){
+        var owner=type("owner-access","q.Owner");
+        var publicMember=methodWithModifiers("public-m","q.Owner","publicM",Set.of("public"));
+        var packageMember=methodWithModifiers("package-m","q.Owner","packageM",Set.of());
+        var protectedMember=methodWithModifiers("protected-m","q.Owner","protectedM",Set.of("protected"));
+        var privateMember=methodWithModifiers("private-m","q.Owner","privateM",Set.of("private"));
+
+        assertThat(CompletionContextResolver.access(publicMember,"p"))
+                .isEqualTo(CompletionContextResolver.Access.ALLOWED);
+        assertThat(CompletionContextResolver.access(packageMember,"q"))
+                .isEqualTo(CompletionContextResolver.Access.ALLOWED);
+        assertThat(CompletionContextResolver.access(packageMember,"p"))
+                .isEqualTo(CompletionContextResolver.Access.DENIED);
+        assertThat(CompletionContextResolver.access(protectedMember,"p"))
+                .isEqualTo(CompletionContextResolver.Access.UNKNOWN);
+        assertThat(CompletionContextResolver.access(privateMember,"q"))
+                .isEqualTo(CompletionContextResolver.Access.UNKNOWN);
+        assertThat(owner).isNotNull();
+    }
+
     @Test void leavesComplexAndGenericExpressionsForBoundedJavacFallback()throws Exception{
         var fixture=fixture();
         String complex="package p; class Use { Object f(Api project){ return choose(project).; } Api choose(Api x){return x;} }";
@@ -127,6 +183,13 @@ class CompletionContextResolverTest {
     private static SemanticReadView.Symbol method(String id,String owner,String name,SemanticType returns,boolean statik){
         var modifiers=statik?Set.of("public","static"):Set.of("public");
         var type=new SemanticType.Executable(List.of(),returns,List.of());
+        var resolution=ResolutionFact.canonical(owner+"#"+name+"()",owner,"method",name,"()",modifiers,packageOf(owner),
+                type,List.of(),List.of(),List.of(),false);
+        return new SemanticReadView.Symbol(id,name,"method",owner,owner+"#"+name+"()","","()",modifiers,resolution,SemanticReadView.Origin.MACHINE);
+    }
+
+    private static SemanticReadView.Symbol methodWithModifiers(String id,String owner,String name,Set<String> modifiers){
+        var type=new SemanticType.Executable(List.of(),new SemanticType.Primitive("int"),List.of());
         var resolution=ResolutionFact.canonical(owner+"#"+name+"()",owner,"method",name,"()",modifiers,packageOf(owner),
                 type,List.of(),List.of(),List.of(),false);
         return new SemanticReadView.Symbol(id,name,"method",owner,owner+"#"+name+"()","","()",modifiers,resolution,SemanticReadView.Origin.MACHINE);

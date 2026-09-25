@@ -585,3 +585,46 @@ Deviations:
 
 Remaining:
 - Checkpoint 8: attach canonical QueryProof dependencies to document/query contexts for lexical/document scope, receiver, resolution/search path, hierarchy, accessibility, namespace and ordered classpath evidence.
+
+
+## Checkpoint 8 — proof-backed document contexts
+
+Starting SHA: `9b82025eba11141670bbc888d8f13cc048bd9dd5`
+Ending SHA: `cc3d6be6467eff735ed70dbcad22eacc6c46433f`
+
+Evidence:
+- Exact-head Tests: https://github.com/maxjay/jvmd/actions/runs/36134872816 — **success**.
+- Exact-head Benchmarks: https://github.com/maxjay/jvmd/actions/runs/36134872810 — **success**.
+- Phase 3 includes the ordered resolution-scoped workspace classpath identity regression.
+- Phase 4 includes the focused document-proof reuse regression plus all existing completion cache/name-resolution regressions.
+
+Changes:
+- `DocumentSemanticSnapshot.QueryContext` now carries a canonical immutable `QueryProof`.
+- `DocumentSemanticCached` no longer owns parallel ad-hoc validity fields for resolution maps, dependency API maps or hierarchy hashes. Cached context reuse is decided by proof equality.
+- The proof binds independent `DOCUMENT_SCOPE`, `RECEIVER`, `RESOLUTION_PATH`, `HIERARCHY`, `ACCESSIBILITY`, `NAMESPACE` and `CLASSPATH_SEARCH` dependencies.
+- The document-scope dependency hashes the focused member produced by `Focusing`, not the complete source file. An edit in a different method can therefore preserve the context proof.
+- Receiver validity combines detached semantic type identity with the current exact declaration identity when available.
+- Resolution-path dependencies cover the receiver type and javac-observed simple-name/source dependencies. LIVE source declarations are refreshed before comparing their canonical resolution identity, so body-only edits remain equal while visibility/name-resolution changes do not.
+- Hierarchy and accessibility remain separate dependencies. Accessibility cache presence is treated only as required detached data availability; semantic validity is the proof identity itself.
+- Namespace proof currently binds the canonical package/import context plus the maintained namespace identity. Checkpoint 10 will narrow this to exact package/import/negative-resolution domains.
+- `IndexStore.semanticClasspathIdentity(workspace)` exposes the selected ordered workspace dependency proof. Rocks persists each artifact's resolution-scoped identity and composes a `ClasspathSequence` from only the selected MACHINE dependencies, never the global machine root.
+- Backends without this proof use the existing compiler environment identity conservatively rather than inventing a machine-wide semantic dependency.
+
+Correctness proof:
+- `DocumentContextProofTest` forces Tier-2 context attribution with `choose(value).`, proves unchanged warm reuse, proves an unrelated-method body edit does not rerun context attribution, and proves a lexical edit inside the focused method invalidates the proof.
+- `SemanticClasspathIdentityTest` proves source/docs enrichment and body-only JAR replacement preserve the selected classpath proof while an API member addition changes it.
+- Existing `CompletionPrefixCacheTest.negativeNameResolutionChangesInvalidateQualifiedCompletion` initially exposed a missing source refresh in `RESOLUTION_PATH`; the repaired exact-head run proves a package-private-to-public competing wildcard import invalidates the cached context again.
+- All Checkpoints 4–7 regressions remain green.
+
+Architecture:
+- An event occurring is still not the validity decision. A changed file causes the relevant proof dependencies to be recomputed; equal proof means the detached context remains reusable.
+- The classpath root is a structural/search-evidence input, not an automatic workspace invalidation instruction.
+- The machine-global inventory root is not part of a document/query proof.
+- This checkpoint deliberately does not yet define result-level exact-symbol/overload/member-range validity; Checkpoint 9 owns those query-result domains.
+
+Failed/deprecated approaches:
+- The first proof-backed run read retained LIVE type facts without ensuring a changed source unit was semantically current. `negativeNameResolutionChangesInvalidateQualifiedCompletion` caught the stale winner. Resolution-path comparison now refreshes that bounded source unit before comparing its canonical identity.
+- Broad whole-file content identity is not used as the document-context proof. The focused member is the lexical/document dependency.
+
+Remaining:
+- Checkpoint 9: exact-symbol, overload-group and member-prefix/range proofs for query result validity.

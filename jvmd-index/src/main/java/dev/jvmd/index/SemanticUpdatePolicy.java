@@ -1,5 +1,6 @@
 package dev.jvmd.index;
 
+import dev.jvmd.core.Hash256;
 import java.nio.file.Path;
 import java.util.*;
 
@@ -61,12 +62,156 @@ public final class SemanticUpdatePolicy {
         return false;
     }
 
+    public record ProofConsumer(Path file,String id) implements Comparable<ProofConsumer> {
+        public ProofConsumer {
+            file=Objects.requireNonNull(file).toAbsolutePath().normalize();
+            Objects.requireNonNull(id);
+            if(id.isBlank())throw new IllegalArgumentException("Proof consumer id must not be blank");
+        }
+        @Override public int compareTo(ProofConsumer other){
+            int path=file.toString().compareTo(other.file.toString());
+            return path!=0?path:id.compareTo(other.id);
+        }
+    }
+    public record ProofEvaluation(QueryProof dependencies,QueryProof.Key output,Hash256 derivedIdentity) {
+        public ProofEvaluation {
+            Objects.requireNonNull(dependencies);Objects.requireNonNull(output);Objects.requireNonNull(derivedIdentity);
+            if(dependencies.dependencies().stream().anyMatch(value->value.key().equals(output)))
+                throw new IllegalArgumentException("A proof consumer cannot depend directly on its own output");
+        }
+    }
+    @FunctionalInterface
+    public interface ProofRecomputer {
+        Optional<ProofEvaluation> recompute(ProofConsumer consumer)throws Exception;
+    }
+    public record ProofPropagation(Set<ProofConsumer> recomputed,Set<ProofConsumer> changed,
+                                   Set<ProofConsumer> equal,Set<ProofConsumer> fallback) {
+        public ProofPropagation {
+            recomputed=Set.copyOf(recomputed);changed=Set.copyOf(changed);
+            equal=Set.copyOf(equal);fallback=Set.copyOf(fallback);
+        }
+        public Set<Path> changedFiles(){
+            var result=new TreeSet<Path>();changed.forEach(value->result.add(value.file()));return Set.copyOf(result);
+        }
+        public Set<Path> fallbackFiles(){
+            var result=new TreeSet<Path>();fallback.forEach(value->result.add(value.file()));return Set.copyOf(result);
+        }
+    }
+
+    /**
+     * Precise semantic dependency DAG.
+     *
+     * Leaf proof keys are maintained elsewhere (resident/indexed semantic state). This owner stores
+     * only which reusable conclusions depended on which proof keys and the derived identity each
+     * conclusion published. A leaf event enqueues direct consumers only when the supplied current
+     * leaf identity differs from the identity captured in that consumer's proof. Recomputed equal
+     * derived identities stop propagation immediately.
+     */
+    public static final class ProofDag {
+        private record Node(ProofEvaluation evaluation) { }
+        private final Map<ProofConsumer,Node> nodes=new HashMap<>();
+        private final Map<QueryProof.Key,Set<ProofConsumer>> reverse=new HashMap<>();
+        private final Map<QueryProof.Key,ProofConsumer> producers=new HashMap<>();
+
+        public void register(ProofConsumer consumer,ProofEvaluation evaluation){
+            Objects.requireNonNull(consumer);Objects.requireNonNull(evaluation);
+            ProofConsumer producer=producers.get(evaluation.output());
+            if(producer!=null&&!producer.equals(consumer))
+                throw new IllegalArgumentException("Duplicate proof output producer: "+evaluation.output());
+            var previous=nodes.get(consumer);
+            if(previous!=null)unlink(consumer,previous.evaluation());
+            nodes.put(consumer,new Node(evaluation));producers.put(evaluation.output(),consumer);link(consumer,evaluation);
+            if(cycleFrom(consumer,new HashSet<>(),new HashSet<>())){
+                unlink(consumer,evaluation);nodes.remove(consumer);producers.remove(evaluation.output(),consumer);
+                if(previous!=null){nodes.put(consumer,previous);producers.put(previous.evaluation().output(),consumer);link(consumer,previous.evaluation());}
+                throw new IllegalArgumentException("Semantic proof dependencies must form a DAG");
+            }
+        }
+        public void remove(ProofConsumer consumer){
+            var previous=nodes.remove(Objects.requireNonNull(consumer));if(previous==null)return;
+            unlink(consumer,previous.evaluation());producers.remove(previous.evaluation().output(),consumer);
+        }
+        public void removeFile(Path file){
+            Path normalized=normalize(file);
+            for(var consumer:new ArrayList<>(nodes.keySet()))if(consumer.file().equals(normalized))remove(consumer);
+        }
+        public Optional<ProofEvaluation> evaluation(ProofConsumer consumer){
+            var node=nodes.get(consumer);return node==null?Optional.empty():Optional.of(node.evaluation());
+        }
+        public Set<ProofConsumer> consumers(QueryProof.Key key){
+            return Set.copyOf(reverse.getOrDefault(Objects.requireNonNull(key),Set.of()));
+        }
+        public boolean hasConsumers(Path file){
+            Path normalized=normalize(file);return nodes.keySet().stream().anyMatch(value->value.file().equals(normalized));
+        }
+        public int size(){return nodes.size();}
+
+        public ProofPropagation propagate(Map<QueryProof.Key,Hash256> currentLeaves,ProofRecomputer recomputer)throws Exception{
+            Objects.requireNonNull(currentLeaves);Objects.requireNonNull(recomputer);
+            var queue=new ArrayDeque<ProofConsumer>();var queued=new HashSet<ProofConsumer>();
+            for(var entry:currentLeaves.entrySet()){
+                for(var consumer:reverse.getOrDefault(entry.getKey(),Set.of())){
+                    var node=nodes.get(consumer);if(node==null)continue;
+                    var captured=node.evaluation().dependencies().identity(entry.getKey().domain(),entry.getKey().value());
+                    if(captured.isEmpty()||!captured.get().equals(entry.getValue()))
+                        if(queued.add(consumer))queue.addLast(consumer);
+                }
+            }
+            var recomputed=new TreeSet<ProofConsumer>(),changed=new TreeSet<ProofConsumer>(),
+                    equal=new TreeSet<ProofConsumer>(),fallback=new TreeSet<ProofConsumer>();
+            int iterations=0,limit=Math.max(16,nodes.size()*Math.max(4,nodes.size()+1));
+            while(!queue.isEmpty()){
+                if(++iterations>limit)throw new IllegalStateException("Semantic proof propagation did not converge");
+                var consumer=queue.removeFirst();queued.remove(consumer);
+                var before=nodes.get(consumer);if(before==null)continue;
+                recomputed.add(consumer);
+                var result=recomputer.recompute(consumer);
+                if(result.isEmpty()){fallback.add(consumer);continue;}
+                var next=result.get();
+                Hash256 previousIdentity=before.evaluation().derivedIdentity();
+                QueryProof.Key previousOutput=before.evaluation().output();
+                register(consumer,next);
+                if(previousIdentity.equals(next.derivedIdentity())&&previousOutput.equals(next.output())){
+                    equal.add(consumer);continue;
+                }
+                changed.add(consumer);
+                var downstream=new LinkedHashSet<ProofConsumer>();
+                downstream.addAll(reverse.getOrDefault(previousOutput,Set.of()));
+                downstream.addAll(reverse.getOrDefault(next.output(),Set.of()));
+                for(var dependent:downstream)if(!dependent.equals(consumer)&&queued.add(dependent))queue.addLast(dependent);
+            }
+            return new ProofPropagation(recomputed,changed,equal,fallback);
+        }
+
+        private void link(ProofConsumer consumer,ProofEvaluation evaluation){
+            for(var dependency:evaluation.dependencies().dependencies())
+                reverse.computeIfAbsent(dependency.key(),ignored->new TreeSet<>()).add(consumer);
+        }
+        private void unlink(ProofConsumer consumer,ProofEvaluation evaluation){
+            for(var dependency:evaluation.dependencies().dependencies()){
+                var values=reverse.get(dependency.key());if(values==null)continue;
+                values.remove(consumer);if(values.isEmpty())reverse.remove(dependency.key());
+            }
+        }
+        private boolean cycleFrom(ProofConsumer current,Set<ProofConsumer> visiting,Set<ProofConsumer> done){
+            if(done.contains(current))return false;if(!visiting.add(current))return true;
+            var node=nodes.get(current);
+            if(node!=null)for(var dependency:node.evaluation().dependencies().dependencies()){
+                var producer=producers.get(dependency.key());
+                if(producer!=null&&cycleFrom(producer,visiting,done))return true;
+            }
+            visiting.remove(current);done.add(current);return false;
+        }
+    }
+
     /** Actor-local canonical state. Focused observations supplement facts until a complete replacement arrives. */
     public static final class Live implements Postings {
         private final Map<Path,FileSemanticContribution> complete=new HashMap<>();
         private final Map<Path,Set<Path>> focused=new HashMap<>(),reverse=new HashMap<>();
         private final Map<Path,Set<Path>> pending=new HashMap<>();
+        private final ProofDag proofs=new ProofDag();
         public FileSemanticContribution contribution(Path path){return complete.get(normalize(path));}
+        public ProofDag proofs(){return proofs;}
         public Set<Path> dependencies(Path path){
             path=normalize(path);var result=new HashSet<>(focused.getOrDefault(path,Set.of()));
             var value=complete.get(path);if(value!=null)result.addAll(value.dependencies());return Set.copyOf(result);
@@ -110,7 +255,7 @@ public final class SemanticUpdatePolicy {
             var affected=new HashSet<>(closure(Set.of(file),this));affected.remove(file);
             var result=before==null?new Result(affected,Set.of(file),Set.of(),Set.of(file),false,true)
                     :decide(List.of(new Change(before,null)),false,this);
-            unlink(file);complete.remove(file);focused.remove(file);pending.remove(file);return result;
+            unlink(file);complete.remove(file);focused.remove(file);pending.remove(file);proofs.removeFile(file);return result;
         }
         public Set<Path> changed(Path file){
             file=normalize(file);var affected=closure(Set.of(file),this);pending.put(file,affected);return affected;
@@ -125,7 +270,7 @@ public final class SemanticUpdatePolicy {
         public int conditionalCount(){
             var files=new HashSet<Path>();pending.forEach((root,affected)->affected.stream().filter(p->!p.equals(root)).forEach(files::add));return files.size();
         }
-        public void clear(){complete.clear();focused.clear();reverse.clear();pending.clear();}
+        public void clear(){complete.clear();focused.clear();reverse.clear();pending.clear();for(var file:new ArrayList<>(files()))proofs.removeFile(file);}
         private void unlink(Path file){for(Path dependency:dependencies(file)){var values=reverse.get(dependency);if(values!=null){values.remove(file);if(values.isEmpty())reverse.remove(dependency);}}}
         private void link(Path file){for(Path dependency:dependencies(file))if(!dependency.equals(file))reverse.computeIfAbsent(dependency,k->new HashSet<>()).add(file);}
         public int edgeCount(){return reverse.values().stream().mapToInt(Set::size).sum();}

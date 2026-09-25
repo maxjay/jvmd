@@ -324,7 +324,10 @@ public final class SemanticUpdatePolicy {
         }
         private Result resolve(FileSemanticContribution value,boolean preciseLeavesAvailable){
             boolean initial=contribution(value.file())==null&&!pending(value.file());
-            if(initial){replace(value);return new Result(Set.of(),Set.of(),Set.of(),Set.of(),false,false);}
+            if(initial){
+                replace(value);consumerResolved(value.file());
+                return new Result(Set.of(),Set.of(),Set.of(),Set.of(),false,false);
+            }
             return update(value,Completeness.COMPLETE,preciseLeavesAvailable);
         }
         public Result update(FileSemanticContribution value,Completeness completeness){
@@ -342,7 +345,7 @@ public final class SemanticUpdatePolicy {
             var result=preciseLeavesAvailable
                     ?decide(List.of(new Change(before,value)),EnvironmentTransition.NONE,this,this::proofCovered)
                     :decide(List.of(new Change(before,value)),EnvironmentTransition.NONE,this);
-            replace(value);pending.remove(file);
+            replace(value);pending.remove(file);consumerResolved(file);
             return result;
         }
         private void replace(FileSemanticContribution value){
@@ -381,6 +384,18 @@ public final class SemanticUpdatePolicy {
             return Set.copyOf(result);
         }
         public boolean pending(Path file){return pending.containsKey(normalize(file));}
+        /**
+         * A complete consumer attribution observed all of its implicit source inputs. Remove that
+         * consumer from outstanding prerequisite closures without claiming the changed root itself
+         * has been semantically admitted.
+         */
+        public void consumerResolved(Path file){
+            file=normalize(file);
+            for(var entry:pending.entrySet())if(!entry.getKey().equals(file)){
+                var remaining=new LinkedHashSet<>(entry.getValue());remaining.remove(file);
+                entry.setValue(Set.copyOf(remaining));
+            }
+        }
         public int pendingCount(){return pending.size();}
         public int conditionalCount(){
             var files=new HashSet<Path>();pending.forEach((root,affected)->affected.stream().filter(p->!p.equals(root)).forEach(files::add));return files.size();

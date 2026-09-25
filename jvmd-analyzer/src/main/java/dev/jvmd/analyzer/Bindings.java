@@ -91,7 +91,8 @@ public final class Bindings {
                 row.put("kind",fact.kind());row.put("signature",fact.structuralSignature());row.put("gav",declaration.gav());row.put("artifact",declaration.gav());row.put("resolved",true);
                 row.put("modifiers",fact.modifiers().stream().sorted().toList());row.put("declaring",declaration.declaring());row.put("fqn",fact.fqn());
                 row.put("api",declaration.apiDeclaration());row.put("parameters",fact.parameterNames());row.put("type_parameters",declaration.typeParameterDisplays());
-                row.put("erased_descriptor",fact.erasedDescriptor());if(!declaration.signatureComplete())row.put("signature_complete",false);
+                row.put("erased_descriptor",fact.erasedDescriptor());row.put("resolution_fact",fact.resolutionFact().encode());
+                if(!declaration.signatureComplete())row.put("signature_complete",false);
                 if(element.getEnclosingElement() instanceof ExecutableElement)try{row.put("qualified_name_path",identity.qualifiedNamePath(element));}catch(IllegalArgumentException unresolved){}
                 var path=identity.path(element);String sourceFile=fact.sourceFile();if(sourceFile!=null)dependencies.add(Path.of(sourceFile));row.put("file",sourceFile);row.put("source_file",sourceFile);
                 if(path!=null){var unit=path.getCompilationUnit();var text=source(unit);int begin=start(unit,path.getLeaf()),finish=end(unit,path.getLeaf());var token=declaration(path,element);

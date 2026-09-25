@@ -36,6 +36,7 @@ type RunningServer = {
   connection:MessageConnection;
   server:ChildProcess;
   adapter?:ChildProcess;
+  control?:RpcClient;
   milestones:Record<string,number>;
   metadata:Record<string,unknown>;
 };
@@ -158,6 +159,7 @@ export abstract class LspScenarioHarness {
       this.running.connection.sendNotification("exit");
     }finally{
       this.running.connection.dispose();
+      this.running.control?.close();
       stop(this.running.adapter);
       stop(this.running.server);
     }
@@ -167,6 +169,14 @@ export abstract class LspScenarioHarness {
     try{
       const payload=await this.scenario();
       const verification=this.verify(payload);
+      if(LspScenarioHarness.mode==="compare"&&LspScenarioHarness.serverId==="jvmd"){
+        const completion=verification.operationCorrectness.completion;
+        assert(completion?.firstUse,"JVMD CMP semantic oracle mismatch on first use");
+        assert(completion?.warmup?.every(Boolean),"JVMD CMP semantic oracle mismatch during warmup");
+        assert(completion?.steady?.every(Boolean),"JVMD CMP semantic oracle mismatch during steady state");
+        for(const [name,correct] of Object.entries(verification.legacy))
+          assert(correct,"JVMD CMP legacy semantic oracle mismatch: "+name);
+      }
       const completionCorrectness=verification.operationCorrectness.completion;
       if(payload.operations.completion&&completionCorrectness){
         payload.operations.completion.correctStats=latencyStats(
@@ -259,6 +269,17 @@ export abstract class LspScenarioHarness {
 
   protected request<T>(method:string,params:unknown):Promise<T>{
     return LspScenarioHarness.running.connection.sendRequest(method,params);
+  }
+
+  protected async nativeAnalyzerStatus(){
+    if(LspScenarioHarness.serverId!=="jvmd"||!LspScenarioHarness.running.control)return null;
+    const daemon:any=await LspScenarioHarness.running.control.call("daemon.status",{});
+    const sessions:any[]=daemon?.result?.sessions??[];
+    const wanted=path.resolve(LspScenarioHarness.fixtureRoot);
+    const selected=sessions.find(row=>path.resolve(String(row?.root??""))===wanted)??(sessions.length===1?sessions[0]:undefined);
+    assert(selected?.session,"JVMD benchmark session not visible through daemon.status");
+    const status:any=await LspScenarioHarness.running.control.call("session.status",{session:selected.session});
+    return status?.result?.analyzer??null;
   }
 
   protected async measure<T,U>(request:()=>Promise<T>,normalise:(value:T)=>U):Promise<Measurement<U>>{
@@ -468,14 +489,13 @@ async function startJvmd(root:string):Promise<RunningServer>{
   ],{env,stdio:["ignore","ignore","inherit"]});
   const readinessClient=await waitForJvmdTransport(socket);
   milestones.transport_available=nowNs();
-  try{await waitForJvmdIndex(readinessClient);}
-  finally{readinessClient.close();}
+  await waitForJvmdIndex(readinessClient);
   milestones.daemon_index_ready=nowNs();
   const adapter=spawn(path.join(image,"bin/jvmd-lsp"),["--root",root,"--socket",socket],{env,stdio:["pipe","pipe","inherit"]});
   milestones.adapter_spawned=nowNs();
   return {
     connection:createMessageConnection(new StreamMessageReader(adapter.stdout!),new StreamMessageWriter(adapter.stdin!)),
-    server,adapter,milestones,
+    server,adapter,control:readinessClient,milestones,
     metadata:{mode:"distributed-image JVM plus LSP adapter; AOT cache not enabled",aotCacheUsed:false,residentDaemon:false},
   };
 }

@@ -981,12 +981,12 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     public Set<Path> pendingPrerequisites(Path file){return dependencies.semantic().prerequisites(file);}
     public void changed(Path path,String hash){
         path=path.toAbsolutePath().normalize();compiler.observeSources(Set.of(path));observeResidentSourceTransitions();
-        var affected=dependencies.changed(path,hash);sourceProofEvidence.beginMutation((int)affected.stream().filter(file->!file.equals(path)).count());
+        var affected=dependencies.changed(path,hash);sourceProofEvidence.beginMutation(Math.max(0,affected.size()-(affected.contains(path)?1:0)));
         conditionallyInvalidate(path,affected);
     }
     public void changed(Path path){
         path=path.toAbsolutePath().normalize();compiler.observeSources(Set.of(path));observeResidentSourceTransitions();
-        var affected=dependencies.changed(path);sourceProofEvidence.beginMutation((int)affected.stream().filter(file->!file.equals(path)).count());
+        var affected=dependencies.changed(path);sourceProofEvidence.beginMutation(Math.max(0,affected.size()-(affected.contains(path)?1:0)));
         conditionallyInvalidate(path,affected);
     }
     /**

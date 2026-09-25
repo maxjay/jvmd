@@ -89,6 +89,12 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 coarseFiles,sourceConsumersInvalidated,preProofDependantInvalidations;
         long lastLeavesPublished,lastConsumersVisited,lastConsumersChanged,lastConsumersEqual,lastConsumersFallback,
                 lastCoarseFiles,lastSourceConsumersInvalidated,lastPreProofDependantInvalidations;
+        String lastCoverageFile="";
+        List<String> lastCoverageFailures=List.of();
+        void coverage(Path file,Collection<String> failures){
+            lastCoverageFile=file.toAbsolutePath().normalize().toString();
+            lastCoverageFailures=List.copyOf(failures);
+        }
         void beginMutation(int dependantInvalidations){
             lastPreProofDependantInvalidations=dependantInvalidations;
             preProofDependantInvalidations+=dependantInvalidations;
@@ -114,7 +120,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                     Map.entry("last_proof_consumers_stopped_equal",lastConsumersEqual),
                     Map.entry("last_proof_consumers_fallback",lastConsumersFallback),Map.entry("last_coarse_fallback_files",lastCoarseFiles),
                     Map.entry("last_source_consumers_invalidated",lastSourceConsumersInvalidated),
-                    Map.entry("last_pre_proof_dependant_invalidations",lastPreProofDependantInvalidations));
+                    Map.entry("last_pre_proof_dependant_invalidations",lastPreProofDependantInvalidations),
+                    Map.entry("last_coverage_file",lastCoverageFile),
+                    Map.entry("last_coverage_failures",lastCoverageFailures));
         }
     }
 
@@ -341,22 +349,23 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private void registerSourceProof(Path file,String text,Bindings.Snapshot snapshot,FileSemanticContribution contribution)throws Exception{
         file=file.toAbsolutePath().normalize();
         var consumer=sourceProofConsumer(file);var values=new TreeMap<QueryProof.Key,Hash256>();
-        var coveredFiles=new HashSet<Path>();var view=semanticReadView();
+        var coveredFiles=new HashSet<Path>();var view=semanticReadView();var coverageFailures=new LinkedHashSet<String>();
         var referencesByTarget=new HashMap<String,List<Bindings.ReferenceProof>>();
         for(var reference:snapshot.referenceProofs())
             referencesByTarget.computeIfAbsent(reference.target(),ignored->new ArrayList<>()).add(reference);
         boolean precise=liveSourceState!=null;
+        if(!precise)coverageFailures.add("no-live-source-state");
 
         for(var edge:snapshot.edges()){
             var fact=snapshot.semanticFacts().get(edge.dst());if(fact==null)continue;
             Path source=null;
             if(fact.sourceFile()!=null)try{source=Path.of(fact.sourceFile()).toAbsolutePath().normalize();}catch(Exception ignored){}
             boolean liveDependency=source!=null&&!source.equals(file)&&liveSourceState!=null&&liveSourceState.accepts(source);
-            if(liveDependency){coveredFiles.add(source);if(!currentSourceFact(fact))precise=false;}
+            if(liveDependency){coveredFiles.add(source);if(!currentSourceFact(fact)){precise=false;coverageFailures.add("stale-source-fact:"+source);}}
             if(!liveDependency)continue;
 
             var exact=view.identity(QueryProof.Domain.EXACT_SYMBOL,fact.id());
-            if(exact.isEmpty())precise=false;else addProofDependency(values,
+            if(exact.isEmpty()){precise=false;coverageFailures.add("missing-exact:"+fact.id());}else addProofDependency(values,
                     new QueryProof.Dependency(QueryProof.Domain.EXACT_SYMBOL,fact.id(),exact.get()));
 
             String owner=fact.ownerId();
@@ -364,16 +373,18 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 var references=referencesByTarget.getOrDefault(fact.id(),List.of());
                 boolean sourceReference=edge.kind().equals("calls")||edge.kind().equals("reads")||edge.kind().equals("writes");
                 if(sourceReference){
-                    if(references.isEmpty())precise=false;
+                    if(references.isEmpty()){precise=false;coverageFailures.add("missing-reference-evidence:"+fact.id());}
                     for(var reference:references){
-                        if(reference.receiverType()==null
-                                ||!addReceiverLookupProof(values,view,reference.receiverType(),fact.name(),edge.kind().equals("calls")))
-                            precise=false;
+                        if(reference.receiverType()==null){
+                            precise=false;coverageFailures.add("missing-receiver:"+fact.id());
+                        }else if(!addReceiverLookupProof(values,view,reference.receiverType(),fact.name(),edge.kind().equals("calls"))){
+                            precise=false;coverageFailures.add("incomplete-receiver-lookup:"+reference.receiverType()+"#"+fact.name());
+                        }
                     }
                 }
             }else if(fact.typeDeclaration()&&(edge.kind().equals("extends")||edge.kind().equals("implements"))){
                 var hierarchy=view.identity(QueryProof.Domain.HIERARCHY,fact.id());
-                if(hierarchy.isEmpty())precise=false;else addProofDependency(values,
+                if(hierarchy.isEmpty()){precise=false;coverageFailures.add("missing-hierarchy:"+fact.id());}else addProofDependency(values,
                         new QueryProof.Dependency(QueryProof.Domain.HIERARCHY,fact.id(),hierarchy.get()));
             }
         }
@@ -388,17 +399,17 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             if(!javax.lang.model.SourceVersion.isIdentifier(simple))continue;
             String binary=fact.fqn()==null||fact.fqn().isBlank()?fact.resolutionFact().symbolKey():fact.fqn();
             var plan=NamespaceResolutionProofs.plan(text,simple,binary);
-            if(!plan.precise()){precise=false;continue;}
+            if(!plan.precise()){precise=false;coverageFailures.add("imprecise-namespace:"+simple);continue;}
             for(var dependency:NamespaceResolutionProofs.dependencies(plan,b->maintainedNamespaceTypeIdentity(view,b)))
                 addProofDependency(values,dependency);
         }
 
         for(String unresolved:new TreeSet<>(contribution.unresolvedTargets())){
             if(unresolved.equals("*")||!javax.lang.model.SourceVersion.isIdentifier(unresolved)){
-                precise=false;continue;
+                precise=false;coverageFailures.add("coarse-unresolved:"+unresolved);continue;
             }
             var plan=NamespaceResolutionProofs.plan(text,unresolved,null);
-            if(!plan.precise()){precise=false;continue;}
+            if(!plan.precise()){precise=false;coverageFailures.add("imprecise-negative:"+unresolved);continue;}
             for(var dependency:NamespaceResolutionProofs.dependencies(plan,b->maintainedNamespaceTypeIdentity(view,b)))
                 addProofDependency(values,dependency);
         }
@@ -406,9 +417,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         for(Path dependency:contribution.dependencies()){
             Path normalized=dependency.toAbsolutePath().normalize();
             if(normalized.equals(file)||liveSourceState==null||!liveSourceState.accepts(normalized))continue;
-            if(!coveredFiles.contains(normalized))precise=false;
+            if(!coveredFiles.contains(normalized)){precise=false;coverageFailures.add("uncovered-dependency:"+normalized);}
         }
 
+        sourceProofEvidence.coverage(file,coverageFailures);
         if(!precise){
             dependencies.semantic().proofs().remove(consumer);dependencies.semantic().proofCoverage(file,false);return;
         }

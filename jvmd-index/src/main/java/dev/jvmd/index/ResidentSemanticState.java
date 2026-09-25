@@ -212,8 +212,15 @@ public final class ResidentSemanticState {
     }
 
     public synchronized MemberCursor memberCursor(String ownerId,String namePrefix){
+        return memberCursor(ownerId,namePrefix,null);
+    }
+
+    /** Resume a member range strictly after a previously returned ordered fact key. */
+    public synchronized MemberCursor memberCursor(String ownerId,String namePrefix,String afterOrderedKey){
         String prefix=SemanticFact.memberPrefix(ownerId,namePrefix);
-        return new MemberCursor(root,prefix,prefix+"\uffff");
+        String lower=afterOrderedKey==null?prefix:afterOrderedKey+"\0";
+        if(!lower.startsWith(prefix))throw new IllegalArgumentException("Member cursor does not belong to requested owner/prefix");
+        return new MemberCursor(root,lower,prefix+"\uffff");
     }
 
     public List<SemanticFact> members(String ownerId,String namePrefix,int limit){

@@ -322,8 +322,8 @@ public final class RocksIndexStore implements IndexStore {
     }
     @Override public synchronized IndexedSemanticSymbol semanticByScip(String scip,String workspace,SemanticLayer layer)throws Exception{
         for(var artifact:selected(workspace,true,layer)){
-            var source=sourceOverlay.first(artifact.id(),"scip",scip);
-            if(source!=null)return indexedSemantic(artifact,source,layer);
+            var source=sourceOverlay.semanticFirst(artifact.id(),"scip",scip,layer);
+            if(source!=null)return source;
             var context=artifact.input().context();String[] gav=context.gav().split(":",3);
             String prefix="maven "+gav[0]+"/"+gav[1]+" "+gav[2]+" ";
             if(!scip.startsWith(prefix))continue;
@@ -337,11 +337,10 @@ public final class RocksIndexStore implements IndexStore {
         if(limit<=0)return List.of();
         var result=new ArrayList<IndexedSemanticSymbol>(Math.min(limit,64));var seen=new HashSet<String>();
         for(var artifact:selected(workspace,true,layer)){
-            for(var row:sourceOverlay.select(artifact.id(),simpleName,false,true,limit,0,
-                    value->simpleName.equals(Objects.toString(value.get("name"),""))
-                            &&TYPES.contains(Objects.toString(value.get("kind"),"")))){
-                String scip=Objects.toString(row.get("scip"),"");
-                if(seen.add(scip))result.add(indexedSemantic(artifact,row,layer));
+            for(var entry:sourceOverlay.semanticSelect(artifact.id(),simpleName,true,limit,0,layer,
+                    value->simpleName.equals(value.name())&&TYPES.contains(value.kind()))){
+                var value=entry.symbol();
+                if(seen.add(value.id()))result.add(value);
                 if(result.size()>=limit)return List.copyOf(result);
             }
             var matches=repository.select(symbolsKey(artifact),"3|name|"+simpleName+"|",-1,limit,
@@ -435,14 +434,12 @@ public final class RocksIndexStore implements IndexStore {
                 if(!cursor.startsWith("source:"))throw new IllegalArgumentException("Invalid local semantic member cursor");
                 after=Long.parseUnsignedLong(cursor.substring("source:".length()));
             }
-            var values=sourceOverlay.select(artifactId,Objects.requireNonNullElse(prefix,""),false,true,limit+1,after,
-                    value->ownerFqn.equals(Objects.toString(value.get("fqn"),""))
-                            &&Set.of("method","ctor","field","enumconst","class","interface","record","enum","annotation")
-                                    .contains(Objects.toString(value.get("kind"),"")));
+            var values=sourceOverlay.semanticSelect(artifactId,Objects.requireNonNullElse(prefix,""),true,limit+1,after,layer,
+                    value->ownerFqn.equals(value.fqn())
+                            &&Set.of("method","ctor","field","enumconst","class","interface","record","enum","annotation").contains(value.kind()));
             boolean more=values.size()>limit;var page=values.subList(0,Math.min(limit,values.size()));
-            var typed=new ArrayList<IndexedSemanticSymbol>(page.size());
-            for(var value:page)typed.add(indexedSemantic(artifact,value,layer));
-            String next=more?"source:"+Long.toUnsignedString(((Number)page.getLast().get("id")).longValue()&0xffffffffL):null;
+            var typed=page.stream().map(SourceOverlay.SemanticEntry::symbol).toList();
+            String next=more?"source:"+Long.toUnsignedString(page.getLast().handle()&0xffffffffL):null;
             return new SemanticMemberPage(typed,next);
         }
         String generation=symbolsKey(artifact);

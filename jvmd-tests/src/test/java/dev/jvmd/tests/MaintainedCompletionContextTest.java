@@ -77,10 +77,9 @@ class MaintainedCompletionContextTest {
                     public String getGroupId(){return "group";}
                 }
                 """,true);
-        Path sources=Files.createDirectories(root.resolve("maven-src/demo"));
+        Path sources=Files.createDirectories(root.resolve("maven-src/org/apache/maven/project"));
         String source="""
-                package demo;
-                import org.apache.maven.project.MavenProject;
+                package org.apache.maven.project;
                 class Use {
                     Object inspect(MavenProject project) {
                         return project.;

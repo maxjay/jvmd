@@ -12,6 +12,21 @@ import java.util.*;
 public interface SemanticReadView {
     enum Origin { LIVE, LOCAL, MACHINE }
 
+    record MemberIdentityKey(String ownerId,String name) {
+        public MemberIdentityKey {
+            Objects.requireNonNull(ownerId);name=Objects.requireNonNullElse(name,"");
+            if(ownerId.isBlank())throw new IllegalArgumentException("ownerId");
+        }
+    }
+    static String memberIdentityKey(String ownerId,String name){
+        return Objects.requireNonNull(ownerId)+(char)1+Objects.requireNonNullElse(name,"");
+    }
+    static MemberIdentityKey parseMemberIdentityKey(String key){
+        int split=Objects.requireNonNull(key).indexOf(1);
+        if(split<=0)throw new IllegalArgumentException("Invalid semantic member proof key");
+        return new MemberIdentityKey(key.substring(0,split),key.substring(split+1));
+    }
+
     record Symbol(String id,String name,String kind,String fqn,String binaryKey,String signature,
                   String erasedDescriptor,Set<String> modifiers,ResolutionFact resolution,
                   List<String> parameterNames,String sourceFile,Origin origin) {

@@ -719,3 +719,49 @@ Failed/deprecated approaches:
 
 Remaining:
 - Checkpoint 11: attach precise semantic proofs to direct consumers in the existing canonical semantic dependency owner and propagate only when a recomputed derived proof changes.
+
+
+## Checkpoint 11 — semantic dependency proof DAG
+
+Starting SHA: `199f4359677607cdbc7d2dfc320b88c1a8a64211`
+Ending SHA: `1cd0d57d22382a5d01d45f5ffb387b91e5765cf3`
+
+Evidence:
+- Exact-head Tests run https://github.com/maxjay/jvmd/actions/runs/36142064392: compile/package, Phase 1, Phase 3, Rocks and Phase 4 are **green** with the Checkpoint-11 implementation present. The run continued through later unrelated gates after the focused proof-DAG acceptance criteria passed.
+- Exact-head Benchmarks: https://github.com/maxjay/jvmd/actions/runs/36142064625 — **success**.
+- The previous semantic implementation subject `e3a1e308979fa78a586b2fbccc7cff4cf10c0941` already passed four of five DAG regressions; its only Phase-1 error was mutating an intentionally immutable fallback set.
+
+Changes:
+- Added a precise semantic proof DAG owned by the existing `SemanticUpdatePolicy.Live` actor-local semantic policy. No second Analyzer-side dependency graph was created.
+- Each `ProofConsumer` references a canonical `QueryProof`, publishes one derived proof key and one derived identity.
+- Reverse postings are keyed by `QueryProof.Key`, so a changed leaf enqueues only direct consumers whose captured identity no longer equals the supplied current identity.
+- Recompute returns a replacement dependency proof and derived identity. If the derived identity is equal, propagation stops immediately; downstream consumers are not enqueued.
+- A changed derived identity is itself propagated through its output proof key.
+- Duplicate output producers and semantic proof cycles are rejected.
+- File-level coarse closure remains available through the same `SemanticUpdatePolicy.Live` owner. A file is skipped by coarse closure only after explicit complete proof coverage is declared.
+- If precise recomputation is unavailable, the affected consumer is reported as fallback and coarse reverse-file propagation resumes from that boundary.
+- If a precise derived output changes and a downstream file has no complete proof coverage, propagation bridges back to the coarse graph only for that unproven suffix.
+
+Correctness proof:
+- Exact-symbol leaf: equal current leaf does not enqueue the consumer; a changed exact symbol enqueues only the direct consumer; equal derived output stops before the downstream consumer.
+- Overload-group leaf: changing an unrelated overload group enqueues nothing; changing the referenced group propagates through the changed derived output to its direct downstream consumer.
+- Hierarchy fixed point: a base hierarchy identity can change while a middle derived hierarchy surface remains equal; the downstream consumer is never recomputed.
+- Conservative fallback: a proof-covered direct consumer prevents broad A→B→C closure; when B's precise recomputation is unavailable, only the unproven downstream C suffix is returned for coarse reanalysis.
+- DAG cycles are rejected at registration.
+
+Architecture:
+- Broad source-file edges remain a correctness fallback, not a parallel semantic authority.
+- Proof leaves are maintained by resident/indexed semantic state; the DAG stores dependency/provenance and derived conclusion identities only.
+- Equality is checked at both entry and derived-output boundaries:
+  `event -> leaf identity equal` does no work;
+  `leaf changed -> derived identity equal` stops propagation.
+- This establishes the fixed-point propagation primitive required by later mutation/classpath integration without forcing every existing coarse source consumer to become precise at once.
+
+Failed/deprecated approaches:
+- Initial production compile used an illegal compound `var` declaration for the propagation result sets; runs on early Checkpoint-11 subjects failed before tests.
+- The first nested DAG compile also referenced `Live.normalize` from the sibling nested class; path normalization is now local to the DAG.
+- The first regression file repeated the compound-`var` mistake; corrected before semantic execution.
+- On `e3a1e308...`, four proof-DAG tests passed; the fifth failed because `Set.copyOf` fallback closure was filtered in place. The wrapper now copies into a mutable `LinkedHashSet` before removing the changed root.
+
+Remaining:
+- Checkpoint 12: integrate ordered classpath structural/search proofs so classpath mutation is diff discovery and only proofs whose winning search interval can change are reconsidered.

@@ -224,7 +224,7 @@ public final class RocksIndexStore implements IndexStore {
                         :!artifact.input().context().kind().equals("local"))
                 .toList();
     }
-    @Override public synchronized Optional<Hash256> semanticClasspathIdentity(String workspace){
+    @Override public synchronized Optional<ClasspathSequence> semanticClasspathSequence(String workspace){
         var entries=new ArrayList<ClasspathSequence.Entry>();
         for(var artifact:selected(workspace,false,SemanticLayer.MACHINE)){
             if(artifact.input().context().kind().equals("sources"))continue;
@@ -232,7 +232,19 @@ public final class RocksIndexStore implements IndexStore {
                     artifact.input().context().path(),
                     Hash256.fromHex(artifact.resolutionIdentity())));
         }
-        return Optional.of(ClasspathSequence.of(entries).identity());
+        return Optional.of(ClasspathSequence.of(entries));
+    }
+    @Override public synchronized Optional<ClasspathSearchProof> semanticClasspathSearch(String workspace,String binaryName)throws Exception{
+        Objects.requireNonNull(binaryName);
+        int searched=0;
+        for(var artifact:selected(workspace,false,SemanticLayer.MACHINE)){
+            if(artifact.input().context().kind().equals("sources"))continue;
+            searched++;
+            var symbol=semanticType(artifact,binaryName,SemanticLayer.MACHINE);
+            if(symbol!=null)return Optional.of(new ClasspathSearchProof(
+                    binaryName,searched,artifact.input().context().path(),symbol.id(),symbol.resolution().identity()));
+        }
+        return Optional.of(new ClasspathSearchProof(binaryName,searched,null,null,null));
     }
 
     private String semanticProofCacheKey(String ownerScip,String value,String workspace,SemanticLayer layer,String domain)throws Exception{
@@ -394,14 +406,18 @@ public final class RocksIndexStore implements IndexStore {
         }
         return List.copyOf(result);
     }
+    private IndexedSemanticSymbol semanticType(StoredArtifact artifact,String binaryName,SemanticLayer layer)throws Exception{
+        var source=sourceOverlay.semanticFirst(artifact.id(),"binary_key",binaryName,layer);
+        if(source!=null&&TYPES.contains(source.kind()))return source;
+        Integer id=repository.binaryId(symbolsKey(artifact),binaryName);
+        if(id==null)return null;
+        var symbol=repository.symbol(symbolsKey(artifact),id);
+        return symbol!=null&&TYPES.contains(symbol.kind())?indexedSemantic(artifact,symbol,layer):null;
+    }
     @Override public synchronized IndexedSemanticSymbol semanticType(String binaryName,String workspace,SemanticLayer layer)throws Exception{
         for(var artifact:selected(workspace,true,layer)){
-            var source=sourceOverlay.semanticFirst(artifact.id(),"binary_key",binaryName,layer);
-            if(source!=null&&TYPES.contains(source.kind()))return source;
-            Integer id=repository.binaryId(symbolsKey(artifact),binaryName);
-            if(id==null)continue;
-            var symbol=repository.symbol(symbolsKey(artifact),id);
-            if(symbol!=null&&TYPES.contains(symbol.kind()))return indexedSemantic(artifact,symbol,layer);
+            var value=semanticType(artifact,binaryName,layer);
+            if(value!=null)return value;
         }
         return null;
     }

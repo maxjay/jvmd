@@ -114,6 +114,11 @@ This checklist is authoritative. A box is checked only when the implementation e
 - [x] Dependency removal handled precisely.
 - [x] Reorder handles precedence/ambiguity correctly.
 - [x] Winning search-prefix proof retained when later changes cannot affect the winner.
+- [x] Production `Analyzer.configure()` invokes ordered classpath diff/search-proof reconciliation before any broad detached-state reset.
+- [x] Lazy `validatedInputs()` classpath replacement uses the same proof-first reconciliation before document/accessibility/resident fencing.
+- [x] Changed `CLASSPATH_SEARCH` leaves propagate through the existing `SemanticUpdatePolicy.Live / ProofDag`; equal leaves stop propagation.
+- [x] Precise classpath transitions do not widen `environmentChanged` to all files; unknown/uncovered environment transitions retain the conservative fallback.
+- [x] Permanent production-boundary A/B/C regression proves diff intervals, reconsidered/equal/changed search proofs, ProofDag consumers, javac queries and resident semantic mutation/unit counts.
 
 ## Checkpoint 13 — uncertainty/generation audit
 - [x] Lost-history/overflow/corruption paths inspected.

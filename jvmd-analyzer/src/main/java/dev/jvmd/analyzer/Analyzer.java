@@ -1342,6 +1342,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var value=new LinkedHashMap<String,Object>();
         value.put("scip",candidate.id());value.put("name",candidate.name());value.put("name_path",Objects.requireNonNullElse(namePath,candidate.name()));
         value.put("kind",candidate.kind());value.put("signature",candidate.structuralSignature());value.put("label",candidate.label());
+        value.put("editor_label",candidate.editorLabel());
         value.put("modifiers",candidate.modifiers().stream().sorted().toList());
         if(candidate.sourceFile()!=null)value.put("source_file",candidate.sourceFile());
         var parameters=new ArrayList<Map<String,Object>>();
@@ -1417,26 +1418,36 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private CompletionCandidate semanticCandidate(SemanticReadView.Symbol fact,Map<String,SemanticType> substitutions,
                                                   Map<String,String> typeNames)throws Exception{
         SemanticType contextual=fact.semanticType().substitute(substitutions);
-        String label=fact.name()+" : "+CompletionCandidate.typeLabel(contextual,false);
+        String label=fact.name()+": "+contextual.display();
+        String editorLabel=fact.name()+" : "+CompletionCandidate.typeLabel(contextual,false);
         var labels=new ArrayList<CompletionCandidate.ParameterLabel>();
         if(contextual instanceof SemanticType.Executable executable){
             var value=new StringBuilder(fact.name()).append('(');
+            var editor=new StringBuilder(fact.name()).append('(');
             for(int i=0;i<executable.parameters().size();i++){
-                if(i>0)value.append(", ");
-                String parameter=CompletionCandidate.typeLabel(executable.parameters().get(i),true);
+                if(i>0){value.append(", ");editor.append(", ");}
+                String parameter=executable.parameters().get(i).display();
+                String editorParameter=CompletionCandidate.typeLabel(executable.parameters().get(i),true);
                 if(fact.varargs()&&i==executable.parameters().size()-1&&parameter.endsWith("[]"))
                     parameter=parameter.substring(0,parameter.length()-2)+"...";
-                int parameterStart=value.length();value.append(parameter);
-                if(i<fact.parameterNames().size()&&!fact.parameterNames().get(i).isBlank())
+                if(fact.varargs()&&i==executable.parameters().size()-1&&editorParameter.endsWith("[]"))
+                    editorParameter=editorParameter.substring(0,editorParameter.length()-2)+"...";
+                int parameterStart=value.length();value.append(parameter);editor.append(editorParameter);
+                if(i<fact.parameterNames().size()&&!fact.parameterNames().get(i).isBlank()){
                     value.append(' ').append(fact.parameterNames().get(i));
+                    editor.append(' ').append(fact.parameterNames().get(i));
+                }
                 labels.add(new CompletionCandidate.ParameterLabel(parameterStart,value.length()));
             }
-            value.append(')');
-            if(!fact.kind().equals("ctor"))value.append(" : ").append(CompletionCandidate.typeLabel(executable.returns(),true));
-            label=value.toString();
+            value.append(')');editor.append(')');
+            if(!fact.kind().equals("ctor")){
+                value.append(": ").append(executable.returns().display());
+                editor.append(" : ").append(CompletionCandidate.typeLabel(executable.returns(),true));
+            }
+            label=value.toString();editorLabel=editor.toString();
         }
         return new CompletionCandidate(fact.id(),fact.name(),fact.kind(),fact.signature(),fact.resolution().ownerKey(),
-                fact.sourceFile(),fact.modifiers(),label,labels);
+                fact.sourceFile(),fact.modifiers(),label,editorLabel,labels);
     }
 
     private record SemanticHierarchyOwner(SemanticReadView.Symbol symbol,SemanticType.Declared instantiated,

@@ -33,7 +33,7 @@ public final class CompletionProbe {
         boolean qualified=selector>=0&&text.charAt(selector)=='.';
 
         String replacement=qualified?MARKER+"()":MARKER;
-        if(qualified&&needsTerminator(text,end))replacement+=";";
+        if(qualified&&needsTerminator(text,start,end))replacement+=";";
         String source=text.substring(0,start)+replacement+text.substring(end);
         return new Shape(source,start,end,start,prefix,qualified);
     }
@@ -43,9 +43,32 @@ public final class CompletionProbe {
      * unresolved invocation. Inside argument lists, conditionals, existing statements, etc. the
      * surrounding delimiter remains authoritative.
      */
-    private static boolean needsTerminator(String text,int offset){
+    private static boolean needsTerminator(String text,int selectorStart,int offset){
         int next=nextSignificant(text,offset);
-        return next>=text.length()||text.charAt(next)=='}';
+        if(next>=text.length()||text.charAt(next)=='}')return true;
+        char token=text.charAt(next);
+        if(token==';'||token==')'||token==']'||token==','||token==':'||token=='?'||token=='.')return false;
+        if(sameLine(text,offset,next))return false;
+        // A more-indented following token is plausibly a line continuation. Same/dedented code is
+        // a confidently separate statement boundary, so terminate the repaired invocation.
+        return indentation(text,next)<=indentation(text,selectorStart);
+    }
+
+    private static boolean sameLine(String text,int first,int second){
+        int end=text.indexOf('\n',Math.min(first,text.length()));
+        return end<0||second<end;
+    }
+    private static int indentation(String text,int offset){
+        int line=offset;
+        while(line>0&&text.charAt(line-1)!='\n')line--;
+        int width=0;
+        for(int i=line;i<text.length()&&i<offset;i++){
+            char c=text.charAt(i);
+            if(c==' ')width++;
+            else if(c=='\t')width+=4;
+            else break;
+        }
+        return width;
     }
 
     private static int nextSignificant(String text,int offset){

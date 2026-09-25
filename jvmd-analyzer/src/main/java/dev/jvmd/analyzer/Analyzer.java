@@ -163,6 +163,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     private LinkedHashMap<String,Cached> focused=new LinkedHashMap<>(32,.75f,true);
     private final Dependencies dependencies=new Dependencies();
+    private final Set<Path> settlingPrerequisites=new HashSet<>();
     private final SourceProofEvidence sourceProofEvidence=new SourceProofEvidence();
     private final LinkedHashMap<String,SourceText> sourceTexts=new LinkedHashMap<>(16,.75f,true);
     private long cacheHits,bindingComputations,diagnosticFilesAnalysed,diagnosticFilesReused,indexWrites,indexWriteNanos,apiFingerprintChanges,apiFingerprintUnchanged;
@@ -788,10 +789,40 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         touchHash(path,Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
     }
     private void touchHash(Path path,String hash)throws Exception{
-        modules.get(context.generation()).files.add(path.toAbsolutePath().normalize());
+        path=path.toAbsolutePath().normalize();
+        modules.get(context.generation()).files.add(path);
         var changed=new LinkedHashSet<>(dependencies.observe(path,hash));
         changed.addAll(dependencies.check(path));
         if(!changed.isEmpty())invalidate(changed);
+        settlePendingPrerequisites(path);
+    }
+    private void settlePendingPrerequisites(Path consumer)throws Exception{
+        consumer=consumer.toAbsolutePath().normalize();
+        if(!settlingPrerequisites.add(consumer))return;
+        try{
+            var pending=dependencies.semantic().prerequisites(consumer);
+            if(pending.isEmpty())return;
+            if(!dependencies.semantic().proofCovered(consumer)){
+                // Conservative fallback happens at the consumer request boundary, not at the
+                // original source event. The next full consumer attribution observes current
+                // implicit sources and then discharges this pending edge.
+                invalidate(Set.of(consumer));
+                return;
+            }
+            for(Path prerequisite:new TreeSet<>(pending)){
+                prerequisite=prerequisite.toAbsolutePath().normalize();
+                if(documents.contains(prerequisite)||Files.isRegularFile(prerequisite)){
+                    String source=documents.text(prerequisite);
+                    // Full source admission is the semantic mutation boundary: canonical facts are
+                    // updated first, then precise leaves flow through the proof DAG.
+                    bindings(prerequisite,source,null);
+                }else{
+                    sourceMembershipChanged(prerequisite);
+                }
+            }
+        }finally{
+            settlingPrerequisites.remove(consumer);
+        }
     }
     private void invalidateCompilerCaches(Set<Path> changed){
         for(var entry:modules.entrySet()){

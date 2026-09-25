@@ -151,7 +151,7 @@ public record SemanticFact(
                 labels.add(new CompletionCandidate.ParameterLabel(start,value.length()));
             }
             value.append(')');
-            if(!kind.equals("ctor"))value.append(": ").append(executable.returns().display());
+            if(!kind.equals("ctor"))value.append(" : ").append(executable.returns().display());
             label=value.toString();
         }
         return new CompletionCandidate(id,name,kind,structuralSignature,ownerId,sourceFile,modifiers,label,labels);

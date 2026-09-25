@@ -173,7 +173,11 @@ export abstract class LspScenarioHarness {
       const verification=this.verify(payload);
       if(LspScenarioHarness.mode==="compare"&&LspScenarioHarness.serverId==="jvmd"){
         const completion=verification.operationCorrectness.completion;
-        assert(completion?.firstUse,"JVMD CMP semantic oracle mismatch on first use");
+        if(!completion?.firstUse)
+          throw new assert.AssertionError({
+            message:"JVMD CMP semantic oracle mismatch on first use: "+this.completionMismatch(payload.operations.completion?.firstUse?.result),
+            actual:false,expected:true,operator:"semantic oracle",
+          });
         assert(completion?.warmup?.every(Boolean),"JVMD CMP semantic oracle mismatch during warmup");
         assert(completion?.steady?.every(Boolean),"JVMD CMP semantic oracle mismatch during steady state");
         for(const [name,correct] of Object.entries(verification.legacy))
@@ -372,6 +376,21 @@ export abstract class LspScenarioHarness {
       LspScenarioHarness.running.connection.sendNotification("textDocument/didClose",{textDocument:{uri}});
     }
     LspScenarioHarness.openDocuments.clear();
+  }
+
+  private completionMismatch(actual:unknown){
+    const expectedDir=path.resolve(process.env.EXPECTED_DIR??"benchmarks/lsp-scenarios/expected");
+    const expected:any=JSON.parse(readFileSync(path.join(expectedDir,this.id+".json"),"utf8"));
+    const wanted:any[]=Array.isArray(expected?.first?.result)?expected.first.result:[];
+    const got:any[]=Array.isArray(actual)?actual as any[]:[];
+    const wantedByLabel=new Map(wanted.map(item=>[String(item.label),item]));
+    const gotByLabel=new Map(got.map(item=>[String(item.label),item]));
+    const missing=[...wantedByLabel.keys()].filter(label=>!gotByLabel.has(label));
+    const extra=[...gotByLabel.keys()].filter(label=>!wantedByLabel.has(label));
+    const changed=[...wantedByLabel.keys()].filter(label=>{
+      const right=gotByLabel.get(label);return right!==undefined&&!isDeepStrictEqual(wantedByLabel.get(label),right);
+    }).map(label=>({label,expected:wantedByLabel.get(label),actual:gotByLabel.get(label)}));
+    return JSON.stringify({expectedCount:wanted.length,actualCount:got.length,missing,extra,changed});
   }
 
   private verify(payload:ScenarioPayload){

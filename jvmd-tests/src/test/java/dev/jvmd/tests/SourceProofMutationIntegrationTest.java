@@ -205,6 +205,10 @@ class SourceProofMutationIntegrationTest {
             assertThat(diagnostics(analyzer,a,aText)).isEmpty();
             assertThat(diagnostics(analyzer,b,bText)).isEmpty();
             assertThat(diagnostics(analyzer,c,cText)).isEmpty();
+            @SuppressWarnings("unchecked")
+            var coverage=(Map<String,List<String>>)evidence(analyzer).get("coverage_failures_by_file");
+            assertThat(coverage).as("hierarchy source consumers must have complete semantic proof coverage")
+                    .doesNotContainKeys(b.toAbsolutePath().normalize().toString(),c.toAbsolutePath().normalize().toString());
             long warm=queries(analyzer);
             @SuppressWarnings("unchecked")
             var residentBefore=(Map<String,Object>)analyzer.status().get("resident_semantic_state");

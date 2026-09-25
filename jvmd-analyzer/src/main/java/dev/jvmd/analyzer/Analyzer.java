@@ -1484,7 +1484,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 for(var member:page.symbols()){
                     examined++;
                     if(member.kind().equals("ctor")||member.kind().equals("package")||member.kind().equals("module"))continue;
-                    if(resolved.staticReceiver()&&!member.staticMember()&&!Set.of("class","interface","enum","record","annotation").contains(member.kind()))continue;
+                    boolean declarationType=Set.of("class","interface","enum","record","annotation").contains(member.kind());
+                    if(resolved.staticReceiver()&&!member.staticMember()&&!declarationType)continue;
+                    if(!resolved.staticReceiver()&&member.staticMember()
+                            &&Set.of("method","field","enumconst").contains(member.kind()))continue;
                     var access=CompletionContextResolver.access(member,resolved.packageName(),enclosing);
                     if(access==CompletionContextResolver.Access.UNKNOWN)return null;
                     if(access==CompletionContextResolver.Access.DENIED)continue;
@@ -1496,7 +1499,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 cursor=page.cursor();
             }while(cursor!=null&&examined<perOwnerBudget);
         }
-        return selected.values().stream().map(HierarchyChoice::row).sorted(COMPLETION_ORDER).limit(target).toList();
+        return selected.values().stream().map(HierarchyChoice::row).sorted(QUALIFIED_COMPLETION_ORDER).limit(target).toList();
     }
 
     private boolean moduleSensitiveCompletion(){
@@ -1527,10 +1530,21 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return new Envelope(2,"live",more,more?Integer.toString(to):null,warnings(List.of()),
                 Map.of("items",returned,"range",new SourceText(text).range(start,end)));
     }
+    private static int qualifiedCompletionRank(Map<String,Object> row){
+        return switch(Objects.toString(row.get("kind"),"")){
+            case "field","enumconst" -> 0;
+            case "method" -> 1;
+            case "class","interface","enum","record","annotation" -> 2;
+            default -> 3;
+        };
+    }
     private static final Comparator<Map<String,Object>> COMPLETION_ORDER=Comparator
             .comparing((Map<String,Object> row)->Objects.toString(row.get("name"),""))
             .thenComparing(row->Objects.toString(row.get("label"),""))
             .thenComparing(row->Objects.toString(row.get("scip"),""));
+    private static final Comparator<Map<String,Object>> QUALIFIED_COMPLETION_ORDER=Comparator
+            .comparingInt(Analyzer::qualifiedCompletionRank)
+            .thenComparing(COMPLETION_ORDER);
     private record HierarchyOwner(String id,Map<String,SemanticType> substitutions,int order) { }
     private record HierarchyChoice(int ownerOrder,Map<String,Object> row) { }
     private static final class HierarchyStream {

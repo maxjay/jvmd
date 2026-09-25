@@ -2014,6 +2014,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(liveSourceState!=null)result.put("live_source_state",liveSourceState.status());
         if(context!=null)result.put("resident_semantic_state",semanticState().status());
         result.put("completion_requests",completionRequests);result.put("resident_description_loads",residentDescriptionLoads);result.put("resident_description_cache_hits",residentDescriptionCacheHits);
+        result.put("source_proof_evidence",sourceProofEvidence.status());
         if(context!=null){
             var active=modules.get(context.generation());
             result.put("resident_description_cache_entries",active.descriptions.size());

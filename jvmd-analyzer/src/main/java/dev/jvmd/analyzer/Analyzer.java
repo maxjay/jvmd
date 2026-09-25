@@ -776,6 +776,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             var observed=validatedInputs();String residentKey=residentContextKey(path,patched,start,observed,qualified);
             Envelope resident;
             try{
+                if(qualified){
+                    var maintained=maintainedQualifiedCompletion(path,text,start,end,prefix,probe,limit,offset);
+                    if(maintained!=null)return maintained;
+                }
                 resident=qualified
                         ?residentQualifiedCompletion(path,text,patched,start,end,focusCursor,prefix,limit,offset,residentKey,observed)
                         :residentUnqualifiedCompletion(path,text,patched,start,end,focusCursor,prefix,limit,offset,residentKey,observed);
@@ -929,6 +933,635 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(Set.of("field","enumconst").contains(fact.kind()))return "field\0"+fact.name();
         if(fact.typeDeclaration())return "type\0"+fact.name();
         return fact.kind()+"\0"+fact.name()+"\0"+Objects.requireNonNullElse(fact.erasedDescriptor(),"");
+    }
+
+    private static String inheritedMemberShape(SemanticReadView.Symbol fact){
+        if(fact.kind().equals("method")){
+            String descriptor=Objects.requireNonNullElse(fact.erasedDescriptor(),"");
+            int close=descriptor.indexOf(')');
+            String parameters=close>=0?descriptor.substring(0,close+1):descriptor;
+            return "method\0"+fact.name()+"\0"+parameters;
+        }
+        if(Set.of("field","enumconst").contains(fact.kind()))return "field\0"+fact.name();
+        if(Set.of("class","interface","enum","record","annotation").contains(fact.kind()))return "type\0"+fact.name();
+        return fact.kind()+"\0"+fact.name()+"\0"+Objects.requireNonNullElse(fact.erasedDescriptor(),"");
+    }
+
+    private Map<String,SemanticType> semanticTypeSubstitutions(SemanticReadView.Symbol type,SemanticType.Declared instantiated){
+        if(type.typeParameters().isEmpty()||instantiated.arguments().isEmpty())return Map.of();
+        var result=new LinkedHashMap<String,SemanticType>();
+        int count=Math.min(type.typeParameters().size(),instantiated.arguments().size());
+        for(int i=0;i<count;i++)result.put("$T"+i,instantiated.arguments().get(i));
+        return Map.copyOf(result);
+    }
+
+    private String semanticTypeLabel(SemanticType type,Map<String,String> names)throws Exception{
+        return switch(type){
+            case SemanticType.Primitive value -> value.name();
+            case SemanticType.Declared value -> {
+                String canonical=value.name();
+                String display=names.get(canonical);
+                if(display==null){
+                    String simple=canonical.substring(Math.max(canonical.lastIndexOf('.'),canonical.lastIndexOf('
+    private static final Comparator<Map<String,Object>> COMPLETION_ORDER=Comparator
+            .comparing((Map<String,Object> row)->Objects.toString(row.get("name"),""))
+            .thenComparing(row->Objects.toString(row.get("label"),""))
+            .thenComparing(row->Objects.toString(row.get("scip"),""));
+    private record HierarchyOwner(String id,Map<String,SemanticType> substitutions,int order) { }
+    private record HierarchyChoice(int ownerOrder,Map<String,Object> row) { }
+    private static final class HierarchyStream {
+        final ResidentSemanticState.MemberCursor cursor;final Map<String,SemanticType> substitutions;final int ownerOrder;
+        SemanticFact current;
+        HierarchyStream(ResidentSemanticState.MemberCursor cursor,Map<String,SemanticType> substitutions,int ownerOrder){
+            this.cursor=cursor;this.substitutions=substitutions;this.ownerOrder=ownerOrder;
+        }
+        boolean advance(){current=cursor.next();return current!=null;}
+    }
+
+    private List<HierarchyOwner> hierarchyOwners(DocumentSemanticSnapshot.QueryContext query){
+        var queue=new ArrayDeque<SemanticType>();addDeclaredTypes(queue,query.receiverType());
+        var seen=new HashSet<String>();var result=new ArrayList<HierarchyOwner>();
+        while(!queue.isEmpty()){
+            var next=queue.removeFirst();if(!(next instanceof SemanticType.Declared declared)||!seen.add(declared.symbolId()))continue;
+            var owner=semanticState().symbol(declared.symbolId());if(owner==null)continue;
+            var substitutions=typeSubstitutions(owner,declared);
+            result.add(new HierarchyOwner(declared.symbolId(),substitutions,result.size()));
+            for(var parent:owner.directSupertypes())addDeclaredTypes(queue,parent.substitute(substitutions));
+        }
+        return List.copyOf(result);
+    }
+
+    private List<Map<String,Object>> residentHierarchyRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target,boolean staticOnly,
+                                                           Set<String> excludedIds,Set<String> shadowedFieldNames){
+        if(target<=0)return List.of();
+        var accessible=accessibility(query);if(accessible==null)return List.of();
+        var streams=new PriorityQueue<HierarchyStream>(Comparator
+                .comparing((HierarchyStream stream)->stream.current.name())
+                .thenComparing(stream->stream.current.id())
+                .thenComparingInt(stream->stream.ownerOrder));
+        for(var owner:hierarchyOwners(query)){
+            var stream=new HierarchyStream(semanticState().memberCursor(owner.id(),prefix),owner.substitutions(),owner.order());
+            if(stream.advance())streams.add(stream);
+        }
+        var rows=new ArrayList<Map<String,Object>>(Math.min(target,64));
+        while(!streams.isEmpty()&&rows.size()<target){
+            String name=streams.peek().current.name();
+            var choices=new HashMap<String,HierarchyChoice>();
+            while(!streams.isEmpty()&&streams.peek().current.name().equals(name)){
+                var stream=streams.poll();
+                do{
+                    var member=stream.current;
+                    if(!excludedIds.contains(member.id())
+                            &&!member.kind().equals("ctor")&&!member.kind().equals("package")&&!member.kind().equals("module")
+                            &&(!staticOnly||member.typeDeclaration()||member.modifiers().contains("static"))
+                            &&accessible.contains(member.id())
+                            &&!(Set.of("field","enumconst").contains(member.kind())&&shadowedFieldNames.contains(member.name()))){
+                        String shape=inheritedMemberShape(member);var row=residentCompletionRow(member,member.candidate(stream.substitutions));
+                        var previous=choices.get(shape);
+                        if(previous==null||stream.ownerOrder<previous.ownerOrder())choices.put(shape,new HierarchyChoice(stream.ownerOrder,row));
+                    }
+                }while(stream.advance()&&stream.current.name().equals(name));
+                if(stream.current!=null)streams.add(stream);
+            }
+            var group=choices.values().stream().map(HierarchyChoice::row).sorted(COMPLETION_ORDER).toList();
+            for(var row:group){if(rows.size()>=target)break;rows.add(row);}
+        }
+        return List.copyOf(rows);
+    }
+    private List<Map<String,Object>> residentQualifiedRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target){
+        return residentHierarchyRows(query,prefix,target,query.staticReceiver(),Set.of(),Set.of());
+    }
+    private List<Map<String,Object>> residentUnqualifiedRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target){
+        if(target<=0)return List.of();
+        var localKinds=Set.of("local_variable","resource_variable","exception_parameter","binding_variable","parameter");
+        var variableNames=new HashSet<String>();
+        for(var candidate:query.scopedCandidates())
+            if(candidate.name().startsWith(prefix)&&!candidate.name().equals(EditorQueries.MARKER)&&localKinds.contains(candidate.kind()))
+                variableNames.add(candidate.name());
+
+        var scopeRows=new LinkedHashMap<String,Map<String,Object>>();var seenLocalNames=new HashSet<String>();
+        for(var candidate:query.scopedCandidates()){
+            if(!candidate.name().startsWith(prefix)||candidate.name().equals(EditorQueries.MARKER))continue;
+            boolean local=localKinds.contains(candidate.kind());
+            if(local&&!seenLocalNames.add(candidate.name()))continue;
+            if(!local&&Set.of("field","enumconst").contains(candidate.kind())&&variableNames.contains(candidate.name()))continue;
+            if(query.staticContext()&&candidate.declaringType()!=null&&!candidate.modifiers().contains("static")
+                    &&semanticState().symbol(candidate.declaringType())!=null)continue;
+            scopeRows.putIfAbsent(candidate.id(),residentCompletionRow(candidate,candidate.name()));
+        }
+        var lexical=scopeRows.values().stream().sorted(COMPLETION_ORDER).toList();
+        var hierarchy=(query.receiverType() instanceof SemanticType.Declared||query.receiverType() instanceof SemanticType.Intersection)
+                ?residentHierarchyRows(query,prefix,target,query.staticContext(),scopeRows.keySet(),variableNames):List.<Map<String,Object>>of();
+
+        var rows=new ArrayList<Map<String,Object>>(Math.min(target,64));int lexicalIndex=0,hierarchyIndex=0;
+        while(rows.size()<target&&(lexicalIndex<lexical.size()||hierarchyIndex<hierarchy.size())){
+            if(hierarchyIndex>=hierarchy.size()
+                    ||lexicalIndex<lexical.size()&&COMPLETION_ORDER.compare(lexical.get(lexicalIndex),hierarchy.get(hierarchyIndex))<=0)
+                rows.add(lexical.get(lexicalIndex++));
+            else rows.add(hierarchy.get(hierarchyIndex++));
+        }
+        return List.copyOf(rows);
+    }
+
+    private static Set<String> completionDiscoveryPackages(String text){
+        var result=new LinkedHashSet<String>();var packageMatch=java.util.regex.Pattern.compile("(?m)^\\s*package\\s+([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)\\s*;").matcher(text);
+        String current=packageMatch.find()?packageMatch.group(1):"";result.add(current);
+        var imports=java.util.regex.Pattern.compile("(?m)^\\s*import\\s+(static\\s+)?([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$*][\\w$*]*)*)\\s*;").matcher(text);
+        while(imports.find()){
+            boolean statik=imports.group(1)!=null;String name=imports.group(2);
+            if(name.endsWith(".*"))name=name.substring(0,name.length()-2);
+            int cut=name.lastIndexOf('.');
+            if(statik&&cut>=0){name=name.substring(0,cut);cut=name.lastIndexOf('.');}
+            if(cut>=0)result.add(name.substring(0,cut));else if(!statik)result.add("");
+        }
+        // Fully-qualified type references can name a source package without an import.
+        var qualifiedTypes=java.util.regex.Pattern.compile("\\b((?:[A-Za-z_$][\\w$]*\\.)+)([A-Z_$][\\w$]*)\\b").matcher(text);
+        while(qualifiedTypes.find())result.add(qualifiedTypes.group(1).substring(0,qualifiedTypes.group(1).length()-1));
+        return Set.copyOf(result);
+    }
+    public Envelope signatureHelp(Path path,String text,int line,int character)throws Exception{
+        synchronizeKnownSources(path);int cursor=Documents.offset(text,new Documents.Position(line,character));touch(path,text);var focus=focusing.focus(path,text,cursor);
+        var outcome=compiler.query(path,focus.source(),2,(task,units,tier)->EditorQueries.signatures(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),cursor));
+        return new Envelope(outcome.tier(),"live",false,null,warnings(outcome.warnings()),outcome.result()==null?Map.of("signatures",List.of()):outcome.result());
+    }
+    public Envelope semanticTokens(Path path,String text,int limit,int offset)throws Exception{
+        var outcome=bindings(path,text,null);var tokens=new TreeMap<Integer,Bindings.Occurrence>();
+        if(outcome.result()!=null)for(var occurrence:outcome.result().occurrences())if(occurrence.file().equals(path.toString()))tokens.merge(occurrence.start(),occurrence,(first,next)->"instantiates".equals(first.role())?next:first);
+        var values=List.copyOf(tokens.values());int from=Math.min(offset,values.size()),to=Math.min(values.size(),from+limit);var data=new ArrayList<Integer>();
+        int previousLine=from==0?0:values.get(from-1).range().start().line(),previousCharacter=from==0?0:values.get(from-1).range().start().character();
+        for(var occurrence:values.subList(from,to)){
+            var symbol=outcome.result().symbols().get(occurrence.scip());int type=switch(Objects.toString(symbol.get("kind"),"")){case "package"->0;case "class","record","ctor"->1;case "interface"->2;case "enum"->3;case "type_parameter"->4;case "parameter"->5;case "field"->7;case "enumconst"->8;case "method"->9;case "annotation"->10;default->6;};
+            @SuppressWarnings("unchecked") var modifiers=(List<String>)symbol.getOrDefault("modifiers",List.of());int flags="declaration".equals(occurrence.role())?1:0;if(modifiers.contains("static"))flags|=2;if(modifiers.contains("final"))flags|=4;if(modifiers.contains("abstract"))flags|=8;if("writes".equals(occurrence.role()))flags|=32;
+            int line=occurrence.range().start().line(),character=occurrence.range().start().character();data.add(line-previousLine);data.add(line==previousLine?character-previousCharacter:character);data.add(occurrence.end()-occurrence.start());data.add(type);data.add(flags);previousLine=line;previousCharacter=character;
+        }
+        return new Envelope(outcome.tier(),"live",to<values.size(),to<values.size()?Integer.toString(to):null,warnings(outcome.warnings()),Map.of("data",data,"resultId",Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+    }
+    private SymbolDescription loadResidentDescription(SemanticFact fact)throws Exception{
+        if(fact.sourceFile()==null)return null;
+        Path source;
+        try{source=Path.of(fact.sourceFile()).toAbsolutePath().normalize();}
+        catch(Exception invalid){return null;}
+        if(!documents.contains(source)&&!Files.isRegularFile(source))return null;
+        String text=documents.text(source);
+        String sourceHash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var caches=modules.get(context.generation());
+        String key=fact.id()+"\0"+fact.factIdentity().hex()+"\0"+sourceHash;
+        var cached=caches.descriptions.get(key);
+        if(cached!=null){residentDescriptionCacheHits++;return cached;}
+
+        String wanted=fact.id();var observed=inputSnapshot();
+        var outcome=compiler.query(source,text,2,observed,(task,units,tier)->{
+            if(tier!=2)return null;
+            var identity=new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources());
+            SymbolDescription[] found={null};var trees=Trees.instance(task);
+            for(var unit:units){
+                new TreePathScanner<Void,Void>(){
+                    private void capture(Element element){
+                        if(found[0]!=null||element==null)return;
+                        try{if(wanted.equals(identity.scip(element)))found[0]=SemanticFacts.description(task,identity,element);}
+                        catch(IllegalArgumentException unresolved){/* selected identity not present in this task */}
+                    }
+                    @Override public Void visitClass(ClassTree node,Void unused){capture(trees.getElement(getCurrentPath()));return found[0]==null?super.visitClass(node,unused):null;}
+                    @Override public Void visitMethod(MethodTree node,Void unused){capture(trees.getElement(getCurrentPath()));return null;}
+                    @Override public Void visitVariable(VariableTree node,Void unused){
+                        var element=trees.getElement(getCurrentPath());if(element!=null&&element.getKind().isField())capture(element);return null;
+                    }
+                }.scan(unit,null);
+                if(found[0]!=null)break;
+            }
+            return found[0];
+        });
+        if(outcome.result()==null||!outcome.warnings().isEmpty())return null;
+        residentDescriptionLoads++;caches.descriptions.put(key,outcome.result());
+        while(caches.descriptions.size()>64)caches.descriptions.remove(caches.descriptions.keySet().iterator().next());
+        return outcome.result();
+    }
+
+    public Map<String,Object> residentDescription(String ref)throws Exception{
+        var fact=semanticState().symbol(ref);if(fact==null)return null;
+        if(fact.sourceFile()!=null&&liveSourceState!=null)try{
+            Path source=Path.of(fact.sourceFile()).toAbsolutePath().normalize();
+            if(liveSourceState.accepts(source)){ensureSourceSemanticCurrent(source);fact=semanticState().symbol(ref);if(fact==null)return null;}
+        }catch(Exception ignored){}
+        var description=loadResidentDescription(fact);var value=new LinkedHashMap<String,Object>();
+        value.put("scip",fact.id());value.put("name",fact.name());value.put("name_path",fact.namePath());value.put("kind",fact.kind());
+        value.put("signature",description==null?fact.structuralSignature():description.detailedSignature());value.put("resolved",true);
+        value.put("modifiers",fact.modifiers().stream().sorted().toList());value.put("fqn",fact.fqn());
+        if(fact.sourceFile()!=null){value.put("file",fact.sourceFile());value.put("source_file",fact.sourceFile());}
+        var owner=fact.ownerId()==null?null:semanticState().symbol(fact.ownerId());
+        if(owner!=null)value.put("declaring",owner.fqn()==null?owner.name():owner.fqn());
+        if(description!=null){
+            String doc=DocMarkdown.render(description.documentation());if(doc!=null)value.put("doc",doc);
+            var location=description.declaration();
+            if(location!=null){
+                value.put("source_start",location.start());value.put("source_end",location.end());
+                value.put("start",location.start());value.put("end",location.end());
+            }
+        }
+        return Collections.unmodifiableMap(value);
+    }
+
+    public List<Map<String,Object>> known(String ref){
+        var found=new LinkedHashMap<String,Map<String,Object>>();
+        for(var cached:focused.values())if(cached.result().result()!=null)for(var symbol:cached.result().result().symbols().values())if(matches(symbol,ref,false))found.put(symbol.get("scip").toString(),symbol);
+        return List.copyOf(found.values());
+    }
+    public static boolean matches(Map<String,Object> symbol,String ref,boolean substring){
+        if(substring)return Objects.toString(symbol.get("name_path"),"").contains(ref)||Objects.toString(symbol.get("name"),"").contains(ref);
+        return NamePath.parse(ref).matches(symbol);
+    }
+    public Map<String,Object> status(){
+        var result=new LinkedHashMap<String,Object>(compiler.status());if(snapshots!=null)result.put("persistent_snapshots",snapshots.status());result.putAll(focusing.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("binding_computations",bindingComputations);result.put("classpath_fingerprints",classpathFingerprints);result.put("diagnostic_store",diagnosticStore.status());result.put("diagnostic_files_analysed",diagnosticFilesAnalysed);result.put("diagnostic_files_reused",diagnosticFilesReused);result.put("index_record_source_calls",indexWrites);result.put("index_record_source_ms",0.0);result.put("index_publish_enqueue_ms",Math.round(indexWriteNanos/1000.0)/1000.0);if(index!=null)result.put("source_publisher",index.sourcePublisherStatus());result.put("api_fingerprint_changes",apiFingerprintChanges);result.put("api_fingerprint_unchanged",apiFingerprintUnchanged);result.put("pending_api_files",dependencies.semantic().pendingCount());result.put("conditional_files",dependencies.semantic().conditionalCount());result.put("dependencies",dependencies.status());
+        if(liveSourceState!=null)result.put("live_source_state",liveSourceState.status());
+        if(context!=null)result.put("resident_semantic_state",semanticState().status());
+        result.put("completion_requests",completionRequests);result.put("resident_description_loads",residentDescriptionLoads);result.put("resident_description_cache_hits",residentDescriptionCacheHits);
+        if(context!=null){
+            result.put("resident_description_cache_entries",modules.get(context.generation()).descriptions.size());
+            result.put("resident_accessibility_cache",modules.get(context.generation()).accessibility.status());
+        }
+        long retainedSemantic=retainedSemanticBytes();
+        var semanticGenerations=new LinkedHashMap<String,Object>();
+        for(var entry:modules.entrySet()){
+            var semanticStatus=entry.getValue().semantic.status();
+            semanticGenerations.put(entry.getKey(),Map.of(
+                    "family",generationFamilies.getOrDefault(entry.getKey(),entry.getKey()),
+                    "estimated_bytes",entry.getValue().semantic.estimatedBytes(),
+                    "facts",semanticStatus.get("semantic_facts"),
+                    "units",semanticStatus.get("semantic_units")));
+        }
+        result.put("resident_semantic_generations",semanticGenerations);
+        result.put("resident_semantic_generation_count",modules.size());
+        result.put("resident_semantic_generation_families",generationFamilyLru.size());
+        result.put("resident_semantic_budget_bytes",semanticBudgetBytes);
+        result.put("resident_semantic_estimated_bytes",retainedSemantic);
+        result.put("resident_semantic_over_budget_bytes",Math.max(0,retainedSemantic-semanticBudgetBytes));
+        result.put("resident_semantic_retired_generations",retiredModuleGenerations);
+        result.put("resident_semantic_retired_bytes",retiredSemanticBytes);
+        result.put("compiler_retired_generations",retiredCompilerGenerations);
+        var moduleStatus=new LinkedHashMap<String,Object>();for(var entry:compilerPools.entrySet())moduleStatus.put(entry.getKey(),entry.getValue().status());result.put("module_compilers",moduleStatus);return result;
+    }
+    @Override public void close()throws Exception{if(snapshots!=null)snapshots.close();diagnosticStore.clear();outlines.clear();focused.clear();focusing.close();sourceTexts.clear();dependencies.semantic().clear();for(var pool:compilerPools.values())pool.close();compilerPools.clear();modules.clear();generationFamilies.clear();generationFamilyLru.clear();compiler=null;}
+}
+))+1);
+                    var matches=semanticTypes(simple).stream().map(SemanticReadView.Symbol::fqn).filter(v->!v.isBlank()).distinct().toList();
+                    display=matches.size()<=1?simple:canonical.replace('
+    private static final Comparator<Map<String,Object>> COMPLETION_ORDER=Comparator
+            .comparing((Map<String,Object> row)->Objects.toString(row.get("name"),""))
+            .thenComparing(row->Objects.toString(row.get("label"),""))
+            .thenComparing(row->Objects.toString(row.get("scip"),""));
+    private record HierarchyOwner(String id,Map<String,SemanticType> substitutions,int order) { }
+    private record HierarchyChoice(int ownerOrder,Map<String,Object> row) { }
+    private static final class HierarchyStream {
+        final ResidentSemanticState.MemberCursor cursor;final Map<String,SemanticType> substitutions;final int ownerOrder;
+        SemanticFact current;
+        HierarchyStream(ResidentSemanticState.MemberCursor cursor,Map<String,SemanticType> substitutions,int ownerOrder){
+            this.cursor=cursor;this.substitutions=substitutions;this.ownerOrder=ownerOrder;
+        }
+        boolean advance(){current=cursor.next();return current!=null;}
+    }
+
+    private List<HierarchyOwner> hierarchyOwners(DocumentSemanticSnapshot.QueryContext query){
+        var queue=new ArrayDeque<SemanticType>();addDeclaredTypes(queue,query.receiverType());
+        var seen=new HashSet<String>();var result=new ArrayList<HierarchyOwner>();
+        while(!queue.isEmpty()){
+            var next=queue.removeFirst();if(!(next instanceof SemanticType.Declared declared)||!seen.add(declared.symbolId()))continue;
+            var owner=semanticState().symbol(declared.symbolId());if(owner==null)continue;
+            var substitutions=typeSubstitutions(owner,declared);
+            result.add(new HierarchyOwner(declared.symbolId(),substitutions,result.size()));
+            for(var parent:owner.directSupertypes())addDeclaredTypes(queue,parent.substitute(substitutions));
+        }
+        return List.copyOf(result);
+    }
+
+    private List<Map<String,Object>> residentHierarchyRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target,boolean staticOnly,
+                                                           Set<String> excludedIds,Set<String> shadowedFieldNames){
+        if(target<=0)return List.of();
+        var accessible=accessibility(query);if(accessible==null)return List.of();
+        var streams=new PriorityQueue<HierarchyStream>(Comparator
+                .comparing((HierarchyStream stream)->stream.current.name())
+                .thenComparing(stream->stream.current.id())
+                .thenComparingInt(stream->stream.ownerOrder));
+        for(var owner:hierarchyOwners(query)){
+            var stream=new HierarchyStream(semanticState().memberCursor(owner.id(),prefix),owner.substitutions(),owner.order());
+            if(stream.advance())streams.add(stream);
+        }
+        var rows=new ArrayList<Map<String,Object>>(Math.min(target,64));
+        while(!streams.isEmpty()&&rows.size()<target){
+            String name=streams.peek().current.name();
+            var choices=new HashMap<String,HierarchyChoice>();
+            while(!streams.isEmpty()&&streams.peek().current.name().equals(name)){
+                var stream=streams.poll();
+                do{
+                    var member=stream.current;
+                    if(!excludedIds.contains(member.id())
+                            &&!member.kind().equals("ctor")&&!member.kind().equals("package")&&!member.kind().equals("module")
+                            &&(!staticOnly||member.typeDeclaration()||member.modifiers().contains("static"))
+                            &&accessible.contains(member.id())
+                            &&!(Set.of("field","enumconst").contains(member.kind())&&shadowedFieldNames.contains(member.name()))){
+                        String shape=inheritedMemberShape(member);var row=residentCompletionRow(member,member.candidate(stream.substitutions));
+                        var previous=choices.get(shape);
+                        if(previous==null||stream.ownerOrder<previous.ownerOrder())choices.put(shape,new HierarchyChoice(stream.ownerOrder,row));
+                    }
+                }while(stream.advance()&&stream.current.name().equals(name));
+                if(stream.current!=null)streams.add(stream);
+            }
+            var group=choices.values().stream().map(HierarchyChoice::row).sorted(COMPLETION_ORDER).toList();
+            for(var row:group){if(rows.size()>=target)break;rows.add(row);}
+        }
+        return List.copyOf(rows);
+    }
+    private List<Map<String,Object>> residentQualifiedRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target){
+        return residentHierarchyRows(query,prefix,target,query.staticReceiver(),Set.of(),Set.of());
+    }
+    private List<Map<String,Object>> residentUnqualifiedRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target){
+        if(target<=0)return List.of();
+        var localKinds=Set.of("local_variable","resource_variable","exception_parameter","binding_variable","parameter");
+        var variableNames=new HashSet<String>();
+        for(var candidate:query.scopedCandidates())
+            if(candidate.name().startsWith(prefix)&&!candidate.name().equals(EditorQueries.MARKER)&&localKinds.contains(candidate.kind()))
+                variableNames.add(candidate.name());
+
+        var scopeRows=new LinkedHashMap<String,Map<String,Object>>();var seenLocalNames=new HashSet<String>();
+        for(var candidate:query.scopedCandidates()){
+            if(!candidate.name().startsWith(prefix)||candidate.name().equals(EditorQueries.MARKER))continue;
+            boolean local=localKinds.contains(candidate.kind());
+            if(local&&!seenLocalNames.add(candidate.name()))continue;
+            if(!local&&Set.of("field","enumconst").contains(candidate.kind())&&variableNames.contains(candidate.name()))continue;
+            if(query.staticContext()&&candidate.declaringType()!=null&&!candidate.modifiers().contains("static")
+                    &&semanticState().symbol(candidate.declaringType())!=null)continue;
+            scopeRows.putIfAbsent(candidate.id(),residentCompletionRow(candidate,candidate.name()));
+        }
+        var lexical=scopeRows.values().stream().sorted(COMPLETION_ORDER).toList();
+        var hierarchy=(query.receiverType() instanceof SemanticType.Declared||query.receiverType() instanceof SemanticType.Intersection)
+                ?residentHierarchyRows(query,prefix,target,query.staticContext(),scopeRows.keySet(),variableNames):List.<Map<String,Object>>of();
+
+        var rows=new ArrayList<Map<String,Object>>(Math.min(target,64));int lexicalIndex=0,hierarchyIndex=0;
+        while(rows.size()<target&&(lexicalIndex<lexical.size()||hierarchyIndex<hierarchy.size())){
+            if(hierarchyIndex>=hierarchy.size()
+                    ||lexicalIndex<lexical.size()&&COMPLETION_ORDER.compare(lexical.get(lexicalIndex),hierarchy.get(hierarchyIndex))<=0)
+                rows.add(lexical.get(lexicalIndex++));
+            else rows.add(hierarchy.get(hierarchyIndex++));
+        }
+        return List.copyOf(rows);
+    }
+
+    private static Set<String> completionDiscoveryPackages(String text){
+        var result=new LinkedHashSet<String>();var packageMatch=java.util.regex.Pattern.compile("(?m)^\\s*package\\s+([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)\\s*;").matcher(text);
+        String current=packageMatch.find()?packageMatch.group(1):"";result.add(current);
+        var imports=java.util.regex.Pattern.compile("(?m)^\\s*import\\s+(static\\s+)?([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$*][\\w$*]*)*)\\s*;").matcher(text);
+        while(imports.find()){
+            boolean statik=imports.group(1)!=null;String name=imports.group(2);
+            if(name.endsWith(".*"))name=name.substring(0,name.length()-2);
+            int cut=name.lastIndexOf('.');
+            if(statik&&cut>=0){name=name.substring(0,cut);cut=name.lastIndexOf('.');}
+            if(cut>=0)result.add(name.substring(0,cut));else if(!statik)result.add("");
+        }
+        // Fully-qualified type references can name a source package without an import.
+        var qualifiedTypes=java.util.regex.Pattern.compile("\\b((?:[A-Za-z_$][\\w$]*\\.)+)([A-Z_$][\\w$]*)\\b").matcher(text);
+        while(qualifiedTypes.find())result.add(qualifiedTypes.group(1).substring(0,qualifiedTypes.group(1).length()-1));
+        return Set.copyOf(result);
+    }
+    public Envelope signatureHelp(Path path,String text,int line,int character)throws Exception{
+        synchronizeKnownSources(path);int cursor=Documents.offset(text,new Documents.Position(line,character));touch(path,text);var focus=focusing.focus(path,text,cursor);
+        var outcome=compiler.query(path,focus.source(),2,(task,units,tier)->EditorQueries.signatures(task,units,new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources()),cursor));
+        return new Envelope(outcome.tier(),"live",false,null,warnings(outcome.warnings()),outcome.result()==null?Map.of("signatures",List.of()):outcome.result());
+    }
+    public Envelope semanticTokens(Path path,String text,int limit,int offset)throws Exception{
+        var outcome=bindings(path,text,null);var tokens=new TreeMap<Integer,Bindings.Occurrence>();
+        if(outcome.result()!=null)for(var occurrence:outcome.result().occurrences())if(occurrence.file().equals(path.toString()))tokens.merge(occurrence.start(),occurrence,(first,next)->"instantiates".equals(first.role())?next:first);
+        var values=List.copyOf(tokens.values());int from=Math.min(offset,values.size()),to=Math.min(values.size(),from+limit);var data=new ArrayList<Integer>();
+        int previousLine=from==0?0:values.get(from-1).range().start().line(),previousCharacter=from==0?0:values.get(from-1).range().start().character();
+        for(var occurrence:values.subList(from,to)){
+            var symbol=outcome.result().symbols().get(occurrence.scip());int type=switch(Objects.toString(symbol.get("kind"),"")){case "package"->0;case "class","record","ctor"->1;case "interface"->2;case "enum"->3;case "type_parameter"->4;case "parameter"->5;case "field"->7;case "enumconst"->8;case "method"->9;case "annotation"->10;default->6;};
+            @SuppressWarnings("unchecked") var modifiers=(List<String>)symbol.getOrDefault("modifiers",List.of());int flags="declaration".equals(occurrence.role())?1:0;if(modifiers.contains("static"))flags|=2;if(modifiers.contains("final"))flags|=4;if(modifiers.contains("abstract"))flags|=8;if("writes".equals(occurrence.role()))flags|=32;
+            int line=occurrence.range().start().line(),character=occurrence.range().start().character();data.add(line-previousLine);data.add(line==previousLine?character-previousCharacter:character);data.add(occurrence.end()-occurrence.start());data.add(type);data.add(flags);previousLine=line;previousCharacter=character;
+        }
+        return new Envelope(outcome.tier(),"live",to<values.size(),to<values.size()?Integer.toString(to):null,warnings(outcome.warnings()),Map.of("data",data,"resultId",Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+    }
+    private SymbolDescription loadResidentDescription(SemanticFact fact)throws Exception{
+        if(fact.sourceFile()==null)return null;
+        Path source;
+        try{source=Path.of(fact.sourceFile()).toAbsolutePath().normalize();}
+        catch(Exception invalid){return null;}
+        if(!documents.contains(source)&&!Files.isRegularFile(source))return null;
+        String text=documents.text(source);
+        String sourceHash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var caches=modules.get(context.generation());
+        String key=fact.id()+"\0"+fact.factIdentity().hex()+"\0"+sourceHash;
+        var cached=caches.descriptions.get(key);
+        if(cached!=null){residentDescriptionCacheHits++;return cached;}
+
+        String wanted=fact.id();var observed=inputSnapshot();
+        var outcome=compiler.query(source,text,2,observed,(task,units,tier)->{
+            if(tier!=2)return null;
+            var identity=new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources());
+            SymbolDescription[] found={null};var trees=Trees.instance(task);
+            for(var unit:units){
+                new TreePathScanner<Void,Void>(){
+                    private void capture(Element element){
+                        if(found[0]!=null||element==null)return;
+                        try{if(wanted.equals(identity.scip(element)))found[0]=SemanticFacts.description(task,identity,element);}
+                        catch(IllegalArgumentException unresolved){/* selected identity not present in this task */}
+                    }
+                    @Override public Void visitClass(ClassTree node,Void unused){capture(trees.getElement(getCurrentPath()));return found[0]==null?super.visitClass(node,unused):null;}
+                    @Override public Void visitMethod(MethodTree node,Void unused){capture(trees.getElement(getCurrentPath()));return null;}
+                    @Override public Void visitVariable(VariableTree node,Void unused){
+                        var element=trees.getElement(getCurrentPath());if(element!=null&&element.getKind().isField())capture(element);return null;
+                    }
+                }.scan(unit,null);
+                if(found[0]!=null)break;
+            }
+            return found[0];
+        });
+        if(outcome.result()==null||!outcome.warnings().isEmpty())return null;
+        residentDescriptionLoads++;caches.descriptions.put(key,outcome.result());
+        while(caches.descriptions.size()>64)caches.descriptions.remove(caches.descriptions.keySet().iterator().next());
+        return outcome.result();
+    }
+
+    public Map<String,Object> residentDescription(String ref)throws Exception{
+        var fact=semanticState().symbol(ref);if(fact==null)return null;
+        if(fact.sourceFile()!=null&&liveSourceState!=null)try{
+            Path source=Path.of(fact.sourceFile()).toAbsolutePath().normalize();
+            if(liveSourceState.accepts(source)){ensureSourceSemanticCurrent(source);fact=semanticState().symbol(ref);if(fact==null)return null;}
+        }catch(Exception ignored){}
+        var description=loadResidentDescription(fact);var value=new LinkedHashMap<String,Object>();
+        value.put("scip",fact.id());value.put("name",fact.name());value.put("name_path",fact.namePath());value.put("kind",fact.kind());
+        value.put("signature",description==null?fact.structuralSignature():description.detailedSignature());value.put("resolved",true);
+        value.put("modifiers",fact.modifiers().stream().sorted().toList());value.put("fqn",fact.fqn());
+        if(fact.sourceFile()!=null){value.put("file",fact.sourceFile());value.put("source_file",fact.sourceFile());}
+        var owner=fact.ownerId()==null?null:semanticState().symbol(fact.ownerId());
+        if(owner!=null)value.put("declaring",owner.fqn()==null?owner.name():owner.fqn());
+        if(description!=null){
+            String doc=DocMarkdown.render(description.documentation());if(doc!=null)value.put("doc",doc);
+            var location=description.declaration();
+            if(location!=null){
+                value.put("source_start",location.start());value.put("source_end",location.end());
+                value.put("start",location.start());value.put("end",location.end());
+            }
+        }
+        return Collections.unmodifiableMap(value);
+    }
+
+    public List<Map<String,Object>> known(String ref){
+        var found=new LinkedHashMap<String,Map<String,Object>>();
+        for(var cached:focused.values())if(cached.result().result()!=null)for(var symbol:cached.result().result().symbols().values())if(matches(symbol,ref,false))found.put(symbol.get("scip").toString(),symbol);
+        return List.copyOf(found.values());
+    }
+    public static boolean matches(Map<String,Object> symbol,String ref,boolean substring){
+        if(substring)return Objects.toString(symbol.get("name_path"),"").contains(ref)||Objects.toString(symbol.get("name"),"").contains(ref);
+        return NamePath.parse(ref).matches(symbol);
+    }
+    public Map<String,Object> status(){
+        var result=new LinkedHashMap<String,Object>(compiler.status());if(snapshots!=null)result.put("persistent_snapshots",snapshots.status());result.putAll(focusing.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("binding_computations",bindingComputations);result.put("classpath_fingerprints",classpathFingerprints);result.put("diagnostic_store",diagnosticStore.status());result.put("diagnostic_files_analysed",diagnosticFilesAnalysed);result.put("diagnostic_files_reused",diagnosticFilesReused);result.put("index_record_source_calls",indexWrites);result.put("index_record_source_ms",0.0);result.put("index_publish_enqueue_ms",Math.round(indexWriteNanos/1000.0)/1000.0);if(index!=null)result.put("source_publisher",index.sourcePublisherStatus());result.put("api_fingerprint_changes",apiFingerprintChanges);result.put("api_fingerprint_unchanged",apiFingerprintUnchanged);result.put("pending_api_files",dependencies.semantic().pendingCount());result.put("conditional_files",dependencies.semantic().conditionalCount());result.put("dependencies",dependencies.status());
+        if(liveSourceState!=null)result.put("live_source_state",liveSourceState.status());
+        if(context!=null)result.put("resident_semantic_state",semanticState().status());
+        result.put("completion_requests",completionRequests);result.put("resident_description_loads",residentDescriptionLoads);result.put("resident_description_cache_hits",residentDescriptionCacheHits);
+        if(context!=null){
+            result.put("resident_description_cache_entries",modules.get(context.generation()).descriptions.size());
+            result.put("resident_accessibility_cache",modules.get(context.generation()).accessibility.status());
+        }
+        long retainedSemantic=retainedSemanticBytes();
+        var semanticGenerations=new LinkedHashMap<String,Object>();
+        for(var entry:modules.entrySet()){
+            var semanticStatus=entry.getValue().semantic.status();
+            semanticGenerations.put(entry.getKey(),Map.of(
+                    "family",generationFamilies.getOrDefault(entry.getKey(),entry.getKey()),
+                    "estimated_bytes",entry.getValue().semantic.estimatedBytes(),
+                    "facts",semanticStatus.get("semantic_facts"),
+                    "units",semanticStatus.get("semantic_units")));
+        }
+        result.put("resident_semantic_generations",semanticGenerations);
+        result.put("resident_semantic_generation_count",modules.size());
+        result.put("resident_semantic_generation_families",generationFamilyLru.size());
+        result.put("resident_semantic_budget_bytes",semanticBudgetBytes);
+        result.put("resident_semantic_estimated_bytes",retainedSemantic);
+        result.put("resident_semantic_over_budget_bytes",Math.max(0,retainedSemantic-semanticBudgetBytes));
+        result.put("resident_semantic_retired_generations",retiredModuleGenerations);
+        result.put("resident_semantic_retired_bytes",retiredSemanticBytes);
+        result.put("compiler_retired_generations",retiredCompilerGenerations);
+        var moduleStatus=new LinkedHashMap<String,Object>();for(var entry:compilerPools.entrySet())moduleStatus.put(entry.getKey(),entry.getValue().status());result.put("module_compilers",moduleStatus);return result;
+    }
+    @Override public void close()throws Exception{if(snapshots!=null)snapshots.close();diagnosticStore.clear();outlines.clear();focused.clear();focusing.close();sourceTexts.clear();dependencies.semantic().clear();for(var pool:compilerPools.values())pool.close();compilerPools.clear();modules.clear();generationFamilies.clear();generationFamilyLru.clear();compiler=null;}
+}
+,'.');
+                    names.put(canonical,display);
+                }
+                if(value.arguments().isEmpty())yield display;
+                var arguments=new ArrayList<String>();
+                for(var argument:value.arguments())arguments.add(semanticTypeLabel(argument,names));
+                yield display+"<"+String.join(", ",arguments)+">";
+            }
+            case SemanticType.Variable value -> value.name();
+            case SemanticType.Array value -> semanticTypeLabel(value.component(),names)+"[]";
+            case SemanticType.Wildcard value -> value.extendsBound()!=null
+                    ?"? extends "+semanticTypeLabel(value.extendsBound(),names)
+                    :value.superBound()!=null?"? super "+semanticTypeLabel(value.superBound(),names):"?";
+            case SemanticType.Intersection value -> {
+                var parts=new ArrayList<String>();for(var bound:value.bounds())parts.add(semanticTypeLabel(bound,names));
+                yield String.join(" & ",parts);
+            }
+            case SemanticType.Executable value -> value.display();
+            case SemanticType.Unknown value -> value.text();
+        };
+    }
+
+    private CompletionCandidate semanticCandidate(SemanticReadView.Symbol fact,Map<String,SemanticType> substitutions,
+                                                  Map<String,String> typeNames)throws Exception{
+        SemanticType contextual=fact.semanticType().substitute(substitutions);
+        String label=fact.name()+": "+semanticTypeLabel(contextual,typeNames);
+        var labels=new ArrayList<CompletionCandidate.ParameterLabel>();
+        if(contextual instanceof SemanticType.Executable executable){
+            var value=new StringBuilder(fact.name()).append('(');
+            for(int i=0;i<executable.parameters().size();i++){
+                if(i>0)value.append(", ");
+                String parameter=semanticTypeLabel(executable.parameters().get(i),typeNames);
+                if(fact.varargs()&&i==executable.parameters().size()-1&&parameter.endsWith("[]"))
+                    parameter=parameter.substring(0,parameter.length()-2)+"...";
+                int start=value.length();value.append(parameter);
+                if(i<fact.parameterNames().size()&&!fact.parameterNames().get(i).isBlank())
+                    value.append(' ').append(fact.parameterNames().get(i));
+                labels.add(new CompletionCandidate.ParameterLabel(start,value.length()));
+            }
+            value.append(')');
+            if(!fact.kind().equals("ctor"))value.append(" : ").append(semanticTypeLabel(executable.returns(),typeNames));
+            label=value.toString();
+        }
+        return new CompletionCandidate(fact.id(),fact.name(),fact.kind(),fact.signature(),fact.resolution().ownerKey(),
+                fact.sourceFile(),fact.modifiers(),label,labels);
+    }
+
+    private record SemanticHierarchyOwner(SemanticReadView.Symbol symbol,SemanticType.Declared instantiated,
+                                          Map<String,SemanticType> substitutions,int order) { }
+
+    private List<SemanticHierarchyOwner> semanticHierarchyOwners(SemanticReadView view,
+            CompletionContextResolver.Resolved resolved)throws Exception{
+        var rootType=resolved.receiverType() instanceof SemanticType.Declared declared
+                ?declared
+                :resolved.receiver().semanticType() instanceof SemanticType.Declared declared?declared:null;
+        if(rootType==null)return List.of();
+        var queue=new ArrayDeque<SemanticHierarchyOwner>();
+        queue.add(new SemanticHierarchyOwner(resolved.receiver(),rootType,
+                semanticTypeSubstitutions(resolved.receiver(),rootType),0));
+        var seen=new HashSet<String>();var result=new ArrayList<SemanticHierarchyOwner>();
+        while(!queue.isEmpty()){
+            var current=queue.removeFirst();if(!seen.add(current.symbol().id()))continue;
+            var admitted=new SemanticHierarchyOwner(current.symbol(),current.instantiated(),current.substitutions(),result.size());
+            result.add(admitted);
+            for(var parent:current.symbol().directSupertypes()){
+                var substituted=parent.substitute(current.substitutions());
+                if(!(substituted instanceof SemanticType.Declared declared))continue;
+                var matches=semanticTypes(declared.name());
+                if(matches.size()!=1)continue;
+                var symbol=matches.getFirst();
+                queue.addLast(new SemanticHierarchyOwner(symbol,declared,semanticTypeSubstitutions(symbol,declared),0));
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    private List<Map<String,Object>> semanticQualifiedRows(SemanticReadView view,CompletionContextResolver.Resolved resolved,
+                                                            String prefix,int target)throws Exception{
+        if(target<=0)return List.of();
+        SemanticReadView.Symbol enclosing=resolved.enclosingTypeId()==null?null:view.symbol(resolved.enclosingTypeId());
+        int perOwnerBudget=Math.max(64,Math.min(4096,target*8));
+        var selected=new HashMap<String,HierarchyChoice>();var typeNames=new HashMap<String,String>();
+        for(var owner:semanticHierarchyOwners(view,resolved)){
+            String cursor=null;int examined=0;
+            do{
+                int pageSize=Math.min(128,perOwnerBudget-examined);if(pageSize<=0)break;
+                var page=view.members(owner.symbol().id(),prefix,pageSize,cursor);
+                for(var member:page.symbols()){
+                    examined++;
+                    if(member.kind().equals("ctor")||member.kind().equals("package")||member.kind().equals("module"))continue;
+                    if(resolved.staticReceiver()&&!member.staticMember()&&!Set.of("class","interface","enum","record","annotation").contains(member.kind()))continue;
+                    if(!CompletionContextResolver.accessible(member,resolved.packageName(),enclosing,view))continue;
+                    String shape=inheritedMemberShape(member);
+                    var row=residentCompletionRow(semanticCandidate(member,owner.substitutions(),typeNames),member.name());
+                    var previous=selected.get(shape);
+                    if(previous==null||owner.order()<previous.ownerOrder())selected.put(shape,new HierarchyChoice(owner.order(),row));
+                }
+                cursor=page.cursor();
+            }while(cursor!=null&&examined<perOwnerBudget);
+        }
+        return selected.values().stream().map(HierarchyChoice::row).sorted(COMPLETION_ORDER).limit(target).toList();
+    }
+
+    private Envelope maintainedQualifiedCompletion(Path path,String text,int start,int end,String prefix,
+                                                    CompletionProbe.Shape probe,int limit,int offset)throws Exception{
+        var view=semanticReadView();
+        var resolved=CompletionContextResolver.resolve(text,probe,view,this::semanticTypes);
+        if(resolved==null)return null;
+        int target=(int)Math.min(Integer.MAX_VALUE,(long)offset+limit+1L);
+        var rows=semanticQualifiedRows(view,resolved,prefix,target);
+        int from=Math.min(offset,rows.size()),to=Math.min(rows.size(),from+limit);
+        var returned=List.copyOf(rows.subList(from,to));boolean more=rows.size()>to;
+        completionRequests++;
+        try(var trace=dev.jvmd.core.RequestScope.stage("completion.maintained")){
+            trace.cache("semantic-read");trace.count("rows_returned",returned.size());
+        }
+        return new Envelope(2,"live",more,more?Integer.toString(to):null,List.of(),
+                Map.of("items",returned,"range",new SourceText(text).range(start,end)));
     }
 
     private static final Comparator<Map<String,Object>> COMPLETION_ORDER=Comparator

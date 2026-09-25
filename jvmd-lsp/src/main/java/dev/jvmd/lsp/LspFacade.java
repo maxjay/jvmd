@@ -101,7 +101,7 @@ public final class LspFacade {
         if(method.equals("textDocument/completion")){
             var answer=query.call("symbol.completion",arguments.put("limit",50));JsonNode completion=Json.MAPPER.valueToTree(answer.result());var items=Json.MAPPER.createArrayNode();
             for(var symbol:completion.path("items")){
-                String name=symbol.path("name").asText(),semanticLabel=symbol.path("label").asText(name),kind=symbol.path("kind").asText();
+                String name=symbol.path("name").asText(),semanticLabel=symbol.path("editor_label").asText(symbol.path("label").asText(name)),kind=symbol.path("kind").asText();
                 boolean type=Set.of("class","interface","enum","record","annotation","type_parameter").contains(kind);
                 var item=Json.MAPPER.createObjectNode()
                         .put("label",type?name:semanticLabel)

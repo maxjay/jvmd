@@ -13,7 +13,12 @@ public interface SemanticReadView {
     enum Origin { LIVE, LOCAL, MACHINE }
 
     record Symbol(String id,String name,String kind,String fqn,String binaryKey,String signature,
-                  String erasedDescriptor,Set<String> modifiers,ResolutionFact resolution,Origin origin) {
+                  String erasedDescriptor,Set<String> modifiers,ResolutionFact resolution,
+                  List<String> parameterNames,String sourceFile,Origin origin) {
+        public Symbol(String id,String name,String kind,String fqn,String binaryKey,String signature,
+                      String erasedDescriptor,Set<String> modifiers,ResolutionFact resolution,Origin origin){
+            this(id,name,kind,fqn,binaryKey,signature,erasedDescriptor,modifiers,resolution,List.of(),null,origin);
+        }
         public Symbol {
             Objects.requireNonNull(id);Objects.requireNonNull(name);Objects.requireNonNull(kind);
             fqn=Objects.requireNonNullElse(fqn,"");
@@ -21,7 +26,9 @@ public interface SemanticReadView {
             signature=Objects.requireNonNullElse(signature,"");
             erasedDescriptor=Objects.requireNonNullElse(erasedDescriptor,"");
             modifiers=Set.copyOf(modifiers);
-            Objects.requireNonNull(resolution);Objects.requireNonNull(origin);
+            Objects.requireNonNull(resolution);
+            parameterNames=List.copyOf(parameterNames);
+            Objects.requireNonNull(origin);
         }
         public Hash256 resolutionIdentity(){return resolution.identity();}
         public SemanticType semanticType(){return resolution.type();}

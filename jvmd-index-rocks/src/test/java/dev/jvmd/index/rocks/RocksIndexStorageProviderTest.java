@@ -43,6 +43,42 @@ class RocksIndexStorageProviderTest {
         }
     }
 
+    @Test void localAndMachineSemanticLayersRemainIndependentlyAddressable()throws Exception{
+        Path root=temp.resolve("layer-overlap");
+        Path machinePath=Files.writeString(temp.resolve("machine.jar"),"machine");
+        Path localPath=Files.createDirectories(temp.resolve("local-classes"));
+        var machineKey=ArtifactIndexFormat.key("d".repeat(64),"signatures");
+        var localKey=ArtifactIndexFormat.key("e".repeat(64),"local-signatures");
+        var symbols=java.util.List.of(
+                new ArtifactIndexFormat.SymbolRecord(0,-1,"dep.Shared","dep.Shared","Shared","class",
+                        "class dep.Shared",null,1,"dep/Shared.class",java.util.List.of(),"{}"),
+                new ArtifactIndexFormat.SymbolRecord(1,0,"dep.Shared#value()I","dep.Shared","value","method",
+                        "int value()","()I",1,"dep/Shared.class",java.util.List.of(),"{}"));
+        var machineFacts=new ArtifactIndexFormat.ArtifactData(machineKey,symbols,java.util.List.of());
+        var localFacts=new ArtifactIndexFormat.ArtifactData(localKey,symbols,java.util.List.of());
+        var machineContext=new ArtifactContext("g:a:1","jar",machinePath.toString());
+        var localContext=new ArtifactContext("g:a:1","local",localPath.toString());
+
+        try(var storage=IndexStorage.open(root,8L*1024*1024)){
+            storage.store().publishBinary(new IndexStore.ArtifactInput(machineContext,machineKey,Files.size(machinePath),1),machineFacts,java.util.Set.of());
+            storage.store().publishBinary(new IndexStore.ArtifactInput(localContext,localKey,0,1),localFacts,java.util.Set.of());
+            storage.store().loadWorkspace("w",java.util.List.of(
+                    new IndexStore.WorkspaceEntry(localPath.toString(),"local"),
+                    new IndexStore.WorkspaceEntry(machinePath.toString(),"compile")),java.util.List.of());
+
+            String shared=machineContext.scip(symbols.getFirst());
+            var local=SemanticReadViews.local(storage.store(),"w");
+            var machine=SemanticReadViews.machine(storage.store(),"w");
+
+            assertThat(local.symbol(shared).origin()).isEqualTo(SemanticReadView.Origin.LOCAL);
+            assertThat(machine.symbol(shared).origin()).isEqualTo(SemanticReadView.Origin.MACHINE);
+            assertThat(local.members(shared,"value",10,null).symbols()).singleElement()
+                    .satisfies(symbol->assertThat(symbol.origin()).isEqualTo(SemanticReadView.Origin.LOCAL));
+            assertThat(machine.members(shared,"value",10,null).symbols()).singleElement()
+                    .satisfies(symbol->assertThat(symbol.origin()).isEqualTo(SemanticReadView.Origin.MACHINE));
+        }
+    }
+
     @Test void candidateValidationStreamsOnReopenAndReusesOwnedPublicationProof()throws Exception{
         var key=ArtifactIndexFormat.key("a".repeat(64),"signatures");
         var symbol=new ArtifactIndexFormat.SymbolRecord(0,-1,"dep.Type","dep.Type","Type","class","class dep.Type",null,1,"dep/Type.class",java.util.List.of(),"{}");

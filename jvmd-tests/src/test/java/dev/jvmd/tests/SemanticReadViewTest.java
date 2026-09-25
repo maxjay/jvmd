@@ -1,6 +1,7 @@
 package dev.jvmd.tests;
 
 import dev.jvmd.core.Hash256;
+import dev.jvmd.core.AlgebraicAccumulator;
 import dev.jvmd.index.*;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
@@ -141,6 +142,20 @@ class SemanticReadViewTest {
         assertThat(second.symbols()).extracting(SemanticReadView.Symbol::name).containsExactly("gamma");
         assertThat(second.symbols().getFirst().origin()).isEqualTo(SemanticReadView.Origin.LOCAL);
         assertThat(view.symbol("beta").origin()).isEqualTo(SemanticReadView.Origin.LOCAL);
+    }
+
+    @Test void memberRangeProofIgnoresOutOfRangeChangesAndTracksRelevantChanges()throws Exception{
+        String key=SemanticReadView.memberIdentityKey("owner","get");
+        var before=SemanticReadViews.precedence(empty(),empty(),
+                surface(SemanticReadView.Origin.MACHINE,SemanticCompleteness.COMPLETE,List.of("getA","setA")));
+        var unrelated=SemanticReadViews.precedence(empty(),empty(),
+                surface(SemanticReadView.Origin.MACHINE,SemanticCompleteness.COMPLETE,List.of("getA","setB")));
+        var relevant=SemanticReadViews.precedence(empty(),empty(),
+                surface(SemanticReadView.Origin.MACHINE,SemanticCompleteness.COMPLETE,List.of("getA","getB","setB")));
+
+        var identity=before.identity(QueryProof.Domain.MEMBER_RANGE,key).orElseThrow();
+        assertThat(unrelated.identity(QueryProof.Domain.MEMBER_RANGE,key)).contains(identity);
+        assertThat(relevant.identity(QueryProof.Domain.MEMBER_RANGE,key).orElseThrow()).isNotEqualTo(identity);
     }
 
     @Test void persistedLocalAndMachineRemainIndependentlyAddressableWhenIdentityOverlaps()throws Exception{
@@ -321,7 +336,20 @@ class SemanticReadViewTest {
             }
             public List<String> directSupertypes(String id){return List.of();}
             public Optional<Hash256> identity(QueryProof.Domain domain,String key){
-                var symbol=symbol(key);return domain==QueryProof.Domain.EXACT_SYMBOL&&symbol!=null?Optional.of(symbol.resolutionIdentity()):Optional.empty();
+                var symbol=symbol(key);
+                if(domain==QueryProof.Domain.EXACT_SYMBOL&&symbol!=null)return Optional.of(symbol.resolutionIdentity());
+                if(domain==QueryProof.Domain.MEMBER_RANGE||domain==QueryProof.Domain.OVERLOAD_GROUP){
+                    var requested=SemanticReadView.parseMemberIdentityKey(key);
+                    if(!requested.ownerId().equals("owner"))return Optional.empty();
+                    var aggregate=new AlgebraicAccumulator(domain==QueryProof.Domain.MEMBER_RANGE
+                            ?"semantic-member-range-v1":"semantic-overload-group-v1");
+                    for(String name:members){
+                        if(domain==QueryProof.Domain.MEMBER_RANGE?!name.startsWith(requested.name()):!name.equals(requested.name()))continue;
+                        var value=member(name);aggregate.add(value.resolution().symbolKey(),value.resolutionIdentity());
+                    }
+                    return Optional.of(aggregate.identity());
+                }
+                return Optional.empty();
             }
         };
     }

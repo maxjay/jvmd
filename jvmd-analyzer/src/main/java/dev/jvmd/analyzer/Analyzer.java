@@ -252,6 +252,13 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private static QueryProof.Key sourceProofOutput(Path file){
         return new QueryProof.Key(QueryProof.Domain.WORKSPACE,"source-semantic:"+file.toAbsolutePath().normalize());
     }
+    private static SemanticUpdatePolicy.ProofConsumer completionRangeProofConsumer(Path file,int selectorOffset){
+        return new SemanticUpdatePolicy.ProofConsumer(file,"completion-range:"+selectorOffset);
+    }
+    private static QueryProof.Key completionRangeProofOutput(Path file,int selectorOffset){
+        return new QueryProof.Key(QueryProof.Domain.DOCUMENT_SCOPE,
+                "completion-range:"+file.toAbsolutePath().normalize()+"#"+selectorOffset);
+    }
     private static void addProofDependency(Map<QueryProof.Key,Hash256> values,QueryProof.Dependency dependency){
         var previous=values.putIfAbsent(dependency.key(),dependency.identity());
         if(previous!=null&&!previous.equals(dependency.identity()))
@@ -342,6 +349,23 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 new SemanticUpdatePolicy.ProofEvaluation(proof,sourceProofOutput(file),proof.identity()));
         dependencies.semantic().proofCoverage(file,true);
     }
+    private void registerCompletionRangeProof(Path file,int selectorOffset,String prefix,SemanticReadView view,
+                                              CompletionContextResolver.Resolved resolved)throws Exception{
+        var consumer=completionRangeProofConsumer(file,selectorOffset);
+        var owners=semanticHierarchyOwners(view,resolved);
+        if(owners==null||owners.isEmpty()){dependencies.semantic().proofs().remove(consumer);return;}
+        var values=new TreeMap<QueryProof.Key,Hash256>();
+        for(var owner:owners){
+            var proof=SemanticQueryProofs.range(view,owner.symbol().id(),prefix);
+            if(proof.isEmpty()){dependencies.semantic().proofs().remove(consumer);return;}
+            for(var dependency:proof.get().dependencies())addProofDependency(values,dependency);
+        }
+        var proof=new QueryProof(values.entrySet().stream()
+                .map(entry->new QueryProof.Dependency(entry.getKey(),entry.getValue())).toList());
+        dependencies.semantic().proofs().register(consumer,new SemanticUpdatePolicy.ProofEvaluation(
+                proof,completionRangeProofOutput(file,selectorOffset),proof.identity()));
+    }
+
     private void registerDocumentProof(Path file,DocumentSemanticSnapshot.QueryContext query){
         if(query.proof().dependencies().isEmpty())return;
         dependencies.semantic().proofs().register(documentProofConsumer(file,query.selectorOffset()),
@@ -1786,6 +1810,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(resolved==null)return null;
         int target=(int)Math.min(Integer.MAX_VALUE,(long)offset+limit+1L);
         var rows=semanticQualifiedRows(view,resolved,prefix,target);if(rows==null)return null;
+        registerCompletionRangeProof(path,start,prefix,view,resolved);
         int from=Math.min(offset,rows.size()),to=Math.min(rows.size(),from+limit);
         var returned=List.copyOf(rows.subList(from,to));boolean more=rows.size()>to;
         completionRequests++;

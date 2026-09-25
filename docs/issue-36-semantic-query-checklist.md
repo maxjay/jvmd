@@ -40,36 +40,36 @@ This checklist is authoritative. A box is checked only when the implementation e
 - [x] Structural-root propagation is separated from semantic invalidation.
 
 ## Checkpoint 4 — semantic read view
-- [ ] One read contract spans live, local/workspace, and machine/JDK facts.
-- [ ] Deterministic precedence is LIVE > LOCAL > MACHINE.
-- [ ] Exact symbol lookup.
-- [ ] Direct-supertype lookup.
-- [ ] Semantic identity lookup.
-- [ ] Callers do not depend on backing-store origin.
+- [x] One read contract spans live, local/workspace, and machine/JDK facts.
+- [x] Deterministic precedence is LIVE > LOCAL > MACHINE.
+- [x] Exact symbol lookup.
+- [x] Direct-supertype lookup.
+- [x] Semantic identity lookup.
+- [x] Callers do not depend on backing-store origin.
 
 ## Checkpoint 5 — machine owner/member ranges
-- [ ] Existing Rocks postings evaluated before adding storage.
-- [ ] Bounded owner-member query.
-- [ ] Prefix/range query and deterministic ordering.
-- [ ] Bounded pagination/cursor where required.
-- [ ] Hierarchy traversal supported.
-- [ ] Dependency completion does not require full resident promotion.
+- [x] Existing Rocks postings evaluated before adding storage.
+- [x] Bounded owner-member query.
+- [x] Prefix/range query and deterministic ordering.
+- [x] Bounded pagination/cursor where required.
+- [x] Hierarchy traversal supported.
+- [x] Dependency completion does not require full resident promotion.
 
 ## Checkpoint 6 — completion probe boundary
-- [ ] Dedicated incomplete-source probe component.
-- [ ] `receiver.`.
-- [ ] `receiver.pre`.
-- [ ] Whitespace/newline continuation.
-- [ ] Expression-statement-safe attributable probe.
-- [ ] No fixture/Maven-specific hacks.
+- [x] Dedicated incomplete-source probe component.
+- [x] `receiver.`.
+- [x] `receiver.pre`.
+- [x] Whitespace/newline continuation.
+- [x] Expression-statement-safe attributable probe.
+- [x] No fixture/Maven-specific hacks.
 
 ## Checkpoint 7 — tiered CompletionContextResolver
-- [ ] Tier 0 detached context reuse.
-- [ ] Tier 1 local lexical receiver resolution.
-- [ ] Tier 1 indexed receiver/type resolution.
-- [ ] Straightforward chained resolution.
-- [ ] Tier 2 bounded javac fallback.
-- [ ] Fallback returns semantic context, not the candidate universe.
+- [x] Tier 0 detached context reuse.
+- [x] Tier 1 local lexical receiver resolution.
+- [x] Tier 1 indexed receiver/type resolution.
+- [x] Straightforward chained resolution.
+- [x] Tier 2 bounded javac fallback.
+- [x] Fallback returns semantic context, not the candidate universe.
 
 ## Checkpoint 8 — proof-backed document contexts
 - [ ] Lexical/document context proof.

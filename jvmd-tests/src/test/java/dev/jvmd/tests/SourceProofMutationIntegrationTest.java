@@ -18,8 +18,8 @@ class SourceProofMutationIntegrationTest {
 
     @Test void unrelatedExactAndOverloadChangesDoNotReanalyseProofCoveredCallerButRelevantOverloadDoes()throws Exception{
         Path a=root.resolve("A.java"),b=root.resolve("B.java");
-        String first="class A { static int one(){return 1;} static int two(){return 2;} static int foo(Object value){return 3;} static int bar(){return 4;} }";
-        String caller="class B { int one(){return A.one();} int foo(){return A.foo(\"x\");} }";
+        String first="class A { int one(){return 1;} int two(){return 2;} int foo(Object value){return 3;} int bar(){return 4;} }";
+        String caller="class B { int one(A a){return a.one();} int foo(A a){return a.foo(\"x\");} }";
         Files.writeString(a,first);Files.writeString(b,caller);
         var documents=new Documents();documents.open(a,first,1);
 
@@ -27,7 +27,7 @@ class SourceProofMutationIntegrationTest {
             assertThat(diagnostics(analyzer,a,first)).isEmpty();
             assertThat(diagnostics(analyzer,b,caller)).isEmpty();
 
-            String twoChanged=first.replace("static int two(){return 2;}","static String two(){return \"two\";}");
+            String twoChanged=first.replace("int two(){return 2;}","String two(){return \"two\";}");
             mutate(analyzer,documents,a,2,twoChanged);
             long afterTwo=queries(analyzer);
             assertThat(evidence(analyzer)).containsEntry("last_proof_consumers_visited",0L)
@@ -36,7 +36,7 @@ class SourceProofMutationIntegrationTest {
             assertThat(diagnostics(analyzer,b,caller)).isEmpty();
             assertThat(queries(analyzer)).as("A.two must not reanalyse B which depends on A.one/A.foo").isEqualTo(afterTwo);
 
-            String barChanged=twoChanged.replace("static int bar(){return 4;}","static String bar(){return \"bar\";}");
+            String barChanged=twoChanged.replace("int bar(){return 4;}","String bar(){return \"bar\";}");
             mutate(analyzer,documents,a,3,barChanged);
             long afterBar=queries(analyzer);
             assertThat(evidence(analyzer)).containsEntry("last_proof_consumers_visited",0L)
@@ -46,8 +46,8 @@ class SourceProofMutationIntegrationTest {
             assertThat(queries(analyzer)).as("A.bar must not reanalyse a caller of A.foo").isEqualTo(afterBar);
 
             String overload=barChanged.replace(
-                    "static int foo(Object value){return 3;}",
-                    "static int foo(Object value){return 3;} static int foo(String value){return 5;}");
+                    "int foo(Object value){return 3;}",
+                    "int foo(Object value){return 3;} int foo(String value){return 5;}");
             mutate(analyzer,documents,a,4,overload);
             var proof=evidence(analyzer);
             assertThat(((Number)proof.get("last_proof_consumers_visited")).longValue()).isPositive();

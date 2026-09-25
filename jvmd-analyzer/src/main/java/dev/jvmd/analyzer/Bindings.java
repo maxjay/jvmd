@@ -217,7 +217,11 @@ public final class Bindings {
                 return parent instanceof InstanceOfTree test&&test.getType()==leaf;
             }
             void reference(String name,String container){
-                var e=element();if(e==null){if(unresolvedTypePosition())unresolvedTypeNames.add(name);return;}
+                var e=element();
+                if(e==null||e.asType().getKind()==TypeKind.ERROR){
+                    if(unresolvedTypePosition())unresolvedTypeNames.add(name);
+                    return;
+                }
                 String role=e instanceof ExecutableElement?"calls":"reads";
                 Tree parent=getCurrentPath().getParentPath()==null?null:getCurrentPath().getParentPath().getLeaf(),leaf=getCurrentPath().getLeaf();
                 if(parent instanceof AssignmentTree assignment&&assignment.getVariable()==leaf||parent instanceof CompoundAssignmentTree compound&&compound.getVariable()==leaf||parent instanceof UnaryTree unary&&Set.of(Tree.Kind.PREFIX_INCREMENT,Tree.Kind.PREFIX_DECREMENT,Tree.Kind.POSTFIX_INCREMENT,Tree.Kind.POSTFIX_DECREMENT).contains(unary.getKind()))role="writes";

@@ -27,6 +27,8 @@ class SemanticReadViewTest {
         assertThat(symbol).isNotNull();
         assertThat(symbol.origin()).isEqualTo(SemanticReadView.Origin.LIVE);
         assertThat(symbol.resolutionIdentity()).isEqualTo(child.resolutionIdentity());
+        assertThat(symbol.resolution()).isSameAs(child.resolutionFact());
+        assertThat(view.symbol("child").resolution()).isSameAs(child.resolutionFact());
         assertThat(view.directSupertypes("child")).containsExactly("parent");
         assertThat(view.identity(QueryProof.Domain.EXACT_SYMBOL,"child")).contains(child.resolutionIdentity());
         assertThat(view.identity(QueryProof.Domain.HIERARCHY,"child")).isPresent();
@@ -78,6 +80,38 @@ class SemanticReadViewTest {
 
         var onlyMachine=SemanticReadViews.precedence(empty(),empty(),machine);
         assertThat(onlyMachine.symbol("same").origin()).isEqualTo(SemanticReadView.Origin.MACHINE);
+    }
+
+    @Test void completeLiveOwnerSuppressesDeclarationsAbsentFromLowerLayers()throws Exception{
+        var live=surface(SemanticReadView.Origin.LIVE,SemanticCompleteness.COMPLETE,List.of("alpha"));
+        var local=surface(SemanticReadView.Origin.LOCAL,SemanticCompleteness.COMPLETE,List.of("alpha","beta"));
+        var view=SemanticReadViews.precedence(live,local,empty());
+
+        var members=view.members("owner","",10,null);
+        assertThat(members.symbols()).extracting(SemanticReadView.Symbol::name).containsExactly("alpha");
+        assertThat(members.symbols().getFirst().origin()).isEqualTo(SemanticReadView.Origin.LIVE);
+        assertThat(view.symbol("alpha").origin()).isEqualTo(SemanticReadView.Origin.LIVE);
+    }
+
+    @Test void typedPersistedReadsDoNotUseNavigationMapProjection()throws Exception{
+        var owner=typed("owner","Owner","class","p.Owner","p.Owner",
+                new SemanticType.Declared("p.Owner","p.Owner",List.of()),IndexStore.SemanticLayer.MACHINE);
+        var member=typed("member","getOne","method","p.Owner","p.Owner#getOne()I",
+                new SemanticType.Executable(List.of(),new SemanticType.Primitive("int"),List.of()),IndexStore.SemanticLayer.MACHINE);
+        var store=(IndexStore)Proxy.newProxyInstance(
+                SemanticReadViewTest.class.getClassLoader(),new Class<?>[]{IndexStore.class},
+                (_,method,args)->switch(method.getName()){
+                    case "semanticByScip" -> "owner".equals(args[0])?owner:"member".equals(args[0])?member:null;
+                    case "semanticMembersByOwner" -> new IndexStore.SemanticMemberPage(List.of(member),null);
+                    case "relationships" -> List.of();
+                    case "byScip","membersByOwner" -> throw new AssertionError("semantic read fell back to navigation map: "+method.getName());
+                    case "close" -> null;
+                    case "backend" -> "typed-fixture";
+                    default -> throw new UnsupportedOperationException(method.getName());
+                });
+        var view=SemanticReadViews.machine(store,"workspace");
+        assertThat(view.symbol("owner").resolution()).isSameAs(owner.resolution());
+        assertThat(view.members("owner","get",10,null).symbols().getFirst().resolution()).isSameAs(member.resolution());
     }
 
     @Test void partialLiveFactsOverlayCompleteLowerSurfacePerDeclaration()throws Exception{
@@ -167,7 +201,12 @@ class SemanticReadViewTest {
                         }
                         yield row;
                     }
-                    case "membersByOwner" -> {
+                    case "semanticByScip" -> {
+                        var row=rows.get((String)args[0]);var layer=(IndexStore.SemanticLayer)args[2];
+                        boolean local=row!=null&&"local".equals(Objects.toString(row.get("artifact_kind"),""));
+                        yield row==null||(layer==IndexStore.SemanticLayer.LOCAL)!=local?null:typed(row,layer);
+                    }
+                    case "membersByOwner","semanticMembersByOwner" -> {
                         String owner=(String)args[0],prefix=(String)args[1];
                         IndexStore.SemanticLayer layer=args.length==6?(IndexStore.SemanticLayer)args[5]:null;
                         var values=rows.values().stream()
@@ -177,6 +216,10 @@ class SemanticReadViewTest {
                                 .filter(row->Objects.toString(row.get("name"),"").startsWith(prefix))
                                 .filter(row->layer==null||("local".equals(Objects.toString(row.get("artifact_kind"),"")))
                                         ==(layer==IndexStore.SemanticLayer.LOCAL)).toList();
+                        if(method.getName().equals("semanticMembersByOwner")){
+                            var layer=args.length==6?(IndexStore.SemanticLayer)args[5]:IndexStore.SemanticLayer.MACHINE;
+                            yield new IndexStore.SemanticMemberPage(values.stream().map(row->typed(row,layer)).toList(),null);
+                        }
                         yield new IndexStore.MemberPage(values,null);
                     }
                     case "relationships" -> {
@@ -204,12 +247,39 @@ class SemanticReadViewTest {
                         var layer=(IndexStore.SemanticLayer)args[2];
                         yield (layer==IndexStore.SemanticLayer.LOCAL?local:machine).get((String)args[0]);
                     }
+                    case "semanticByScip" -> {
+                        var layer=(IndexStore.SemanticLayer)args[2];
+                        var row=(layer==IndexStore.SemanticLayer.LOCAL?local:machine).get((String)args[0]);
+                        yield row==null?null:typed(row,layer);
+                    }
                     case "membersByOwner" -> new IndexStore.MemberPage(List.of(),null);
+                    case "semanticMembersByOwner" -> new IndexStore.SemanticMemberPage(List.of(),null);
                     case "relationships" -> List.of();
                     case "close" -> null;
                     case "backend" -> "fixture";
                     default -> throw new UnsupportedOperationException(method.getName());
                 });
+    }
+
+    private static IndexStore.IndexedSemanticSymbol typed(Map<String,Object> row,IndexStore.SemanticLayer layer){
+        String id=Objects.toString(row.get("scip"),"");
+        String binary=Objects.toString(row.get("binary_key"),id);
+        String fqn=Objects.toString(row.get("fqn"),"");
+        String name=Objects.toString(row.get("name"),"");
+        String kind=Objects.toString(row.get("kind"),"");
+        String signature=Objects.toString(row.get("signature"),"");
+        String descriptor=Objects.toString(row.get("erased_descriptor"),"");
+        var resolution=ResolutionFact.decode(Objects.toString(row.get("resolution_fact")));
+        return new IndexStore.IndexedSemanticSymbol(id,name,kind,fqn,binary,signature,descriptor,resolution,List.of(),null,layer);
+    }
+
+    private static IndexStore.IndexedSemanticSymbol typed(String id,String name,String kind,String fqn,String binary,
+                                                           SemanticType type,IndexStore.SemanticLayer layer){
+        String descriptor=kind.equals("method")?"()I":"";
+        String owner=kind.equals("method")?fqn:null;
+        var resolution=ResolutionFact.canonical(binary,owner,kind,name,descriptor,Set.of("public"),ResolutionFact.packageName(fqn),
+                type,List.of(),List.of(),List.of(),false);
+        return new IndexStore.IndexedSemanticSymbol(id,name,kind,fqn,binary,"",descriptor,resolution,List.of(),null,layer);
     }
 
     private static SemanticReadView single(String id,SemanticReadView.Origin origin,String identity){

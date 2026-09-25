@@ -28,8 +28,14 @@ public final class ArtifactIndexFormat {
         }
     }
     public record SymbolRecord(int id,int ownerId,String key,String fqn,String name,String kind,String signature,
-                               String descriptor,int flags,String entry,List<String> parameters,String metadataJson) {
-        public SymbolRecord{parameters=List.copyOf(parameters);}
+                               String descriptor,int flags,String entry,List<String> parameters,String metadataJson,
+                               ResolutionFact resolution) {
+        public SymbolRecord(int id,int ownerId,String key,String fqn,String name,String kind,String signature,
+                            String descriptor,int flags,String entry,List<String> parameters,String metadataJson){
+            this(id,ownerId,key,fqn,name,kind,signature,descriptor,flags,entry,parameters,metadataJson,
+                    ResolutionFact.legacy(key,fqn,name,kind,descriptor,flags));
+        }
+        public SymbolRecord{parameters=List.copyOf(parameters);Objects.requireNonNull(resolution);}
     }
     public record Relationship(int sourceId,String target,String kind) { }
     public record ArtifactData(Key key,List<SymbolRecord> symbols,List<Relationship> relationships) {
@@ -59,25 +65,27 @@ public final class ArtifactIndexFormat {
             "permitted_subclasses","record_components","module_exports",
             "return_type","parameter_types","type_parameters","scip_return_disambiguated");
 
-    /** Java-resolution identity for one persisted binary symbol, excluding presentation/enrichment. */
+    /** Canonical Java-resolution identity shared with LIVE source facts. */
     public static Hash256 symbolResolutionIdentity(SymbolRecord symbol){
-        Objects.requireNonNull(symbol);
-        return CanonicalDigestWriter.digest("artifact-symbol-resolution-v1",
-                symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),
-                Objects.toString(symbol.signature(),""),
-                Objects.toString(symbol.descriptor(),""),
-                symbol.flags(),resolutionMetadata(symbol.metadataJson()));
+        return Objects.requireNonNull(symbol).resolution().identity();
     }
 
+    /**
+     * Normalized Java semantic identity of an artifact.
+     *
+     * Storage/index generation inputs in Key are deliberately excluded. A format/indexer/runtime
+     * generation change with identical normalized facts and relationships retains this identity.
+     */
     public static Hash256 resolutionIdentity(ArtifactData data){
         Objects.requireNonNull(data);
-        Key key=data.key();
-        return CanonicalDigestWriter.digest("artifact-resolution-v2",
-                key.formatVersion(),key.indexerVersion(),key.runtimeFeature(),key.mode(),
-                data.symbols().stream().map(ArtifactIndexFormat::symbolResolutionIdentity).toList(),
-                data.relationships().stream().map(edge->new Object[]{
-                        edge.sourceId(),edge.target(),edge.kind()
-                }).toList());
+        var symbols=data.symbols().stream()
+                .sorted(Comparator.comparing(symbol->symbol.resolution().symbolKey()))
+                .map(symbol->new Object[]{symbol.resolution().symbolKey(),symbolResolutionIdentity(symbol)})
+                .toList();
+        var relationships=data.relationships().stream().map(edge->new Object[]{
+                    data.symbols().get(edge.sourceId()).resolution().symbolKey(),edge.target(),edge.kind()
+                }).sorted(Comparator.comparing(value->value[0].toString()+"\0"+value[1]+"\0"+value[2])).toList();
+        return CanonicalDigestWriter.digest("artifact-java-resolution-v1",symbols,relationships);
     }
 
     private static List<Object> resolutionMetadata(String metadataJson){
@@ -118,8 +126,11 @@ public final class ArtifactIndexFormat {
                 metadata=new LinkedHashMap<>(metadata);
                 metadata.put("scip_return_disambiguated",true);
             }
+            var resolution=ResolutionFact.canonical(symbol.key(),symbol.owner(),symbol.kind(),symbol.name(),symbol.descriptor(),
+                    ResolutionFact.modifiers(symbol.flags()),ResolutionFact.packageName(symbol.fqn()),symbol.semanticType(),
+                    symbol.typeParameters(),symbol.typeParameterBounds(),symbol.directSupertypes(),symbol.varargs());
             symbols.add(new SymbolRecord(i,owner,symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),symbol.signature(),
-                    symbol.descriptor(),symbol.flags(),symbol.entry(),symbol.parameters(),canonicalJson(metadata)));
+                    symbol.descriptor(),symbol.flags(),symbol.entry(),symbol.parameters(),canonicalJson(metadata),resolution));
         }
         var relationships=new LinkedHashSet<Relationship>();
         for(var edge:relationshipFacts){
@@ -140,7 +151,7 @@ public final class ArtifactIndexFormat {
         if(data.key().formatVersion()!=FORMAT_VERSION)throw new IllegalArgumentException("Unsupported format version: "+data.key().formatVersion());
         var strings=new TreeSet<String>();
         for(var symbol:data.symbols()){
-            for(String value:List.of(symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),symbol.metadataJson()))strings.add(value);
+            for(String value:List.of(symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),symbol.metadataJson(),symbol.resolution().encode()))strings.add(value);
             if(symbol.signature()!=null)strings.add(symbol.signature());
             if(symbol.descriptor()!=null)strings.add(symbol.descriptor());
             if(symbol.entry()!=null)strings.add(symbol.entry());
@@ -159,6 +170,7 @@ public final class ArtifactIndexFormat {
                 out.writeInt(symbol.id());out.writeInt(symbol.ownerId());out.writeInt(symbol.flags());
                 out.writeInt(id(ids,symbol.key()));out.writeInt(id(ids,symbol.fqn()));out.writeInt(id(ids,symbol.name()));out.writeInt(id(ids,symbol.kind()));
                 out.writeInt(id(ids,symbol.signature()));out.writeInt(id(ids,symbol.descriptor()));out.writeInt(id(ids,symbol.entry()));out.writeInt(id(ids,symbol.metadataJson()));
+                out.writeInt(id(ids,symbol.resolution().encode()));
                 out.writeInt(symbol.parameters().size());for(String parameter:symbol.parameters())out.writeInt(id(ids,parameter));
             }
             out.writeInt(data.relationships().size());
@@ -175,7 +187,7 @@ public final class ArtifactIndexFormat {
         try(var out=new DataOutputStream(bytes)){
             out.writeInt(symbol.id());out.writeInt(symbol.ownerId());out.writeInt(symbol.flags());
             for(String value:new String[]{symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),symbol.signature(),
-                    symbol.descriptor(),symbol.entry(),symbol.metadataJson()}){
+                    symbol.descriptor(),symbol.entry(),symbol.metadataJson(),symbol.resolution().encode()}){
                 out.writeBoolean(value!=null);if(value!=null)writeString(out,value);
             }
             out.writeInt(symbol.parameters().size());for(String value:symbol.parameters())writeString(out,value);
@@ -185,13 +197,13 @@ public final class ArtifactIndexFormat {
 
     public static SymbolRecord decodeSymbol(byte[] bytes)throws IOException{
         try(var in=new DataInputStream(new ByteArrayInputStream(bytes))){
-            int id=in.readInt(),owner=in.readInt(),flags=in.readInt();var fields=new String[8];
+            int id=in.readInt(),owner=in.readInt(),flags=in.readInt();var fields=new String[9];
             for(int i=0;i<fields.length;i++)fields[i]=in.readBoolean()?readString(in):null;
             int count=bounded(in.readInt(),1_000_000,"parameter count");var parameters=new ArrayList<String>(count);
             for(int i=0;i<count;i++)parameters.add(readString(in));
-            if(id<0||owner< -1||in.available()!=0||fields[0]==null||fields[1]==null||fields[2]==null||fields[3]==null||fields[7]==null)
+            if(id<0||owner< -1||in.available()!=0||fields[0]==null||fields[1]==null||fields[2]==null||fields[3]==null||fields[7]==null||fields[8]==null)
                 throw new IOException("Invalid symbol record");
-            return new SymbolRecord(id,owner,fields[0],fields[1],fields[2],fields[3],fields[4],fields[5],flags,fields[6],parameters,fields[7]);
+            return new SymbolRecord(id,owner,fields[0],fields[1],fields[2],fields[3],fields[4],fields[5],flags,fields[6],parameters,fields[7],ResolutionFact.decode(fields[8]));
         }
     }
 
@@ -201,9 +213,9 @@ public final class ArtifactIndexFormat {
         try{
             int id=input.getInt(),owner=input.getInt();input.getInt();
             if(id<0||owner< -1)throw new IOException("Invalid symbol record");
-            for(int field=0;field<8;field++){
+            for(int field=0;field<9;field++){
                 if(input.get()!=0)skipString(input);
-                else if(field<4||field==7)throw new IOException("Invalid symbol record");
+                else if(field<4||field>=7)throw new IOException("Invalid symbol record");
             }
             int count=bounded(input.getInt(),1_000_000,"parameter count");
             for(int i=0;i<count;i++)skipString(input);
@@ -234,10 +246,11 @@ public final class ArtifactIndexFormat {
                 int id=in.readInt(),owner=in.readInt(),flags=in.readInt();
                 String localKey=value(strings,in.readInt()),fqn=value(strings,in.readInt()),name=value(strings,in.readInt()),kind=value(strings,in.readInt());
                 String signature=valueOrNull(strings,in.readInt()),descriptor=valueOrNull(strings,in.readInt()),entry=valueOrNull(strings,in.readInt()),metadata=value(strings,in.readInt());
+                String resolution=value(strings,in.readInt());
                 int parameterCount=bounded(in.readInt(),1_000_000,"parameter count");var parameters=new ArrayList<String>(parameterCount);
                 for(int p=0;p<parameterCount;p++)parameters.add(value(strings,in.readInt()));
                 if(id!=i)throw new IOException("Non-canonical local symbol id");
-                symbols.add(new SymbolRecord(id,owner,localKey,fqn,name,kind,signature,descriptor,flags,entry,List.copyOf(parameters),metadata));
+                symbols.add(new SymbolRecord(id,owner,localKey,fqn,name,kind,signature,descriptor,flags,entry,List.copyOf(parameters),metadata,ResolutionFact.decode(resolution)));
             }
             int relationCount=bounded(in.readInt(),MAX_RELATIONSHIPS,"relationship count");var relations=new ArrayList<Relationship>(relationCount);
             for(int i=0;i<relationCount;i++){

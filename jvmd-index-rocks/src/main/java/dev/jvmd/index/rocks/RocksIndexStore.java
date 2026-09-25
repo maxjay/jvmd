@@ -210,6 +210,13 @@ public final class RocksIndexStore implements IndexStore {
         }
         return List.copyOf(selected.values());
     }
+    private List<StoredArtifact> selected(String workspace,boolean jdk,SemanticLayer layer){
+        return selected(workspace,jdk).stream()
+                .filter(artifact->layer==SemanticLayer.LOCAL
+                        ?artifact.input().context().kind().equals("local")
+                        :!artifact.input().context().kind().equals("local"))
+                .toList();
+    }
     @Override public synchronized List<String> loadWorkspace(String workspace,List<WorkspaceEntry> entries,List<Map.Entry<String,String>> dependencies)throws Exception{
         workspaces.put(workspace,entries.stream().map(e->new WorkspaceEntry(Path.of(e.path()).toAbsolutePath().normalize().toString(),e.scope())).toList());
         var classes=new TreeMap<String,Set<String>>();var packages=new TreeMap<String,Set<String>>();
@@ -281,7 +288,13 @@ public final class RocksIndexStore implements IndexStore {
         }return true;
     }
     @Override public synchronized Map<String,Object> byScip(String scip,String workspace)throws Exception{
-        for(var artifact:selected(workspace,true)){
+        return byScipFrom(scip,selected(workspace,true));
+    }
+    @Override public synchronized Map<String,Object> byScip(String scip,String workspace,SemanticLayer layer)throws Exception{
+        return byScipFrom(scip,selected(workspace,true,layer));
+    }
+    private Map<String,Object> byScipFrom(String scip,List<StoredArtifact> candidates)throws Exception{
+        for(var artifact:candidates){
             var source=sourceByScip(artifact,scip);if(source!=null)return source;
             var context=artifact.input().context();String[] gav=context.gav().split(":",3);String prefix="maven "+gav[0]+"/"+gav[1]+" "+gav[2]+" ";
             if(!scip.startsWith(prefix))continue;
@@ -329,10 +342,17 @@ public final class RocksIndexStore implements IndexStore {
     @Override public synchronized MemberPage membersByOwner(String ownerScip,String prefix,String workspace,int limit,String cursor)throws Exception{
         if(limit<=0)return new MemberPage(List.of(),null);
         var owner=byScip(ownerScip,workspace);if(owner==null)return new MemberPage(List.of(),null);
+        return membersByOwner(ownerScip,prefix,limit,cursor,owner);
+    }
+    @Override public synchronized MemberPage membersByOwner(String ownerScip,String prefix,String workspace,int limit,String cursor,SemanticLayer layer)throws Exception{
+        if(limit<=0)return new MemberPage(List.of(),null);
+        var owner=byScip(ownerScip,workspace,layer);if(owner==null)return new MemberPage(List.of(),null);
+        return membersByOwner(ownerScip,prefix,limit,cursor,owner);
+    }
+    private MemberPage membersByOwner(String ownerScip,String prefix,int limit,String cursor,Map<String,Object> owner)throws Exception{
         long artifactId=((Number)owner.get("artifact_id")).longValue();var artifact=required(artifactId);
         String ownerFqn=Objects.toString(owner.get("fqn"),Objects.toString(owner.get("binary_key"),""));
 
-        // Current local source facts already have a bounded name posting in SourceOverlay.
         if(sourceOverlay.contains(artifactId,ownerScip)){
             long after=0;
             if(cursor!=null){
@@ -489,9 +509,12 @@ public final class RocksIndexStore implements IndexStore {
         return result.stream().sorted(Comparator.comparing(SymbolicReference::sourceScip).thenComparing(SymbolicReference::targetBinaryKey).thenComparing(SymbolicReference::kind)).toList();
     }
     @Override public synchronized List<ResolvedRelationship> relationships(Collection<String> scips,boolean outgoing,Set<String> kinds,String workspace)throws Exception{
+        return relationships(scips,outgoing,kinds,workspace,null);
+    }
+    @Override public synchronized List<ResolvedRelationship> relationships(Collection<String> scips,boolean outgoing,Set<String> kinds,String workspace,SemanticLayer layer)throws Exception{
         var result=new LinkedHashMap<String,ResolvedRelationship>();
         if(outgoing){
-            for(String scip:scips){var source=byScip(scip,workspace);if(source==null)continue;
+            for(String scip:scips){var source=layer==null?byScip(scip,workspace):byScip(scip,workspace,layer);if(source==null)continue;
                 for(var edge:raw(source,kinds,false)){var target=resolve(edge.targetBinaryKey(),workspace,new HashSet<>());if(target!=null)add(result,source,target,edge.kind());}
                 if(kinds.isEmpty()||kinds.contains("overrides"))for(var parent:overrideParents(scip,workspace,Integer.MAX_VALUE))add(result,source,parent,"overrides");
             }
@@ -501,9 +524,9 @@ public final class RocksIndexStore implements IndexStore {
                     for(var edge:repository.incoming(artifact.input().key().cacheKey(),binary,kinds,Integer.MAX_VALUE)){
                         var symbol=repository.symbol(artifact.input().key().cacheKey(),edge.sourceId());var source=byScip(artifact.input().context().scip(symbol),workspace);
                         var resolved=resolve(edge.target(),workspace,new HashSet<>());
-                        if(source!=null&&((Number)source.get("artifact_id")).longValue()==artifact.id()&&!sourceOverlay.contains(artifact.id(),source.get("scip").toString())&&resolved!=null&&scip.equals(resolved.get("scip")))add(result,source,target,edge.kind());
+                        if(source!=null&&(layer==null||layerMatches(source,layer))&&((Number)source.get("artifact_id")).longValue()==artifact.id()&&!sourceOverlay.contains(artifact.id(),source.get("scip").toString())&&resolved!=null&&scip.equals(resolved.get("scip")))add(result,source,target,edge.kind());
                     }
-                    for(var edge:sourceOverlay.edges(artifact.id(),scip,false,kinds)){var source=byScip(edge.sourceScip(),workspace);if(source!=null&&((Number)source.get("artifact_id")).longValue()==artifact.id())add(result,source,target,edge.kind());}
+                    for(var edge:sourceOverlay.edges(artifact.id(),scip,false,kinds)){var source=byScip(edge.sourceScip(),workspace);if(source!=null&&(layer==null||layerMatches(source,layer))&&((Number)source.get("artifact_id")).longValue()==artifact.id())add(result,source,target,edge.kind());}
                     if((kinds.isEmpty()||kinds.contains("overrides"))&&"method".equals(target.get("kind"))){
                         for(var candidate:find(target.get("name").toString(),workspace,false,Integer.MAX_VALUE,0,Set.of("method")))
                             for(var parent:overrideParents(candidate.get("scip").toString(),workspace,Integer.MAX_VALUE))if(scip.equals(parent.get("scip")))add(result,candidate,target,"overrides");
@@ -514,6 +537,10 @@ public final class RocksIndexStore implements IndexStore {
         return result.values().stream().sorted(Comparator.comparingLong((ResolvedRelationship r)->((Number)r.source().get("id")).longValue()).thenComparingLong(r->((Number)r.target().get("id")).longValue()).thenComparing(ResolvedRelationship::kind)).toList();
     }
     private static void add(Map<String,ResolvedRelationship> result,Map<String,Object> source,Map<String,Object> target,String kind){result.putIfAbsent(source.get("scip")+"|"+kind+"|"+target.get("scip"),new ResolvedRelationship(source,target,kind));}
+    private static boolean layerMatches(Map<String,Object> row,SemanticLayer layer){
+        boolean local="local".equals(Objects.toString(row.get("artifact_kind"),""));
+        return layer==SemanticLayer.LOCAL?local:!local;
+    }
     @Override public synchronized List<Map<String,Object>> relationshipClosure(String scip,int depth,Set<String> kinds,String workspace,int limit,int offset)throws Exception{
         if(depth<=0||kinds.isEmpty()||limit<=0)return List.of();var visited=new HashSet<String>();visited.add(scip);var frontier=List.of(scip);var all=new ArrayList<Map<String,Object>>();
         for(int level=0;level<depth&&!frontier.isEmpty()&&all.size()<limit+(long)offset;level++){

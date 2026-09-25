@@ -278,6 +278,9 @@ public final class SemanticUpdatePolicy {
             reanalyze.remove(changedFile);
             return new ProofInvalidation(propagation,reanalyze);
         }
+        public Set<Path> coarseFallback(Collection<Path> roots){
+            return coarseUnprovenClosure(roots);
+        }
         private Set<Path> coarseUnprovenClosure(Collection<Path> roots){
             var result=new LinkedHashSet<Path>();var queue=new ArrayDeque<Path>();
             for(Path root:roots)queue.add(normalize(root));

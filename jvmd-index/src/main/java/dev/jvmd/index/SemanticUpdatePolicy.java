@@ -148,20 +148,24 @@ public final class SemanticUpdatePolicy {
         private final Map<QueryProof.Key,ProofConsumer> producers=new HashMap<>();
 
         public void register(ProofConsumer consumer,ProofEvaluation evaluation){
-            Objects.requireNonNull(consumer);Objects.requireNonNull(evaluation);
-            ProofConsumer producer=producers.get(evaluation.output());
-            if(producer!=null&&!producer.equals(consumer))
-                throw new IllegalArgumentException("Duplicate proof output producer: "+evaluation.output());
-            var previous=nodes.get(consumer);
-            if(previous!=null){
-                unlink(consumer,previous.evaluation());
-                producers.remove(previous.evaluation().output(),consumer);
-            }
-            nodes.put(consumer,new Node(evaluation));producers.put(evaluation.output(),consumer);link(consumer,evaluation);
-            if(cycleFrom(consumer,new HashSet<>(),new HashSet<>())){
-                unlink(consumer,evaluation);nodes.remove(consumer);producers.remove(evaluation.output(),consumer);
-                if(previous!=null){nodes.put(consumer,previous);producers.put(previous.evaluation().output(),consumer);link(consumer,previous.evaluation());}
-                throw new IllegalArgumentException("Semantic proof dependencies must form a DAG");
+            try(var trace=dev.jvmd.core.RequestScope.stage("proof.dag.register")){
+                Objects.requireNonNull(consumer);Objects.requireNonNull(evaluation);
+                ProofConsumer producer=producers.get(evaluation.output());
+                if(producer!=null&&!producer.equals(consumer))
+                    throw new IllegalArgumentException("Duplicate proof output producer: "+evaluation.output());
+                var previous=nodes.get(consumer);trace.count("reregister",previous==null?0:1);
+                if(previous!=null){
+                    unlink(consumer,previous.evaluation());
+                    producers.remove(previous.evaluation().output(),consumer);
+                }
+                nodes.put(consumer,new Node(evaluation));producers.put(evaluation.output(),consumer);link(consumer,evaluation);
+                int[] visited=dev.jvmd.core.RequestScope.TRACING?new int[1]:null;
+                if(cycleFrom(consumer,new HashSet<>(),new HashSet<>(),visited)){
+                    unlink(consumer,evaluation);nodes.remove(consumer);producers.remove(evaluation.output(),consumer);
+                    if(previous!=null){nodes.put(consumer,previous);producers.put(previous.evaluation().output(),consumer);link(consumer,previous.evaluation());}
+                    throw new IllegalArgumentException("Semantic proof dependencies must form a DAG");
+                }
+                trace.count("cycle_nodes",visited==null?0:visited[0]);trace.count("dag_size",nodes.size());
             }
         }
         public void remove(ProofConsumer consumer){
@@ -238,12 +242,13 @@ public final class SemanticUpdatePolicy {
                 values.remove(consumer);if(values.isEmpty())reverse.remove(dependency.key());
             }
         }
-        private boolean cycleFrom(ProofConsumer current,Set<ProofConsumer> visiting,Set<ProofConsumer> done){
+        private boolean cycleFrom(ProofConsumer current,Set<ProofConsumer> visiting,Set<ProofConsumer> done,int[] visited){
+            if(visited!=null)visited[0]++;
             if(done.contains(current))return false;if(!visiting.add(current))return true;
             var node=nodes.get(current);
             if(node!=null)for(var dependency:node.evaluation().dependencies().dependencies()){
                 var producer=producers.get(dependency.key());
-                if(producer!=null&&cycleFrom(producer,visiting,done))return true;
+                if(producer!=null&&cycleFrom(producer,visiting,done,visited))return true;
             }
             visiting.remove(current);done.add(current);return false;
         }

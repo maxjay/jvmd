@@ -33,17 +33,18 @@ public final class Bindings {
     }
     /** Implements 4.2: detached declarations, references and source dependencies. */
     public record Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies,
-                           Map<String,SemanticFact> semanticFacts,List<ReferenceProof> referenceProofs) {
+                           Map<String,SemanticFact> semanticFacts,List<ReferenceProof> referenceProofs,Set<String> unresolvedTypeNames) {
         public Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies){
-            this(symbols,occurrences,edges,dependencies,Map.of(),List.of());
+            this(symbols,occurrences,edges,dependencies,Map.of(),List.of(),Set.of());
         }
         public Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies,
                         Map<String,SemanticFact> semanticFacts){
-            this(symbols,occurrences,edges,dependencies,semanticFacts,List.of());
+            this(symbols,occurrences,edges,dependencies,semanticFacts,List.of(),Set.of());
         }
         public Snapshot {
             symbols=Map.copyOf(symbols);occurrences=List.copyOf(occurrences);edges=List.copyOf(edges);
             dependencies=Set.copyOf(dependencies);semanticFacts=Map.copyOf(semanticFacts);referenceProofs=List.copyOf(referenceProofs);
+            unresolvedTypeNames=Set.copyOf(unresolvedTypeNames);
         }
         public Map<String,Object> at(int offset){
             var occurrence=occurrences.stream().filter(o->o.start()<=offset&&offset<o.end()).min(Comparator.comparingInt(o->o.end()-o.start())).orElse(null);if(occurrence==null)return null;
@@ -67,7 +68,7 @@ public final class Bindings {
     public static Snapshot capture(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,Path requested,SourceText original,
                                    boolean bodies,Focusing.Span focus,java.util.function.Function<String,SemanticFact> reusableFacts){
         Objects.requireNonNull(reusableFacts);
-        var trees=Trees.instance(task);var symbols=new LinkedHashMap<String,Map<String,Object>>();var semanticFacts=new LinkedHashMap<String,SemanticFact>();var occurrences=new LinkedHashMap<String,Occurrence>();var edges=new LinkedHashSet<Edge>();var dependencies=new LinkedHashSet<Path>();var referenceProofs=new LinkedHashSet<ReferenceProof>();
+        var trees=Trees.instance(task);var symbols=new LinkedHashMap<String,Map<String,Object>>();var semanticFacts=new LinkedHashMap<String,SemanticFact>();var occurrences=new LinkedHashMap<String,Occurrence>();var edges=new LinkedHashSet<Edge>();var dependencies=new LinkedHashSet<Path>();var referenceProofs=new LinkedHashSet<ReferenceProof>();var unresolvedTypeNames=new LinkedHashSet<String>();
         var texts=new HashMap<String,SourceText>();texts.put(requested.toUri().toString(),original);
         class Capture {
             SourceText source(CompilationUnitTree unit){return texts.computeIfAbsent(unit.getSourceFile().toUri().toString(),key->{try{return new SourceText(unit.getSourceFile().getCharContent(true).toString());}catch(Exception e){return new SourceText("");}});}
@@ -199,8 +200,25 @@ public final class Bindings {
             @Override public Void visitMemberSelect(MemberSelectTree tree,String parent){reference(tree.getIdentifier().toString(),parent);return super.visitMemberSelect(tree,parent);}
             @Override public Void visitMemberReference(MemberReferenceTree tree,String parent){var e=element();capture.occurrence(getCurrentPath(),e,tree.getName().toString(),false,"calls",parent);return super.visitMemberReference(tree,parent);}
             @Override public Void visitNewClass(NewClassTree tree,String parent){var e=element();if(e!=null)capture.occurrence(new TreePath(getCurrentPath(),tree.getIdentifier()),e,identity.displayName(e),false,"instantiates",parent);return super.visitNewClass(tree,parent);}
+            boolean unresolvedTypePosition(){
+                TreePath path=getCurrentPath(),parentPath=path.getParentPath();if(parentPath==null)return false;
+                Tree leaf=path.getLeaf(),parent=parentPath.getLeaf();
+                while(parent instanceof AnnotatedTypeTree annotated&&annotated.getUnderlyingType()==leaf
+                        ||parent instanceof ArrayTypeTree array&&array.getType()==leaf
+                        ||parent instanceof ParameterizedTypeTree parameterized
+                            &&(parameterized.getType()==leaf||parameterized.getTypeArguments().contains(leaf))){
+                    leaf=parent;path=parentPath;parentPath=path.getParentPath();if(parentPath==null)return true;parent=parentPath.getLeaf();
+                }
+                if(parent instanceof VariableTree variable&&variable.getType()==leaf)return true;
+                if(parent instanceof MethodTree method&&(method.getReturnType()==leaf||method.getThrows().contains(leaf)))return true;
+                if(parent instanceof ClassTree type&&(type.getExtendsClause()==leaf||type.getImplementsClause().contains(leaf)))return true;
+                if(parent instanceof NewClassTree created&&created.getIdentifier()==leaf)return true;
+                if(parent instanceof TypeCastTree cast&&cast.getType()==leaf)return true;
+                return parent instanceof InstanceOfTree test&&test.getType()==leaf;
+            }
             void reference(String name,String container){
-                var e=element();if(e==null)return;String role=e instanceof ExecutableElement?"calls":"reads";
+                var e=element();if(e==null){if(unresolvedTypePosition())unresolvedTypeNames.add(name);return;}
+                String role=e instanceof ExecutableElement?"calls":"reads";
                 Tree parent=getCurrentPath().getParentPath()==null?null:getCurrentPath().getParentPath().getLeaf(),leaf=getCurrentPath().getLeaf();
                 if(parent instanceof AssignmentTree assignment&&assignment.getVariable()==leaf||parent instanceof CompoundAssignmentTree compound&&compound.getVariable()==leaf||parent instanceof UnaryTree unary&&Set.of(Tree.Kind.PREFIX_INCREMENT,Tree.Kind.PREFIX_DECREMENT,Tree.Kind.POSTFIX_INCREMENT,Tree.Kind.POSTFIX_DECREMENT).contains(unary.getKind()))role="writes";
                 capture.occurrence(getCurrentPath(),e,name,false,role,container);
@@ -220,6 +238,6 @@ public final class Bindings {
                 }
             }
         }.scan(unit,null);
-        return new Snapshot(symbols,List.copyOf(occurrences.values()),List.copyOf(edges),Set.copyOf(dependencies),semanticFacts,List.copyOf(referenceProofs));
+        return new Snapshot(symbols,List.copyOf(occurrences.values()),List.copyOf(edges),Set.copyOf(dependencies),semanticFacts,List.copyOf(referenceProofs),Set.copyOf(unresolvedTypeNames));
     }
 }

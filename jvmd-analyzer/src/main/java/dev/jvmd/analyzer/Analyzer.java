@@ -175,11 +175,14 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private long budget;
 
     private String platformFingerprint()throws Exception{
-        Path home=Path.of(System.getProperty("java.home")).toAbsolutePath().normalize();
-        var values=new ArrayList<Object>();
-        for(Path path:List.of(home.resolve("release"),home.resolve("lib/modules"),home.resolve("lib/ct.sym")))
-            values.add(List.of(path.toString(),inputFiles.hash(path)));
-        return CompilerInputs.compose("semantic-platform-v1",values);
+        try(var trace=RequestScope.stage("analyzer.configure.platformFingerprint")){
+            Path home=Path.of(System.getProperty("java.home")).toAbsolutePath().normalize();
+            var values=new ArrayList<Object>();
+            for(Path path:List.of(home.resolve("release"),home.resolve("lib/modules"),home.resolve("lib/ct.sym")))
+                values.add(List.of(path.toString(),inputFiles.hash(path)));
+            trace.count("files",values.size());
+            return CompilerInputs.compose("semantic-platform-v1",values);
+        }
     }
     private static String semanticOwnerIdentity(Context context,String platformFingerprint){
         return CompilerInputs.compose("semantic-owner-v2",
@@ -215,12 +218,22 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return false;
     }
     private Optional<ClasspathSequence> preciseClasspathSequence(Context context,IndexService index)throws Exception{
-        if(index==null||context.workspace().isBlank()||hasUnprovenPathOptions(context))return Optional.empty();
-        var sequence=index.store().semanticClasspathSequence(context.workspace());
-        if(sequence.isEmpty())return Optional.empty();
-        var expected=context.classpath().stream().map(path->path.toAbsolutePath().normalize().toString()).toList();
-        var actual=sequence.get().entries().stream().map(ClasspathSequence.Entry::key).toList();
-        return expected.equals(actual)?sequence:Optional.empty();
+        try(var trace=RequestScope.stage("analyzer.configure.preciseClasspathSequence")){
+            if(index==null||context.workspace().isBlank()||hasUnprovenPathOptions(context)){trace.cache("unavailable");return Optional.empty();}
+            Optional<ClasspathSequence> sequence;
+            try(var read=RequestScope.stage("analyzer.configure.semanticClasspathSequence")){
+                sequence=index.store().semanticClasspathSequence(context.workspace());
+            }
+            if(sequence.isEmpty()){trace.cache("missing");return Optional.empty();}
+            var expected=context.classpath().stream().map(path->path.toAbsolutePath().normalize().toString()).toList();
+            List<String> actual;
+            try(var entries=RequestScope.stage("analyzer.configure.classpathEntries")){
+                actual=sequence.get().entries().stream().map(ClasspathSequence.Entry::key).toList();
+                entries.count("entries",actual.size());
+            }
+            trace.count("expected_entries",expected.size());trace.cache(expected.equals(actual)?"equal":"mismatch");
+            return expected.equals(actual)?sequence:Optional.empty();
+        }
     }
     private ModuleCaches moduleCaches(Context next,String owner){
         var direct=modules.get(next.generation());
@@ -449,6 +462,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(unit!=null&&!unit.startsWith("source:"))caches.semantic.removeUnit(unit);
     }
     private boolean reconcileClasspath(ModuleCaches caches,ClasspathSequence current,IndexService index,String workspace)throws Exception{
+        try(var trace=RequestScope.stage("analyzer.configure.reconcileClasspath")){
         if(caches.classpathSequence==null){
             caches.classpathSequence=current;caches.classpathPrecise=true;return true;
         }
@@ -482,6 +496,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         caches.classpathSearchProofs.putAll(refreshed);
         caches.classpathSequence=current;caches.classpathPrecise=true;return true;
+        }
     }
     private void initializeClasspath(ModuleCaches caches,Optional<ClasspathSequence> sequence){
         caches.classpathSequence=sequence.orElse(null);caches.classpathPrecise=sequence.isPresent();
@@ -489,9 +504,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
 
     public void configure(Context context,IndexService index,long budget)throws Exception{
+        try(var configureTrace=RequestScope.stage("analyzer.configure")){
         String family=generationFamily(context);generationFamilies.put(context.generation(),family);generationFamilyLru.put(family,Boolean.TRUE);
         String platform=platformFingerprint();
-        String owner=semanticOwnerIdentity(context,platform);
+        String owner;
+        try(var ownerTrace=RequestScope.stage("analyzer.configure.semanticOwnerIdentity")){owner=semanticOwnerIdentity(context,platform);}
         var caches=moduleCaches(context,owner);
         boolean hadState=!caches.completionContextIdentity.isBlank();
         boolean ownerChanged=hadState&&!owner.equals(caches.semanticOwnerIdentity);
@@ -522,9 +539,13 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         caches.completionContextIdentity=precise?owner:broadCompletionContextIdentity(context);
 
         compiler=compilerPools.computeIfAbsent(context.generation(),_->new CompilerPool(inputFiles));
-        compiler.configure(context.generation(),context.release(),context.classpath(),context.sources(),index,budget,context.compilerOptions(),context.preciseSourceRoots());
-        compiler.binarySources(context.binarySources());
+        try(var compilerTrace=RequestScope.stage("analyzer.configure.compilerPool")){
+            compiler.configure(context.generation(),context.release(),context.classpath(),context.sources(),index,budget,context.compilerOptions(),context.preciseSourceRoots());
+            compiler.binarySources(context.binarySources());
+        }
+        configureTrace.count("classpath_entries",context.classpath().size());
         retireOldGenerationFamilies(family);
+        }
     }
 
     private static String generationFamily(Context context){
@@ -670,6 +691,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     private String classpathStamp()throws Exception{return computeClasspathStamp();}
     private CompilerInputs.Snapshot validatedInputs()throws Exception {
+        try(var trace=RequestScope.stage("analyzer.validatedInputs")){
         var inputs=inputSnapshot();
         if(!compiler.cacheValid(inputs)){
             // Javac must fence its own environment immediately. Detached semantic/query state gets
@@ -695,6 +717,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             inputs=inputSnapshot();
         }
         return inputs;
+        }
     }
     private String computeClasspathStamp()throws Exception {
         classpathFingerprints++;

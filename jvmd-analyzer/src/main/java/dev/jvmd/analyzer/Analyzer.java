@@ -86,9 +86,13 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
 
     private static final class SourceProofEvidence {
         long transitions,leavesPublished,consumersVisited,consumersChanged,consumersEqual,consumersFallback,
-                coarseFiles,sourceConsumersInvalidated;
+                coarseFiles,sourceConsumersInvalidated,preProofDependantInvalidations;
         long lastLeavesPublished,lastConsumersVisited,lastConsumersChanged,lastConsumersEqual,lastConsumersFallback,
-                lastCoarseFiles,lastSourceConsumersInvalidated;
+                lastCoarseFiles,lastSourceConsumersInvalidated,lastPreProofDependantInvalidations;
+        void beginMutation(int dependantInvalidations){
+            lastPreProofDependantInvalidations=dependantInvalidations;
+            preProofDependantInvalidations+=dependantInvalidations;
+        }
         void record(int leaves,SemanticUpdatePolicy.ProofPropagation propagation,int leafEqualStops,int coarse,int sourceInvalidated){
             transitions++;lastLeavesPublished=leaves;lastConsumersVisited=propagation.recomputed().size();
             lastConsumersChanged=propagation.changed().size();lastConsumersEqual=leafEqualStops+propagation.equal().size();
@@ -104,11 +108,13 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                     Map.entry("proof_consumers_changed",consumersChanged),Map.entry("proof_consumers_stopped_equal",consumersEqual),
                     Map.entry("proof_consumers_fallback",consumersFallback),Map.entry("coarse_fallback_files",coarseFiles),
                     Map.entry("source_consumers_invalidated",sourceConsumersInvalidated),
+                    Map.entry("pre_proof_dependant_invalidations",preProofDependantInvalidations),
                     Map.entry("last_leaves_published",lastLeavesPublished),Map.entry("last_proof_consumers_visited",lastConsumersVisited),
                     Map.entry("last_proof_consumers_recomputed",lastConsumersVisited),Map.entry("last_proof_consumers_changed",lastConsumersChanged),
                     Map.entry("last_proof_consumers_stopped_equal",lastConsumersEqual),
                     Map.entry("last_proof_consumers_fallback",lastConsumersFallback),Map.entry("last_coarse_fallback_files",lastCoarseFiles),
-                    Map.entry("last_source_consumers_invalidated",lastSourceConsumersInvalidated));
+                    Map.entry("last_source_consumers_invalidated",lastSourceConsumersInvalidated),
+                    Map.entry("last_pre_proof_dependant_invalidations",lastPreProofDependantInvalidations));
         }
     }
 
@@ -870,13 +876,14 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     public void resolvedContribution(FileSemanticContribution value){if(value!=null)resolveContribution(value);}
     public Set<Path> pendingPrerequisites(Path file){return dependencies.semantic().prerequisites(file);}
     public void changed(Path path,String hash){
-        path=path.toAbsolutePath().normalize();compiler.observeSources(Set.of(path));observeResidentSourceTransitions();conditionallyInvalidate(path,dependencies.changed(path,hash));
+        path=path.toAbsolutePath().normalize();compiler.observeSources(Set.of(path));observeResidentSourceTransitions();
+        var affected=dependencies.changed(path,hash);sourceProofEvidence.beginMutation((int)affected.stream().filter(file->!file.equals(path)).count());
+        conditionallyInvalidate(path,affected);
     }
     public void changed(Path path){
-        path=path.toAbsolutePath().normalize();compiler.observeSources(Set.of(path));observeResidentSourceTransitions();conditionallyInvalidate(path,dependencies.changed(path));
-        // An unresolved lookup has no declaration edge; an API change will invalidate unresolved diagnostic states after attribution.
-        focused.entrySet().removeIf(e->e.getValue().result().diagnostics().stream().anyMatch(d->d.kind().equals("ERROR")));
-        outlines.entrySet().removeIf(e->Json.MAPPER.valueToTree(e.getValue().result()).path("diagnostics").findValuesAsText("kind").contains("ERROR"));
+        path=path.toAbsolutePath().normalize();compiler.observeSources(Set.of(path));observeResidentSourceTransitions();
+        var affected=dependencies.changed(path);sourceProofEvidence.beginMutation((int)affected.stream().filter(file->!file.equals(path)).count());
+        conditionallyInvalidate(path,affected);
     }
     /**
      * A source appears or disappears from the editor overlay. Preserve already-admitted semantic

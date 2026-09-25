@@ -238,7 +238,7 @@ public final class RocksIndexStore implements IndexStore {
         result.put("scip",context.scip(symbol));result.put("kind",symbol.kind());result.put("name",symbol.name());result.put("name_path",ArtifactContext.namePath(symbol));
         result.put("signature",symbol.signature());result.put("erased_descriptor",symbol.descriptor());result.put("source_file",null);result.put("doc",null);
         result.put("fqn",symbol.fqn());result.put("binary_key",symbol.key());result.put("class_entry",symbol.entry());result.put("parameters",Json.MAPPER.valueToTree(symbol.parameters()));
-        result.put("metadata",Json.MAPPER.readTree(symbol.metadataJson()));result.put("tier",2);
+        result.put("metadata",Json.MAPPER.readTree(symbol.metadataJson()));result.put("resolution_fact",symbol.resolution().encode());result.put("tier",2);
         return contextual(artifact,result);
     }
     private Map<String,Object> row(StoredArtifact artifact,ArtifactIndexFormat.SymbolRecord symbol)throws Exception{

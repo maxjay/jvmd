@@ -158,8 +158,14 @@ class ClasspathLifecycleIntegrationTest {
         index.loadWorkspace("w",paths.stream().map(path->new IndexService.WorkspaceArtifact(path.toString(),"compile")).toList(),List.of());
     }
     private static void configure(Analyzer analyzer,IndexService index,Documents documents,Path sources,List<Path> classpath,String generation)throws Exception{
+        var coordinates=new LinkedHashMap<String,String>();
+        for(Path path:classpath){
+            String name=path.getFileName().toString();
+            int dot=name.lastIndexOf('.');if(dot>=0)name=name.substring(0,dot);
+            coordinates.put(path.toAbsolutePath().normalize().toString(),"fixture:"+name+":1");
+        }
         analyzer.configure(new Analyzer.Context(
-                "fixture:app:1","25",classpath,List.of(sources),generation,Map.of(),
+                "fixture:app:1","25",classpath,List.of(sources),generation,Map.copyOf(coordinates),
                 List.of("--release","25"),Set.of(),List.of(),List.of(sources),true,"w"),
                 index,256L*1024*1024);
         analyzer.documents(documents);

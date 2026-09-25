@@ -151,6 +151,35 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     public void documents(Documents documents){this.documents=documents;if(snapshots!=null)snapshots.documents(documents);compiler.documents(documents);dependencies.documentHash(documents::hash);dependencies.fileStates(documents.fileStates());if(context!=null)liveSourceState=documents.liveState(context.sources());}
     private ResidentSemanticState semanticState(){return modules.get(context.generation()).semantic;}
+    private SemanticReadView semanticReadView(){
+        var live=SemanticReadViews.resident(semanticState());
+        if(index==null||context.workspace().isBlank())return live;
+        return SemanticReadViews.precedence(
+                live,
+                SemanticReadViews.local(index.store(),context.workspace()),
+                SemanticReadViews.machine(index.store(),context.workspace()));
+    }
+    private List<SemanticReadView.Symbol> semanticTypes(String name)throws Exception{
+        String requested=Objects.requireNonNullElse(name,"").trim();
+        if(requested.isBlank())return List.of();
+        var result=new LinkedHashMap<String,SemanticReadView.Symbol>();
+        var resident=semanticState().type(requested);
+        if(resident!=null){
+            var symbol=SemanticReadViews.resident(semanticState()).symbol(resident.id());
+            if(symbol!=null)result.put(symbol.id(),symbol);
+        }
+        if(index==null||context.workspace().isBlank())return List.copyOf(result.values());
+        String simple=requested.substring(requested.lastIndexOf('.')+1);
+        for(var row:index.findNamePrefix(simple,context.workspace(),64,Set.of("class","interface","enum","record","annotation"))){
+            if(!simple.equals(Objects.toString(row.get("name"),"")))continue;
+            String fqn=Objects.toString(row.get("fqn"),"");
+            if(requested.indexOf('.')>=0&&!requested.equals(fqn)&&!requested.equals(Objects.toString(row.get("binary_key"),"")))continue;
+            String id=Objects.toString(row.get("scip"),"");
+            var symbol=semanticReadView().symbol(id);
+            if(symbol!=null)result.putIfAbsent(symbol.id(),symbol);
+        }
+        return List.copyOf(result.values());
+    }
     private void admitSemantic(SemanticSnapshot snapshot,FileSemanticContribution contribution){
         if(snapshot==null||contribution==null)return;
         var canonical=new SemanticSnapshot(snapshot.unit(),snapshot.sourceFile(),snapshot.contentIdentity(),snapshot.facts(),snapshot.descriptions(),

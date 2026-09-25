@@ -739,11 +739,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         String content=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         var cached=caches.documentSemantics.get(path);
         if(!force&&key!=null&&cached!=null&&key.equals(cached.key())&&cached.snapshot().query(start)!=null){
-            var query=cached.snapshot().query(start);var current=completionResolutionIdentities(cached.resolutionIdentities().keySet());
-            if(current.equals(cached.resolutionIdentities())&&accessibilityCurrent(query)&&cachedHierarchyCurrent(cached,query)){
+            var query=cached.snapshot().query(start);
+            if(documentProofCurrent(path,text,patched,focusCursor,cached.snapshot(),query,observed)){
                 var rebased=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
                         cached.snapshot().queries());
-                var reused=new DocumentSemanticCached(key,rebased,current,cached.dependencyApis(),cached.hierarchyApi());caches.documentSemantics.put(path,reused);return reused;
+                var reused=new DocumentSemanticCached(key,rebased);caches.documentSemantics.put(path,reused);return reused;
             }
         }
         var focus=focusing.focus(path,patched,focusCursor);
@@ -769,10 +769,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         for(var snapshot:result.semanticSnapshots())admitDetachedSemantic(snapshot);
         var query=registerAccessibility(caches,result);
         var binaries=completionNameResolutionBinaries(text,result.nameResolutionNames());
-        var resolution=completionResolutionIdentities(binaries);
+        query=query.withProof(documentContextProof(path,text,focus,query,binaries,List.of(),observed));
         var snapshot=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
                 Map.of(start,query));
-        var next=new DocumentSemanticCached(key,snapshot,resolution,Map.of(),queryHierarchyApi(query));caches.documentSemantics.put(path,next);return next;
+        var next=new DocumentSemanticCached(key,snapshot);caches.documentSemantics.put(path,next);return next;
     }
 
     private Map<Path,String> documentDependencyApis(DocumentSemanticSnapshot.QueryContext query,Path caller)throws Exception{
@@ -786,12 +786,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return completionApiFingerprints(dependenciesToCheck);
     }
 
-    private boolean documentDependenciesCurrent(DocumentSemanticCached cached)throws Exception{
-        if(cached.dependencyApis().isEmpty())return true;
-        if(!ensureCompletionSemantics(cached.dependencyApis().keySet()))return false;
-        return completionApiFingerprints(cached.dependencyApis().keySet()).equals(cached.dependencyApis());
-    }
-
     private DocumentSemanticCached unqualifiedDocumentSemantic(Path path,String text,String patched,int start,int focusCursor,
                                                                  String key,CompilerInputs.Snapshot observed,boolean force)throws Exception{
         return unqualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,observed,force,false,0);
@@ -801,12 +795,13 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var caches=modules.get(context.generation());int version=Objects.requireNonNullElse(documents.version(path),-1);
         String content=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         var cached=caches.documentSemantics.get(path);
-        if(!force&&key!=null&&cached!=null&&key.equals(cached.key())&&cached.snapshot().query(start)!=null
-                &&accessibilityCurrent(cached.snapshot().query(start))
-                &&documentDependenciesCurrent(cached)&&cachedHierarchyCurrent(cached,cached.snapshot().query(start))){
-            var rebased=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
-                    cached.snapshot().queries());
-            var reused=new DocumentSemanticCached(key,rebased,Map.of(),cached.dependencyApis(),cached.hierarchyApi());caches.documentSemantics.put(path,reused);return reused;
+        if(!force&&key!=null&&cached!=null&&key.equals(cached.key())&&cached.snapshot().query(start)!=null){
+            var query=cached.snapshot().query(start);
+            if(documentProofCurrent(path,text,patched,focusCursor,cached.snapshot(),query,observed)){
+                var rebased=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
+                        cached.snapshot().queries());
+                var reused=new DocumentSemanticCached(key,rebased);caches.documentSemantics.put(path,reused);return reused;
+            }
         }
         var focus=focusing.focus(path,patched,focusCursor);
         var attributed=compiler.query(path,focus.source(),2,observed,(task,units,tier)->{
@@ -831,9 +826,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         for(var snapshot:result.semanticSnapshots())admitDetachedSemantic(snapshot);
         var query=registerAccessibility(caches,result);
         var dependencyApis=documentDependencyApis(query,path);if(dependencyApis==null)return null;
+        query=query.withProof(documentContextProof(path,text,focus,query,List.of(),dependencyApis.keySet(),observed));
         var snapshot=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
                 Map.of(start,query));
-        var next=new DocumentSemanticCached(key,snapshot,Map.of(),dependencyApis,queryHierarchyApi(query));caches.documentSemantics.put(path,next);return next;
+        var next=new DocumentSemanticCached(key,snapshot);caches.documentSemantics.put(path,next);return next;
     }
 
     private Envelope residentQualifiedCompletion(Path path,String text,String patched,int start,int end,int focusCursor,String prefix,

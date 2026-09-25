@@ -10,7 +10,11 @@ import java.util.function.Predicate;
 final class SourceOverlay implements AutoCloseable {
     record FileStamp(String file,String hash) {}
     private final RocksDB db;
-    private final ReadOptions read=new ReadOptions();
+    // The source overlay shares the strict native Rocks budget with immutable machine artifacts.
+    // Query-time overlay scans are bounded and have their own decoded/typed Java cache; do not let
+    // them insert data/index blocks into an already-pinned native LRU and turn cache pressure into
+    // RocksDBException("LRU cache being full").
+    private final ReadOptions read=new ReadOptions().setFillCache(false);
     private long decoded,cacheBytes;
     private final long cacheBudget;
     private record Cached(Map<String,Object> value,long weight) {}

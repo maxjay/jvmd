@@ -686,8 +686,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         String queryKey=path.toAbsolutePath().normalize()+"#"+query.selectorOffset();
         dependencies.add(new QueryProof.Dependency(QueryProof.Domain.DOCUMENT_SCOPE,queryKey,documentScopeIdentity(focus)));
         dependencies.add(new QueryProof.Dependency(QueryProof.Domain.RECEIVER,"receiver",receiverProofIdentity(query)));
-        for(String binary:new TreeSet<>(resolutionBinaries))
-            dependencies.add(new QueryProof.Dependency(QueryProof.Domain.RESOLUTION_PATH,"type:"+binary,resolutionPathIdentity("type:"+binary)));
+        var resolutionKeys=new TreeSet<String>();
+        for(String binary:resolutionBinaries)resolutionKeys.add("type:"+binary);
+        if(query.receiverType() instanceof SemanticType.Declared declared)resolutionKeys.add("type:"+declared.name());
+        for(String resolutionKey:resolutionKeys)
+            dependencies.add(new QueryProof.Dependency(QueryProof.Domain.RESOLUTION_PATH,resolutionKey,resolutionPathIdentity(resolutionKey)));
         var sourceKeys=new TreeSet<String>();
         for(Path source:dependencySources)sourceKeys.add(source.toAbsolutePath().normalize().toString());
         for(String source:sourceKeys)

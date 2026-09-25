@@ -324,7 +324,7 @@ public final class RocksIndexStore implements IndexStore {
         result.put("scip",context.scip(symbol));result.put("kind",symbol.kind());result.put("name",symbol.name());result.put("name_path",ArtifactContext.namePath(symbol));
         result.put("signature",symbol.signature());result.put("erased_descriptor",symbol.descriptor());result.put("source_file",null);result.put("doc",null);
         result.put("fqn",symbol.fqn());result.put("binary_key",symbol.key());result.put("class_entry",symbol.entry());result.put("parameters",Json.MAPPER.valueToTree(symbol.parameters()));
-        result.put("metadata",Json.MAPPER.readTree(symbol.metadataJson()));result.put("resolution_fact",symbol.resolution().encode());result.put("tier",2);
+        result.put("metadata",Json.MAPPER.readTree(symbol.metadataJson()));result.put("resolution_fact",symbol.resolution().encode());result.put("resolution_identity",symbol.resolution().identity().hex());result.put("tier",2);
         return contextual(artifact,result);
     }
     private Map<String,Object> row(StoredArtifact artifact,ArtifactIndexFormat.SymbolRecord symbol)throws Exception{
@@ -345,7 +345,11 @@ public final class RocksIndexStore implements IndexStore {
         var result=new LinkedHashMap<>(value);var context=artifact.input().context();
         result.put("artifact_id",artifact.id());result.put("gav",context.gav());result.put("artifact_path",context.path());result.put("artifact_kind",context.kind());
         result.put("parameters",Json.MAPPER.valueToTree(result.getOrDefault("parameters",List.of())));
-        result.put("metadata",Json.MAPPER.valueToTree(result.getOrDefault("metadata",Map.of())));return result;
+        result.put("metadata",Json.MAPPER.valueToTree(result.getOrDefault("metadata",Map.of())));
+        if(!result.containsKey("resolution_identity")&&result.get("resolution_fact") instanceof String encoded)try{
+            result.put("resolution_identity",ResolutionFact.decode(encoded).identity().hex());
+        }catch(IllegalArgumentException ignored){}
+        return result;
     }
     private static Map<String,Object> searchFields(StoredArtifact artifact,ArtifactIndexFormat.SymbolRecord symbol){
         var result=new HashMap<String,Object>();result.put("scip",artifact.input().context().scip(symbol));result.put("kind",symbol.kind());

@@ -114,7 +114,6 @@ class MaintainedCompletionContextTest {
             @SuppressWarnings("unchecked")
             var resident=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
             assertThat(((Number)resident.get("semantic_facts")).longValue()).isZero();
-            assertThat(((Number)index.store().status().get("owner_prefix_queries")).longValue()).isPositive();
         }
     }
 

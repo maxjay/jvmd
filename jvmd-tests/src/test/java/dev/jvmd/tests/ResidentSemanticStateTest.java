@@ -168,28 +168,37 @@ class ResidentSemanticStateTest {
 
         var getRange=state.memberRangeIdentity("A#","get");
         var exactGetOne=state.symbol(getOne.id()).resolutionIdentity();
+        var view=SemanticReadViews.resident(state);
+        var rangeProof=SemanticQueryProofs.range(view,"A#","get").orElseThrow();
+        var exactProof=SemanticQueryProofs.exact(view,getOne.id()).orElseThrow();
 
         var setChanged=method("A#setOne()J","A#","setOne","()J",List.of(),new SemanticType.Primitive("long"));
         state.admit(snapshot("two",owner,getOne,getTwo,setChanged));
         assertThat(state.memberRangeIdentity("A#","get")).isEqualTo(getRange);
         assertThat(state.symbol(getOne.id()).resolutionIdentity()).isEqualTo(exactGetOne);
+        assertThat(SemanticQueryProofs.range(view,"A#","get").orElseThrow()).isEqualTo(rangeProof);
+        assertThat(SemanticQueryProofs.exact(view,getOne.id()).orElseThrow()).isEqualTo(exactProof);
 
         var getTwoChanged=method("A#getTwo()J","A#","getTwo","()J",List.of(),new SemanticType.Primitive("long"));
         state.admit(snapshot("three",owner,getOne,getTwoChanged,setChanged));
         assertThat(state.memberRangeIdentity("A#","get")).isNotEqualTo(getRange);
+        assertThat(SemanticQueryProofs.range(view,"A#","get").orElseThrow()).isNotEqualTo(rangeProof);
 
         var fooInt=method("A#foo(I)I","A#","foo","(I)I",List.of(new SemanticType.Primitive("int")),new SemanticType.Primitive("int"));
         state.admit(snapshot("four",owner,getOne,getTwoChanged,setChanged,fooInt));
         var fooGroup=state.overloadGroupIdentity("A#","foo");
+        var overloadProof=SemanticQueryProofs.overload(view,"A#","foo").orElseThrow();
 
         var bar=method("A#bar()I","A#","bar","()I",List.of(),new SemanticType.Primitive("int"));
         state.admit(snapshot("five",owner,getOne,getTwoChanged,setChanged,fooInt,bar));
         assertThat(state.overloadGroupIdentity("A#","foo")).isEqualTo(fooGroup);
+        assertThat(SemanticQueryProofs.overload(view,"A#","foo").orElseThrow()).isEqualTo(overloadProof);
 
         var stringType=new SemanticType.Declared("java/lang/String#","java.lang.String",List.of());
         var fooString=method("A#foo(Ljava/lang/String;)I","A#","foo","(Ljava/lang/String;)I",List.of(stringType),new SemanticType.Primitive("int"));
         state.admit(snapshot("six",owner,getOne,getTwoChanged,setChanged,fooInt,bar,fooString));
         assertThat(state.overloadGroupIdentity("A#","foo")).isNotEqualTo(fooGroup);
+        assertThat(SemanticQueryProofs.overload(view,"A#","foo").orElseThrow()).isNotEqualTo(overloadProof);
     }
 
     @Test void receiverHierarchyAggregateChangesOnlyWithEffectiveApi(){

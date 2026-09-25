@@ -347,7 +347,7 @@ public final class RocksIndexStore implements IndexStore {
             return new MemberPage(page.stream().map(value->contextual(artifact,value)).toList(),next);
         }
 
-        String generation=artifact.input().key().cacheKey();
+        String generation=symbolsKey(artifact);
         String binaryOwner=Objects.toString(owner.get("binary_key"),"");
         String token=cursor==null?null:cursor.startsWith("binary:")?cursor.substring("binary:".length()):null;
         if(cursor!=null&&token==null)throw new IllegalArgumentException("Invalid binary member cursor");

@@ -26,18 +26,18 @@ This checklist is authoritative. A box is checked only when the implementation e
 - [x] Equality and changed-component tests.
 
 ## Checkpoint 2 — ordered classpath Merkle sequence
-- [ ] Canonical exact-order sequence root.
-- [ ] Single-leaf content diff.
-- [ ] Insertion and removal diff.
-- [ ] Reorder diff.
-- [ ] Exact-order equality tests.
+- [x] Canonical exact-order sequence root.
+- [x] Single-leaf content diff.
+- [x] Insertion and removal diff.
+- [x] Reorder diff.
+- [x] Exact-order equality tests.
 
 ## Checkpoint 3 — compositional machine/workspace identities
-- [ ] Machine artifact semantic roots composed without flattening.
-- [ ] Workspace dependency root derives only from its ordered dependencies.
-- [ ] Unrelated machine artifact change leaves unrelated workspace dependency root equal.
-- [ ] Workspace/module identity composes semantic domains explicitly.
-- [ ] Structural-root propagation is separated from semantic invalidation.
+- [x] Machine artifact semantic roots composed without flattening.
+- [x] Workspace dependency root derives only from its ordered dependencies.
+- [x] Unrelated machine artifact change leaves unrelated workspace dependency root equal.
+- [x] Workspace/module identity composes semantic domains explicitly.
+- [x] Structural-root propagation is separated from semantic invalidation.
 
 ## Checkpoint 4 — semantic read view
 - [ ] One read contract spans live, local/workspace, and machine/JDK facts.

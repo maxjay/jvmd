@@ -644,15 +644,17 @@ public final class Application implements AutoCloseable {
     }
     private static <T> List<T> slice(List<T> list,int offset,int limit){return List.copyOf(list.subList(Math.min(offset,list.size()),Math.min(list.size(),offset+limit)));}
     private Analyzer analyzer(Session session,Path path)throws Exception{
-        var graph=RequestScope.memo(List.of(session,"analysis-resolution"),()->session.state("resolution")==null?null:refresh(session));
-        var contexts=session.state("analysis_contexts",WorkspaceContextManager::new);
-        var context=contexts.context(path,graph,file->createAnalyzerContext(session,file,graph));
-        var analyzer=session.state("analyzer",()->new Analyzer(classpathFiles));
-        var availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
-        analyzer.configure(context,availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));
-        analyzer.documents(documents(session));
-        analyzer.persistence(config.stateDir().resolve("diagnostics-v2").resolve(Hashing.sha256(session.root().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))));
-        return analyzer;
+        try(var trace=RequestScope.stage("application.analyzer")){
+            var graph=RequestScope.memo(List.of(session,"analysis-resolution"),()->session.state("resolution")==null?null:refresh(session));
+            var contexts=session.state("analysis_contexts",WorkspaceContextManager::new);
+            var context=contexts.context(path,graph,file->createAnalyzerContext(session,file,graph));
+            var analyzer=session.state("analyzer",()->new Analyzer(classpathFiles));
+            var availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
+            analyzer.configure(context,availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));
+            analyzer.documents(documents(session));
+            analyzer.persistence(config.stateDir().resolve("diagnostics-v2").resolve(Hashing.sha256(session.root().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+            return analyzer;
+        }
     }
     private Analyzer.Context createAnalyzerContext(Session session,Path path,Resolution graph)throws Exception{
         String gav="local:workspace:0",release="25",generation="plain";

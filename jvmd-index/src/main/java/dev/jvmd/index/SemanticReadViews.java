@@ -66,6 +66,17 @@ public final class SemanticReadViews {
      * that symbol's semantic facts and identities.
      */
     public static SemanticReadView precedence(SemanticReadView live,SemanticReadView local,SemanticReadView machine){
+        return precedence(live,local,machine,ignored->false);
+    }
+
+    /**
+     * Compose with a maintained workspace-source ownership fence. If source membership proves that
+     * a binary belongs to workspace source but LIVE has not admitted its current declaration yet,
+     * lower persisted/MACHINE facts are not authoritative for that type.
+     */
+    public static SemanticReadView precedence(SemanticReadView live,SemanticReadView local,SemanticReadView machine,
+                                              java.util.function.Predicate<String> workspaceSourceOwnsBinary){
+        Objects.requireNonNull(workspaceSourceOwnsBinary);
         var layers=List.of(Objects.requireNonNull(live),Objects.requireNonNull(local),Objects.requireNonNull(machine));
         return new SemanticReadView(){
             @Override public Symbol symbol(String id)throws Exception{
@@ -84,8 +95,10 @@ public final class SemanticReadViews {
             }
 
             @Override public Symbol type(String binaryName)throws Exception{
-                for(var layer:layers){var value=layer.type(binaryName);if(value!=null)return value;}
-                return null;
+                var liveValue=live.type(binaryName);if(liveValue!=null)return liveValue;
+                if(workspaceSourceOwnsBinary.test(binaryName))return null;
+                var localValue=local.type(binaryName);if(localValue!=null)return localValue;
+                return machine.type(binaryName);
             }
 
             @Override public SemanticCompleteness completeness(String ownerId)throws Exception{

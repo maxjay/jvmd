@@ -169,7 +169,9 @@ class MaintainedCompletionContextTest {
             var before=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
             assertThat(((Number)before.get("semantic_facts")).longValue()).isZero();
 
-            var answer=completion(analyzer,use,useText,"value.");
+            int cursor=useText.indexOf("value.")+"value.".length();
+            var position=dev.jvmd.core.Documents.position(useText,cursor);
+            var answer=Json.MAPPER.valueToTree(analyzer.completion(use,useText,position.line(),position.character(),100,0).result());
             var names=answer.path("items").findValuesAsText("name");
             assertThat(names).contains("sourceOnly").doesNotContain("machineOnly");
 

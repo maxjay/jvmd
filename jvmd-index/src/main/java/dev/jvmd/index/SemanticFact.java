@@ -167,6 +167,6 @@ public record SemanticFact(
             }
             label=value.toString();editorLabel=editor.toString();
         }
-        return new CompletionCandidate(id,name,kind,structuralSignature,ownerId,sourceFile,modifiers,label,editorLabel,labels);
+        return new CompletionCandidate(id,name,kind,structuralSignature,ownerId,sourceFile,modifiers,label,editorLabel,labels,resolutionIdentity());
     }
 }

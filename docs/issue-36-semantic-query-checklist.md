@@ -98,13 +98,13 @@ This checklist is authoritative. A box is checked only when the implementation e
 - [x] Newly resolvable name invalidates only the relevant proof.
 
 ## Checkpoint 11 — semantic dependency proof DAG
-- [ ] Consumers reference precise semantic proofs.
-- [ ] Changed proofs enqueue direct consumers.
-- [ ] Equal derived proof stops propagation.
-- [ ] Coarse file closure retained only where precise proof is unavailable.
-- [ ] Exact-symbol dependency regression.
-- [ ] Overload dependency regression.
-- [ ] Hierarchy dependency/fixed-point regression.
+- [x] Consumers reference precise semantic proofs.
+- [x] Changed proofs enqueue direct consumers.
+- [x] Equal derived proof stops propagation.
+- [x] Coarse file closure retained only where precise proof is unavailable.
+- [x] Exact-symbol dependency regression.
+- [x] Overload dependency regression.
+- [x] Hierarchy dependency/fixed-point regression.
 
 ## Checkpoint 12 — classpath proof integration
 - [ ] C content update changes ordered classpath root with a narrow diff.

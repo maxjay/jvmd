@@ -87,14 +87,20 @@ public final class SemanticUpdatePolicy {
     public record ProofPropagation(Set<ProofConsumer> recomputed,Set<ProofConsumer> changed,
                                    Set<ProofConsumer> equal,Set<ProofConsumer> fallback) {
         public ProofPropagation {
-            recomputed=Set.copyOf(recomputed);changed=Set.copyOf(changed);
-            equal=Set.copyOf(equal);fallback=Set.copyOf(fallback);
+            recomputed=ordered(recomputed);changed=ordered(changed);
+            equal=ordered(equal);fallback=ordered(fallback);
+        }
+        private static Set<ProofConsumer> ordered(Collection<ProofConsumer> values){
+            return Collections.unmodifiableSet(new LinkedHashSet<>(new TreeSet<>(values)));
+        }
+        private static Set<Path> orderedPaths(Collection<Path> values){
+            return Collections.unmodifiableSet(new LinkedHashSet<>(new TreeSet<>(values)));
         }
         public Set<Path> changedFiles(){
-            var result=new TreeSet<Path>();changed.forEach(value->result.add(value.file()));return Set.copyOf(result);
+            var result=new TreeSet<Path>();changed.forEach(value->result.add(value.file()));return orderedPaths(result);
         }
         public Set<Path> fallbackFiles(){
-            var result=new TreeSet<Path>();fallback.forEach(value->result.add(value.file()));return Set.copyOf(result);
+            var result=new TreeSet<Path>();fallback.forEach(value->result.add(value.file()));return orderedPaths(result);
         }
     }
     public record ProofInvalidation(ProofPropagation propagation,Set<Path> coarseReanalyze) {
@@ -147,7 +153,8 @@ public final class SemanticUpdatePolicy {
             var node=nodes.get(consumer);return node==null?Optional.empty():Optional.of(node.evaluation());
         }
         public Set<ProofConsumer> consumers(QueryProof.Key key){
-            return Set.copyOf(reverse.getOrDefault(Objects.requireNonNull(key),Set.of()));
+            return Collections.unmodifiableSet(new LinkedHashSet<>(
+                    new TreeSet<>(reverse.getOrDefault(Objects.requireNonNull(key),Set.of()))));
         }
         public boolean hasConsumers(Path file){
             Path normalized=Objects.requireNonNull(file).toAbsolutePath().normalize();return nodes.keySet().stream().anyMatch(value->value.file().equals(normalized));

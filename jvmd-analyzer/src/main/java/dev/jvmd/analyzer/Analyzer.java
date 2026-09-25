@@ -464,13 +464,26 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private CompilerInputs.Snapshot validatedInputs()throws Exception {
         var inputs=inputSnapshot();
         if(!compiler.cacheValid(inputs)){
+            // Javac must fence its own environment immediately. Detached semantic/query state gets
+            // a separate decision: first try the ordered classpath/search-proof transition, and
+            // widen only when that transition cannot fully explain the environment change.
             outlines.clear();focused.clear();
-            var caches=modules.get(context.generation());
-            caches.documentSemantics.clear();caches.accessibility.clear();
-            // A classpath/environment replacement invalidates detached binary/JDK declaration
-            // currency even when the source membership is unchanged. Preserve facts for reuse, but
-            // fence every retained unit until javac re-admits it from the new environment.
-            caches.semantic.markHierarchyUncertain();
+            var caches=modules.get(context.generation());boolean precise=false;
+            if(caches.classpathPrecise&&Objects.equals(caches.platformFingerprint,platformFingerprint())){
+                var currentClasspath=preciseClasspathSequence(context,index);
+                if(currentClasspath.isPresent()){
+                    caches.classpathProofEvidence.validatedInputReconciliations++;
+                    precise=reconcileClasspath(caches,currentClasspath.get(),index,context.workspace());
+                }
+            }
+            if(!precise){
+                caches.classpathProofEvidence.coarseFallbacks++;
+                clearDocumentSemantics(caches);caches.accessibility.clear();
+                // Unsupported environment transitions (platform/module/path options/lost precise
+                // classpath coverage) retain facts physically but fence their semantic currency.
+                caches.semantic.markHierarchyUncertain();
+                caches.classpathSearchProofs.clear();caches.classpathSequence=null;caches.classpathPrecise=false;
+            }
             inputs=inputSnapshot();
         }
         return inputs;
@@ -1727,8 +1740,14 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(context!=null)result.put("resident_semantic_state",semanticState().status());
         result.put("completion_requests",completionRequests);result.put("resident_description_loads",residentDescriptionLoads);result.put("resident_description_cache_hits",residentDescriptionCacheHits);
         if(context!=null){
-            result.put("resident_description_cache_entries",modules.get(context.generation()).descriptions.size());
-            result.put("resident_accessibility_cache",modules.get(context.generation()).accessibility.status());
+            var active=modules.get(context.generation());
+            result.put("resident_description_cache_entries",active.descriptions.size());
+            result.put("resident_accessibility_cache",active.accessibility.status());
+            result.put("document_semantic_contexts",active.documentSemantics.size());
+            result.put("semantic_proof_consumers",dependencies.semantic().proofs().size());
+            result.put("classpath_proof_precise",active.classpathPrecise);
+            result.put("classpath_search_proofs",active.classpathSearchProofs.size());
+            result.put("classpath_proof_evidence",active.classpathProofEvidence.status());
         }
         long retainedSemantic=retainedSemanticBytes();
         var semanticGenerations=new LinkedHashMap<String,Object>();

@@ -1047,6 +1047,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private List<Map<String,Object>> semanticQualifiedRows(SemanticReadView view,CompletionContextResolver.Resolved resolved,
                                                             String prefix,int target)throws Exception{
         if(target<=0)return List.of();
+        SemanticReadView.Symbol enclosing=resolved.enclosingTypeId()==null?null:view.symbol(resolved.enclosingTypeId());
         int perOwnerBudget=Math.max(64,Math.min(4096,target*8));
         var selected=new HashMap<String,HierarchyChoice>();var typeNames=new HashMap<String,String>();
         var owners=semanticHierarchyOwners(view,resolved);if(owners==null)return null;

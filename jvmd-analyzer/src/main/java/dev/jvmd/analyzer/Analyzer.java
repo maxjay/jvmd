@@ -54,8 +54,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         final Map<Path,DocumentSemanticCached> documentSemantics=new HashMap<>();
         final LinkedHashMap<String,SymbolDescription> descriptions=new LinkedHashMap<>(16,.75f,true);
         final AccessibilityCache accessibility=new AccessibilityCache();
+        final Map<String,IndexStore.ClasspathSearchProof> classpathSearchProofs=new TreeMap<>();
         long semanticSourceEpoch=-1;
-        String completionContextIdentity="";
+        String completionContextIdentity="",semanticOwnerIdentity="";
+        ClasspathSequence classpathSequence;
+        boolean classpathPrecise;
     }
     private static final int MAX_GENERATION_FAMILIES=2;
     private final Map<String,ModuleCaches> modules=new LinkedHashMap<>();
@@ -90,13 +93,18 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private DiagnosticSnapshots snapshots;
     public void persistence(Path directory){if(snapshots==null){snapshots=new DiagnosticSnapshots(directory);diagnosticStore.persistence(snapshots);snapshots.documents(documents);}}
     private long budget;
-    public void configure(Context context,IndexService index,long budget)throws Exception{
-        String family=generationFamily(context);generationFamilies.put(context.generation(),family);generationFamilyLru.put(family,Boolean.TRUE);
-        var caches=modules.computeIfAbsent(context.generation(),_->new ModuleCaches());
-        outlines=caches.outlines;focused=caches.focused;
-        this.context=context;this.index=index;this.budget=budget;semanticBudgetBytes=Math.max(8L*1024*1024,budget/2);
-        diagnosticStore.budget(Math.max(1024*1024,budget/8));
-        String newCompletionContextIdentity=CompilerInputs.compose("completion-context-v1",
+
+    private static String semanticOwnerIdentity(Context context){
+        return CompilerInputs.compose("semantic-owner-v1",
+                context.gav(),context.release(),
+                context.sources().stream().map(p->p.toAbsolutePath().normalize().toString()).toList(),
+                context.compilerOptions(),
+                context.binarySources().stream().map(p->p.toAbsolutePath().normalize().toString()).sorted().toList(),
+                context.navigationSources().stream().map(p->p.toAbsolutePath().normalize().toString()).toList(),
+                context.preciseSourceRoots(),context.workspace());
+    }
+    private static String broadCompletionContextIdentity(Context context){
+        return CompilerInputs.compose("completion-context-v1",
                 context.gav(),context.release(),context.generation(),
                 context.classpath().stream().map(p->p.toAbsolutePath().normalize().toString()).toList(),
                 context.sources().stream().map(p->p.toAbsolutePath().normalize().toString()).toList(),
@@ -105,10 +113,164 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 new TreeMap<>(context.coordinates()),
                 context.navigationSources().stream().map(p->p.toAbsolutePath().normalize().toString()).toList(),
                 context.preciseSourceRoots(),context.workspace());
-        if(!newCompletionContextIdentity.equals(caches.completionContextIdentity)){
-            caches.documentSemantics.clear();caches.descriptions.clear();caches.accessibility.clear();caches.semantic.clear();caches.semanticSourceEpoch=-1;
+    }
+    private static boolean hasUnprovenPathOptions(Context context){
+        if(!context.binarySources().isEmpty())return true;
+        var names=Set.of("--module-path","-p","--upgrade-module-path","--class-path","-classpath","-cp",
+                "--processor-path","-processorpath","--processor-module-path","--patch-module","--system",
+                "--source-path","-sourcepath","--module-source-path","--boot-class-path","-bootclasspath",
+                "-extdirs","-endorseddirs","-Djava.ext.dirs","-Djava.endorsed.dirs");
+        for(String option:context.compilerOptions()){
+            String name=option.contains("=")?option.substring(0,option.indexOf('=')):option;
+            if(names.contains(name)||option.startsWith("-Xbootclasspath:")||option.startsWith("-Xbootclasspath/a:")
+                    ||option.startsWith("-Xbootclasspath/p:"))return true;
         }
-        caches.completionContextIdentity=newCompletionContextIdentity;
+        return false;
+    }
+    private Optional<ClasspathSequence> preciseClasspathSequence(Context context,IndexService index)throws Exception{
+        if(index==null||context.workspace().isBlank()||hasUnprovenPathOptions(context))return Optional.empty();
+        var sequence=index.store().semanticClasspathSequence(context.workspace());
+        if(sequence.isEmpty())return Optional.empty();
+        var expected=context.classpath().stream().map(path->path.toAbsolutePath().normalize().toString()).toList();
+        var actual=sequence.get().entries().stream().map(ClasspathSequence.Entry::key).toList();
+        return expected.equals(actual)?sequence:Optional.empty();
+    }
+    private ModuleCaches moduleCaches(Context next,String owner){
+        var direct=modules.get(next.generation());
+        if(direct!=null)return direct;
+        String candidateKey=null;ModuleCaches candidate=null;
+        for(var entry:modules.entrySet())if(owner.equals(entry.getValue().semanticOwnerIdentity)){
+            candidateKey=entry.getKey();candidate=entry.getValue();break;
+        }
+        if(candidate!=null){
+            modules.remove(candidateKey);
+            modules.put(next.generation(),candidate);
+            return candidate;
+        }
+        var created=new ModuleCaches();modules.put(next.generation(),created);return created;
+    }
+    private void removeDocumentProofs(Path file,DocumentSemanticCached cached){
+        if(cached!=null)for(var query:cached.snapshot().queries().values())
+            dependencies.semantic().proofs().remove(documentProofConsumer(file,query.selectorOffset()));
+    }
+    private void clearDocumentSemantics(ModuleCaches caches){
+        for(var entry:new ArrayList<>(caches.documentSemantics.entrySet()))removeDocumentProofs(entry.getKey(),entry.getValue());
+        caches.documentSemantics.clear();
+    }
+    private void clearSemanticCaches(ModuleCaches caches){
+        clearDocumentSemantics(caches);caches.descriptions.clear();caches.accessibility.clear();caches.semantic.clear();
+        caches.semanticSourceEpoch=-1;caches.classpathSearchProofs.clear();caches.classpathSequence=null;caches.classpathPrecise=false;
+    }
+    private static SemanticUpdatePolicy.ProofConsumer documentProofConsumer(Path file,int selectorOffset){
+        return new SemanticUpdatePolicy.ProofConsumer(file,"document-context:"+selectorOffset);
+    }
+    private static QueryProof.Key documentProofOutput(Path file,int selectorOffset){
+        return new QueryProof.Key(QueryProof.Domain.DOCUMENT_SCOPE,
+                "derived:"+file.toAbsolutePath().normalize()+"#"+selectorOffset);
+    }
+    private void registerDocumentProof(Path file,DocumentSemanticSnapshot.QueryContext query){
+        if(query.proof().dependencies().isEmpty())return;
+        dependencies.semantic().proofs().register(documentProofConsumer(file,query.selectorOffset()),
+                new SemanticUpdatePolicy.ProofEvaluation(query.proof(),documentProofOutput(file,query.selectorOffset()),query.proof().identity()));
+    }
+    private Optional<SemanticUpdatePolicy.ProofEvaluation> rebaseDocumentProof(
+            SemanticUpdatePolicy.ProofConsumer consumer,Map<QueryProof.Key,Hash256> leaves){
+        var prior=dependencies.semantic().proofs().evaluation(consumer);if(prior.isEmpty())return Optional.empty();
+        var dependencies=new ArrayList<QueryProof.Dependency>();
+        for(var dependency:prior.get().dependencies().dependencies())
+            dependencies.add(new QueryProof.Dependency(dependency.key(),leaves.getOrDefault(dependency.key(),dependency.identity())));
+        var proof=new QueryProof(dependencies);
+        return Optional.of(new SemanticUpdatePolicy.ProofEvaluation(proof,prior.get().output(),proof.identity()));
+    }
+    private void invalidateDocumentProofConsumers(ModuleCaches caches,Collection<SemanticUpdatePolicy.ProofConsumer> consumers){
+        var files=new LinkedHashSet<Path>();for(var consumer:consumers)files.add(consumer.file());
+        for(Path file:files){
+            var cached=caches.documentSemantics.remove(file);removeDocumentProofs(file,cached);
+        }
+    }
+    private void invalidateBroadClasspathContexts(ModuleCaches caches){
+        var files=new LinkedHashSet<Path>();
+        for(var entry:caches.documentSemantics.entrySet())for(var query:entry.getValue().snapshot().queries().values())
+            if(query.proof().dependencies().stream().anyMatch(dependency->
+                    dependency.key().domain()==QueryProof.Domain.CLASSPATH_SEARCH
+                            &&!dependency.key().value().startsWith("binary:"))){
+                files.add(entry.getKey());break;
+            }
+        for(Path file:files){
+            var cached=caches.documentSemantics.remove(file);removeDocumentProofs(file,cached);
+        }
+    }
+    private void evictChangedClasspathWinner(ModuleCaches caches,IndexStore.ClasspathSearchProof proof){
+        if(proof==null||!proof.resolved())return;
+        String unit=caches.semantic.unitForFact(proof.winnerScip());
+        if(unit!=null&&!unit.startsWith("source:"))caches.semantic.removeUnit(unit);
+    }
+    private boolean reconcileClasspath(ModuleCaches caches,ClasspathSequence current,IndexService index,String workspace)throws Exception{
+        if(caches.classpathSequence==null){
+            caches.classpathSequence=current;caches.classpathPrecise=true;return true;
+        }
+        var previous=caches.classpathSequence;
+        if(previous.identity().equals(current.identity())){
+            caches.classpathSequence=current;caches.classpathPrecise=true;return true;
+        }
+        var refreshed=new HashMap<String,IndexStore.ClasspathSearchProof>();
+        var update=ClasspathSearchProofs.update(previous,current,caches.classpathSearchProofs.values(),binary->{
+            var proof=index.store().semanticClasspathSearch(workspace,binary);
+            proof.ifPresent(value->refreshed.put(binary,value));return proof;
+        });
+        if(!update.unavailable().isEmpty())return false;
+
+        invalidateBroadClasspathContexts(caches);
+        if(!update.changed().isEmpty()){
+            for(var key:update.changed().keySet()){
+                String binary=key.value().startsWith("binary:")?key.value().substring("binary:".length()):key.value();
+                evictChangedClasspathWinner(caches,caches.classpathSearchProofs.get(binary));
+                evictChangedClasspathWinner(caches,refreshed.get(binary));
+            }
+            var propagation=dependencies.semantic().proofs().propagate(update.changed(),
+                    consumer->rebaseDocumentProof(consumer,update.changed()));
+            var invalid=new LinkedHashSet<SemanticUpdatePolicy.ProofConsumer>(propagation.changed());
+            invalid.addAll(propagation.fallback());
+            invalidateDocumentProofConsumers(caches,invalid);
+        }
+        caches.classpathSearchProofs.putAll(refreshed);
+        caches.classpathSequence=current;caches.classpathPrecise=true;return true;
+    }
+    private void initializeClasspath(ModuleCaches caches,Optional<ClasspathSequence> sequence){
+        caches.classpathSequence=sequence.orElse(null);caches.classpathPrecise=sequence.isPresent();
+        if(sequence.isEmpty())caches.classpathSearchProofs.clear();
+    }
+
+    public void configure(Context context,IndexService index,long budget)throws Exception{
+        String family=generationFamily(context);generationFamilies.put(context.generation(),family);generationFamilyLru.put(family,Boolean.TRUE);
+        String owner=semanticOwnerIdentity(context);
+        var caches=moduleCaches(context,owner);
+        boolean hadState=!caches.completionContextIdentity.isBlank();
+        boolean ownerChanged=hadState&&!owner.equals(caches.semanticOwnerIdentity);
+        var currentClasspath=preciseClasspathSequence(context,index);
+
+        this.context=context;this.index=index;this.budget=budget;semanticBudgetBytes=Math.max(8L*1024*1024,budget/2);
+        outlines=caches.outlines;focused=caches.focused;
+        diagnosticStore.budget(Math.max(1024*1024,budget/8));
+
+        boolean precise=false;
+        if(ownerChanged){
+            clearSemanticCaches(caches);
+        }else if(!hadState){
+            initializeClasspath(caches,currentClasspath);precise=currentClasspath.isPresent();
+        }else if(caches.classpathPrecise&&currentClasspath.isPresent()){
+            precise=reconcileClasspath(caches,currentClasspath.get(),index,context.workspace());
+        }
+
+        if(hadState&&!ownerChanged&&!precise){
+            String broad=broadCompletionContextIdentity(context);
+            if(!broad.equals(caches.completionContextIdentity))clearSemanticCaches(caches);
+            initializeClasspath(caches,currentClasspath);
+            precise=currentClasspath.isPresent();
+        }
+        caches.semanticOwnerIdentity=owner;
+        caches.completionContextIdentity=precise?owner:broadCompletionContextIdentity(context);
+
         compiler=compilerPools.computeIfAbsent(context.generation(),_->new CompilerPool(inputFiles));
         compiler.configure(context.generation(),context.release(),context.classpath(),context.sources(),index,budget,context.compilerOptions(),context.preciseSourceRoots());
         compiler.binarySources(context.binarySources());

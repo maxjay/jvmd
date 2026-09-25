@@ -58,6 +58,8 @@ class SemanticReadViewTest {
         assertThat(machineView.members("machine-symbol","get",10,null).symbols().getFirst().origin())
                 .isEqualTo(SemanticReadView.Origin.MACHINE);
         assertThat(machineView.identity(QueryProof.Domain.EXACT_SYMBOL,"machine-symbol")).isPresent();
+        assertThat(machineView.symbol("machine-member").semanticType()).isInstanceOf(SemanticType.Executable.class);
+        assertThat(machineView.symbol("machine-member").staticMember()).isFalse();
         assertThat(machineView.identity(QueryProof.Domain.CLASSPATH_SEARCH,"machine-symbol")).isEmpty();
     }
 
@@ -78,6 +80,19 @@ class SemanticReadViewTest {
         assertThat(onlyMachine.symbol("same").origin()).isEqualTo(SemanticReadView.Origin.MACHINE);
     }
 
+    @Test void partialLiveOwnerCannotHideCompleteLowerLayerSurface()throws Exception{
+        var live=surface(SemanticReadView.Origin.LIVE,SemanticCompleteness.PARTIAL,List.of("foo"));
+        var local=surface(SemanticReadView.Origin.LOCAL,SemanticCompleteness.COMPLETE,List.of("foo","bar","baz"));
+        var view=SemanticReadViews.precedence(live,local,empty());
+
+        assertThat(view.symbol("owner").origin()).isEqualTo(SemanticReadView.Origin.LIVE);
+        assertThat(view.completeness("owner")).isEqualTo(SemanticCompleteness.COMPLETE);
+        assertThat(view.members("owner","",10,null).symbols())
+                .extracting(SemanticReadView.Symbol::name).containsExactly("foo","bar","baz");
+        assertThat(view.members("owner","",10,null).symbols())
+                .allMatch(symbol->symbol.origin()==SemanticReadView.Origin.LOCAL);
+    }
+
     private static SemanticFact type(String id,String fqn,List<SemanticType> parents){
         String name=fqn.substring(fqn.lastIndexOf('.')+1);
         return new SemanticFact(
@@ -94,7 +109,15 @@ class SemanticReadViewTest {
                 :fqn.substring(fqn.lastIndexOf('.')+1);
         row.put("scip",scip);row.put("artifact_kind",kind);row.put("name",name);
         row.put("kind",symbolKind);row.put("fqn",fqn);row.put("binary_key",binary);
-        row.put("signature","class "+fqn);row.put("erased_descriptor","");row.put("flags",1);
+        String descriptor=symbolKind.equals("method")?"()I":"";
+        row.put("signature","class "+fqn);row.put("erased_descriptor",descriptor);row.put("flags",1);
+        SemanticType semantic=symbolKind.equals("method")
+                ?new SemanticType.Executable(List.of(),new SemanticType.Primitive("int"),List.of())
+                :new SemanticType.Declared(fqn,fqn,List.of());
+        String owner=symbolKind.equals("method")?fqn:null;
+        var resolution=ResolutionFact.canonical(binary,owner,symbolKind,name,descriptor,Set.of("public"),
+                ResolutionFact.packageName(fqn),semantic,List.of(),List.of(),List.of(),false);
+        row.put("resolution_fact",resolution.encode());
         row.put("metadata",Map.of("binary_name",fqn));return Map.copyOf(row);
     }
 
@@ -127,8 +150,11 @@ class SemanticReadViewTest {
 
     private static SemanticReadView single(String id,SemanticReadView.Origin origin,String identity){
         return new SemanticReadView(){
-            private final Symbol symbol=new Symbol(id,id,"class",id,id,"","",Set.of(),hash(identity),origin);
+            private final ResolutionFact resolution=new ResolutionFact(id,null,"class",id,"",Set.of(),"",
+                    new SemanticType.Declared(id,id,List.of()),List.of(),List.of(),false,hash(identity));
+            private final Symbol symbol=new Symbol(id,id,"class",id,id,"","",Set.of(),resolution,origin);
             public Symbol symbol(String key){return id.equals(key)?symbol:null;}
+            public SemanticCompleteness completeness(String ownerId){return id.equals(ownerId)?SemanticCompleteness.COMPLETE:SemanticCompleteness.UNKNOWN;}
             public MemberPage members(String ownerId,String prefix,int limit,String cursor){return new MemberPage(List.of(),null);}
             public List<String> directSupertypes(String key){return List.of();}
             public Optional<Hash256> identity(QueryProof.Domain domain,String key){
@@ -137,9 +163,36 @@ class SemanticReadViewTest {
         };
     }
 
+    private static SemanticReadView surface(SemanticReadView.Origin origin,SemanticCompleteness completeness,List<String> members){
+        return new SemanticReadView(){
+            private final ResolutionFact ownerResolution=ResolutionFact.canonical("p.Owner",null,"class","Owner","",Set.of("public"),
+                    "p",new SemanticType.Declared("p.Owner","p.Owner",List.of()),List.of(),List.of(),List.of(),false);
+            private final Symbol owner=new Symbol("owner","Owner","class","p.Owner","p.Owner","class p.Owner","",Set.of("public"),ownerResolution,origin);
+            private Symbol member(String name){
+                var resolution=ResolutionFact.canonical("p.Owner#"+name+"()I","p.Owner","method",name,"()I",Set.of("public"),"p",
+                        new SemanticType.Executable(List.of(),new SemanticType.Primitive("int"),List.of()),List.of(),List.of(),List.of(),false);
+                return new Symbol(name,name,"method","p.Owner","p.Owner#"+name+"()I","int "+name+"()","()I",Set.of("public"),resolution,origin);
+            }
+            public Symbol symbol(String id){
+                if(id.equals("owner"))return owner;
+                return members.contains(id)?member(id):null;
+            }
+            public SemanticCompleteness completeness(String ownerId){return ownerId.equals("owner")?completeness:SemanticCompleteness.UNKNOWN;}
+            public MemberPage members(String ownerId,String prefix,int limit,String cursor){
+                if(!ownerId.equals("owner"))return new MemberPage(List.of(),null);
+                return new MemberPage(members.stream().filter(name->name.startsWith(prefix)).limit(limit).map(this::member).toList(),null);
+            }
+            public List<String> directSupertypes(String id){return List.of();}
+            public Optional<Hash256> identity(QueryProof.Domain domain,String key){
+                var symbol=symbol(key);return domain==QueryProof.Domain.EXACT_SYMBOL&&symbol!=null?Optional.of(symbol.resolutionIdentity()):Optional.empty();
+            }
+        };
+    }
+
     private static SemanticReadView empty(){
         return new SemanticReadView(){
             public Symbol symbol(String id){return null;}
+            public SemanticCompleteness completeness(String ownerId){return SemanticCompleteness.UNKNOWN;}
             public MemberPage members(String ownerId,String prefix,int limit,String cursor){return new MemberPage(List.of(),null);}
             public List<String> directSupertypes(String id){return List.of();}
             public Optional<Hash256> identity(QueryProof.Domain domain,String key){return Optional.empty();}

@@ -663,6 +663,14 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private Hash256 resolutionPathIdentity(String key)throws Exception{
         if(key.startsWith("type:")){
             String binary=key.substring("type:".length());
+            if(liveSourceState!=null){
+                var source=liveSourceState.source(binary).orElse(null);
+                if(source!=null){
+                    Path file=source.file().toAbsolutePath().normalize();
+                    if(!ensureSourceSemanticCurrent(file))
+                        return CanonicalDigestWriter.digest("document-resolution-path-v1",binary,"<unavailable>");
+                }
+            }
             var symbol=semanticReadView().type(binary);
             return CanonicalDigestWriter.digest("document-resolution-path-v1",binary,
                     symbol==null?null:symbol.fqn(),symbol==null?null:symbol.resolutionIdentity());

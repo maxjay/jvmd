@@ -2076,6 +2076,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var description=loadResidentDescription(fact);var value=new LinkedHashMap<String,Object>();
         value.put("scip",fact.id());value.put("name",fact.name());value.put("name_path",fact.namePath());value.put("kind",fact.kind());
         value.put("signature",description==null?fact.structuralSignature():description.detailedSignature());value.put("resolved",true);
+        value.put("resolution_identity",fact.resolutionIdentity().hex());
         value.put("modifiers",fact.modifiers().stream().sorted().toList());value.put("fqn",fact.fqn());
         if(fact.sourceFile()!=null){value.put("file",fact.sourceFile());value.put("source_file",fact.sourceFile());}
         var owner=fact.ownerId()==null?null:semanticState().symbol(fact.ownerId());

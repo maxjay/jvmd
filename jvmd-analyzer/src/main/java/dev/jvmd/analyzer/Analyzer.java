@@ -1497,8 +1497,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                     if(member.kind().equals("ctor")||member.kind().equals("package")||member.kind().equals("module"))continue;
                     boolean declarationType=Set.of("class","interface","enum","record","annotation").contains(member.kind());
                     if(resolved.staticReceiver()&&!member.staticMember()&&!declarationType)continue;
-                    if(!resolved.staticReceiver()&&member.staticMember()
-                            &&Set.of("method","field","enumconst").contains(member.kind()))continue;
                     var access=CompletionContextResolver.access(member,resolved.packageName(),enclosing,resolved.enclosingTypeName());
                     if(access==CompletionContextResolver.Access.UNKNOWN)return null;
                     if(access==CompletionContextResolver.Access.DENIED)continue;
@@ -1510,7 +1508,26 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 cursor=page.cursor();
             }while(cursor!=null&&examined<perOwnerBudget);
         }
-        return selected.values().stream().map(HierarchyChoice::row).sorted(COMPLETION_ORDER).limit(target).toList();
+        return selected.values().stream().map(HierarchyChoice::row)
+                .sorted(qualifiedCompletionOrder(resolved.staticReceiver())).limit(target).toList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static boolean completionStatic(Map<String,Object> row){
+        Object raw=row.get("modifiers");
+        return raw instanceof Collection<?> values&&values.contains("static");
+    }
+    private static int instanceCompletionRank(Map<String,Object> row){
+        boolean statik=completionStatic(row);
+        boolean field=Set.of("field","enumconst").contains(Objects.toString(row.get("kind"),""));
+        if(!statik&&field)return 0;
+        if(!statik)return 1;
+        if(field)return 2;
+        return 3;
+    }
+    private static Comparator<Map<String,Object>> qualifiedCompletionOrder(boolean staticReceiver){
+        return staticReceiver?COMPLETION_ORDER:
+                Comparator.comparingInt(Analyzer::instanceCompletionRank).thenComparing(COMPLETION_ORDER);
     }
 
     private boolean moduleSensitiveCompletion(){
@@ -1569,7 +1586,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return List.copyOf(result);
     }
 
-    private enum QualifiedMemberMode { ALL, STATIC_ONLY, INSTANCE_ONLY }
+    private enum QualifiedMemberMode { ALL, STATIC_ONLY }
     private List<Map<String,Object>> residentHierarchyRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target,QualifiedMemberMode memberMode,
                                                            Set<String> excludedIds,Set<String> shadowedFieldNames){
         if(target<=0)return List.of();
@@ -1594,8 +1611,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                             &&!member.kind().equals("ctor")&&!member.kind().equals("package")&&!member.kind().equals("module")
                             &&(member.typeDeclaration()
                                 ||memberMode==QualifiedMemberMode.ALL
-                                ||memberMode==QualifiedMemberMode.STATIC_ONLY&&member.modifiers().contains("static")
-                                ||memberMode==QualifiedMemberMode.INSTANCE_ONLY&&!member.modifiers().contains("static"))
+                                ||memberMode==QualifiedMemberMode.STATIC_ONLY&&member.modifiers().contains("static"))
                             &&accessible.contains(member.id())
                             &&!(Set.of("field","enumconst").contains(member.kind())&&shadowedFieldNames.contains(member.name()))){
                         String shape=inheritedMemberShape(member);var row=residentCompletionRow(member,member.candidate(stream.substitutions));
@@ -1611,8 +1627,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return List.copyOf(rows);
     }
     private List<Map<String,Object>> residentQualifiedRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target){
-        return residentHierarchyRows(query,prefix,target,
-                query.staticReceiver()?QualifiedMemberMode.STATIC_ONLY:QualifiedMemberMode.INSTANCE_ONLY,Set.of(),Set.of());
+        if(query.staticReceiver())
+            return residentHierarchyRows(query,prefix,target,QualifiedMemberMode.STATIC_ONLY,Set.of(),Set.of());
+        int scanTarget=Math.max(target,Math.min(4096,target*8));
+        return residentHierarchyRows(query,prefix,scanTarget,QualifiedMemberMode.ALL,Set.of(),Set.of()).stream()
+                .sorted(qualifiedCompletionOrder(false)).limit(target).toList();
     }
     private List<Map<String,Object>> residentUnqualifiedRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target){
         if(target<=0)return List.of();

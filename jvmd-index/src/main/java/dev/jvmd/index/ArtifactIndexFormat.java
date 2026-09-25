@@ -82,8 +82,11 @@ public final class ArtifactIndexFormat {
                 .sorted(Comparator.comparing(symbol->symbol.resolution().symbolKey()))
                 .map(symbol->new Object[]{symbol.resolution().symbolKey(),symbolResolutionIdentity(symbol)})
                 .toList();
-        var relationships=data.relationships().stream().map(edge->new Object[]{
-                    data.symbols().get(edge.sourceId()).resolution().symbolKey(),edge.target(),edge.kind()
+        var byId=new HashMap<Integer,SymbolRecord>();for(var symbol:data.symbols())byId.put(symbol.id(),symbol);
+        var relationships=data.relationships().stream().map(edge->{
+                    var source=byId.get(edge.sourceId());
+                    if(source==null)throw new IllegalArgumentException("Unknown relationship source: "+edge.sourceId());
+                    return new Object[]{source.resolution().symbolKey(),edge.target(),edge.kind()};
                 }).sorted(Comparator.comparing(value->value[0].toString()+"\0"+value[1]+"\0"+value[2])).toList();
         return CanonicalDigestWriter.digest("artifact-java-resolution-v1",symbols,relationships);
     }

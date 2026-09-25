@@ -160,13 +160,18 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         String requested=Objects.requireNonNullElse(name,"").trim();
         if(requested.isBlank())return List.of();
         var result=new LinkedHashMap<String,SemanticReadView.Symbol>();
+        var residentView=SemanticReadViews.resident(semanticState());
         var resident=semanticState().type(requested);
         if(resident!=null){
-            var symbol=SemanticReadViews.resident(semanticState()).symbol(resident.id());
+            var symbol=residentView.symbol(resident.id());
             if(symbol!=null)result.put(symbol.id(),symbol);
         }
+        String simple=requested.substring(Math.max(requested.lastIndexOf('.'),requested.lastIndexOf(36))+1);
+        for(var fact:semanticState().typesByName(simple)){
+            var symbol=residentView.symbol(fact.id());
+            if(symbol!=null)result.putIfAbsent(symbol.id(),symbol);
+        }
         if(index==null||context.workspace().isBlank())return List.copyOf(result.values());
-        String simple=requested.substring(requested.lastIndexOf('.')+1);
         for(var layer:List.of(IndexStore.SemanticLayer.LOCAL,IndexStore.SemanticLayer.MACHINE)){
             var origin=layer==IndexStore.SemanticLayer.LOCAL?SemanticReadView.Origin.LOCAL:SemanticReadView.Origin.MACHINE;
             for(var value:index.store().semanticTypesByName(simple,context.workspace(),64,layer)){

@@ -173,6 +173,10 @@ public final class ResidentSemanticState {
     public synchronized String unitForType(String fqn){
         String id=typesByFqn.get(fqn);return id==null?null:unitForFact(id);
     }
+    /** Exact retained type declaration by canonical binary/FQN identity. */
+    public synchronized SemanticFact type(String fqn){
+        String id=typesByFqn.get(fqn);return id==null?null:symbols.get(id);
+    }
     public synchronized boolean unitCurrent(String unit,String contentIdentity){
         var state=units.get(unit);if(state==null||staleUnits.containsKey(unit)
                 ||state.uncertaintyGeneration()!=uncertaintyGeneration)return false;

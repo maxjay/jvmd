@@ -22,6 +22,9 @@ public final class MachineDependencyState {
             Objects.requireNonNull(resolutionIdentity);
             if(key.isBlank())throw new IllegalArgumentException("Artifact key must not be blank");
         }
+        public Artifact(String key,ArtifactIndexFormat.ArtifactData facts){
+            this(key,ArtifactIndexFormat.resolutionIdentity(Objects.requireNonNull(facts)));
+        }
     }
 
     public record WorkspaceDependencies(ClasspathSequence sequence) {

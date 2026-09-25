@@ -27,6 +27,7 @@ class MaintainedCompletionContextTest {
                 public class Sample extends Base {
                     public int getPets(){return 1;}
                     public static int staticValue(){return 2;}
+                    private int hidden(){return 3;}
                     public Model getModel(){return new Model();}
                 }
                 class Model {

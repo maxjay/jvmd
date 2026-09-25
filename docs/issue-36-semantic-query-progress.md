@@ -670,3 +670,52 @@ Failed/deprecated approaches:
 
 Remaining:
 - Checkpoint 10: precise package/import namespace and negative-resolution proofs.
+
+
+## Checkpoint 10 — precise namespace and negative-resolution proofs
+
+Starting SHA: `4c19130229e6b7386e80e7b95f1da9659d687662`
+Ending SHA: `61c1798944b9444c8cc3101e0cbe7a8ce2c49d9d`
+
+Evidence:
+- Exact-head Tests: https://github.com/maxjay/jvmd/actions/runs/36139690053 — **success**.
+- Exact-head Benchmarks: https://github.com/maxjay/jvmd/actions/runs/36139690094 — **success**.
+- Phase 1 covers canonical current-package, explicit-import, wildcard-import, `java.lang` and fully-negative namespace proof construction.
+- Phase 4 covers real completion-cache reuse/invalidation across those search domains.
+- Phase 3, Rocks, Phase 5–7 and later runtime/LSP-facing gates remained green.
+
+Changes:
+- Added `NamespaceResolutionProofs`, a detached canonical search-plan representation for one Java simple-type lookup.
+- A matching single-type import records only that exact import domain.
+- A proven current-package winner stops the namespace search at the current package.
+- Otherwise the proof records the current package plus each on-demand import package and `java.lang`.
+- Each searched binary name gets a `NAMESPACE type:<binary>` identity over its exact declaration resolution fact or absence.
+- Every searched non-winning domain also gets a domain-separated `NEGATIVE_RESOLUTION <simple>@<binary>` identity.
+- Analyzer performs bounded package reconciliation only for the packages present in the exact search plan, then refreshes any known LIVE declaration before comparing its resolution identity.
+- Qualified document-context proof rebuilding reconstructs these namespace/negative dependencies as a group from its saved `plan:<simple>` key instead of comparing the workspace-wide namespace aggregate.
+- Static-import, nested-type and other unproven namespace cases deliberately retain the previous broad namespace fallback rather than implementing incomplete Java resolution semantics.
+
+Correctness proof:
+- Current-package proof contains only the current-package candidate once that winner is proven.
+- Explicit-import proof contains only the matching single-type import.
+- Wildcard proof contains current-package, every imported-on-demand package, and `java.lang`.
+- A fully negative lookup captures exactly those searched domains.
+- Repeating an unchanged negative lookup reuses the cached context without another compiler query.
+- Adding a class in an unrelated, unsearched package leaves the query count unchanged.
+- A body-only edit in a searched but still-inaccessible competing type leaves the proof equal.
+- Making that competing wildcard type public changes only its searched-domain proof and invalidates the cached context.
+- A current-package winner is not invalidated when a wildcard package later gains a matching public type.
+- An explicit-import winner is likewise unaffected by a wildcard package gaining a matching type.
+
+Architecture:
+- Namespace validity is now based on the Java search domains that can affect the conclusion, not a global/workspace namespace root.
+- Negative resolution is positive evidence about exact searched absences; unchanged absence is reusable state, not an instruction to resolve again.
+- Source package reconciliation is bounded by the proof's package set.
+- Broader namespace identity remains only a conservative fallback for cases the detached namespace model cannot safely prove.
+
+Failed/deprecated approaches:
+- The first Checkpoint-10 source write was corrupted by the GitHub contents path at literal dollar-sign character expressions and duplicated the source tail. Run https://github.com/maxjay/jvmd/actions/runs/36139293179 failed compilation. The file was restored atomically with character-code / regex escapes that contain no literal dollar-sign source characters.
+- The next implementation parsed package/import declarations only at line starts. Valid JVMD fixtures place `package ...; import ...;` on one line, so wildcard/explicit domains were omitted and Phase 1/4 failed on the stale search plan. That parser assumption was removed; Java declarations are now found at token boundaries regardless of line layout.
+
+Remaining:
+- Checkpoint 11: attach precise semantic proofs to direct consumers in the existing canonical semantic dependency owner and propagate only when a recomputed derived proof changes.

@@ -122,9 +122,9 @@ public final class ResidentSemanticState {
 
     public synchronized SemanticDelta removeUnit(String unit){
         var previous=units.get(unit);
-        if(previous==null)return new SemanticDelta(unit,null,"",SemanticUnitMerkle.empty(),List.of(),List.of(),Set.of(),"","","",Set.of());
+        if(previous==null)return new SemanticDelta(unit,null,"",SemanticUnitMerkle.empty(),List.of(),List.of(),Set.of(),"","","",Set.of(),SemanticCompleteness.UNKNOWN);
         var removed=previous.facts().ids();
-        var delta=new SemanticDelta(unit,previous.sourceFile(),"",SemanticUnitMerkle.empty(),List.of(),List.of(),removed,"","","",Set.of());
+        var delta=new SemanticDelta(unit,previous.sourceFile(),"",SemanticUnitMerkle.empty(),List.of(),List.of(),removed,"","","",Set.of(),previous.completeness());
         apply(delta);units.remove(unit);return delta;
     }
 
@@ -177,6 +177,11 @@ public final class ResidentSemanticState {
         var state=units.get(unit);if(state==null||staleUnits.containsKey(unit)
                 ||state.uncertaintyGeneration()!=uncertaintyGeneration)return false;
         return contentIdentity==null||Objects.equals(contentIdentity,state.contentIdentity());
+    }
+    /** Completeness is authoritative only while the owning semantic unit is current. */
+    public synchronized SemanticCompleteness completeness(String factId){
+        String unit=unitForFact(factId);if(unit==null||!unitCurrent(unit,null))return SemanticCompleteness.UNKNOWN;
+        var state=units.get(unit);return state==null?SemanticCompleteness.UNKNOWN:state.completeness();
     }
     public synchronized SemanticFact unitType(String unit,String fqn){
         var state=units.get(unit);if(state==null)return null;
@@ -277,7 +282,7 @@ public final class ResidentSemanticState {
 
     private SemanticUnitState nextUnitState(SemanticDelta delta){
         return new SemanticUnitState(delta.unit(),delta.sourceFile(),delta.contentIdentity(),delta.facts(),
-                delta.apiIdentity(),delta.namespaceIdentity(),delta.documentationIdentity(),delta.dependencies(),uncertaintyGeneration);
+                delta.apiIdentity(),delta.namespaceIdentity(),delta.documentationIdentity(),delta.dependencies(),delta.completeness(),uncertaintyGeneration);
     }
 
     private String freshnessIdentity(){

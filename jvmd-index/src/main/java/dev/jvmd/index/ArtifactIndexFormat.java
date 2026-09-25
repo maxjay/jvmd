@@ -54,20 +54,43 @@ public final class ArtifactIndexFormat {
      * separately published documentation overlay. Two bytecode generations with the same indexed
      * Java semantic surface therefore retain the same resolution identity.
      */
+    private static final Set<String> RESOLUTION_METADATA=Set.of(
+            "generic_signature","binary_name","inner_classes","nest_host","nest_members",
+            "permitted_subclasses","record_components","module_exports",
+            "return_type","parameter_types","type_parameters","scip_return_disambiguated");
+
+    /** Java-resolution identity for one persisted binary symbol, excluding presentation/enrichment. */
+    public static Hash256 symbolResolutionIdentity(SymbolRecord symbol){
+        Objects.requireNonNull(symbol);
+        return CanonicalDigestWriter.digest("artifact-symbol-resolution-v1",
+                symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),
+                Objects.toString(symbol.signature(),""),
+                Objects.toString(symbol.descriptor(),""),
+                symbol.flags(),resolutionMetadata(symbol.metadataJson()));
+    }
+
     public static Hash256 resolutionIdentity(ArtifactData data){
         Objects.requireNonNull(data);
         Key key=data.key();
-        return CanonicalDigestWriter.digest("artifact-resolution-v1",
+        return CanonicalDigestWriter.digest("artifact-resolution-v2",
                 key.formatVersion(),key.indexerVersion(),key.runtimeFeature(),key.mode(),
-                data.symbols().stream().map(symbol->new Object[]{
-                        symbol.id(),symbol.ownerId(),symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),
-                        Objects.toString(symbol.signature(),""),
-                        Objects.toString(symbol.descriptor(),""),
-                        symbol.flags(),symbol.metadataJson()
-                }).toList(),
+                data.symbols().stream().map(ArtifactIndexFormat::symbolResolutionIdentity).toList(),
                 data.relationships().stream().map(edge->new Object[]{
                         edge.sourceId(),edge.target(),edge.kind()
                 }).toList());
+    }
+
+    private static List<Object> resolutionMetadata(String metadataJson){
+        try{
+            var node=Json.MAPPER.readTree(Objects.requireNonNullElse(metadataJson,"{}"));
+            var result=new ArrayList<Object>();
+            var names=new ArrayList<String>();node.fieldNames().forEachRemaining(names::add);names.sort(String::compareTo);
+            for(String name:names)if(RESOLUTION_METADATA.contains(name))
+                result.add(new Object[]{name,node.get(name).toString()});
+            return List.copyOf(result);
+        }catch(IOException invalid){
+            throw new IllegalArgumentException("Invalid artifact symbol metadata",invalid);
+        }
     }
 
     public static ArtifactData from(BinaryReader.Content content,Key key)throws Exception{

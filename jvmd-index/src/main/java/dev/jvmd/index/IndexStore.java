@@ -19,6 +19,7 @@ public interface IndexStore extends AutoCloseable {
     }
     record SymbolicReference(String sourceScip,String targetBinaryKey,String kind) { }
     record SourceRelationship(String sourceScip,String targetScip,String kind) { }
+    enum SemanticLayer { LOCAL, MACHINE }
     record ArtifactInput(ArtifactContext context,ArtifactIndexFormat.Key key,long size,long mtime) {
         public ArtifactInput {
             Objects.requireNonNull(context);Objects.requireNonNull(key);
@@ -67,18 +68,38 @@ public interface IndexStore extends AutoCloseable {
     default MemberPage membersByOwner(String ownerScip,String prefix,String workspace,int limit,String cursor)throws Exception{
         throw new UnsupportedOperationException("owner/member range unavailable");
     }
+    /** Layer-specific owner/member range. Production stores should override to avoid pre-composition masking. */
+    default MemberPage membersByOwner(String ownerScip,String prefix,String workspace,int limit,String cursor,SemanticLayer layer)throws Exception{
+        var page=membersByOwner(ownerScip,prefix,workspace,limit,cursor);
+        var filtered=page.symbols().stream().filter(row->layerMatches(row,layer)).toList();
+        return new MemberPage(filtered,page.cursor());
+    }
     List<Map<String,Object>> descendants(String path,String workspace,int depth,int limit,long after,Set<String> kinds)throws Exception;
     Map<String,Object> byId(long id,String workspace)throws Exception;
     Map<String,Object> byScip(String scip,String workspace)throws Exception;
+    /** Layer-specific exact lookup used before LIVE/LOCAL/MACHINE composition. */
+    default Map<String,Object> byScip(String scip,String workspace,SemanticLayer layer)throws Exception{
+        var row=byScip(scip,workspace);return row!=null&&layerMatches(row,layer)?row:null;
+    }
     List<ArtifactCandidate> binaryArtifacts(String workspace)throws Exception;
     List<ArtifactWork> pendingSignatureArtifacts(String workspace)throws Exception;
     List<ArtifactCandidate> artifactsOwning(Collection<String> scips,String workspace)throws Exception;
     List<ArtifactCandidate> artifactsReferencing(Collection<String> fqns,String workspace)throws Exception;
     List<ResolvedRelationship> relationships(Collection<String> scips,boolean outgoing,Set<String> kinds,String workspace)throws Exception;
+    /** Layer-specific relationship read; production stores should override when layers can overlap. */
+    default List<ResolvedRelationship> relationships(Collection<String> scips,boolean outgoing,Set<String> kinds,String workspace,SemanticLayer layer)throws Exception{
+        return relationships(scips,outgoing,kinds,workspace).stream()
+                .filter(edge->layerMatches(edge.source(),layer)).toList();
+    }
     List<SymbolicReference> codeReferences(Collection<String> frontier,boolean outgoing,Set<String> kinds,String workspace)throws Exception;
     List<Map<String,Object>> symbolsByBinaryKey(String binaryKey,String workspace)throws Exception;
     List<Map<String,Object>> relationshipClosure(String rootScip,int depth,Set<String> kinds,String workspace,int limit,int offset)throws Exception;
     Set<String> unresolvedSignatureTargets(String rootScip,int depth,Set<String> kinds,String workspace,int limit)throws Exception;
     List<Map<String,Object>> overrideParents(String scip,String workspace,int limit)throws Exception;
     List<Path> localWorkspaceArtifacts(String workspace)throws Exception;
+
+    private static boolean layerMatches(Map<String,Object> row,SemanticLayer layer){
+        boolean local="local".equals(Objects.toString(row.get("artifact_kind"),""));
+        return layer==SemanticLayer.LOCAL?local:!local;
+    }
 }

@@ -33,8 +33,13 @@ public final class SemanticContributions {
         // Preserve precise negative type names for ordinary cant.resolve diagnostics. Other compiler
         // errors still require the explicit wildcard conservative boundary.
         var errors=problems.stream().filter(p->p.kind().equals("ERROR")).toList();
-        if(!errors.isEmpty()&&(snapshot.unresolvedTypeNames().isEmpty()
-                ||errors.stream().anyMatch(p->!p.code().contains("cant.resolve"))))unresolved.add("*");
+        // javac may report a missing wildcard/import package as compiler.err.doesnt.exist in the
+        // same attribution that reports the precise unresolved type name. That error is still
+        // represented by the namespace/negative-resolution plan for the captured type name; it
+        // must not force the whole contribution back to "*". Other error domains remain coarse.
+        boolean onlyNameResolutionErrors=!errors.isEmpty()&&errors.stream().allMatch(p->
+                p.code().contains("cant.resolve")||p.code().contains("doesnt.exist"));
+        if(!errors.isEmpty()&&(snapshot.unresolvedTypeNames().isEmpty()||!onlyNameResolutionErrors))unresolved.add("*");
         return new FileSemanticContribution(file,hash,ApiFingerprint.of(snapshot,file),snapshot.dependencies(),exports,unresolved);
     }
 }

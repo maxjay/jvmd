@@ -153,6 +153,10 @@ public final class ResidentSemanticState {
     }
 
     public synchronized SemanticFact symbol(String id){return symbols.get(id);}
+    /** Direct maintained hierarchy edges for the canonical type, without walking ancestors. */
+    public synchronized List<String> directSupertypeIds(String typeId){
+        var values=new ArrayList<>(directSupers.getOrDefault(typeId,Set.of()));values.sort(String::compareTo);return List.copyOf(values);
+    }
     public synchronized SemanticUnitState unit(String unit){return units.get(unit);}
     /** Resolve a canonical declaration to the retained semantic unit that owns it. */
     public synchronized String unitForFact(String id){

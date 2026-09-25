@@ -387,11 +387,11 @@ public final class RocksIndexStore implements IndexStore {
     }
     /** Preserve the established navigation/search contract while semantic reads retain full declarations. */
     private static boolean searchVisible(StoredArtifact artifact,ArtifactIndexFormat.SymbolRecord symbol){
-        return "local".equals(artifact.input().context().kind())
+        return "local".equals(artifact.input().context().kind())||artifact.codeKey()!=null
                 ||(symbol.flags()&java.lang.classfile.ClassFile.ACC_PRIVATE)==0;
     }
     private static boolean searchVisible(StoredArtifact artifact,Map<String,Object> symbol){
-        return "local".equals(artifact.input().context().kind())||(flags(symbol)&2)==0;
+        return "local".equals(artifact.input().context().kind())||artifact.codeKey()!=null||(flags(symbol)&2)==0;
     }
     @Override public synchronized List<Map<String,Object>> findNamePrefix(String prefix,String workspace,int limit,Set<String> kinds)throws Exception{
         if(limit<=0)return List.of();

@@ -55,6 +55,7 @@ public final class ResidentSemanticState {
     private Node root;
     private final Map<String,SemanticFact> symbols=new HashMap<>();
     private final Map<String,String> typesByFqn=new HashMap<>();
+    private final Map<String,Set<String>> typesBySimpleName=new HashMap<>();
     private final Map<String,SemanticUnitState> units=new HashMap<>();
     private final Map<String,Aggregate> memberAggregates=new HashMap<>();
     private Aggregate semanticAggregate=Aggregate.ZERO;
@@ -184,6 +185,14 @@ public final class ResidentSemanticState {
     public synchronized SemanticFact type(String fqn){
         String id=typesByFqn.get(fqn);return id==null?null:symbols.get(id);
     }
+    /** Bounded maintained simple-name lookup; ambiguity is preserved for Java resolution filtering. */
+    public synchronized List<SemanticFact> typesByName(String simpleName){
+        var ids=typesBySimpleName.getOrDefault(Objects.requireNonNullElse(simpleName,""),Set.of());
+        if(ids.isEmpty())return List.of();
+        return ids.stream().map(symbols::get).filter(Objects::nonNull)
+                .sorted(Comparator.comparing(fact->Objects.requireNonNullElse(fact.fqn(),"")).thenComparing(SemanticFact::id))
+                .toList();
+    }
     public synchronized boolean unitCurrent(String unit,String contentIdentity){
         var state=units.get(unit);if(state==null||staleUnits.containsKey(unit)
                 ||state.uncertaintyGeneration()!=uncertaintyGeneration)return false;
@@ -275,7 +284,7 @@ public final class ResidentSemanticState {
 
     public synchronized void clear(){
         if(root==null&&symbols.isEmpty()&&units.isEmpty())return;
-        root=null;symbols.clear();typesByFqn.clear();units.clear();memberAggregates.clear();semanticAggregate=Aggregate.ZERO;directSupers.clear();directSubs.clear();hierarchyApis.clear();staleUnits.clear();staleAggregate=new AlgebraicAccumulator("semantic-stale-v2");uncertaintyGeneration=0;epoch++;
+        root=null;symbols.clear();typesByFqn.clear();typesBySimpleName.clear();units.clear();memberAggregates.clear();semanticAggregate=Aggregate.ZERO;directSupers.clear();directSubs.clear();hierarchyApis.clear();staleUnits.clear();staleAggregate=new AlgebraicAccumulator("semantic-stale-v2");uncertaintyGeneration=0;epoch++;
     }
 
     /** Conservative retained-size estimate used only for semantic cache budgeting/retirement. */
@@ -392,10 +401,18 @@ public final class ResidentSemanticState {
     }
 
     private void indexType(SemanticFact fact){
-        if(fact.typeDeclaration()&&fact.fqn()!=null&&!fact.fqn().isBlank())typesByFqn.put(fact.fqn(),fact.id());
+        if(!fact.typeDeclaration()||fact.fqn()==null||fact.fqn().isBlank())return;
+        typesByFqn.put(fact.fqn(),fact.id());
+        var ids=new TreeSet<>(typesBySimpleName.getOrDefault(fact.name(),Set.of()));
+        ids.add(fact.id());typesBySimpleName.put(fact.name(),Set.copyOf(ids));
     }
     private void unindexType(SemanticFact fact){
-        if(fact.typeDeclaration()&&fact.fqn()!=null&&!fact.fqn().isBlank())typesByFqn.remove(fact.fqn(),fact.id());
+        if(!fact.typeDeclaration()||fact.fqn()==null||fact.fqn().isBlank())return;
+        typesByFqn.remove(fact.fqn(),fact.id());
+        var ids=new TreeSet<>(typesBySimpleName.getOrDefault(fact.name(),Set.of()));
+        ids.remove(fact.id());
+        if(ids.isEmpty())typesBySimpleName.remove(fact.name());
+        else typesBySimpleName.put(fact.name(),Set.copyOf(ids));
     }
     private void addFact(SemanticFact fact){
         indexType(fact);

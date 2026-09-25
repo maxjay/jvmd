@@ -144,6 +144,44 @@ class MaintainedCompletionContextTest {
         }
     }
 
+    @Test void knownWorkspaceSourceShadowsMachineTypeBeforeLiveOrLocalPublication()throws Exception{
+        Path repo=Files.createDirectories(root.resolve("shadow-repo"));
+        Path jar=IndexFixtures.jar(repo,"shadow-api","""
+                package p;
+                public class Foo { public int machineOnly(){return 1;} }
+                """,true);
+        Path sourceRoot=Files.createDirectories(root.resolve("shadow-src/p"));
+        Path foo=Files.writeString(sourceRoot.resolve("Foo.java"),
+                "package p; public class Foo { public int sourceOnly(){return 2;} }");
+        String useText="package p; class Use { Object f(Foo value){ return value.; } }";
+        Path use=Files.writeString(sourceRoot.resolve("Use.java"),useText);
+
+        try(var index=new IndexService(root.resolve("shadow-index.db"),repo);
+            var analyzer=new Analyzer()){
+            index.indexJar(jar,"fixture:shadow-api:1","jar");
+            index.loadWorkspace("shadow-w",List.of(new IndexService.WorkspaceArtifact(jar.toString(),"compile")),List.of());
+            analyzer.configure(new Analyzer.Context(
+                    "fixture:shadow-app:1","25",List.of(jar),List.of(root.resolve("shadow-src")),"shadow",Map.of(),
+                    List.of("--release","25"),Set.of(),List.of(),List.of(root.resolve("shadow-src")),true,"shadow-w"),
+                    index,256L*1024*1024);
+
+            @SuppressWarnings("unchecked")
+            var before=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            assertThat(((Number)before.get("semantic_facts")).longValue()).isZero();
+
+            var answer=completion(analyzer,use,useText,"value.");
+            var names=answer.path("items").findValuesAsText("name");
+            assertThat(names).contains("sourceOnly").doesNotContain("machineOnly");
+
+            @SuppressWarnings("unchecked")
+            var after=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            assertThat(((Number)after.get("semantic_facts")).longValue())
+                    .as("bounded javac fallback admits the workspace declaration after ownership blocked MACHINE")
+                    .isPositive();
+            assertThat(Files.readString(foo)).contains("sourceOnly");
+        }
+    }
+
     private static void assertZeroJavac(Analyzer analyzer,Path file,String source,String needle,String... expected)throws Exception{
         long before=((Number)analyzer.status().get("queries")).longValue();
         int cursor=source.indexOf(needle)+needle.length();

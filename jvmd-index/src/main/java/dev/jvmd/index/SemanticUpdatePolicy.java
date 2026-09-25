@@ -97,6 +97,11 @@ public final class SemanticUpdatePolicy {
             var result=new TreeSet<Path>();fallback.forEach(value->result.add(value.file()));return Set.copyOf(result);
         }
     }
+    public record ProofInvalidation(ProofPropagation propagation,Set<Path> coarseReanalyze) {
+        public ProofInvalidation {
+            Objects.requireNonNull(propagation);coarseReanalyze=Set.copyOf(coarseReanalyze);
+        }
+    }
 
     /**
      * Precise semantic dependency DAG.
@@ -119,7 +124,10 @@ public final class SemanticUpdatePolicy {
             if(producer!=null&&!producer.equals(consumer))
                 throw new IllegalArgumentException("Duplicate proof output producer: "+evaluation.output());
             var previous=nodes.get(consumer);
-            if(previous!=null)unlink(consumer,previous.evaluation());
+            if(previous!=null){
+                unlink(consumer,previous.evaluation());
+                producers.remove(previous.evaluation().output(),consumer);
+            }
             nodes.put(consumer,new Node(evaluation));producers.put(evaluation.output(),consumer);link(consumer,evaluation);
             if(cycleFrom(consumer,new HashSet<>(),new HashSet<>())){
                 unlink(consumer,evaluation);nodes.remove(consumer);producers.remove(evaluation.output(),consumer);
@@ -145,6 +153,7 @@ public final class SemanticUpdatePolicy {
             Path normalized=normalize(file);return nodes.keySet().stream().anyMatch(value->value.file().equals(normalized));
         }
         public int size(){return nodes.size();}
+        public void clear(){nodes.clear();reverse.clear();producers.clear();}
 
         public ProofPropagation propagate(Map<QueryProof.Key,Hash256> currentLeaves,ProofRecomputer recomputer)throws Exception{
             Objects.requireNonNull(currentLeaves);Objects.requireNonNull(recomputer);
@@ -210,8 +219,40 @@ public final class SemanticUpdatePolicy {
         private final Map<Path,Set<Path>> focused=new HashMap<>(),reverse=new HashMap<>();
         private final Map<Path,Set<Path>> pending=new HashMap<>();
         private final ProofDag proofs=new ProofDag();
+        private final Set<Path> preciseProofCoverage=new HashSet<>();
         public FileSemanticContribution contribution(Path path){return complete.get(normalize(path));}
         public ProofDag proofs(){return proofs;}
+        /**
+         * Declare whether proof consumers fully cover this file's semantic dependency conclusions.
+         * Until coverage is explicitly complete, the coarse reverse file graph remains authoritative.
+         */
+        public void proofCoverage(Path file,boolean completeCoverage){
+            file=normalize(file);
+            if(completeCoverage)preciseProofCoverage.add(file);else preciseProofCoverage.remove(file);
+        }
+        public boolean proofCovered(Path file){return preciseProofCoverage.contains(normalize(file));}
+        public ProofInvalidation propagateProofChanges(Path changedFile,Map<QueryProof.Key,Hash256> leaves,
+                                                       ProofRecomputer recomputer)throws Exception{
+            changedFile=normalize(changedFile);
+            var propagation=proofs.propagate(leaves,recomputer);
+            var coarseRoots=new LinkedHashSet<Path>(propagation.fallbackFiles());
+            coarseRoots.add(changedFile);
+            var reanalyze=coarseUnprovenClosure(coarseRoots);
+            reanalyze.remove(changedFile);
+            return new ProofInvalidation(propagation,reanalyze);
+        }
+        private Set<Path> coarseUnprovenClosure(Collection<Path> roots){
+            var result=new LinkedHashSet<Path>();var queue=new ArrayDeque<Path>();
+            for(Path root:roots)queue.add(normalize(root));
+            while(!queue.isEmpty()){
+                Path current=queue.removeFirst();
+                for(Path dependant:dependants(current)){
+                    if(proofCovered(dependant))continue;
+                    if(result.add(dependant))queue.addLast(dependant);
+                }
+            }
+            return Set.copyOf(result);
+        }
         public Set<Path> dependencies(Path path){
             path=normalize(path);var result=new HashSet<>(focused.getOrDefault(path,Set.of()));
             var value=complete.get(path);if(value!=null)result.addAll(value.dependencies());return Set.copyOf(result);
@@ -255,7 +296,7 @@ public final class SemanticUpdatePolicy {
             var affected=new HashSet<>(closure(Set.of(file),this));affected.remove(file);
             var result=before==null?new Result(affected,Set.of(file),Set.of(),Set.of(file),false,true)
                     :decide(List.of(new Change(before,null)),false,this);
-            unlink(file);complete.remove(file);focused.remove(file);pending.remove(file);proofs.removeFile(file);return result;
+            unlink(file);complete.remove(file);focused.remove(file);pending.remove(file);proofs.removeFile(file);preciseProofCoverage.remove(file);return result;
         }
         public Set<Path> changed(Path file){
             file=normalize(file);var affected=closure(Set.of(file),this);pending.put(file,affected);return affected;
@@ -270,7 +311,7 @@ public final class SemanticUpdatePolicy {
         public int conditionalCount(){
             var files=new HashSet<Path>();pending.forEach((root,affected)->affected.stream().filter(p->!p.equals(root)).forEach(files::add));return files.size();
         }
-        public void clear(){complete.clear();focused.clear();reverse.clear();pending.clear();for(var file:new ArrayList<>(files()))proofs.removeFile(file);}
+        public void clear(){complete.clear();focused.clear();reverse.clear();pending.clear();proofs.clear();preciseProofCoverage.clear();}
         private void unlink(Path file){for(Path dependency:dependencies(file)){var values=reverse.get(dependency);if(values!=null){values.remove(file);if(values.isEmpty())reverse.remove(dependency);}}}
         private void link(Path file){for(Path dependency:dependencies(file))if(!dependency.equals(file))reverse.computeIfAbsent(dependency,k->new HashSet<>()).add(file);}
         public int edgeCount(){return reverse.values().stream().mapToInt(Set::size).sum();}

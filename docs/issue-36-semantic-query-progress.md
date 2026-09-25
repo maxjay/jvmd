@@ -765,3 +765,65 @@ Failed/deprecated approaches:
 
 Remaining:
 - Checkpoint 12: integrate ordered classpath structural/search proofs so classpath mutation is diff discovery and only proofs whose winning search interval can change are reconsidered.
+
+
+## Checkpoint 12 — ordered classpath structural/search proof integration
+
+Starting SHA: `e3363f9705a254e8d4592c6b934f8319c007fbee`
+Implementation subject: `c0a07a5ade3976617b80fe496081230fbf372e62`
+
+Evidence:
+- Exact-subject Tests run https://github.com/maxjay/jvmd/actions/runs/36145478474: compile/package, Phase 1, Phase 2, **Phase 3**, Rocks, **Phase 4**, Phase 5, Phase 6 and Phase 7 are green with the Checkpoint-12 implementation present.
+- Exact-subject Benchmarks https://github.com/maxjay/jvmd/actions/runs/36145478343 — **success**.
+- The Checkpoint-11 nondeterministic-order regression was repaired immediately before this checkpoint: `ProofPropagation` now preserves sorted immutable iteration rather than passing a `TreeSet` through `Set.copyOf`. Phase 1 is green on the Checkpoint-12 subject.
+
+Changes:
+- Added `IndexStore.ClasspathSearchProof`: one exact binary-name resolution conclusion with:
+  - the number of ordered dependency slots searched;
+  - the winning artifact/path, canonical symbol and resolution identity when resolved;
+  - a canonical negative identity when unresolved.
+- Added `semanticClasspathSequence(workspace)` for structural Merkle equality/diff discovery and retained `semanticClasspathIdentity` as a convenience projection.
+- Added `semanticClasspathSearch(workspace,binaryName)` on Rocks. It walks selected MACHINE dependencies in resolver order and stops at the first exact type declaration.
+- Added `ClasspathSearchProofs.update(...)`, which:
+  - diffs the old/new ordered `ClasspathSequence`;
+  - skips a resolved proof entirely when all changed structural intervals are after its searched/winning prefix;
+  - recomputes only structurally affected search proofs;
+  - emits a changed `CLASSPATH_SEARCH` leaf only when the recomputed semantic identity differs;
+  - records equal fixed points separately;
+  - reports unavailable recomputation for conservative fallback.
+- Qualified document contexts now bind `CLASSPATH_SEARCH:binary:<receiver>` to the exact winning search proof. Unqualified/global contexts retain the conservative ordered-root fallback until their complete search plan is represented.
+
+Semantic model:
+- The complete ordered classpath Merkle root remains **diff discovery only**.
+- Classpath-search semantic identity is winner-based, not whole-root based.
+- Structural provenance (`searchedEntries`) decides whether a mutation can affect the old search conclusion; it is not itself part of the semantic result identity.
+- Therefore:
+  - a changed/inserted dependency before the winner is reconsidered;
+  - if it still does not provide the binary, the search proof remains equal and propagation stops;
+  - a changed dependency wholly after the established winner is not reconsidered;
+  - a changed winner or a newly earlier declaration changes the proof.
+
+Permanent proof matrix — `ClasspathSearchProofIntegrationTest`:
+- C content/API-root update produces a narrow single-slot `ClasspathSequence.diff`.
+- A query won by A does not reconsider a later C mutation.
+- A C-won query is reconsidered when C changes, but an unrelated C member change leaves the binary-name proof equal.
+- A resolution-relevant change to C's winning type changes only that classpath-search proof.
+- Inserting an absent dependency before the winner is reconsidered but reaches an equal fixed point.
+- Removing that absent dependency likewise reaches an equal fixed point.
+- Inserting a dependency that actually declares the binary changes the winner proof.
+- Removing the current winner changes the proof to the next winner.
+- Reordering competing declarations changes precedence and the proof.
+- Reordering dependencies strictly after a first-slot winner changes the structural root but does not even reconsider that proof.
+
+Architecture:
+- This implements:
+  `classpath event -> Merkle structural diff -> affected binary search proofs -> changed semantic leaves only -> existing proof DAG`.
+- It does not feed the global machine root or whole classpath root into ordinary qualified completion validity.
+- Negative classpath resolution is reusable: after structural mutation it is rechecked only when necessary; if the binary remains absent, the proof identity is equal.
+
+Failed/deprecated approaches:
+- None in the Checkpoint-12 semantic model.
+- The prior Checkpoint-11 docs head exposed an iteration-order flake because `Set.copyOf(TreeSet)` did not retain iteration order. This was fixed at `e3363f97...` before Checkpoint 12 rather than weakening the regression.
+
+Remaining:
+- Checkpoint 13: audit uncertainty/generation boundaries, retain O(1) fences for lost history, and remove only unnecessary broad epoch invalidation while preserving conservative correctness.

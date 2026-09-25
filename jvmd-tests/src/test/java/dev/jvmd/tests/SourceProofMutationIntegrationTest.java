@@ -193,6 +193,46 @@ class SourceProofMutationIntegrationTest {
         }
     }
 
+    @Test void hierarchyReconsiderationStopsWhenReanalysedConsumerFactsStayEqual()throws Exception{
+        Path a=root.resolve("A.java"),b=root.resolve("B.java"),c=root.resolve("C.java");
+        String aText="class A { int base(){return 1;} }";
+        String bText="class B extends A { int use(){return base();} }";
+        String cText="class C { int call(B b){return b.use();} }";
+        Files.writeString(a,aText);Files.writeString(b,bText);Files.writeString(c,cText);
+        var documents=new Documents();documents.open(a,aText,1);
+
+        try(var analyzer=analyzer(documents)){
+            assertThat(diagnostics(analyzer,a,aText)).isEmpty();
+            assertThat(diagnostics(analyzer,b,bText)).isEmpty();
+            assertThat(diagnostics(analyzer,c,cText)).isEmpty();
+            long warm=queries(analyzer);
+            @SuppressWarnings("unchecked")
+            var residentBefore=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            long factMutations=((Number)residentBefore.get("semantic_fact_mutations")).longValue();
+
+            String changed=insertBeforeLastBrace(aText," int unrelated(){return 2;} ");
+            mutate(analyzer,documents,a,2,changed);
+            var ancestor=evidence(analyzer);
+            assertThat(ancestor).containsEntry("last_pre_proof_dependant_invalidations",0L)
+                    .containsEntry("last_source_consumers_invalidated",1L)
+                    .containsEntry("last_coarse_fallback_files",0L);
+            long afterA=queries(analyzer);
+            assertThat(afterA).isEqualTo(warm+1);
+
+            assertThat(diagnostics(analyzer,b,bText)).isEmpty();
+            long afterB=queries(analyzer);
+            assertThat(afterB).as("ancestor hierarchy proof reconsiders only direct consumer B").isEqualTo(afterA+1);
+            @SuppressWarnings("unchecked")
+            var residentAfterB=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            assertThat(((Number)residentAfterB.get("semantic_fact_mutations")).longValue())
+                    .as("B reanalysis produces no new semantic facts; derived B surface is equal")
+                    .isEqualTo(factMutations+1); // only A.unrelated was added
+
+            assertThat(diagnostics(analyzer,c,cText)).isEmpty();
+            assertThat(queries(analyzer)).as("equal reanalysed B surface must stop before downstream C").isEqualTo(afterB);
+        }
+    }
+
     @Test void realSourceMembershipUsesNegativeResolutionProofDomains()throws Exception{
         Path p=Files.createDirectories(root.resolve("p")),q=Files.createDirectories(root.resolve("q")),other=Files.createDirectories(root.resolve("s"));
         Path use=p.resolve("Use.java"),random=other.resolve("Random.java"),widget=q.resolve("Widget.java");

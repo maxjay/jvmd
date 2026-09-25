@@ -51,7 +51,7 @@ class DocumentContextProofTest {
 
             long before=queries(analyzer);
             var first=completion(analyzer,file,original,"choose(value).");
-            assertThat(first.path("items").findValuesAsText("name")).contains("getPets").doesNotContain("staticValue","hidden");
+            assertThat(first.path("items").findValuesAsText("name")).contains("getPets","staticValue").doesNotContain("hidden");
             long afterFirst=queries(analyzer);
             assertThat(afterFirst-before).as("complex receiver gets one bounded semantic-context javac fallback").isEqualTo(1);
 

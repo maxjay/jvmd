@@ -28,6 +28,13 @@ public interface SemanticReadView {
     /** Exact canonical symbol identity, or null when this layer does not own the symbol. */
     Symbol symbol(String id)throws Exception;
 
+    record MemberPage(List<Symbol> symbols,String cursor) {
+        public MemberPage { symbols=List.copyOf(symbols); }
+    }
+
+    /** Bounded direct-member range in deterministic owner/name order. Cursor is view-owned. */
+    MemberPage members(String ownerId,String prefix,int limit,String cursor)throws Exception;
+
     /** Direct supertype symbol identities in deterministic order. */
     List<String> directSupertypes(String typeId)throws Exception;
 

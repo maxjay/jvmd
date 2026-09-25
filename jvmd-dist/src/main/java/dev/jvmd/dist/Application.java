@@ -841,7 +841,11 @@ public final class Application implements AutoCloseable {
     }
     private Resolution refresh(Session session) throws Exception {
         try(var trace=dev.jvmd.core.RequestScope.stage("project.resolve")){
-        Resolution graph = resolver().resolveWorkspace(session.root(),workspace(session).roots(),workspace(session).ignoreVersions());
+        var workspace=workspace(session);var lifecycleInputs=projectLifecycleInputs(session);var maven=resolver();
+        Resolution graph=maven.resolveWorkspace(session.root(),workspace.roots(),workspace.ignoreVersions(),
+                lifecycleInputs,projectModelInvalidation(session));
+        session.put("project_model_request_fallback",
+                !maven.workspaceWatchReliable(session.root(),workspace.roots(),workspace.ignoreVersions(),lifecycleInputs));
         var previous = (Resolution) session.state("resolution");
         if (previous == null || !previous.fingerprint().equals(graph.fingerprint())) {
             var oldPaths = previous == null ? java.util.List.<String>of() : previous.classpath();
@@ -849,6 +853,10 @@ public final class Application implements AutoCloseable {
             session.put("classpath_diff", java.util.Map.of("added", newPaths.stream().filter(p -> !oldPaths.contains(p)).toList(),
                     "removed", oldPaths.stream().filter(p -> !newPaths.contains(p)).toList()));
             session.put("classpath_generation", graph.fingerprint());
+            // These caches are keyed by graph/index identity internally, but dropping the tiny
+            // session projections at publication makes the new graph visible atomically.
+            session.remove("completion_type_cache");
+            session.remove("indexed_workspace_bindings");
         }
         session.put("resolution", graph);
         graph.warnings().forEach(session::warn);

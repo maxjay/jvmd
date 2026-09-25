@@ -16,7 +16,8 @@ public final class BinaryReader {
                          List<SemanticType> directSupertypes, boolean varargs) {
         public Symbol {
             parameters=List.copyOf(parameters);metadata=Map.copyOf(metadata);
-            typeParameters=List.copyOf(typeParameters);typeParameterBounds=typeParameterBounds.stream().map(List::copyOf).toList();
+            typeParameters=List.copyOf(typeParameters);
+            typeParameterBounds=typeParameterBounds.stream().map(List::copyOf).toList();
             directSupertypes=List.copyOf(directSupertypes);
         }
     }
@@ -63,13 +64,34 @@ public final class BinaryReader {
                 if(model.superclass().isPresent()&&!name(model.superclass().get()).equals("java.lang.Object")) declaration+=" extends "+name(model.superclass().get());
                 if(!model.interfaces().isEmpty()) declaration+=(kind.equals("interface")?" extends ":" implements ")+String.join(", ",model.interfaces().stream().map(BinaryReader::name).toList());
             }
-            String outer=owner.contains("$")?owner.substring(0,owner.lastIndexOf('
+            String outer=owner.contains("$")?owner.substring(0,owner.lastIndexOf('$')):null;
+            Generic classParameters=generic.map(value->generic(value.typeParameters())).orElseGet(BinaryReader::emptyGeneric);
+            var typeArguments=classParameters.ids().stream().map(id->(SemanticType)new SemanticType.Variable(id,id)).toList();
+            String semanticName=owner.replace('$','.');
+            var semanticType=new SemanticType.Declared(semanticName,semanticName,typeArguments);
+            List<SemanticType> directSupertypes;
+            if(generic.isPresent()){
+                var value=generic.get();var parents=new ArrayList<SemanticType>();
+                if(!Signatures.type(value.superclassSignature()).equals("java.lang.Object"))parents.add(semantic(value.superclassSignature()));
+                value.superinterfaceSignatures().forEach(parent->parents.add(semantic(parent)));
+                directSupertypes=List.copyOf(parents);
+            }else{
+                var parents=new ArrayList<SemanticType>();
+                model.superclass().filter(parent->!name(parent).equals("java.lang.Object")).ifPresent(parent->parents.add(declared(name(parent))));
+                model.interfaces().forEach(parent->parents.add(declared(name(parent))));
+                directSupertypes=List.copyOf(parents);
+            }
+            symbols.add(new Symbol(owner,owner,simple(owner),outer,kind,declaration,null,flags,entry,List.of(),metadata,
+                    semanticType,classParameters.ids(),classParameters.bounds(),directSupertypes,false));
+            model.superclass().ifPresent(parent->edges.add(new Edge(owner,name(parent),"extends")));
+            model.interfaces().forEach(parent->edges.add(new Edge(owner,name(parent),kind.equals("interface")?"extends":"implements")));
             annotations(model,owner,edges);
             for(var field:model.fields()) {
                 if(!local&&!visible(field.flags().flagsMask()))continue;
                 String key=owner+"#"+field.fieldName().stringValue();
                 Signature type=field.findAttribute(Attributes.signature()).map(a->a.asTypeSignature()).orElseGet(()->Signature.of(field.fieldTypeSymbol()));
-                symbols.add(new Symbol(key,owner,field.fieldName().stringValue(),owner,(field.flags().flagsMask()&ClassFile.ACC_ENUM)!=0?"enumconst":"field",Signatures.type(type)+" "+field.fieldName().stringValue(),field.fieldType().stringValue(),field.flags().flagsMask(),entry,List.of(),metadata(field),
+                symbols.add(new Symbol(key,owner,field.fieldName().stringValue(),owner,(field.flags().flagsMask()&ClassFile.ACC_ENUM)!=0?"enumconst":"field",
+                        Signatures.type(type)+" "+field.fieldName().stringValue(),field.fieldType().stringValue(),field.flags().flagsMask(),entry,List.of(),metadata(field),
                         semantic(type),List.of(),List.of(),List.of(),false));
                 Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"return_type"))); annotations(field,key,edges);
             }
@@ -91,11 +113,13 @@ public final class BinaryReader {
                 var data=metadata(method);data.put("parameter_names_from_class",stored.isPresent());data.put("return_type",Signatures.type(sig.result()));data.put("parameter_types",sig.arguments().stream().map(Signatures::type).toList());data.put("type_parameters",Signatures.parameters(sig.typeParameters()));
                 Generic methodParameters=generic(sig.typeParameters());
                 var semanticThrown=!sig.throwableSignatures().isEmpty()
-                        ?sig.throwableSignatures().stream().map(value->semantic((Signature)value)).toList()
+                        ?sig.throwableSignatures().stream().map(BinaryReader::semantic).toList()
                         :thrown.stream().map(BinaryReader::declared).toList();
-                var semanticMethod=new SemanticType.Executable(sig.arguments().stream().map(BinaryReader::semantic).toList(),
+                var semanticMethod=new SemanticType.Executable(
+                        sig.arguments().stream().map(BinaryReader::semantic).toList(),
                         semantic(sig.result()),semanticThrown);
-                symbols.add(new Symbol(key,owner,ctor?simple(owner):methodName,owner,ctor?"ctor":"method",signature,method.methodType().stringValue(),mf,entry,List.copyOf(names),data,
+                symbols.add(new Symbol(key,owner,ctor?simple(owner):methodName,owner,ctor?"ctor":"method",
+                        signature,method.methodType().stringValue(),mf,entry,List.copyOf(names),data,
                         semanticMethod,methodParameters.ids(),methodParameters.bounds(),List.of(),(mf&ClassFile.ACC_VARARGS)!=0));
                 for(var type:sig.arguments())Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"param_type")));
                 Signatures.referenced(sig.result()).forEach(t->edges.add(new Edge(key,t,"return_type")));
@@ -112,187 +136,23 @@ public final class BinaryReader {
     private static Generic emptyGeneric(){return new Generic(List.of(),List.of());}
     private static Generic generic(List<Signature.TypeParam> parameters){
         if(parameters.isEmpty())return emptyGeneric();
-        var ids=new ArrayList<String>(parameters.size());var bounds=new ArrayList<List<SemanticType>>(parameters.size());
+        var ids=new ArrayList<String>(parameters.size());
+        var bounds=new ArrayList<List<SemanticType>>(parameters.size());
         for(var parameter:parameters){
-            ids.add(parameter.identifier());var values=new ArrayList<SemanticType>();
-            parameter.classBound().ifPresent(bound->{var value=semantic(bound);if(!(value instanceof SemanticType.Declared declared&&declared.name().equals("java.lang.Object")))values.add(value);});
-            parameter.interfaceBounds().forEach(bound->values.add(semantic(bound)));bounds.add(List.copyOf(values));
+            ids.add(parameter.identifier());
+            var values=new ArrayList<SemanticType>();
+            parameter.classBound().ifPresent(bound->{
+                var value=semantic(bound);
+                if(!(value instanceof SemanticType.Declared declared&&declared.name().equals("java.lang.Object")))values.add(value);
+            });
+            parameter.interfaceBounds().forEach(bound->values.add(semantic(bound)));
+            bounds.add(List.copyOf(values));
         }
         return new Generic(ids,bounds);
     }
     private static SemanticType declared(String binary){
-        String name=binary.replace('
-        try {var model=ClassFile.of().parse(bytes);String name=name(model.thisClass());classes.put(name,model);entries.put(name,entry);}
-        catch(IllegalArgumentException e){warnings.add("malformed_class: "+entry+": "+e.getClass().getSimpleName());}
-    }
-    private static boolean visible(int flags){return(flags&(ClassFile.ACC_PUBLIC|ClassFile.ACC_PROTECTED))!=0;}
-    private static String name(ClassEntry entry){return entry.asInternalName().replace('/','.');}
-    static String simple(String name){return name.substring(Math.max(name.lastIndexOf('.'),name.lastIndexOf('$'))+1);}
-    private static Map<String,Object> metadata(AttributedElement element){var data=new LinkedHashMap<String,Object>();element.findAttribute(Attributes.signature()).ifPresent(a->data.put("generic_signature",a.signature().stringValue()));data.put("deprecated",element.findAttribute(Attributes.deprecated()).isPresent());return data;}
-    private static void annotations(AttributedElement element,String key,List<Edge> edges){element.findAttribute(Attributes.runtimeVisibleAnnotations()).ifPresent(a->a.annotations().forEach(n->edges.add(new Edge(key,Signatures.qualified(n.classSymbol()),"annotated_by"))));}
-}
-)):null;
-            Generic classParameters=generic.map(value->generic(value.typeParameters())).orElseGet(BinaryReader::emptyGeneric);
-            var typeArguments=classParameters.ids().stream().map(id->(SemanticType)new SemanticType.Variable(id,id)).toList();
-            var semanticType=new SemanticType.Declared(owner.replace('
-            annotations(model,owner,edges);
-            for(var field:model.fields()) {
-                if(!local&&!visible(field.flags().flagsMask()))continue;
-                String key=owner+"#"+field.fieldName().stringValue();
-                Signature type=field.findAttribute(Attributes.signature()).map(a->a.asTypeSignature()).orElseGet(()->Signature.of(field.fieldTypeSymbol()));
-                symbols.add(new Symbol(key,owner,field.fieldName().stringValue(),owner,(field.flags().flagsMask()&ClassFile.ACC_ENUM)!=0?"enumconst":"field",Signatures.type(type)+" "+field.fieldName().stringValue(),field.fieldType().stringValue(),field.flags().flagsMask(),entry,List.of(),metadata(field)));
-                Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"return_type"))); annotations(field,key,edges);
-            }
-            for(var method:model.methods()) {
-                int mf=method.flags().flagsMask(); String methodName=method.methodName().stringValue();
-                if(methodName.equals("<clinit>") || (mf & ClassFile.ACC_BRIDGE)!=0 || !local&&!visible(mf))continue;
-                String key=owner+"#"+methodName+method.methodType().stringValue();
-                var sig=method.findAttribute(Attributes.signature()).map(a->a.asMethodSignature()).orElseGet(()->MethodSignature.of(method.methodTypeSymbol()));
-                var names=new ArrayList<String>();
-                var stored=method.findAttribute(Attributes.methodParameters());
-                for(int i=0;i<sig.arguments().size();i++)names.add(stored.isPresent()&&i<stored.get().parameters().size()?stored.get().parameters().get(i).name().map(n->n.stringValue()).orElse("arg"+i):"arg"+i);
-                var parts=new ArrayList<String>(); for(int i=0;i<sig.arguments().size();i++)parts.add(Signatures.type(sig.arguments().get(i))+" "+names.get(i));
-                boolean ctor=methodName.equals("<init>");
-                String signature=Signatures.parameters(sig.typeParameters()); if(!signature.isEmpty())signature+=" ";
-                signature+=(ctor?simple(owner):Signatures.type(sig.result())+" "+methodName)+"("+String.join(", ",parts)+")";
-                var thrown=method.findAttribute(Attributes.exceptions()).stream().flatMap(a->a.exceptions().stream()).map(BinaryReader::name).toList();
-                if(!sig.throwableSignatures().isEmpty())signature+=" throws "+String.join(", ",sig.throwableSignatures().stream().map(Signatures::type).toList());
-                else if(!thrown.isEmpty())signature+=" throws "+String.join(", ",thrown);
-                var data=metadata(method);data.put("parameter_names_from_class",stored.isPresent());data.put("return_type",Signatures.type(sig.result()));data.put("parameter_types",sig.arguments().stream().map(Signatures::type).toList());data.put("type_parameters",Signatures.parameters(sig.typeParameters()));
-                symbols.add(new Symbol(key,owner,ctor?simple(owner):methodName,owner,ctor?"ctor":"method",signature,method.methodType().stringValue(),mf,entry,List.copyOf(names),data));
-                for(var type:sig.arguments())Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"param_type")));
-                Signatures.referenced(sig.result()).forEach(t->edges.add(new Edge(key,t,"return_type")));
-                for(var type:method.methodTypeSymbol().parameterArray())Signatures.referenced(Signature.of(type)).forEach(t->edges.add(new Edge(key,t,"param_type")));
-                Signatures.referenced(Signature.of(method.methodTypeSymbol().returnType())).forEach(t->edges.add(new Edge(key,t,"return_type")));
-                thrown.forEach(t->edges.add(new Edge(key,t,"throws")));annotations(method,key,edges);
-            }
-        }
-        // Module exports are metadata, not a reason to discard a class on the class path.
-        var exports=classes.values().stream().filter(ClassModel::isModuleInfo).flatMap(m->m.findAttribute(Attributes.module()).stream()).flatMap(m->m.exports().stream()).map(e->e.exportedPackage().name().stringValue().replace('/','.')).toList();
-        if(!exports.isEmpty())for(var symbol:symbols)if(symbol.key().equals(symbol.fqn()))symbol.metadata().put("module_exports",exports);
-        return new Content(List.copyOf(symbols),List.copyOf(edges),classes,List.copyOf(warnings));
-    }
-    private static void parse(byte[] bytes,String entry,Map<String,ClassModel> classes,Map<String,String> entries,List<String> warnings) {
-        try {var model=ClassFile.of().parse(bytes);String name=name(model.thisClass());classes.put(name,model);entries.put(name,entry);}
-        catch(IllegalArgumentException e){warnings.add("malformed_class: "+entry+": "+e.getClass().getSimpleName());}
-    }
-    private static boolean visible(int flags){return(flags&(ClassFile.ACC_PUBLIC|ClassFile.ACC_PROTECTED))!=0;}
-    private static String name(ClassEntry entry){return entry.asInternalName().replace('/','.');}
-    static String simple(String name){return name.substring(Math.max(name.lastIndexOf('.'),name.lastIndexOf('$'))+1);}
-    private static Map<String,Object> metadata(AttributedElement element){var data=new LinkedHashMap<String,Object>();element.findAttribute(Attributes.signature()).ifPresent(a->data.put("generic_signature",a.signature().stringValue()));data.put("deprecated",element.findAttribute(Attributes.deprecated()).isPresent());return data;}
-    private static void annotations(AttributedElement element,String key,List<Edge> edges){element.findAttribute(Attributes.runtimeVisibleAnnotations()).ifPresent(a->a.annotations().forEach(n->edges.add(new Edge(key,Signatures.qualified(n.classSymbol()),"annotated_by"))));}
-}
-,'.'),owner.replace('
-            annotations(model,owner,edges);
-            for(var field:model.fields()) {
-                if(!local&&!visible(field.flags().flagsMask()))continue;
-                String key=owner+"#"+field.fieldName().stringValue();
-                Signature type=field.findAttribute(Attributes.signature()).map(a->a.asTypeSignature()).orElseGet(()->Signature.of(field.fieldTypeSymbol()));
-                symbols.add(new Symbol(key,owner,field.fieldName().stringValue(),owner,(field.flags().flagsMask()&ClassFile.ACC_ENUM)!=0?"enumconst":"field",Signatures.type(type)+" "+field.fieldName().stringValue(),field.fieldType().stringValue(),field.flags().flagsMask(),entry,List.of(),metadata(field)));
-                Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"return_type"))); annotations(field,key,edges);
-            }
-            for(var method:model.methods()) {
-                int mf=method.flags().flagsMask(); String methodName=method.methodName().stringValue();
-                if(methodName.equals("<clinit>") || (mf & ClassFile.ACC_BRIDGE)!=0 || !local&&!visible(mf))continue;
-                String key=owner+"#"+methodName+method.methodType().stringValue();
-                var sig=method.findAttribute(Attributes.signature()).map(a->a.asMethodSignature()).orElseGet(()->MethodSignature.of(method.methodTypeSymbol()));
-                var names=new ArrayList<String>();
-                var stored=method.findAttribute(Attributes.methodParameters());
-                for(int i=0;i<sig.arguments().size();i++)names.add(stored.isPresent()&&i<stored.get().parameters().size()?stored.get().parameters().get(i).name().map(n->n.stringValue()).orElse("arg"+i):"arg"+i);
-                var parts=new ArrayList<String>(); for(int i=0;i<sig.arguments().size();i++)parts.add(Signatures.type(sig.arguments().get(i))+" "+names.get(i));
-                boolean ctor=methodName.equals("<init>");
-                String signature=Signatures.parameters(sig.typeParameters()); if(!signature.isEmpty())signature+=" ";
-                signature+=(ctor?simple(owner):Signatures.type(sig.result())+" "+methodName)+"("+String.join(", ",parts)+")";
-                var thrown=method.findAttribute(Attributes.exceptions()).stream().flatMap(a->a.exceptions().stream()).map(BinaryReader::name).toList();
-                if(!sig.throwableSignatures().isEmpty())signature+=" throws "+String.join(", ",sig.throwableSignatures().stream().map(Signatures::type).toList());
-                else if(!thrown.isEmpty())signature+=" throws "+String.join(", ",thrown);
-                var data=metadata(method);data.put("parameter_names_from_class",stored.isPresent());data.put("return_type",Signatures.type(sig.result()));data.put("parameter_types",sig.arguments().stream().map(Signatures::type).toList());data.put("type_parameters",Signatures.parameters(sig.typeParameters()));
-                symbols.add(new Symbol(key,owner,ctor?simple(owner):methodName,owner,ctor?"ctor":"method",signature,method.methodType().stringValue(),mf,entry,List.copyOf(names),data));
-                for(var type:sig.arguments())Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"param_type")));
-                Signatures.referenced(sig.result()).forEach(t->edges.add(new Edge(key,t,"return_type")));
-                for(var type:method.methodTypeSymbol().parameterArray())Signatures.referenced(Signature.of(type)).forEach(t->edges.add(new Edge(key,t,"param_type")));
-                Signatures.referenced(Signature.of(method.methodTypeSymbol().returnType())).forEach(t->edges.add(new Edge(key,t,"return_type")));
-                thrown.forEach(t->edges.add(new Edge(key,t,"throws")));annotations(method,key,edges);
-            }
-        }
-        // Module exports are metadata, not a reason to discard a class on the class path.
-        var exports=classes.values().stream().filter(ClassModel::isModuleInfo).flatMap(m->m.findAttribute(Attributes.module()).stream()).flatMap(m->m.exports().stream()).map(e->e.exportedPackage().name().stringValue().replace('/','.')).toList();
-        if(!exports.isEmpty())for(var symbol:symbols)if(symbol.key().equals(symbol.fqn()))symbol.metadata().put("module_exports",exports);
-        return new Content(List.copyOf(symbols),List.copyOf(edges),classes,List.copyOf(warnings));
-    }
-    private static void parse(byte[] bytes,String entry,Map<String,ClassModel> classes,Map<String,String> entries,List<String> warnings) {
-        try {var model=ClassFile.of().parse(bytes);String name=name(model.thisClass());classes.put(name,model);entries.put(name,entry);}
-        catch(IllegalArgumentException e){warnings.add("malformed_class: "+entry+": "+e.getClass().getSimpleName());}
-    }
-    private static boolean visible(int flags){return(flags&(ClassFile.ACC_PUBLIC|ClassFile.ACC_PROTECTED))!=0;}
-    private static String name(ClassEntry entry){return entry.asInternalName().replace('/','.');}
-    static String simple(String name){return name.substring(Math.max(name.lastIndexOf('.'),name.lastIndexOf('$'))+1);}
-    private static Map<String,Object> metadata(AttributedElement element){var data=new LinkedHashMap<String,Object>();element.findAttribute(Attributes.signature()).ifPresent(a->data.put("generic_signature",a.signature().stringValue()));data.put("deprecated",element.findAttribute(Attributes.deprecated()).isPresent());return data;}
-    private static void annotations(AttributedElement element,String key,List<Edge> edges){element.findAttribute(Attributes.runtimeVisibleAnnotations()).ifPresent(a->a.annotations().forEach(n->edges.add(new Edge(key,Signatures.qualified(n.classSymbol()),"annotated_by"))));}
-}
-,'.'),typeArguments);
-            List<SemanticType> directSupertypes;
-            if(generic.isPresent()){
-                var value=generic.get();var parents=new ArrayList<SemanticType>();
-                if(!Signatures.type(value.superclassSignature()).equals("java.lang.Object"))parents.add(semantic(value.superclassSignature()));
-                value.superinterfaceSignatures().forEach(parent->parents.add(semantic(parent)));directSupertypes=List.copyOf(parents);
-            }else{
-                var parents=new ArrayList<SemanticType>();
-                model.superclass().filter(parent->!name(parent).equals("java.lang.Object")).ifPresent(parent->parents.add(declared(name(parent))));
-                model.interfaces().forEach(parent->parents.add(declared(name(parent))));directSupertypes=List.copyOf(parents);
-            }
-            symbols.add(new Symbol(owner,owner,simple(owner),outer,kind,declaration,null,flags,entry,List.of(),metadata,
-                    semanticType,classParameters.ids(),classParameters.bounds(),directSupertypes,false));
-            model.superclass().ifPresent(c->edges.add(new Edge(owner,name(c),"extends")));
-            model.interfaces().forEach(c->edges.add(new Edge(owner,name(c),kind.equals("interface")?"extends":"implements")));
-            annotations(model,owner,edges);
-            for(var field:model.fields()) {
-                if(!local&&!visible(field.flags().flagsMask()))continue;
-                String key=owner+"#"+field.fieldName().stringValue();
-                Signature type=field.findAttribute(Attributes.signature()).map(a->a.asTypeSignature()).orElseGet(()->Signature.of(field.fieldTypeSymbol()));
-                symbols.add(new Symbol(key,owner,field.fieldName().stringValue(),owner,(field.flags().flagsMask()&ClassFile.ACC_ENUM)!=0?"enumconst":"field",Signatures.type(type)+" "+field.fieldName().stringValue(),field.fieldType().stringValue(),field.flags().flagsMask(),entry,List.of(),metadata(field)));
-                Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"return_type"))); annotations(field,key,edges);
-            }
-            for(var method:model.methods()) {
-                int mf=method.flags().flagsMask(); String methodName=method.methodName().stringValue();
-                if(methodName.equals("<clinit>") || (mf & ClassFile.ACC_BRIDGE)!=0 || !local&&!visible(mf))continue;
-                String key=owner+"#"+methodName+method.methodType().stringValue();
-                var sig=method.findAttribute(Attributes.signature()).map(a->a.asMethodSignature()).orElseGet(()->MethodSignature.of(method.methodTypeSymbol()));
-                var names=new ArrayList<String>();
-                var stored=method.findAttribute(Attributes.methodParameters());
-                for(int i=0;i<sig.arguments().size();i++)names.add(stored.isPresent()&&i<stored.get().parameters().size()?stored.get().parameters().get(i).name().map(n->n.stringValue()).orElse("arg"+i):"arg"+i);
-                var parts=new ArrayList<String>(); for(int i=0;i<sig.arguments().size();i++)parts.add(Signatures.type(sig.arguments().get(i))+" "+names.get(i));
-                boolean ctor=methodName.equals("<init>");
-                String signature=Signatures.parameters(sig.typeParameters()); if(!signature.isEmpty())signature+=" ";
-                signature+=(ctor?simple(owner):Signatures.type(sig.result())+" "+methodName)+"("+String.join(", ",parts)+")";
-                var thrown=method.findAttribute(Attributes.exceptions()).stream().flatMap(a->a.exceptions().stream()).map(BinaryReader::name).toList();
-                if(!sig.throwableSignatures().isEmpty())signature+=" throws "+String.join(", ",sig.throwableSignatures().stream().map(Signatures::type).toList());
-                else if(!thrown.isEmpty())signature+=" throws "+String.join(", ",thrown);
-                var data=metadata(method);data.put("parameter_names_from_class",stored.isPresent());data.put("return_type",Signatures.type(sig.result()));data.put("parameter_types",sig.arguments().stream().map(Signatures::type).toList());data.put("type_parameters",Signatures.parameters(sig.typeParameters()));
-                symbols.add(new Symbol(key,owner,ctor?simple(owner):methodName,owner,ctor?"ctor":"method",signature,method.methodType().stringValue(),mf,entry,List.copyOf(names),data));
-                for(var type:sig.arguments())Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"param_type")));
-                Signatures.referenced(sig.result()).forEach(t->edges.add(new Edge(key,t,"return_type")));
-                for(var type:method.methodTypeSymbol().parameterArray())Signatures.referenced(Signature.of(type)).forEach(t->edges.add(new Edge(key,t,"param_type")));
-                Signatures.referenced(Signature.of(method.methodTypeSymbol().returnType())).forEach(t->edges.add(new Edge(key,t,"return_type")));
-                thrown.forEach(t->edges.add(new Edge(key,t,"throws")));annotations(method,key,edges);
-            }
-        }
-        // Module exports are metadata, not a reason to discard a class on the class path.
-        var exports=classes.values().stream().filter(ClassModel::isModuleInfo).flatMap(m->m.findAttribute(Attributes.module()).stream()).flatMap(m->m.exports().stream()).map(e->e.exportedPackage().name().stringValue().replace('/','.')).toList();
-        if(!exports.isEmpty())for(var symbol:symbols)if(symbol.key().equals(symbol.fqn()))symbol.metadata().put("module_exports",exports);
-        return new Content(List.copyOf(symbols),List.copyOf(edges),classes,List.copyOf(warnings));
-    }
-    private static void parse(byte[] bytes,String entry,Map<String,ClassModel> classes,Map<String,String> entries,List<String> warnings) {
-        try {var model=ClassFile.of().parse(bytes);String name=name(model.thisClass());classes.put(name,model);entries.put(name,entry);}
-        catch(IllegalArgumentException e){warnings.add("malformed_class: "+entry+": "+e.getClass().getSimpleName());}
-    }
-    private static boolean visible(int flags){return(flags&(ClassFile.ACC_PUBLIC|ClassFile.ACC_PROTECTED))!=0;}
-    private static String name(ClassEntry entry){return entry.asInternalName().replace('/','.');}
-    static String simple(String name){return name.substring(Math.max(name.lastIndexOf('.'),name.lastIndexOf('$'))+1);}
-    private static Map<String,Object> metadata(AttributedElement element){var data=new LinkedHashMap<String,Object>();element.findAttribute(Attributes.signature()).ifPresent(a->data.put("generic_signature",a.signature().stringValue()));data.put("deprecated",element.findAttribute(Attributes.deprecated()).isPresent());return data;}
-    private static void annotations(AttributedElement element,String key,List<Edge> edges){element.findAttribute(Attributes.runtimeVisibleAnnotations()).ifPresent(a->a.annotations().forEach(n->edges.add(new Edge(key,Signatures.qualified(n.classSymbol()),"annotated_by"))));}
-}
-,'.');return new SemanticType.Declared(name,name,List.of());
+        String value=binary.replace('$','.');
+        return new SemanticType.Declared(value,value,List.of());
     }
     private static SemanticType semantic(Signature signature){
         return switch(signature){
@@ -310,348 +170,15 @@ public final class BinaryReader {
                         case SUPER -> new SemanticType.Wildcard(null,semantic(bounded.boundType()));
                     };
                 });
-                yield new SemanticType.Declared(name,name,arguments);
+                yield new SemanticType.Declared(name,name,List.copyOf(arguments));
             }
         };
     }
     private static String rawName(Signature.ClassTypeSig type){
-        String name=type.className().replace('/','.').replace('
-        try {var model=ClassFile.of().parse(bytes);String name=name(model.thisClass());classes.put(name,model);entries.put(name,entry);}
-        catch(IllegalArgumentException e){warnings.add("malformed_class: "+entry+": "+e.getClass().getSimpleName());}
-    }
-    private static boolean visible(int flags){return(flags&(ClassFile.ACC_PUBLIC|ClassFile.ACC_PROTECTED))!=0;}
-    private static String name(ClassEntry entry){return entry.asInternalName().replace('/','.');}
-    static String simple(String name){return name.substring(Math.max(name.lastIndexOf('.'),name.lastIndexOf('$'))+1);}
-    private static Map<String,Object> metadata(AttributedElement element){var data=new LinkedHashMap<String,Object>();element.findAttribute(Attributes.signature()).ifPresent(a->data.put("generic_signature",a.signature().stringValue()));data.put("deprecated",element.findAttribute(Attributes.deprecated()).isPresent());return data;}
-    private static void annotations(AttributedElement element,String key,List<Edge> edges){element.findAttribute(Attributes.runtimeVisibleAnnotations()).ifPresent(a->a.annotations().forEach(n->edges.add(new Edge(key,Signatures.qualified(n.classSymbol()),"annotated_by"))));}
-}
-)):null;
-            Generic classParameters=generic.map(value->generic(value.typeParameters())).orElseGet(BinaryReader::emptyGeneric);
-            var typeArguments=classParameters.ids().stream().map(id->(SemanticType)new SemanticType.Variable(id,id)).toList();
-            var semanticType=new SemanticType.Declared(owner.replace('
-            annotations(model,owner,edges);
-            for(var field:model.fields()) {
-                if(!local&&!visible(field.flags().flagsMask()))continue;
-                String key=owner+"#"+field.fieldName().stringValue();
-                Signature type=field.findAttribute(Attributes.signature()).map(a->a.asTypeSignature()).orElseGet(()->Signature.of(field.fieldTypeSymbol()));
-                symbols.add(new Symbol(key,owner,field.fieldName().stringValue(),owner,(field.flags().flagsMask()&ClassFile.ACC_ENUM)!=0?"enumconst":"field",Signatures.type(type)+" "+field.fieldName().stringValue(),field.fieldType().stringValue(),field.flags().flagsMask(),entry,List.of(),metadata(field)));
-                Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"return_type"))); annotations(field,key,edges);
-            }
-            for(var method:model.methods()) {
-                int mf=method.flags().flagsMask(); String methodName=method.methodName().stringValue();
-                if(methodName.equals("<clinit>") || (mf & ClassFile.ACC_BRIDGE)!=0 || !local&&!visible(mf))continue;
-                String key=owner+"#"+methodName+method.methodType().stringValue();
-                var sig=method.findAttribute(Attributes.signature()).map(a->a.asMethodSignature()).orElseGet(()->MethodSignature.of(method.methodTypeSymbol()));
-                var names=new ArrayList<String>();
-                var stored=method.findAttribute(Attributes.methodParameters());
-                for(int i=0;i<sig.arguments().size();i++)names.add(stored.isPresent()&&i<stored.get().parameters().size()?stored.get().parameters().get(i).name().map(n->n.stringValue()).orElse("arg"+i):"arg"+i);
-                var parts=new ArrayList<String>(); for(int i=0;i<sig.arguments().size();i++)parts.add(Signatures.type(sig.arguments().get(i))+" "+names.get(i));
-                boolean ctor=methodName.equals("<init>");
-                String signature=Signatures.parameters(sig.typeParameters()); if(!signature.isEmpty())signature+=" ";
-                signature+=(ctor?simple(owner):Signatures.type(sig.result())+" "+methodName)+"("+String.join(", ",parts)+")";
-                var thrown=method.findAttribute(Attributes.exceptions()).stream().flatMap(a->a.exceptions().stream()).map(BinaryReader::name).toList();
-                if(!sig.throwableSignatures().isEmpty())signature+=" throws "+String.join(", ",sig.throwableSignatures().stream().map(Signatures::type).toList());
-                else if(!thrown.isEmpty())signature+=" throws "+String.join(", ",thrown);
-                var data=metadata(method);data.put("parameter_names_from_class",stored.isPresent());data.put("return_type",Signatures.type(sig.result()));data.put("parameter_types",sig.arguments().stream().map(Signatures::type).toList());data.put("type_parameters",Signatures.parameters(sig.typeParameters()));
-                symbols.add(new Symbol(key,owner,ctor?simple(owner):methodName,owner,ctor?"ctor":"method",signature,method.methodType().stringValue(),mf,entry,List.copyOf(names),data));
-                for(var type:sig.arguments())Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"param_type")));
-                Signatures.referenced(sig.result()).forEach(t->edges.add(new Edge(key,t,"return_type")));
-                for(var type:method.methodTypeSymbol().parameterArray())Signatures.referenced(Signature.of(type)).forEach(t->edges.add(new Edge(key,t,"param_type")));
-                Signatures.referenced(Signature.of(method.methodTypeSymbol().returnType())).forEach(t->edges.add(new Edge(key,t,"return_type")));
-                thrown.forEach(t->edges.add(new Edge(key,t,"throws")));annotations(method,key,edges);
-            }
-        }
-        // Module exports are metadata, not a reason to discard a class on the class path.
-        var exports=classes.values().stream().filter(ClassModel::isModuleInfo).flatMap(m->m.findAttribute(Attributes.module()).stream()).flatMap(m->m.exports().stream()).map(e->e.exportedPackage().name().stringValue().replace('/','.')).toList();
-        if(!exports.isEmpty())for(var symbol:symbols)if(symbol.key().equals(symbol.fqn()))symbol.metadata().put("module_exports",exports);
-        return new Content(List.copyOf(symbols),List.copyOf(edges),classes,List.copyOf(warnings));
-    }
-    private static void parse(byte[] bytes,String entry,Map<String,ClassModel> classes,Map<String,String> entries,List<String> warnings) {
-        try {var model=ClassFile.of().parse(bytes);String name=name(model.thisClass());classes.put(name,model);entries.put(name,entry);}
-        catch(IllegalArgumentException e){warnings.add("malformed_class: "+entry+": "+e.getClass().getSimpleName());}
-    }
-    private static boolean visible(int flags){return(flags&(ClassFile.ACC_PUBLIC|ClassFile.ACC_PROTECTED))!=0;}
-    private static String name(ClassEntry entry){return entry.asInternalName().replace('/','.');}
-    static String simple(String name){return name.substring(Math.max(name.lastIndexOf('.'),name.lastIndexOf('$'))+1);}
-    private static Map<String,Object> metadata(AttributedElement element){var data=new LinkedHashMap<String,Object>();element.findAttribute(Attributes.signature()).ifPresent(a->data.put("generic_signature",a.signature().stringValue()));data.put("deprecated",element.findAttribute(Attributes.deprecated()).isPresent());return data;}
-    private static void annotations(AttributedElement element,String key,List<Edge> edges){element.findAttribute(Attributes.runtimeVisibleAnnotations()).ifPresent(a->a.annotations().forEach(n->edges.add(new Edge(key,Signatures.qualified(n.classSymbol()),"annotated_by"))));}
-}
-,'.'),owner.replace('
-            annotations(model,owner,edges);
-            for(var field:model.fields()) {
-                if(!local&&!visible(field.flags().flagsMask()))continue;
-                String key=owner+"#"+field.fieldName().stringValue();
-                Signature type=field.findAttribute(Attributes.signature()).map(a->a.asTypeSignature()).orElseGet(()->Signature.of(field.fieldTypeSymbol()));
-                symbols.add(new Symbol(key,owner,field.fieldName().stringValue(),owner,(field.flags().flagsMask()&ClassFile.ACC_ENUM)!=0?"enumconst":"field",Signatures.type(type)+" "+field.fieldName().stringValue(),field.fieldType().stringValue(),field.flags().flagsMask(),entry,List.of(),metadata(field)));
-                Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"return_type"))); annotations(field,key,edges);
-            }
-            for(var method:model.methods()) {
-                int mf=method.flags().flagsMask(); String methodName=method.methodName().stringValue();
-                if(methodName.equals("<clinit>") || (mf & ClassFile.ACC_BRIDGE)!=0 || !local&&!visible(mf))continue;
-                String key=owner+"#"+methodName+method.methodType().stringValue();
-                var sig=method.findAttribute(Attributes.signature()).map(a->a.asMethodSignature()).orElseGet(()->MethodSignature.of(method.methodTypeSymbol()));
-                var names=new ArrayList<String>();
-                var stored=method.findAttribute(Attributes.methodParameters());
-                for(int i=0;i<sig.arguments().size();i++)names.add(stored.isPresent()&&i<stored.get().parameters().size()?stored.get().parameters().get(i).name().map(n->n.stringValue()).orElse("arg"+i):"arg"+i);
-                var parts=new ArrayList<String>(); for(int i=0;i<sig.arguments().size();i++)parts.add(Signatures.type(sig.arguments().get(i))+" "+names.get(i));
-                boolean ctor=methodName.equals("<init>");
-                String signature=Signatures.parameters(sig.typeParameters()); if(!signature.isEmpty())signature+=" ";
-                signature+=(ctor?simple(owner):Signatures.type(sig.result())+" "+methodName)+"("+String.join(", ",parts)+")";
-                var thrown=method.findAttribute(Attributes.exceptions()).stream().flatMap(a->a.exceptions().stream()).map(BinaryReader::name).toList();
-                if(!sig.throwableSignatures().isEmpty())signature+=" throws "+String.join(", ",sig.throwableSignatures().stream().map(Signatures::type).toList());
-                else if(!thrown.isEmpty())signature+=" throws "+String.join(", ",thrown);
-                var data=metadata(method);data.put("parameter_names_from_class",stored.isPresent());data.put("return_type",Signatures.type(sig.result()));data.put("parameter_types",sig.arguments().stream().map(Signatures::type).toList());data.put("type_parameters",Signatures.parameters(sig.typeParameters()));
-                symbols.add(new Symbol(key,owner,ctor?simple(owner):methodName,owner,ctor?"ctor":"method",signature,method.methodType().stringValue(),mf,entry,List.copyOf(names),data));
-                for(var type:sig.arguments())Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"param_type")));
-                Signatures.referenced(sig.result()).forEach(t->edges.add(new Edge(key,t,"return_type")));
-                for(var type:method.methodTypeSymbol().parameterArray())Signatures.referenced(Signature.of(type)).forEach(t->edges.add(new Edge(key,t,"param_type")));
-                Signatures.referenced(Signature.of(method.methodTypeSymbol().returnType())).forEach(t->edges.add(new Edge(key,t,"return_type")));
-                thrown.forEach(t->edges.add(new Edge(key,t,"throws")));annotations(method,key,edges);
-            }
-        }
-        // Module exports are metadata, not a reason to discard a class on the class path.
-        var exports=classes.values().stream().filter(ClassModel::isModuleInfo).flatMap(m->m.findAttribute(Attributes.module()).stream()).flatMap(m->m.exports().stream()).map(e->e.exportedPackage().name().stringValue().replace('/','.')).toList();
-        if(!exports.isEmpty())for(var symbol:symbols)if(symbol.key().equals(symbol.fqn()))symbol.metadata().put("module_exports",exports);
-        return new Content(List.copyOf(symbols),List.copyOf(edges),classes,List.copyOf(warnings));
-    }
-    private static void parse(byte[] bytes,String entry,Map<String,ClassModel> classes,Map<String,String> entries,List<String> warnings) {
-        try {var model=ClassFile.of().parse(bytes);String name=name(model.thisClass());classes.put(name,model);entries.put(name,entry);}
-        catch(IllegalArgumentException e){warnings.add("malformed_class: "+entry+": "+e.getClass().getSimpleName());}
-    }
-    private static boolean visible(int flags){return(flags&(ClassFile.ACC_PUBLIC|ClassFile.ACC_PROTECTED))!=0;}
-    private static String name(ClassEntry entry){return entry.asInternalName().replace('/','.');}
-    static String simple(String name){return name.substring(Math.max(name.lastIndexOf('.'),name.lastIndexOf('$'))+1);}
-    private static Map<String,Object> metadata(AttributedElement element){var data=new LinkedHashMap<String,Object>();element.findAttribute(Attributes.signature()).ifPresent(a->data.put("generic_signature",a.signature().stringValue()));data.put("deprecated",element.findAttribute(Attributes.deprecated()).isPresent());return data;}
-    private static void annotations(AttributedElement element,String key,List<Edge> edges){element.findAttribute(Attributes.runtimeVisibleAnnotations()).ifPresent(a->a.annotations().forEach(n->edges.add(new Edge(key,Signatures.qualified(n.classSymbol()),"annotated_by"))));}
-}
-,'.'),typeArguments);
-            List<SemanticType> directSupertypes;
-            if(generic.isPresent()){
-                var value=generic.get();var parents=new ArrayList<SemanticType>();
-                if(!Signatures.type(value.superclassSignature()).equals("java.lang.Object"))parents.add(semantic(value.superclassSignature()));
-                value.superinterfaceSignatures().forEach(parent->parents.add(semantic(parent)));directSupertypes=List.copyOf(parents);
-            }else{
-                var parents=new ArrayList<SemanticType>();
-                model.superclass().filter(parent->!name(parent).equals("java.lang.Object")).ifPresent(parent->parents.add(declared(name(parent))));
-                model.interfaces().forEach(parent->parents.add(declared(name(parent))));directSupertypes=List.copyOf(parents);
-            }
-            symbols.add(new Symbol(owner,owner,simple(owner),outer,kind,declaration,null,flags,entry,List.of(),metadata,
-                    semanticType,classParameters.ids(),classParameters.bounds(),directSupertypes,false));
-            model.superclass().ifPresent(c->edges.add(new Edge(owner,name(c),"extends")));
-            model.interfaces().forEach(c->edges.add(new Edge(owner,name(c),kind.equals("interface")?"extends":"implements")));
-            annotations(model,owner,edges);
-            for(var field:model.fields()) {
-                if(!local&&!visible(field.flags().flagsMask()))continue;
-                String key=owner+"#"+field.fieldName().stringValue();
-                Signature type=field.findAttribute(Attributes.signature()).map(a->a.asTypeSignature()).orElseGet(()->Signature.of(field.fieldTypeSymbol()));
-                symbols.add(new Symbol(key,owner,field.fieldName().stringValue(),owner,(field.flags().flagsMask()&ClassFile.ACC_ENUM)!=0?"enumconst":"field",Signatures.type(type)+" "+field.fieldName().stringValue(),field.fieldType().stringValue(),field.flags().flagsMask(),entry,List.of(),metadata(field)));
-                Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"return_type"))); annotations(field,key,edges);
-            }
-            for(var method:model.methods()) {
-                int mf=method.flags().flagsMask(); String methodName=method.methodName().stringValue();
-                if(methodName.equals("<clinit>") || (mf & ClassFile.ACC_BRIDGE)!=0 || !local&&!visible(mf))continue;
-                String key=owner+"#"+methodName+method.methodType().stringValue();
-                var sig=method.findAttribute(Attributes.signature()).map(a->a.asMethodSignature()).orElseGet(()->MethodSignature.of(method.methodTypeSymbol()));
-                var names=new ArrayList<String>();
-                var stored=method.findAttribute(Attributes.methodParameters());
-                for(int i=0;i<sig.arguments().size();i++)names.add(stored.isPresent()&&i<stored.get().parameters().size()?stored.get().parameters().get(i).name().map(n->n.stringValue()).orElse("arg"+i):"arg"+i);
-                var parts=new ArrayList<String>(); for(int i=0;i<sig.arguments().size();i++)parts.add(Signatures.type(sig.arguments().get(i))+" "+names.get(i));
-                boolean ctor=methodName.equals("<init>");
-                String signature=Signatures.parameters(sig.typeParameters()); if(!signature.isEmpty())signature+=" ";
-                signature+=(ctor?simple(owner):Signatures.type(sig.result())+" "+methodName)+"("+String.join(", ",parts)+")";
-                var thrown=method.findAttribute(Attributes.exceptions()).stream().flatMap(a->a.exceptions().stream()).map(BinaryReader::name).toList();
-                if(!sig.throwableSignatures().isEmpty())signature+=" throws "+String.join(", ",sig.throwableSignatures().stream().map(Signatures::type).toList());
-                else if(!thrown.isEmpty())signature+=" throws "+String.join(", ",thrown);
-                var data=metadata(method);data.put("parameter_names_from_class",stored.isPresent());data.put("return_type",Signatures.type(sig.result()));data.put("parameter_types",sig.arguments().stream().map(Signatures::type).toList());data.put("type_parameters",Signatures.parameters(sig.typeParameters()));
-                symbols.add(new Symbol(key,owner,ctor?simple(owner):methodName,owner,ctor?"ctor":"method",signature,method.methodType().stringValue(),mf,entry,List.copyOf(names),data));
-                for(var type:sig.arguments())Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"param_type")));
-                Signatures.referenced(sig.result()).forEach(t->edges.add(new Edge(key,t,"return_type")));
-                for(var type:method.methodTypeSymbol().parameterArray())Signatures.referenced(Signature.of(type)).forEach(t->edges.add(new Edge(key,t,"param_type")));
-                Signatures.referenced(Signature.of(method.methodTypeSymbol().returnType())).forEach(t->edges.add(new Edge(key,t,"return_type")));
-                thrown.forEach(t->edges.add(new Edge(key,t,"throws")));annotations(method,key,edges);
-            }
-        }
-        // Module exports are metadata, not a reason to discard a class on the class path.
-        var exports=classes.values().stream().filter(ClassModel::isModuleInfo).flatMap(m->m.findAttribute(Attributes.module()).stream()).flatMap(m->m.exports().stream()).map(e->e.exportedPackage().name().stringValue().replace('/','.')).toList();
-        if(!exports.isEmpty())for(var symbol:symbols)if(symbol.key().equals(symbol.fqn()))symbol.metadata().put("module_exports",exports);
-        return new Content(List.copyOf(symbols),List.copyOf(edges),classes,List.copyOf(warnings));
-    }
-    private static void parse(byte[] bytes,String entry,Map<String,ClassModel> classes,Map<String,String> entries,List<String> warnings) {
-        try {var model=ClassFile.of().parse(bytes);String name=name(model.thisClass());classes.put(name,model);entries.put(name,entry);}
-        catch(IllegalArgumentException e){warnings.add("malformed_class: "+entry+": "+e.getClass().getSimpleName());}
-    }
-    private static boolean visible(int flags){return(flags&(ClassFile.ACC_PUBLIC|ClassFile.ACC_PROTECTED))!=0;}
-    private static String name(ClassEntry entry){return entry.asInternalName().replace('/','.');}
-    static String simple(String name){return name.substring(Math.max(name.lastIndexOf('.'),name.lastIndexOf('$'))+1);}
-    private static Map<String,Object> metadata(AttributedElement element){var data=new LinkedHashMap<String,Object>();element.findAttribute(Attributes.signature()).ifPresent(a->data.put("generic_signature",a.signature().stringValue()));data.put("deprecated",element.findAttribute(Attributes.deprecated()).isPresent());return data;}
-    private static void annotations(AttributedElement element,String key,List<Edge> edges){element.findAttribute(Attributes.runtimeVisibleAnnotations()).ifPresent(a->a.annotations().forEach(n->edges.add(new Edge(key,Signatures.qualified(n.classSymbol()),"annotated_by"))));}
-}
-,'.');
-        if(type.outerType().isPresent())name=rawName(type.outerType().get())+"."+name;
-        return name;
+        String current=type.className().replace('/','.').replace('$','.');
+        return type.outerType().map(parent->rawName(parent)+"."+current).orElse(current);
     }
 
-    private static void parse(byte[] bytes,String entry,Map<String,ClassModel> classes,Map<String,String> entries,List<String> warnings) {
-        try {var model=ClassFile.of().parse(bytes);String name=name(model.thisClass());classes.put(name,model);entries.put(name,entry);}
-        catch(IllegalArgumentException e){warnings.add("malformed_class: "+entry+": "+e.getClass().getSimpleName());}
-    }
-    private static boolean visible(int flags){return(flags&(ClassFile.ACC_PUBLIC|ClassFile.ACC_PROTECTED))!=0;}
-    private static String name(ClassEntry entry){return entry.asInternalName().replace('/','.');}
-    static String simple(String name){return name.substring(Math.max(name.lastIndexOf('.'),name.lastIndexOf('$'))+1);}
-    private static Map<String,Object> metadata(AttributedElement element){var data=new LinkedHashMap<String,Object>();element.findAttribute(Attributes.signature()).ifPresent(a->data.put("generic_signature",a.signature().stringValue()));data.put("deprecated",element.findAttribute(Attributes.deprecated()).isPresent());return data;}
-    private static void annotations(AttributedElement element,String key,List<Edge> edges){element.findAttribute(Attributes.runtimeVisibleAnnotations()).ifPresent(a->a.annotations().forEach(n->edges.add(new Edge(key,Signatures.qualified(n.classSymbol()),"annotated_by"))));}
-}
-)):null;
-            Generic classParameters=generic.map(value->generic(value.typeParameters())).orElseGet(BinaryReader::emptyGeneric);
-            var typeArguments=classParameters.ids().stream().map(id->(SemanticType)new SemanticType.Variable(id,id)).toList();
-            var semanticType=new SemanticType.Declared(owner.replace('
-            annotations(model,owner,edges);
-            for(var field:model.fields()) {
-                if(!local&&!visible(field.flags().flagsMask()))continue;
-                String key=owner+"#"+field.fieldName().stringValue();
-                Signature type=field.findAttribute(Attributes.signature()).map(a->a.asTypeSignature()).orElseGet(()->Signature.of(field.fieldTypeSymbol()));
-                symbols.add(new Symbol(key,owner,field.fieldName().stringValue(),owner,(field.flags().flagsMask()&ClassFile.ACC_ENUM)!=0?"enumconst":"field",Signatures.type(type)+" "+field.fieldName().stringValue(),field.fieldType().stringValue(),field.flags().flagsMask(),entry,List.of(),metadata(field)));
-                Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"return_type"))); annotations(field,key,edges);
-            }
-            for(var method:model.methods()) {
-                int mf=method.flags().flagsMask(); String methodName=method.methodName().stringValue();
-                if(methodName.equals("<clinit>") || (mf & ClassFile.ACC_BRIDGE)!=0 || !local&&!visible(mf))continue;
-                String key=owner+"#"+methodName+method.methodType().stringValue();
-                var sig=method.findAttribute(Attributes.signature()).map(a->a.asMethodSignature()).orElseGet(()->MethodSignature.of(method.methodTypeSymbol()));
-                var names=new ArrayList<String>();
-                var stored=method.findAttribute(Attributes.methodParameters());
-                for(int i=0;i<sig.arguments().size();i++)names.add(stored.isPresent()&&i<stored.get().parameters().size()?stored.get().parameters().get(i).name().map(n->n.stringValue()).orElse("arg"+i):"arg"+i);
-                var parts=new ArrayList<String>(); for(int i=0;i<sig.arguments().size();i++)parts.add(Signatures.type(sig.arguments().get(i))+" "+names.get(i));
-                boolean ctor=methodName.equals("<init>");
-                String signature=Signatures.parameters(sig.typeParameters()); if(!signature.isEmpty())signature+=" ";
-                signature+=(ctor?simple(owner):Signatures.type(sig.result())+" "+methodName)+"("+String.join(", ",parts)+")";
-                var thrown=method.findAttribute(Attributes.exceptions()).stream().flatMap(a->a.exceptions().stream()).map(BinaryReader::name).toList();
-                if(!sig.throwableSignatures().isEmpty())signature+=" throws "+String.join(", ",sig.throwableSignatures().stream().map(Signatures::type).toList());
-                else if(!thrown.isEmpty())signature+=" throws "+String.join(", ",thrown);
-                var data=metadata(method);data.put("parameter_names_from_class",stored.isPresent());data.put("return_type",Signatures.type(sig.result()));data.put("parameter_types",sig.arguments().stream().map(Signatures::type).toList());data.put("type_parameters",Signatures.parameters(sig.typeParameters()));
-                symbols.add(new Symbol(key,owner,ctor?simple(owner):methodName,owner,ctor?"ctor":"method",signature,method.methodType().stringValue(),mf,entry,List.copyOf(names),data));
-                for(var type:sig.arguments())Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"param_type")));
-                Signatures.referenced(sig.result()).forEach(t->edges.add(new Edge(key,t,"return_type")));
-                for(var type:method.methodTypeSymbol().parameterArray())Signatures.referenced(Signature.of(type)).forEach(t->edges.add(new Edge(key,t,"param_type")));
-                Signatures.referenced(Signature.of(method.methodTypeSymbol().returnType())).forEach(t->edges.add(new Edge(key,t,"return_type")));
-                thrown.forEach(t->edges.add(new Edge(key,t,"throws")));annotations(method,key,edges);
-            }
-        }
-        // Module exports are metadata, not a reason to discard a class on the class path.
-        var exports=classes.values().stream().filter(ClassModel::isModuleInfo).flatMap(m->m.findAttribute(Attributes.module()).stream()).flatMap(m->m.exports().stream()).map(e->e.exportedPackage().name().stringValue().replace('/','.')).toList();
-        if(!exports.isEmpty())for(var symbol:symbols)if(symbol.key().equals(symbol.fqn()))symbol.metadata().put("module_exports",exports);
-        return new Content(List.copyOf(symbols),List.copyOf(edges),classes,List.copyOf(warnings));
-    }
-    private static void parse(byte[] bytes,String entry,Map<String,ClassModel> classes,Map<String,String> entries,List<String> warnings) {
-        try {var model=ClassFile.of().parse(bytes);String name=name(model.thisClass());classes.put(name,model);entries.put(name,entry);}
-        catch(IllegalArgumentException e){warnings.add("malformed_class: "+entry+": "+e.getClass().getSimpleName());}
-    }
-    private static boolean visible(int flags){return(flags&(ClassFile.ACC_PUBLIC|ClassFile.ACC_PROTECTED))!=0;}
-    private static String name(ClassEntry entry){return entry.asInternalName().replace('/','.');}
-    static String simple(String name){return name.substring(Math.max(name.lastIndexOf('.'),name.lastIndexOf('$'))+1);}
-    private static Map<String,Object> metadata(AttributedElement element){var data=new LinkedHashMap<String,Object>();element.findAttribute(Attributes.signature()).ifPresent(a->data.put("generic_signature",a.signature().stringValue()));data.put("deprecated",element.findAttribute(Attributes.deprecated()).isPresent());return data;}
-    private static void annotations(AttributedElement element,String key,List<Edge> edges){element.findAttribute(Attributes.runtimeVisibleAnnotations()).ifPresent(a->a.annotations().forEach(n->edges.add(new Edge(key,Signatures.qualified(n.classSymbol()),"annotated_by"))));}
-}
-,'.'),owner.replace('
-            annotations(model,owner,edges);
-            for(var field:model.fields()) {
-                if(!local&&!visible(field.flags().flagsMask()))continue;
-                String key=owner+"#"+field.fieldName().stringValue();
-                Signature type=field.findAttribute(Attributes.signature()).map(a->a.asTypeSignature()).orElseGet(()->Signature.of(field.fieldTypeSymbol()));
-                symbols.add(new Symbol(key,owner,field.fieldName().stringValue(),owner,(field.flags().flagsMask()&ClassFile.ACC_ENUM)!=0?"enumconst":"field",Signatures.type(type)+" "+field.fieldName().stringValue(),field.fieldType().stringValue(),field.flags().flagsMask(),entry,List.of(),metadata(field)));
-                Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"return_type"))); annotations(field,key,edges);
-            }
-            for(var method:model.methods()) {
-                int mf=method.flags().flagsMask(); String methodName=method.methodName().stringValue();
-                if(methodName.equals("<clinit>") || (mf & ClassFile.ACC_BRIDGE)!=0 || !local&&!visible(mf))continue;
-                String key=owner+"#"+methodName+method.methodType().stringValue();
-                var sig=method.findAttribute(Attributes.signature()).map(a->a.asMethodSignature()).orElseGet(()->MethodSignature.of(method.methodTypeSymbol()));
-                var names=new ArrayList<String>();
-                var stored=method.findAttribute(Attributes.methodParameters());
-                for(int i=0;i<sig.arguments().size();i++)names.add(stored.isPresent()&&i<stored.get().parameters().size()?stored.get().parameters().get(i).name().map(n->n.stringValue()).orElse("arg"+i):"arg"+i);
-                var parts=new ArrayList<String>(); for(int i=0;i<sig.arguments().size();i++)parts.add(Signatures.type(sig.arguments().get(i))+" "+names.get(i));
-                boolean ctor=methodName.equals("<init>");
-                String signature=Signatures.parameters(sig.typeParameters()); if(!signature.isEmpty())signature+=" ";
-                signature+=(ctor?simple(owner):Signatures.type(sig.result())+" "+methodName)+"("+String.join(", ",parts)+")";
-                var thrown=method.findAttribute(Attributes.exceptions()).stream().flatMap(a->a.exceptions().stream()).map(BinaryReader::name).toList();
-                if(!sig.throwableSignatures().isEmpty())signature+=" throws "+String.join(", ",sig.throwableSignatures().stream().map(Signatures::type).toList());
-                else if(!thrown.isEmpty())signature+=" throws "+String.join(", ",thrown);
-                var data=metadata(method);data.put("parameter_names_from_class",stored.isPresent());data.put("return_type",Signatures.type(sig.result()));data.put("parameter_types",sig.arguments().stream().map(Signatures::type).toList());data.put("type_parameters",Signatures.parameters(sig.typeParameters()));
-                symbols.add(new Symbol(key,owner,ctor?simple(owner):methodName,owner,ctor?"ctor":"method",signature,method.methodType().stringValue(),mf,entry,List.copyOf(names),data));
-                for(var type:sig.arguments())Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"param_type")));
-                Signatures.referenced(sig.result()).forEach(t->edges.add(new Edge(key,t,"return_type")));
-                for(var type:method.methodTypeSymbol().parameterArray())Signatures.referenced(Signature.of(type)).forEach(t->edges.add(new Edge(key,t,"param_type")));
-                Signatures.referenced(Signature.of(method.methodTypeSymbol().returnType())).forEach(t->edges.add(new Edge(key,t,"return_type")));
-                thrown.forEach(t->edges.add(new Edge(key,t,"throws")));annotations(method,key,edges);
-            }
-        }
-        // Module exports are metadata, not a reason to discard a class on the class path.
-        var exports=classes.values().stream().filter(ClassModel::isModuleInfo).flatMap(m->m.findAttribute(Attributes.module()).stream()).flatMap(m->m.exports().stream()).map(e->e.exportedPackage().name().stringValue().replace('/','.')).toList();
-        if(!exports.isEmpty())for(var symbol:symbols)if(symbol.key().equals(symbol.fqn()))symbol.metadata().put("module_exports",exports);
-        return new Content(List.copyOf(symbols),List.copyOf(edges),classes,List.copyOf(warnings));
-    }
-    private static void parse(byte[] bytes,String entry,Map<String,ClassModel> classes,Map<String,String> entries,List<String> warnings) {
-        try {var model=ClassFile.of().parse(bytes);String name=name(model.thisClass());classes.put(name,model);entries.put(name,entry);}
-        catch(IllegalArgumentException e){warnings.add("malformed_class: "+entry+": "+e.getClass().getSimpleName());}
-    }
-    private static boolean visible(int flags){return(flags&(ClassFile.ACC_PUBLIC|ClassFile.ACC_PROTECTED))!=0;}
-    private static String name(ClassEntry entry){return entry.asInternalName().replace('/','.');}
-    static String simple(String name){return name.substring(Math.max(name.lastIndexOf('.'),name.lastIndexOf('$'))+1);}
-    private static Map<String,Object> metadata(AttributedElement element){var data=new LinkedHashMap<String,Object>();element.findAttribute(Attributes.signature()).ifPresent(a->data.put("generic_signature",a.signature().stringValue()));data.put("deprecated",element.findAttribute(Attributes.deprecated()).isPresent());return data;}
-    private static void annotations(AttributedElement element,String key,List<Edge> edges){element.findAttribute(Attributes.runtimeVisibleAnnotations()).ifPresent(a->a.annotations().forEach(n->edges.add(new Edge(key,Signatures.qualified(n.classSymbol()),"annotated_by"))));}
-}
-,'.'),typeArguments);
-            List<SemanticType> directSupertypes;
-            if(generic.isPresent()){
-                var value=generic.get();var parents=new ArrayList<SemanticType>();
-                if(!Signatures.type(value.superclassSignature()).equals("java.lang.Object"))parents.add(semantic(value.superclassSignature()));
-                value.superinterfaceSignatures().forEach(parent->parents.add(semantic(parent)));directSupertypes=List.copyOf(parents);
-            }else{
-                var parents=new ArrayList<SemanticType>();
-                model.superclass().filter(parent->!name(parent).equals("java.lang.Object")).ifPresent(parent->parents.add(declared(name(parent))));
-                model.interfaces().forEach(parent->parents.add(declared(name(parent))));directSupertypes=List.copyOf(parents);
-            }
-            symbols.add(new Symbol(owner,owner,simple(owner),outer,kind,declaration,null,flags,entry,List.of(),metadata,
-                    semanticType,classParameters.ids(),classParameters.bounds(),directSupertypes,false));
-            model.superclass().ifPresent(c->edges.add(new Edge(owner,name(c),"extends")));
-            model.interfaces().forEach(c->edges.add(new Edge(owner,name(c),kind.equals("interface")?"extends":"implements")));
-            annotations(model,owner,edges);
-            for(var field:model.fields()) {
-                if(!local&&!visible(field.flags().flagsMask()))continue;
-                String key=owner+"#"+field.fieldName().stringValue();
-                Signature type=field.findAttribute(Attributes.signature()).map(a->a.asTypeSignature()).orElseGet(()->Signature.of(field.fieldTypeSymbol()));
-                symbols.add(new Symbol(key,owner,field.fieldName().stringValue(),owner,(field.flags().flagsMask()&ClassFile.ACC_ENUM)!=0?"enumconst":"field",Signatures.type(type)+" "+field.fieldName().stringValue(),field.fieldType().stringValue(),field.flags().flagsMask(),entry,List.of(),metadata(field)));
-                Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"return_type"))); annotations(field,key,edges);
-            }
-            for(var method:model.methods()) {
-                int mf=method.flags().flagsMask(); String methodName=method.methodName().stringValue();
-                if(methodName.equals("<clinit>") || (mf & ClassFile.ACC_BRIDGE)!=0 || !local&&!visible(mf))continue;
-                String key=owner+"#"+methodName+method.methodType().stringValue();
-                var sig=method.findAttribute(Attributes.signature()).map(a->a.asMethodSignature()).orElseGet(()->MethodSignature.of(method.methodTypeSymbol()));
-                var names=new ArrayList<String>();
-                var stored=method.findAttribute(Attributes.methodParameters());
-                for(int i=0;i<sig.arguments().size();i++)names.add(stored.isPresent()&&i<stored.get().parameters().size()?stored.get().parameters().get(i).name().map(n->n.stringValue()).orElse("arg"+i):"arg"+i);
-                var parts=new ArrayList<String>(); for(int i=0;i<sig.arguments().size();i++)parts.add(Signatures.type(sig.arguments().get(i))+" "+names.get(i));
-                boolean ctor=methodName.equals("<init>");
-                String signature=Signatures.parameters(sig.typeParameters()); if(!signature.isEmpty())signature+=" ";
-                signature+=(ctor?simple(owner):Signatures.type(sig.result())+" "+methodName)+"("+String.join(", ",parts)+")";
-                var thrown=method.findAttribute(Attributes.exceptions()).stream().flatMap(a->a.exceptions().stream()).map(BinaryReader::name).toList();
-                if(!sig.throwableSignatures().isEmpty())signature+=" throws "+String.join(", ",sig.throwableSignatures().stream().map(Signatures::type).toList());
-                else if(!thrown.isEmpty())signature+=" throws "+String.join(", ",thrown);
-                var data=metadata(method);data.put("parameter_names_from_class",stored.isPresent());data.put("return_type",Signatures.type(sig.result()));data.put("parameter_types",sig.arguments().stream().map(Signatures::type).toList());data.put("type_parameters",Signatures.parameters(sig.typeParameters()));
-                symbols.add(new Symbol(key,owner,ctor?simple(owner):methodName,owner,ctor?"ctor":"method",signature,method.methodType().stringValue(),mf,entry,List.copyOf(names),data));
-                for(var type:sig.arguments())Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"param_type")));
-                Signatures.referenced(sig.result()).forEach(t->edges.add(new Edge(key,t,"return_type")));
-                for(var type:method.methodTypeSymbol().parameterArray())Signatures.referenced(Signature.of(type)).forEach(t->edges.add(new Edge(key,t,"param_type")));
-                Signatures.referenced(Signature.of(method.methodTypeSymbol().returnType())).forEach(t->edges.add(new Edge(key,t,"return_type")));
-                thrown.forEach(t->edges.add(new Edge(key,t,"throws")));annotations(method,key,edges);
-            }
-        }
-        // Module exports are metadata, not a reason to discard a class on the class path.
-        var exports=classes.values().stream().filter(ClassModel::isModuleInfo).flatMap(m->m.findAttribute(Attributes.module()).stream()).flatMap(m->m.exports().stream()).map(e->e.exportedPackage().name().stringValue().replace('/','.')).toList();
-        if(!exports.isEmpty())for(var symbol:symbols)if(symbol.key().equals(symbol.fqn()))symbol.metadata().put("module_exports",exports);
-        return new Content(List.copyOf(symbols),List.copyOf(edges),classes,List.copyOf(warnings));
-    }
     private static void parse(byte[] bytes,String entry,Map<String,ClassModel> classes,Map<String,String> entries,List<String> warnings) {
         try {var model=ClassFile.of().parse(bytes);String name=name(model.thisClass());classes.put(name,model);entries.put(name,entry);}
         catch(IllegalArgumentException e){warnings.add("malformed_class: "+entry+": "+e.getClass().getSimpleName());}

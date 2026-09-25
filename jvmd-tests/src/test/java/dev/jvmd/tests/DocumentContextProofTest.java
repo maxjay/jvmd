@@ -24,6 +24,8 @@ class DocumentContextProofTest {
                 public class Sample {
                     public int getPets(){return 1;}
                     public String getName(){return "sample";}
+                    public static int staticValue(){return 2;}
+                    private int hidden(){return 3;}
                 }
                 """,true);
         Path sourceRoot=Files.createDirectories(root.resolve("src/lib"));
@@ -48,7 +50,8 @@ class DocumentContextProofTest {
                     index,256L*1024*1024);
 
             long before=queries(analyzer);
-            assertCompletion(analyzer,file,original,"choose(value).","getPets");
+            var first=completion(analyzer,file,original,"choose(value).");
+            assertThat(first.path("items").findValuesAsText("name")).contains("getPets").doesNotContain("staticValue","hidden");
             long afterFirst=queries(analyzer);
             assertThat(afterFirst-before).as("complex receiver gets one bounded semantic-context javac fallback").isEqualTo(1);
 
@@ -68,13 +71,16 @@ class DocumentContextProofTest {
         }
     }
 
-    private static void assertCompletion(Analyzer analyzer,Path file,String source,String needle,String expected)throws Exception{
+    private static JsonNode completion(Analyzer analyzer,Path file,String source,String needle)throws Exception{
         int cursor=source.indexOf(needle)+needle.length();
         var position=Documents.position(source,cursor);
         var answer=analyzer.completion(file,source,position.line(),position.character(),100,0);
         assertThat(answer.warnings()).as(answer.toString()).isEmpty();
-        JsonNode result=Json.MAPPER.valueToTree(answer.result());
-        assertThat(result.path("items").findValuesAsText("name")).contains(expected);
+        return Json.MAPPER.valueToTree(answer.result());
+    }
+
+    private static void assertCompletion(Analyzer analyzer,Path file,String source,String needle,String expected)throws Exception{
+        assertThat(completion(analyzer,file,source,needle).path("items").findValuesAsText("name")).contains(expected);
     }
 
     private static long queries(Analyzer analyzer){

@@ -42,7 +42,7 @@ public interface SemanticReadView {
     Symbol symbol(String id)throws Exception;
 
     /** Exact type declaration by canonical binary/FQN resolution key, or null for absence. */
-    Symbol type(String binaryName)throws Exception;
+    default Symbol type(String binaryName)throws Exception{return null;}
 
     /**
      * Whether this layer owns a complete authoritative declaration surface for the type/owner.

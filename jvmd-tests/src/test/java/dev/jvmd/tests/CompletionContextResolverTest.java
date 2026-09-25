@@ -105,6 +105,11 @@ class CompletionContextResolverTest {
                 .isEqualTo(CompletionContextResolver.Access.DENIED);
         assertThat(CompletionContextResolver.access(privateMember,"q",nested))
                 .isEqualTo(CompletionContextResolver.Access.UNKNOWN);
+        assertThat(CompletionContextResolver.access(privateMember,"q",null,"q.Other"))
+                .as("lexical enclosing name can prove a distinct nest before the caller is indexed")
+                .isEqualTo(CompletionContextResolver.Access.DENIED);
+        assertThat(CompletionContextResolver.access(privateMember,"q",null,"q.Owner$Nested"))
+                .isEqualTo(CompletionContextResolver.Access.UNKNOWN);
         assertThat(owner).isNotNull();
     }
 

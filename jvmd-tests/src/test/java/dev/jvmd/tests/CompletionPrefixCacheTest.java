@@ -23,9 +23,13 @@ class CompletionPrefixCacheTest {
         Path file=Files.writeString(root.resolve("Use.java"),text("g"));var documents=new Documents();documents.open(file,text("g"),1);
         try(var analyzer=new Analyzer()){
             analyzer.configure(context(),null,256L*1024*1024);analyzer.documents(documents);int version=1;
+            Long narrowedQueries=null;
             for(String prefix:List.of("g","ge","get","getP","getPe","getPet","getPets")){
                 String text=text(prefix);documents.change(file,++version,List.of(new Documents.Change(null,text)));analyzer.changed(file,documents.hash(file));analyzer.documents(documents);
                 var result=complete(analyzer,file,text,prefix);
+                long currentQueries=((Number)analyzer.status().get("queries")).longValue();
+                if(narrowedQueries==null)narrowedQueries=currentQueries;
+                else assertThat(currentQueries).as("prefix narrowing must not re-enter javac").isEqualTo(narrowedQueries);
                 try(var fresh=new Analyzer()){
                     fresh.configure(context(),null,256L*1024*1024);fresh.documents(documents);
                     assertThat(result).isEqualTo(complete(fresh,file,text,prefix));

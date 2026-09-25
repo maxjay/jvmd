@@ -105,18 +105,18 @@ public final class CompletionContextResolver {
         if(matching.size()!=1)return null;
         var selected=matching.values().iterator().next();
         SemanticType next=call?((SemanticType.Executable)selected.semanticType()).returns():selected.semanticType();
-        var owner=declaredOwner(next,textForLookup(next),lookup);
+        var owner=declaredOwner(next,lookup);
         return owner==null?null:new State(owner,next,false);
     }
 
-    private static SemanticReadView.Symbol declaredOwner(SemanticType type,String lookupName,TypeLookup lookup)throws Exception{
+    private static SemanticReadView.Symbol declaredOwner(SemanticType type,TypeLookup lookup)throws Exception{
         if(type instanceof SemanticType.Declared declared){
             var values=lookup.find(declared.name());
             if(values.isEmpty()&&!declared.symbolId().equals(declared.name()))values=lookup.find(declared.symbolId());
             return unique(values);
         }
         if(type instanceof SemanticType.Intersection intersection&&intersection.bounds().size()==1)
-            return declaredOwner(intersection.bounds().getFirst(),lookupName,lookup);
+            return declaredOwner(intersection.bounds().getFirst(),lookup);
         return null;
     }
     private static String textForLookup(SemanticType type){return type instanceof SemanticType.Declared d?d.name():"";}
@@ -198,7 +198,7 @@ public final class CompletionContextResolver {
         return List.copyOf(result.values());
     }
 
-    private static boolean accessible(SemanticReadView.Symbol member,String callerPackage,SemanticReadView.Symbol enclosing,
+    public static boolean accessible(SemanticReadView.Symbol member,String callerPackage,SemanticReadView.Symbol enclosing,
                                       SemanticReadView view)throws Exception{
         var modifiers=member.modifiers();
         if(modifiers.contains("public"))return true;

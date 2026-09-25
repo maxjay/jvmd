@@ -163,7 +163,7 @@ public final class SemanticReadViews {
     private static SemanticReadView.Symbol fromResident(SemanticFact fact){
         var resolution=fact.resolutionFact();
         return new SemanticReadView.Symbol(fact.id(),fact.name(),fact.kind(),fact.fqn(),resolution.symbolKey(),fact.structuralSignature(),
-                fact.erasedDescriptor(),fact.modifiers(),resolution,SemanticReadView.Origin.LIVE);
+                fact.erasedDescriptor(),fact.modifiers(),resolution,fact.parameterNames(),fact.sourceFile(),SemanticReadView.Origin.LIVE);
     }
 
     private static SemanticReadView.Symbol fromIndexed(Map<String,Object> row,SemanticReadView.Origin origin)throws Exception{
@@ -178,7 +178,11 @@ public final class SemanticReadViews {
         ResolutionFact resolution=row.get("resolution_fact") instanceof String encoded
                 ?ResolutionFact.decode(encoded)
                 :ResolutionFact.legacy(binary,fqn,name,kind,descriptor,flags);
-        return new SemanticReadView.Symbol(id,name,kind,fqn,binary,signature,descriptor,modifiers(row,flags),resolution,origin);
+        var parameters=new ArrayList<String>();
+        if(row.get("parameters") instanceof Collection<?> values)for(Object value:values)parameters.add(value.toString());
+        String sourceFile=row.get("source_file")==null?null:row.get("source_file").toString();
+        return new SemanticReadView.Symbol(id,name,kind,fqn,binary,signature,descriptor,modifiers(row,flags),resolution,
+                List.copyOf(parameters),sourceFile,origin);
     }
 
     private static boolean isLocal(Map<String,Object> row){

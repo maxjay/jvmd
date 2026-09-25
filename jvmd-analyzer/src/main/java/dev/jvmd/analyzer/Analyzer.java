@@ -133,9 +133,16 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     public void persistence(Path directory){if(snapshots==null){snapshots=new DiagnosticSnapshots(directory);diagnosticStore.persistence(snapshots);snapshots.documents(documents);}}
     private long budget;
 
-    private static String semanticOwnerIdentity(Context context){
-        return CompilerInputs.compose("semantic-owner-v1",
-                context.gav(),context.release(),
+    private String platformFingerprint()throws Exception{
+        Path home=Path.of(System.getProperty("java.home")).toAbsolutePath().normalize();
+        var values=new ArrayList<Object>();
+        for(Path path:List.of(home.resolve("release"),home.resolve("lib/modules"),home.resolve("lib/ct.sym")))
+            values.add(List.of(path.toString(),inputFiles.hash(path)));
+        return CompilerInputs.compose("semantic-platform-v1",values);
+    }
+    private static String semanticOwnerIdentity(Context context,String platformFingerprint){
+        return CompilerInputs.compose("semantic-owner-v2",
+                context.gav(),context.release(),platformFingerprint,
                 context.sources().stream().map(p->p.toAbsolutePath().normalize().toString()).toList(),
                 context.compilerOptions(),
                 context.binarySources().stream().map(p->p.toAbsolutePath().normalize().toString()).sorted().toList(),
@@ -282,7 +289,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
 
     public void configure(Context context,IndexService index,long budget)throws Exception{
         String family=generationFamily(context);generationFamilies.put(context.generation(),family);generationFamilyLru.put(family,Boolean.TRUE);
-        String owner=semanticOwnerIdentity(context);
+        String platform=platformFingerprint();
+        String owner=semanticOwnerIdentity(context,platform);
         var caches=moduleCaches(context,owner);
         boolean hadState=!caches.completionContextIdentity.isBlank();
         boolean ownerChanged=hadState&&!owner.equals(caches.semanticOwnerIdentity);
@@ -307,7 +315,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             initializeClasspath(caches,currentClasspath);
             precise=currentClasspath.isPresent();
         }
-        caches.semanticOwnerIdentity=owner;
+        caches.semanticOwnerIdentity=owner;caches.platformFingerprint=platform;
         caches.completionContextIdentity=precise?owner:broadCompletionContextIdentity(context);
 
         compiler=compilerPools.computeIfAbsent(context.generation(),_->new CompilerPool(inputFiles));

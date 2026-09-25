@@ -236,6 +236,33 @@ public final class RocksIndexStore implements IndexStore {
         Integer original=repository.binaryId(artifact.input().key().cacheKey(),symbol.key());
         return (artifact.id()<<32)|(original==null?0x40000000L|Integer.toUnsignedLong(symbol.id()):Integer.toUnsignedLong(original));
     }
+    private IndexedSemanticSymbol indexedSemantic(StoredArtifact artifact,ArtifactIndexFormat.SymbolRecord symbol,SemanticLayer layer){
+        var context=artifact.input().context();
+        return new IndexedSemanticSymbol(
+                context.scip(symbol),symbol.name(),symbol.kind(),symbol.fqn(),symbol.key(),
+                Objects.toString(symbol.signature(),""),Objects.toString(symbol.descriptor(),""),
+                symbol.resolution(),symbol.parameters(),null,layer);
+    }
+    private IndexedSemanticSymbol indexedSemantic(StoredArtifact artifact,Map<String,Object> row,SemanticLayer layer){
+        String id=Objects.toString(row.get("scip"),"");
+        String binary=Objects.toString(row.get("binary_key"),id);
+        String fqn=Objects.toString(row.get("fqn"),"");
+        String name=Objects.toString(row.get("name"),"");
+        String kind=Objects.toString(row.get("kind"),"");
+        String signature=Objects.toString(row.get("signature"),"");
+        String descriptor=Objects.toString(row.get("erased_descriptor"),"");
+        int flags=row.get("flags") instanceof Number value?value.intValue():0;
+        Object encoded=row.get("resolution_fact");
+        ResolutionFact resolution=encoded instanceof ResolutionFact value?value
+                :encoded instanceof String value?ResolutionFact.decode(value)
+                :ResolutionFact.legacy(binary,fqn,name,kind,descriptor,flags);
+        var parameters=new ArrayList<String>();
+        Object raw=row.get("parameters");
+        if(raw instanceof Iterable<?> values)for(Object value:values)parameters.add(Objects.toString(value,""));
+        String source=row.get("source_file")==null?null:row.get("source_file").toString();
+        return new IndexedSemanticSymbol(id,name,kind,fqn,binary,signature,descriptor,resolution,List.copyOf(parameters),source,layer);
+    }
+
     /** Semantic row without documentation/source enrichment. */
     private Map<String,Object> semanticRow(StoredArtifact artifact,ArtifactIndexFormat.SymbolRecord symbol)throws Exception{
         var context=artifact.input().context();var result=new LinkedHashMap<String,Object>();
@@ -292,6 +319,41 @@ public final class RocksIndexStore implements IndexStore {
     }
     @Override public synchronized Map<String,Object> byScip(String scip,String workspace,SemanticLayer layer)throws Exception{
         return byScipFrom(scip,selected(workspace,true,layer));
+    }
+    @Override public synchronized IndexedSemanticSymbol semanticByScip(String scip,String workspace,SemanticLayer layer)throws Exception{
+        for(var artifact:selected(workspace,true,layer)){
+            var source=sourceOverlay.first(artifact.id(),"scip",scip);
+            if(source!=null)return indexedSemantic(artifact,source,layer);
+            var context=artifact.input().context();String[] gav=context.gav().split(":",3);
+            String prefix="maven "+gav[0]+"/"+gav[1]+" "+gav[2]+" ";
+            if(!scip.startsWith(prefix))continue;
+            var found=repository.select(symbolsKey(artifact),"2|scip|"+scip.substring(prefix.length())+"|",-1,1,
+                    symbol->context.scip(symbol).equals(scip));
+            if(!found.isEmpty())return indexedSemantic(artifact,found.getFirst(),layer);
+        }
+        return null;
+    }
+    @Override public synchronized List<IndexedSemanticSymbol> semanticTypesByName(String simpleName,String workspace,int limit,SemanticLayer layer)throws Exception{
+        if(limit<=0)return List.of();
+        var result=new ArrayList<IndexedSemanticSymbol>(Math.min(limit,64));var seen=new HashSet<String>();
+        for(var artifact:selected(workspace,true,layer)){
+            for(var row:sourceOverlay.select(artifact.id(),simpleName,false,true,limit,0,
+                    value->simpleName.equals(Objects.toString(value.get("name"),""))
+                            &&TYPES.contains(Objects.toString(value.get("kind"),"")))){
+                String scip=Objects.toString(row.get("scip"),"");
+                if(seen.add(scip))result.add(indexedSemantic(artifact,row,layer));
+                if(result.size()>=limit)return List.copyOf(result);
+            }
+            var matches=repository.select(symbolsKey(artifact),"3|name|"+simpleName+"|",-1,limit,
+                    symbol->simpleName.equals(symbol.name())&&TYPES.contains(symbol.kind()));
+            for(var symbol:matches){
+                String scip=artifact.input().context().scip(symbol);
+                if(sourceOverlay.contains(artifact.id(),scip)||!seen.add(scip))continue;
+                result.add(indexedSemantic(artifact,symbol,layer));
+                if(result.size()>=limit)return List.copyOf(result);
+            }
+        }
+        return List.copyOf(result);
     }
     private Map<String,Object> byScipFrom(String scip,List<StoredArtifact> candidates)throws Exception{
         for(var artifact:candidates){
@@ -360,6 +422,37 @@ public final class RocksIndexStore implements IndexStore {
         if(limit<=0)return new MemberPage(List.of(),null);
         var owner=byScip(ownerScip,workspace,layer);if(owner==null)return new MemberPage(List.of(),null);
         return membersByOwner(ownerScip,prefix,limit,cursor,owner);
+    }
+    @Override public synchronized SemanticMemberPage semanticMembersByOwner(String ownerScip,String prefix,String workspace,
+                                                                            int limit,String cursor,SemanticLayer layer)throws Exception{
+        if(limit<=0)return new SemanticMemberPage(List.of(),null);
+        var owner=byScip(ownerScip,workspace,layer);if(owner==null)return new SemanticMemberPage(List.of(),null);
+        long artifactId=((Number)owner.get("artifact_id")).longValue();var artifact=required(artifactId);
+        String ownerFqn=Objects.toString(owner.get("fqn"),Objects.toString(owner.get("binary_key"),""));
+        if(sourceOverlay.contains(artifactId,ownerScip)){
+            long after=0;
+            if(cursor!=null){
+                if(!cursor.startsWith("source:"))throw new IllegalArgumentException("Invalid local semantic member cursor");
+                after=Long.parseUnsignedLong(cursor.substring("source:".length()));
+            }
+            var values=sourceOverlay.select(artifactId,Objects.requireNonNullElse(prefix,""),false,true,limit+1,after,
+                    value->ownerFqn.equals(Objects.toString(value.get("fqn"),""))
+                            &&Set.of("method","ctor","field","enumconst","class","interface","record","enum","annotation")
+                                    .contains(Objects.toString(value.get("kind"),"")));
+            boolean more=values.size()>limit;var page=values.subList(0,Math.min(limit,values.size()));
+            var typed=new ArrayList<IndexedSemanticSymbol>(page.size());
+            for(var value:page)typed.add(indexedSemantic(artifact,value,layer));
+            String next=more?"source:"+Long.toUnsignedString(((Number)page.getLast().get("id")).longValue()&0xffffffffL):null;
+            return new SemanticMemberPage(typed,next);
+        }
+        String generation=symbolsKey(artifact);
+        String binaryOwner=Objects.toString(owner.get("binary_key"),"");
+        String token=cursor==null?null:cursor.startsWith("binary:")?cursor.substring("binary:".length()):null;
+        if(cursor!=null&&token==null)throw new IllegalArgumentException("Invalid binary semantic member cursor");
+        var page=repository.ownerMembers(generation,binaryOwner,Objects.requireNonNullElse(prefix,""),limit,token);
+        var typed=new ArrayList<IndexedSemanticSymbol>(page.symbols().size());
+        for(var symbol:page.symbols())typed.add(indexedSemantic(artifact,symbol,layer));
+        return new SemanticMemberPage(typed,page.cursor()==null?null:"binary:"+page.cursor());
     }
     private MemberPage membersByOwner(String ownerScip,String prefix,int limit,String cursor,Map<String,Object> owner)throws Exception{
         long artifactId=((Number)owner.get("artifact_id")).longValue();var artifact=required(artifactId);

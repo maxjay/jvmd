@@ -190,6 +190,6 @@ public final class SemanticReadViews {
         if(explicit instanceof Collection<?> values){
             var result=new TreeSet<String>();for(Object value:values)result.add(value.toString());return Set.copyOf(result);
         }
-        return ResolutionFact.modifiers(flags);
+        return ResolutionFact.modifiers(flags,Objects.toString(row.get("kind"),""));
     }
 }

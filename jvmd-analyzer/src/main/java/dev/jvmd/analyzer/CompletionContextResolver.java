@@ -103,9 +103,10 @@ public final class CompletionContextResolver {
         boolean call=segment.endsWith("()");
         String name=call?segment.substring(0,segment.length()-2):segment;
         if(name.isBlank())return null;
-        var candidates=members(view,state.owner(),name,64);
+        var scan=members(view,state.owner(),name,64);
+        if(!scan.complete())return null;
         var matching=new LinkedHashMap<String,SemanticReadView.Symbol>();
-        for(var member:candidates){
+        for(var member:scan.symbols()){
             if(!member.name().equals(name))continue;
             if(state.staticReceiver()&&!member.staticMember())continue;
             var access=access(member,pkg,enclosing,enclosingName);
@@ -210,22 +211,39 @@ public final class CompletionContextResolver {
         return false;
     }
 
-    private static List<SemanticReadView.Symbol> members(SemanticReadView view,SemanticReadView.Symbol owner,String prefix,int limit)throws Exception{
+    private record MemberScan(List<SemanticReadView.Symbol> symbols,boolean complete) {
+        MemberScan { symbols=List.copyOf(symbols); }
+    }
+    /**
+     * Read only the exact-name group needed for chained resolution. The semantic member view is
+     * ordered by name, so observing a later name proves the exact group is exhausted. Hitting the
+     * bound while a cursor remains is uncertainty, never evidence that the first match is unique.
+     */
+    private static MemberScan members(SemanticReadView view,SemanticReadView.Symbol owner,String name,int limit)throws Exception{
         var result=new LinkedHashMap<String,SemanticReadView.Symbol>();
         var queue=new ArrayDeque<SemanticReadView.Symbol>();queue.add(owner);var seen=new HashSet<String>();
-        while(!queue.isEmpty()&&result.size()<limit){
+        while(!queue.isEmpty()){
             var current=queue.removeFirst();if(!seen.add(current.id()))continue;
-            String cursor=null;
+            String cursor=null;boolean exhausted=false;
             do{
-                var page=view.members(current.id(),prefix,Math.max(1,limit-result.size()),cursor);
-                for(var value:page.symbols())result.putIfAbsent(value.resolution().symbolKey(),value);
+                int remaining=Math.max(1,limit-result.size());
+                var page=view.members(current.id(),name,remaining,cursor);
+                for(var value:page.symbols()){
+                    int compared=value.name().compareTo(name);
+                    if(compared==0)result.putIfAbsent(value.resolution().symbolKey(),value);
+                    else if(compared>0){exhausted=true;break;}
+                }
+                if(exhausted||page.cursor()==null)break;
+                if(result.size()>=limit)return new MemberScan(result.values().stream().toList(),false);
                 cursor=page.cursor();
-            }while(cursor!=null&&result.size()<limit);
+            }while(true);
+            if(!exhausted&&cursor!=null&&result.size()>=limit)
+                return new MemberScan(result.values().stream().toList(),false);
             for(String parent:view.directSupertypes(current.id())){
                 var symbol=view.symbol(parent);if(symbol!=null)queue.addLast(symbol);
             }
         }
-        return List.copyOf(result.values());
+        return new MemberScan(result.values().stream().toList(),true);
     }
 
     /**

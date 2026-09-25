@@ -89,9 +89,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 coarseFiles,sourceConsumersInvalidated;
         long lastLeavesPublished,lastConsumersVisited,lastConsumersChanged,lastConsumersEqual,lastConsumersFallback,
                 lastCoarseFiles,lastSourceConsumersInvalidated;
-        void record(int leaves,SemanticUpdatePolicy.ProofPropagation propagation,int coarse,int sourceInvalidated){
+        void record(int leaves,SemanticUpdatePolicy.ProofPropagation propagation,int leafEqualStops,int coarse,int sourceInvalidated){
             transitions++;lastLeavesPublished=leaves;lastConsumersVisited=propagation.recomputed().size();
-            lastConsumersChanged=propagation.changed().size();lastConsumersEqual=propagation.equal().size();
+            lastConsumersChanged=propagation.changed().size();lastConsumersEqual=leafEqualStops+propagation.equal().size();
             lastConsumersFallback=propagation.fallback().size();lastCoarseFiles=coarse;lastSourceConsumersInvalidated=sourceInvalidated;
             leavesPublished+=lastLeavesPublished;consumersVisited+=lastConsumersVisited;consumersChanged+=lastConsumersChanged;
             consumersEqual+=lastConsumersEqual;consumersFallback+=lastConsumersFallback;coarseFiles+=coarse;
@@ -146,6 +146,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private record DocumentSemanticCached(String key,DocumentSemanticSnapshot snapshot) { }
     private record SemanticAdmission(SemanticDelta delta,List<SemanticFact> removed) {
         SemanticAdmission { Objects.requireNonNull(delta);removed=List.copyOf(removed); }
+    }
+    private record SourceLeafChanges(Map<QueryProof.Key,Hash256> changed,int consumersStoppedEqual) {
+        SourceLeafChanges { changed=Collections.unmodifiableMap(new TreeMap<>(changed)); }
     }
     private record Outline(List<Map<String,Object>> symbols,Set<Path> dependencies) { }
     private static final class CompletionAdvanceFailure extends Exception {
@@ -761,8 +764,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             default -> unavailableProofIdentity(key);
         };
     }
-    private Map<QueryProof.Key,Hash256> sourceMutationLeaves(SemanticAdmission admission,Path changedFile)throws Exception{
-        if(admission==null||admission.delta().emptyFacts())return Map.of();
+    private SourceLeafChanges sourceMutationLeaves(SemanticAdmission admission,Path changedFile)throws Exception{
+        if(admission==null||admission.delta().emptyFacts())return new SourceLeafChanges(Map.of(),0);
         var changedFacts=new ArrayList<SemanticFact>();changedFacts.addAll(admission.removed());
         changedFacts.addAll(admission.delta().changed());changedFacts.addAll(admission.delta().added());
         var changedIds=new HashSet<String>();var changedBinaries=new HashSet<String>();
@@ -796,7 +799,21 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             };
             if(affected)leaves.put(key,currentSourceLeafIdentity(key));
         }
-        return Collections.unmodifiableMap(leaves);
+        var changed=new TreeMap<QueryProof.Key,Hash256>();var changedConsumers=new HashSet<SemanticUpdatePolicy.ProofConsumer>();
+        var equalCandidates=new HashSet<SemanticUpdatePolicy.ProofConsumer>();
+        for(var entry:leaves.entrySet()){
+            boolean keyChanged=false;
+            for(var consumer:dependencies.semantic().proofs().consumers(entry.getKey())){
+                var evaluation=dependencies.semantic().proofs().evaluation(consumer);if(evaluation.isEmpty())continue;
+                var captured=evaluation.get().dependencies().identity(entry.getKey().domain(),entry.getKey().value());
+                if(captured.isPresent()&&!captured.get().equals(entry.getValue())){
+                    keyChanged=true;changedConsumers.add(consumer);
+                }else equalCandidates.add(consumer);
+            }
+            if(keyChanged)changed.put(entry.getKey(),entry.getValue());
+        }
+        equalCandidates.removeAll(changedConsumers);
+        return new SourceLeafChanges(changed,equalCandidates.size());
     }
     private static boolean sourceProofConsumer(SemanticUpdatePolicy.ProofConsumer consumer){
         return consumer.id().equals("source-semantic");
@@ -815,7 +832,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var coarse=new LinkedHashSet<>(result.reanalyze());coarse.remove(contribution.file());
         var affected=new LinkedHashSet<Path>(coarse);
         if(admission!=null){
-            var leaves=sourceMutationLeaves(admission,contribution.file());
+            var leafChanges=sourceMutationLeaves(admission,contribution.file());
+            var leaves=leafChanges.changed();
             var propagation=dependencies.semantic().proofs().propagate(leaves,consumer->rebaseProof(consumer,leaves));
 
             var queryInvalid=new LinkedHashSet<SemanticUpdatePolicy.ProofConsumer>();
@@ -831,7 +849,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             for(Path file:sourceFallback)dependencies.semantic().proofCoverage(file,false);
             affected.addAll(sourceChanged);affected.addAll(sourceFallback);
             var fallbackClosure=dependencies.semantic().coarseFallback(sourceFallback);affected.addAll(fallbackClosure);coarse.addAll(fallbackClosure);
-            sourceProofEvidence.record(leaves.size(),propagation,coarse.size(),sourceChanged.size()+sourceFallback.size());
+            sourceProofEvidence.record(leaves.size(),propagation,leafChanges.consumersStoppedEqual(),coarse.size(),sourceChanged.size()+sourceFallback.size());
         }
         diagnosticStore.invalidate(affected,DiagnosticStore.Reason.DEPENDENCY_API_CHANGED);invalidateCompilerCaches(affected);
     }

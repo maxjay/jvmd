@@ -19,6 +19,7 @@ public record SemanticFact(
         String fqn,
         SemanticType type,
         List<String> typeParameters,
+        List<List<SemanticType>> typeParameterBounds,
         List<SemanticType> directSupertypes,
         List<String> parameterNames,
         boolean varargs,
@@ -35,7 +36,16 @@ public record SemanticFact(
                         List<String> typeParameters,List<SemanticType> directSupertypes,List<String> parameterNames,boolean varargs,
                         String apiIdentity,String namespaceIdentity,String documentationIdentity){
         this(id,ownerId,name,kind,structuralSignature,erasedDescriptor,modifiers,sourceFile,packageName,namePath,fqn,type,
-                typeParameters,directSupertypes,parameterNames,varargs,apiIdentity,namespaceIdentity,documentationIdentity,null);
+                typeParameters,typeParameters.stream().map(_->List.<SemanticType>of()).toList(),directSupertypes,parameterNames,varargs,
+                apiIdentity,namespaceIdentity,documentationIdentity,null);
+    }
+
+    public SemanticFact(String id,String ownerId,String name,String kind,String structuralSignature,String erasedDescriptor,
+                        Set<String> modifiers,String sourceFile,String packageName,String namePath,String fqn,SemanticType type,
+                        List<String> typeParameters,List<List<SemanticType>> typeParameterBounds,List<SemanticType> directSupertypes,
+                        List<String> parameterNames,boolean varargs,String apiIdentity,String namespaceIdentity,String documentationIdentity){
+        this(id,ownerId,name,kind,structuralSignature,erasedDescriptor,modifiers,sourceFile,packageName,namePath,fqn,type,
+                typeParameters,typeParameterBounds,directSupertypes,parameterNames,varargs,apiIdentity,namespaceIdentity,documentationIdentity,null);
     }
 
     public SemanticFact {
@@ -46,22 +56,25 @@ public record SemanticFact(
         namePath=Objects.requireNonNullElse(namePath,name);
         if(type==null)type=new SemanticType.Unknown(structuralSignature);
         typeParameters=List.copyOf(typeParameters);
+        typeParameterBounds=typeParameterBounds.stream().map(List::copyOf).toList();
+        if(typeParameters.size()!=typeParameterBounds.size())throw new IllegalArgumentException("Type parameter identity/bounds mismatch");
         directSupertypes=List.copyOf(directSupertypes);
         parameterNames=List.copyOf(parameterNames);
         apiIdentity=Objects.requireNonNullElse(apiIdentity,"");
         namespaceIdentity=Objects.requireNonNullElse(namespaceIdentity,"");
         documentationIdentity=Objects.requireNonNullElse(documentationIdentity,"");
         if(factIdentity==null)factIdentity=identity(id,ownerId,name,kind,structuralSignature,erasedDescriptor,modifiers,sourceFile,
-                packageName,namePath,fqn,type,typeParameters,directSupertypes,parameterNames,varargs,apiIdentity,namespaceIdentity,documentationIdentity);
+                packageName,namePath,fqn,type,typeParameters,typeParameterBounds,directSupertypes,parameterNames,varargs,apiIdentity,namespaceIdentity,documentationIdentity);
     }
 
     private static Hash256 identity(String id,String ownerId,String name,String kind,String structuralSignature,String erasedDescriptor,
                                     Set<String> modifiers,String sourceFile,String packageName,String namePath,String fqn,SemanticType type,
-                                    List<String> typeParameters,List<SemanticType> directSupertypes,List<String> parameterNames,boolean varargs,
-                                    String apiIdentity,String namespaceIdentity,String documentationIdentity){
+                                    List<String> typeParameters,List<List<SemanticType>> typeParameterBounds,List<SemanticType> directSupertypes,
+                                    List<String> parameterNames,boolean varargs,String apiIdentity,String namespaceIdentity,String documentationIdentity){
         return CanonicalDigestWriter.digest("semantic-fact-v1",
                 id,ownerId,name,kind,structuralSignature,erasedDescriptor,modifiers.stream().sorted().toList(),
                 sourceFile,packageName,namePath,fqn,type.identity(),typeParameters,
+                typeParameterBounds.stream().map(bounds->bounds.stream().map(SemanticType::identity).toList()).toList(),
                 directSupertypes.stream().map(SemanticType::identity).toList(),parameterNames,varargs,
                 apiIdentity,namespaceIdentity,documentationIdentity);
     }
@@ -73,12 +86,8 @@ public record SemanticFact(
      * changing them may alter presentation/enrichment, but cannot by itself change what declaration
      * this is, its accessibility, overload shape, type or hierarchy semantics.
      */
-    public Hash256 resolutionIdentity(){
-        return CanonicalDigestWriter.digest("semantic-fact-resolution-v1",
-                id,ownerId,name,kind,structuralSignature,erasedDescriptor,
-                modifiers.stream().sorted().toList(),packageName,namePath,fqn,type.identity(),typeParameters,
-                directSupertypes.stream().map(SemanticType::identity).toList(),varargs,apiIdentity,namespaceIdentity);
-    }
+    public ResolutionFact resolutionFact(){return ResolutionFact.from(this);}
+    public Hash256 resolutionIdentity(){return resolutionFact().identity();}
 
     public boolean typeDeclaration(){return TYPES.contains(kind);}
     public boolean member(){return ownerId!=null&&!ownerId.isBlank();}

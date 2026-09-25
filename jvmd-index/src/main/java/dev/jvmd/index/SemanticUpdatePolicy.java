@@ -348,11 +348,16 @@ public final class SemanticUpdatePolicy {
             for(Path dependency:dependencies)if(!normalize(dependency).equals(file))merged.add(normalize(dependency));
             focused.put(file,Set.copyOf(merged));link(file);
         }
-        public Result remove(Path file){
+        public Result remove(Path file){return remove(file,false);}
+        /** Remove after the caller has captured/applied the resident semantic removal delta. */
+        public Result removePrecise(Path file){return remove(file,true);}
+        private Result remove(Path file,boolean preciseLeavesAvailable){
             file=normalize(file);var before=complete.get(file);
-            var affected=new HashSet<>(closure(Set.of(file),this));affected.remove(file);
+            var affected=new HashSet<>(preciseLeavesAvailable?coarseUnprovenClosure(Set.of(file)):closure(Set.of(file),this));affected.remove(file);
             var result=before==null?new Result(affected,Set.of(file),Set.of(),Set.of(file),false,true)
-                    :decide(List.of(new Change(before,null)),false,this);
+                    :preciseLeavesAvailable
+                        ?decide(List.of(new Change(before,null)),EnvironmentTransition.NONE,this,this::proofCovered)
+                        :decide(List.of(new Change(before,null)),EnvironmentTransition.NONE,this);
             unlink(file);complete.remove(file);focused.remove(file);pending.remove(file);proofs.removeFile(file);preciseProofCoverage.remove(file);return result;
         }
         public Set<Path> changed(Path file){

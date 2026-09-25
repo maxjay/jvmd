@@ -212,7 +212,7 @@ public final class Application implements AutoCloseable {
                     symbol.get("modifiers") instanceof Collection<?> modifiers&&modifiers.contains("public");
             if(!candidatePackage.equals(packageName)&&!publicType)continue;
             var row=new LinkedHashMap<String,Object>();
-            for(String key:List.of("scip","name","name_path","kind","signature","fqn"))if(symbol.get(key)!=null)row.put(key,symbol.get(key));
+            for(String key:List.of("scip","name","name_path","kind","signature","fqn","resolution_identity"))if(symbol.get(key)!=null)row.put(key,symbol.get(key));
             row.put("label",fqn);
             if(needsImport(fqn,packageName,imported))row.put("import",fqn);
             types.putIfAbsent(fqn,Collections.unmodifiableMap(row));

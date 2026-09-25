@@ -168,7 +168,9 @@ public final class CompletionContextResolver {
         int classOpen=enclosingTypeOpen(masked,receiverEnd);
         int classBodyDepth=classOpen<0?-1:depthAt(braces,classOpen)+1;
         for(int i=matches.size()-1;i>=0;i--){
-            var value=matches.get(i);int depth=depthAt(braces,value.start());
+            var value=matches.get(i);
+            if(!declarationType(value.type()))continue;
+            int depth=depthAt(braces,value.start());
             if(depth>cursorDepth||dropsBelow(braces,value.end(),receiverEnd,depth))continue;
             if(depthAt(parens,value.start())>0&&!parameterScopeContains(masked,braces,value.end(),receiverEnd,depth))continue;
             boolean field=classBodyDepth>=0&&depth==classBodyDepth&&depthAt(parens,value.start())==0;
@@ -176,6 +178,13 @@ public final class CompletionContextResolver {
             return new Declaration(value.type(),value.start(),value.end(),field,statik);
         }
         return null;
+    }
+
+    private static boolean declarationType(String sourceType){
+        String value=sourceType.replaceAll("\\s+","").replace("[]","");
+        int dot=value.indexOf('.');String head=dot<0?value:value.substring(0,dot);
+        return !head.isBlank()&&!javax.lang.model.SourceVersion.isKeyword(head)
+                &&!Set.of("var","yield","record","sealed","permits","non").contains(head);
     }
 
     private static boolean parameterScopeContains(String source,int[] braces,int start,int cursor,int declarationDepth){

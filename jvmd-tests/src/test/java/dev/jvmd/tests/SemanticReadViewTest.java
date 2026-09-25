@@ -91,6 +91,7 @@ class SemanticReadViewTest {
         assertThat(members.symbols()).extracting(SemanticReadView.Symbol::name).containsExactly("alpha");
         assertThat(members.symbols().getFirst().origin()).isEqualTo(SemanticReadView.Origin.LIVE);
         assertThat(view.symbol("alpha").origin()).isEqualTo(SemanticReadView.Origin.LIVE);
+        assertThat(view.symbol("beta")).isNull();
     }
 
     @Test void typedPersistedReadsDoNotUseNavigationMapProjection()throws Exception{
@@ -139,6 +140,7 @@ class SemanticReadViewTest {
         var second=view.members("owner","",2,first.cursor());
         assertThat(second.symbols()).extracting(SemanticReadView.Symbol::name).containsExactly("gamma");
         assertThat(second.symbols().getFirst().origin()).isEqualTo(SemanticReadView.Origin.LOCAL);
+        assertThat(view.symbol("beta").origin()).isEqualTo(SemanticReadView.Origin.LOCAL);
     }
 
     @Test void persistedLocalAndMachineRemainIndependentlyAddressableWhenIdentityOverlaps()throws Exception{
@@ -311,6 +313,7 @@ class SemanticReadViewTest {
                 if(id.equals("owner"))return owner;
                 return members.contains(id)?member(id):null;
             }
+            public Symbol type(String binaryName){return binaryName.equals("p.Owner")?owner:null;}
             public SemanticCompleteness completeness(String ownerId){return ownerId.equals("owner")?completeness:SemanticCompleteness.UNKNOWN;}
             public MemberPage members(String ownerId,String prefix,int limit,String cursor){
                 if(!ownerId.equals("owner"))return new MemberPage(List.of(),null);

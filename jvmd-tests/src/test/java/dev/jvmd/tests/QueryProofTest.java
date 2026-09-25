@@ -71,7 +71,7 @@ class QueryProofTest {
     }
 
     @Test void duplicateSemanticKeysAreRejectedEvenWhenIdentityMatches(){
-        var dependency=dependency(QueryProof.Domain.CLASSPATH,"position:3","artifact-v1");
+        var dependency=dependency(QueryProof.Domain.CLASSPATH_SEARCH,"prefix:[0,3]","artifact-v1");
         assertThatThrownBy(()->new QueryProof(List.of(dependency,dependency)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Duplicate proof dependency");

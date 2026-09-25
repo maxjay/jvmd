@@ -139,7 +139,7 @@ public record SemanticFact(
 
     public CompletionCandidate candidate(Map<String,SemanticType> substitutions){
         SemanticType contextual=type.substitute(substitutions);
-        String label=name+": "+CompletionCandidate.typeLabel(contextual,false);var labels=new ArrayList<CompletionCandidate.ParameterLabel>();
+        String label=name+" : "+CompletionCandidate.typeLabel(contextual,false);var labels=new ArrayList<CompletionCandidate.ParameterLabel>();
         if(contextual instanceof SemanticType.Executable executable){
             var value=new StringBuilder(name).append('(');
             for(int i=0;i<executable.parameters().size();i++){

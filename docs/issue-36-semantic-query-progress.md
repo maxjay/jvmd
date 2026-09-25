@@ -887,3 +887,158 @@ Failed/deprecated approaches:
 
 Remaining:
 - Checkpoint 14: finish javac minimization proof — simple dependency/local receivers, prefix/warm reuse, one bounded complex fallback, and audit completion paths for prohibited `Elements.getAllMembers()` / javac hierarchy discovery.
+
+
+## Checkpoint 12 production lifecycle repair — classpath events now drive the accepted proof model end-to-end
+
+Repair starting point: `b9274a860a7e23e44081928a733121cd0beff0ab`  
+Accepted repair subject: `88bf585ef9b48812827d9f0ec43526d0b119bccf`
+
+Evidence:
+- Exact-head Tests: https://github.com/maxjay/jvmd/actions/runs/36151870196 — **success**.
+  - compile/package green;
+  - Phase 1 green;
+  - **Phase 3 green**, including the explicit precise-vs-unknown environment invalidation regression;
+  - Rocks green;
+  - **Phase 4 green**, including the full production `ClasspathLifecycleIntegrationTest`;
+  - Phase 5, Phase 6, Phase 7, runtime, agent and LSP synchronization gates green.
+- Exact-head Benchmarks: https://github.com/maxjay/jvmd/actions/runs/36151870055 — **success**.
+- No Checkpoint-17 frozen before/after proof was run.
+
+Why this repair was required:
+- The Checkpoint-12 model itself was already correct, but the production lifecycle still had two escape hatches:
+  1. `validatedInputs()` could let javac detect an in-place classpath replacement and then eagerly clear proof-backed document/accessibility state and fence the entire resident semantic state before classpath-search proof equality was consulted.
+  2. `SemanticUpdatePolicy.decide(... environmentChanged=true ...)` still represented every environment change as `affected.addAll(postings.files())`, with no explicit distinction between a precisely handled classpath transition and an unknown compiler environment transition.
+- The earlier Checkpoint-13 statement that classpath replacement remained conservatively broad in `validatedInputs()` is therefore **superseded by this repair**. Module/platform/path-option/lost-coverage changes remain conservative; precisely represented ordered dependency changes do not.
+
+Production lifecycle now:
+
+```text
+REAL CLASSPATH / DEPENDENCY MUTATION
+        |
+        v
+old ModuleCaches.classpathSequence
+vs current IndexStore.semanticClasspathSequence(workspace)
+        |
+        v
+ClasspathSequence.diff(...)
+        |
+        v
+previous IndexStore.ClasspathSearchProof values
+        |
+        v
+ClasspathSearchProofs.update(...)
+        |
+        +-- structurally unaffected
+        |      -> no search recomputation
+        |
+        +-- affected + semantic identity equal
+        |      -> fixed point; STOP
+        |
+        +-- semantic identity changed
+        |      -> changed CLASSPATH_SEARCH QueryProof leaf
+        |      -> existing SemanticUpdatePolicy.Live ProofDag
+        |      -> changed/fallback consumers only
+        |
+        +-- recomputation unavailable / unsupported environment
+               -> conservative fallback
+```
+
+Production wiring:
+- `Analyzer.configure()` preserves one `ModuleCaches` across generation/classpath changes when the semantic owner is otherwise equal. Classpath is intentionally excluded from that semantic-owner identity; compiler release/options, source ownership, binary-source/path semantics, workspace ownership and the maintained JDK/platform fingerprint are not.
+- `preciseClasspathSequence(...)` is available only for a workspace whose ordered compiler classpath exactly equals the selected indexed MACHINE sequence and which has no unsupported module/classpath/processor/system path options. Anything outside that boundary stays conservative.
+- `reconcileClasspath(...)` is the production bridge:
+  - computes the structural Merkle diff;
+  - calls the accepted `ClasspathSearchProofs.update(...)`;
+  - does not reconsider searches whose established prefix is structurally unaffected;
+  - records equal search fixed points without propagation;
+  - turns only changed search conclusions into `CLASSPATH_SEARCH` leaves;
+  - feeds those leaves into the existing `SemanticUpdatePolicy.Live.proofs().propagate(...)`;
+  - invalidates only changed/fallback document-proof consumers;
+  - fences/removes only the old/new changed winning binary semantic units, not the resident semantic state globally.
+- Broad document contexts that still bind the whole ordered root are invalidated conservatively. This is explicit incomplete proof coverage, not ordinary qualified-query behavior.
+- `validatedInputs()` now uses the same proof-first bridge when javac detects an in-place classpath/environment replacement:
+  - javac resets its own file manager/context immediately;
+  - detached query state is **not** automatically invalid;
+  - if the platform is unchanged and the indexed ordered classpath remains precisely representable, `reconcileClasspath(...)` runs before any detached-state fence;
+  - only if proof coverage/recomputation is unavailable does it clear document/accessibility evidence and call the resident O(1) hierarchy uncertainty fence.
+- JDK/platform inputs are explicitly part of the semantic-owner fingerprint. A platform change therefore cannot masquerade as a dependency-only transition.
+- `SemanticUpdatePolicy.EnvironmentTransition` now names the boundary:
+  - `PRECISE_CLASSPATH`: classpath leaves were already reconciled through the proof DAG; no `postings.files()` widening.
+  - `UNKNOWN`: existing all-files environment fallback remains.
+  - `NONE`: ordinary source semantic invalidation.
+- Persisted Rocks semantic invalidation continues to label an unsupported context transition as `UNKNOWN`; precise dependency classpath changes are excluded from that broad publisher-context fingerprint and are owned by the classpath search proof path.
+
+Production evidence exposed temporarily through `Analyzer.status().classpath_proof_evidence`:
+- structural diff interval count / last intervals;
+- search proofs reconsidered;
+- equal search proofs;
+- changed search proofs;
+- unavailable search proofs;
+- ProofDag consumers visited / changed / equal / fallback;
+- broad root-bound context invalidations;
+- coarse fallbacks;
+- lazy `validatedInputs()` reconciliations.
+Existing status supplies query-side javac count plus resident semantic fact/unit mutation counts. These counters are proof plumbing for Checkpoint 18 cleanup, not runtime policy.
+
+Permanent end-to-end proof — `ClasspathLifecycleIntegrationTest`:
+- Workspace starts `[A, B, C]`; a cached complex qualified completion resolves `a.Sample` from A and registers the production classpath-search/document ProofDag consumer.
+- **Lazy in-place C change, no `Analyzer.configure()`:**
+  - javac detects the environment change;
+  - `validatedInputs()` invokes the production classpath reconciliation;
+  - structural classpath identity changes;
+  - A's search prefix is after no changed interval, so `last_reconsidered = 0`;
+  - completion remains A-backed;
+  - javac query count is unchanged;
+  - document semantic context count is unchanged;
+  - resident semantic fact mutation count and semantic unit count are unchanged.
+- **Reorder strictly after A:**
+  - structural interval is non-empty;
+  - A proof is not reconsidered;
+  - zero javac queries on the new compiler generation;
+  - no resident semantic mutation.
+- **Insert D before A, D does not contain the target:**
+  - exactly one A search proof is reconsidered;
+  - `equal = 1`, `changed = 0`;
+  - ProofDag consumers visited = 0;
+  - completion remains A-backed with zero javac and no resident mutation.
+- **D then introduces the target before A:**
+  - search proof changes;
+  - exactly one proof-backed document consumer is visited and changed;
+  - that document context is removed;
+  - the next request performs one bounded semantic-context javac query and resolves the new D winner.
+- **Remove D / return to A:**
+  - winner search proof changes precisely;
+  - next request performs one bounded re-attribution and returns A again.
+- **C is the winner; C changes but `c.Sample` resolution identity is equal:**
+  - search is reconsidered;
+  - `equal = 1`, `changed = 0`;
+  - ProofDag consumers visited = 0;
+  - zero javac;
+  - resident semantic fact mutations and unit count remain unchanged.
+- **C-winning type changes resolution semantics:**
+  - one `CLASSPATH_SEARCH` leaf changes;
+  - one ProofDag consumer is visited/changed;
+  - one bounded semantic-context javac query follows.
+- Every supported transition asserts `coarse_fallbacks = 0` and `search_proofs_unavailable = 0`.
+
+Artifact provenance correction:
+- An intermediate proof run `36150907146` on `7187d2c0...` correctly reached the D-winner proof transition, but the fixture's `Analyzer.Context.coordinates` was empty. javac-admitted A/D facts therefore fell back to the application GAV and could not represent the artifact winner change correctly; the completion materialized only `Object.getClass`.
+- Production does not have that omission: `Application` maps each dependency classes path to its dependency GAV before constructing `Analyzer.Context`.
+- The permanent regression now supplies the same path -> GAV provenance, after which the exact-head run is green.
+
+SemanticUpdatePolicy fallback proof:
+- `SemanticUpdatePolicyTest.preciseClasspathEnvironmentDoesNotWidenToEveryFile` proves:
+  - `PRECISE_CLASSPATH` does not turn the environment event into all-files reanalysis;
+  - `UNKNOWN` retains the prior conservative all-files fallback.
+- This does not introduce another dependency graph. Changed classpath-search leaves are owned by the existing `SemanticUpdatePolicy.Live / ProofDag`.
+
+Result:
+- The original Checkpoint-12 architecture statement is now literally true through production:
+  `classpath event -> Merkle structural diff -> affected binary search proofs -> changed semantic leaves only -> existing ProofDag`.
+- The whole classpath root remains diff discovery, not an automatic invalidation key.
+- A javac environment reset is explicitly separated from detached semantic validity.
+- Coarse environment invalidation remains only where precise classpath proof coverage is unavailable.
+
+Remaining:
+- Resume Checkpoint 14 javac-minimization work from this repaired lifecycle boundary; do not revisit the accepted classpath proof model.

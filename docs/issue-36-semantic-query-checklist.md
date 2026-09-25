@@ -107,13 +107,13 @@ This checklist is authoritative. A box is checked only when the implementation e
 - [x] Hierarchy dependency/fixed-point regression.
 
 ## Checkpoint 12 — classpath proof integration
-- [ ] C content update changes ordered classpath root with a narrow diff.
-- [ ] Unreferenced C change does not invalidate unrelated query proof.
-- [ ] Relevant C change invalidates affected proof only.
-- [ ] Dependency insertion handled precisely.
-- [ ] Dependency removal handled precisely.
-- [ ] Reorder handles precedence/ambiguity correctly.
-- [ ] Winning search-prefix proof retained when later changes cannot affect the winner.
+- [x] C content update changes ordered classpath root with a narrow diff.
+- [x] Unreferenced C change does not invalidate unrelated query proof.
+- [x] Relevant C change invalidates affected proof only.
+- [x] Dependency insertion handled precisely.
+- [x] Dependency removal handled precisely.
+- [x] Reorder handles precedence/ambiguity correctly.
+- [x] Winning search-prefix proof retained when later changes cannot affect the winner.
 
 ## Checkpoint 13 — uncertainty/generation audit
 - [ ] Lost-history/overflow/corruption paths inspected.

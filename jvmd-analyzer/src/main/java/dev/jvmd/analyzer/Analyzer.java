@@ -1059,7 +1059,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                     examined++;
                     if(member.kind().equals("ctor")||member.kind().equals("package")||member.kind().equals("module"))continue;
                     if(resolved.staticReceiver()&&!member.staticMember()&&!Set.of("class","interface","enum","record","annotation").contains(member.kind()))continue;
-                    var access=CompletionContextResolver.access(member,resolved.packageName());
+                    var access=CompletionContextResolver.access(member,resolved.packageName(),enclosing);
                     if(access==CompletionContextResolver.Access.UNKNOWN)return null;
                     if(access==CompletionContextResolver.Access.DENIED)continue;
                     String shape=inheritedMemberShape(member);

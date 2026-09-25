@@ -1,5 +1,6 @@
 package dev.jvmd.tests;
 
+import dev.jvmd.core.AlgebraicAccumulator;
 import dev.jvmd.index.*;
 import java.nio.file.*;
 import java.util.*;
@@ -30,6 +31,10 @@ class MachineSemanticQueryProofTest {
                     .filter(value->value.fqn().equals("lib.Sample")).findFirst().orElseThrow();
             var rangeKey=SemanticReadView.memberIdentityKey(owner.id(),"get");
             var before=view.identity(QueryProof.Domain.MEMBER_RANGE,rangeKey).orElseThrow();
+            var expected=new AlgebraicAccumulator("semantic-member-range-v1");
+            for(var symbol:index.store().semanticMembersByOwner(owner.id(),"get","w",100,null,IndexStore.SemanticLayer.MACHINE).symbols())
+                expected.add(symbol.resolution().symbolKey(),symbol.resolution().identity());
+            assertThat(before).isEqualTo(expected.identity());
 
             IndexFixtures.jar(repo,"api","""
                     package lib;

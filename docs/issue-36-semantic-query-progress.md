@@ -378,3 +378,105 @@ Deviations:
 
 Remaining:
 - Checkpoint 2: represent ordered classpath semantics with a canonical Merkle sequence that supports exact equality, narrow same-position content diffs, insertion/removal and reorder diffs without using a commutative accumulator.
+
+
+## Checkpoint 2 — ordered classpath Merkle sequence
+
+Starting SHA: `2760a68fe3dc7362b010f8d3e7744709997c7d73`
+Ending SHA: `38ab3495988674230b1726d84e9b9b6312b7c473`
+
+Changes:
+- Added `ClasspathSequence` as the ordered structural identity for classpath semantics.
+- Entries now carry a stable logical slot key plus a **resolution identity**, not an opaque whole-artifact generation hash.
+- Same-slot resolution changes path-copy only the affected deterministic-priority treap path.
+- Insert/remove/reorder diffs no longer materialise both complete sequences or linearly scan prefix/suffix.
+- Structural diffs now binary-search canonical Merkle range identities to find the longest equal prefix and suffix; equal regions are skipped by identity.
+- Renamed the query-proof classpath domain to `CLASSPATH_SEARCH` and documented that ordinary query proofs bind ordered search-prefix/interval evidence rather than the complete classpath root.
+
+Architecture:
+- The complete classpath root proves exact ordered structural equality and identifies where a structural change occurred.
+- It is **not** an automatic semantic invalidation key.
+- `ClasspathSequence.Entry.resolutionIdentity` is explicitly scoped to Java-resolution-relevant semantics. Documentation/source enrichment that cannot affect Java resolution must remain outside it.
+- Structural insert/remove/reorder diff is now O(log² N) expected tree work for prefix/suffix discovery over the deterministic treap, rather than O(N) entry materialisation/scanning.
+
+Correctness proof:
+- Exact-head compile/package passed.
+- Phase-1 deterministic checkpoints passed in Tests run https://github.com/maxjay/jvmd/actions/runs/36076360165 with the checkpoint-2 implementation present.
+- Permanent tests cover exact order equality, single-leaf replacement, insertion, removal, reorder, duplicate stable keys and resolution-generation replacement.
+- A 4,096-entry permanent regression proves insertion/removal/reorder return the minimal changed interval while visiting fewer than half the sequence's Merkle nodes; the structural path never calls `entries()`.
+
+Performance proof:
+- The previous structural fallback materialised both full ordered sequences and performed an O(N) prefix/suffix scan.
+- That fallback was **removed**, not retained.
+- The replacement uses canonical range extraction from persistent treap splits and Merkle equality. Each binary-search probe visits only tree paths; unchanged ranges are skipped by hash.
+- No latency claim is made yet because this checkpoint has no request-path consumer. The executable node-visit bound protects the structural complexity directly.
+
+Findings:
+- Deterministic-priority treap splitting yields a canonical subtree for the same ordered subsequence, so range roots can be compared even when an insertion/removal changed the surrounding tree shape.
+- A broad classpath-root mismatch is therefore only a diff-discovery signal.
+- Query proofs should reference the winning ordered search prefix/interval plus the exact artifact/symbol identities that can affect resolution.
+
+Failed/deprecated approaches:
+- The initial checkpoint-2 test source used illegal compound `var` declarations and failed repository compilation before tests ran. The declarations were repaired.
+- The initial structural diff fallback that materialised full sequences was rejected after review and replaced with Merkle-range diffing.
+- A disposable compile-debug workflow was used once to capture the Maven compiler error because GitHub job logs were unavailable through the connector, then deleted immediately after diagnosis.
+
+Deviations:
+- None from the requested semantic model.
+
+Remaining:
+- Checkpoint 3 composes machine/workspace identities without feeding broad machine roots into workspace/query validity.
+
+
+## Checkpoint 3 — compositional machine/workspace identities
+
+Starting SHA: `38ab3495988674230b1726d84e9b9b6312b7c473`
+Ending SHA: `31ed33dcf988898d2b86fb4418da21bd3b2d0f19`
+
+Changes:
+- Added `MachineDependencyState`.
+- Added `WorkspaceSemanticIdentity`.
+- Added `ArtifactIndexFormat.resolutionIdentity(...)` so machine artifact semantic roots are derived from indexed Java semantic facts rather than raw JAR bytes.
+- Machine-global identity is a commutative algebraic inventory identity over artifact **resolution** identities.
+- Workspace dependency identity is a separate ordered `ClasspathSequence` composed only from the artifacts that workspace actually selected, in resolver order.
+- Workspace semantic identity composes selected dependency root, compiler options, processor/config, source membership, generated output and canonical per-module API/namespace/hierarchy identities.
+
+Architecture:
+- The machine root is deliberately absent from `WorkspaceSemanticIdentity`.
+- A workspace using A/B composes only A/B. If C changes, the machine identity may change while the A/B workspace dependency root remains byte-for-byte equal.
+- Artifact resolution identity excludes raw binary SHA, class-entry location, parameter display names and the separately published documentation overlay. Indexed signature/relationship semantics remain authoritative inputs.
+- Workspace structural identity is an observation/composition root, not an automatic instruction to reanalyse every conclusion. Later query proofs bind only required sub-identities.
+
+Correctness proof:
+- Exact-head compile/package passed.
+- Phase-1 deterministic checkpoints passed in Tests run https://github.com/maxjay/jvmd/actions/runs/36076360165 with the checkpoint-3 implementation present.
+- `MachineWorkspaceIdentityTest` proves:
+  - C changes machine identity while an A/B workspace root and workspace semantic identity remain equal;
+  - a C-using workspace changes;
+  - resolver order changes the workspace dependency root;
+  - republishing an equal resolution identity does not churn machine/workspace roots;
+  - duplicate/missing selected artifacts are rejected.
+- `ArtifactResolutionIdentityTest` proves:
+  - different binary SHA / class-entry / parameter-display generations with the same indexed semantic surface retain the same resolution identity;
+  - signature or semantic relationship changes alter the identity;
+  - documentation keys are separate from the resolution identity.
+
+Performance proof:
+- Machine inventory replacement updates one algebraic contribution in O(1).
+- Workspace dependency composition is proportional to the selected classpath when a workspace/project model is admitted; it is not a query-time operation.
+- Artifact resolution identity is computed from canonical indexed semantic facts at artifact publication/admission boundaries, not from query reads.
+- No ordinary completion/query path consumes either broad machine root or whole workspace root.
+
+Findings:
+- Raw binary content identity is too broad for Java semantic validity: body-only bytecode/JAR changes can preserve the canonical resolution surface.
+- Documentation is already a separate persisted overlay in the index architecture, so excluding it from artifact resolution identity aligns with existing storage ownership.
+- Machine-global change and workspace semantic change are now mathematically separate states rather than an event relationship.
+
+Failed/deprecated approaches:
+- No checkpoint-3 semantic approach was discarded.
+
+Deviations:
+- The new composition primitives are not yet the query read abstraction. Checkpoints 4, 8 and 12 will connect maintained identities to semantic reads/proofs and classpath resolution evidence without making the broad roots default invalidation keys.
+
+Remaining:
+- Checkpoint 4: converge live, workspace/local and machine/JDK semantic reads behind one deterministic semantic read view.

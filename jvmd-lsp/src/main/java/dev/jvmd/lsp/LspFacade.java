@@ -99,10 +99,11 @@ public final class LspFacade {
         var position=nativeParams.path("position");int line=Dispatcher.bounded(position,"line",0,Integer.MAX_VALUE),character=Dispatcher.bounded(position,"character",0,Integer.MAX_VALUE);
         Documents.offset(documents.text(file),new Documents.Position(line,character));arguments.put("line",line).put("character",character);
         if(method.equals("textDocument/completion")){
-            var answer=query.call("symbol.completion",arguments.put("limit",100));JsonNode completion=Json.MAPPER.valueToTree(answer.result());var items=Json.MAPPER.createArrayNode();
+            var answer=query.call("symbol.completion",arguments.put("limit",50));JsonNode completion=Json.MAPPER.valueToTree(answer.result());var items=Json.MAPPER.createArrayNode();
             for(var symbol:completion.path("items")){
-                var item=Json.MAPPER.createObjectNode().put("label",symbol.path("name").asText()).put("detail",symbol.path("label").asText()).put("kind",completionKind(symbol.path("kind").asText()));
-                item.set("textEdit",Json.MAPPER.valueToTree(Map.of("range",completion.path("range"),"newText",symbol.path("name").asText())));item.set("data",Json.MAPPER.valueToTree(Map.of("scip",symbol.path("scip").asText())));
+                String name=symbol.path("name").asText(),label=symbol.path("label").asText(name);
+                var item=Json.MAPPER.createObjectNode().put("label",label).put("kind",completionKind(symbol.path("kind").asText()));
+                item.set("textEdit",Json.MAPPER.valueToTree(Map.of("range",completion.path("range"),"newText",name)));item.set("data",Json.MAPPER.valueToTree(Map.of("scip",symbol.path("scip").asText())));
                 if(symbol.hasNonNull("import"))item.set("additionalTextEdits",Json.MAPPER.valueToTree(List.of(importEdit(documents.text(file),symbol.path("import").asText()))));
                 items.add(item);
             }return query.finish(Json.MAPPER.valueToTree(Map.of("isIncomplete",answer.truncated(),"items",items)));

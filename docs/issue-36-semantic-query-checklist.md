@@ -128,13 +128,13 @@ This checklist is authoritative. A box is checked only when the implementation e
 - [x] No unrelated tree redesign.
 
 ## Checkpoint 14 — javac minimization
-- [ ] Simple dependency receiver: zero query-side javac.
-- [ ] Simple local receiver: zero query-side javac where maintained facts suffice.
-- [ ] Prefix narrowing: zero javac.
-- [ ] Warm unchanged completion: zero javac.
-- [ ] Complex expression: at most one bounded semantic-context fallback.
-- [ ] No completion-time `Elements.getAllMembers()`.
-- [ ] No dependency hierarchy discovery through javac when indexed proof suffices.
+- [x] Simple dependency receiver: zero query-side javac.
+- [x] Simple local receiver: zero query-side javac where maintained facts suffice.
+- [x] Prefix narrowing: zero javac.
+- [x] Warm unchanged completion: zero javac.
+- [x] Complex expression: at most one bounded semantic-context fallback.
+- [x] No completion-time `Elements.getAllMembers()`.
+- [x] No dependency hierarchy discovery through javac when indexed proof suffices.
 
 ## Checkpoint 15 — CMP-01 correctness
 - [ ] Normal incomplete `project.` returns expected MavenProject candidates.

@@ -385,17 +385,25 @@ public final class RocksIndexStore implements IndexStore {
     @Override public synchronized List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds)throws Exception{
         return findMatching(query,workspace,substring,limit,after,kinds,ignored->true);
     }
+    /** Preserve the established navigation/search contract while semantic reads retain full declarations. */
+    private static boolean searchVisible(StoredArtifact artifact,ArtifactIndexFormat.SymbolRecord symbol){
+        return "local".equals(artifact.input().context().kind())
+                ||(symbol.flags()&java.lang.classfile.ClassFile.ACC_PRIVATE)==0;
+    }
+    private static boolean searchVisible(StoredArtifact artifact,Map<String,Object> symbol){
+        return "local".equals(artifact.input().context().kind())||(flags(symbol)&2)==0;
+    }
     @Override public synchronized List<Map<String,Object>> findNamePrefix(String prefix,String workspace,int limit,Set<String> kinds)throws Exception{
         if(limit<=0)return List.of();
         var found=new TreeMap<Long,Map<String,Object>>();var seen=new HashSet<String>();var selectedArtifacts=selected(workspace,true);
         for(var artifact:selectedArtifacts){
             for(var symbol:sourceOverlay.select(artifact.id(),prefix,false,true,limit,0,
-                    value->sourcePreferred(artifact,value,selectedArtifacts)&&!seen.contains(value.get("scip").toString())&&(kinds.isEmpty()||kinds.contains(value.get("kind")))&&Objects.toString(value.get("name"),"").startsWith(prefix))){
+                    value->searchVisible(artifact,value)&&sourcePreferred(artifact,value,selectedArtifacts)&&!seen.contains(value.get("scip").toString())&&(kinds.isEmpty()||kinds.contains(value.get("kind")))&&Objects.toString(value.get("name"),"").startsWith(prefix))){
                 String scip=symbol.get("scip").toString();if(seen.add(scip)&&preferred(artifact,scip,selectedArtifacts))offer(found,contextual(artifact,symbol),0,limit);
             }
             String posting="3|name|"+prefix;
             Predicate<ArtifactIndexFormat.SymbolRecord> accepts=s->{try{
-                if(!kinds.isEmpty()&&!kinds.contains(s.kind())||!s.name().startsWith(prefix))return false;
+                if(!searchVisible(artifact,s)||!kinds.isEmpty()&&!kinds.contains(s.kind())||!s.name().startsWith(prefix))return false;
                 String scip=artifact.input().context().scip(s);
                 return !sourceOverlay.contains(artifact.id(),scip)&&!seen.contains(scip)&&preferred(artifact,scip,selectedArtifacts);
             }catch(Exception e){throw new IllegalStateException(e);}};
@@ -404,7 +412,7 @@ public final class RocksIndexStore implements IndexStore {
                     repository.selectRanked(symbolsKey(artifact),posting,0,limit,accepts,s->{try{return symbolId(artifact,s);}catch(Exception e){throw new IllegalStateException(e);}});
             for(var symbol:matches){
                 var value=row(artifact,symbol);String scip=value.get("scip").toString();
-                if(!sourceOverlay.contains(artifact.id(),scip)&&seen.add(scip)&&preferred(artifact,scip,selectedArtifacts)
+                if(searchVisible(artifact,value)&&!sourceOverlay.contains(artifact.id(),scip)&&seen.add(scip)&&preferred(artifact,scip,selectedArtifacts)
                         &&(kinds.isEmpty()||kinds.contains(value.get("kind")))&&Objects.toString(value.get("name"),"").startsWith(prefix))
                     offer(found,value,0,limit);
             }
@@ -491,7 +499,7 @@ public final class RocksIndexStore implements IndexStore {
         var found=new TreeMap<Long,Map<String,Object>>();var seen=new HashSet<String>();
         var selectedArtifacts=selected(workspace,false);
         for(var artifact:selectedArtifacts){
-            for(var symbol:sourceOverlay.select(artifact.id(),query,substring,false,limit,after,value->sourcePreferred(artifact,value,selectedArtifacts)&&!seen.contains(value.get("scip").toString())&&match.test(value))){
+            for(var symbol:sourceOverlay.select(artifact.id(),query,substring,false,limit,after,value->searchVisible(artifact,value)&&sourcePreferred(artifact,value,selectedArtifacts)&&!seen.contains(value.get("scip").toString())&&match.test(value))){
                 String scip=symbol.get("scip").toString();if(seen.add(scip)&&preferred(artifact,scip,selectedArtifacts))offer(found,contextual(artifact,symbol),after,limit);
             }
             if(after>>>32>artifact.id())continue;
@@ -511,7 +519,7 @@ public final class RocksIndexStore implements IndexStore {
                 if(query.startsWith(prefix))prefixes.add("2|scip|"+query.substring(prefix.length())+"|");
             }
             var candidates=new TreeMap<Integer,ArtifactIndexFormat.SymbolRecord>();
-            Predicate<ArtifactIndexFormat.SymbolRecord> accepts=s->{try{if(!kinds.isEmpty()&&!kinds.contains(s.kind()))return false;String scip=artifact.input().context().scip(s);return !sourceOverlay.contains(artifact.id(),scip)&&!seen.contains(scip)&&preferred(artifact,scip,selectedArtifacts)&&match.test(searchFields(artifact,s));}catch(Exception e){throw new IllegalStateException(e);}};
+            Predicate<ArtifactIndexFormat.SymbolRecord> accepts=s->{try{if(!searchVisible(artifact,s)||!kinds.isEmpty()&&!kinds.contains(s.kind()))return false;String scip=artifact.input().context().scip(s);return !sourceOverlay.contains(artifact.id(),scip)&&!seen.contains(scip)&&preferred(artifact,scip,selectedArtifacts)&&match.test(searchFields(artifact,s));}catch(Exception e){throw new IllegalStateException(e);}};
             for(String prefix:prefixes){
                 // Code-enriched generations can remap IDs to original signatures; their
                 // rank still needs the decoded symbol. Plain signatures can reject IDs first.
@@ -523,7 +531,7 @@ public final class RocksIndexStore implements IndexStore {
             Integer direct=substring?null:repository.binaryId(symbolsKey(artifact),query);if(direct!=null)candidates.put(direct,repository.symbol(symbolsKey(artifact),direct));
             for(var symbol:candidates.values()){
                 var value=row(artifact,symbol);String scip=value.get("scip").toString();
-                if(!sourceOverlay.contains(artifact.id(),scip)&&seen.add(scip)&&preferred(artifact,scip,selectedArtifacts)&&match.test(value))offer(found,value,after,limit);
+                if(searchVisible(artifact,value)&&!sourceOverlay.contains(artifact.id(),scip)&&seen.add(scip)&&preferred(artifact,scip,selectedArtifacts)&&match.test(value))offer(found,value,after,limit);
             }
         }return List.copyOf(found.values());
     }

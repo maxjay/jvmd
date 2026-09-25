@@ -236,6 +236,7 @@ public final class SemanticUpdatePolicy {
             changedFile=normalize(changedFile);
             var propagation=proofs.propagate(leaves,recomputer);
             var coarseRoots=new LinkedHashSet<Path>(propagation.fallbackFiles());
+            coarseRoots.addAll(propagation.changedFiles());
             coarseRoots.add(changedFile);
             var reanalyze=coarseUnprovenClosure(coarseRoots);
             reanalyze.remove(changedFile);

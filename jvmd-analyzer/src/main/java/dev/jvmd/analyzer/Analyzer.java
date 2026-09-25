@@ -734,12 +734,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     public Envelope completion(Path path,String text,int line,int character,int limit,int offset)throws Exception{
         try(var trace=dev.jvmd.core.RequestScope.stage("completion.materialize")){
             path=path.toAbsolutePath().normalize();
-            int cursor=Documents.offset(text,new Documents.Position(line,character)),start=cursor,end=cursor;
-            while(start>0&&Character.isJavaIdentifierPart(text.codePointBefore(start)))start-=Character.charCount(text.codePointBefore(start));
-            while(end<text.length()&&Character.isJavaIdentifierPart(text.codePointAt(end)))end+=Character.charCount(text.codePointAt(end));
-            String prefix=text.substring(start,cursor),patched=text.substring(0,start)+EditorQueries.MARKER+text.substring(end);int focusCursor=start;
-            int selector=start-1;while(selector>=0&&Character.isWhitespace(text.charAt(selector)))selector--;
-            boolean qualified=selector>=0&&text.charAt(selector)=='.';
+            int cursor=Documents.offset(text,new Documents.Position(line,character));
+            var probe=CompletionProbe.create(text,cursor);
+            int start=probe.selectorStart(),end=probe.selectorEnd(),focusCursor=probe.focusCursor();
+            String prefix=probe.prefix(),patched=probe.source();
+            boolean qualified=probe.qualified();
             synchronizeKnownSources(path);touch(path,text);
             var observed=validatedInputs();String residentKey=residentContextKey(path,patched,start,observed,qualified);
             Envelope resident;

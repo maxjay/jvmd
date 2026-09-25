@@ -1028,6 +1028,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var seen=new HashSet<String>();var result=new ArrayList<SemanticHierarchyOwner>();
         while(!queue.isEmpty()){
             var current=queue.removeFirst();if(!seen.add(current.symbol().id()))continue;
+            if(view.completeness(current.symbol().id())!=SemanticCompleteness.COMPLETE)return null;
             var admitted=new SemanticHierarchyOwner(current.symbol(),current.instantiated(),current.substitutions(),result.size());
             result.add(admitted);
             for(var parent:current.symbol().directSupertypes()){
@@ -1048,7 +1049,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         SemanticReadView.Symbol enclosing=resolved.enclosingTypeId()==null?null:view.symbol(resolved.enclosingTypeId());
         int perOwnerBudget=Math.max(64,Math.min(4096,target*8));
         var selected=new HashMap<String,HierarchyChoice>();var typeNames=new HashMap<String,String>();
-        for(var owner:semanticHierarchyOwners(view,resolved)){
+        var owners=semanticHierarchyOwners(view,resolved);if(owners==null)return null;
+        for(var owner:owners){
             String cursor=null;int examined=0;
             do{
                 int pageSize=Math.min(128,perOwnerBudget-examined);if(pageSize<=0)break;
@@ -1075,7 +1077,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var resolved=CompletionContextResolver.resolve(text,probe,view,this::semanticTypes);
         if(resolved==null)return null;
         int target=(int)Math.min(Integer.MAX_VALUE,(long)offset+limit+1L);
-        var rows=semanticQualifiedRows(view,resolved,prefix,target);
+        var rows=semanticQualifiedRows(view,resolved,prefix,target);if(rows==null)return null;
         int from=Math.min(offset,rows.size()),to=Math.min(rows.size(),from+limit);
         var returned=List.copyOf(rows.subList(from,to));boolean more=rows.size()>to;
         completionRequests++;

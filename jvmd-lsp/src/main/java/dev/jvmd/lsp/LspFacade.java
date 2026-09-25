@@ -101,9 +101,15 @@ public final class LspFacade {
         if(method.equals("textDocument/completion")){
             var answer=query.call("symbol.completion",arguments.put("limit",50));JsonNode completion=Json.MAPPER.valueToTree(answer.result());var items=Json.MAPPER.createArrayNode();
             for(var symbol:completion.path("items")){
-                String name=symbol.path("name").asText(),label=symbol.path("label").asText(name);
-                var item=Json.MAPPER.createObjectNode().put("label",label).put("kind",completionKind(symbol.path("kind").asText()));
-                item.set("textEdit",Json.MAPPER.valueToTree(Map.of("range",completion.path("range"),"newText",name)));item.set("data",Json.MAPPER.valueToTree(Map.of("scip",symbol.path("scip").asText())));
+                String name=symbol.path("name").asText(),semanticLabel=symbol.path("label").asText(name),kind=symbol.path("kind").asText();
+                boolean type=Set.of("class","interface","enum","record","annotation","type_parameter").contains(kind);
+                var item=Json.MAPPER.createObjectNode()
+                        .put("label",type?name:semanticLabel)
+                        .put("kind",completionKind(kind));
+                if(type&&!semanticLabel.equals(name))item.put("detail",semanticLabel);
+                else if(!type)item.put("detail",semanticLabel);
+                item.set("textEdit",Json.MAPPER.valueToTree(Map.of("range",completion.path("range"),"newText",name)));
+                item.set("data",Json.MAPPER.valueToTree(Map.of("scip",symbol.path("scip").asText())));
                 if(symbol.hasNonNull("import"))item.set("additionalTextEdits",Json.MAPPER.valueToTree(List.of(importEdit(documents.text(file),symbol.path("import").asText()))));
                 items.add(item);
             }return query.finish(Json.MAPPER.valueToTree(Map.of("isIncomplete",answer.truncated(),"items",items)));

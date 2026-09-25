@@ -81,12 +81,12 @@ This checklist is authoritative. A box is checked only when the implementation e
 - [x] Ordered classpath proof.
 
 ## Checkpoint 9 — exact-symbol / overload / member-range proofs
-- [ ] Exact symbol fact identity.
-- [ ] Overload-group identity.
-- [ ] Member-range identity.
-- [ ] Unrelated member leaves queried range proof equal.
-- [ ] Relevant member changes queried range proof.
-- [ ] Prefix narrowing reuses receiver/hierarchy/classpath proof.
+- [x] Exact symbol fact identity.
+- [x] Overload-group identity.
+- [x] Member-range identity.
+- [x] Unrelated member leaves queried range proof equal.
+- [x] Relevant member changes queried range proof.
+- [x] Prefix narrowing reuses receiver/hierarchy/classpath proof.
 
 ## Checkpoint 10 — namespace / negative proofs
 - [ ] Current-package namespace proof.

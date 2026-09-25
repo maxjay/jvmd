@@ -8,18 +8,26 @@ import java.util.*;
 /**
  * Persistent ordered classpath identity.
  *
+ * The whole root proves exact ordered equality and is a structural diff-discovery primitive. It is
+ * deliberately not a default semantic-query validity key: resolution proofs should bind only the
+ * ordered search prefix/range and exact artifact/symbol identities capable of changing the result.
+ *
+ * Entry {@code resolutionIdentity} must likewise describe Java-resolution-relevant semantics for
+ * that classpath slot. Documentation/source enrichment that cannot affect Java resolution belongs
+ * in a separate identity and must not churn this sequence.
+ *
  * Logical position is represented by sequence structure and subtree cardinality rather than being
- * copied into each leaf. That keeps a same-position artifact update to path-copying O(log N) while
+ * copied into each leaf. That keeps a same-position semantic update to path-copying O(log N) while
  * the Merkle root still commits to exact order. Entry keys must be stable for one logical classpath
- * slot across content generations.
+ * slot across resolution-relevant generations.
  */
 public final class ClasspathSequence {
     private static final Hash256 EMPTY=CanonicalDigestWriter.digest("classpath-sequence-empty-v1");
 
-    public record Entry(String key,Hash256 semanticIdentity) {
+    public record Entry(String key,Hash256 resolutionIdentity) {
         public Entry {
             Objects.requireNonNull(key);
-            Objects.requireNonNull(semanticIdentity);
+            Objects.requireNonNull(resolutionIdentity);
             if(key.isBlank())throw new IllegalArgumentException("Classpath entry key must not be blank");
         }
     }
@@ -32,7 +40,7 @@ public final class ClasspathSequence {
         }
     }
 
-    public record Difference(List<Interval> intervals,int merkleNodesCompared,boolean structuralFallback) {
+    public record Difference(List<Interval> intervals,int merkleNodesCompared) {
         public Difference {
             intervals=List.copyOf(intervals);
             if(merkleNodesCompared<0)throw new IllegalArgumentException("Negative Merkle comparison count");
@@ -55,7 +63,7 @@ public final class ClasspathSequence {
             size=1+leftSize+rightSize;
             // left/right cardinality plus ordered child identities bind the logical sequence positions.
             merkle=CanonicalDigestWriter.digest("classpath-sequence-node-v1",
-                    leftSize,identity(left),item.entry().key(),item.entry().semanticIdentity(),
+                    leftSize,identity(left),item.entry().key(),item.entry().resolutionIdentity(),
                     rightSize,identity(right));
         }
     }
@@ -127,33 +135,64 @@ public final class ClasspathSequence {
     }
 
     /**
-     * Merkle diff. Content-only changes retain the canonical tree shape and recurse only through
-     * unequal subtrees. Structural edits fall back to one minimal changed ordered interval bounded
-     * by the longest equal prefix and suffix.
+     * Merkle/range diff.
+     *
+     * Content-only changes retain the canonical treap shape and recurse through unequal subtrees.
+     * Structural edits use binary-searched Merkle range identities for the longest equal prefix and
+     * suffix. No structural diff materialises the complete previous/current sequences.
      */
     public Difference diff(ClasspathSequence current){
         Objects.requireNonNull(current);
         var compared=new Counter();
-        if(identity().equals(current.identity()))return new Difference(List.of(),1,false);
+        if(identity().equals(current.identity()))return new Difference(List.of(),1);
 
         var changed=new ArrayList<Integer>();
         if(diffSameShape(root,current.root,0,changed,compared))
-            return new Difference(intervals(changed),compared.value,false);
+            return new Difference(intervals(changed),compared.value);
 
-        var previousEntries=entries();
-        var currentEntries=current.entries();
-        int prefix=0;
-        int common=Math.min(previousEntries.size(),currentEntries.size());
-        while(prefix<common&&previousEntries.get(prefix).equals(currentEntries.get(prefix)))prefix++;
-
-        int suffix=0;
-        while(suffix<previousEntries.size()-prefix&&suffix<currentEntries.size()-prefix
-                &&previousEntries.get(previousEntries.size()-1-suffix)
-                        .equals(currentEntries.get(currentEntries.size()-1-suffix)))suffix++;
-
+        int prefix=commonPrefix(root,current.root,compared);
+        int suffix=commonSuffix(root,current.root,prefix,compared);
         return new Difference(List.of(new Interval(
-                prefix,previousEntries.size()-suffix,
-                prefix,currentEntries.size()-suffix)),compared.value,true);
+                prefix,size(root)-suffix,
+                prefix,size(current.root)-suffix)),compared.value);
+    }
+
+    private static int commonPrefix(Node previous,Node current,Counter compared){
+        int low=0,high=Math.min(size(previous),size(current));
+        while(low<high){
+            int middle=low+(high-low+1)/2;
+            if(rangeIdentity(previous,0,middle,compared).equals(rangeIdentity(current,0,middle,compared)))low=middle;
+            else high=middle-1;
+        }
+        return low;
+    }
+
+    private static int commonSuffix(Node previous,Node current,int prefix,Counter compared){
+        int previousSize=size(previous),currentSize=size(current);
+        int low=0,high=Math.min(previousSize-prefix,currentSize-prefix);
+        while(low<high){
+            int middle=low+(high-low+1)/2;
+            if(rangeIdentity(previous,previousSize-middle,previousSize,compared)
+                    .equals(rangeIdentity(current,currentSize-middle,currentSize,compared)))low=middle;
+            else high=middle-1;
+        }
+        return low;
+    }
+
+    /**
+     * Canonical identity of one ordered half-open range. Splitting a deterministic-priority treap
+     * yields the same canonical subtree for the same ordered entries, regardless of its surrounding
+     * sequence, so equal ranges can be skipped by identity without enumerating their leaves.
+     */
+    private static Hash256 rangeIdentity(Node root,int start,int end,Counter compared){
+        int size=size(root);
+        if(start<0||end<start||end>size)throw new IndexOutOfBoundsException("Range ["+start+","+end+") outside [0,"+size+")");
+        if(start==end)return EMPTY;
+        if(start==0&&end==size){compared.value++;return identity(root);}
+        if(start==0)return identity(split(root,end,compared).left());
+        if(end==size)return identity(split(root,start,compared).right());
+        Split prefix=split(root,start,compared);
+        return identity(split(prefix.right(),end-start,compared).left());
     }
 
     private static boolean diffSameShape(Node previous,Node current,int offset,List<Integer> changed,Counter compared){
@@ -165,7 +204,7 @@ public final class ClasspathSequence {
         if(previous.size!=current.size||previousLeft!=currentLeft
                 ||!previous.item.entry().key().equals(current.item.entry().key()))return false;
         if(!diffSameShape(previous.left,current.left,offset,changed,compared))return false;
-        if(!previous.item.entry().semanticIdentity().equals(current.item.entry().semanticIdentity()))
+        if(!previous.item.entry().resolutionIdentity().equals(current.item.entry().resolutionIdentity()))
             changed.add(offset+previousLeft);
         return diffSameShape(previous.right,current.right,offset+previousLeft+1,changed,compared);
     }
@@ -203,14 +242,18 @@ public final class ClasspathSequence {
     }
 
     /** Split by ordered cardinality: left contains exactly {@code count} entries. */
-    private static Split split(Node node,int count){
+    private static Split split(Node node,int count){return split(node,count,null);}
+
+    /** Diff-only split that counts visited Merkle nodes without materialising sequence entries. */
+    private static Split split(Node node,int count,Counter compared){
         if(node==null)return new Split(null,null);
+        if(compared!=null)compared.value++;
         int left=size(node.left);
         if(count<=left){
-            Split split=split(node.left,count);
+            Split split=split(node.left,count,compared);
             return new Split(split.left,new Node(node.item,split.right,node.right));
         }
-        Split split=split(node.right,count-left-1);
+        Split split=split(node.right,count-left-1,compared);
         return new Split(new Node(node.item,node.left,split.left),split.right);
     }
 

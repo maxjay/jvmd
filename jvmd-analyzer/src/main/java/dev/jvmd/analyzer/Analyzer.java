@@ -1380,6 +1380,20 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return query.proof().equals(currentDocumentContextProof(path,text,patched,focusCursor,snapshot,query,observed));
     }
 
+    private DocumentSemanticCached reusableDocumentSemantic(Path path,String text,String patched,int start,int focusCursor,
+                                                                  String key,CompilerInputs.Snapshot observed)throws Exception{
+        if(key==null)return null;
+        var caches=modules.get(context.generation());var cached=caches.documentSemantics.get(path);
+        if(cached==null||!key.equals(cached.key())||cached.snapshot().query(start)==null)return null;
+        var query=cached.snapshot().query(start);
+        if(!documentProofCurrent(path,text,patched,focusCursor,cached.snapshot(),query,observed))return null;
+        int version=Objects.requireNonNullElse(documents.version(path),-1);
+        String content=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var rebased=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
+                cached.snapshot().queries());
+        var reused=new DocumentSemanticCached(key,rebased);caches.documentSemantics.put(path,reused);return reused;
+    }
+
     private DocumentSemanticCached qualifiedDocumentSemantic(Path path,String text,String patched,int start,int focusCursor,
                                                                String key,CompilerInputs.Snapshot observed,boolean force)throws Exception{
         return qualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,observed,force,false,0);
@@ -1388,14 +1402,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                                                                String key,CompilerInputs.Snapshot observed,boolean force,boolean discovered,int supersededRetries)throws Exception{
         var caches=modules.get(context.generation());int version=Objects.requireNonNullElse(documents.version(path),-1);
         String content=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        var cached=caches.documentSemantics.get(path);
-        if(!force&&key!=null&&cached!=null&&key.equals(cached.key())&&cached.snapshot().query(start)!=null){
-            var query=cached.snapshot().query(start);
-            if(documentProofCurrent(path,text,patched,focusCursor,cached.snapshot(),query,observed)){
-                var rebased=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
-                        cached.snapshot().queries());
-                var reused=new DocumentSemanticCached(key,rebased);caches.documentSemantics.put(path,reused);return reused;
-            }
+        if(!force){
+            var reused=reusableDocumentSemantic(path,text,patched,start,focusCursor,key,observed);
+            if(reused!=null)return reused;
         }
         var focus=focusing.focus(path,patched,focusCursor);
         var attributed=compiler.query(path,focus.source(),2,observed,(task,units,tier)->{
@@ -1444,14 +1453,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                                                                  String key,CompilerInputs.Snapshot observed,boolean force,boolean discovered,int supersededRetries)throws Exception{
         var caches=modules.get(context.generation());int version=Objects.requireNonNullElse(documents.version(path),-1);
         String content=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        var cached=caches.documentSemantics.get(path);
-        if(!force&&key!=null&&cached!=null&&key.equals(cached.key())&&cached.snapshot().query(start)!=null){
-            var query=cached.snapshot().query(start);
-            if(documentProofCurrent(path,text,patched,focusCursor,cached.snapshot(),query,observed)){
-                var rebased=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
-                        cached.snapshot().queries());
-                var reused=new DocumentSemanticCached(key,rebased);caches.documentSemantics.put(path,reused);return reused;
-            }
+        if(!force){
+            var reused=reusableDocumentSemantic(path,text,patched,start,focusCursor,key,observed);
+            if(reused!=null)return reused;
         }
         var focus=focusing.focus(path,patched,focusCursor);
         var attributed=compiler.query(path,focus.source(),2,observed,(task,units,tier)->{
@@ -1483,9 +1487,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
 
     private Envelope residentQualifiedCompletion(Path path,String text,String patched,int start,int end,int focusCursor,String prefix,
-                                                  int limit,int offset,String key,CompilerInputs.Snapshot observed)throws Exception{
+                                                  int limit,int offset,String key,CompilerInputs.Snapshot observed,boolean reuseOnly)throws Exception{
         if(key==null)return null;
-        var cached=qualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,observed,false);if(cached==null)return null;
+        var cached=reuseOnly?reusableDocumentSemantic(path,text,patched,start,focusCursor,key,observed)
+                :qualifiedDocumentSemantic(path,text,patched,start,focusCursor,key,observed,false);
+        if(cached==null)return null;
         var query=cached.snapshot().query(start);if(query==null)return null;
         if(!(query.receiverType() instanceof SemanticType.Declared||query.receiverType() instanceof SemanticType.Intersection))return null;
         int target=(int)Math.min(Integer.MAX_VALUE,(long)offset+limit+1L);
@@ -1528,11 +1534,16 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             Envelope resident;
             try{
                 if(qualified){
+                    // Tier 0: consume an existing detached context before doing any lexical/index
+                    // receiver reconstruction. Prefix edits share the same receiver anchor.
+                    resident=residentQualifiedCompletion(path,text,patched,start,end,focusCursor,prefix,limit,offset,residentKey,observed,true);
+                    if(resident!=null)return resident;
+                    // Tier 1: establish a straightforward receiver directly from maintained facts.
                     var maintained=maintainedQualifiedCompletion(path,text,start,end,prefix,probe,limit,offset);
                     if(maintained!=null)return maintained;
                 }
                 resident=qualified
-                        ?residentQualifiedCompletion(path,text,patched,start,end,focusCursor,prefix,limit,offset,residentKey,observed)
+                        ?residentQualifiedCompletion(path,text,patched,start,end,focusCursor,prefix,limit,offset,residentKey,observed,false)
                         :residentUnqualifiedCompletion(path,text,patched,start,end,focusCursor,prefix,limit,offset,residentKey,observed);
             }catch(CompletionAdvanceFailure failure){
                 completionRequests++;

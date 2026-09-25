@@ -225,11 +225,17 @@ public final class Bindings {
                 String target=capture.symbol(e);
                 if(target!=null){
                     String receiver=null;
-                    if(leaf instanceof MemberSelectTree selected)try{
-                        TypeMirror mirror=trees.getTypeMirror(new TreePath(getCurrentPath(),selected.getExpression()));
-                        if(mirror instanceof TypeVariable variable)mirror=variable.getUpperBound();
-                        if(mirror instanceof DeclaredType declared&&declared.asElement() instanceof TypeElement type)
-                            receiver=capture.symbol(type);
+                    try{
+                        if(leaf instanceof MemberSelectTree selected){
+                            TypeMirror mirror=trees.getTypeMirror(new TreePath(getCurrentPath(),selected.getExpression()));
+                            if(mirror instanceof TypeVariable variable)mirror=variable.getUpperBound();
+                            if(mirror instanceof DeclaredType declared&&declared.asElement() instanceof TypeElement type)
+                                receiver=capture.symbol(type);
+                        }else if(e.getEnclosingElement() instanceof TypeElement
+                                &&!e.getModifiers().contains(Modifier.STATIC)){
+                            var scope=trees.getScope(getCurrentPath());var enclosing=scope==null?null:scope.getEnclosingClass();
+                            if(enclosing!=null)receiver=capture.symbol(enclosing);
+                        }
                     }catch(IllegalArgumentException|NullPointerException ignored){}
                     referenceProofs.add(new ReferenceProof(target,receiver,name,role));
                 }

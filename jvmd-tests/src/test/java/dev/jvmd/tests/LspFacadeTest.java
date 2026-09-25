@@ -61,6 +61,30 @@ class LspFacadeTest {
         }
     }
 
+    @Test void staleCompletionItemIsRejectedBeforeEnrichment()throws Exception{
+        Path api=root.resolve("Api.java"),use=root.resolve("Use.java");
+        String apiSource="class Api { /** Original. */ int greet(){return 1;} }";
+        String useSource="class Use { Object call(Api api){return api.gre;} }";
+        Files.writeString(api,apiSource);Files.writeString(use,useSource);
+        try(var app=new Application(TestSupport.config(root,Duration.ofHours(4)))){
+            String session=TestSupport.open(app,root);
+            var completion=call(app,session,"textDocument/completion",use,useSource,useSource.indexOf("api.gre")+7,Map.of());
+            JsonNode item=null;for(var candidate:completion.path("items"))if(candidate.path("label").asText().startsWith("greet(")){item=candidate;break;}
+            assertThat(item).as(completion.toString()).isNotNull();
+            assertThat(item.path("data").path("resolution_identity").asText()).isNotBlank();
+
+            String changed="class Api { /** Current. */ String greet(){return \"changed\";} }";
+            var opened=TestSupport.request(app.dispatcher(),"document.open",Map.of(
+                    "session",session,"path",api.toString(),"version",1,"text",changed));
+            assertThat(opened.has("error")).as(opened.toString()).isFalse();
+
+            var response=TestSupport.request(app.dispatcher(),"lsp.request",Map.of(
+                    "session",session,"method","completionItem/resolve","params",item,"client",CLIENT));
+            assertThat(response.path("error").path("code").asInt()).isEqualTo(-32801);
+            assertThat(response.path("error").path("message").asText()).contains("stale");
+        }
+    }
+
     @Test void typeRenameIncludesTheVersionedTextEditAndFileOperation()throws Exception{
         Path file=root.resolve("Original.java");String source="class Original { Original create(){return new Original();} }";Files.writeString(file,source);
         try(var app=new Application(TestSupport.config(root,Duration.ofHours(4)))){

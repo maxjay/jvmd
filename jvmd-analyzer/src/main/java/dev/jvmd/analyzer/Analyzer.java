@@ -914,6 +914,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         return changedSourceLeaves(leaves);
     }
+    private static SourceLeafChanges mergeSourceLeafChanges(SourceLeafChanges first,SourceLeafChanges second){
+        var changed=new TreeMap<QueryProof.Key,Hash256>(first.changed());changed.putAll(second.changed());
+        return new SourceLeafChanges(changed,first.consumersStoppedEqual()+second.consumersStoppedEqual());
+    }
     private static boolean sourceProofConsumer(SemanticUpdatePolicy.ProofConsumer consumer){
         return consumer.id().equals("source-semantic");
     }
@@ -986,20 +990,40 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         conditionallyInvalidate(path,affected);
     }
     /**
-     * A source appears or disappears from the editor overlay. Preserve already-admitted semantic
-     * facts and reset only this module's javac source namespace. Negative resolutions have no
-     * declaration edge, so invalidate the unresolved-name posting set and its reverse closure.
+     * A source appears or disappears from the editor/disk namespace. Membership is discovery
+     * evidence: proof-covered negative/name-resolution consumers are reconsidered only from the
+     * binary-name domains this path can change. Consumers without precise negative proof coverage
+     * retain the conservative unresolved-file closure.
      */
     public void sourceMembershipChanged(Path path)throws Exception{
         path=path.toAbsolutePath().normalize();
         compiler.documents(documents);compiler.observeSources(Set.of(path));
-        var affected=new LinkedHashSet<Path>(SemanticUpdatePolicy.closure(dependencies.semantic().unresolved(),dependencies.semantic()));
-        boolean present=documents.contains(path)||Files.isRegularFile(path);
+        String binary=sourceBinary(path);boolean present=documents.contains(path)||Files.isRegularFile(path);
+        if(liveSourceState!=null)liveSourceState.observe(path);
+
+        var coarseRoots=new LinkedHashSet<Path>();
+        for(Path unresolved:dependencies.semantic().unresolved())
+            if(!dependencies.semantic().proofCovered(unresolved))coarseRoots.add(unresolved);
+        var coarse=new LinkedHashSet<Path>(coarseRoots);
+        coarse.addAll(dependencies.semantic().coarseFallback(coarseRoots));
+        coarse.remove(path);
+
+        SourceLeafChanges membership=sourceMembershipLeaves(binary,present);
+        SourceLeafChanges semantic=new SourceLeafChanges(Map.of(),0);
         if(!present){
-            var removed=dependencies.semantic().remove(path);affected.addAll(removed.reanalyze());
-            semanticState().removeUnit("source:"+path);
+            String unit="source:"+path;var state=semanticState().unit(unit);var oldFacts=new ArrayList<SemanticFact>();
+            if(state!=null)for(String id:state.facts().ids()){var fact=semanticState().symbol(id);if(fact!=null)oldFacts.add(fact);}
+            var delta=semanticState().removeUnit(unit);
+            semantic=sourceMutationLeaves(new SemanticAdmission(delta,oldFacts),path);
+            var removed=dependencies.semantic().removePrecise(path);
+            coarse.addAll(removed.reanalyze());coarse.remove(path);
         }
-        if(!affected.isEmpty())invalidate(affected);
+
+        var propagation=propagateSourceLeaves(mergeSourceLeafChanges(semantic,membership),coarse);
+        if(!propagation.affected().isEmpty()){
+            diagnosticStore.invalidate(propagation.affected(),DiagnosticStore.Reason.DEPENDENCY_API_CHANGED);
+            invalidateCompilerCaches(propagation.affected());
+        }
         compiler.resetSourceContext();
     }
     /** Broad project-model namespace reset; editor source membership must use sourceMembershipChanged. */

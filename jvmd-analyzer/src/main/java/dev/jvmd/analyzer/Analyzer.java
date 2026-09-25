@@ -558,10 +558,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     private String residentContextKey(Path file,String patched,int start,CompilerInputs.Snapshot inputs,boolean qualified){
         if(patched.length()>256*1024)return null;
-        String patchedHash=Hashing.sha256(patched.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        String namespace=qualified?"qualified":inputs.live().snapshot().state().namespace().fingerprint().value();
-        return CompilerInputs.compose(qualified?"resident-qualified-v2":"resident-unqualified-v2",
-                modules.get(context.generation()).completionContextIdentity,file.toString(),start,patchedHash,inputs.environment().value(),namespace);
+        return CompilerInputs.compose("resident-context-anchor-v3",
+                context.gav(),context.release(),context.workspace(),file.toString(),start,qualified);
     }
 
     private boolean residentSemanticUnitCurrent(String unit){
@@ -598,29 +596,137 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(identities.isEmpty())return "";
         identities.sort(String::compareTo);return Hashing.sha256(String.join("\n",identities).getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
-    private String accessibilityKey(DocumentSemanticSnapshot.QueryContext query){
-        var caches=modules.get(context.generation());
-        return CompilerInputs.compose("completion-access-v1",caches.completionContextIdentity,
-                query.receiverType().identity().hex(),Objects.toString(query.receiverSymbolId(),""),
-                query.staticReceiver(),query.packageName(),Objects.toString(query.enclosingTypeId(),""),
-                query.staticContext(),queryHierarchyApi(query));
+
+    private Hash256 documentScopeIdentity(Focusing.Result focus){
+        int start=Math.max(0,Math.min(focus.start(),focus.source().length()));
+        int end=Math.max(start,Math.min(focus.end(),focus.source().length()));
+        return CanonicalDigestWriter.digest("document-scope-proof-v1",focus.member(),focus.source().substring(start,end));
     }
-    private DocumentSemanticSnapshot.QueryContext registerAccessibility(ModuleCaches caches,SemanticFacts.CompletionContext result){
+    private Hash256 documentScopeIdentity(Path path,String patched,int focusCursor)throws Exception{
+        return documentScopeIdentity(focusing.focus(path,patched,focusCursor));
+    }
+    private Hash256 receiverProofIdentity(DocumentSemanticSnapshot.QueryContext query)throws Exception{
+        Hash256 declaration=null;
+        if(query.receiverSymbolId()!=null&&!query.receiverSymbolId().isBlank())
+            declaration=semanticReadView().identity(QueryProof.Domain.EXACT_SYMBOL,query.receiverSymbolId()).orElse(null);
+        return CanonicalDigestWriter.digest("document-receiver-proof-v1",
+                query.receiverType().identity(),Objects.toString(query.receiverSymbolId(),""),
+                query.staticReceiver(),declaration);
+    }
+    private Hash256 hierarchyProofIdentity(DocumentSemanticSnapshot.QueryContext query)throws Exception{
+        if(!context.preciseSourceRoots()||liveSourceState==null||!liveSourceState.snapshot().trusted())
+            if(!ensureHierarchySemanticCurrent(query))return CanonicalDigestWriter.digest("document-hierarchy-proof-v1","<unavailable>");
+        return CanonicalDigestWriter.digest("document-hierarchy-proof-v1",queryHierarchyApi(query));
+    }
+    private Hash256 accessibilityProofIdentity(DocumentSemanticSnapshot.QueryContext query)throws Exception{
+        Hash256 enclosing=null;
+        if(query.enclosingTypeId()!=null&&!query.enclosingTypeId().isBlank())
+            enclosing=semanticReadView().identity(QueryProof.Domain.EXACT_SYMBOL,query.enclosingTypeId()).orElse(null);
+        return CanonicalDigestWriter.digest("document-accessibility-proof-v1",
+                context.release(),context.compilerOptions(),query.receiverType().identity(),
+                Objects.toString(query.receiverSymbolId(),""),query.staticReceiver(),query.packageName(),
+                Objects.toString(query.enclosingTypeId(),""),enclosing,query.staticContext(),hierarchyProofIdentity(query));
+    }
+    private String accessibilityKey(DocumentSemanticSnapshot.QueryContext query)throws Exception{
+        return accessibilityProofIdentity(query).hex();
+    }
+    private DocumentSemanticSnapshot.QueryContext registerAccessibility(ModuleCaches caches,SemanticFacts.CompletionContext result)throws Exception{
         String key=accessibilityKey(result.query());caches.accessibility.put(key,result.accessibleMemberIds());
         return result.query().withAccessibilityKey(key);
     }
-    private boolean accessibilityCurrent(DocumentSemanticSnapshot.QueryContext query){
-        return modules.get(context.generation()).accessibility.contains(query.accessibilityKey());
+    private boolean accessibilityCurrent(DocumentSemanticSnapshot.QueryContext query)throws Exception{
+        return query.accessibilityKey().equals(accessibilityKey(query))
+                &&modules.get(context.generation()).accessibility.contains(query.accessibilityKey());
     }
     private Set<String> accessibility(DocumentSemanticSnapshot.QueryContext query){
         return modules.get(context.generation()).accessibility.get(query.accessibilityKey());
     }
 
-    private boolean cachedHierarchyCurrent(DocumentSemanticCached cached,DocumentSemanticSnapshot.QueryContext query)throws Exception{
-        if(!context.preciseSourceRoots()||liveSourceState==null||!liveSourceState.snapshot().trusted()){
-            if(!ensureHierarchySemanticCurrent(query))return false;
+    private Hash256 namespaceProofIdentity(String text,CompilerInputs.Snapshot observed){
+        var imports=new TreeSet<String>();
+        var matcher=java.util.regex.Pattern.compile("(?m)^\\s*import\\s+(static\\s+)?([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$*][\\w$*]*)*)\\s*;").matcher(text);
+        while(matcher.find())imports.add((matcher.group(1)==null?"":"static ")+matcher.group(2));
+        var packageMatcher=java.util.regex.Pattern.compile("(?m)^\\s*package\\s+([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)\\s*;").matcher(text);
+        String pkg=packageMatcher.find()?packageMatcher.group(1):"";
+        return CanonicalDigestWriter.digest("document-namespace-proof-v1",pkg,List.copyOf(imports),
+                observed.live().snapshot().state().namespace().fingerprint().value());
+    }
+    private Hash256 classpathProofIdentity(CompilerInputs.Snapshot observed)throws Exception{
+        if(index!=null&&!context.workspace().isBlank()){
+            var identity=index.store().semanticClasspathIdentity(context.workspace());
+            if(identity.isPresent())return identity.get();
         }
-        return Objects.equals(cached.hierarchyApi(),queryHierarchyApi(query));
+        return CanonicalDigestWriter.digest("document-classpath-search-fallback-v1",
+                context.release(),context.classpath().stream().map(path->path.toAbsolutePath().normalize().toString()).toList(),
+                observed.environment().value());
+    }
+    private Hash256 resolutionPathIdentity(String key)throws Exception{
+        if(key.startsWith("type:")){
+            String binary=key.substring("type:".length());
+            var symbol=semanticReadView().type(binary);
+            return CanonicalDigestWriter.digest("document-resolution-path-v1",binary,
+                    symbol==null?null:symbol.fqn(),symbol==null?null:symbol.resolutionIdentity());
+        }
+        if(key.startsWith("source:")){
+            Path source=Path.of(key.substring("source:".length())).toAbsolutePath().normalize();
+            if(!ensureCompletionSemantics(Set.of(source)))
+                return CanonicalDigestWriter.digest("document-resolution-path-v1",source.toString(),"<unavailable>");
+            var leaf=documents.liveState(context.sources()).leaf(source).orElse(null);
+            return CanonicalDigestWriter.digest("document-resolution-path-v1",source.toString(),
+                    leaf==null?"<missing>":leaf.api().value());
+        }
+        return CanonicalDigestWriter.digest("document-resolution-path-v1",key,"<unknown>");
+    }
+
+    private QueryProof documentContextProof(Path path,String text,Focusing.Result focus,
+                                             DocumentSemanticSnapshot.QueryContext query,
+                                             Collection<String> resolutionBinaries,Collection<Path> dependencySources,
+                                             CompilerInputs.Snapshot observed)throws Exception{
+        var dependencies=new ArrayList<QueryProof.Dependency>();
+        String queryKey=path.toAbsolutePath().normalize()+"#"+query.selectorOffset();
+        dependencies.add(new QueryProof.Dependency(QueryProof.Domain.DOCUMENT_SCOPE,queryKey,documentScopeIdentity(focus)));
+        dependencies.add(new QueryProof.Dependency(QueryProof.Domain.RECEIVER,"receiver",receiverProofIdentity(query)));
+        for(String binary:new TreeSet<>(resolutionBinaries))
+            dependencies.add(new QueryProof.Dependency(QueryProof.Domain.RESOLUTION_PATH,"type:"+binary,resolutionPathIdentity("type:"+binary)));
+        var sourceKeys=new TreeSet<String>();
+        for(Path source:dependencySources)sourceKeys.add(source.toAbsolutePath().normalize().toString());
+        for(String source:sourceKeys)
+            dependencies.add(new QueryProof.Dependency(QueryProof.Domain.RESOLUTION_PATH,"source:"+source,resolutionPathIdentity("source:"+source)));
+        dependencies.add(new QueryProof.Dependency(QueryProof.Domain.HIERARCHY,"receiver",hierarchyProofIdentity(query)));
+        dependencies.add(new QueryProof.Dependency(QueryProof.Domain.ACCESSIBILITY,"context",accessibilityProofIdentity(query)));
+        dependencies.add(new QueryProof.Dependency(QueryProof.Domain.NAMESPACE,"visible",namespaceProofIdentity(text,observed)));
+        dependencies.add(new QueryProof.Dependency(QueryProof.Domain.CLASSPATH_SEARCH,
+                context.workspace().isBlank()?"compiler":"workspace:"+context.workspace(),classpathProofIdentity(observed)));
+        return new QueryProof(dependencies);
+    }
+    private QueryProof currentDocumentContextProof(Path path,String text,String patched,int focusCursor,
+                                                    DocumentSemanticSnapshot snapshot,
+                                                    DocumentSemanticSnapshot.QueryContext query,
+                                                    CompilerInputs.Snapshot observed)throws Exception{
+        String currentContent=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var dependencies=new ArrayList<QueryProof.Dependency>();
+        for(var dependency:query.proof().dependencies()){
+            Hash256 identity=switch(dependency.key().domain()){
+                case DOCUMENT_SCOPE -> currentContent.equals(snapshot.contentIdentity())
+                        ?dependency.identity():documentScopeIdentity(path,patched,focusCursor);
+                case RECEIVER -> receiverProofIdentity(query);
+                case RESOLUTION_PATH -> resolutionPathIdentity(dependency.key().value());
+                case HIERARCHY -> hierarchyProofIdentity(query);
+                case ACCESSIBILITY -> accessibilityProofIdentity(query);
+                case NAMESPACE -> namespaceProofIdentity(text,observed);
+                case CLASSPATH_SEARCH -> classpathProofIdentity(observed);
+                default -> dependency.identity();
+            };
+            dependencies.add(new QueryProof.Dependency(dependency.key(),identity));
+        }
+        return new QueryProof(dependencies);
+    }
+    private boolean documentProofCurrent(Path path,String text,String patched,int focusCursor,
+                                         DocumentSemanticSnapshot snapshot,DocumentSemanticSnapshot.QueryContext query,
+                                         CompilerInputs.Snapshot observed)throws Exception{
+        if(query.proof().dependencies().isEmpty())return false;
+        if(!accessibilityCurrent(query))return false;
+        return query.proof().equals(currentDocumentContextProof(path,text,patched,focusCursor,snapshot,query,observed));
     }
 
     private DocumentSemanticCached qualifiedDocumentSemantic(Path path,String text,String patched,int start,int focusCursor,

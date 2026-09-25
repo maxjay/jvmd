@@ -121,6 +121,96 @@ public interface IndexStore extends AutoCloseable {
         }
         return List.copyOf(result);
     }
+    /** Exact type lookup by canonical binary/FQN key. */
+    default IndexedSemanticSymbol semanticType(String binaryName,String workspace,SemanticLayer layer)throws Exception{
+        String simple=binaryName.substring(Math.max(binaryName.lastIndexOf('.'),binaryName.lastIndexOf('    List<ArtifactCandidate> binaryArtifacts(String workspace)throws Exception;
+    List<ArtifactWork> pendingSignatureArtifacts(String workspace)throws Exception;
+    List<ArtifactCandidate> artifactsOwning(Collection<String> scips,String workspace)throws Exception;
+    List<ArtifactCandidate> artifactsReferencing(Collection<String> fqns,String workspace)throws Exception;
+    List<ResolvedRelationship> relationships(Collection<String> scips,boolean outgoing,Set<String> kinds,String workspace)throws Exception;
+    /** Layer-specific relationship read; production stores should override when layers can overlap. */
+    default List<ResolvedRelationship> relationships(Collection<String> scips,boolean outgoing,Set<String> kinds,String workspace,SemanticLayer layer)throws Exception{
+        return relationships(scips,outgoing,kinds,workspace).stream()
+                .filter(edge->layerMatches(edge.source(),layer)).toList();
+    }
+    List<SymbolicReference> codeReferences(Collection<String> frontier,boolean outgoing,Set<String> kinds,String workspace)throws Exception;
+    List<Map<String,Object>> symbolsByBinaryKey(String binaryKey,String workspace)throws Exception;
+    List<Map<String,Object>> relationshipClosure(String rootScip,int depth,Set<String> kinds,String workspace,int limit,int offset)throws Exception;
+    Set<String> unresolvedSignatureTargets(String rootScip,int depth,Set<String> kinds,String workspace,int limit)throws Exception;
+    List<Map<String,Object>> overrideParents(String scip,String workspace,int limit)throws Exception;
+    List<Path> localWorkspaceArtifacts(String workspace)throws Exception;
+
+    private static IndexedSemanticSymbol semanticSymbol(Map<String,Object> row,SemanticLayer layer){
+        String id=Objects.toString(row.get("scip"),"");
+        String binary=Objects.toString(row.get("binary_key"),id);
+        String fqn=Objects.toString(row.get("fqn"),"");
+        String name=Objects.toString(row.get("name"),"");
+        String kind=Objects.toString(row.get("kind"),"");
+        String signature=Objects.toString(row.get("signature"),"");
+        String descriptor=Objects.toString(row.get("erased_descriptor"),"");
+        int flags=row.get("flags") instanceof Number value?value.intValue():0;
+        Object encoded=row.get("resolution_fact");
+        ResolutionFact resolution=encoded instanceof ResolutionFact value?value
+                :encoded instanceof String value?ResolutionFact.decode(value)
+                :ResolutionFact.legacy(binary,fqn,name,kind,descriptor,flags);
+        var parameters=new ArrayList<String>();
+        Object raw=row.get("parameters");
+        if(raw instanceof Iterable<?> values)for(Object value:values)parameters.add(Objects.toString(value,""));
+        String source=row.get("source_file")==null?null:row.get("source_file").toString();
+        return new IndexedSemanticSymbol(id,name,kind,fqn,binary,signature,descriptor,resolution,List.copyOf(parameters),source,layer);
+    }
+    private static boolean layerMatches(Map<String,Object> row,SemanticLayer layer){
+        boolean local="local".equals(Objects.toString(row.get("artifact_kind"),""));
+        return layer==SemanticLayer.LOCAL?local:!local;
+    }
+}
+))+1);
+        for(var value:semanticTypesByName(simple,workspace,256,layer))
+            if(binaryName.equals(value.fqn())||binaryName.equals(value.binaryKey())||binaryName.equals(value.fqn().replace('    List<ArtifactCandidate> binaryArtifacts(String workspace)throws Exception;
+    List<ArtifactWork> pendingSignatureArtifacts(String workspace)throws Exception;
+    List<ArtifactCandidate> artifactsOwning(Collection<String> scips,String workspace)throws Exception;
+    List<ArtifactCandidate> artifactsReferencing(Collection<String> fqns,String workspace)throws Exception;
+    List<ResolvedRelationship> relationships(Collection<String> scips,boolean outgoing,Set<String> kinds,String workspace)throws Exception;
+    /** Layer-specific relationship read; production stores should override when layers can overlap. */
+    default List<ResolvedRelationship> relationships(Collection<String> scips,boolean outgoing,Set<String> kinds,String workspace,SemanticLayer layer)throws Exception{
+        return relationships(scips,outgoing,kinds,workspace).stream()
+                .filter(edge->layerMatches(edge.source(),layer)).toList();
+    }
+    List<SymbolicReference> codeReferences(Collection<String> frontier,boolean outgoing,Set<String> kinds,String workspace)throws Exception;
+    List<Map<String,Object>> symbolsByBinaryKey(String binaryKey,String workspace)throws Exception;
+    List<Map<String,Object>> relationshipClosure(String rootScip,int depth,Set<String> kinds,String workspace,int limit,int offset)throws Exception;
+    Set<String> unresolvedSignatureTargets(String rootScip,int depth,Set<String> kinds,String workspace,int limit)throws Exception;
+    List<Map<String,Object>> overrideParents(String scip,String workspace,int limit)throws Exception;
+    List<Path> localWorkspaceArtifacts(String workspace)throws Exception;
+
+    private static IndexedSemanticSymbol semanticSymbol(Map<String,Object> row,SemanticLayer layer){
+        String id=Objects.toString(row.get("scip"),"");
+        String binary=Objects.toString(row.get("binary_key"),id);
+        String fqn=Objects.toString(row.get("fqn"),"");
+        String name=Objects.toString(row.get("name"),"");
+        String kind=Objects.toString(row.get("kind"),"");
+        String signature=Objects.toString(row.get("signature"),"");
+        String descriptor=Objects.toString(row.get("erased_descriptor"),"");
+        int flags=row.get("flags") instanceof Number value?value.intValue():0;
+        Object encoded=row.get("resolution_fact");
+        ResolutionFact resolution=encoded instanceof ResolutionFact value?value
+                :encoded instanceof String value?ResolutionFact.decode(value)
+                :ResolutionFact.legacy(binary,fqn,name,kind,descriptor,flags);
+        var parameters=new ArrayList<String>();
+        Object raw=row.get("parameters");
+        if(raw instanceof Iterable<?> values)for(Object value:values)parameters.add(Objects.toString(value,""));
+        String source=row.get("source_file")==null?null:row.get("source_file").toString();
+        return new IndexedSemanticSymbol(id,name,kind,fqn,binary,signature,descriptor,resolution,List.copyOf(parameters),source,layer);
+    }
+    private static boolean layerMatches(Map<String,Object> row,SemanticLayer layer){
+        boolean local="local".equals(Objects.toString(row.get("artifact_kind"),""));
+        return layer==SemanticLayer.LOCAL?local:!local;
+    }
+}
+,'.')))
+                return value;
+        return null;
+    }
     List<ArtifactCandidate> binaryArtifacts(String workspace)throws Exception;
     List<ArtifactWork> pendingSignatureArtifacts(String workspace)throws Exception;
     List<ArtifactCandidate> artifactsOwning(Collection<String> scips,String workspace)throws Exception;

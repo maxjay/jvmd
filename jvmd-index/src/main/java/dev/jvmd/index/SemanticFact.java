@@ -66,6 +66,20 @@ public record SemanticFact(
                 apiIdentity,namespaceIdentity,documentationIdentity);
     }
 
+    /**
+     * Identity of the Java-resolution meaning of this declaration.
+     *
+     * Source provenance, parameter display names and documentation are intentionally excluded:
+     * changing them may alter presentation/enrichment, but cannot by itself change what declaration
+     * this is, its accessibility, overload shape, type or hierarchy semantics.
+     */
+    public Hash256 resolutionIdentity(){
+        return CanonicalDigestWriter.digest("semantic-fact-resolution-v1",
+                id,ownerId,name,kind,structuralSignature,erasedDescriptor,
+                modifiers.stream().sorted().toList(),packageName,namePath,fqn,type.identity(),typeParameters,
+                directSupertypes.stream().map(SemanticType::identity).toList(),varargs,apiIdentity,namespaceIdentity);
+    }
+
     public boolean typeDeclaration(){return TYPES.contains(kind);}
     public boolean member(){return ownerId!=null&&!ownerId.isBlank();}
 

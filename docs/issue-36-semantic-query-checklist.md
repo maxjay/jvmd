@@ -72,13 +72,13 @@ This checklist is authoritative. A box is checked only when the implementation e
 - [x] Fallback returns semantic context, not the candidate universe.
 
 ## Checkpoint 8 — proof-backed document contexts
-- [ ] Lexical/document context proof.
-- [ ] Receiver proof.
-- [ ] Resolution/search-path proof.
-- [ ] Hierarchy proof.
-- [ ] Accessibility-context proof.
-- [ ] Namespace proof.
-- [ ] Ordered classpath proof.
+- [x] Lexical/document context proof.
+- [x] Receiver proof.
+- [x] Resolution/search-path proof.
+- [x] Hierarchy proof.
+- [x] Accessibility-context proof.
+- [x] Namespace proof.
+- [x] Ordered classpath proof.
 
 ## Checkpoint 9 — exact-symbol / overload / member-range proofs
 - [ ] Exact symbol fact identity.

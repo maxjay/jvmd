@@ -30,7 +30,11 @@ public final class SemanticUpdatePolicy {
         return decide(changes,environmentChanged?EnvironmentTransition.UNKNOWN:EnvironmentTransition.NONE,postings);
     }
     public static Result decide(Collection<Change> changes,EnvironmentTransition environment,Postings postings){
-        Objects.requireNonNull(environment);Objects.requireNonNull(postings);
+        return decide(changes,environment,postings,ignored->false);
+    }
+    private static Result decide(Collection<Change> changes,EnvironmentTransition environment,Postings postings,
+                                 java.util.function.Predicate<Path> proofCovered){
+        Objects.requireNonNull(environment);Objects.requireNonNull(postings);Objects.requireNonNull(proofCovered);
         try(var trace=dev.jvmd.core.RequestScope.stage("semantic.invalidate")){
             trace.count("changed_files",changes.size());
             trace.count("environment_unknown",environment==EnvironmentTransition.UNKNOWN?1:0);
@@ -46,13 +50,13 @@ public final class SemanticUpdatePolicy {
             }else if(!old.equals(now))body.add(file);
         }
         var affected=new LinkedHashSet<Path>(body);affected.addAll(api);
-        // PRECISE_CLASSPATH means ordered classpath search leaves were already reconciled and
-        // propagated through ProofDag. Only an unsupported/unknown environment transition widens
-        // to every file. Source API changes still use the ordinary reverse dependency closure.
+        // A broad API/root event is discovery evidence. Reverse-file closure is authoritative only
+        // until a dependant explicitly declares complete semantic-proof coverage. Precise consumers
+        // are reconsidered from changed proof leaves after the new detached facts are admitted.
         if(environment==EnvironmentTransition.UNKNOWN)affected.addAll(postings.files());
         else if(!api.isEmpty()){
             var roots=new LinkedHashSet<>(api);roots.addAll(postings.unresolved(exports));
-            affected.addAll(closure(roots,postings));
+            affected.addAll(closure(roots,postings,proofCovered));
         }
         affected.removeAll(deleted);
         trace.count("affected_files",affected.size());trace.count("api_files",api.size());trace.count("body_files",body.size());
@@ -61,8 +65,17 @@ public final class SemanticUpdatePolicy {
         }
     }
     public static Set<Path> closure(Collection<Path> roots,Postings postings){
-        var result=new LinkedHashSet<Path>();var queue=new ArrayDeque<>(roots);
-        while(!queue.isEmpty()){Path path=queue.removeFirst();if(result.add(path))queue.addAll(postings.dependants(path));}
+        return closure(roots,postings,ignored->false);
+    }
+    private static Set<Path> closure(Collection<Path> roots,Postings postings,
+                                     java.util.function.Predicate<Path> proofCovered){
+        var result=new LinkedHashSet<Path>();var queue=new ArrayDeque<>(roots);var rootsSet=new HashSet<Path>();
+        for(Path root:roots)rootsSet.add(root.toAbsolutePath().normalize());
+        while(!queue.isEmpty()){
+            Path path=queue.removeFirst().toAbsolutePath().normalize();
+            if(!rootsSet.contains(path)&&proofCovered.test(path))continue;
+            if(result.add(path))queue.addAll(postings.dependants(path));
+        }
         return Set.copyOf(result);
     }
     public static boolean matches(Set<String> unresolved,Set<String> exports){
@@ -165,6 +178,10 @@ public final class SemanticUpdatePolicy {
         public Set<ProofConsumer> consumers(QueryProof.Key key){
             return Collections.unmodifiableSet(new LinkedHashSet<>(
                     new TreeSet<>(reverse.getOrDefault(Objects.requireNonNull(key),Set.of()))));
+        }
+        /** Current semantic dependency leaves referenced by registered consumers. */
+        public Set<QueryProof.Key> dependencyKeys(){
+            return Collections.unmodifiableSet(new LinkedHashSet<>(new TreeSet<>(reverse.keySet())));
         }
         public boolean hasConsumers(Path file){
             Path normalized=Objects.requireNonNull(file).toAbsolutePath().normalize();return nodes.keySet().stream().anyMatch(value->value.file().equals(normalized));
@@ -299,7 +316,7 @@ public final class SemanticUpdatePolicy {
             if(completeness==Completeness.FOCUSED){recordFocused(file,value.dependencies());return new Result(Set.of(),Set.of(),Set.of(),Set.of(),false,false);}
             var before=complete.get(file);
             // Decide with old edges still present, then replace exactly, including empty sets.
-            var result=decide(List.of(new Change(before,value)),false,this);
+            var result=decide(List.of(new Change(before,value)),EnvironmentTransition.NONE,this,this::proofCovered);
             replace(value);pending.remove(file);
             return result;
         }
@@ -319,7 +336,13 @@ public final class SemanticUpdatePolicy {
             unlink(file);complete.remove(file);focused.remove(file);pending.remove(file);proofs.removeFile(file);preciseProofCoverage.remove(file);return result;
         }
         public Set<Path> changed(Path file){
-            file=normalize(file);var affected=closure(Set.of(file),this);pending.put(file,affected);return affected;
+            file=normalize(file);
+            // Retain the full closure as pending discovery so scheduling can establish the changed
+            // prerequisite first. Immediate cache invalidation stops at proof-covered dependants;
+            // source admission will reopen only the paths whose semantic leaves actually changed.
+            var pendingAffected=closure(Set.of(file),this);pending.put(file,pendingAffected);
+            var immediate=new LinkedHashSet<Path>();immediate.add(file);immediate.addAll(coarseUnprovenClosure(Set.of(file)));
+            return Set.copyOf(immediate);
         }
         public Set<Path> prerequisites(Path file){
             file=normalize(file);var result=new HashSet<Path>();

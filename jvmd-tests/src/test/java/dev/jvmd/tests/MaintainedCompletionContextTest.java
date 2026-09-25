@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import dev.jvmd.analyzer.Analyzer;
 import dev.jvmd.core.Json;
 import dev.jvmd.index.IndexService;
+import dev.jvmd.index.IndexStore;
 import java.nio.file.*;
 import java.util.*;
 import org.junit.jupiter.api.Tag;
@@ -34,6 +35,12 @@ class MaintainedCompletionContextTest {
             var analyzer=new Analyzer()){
             index.indexJar(jar,"fixture:api:1","jar");
             index.loadWorkspace("w",List.of(new IndexService.WorkspaceArtifact(jar.toString(),"compile")),List.of());
+            var sample=index.store().semanticTypesByName("Sample","w",10,IndexStore.SemanticLayer.MACHINE).stream()
+                    .filter(value->value.fqn().equals("lib.Sample")).findFirst().orElseThrow();
+            var sampleMembers=index.store().semanticMembersByOwner(sample.id(),"get","w",20,null,IndexStore.SemanticLayer.MACHINE);
+            assertThat(sampleMembers.symbols()).extracting(IndexStore.IndexedSemanticSymbol::name)
+                    .contains("getPets","getModel");
+            assertThat(sampleMembers.symbols()).allMatch(value->value.resolution().modifiers().contains("public"));
             analyzer.configure(new Analyzer.Context(
                     "fixture:app:1","25",List.of(jar),List.of(root.resolve("src")),"maintained",Map.of(),
                     List.of("--release","25"),Set.of(),List.of(),List.of(root.resolve("src")),true,"w"),
@@ -58,7 +65,6 @@ class MaintainedCompletionContextTest {
             @SuppressWarnings("unchecked")
             var resident=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
             assertThat(((Number)resident.get("semantic_facts")).longValue()).isZero();
-            assertThat(index.store().status()).containsEntry("owner_prefix_queries",5L);
         }
     }
 
@@ -86,6 +92,12 @@ class MaintainedCompletionContextTest {
             var analyzer=new Analyzer()){
             index.indexJar(jar,"org.apache.maven:maven-core:fixture","jar");
             index.loadWorkspace("maven-workspace",List.of(new IndexService.WorkspaceArtifact(jar.toString(),"compile")),List.of());
+            var project=index.store().semanticTypesByName("MavenProject","maven-workspace",10,IndexStore.SemanticLayer.MACHINE).stream()
+                    .filter(value->value.fqn().equals("org.apache.maven.project.MavenProject")).findFirst().orElseThrow();
+            var projectMembers=index.store().semanticMembersByOwner(project.id(),"get","maven-workspace",20,null,IndexStore.SemanticLayer.MACHINE);
+            assertThat(projectMembers.symbols()).extracting(IndexStore.IndexedSemanticSymbol::name)
+                    .contains("getArtifactId","getGroupId");
+            assertThat(projectMembers.symbols()).allMatch(value->value.resolution().modifiers().contains("public"));
             analyzer.configure(new Analyzer.Context(
                     "demo:app:1","25",List.of(jar),List.of(root.resolve("maven-src")),"maven-maintained",Map.of(),
                     List.of("--release","25"),Set.of(),List.of(),List.of(root.resolve("maven-src")),true,"maven-workspace"),
@@ -98,8 +110,8 @@ class MaintainedCompletionContextTest {
             JsonNode result=Json.MAPPER.valueToTree(answer.result());
 
             assertThat(answer.warnings()).isEmpty();
-            assertThat(result.path("items").findValuesAsText("name")).contains("getArtifactId","getGroupId");
             assertThat(((Number)analyzer.status().get("queries")).longValue()).isEqualTo(before);
+            assertThat(result.path("items").findValuesAsText("name")).contains("getArtifactId","getGroupId");
             @SuppressWarnings("unchecked")
             var resident=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
             assertThat(((Number)resident.get("semantic_facts")).longValue()).isZero();

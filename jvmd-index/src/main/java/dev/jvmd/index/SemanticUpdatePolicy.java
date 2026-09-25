@@ -166,8 +166,10 @@ public final class SemanticUpdatePolicy {
                         if(queued.add(consumer))queue.addLast(consumer);
                 }
             }
-            var recomputed=new TreeSet<ProofConsumer>(),changed=new TreeSet<ProofConsumer>(),
-                    equal=new TreeSet<ProofConsumer>(),fallback=new TreeSet<ProofConsumer>();
+            var recomputed=new TreeSet<ProofConsumer>();
+            var changed=new TreeSet<ProofConsumer>();
+            var equal=new TreeSet<ProofConsumer>();
+            var fallback=new TreeSet<ProofConsumer>();
             int iterations=0,limit=Math.max(16,nodes.size()*Math.max(4,nodes.size()+1));
             while(!queue.isEmpty()){
                 if(++iterations>limit)throw new IllegalStateException("Semantic proof propagation did not converge");

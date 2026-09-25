@@ -21,7 +21,10 @@ class MaintainedCompletionContextTest {
         Path repo=Files.createDirectories(root.resolve("repo"));
         Path jar=IndexFixtures.jar(repo,"api","""
                 package lib;
-                public class Sample {
+                class Base {
+                    public int inherited(){return 7;}
+                }
+                public class Sample extends Base {
                     public int getPets(){return 1;}
                     public static int staticValue(){return 2;}
                     public Model getModel(){return new Model();}
@@ -48,7 +51,7 @@ class MaintainedCompletionContextTest {
 
             String parameter="package lib; class Use { Object f(Sample value){ return value.; } }";
             Path file=Files.writeString(sources.resolve("Use.java"),parameter);
-            assertZeroJavac(analyzer,file,parameter,"value.","getPets");
+            assertZeroJavac(analyzer,file,parameter,"value.","getPets","inherited");
 
             String field="package lib; class Use { Sample field; Object f(){ return field.; } }";
             Files.writeString(file,field);analyzer.changed(file);
@@ -65,6 +68,29 @@ class MaintainedCompletionContextTest {
             @SuppressWarnings("unchecked")
             var resident=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
             assertThat(((Number)resident.get("semantic_facts")).longValue()).isZero();
+        }
+    }
+
+    @Test void admittedLocalReceiverCompletesFromResidentFactsWithZeroQuerySideJavac()throws Exception{
+        Path sourceRoot=Files.createDirectories(root.resolve("local-src/local"));
+        String apiText="package local; class Api { int getLocal(){return 1;} }";
+        Path api=Files.writeString(sourceRoot.resolve("Api.java"),apiText);
+        String useText="package local; class Use { Object f(Api value){ return value.; } }";
+        Path use=Files.writeString(sourceRoot.resolve("Use.java"),useText);
+
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(new Analyzer.Context(
+                    "fixture:local:1","25",List.of(),List.of(root.resolve("local-src")),"local-maintained",Map.of()),
+                    null,256L*1024*1024);
+
+            var admitted=analyzer.bindings(api,apiText,null);
+            assertThat(admitted.tier()).isEqualTo(2);
+            assertThat(admitted.warnings()).isEmpty();
+            @SuppressWarnings("unchecked")
+            var resident=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            assertThat(((Number)resident.get("semantic_facts")).longValue()).isPositive();
+
+            assertZeroJavac(analyzer,use,useText,"value.","getLocal");
         }
     }
 
@@ -117,7 +143,7 @@ class MaintainedCompletionContextTest {
         }
     }
 
-    private static void assertZeroJavac(Analyzer analyzer,Path file,String source,String needle,String expected)throws Exception{
+    private static void assertZeroJavac(Analyzer analyzer,Path file,String source,String needle,String... expected)throws Exception{
         long before=((Number)analyzer.status().get("queries")).longValue();
         int cursor=source.indexOf(needle)+needle.length();
         var position=dev.jvmd.core.Documents.position(source,cursor);

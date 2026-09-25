@@ -9,6 +9,11 @@ import java.util.*;
  *
  * A proof contains only domain/key identities. It deliberately retains no javac objects and owns
  * no semantic state: producers bind current maintained identities; consumers compare them.
+ *
+ * Broad structural roots are not ordinary proof dependencies merely because they changed. In
+ * particular classpath proofs should bind the ordered search prefix/interval and exact artifact or
+ * symbol identities that can affect a resolution. The complete classpath root is a diff-discovery
+ * identity, not an automatic query invalidation key.
  */
 public final class QueryProof {
     public enum Domain {
@@ -22,7 +27,9 @@ public final class QueryProof {
         RESOLUTION_PATH,
         NEGATIVE_RESOLUTION,
         ACCESSIBILITY,
-        CLASSPATH,
+        /** Ordered classpath search prefix/interval evidence; not the whole classpath root by default. */
+        CLASSPATH_SEARCH,
+        /** Reserved for conclusions whose semantics genuinely depend on a composed workspace identity. */
         WORKSPACE
     }
 

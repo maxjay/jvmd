@@ -39,9 +39,16 @@ public final class ResidentSemanticState {
     private record Entry(String key,SemanticFact fact,Hash256 valueIdentity,Aggregate contribution,BigInteger priority) { }
     private static final class Node {
         final Entry entry;final Node left,right;final Hash256 merkle;
+        final AlgebraicAccumulator.Value resolutionRange;
+        final String minKey,maxKey;
         Node(Entry entry,Node left,Node right){
             this.entry=entry;this.left=left;this.right=right;
             merkle=CanonicalDigestWriter.digest("resident-node-v1",left==null?EMPTY_HASH:left.merkle,entry.key(),entry.valueIdentity(),right==null?EMPTY_HASH:right.merkle);
+            var self=AlgebraicAccumulator.contribution("semantic-resolution-range-v1",entry.key(),entry.fact().resolutionIdentity());
+            resolutionRange=(left==null?AlgebraicAccumulator.Value.ZERO:left.resolutionRange)
+                    .plus(self).plus(right==null?AlgebraicAccumulator.Value.ZERO:right.resolutionRange);
+            minKey=left==null?entry.key():left.minKey;
+            maxKey=right==null?entry.key():right.maxKey;
         }
     }
 
@@ -242,6 +249,16 @@ public final class ResidentSemanticState {
     public synchronized Aggregate memberAggregate(String ownerId){
         return memberAggregates.getOrDefault(ownerId,Aggregate.ZERO);
     }
+    /** Resolution-only identity for one direct owner/name-prefix domain. */
+    public synchronized Hash256 memberRangeIdentity(String ownerId,String namePrefix){
+        String prefix=SemanticFact.memberPrefix(ownerId,Objects.requireNonNullElse(namePrefix,""));
+        return resolutionRange(root,prefix,prefix+"\uffff").identity("semantic-member-range-v1");
+    }
+    /** Resolution-only identity for the exact overload group of one member name. */
+    public synchronized Hash256 overloadGroupIdentity(String ownerId,String name){
+        String prefix=SemanticFact.memberPrefix(ownerId,Objects.requireNonNullElse(name,""))+"\0";
+        return resolutionRange(root,prefix,prefix+"\uffff").identity("semantic-overload-group-v1");
+    }
     /** Constant-time validity identity for the effective API reachable from a receiver type. */
     public synchronized String hierarchyApi(String typeId){
         return CanonicalDigestWriter.digest("hierarchy-validity-v2",uncertaintyGeneration,
@@ -407,6 +424,17 @@ public final class ResidentSemanticState {
 
     private static BigInteger point(String domain,String value){
         return Hash256.sha256((domain+"\0"+Objects.requireNonNullElse(value,"")).getBytes(StandardCharsets.UTF_8)).unsignedInteger().mod(FIELD);
+    }
+
+    private static AlgebraicAccumulator.Value resolutionRange(Node node,String lower,String upper){
+        if(node==null||node.maxKey.compareTo(lower)<0||node.minKey.compareTo(upper)>0)
+            return AlgebraicAccumulator.Value.ZERO;
+        if(node.minKey.compareTo(lower)>=0&&node.maxKey.compareTo(upper)<=0)return node.resolutionRange;
+        var result=resolutionRange(node.left,lower,upper);
+        if(node.entry.key().compareTo(lower)>=0&&node.entry.key().compareTo(upper)<=0)
+            result=result.plus(AlgebraicAccumulator.contribution("semantic-resolution-range-v1",
+                    node.entry.key(),node.entry.fact().resolutionIdentity()));
+        return result.plus(resolutionRange(node.right,lower,upper));
     }
 
     private Node newNode(Entry entry,Node left,Node right){return new Node(entry,left,right);}

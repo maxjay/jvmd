@@ -19,15 +19,31 @@ public final class Bindings {
     public record ImportSite(int start,int end,String qualifier) { }
     /** Implements 4.4: resolved structural and source-code relationships. */
     public record Edge(String src,String dst,String kind) { }
+    /**
+     * Detached receiver evidence for one resolved source reference. The target is javac's selected
+     * declaration; receiverType is the canonical declared type of a qualified receiver when javac
+     * can prove one. This is enough to bind instance-call reuse to the effective receiver hierarchy
+     * without retaining Trees/TypeMirror state.
+     */
+    public record ReferenceProof(String target,String receiverType,String name,String role) {
+        public ReferenceProof {
+            Objects.requireNonNull(target);Objects.requireNonNull(name);Objects.requireNonNull(role);
+            receiverType=receiverType==null||receiverType.isBlank()?null:receiverType;
+        }
+    }
     /** Implements 4.2: detached declarations, references and source dependencies. */
     public record Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies,
-                           Map<String,SemanticFact> semanticFacts) {
+                           Map<String,SemanticFact> semanticFacts,List<ReferenceProof> referenceProofs) {
         public Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies){
-            this(symbols,occurrences,edges,dependencies,Map.of());
+            this(symbols,occurrences,edges,dependencies,Map.of(),List.of());
+        }
+        public Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies,
+                        Map<String,SemanticFact> semanticFacts){
+            this(symbols,occurrences,edges,dependencies,semanticFacts,List.of());
         }
         public Snapshot {
             symbols=Map.copyOf(symbols);occurrences=List.copyOf(occurrences);edges=List.copyOf(edges);
-            dependencies=Set.copyOf(dependencies);semanticFacts=Map.copyOf(semanticFacts);
+            dependencies=Set.copyOf(dependencies);semanticFacts=Map.copyOf(semanticFacts);referenceProofs=List.copyOf(referenceProofs);
         }
         public Map<String,Object> at(int offset){
             var occurrence=occurrences.stream().filter(o->o.start()<=offset&&offset<o.end()).min(Comparator.comparingInt(o->o.end()-o.start())).orElse(null);if(occurrence==null)return null;
@@ -51,7 +67,7 @@ public final class Bindings {
     public static Snapshot capture(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,Path requested,SourceText original,
                                    boolean bodies,Focusing.Span focus,java.util.function.Function<String,SemanticFact> reusableFacts){
         Objects.requireNonNull(reusableFacts);
-        var trees=Trees.instance(task);var symbols=new LinkedHashMap<String,Map<String,Object>>();var semanticFacts=new LinkedHashMap<String,SemanticFact>();var occurrences=new LinkedHashMap<String,Occurrence>();var edges=new LinkedHashSet<Edge>();var dependencies=new LinkedHashSet<Path>();
+        var trees=Trees.instance(task);var symbols=new LinkedHashMap<String,Map<String,Object>>();var semanticFacts=new LinkedHashMap<String,SemanticFact>();var occurrences=new LinkedHashMap<String,Occurrence>();var edges=new LinkedHashSet<Edge>();var dependencies=new LinkedHashSet<Path>();var referenceProofs=new LinkedHashSet<ReferenceProof>();
         var texts=new HashMap<String,SourceText>();texts.put(requested.toUri().toString(),original);
         class Capture {
             SourceText source(CompilationUnitTree unit){return texts.computeIfAbsent(unit.getSourceFile().toUri().toString(),key->{try{return new SourceText(unit.getSourceFile().getCharContent(true).toString());}catch(Exception e){return new SourceText("");}});}
@@ -188,9 +204,22 @@ public final class Bindings {
                 Tree parent=getCurrentPath().getParentPath()==null?null:getCurrentPath().getParentPath().getLeaf(),leaf=getCurrentPath().getLeaf();
                 if(parent instanceof AssignmentTree assignment&&assignment.getVariable()==leaf||parent instanceof CompoundAssignmentTree compound&&compound.getVariable()==leaf||parent instanceof UnaryTree unary&&Set.of(Tree.Kind.PREFIX_INCREMENT,Tree.Kind.PREFIX_DECREMENT,Tree.Kind.POSTFIX_INCREMENT,Tree.Kind.POSTFIX_DECREMENT).contains(unary.getKind()))role="writes";
                 capture.occurrence(getCurrentPath(),e,name,false,role,container);
-                if(role.equals("writes")&&(parent instanceof CompoundAssignmentTree||parent instanceof UnaryTree)){String target=capture.symbol(e);if(container!=null&&target!=null)edges.add(new Edge(container,target,"reads"));}
+                String target=capture.symbol(e);
+                if(target!=null){
+                    String receiver=null;
+                    if(leaf instanceof MemberSelectTree selected)try{
+                        TypeMirror mirror=trees.getTypeMirror(new TreePath(getCurrentPath(),selected.getExpression()));
+                        if(mirror instanceof TypeVariable variable)mirror=variable.getUpperBound();
+                        if(mirror instanceof DeclaredType declared&&declared.asElement() instanceof TypeElement type)
+                            receiver=capture.symbol(type);
+                    }catch(IllegalArgumentException|NullPointerException ignored){}
+                    referenceProofs.add(new ReferenceProof(target,receiver,name,role));
+                }
+                if(role.equals("writes")&&(parent instanceof CompoundAssignmentTree||parent instanceof UnaryTree)){
+                    if(container!=null&&target!=null)edges.add(new Edge(container,target,"reads"));
+                }
             }
         }.scan(unit,null);
-        return new Snapshot(symbols,List.copyOf(occurrences.values()),List.copyOf(edges),Set.copyOf(dependencies),semanticFacts);
+        return new Snapshot(symbols,List.copyOf(occurrences.values()),List.copyOf(edges),Set.copyOf(dependencies),semanticFacts,List.copyOf(referenceProofs));
     }
 }

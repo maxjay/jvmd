@@ -49,6 +49,28 @@ class CanonicalResolutionIdentityTest {
         assertThat(liveMethod.resolutionIdentity()).isEqualTo(ArtifactIndexFormat.symbolResolutionIdentity(binaryMethod));
     }
 
+    @Test void machineBinarySurfaceRetainsAllJavaReachableDeclarations()throws Exception{
+        String source="""
+                package fixture;
+                public class Surface {
+                    private int hiddenField;
+                    int packageField;
+                    protected int protectedField;
+                    public int publicField;
+                    private void hiddenMethod() {}
+                    void packageMethod() {}
+                    protected void protectedMethod() {}
+                    public void publicMethod() {}
+                }
+                """;
+        Path jar=IndexFixtures.jar(root.resolve("surface"),"surface",source,true);
+        var content=new BinaryReader().read(jar,false);
+
+        assertThat(content.symbols()).extracting(BinaryReader.Symbol::name)
+                .contains("hiddenField","packageField","protectedField","publicField",
+                        "hiddenMethod","packageMethod","protectedMethod","publicMethod");
+    }
+
     @Test void genuineJavaSemanticChangeChangesCanonicalIdentity()throws Exception{
         var first=ResolutionFact.canonical(
                 "fixture.Sample#value()I","fixture.Sample","method","value","()I",Set.of("public"),"fixture",

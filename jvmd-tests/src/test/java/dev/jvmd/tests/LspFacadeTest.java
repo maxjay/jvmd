@@ -37,7 +37,7 @@ class LspFacadeTest {
             var tokens=call(app,session,"textDocument/semanticTokens/full",file,source,0,Map.of());assertThat(tokens.path("data").size()).isGreaterThan(30);assertThat(tokens.path("data").size()%5).isZero();assertThat(tokens.path("resultId").asText()).hasSize(64);
             String unsaved=source.replace("return value(1,name);","return name.len;");
             var opened=TestSupport.request(app.dispatcher(),"document.open",Map.of("session",session,"path",file.toString(),"version",1,"text",unsaved));assertThat(opened.has("error")).isFalse();
-            var completion=call(app,session,"textDocument/completion",file,unsaved,unsaved.indexOf("name.len")+8,Map.of());assertThat(completion.path("items").toString()).contains("\"label\":\"length\"");assertThat(completion.path("items").get(0).path("textEdit").path("range").isObject()).isTrue();
+            var completion=call(app,session,"textDocument/completion",file,unsaved,unsaved.indexOf("name.len")+8,Map.of());assertThat(completion.path("items").toString()).contains("\"label\":\"length() : int\"");assertThat(completion.path("items").get(0).path("textEdit").path("range").isObject()).isTrue();
             assertThat(Files.readString(file)).isEqualTo(source);
         }
     }
@@ -49,13 +49,13 @@ class LspFacadeTest {
         try(var app=new Application(TestSupport.config(root,Duration.ofHours(4)))){
             String session=TestSupport.open(app,root);
             var completion=call(app,session,"textDocument/completion",use,useSource,useSource.indexOf("api.gre")+7,Map.of());
-            JsonNode item=null;for(var candidate:completion.path("items"))if(candidate.path("label").asText().equals("greet")){item=candidate;break;}
+            JsonNode item=null;for(var candidate:completion.path("items"))if(candidate.path("label").asText().startsWith("greet(")){item=candidate;break;}
             assertThat(item).isNotNull();assertThat(item.has("documentation")).isFalse();assertThat(item.path("detail").asText()).contains("greet");
             assertThat(((Map<?,?>)dev.jvmd.lsp.LspFacade.capabilities().get("completionProvider")).get("resolveProvider")).isEqualTo(true);
             var response=TestSupport.request(app.dispatcher(),"lsp.request",Map.of("session",session,"method","completionItem/resolve","params",item,"client",CLIENT));
             assertThat(response.has("error")).as(response.toPrettyString()).isFalse();
             var resolved=response.path("result").path("result").path("value");
-            assertThat(resolved.path("label").asText()).isEqualTo("greet");
+            assertThat(resolved.path("label").asText()).startsWith("greet(");
             assertThat(resolved.path("detail").asText()).contains("greet");
             assertThat(resolved.path("documentation").path("value").asText()).contains("Greets callers");
         }

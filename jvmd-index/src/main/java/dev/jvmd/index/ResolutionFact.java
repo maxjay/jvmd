@@ -90,7 +90,7 @@ public record ResolutionFact(
     public static ResolutionFact legacy(String symbolKey,String fqn,String name,String kind,String descriptor,int flags){
         String owner=ownerKey(symbolKey,fqn,kind);
         SemanticType type=LegacyTypes.type(fqn,kind,descriptor);
-        return canonical(symbolKey,owner,kind,name,descriptor,modifiers(flags),packageName(fqn),type,
+        return canonical(symbolKey,owner,kind,name,descriptor,modifiers(flags,kind),packageName(fqn),type,
                 List.of(),List.of(),List.of(),(flags&ClassFile.ACC_VARARGS)!=0);
     }
 
@@ -165,19 +165,25 @@ public record ResolutionFact(
         return Set.copyOf(result);
     }
 
-    public static Set<String> modifiers(int flags){
+    public static Set<String> modifiers(int flags){return modifiers(flags,"");}
+    public static Set<String> modifiers(int flags,String kind){
         var result=new TreeSet<String>();
         if((flags&ClassFile.ACC_PUBLIC)!=0)result.add("public");
         if((flags&ClassFile.ACC_PROTECTED)!=0)result.add("protected");
         if((flags&ClassFile.ACC_PRIVATE)!=0)result.add("private");
         if((flags&ClassFile.ACC_STATIC)!=0)result.add("static");
-        if((flags&ClassFile.ACC_ABSTRACT)!=0)result.add("abstract");
         if((flags&ClassFile.ACC_FINAL)!=0)result.add("final");
-        if((flags&ClassFile.ACC_NATIVE)!=0)result.add("native");
-        if((flags&ClassFile.ACC_SYNCHRONIZED)!=0)result.add("synchronized");
-        if((flags&ClassFile.ACC_STRICT)!=0)result.add("strictfp");
-        if((flags&ClassFile.ACC_VOLATILE)!=0)result.add("volatile");
-        if((flags&ClassFile.ACC_TRANSIENT)!=0)result.add("transient");
+        if(Set.of("class","interface","enum","record","annotation","method").contains(kind)
+                &&(flags&ClassFile.ACC_ABSTRACT)!=0)result.add("abstract");
+        if(kind.equals("method")||kind.equals("ctor")){
+            if((flags&ClassFile.ACC_NATIVE)!=0)result.add("native");
+            if((flags&ClassFile.ACC_SYNCHRONIZED)!=0)result.add("synchronized");
+            if((flags&ClassFile.ACC_STRICT)!=0)result.add("strictfp");
+        }
+        if(kind.equals("field")||kind.equals("enumconst")){
+            if((flags&ClassFile.ACC_VOLATILE)!=0)result.add("volatile");
+            if((flags&ClassFile.ACC_TRANSIENT)!=0)result.add("transient");
+        }
         return Set.copyOf(result);
     }
 

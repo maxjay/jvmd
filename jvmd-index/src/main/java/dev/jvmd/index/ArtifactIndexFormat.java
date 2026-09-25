@@ -131,7 +131,7 @@ public final class ArtifactIndexFormat {
                 metadata.put("scip_return_disambiguated",true);
             }
             var resolution=ResolutionFact.canonical(symbol.key(),symbol.owner(),symbol.kind(),symbol.name(),symbol.descriptor(),
-                    ResolutionFact.modifiers(symbol.flags()),ResolutionFact.packageName(symbol.fqn()),symbol.semanticType(),
+                    ResolutionFact.modifiers(symbol.flags(),symbol.kind()),ResolutionFact.packageName(symbol.fqn()),symbol.semanticType(),
                     symbol.typeParameters(),symbol.typeParameterBounds(),symbol.directSupertypes(),symbol.varargs());
             symbols.add(new SymbolRecord(i,owner,symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),symbol.signature(),
                     symbol.descriptor(),symbol.flags(),symbol.entry(),symbol.parameters(),canonicalJson(metadata),resolution));

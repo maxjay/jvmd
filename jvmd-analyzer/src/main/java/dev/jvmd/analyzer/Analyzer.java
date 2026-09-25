@@ -1462,6 +1462,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                                                     DocumentSemanticSnapshot snapshot,
                                                     DocumentSemanticSnapshot.QueryContext query,
                                                     CompilerInputs.Snapshot observed)throws Exception{
+        try(var trace=RequestScope.stage("proof.document.current")){
+        trace.count("dependencies",query.proof().dependencies().size());
         String currentContent=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         var dependencies=new ArrayList<QueryProof.Dependency>();
         var namespaceNames=new TreeSet<String>();boolean broadNamespace=false;
@@ -1493,13 +1495,17 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         else if(broadNamespace)dependencies.add(new QueryProof.Dependency(
                 QueryProof.Domain.NAMESPACE,"visible",namespaceProofIdentity(text,observed)));
         return new QueryProof(dependencies);
+        }
     }
     private boolean documentProofCurrent(Path path,String text,String patched,int focusCursor,
                                          DocumentSemanticSnapshot snapshot,DocumentSemanticSnapshot.QueryContext query,
                                          CompilerInputs.Snapshot observed)throws Exception{
-        if(query.proof().dependencies().isEmpty())return false;
-        if(!accessibilityCurrent(query))return false;
-        return query.proof().equals(currentDocumentContextProof(path,text,patched,focusCursor,snapshot,query,observed));
+        try(var trace=RequestScope.stage("proof.document.validate")){
+            if(query.proof().dependencies().isEmpty()){trace.cache("empty");return false;}
+            if(!accessibilityCurrent(query)){trace.cache("accessibility-miss");return false;}
+            boolean current=query.proof().equals(currentDocumentContextProof(path,text,patched,focusCursor,snapshot,query,observed));
+            trace.cache(current?"hit":"miss");return current;
+        }
     }
 
     private DocumentSemanticCached reusableDocumentSemantic(Path path,String text,String patched,int start,int focusCursor,

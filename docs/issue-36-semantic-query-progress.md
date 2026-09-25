@@ -827,3 +827,63 @@ Failed/deprecated approaches:
 
 Remaining:
 - Checkpoint 13: audit uncertainty/generation boundaries, retain O(1) fences for lost history, and remove only unnecessary broad epoch invalidation while preserving conservative correctness.
+
+
+## Checkpoint 13 — uncertainty / generation audit
+
+Starting SHA: `8135ada21febf539da19debc6f1e951c8c5ba126`
+Implementation subject: `01a046506f1890132f7ea1ba30e4588ed8930355`
+
+Evidence:
+- Exact-subject Tests run https://github.com/maxjay/jvmd/actions/runs/36146465740:
+  - compile/package green;
+  - Phase 1 green, including the strengthened resident uncertainty-generation regression;
+  - Phase 2 green, including bounded source-history loss after journal rollover;
+  - Phase 3, Rocks and Phase 4 green, proving the retained document contexts remain correct under the audit change.
+- Exact-subject Benchmarks https://github.com/maxjay/jvmd/actions/runs/36146465871 — **success**.
+
+Audit findings:
+- `LiveSourceState.changedPathsSince(epoch)` already has the correct uncertainty boundary: exact changed paths while the bounded journal can prove them; `Optional.empty()` when history before `sourceHistoryFloor` has been lost.
+- `ResidentSemanticState.markHierarchyUncertain()` already implements the required graph-wide invalidation as one O(1) generation fence: increment `uncertaintyGeneration` and `epoch`; it does not walk semantic units, facts or dependency owners.
+- `SemanticUnitState` captures the admitted uncertainty generation. `unitCurrent` and `completeness` therefore become conservatively false/UNKNOWN after the fence without modifying every retained unit.
+- Hierarchy proof identity includes the uncertainty generation, so proof-backed document contexts cannot remain semantically valid across lost history merely because retained fact objects still exist.
+- Exact known source changes continue to use per-source staleness/removal; `module-info.java` remains a conservative document-context reset.
+- Compiler environment/classpath replacement remains conservative in `validatedInputs()`: module exports/options/platform semantics are not fully represented by all current query proofs, so the existing context/accessibility reset is retained.
+- Configuration-generation changes retain their existing generation-owned cache reset. No unrelated generation-family/tree redesign was attempted.
+
+Change:
+- Removed the extra `caches.documentSemantics.clear()` from the **lost source-history** branch only.
+- Lost history still calls `markHierarchyUncertain()`; cached query contexts are retained as objects but fail proof equality lazily through hierarchy/accessibility/resolution evidence and are re-attributed only when requested.
+- This avoids turning an uncertainty event into an eager O(number of cached contexts) semantic invalidation.
+
+Permanent regressions:
+- `ResidentSemanticStateTest.globalHierarchyUncertaintyIsOneGenerationFence` now proves:
+  - generation increments exactly once;
+  - fact/unit counts remain retained;
+  - `semantic_fact_mutations` does not increase;
+  - no per-unit stale map is populated;
+  - hierarchy identity changes and completeness becomes UNKNOWN;
+  - re-admitting one unit makes only that unit current, without fact mutation.
+- `LiveSourceStateTest.boundedSourceHistoryLossReportsUncertaintyWithoutWorkspaceReconciliation` drives the bounded source journal past its retained history and proves:
+  - `changedPathsSince(oldEpoch)` becomes unavailable;
+  - no workspace reconciliation occurs;
+  - maintained source state remains trusted and source membership remains available.
+
+Corruption / unavailable-state audit:
+- Corrupt compact artifact records remain rejected by `ArtifactIndexFormatTest.corruptAndIncompatibleRecordsAreRejected`.
+- Corrupt staged Rocks SSTs / wrong record counts remain rejected before activation by `RocksArtifactRepositoryTest.stagedNativeVerificationRejectsWrongCountsAndCorruptedData`.
+- Corrupt source-overlay records remain rejected by `SourceOverlayTest.factCodecHandlesNestedMetadataAndRejectsCorruption`.
+- Index activation verification failures remain failures, not semantic equality.
+- Watcher uncertainty/overflow continues through `LiveSourceState.markUncertain(...)` plus reconciliation correctness boundaries.
+
+Architecture:
+- Lost observation history is a generation/fence event, **not** evidence that every semantic conclusion changed.
+- Precise known mutations continue through precise proof/domain updates.
+- Unknown history remains conservative: retained semantic facts are not considered current until re-admitted.
+- No broad workspace/classpath root was introduced as an invalidation key.
+
+Failed/deprecated approaches:
+- None for Checkpoint 13. The audit intentionally rejected removing the broader classpath/module/configuration reset because precise proof coverage is not yet universal for those Java access/module semantics.
+
+Remaining:
+- Checkpoint 14: finish javac minimization proof — simple dependency/local receivers, prefix/warm reuse, one bounded complex fallback, and audit completion paths for prohibited `Elements.getAllMembers()` / javac hierarchy discovery.

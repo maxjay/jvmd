@@ -58,26 +58,29 @@ public final class SemanticReadViews {
         var layers=List.of(Objects.requireNonNull(live),Objects.requireNonNull(local),Objects.requireNonNull(machine));
         return new SemanticReadView(){
             private SemanticReadView ownerLayer(String ownerId)throws Exception{
-                SemanticReadView fallback=null;
+                SemanticReadView partial=null;
                 for(var layer:layers){
                     if(layer.symbol(ownerId)==null)continue;
-                    if(fallback==null)fallback=layer;
-                    if(layer.completeness(ownerId).authoritative())return layer;
+                    var completeness=layer.completeness(ownerId);
+                    if(completeness.authoritative())return layer;
+                    if(completeness==SemanticCompleteness.UNKNOWN)return null;
+                    if(partial==null)partial=layer;
                 }
-                return fallback;
+                return partial;
             }
             @Override public Symbol symbol(String id)throws Exception{
                 for(var layer:layers){var value=layer.symbol(id);if(value!=null)return value;}return null;
             }
             @Override public SemanticCompleteness completeness(String ownerId)throws Exception{
-                SemanticCompleteness fallback=SemanticCompleteness.UNKNOWN;
+                SemanticCompleteness partial=SemanticCompleteness.UNKNOWN;
                 for(var layer:layers){
                     if(layer.symbol(ownerId)==null)continue;
                     var value=layer.completeness(ownerId);
                     if(value.authoritative())return value;
-                    if(fallback==SemanticCompleteness.UNKNOWN)fallback=value;
+                    if(value==SemanticCompleteness.UNKNOWN)return value;
+                    partial=value;
                 }
-                return fallback;
+                return partial;
             }
             @Override public MemberPage members(String ownerId,String prefix,int limit,String cursor)throws Exception{
                 var layer=ownerLayer(ownerId);return layer==null?new MemberPage(List.of(),null):layer.members(ownerId,prefix,limit,cursor);

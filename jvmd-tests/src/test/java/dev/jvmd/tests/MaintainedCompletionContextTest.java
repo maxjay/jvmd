@@ -62,6 +62,51 @@ class MaintainedCompletionContextTest {
         }
     }
 
+    @Test void projectDotResolvesMavenProjectFromMachineRangeWithZeroQuerySideJavac()throws Exception{
+        Path repo=Files.createDirectories(root.resolve("maven-repo"));
+        Path jar=IndexFixtures.jar(repo,"maven-project","""
+                package org.apache.maven.project;
+                public class MavenProject {
+                    public String getArtifactId(){return "artifact";}
+                    public String getGroupId(){return "group";}
+                }
+                """,true);
+        Path sources=Files.createDirectories(root.resolve("maven-src/demo"));
+        String source="""
+                package demo;
+                import org.apache.maven.project.MavenProject;
+                class Use {
+                    Object inspect(MavenProject project) {
+                        return project.;
+                    }
+                }
+                """;
+        Path file=Files.writeString(sources.resolve("Use.java"),source);
+        try(var index=new IndexService(root.resolve("maven-index.db"),repo);
+            var analyzer=new Analyzer()){
+            index.indexJar(jar,"org.apache.maven:maven-core:fixture","jar");
+            index.loadWorkspace("maven-workspace",List.of(new IndexService.WorkspaceArtifact(jar.toString(),"compile")),List.of());
+            analyzer.configure(new Analyzer.Context(
+                    "demo:app:1","25",List.of(jar),List.of(root.resolve("maven-src")),"maven-maintained",Map.of(),
+                    List.of("--release","25"),Set.of(),List.of(),List.of(root.resolve("maven-src")),true,"maven-workspace"),
+                    index,256L*1024*1024);
+
+            long before=((Number)analyzer.status().get("queries")).longValue();
+            int cursor=source.indexOf("project.")+"project.".length();
+            var position=dev.jvmd.core.Documents.position(source,cursor);
+            var answer=analyzer.completion(file,source,position.line(),position.character(),100,0);
+            JsonNode result=Json.MAPPER.valueToTree(answer.result());
+
+            assertThat(answer.warnings()).isEmpty();
+            assertThat(result.path("items").findValuesAsText("name")).contains("getArtifactId","getGroupId");
+            assertThat(((Number)analyzer.status().get("queries")).longValue()).isEqualTo(before);
+            @SuppressWarnings("unchecked")
+            var resident=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            assertThat(((Number)resident.get("semantic_facts")).longValue()).isZero();
+            assertThat(((Number)index.store().status().get("owner_prefix_queries")).longValue()).isPositive();
+        }
+    }
+
     private static void assertZeroJavac(Analyzer analyzer,Path file,String source,String needle,String expected)throws Exception{
         long before=((Number)analyzer.status().get("queries")).longValue();
         int cursor=source.indexOf(needle)+needle.length();

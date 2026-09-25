@@ -354,6 +354,17 @@ public final class RocksIndexStore implements IndexStore {
         }
         return List.copyOf(result);
     }
+    @Override public synchronized IndexedSemanticSymbol semanticType(String binaryName,String workspace,SemanticLayer layer)throws Exception{
+        for(var artifact:selected(workspace,true,layer)){
+            var source=sourceOverlay.semanticFirst(artifact.id(),"binary_key",binaryName,layer);
+            if(source!=null&&TYPES.contains(source.kind()))return source;
+            Integer id=repository.binaryId(symbolsKey(artifact),binaryName);
+            if(id==null)continue;
+            var symbol=repository.symbol(symbolsKey(artifact),id);
+            if(symbol!=null&&TYPES.contains(symbol.kind()))return indexedSemantic(artifact,symbol,layer);
+        }
+        return null;
+    }
     private Map<String,Object> byScipFrom(String scip,List<StoredArtifact> candidates)throws Exception{
         for(var artifact:candidates){
             var source=sourceByScip(artifact,scip);if(source!=null)return source;

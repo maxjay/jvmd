@@ -89,13 +89,13 @@ This checklist is authoritative. A box is checked only when the implementation e
 - [x] Prefix narrowing reuses receiver/hierarchy/classpath proof.
 
 ## Checkpoint 10 — namespace / negative proofs
-- [ ] Current-package namespace proof.
-- [ ] Explicit-import proof.
-- [ ] Wildcard-import proof.
-- [ ] `java.lang` proof where relevant.
-- [ ] Negative lookup captures exact searched domains.
-- [ ] Unchanged negative lookup reuses without resolution work.
-- [ ] Newly resolvable name invalidates only the relevant proof.
+- [x] Current-package namespace proof.
+- [x] Explicit-import proof.
+- [x] Wildcard-import proof.
+- [x] `java.lang` proof where relevant.
+- [x] Negative lookup captures exact searched domains.
+- [x] Unchanged negative lookup reuses without resolution work.
+- [x] Newly resolvable name invalidates only the relevant proof.
 
 ## Checkpoint 11 — semantic dependency proof DAG
 - [ ] Consumers reference precise semantic proofs.

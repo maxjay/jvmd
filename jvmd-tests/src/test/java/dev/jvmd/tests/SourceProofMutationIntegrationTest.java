@@ -193,6 +193,50 @@ class SourceProofMutationIntegrationTest {
         }
     }
 
+    @Test void realSourceMembershipUsesNegativeResolutionProofDomains()throws Exception{
+        Path p=Files.createDirectories(root.resolve("p")),q=Files.createDirectories(root.resolve("q")),other=Files.createDirectories(root.resolve("s"));
+        Path use=p.resolve("Use.java"),random=other.resolve("Random.java"),widget=q.resolve("Widget.java");
+        String useText="package p; import q.*; class Use { Widget value; }";
+        Files.writeString(use,useText);
+        var documents=new Documents();
+
+        try(var analyzer=analyzer(documents)){
+            assertThat(diagnostics(analyzer,use,useText)).anyMatch(problem->problem.code().contains("cant.resolve"));
+            assertThat(analyzer.contribution(use).unresolvedTargets()).contains("Widget").doesNotContain("*");
+            assertThat(analyzer.status()).extractingByKey("source_proof_evidence").isNotNull();
+
+            long unresolvedQueries=queries(analyzer);
+            String randomText="package s; public class Random {}";
+            documents.open(random,randomText,1);analyzer.documents(documents);
+            analyzer.changed(random,documents.hash(random));analyzer.sourceMembershipChanged(random);
+            var unrelated=evidence(analyzer);
+            assertThat(unrelated).containsEntry("last_pre_proof_dependant_invalidations",0L)
+                    .containsEntry("last_proof_consumers_visited",0L)
+                    .containsEntry("last_source_consumers_invalidated",0L)
+                    .containsEntry("last_coarse_fallback_files",0L);
+            assertThat(diagnostics(analyzer,use,useText)).anyMatch(problem->problem.code().contains("cant.resolve"));
+            assertThat(queries(analyzer)).as("adding s.Random must not rerun unresolved q.Widget").isEqualTo(unresolvedQueries);
+
+            String widgetText="package q; public class Widget {}";
+            documents.open(widget,widgetText,1);analyzer.documents(documents);
+            analyzer.changed(widget,documents.hash(widget));analyzer.sourceMembershipChanged(widget);
+            var relevant=evidence(analyzer);
+            assertThat(relevant).containsEntry("last_pre_proof_dependant_invalidations",0L)
+                    .containsEntry("last_source_consumers_invalidated",1L)
+                    .containsEntry("last_coarse_fallback_files",0L);
+            assertThat(((Number)relevant.get("last_proof_consumers_visited")).longValue()).isPositive();
+            long beforeResolved=queries(analyzer);
+            assertThat(diagnostics(analyzer,use,useText)).isEmpty();
+            assertThat(queries(analyzer)).as("adding q.Widget must reconsider the negative proof consumer").isEqualTo(beforeResolved+1);
+
+            documents.close(widget);analyzer.documents(documents);
+            analyzer.changed(widget);analyzer.sourceMembershipChanged(widget);
+            long beforeRemoved=queries(analyzer);
+            assertThat(diagnostics(analyzer,use,useText)).anyMatch(problem->problem.code().contains("cant.resolve"));
+            assertThat(queries(analyzer)).as("removing q.Widget must reconsider the now-positive consumer").isEqualTo(beforeRemoved+1);
+        }
+    }
+
     private static String insertBeforeLastBrace(String source,String text){
         int end=source.lastIndexOf('}');if(end<0)throw new IllegalArgumentException("missing class brace");
         return source.substring(0,end)+text+source.substring(end);

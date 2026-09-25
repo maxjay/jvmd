@@ -35,10 +35,10 @@ public final class NamespaceResolutionProofs {
     }
 
     private static final Pattern PACKAGE=Pattern.compile(
-            "(?m)^\\s*package\\s+([A-Za-z_\\x24][\\w\\x24]*(?:\\.[A-Za-z_\\x24][\\w\\x24]*)*)\\s*;");
+            "\\bpackage\\s+([A-Za-z_\\x24][\\w\\x24]*(?:\\.[A-Za-z_\\x24][\\w\\x24]*)*)\\s*;");
     private static final Pattern IMPORT=Pattern.compile(
-            "(?m)^\\s*import\\s+(?!static\\b)([A-Za-z_\\x24][\\w\\x24]*(?:\\.[A-Za-z_\\x24*][\\w\\x24*]*)*)\\s*;");
-    private static final Pattern STATIC_IMPORT=Pattern.compile("(?m)^\\s*import\\s+static\\b");
+            "\\bimport\\s+(?!static\\b)([A-Za-z_\\x24][\\w\\x24]*(?:\\.[A-Za-z_\\x24*][\\w\\x24*]*)*)\\s*;");
+    private static final Pattern STATIC_IMPORT=Pattern.compile("\\bimport\\s+static\\b");
 
     private NamespaceResolutionProofs(){}
 

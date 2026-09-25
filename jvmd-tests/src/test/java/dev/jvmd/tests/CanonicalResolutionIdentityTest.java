@@ -52,7 +52,7 @@ class CanonicalResolutionIdentityTest {
     @Test void machineBinarySurfaceRetainsAllJavaReachableDeclarations()throws Exception{
         String source="""
                 package fixture;
-                public class Surface {
+                public class Sample {
                     private int hiddenField;
                     int packageField;
                     protected int protectedField;

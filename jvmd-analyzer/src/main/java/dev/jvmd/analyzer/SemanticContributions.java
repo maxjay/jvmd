@@ -29,8 +29,12 @@ public final class SemanticContributions {
         }
         var unresolved=new LinkedHashSet<String>();
         for(var edge:snapshot.edges())if(!known.contains(edge.dst()))unresolved.add(edge.dst());
-        // javac can omit an unresolved edge entirely. Retain explicit conservative evidence.
-        if(problems.stream().anyMatch(p->p.kind().equals("ERROR")))unresolved.add("*");
+        unresolved.addAll(snapshot.unresolvedTypeNames());
+        // Preserve precise negative type names for ordinary cant.resolve diagnostics. Other compiler
+        // errors still require the explicit wildcard conservative boundary.
+        var errors=problems.stream().filter(p->p.kind().equals("ERROR")).toList();
+        if(!errors.isEmpty()&&(snapshot.unresolvedTypeNames().isEmpty()
+                ||errors.stream().anyMatch(p->!p.code().contains("cant.resolve"))))unresolved.add("*");
         return new FileSemanticContribution(file,hash,ApiFingerprint.of(snapshot,file),snapshot.dependencies(),exports,unresolved);
     }
 }

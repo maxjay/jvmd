@@ -556,8 +556,14 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return SemanticReadViews.precedence(
                 live,
                 SemanticReadViews.local(index.store(),context.workspace()),
-                SemanticReadViews.machine(index.store(),context.workspace()));
+                SemanticReadViews.machine(index.store(),context.workspace()),
+                this::workspaceSourceOwnsBinary);
     }
+    private boolean workspaceSourceOwnsBinary(String binaryName){
+        return liveSourceState!=null&&binaryName!=null&&!binaryName.isBlank()
+                &&liveSourceState.source(binaryName.replace((char)36,'.')).isPresent();
+    }
+
     private List<SemanticReadView.Symbol> semanticTypes(String name)throws Exception{
         String requested=Objects.requireNonNullElse(name,"").trim();
         if(requested.isBlank())return List.of();
@@ -580,6 +586,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 String fqn=value.fqn();
                 if(requested.indexOf('.')>=0&&!requested.equals(fqn)&&!requested.equals(fqn.replace((char)36,'.'))
                         &&!requested.equals(value.binaryKey()))continue;
+                if(workspaceSourceOwnsBinary(fqn)&&semanticState().type(fqn)==null)continue;
                 var symbol=SemanticReadViews.fromIndexed(value,origin);
                 result.putIfAbsent(symbol.id(),symbol);
             }

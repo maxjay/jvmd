@@ -2,8 +2,6 @@ package dev.jvmd.index;
 
 import dev.jvmd.core.CanonicalDigestWriter;
 import dev.jvmd.core.Hash256;
-import dev.jvmd.core.Json;
-import java.lang.classfile.ClassFile;
 import java.util.*;
 
 /** Adapters and deterministic LIVE > LOCAL > MACHINE composition for {@link SemanticReadView}. */
@@ -132,17 +130,17 @@ public final class SemanticReadViews {
         var origin=local?SemanticReadView.Origin.LOCAL:SemanticReadView.Origin.MACHINE;
         return new SemanticReadView(){
             @Override public Symbol symbol(String id)throws Exception{
-                var row=store.byScip(id,workspace,layer);
-                return row==null?null:fromIndexed(row,origin);
+                var value=store.semanticByScip(id,workspace,layer);
+                return value==null?null:fromIndexed(value,origin);
             }
             @Override public SemanticCompleteness completeness(String ownerId)throws Exception{
                 return symbol(ownerId)==null?SemanticCompleteness.UNKNOWN:SemanticCompleteness.COMPLETE;
             }
             @Override public MemberPage members(String ownerId,String prefix,int limit,String cursor)throws Exception{
                 if(symbol(ownerId)==null||limit<=0)return new MemberPage(List.of(),null);
-                var page=store.membersByOwner(ownerId,prefix,workspace,limit,cursor,layer);
+                var page=store.semanticMembersByOwner(ownerId,prefix,workspace,limit,cursor,layer);
                 var values=new ArrayList<SemanticReadView.Symbol>(page.symbols().size());
-                for(var row:page.symbols())values.add(fromIndexed(row,origin));
+                for(var value:page.symbols())values.add(fromIndexed(value,origin));
                 return new MemberPage(values,page.cursor());
             }
             @Override public List<String> directSupertypes(String typeId)throws Exception{
@@ -166,34 +164,9 @@ public final class SemanticReadViews {
                 fact.erasedDescriptor(),fact.modifiers(),resolution,fact.parameterNames(),fact.sourceFile(),SemanticReadView.Origin.LIVE);
     }
 
-    private static SemanticReadView.Symbol fromIndexed(Map<String,Object> row,SemanticReadView.Origin origin)throws Exception{
-        String id=Objects.toString(row.get("scip"),"");
-        String binary=Objects.toString(row.get("binary_key"),id);
-        String fqn=Objects.toString(row.get("fqn"),"");
-        String name=Objects.toString(row.get("name"),"");
-        String kind=Objects.toString(row.get("kind"),"");
-        String signature=Objects.toString(row.get("signature"),"");
-        String descriptor=Objects.toString(row.get("erased_descriptor"),"");
-        int flags=row.get("flags") instanceof Number value?value.intValue():0;
-        ResolutionFact resolution=row.get("resolution_fact") instanceof String encoded
-                ?ResolutionFact.decode(encoded)
-                :ResolutionFact.legacy(binary,fqn,name,kind,descriptor,flags);
-        var parameters=new ArrayList<String>();
-        if(row.get("parameters") instanceof Collection<?> values)for(Object value:values)parameters.add(value.toString());
-        String sourceFile=row.get("source_file")==null?null:row.get("source_file").toString();
-        return new SemanticReadView.Symbol(id,name,kind,fqn,binary,signature,descriptor,modifiers(row,flags),resolution,
-                List.copyOf(parameters),sourceFile,origin);
-    }
-
-    private static boolean isLocal(Map<String,Object> row){
-        return "local".equals(Objects.toString(row.get("artifact_kind"),""));
-    }
-
-    private static Set<String> modifiers(Map<String,Object> row,int flags){
-        Object explicit=row.get("modifiers");
-        if(explicit instanceof Collection<?> values){
-            var result=new TreeSet<String>();for(Object value:values)result.add(value.toString());return Set.copyOf(result);
-        }
-        return ResolutionFact.modifiers(flags,Objects.toString(row.get("kind"),""));
+    /** Convert one typed persisted semantic record without JSON decode or canonical re-hashing. */
+    public static SemanticReadView.Symbol fromIndexed(IndexStore.IndexedSemanticSymbol value,SemanticReadView.Origin origin){
+        return new SemanticReadView.Symbol(value.id(),value.name(),value.kind(),value.fqn(),value.binaryKey(),value.signature(),
+                value.erasedDescriptor(),value.resolution().modifiers(),value.resolution(),value.parameterNames(),value.sourceFile(),origin);
     }
 }

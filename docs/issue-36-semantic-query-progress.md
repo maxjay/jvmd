@@ -628,3 +628,45 @@ Failed/deprecated approaches:
 
 Remaining:
 - Checkpoint 9: exact-symbol, overload-group and member-prefix/range proofs for query result validity.
+
+
+## Checkpoint 9 — exact-symbol, overload-group and member-range proofs
+
+Starting SHA: `2394a755e88554de23f2f7b2a65da27cedeb06b0`
+Ending SHA: `dbcbe3438761addfe97cb417c6fc8918acd7f45a`
+
+Evidence:
+- Exact-head Tests: https://github.com/maxjay/jvmd/actions/runs/36136556214 — **success**.
+- Exact-head Benchmarks: https://github.com/maxjay/jvmd/actions/runs/36136556114 — **success**.
+- Phase 1 covers resident semantic range/overload proof identities and canonical QueryProof construction.
+- Phase 3 covers real persisted MACHINE owner/prefix proof isolation.
+- Phase 4 and all later regression gates remain green.
+
+Changes:
+- `ResidentSemanticState` now maintains a resolution-only algebraic aggregate in each persistent semantic-tree node, alongside the existing structural Merkle identity.
+- `memberRangeIdentity(owner,prefix)` evaluates only the requested ordered member slice and can reuse fully-contained persistent subtrees.
+- `overloadGroupIdentity(owner,name)` is the domain-separated exact-name subset of the same canonical member contribution scheme.
+- `SemanticReadView.identity(...)` now supports `EXACT_SYMBOL`, `OVERLOAD_GROUP` and `MEMBER_RANGE` through LIVE, LOCAL, MACHINE and precedence composition.
+- `SemanticQueryProofs` constructs canonical `QueryProof` dependencies from those precise semantic domains and returns no proof when the maintained view cannot establish one safely.
+- Persisted semantic stores expose the same resolution-only range identities. Rocks memoizes proof identities by immutable artifact resolution identity / source revision / owner / range so repeated validation does not repeatedly scan an unchanged posting.
+- LIVE and persisted range contributions use the same canonical domain and symbol-resolution identity, so proof equality is independent of backing-store origin.
+
+Correctness proof:
+- Exact symbol proof is unchanged by an unrelated declaration and changes only when that symbol's canonical resolution fact changes.
+- A `get*` member-range proof remains equal when `set*` changes, and changes when a `get*` declaration changes or is added.
+- An overload-group proof for `foo` remains equal when `bar` changes, and changes when a new `foo` overload is admitted.
+- `MachineSemanticQueryProofTest` proves the same prefix isolation through the real Rocks MACHINE semantic view.
+- `SemanticReadViewTest` proves range identity remains prefix-scoped through composed semantic views.
+
+Architecture:
+- Exact-symbol, overload and range validity are no longer represented by whole-file or whole-owner API roots.
+- Query-result proofs can now bind only the declaration/range actually required by the conclusion.
+- These identities are resolution-only: documentation/body presentation changes do not churn Java query validity.
+- Checkpoint 11 will attach these precise proofs to direct consumers and stop propagation when a recomputed derived proof is equal.
+
+Failed/deprecated approaches:
+- The first Checkpoint-9 test commit omitted `throws Exception` on the JUnit method calling proof helpers; production compiled, test compilation failed, and the test signature was repaired.
+- LIVE and persisted range aggregates initially used different contribution domains. That would have made identical semantic ranges compare unequal after origin changes, so both were normalized to the shared `semantic-member-range-v1` contribution scheme before acceptance.
+
+Remaining:
+- Checkpoint 10: precise package/import namespace and negative-resolution proofs.

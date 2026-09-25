@@ -15,9 +15,10 @@ final class SourceOverlay implements AutoCloseable {
     private final long cacheBudget;
     private record Cached(Map<String,Object> value,long weight) {}
     private final LinkedHashMap<String,Cached> cache=new LinkedHashMap<>(64,.75f,true);
+    private final Map<String,IndexStore.IndexedSemanticSymbol> semanticCache=new HashMap<>();
     SourceOverlay(RocksDB db){this(db,4L*1024*1024);}
     SourceOverlay(RocksDB db,long budget){this.db=db;this.cacheBudget=budget;}
-    private void evict(){cache.clear();cacheBytes=0;}
+    private void evict(){cache.clear();semanticCache.clear();cacheBytes=0;}
     private KeyedFacts facts(long artifact){return new KeyedFacts(db,"L/"+String.format(Locale.ROOT,"%016x",artifact)+"/");}
     private static String key(String value){return KeyedFacts.part(value);}
     private static String handle(long id){return String.format(Locale.ROOT,"%016x",id);}
@@ -43,11 +44,47 @@ final class SourceOverlay implements AutoCloseable {
     @SuppressWarnings("unchecked") private Map<String,Object> decode(long artifact,String id,byte[] value)throws Exception {
         String key=artifact+"/"+id;var cached=cache.get(key);if(cached!=null)return cached.value();
         decoded++;Map<String,Object> result=Collections.unmodifiableMap(FactCodec.decode(value,Map.class));long weight=128+value.length*4L;
-        if(weight<=cacheBudget){cache.put(key,new Cached(result,weight));cacheBytes+=weight;while(cacheBytes>cacheBudget)cacheBytes-=cache.pollFirstEntry().getValue().weight();}return result;
+        if(weight<=cacheBudget){
+            cache.put(key,new Cached(result,weight));cacheBytes+=weight;
+            while(cacheBytes>cacheBudget){
+                var removed=cache.pollFirstEntry();cacheBytes-=removed.getValue().weight();semanticCache.remove(removed.getKey());
+            }
+        }
+        return result;
+    }
+
+    private IndexStore.IndexedSemanticSymbol semantic(long artifact,String id,byte[] bytes,IndexStore.SemanticLayer layer)throws Exception{
+        String cacheKey=artifact+"/"+id;var cached=semanticCache.get(cacheKey);if(cached!=null)return cached;
+        var row=decode(artifact,id,bytes);
+        String scip=Objects.toString(row.get("scip"),"");
+        String binary=Objects.toString(row.get("binary_key"),scip);
+        String fqn=Objects.toString(row.get("fqn"),"");
+        String name=Objects.toString(row.get("name"),"");
+        String kind=Objects.toString(row.get("kind"),"");
+        String signature=Objects.toString(row.get("signature"),"");
+        String descriptor=Objects.toString(row.get("erased_descriptor"),"");
+        int flags=row.get("flags") instanceof Number value?value.intValue():0;
+        Object encoded=row.get("resolution_fact");
+        ResolutionFact resolution=encoded instanceof ResolutionFact value?value
+                :encoded instanceof String value?ResolutionFact.decode(value)
+                :ResolutionFact.legacy(binary,fqn,name,kind,descriptor,flags);
+        var parameters=new ArrayList<String>();
+        Object raw=row.get("parameters");
+        if(raw instanceof Iterable<?> values)for(Object value:values)parameters.add(Objects.toString(value,""));
+        String source=row.get("source_file")==null?null:row.get("source_file").toString();
+        var result=new IndexStore.IndexedSemanticSymbol(scip,name,kind,fqn,binary,signature,descriptor,resolution,
+                List.copyOf(parameters),source,layer);
+        if(cache.containsKey(cacheKey))semanticCache.put(cacheKey,result);
+        return result;
     }
     Map<String,Object> byId(long artifact,long id)throws Exception {byte[] value=facts(artifact).get(read,"s/"+handle(id));return value==null?null:decode(artifact,"s/"+handle(id),value);}
     Map<String,Object> first(long artifact,String field,String value)throws Exception {
         var result=new ArrayList<Map<String,Object>>(1);facts(artifact).select(read,field+"/"+key(value),false,(id,bytes)->{result.add(decode(artifact,id,bytes));return false;});return result.isEmpty()?null:result.getFirst();
+    }
+    IndexStore.IndexedSemanticSymbol semanticFirst(long artifact,String field,String value,IndexStore.SemanticLayer layer)throws Exception {
+        var result=new ArrayList<IndexStore.IndexedSemanticSymbol>(1);
+        facts(artifact).select(read,field+"/"+key(value),false,(id,bytes)->{result.add(semantic(artifact,id,bytes,layer));return false;});
+        return result.isEmpty()?null:result.getFirst();
     }
     boolean contains(long artifact,String scip)throws Exception {return facts(artifact).contains(read,"scip/"+key(scip));}
     List<Map<String,Object>> select(long artifact,String query,boolean substring,boolean prefix,int limit,long after,Predicate<Map<String,Object>> accepts)throws Exception {
@@ -63,6 +100,22 @@ final class SourceOverlay implements AutoCloseable {
             var value=decode(artifact,id,bytes);if(accepts.test(value)){result.put(handle,value);if(result.size()>limit)result.pollLastEntry();}return prefix||result.size()<limit;};
         facts(artifact).select(read,posting,range,visitor);
         if(!substring&&!prefix)facts(artifact).select(read,"binary_key/"+key(query),false,visitor);
+        return List.copyOf(result.values());
+    }
+    record SemanticEntry(long handle,IndexStore.IndexedSemanticSymbol symbol) {}
+    List<SemanticEntry> semanticSelect(long artifact,String query,boolean prefix,int limit,long after,
+                                       IndexStore.SemanticLayer layer,Predicate<IndexStore.IndexedSemanticSymbol> accepts)throws Exception {
+        if(limit<=0)return List.of();
+        String posting=prefix?"name/"+key(query):"scip/"+key(query);
+        var result=new TreeMap<Long,SemanticEntry>();
+        KeyedFacts.Visitor visitor=(id,bytes)->{
+            long handle=Long.parseUnsignedLong(id.substring(2),16);if(handle<=after)return true;
+            var value=semantic(artifact,id,bytes,layer);
+            if(accepts.test(value)){result.put(handle,new SemanticEntry(handle,value));if(result.size()>limit)result.pollLastEntry();}
+            return prefix||result.size()<limit;
+        };
+        facts(artifact).select(read,posting,prefix,visitor);
+        if(!prefix)facts(artifact).select(read,"binary_key/"+key(query),false,visitor);
         return List.copyOf(result.values());
     }
     List<IndexStore.SourceRelationship> edges(long artifact,String scip,boolean outgoing,Set<String> kinds)throws Exception {

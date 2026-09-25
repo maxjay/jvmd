@@ -311,6 +311,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var queue=new ArrayDeque<String>();queue.add(receiverType);var seen=new HashSet<String>();
         while(!queue.isEmpty()){
             String owner=queue.removeFirst();if(!seen.add(owner))continue;
+            var symbol=view.symbol(owner);if(symbol==null)return false;
             var typeIdentity=view.identity(QueryProof.Domain.EXACT_SYMBOL,owner);
             if(typeIdentity.isEmpty())return false;
             addProofDependency(values,new QueryProof.Dependency(QueryProof.Domain.EXACT_SYMBOL,owner,typeIdentity.get()));
@@ -320,9 +321,18 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             if(memberProof.isEmpty())return false;
             for(var dependency:memberProof.get().dependencies())addProofDependency(values,dependency);
 
-            for(String parent:view.directSupertypes(owner)){
-                if(view.symbol(parent)==null)return false;
-                queue.addLast(parent);
+            for(var parent:symbol.directSupertypes()){
+                if(!(parent instanceof SemanticType.Declared declared))continue;
+                // This proof governs source mutations. A platform/dependency parent cannot change
+                // because this workspace source changed; changing the direct-supertype relation
+                // itself changes the exact owner type identity above. A known workspace parent,
+                // however, must have current maintained semantics and participates recursively.
+                String binary=declared.name().replace((char)36,'.');
+                boolean workspaceParent=liveSourceState!=null&&liveSourceState.source(binary).isPresent();
+                if(!workspaceParent)continue;
+                var parentSymbol=view.symbol(declared.symbolId());if(parentSymbol==null)return false;
+                if(!currentSourceFact(semanticState().symbol(declared.symbolId())))return false;
+                queue.addLast(declared.symbolId());
             }
         }
         return true;

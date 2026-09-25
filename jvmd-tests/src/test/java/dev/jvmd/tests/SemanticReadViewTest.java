@@ -111,6 +111,7 @@ class SemanticReadViewTest {
         return new SemanticReadView(){
             private final Symbol symbol=new Symbol(id,id,"class",id,id,"","",Set.of(),hash(identity),origin);
             public Symbol symbol(String key){return id.equals(key)?symbol:null;}
+            public MemberPage members(String ownerId,String prefix,int limit,String cursor){return new MemberPage(List.of(),null);}
             public List<String> directSupertypes(String key){return List.of();}
             public Optional<Hash256> identity(QueryProof.Domain domain,String key){
                 return domain==QueryProof.Domain.EXACT_SYMBOL&&id.equals(key)?Optional.of(symbol.resolutionIdentity()):Optional.empty();
@@ -121,6 +122,7 @@ class SemanticReadViewTest {
     private static SemanticReadView empty(){
         return new SemanticReadView(){
             public Symbol symbol(String id){return null;}
+            public MemberPage members(String ownerId,String prefix,int limit,String cursor){return new MemberPage(List.of(),null);}
             public List<String> directSupertypes(String id){return List.of();}
             public Optional<Hash256> identity(QueryProof.Domain domain,String key){return Optional.empty();}
         };

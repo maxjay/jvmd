@@ -46,7 +46,6 @@ public final class BinaryReader {
             int flags=model.flags().flagsMask();
             for(var inner:model.findAttribute(Attributes.innerClasses()).stream().flatMap(a->a.classes().stream()).toList())
                 if(inner.innerClass().asInternalName().equals(model.thisClass().asInternalName())) flags=inner.flagsMask();
-            if(!local && !visible(flags)) continue;
             String kind=(flags&ClassFile.ACC_ANNOTATION)!=0?"annotation":(flags&ClassFile.ACC_INTERFACE)!=0?"interface":(flags&ClassFile.ACC_ENUM)!=0?"enum":model.findAttribute(Attributes.record()).isPresent()?"record":"class";
             var metadata=metadata(model); metadata.put("binary_name",owner);
             model.findAttribute(Attributes.innerClasses()).ifPresent(a->metadata.put("inner_classes",a.classes().stream().map(i->name(i.innerClass())).toList()));
@@ -87,7 +86,6 @@ public final class BinaryReader {
             model.interfaces().forEach(parent->edges.add(new Edge(owner,name(parent),kind.equals("interface")?"extends":"implements")));
             annotations(model,owner,edges);
             for(var field:model.fields()) {
-                if(!local&&!visible(field.flags().flagsMask()))continue;
                 String key=owner+"#"+field.fieldName().stringValue();
                 Signature type=field.findAttribute(Attributes.signature()).map(a->a.asTypeSignature()).orElseGet(()->Signature.of(field.fieldTypeSymbol()));
                 symbols.add(new Symbol(key,owner,field.fieldName().stringValue(),owner,(field.flags().flagsMask()&ClassFile.ACC_ENUM)!=0?"enumconst":"field",
@@ -97,7 +95,7 @@ public final class BinaryReader {
             }
             for(var method:model.methods()) {
                 int mf=method.flags().flagsMask(); String methodName=method.methodName().stringValue();
-                if(methodName.equals("<clinit>") || (mf & ClassFile.ACC_BRIDGE)!=0 || !local&&!visible(mf))continue;
+                if(methodName.equals("<clinit>") || (mf & ClassFile.ACC_BRIDGE)!=0)continue;
                 String key=owner+"#"+methodName+method.methodType().stringValue();
                 var sig=method.findAttribute(Attributes.signature()).map(a->a.asMethodSignature()).orElseGet(()->MethodSignature.of(method.methodTypeSymbol()));
                 var names=new ArrayList<String>();

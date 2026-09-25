@@ -236,18 +236,30 @@ class ResidentSemanticStateTest {
         var b=type("B#","B","api-B");
         state.admit(snapshotUnit("unit:a","content-a",a));
         state.admit(snapshotUnit("unit:b","content-b",b));
-        long generation=((Number)state.status().get("semantic_uncertainty_generation")).longValue();
+        var before=state.status();
+        long generation=((Number)before.get("semantic_uncertainty_generation")).longValue();
+        long mutations=((Number)before.get("semantic_fact_mutations")).longValue();
+        Object facts=before.get("semantic_facts"),units=before.get("semantic_units");
+        String hierarchy=state.hierarchyApi("A#");
 
         state.markHierarchyUncertain();
 
-        assertThat(state.status()).containsEntry("semantic_stale_units",0);
-        assertThat(((Number)state.status().get("semantic_uncertainty_generation")).longValue()).isEqualTo(generation+1);
+        var uncertain=state.status();
+        assertThat(uncertain).containsEntry("semantic_stale_units",0)
+                .containsEntry("semantic_facts",facts)
+                .containsEntry("semantic_units",units)
+                .containsEntry("semantic_fact_mutations",mutations);
+        assertThat(((Number)uncertain.get("semantic_uncertainty_generation")).longValue()).isEqualTo(generation+1);
+        assertThat(state.hierarchyApi("A#")).isNotEqualTo(hierarchy);
         assertThat(state.unitCurrent("unit:a",null)).isFalse();
         assertThat(state.unitCurrent("unit:b",null)).isFalse();
+        assertThat(state.completeness("A#")).isEqualTo(SemanticCompleteness.UNKNOWN);
 
         state.admit(snapshotUnit("unit:a","content-a",a));
         assertThat(state.unitCurrent("unit:a",null)).isTrue();
         assertThat(state.unitCurrent("unit:b",null)).isFalse();
+        assertThat(state.completeness("A#")).isNotEqualTo(SemanticCompleteness.UNKNOWN);
+        assertThat(((Number)state.status().get("semantic_fact_mutations")).longValue()).isEqualTo(mutations);
     }
 
     @Test void sourceStalenessInvalidatesHierarchyIdentityUntilBodyOnlyReadmission(){

@@ -37,10 +37,12 @@ class SemanticReadViewTest {
         var local=row("local-symbol","local","p.Local","p.Local","class");
         var machine=row("machine-symbol","jar","p.Machine","p.Machine","class");
         var parent=row("parent-symbol","jar","p.Parent","p.Parent","class");
+        var member=row("machine-member","jar","p.Machine","p.Machine#getOne()I","method");
         var rows=Map.of(
                 "local-symbol",local,
                 "machine-symbol",machine,
-                "parent-symbol",parent);
+                "parent-symbol",parent,
+                "machine-member",member);
         var store=store(rows,List.of(new IndexStore.ResolvedRelationship(machine,parent,"extends")));
 
         var localView=SemanticReadViews.local(store,"workspace");
@@ -51,6 +53,10 @@ class SemanticReadViewTest {
         assertThat(machineView.symbol("machine-symbol").origin()).isEqualTo(SemanticReadView.Origin.MACHINE);
         assertThat(machineView.symbol("local-symbol")).isNull();
         assertThat(machineView.directSupertypes("machine-symbol")).containsExactly("parent-symbol");
+        assertThat(machineView.members("machine-symbol","get",10,null).symbols())
+                .extracting(SemanticReadView.Symbol::id).containsExactly("machine-member");
+        assertThat(machineView.members("machine-symbol","get",10,null).symbols().getFirst().origin())
+                .isEqualTo(SemanticReadView.Origin.MACHINE);
         assertThat(machineView.identity(QueryProof.Domain.EXACT_SYMBOL,"machine-symbol")).isPresent();
         assertThat(machineView.identity(QueryProof.Domain.CLASSPATH_SEARCH,"machine-symbol")).isEmpty();
     }
@@ -94,6 +100,15 @@ class SemanticReadViewTest {
                 SemanticReadViewTest.class.getClassLoader(),new Class<?>[]{IndexStore.class},
                 (_,method,args)->switch(method.getName()){
                     case "byScip" -> rows.get((String)args[0]);
+                    case "membersByOwner" -> {
+                        String owner=(String)args[0],prefix=(String)args[1];
+                        var values=rows.values().stream()
+                                .filter(row->owner.equals("machine-symbol"))
+                                .filter(row->Objects.toString(row.get("fqn"),"").equals("p.Machine"))
+                                .filter(row->Objects.toString(row.get("kind"),"").equals("method"))
+                                .filter(row->Objects.toString(row.get("name"),"").startsWith(prefix)).toList();
+                        yield new IndexStore.MemberPage(values,null);
+                    }
                     case "relationships" -> {
                         @SuppressWarnings("unchecked") Collection<String> scips=(Collection<String>)args[0];
                         @SuppressWarnings("unchecked") Set<String> kinds=(Set<String>)args[2];

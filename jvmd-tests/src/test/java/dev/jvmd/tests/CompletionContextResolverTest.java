@@ -91,15 +91,19 @@ class CompletionContextResolverTest {
         var protectedMember=methodWithModifiers("protected-m","q.Owner","protectedM",Set.of("protected"));
         var privateMember=methodWithModifiers("private-m","q.Owner","privateM",Set.of("private"));
 
-        assertThat(CompletionContextResolver.access(publicMember,"p"))
+        var other=type("other-access","q.Other");
+        var nested=type("nested-access","q.Owner$Nested");
+        assertThat(CompletionContextResolver.access(publicMember,"p",other))
                 .isEqualTo(CompletionContextResolver.Access.ALLOWED);
-        assertThat(CompletionContextResolver.access(packageMember,"q"))
+        assertThat(CompletionContextResolver.access(packageMember,"q",other))
                 .isEqualTo(CompletionContextResolver.Access.ALLOWED);
-        assertThat(CompletionContextResolver.access(packageMember,"p"))
+        assertThat(CompletionContextResolver.access(packageMember,"p",other))
                 .isEqualTo(CompletionContextResolver.Access.DENIED);
-        assertThat(CompletionContextResolver.access(protectedMember,"p"))
+        assertThat(CompletionContextResolver.access(protectedMember,"p",other))
                 .isEqualTo(CompletionContextResolver.Access.UNKNOWN);
-        assertThat(CompletionContextResolver.access(privateMember,"q"))
+        assertThat(CompletionContextResolver.access(privateMember,"q",other))
+                .isEqualTo(CompletionContextResolver.Access.DENIED);
+        assertThat(CompletionContextResolver.access(privateMember,"q",nested))
                 .isEqualTo(CompletionContextResolver.Access.UNKNOWN);
         assertThat(owner).isNotNull();
     }

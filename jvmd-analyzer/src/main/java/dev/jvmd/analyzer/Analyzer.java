@@ -2260,6 +2260,26 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(substring)return Objects.toString(symbol.get("name_path"),"").contains(ref)||Objects.toString(symbol.get("name"),"").contains(ref);
         return NamePath.parse(ref).matches(symbol);
     }
+    /** Temporary Issue-36 proof projection; remove with the Checkpoint-18 proof tooling. */
+    public Map<String,Object> proofStatus(){
+        var compilerStatus=compiler.status();var result=new LinkedHashMap<String,Object>();
+        for(String key:List.of("queries","parse_invocations","enter_attribute_invocations","completion_tier2_invocations","fallback_receiver_queries"))
+            if(compilerStatus.get(key)!=null)result.put(key,compilerStatus.get(key));
+        result.put("completion_requests",completionRequests);result.put("binding_computations",bindingComputations);
+        result.put("source_proof_evidence",sourceProofEvidence.status());
+        if(context!=null){
+            var caches=modules.get(context.generation());var semantic=caches.semantic.status();
+            var resident=new LinkedHashMap<String,Object>();
+            for(String key:List.of("semantic_fact_mutations","semantic_tree_range_entries_read","semantic_units","semantic_stale_units"))
+                if(semantic.get(key)!=null)resident.put(key,semantic.get(key));
+            result.put("resident_semantic_state",Collections.unmodifiableMap(resident));
+            result.put("classpath_proof_evidence",caches.classpathProofEvidence.status());
+            result.put("document_semantic_contexts",caches.documentSemantics.size());
+            result.put("semantic_proof_consumers",dependencies.semantic().proofs().size());
+        }
+        return Collections.unmodifiableMap(result);
+    }
+
     public Map<String,Object> status(){
         var result=new LinkedHashMap<String,Object>(compiler.status());if(snapshots!=null)result.put("persistent_snapshots",snapshots.status());result.putAll(focusing.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("binding_computations",bindingComputations);result.put("classpath_fingerprints",classpathFingerprints);result.put("diagnostic_store",diagnosticStore.status());result.put("diagnostic_files_analysed",diagnosticFilesAnalysed);result.put("diagnostic_files_reused",diagnosticFilesReused);result.put("index_record_source_calls",indexWrites);result.put("index_record_source_ms",0.0);result.put("index_publish_enqueue_ms",Math.round(indexWriteNanos/1000.0)/1000.0);if(index!=null)result.put("source_publisher",index.sourcePublisherStatus());result.put("api_fingerprint_changes",apiFingerprintChanges);result.put("api_fingerprint_unchanged",apiFingerprintUnchanged);result.put("pending_api_files",dependencies.semantic().pendingCount());result.put("conditional_files",dependencies.semantic().conditionalCount());result.put("dependencies",dependencies.status());
         if(liveSourceState!=null)result.put("live_source_state",liveSourceState.status());

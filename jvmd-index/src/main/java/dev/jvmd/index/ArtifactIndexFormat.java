@@ -12,7 +12,7 @@ import java.util.*;
  */
 public final class ArtifactIndexFormat {
     public static final int FORMAT_VERSION=1;
-    public static final String INDEXER_VERSION="jvmd-index-v8";
+    public static final String INDEXER_VERSION="jvmd-index-v9";
     private static final byte[] MAGIC="JVIDX001".getBytes(StandardCharsets.US_ASCII);
     private static final int MAX_STRINGS=5_000_000,MAX_SYMBOLS=5_000_000,MAX_RELATIONSHIPS=20_000_000,MAX_STRING_BYTES=32*1024*1024;
 
@@ -185,15 +185,16 @@ public final class ArtifactIndexFormat {
         result.write(MAGIC);result.write(checksum);result.write(body);return result.toByteArray();
     }
 
-    /** Individually addressable records keep a single lookup independent of artifact size. */
+    /** Individually addressable records keep one typed lookup independent of artifact size. */
     public static byte[] encodeSymbol(SymbolRecord symbol)throws IOException{
         var bytes=new ByteArrayOutputStream();
         try(var out=new DataOutputStream(bytes)){
             out.writeInt(symbol.id());out.writeInt(symbol.ownerId());out.writeInt(symbol.flags());
             for(String value:new String[]{symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),symbol.signature(),
-                    symbol.descriptor(),symbol.entry(),symbol.metadataJson(),symbol.resolution().encode()}){
+                    symbol.descriptor(),symbol.entry(),symbol.metadataJson()}){
                 out.writeBoolean(value!=null);if(value!=null)writeString(out,value);
             }
+            writeResolution(out,symbol.resolution());
             out.writeInt(symbol.parameters().size());for(String value:symbol.parameters())writeString(out,value);
         }
         return bytes.toByteArray();
@@ -201,26 +202,29 @@ public final class ArtifactIndexFormat {
 
     public static SymbolRecord decodeSymbol(byte[] bytes)throws IOException{
         try(var in=new DataInputStream(new ByteArrayInputStream(bytes))){
-            int id=in.readInt(),owner=in.readInt(),flags=in.readInt();var fields=new String[9];
+            int id=in.readInt(),owner=in.readInt(),flags=in.readInt();var fields=new String[8];
             for(int i=0;i<fields.length;i++)fields[i]=in.readBoolean()?readString(in):null;
+            if(id<0||owner< -1||fields[0]==null||fields[1]==null||fields[2]==null||fields[3]==null||fields[7]==null)
+                throw new IOException("Invalid symbol record");
+            ResolutionFact resolution=readResolution(in);
             int count=bounded(in.readInt(),1_000_000,"parameter count");var parameters=new ArrayList<String>(count);
             for(int i=0;i<count;i++)parameters.add(readString(in));
-            if(id<0||owner< -1||in.available()!=0||fields[0]==null||fields[1]==null||fields[2]==null||fields[3]==null||fields[7]==null||fields[8]==null)
-                throw new IOException("Invalid symbol record");
-            return new SymbolRecord(id,owner,fields[0],fields[1],fields[2],fields[3],fields[4],fields[5],flags,fields[6],parameters,fields[7],ResolutionFact.decode(fields[8]));
+            if(in.available()!=0)throw new IOException("Trailing symbol record bytes");
+            return new SymbolRecord(id,owner,fields[0],fields[1],fields[2],fields[3],fields[4],fields[5],flags,fields[6],parameters,fields[7],resolution);
         }
     }
 
-    /** Validate the same record shape without allocating decoded strings or a symbol model. */
+    /** Validate the same compact record shape without constructing semantic objects. */
     public static boolean validateSymbol(byte[] bytes,long expectedId,long symbolCount)throws IOException{
         var input=java.nio.ByteBuffer.wrap(bytes);
         try{
             int id=input.getInt(),owner=input.getInt();input.getInt();
             if(id<0||owner< -1)throw new IOException("Invalid symbol record");
-            for(int field=0;field<9;field++){
+            for(int field=0;field<8;field++){
                 if(input.get()!=0)skipString(input);
-                else if(field<4||field>=7)throw new IOException("Invalid symbol record");
+                else if(field<4||field==7)throw new IOException("Invalid symbol record");
             }
+            skipResolution(input);
             int count=bounded(input.getInt(),1_000_000,"parameter count");
             for(int i=0;i<count;i++)skipString(input);
             if(input.hasRemaining())throw new IOException("Invalid symbol record");
@@ -231,6 +235,119 @@ public final class ArtifactIndexFormat {
         int size=bounded(input.getInt(),MAX_STRING_BYTES,"string size");
         if(size>input.remaining())throw new EOFException("Truncated symbol record");
         input.position(input.position()+size);
+    }
+
+    private static void writeResolution(DataOutputStream out,ResolutionFact value)throws IOException{
+        writeString(out,value.symbolKey());
+        out.writeBoolean(value.ownerKey()!=null);if(value.ownerKey()!=null)writeString(out,value.ownerKey());
+        writeString(out,value.kind());writeString(out,value.name());writeString(out,value.erasedDescriptor());
+        out.writeInt(value.modifiers().size());for(String modifier:value.modifiers().stream().sorted().toList())writeString(out,modifier);
+        writeString(out,value.packageName());writeType(out,value.type());
+        out.writeInt(value.typeParameters().size());
+        for(var parameter:value.typeParameters()){
+            out.writeInt(parameter.bounds().size());for(var bound:parameter.bounds())writeType(out,bound);
+        }
+        out.writeInt(value.directSupertypes().size());for(var parent:value.directSupertypes())writeType(out,parent);
+        out.writeBoolean(value.varargs());out.write(value.identity().bytes());
+    }
+
+    private static ResolutionFact readResolution(DataInputStream in)throws IOException{
+        String symbol=readString(in),owner=in.readBoolean()?readString(in):null;
+        String kind=readString(in),name=readString(in),descriptor=readString(in);
+        int modifierCount=bounded(in.readInt(),64,"resolution modifier count");var modifiers=new LinkedHashSet<String>();
+        for(int i=0;i<modifierCount;i++)modifiers.add(readString(in));
+        String pkg=readString(in);SemanticType type=readType(in);
+        int parameterCount=bounded(in.readInt(),1024,"resolution type parameter count");
+        var parameters=new ArrayList<ResolutionFact.TypeParameter>(parameterCount);
+        for(int i=0;i<parameterCount;i++){
+            int boundCount=bounded(in.readInt(),1024,"resolution bound count");var bounds=new ArrayList<SemanticType>(boundCount);
+            for(int j=0;j<boundCount;j++)bounds.add(readType(in));parameters.add(new ResolutionFact.TypeParameter(bounds));
+        }
+        int parentCount=bounded(in.readInt(),4096,"resolution supertype count");var parents=new ArrayList<SemanticType>(parentCount);
+        for(int i=0;i<parentCount;i++)parents.add(readType(in));
+        boolean varargs=in.readBoolean();byte[] identity=in.readNBytes(Hash256.BYTES);
+        if(identity.length!=Hash256.BYTES)throw new EOFException("Truncated resolution identity");
+        return new ResolutionFact(symbol,owner,kind,name,descriptor,modifiers,pkg,type,parameters,parents,varargs,new Hash256(identity));
+    }
+
+    private static void writeType(DataOutputStream out,SemanticType type)throws IOException{
+        switch(type){
+            case SemanticType.Primitive value -> {out.writeByte(1);writeString(out,value.name());}
+            case SemanticType.Declared value -> {
+                out.writeByte(2);writeString(out,value.symbolId());writeString(out,value.name());
+                out.writeInt(value.arguments().size());for(var argument:value.arguments())writeType(out,argument);
+            }
+            case SemanticType.Variable value -> {out.writeByte(3);writeString(out,value.symbolId());writeString(out,value.name());}
+            case SemanticType.Array value -> {out.writeByte(4);writeType(out,value.component());}
+            case SemanticType.Executable value -> {
+                out.writeByte(5);out.writeInt(value.parameters().size());for(var parameter:value.parameters())writeType(out,parameter);
+                writeType(out,value.returns());out.writeInt(value.thrown().size());for(var thrown:value.thrown())writeType(out,thrown);
+            }
+            case SemanticType.Wildcard value -> {
+                out.writeByte(6);out.writeBoolean(value.extendsBound()!=null);if(value.extendsBound()!=null)writeType(out,value.extendsBound());
+                out.writeBoolean(value.superBound()!=null);if(value.superBound()!=null)writeType(out,value.superBound());
+            }
+            case SemanticType.Intersection value -> {
+                out.writeByte(7);out.writeInt(value.bounds().size());for(var bound:value.bounds())writeType(out,bound);
+            }
+            case SemanticType.Unknown value -> {out.writeByte(8);writeString(out,value.text());}
+        }
+    }
+
+    private static SemanticType readType(DataInputStream in)throws IOException{
+        return switch(in.readUnsignedByte()){
+            case 1 -> new SemanticType.Primitive(readString(in));
+            case 2 -> {
+                String id=readString(in),name=readString(in);int count=bounded(in.readInt(),4096,"type argument count");
+                var args=new ArrayList<SemanticType>(count);for(int i=0;i<count;i++)args.add(readType(in));
+                yield new SemanticType.Declared(id,name,args);
+            }
+            case 3 -> new SemanticType.Variable(readString(in),readString(in));
+            case 4 -> new SemanticType.Array(readType(in));
+            case 5 -> {
+                int count=bounded(in.readInt(),4096,"parameter type count");var params=new ArrayList<SemanticType>(count);
+                for(int i=0;i<count;i++)params.add(readType(in));SemanticType returns=readType(in);
+                int thrownCount=bounded(in.readInt(),4096,"thrown type count");var thrown=new ArrayList<SemanticType>(thrownCount);
+                for(int i=0;i<thrownCount;i++)thrown.add(readType(in));
+                yield new SemanticType.Executable(params,returns,thrown);
+            }
+            case 6 -> {
+                SemanticType ext=in.readBoolean()?readType(in):null;SemanticType sup=in.readBoolean()?readType(in):null;
+                yield new SemanticType.Wildcard(ext,sup);
+            }
+            case 7 -> {
+                int count=bounded(in.readInt(),4096,"intersection bound count");var bounds=new ArrayList<SemanticType>(count);
+                for(int i=0;i<count;i++)bounds.add(readType(in));yield new SemanticType.Intersection(bounds);
+            }
+            case 8 -> new SemanticType.Unknown(readString(in));
+            default -> throw new IOException("Invalid semantic type tag");
+        };
+    }
+
+    private static void skipResolution(java.nio.ByteBuffer input)throws IOException{
+        skipString(input);if(input.get()!=0)skipString(input);skipString(input);skipString(input);skipString(input);
+        int modifiers=bounded(input.getInt(),64,"resolution modifier count");for(int i=0;i<modifiers;i++)skipString(input);
+        skipString(input);skipType(input);
+        int parameters=bounded(input.getInt(),1024,"resolution type parameter count");
+        for(int i=0;i<parameters;i++){int bounds=bounded(input.getInt(),1024,"resolution bound count");for(int j=0;j<bounds;j++)skipType(input);}
+        int parents=bounded(input.getInt(),4096,"resolution supertype count");for(int i=0;i<parents;i++)skipType(input);
+        input.get();if(input.remaining()<Hash256.BYTES)throw new EOFException("Truncated resolution identity");input.position(input.position()+Hash256.BYTES);
+    }
+
+    private static void skipType(java.nio.ByteBuffer input)throws IOException{
+        switch(Byte.toUnsignedInt(input.get())){
+            case 1,8 -> skipString(input);
+            case 2 -> {skipString(input);skipString(input);int count=bounded(input.getInt(),4096,"type argument count");for(int i=0;i<count;i++)skipType(input);}
+            case 3 -> {skipString(input);skipString(input);}
+            case 4 -> skipType(input);
+            case 5 -> {
+                int count=bounded(input.getInt(),4096,"parameter type count");for(int i=0;i<count;i++)skipType(input);
+                skipType(input);int thrown=bounded(input.getInt(),4096,"thrown type count");for(int i=0;i<thrown;i++)skipType(input);
+            }
+            case 6 -> {if(input.get()!=0)skipType(input);if(input.get()!=0)skipType(input);}
+            case 7 -> {int count=bounded(input.getInt(),4096,"intersection bound count");for(int i=0;i<count;i++)skipType(input);}
+            default -> throw new IOException("Invalid semantic type tag");
+        }
     }
 
     public static ArtifactData decode(byte[] encoded)throws Exception{

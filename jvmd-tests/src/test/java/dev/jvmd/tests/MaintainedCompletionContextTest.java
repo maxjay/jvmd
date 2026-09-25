@@ -58,7 +58,7 @@ class MaintainedCompletionContextTest {
             @SuppressWarnings("unchecked")
             var resident=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
             assertThat(((Number)resident.get("semantic_facts")).longValue()).isZero();
-            assertThat(index.store().status()).containsEntry("owner_prefix_queries",4L);
+            assertThat(index.store().status()).containsEntry("owner_prefix_queries",5L);
         }
     }
 

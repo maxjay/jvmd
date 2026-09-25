@@ -511,3 +511,77 @@ Repairs following this run preserve the review constraints:
 - the fixture helper supports a correctly named public Java source file.
 
 No checkpoint boxes were changed for this failed run.
+
+
+## Checkpoints 4–7 — semantic reads, bounded member ranges, completion probe and tiered context resolver
+
+Starting SHA: `31ed33dcf988898d2b86fb4418da21bd3b2d0f19`
+Implementation subject: `dea7ae09145b7cf7d9f04affd3165dd2ad9482de`
+
+Focused evidence:
+- Exact-subject Tests run https://github.com/maxjay/jvmd/actions/runs/36132238705 passed compile/package, Phase 1, Phase 3, standalone RocksDB tests and **Phase 4** with the Checkpoints 4–7 implementation present.
+- The preceding subject `1e2442da6d16f12c4198b1766c906a74d55e41ec` reached the maintained Maven completion path with the expected candidates and zero query-side javac; its sole Phase-4 error was a stale test read of a removed proof-only `owner_prefix_queries` status field. `dea7ae09` removes only that stale assertion.
+- Benchmarks remained green throughout the final repair subjects; no frozen Checkpoint-17 before/after run was performed.
+
+Checkpoint 4 — unified semantic read view:
+- Added the backend-neutral `SemanticReadView` contract for exact symbols, exact types, direct member ranges, direct supertypes, semantic completeness and precise semantic identities.
+- Added adapters for LIVE resident facts and persisted LOCAL/MACHINE facts, then deterministic LIVE > LOCAL > MACHINE composition.
+- Composition is completeness-aware: a COMPLETE higher-precedence owner makes lower-layer absence authoritative; PARTIAL owners may fill from lower maintained state.
+- Added exact-member deletion/shadowing regressions as well as additive PARTIAL overlays.
+- Canonical persisted reads are typed: `IndexedSemanticSymbol` carries the already-decoded `ResolutionFact`; ordinary semantic reads do not serialize a fact to JSON and immediately parse it again.
+- Immutable LIVE facts cache their canonical `ResolutionFact`; typed LOCAL source-overlay facts are cached after their first storage decode.
+
+Checkpoint 5 — machine owner/member ranges:
+- Reused Rocks secondary postings rather than duplicating the symbol store. A pointer-only owner/name posting provides bounded direct-member reads from canonical symbol records.
+- Added deterministic prefix/range pagination and cursor handling for persisted and resident layers.
+- Analyzer hierarchy traversal consumes these ranges through `SemanticReadView` rather than promoting complete dependency types into resident javac state.
+- Permanent integration proof resolves indexed parameter, field, static and zero-argument chained receivers with resident semantic fact count remaining zero.
+- A dedicated MavenProject regression first proves the typed MACHINE type lookup and typed owner/prefix range contain `getArtifactId` / `getGroupId`, then proves completion consumes that maintained state.
+
+Checkpoint 6 — completion probe:
+- Added the dedicated `CompletionProbe` boundary and routed completion source shaping through it.
+- Probe tests cover `receiver.`, `receiver.pre`, whitespace/newline continuation, EOF/closing-brace boundaries, existing semicolons, and malformed-but-normal editor states in return, assignment, arguments and control-flow contexts.
+- `receiver.\nnextStatement();` and `receiver.\n// comment\nnextStatement();` are explicitly protected.
+- The probe does not contain Maven/fixture-specific repair rules; unsafe/ambiguous repair remains unresolved and falls through to the bounded fallback.
+
+Checkpoint 7 — tiered CompletionContextResolver:
+- Tier 0 retained existing detached document-context reuse.
+- Tier 1 now proves simple lexical parameters/fields/static type receivers and unambiguous zero-argument chains from maintained semantic facts.
+- Tier 1 deliberately returns null for generic/complex expressions and uncertain Java access/static contexts.
+- Cross-package `protected`, possible same-nest `private`, module-sensitive access and unknown static context remain fallback cases. Distinct-nest private denial is proven only where it is unambiguous.
+- Static-method, instance-method, static-initializer, static-field-initializer and instance-field-initializer regressions protect context classification.
+- Tier 2 remains the existing bounded javac context-attribution path; javac returns semantic context, not the member candidate universe.
+- The normal same-package Maven `MavenProject project; project.` regression returns expected indexed members with **query-side compiler queries unchanged**.
+
+Navigation/search boundary:
+- Generic navigation/search semantics were kept separate from the complete semantic declaration surface.
+- Installed binary-skeleton private members retain the existing hidden-search behavior.
+- Private callers admitted by code enrichment retain the existing searchable behavior.
+- The semantic read API still sees the complete declaration surface needed for access reasoning.
+
+Correctness proof:
+- `SemanticReadViewTest`: LIVE/LOCAL/MACHINE adapters, precedence, COMPLETE authoritative absence, PARTIAL fill and exact-member replacement.
+- `CompletionProbeTest`: 13 malformed/incomplete-source probe cases.
+- `CompletionContextResolverTest`: lexical/indexed/chained resolution plus conservative access/static fallback cases.
+- `MaintainedCompletionContextTest`: simple indexed receivers and Maven `project.` complete through typed MACHINE ranges with zero query-side javac and no resident dependency promotion.
+- Phase 3 and Phase 6 retain the pre-existing local/installed navigation behavior.
+- Standalone `jvmd-index-rocks` tests pass with compact typed symbol round-trips and typed source-overlay cache reuse.
+
+Performance proof:
+- Persisted semantic reads no longer perform the previous `ResolutionFact -> JSON -> map -> JSON parse -> SemanticType rebuild -> identity recomputation` loop inside one JVM query.
+- LIVE and LOCAL repeated semantic reads reuse canonical resolution objects rather than normalizing/hashing the same immutable declaration on every member query.
+- MACHINE member completion is bounded by owner/name postings and pagination; dependency types need not be promoted into the resident semantic heap.
+- Simple indexed and Maven parameter completion prove zero query-side javac on the maintained path.
+
+Failed/deprecated approaches:
+- The failed `db5020a8` run and its findings remain recorded above.
+- A temporary broad generic-search visibility change was rejected. The final implementation preserves the established navigation contract and gives complete private declaration access only through the semantic boundary.
+- A lexical regex initially treated `return project` as a declaration whose type was `return`; keyword pseudo-declarations are now rejected without expanding Tier 1 into a Java parser.
+- The initial Maven fixture compiled a public MavenProject from `Sample.java`; the fixture helper now supports canonical public source filenames.
+- The temporary `owner_prefix_queries` status assertion was removed rather than adding production proof-only instrumentation.
+
+Deviations:
+- None from the requested architecture. Complex/context-sensitive Java semantics remain intentionally on bounded javac fallback.
+
+Remaining:
+- Checkpoint 8: attach canonical QueryProof dependencies to document/query contexts for lexical/document scope, receiver, resolution/search path, hierarchy, accessibility, namespace and ordered classpath evidence.

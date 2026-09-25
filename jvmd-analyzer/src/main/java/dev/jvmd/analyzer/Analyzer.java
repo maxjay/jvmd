@@ -688,7 +688,24 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         for(var plan:plans)result.addAll(NamespaceResolutionProofs.dependencies(plan,this::namespaceTypeIdentity));
         return List.copyOf(result);
     }
-    private Hash256 classpathProofIdentity(CompilerInputs.Snapshot observed)throws Exception{
+    private QueryProof.Dependency classpathDependency(DocumentSemanticSnapshot.QueryContext query,
+                                                         boolean qualified,CompilerInputs.Snapshot observed)throws Exception{
+        if(qualified&&query.receiverType() instanceof SemanticType.Declared declared
+                &&index!=null&&!context.workspace().isBlank()){
+            var proof=index.store().semanticClasspathSearch(context.workspace(),declared.name());
+            if(proof.isPresent())return new QueryProof.Dependency(proof.get().key(),proof.get().identity());
+        }
+        var key=new QueryProof.Key(QueryProof.Domain.CLASSPATH_SEARCH,
+                context.workspace().isBlank()?"compiler":"workspace:"+context.workspace());
+        return new QueryProof.Dependency(key,classpathProofIdentity(key,observed));
+    }
+    private Hash256 classpathProofIdentity(QueryProof.Key key,CompilerInputs.Snapshot observed)throws Exception{
+        if(key.domain()!=QueryProof.Domain.CLASSPATH_SEARCH)throw new IllegalArgumentException("Not a classpath proof key");
+        if(key.value().startsWith("binary:")&&index!=null&&!context.workspace().isBlank()){
+            String binary=key.value().substring("binary:".length());
+            var proof=index.store().semanticClasspathSearch(context.workspace(),binary);
+            if(proof.isPresent())return proof.get().identity();
+        }
         if(index!=null&&!context.workspace().isBlank()){
             var identity=index.store().semanticClasspathIdentity(context.workspace());
             if(identity.isPresent())return identity.get();
@@ -724,7 +741,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
 
     private QueryProof documentContextProof(Path path,String text,Focusing.Result focus,
-                                             DocumentSemanticSnapshot.QueryContext query,
+                                             DocumentSemanticSnapshot.QueryContext query,boolean qualified,
                                              Collection<String> namespaceNames,Collection<Path> dependencySources,
                                              CompilerInputs.Snapshot observed)throws Exception{
         var dependencies=new ArrayList<QueryProof.Dependency>();
@@ -745,8 +762,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(namespace.isEmpty())
             dependencies.add(new QueryProof.Dependency(QueryProof.Domain.NAMESPACE,"visible",namespaceProofIdentity(text,observed)));
         else dependencies.addAll(namespace);
-        dependencies.add(new QueryProof.Dependency(QueryProof.Domain.CLASSPATH_SEARCH,
-                context.workspace().isBlank()?"compiler":"workspace:"+context.workspace(),classpathProofIdentity(observed)));
+        dependencies.add(classpathDependency(query,qualified,observed));
         return new QueryProof(dependencies);
     }
     private QueryProof currentDocumentContextProof(Path path,String text,String patched,int focusCursor,
@@ -772,7 +788,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 case RESOLUTION_PATH -> resolutionPathIdentity(dependency.key().value());
                 case HIERARCHY -> hierarchyProofIdentity(query);
                 case ACCESSIBILITY -> accessibilityProofIdentity(query);
-                case CLASSPATH_SEARCH -> classpathProofIdentity(observed);
+                case CLASSPATH_SEARCH -> classpathProofIdentity(dependency.key(),observed);
                 default -> dependency.identity();
             };
             dependencies.add(new QueryProof.Dependency(dependency.key(),identity));
@@ -829,7 +845,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(result==null)return null;
         for(var snapshot:result.semanticSnapshots())admitDetachedSemantic(snapshot);
         var query=registerAccessibility(caches,result);
-        query=query.withProof(documentContextProof(path,text,focus,query,result.nameResolutionNames(),List.of(),observed));
+        query=query.withProof(documentContextProof(path,text,focus,query,true,result.nameResolutionNames(),List.of(),observed));
         var snapshot=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
                 Map.of(start,query));
         var next=new DocumentSemanticCached(key,snapshot);caches.documentSemantics.put(path,next);return next;
@@ -886,7 +902,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         for(var snapshot:result.semanticSnapshots())admitDetachedSemantic(snapshot);
         var query=registerAccessibility(caches,result);
         var dependencyApis=documentDependencyApis(query,path);if(dependencyApis==null)return null;
-        query=query.withProof(documentContextProof(path,text,focus,query,List.of(),dependencyApis.keySet(),observed));
+        query=query.withProof(documentContextProof(path,text,focus,query,false,List.of(),dependencyApis.keySet(),observed));
         var snapshot=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
                 Map.of(start,query));
         var next=new DocumentSemanticCached(key,snapshot);caches.documentSemantics.put(path,next);return next;

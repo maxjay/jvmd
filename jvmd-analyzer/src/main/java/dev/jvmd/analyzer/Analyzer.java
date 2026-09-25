@@ -84,6 +84,34 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
     }
 
+    private static final class SourceProofEvidence {
+        long transitions,leavesPublished,consumersVisited,consumersChanged,consumersEqual,consumersFallback,
+                coarseFiles,sourceConsumersInvalidated;
+        long lastLeavesPublished,lastConsumersVisited,lastConsumersChanged,lastConsumersEqual,lastConsumersFallback,
+                lastCoarseFiles,lastSourceConsumersInvalidated;
+        void record(int leaves,SemanticUpdatePolicy.ProofPropagation propagation,int coarse,int sourceInvalidated){
+            transitions++;lastLeavesPublished=leaves;lastConsumersVisited=propagation.recomputed().size();
+            lastConsumersChanged=propagation.changed().size();lastConsumersEqual=propagation.equal().size();
+            lastConsumersFallback=propagation.fallback().size();lastCoarseFiles=coarse;lastSourceConsumersInvalidated=sourceInvalidated;
+            leavesPublished+=lastLeavesPublished;consumersVisited+=lastConsumersVisited;consumersChanged+=lastConsumersChanged;
+            consumersEqual+=lastConsumersEqual;consumersFallback+=lastConsumersFallback;coarseFiles+=coarse;
+            sourceConsumersInvalidated+=sourceInvalidated;
+        }
+        Map<String,Object> status(){
+            return Map.ofEntries(
+                    Map.entry("transitions",transitions),Map.entry("leaves_published",leavesPublished),
+                    Map.entry("proof_consumers_visited",consumersVisited),Map.entry("proof_consumers_recomputed",consumersVisited),
+                    Map.entry("proof_consumers_changed",consumersChanged),Map.entry("proof_consumers_stopped_equal",consumersEqual),
+                    Map.entry("proof_consumers_fallback",consumersFallback),Map.entry("coarse_fallback_files",coarseFiles),
+                    Map.entry("source_consumers_invalidated",sourceConsumersInvalidated),
+                    Map.entry("last_leaves_published",lastLeavesPublished),Map.entry("last_proof_consumers_visited",lastConsumersVisited),
+                    Map.entry("last_proof_consumers_recomputed",lastConsumersVisited),Map.entry("last_proof_consumers_changed",lastConsumersChanged),
+                    Map.entry("last_proof_consumers_stopped_equal",lastConsumersEqual),
+                    Map.entry("last_proof_consumers_fallback",lastConsumersFallback),Map.entry("last_coarse_fallback_files",lastCoarseFiles),
+                    Map.entry("last_source_consumers_invalidated",lastSourceConsumersInvalidated));
+        }
+    }
+
     private static final class ModuleCaches {
         final LinkedHashMap<String,Envelope> outlines=new LinkedHashMap<>(16,.75f,true);
         final LinkedHashMap<String,Cached> focused=new LinkedHashMap<>(32,.75f,true);
@@ -116,6 +144,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private LinkedHashMap<String,Envelope> outlines=new LinkedHashMap<>(16,.75f,true);
     private record Cached(Path file,String hash,String stamp,int start,int end,List<Focusing.Span> excluded,CompilerPool.Outcome<Bindings.Snapshot> result) { }
     private record DocumentSemanticCached(String key,DocumentSemanticSnapshot snapshot) { }
+    private record SemanticAdmission(SemanticDelta delta,List<SemanticFact> removed) {
+        SemanticAdmission { Objects.requireNonNull(delta);removed=List.copyOf(removed); }
+    }
     private record Outline(List<Map<String,Object>> symbols,Set<Path> dependencies) { }
     private static final class CompletionAdvanceFailure extends Exception {
         final List<String> warnings;
@@ -123,6 +154,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     private LinkedHashMap<String,Cached> focused=new LinkedHashMap<>(32,.75f,true);
     private final Dependencies dependencies=new Dependencies();
+    private final SourceProofEvidence sourceProofEvidence=new SourceProofEvidence();
     private final LinkedHashMap<String,SourceText> sourceTexts=new LinkedHashMap<>(16,.75f,true);
     private long cacheHits,bindingComputations,diagnosticFilesAnalysed,diagnosticFilesReused,indexWrites,indexWriteNanos,apiFingerprintChanges,apiFingerprintUnchanged;
     private long completionRequests,residentDescriptionLoads,residentDescriptionCacheHits;

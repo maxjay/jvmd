@@ -27,6 +27,12 @@ public final class Application implements AutoCloseable {
     private volatile java.util.concurrent.CompletableFuture<IndexService> index;
     private volatile IndexService bootstrappingIndex;
     private final java.util.concurrent.atomic.AtomicBoolean closed=new java.util.concurrent.atomic.AtomicBoolean();
+    // Temporary Issue-36 proof counters. Deltas are sampled around completionItem/resolve and
+    // removed with the Checkpoint-18 measurement tooling.
+    private final java.util.concurrent.atomic.AtomicLong workspaceFindCalls=new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong workspaceFindFilesScanned=new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong workspaceBindingsBuilds=new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong dependencyExactDescribeHits=new java.util.concurrent.atomic.AtomicLong();
     private static final Set<String> COMPLETION_TYPE_KINDS=Set.of("class","interface","enum","record","annotation");
     private record TypeCompletionCache(String generation,String prefix,List<Map<String,Object>> rows,boolean complete) { }
     public Application(Config config) {
@@ -95,9 +101,20 @@ public final class Application implements AutoCloseable {
         dispatcher.register("symbol.hierarchy",(s,p)->relationships(s,p,true));
         dispatcher.register("session.status", (s, p) -> {
             var actorRegistry=(ModuleAnalyzerRegistry)s.state("diagnostic_actors");var interactiveAnalyzer=(Analyzer)s.state("analyzer");
+            String statusSection=p.path("section").asText("");
+            if(statusSection.equals("proof")){
+                var analyzerProof=new LinkedHashMap<String,Object>(interactiveAnalyzer==null?Map.of("initialized",false):interactiveAnalyzer.proofStatus());
+                analyzerProof.put("resolve_evidence",Map.of(
+                        "workspace_find_calls",workspaceFindCalls.get(),
+                        "workspace_find_files_scanned",workspaceFindFilesScanned.get(),
+                        "workspace_bindings_builds",workspaceBindingsBuilds.get(),
+                        "dependency_exact_describe_hits",dependencyExactDescribeHits.get()));
+                return new Envelope(0,"live",false,null,s.warnings(),Map.of(
+                        "session",s.id(),"root",s.root().toString(),"analyzer",Collections.unmodifiableMap(analyzerProof)));
+            }
             var analyzerStatus=actorRegistry!=null?actorRegistry.analyzerStatus(interactiveAnalyzer==null?Map.of():interactiveAnalyzer.status())
                     :interactiveAnalyzer==null?Map.of("initialized",false):interactiveAnalyzer.status();
-            if(p.path("section").asText("").equals("analyzer"))
+            if(statusSection.equals("analyzer"))
                 return new Envelope(0,"live",false,null,s.warnings(),Map.of("session",s.id(),"root",s.root().toString(),"analyzer",analyzerStatus));
             var graph=(Resolution)s.state("resolution");var result=new LinkedHashMap<String,Object>();
             result.put("shared_classpath_files",classpathFiles.status());
@@ -356,6 +373,7 @@ public final class Application implements AutoCloseable {
         WorkspaceBindings.InputSource inputSource=()->workspaceModuleInputs(session,currentGraph);
         if(!load)return cache.peek(inputSource);
         return cache.getBatch(inputSource,documents(session),(long)config.heapCeilingMb()*1024*1024/Math.max(1,sessions.list().size())/4,files->{
+            workspaceBindingsBuilds.incrementAndGet();
             var groups=new LinkedHashMap<String,LinkedHashMap<Path,String>>();
             for(var entry:files.entrySet())groups.computeIfAbsent(WorkspaceContextManager.key(entry.getKey(),currentGraph),_->new LinkedHashMap<>()).put(entry.getKey(),entry.getValue());
             var results=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();
@@ -394,15 +412,17 @@ public final class Application implements AutoCloseable {
         }return page(tier,"live","symbols",symbols,offset,limit,List.copyOf(warnings));
     }
     private List<Map<String,Object>> workspaceFind(Session session,String ref,boolean substring)throws Exception{
+        workspaceFindCalls.incrementAndGet();
         if(session.state("workspace_bindings")!=null)try(var cached=workspaceBindings(session,false)){
             if(cached!=null&&cached.diagnostics().stream().noneMatch(d->d.kind().equals("ERROR")))return cached.find(ref,substring,Set.of(),Integer.MAX_VALUE,null).symbols();
         }
         var found=new LinkedHashMap<String,Map<String,Object>>();
         if(ref.contains(")/")){
-            for(Path file:sourceFiles(session)){var snapshot=analyzer(session,file).bindings(file,documents(session).text(file),null);if(snapshot.result()!=null)for(var symbol:snapshot.result().symbols().values())if(Analyzer.matches(symbol,ref,substring))found.put(symbol.get("scip").toString(),symbol);}
+            for(Path file:sourceFiles(session)){workspaceFindFilesScanned.incrementAndGet();var snapshot=analyzer(session,file).bindings(file,documents(session).text(file),null);if(snapshot.result()!=null)for(var symbol:snapshot.result().symbols().values())if(Analyzer.matches(symbol,ref,substring))found.put(symbol.get("scip").toString(),symbol);}
             return List.copyOf(found.values());
         }
         for(Path file:sourceFiles(session)){
+            workspaceFindFilesScanned.incrementAndGet();
             var analyzer=analyzer(session,file);int offset=0;var declarations=new ArrayList<Map<String,Object>>();
             do{
                 var outline=analyzer.overview(file,documents(session).text(file),10,1000,offset);
@@ -446,7 +466,7 @@ public final class Application implements AutoCloseable {
         if(ref.startsWith("maven ")){
             var database=index();bindIndex(session,database);
             var indexed=database.store().byScip(ref,session.state("resolution")==null?null:session.id());
-            if(indexed!=null)return Envelope.of(2,"index",indexed);
+            if(indexed!=null){dependencyExactDescribeHits.incrementAndGet();return Envelope.of(2,"index",indexed);}
         }
         var local=workspaceFind(session,ref,false);
         if(local.size()==1)return Envelope.of(1,"live",local.getFirst());

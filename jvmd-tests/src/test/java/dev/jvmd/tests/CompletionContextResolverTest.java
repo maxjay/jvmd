@@ -122,6 +122,48 @@ class CompletionContextResolverTest {
         assertThat(resolve(generic,"box.",fixture)).isNull();
     }
 
+    @Test void truncatedExactMemberGroupIsUnknownRatherThanUnique()throws Exception{
+        var api=type("api-many","p.Api");
+        var model=type("model-many","p.Model");
+        var symbols=new LinkedHashMap<String,SemanticReadView.Symbol>();
+        symbols.put(api.id(),api);symbols.put(model.id(),model);
+        var members=new ArrayList<SemanticReadView.Symbol>();
+        members.add(method("chain-zero","p.Api","chain",new SemanticType.Declared("p.Model","p.Model",List.of()),false));
+        for(int i=0;i<64;i++){
+            var type=new SemanticType.Executable(List.of(new SemanticType.Primitive("int")),
+                    new SemanticType.Declared("p.Model","p.Model",List.of()),List.of());
+            var resolution=ResolutionFact.canonical("p.Api#chain(int)"+i,"p.Api","method","chain","(I)"+i,
+                    Set.of("public"),"p",type,List.of(),List.of(),List.of(),false);
+            members.add(new SemanticReadView.Symbol("chain-"+i,"chain","method","p.Api","p.Api#chain(int)"+i,
+                    "","(I)"+i,Set.of("public"),resolution,SemanticReadView.Origin.MACHINE));
+        }
+        var view=new SemanticReadView(){
+            public Symbol symbol(String id){return symbols.get(id);}
+            public Symbol type(String binary){return binary.equals("p.Api")?api:binary.equals("p.Model")?model:null;}
+            public SemanticCompleteness completeness(String ownerId){return ownerId.equals(api.id())?SemanticCompleteness.COMPLETE:SemanticCompleteness.UNKNOWN;}
+            public MemberPage members(String ownerId,String prefix,int limit,String cursor){
+                if(!ownerId.equals(api.id()))return new MemberPage(List.of(),null);
+                int offset=cursor==null?0:Integer.parseInt(cursor);
+                var matching=members.stream().filter(value->value.name().startsWith(prefix)).toList();
+                int to=Math.min(matching.size(),offset+limit);
+                return new MemberPage(matching.subList(offset,to),to<matching.size()?Integer.toString(to):null);
+            }
+            public List<String> directSupertypes(String typeId){return List.of();}
+            public Optional<Hash256> identity(QueryProof.Domain domain,String key){return Optional.empty();}
+        };
+        String source="package p; class Use { Object f(Api project){ return project.chain().; } }";
+        int cursor=source.indexOf("project.chain().")+"project.chain().".length();
+        var probe=CompletionProbe.create(source,cursor);
+        var resolved=CompletionContextResolver.resolve(source,probe,view,name->{
+            if(name.equals("Api")||name.equals("p.Api"))return List.of(api);
+            if(name.equals("Model")||name.equals("p.Model"))return List.of(model);
+            return List.of();
+        });
+        assertThat(resolved)
+                .as("a bounded first page cannot prove the exact overload group is unique")
+                .isNull();
+    }
+
     @Test void doesNotReuseParameterFromAnEarlierClosedMethod()throws Exception{
         var fixture=fixture();
         String source="package p; class Use { void first(Api project){} Object second(){ return project.; } }";

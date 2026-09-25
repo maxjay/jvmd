@@ -140,7 +140,7 @@ public final class SemanticUpdatePolicy {
             unlink(consumer,previous.evaluation());producers.remove(previous.evaluation().output(),consumer);
         }
         public void removeFile(Path file){
-            Path normalized=normalize(file);
+            Path normalized=Objects.requireNonNull(file).toAbsolutePath().normalize();
             for(var consumer:new ArrayList<>(nodes.keySet()))if(consumer.file().equals(normalized))remove(consumer);
         }
         public Optional<ProofEvaluation> evaluation(ProofConsumer consumer){
@@ -150,7 +150,7 @@ public final class SemanticUpdatePolicy {
             return Set.copyOf(reverse.getOrDefault(Objects.requireNonNull(key),Set.of()));
         }
         public boolean hasConsumers(Path file){
-            Path normalized=normalize(file);return nodes.keySet().stream().anyMatch(value->value.file().equals(normalized));
+            Path normalized=Objects.requireNonNull(file).toAbsolutePath().normalize();return nodes.keySet().stream().anyMatch(value->value.file().equals(normalized));
         }
         public int size(){return nodes.size();}
         public void clear(){nodes.clear();reverse.clear();producers.clear();}

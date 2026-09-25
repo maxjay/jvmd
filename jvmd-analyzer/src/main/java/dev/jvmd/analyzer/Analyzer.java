@@ -674,11 +674,13 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                                                               Collection<String> simpleNames)throws Exception{
         if(simpleNames==null||simpleNames.isEmpty())return List.of();
         String receiver=query.receiverType() instanceof SemanticType.Declared declared?declared.name():null;
+        if(receiver==null)return List.of();
         var plans=new ArrayList<NamespaceResolutionProofs.Plan>();
         var packages=new TreeSet<String>();
         for(String simple:new TreeSet<>(simpleNames)){
-            String resolved=receiver!=null&&simpleTypeName(receiver).equals(simple)?receiver:null;
-            var plan=NamespaceResolutionProofs.plan(text,simple,resolved);
+            if(!simpleTypeName(receiver).equals(simple))return List.of();
+            var plan=NamespaceResolutionProofs.plan(text,simple,receiver);
+            if(!plan.precise())return List.of();
             plans.add(plan);packages.addAll(plan.packages());
         }
         if(liveSourceState!=null&&!packages.isEmpty())liveSourceState.reconcilePackages(packages);

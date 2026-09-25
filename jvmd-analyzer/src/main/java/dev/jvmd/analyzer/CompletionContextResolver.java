@@ -23,12 +23,14 @@ public final class CompletionContextResolver {
             boolean staticReceiver,
             String packageName,
             String enclosingTypeId,
+            String enclosingTypeName,
             StaticContext staticContext,
             Set<String> resolutionNames) {
         public Resolved {
             Objects.requireNonNull(receiver);
             Objects.requireNonNull(receiverType);
             packageName=Objects.requireNonNullElse(packageName,"");
+            enclosingTypeName=Objects.requireNonNullElse(enclosingTypeName,"");
             resolutionNames=Set.copyOf(resolutionNames);
         }
     }
@@ -65,11 +67,11 @@ public final class CompletionContextResolver {
         State state=base(segments.getFirst(),text,dot,pkg,enclosing,staticContext,view,lookup);
         if(state==null)return null;
         for(int i=1;i<segments.size();i++){
-            state=advance(state,segments.get(i),pkg,enclosing,view,lookup);
+            state=advance(state,segments.get(i),pkg,enclosing,enclosingName,view,lookup);
             if(state==null)return null;
         }
         return new Resolved(state.owner(),state.type(),state.staticReceiver(),pkg,
-                enclosing==null?null:enclosing.id(),staticContext,resolutionNames(text,pkg));
+                enclosing==null?null:enclosing.id(),enclosingName,staticContext,resolutionNames(text,pkg));
     }
 
     private static State base(String segment,String text,int receiverEnd,String pkg,SemanticReadView.Symbol enclosing,
@@ -96,7 +98,7 @@ public final class CompletionContextResolver {
         return type==null?null:new State(type,type.semanticType(),true);
     }
 
-    private static State advance(State state,String segment,String pkg,SemanticReadView.Symbol enclosing,
+    private static State advance(State state,String segment,String pkg,SemanticReadView.Symbol enclosing,String enclosingName,
                                  SemanticReadView view,TypeLookup lookup)throws Exception{
         boolean call=segment.endsWith("()");
         String name=call?segment.substring(0,segment.length()-2):segment;
@@ -106,7 +108,7 @@ public final class CompletionContextResolver {
         for(var member:candidates){
             if(!member.name().equals(name))continue;
             if(state.staticReceiver()&&!member.staticMember())continue;
-            var access=access(member,pkg,enclosing);
+            var access=access(member,pkg,enclosing,enclosingName);
             if(access==Access.UNKNOWN)return null;
             if(access==Access.DENIED)continue;
             if(call){
@@ -231,13 +233,22 @@ public final class CompletionContextResolver {
      * remains authoritative for protected qualification, private nestmates and module semantics.
      */
     public static Access access(SemanticReadView.Symbol member,String callerPackage,SemanticReadView.Symbol enclosing){
+        return access(member,callerPackage,enclosing,enclosing==null?null:enclosing.fqn());
+    }
+
+    /**
+     * Lexical enclosing type name is sufficient to prove that two declarations belong to distinct
+     * nests even before the caller type itself has entered maintained semantic state.
+     */
+    public static Access access(SemanticReadView.Symbol member,String callerPackage,SemanticReadView.Symbol enclosing,String enclosingName){
         var modifiers=member.modifiers();
         if(modifiers.contains("public"))return Access.ALLOWED;
         String ownerPackage=member.resolution().packageName();
         if(modifiers.contains("private")){
             if(!Objects.equals(ownerPackage,callerPackage))return Access.DENIED;
-            if(enclosing!=null&&member.resolution().ownerKey()!=null
-                    &&!nestHost(member.resolution().ownerKey()).equals(nestHost(enclosing.fqn())))return Access.DENIED;
+            String caller=enclosing!=null?enclosing.fqn():Objects.requireNonNullElse(enclosingName,"");
+            if(!caller.isBlank()&&member.resolution().ownerKey()!=null
+                    &&!nestHost(member.resolution().ownerKey()).equals(nestHost(caller)))return Access.DENIED;
             return Access.UNKNOWN;
         }
         if(Objects.equals(ownerPackage,callerPackage))return Access.ALLOWED;

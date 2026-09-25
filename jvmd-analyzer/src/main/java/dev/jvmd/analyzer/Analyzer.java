@@ -703,12 +703,109 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private void conditionallyInvalidate(Path path,Set<Path> affected){
         diagnosticStore.invalidate(Set.of(path.toAbsolutePath().normalize()));invalidateCompilerCaches(affected);
     }
+    private static Hash256 unavailableProofIdentity(QueryProof.Key key){
+        return CanonicalDigestWriter.digest("semantic-proof-unavailable-v1",key.domain().name(),key.value());
+    }
+    private static String semanticBinary(SemanticFact fact){
+        if(fact==null)return "";
+        String value=fact.fqn();
+        if(value==null||value.isBlank())value=fact.typeDeclaration()?fact.resolutionFact().symbolKey():"";
+        return Objects.requireNonNullElse(value,"").replace((char)36,'.');
+    }
+    private Hash256 currentSourceLeafIdentity(QueryProof.Key key)throws Exception{
+        var view=semanticReadView();
+        return switch(key.domain()){
+            case EXACT_SYMBOL,MEMBER_RANGE,OVERLOAD_GROUP,HIERARCHY ->
+                    view.identity(key.domain(),key.value()).orElseGet(()->unavailableProofIdentity(key));
+            case RESOLUTION_PATH -> resolutionPathIdentity(key.value());
+            case NAMESPACE -> {
+                if(!key.value().startsWith("type:"))yield unavailableProofIdentity(key);
+                String binary=key.value().substring("type:".length());
+                Hash256 declaration=namespaceTypeIdentity(binary).orElse(null);
+                yield CanonicalDigestWriter.digest("namespace-search-domain-v1",binary,declaration);
+            }
+            case NEGATIVE_RESOLUTION -> {
+                int split=key.value().lastIndexOf('@');
+                if(split<=0||split==key.value().length()-1)yield unavailableProofIdentity(key);
+                String simple=key.value().substring(0,split),binary=key.value().substring(split+1);
+                Hash256 declaration=namespaceTypeIdentity(binary).orElse(null);
+                Hash256 domain=CanonicalDigestWriter.digest("namespace-search-domain-v1",binary,declaration);
+                yield CanonicalDigestWriter.digest("negative-resolution-domain-v1",simple,binary,domain);
+            }
+            default -> unavailableProofIdentity(key);
+        };
+    }
+    private Map<QueryProof.Key,Hash256> sourceMutationLeaves(SemanticAdmission admission,Path changedFile)throws Exception{
+        if(admission==null||admission.delta().emptyFacts())return Map.of();
+        var changedFacts=new ArrayList<SemanticFact>();changedFacts.addAll(admission.removed());
+        changedFacts.addAll(admission.delta().changed());changedFacts.addAll(admission.delta().added());
+        var changedIds=new HashSet<String>();var changedBinaries=new HashSet<String>();
+        for(var fact:changedFacts){changedIds.add(fact.id());String binary=semanticBinary(fact);if(fact.typeDeclaration()&&!binary.isBlank())changedBinaries.add(binary);}
+        String sourceKey="source:"+changedFile.toAbsolutePath().normalize();
+        var leaves=new TreeMap<QueryProof.Key,Hash256>();
+        for(var key:dependencies.semantic().proofs().dependencyKeys()){
+            boolean affected=switch(key.domain()){
+                case EXACT_SYMBOL -> changedIds.contains(key.value());
+                case MEMBER_RANGE,OVERLOAD_GROUP -> {
+                    SemanticReadView.MemberIdentityKey member;
+                    try{member=SemanticReadView.parseMemberIdentityKey(key.value());}catch(IllegalArgumentException invalid){yield false;}
+                    boolean exact=key.domain()==QueryProof.Domain.OVERLOAD_GROUP;
+                    yield changedFacts.stream().anyMatch(fact->Objects.equals(member.ownerId(),fact.ownerId())
+                            &&(exact?member.name().equals(fact.name()):fact.name().startsWith(member.name())));
+                }
+                // Resident hierarchy composition can update descendants after any declaration/member
+                // mutation. Only currently referenced hierarchy keys are re-read; equality stops work.
+                case HIERARCHY -> true;
+                case NAMESPACE -> key.value().startsWith("type:")
+                        &&changedBinaries.contains(key.value().substring("type:".length()).replace((char)36,'.'));
+                case NEGATIVE_RESOLUTION -> {
+                    int split=key.value().lastIndexOf('@');
+                    yield split>0&&changedBinaries.contains(key.value().substring(split+1).replace((char)36,'.'));
+                }
+                case RESOLUTION_PATH -> key.value().equals(sourceKey)
+                        ||key.value().startsWith("type:")
+                        &&changedBinaries.contains(key.value().substring("type:".length()).replace((char)36,'.'));
+                default -> false;
+            };
+            if(affected)leaves.put(key,currentSourceLeafIdentity(key));
+        }
+        return Collections.unmodifiableMap(leaves);
+    }
+    private static boolean sourceProofConsumer(SemanticUpdatePolicy.ProofConsumer consumer){
+        return consumer.id().equals("source-semantic");
+    }
     private void resolveContribution(FileSemanticContribution contribution){
+        try{resolveContribution(contribution,null);}
+        catch(RuntimeException failure){throw failure;}
+        catch(Exception failure){throw new IllegalStateException(failure);}
+    }
+    private void resolveContribution(FileSemanticContribution contribution,SemanticAdmission admission)throws Exception{
         if(liveSourceState!=null)liveSourceState.semantic(contribution.file(),contribution.sourceHash(),contribution.apiFingerprint(),contribution.exportedNames());
         boolean pending=dependencies.semantic().pending(contribution.file());
-        var result=dependencies.semantic().resolve(contribution);
+        var result=admission==null?dependencies.semantic().resolve(contribution):dependencies.semantic().resolvePrecise(contribution);
         if(pending){if(result.apiChanged().isEmpty())apiFingerprintUnchanged++;else apiFingerprintChanges++;}
-        var affected=new LinkedHashSet<>(result.reanalyze());affected.remove(contribution.file());
+
+        var coarse=new LinkedHashSet<>(result.reanalyze());coarse.remove(contribution.file());
+        var affected=new LinkedHashSet<Path>(coarse);
+        if(admission!=null){
+            var leaves=sourceMutationLeaves(admission,contribution.file());
+            var propagation=dependencies.semantic().proofs().propagate(leaves,consumer->rebaseProof(consumer,leaves));
+
+            var queryInvalid=new LinkedHashSet<SemanticUpdatePolicy.ProofConsumer>();
+            propagation.changed().stream().filter(consumer->!sourceProofConsumer(consumer)).forEach(queryInvalid::add);
+            propagation.fallback().stream().filter(consumer->!sourceProofConsumer(consumer)).forEach(queryInvalid::add);
+            var caches=modules.get(context.generation());if(caches!=null&&!queryInvalid.isEmpty())invalidateDocumentProofConsumers(caches,queryInvalid);
+
+            var sourceChanged=new LinkedHashSet<Path>();
+            propagation.changed().stream().filter(Analyzer::sourceProofConsumer).map(SemanticUpdatePolicy.ProofConsumer::file).forEach(sourceChanged::add);
+            var sourceFallback=new LinkedHashSet<Path>();
+            propagation.fallback().stream().filter(Analyzer::sourceProofConsumer).map(SemanticUpdatePolicy.ProofConsumer::file).forEach(sourceFallback::add);
+            for(Path file:sourceChanged)dependencies.semantic().proofCoverage(file,false);
+            for(Path file:sourceFallback)dependencies.semantic().proofCoverage(file,false);
+            affected.addAll(sourceChanged);affected.addAll(sourceFallback);
+            var fallbackClosure=dependencies.semantic().coarseFallback(sourceFallback);affected.addAll(fallbackClosure);coarse.addAll(fallbackClosure);
+            sourceProofEvidence.record(leaves.size(),propagation,coarse.size(),sourceChanged.size()+sourceFallback.size());
+        }
         diagnosticStore.invalidate(affected,DiagnosticStore.Reason.DEPENDENCY_API_CHANGED);invalidateCompilerCaches(affected);
     }
     private void invalidateConditionalIfUnresolved(Path path){

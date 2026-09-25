@@ -19,7 +19,10 @@ class ClasspathSequenceTest {
     }
 
     @Test void exactOrderHasCanonicalMerkleIdentity(){
-        var a=entry("A","a1"),b=entry("B","b1"),c=entry("C","c1"),d=entry("D","d1");
+        var a=entry("A","a1");
+        var b=entry("B","b1");
+        var c=entry("C","c1");
+        var d=entry("D","d1");
         var first=ClasspathSequence.of(List.of(a,b,c,d));
         var same=ClasspathSequence.of(List.of(a,b,c,d));
         var reordered=ClasspathSequence.of(List.of(a,c,b,d));
@@ -46,7 +49,11 @@ class ClasspathSequenceTest {
     }
 
     @Test void insertionProducesMinimalChangedIntervalAndCanonicalResult(){
-        var a=entry("A","a1"),b=entry("B","b1"),c=entry("C","c1"),d=entry("D","d1"),x=entry("X","x1");
+        var a=entry("A","a1");
+        var b=entry("B","b1");
+        var c=entry("C","c1");
+        var d=entry("D","d1");
+        var x=entry("X","x1");
         var before=ClasspathSequence.of(List.of(a,b,c,d));
         var after=before.insert(2,x);
 

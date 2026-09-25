@@ -408,12 +408,6 @@ public final class SqliteIndexStore implements IndexStore {
     @Override public List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds)throws Exception{
         return findMatching(query,workspace,substring,limit,after,kinds,ignored->true);
     }
-    private static boolean searchVisible(Map<String,Object> symbol){
-        if("local".equals(Objects.toString(symbol.get("artifact_kind"),"")))return true;
-        Object flags=symbol.get("flags");
-        return !(flags instanceof Number value)||(value.intValue()&java.lang.classfile.ClassFile.ACC_PRIVATE)==0;
-    }
-
     @Override public List<Map<String,Object>> findNamePrefix(String prefix,String workspace,int limit,Set<String> kinds)throws Exception{
         if(limit<=0)return List.of();
         return database.read(c->{
@@ -426,7 +420,7 @@ public final class SqliteIndexStore implements IndexStore {
             try(var statement=c.prepareStatement(sql)){
                 int i=1;statement.setInt(i++,prefix.length());statement.setString(i++,prefix);if(workspace!=null)statement.setString(i,workspace);
                 try(var rows=statement.executeQuery()){while(rows.next()&&result.size()<limit){
-                    var value=symbol(rows);if(!searchVisible(value)||!kinds.isEmpty()&&!kinds.contains(value.get("kind")))continue;
+                    var value=symbol(rows);if(!kinds.isEmpty()&&!kinds.contains(value.get("kind")))continue;
                     if(Objects.toString(value.get("name"),"").startsWith(prefix))result.add(value);
                 }}
             }

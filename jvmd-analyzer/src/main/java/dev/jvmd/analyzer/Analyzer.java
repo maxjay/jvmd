@@ -234,7 +234,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             var cached=caches.documentSemantics.remove(file);removeDocumentProofs(file,cached);
         }
     }
-    private void invalidateBroadClasspathContexts(ModuleCaches caches){
+    private long invalidateBroadClasspathContexts(ModuleCaches caches){
         var files=new LinkedHashSet<Path>();
         for(var entry:caches.documentSemantics.entrySet())for(var query:entry.getValue().snapshot().queries().values())
             if(query.proof().dependencies().stream().anyMatch(dependency->
@@ -245,6 +245,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         for(Path file:files){
             var cached=caches.documentSemantics.remove(file);removeDocumentProofs(file,cached);
         }
+        return files.size();
     }
     private void evictChangedClasspathWinner(ModuleCaches caches,IndexStore.ClasspathSearchProof proof){
         if(proof==null||!proof.resolved())return;
@@ -264,9 +265,12 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             var proof=index.store().semanticClasspathSearch(workspace,binary);
             proof.ifPresent(value->refreshed.put(binary,value));return proof;
         });
-        if(!update.unavailable().isEmpty())return false;
+        caches.classpathProofEvidence.record(update);
+        if(!update.unavailable().isEmpty()){
+            caches.classpathProofEvidence.coarseFallbacks++;return false;
+        }
 
-        invalidateBroadClasspathContexts(caches);
+        caches.classpathProofEvidence.broadContexts(invalidateBroadClasspathContexts(caches));
         if(!update.changed().isEmpty()){
             for(var key:update.changed().keySet()){
                 String binary=key.value().startsWith("binary:")?key.value().substring("binary:".length()):key.value();
@@ -275,6 +279,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             }
             var propagation=dependencies.semantic().proofs().propagate(update.changed(),
                     consumer->rebaseDocumentProof(consumer,update.changed()));
+            caches.classpathProofEvidence.propagation(propagation);
             var invalid=new LinkedHashSet<SemanticUpdatePolicy.ProofConsumer>(propagation.changed());
             invalid.addAll(propagation.fallback());
             invalidateDocumentProofConsumers(caches,invalid);
@@ -311,7 +316,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
 
         if(hadState&&!ownerChanged&&!precise){
             String broad=broadCompletionContextIdentity(context);
-            if(!broad.equals(caches.completionContextIdentity))clearSemanticCaches(caches);
+            if(!broad.equals(caches.completionContextIdentity)){
+                caches.classpathProofEvidence.coarseFallbacks++;clearSemanticCaches(caches);
+            }
             initializeClasspath(caches,currentClasspath);
             precise=currentClasspath.isPresent();
         }

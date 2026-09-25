@@ -883,7 +883,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             dependencies.recordFocused(path,outcome.result().dependencies());
             if(cursor==null&&outcome.tier()==2){
                 var contribution=SemanticContributions.from(path,hash,outcome.result(),outcome.diagnostics());
-                resolveContribution(contribution);admitSemantic(semantic[0],contribution);publishSource(path,hash,stamp,semanticPublisherContextFingerprint(observed,stamp),outcome.result(),outcome.tier());
+                var admission=admitSemanticMutation(semantic[0],contribution);
+                resolveContribution(contribution,admission);
+                if(admission!=null)registerSourceProof(path,text,outcome.result(),contribution);
+                else{dependencies.semantic().proofs().remove(sourceProofConsumer(path));dependencies.semantic().proofCoverage(path,false);}
+                publishSource(path,hash,stamp,semanticPublisherContextFingerprint(observed,stamp),outcome.result(),outcome.tier());
             }
             String member=focus==null?"full":focus.member();focused.put(path+":"+hash+":"+stamp+":"+member,new Cached(path,hash,stamp,focus==null?0:focus.member().equals("declarations")?cursor:focus.start(),focus==null?text.length():focus.member().equals("declarations")?cursor+1:focus.end(),focus==null?List.of():focus.replaced(),outcome));
             while(focused.size()>32)focused.remove(focused.keySet().iterator().next());
@@ -976,7 +980,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(result.result()!=null&&result.tier()==2&&result.warnings().isEmpty())for(var entry:result.result().entrySet()){
             dependencies.recordFocused(entry.getKey(),entry.getValue().dependencies());
             var contribution=SemanticContributions.from(entry.getKey(),Hashing.sha256(sources.get(entry.getKey()).getBytes(java.nio.charset.StandardCharsets.UTF_8)),entry.getValue(),result.diagnostics().stream().filter(p->sameFile(p.file(),entry.getKey())).toList());
-            resolveContribution(contribution);admitSemantic(semanticSnapshots.get(entry.getKey()),contribution);
+            var admission=admitSemanticMutation(semanticSnapshots.get(entry.getKey()),contribution);
+            resolveContribution(contribution,admission);
+            if(admission!=null)registerSourceProof(entry.getKey(),sources.get(entry.getKey()),entry.getValue(),contribution);
+            else{dependencies.semantic().proofs().remove(sourceProofConsumer(entry.getKey()));dependencies.semantic().proofCoverage(entry.getKey(),false);}
         }
         for(var input:inputs){
             Path file=input.file();String hash=Hashing.sha256(input.text().getBytes(java.nio.charset.StandardCharsets.UTF_8));

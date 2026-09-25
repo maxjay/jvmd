@@ -940,11 +940,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             String descriptor=Objects.requireNonNullElse(fact.erasedDescriptor(),"");
             int close=descriptor.indexOf(')');
             String parameters=close>=0?descriptor.substring(0,close+1):descriptor;
-            return "method\0"+fact.name()+"\0"+parameters;
+            return "method\\0"+fact.name()+"\\0"+parameters;
         }
-        if(Set.of("field","enumconst").contains(fact.kind()))return "field\0"+fact.name();
-        if(Set.of("class","interface","enum","record","annotation").contains(fact.kind()))return "type\0"+fact.name();
-        return fact.kind()+"\0"+fact.name()+"\0"+Objects.requireNonNullElse(fact.erasedDescriptor(),"");
+        if(Set.of("field","enumconst").contains(fact.kind()))return "field\\0"+fact.name();
+        if(Set.of("class","interface","enum","record","annotation").contains(fact.kind()))return "type\\0"+fact.name();
+        return fact.kind()+"\\0"+fact.name()+"\\0"+Objects.requireNonNullElse(fact.erasedDescriptor(),"");
     }
 
     private Map<String,SemanticType> semanticTypeSubstitutions(SemanticReadView.Symbol type,SemanticType.Declared instantiated){
@@ -962,7 +962,128 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 String canonical=value.name();
                 String display=names.get(canonical);
                 if(display==null){
-                    String simple=canonical.substring(Math.max(canonical.lastIndexOf('.'),canonical.lastIndexOf('
+                    int split=Math.max(canonical.lastIndexOf('.'),canonical.lastIndexOf(36));
+                    String simple=canonical.substring(split+1);
+                    var matches=semanticTypes(simple).stream().map(SemanticReadView.Symbol::fqn).filter(v->!v.isBlank()).distinct().toList();
+                    display=matches.size()<=1?simple:canonical.replace((char)36,'.');
+                    names.put(canonical,display);
+                }
+                if(value.arguments().isEmpty())yield display;
+                var arguments=new ArrayList<String>();
+                for(var argument:value.arguments())arguments.add(semanticTypeLabel(argument,names));
+                yield display+"<"+String.join(", ",arguments)+">";
+            }
+            case SemanticType.Variable value -> value.name();
+            case SemanticType.Array value -> semanticTypeLabel(value.component(),names)+"[]";
+            case SemanticType.Wildcard value -> value.extendsBound()!=null
+                    ?"? extends "+semanticTypeLabel(value.extendsBound(),names)
+                    :value.superBound()!=null?"? super "+semanticTypeLabel(value.superBound(),names):"?";
+            case SemanticType.Intersection value -> {
+                var parts=new ArrayList<String>();for(var bound:value.bounds())parts.add(semanticTypeLabel(bound,names));
+                yield String.join(" & ",parts);
+            }
+            case SemanticType.Executable value -> value.display();
+            case SemanticType.Unknown value -> value.text();
+        };
+    }
+
+    private CompletionCandidate semanticCandidate(SemanticReadView.Symbol fact,Map<String,SemanticType> substitutions,
+                                                  Map<String,String> typeNames)throws Exception{
+        SemanticType contextual=fact.semanticType().substitute(substitutions);
+        String label=fact.name()+": "+semanticTypeLabel(contextual,typeNames);
+        var labels=new ArrayList<CompletionCandidate.ParameterLabel>();
+        if(contextual instanceof SemanticType.Executable executable){
+            var value=new StringBuilder(fact.name()).append('(');
+            for(int i=0;i<executable.parameters().size();i++){
+                if(i>0)value.append(", ");
+                String parameter=semanticTypeLabel(executable.parameters().get(i),typeNames);
+                if(fact.varargs()&&i==executable.parameters().size()-1&&parameter.endsWith("[]"))
+                    parameter=parameter.substring(0,parameter.length()-2)+"...";
+                int parameterStart=value.length();value.append(parameter);
+                if(i<fact.parameterNames().size()&&!fact.parameterNames().get(i).isBlank())
+                    value.append(' ').append(fact.parameterNames().get(i));
+                labels.add(new CompletionCandidate.ParameterLabel(parameterStart,value.length()));
+            }
+            value.append(')');
+            if(!fact.kind().equals("ctor"))value.append(" : ").append(semanticTypeLabel(executable.returns(),typeNames));
+            label=value.toString();
+        }
+        return new CompletionCandidate(fact.id(),fact.name(),fact.kind(),fact.signature(),fact.resolution().ownerKey(),
+                fact.sourceFile(),fact.modifiers(),label,labels);
+    }
+
+    private record SemanticHierarchyOwner(SemanticReadView.Symbol symbol,SemanticType.Declared instantiated,
+                                          Map<String,SemanticType> substitutions,int order) { }
+
+    private List<SemanticHierarchyOwner> semanticHierarchyOwners(SemanticReadView view,
+            CompletionContextResolver.Resolved resolved)throws Exception{
+        var rootType=resolved.receiverType() instanceof SemanticType.Declared declared
+                ?declared
+                :resolved.receiver().semanticType() instanceof SemanticType.Declared declared?declared:null;
+        if(rootType==null)return List.of();
+        var queue=new ArrayDeque<SemanticHierarchyOwner>();
+        queue.add(new SemanticHierarchyOwner(resolved.receiver(),rootType,
+                semanticTypeSubstitutions(resolved.receiver(),rootType),0));
+        var seen=new HashSet<String>();var result=new ArrayList<SemanticHierarchyOwner>();
+        while(!queue.isEmpty()){
+            var current=queue.removeFirst();if(!seen.add(current.symbol().id()))continue;
+            var admitted=new SemanticHierarchyOwner(current.symbol(),current.instantiated(),current.substitutions(),result.size());
+            result.add(admitted);
+            for(var parent:current.symbol().directSupertypes()){
+                var substituted=parent.substitute(current.substitutions());
+                if(!(substituted instanceof SemanticType.Declared declared))continue;
+                var matches=semanticTypes(declared.name());
+                if(matches.size()!=1)continue;
+                var symbol=matches.getFirst();
+                queue.addLast(new SemanticHierarchyOwner(symbol,declared,semanticTypeSubstitutions(symbol,declared),0));
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    private List<Map<String,Object>> semanticQualifiedRows(SemanticReadView view,CompletionContextResolver.Resolved resolved,
+                                                            String prefix,int target)throws Exception{
+        if(target<=0)return List.of();
+        SemanticReadView.Symbol enclosing=resolved.enclosingTypeId()==null?null:view.symbol(resolved.enclosingTypeId());
+        int perOwnerBudget=Math.max(64,Math.min(4096,target*8));
+        var selected=new HashMap<String,HierarchyChoice>();var typeNames=new HashMap<String,String>();
+        for(var owner:semanticHierarchyOwners(view,resolved)){
+            String cursor=null;int examined=0;
+            do{
+                int pageSize=Math.min(128,perOwnerBudget-examined);if(pageSize<=0)break;
+                var page=view.members(owner.symbol().id(),prefix,pageSize,cursor);
+                for(var member:page.symbols()){
+                    examined++;
+                    if(member.kind().equals("ctor")||member.kind().equals("package")||member.kind().equals("module"))continue;
+                    if(resolved.staticReceiver()&&!member.staticMember()&&!Set.of("class","interface","enum","record","annotation").contains(member.kind()))continue;
+                    if(!CompletionContextResolver.accessible(member,resolved.packageName(),enclosing,view))continue;
+                    String shape=inheritedMemberShape(member);
+                    var row=residentCompletionRow(semanticCandidate(member,owner.substitutions(),typeNames),member.name());
+                    var previous=selected.get(shape);
+                    if(previous==null||owner.order()<previous.ownerOrder())selected.put(shape,new HierarchyChoice(owner.order(),row));
+                }
+                cursor=page.cursor();
+            }while(cursor!=null&&examined<perOwnerBudget);
+        }
+        return selected.values().stream().map(HierarchyChoice::row).sorted(COMPLETION_ORDER).limit(target).toList();
+    }
+
+    private Envelope maintainedQualifiedCompletion(Path path,String text,int start,int end,String prefix,
+                                                    CompletionProbe.Shape probe,int limit,int offset)throws Exception{
+        var view=semanticReadView();
+        var resolved=CompletionContextResolver.resolve(text,probe,view,this::semanticTypes);
+        if(resolved==null)return null;
+        int target=(int)Math.min(Integer.MAX_VALUE,(long)offset+limit+1L);
+        var rows=semanticQualifiedRows(view,resolved,prefix,target);
+        int from=Math.min(offset,rows.size()),to=Math.min(rows.size(),from+limit);
+        var returned=List.copyOf(rows.subList(from,to));boolean more=rows.size()>to;
+        completionRequests++;
+        try(var trace=dev.jvmd.core.RequestScope.stage("completion.maintained")){
+            trace.cache("semantic-read");trace.count("rows_returned",returned.size());
+        }
+        return new Envelope(2,"live",more,more?Integer.toString(to):null,warnings(List.of()),
+                Map.of("items",returned,"range",new SourceText(text).range(start,end)));
+    }
     private static final Comparator<Map<String,Object>> COMPLETION_ORDER=Comparator
             .comparing((Map<String,Object> row)->Objects.toString(row.get("name"),""))
             .thenComparing(row->Objects.toString(row.get("label"),""))

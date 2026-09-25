@@ -93,13 +93,17 @@ public final class Application implements AutoCloseable {
         dispatcher.register("edit.text",this::editText);
         dispatcher.register("symbol.references",(s,p)->relationships(s,p,false));
         dispatcher.register("symbol.hierarchy",(s,p)->relationships(s,p,true));
-        dispatcher.register("session.status", (s, _) -> {
+        dispatcher.register("session.status", (s, p) -> {
+            var actorRegistry=(ModuleAnalyzerRegistry)s.state("diagnostic_actors");var interactiveAnalyzer=(Analyzer)s.state("analyzer");
+            var analyzerStatus=actorRegistry!=null?actorRegistry.analyzerStatus(interactiveAnalyzer==null?Map.of():interactiveAnalyzer.status())
+                    :interactiveAnalyzer==null?Map.of("initialized",false):interactiveAnalyzer.status();
+            if(p.path("section").asText("").equals("analyzer"))
+                return new Envelope(0,"live",false,null,s.warnings(),Map.of("session",s.id(),"root",s.root().toString(),"analyzer",analyzerStatus));
             var graph=(Resolution)s.state("resolution");var result=new LinkedHashMap<String,Object>();
             result.put("shared_classpath_files",classpathFiles.status());
             result.put("diagnostics",s.state("diagnostics")==null?Map.of("initialized",false):diagnostics(s).status());result.put("file_states",documents(s).fileStates().status());result.put("analysis_contexts",s.state("analysis_contexts")==null?Map.of():((WorkspaceContextManager)s.state("analysis_contexts")).status());
             result.put("workspace_bindings",s.state("workspace_bindings")==null?Map.of("initialized",false):((WorkspaceBindings)s.state("workspace_bindings")).status());result.put("documents",documents(s).status());result.put("session",s.id());result.put("root",s.root().toString());result.put("classpath_state",graph==null?"unresolved":"resolved");result.put("classpath_entries",graph==null?0:graph.classpath().size());result.put("overlay",graph==null?Map.of():overlay(s,graph).status());result.put("metrics",dispatcher.status().get("metrics"));result.put("annotation_processing",s.state("processors")==null?Map.of("initialized",false):((AnnotationProcessing)s.state("processors")).status());
-            var actorRegistry=(ModuleAnalyzerRegistry)s.state("diagnostic_actors");var interactiveAnalyzer=(Analyzer)s.state("analyzer");
-            result.put("analyzer",actorRegistry!=null?actorRegistry.analyzerStatus(interactiveAnalyzer==null?Map.of():interactiveAnalyzer.status()):interactiveAnalyzer==null?Map.of("initialized",false):interactiveAnalyzer.status());
+            result.put("analyzer",analyzerStatus);
             result.put("module_actors",actorRegistry==null?Map.of("initialized",false):actorRegistry.status());result.put("runs",s.state("runs")==null?List.of():runs(s).status());result.put("index",index==null?Map.of("phase","disabled"):index.isDone()&&!index.isCompletedExceptionally()?index.join().status():Map.of("phase","starting"));result.put("capabilities",Map.of("analysis_tiers",List.of(0,1,2),"mcp_tools",14,"runtime",true));
             return new Envelope(0,"live",false,null,s.warnings(),result);
         });
@@ -433,6 +437,14 @@ public final class Application implements AutoCloseable {
         if((ref.startsWith("maven ")||ref.startsWith("local "))&&analyzer!=null){
             var resident=analyzer.residentDescription(ref);
             if(resident!=null)return Envelope.of(2,"live",resident);
+        }
+        // A canonical dependency SCIP already names the exact machine declaration. Do not scan
+        // workspace source merely to prove that a dependency identity is not locally declared.
+        // This keeps completionItem/resolve on the same maintained semantic boundary as completion.
+        if(ref.startsWith("maven ")){
+            var database=index();bindIndex(session,database);
+            var indexed=database.store().byScip(ref,session.state("resolution")==null?null:session.id());
+            if(indexed!=null)return Envelope.of(2,"index",indexed);
         }
         var local=workspaceFind(session,ref,false);
         if(local.size()==1)return Envelope.of(1,"live",local.getFirst());

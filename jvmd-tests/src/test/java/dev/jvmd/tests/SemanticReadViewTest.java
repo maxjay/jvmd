@@ -89,7 +89,10 @@ class SemanticReadViewTest {
 
     private static Map<String,Object> row(String scip,String kind,String fqn,String binary,String symbolKind){
         var row=new LinkedHashMap<String,Object>();
-        row.put("scip",scip);row.put("artifact_kind",kind);row.put("name",fqn.substring(fqn.lastIndexOf('.')+1));
+        String name=symbolKind.equals("method")&&binary.contains("#")&&binary.contains("(")
+                ?binary.substring(binary.indexOf('#')+1,binary.indexOf('('))
+                :fqn.substring(fqn.lastIndexOf('.')+1);
+        row.put("scip",scip);row.put("artifact_kind",kind);row.put("name",name);
         row.put("kind",symbolKind);row.put("fqn",fqn);row.put("binary_key",binary);
         row.put("signature","class "+fqn);row.put("erased_descriptor","");row.put("flags",1);
         row.put("metadata",Map.of("binary_name",fqn));return Map.copyOf(row);

@@ -39,29 +39,28 @@ class ArtifactResolutionIdentityTest {
                 .isEqualTo(ArtifactIndexFormat.resolutionIdentity(first));
     }
 
-    @Test void presentationOnlyMetadataDoesNotAlterResolutionIdentity(){
+    @Test void presentationOnlyMetadataAndSignatureTextDoNotAlterResolutionIdentity(){
         var first=data("1".repeat(64),"int value()","pkg/Type.class",List.of("value"),List.of(),
                 "{\"deprecated\":false,\"parameter_names_from_class\":true,\"return_type\":\"int\"}");
-        var second=data("2".repeat(64),"int value()","pkg/Type.class",List.of("renamed"),List.of(),
-                "{\"deprecated\":true,\"parameter_names_from_class\":false,\"return_type\":\"int\"}");
-        var semantic=data("3".repeat(64),"int value()","pkg/Type.class",List.of("value"),List.of(),
-                "{\"deprecated\":false,\"parameter_names_from_class\":true,\"return_type\":\"java.lang.String\"}");
+        var second=data("2".repeat(64),"renamed presentation text","pkg/Type.class",List.of("renamed"),List.of(),
+                "{\"deprecated\":true,\"parameter_names_from_class\":false,\"return_type\":\"java.lang.String\"}");
 
         assertThat(ArtifactIndexFormat.symbolResolutionIdentity(first.symbols().getFirst()))
                 .isEqualTo(ArtifactIndexFormat.symbolResolutionIdentity(second.symbols().getFirst()));
         assertThat(ArtifactIndexFormat.resolutionIdentity(first))
                 .isEqualTo(ArtifactIndexFormat.resolutionIdentity(second));
-        assertThat(ArtifactIndexFormat.symbolResolutionIdentity(semantic.symbols().getFirst()))
-                .isNotEqualTo(ArtifactIndexFormat.symbolResolutionIdentity(first.symbols().getFirst()));
     }
 
-    @Test void signatureAndRelationshipChangesAlterResolutionIdentity(){
+    @Test void canonicalSemanticFactAndRelationshipChangesAlterResolutionIdentity(){
         var base=data("1".repeat(64),"int value()","pkg/Type.class",List.of("value"),List.of());
-        var signature=data("2".repeat(64),"java.lang.String value()","pkg/Type.class",List.of("value"),List.of());
+        var changedSymbol=new ArtifactIndexFormat.SymbolRecord(
+                0,-1,"pkg.Type#value()Ljava/lang/String;","pkg.Type","value","method",
+                "java.lang.String value()","()Ljava/lang/String;",1,"pkg/Type.class",List.of("value"),"{}");
+        var changed=new ArtifactIndexFormat.ArtifactData(base.key(),List.of(changedSymbol),List.of());
         var relationship=data("3".repeat(64),"int value()","pkg/Type.class",List.of("value"),
                 List.of(new ArtifactIndexFormat.Relationship(0,"java.lang.Number","extends")));
 
-        assertThat(ArtifactIndexFormat.resolutionIdentity(signature))
+        assertThat(ArtifactIndexFormat.resolutionIdentity(changed))
                 .isNotEqualTo(ArtifactIndexFormat.resolutionIdentity(base));
         assertThat(ArtifactIndexFormat.resolutionIdentity(relationship))
                 .isNotEqualTo(ArtifactIndexFormat.resolutionIdentity(base));

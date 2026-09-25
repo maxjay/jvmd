@@ -158,7 +158,7 @@ class ResidentSemanticStateTest {
         assertThat(((Number)state.status().get("semantic_fact_mutations")).longValue()).isGreaterThan(mutations);
     }
 
-    @Test void resolutionRangeAndOverloadIdentitiesArePreciselyScoped(){
+    @Test void resolutionRangeAndOverloadIdentitiesArePreciselyScoped()throws Exception{
         var owner=type("A#","A","api-A");
         var getOne=method("A#getOne()I","A#","getOne","()I",List.of(),new SemanticType.Primitive("int"));
         var getTwo=method("A#getTwo()I","A#","getTwo","()I",List.of(),new SemanticType.Primitive("int"));

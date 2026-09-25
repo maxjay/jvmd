@@ -780,8 +780,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                             &&(exact?member.name().equals(fact.name()):fact.name().startsWith(member.name())));
                 }
                 // Resident hierarchy composition can update descendants after any declaration/member
-                // mutation. Only currently referenced hierarchy keys are re-read; equality stops work.
-                case HIERARCHY -> true;
+                // mutation. Document-local fallback hierarchy keys are not globally addressable and
+                // remain request-validated; canonical type-id keys participate in mutation propagation.
+                case HIERARCHY -> !key.value().startsWith("document:");
                 case NAMESPACE -> key.value().startsWith("type:")
                         &&changedBinaries.contains(key.value().substring("type:".length()).replace((char)36,'.'));
                 case NEGATIVE_RESOLUTION -> {
@@ -1125,6 +1126,15 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             if(!ensureHierarchySemanticCurrent(query))return CanonicalDigestWriter.digest("document-hierarchy-proof-v1","<unavailable>");
         return CanonicalDigestWriter.digest("document-hierarchy-proof-v1",queryHierarchyApi(query));
     }
+    private QueryProof.Dependency hierarchyProofDependency(DocumentSemanticSnapshot.QueryContext query)throws Exception{
+        if(query.receiverType() instanceof SemanticType.Declared declared){
+            var maintained=semanticReadView().identity(QueryProof.Domain.HIERARCHY,declared.symbolId());
+            if(maintained.isPresent())
+                return new QueryProof.Dependency(QueryProof.Domain.HIERARCHY,declared.symbolId(),maintained.get());
+        }
+        String key="document:"+Objects.toString(query.receiverSymbolId(),"receiver");
+        return new QueryProof.Dependency(QueryProof.Domain.HIERARCHY,key,hierarchyProofIdentity(query));
+    }
     private Hash256 accessibilityProofIdentity(DocumentSemanticSnapshot.QueryContext query)throws Exception{
         Hash256 enclosing=null;
         if(query.enclosingTypeId()!=null&&!query.enclosingTypeId().isBlank())
@@ -1267,7 +1277,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         for(Path source:dependencySources)sourceKeys.add(source.toAbsolutePath().normalize().toString());
         for(String source:sourceKeys)
             dependencies.add(new QueryProof.Dependency(QueryProof.Domain.RESOLUTION_PATH,"source:"+source,resolutionPathIdentity("source:"+source)));
-        dependencies.add(new QueryProof.Dependency(QueryProof.Domain.HIERARCHY,"receiver",hierarchyProofIdentity(query)));
+        dependencies.add(hierarchyProofDependency(query));
         dependencies.add(new QueryProof.Dependency(QueryProof.Domain.ACCESSIBILITY,"context",accessibilityProofIdentity(query)));
         var namespace=namespaceDependencies(text,query,namespaceNames);
         if(namespace.isEmpty())
@@ -1297,7 +1307,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                         ?dependency.identity():documentScopeIdentity(path,patched,focusCursor);
                 case RECEIVER -> receiverProofIdentity(query);
                 case RESOLUTION_PATH -> resolutionPathIdentity(dependency.key().value());
-                case HIERARCHY -> hierarchyProofIdentity(query);
+                case HIERARCHY -> dependency.key().value().startsWith("document:")
+                        ?hierarchyProofIdentity(query)
+                        :semanticReadView().identity(QueryProof.Domain.HIERARCHY,dependency.key().value())
+                                .orElseGet(()->unavailableProofIdentity(dependency.key()));
                 case ACCESSIBILITY -> accessibilityProofIdentity(query);
                 case CLASSPATH_SEARCH -> classpathProofIdentity(dependency.key(),observed);
                 default -> dependency.identity();

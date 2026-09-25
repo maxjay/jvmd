@@ -132,8 +132,8 @@ public final class MavenResolver implements AutoCloseable {
             }
             return becameDirty;
         }
-        synchronized long events(){drain(false);return events;}
-        synchronized long overflows(){drain(false);return overflows;}
+        synchronized long events(){return events;}
+        synchronized long overflows(){return overflows;}
         private void closeWatcher(){
             var current=watcher;watcher=null;
             if(current!=null)try{current.close();}catch(java.io.IOException ignored){}
@@ -241,7 +241,10 @@ public final class MavenResolver implements AutoCloseable {
                                                     Collection<Path> lifecycleInputs,Runnable invalidated) throws Exception {
         if(closed)throw new IllegalStateException("Resolver is closed");
         resolveWorkspaceCalls++;
-        var key=new RequestCacheKey(root,roots,ignoreVersions,List.copyOf(lifecycleInputs));var resident=residents.get(key);
+        var key=new RequestCacheKey(root,roots,ignoreVersions,List.copyOf(lifecycleInputs));
+        if(invalidated!=null)for(var entry:new ArrayList<>(residents.entrySet()))
+            if(entry.getKey().root().equals(key.root())&&!entry.getKey().equals(key))retire(entry.getKey(),entry.getValue());
+        var resident=residents.get(key);
         if(resident!=null)resident.invalidated(invalidated);
         if(resident!=null&&resident.current()){residentHits++;return resident.resolution.cachedCopy();}
         if(resident!=null){residentInvalidations++;retire(key,resident);}

@@ -123,7 +123,14 @@ public interface IndexStore extends AutoCloseable {
     }
     /** Exact type lookup by canonical binary/FQN key. */
     default IndexedSemanticSymbol semanticType(String binaryName,String workspace,SemanticLayer layer)throws Exception{
-        String simple=binaryName.substring(Math.max(binaryName.lastIndexOf('.'),binaryName.lastIndexOf('    List<ArtifactCandidate> binaryArtifacts(String workspace)throws Exception;
+        int split=Math.max(binaryName.lastIndexOf('.'),binaryName.lastIndexOf(36));
+        String simple=binaryName.substring(split+1);
+        for(var value:semanticTypesByName(simple,workspace,256,layer))
+            if(binaryName.equals(value.fqn())||binaryName.equals(value.binaryKey())||binaryName.equals(value.fqn().replace((char)36,'.')))
+                return value;
+        return null;
+    }
+    List<ArtifactCandidate> binaryArtifacts(String workspace)throws Exception;
     List<ArtifactWork> pendingSignatureArtifacts(String workspace)throws Exception;
     List<ArtifactCandidate> artifactsOwning(Collection<String> scips,String workspace)throws Exception;
     List<ArtifactCandidate> artifactsReferencing(Collection<String> fqns,String workspace)throws Exception;

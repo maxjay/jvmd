@@ -36,6 +36,7 @@ public final class Session implements AutoCloseable {
     public <T> T state(String key, Supplier<T> factory) { return (T) state.computeIfAbsent(key, _ -> factory.get()); }
     public Object state(String key) { return state.get(key); }
     public void put(String key, Object value) { state.put(key, value); }
+    public Object remove(String key) { return state.remove(key); }
     public <T> T execute(Callable<T> work) throws Exception {
         return execute(2,work);
     }

@@ -47,6 +47,29 @@ public final class ArtifactIndexFormat {
         return Hashing.sha256((binary.cacheKey()+"\0"+sourceSha256).getBytes(StandardCharsets.UTF_8));
     }
 
+    /**
+     * Java-resolution identity of one indexed artifact generation.
+     *
+     * Deliberately excludes the raw binary SHA, class-entry path, parameter display names and the
+     * separately published documentation overlay. Two bytecode generations with the same indexed
+     * Java semantic surface therefore retain the same resolution identity.
+     */
+    public static Hash256 resolutionIdentity(ArtifactData data){
+        Objects.requireNonNull(data);
+        Key key=data.key();
+        return CanonicalDigestWriter.digest("artifact-resolution-v1",
+                key.formatVersion(),key.indexerVersion(),key.runtimeFeature(),key.mode(),
+                data.symbols().stream().map(symbol->new Object[]{
+                        symbol.id(),symbol.ownerId(),symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),
+                        Objects.toString(symbol.signature(),""),
+                        Objects.toString(symbol.descriptor(),""),
+                        symbol.flags(),symbol.metadataJson()
+                }).toList(),
+                data.relationships().stream().map(edge->new Object[]{
+                        edge.sourceId(),edge.target(),edge.kind()
+                }).toList());
+    }
+
     public static ArtifactData from(BinaryReader.Content content,Key key)throws Exception{
         return from(content,key,content.edges());
     }

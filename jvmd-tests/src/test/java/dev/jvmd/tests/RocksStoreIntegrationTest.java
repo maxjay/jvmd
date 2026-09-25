@@ -38,8 +38,16 @@ class RocksStoreIntegrationTest {
             var expansion=new CodePass(index).expand(List.of(value),true,Set.of("calls"),null);
             assertThat(expansion.symbols()).extracting(s->s.get("name")).contains("answer");
             assertThat(index.byId(before).get("scip")).isEqualTo(value.get("scip"));
-            var hidden=index.find("hidden",null,false,10,0).getFirst();assertThat(index.byId(((Number)hidden.get("id")).longValue()).get("scip")).isEqualTo(hidden.get("scip"));
-            assertThat(new CodePass(index).expand(List.of(hidden),true,Set.of("calls"),null).symbols()).extracting(s->s.get("name")).contains("answer");
+            assertThat(index.find("hidden",null,false,10,0)).isEmpty();
+            var owner=index.find("Sample",null,false,10,0,Set.of("class")).stream()
+                    .filter(row->"fixture.Sample".equals(row.get("fqn"))).findFirst().orElseThrow();
+            var machine=SemanticReadViews.machine(index.store(),null);
+            var hiddenSymbol=machine.members(owner.get("scip").toString(),"hidden",10,null).symbols().stream()
+                    .filter(symbol->symbol.name().equals("hidden")).findFirst().orElseThrow();
+            var hidden=index.store().byScip(hiddenSymbol.id(),null,IndexStore.SemanticLayer.MACHINE);
+            assertThat(hidden).isNotNull();
+            assertThat(new CodePass(index).expand(List.of(hidden),true,Set.of("calls"),null).symbols())
+                    .extracting(s->s.get("name")).contains("answer");
             for(String query:List.of("","Sample")){
                 var all=index.find(query,null,true,100,0);var pages=new ArrayList<Map<String,Object>>();long after=0;
                 for(int page=0;page<all.size()+1;page++){
@@ -47,7 +55,7 @@ class RocksStoreIntegrationTest {
                     pages.addAll(values);after=((Number)values.getLast().get("id")).longValue();
                 }
                 assertThat(pages).as("Enriched IDs must retain original signature order: %s",query).isEqualTo(all);
-                assertThat(pages).extracting(s->s.get("name")).contains("hidden","value");
+                assertThat(pages).extracting(s->s.get("name")).contains("value").doesNotContain("hidden");
             }
         }
     }

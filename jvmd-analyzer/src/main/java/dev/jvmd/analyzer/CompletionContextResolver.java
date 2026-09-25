@@ -36,6 +36,12 @@ public final class CompletionContextResolver {
     private record State(SemanticReadView.Symbol owner,SemanticType type,boolean staticReceiver) { }
     private record Declaration(String type,int start,int end,boolean field,boolean staticField) { }
     private static final Set<String> TYPE_KINDS=Set.of("class","interface","enum","record","annotation");
+    private static final Set<String> NON_TYPE_WORDS=Set.of(
+            "return","throw","new","case","yield","instanceof","this","super",
+            "if","else","for","while","do","switch","try","catch","finally","synchronized",
+            "break","continue","assert","class","interface","enum","record","extends","implements",
+            "package","import","static","public","protected","private","final","abstract","native",
+            "strictfp","transient","volatile");
     private static final Pattern PACKAGE=Pattern.compile("(?m)\\bpackage\\s+([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)\\s*;");
     private static final Pattern IMPORT=Pattern.compile("(?m)\\bimport\\s+(?!static\\b)([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$*][\\w$*]*)*)\\s*;");
     private static final Pattern CLASS=Pattern.compile("\\b(class|interface|enum|record)\\s+([A-Za-z_$][\\w$]*)");
@@ -162,7 +168,12 @@ public final class CompletionContextResolver {
         String identifier=Pattern.quote(name);
         var pattern=Pattern.compile("(?<![\\w$])([A-Za-z_$][\\w$]*(?:\\s*\\.\\s*[A-Za-z_$][\\w$]*)*(?:\\s*\\[\\s*\\])*)\\s+"+identifier+"\\b");
         var matches=new ArrayList<Declaration>();var matcher=pattern.matcher(masked);
-        while(matcher.find())matches.add(new Declaration(matcher.group(1),matcher.start(),matcher.end(),false,false));
+        while(matcher.find()){
+            String candidate=matcher.group(1).replaceAll("\\s+","");
+            String first=candidate.replace("[]","");int dot=first.indexOf('.');if(dot>=0)first=first.substring(0,dot);
+            if(NON_TYPE_WORDS.contains(first)||primitive(first))continue;
+            matches.add(new Declaration(matcher.group(1),matcher.start(),matcher.end(),false,false));
+        }
         if(matches.isEmpty())return null;
         int[] braces=braceDepths(masked),parens=parenDepths(masked);int cursorDepth=depthAt(braces,Math.max(0,receiverEnd-1));
         int classOpen=enclosingTypeOpen(masked,receiverEnd);

@@ -357,12 +357,13 @@ public final class SemanticUpdatePolicy {
         }
         public Set<Path> changed(Path file){
             file=normalize(file);
-            // Retain the full closure as pending discovery so scheduling can establish the changed
-            // prerequisite first. Immediate cache invalidation stops at proof-covered dependants;
-            // source admission will reopen only the paths whose semantic leaves actually changed.
-            var pendingAffected=closure(Set.of(file),this);pending.put(file,pendingAffected);
-            var immediate=new LinkedHashSet<Path>();immediate.add(file);immediate.addAll(coarseUnprovenClosure(Set.of(file)));
-            return Set.copyOf(immediate);
+            // A source event is a mutation fence, not an invalidation decision. Retain the full
+            // reverse closure only as pending scheduling evidence so the changed prerequisite is
+            // attributed before its consumers. No dependant state is destroyed here: after the new
+            // detached facts exist, resolve/update decides between precise proof propagation and
+            // the conservative file closure.
+            pending.put(file,closure(Set.of(file),this));
+            return Set.of(file);
         }
         public Set<Path> prerequisites(Path file){
             file=normalize(file);var result=new HashSet<Path>();

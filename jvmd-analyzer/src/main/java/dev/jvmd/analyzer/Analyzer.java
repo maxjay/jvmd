@@ -246,18 +246,112 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return new QueryProof.Key(QueryProof.Domain.DOCUMENT_SCOPE,
                 "derived:"+file.toAbsolutePath().normalize()+"#"+selectorOffset);
     }
+    private static SemanticUpdatePolicy.ProofConsumer sourceProofConsumer(Path file){
+        return new SemanticUpdatePolicy.ProofConsumer(file,"source-semantic");
+    }
+    private static QueryProof.Key sourceProofOutput(Path file){
+        return new QueryProof.Key(QueryProof.Domain.WORKSPACE,"source-semantic:"+file.toAbsolutePath().normalize());
+    }
+    private static void addProofDependency(Map<QueryProof.Key,Hash256> values,QueryProof.Dependency dependency){
+        var previous=values.putIfAbsent(dependency.key(),dependency.identity());
+        if(previous!=null&&!previous.equals(dependency.identity()))
+            throw new IllegalStateException("Conflicting semantic proof identity for "+dependency.key());
+    }
+    private boolean currentSourceFact(SemanticFact fact){
+        if(fact==null||fact.sourceFile()==null||liveSourceState==null)return true;
+        try{
+            Path source=Path.of(fact.sourceFile()).toAbsolutePath().normalize();
+            if(!liveSourceState.accepts(source))return true;
+            String content=liveSourceState.contentHash(source);
+            return content!=null&&semanticState().unitCurrent("source:"+source,content);
+        }catch(Exception invalid){return false;}
+    }
+    private Optional<Hash256> maintainedNamespaceTypeIdentity(SemanticReadView view,String binary)throws Exception{
+        if(liveSourceState!=null){
+            var source=liveSourceState.source(binary).orElse(null);
+            if(source!=null){
+                Path file=source.file().toAbsolutePath().normalize();String content=liveSourceState.contentHash(file);
+                if(content==null||!semanticState().unitCurrent("source:"+file,content))return Optional.empty();
+            }
+        }
+        var symbol=view.type(binary);return symbol==null?Optional.empty():Optional.of(symbol.resolutionIdentity());
+    }
+    private void registerSourceProof(Path file,String text,Bindings.Snapshot snapshot,FileSemanticContribution contribution)throws Exception{
+        file=file.toAbsolutePath().normalize();
+        var consumer=sourceProofConsumer(file);var values=new TreeMap<QueryProof.Key,Hash256>();
+        var coveredFiles=new HashSet<Path>();var view=semanticReadView();
+        boolean precise=liveSourceState!=null&&contribution.unresolvedTargets().isEmpty();
+
+        for(var edge:snapshot.edges()){
+            var fact=snapshot.semanticFacts().get(edge.dst());if(fact==null)continue;
+            Path source=null;
+            if(fact.sourceFile()!=null)try{source=Path.of(fact.sourceFile()).toAbsolutePath().normalize();}catch(Exception ignored){}
+            boolean liveDependency=source!=null&&!source.equals(file)&&liveSourceState!=null&&liveSourceState.accepts(source);
+            if(liveDependency){coveredFiles.add(source);if(!currentSourceFact(fact))precise=false;}
+            if(!liveDependency)continue;
+
+            var exact=view.identity(QueryProof.Domain.EXACT_SYMBOL,fact.id());
+            if(exact.isEmpty())precise=false;else addProofDependency(values,
+                    new QueryProof.Dependency(QueryProof.Domain.EXACT_SYMBOL,fact.id(),exact.get()));
+
+            String owner=fact.ownerId();
+            if(owner!=null&&!owner.isBlank()){
+                var hierarchy=view.identity(QueryProof.Domain.HIERARCHY,owner);
+                if(hierarchy.isEmpty())precise=false;else addProofDependency(values,
+                        new QueryProof.Dependency(QueryProof.Domain.HIERARCHY,owner,hierarchy.get()));
+                if(edge.kind().equals("calls")){
+                    var overload=SemanticQueryProofs.overload(view,owner,fact.name());
+                    if(overload.isEmpty())precise=false;
+                    else for(var dependency:overload.get().dependencies())addProofDependency(values,dependency);
+                }
+            }else if(fact.typeDeclaration()){
+                var hierarchy=view.identity(QueryProof.Domain.HIERARCHY,fact.id());
+                if(hierarchy.isEmpty())precise=false;else addProofDependency(values,
+                        new QueryProof.Dependency(QueryProof.Domain.HIERARCHY,fact.id(),hierarchy.get()));
+            }
+        }
+
+        for(var occurrence:snapshot.occurrences()){
+            if(!occurrence.file().equals(file.toString()))continue;
+            var fact=snapshot.semanticFacts().get(occurrence.scip());
+            if(fact==null||!fact.typeDeclaration()||fact.sourceFile()==null)continue;
+            Path source;try{source=Path.of(fact.sourceFile()).toAbsolutePath().normalize();}catch(Exception invalid){continue;}
+            if(source.equals(file)||liveSourceState==null||!liveSourceState.accepts(source))continue;
+            String simple=occurrence.token();
+            if(!javax.lang.model.SourceVersion.isIdentifier(simple))continue;
+            String binary=fact.fqn()==null||fact.fqn().isBlank()?fact.resolutionFact().symbolKey():fact.fqn();
+            var plan=NamespaceResolutionProofs.plan(text,simple,binary);
+            if(!plan.precise()){precise=false;continue;}
+            for(var dependency:NamespaceResolutionProofs.dependencies(plan,b->maintainedNamespaceTypeIdentity(view,b)))
+                addProofDependency(values,dependency);
+        }
+
+        for(Path dependency:contribution.dependencies()){
+            Path normalized=dependency.toAbsolutePath().normalize();
+            if(normalized.equals(file)||liveSourceState==null||!liveSourceState.accepts(normalized))continue;
+            if(!coveredFiles.contains(normalized))precise=false;
+        }
+
+        if(!precise){
+            dependencies.semantic().proofs().remove(consumer);dependencies.semantic().proofCoverage(file,false);return;
+        }
+        var proof=new QueryProof(values.entrySet().stream().map(entry->new QueryProof.Dependency(entry.getKey(),entry.getValue())).toList());
+        dependencies.semantic().proofs().register(consumer,
+                new SemanticUpdatePolicy.ProofEvaluation(proof,sourceProofOutput(file),proof.identity()));
+        dependencies.semantic().proofCoverage(file,true);
+    }
     private void registerDocumentProof(Path file,DocumentSemanticSnapshot.QueryContext query){
         if(query.proof().dependencies().isEmpty())return;
         dependencies.semantic().proofs().register(documentProofConsumer(file,query.selectorOffset()),
                 new SemanticUpdatePolicy.ProofEvaluation(query.proof(),documentProofOutput(file,query.selectorOffset()),query.proof().identity()));
     }
-    private Optional<SemanticUpdatePolicy.ProofEvaluation> rebaseDocumentProof(
+    private Optional<SemanticUpdatePolicy.ProofEvaluation> rebaseProof(
             SemanticUpdatePolicy.ProofConsumer consumer,Map<QueryProof.Key,Hash256> leaves){
         var prior=dependencies.semantic().proofs().evaluation(consumer);if(prior.isEmpty())return Optional.empty();
-        var dependencies=new ArrayList<QueryProof.Dependency>();
+        var current=new ArrayList<QueryProof.Dependency>();
         for(var dependency:prior.get().dependencies().dependencies())
-            dependencies.add(new QueryProof.Dependency(dependency.key(),leaves.getOrDefault(dependency.key(),dependency.identity())));
-        var proof=new QueryProof(dependencies);
+            current.add(new QueryProof.Dependency(dependency.key(),leaves.getOrDefault(dependency.key(),dependency.identity())));
+        var proof=new QueryProof(current);
         return Optional.of(new SemanticUpdatePolicy.ProofEvaluation(proof,prior.get().output(),proof.identity()));
     }
     private void invalidateDocumentProofConsumers(ModuleCaches caches,Collection<SemanticUpdatePolicy.ProofConsumer> consumers){
@@ -310,7 +404,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 evictChangedClasspathWinner(caches,refreshed.get(binary));
             }
             var propagation=dependencies.semantic().proofs().propagate(update.changed(),
-                    consumer->rebaseDocumentProof(consumer,update.changed()));
+                    consumer->rebaseProof(consumer,update.changed()));
             caches.classpathProofEvidence.propagation(propagation);
             var invalid=new LinkedHashSet<SemanticUpdatePolicy.ProofConsumer>(propagation.changed());
             invalid.addAll(propagation.fallback());

@@ -14,8 +14,14 @@ import org.rocksdb.*;
  * A query holds the metadata monitor, so publication cannot change its selected generations.
  */
 public final class RocksIndexStore implements IndexStore {
-    public record StoredArtifact(long id,ArtifactInput input,String docsKey,String codeKey,long symbols,long edges,
-                                 boolean classReferences,long sourceRevision,long simpleNames) { }
+    public record StoredArtifact(long id,ArtifactInput input,String docsKey,String codeKey,String resolutionIdentity,
+                                 long symbols,long edges,boolean classReferences,long sourceRevision,long simpleNames) {
+        public StoredArtifact {
+            Objects.requireNonNull(input);
+            resolutionIdentity=resolutionIdentity==null||resolutionIdentity.isBlank()
+                    ?input.key().binarySha256():resolutionIdentity;
+        }
+    }
     private record LegacySourceFile(String file,String hash,List<Map<String,Object>> symbols,List<SourceRelationship> edges) { }
     private final RocksArtifactRepository repository;
     private final RocksArtifactAdmission admission;
@@ -80,7 +86,7 @@ public final class RocksIndexStore implements IndexStore {
         Long alias=paths.get(pathString);
         long selected=pathString.equals(previous.input().context().path())?id:alias==null?nextArtifact++:alias;
         var context=new ArtifactContext(previous.input().context().gav(),previous.input().context().kind(),pathString);
-        var value=new StoredArtifact(selected,new ArtifactInput(context,previous.input().key(),size,mtime),previous.docsKey(),previous.codeKey(),previous.symbols(),previous.edges(),previous.classReferences(),previous.sourceRevision(),previous.simpleNames());
+        var value=new StoredArtifact(selected,new ArtifactInput(context,previous.input().key(),size,mtime),previous.docsKey(),previous.codeKey(),previous.resolutionIdentity(),previous.symbols(),previous.edges(),previous.classReferences(),previous.sourceRevision(),previous.simpleNames());
         try(var batch=new WriteBatch()){save(batch,value);state.write(durable,batch);}installed(value);
     }
     @Override public long publishArtifact(ArtifactInput input,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences,Map<String,Map<String,Object>> sourceData)throws Exception{
@@ -98,7 +104,7 @@ public final class RocksIndexStore implements IndexStore {
             Long existing=paths.get(input.context().path());long id=existing==null?nextArtifact++:existing;
             var previous=artifacts.get(id);
             boolean same=previous!=null&&previous.input().key().equals(input.key());
-            var value=new StoredArtifact(id,input,docs,same?previous.codeKey():null,facts.symbols().size(),facts.relationships().size(),!classReferences.isEmpty(),previous==null?0:previous.sourceRevision(),facts.symbols().stream().filter(symbol->TYPES.contains(symbol.kind())).count());
+            var value=new StoredArtifact(id,input,docs,same?previous.codeKey():null,ArtifactIndexFormat.resolutionIdentity(facts).hex(),facts.symbols().size(),facts.relationships().size(),!classReferences.isEmpty(),previous==null?0:previous.sourceRevision(),facts.symbols().stream().filter(symbol->TYPES.contains(symbol.kind())).count());
             try(var batch=new WriteBatch()){
                 // Preserve unchanged source files when another file changes the module fingerprint.
                 if(input.context().kind().equals("local"))for(var file:sourceOverlay.files(id)){
@@ -117,13 +123,13 @@ public final class RocksIndexStore implements IndexStore {
         repository.publish(facts,references);
         synchronized(this){var old=required(id);
             if(!old.input().key().binarySha256().equals(facts.key().binarySha256()))throw new IllegalStateException("Binary changed during code indexing");
-            var value=new StoredArtifact(id,old.input(),old.docsKey(),facts.key().cacheKey(),facts.symbols().size(),old.edges(),old.classReferences()||!references.isEmpty(),old.sourceRevision(),old.simpleNames());
+            var value=new StoredArtifact(id,old.input(),old.docsKey(),facts.key().cacheKey(),old.resolutionIdentity(),facts.symbols().size(),old.edges(),old.classReferences()||!references.isEmpty(),old.sourceRevision(),old.simpleNames());
             try(var batch=new WriteBatch()){save(batch,value);state.write(durable,batch);}installed(value);
         }
     }
     @Override public synchronized void publishClassReferences(long id,Set<String> references)throws Exception{
         // Older formats may lack the class-reference facts; store a small independent supplement.
-        var old=required(id);var value=new StoredArtifact(id,old.input(),old.docsKey(),old.codeKey(),old.symbols(),old.edges(),true,old.sourceRevision(),old.simpleNames());
+        var old=required(id);var value=new StoredArtifact(id,old.input(),old.docsKey(),old.codeKey(),old.resolutionIdentity(),old.symbols(),old.edges(),true,old.sourceRevision(),old.simpleNames());
         try(var batch=new WriteBatch()){
             for(String target:references)batch.put(bytes("C|"+key(id)+"|"+target),new byte[0]);
             save(batch,value);state.write(durable,batch);
@@ -158,7 +164,7 @@ public final class RocksIndexStore implements IndexStore {
             row.put("binary_key",binaryKey(symbol));row.putIfAbsent("metadata",Map.of());rows.add(row);
         }
         var source=new SourceOverlay.FileStamp(path,contentHash);
-        var value=new StoredArtifact(id,old.input(),old.docsKey(),old.codeKey(),old.symbols(),old.edges(),old.classReferences(),old.sourceRevision()+1,old.simpleNames());
+        var value=new StoredArtifact(id,old.input(),old.docsKey(),old.codeKey(),old.resolutionIdentity(),old.symbols(),old.edges(),old.classReferences(),old.sourceRevision()+1,old.simpleNames());
         try(var batch=new WriteBatch()){
             sourceOverlay.replace(batch,id,source,rows,relationships);batch.put(bytes("next-source"),bytes(Long.toString(nextSource)));
             save(batch,value);state.write(durable,batch);
@@ -174,8 +180,8 @@ public final class RocksIndexStore implements IndexStore {
         synchronized(this){
             if(!required(binaryId).input().key().equals(binary.input().key()))throw new IllegalStateException("Binary changed during documentation indexing");
             Long existing=paths.get(input.context().path());long id=existing==null?nextArtifact++:existing;
-            var source=new StoredArtifact(id,input,docs,null,0,0,false,0,0);
-            var updated=new StoredArtifact(binaryId,binary.input(),docs,binary.codeKey(),binary.symbols(),binary.edges(),binary.classReferences(),binary.sourceRevision(),binary.simpleNames());
+            var source=new StoredArtifact(id,input,docs,null,input.key().binarySha256(),0,0,false,0,0);
+            var updated=new StoredArtifact(binaryId,binary.input(),docs,binary.codeKey(),binary.resolutionIdentity(),binary.symbols(),binary.edges(),binary.classReferences(),binary.sourceRevision(),binary.simpleNames());
             try(var batch=new WriteBatch()){save(batch,source);save(batch,updated);batch.put(bytes("U|"+key(id)),bytes(Integer.toString(unmatched)));state.write(durable,batch);}
             this.unmatched.put(id,(long)unmatched);installed(source);installed(updated);return id;
         }
@@ -217,6 +223,17 @@ public final class RocksIndexStore implements IndexStore {
                         :!artifact.input().context().kind().equals("local"))
                 .toList();
     }
+    @Override public synchronized Optional<Hash256> semanticClasspathIdentity(String workspace){
+        var entries=new ArrayList<ClasspathSequence.Entry>();
+        for(var artifact:selected(workspace,false,SemanticLayer.MACHINE)){
+            if(artifact.input().context().kind().equals("sources"))continue;
+            entries.add(new ClasspathSequence.Entry(
+                    artifact.input().context().path(),
+                    Hash256.fromHex(artifact.resolutionIdentity())));
+        }
+        return Optional.of(ClasspathSequence.of(entries).identity());
+    }
+
     @Override public synchronized List<String> loadWorkspace(String workspace,List<WorkspaceEntry> entries,List<Map.Entry<String,String>> dependencies)throws Exception{
         workspaces.put(workspace,entries.stream().map(e->new WorkspaceEntry(Path.of(e.path()).toAbsolutePath().normalize().toString(),e.scope())).toList());
         var classes=new TreeMap<String,Set<String>>();var packages=new TreeMap<String,Set<String>>();

@@ -64,7 +64,7 @@ class MaintainedCompletionContextTest {
 
     @Test void projectDotResolvesMavenProjectFromMachineRangeWithZeroQuerySideJavac()throws Exception{
         Path repo=Files.createDirectories(root.resolve("maven-repo"));
-        Path jar=IndexFixtures.jar(repo,"maven-project","""
+        Path jar=IndexFixtures.jar(repo,"maven-project","MavenProject.java","""
                 package org.apache.maven.project;
                 public class MavenProject {
                     public String getArtifactId(){return "artifact";}

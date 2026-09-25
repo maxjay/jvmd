@@ -1417,13 +1417,13 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private CompletionCandidate semanticCandidate(SemanticReadView.Symbol fact,Map<String,SemanticType> substitutions,
                                                   Map<String,String> typeNames)throws Exception{
         SemanticType contextual=fact.semanticType().substitute(substitutions);
-        String label=fact.name()+": "+semanticTypeLabel(contextual,typeNames);
+        String label=fact.name()+": "+CompletionCandidate.typeLabel(contextual,false);
         var labels=new ArrayList<CompletionCandidate.ParameterLabel>();
         if(contextual instanceof SemanticType.Executable executable){
             var value=new StringBuilder(fact.name()).append('(');
             for(int i=0;i<executable.parameters().size();i++){
                 if(i>0)value.append(", ");
-                String parameter=semanticTypeLabel(executable.parameters().get(i),typeNames);
+                String parameter=CompletionCandidate.typeLabel(executable.parameters().get(i),true);
                 if(fact.varargs()&&i==executable.parameters().size()-1&&parameter.endsWith("[]"))
                     parameter=parameter.substring(0,parameter.length()-2)+"...";
                 int parameterStart=value.length();value.append(parameter);
@@ -1432,7 +1432,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 labels.add(new CompletionCandidate.ParameterLabel(parameterStart,value.length()));
             }
             value.append(')');
-            if(!fact.kind().equals("ctor"))value.append(" : ").append(semanticTypeLabel(executable.returns(),typeNames));
+            if(!fact.kind().equals("ctor"))value.append(" : ").append(CompletionCandidate.typeLabel(executable.returns(),true));
             label=value.toString();
         }
         return new CompletionCandidate(fact.id(),fact.name(),fact.kind(),fact.signature(),fact.resolution().ownerKey(),
@@ -1558,7 +1558,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return List.copyOf(result);
     }
 
-    private List<Map<String,Object>> residentHierarchyRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target,boolean staticOnly,
+    private enum QualifiedMemberMode { ALL, STATIC_ONLY, INSTANCE_ONLY }
+    private List<Map<String,Object>> residentHierarchyRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target,QualifiedMemberMode memberMode,
                                                            Set<String> excludedIds,Set<String> shadowedFieldNames){
         if(target<=0)return List.of();
         var accessible=accessibility(query);if(accessible==null)return List.of();
@@ -1580,7 +1581,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                     var member=stream.current;
                     if(!excludedIds.contains(member.id())
                             &&!member.kind().equals("ctor")&&!member.kind().equals("package")&&!member.kind().equals("module")
-                            &&(!staticOnly||member.typeDeclaration()||member.modifiers().contains("static"))
+                            &&(member.typeDeclaration()
+                                ||memberMode==QualifiedMemberMode.ALL
+                                ||memberMode==QualifiedMemberMode.STATIC_ONLY&&member.modifiers().contains("static")
+                                ||memberMode==QualifiedMemberMode.INSTANCE_ONLY&&!member.modifiers().contains("static"))
                             &&accessible.contains(member.id())
                             &&!(Set.of("field","enumconst").contains(member.kind())&&shadowedFieldNames.contains(member.name()))){
                         String shape=inheritedMemberShape(member);var row=residentCompletionRow(member,member.candidate(stream.substitutions));
@@ -1596,7 +1600,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return List.copyOf(rows);
     }
     private List<Map<String,Object>> residentQualifiedRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target){
-        return residentHierarchyRows(query,prefix,target,query.staticReceiver(),Set.of(),Set.of());
+        return residentHierarchyRows(query,prefix,target,
+                query.staticReceiver()?QualifiedMemberMode.STATIC_ONLY:QualifiedMemberMode.INSTANCE_ONLY,Set.of(),Set.of());
     }
     private List<Map<String,Object>> residentUnqualifiedRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target){
         if(target<=0)return List.of();
@@ -1618,7 +1623,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         var lexical=scopeRows.values().stream().sorted(COMPLETION_ORDER).toList();
         var hierarchy=(query.receiverType() instanceof SemanticType.Declared||query.receiverType() instanceof SemanticType.Intersection)
-                ?residentHierarchyRows(query,prefix,target,query.staticContext(),scopeRows.keySet(),variableNames):List.<Map<String,Object>>of();
+                ?residentHierarchyRows(query,prefix,target,
+                    query.staticContext()?QualifiedMemberMode.STATIC_ONLY:QualifiedMemberMode.ALL,
+                    scopeRows.keySet(),variableNames):List.<Map<String,Object>>of();
 
         var rows=new ArrayList<Map<String,Object>>(Math.min(target,64));int lexicalIndex=0,hierarchyIndex=0;
         while(rows.size()<target&&(lexicalIndex<lexical.size()||hierarchyIndex<hierarchy.size())){

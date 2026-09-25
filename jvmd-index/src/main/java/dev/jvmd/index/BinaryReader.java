@@ -15,7 +15,7 @@ public final class BinaryReader {
                          SemanticType semanticType, List<String> typeParameters, List<List<SemanticType>> typeParameterBounds,
                          List<SemanticType> directSupertypes, boolean varargs) {
         public Symbol {
-            parameters=List.copyOf(parameters);metadata=Map.copyOf(metadata);
+            parameters=List.copyOf(parameters);metadata=new LinkedHashMap<>(metadata);
             typeParameters=List.copyOf(typeParameters);
             typeParameterBounds=typeParameterBounds.stream().map(List::copyOf).toList();
             directSupertypes=List.copyOf(directSupertypes);
@@ -72,12 +72,12 @@ public final class BinaryReader {
             List<SemanticType> directSupertypes;
             if(generic.isPresent()){
                 var value=generic.get();var parents=new ArrayList<SemanticType>();
-                if(!Signatures.type(value.superclassSignature()).equals("java.lang.Object"))parents.add(semantic(value.superclassSignature()));
+                parents.add(semantic(value.superclassSignature()));
                 value.superinterfaceSignatures().forEach(parent->parents.add(semantic(parent)));
                 directSupertypes=List.copyOf(parents);
             }else{
                 var parents=new ArrayList<SemanticType>();
-                model.superclass().filter(parent->!name(parent).equals("java.lang.Object")).ifPresent(parent->parents.add(declared(name(parent))));
+                model.superclass().ifPresent(parent->parents.add(declared(name(parent))));
                 model.interfaces().forEach(parent->parents.add(declared(name(parent))));
                 directSupertypes=List.copyOf(parents);
             }

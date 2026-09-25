@@ -1190,11 +1190,20 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         path=path.toAbsolutePath().normalize();
         String hash=observed.source(path).value();if(hash==null)hash=documents.sourceHash(path);
         reconcileSemanticRevision(path);touchHash(path,hash);invalidateConditionalIfUnresolved(path);
-        var cached=restoreDiagnostics(path,hash,observed.environment().value()+":"+observed.membership().value());
+        var cached=restoreDiagnostics(path,hash,diagnosticStamp(path,observed));
         if(cached!=null){
             diagnosticFilesReused++;
         }
         return cached;
+    }
+    private String diagnosticStamp(Path path,CompilerInputs.Snapshot observed){
+        String broad=observed.environment().value()+":"+observed.membership().value();
+        path=path.toAbsolutePath().normalize();
+        if(liveSourceState==null||!liveSourceState.snapshot().trusted()||!dependencies.semantic().proofCovered(path))return broad;
+        var evaluation=dependencies.semantic().proofs().evaluation(sourceProofConsumer(path));
+        if(evaluation.isEmpty())return broad;
+        return CompilerInputs.compose("diagnostic-semantic-context-v1",
+                observed.environment().value(),evaluation.get().derivedIdentity(),semanticState().uncertaintyGeneration());
     }
     private Envelope restoreDiagnostics(Path path,String hash,String stamp)throws Exception{
         var state=diagnosticStore.state(path,hash,context.generation(),stamp);
@@ -1256,7 +1265,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             if(snapshot!=null&&result.tier()==2&&result.warnings().isEmpty()){
                 focused.put(file+":"+hash+":"+stamp+":full",new Cached(file,hash,stamp,0,input.text().length(),List.of(),outcome));
                 while(focused.size()>32)focused.remove(focused.keySet().iterator().next());
-                diagnosticStore.put(file,hash,context.generation(),stamp,envelope,apiFingerprint(file),snapshot.dependencies(),contribution(file));
+                diagnosticStore.put(file,hash,context.generation(),diagnosticStamp(file,observed),envelope,apiFingerprint(file),snapshot.dependencies(),contribution(file));
                 publishSource(file,hash,stamp,semanticPublisherContextFingerprint(observed,stamp),snapshot,result.tier());
             }
         }
@@ -1278,8 +1287,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     private Envelope diagnostics(Path path,String text,CompilerInputs.Snapshot observed)throws Exception{
         path=path.toAbsolutePath().normalize();reconcileSemanticRevision(path);touch(path,text);invalidateConditionalIfUnresolved(path);
-        String sourceHash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)),stamp=observed.environment().value()+":"+observed.membership().value(),generation=context.generation();
-        var cached=restoreDiagnostics(path,sourceHash,stamp);
+        String sourceHash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)),generation=context.generation();
+        var cached=restoreDiagnostics(path,sourceHash,diagnosticStamp(path,observed));
         if(cached!=null){diagnosticFilesReused++;return cached;}
         long computations=bindingComputations;
         var outcome=bindings(path,text,null,observed);
@@ -1296,7 +1305,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             }
         }
         var envelope=new Envelope(outcome.tier(),"live",false,null,List.copyOf(warnings),Map.of("diagnostics",outcome.diagnostics()));
-        if(outcome.warnings().isEmpty())diagnosticStore.put(path,sourceHash,generation,stamp,envelope,apiFingerprint(path),outcome.result()==null?Set.of():outcome.result().dependencies(),outcome.tier()==2?contribution(path):null);
+        if(outcome.warnings().isEmpty())diagnosticStore.put(path,sourceHash,generation,diagnosticStamp(path,observed),envelope,apiFingerprint(path),outcome.result()==null?Set.of():outcome.result().dependencies(),outcome.tier()==2?contribution(path):null);
         return envelope;
     }
     private String residentContextKey(Path file,String patched,int start,CompilerInputs.Snapshot inputs,boolean qualified){

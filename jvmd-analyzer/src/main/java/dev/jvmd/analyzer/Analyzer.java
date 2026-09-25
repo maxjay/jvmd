@@ -296,6 +296,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         file=file.toAbsolutePath().normalize();
         var consumer=sourceProofConsumer(file);var values=new TreeMap<QueryProof.Key,Hash256>();
         var coveredFiles=new HashSet<Path>();var view=semanticReadView();
+        var referencesByTarget=new HashMap<String,List<Bindings.ReferenceProof>>();
+        for(var reference:snapshot.referenceProofs())
+            referencesByTarget.computeIfAbsent(reference.target(),ignored->new ArrayList<>()).add(reference);
         boolean precise=liveSourceState!=null&&contribution.unresolvedTargets().isEmpty();
 
         for(var edge:snapshot.edges()){
@@ -312,11 +315,17 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
 
             String owner=fact.ownerId();
             if(owner!=null&&!owner.isBlank()){
-                // Direct static member resolution is fully represented by the selected declaration
-                // plus its exact overload domain. Instance lookup can additionally depend on a
-                // receiver hierarchy that Bindings does not yet detach per call site; keep that
-                // case on the conservative file-closure fallback rather than claiming coverage.
-                if(!fact.modifiers().contains("static"))precise=false;
+                var references=referencesByTarget.getOrDefault(fact.id(),List.of());
+                boolean sourceReference=edge.kind().equals("calls")||edge.kind().equals("reads")||edge.kind().equals("writes");
+                if(sourceReference){
+                    if(references.isEmpty())precise=false;
+                    for(var reference:references){
+                        if(reference.receiverType()==null){precise=false;continue;}
+                        var hierarchy=view.identity(QueryProof.Domain.HIERARCHY,reference.receiverType());
+                        if(hierarchy.isEmpty())precise=false;else addProofDependency(values,
+                                new QueryProof.Dependency(QueryProof.Domain.HIERARCHY,reference.receiverType(),hierarchy.get()));
+                    }
+                }
                 if(edge.kind().equals("calls")){
                     var overload=SemanticQueryProofs.overload(view,owner,fact.name());
                     if(overload.isEmpty())precise=false;

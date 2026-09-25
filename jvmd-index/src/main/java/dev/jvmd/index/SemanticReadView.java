@@ -41,6 +41,9 @@ public interface SemanticReadView {
     /** Exact canonical symbol identity, or null when this layer does not own the symbol. */
     Symbol symbol(String id)throws Exception;
 
+    /** Exact type declaration by canonical binary/FQN resolution key, or null for absence. */
+    Symbol type(String binaryName)throws Exception;
+
     /**
      * Whether this layer owns a complete authoritative declaration surface for the type/owner.
      * Presence alone is never treated as proof of completeness.

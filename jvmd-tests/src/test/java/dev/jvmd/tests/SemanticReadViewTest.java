@@ -80,17 +80,43 @@ class SemanticReadViewTest {
         assertThat(onlyMachine.symbol("same").origin()).isEqualTo(SemanticReadView.Origin.MACHINE);
     }
 
-    @Test void partialLiveOwnerCannotHideCompleteLowerLayerSurface()throws Exception{
-        var live=surface(SemanticReadView.Origin.LIVE,SemanticCompleteness.PARTIAL,List.of("foo"));
-        var local=surface(SemanticReadView.Origin.LOCAL,SemanticCompleteness.COMPLETE,List.of("foo","bar","baz"));
+    @Test void partialLiveFactsOverlayCompleteLowerSurfacePerDeclaration()throws Exception{
+        var state=new ResidentSemanticState();
+        var owner=type("owner","p.Owner",List.of());
+        var alpha=member("alpha","owner","p.Owner");
+        state.admit(new SemanticSnapshot(
+                "source:/src/Owner.java","/src/Owner.java","content",
+                Map.of(owner.id(),owner,alpha.id(),alpha),Map.of(),"api","namespace","docs",Set.of(),
+                SemanticCompleteness.PARTIAL));
+
+        var live=SemanticReadViews.resident(state);
+        var local=surface(SemanticReadView.Origin.LOCAL,SemanticCompleteness.COMPLETE,List.of("alpha","beta","gamma"));
         var view=SemanticReadViews.precedence(live,local,empty());
 
         assertThat(view.symbol("owner").origin()).isEqualTo(SemanticReadView.Origin.LIVE);
         assertThat(view.completeness("owner")).isEqualTo(SemanticCompleteness.COMPLETE);
-        assertThat(view.members("owner","",10,null).symbols())
-                .extracting(SemanticReadView.Symbol::name).containsExactly("foo","bar","baz");
-        assertThat(view.members("owner","",10,null).symbols())
-                .allMatch(symbol->symbol.origin()==SemanticReadView.Origin.LOCAL);
+
+        var first=view.members("owner","",2,null);
+        assertThat(first.symbols()).extracting(SemanticReadView.Symbol::name).containsExactly("alpha","beta");
+        assertThat(first.symbols().getFirst().origin()).isEqualTo(SemanticReadView.Origin.LIVE);
+        assertThat(first.symbols().getLast().origin()).isEqualTo(SemanticReadView.Origin.LOCAL);
+        assertThat(first.cursor()).isNotNull();
+
+        var second=view.members("owner","",2,first.cursor());
+        assertThat(second.symbols()).extracting(SemanticReadView.Symbol::name).containsExactly("gamma");
+        assertThat(second.symbols().getFirst().origin()).isEqualTo(SemanticReadView.Origin.LOCAL);
+    }
+
+    @Test void persistedLocalAndMachineRemainIndependentlyAddressableWhenIdentityOverlaps()throws Exception{
+        var local=row("same-symbol","local","p.Same","p.Same","class");
+        var machine=row("same-symbol","jar","p.Same","p.Same","class");
+        var store=layeredStore(Map.of("same-symbol",local),Map.of("same-symbol",machine));
+
+        var localView=SemanticReadViews.local(store,"workspace");
+        var machineView=SemanticReadViews.machine(store,"workspace");
+
+        assertThat(localView.symbol("same-symbol").origin()).isEqualTo(SemanticReadView.Origin.LOCAL);
+        assertThat(machineView.symbol("same-symbol").origin()).isEqualTo(SemanticReadView.Origin.MACHINE);
     }
 
     private static SemanticFact type(String id,String fqn,List<SemanticType> parents){
@@ -100,6 +126,13 @@ class SemanticReadViewTest {
                 "/src/"+name+".java",fqn.substring(0,fqn.lastIndexOf('.')),fqn,fqn,
                 new SemanticType.Declared(id,fqn,List.of()),List.of(),parents,List.of(),false,
                 "api-"+id,"namespace-"+id,"docs-"+id);
+    }
+    private static SemanticFact member(String name,String ownerId,String ownerFqn){
+        return new SemanticFact(
+                name,ownerId,name,"method","int "+name+"()","()I",Set.of("public"),
+                "/src/Owner.java","p","p.Owner/"+name+"()",ownerFqn,
+                new SemanticType.Executable(List.of(),new SemanticType.Primitive("int"),List.of()),
+                List.of(),List.of(),List.of(),false,"api-"+name,"namespace-"+name,"docs-"+name);
     }
 
     private static Map<String,Object> row(String scip,String kind,String fqn,String binary,String symbolKind){
@@ -125,23 +158,54 @@ class SemanticReadViewTest {
         return (IndexStore)Proxy.newProxyInstance(
                 SemanticReadViewTest.class.getClassLoader(),new Class<?>[]{IndexStore.class},
                 (_,method,args)->switch(method.getName()){
-                    case "byScip" -> rows.get((String)args[0]);
+                    case "byScip" -> {
+                        var row=rows.get((String)args[0]);
+                        if(row!=null&&args.length==3){
+                            var layer=(IndexStore.SemanticLayer)args[2];
+                            boolean local="local".equals(Objects.toString(row.get("artifact_kind"),""));
+                            if(layer==IndexStore.SemanticLayer.LOCAL!=local)row=null;
+                        }
+                        yield row;
+                    }
                     case "membersByOwner" -> {
                         String owner=(String)args[0],prefix=(String)args[1];
+                        IndexStore.SemanticLayer layer=args.length==6?(IndexStore.SemanticLayer)args[5]:null;
                         var values=rows.values().stream()
                                 .filter(row->owner.equals("machine-symbol"))
                                 .filter(row->Objects.toString(row.get("fqn"),"").equals("p.Machine"))
                                 .filter(row->Objects.toString(row.get("kind"),"").equals("method"))
-                                .filter(row->Objects.toString(row.get("name"),"").startsWith(prefix)).toList();
+                                .filter(row->Objects.toString(row.get("name"),"").startsWith(prefix))
+                                .filter(row->layer==null||("local".equals(Objects.toString(row.get("artifact_kind"),"")))
+                                        ==(layer==IndexStore.SemanticLayer.LOCAL)).toList();
                         yield new IndexStore.MemberPage(values,null);
                     }
                     case "relationships" -> {
                         @SuppressWarnings("unchecked") Collection<String> scips=(Collection<String>)args[0];
                         @SuppressWarnings("unchecked") Set<String> kinds=(Set<String>)args[2];
+                        IndexStore.SemanticLayer layer=args.length==5?(IndexStore.SemanticLayer)args[4]:null;
                         yield relationships.stream()
                                 .filter(edge->scips.contains(edge.source().get("scip").toString()))
-                                .filter(edge->kinds.isEmpty()||kinds.contains(edge.kind())).toList();
+                                .filter(edge->kinds.isEmpty()||kinds.contains(edge.kind()))
+                                .filter(edge->layer==null||("local".equals(Objects.toString(edge.source().get("artifact_kind"),"")))
+                                        ==(layer==IndexStore.SemanticLayer.LOCAL)).toList();
                     }
+                    case "close" -> null;
+                    case "backend" -> "fixture";
+                    default -> throw new UnsupportedOperationException(method.getName());
+                });
+    }
+
+    private static IndexStore layeredStore(Map<String,Map<String,Object>> local,Map<String,Map<String,Object>> machine){
+        return (IndexStore)Proxy.newProxyInstance(
+                SemanticReadViewTest.class.getClassLoader(),new Class<?>[]{IndexStore.class},
+                (_,method,args)->switch(method.getName()){
+                    case "byScip" -> {
+                        if(args.length<3)yield local.getOrDefault((String)args[0],machine.get((String)args[0]));
+                        var layer=(IndexStore.SemanticLayer)args[2];
+                        yield (layer==IndexStore.SemanticLayer.LOCAL?local:machine).get((String)args[0]);
+                    }
+                    case "membersByOwner" -> new IndexStore.MemberPage(List.of(),null);
+                    case "relationships" -> List.of();
                     case "close" -> null;
                     case "backend" -> "fixture";
                     default -> throw new UnsupportedOperationException(method.getName());

@@ -651,6 +651,41 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return CanonicalDigestWriter.digest("document-namespace-proof-v1",pkg,List.copyOf(imports),
                 observed.live().snapshot().state().namespace().fingerprint().value());
     }
+
+    private static String simpleTypeName(String binary){
+        String value=Objects.requireNonNullElse(binary,"").replace((char)36,'.');
+        int split=value.lastIndexOf('.');return split<0?value:value.substring(split+1);
+    }
+    private Optional<Hash256> namespaceTypeIdentity(String binary)throws Exception{
+        if(liveSourceState!=null){
+            var source=liveSourceState.source(binary).orElse(null);
+            if(source!=null){
+                Path file=source.file().toAbsolutePath().normalize();
+                if(!ensureSourceSemanticCurrent(file)){
+                    String content=Objects.requireNonNullElse(liveSourceState.contentHash(file),"<missing>");
+                    return Optional.of(CanonicalDigestWriter.digest("namespace-type-unavailable-v1",binary,content));
+                }
+            }
+        }
+        var symbol=semanticReadView().type(binary);
+        return symbol==null?Optional.empty():Optional.of(symbol.resolutionIdentity());
+    }
+    private List<QueryProof.Dependency> namespaceDependencies(String text,DocumentSemanticSnapshot.QueryContext query,
+                                                              Collection<String> simpleNames)throws Exception{
+        if(simpleNames==null||simpleNames.isEmpty())return List.of();
+        String receiver=query.receiverType() instanceof SemanticType.Declared declared?declared.name():null;
+        var plans=new ArrayList<NamespaceResolutionProofs.Plan>();
+        var packages=new TreeSet<String>();
+        for(String simple:new TreeSet<>(simpleNames)){
+            String resolved=receiver!=null&&simpleTypeName(receiver).equals(simple)?receiver:null;
+            var plan=NamespaceResolutionProofs.plan(text,simple,resolved);
+            plans.add(plan);packages.addAll(plan.packages());
+        }
+        if(liveSourceState!=null&&!packages.isEmpty())liveSourceState.reconcilePackages(packages);
+        var result=new ArrayList<QueryProof.Dependency>();
+        for(var plan:plans)result.addAll(NamespaceResolutionProofs.dependencies(plan,this::namespaceTypeIdentity));
+        return List.copyOf(result);
+    }
     private Hash256 classpathProofIdentity(CompilerInputs.Snapshot observed)throws Exception{
         if(index!=null&&!context.workspace().isBlank()){
             var identity=index.store().semanticClasspathIdentity(context.workspace());
@@ -688,24 +723,26 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
 
     private QueryProof documentContextProof(Path path,String text,Focusing.Result focus,
                                              DocumentSemanticSnapshot.QueryContext query,
-                                             Collection<String> resolutionBinaries,Collection<Path> dependencySources,
+                                             Collection<String> namespaceNames,Collection<Path> dependencySources,
                                              CompilerInputs.Snapshot observed)throws Exception{
         var dependencies=new ArrayList<QueryProof.Dependency>();
         String queryKey=path.toAbsolutePath().normalize()+"#"+query.selectorOffset();
         dependencies.add(new QueryProof.Dependency(QueryProof.Domain.DOCUMENT_SCOPE,queryKey,documentScopeIdentity(focus)));
         dependencies.add(new QueryProof.Dependency(QueryProof.Domain.RECEIVER,"receiver",receiverProofIdentity(query)));
-        var resolutionKeys=new TreeSet<String>();
-        for(String binary:resolutionBinaries)resolutionKeys.add("type:"+binary);
-        if(query.receiverType() instanceof SemanticType.Declared declared)resolutionKeys.add("type:"+declared.name());
-        for(String resolutionKey:resolutionKeys)
+        if(query.receiverType() instanceof SemanticType.Declared declared){
+            String resolutionKey="type:"+declared.name();
             dependencies.add(new QueryProof.Dependency(QueryProof.Domain.RESOLUTION_PATH,resolutionKey,resolutionPathIdentity(resolutionKey)));
+        }
         var sourceKeys=new TreeSet<String>();
         for(Path source:dependencySources)sourceKeys.add(source.toAbsolutePath().normalize().toString());
         for(String source:sourceKeys)
             dependencies.add(new QueryProof.Dependency(QueryProof.Domain.RESOLUTION_PATH,"source:"+source,resolutionPathIdentity("source:"+source)));
         dependencies.add(new QueryProof.Dependency(QueryProof.Domain.HIERARCHY,"receiver",hierarchyProofIdentity(query)));
         dependencies.add(new QueryProof.Dependency(QueryProof.Domain.ACCESSIBILITY,"context",accessibilityProofIdentity(query)));
-        dependencies.add(new QueryProof.Dependency(QueryProof.Domain.NAMESPACE,"visible",namespaceProofIdentity(text,observed)));
+        var namespace=namespaceDependencies(text,query,namespaceNames);
+        if(namespace.isEmpty())
+            dependencies.add(new QueryProof.Dependency(QueryProof.Domain.NAMESPACE,"visible",namespaceProofIdentity(text,observed)));
+        else dependencies.addAll(namespace);
         dependencies.add(new QueryProof.Dependency(QueryProof.Domain.CLASSPATH_SEARCH,
                 context.workspace().isBlank()?"compiler":"workspace:"+context.workspace(),classpathProofIdentity(observed)));
         return new QueryProof(dependencies);
@@ -716,20 +753,31 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                                                     CompilerInputs.Snapshot observed)throws Exception{
         String currentContent=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         var dependencies=new ArrayList<QueryProof.Dependency>();
+        var namespaceNames=new TreeSet<String>();boolean broadNamespace=false;
         for(var dependency:query.proof().dependencies()){
-            Hash256 identity=switch(dependency.key().domain()){
+            var domain=dependency.key().domain();
+            if(domain==QueryProof.Domain.NEGATIVE_RESOLUTION)continue;
+            if(domain==QueryProof.Domain.NAMESPACE){
+                if(dependency.key().value().startsWith("plan:"))
+                    namespaceNames.add(NamespaceResolutionProofs.simpleNameFromPlanKey(dependency.key().value()));
+                else if(dependency.key().value().equals("visible"))broadNamespace=true;
+                continue;
+            }
+            Hash256 identity=switch(domain){
                 case DOCUMENT_SCOPE -> currentContent.equals(snapshot.contentIdentity())
                         ?dependency.identity():documentScopeIdentity(path,patched,focusCursor);
                 case RECEIVER -> receiverProofIdentity(query);
                 case RESOLUTION_PATH -> resolutionPathIdentity(dependency.key().value());
                 case HIERARCHY -> hierarchyProofIdentity(query);
                 case ACCESSIBILITY -> accessibilityProofIdentity(query);
-                case NAMESPACE -> namespaceProofIdentity(text,observed);
                 case CLASSPATH_SEARCH -> classpathProofIdentity(observed);
                 default -> dependency.identity();
             };
             dependencies.add(new QueryProof.Dependency(dependency.key(),identity));
         }
+        if(!namespaceNames.isEmpty())dependencies.addAll(namespaceDependencies(text,query,namespaceNames));
+        else if(broadNamespace)dependencies.add(new QueryProof.Dependency(
+                QueryProof.Domain.NAMESPACE,"visible",namespaceProofIdentity(text,observed)));
         return new QueryProof(dependencies);
     }
     private boolean documentProofCurrent(Path path,String text,String patched,int focusCursor,
@@ -779,8 +827,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(result==null)return null;
         for(var snapshot:result.semanticSnapshots())admitDetachedSemantic(snapshot);
         var query=registerAccessibility(caches,result);
-        var binaries=completionNameResolutionBinaries(text,result.nameResolutionNames());
-        query=query.withProof(documentContextProof(path,text,focus,query,binaries,List.of(),observed));
+        query=query.withProof(documentContextProof(path,text,focus,query,result.nameResolutionNames(),List.of(),observed));
         var snapshot=new DocumentSemanticSnapshot(path.toString(),version,content,semanticState().identity().epoch(),
                 Map.of(start,query));
         var next=new DocumentSemanticCached(key,snapshot);caches.documentSemantics.put(path,next);return next;

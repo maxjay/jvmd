@@ -287,7 +287,7 @@ export abstract class LspScenarioHarness {
     const wanted=path.resolve(LspScenarioHarness.fixtureRoot);
     const selected=sessions.find(row=>path.resolve(String(row?.root??""))===wanted)??(sessions.length===1?sessions[0]:undefined);
     assert(selected?.session,"JVMD benchmark session not visible through daemon.status");
-    const status:any=await LspScenarioHarness.running.control.call("session.status",{session:selected.session});
+    const status:any=await LspScenarioHarness.running.control.call("session.status",{session:selected.session,section:"analyzer"});
     return status?.result?.analyzer??null;
   }
 

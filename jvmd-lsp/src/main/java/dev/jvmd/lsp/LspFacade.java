@@ -72,7 +72,11 @@ public final class LspFacade {
         if(method.equals("completionItem/resolve")){
             if(!nativeParams.isObject())throw RpcException.invalid("Completion item must be an object");
             String ref=Dispatcher.required(nativeParams.path("data"),"scip");
+            String expected=nativeParams.path("data").path("resolution_identity").asText("");
             var described=query.one("symbol.describe",Json.MAPPER.createObjectNode().put("ref",ref).put("detail","summary").put("doc_depth",0));
+            String current=described.path("resolution_identity").asText("");
+            if(!expected.isEmpty()&&!expected.equals(current))
+                throw new RpcException(-32801,"Completion item is stale",Map.of("scip",ref,"expected",expected,"current",current));
             var item=(ObjectNode)nativeParams.deepCopy();
             if(!item.hasNonNull("detail")&&described.hasNonNull("signature"))item.put("detail",described.path("signature").asText());
             String doc=described.path("doc").asText("");
@@ -109,7 +113,9 @@ public final class LspFacade {
                 if(type&&!semanticLabel.equals(name))item.put("detail",semanticLabel);
                 else if(!type)item.put("detail",semanticLabel);
                 item.set("textEdit",Json.MAPPER.valueToTree(Map.of("range",completion.path("range"),"newText",name)));
-                item.set("data",Json.MAPPER.valueToTree(Map.of("scip",symbol.path("scip").asText())));
+                var data=Json.MAPPER.createObjectNode().put("scip",symbol.path("scip").asText());
+                if(symbol.hasNonNull("resolution_identity"))data.put("resolution_identity",symbol.path("resolution_identity").asText());
+                item.set("data",data);
                 if(symbol.hasNonNull("import"))item.set("additionalTextEdits",Json.MAPPER.valueToTree(List.of(importEdit(documents.text(file),symbol.path("import").asText()))));
                 items.add(item);
             }return query.finish(Json.MAPPER.valueToTree(Map.of("isIncomplete",answer.truncated(),"items",items)));

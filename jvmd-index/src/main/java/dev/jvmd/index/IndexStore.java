@@ -41,6 +41,40 @@ public interface IndexStore extends AutoCloseable {
     record SemanticMemberPage(List<IndexedSemanticSymbol> symbols,String cursor) {
         public SemanticMemberPage { symbols=List.copyOf(symbols); }
     }
+    /**
+     * Semantic evidence for Java classpath resolution of one exact binary name.
+     *
+     * searchedEntries records the ordered structural prefix that had to be examined. The canonical
+     * semantic identity deliberately records only the winning declaration (or exact negative result),
+     * so a changed/inserted slot that is rechecked and remains irrelevant reaches a fixed point.
+     */
+    record ClasspathSearchProof(String binaryName,int searchedEntries,String winnerArtifactKey,
+                                String winnerScip,Hash256 winnerResolutionIdentity) {
+        public ClasspathSearchProof {
+            Objects.requireNonNull(binaryName);
+            if(binaryName.isBlank())throw new IllegalArgumentException("Classpath search binary name must not be blank");
+            if(searchedEntries<0)throw new IllegalArgumentException("Negative searched classpath size");
+            boolean winner=winnerScip!=null||winnerArtifactKey!=null||winnerResolutionIdentity!=null;
+            if(winner&&(winnerScip==null||winnerArtifactKey==null||winnerResolutionIdentity==null))
+                throw new IllegalArgumentException("Incomplete classpath winner evidence");
+        }
+        public boolean resolved(){return winnerScip!=null;}
+        public QueryProof.Key key(){return new QueryProof.Key(QueryProof.Domain.CLASSPATH_SEARCH,"binary:"+binaryName);}
+        public Hash256 identity(){
+            return resolved()
+                    ?CanonicalDigestWriter.digest("classpath-search-proof-v1",binaryName,winnerArtifactKey,winnerScip,winnerResolutionIdentity)
+                    :CanonicalDigestWriter.digest("classpath-search-proof-v1",binaryName,"<missing>");
+        }
+        /** Structural diff discovery: later slots cannot affect an already established winner. */
+        public boolean affectedBy(ClasspathSequence.Difference difference){
+            Objects.requireNonNull(difference);
+            if(difference.equal())return false;
+            if(!resolved())return true;
+            for(var interval:difference.intervals())
+                if(interval.previousStart()<searchedEntries||interval.currentStart()<searchedEntries)return true;
+            return false;
+        }
+    }
     record ArtifactInput(ArtifactContext context,ArtifactIndexFormat.Key key,long size,long mtime) {
         public ArtifactInput {
             Objects.requireNonNull(context);Objects.requireNonNull(key);
@@ -83,11 +117,20 @@ public interface IndexStore extends AutoCloseable {
     Map<String,Object> status();
     List<String> loadWorkspace(String workspace,List<WorkspaceEntry> paths,List<Map.Entry<String,String>> dependencies)throws Exception;
     /**
-     * Resolution-scoped identity of the selected ordered dependency classpath for one workspace.
-     * Empty means the backend cannot provide this proof; callers may conservatively fall back to
-     * their compiler environment identity, but must not substitute a global machine root.
+     * Resolution-scoped ordered dependency classpath for one workspace.
+     * The sequence root is for structural equality/diff discovery, not default query invalidation.
      */
-    default Optional<Hash256> semanticClasspathIdentity(String workspace)throws Exception{return Optional.empty();}
+    default Optional<ClasspathSequence> semanticClasspathSequence(String workspace)throws Exception{return Optional.empty();}
+    default Optional<Hash256> semanticClasspathIdentity(String workspace)throws Exception{
+        return semanticClasspathSequence(workspace).map(ClasspathSequence::identity);
+    }
+    /**
+     * Exact binary-name classpath resolution proof. Production stores should stop at the first
+     * selected artifact that declares the requested type.
+     */
+    default Optional<ClasspathSearchProof> semanticClasspathSearch(String workspace,String binaryName)throws Exception{
+        return Optional.empty();
+    }
     List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds)throws Exception;
     /** Prefix-only simple-name lookup used by editor completion; implementations should avoid substring scans. */
     List<Map<String,Object>> findNamePrefix(String prefix,String workspace,int limit,Set<String> kinds)throws Exception;

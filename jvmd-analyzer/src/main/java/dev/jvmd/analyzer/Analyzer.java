@@ -170,14 +170,15 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         if(index==null||context.workspace().isBlank())return List.copyOf(result.values());
         String simple=requested.substring(requested.lastIndexOf('.')+1);
-        for(var row:index.findNamePrefix(simple,context.workspace(),64,Set.of("class","interface","enum","record","annotation"))){
-            if(!simple.equals(Objects.toString(row.get("name"),"")))continue;
-            String fqn=Objects.toString(row.get("fqn"),"");
-            if(requested.indexOf('.')>=0&&!requested.equals(fqn)&&!requested.equals(fqn.replace((char)36,'.'))
-                    &&!requested.equals(Objects.toString(row.get("binary_key"),"")))continue;
-            String id=Objects.toString(row.get("scip"),"");
-            var symbol=semanticReadView().symbol(id);
-            if(symbol!=null)result.putIfAbsent(symbol.id(),symbol);
+        for(var layer:List.of(IndexStore.SemanticLayer.LOCAL,IndexStore.SemanticLayer.MACHINE)){
+            var origin=layer==IndexStore.SemanticLayer.LOCAL?SemanticReadView.Origin.LOCAL:SemanticReadView.Origin.MACHINE;
+            for(var value:index.store().semanticTypesByName(simple,context.workspace(),64,layer)){
+                String fqn=value.fqn();
+                if(requested.indexOf('.')>=0&&!requested.equals(fqn)&&!requested.equals(fqn.replace((char)36,'.'))
+                        &&!requested.equals(value.binaryKey()))continue;
+                var symbol=SemanticReadViews.fromIndexed(value,origin);
+                result.putIfAbsent(symbol.id(),symbol);
+            }
         }
         return List.copyOf(result.values());
     }

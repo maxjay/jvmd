@@ -14,6 +14,13 @@ class ResidentSemanticStateTest {
         return new SemanticFact(id,owner,name,"method","int "+name+"()",null,Set.of("public"),"/src/A.java","p",
                 "p.A/"+name+"()","p.A",type,List.of(),List.of(),List.of(),false,api,"ns-"+name,doc);
     }
+    private static SemanticFact method(String id,String owner,String name,String descriptor,
+                                       List<SemanticType> parameters,SemanticType returns){
+        var type=new SemanticType.Executable(parameters,returns,List.of());
+        return new SemanticFact(id,owner,name,"method",returns.display()+" "+name+descriptor,descriptor,Set.of("public"),
+                "/src/A.java","p","p.A/"+name+descriptor,"p.A",type,List.of(),List.of(),List.of(),false,
+                "api-"+id,"ns-"+name,"doc-"+id);
+    }
     private static SemanticFact type(String id,String name,String api){
         return type(id,name,api,List.of());
     }
@@ -149,6 +156,40 @@ class ResidentSemanticStateTest {
         state.admit(snapshot("three",type("A#","A","api-A"),renamed));
         assertThat(state.members("A#","b",10)).isEmpty();
         assertThat(((Number)state.status().get("semantic_fact_mutations")).longValue()).isGreaterThan(mutations);
+    }
+
+    @Test void resolutionRangeAndOverloadIdentitiesArePreciselyScoped(){
+        var owner=type("A#","A","api-A");
+        var getOne=method("A#getOne()I","A#","getOne","()I",List.of(),new SemanticType.Primitive("int"));
+        var getTwo=method("A#getTwo()I","A#","getTwo","()I",List.of(),new SemanticType.Primitive("int"));
+        var setOne=method("A#setOne()I","A#","setOne","()I",List.of(),new SemanticType.Primitive("int"));
+        var state=new ResidentSemanticState();
+        state.admit(snapshot("one",owner,getOne,getTwo,setOne));
+
+        var getRange=state.memberRangeIdentity("A#","get");
+        var exactGetOne=state.symbol(getOne.id()).resolutionIdentity();
+
+        var setChanged=method("A#setOne()J","A#","setOne","()J",List.of(),new SemanticType.Primitive("long"));
+        state.admit(snapshot("two",owner,getOne,getTwo,setChanged));
+        assertThat(state.memberRangeIdentity("A#","get")).isEqualTo(getRange);
+        assertThat(state.symbol(getOne.id()).resolutionIdentity()).isEqualTo(exactGetOne);
+
+        var getTwoChanged=method("A#getTwo()J","A#","getTwo","()J",List.of(),new SemanticType.Primitive("long"));
+        state.admit(snapshot("three",owner,getOne,getTwoChanged,setChanged));
+        assertThat(state.memberRangeIdentity("A#","get")).isNotEqualTo(getRange);
+
+        var fooInt=method("A#foo(I)I","A#","foo","(I)I",List.of(new SemanticType.Primitive("int")),new SemanticType.Primitive("int"));
+        state.admit(snapshot("four",owner,getOne,getTwoChanged,setChanged,fooInt));
+        var fooGroup=state.overloadGroupIdentity("A#","foo");
+
+        var bar=method("A#bar()I","A#","bar","()I",List.of(),new SemanticType.Primitive("int"));
+        state.admit(snapshot("five",owner,getOne,getTwoChanged,setChanged,fooInt,bar));
+        assertThat(state.overloadGroupIdentity("A#","foo")).isEqualTo(fooGroup);
+
+        var stringType=new SemanticType.Declared("java/lang/String#","java.lang.String",List.of());
+        var fooString=method("A#foo(Ljava/lang/String;)I","A#","foo","(Ljava/lang/String;)I",List.of(stringType),new SemanticType.Primitive("int"));
+        state.admit(snapshot("six",owner,getOne,getTwoChanged,setChanged,fooInt,bar,fooString));
+        assertThat(state.overloadGroupIdentity("A#","foo")).isNotEqualTo(fooGroup);
     }
 
     @Test void receiverHierarchyAggregateChangesOnlyWithEffectiveApi(){

@@ -100,7 +100,7 @@ public final class CompletionContextResolver {
         for(var member:candidates){
             if(!member.name().equals(name))continue;
             if(state.staticReceiver()&&!member.staticMember())continue;
-            var access=access(member,pkg);
+            var access=access(member,pkg,enclosing);
             if(access==Access.UNKNOWN)return null;
             if(access==Access.DENIED)continue;
             if(call){
@@ -210,14 +210,190 @@ public final class CompletionContextResolver {
      * Detached Tier-1 access proof. Context-sensitive cases are deliberately UNKNOWN so javac
      * remains authoritative for protected qualification, private nestmates and module semantics.
      */
-    public static Access access(SemanticReadView.Symbol member,String callerPackage){
+    public static Access access(SemanticReadView.Symbol member,String callerPackage,SemanticReadView.Symbol enclosing){
         var modifiers=member.modifiers();
         if(modifiers.contains("public"))return Access.ALLOWED;
         String ownerPackage=member.resolution().packageName();
-        if(modifiers.contains("private"))return Access.UNKNOWN;
+        if(modifiers.contains("private")){
+            if(!Objects.equals(ownerPackage,callerPackage))return Access.DENIED;
+            if(enclosing!=null&&member.resolution().ownerKey()!=null
+                    &&!nestHost(member.resolution().ownerKey()).equals(nestHost(enclosing.fqn())))return Access.DENIED;
+            return Access.UNKNOWN;
+        }
         if(Objects.equals(ownerPackage,callerPackage))return Access.ALLOWED;
         if(modifiers.contains("protected"))return Access.UNKNOWN;
         return Access.DENIED;
+    }
+
+    private static String nestHost(String binaryName){
+        String value=Objects.requireNonNullElse(binaryName,"");
+        int nested=value.indexOf('
+
+    private static List<String> segments(String expression){
+        var result=new ArrayList<String>();
+        for(String part:expression.split("\\s*\\.\\s*")){
+            String value=part.replaceAll("\\s+","");
+            if(!value.matches("[A-Za-z_$][\\w$]*(?:\\(\\))?"))return List.of();
+            result.add(value);
+        }
+        return List.copyOf(result);
+    }
+
+    private static String receiverExpression(String text,int dot){
+        String prefix=text.substring(0,dot);
+        var matcher=Pattern.compile("((?:this|super|[A-Za-z_$][\\w$]*)(?:\\s*\\.\\s*[A-Za-z_$][\\w$]*(?:\\s*\\(\\s*\\))?)*)\\s*$").matcher(codeMask(prefix));
+        return matcher.find()?prefix.substring(matcher.start(1),matcher.end(1)):null;
+    }
+
+    private static String packageName(String text){
+        var matcher=PACKAGE.matcher(codeMask(text));return matcher.find()?matcher.group(1):"";
+    }
+
+    private static Set<String> resolutionNames(String text,String pkg){
+        var result=new LinkedHashSet<String>();if(!pkg.isBlank())result.add(pkg);
+        var matcher=IMPORT.matcher(codeMask(text));
+        while(matcher.find())result.add(matcher.group(1));
+        result.add("java.lang");return Set.copyOf(result);
+    }
+
+    private static String enclosingTypeName(String text,int cursor,String pkg){
+        String masked=codeMask(text);var matcher=CLASS.matcher(masked);String selected=null;int selectedStart=-1;
+        while(matcher.find()&&matcher.start()<cursor){
+            int open=masked.indexOf('{',matcher.end());if(open<0||open>=cursor)continue;
+            int close=matchingBrace(masked,open);if(close>=0&&cursor>close)continue;
+            if(open>selectedStart){selected=matcher.group(2);selectedStart=open;}
+        }
+        return selected==null?null:pkg.isBlank()?selected:pkg+"."+selected;
+    }
+
+    private static StaticContext staticContext(String text,int cursor){
+        String masked=codeMask(text);int classOpen=enclosingTypeOpen(masked,cursor);
+        if(classOpen<0)return StaticContext.UNKNOWN;
+        int[] depths=braceDepths(masked);int classBodyDepth=depthAt(depths,classOpen)+1;
+        int cursorDepth=depthAt(depths,Math.max(0,cursor-1));
+
+        // Class-level field initializer.
+        if(cursorDepth==classBodyDepth){
+            String segment=memberPrefix(masked,classOpen,cursor);
+            int equals=segment.indexOf('=');
+            if(equals>=0){
+                String declaration=segment.substring(0,equals);
+                return Pattern.compile("\\bstatic\\b").matcher(declaration).find()
+                        ?StaticContext.STATIC:StaticContext.INSTANCE;
+            }
+        }
+
+        // Walk enclosing blocks outward; control-flow/lambda blocks defer to their parent context.
+        var opens=new ArrayDeque<Integer>();
+        for(int i=classOpen+1;i<Math.min(cursor,masked.length());i++){
+            char ch=masked.charAt(i);
+            if(ch=='{')opens.push(i);
+            else if(ch=='}'&&!opens.isEmpty())opens.pop();
+        }
+        for(int open:opens){
+            if(depthAt(depths,open)!=classBodyDepth)continue;
+            String header=memberPrefix(masked,classOpen,open).trim();
+            if(header.equals("static"))return StaticContext.STATIC;
+            if(header.isEmpty())return StaticContext.INSTANCE;
+            if(header.indexOf(')')>=0&&!controlHeader(header))
+                return Pattern.compile("\\bstatic\\b").matcher(header).find()
+                        ?StaticContext.STATIC:StaticContext.INSTANCE;
+        }
+        return StaticContext.UNKNOWN;
+    }
+
+    private static boolean controlHeader(String header){
+        String value=header.stripLeading();
+        return Pattern.compile("^(if|for|while|switch|catch|try|else|do|synchronized)\\b").matcher(value).find()
+                ||value.contains("->");
+    }
+
+    private static int enclosingTypeOpen(String masked,int cursor){
+        var matcher=CLASS.matcher(masked);int selected=-1;
+        while(matcher.find()&&matcher.start()<cursor){
+            int open=masked.indexOf('{',matcher.end());if(open<0||open>=cursor)continue;
+            int close=matchingBrace(masked,open);if(close>=0&&cursor>close)continue;
+            if(open>selected)selected=open;
+        }
+        return selected;
+    }
+
+    private static String memberPrefix(String source,int classOpen,int end){
+        int start=Math.max(0,classOpen+1);
+        int[] depths=braceDepths(source);int classBodyDepth=depthAt(depths,classOpen)+1;
+        for(int i=Math.min(end-1,source.length()-1);i>classOpen;i--){
+            char ch=source.charAt(i);
+            if((ch==';'||ch=='}'||ch=='{')&&depthAt(depths,i)<=classBodyDepth){start=i+1;break;}
+        }
+        return source.substring(Math.min(start,end),end);
+    }
+
+    private static int previousCode(String text,int from){
+        for(int i=Math.min(from,text.length()-1);i>=0;i--)if(!Character.isWhitespace(text.charAt(i)))return i;
+        return -1;
+    }
+
+    private static String packageOf(String fqn){
+        if(fqn==null)return "";int split=fqn.lastIndexOf('.');return split<0?"":fqn.substring(0,split);
+    }
+    private static boolean primitive(String value){
+        return Set.of("boolean","byte","short","int","long","char","float","double","void").contains(value);
+    }
+    private static <T> T unique(Collection<T> values){return values.size()==1?values.iterator().next():null;}
+
+    private static boolean dropsBelow(int[] depths,int start,int end,int floor){
+        for(int i=Math.max(0,start);i<Math.min(end,depths.length);i++)if(depths[i]<floor)return true;
+        return false;
+    }
+    private static int depthAt(int[] values,int index){return values.length==0?0:values[Math.max(0,Math.min(index,values.length-1))];}
+
+    private static int[] braceDepths(String source){return depths(source,'{','}');}
+    private static int[] parenDepths(String source){return depths(source,'(',')');}
+    private static int[] depths(String source,char open,char close){
+        int[] result=new int[Math.max(1,source.length())];int depth=0;
+        for(int i=0;i<source.length();i++){result[i]=depth;char c=source.charAt(i);if(c==open)depth++;else if(c==close)depth=Math.max(0,depth-1);}
+        if(source.isEmpty())result[0]=0;return result;
+    }
+
+    private static int matchingBrace(String source,int open){
+        int depth=0;
+        for(int i=open;i<source.length();i++){
+            char c=source.charAt(i);if(c=='{')depth++;else if(c=='}'&&--depth==0)return i;
+        }
+        return -1;
+    }
+
+    /** Replace comments and literals with spaces while preserving offsets and line breaks. */
+    private static String codeMask(String source){
+        var out=new StringBuilder(source);int i=0;
+        while(i<source.length()){
+            char c=source.charAt(i);
+            if(c=='/'&&i+1<source.length()&&source.charAt(i+1)=='/'){
+                int end=source.indexOf('\n',i+2);if(end<0)end=source.length();
+                blank(out,i,end);i=end;continue;
+            }
+            if(c=='/'&&i+1<source.length()&&source.charAt(i+1)=='*'){
+                int end=source.indexOf("*/",i+2);end=end<0?source.length():end+2;
+                blank(out,i,end);i=end;continue;
+            }
+            if(c=='"'||c=='\''){
+                boolean block=c=='"'&&source.startsWith("\"\"\"",i);int end=i+(block?3:1);
+                while(end<source.length()){
+                    if(!block&&source.charAt(end)=='\\'){end=Math.min(source.length(),end+2);continue;}
+                    if(block&&source.startsWith("\"\"\"",end)){end+=3;break;}
+                    if(!block&&source.charAt(end)==c){end++;break;}end++;
+                }
+                blank(out,i,end);i=end;continue;
+            }
+            i++;
+        }
+        return out.toString();
+    }
+    private static void blank(StringBuilder out,int start,int end){
+        for(int i=start;i<Math.min(end,out.length());i++)if(out.charAt(i)!='\n'&&out.charAt(i)!='\r')out.setCharAt(i,' ');
+    }
+}
+);return nested<0?value:value.substring(0,nested);
     }
 
     private static List<String> segments(String expression){

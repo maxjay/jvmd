@@ -14,6 +14,9 @@ public interface IndexStore extends AutoCloseable {
     record ArtifactCandidate(long id,String path,String gav,boolean hasClassRefs,boolean hasCodeEdges) { }
     record ArtifactWork(String path,String gav,String kind) { }
     record ResolvedRelationship(Map<String,Object> source,Map<String,Object> target,String kind) { }
+    record MemberPage(List<Map<String,Object>> symbols,String cursor) {
+        public MemberPage { symbols=List.copyOf(symbols); }
+    }
     record SymbolicReference(String sourceScip,String targetBinaryKey,String kind) { }
     record SourceRelationship(String sourceScip,String targetScip,String kind) { }
     record ArtifactInput(ArtifactContext context,ArtifactIndexFormat.Key key,long size,long mtime) {
@@ -60,6 +63,10 @@ public interface IndexStore extends AutoCloseable {
     List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds)throws Exception;
     /** Prefix-only simple-name lookup used by editor completion; implementations should avoid substring scans. */
     List<Map<String,Object>> findNamePrefix(String prefix,String workspace,int limit,Set<String> kinds)throws Exception;
+    /** Bounded direct-member range for one canonical owner. Production Rocks overrides this. */
+    default MemberPage membersByOwner(String ownerScip,String prefix,String workspace,int limit,String cursor)throws Exception{
+        throw new UnsupportedOperationException("owner/member range unavailable");
+    }
     List<Map<String,Object>> descendants(String path,String workspace,int depth,int limit,long after,Set<String> kinds)throws Exception;
     Map<String,Object> byId(long id,String workspace)throws Exception;
     Map<String,Object> byScip(String scip,String workspace)throws Exception;

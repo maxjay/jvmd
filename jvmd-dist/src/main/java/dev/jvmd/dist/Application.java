@@ -297,6 +297,8 @@ public final class Application implements AutoCloseable {
             }
         }
         var analyzer=(Analyzer)session.state("analyzer");if(analyzer!=null){analyzer.changed(file);if(!Files.isRegularFile(file)&&(operation.equals("open")||operation.equals("close")))analyzer.sourceMembershipChanged(file);}
+        var actorRegistry=(ModuleAnalyzerRegistry)session.state("diagnostic_actors");
+        if(actorRegistry!=null)actorRegistry.sourceChanged(file,documents.hash(file));
         session.put("last_verification",Map.of("stale",true));
         return Envelope.of(0,"live",Map.of("path",file.toString(),"open",documents.contains(file),"generation",documents.generation()));
     }

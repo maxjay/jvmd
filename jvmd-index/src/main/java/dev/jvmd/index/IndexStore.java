@@ -2,6 +2,7 @@ package dev.jvmd.index;
 
 import dev.jvmd.core.Hash256;
 import dev.jvmd.core.AlgebraicAccumulator;
+import dev.jvmd.core.CanonicalDigestWriter;
 import java.nio.file.Path;
 import java.util.*;
 
@@ -152,7 +153,7 @@ public interface IndexStore extends AutoCloseable {
     }
     /** Resolution-only identity of the exact overload group for one direct member name. */
     default Hash256 semanticOverloadGroupIdentity(String ownerScip,String name,String workspace,SemanticLayer layer)throws Exception{
-        var aggregate=new AlgebraicAccumulator("semantic-overload-group-v1");
+        var aggregate=new AlgebraicAccumulator("semantic-member-range-v1");
         String cursor=null;
         do{
             var page=semanticMembersByOwner(ownerScip,Objects.requireNonNullElse(name,""),workspace,256,cursor,layer);
@@ -160,7 +161,7 @@ public interface IndexStore extends AutoCloseable {
                 aggregate.add(symbol.resolution().symbolKey(),symbol.resolution().identity());
             cursor=page.cursor();
         }while(cursor!=null);
-        return aggregate.identity();
+        return CanonicalDigestWriter.digest("semantic-overload-group-v1",aggregate.identity());
     }
     List<ArtifactCandidate> binaryArtifacts(String workspace)throws Exception;
     List<ArtifactWork> pendingSignatureArtifacts(String workspace)throws Exception;

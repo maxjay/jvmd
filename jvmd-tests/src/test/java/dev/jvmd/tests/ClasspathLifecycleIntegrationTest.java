@@ -76,7 +76,7 @@ class ClasspathLifecycleIntegrationTest {
 
             // Insert D before A but without a.Sample. The search is structurally affected and is
             // recomputed, but the semantic winner remains A, so equality stops before ProofDag.
-            Path d=IndexFixtures.jar(repo,"d","package d; public class Other { public int value(){return 1;} }",true);
+            Path d=IndexFixtures.jar(repo,"d","Other.java","package d; public class Other { public int value(){return 1;} }",true);
             index(index,d,"fixture:d:1");load(index,List.of(d,a,b,c));
             configure(analyzer,index,documents,sources,List.of(d,a,b,c),"g4");
             assertThat(evidence(analyzer,"last_reconsidered")).isEqualTo(1);

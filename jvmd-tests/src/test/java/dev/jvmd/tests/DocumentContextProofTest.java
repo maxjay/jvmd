@@ -50,7 +50,7 @@ class DocumentContextProofTest {
             long before=queries(analyzer);
             assertCompletion(analyzer,file,original,"choose(value).","getPets");
             long afterFirst=queries(analyzer);
-            assertThat(afterFirst).isGreaterThan(before);
+            assertThat(afterFirst-before).as("complex receiver gets one bounded semantic-context javac fallback").isEqualTo(1);
 
             assertCompletion(analyzer,file,original,"choose(value).","getPets");
             assertThat(queries(analyzer)).isEqualTo(afterFirst);

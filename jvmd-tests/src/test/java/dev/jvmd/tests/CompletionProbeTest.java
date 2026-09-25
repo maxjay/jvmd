@@ -43,7 +43,7 @@ class CompletionProbeTest {
 
         assertThat(probe.source()).contains("consume(receiver.__jvmd_completion__());");
         assertThat(probe.source()).doesNotContain("__jvmd_completion__();)");
-                .doesNotContain("__jvmd_completion__();;");
+        assertThat(probe.source()).doesNotContain("__jvmd_completion__();;");
     }
 
     @Test void continuationCommentStillTerminatesAtStatementBoundary(){

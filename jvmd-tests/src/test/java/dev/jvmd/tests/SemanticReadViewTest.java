@@ -217,8 +217,8 @@ class SemanticReadViewTest {
                                 .filter(row->layer==null||("local".equals(Objects.toString(row.get("artifact_kind"),"")))
                                         ==(layer==IndexStore.SemanticLayer.LOCAL)).toList();
                         if(method.getName().equals("semanticMembersByOwner")){
-                            var layer=args.length==6?(IndexStore.SemanticLayer)args[5]:IndexStore.SemanticLayer.MACHINE;
-                            yield new IndexStore.SemanticMemberPage(values.stream().map(row->typed(row,layer)).toList(),null);
+                            var semanticLayer=layer==null?IndexStore.SemanticLayer.MACHINE:layer;
+                            yield new IndexStore.SemanticMemberPage(values.stream().map(row->typed(row,semanticLayer)).toList(),null);
                         }
                         yield new IndexStore.MemberPage(values,null);
                     }

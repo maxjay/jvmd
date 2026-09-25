@@ -292,6 +292,28 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         var symbol=view.type(binary);return symbol==null?Optional.empty():Optional.of(symbol.resolutionIdentity());
     }
+    private boolean addReceiverLookupProof(Map<QueryProof.Key,Hash256> values,SemanticReadView view,
+                                           String receiverType,String memberName,boolean call)throws Exception{
+        var queue=new ArrayDeque<String>();queue.add(receiverType);var seen=new HashSet<String>();
+        while(!queue.isEmpty()){
+            String owner=queue.removeFirst();if(!seen.add(owner))continue;
+            var typeIdentity=view.identity(QueryProof.Domain.EXACT_SYMBOL,owner);
+            if(typeIdentity.isEmpty())return false;
+            addProofDependency(values,new QueryProof.Dependency(QueryProof.Domain.EXACT_SYMBOL,owner,typeIdentity.get()));
+
+            var memberProof=call?SemanticQueryProofs.overload(view,owner,memberName)
+                    :SemanticQueryProofs.range(view,owner,memberName);
+            if(memberProof.isEmpty())return false;
+            for(var dependency:memberProof.get().dependencies())addProofDependency(values,dependency);
+
+            for(String parent:view.directSupertypes(owner)){
+                if(view.symbol(parent)==null)return false;
+                queue.addLast(parent);
+            }
+        }
+        return true;
+    }
+
     private void registerSourceProof(Path file,String text,Bindings.Snapshot snapshot,FileSemanticContribution contribution)throws Exception{
         file=file.toAbsolutePath().normalize();
         var consumer=sourceProofConsumer(file);var values=new TreeMap<QueryProof.Key,Hash256>();
@@ -320,16 +342,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 if(sourceReference){
                     if(references.isEmpty())precise=false;
                     for(var reference:references){
-                        if(reference.receiverType()==null){precise=false;continue;}
-                        var hierarchy=view.identity(QueryProof.Domain.HIERARCHY,reference.receiverType());
-                        if(hierarchy.isEmpty())precise=false;else addProofDependency(values,
-                                new QueryProof.Dependency(QueryProof.Domain.HIERARCHY,reference.receiverType(),hierarchy.get()));
+                        if(reference.receiverType()==null
+                                ||!addReceiverLookupProof(values,view,reference.receiverType(),fact.name(),edge.kind().equals("calls")))
+                            precise=false;
                     }
-                }
-                if(edge.kind().equals("calls")){
-                    var overload=SemanticQueryProofs.overload(view,owner,fact.name());
-                    if(overload.isEmpty())precise=false;
-                    else for(var dependency:overload.get().dependencies())addProofDependency(values,dependency);
                 }
             }else if(fact.typeDeclaration()&&(edge.kind().equals("extends")||edge.kind().equals("implements"))){
                 var hierarchy=view.identity(QueryProof.Domain.HIERARCHY,fact.id());

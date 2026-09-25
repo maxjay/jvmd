@@ -44,7 +44,7 @@ public final class ResidentSemanticState {
         Node(Entry entry,Node left,Node right){
             this.entry=entry;this.left=left;this.right=right;
             merkle=CanonicalDigestWriter.digest("resident-node-v1",left==null?EMPTY_HASH:left.merkle,entry.key(),entry.valueIdentity(),right==null?EMPTY_HASH:right.merkle);
-            var self=AlgebraicAccumulator.contribution("semantic-resolution-range-v1",entry.key(),entry.fact().resolutionIdentity());
+            var self=AlgebraicAccumulator.contribution("semantic-member-range-v1",entry.key(),entry.fact().resolutionIdentity());
             resolutionRange=(left==null?AlgebraicAccumulator.Value.ZERO:left.resolutionRange)
                     .plus(self).plus(right==null?AlgebraicAccumulator.Value.ZERO:right.resolutionRange);
             minKey=left==null?entry.key():left.minKey;
@@ -257,7 +257,8 @@ public final class ResidentSemanticState {
     /** Resolution-only identity for the exact overload group of one member name. */
     public synchronized Hash256 overloadGroupIdentity(String ownerId,String name){
         String prefix=SemanticFact.memberPrefix(ownerId,Objects.requireNonNullElse(name,""))+"\0";
-        return resolutionRange(root,prefix,prefix+"\uffff").identity("semantic-overload-group-v1");
+        var exact=resolutionRange(root,prefix,prefix+"\uffff").identity("semantic-member-range-v1");
+        return CanonicalDigestWriter.digest("semantic-overload-group-v1",exact);
     }
     /** Constant-time validity identity for the effective API reachable from a receiver type. */
     public synchronized String hierarchyApi(String typeId){
@@ -432,7 +433,7 @@ public final class ResidentSemanticState {
         if(node.minKey.compareTo(lower)>=0&&node.maxKey.compareTo(upper)<=0)return node.resolutionRange;
         var result=resolutionRange(node.left,lower,upper);
         if(node.entry.key().compareTo(lower)>=0&&node.entry.key().compareTo(upper)<=0)
-            result=result.plus(AlgebraicAccumulator.contribution("semantic-resolution-range-v1",
+            result=result.plus(AlgebraicAccumulator.contribution("semantic-member-range-v1",
                     node.entry.key(),node.entry.fact().resolutionIdentity()));
         return result.plus(resolutionRange(node.right,lower,upper));
     }

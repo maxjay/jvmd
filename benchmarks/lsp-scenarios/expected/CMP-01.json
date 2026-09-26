@@ -253,22 +253,22 @@
       }
     ],
     "metrics": {
-      "latencyMs": 464.0720350000047,
+      "latencyMs": 391.1933680000002,
       "memory": {
         "before": {
-          "serverKb": 1539236,
+          "serverKb": 1388360,
           "adapterKb": 0,
-          "totalKb": 1539236
+          "totalKb": 1388360
         },
         "after": {
-          "serverKb": 1542212,
+          "serverKb": 1391292,
           "adapterKb": 0,
-          "totalKb": 1542212
+          "totalKb": 1391292
         },
         "peak": {
-          "serverKb": 1542212,
+          "serverKb": 1391292,
           "adapterKb": 0,
-          "totalKb": 1542212
+          "totalKb": 1391292
         }
       }
     }
@@ -281,22 +281,22 @@
       "insertText": "sources"
     },
     "metrics": {
-      "latencyMs": 26.02795199999673,
+      "latencyMs": 16.19776699999784,
       "memory": {
         "before": {
-          "serverKb": 1542268,
+          "serverKb": 1391296,
           "adapterKb": 0,
-          "totalKb": 1542268
+          "totalKb": 1391296
         },
         "after": {
-          "serverKb": 1542328,
+          "serverKb": 1391384,
           "adapterKb": 0,
-          "totalKb": 1542328
+          "totalKb": 1391384
         },
         "peak": {
-          "serverKb": 1542328,
+          "serverKb": 1391384,
           "adapterKb": 0,
-          "totalKb": 1542328
+          "totalKb": 1391384
         }
       }
     }
@@ -555,22 +555,22 @@
       }
     ],
     "metrics": {
-      "latencyMs": 110.03544899999542,
+      "latencyMs": 51.26020499999868,
       "memory": {
         "before": {
-          "serverKb": 1543084,
+          "serverKb": 1402060,
           "adapterKb": 0,
-          "totalKb": 1543084
+          "totalKb": 1402060
         },
         "after": {
-          "serverKb": 1543316,
+          "serverKb": 1402100,
           "adapterKb": 0,
-          "totalKb": 1543316
+          "totalKb": 1402100
         },
         "peak": {
-          "serverKb": 1543316,
+          "serverKb": 1402100,
           "adapterKb": 0,
-          "totalKb": 1543316
+          "totalKb": 1402100
         }
       }
     }
@@ -829,22 +829,22 @@
       }
     ],
     "metrics": {
-      "latencyMs": 62.50778300000093,
+      "latencyMs": 67.5422050000052,
       "memory": {
         "before": {
-          "serverKb": 1548736,
+          "serverKb": 1406016,
           "adapterKb": 0,
-          "totalKb": 1548736
+          "totalKb": 1406016
         },
         "after": {
-          "serverKb": 1548764,
+          "serverKb": 1406184,
           "adapterKb": 0,
-          "totalKb": 1548764
+          "totalKb": 1406184
         },
         "peak": {
-          "serverKb": 1548764,
+          "serverKb": 1406184,
           "adapterKb": 0,
-          "totalKb": 1548764
+          "totalKb": 1406184
         }
       }
     }

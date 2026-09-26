@@ -56,11 +56,12 @@ export default class CompletionScenario extends LspScenarioHarness {
     const nativeBeforeResolve=analyzerEvidence(await this.nativeAnalyzerStatus());
     let machineResolved:any;
     if(nativeBeforeResolve){
-      const machineCaller=insertBeforeLastBrace(
+      const machineWithMarker=insertBeforeLastBrace(
         finalCaller,
-        "\n    private "+machineMarker+"ArrayL benchmarkMachineValue;\n",
-      ).replace(machineMarker,"");
-      const machinePosition=positionAfter(machineCaller,"ArrayL");
+        "\n    private ArrayL"+machineMarker+" benchmarkMachineValue;\n",
+      );
+      const machinePosition=positionAtMarker(machineWithMarker,machineMarker);
+      const machineCaller=machineWithMarker.replace(machineMarker,"");
       await this.change(caller.uri,machineCaller);
       const machineResponse=await this.request<CompletionResponse>("textDocument/completion",{
         textDocument:{uri:caller.uri},
@@ -145,6 +146,13 @@ export default class CompletionScenario extends LspScenarioHarness {
       },
     };
   }
+}
+
+function positionAtMarker(source:string,marker:string){
+  const cursor=source.indexOf(marker);
+  assert(cursor>=0);
+  const before=source.slice(0,cursor).split("\n");
+  return {line:before.length-1,character:before.at(-1)!.length};
 }
 
 function positionAfter(source:string,needle:string){

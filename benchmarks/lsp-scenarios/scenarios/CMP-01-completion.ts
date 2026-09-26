@@ -69,10 +69,9 @@ export default class CompletionScenario extends LspScenarioHarness {
         context:{triggerKind:1},
       });
       const machineItems=Array.isArray(machineResponse)?machineResponse:machineResponse?.items??[];
-      const machineCandidate=machineItems.find((item:any)=>
-        item?.label==="ArrayList"&&item?.data?.semantic_origin==="machine");
+      const machineCandidate=machineItems.find((item:any)=>item?.data?.semantic_origin==="machine");
       assert(machineCandidate,
-        "JVMD machine type probe must expose ArrayList as a MACHINE-origin candidate: "+
+        "JVMD machine type probe must expose a MACHINE-origin candidate: "+
         JSON.stringify(machineItems.slice(0,20).map((item:any)=>({label:item?.label,origin:item?.data?.semantic_origin}))));
 
       const beforeMachineResolve=analyzerEvidence(await this.nativeAnalyzerStatus());

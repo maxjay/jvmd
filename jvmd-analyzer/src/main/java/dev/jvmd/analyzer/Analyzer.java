@@ -1200,8 +1200,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         return cached;
     }
+    private static String broadDiagnosticStamp(CompilerInputs.Snapshot observed){
+        return observed.environment().value()+":"+observed.membership().value();
+    }
     private String diagnosticStamp(Path path,CompilerInputs.Snapshot observed){
-        String broad=observed.environment().value()+":"+observed.membership().value();
+        String broad=broadDiagnosticStamp(observed);
         path=path.toAbsolutePath().normalize();
         if(liveSourceState==null||!liveSourceState.snapshot().trusted()||!dependencies.semantic().proofCovered(path))return broad;
         var evaluation=dependencies.semantic().proofs().evaluation(sourceProofConsumer(path));
@@ -1269,7 +1272,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             if(snapshot!=null&&result.tier()==2&&result.warnings().isEmpty()){
                 focused.put(file+":"+hash+":"+stamp+":full",new Cached(file,hash,stamp,0,input.text().length(),List.of(),outcome));
                 while(focused.size()>32)focused.remove(focused.keySet().iterator().next());
-                diagnosticStore.put(file,hash,context.generation(),diagnosticStamp(file,observed),envelope,apiFingerprint(file),snapshot.dependencies(),contribution(file));
+                diagnosticStore.put(file,hash,context.generation(),diagnosticStamp(file,observed),envelope,
+                        apiFingerprint(file),snapshot.dependencies(),contribution(file),broadDiagnosticStamp(observed));
                 publishSource(file,hash,stamp,semanticPublisherContextFingerprint(observed,stamp),snapshot,result.tier());
             }
         }
@@ -1309,7 +1313,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             }
         }
         var envelope=new Envelope(outcome.tier(),"live",false,null,List.copyOf(warnings),Map.of("diagnostics",outcome.diagnostics()));
-        if(outcome.warnings().isEmpty())diagnosticStore.put(path,sourceHash,generation,diagnosticStamp(path,observed),envelope,apiFingerprint(path),outcome.result()==null?Set.of():outcome.result().dependencies(),outcome.tier()==2?contribution(path):null);
+        if(outcome.warnings().isEmpty())diagnosticStore.put(path,sourceHash,generation,diagnosticStamp(path,observed),envelope,
+                apiFingerprint(path),outcome.result()==null?Set.of():outcome.result().dependencies(),
+                outcome.tier()==2?contribution(path):null,broadDiagnosticStamp(observed));
         return envelope;
     }
     private String residentContextKey(Path file,String patched,int start,CompilerInputs.Snapshot inputs,boolean qualified){

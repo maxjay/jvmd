@@ -34,6 +34,10 @@ public final class Application implements AutoCloseable {
     private final java.util.concurrent.atomic.AtomicLong workspaceFindFilesScanned=new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicLong workspaceBindingsBuilds=new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicLong dependencyExactDescribeHits=new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong machineExactDescribeAttempts=new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong machineExactDescribeMisses=new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong liveDescribeRebinds=new java.util.concurrent.atomic.AtomicLong();
+    private volatile String lastDescribeRef="";
     private static final Set<String> COMPLETION_TYPE_KINDS=Set.of("class","interface","enum","record","annotation");
     private record TypeCompletionCache(String generation,String prefix,List<Map<String,Object>> rows,boolean complete) { }
     public Application(Config config) {
@@ -118,7 +122,11 @@ public final class Application implements AutoCloseable {
                         "workspace_find_calls",workspaceFindCalls.get(),
                         "workspace_find_files_scanned",workspaceFindFilesScanned.get(),
                         "workspace_bindings_builds",workspaceBindingsBuilds.get(),
-                        "dependency_exact_describe_hits",dependencyExactDescribeHits.get()));
+                        "dependency_exact_describe_hits",dependencyExactDescribeHits.get(),
+                        "machine_exact_describe_attempts",machineExactDescribeAttempts.get(),
+                        "machine_exact_describe_misses",machineExactDescribeMisses.get(),
+                        "live_describe_rebinds",liveDescribeRebinds.get(),
+                        "last_describe_ref",lastDescribeRef));
                 return new Envelope(0,"live",false,null,s.warnings(),Map.of(
                         "session",s.id(),"root",s.root().toString(),"analyzer",Collections.unmodifiableMap(analyzerProof)));
             }
@@ -490,6 +498,7 @@ public final class Application implements AutoCloseable {
         return describe(session,ref,null);
     }
     private Envelope describe(Session session,String ref,WorkspaceBindings.Snapshot validated)throws Exception{
+        lastDescribeRef=ref;
         if(validated!=null){
             var symbol=validated.symbol(ref);if(symbol!=null)return new Envelope(validated.tier(),"live",false,null,validated.warnings(),symbol);
             var direct=validated.lookup(ref);if(direct.size()==1)return new Envelope(validated.tier(),"live",false,null,validated.warnings(),direct.getFirst());
@@ -499,6 +508,7 @@ public final class Application implements AutoCloseable {
         // before any source-position freshness work; LOCAL/source artifacts still fall through to
         // the live path below.
         if(ref.startsWith("maven ")){
+            machineExactDescribeAttempts.incrementAndGet();
             var database=index();bindIndex(session,database);
             var indexed=database.store().byScip(ref,session.state("resolution")==null?null:session.id(),
                     IndexStore.SemanticLayer.MACHINE);
@@ -506,6 +516,7 @@ public final class Application implements AutoCloseable {
                 dependencyExactDescribeHits.incrementAndGet();
                 return Envelope.of(2,"index",indexed);
             }
+            machineExactDescribeMisses.incrementAndGet();
         }
         var analyzer=(Analyzer)session.state("analyzer");
         if((ref.startsWith("maven ")||ref.startsWith("local "))&&analyzer!=null){
@@ -519,6 +530,7 @@ public final class Application implements AutoCloseable {
                 }
                 if(file!=null&&(Files.isRegularFile(Path.of(file.toString()))||documents(session).contains(Path.of(file.toString())))&&symbol.get("name_start") instanceof Number position){
                     Path path=Path.of(file.toString());
+                    liveDescribeRebinds.incrementAndGet();
                     String text=documents(session).text(path);var snapshot=analyzer(session,path).bindings(path,text,position.intValue());if(snapshot.result()!=null){var current=snapshot.result().symbols().get(ref);if(current!=null)return new Envelope(snapshot.tier(),"live",false,null,snapshot.warnings(),current);}
                 }else return Envelope.of(2,"live",symbol);
             }

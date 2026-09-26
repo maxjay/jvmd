@@ -53,7 +53,7 @@ public final class DiagnosticStore {
         put(file,sourceHash,contextFingerprint,classpathFingerprint,diagnostics,null,Set.of());
     }
     public void put(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint,Envelope diagnostics,String apiFingerprint,Set<Path> dependencies){
-        put(file,sourceHash,contextFingerprint,classpathFingerprint,diagnostics,apiFingerprint,dependencies,null,true);
+        put(file,sourceHash,contextFingerprint,classpathFingerprint,diagnostics,apiFingerprint,dependencies,null,true,classpathFingerprint);
     }
     public void put(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint,Envelope diagnostics,String apiFingerprint,Set<Path> dependencies,FileSemanticContribution contribution){
         put(file,sourceHash,contextFingerprint,classpathFingerprint,diagnostics,apiFingerprint,dependencies,contribution,true,classpathFingerprint);
@@ -77,7 +77,8 @@ public final class DiagnosticStore {
         long size;
         try{size=512L+2L*dev.jvmd.core.Json.MAPPER.writeValueAsBytes(diagnostics).length+2L*key.toString().length()+dependencies.stream().mapToLong(p->128L+2L*p.toString().length()).sum();}
         catch(Exception error){throw new IllegalArgumentException("Diagnostic state is not detached",error);}
-        files.put(key,state);weights.put(key,size);bytes+=size;puts++;trim();if(persist&&snapshots!=null&&inputs!=null)snapshots.save(key,state,inputs);
+        files.put(key,state);weights.put(key,size);bytes+=size;puts++;trim();if(persist&&snapshots!=null&&inputs!=null)
+            snapshots.save(new Key(normalized,sourceHash,contextFingerprint,persistenceClasspathFingerprint),state,inputs);
     }
 
     public void invalidate(Collection<Path> paths){

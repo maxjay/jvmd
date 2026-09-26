@@ -1206,7 +1206,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         path=path.toAbsolutePath().normalize();
         String hash=observed.source(path).value();if(hash==null)hash=documents.sourceHash(path);
         reconcileSemanticRevision(path);touchHash(path,hash);invalidateConditionalIfUnresolved(path);
-        var cached=restoreDiagnostics(path,hash,diagnosticStamp(path,observed));
+        var cached=restoreDiagnostics(path,hash,observed);
         if(cached!=null){
             diagnosticFilesReused++;
         }
@@ -1234,6 +1234,13 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             dependencies.recordFocused(path,state.dependencies());resolveContribution(state.contribution());
         }
         return state.diagnostics();
+    }
+    private Envelope restoreDiagnostics(Path path,String hash,CompilerInputs.Snapshot observed)throws Exception{
+        String precise=diagnosticStamp(path,observed);
+        var restored=restoreDiagnostics(path,hash,precise);
+        String broad=broadDiagnosticStamp(observed);
+        if(restored==null&&!precise.equals(broad))restored=restoreDiagnostics(path,hash,broad);
+        return restored;
     }
     public Envelope diagnostics(Path path,Documents documents)throws Exception{
         synchronizeKnownSources(path);var observed=validatedInputs();var cached=cachedDiagnostics(path,documents,observed);if(cached!=null)return cached;
@@ -1308,7 +1315,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private Envelope diagnostics(Path path,String text,CompilerInputs.Snapshot observed)throws Exception{
         path=path.toAbsolutePath().normalize();reconcileSemanticRevision(path);touch(path,text);invalidateConditionalIfUnresolved(path);
         String sourceHash=Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)),generation=context.generation();
-        var cached=restoreDiagnostics(path,sourceHash,diagnosticStamp(path,observed));
+        var cached=restoreDiagnostics(path,sourceHash,observed);
         if(cached!=null){diagnosticFilesReused++;return cached;}
         long computations=bindingComputations;
         var outcome=bindings(path,text,null,observed);

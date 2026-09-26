@@ -34,29 +34,41 @@ export default class CompletionScenario extends LspScenarioHarness {
       context:{triggerKind:2,triggerCharacter:"."},
     });
 
-    let firstCandidate:any;
+    let firstCandidate:any,machineCandidate:any;
     const nativeBeforeFirst=analyzerEvidence(await this.nativeAnalyzerStatus());
     this.beginFirstUse();
     const firstUse=await this.measure(completion,response=>{
       const items=Array.isArray(response)?response:response?.items??[];
       firstCandidate=items[0];
+      machineCandidate=items.find((item:any)=>item?.data?.semantic_origin==="machine");
       return normaliseCompletion(response);
     });
     this.finishFirstUse();
     const nativeAfterFirst=analyzerEvidence(await this.nativeAnalyzerStatus());
 
-    const nativeBeforeResolve=analyzerEvidence(await this.nativeAnalyzerStatus());
+    // Preserve the legacy first-item resolve for the JDTLS semantic oracle.
     const resolved=firstCandidate
       ?await this.measure(
           ()=>this.request<any>("completionItem/resolve",firstCandidate),
           normaliseResolvedCompletion,
         )
       :undefined;
+
+    // Separately prove the exact MACHINE resolve lifecycle on a candidate whose semantic origin is
+    // explicitly MACHINE. This avoids conflating a LIVE workspace declaration with dependency lookup.
+    const nativeBeforeResolve=analyzerEvidence(await this.nativeAnalyzerStatus());
+    if(nativeBeforeResolve)assert(machineCandidate,"JVMD CMP completion must expose a MACHINE-origin candidate for resolve proof");
+    const machineResolved=machineCandidate
+      ?await this.measure(
+          ()=>this.request<any>("completionItem/resolve",machineCandidate),
+          normaliseResolvedCompletion,
+        )
+      :undefined;
     const nativeAfterResolve=analyzerEvidence(await this.nativeAnalyzerStatus());
-    if(firstCandidate&&nativeBeforeResolve&&nativeAfterResolve){
+    if(machineCandidate&&nativeBeforeResolve&&nativeAfterResolve){
       assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"queries"),0,
         "MACHINE completionItem/resolve must not enter javac: "+
-        JSON.stringify({candidate:firstCandidate?.data??null,delta:counterDiff(nativeBeforeResolve,nativeAfterResolve)}));
+        JSON.stringify({candidate:machineCandidate?.data??null,delta:counterDiff(nativeBeforeResolve,nativeAfterResolve)}));
       assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.workspace_find_calls"),0,
         "MACHINE completionItem/resolve must not enter generic workspaceFind");
       assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.workspace_find_files_scanned"),0,
@@ -109,6 +121,7 @@ export default class CompletionScenario extends LspScenarioHarness {
           beforeResolve:nativeBeforeResolve,
           afterResolve:nativeAfterResolve,
           resolveDelta:counterDiff(nativeBeforeResolve,nativeAfterResolve),
+          machineResolve:machineResolved??null,
           beforeRepeated:nativeBeforeRepeated,
           afterRepeated:nativeAfterRepeated,
           repeatedDelta:counterDiff(nativeBeforeRepeated,nativeAfterRepeated),

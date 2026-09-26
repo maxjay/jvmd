@@ -1604,7 +1604,11 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                                          CompilerInputs.Snapshot observed)throws Exception{
         try(var trace=RequestScope.stage("proof.document.validate")){
             if(query.proof().dependencies().isEmpty()){trace.cache("empty");return false;}
-            if(!accessibilityCurrent(query)){trace.cache("accessibility-miss");return false;}
+            // The QueryProof below recomputes the ACCESSIBILITY identity. Here we only need
+            // to prove the materialized accessible-member set for the captured identity still exists.
+            if(!modules.get(context.generation()).accessibility.contains(query.accessibilityKey())){
+                trace.cache("accessibility-missing");return false;
+            }
             boolean current=query.proof().equals(currentDocumentContextProof(path,text,patched,focusCursor,snapshot,query,observed));
             trace.cache(current?"hit":"miss");return current;
         }

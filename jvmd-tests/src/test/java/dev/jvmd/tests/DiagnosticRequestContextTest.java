@@ -30,6 +30,11 @@ class DiagnosticRequestContextTest {
         Files.writeString(use,text);
         try(var daemon=new AotDaemon(temp)){
             String session=daemon.request("session.open",Map.of("root",temp.toString())).path("result").path("session").asText();
+            daemon.request("document.open",Map.of("session",session,"path",use.toString(),"text",text,"version",1));
+            var admitted=daemon.request("session.status",Map.of("session",session)).path("result");
+            long admittedConstructions=admitted.path("analysis_contexts").path("context_constructions").asLong();
+            assertThat(admittedConstructions).as("document admission must publish the analyzer context").isEqualTo(1L);
+
             int cursor=text.indexOf("api.val")+"api.val".length();
             var params=Map.<String,Object>of("session",session,"path",use.toString(),"line",0,"character",cursor,"limit",50);
             var first=daemon.request("symbol.completion",params);
@@ -38,7 +43,7 @@ class DiagnosticRequestContextTest {
             assertThat(second.path("result").path("items")).isEqualTo(first.path("result").path("items"));
             var status=daemon.request("session.status",Map.of("session",session)).path("result");
             assertThat(status.path("analysis_contexts").path("context_constructions").asLong())
-                    .as("unchanged -proc:full reads must consume the maintained analyzer context").isEqualTo(1L);
+                    .as("completion must not reconstruct the context admitted by the mutation").isEqualTo(admittedConstructions);
             assertThat(status.path("analysis_contexts").path("maintained_hits").asLong()).isPositive();
         }
     }

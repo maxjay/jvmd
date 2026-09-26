@@ -368,8 +368,10 @@ public final class Application implements AutoCloseable {
         var actorRegistry=(ModuleAnalyzerRegistry)session.state("diagnostic_actors");
         if(actorRegistry!=null)actorRegistry.sourceChanged(file,documents.hash(file));
         // Analyzer.Context can change when a local dependency crosses built/source-only state.
-        // Editor mutations therefore fence maintained contexts synchronously; unchanged reads stay O(1).
+        // Mutations therefore publish the next context before returning; ordinary editor reads
+        // consume that maintained context instead of paying processor/context construction.
         invalidateAnalysisContexts(session);
+        if(!operation.equals("close")&&session.state("resolution")!=null)analyzer(session,file);
         session.put("last_verification",Map.of("stale",true));
         return Envelope.of(0,"live",Map.of("path",file.toString(),"open",documents.contains(file),"generation",documents.generation()));
     }

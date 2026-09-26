@@ -499,8 +499,9 @@ public final class Application implements AutoCloseable {
         // the live path below.
         if(ref.startsWith("maven ")){
             var database=index();bindIndex(session,database);
-            var indexed=database.store().byScip(ref,session.state("resolution")==null?null:session.id());
-            if(indexed!=null&&!Objects.equals(indexed.get("artifact_kind"),"local")){
+            var indexed=database.store().byScip(ref,session.state("resolution")==null?null:session.id(),
+                    IndexStore.SemanticLayer.MACHINE);
+            if(indexed!=null){
                 dependencyExactDescribeHits.incrementAndGet();
                 return Envelope.of(2,"index",indexed);
             }

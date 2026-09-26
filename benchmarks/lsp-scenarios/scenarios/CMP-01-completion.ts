@@ -51,6 +51,21 @@ export default class CompletionScenario extends LspScenarioHarness {
         )
       :undefined;
 
+
+    const nativeBeforeRepeated=analyzerEvidence(await this.nativeAnalyzerStatus());
+    const rest=await this.measureWarmupAndSteady(completion,normaliseCompletion);
+    const nativeAfterRepeated=analyzerEvidence(await this.nativeAnalyzerStatus());
+    const completionSeries={firstUse,...rest};
+    const repeatedQueryDelta=counterDelta(nativeBeforeRepeated,nativeAfterRepeated,"queries");
+    if(repeatedQueryDelta!==null)
+      assert.equal(repeatedQueryDelta,0,"repeated CMP completion must remain on maintained state without query-side javac");
+
+    await this.change(
+      receiver.uri,
+      insertBeforeLastBrace(receiver.text,"    public void benchmarkAddedMethod() {}\n"),
+    );
+    const afterUnsavedEdit=await this.measure(completion,normaliseCompletion);
+
     // Separately prove exact MACHINE completion/resolve on a type whose semantic state comes from
     // the machine/JDK index. This does not participate in the legacy project. oracle.
     const nativeBeforeResolve=analyzerEvidence(await this.nativeAnalyzerStatus());
@@ -103,19 +118,6 @@ export default class CompletionScenario extends LspScenarioHarness {
     }
     const nativeAfterResolve=analyzerEvidence(await this.nativeAnalyzerStatus());
 
-    const nativeBeforeRepeated=analyzerEvidence(await this.nativeAnalyzerStatus());
-    const rest=await this.measureWarmupAndSteady(completion,normaliseCompletion);
-    const nativeAfterRepeated=analyzerEvidence(await this.nativeAnalyzerStatus());
-    const completionSeries={firstUse,...rest};
-    const repeatedQueryDelta=counterDelta(nativeBeforeRepeated,nativeAfterRepeated,"queries");
-    if(repeatedQueryDelta!==null)
-      assert.equal(repeatedQueryDelta,0,"repeated CMP completion must remain on maintained state without query-side javac");
-
-    await this.change(
-      receiver.uri,
-      insertBeforeLastBrace(receiver.text,"    public void benchmarkAddedMethod() {}\n"),
-    );
-    const afterUnsavedEdit=await this.measure(completion,normaliseCompletion);
 
     return {
       legacy:{

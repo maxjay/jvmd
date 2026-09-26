@@ -62,7 +62,8 @@ public final class TextEdits {
             for(var change:plan.changes){
                 unchanged(change);
                 if(!change.file().equals(change.target())&&Files.exists(change.target()))throw RpcException.invalid("Rename target already exists: "+change.target());
-                Path temporary=Files.createTempFile(change.target().getParent(),".jvmd-edit-",".java");staged.put(change,temporary);Files.writeString(temporary,change.after());
+                // Staging files must not enter the watched Java source membership.
+                Path temporary=Files.createTempFile(change.target().getParent(),".jvmd-edit-",".tmp");staged.put(change,temporary);Files.writeString(temporary,change.after());
                 Files.setPosixFilePermissions(temporary,Files.getPosixFilePermissions(change.file()));
             }
             for(var change:plan.changes)unchanged(change);
@@ -76,7 +77,7 @@ public final class TextEdits {
         }catch(Exception failure){
             for(var change:applied.reversed())try{
                 if(!Files.readString(change.target()).equals(change.after()))throw new java.io.IOException("Concurrent change prevents rollback: "+change.target());
-                Path backup=Files.createTempFile(change.file().getParent(),".jvmd-rollback-",".java");
+                Path backup=Files.createTempFile(change.file().getParent(),".jvmd-rollback-",".tmp");
                 try{Files.writeString(backup,change.before());Files.setPosixFilePermissions(backup,Files.getPosixFilePermissions(change.target()));if(change.file().equals(change.target()))Files.move(backup,change.file(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);else if(Files.exists(change.file())){if(!Files.readString(change.file()).equals(change.before()))throw new java.io.IOException("Concurrent source prevents rollback: "+change.file());}else Files.createLink(change.file(),backup);}finally{Files.deleteIfExists(backup);}
                 if(!change.target().equals(change.file()))Files.delete(change.target());
             }catch(Exception rollback){failure.addSuppressed(rollback);}

@@ -52,6 +52,28 @@ class SemanticEditsTest {
             assertThat(broken.path("diagnostics").size()).isEqualTo(1);assertThat(broken.path("verified").asBoolean()).isFalse();
         }
     }
+    @Test void transactionalEditsNeverExposeTemporaryJavaSources()throws Exception{
+        Path source=Files.writeString(root.resolve("Before.java"),"class Before {}"),target=root.resolve("After.java");
+        var plan=TextEdits.prepare(List.of(new TextEdits.Edit(source,6,12,"After")),Map.of(source,target));
+        try(var watcher=FileSystems.getDefault().newWatchService()){
+            root.register(watcher,StandardWatchEventKinds.ENTRY_CREATE);
+            TextEdits.apply(plan);
+            var createdSources=new HashSet<Path>();
+            long deadline=System.nanoTime()+Duration.ofSeconds(5).toNanos();
+            while(!createdSources.contains(target)&&System.nanoTime()<deadline){
+                var key=watcher.poll(100,java.util.concurrent.TimeUnit.MILLISECONDS);
+                if(key==null)continue;
+                for(var event:key.pollEvents()){
+                    assertThat(event.kind()).isNotEqualTo(StandardWatchEventKinds.OVERFLOW);
+                    Path created=root.resolve((Path)event.context());
+                    if(created.toString().endsWith(".java"))createdSources.add(created);
+                }
+                key.reset();
+            }
+            assertThat(createdSources).containsExactly(target);
+            assertThat(source).doesNotExist();assertThat(Files.readString(target)).isEqualTo("class After {}");
+        }
+    }
     @Test void invalidOrStalePlansNeverPartiallyApply()throws Exception{
         Path a=root.resolve("A.java"),b=root.resolve("B.java");Files.writeString(a,"class A {}");Files.writeString(b,"class B {}");
         assertThatThrownBy(()->TextEdits.prepare(List.of(new TextEdits.Edit(a,6,7,"X"),new TextEdits.Edit(b,6,100,"Y")),Map.of())).isInstanceOf(RpcException.class);

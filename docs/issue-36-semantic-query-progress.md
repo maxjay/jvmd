@@ -1249,3 +1249,32 @@ and completion-prefix tests pass. The frozen workflow and oracle remain unchange
 
 Remaining: verify this repair through exact-head CI and rerun Checkpoint 17 on the
 resulting final implementation. No cleanup or final-proof acceptance is claimed.
+
+## 2026-09-26 — final CI repair: keep transactional staging out of source membership
+
+Starting SHA: `5f9022e95d420bd112496943f5f7c5b4e1b1bc14`.
+
+Exact-head Benchmarks [36248581858](https://github.com/maxjay/jvmd/actions/runs/36248581858)
+and restored LSP [36248581837](https://github.com/maxjay/jvmd/actions/runs/36248581837)
+were green. Tests [36248581897](https://github.com/maxjay/jvmd/actions/runs/36248581897)
+failed the existing Phase-8 touched-member edit regression, as did the preceding head.
+The applied body replacement returned no touched members. This is required correctness,
+tracked with reproduction in #45, rather than an optimization follow-up.
+
+Concurrent repetitions reproduced the failure. Temporary tracing showed identical
+initial, supplied, current and on-disk source hashes, but an advancing input epoch.
+`changedPathsSince` identified only `.jvmd-edit-….java`: a transactional staging file
+had entered source membership, and its removal superseded the subsequent outline.
+The repair gives staging and rollback files a `.tmp` suffix. Atomic replacement,
+rollback behavior and strict compiler currency validation remain unchanged.
+
+Permanent `SemanticEditsTest.transactionalEditsNeverExposeTemporaryJavaSources`
+observes source creation during a transactional rename. It fails before the repair
+because an extra staging Java source is exposed, and passes afterward. All 28 tests
+in `SemanticEditsTest`, `LiveSourceStateTest`, and `CompletionPrefixCacheTest` pass,
+including all 16 completion-prefix tests. Three concurrent processes each completed
+100 repetitions of the original touched-member regression after the repair.
+Temporary tracing and the unsuccessful speculative observation-lock change were removed.
+
+Remaining: exact-head normal CI, then a new frozen Checkpoint-17 subject. No final-proof
+acceptance or cleanup is claimed yet.

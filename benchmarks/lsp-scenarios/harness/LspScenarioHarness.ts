@@ -8,6 +8,7 @@ import { isDeepStrictEqual } from "node:util";
 import net from "node:net";
 import { RpcClient } from "../../../shim/src/transport.ts";
 import { PHASE_MODEL, elapsedMs, latencyStats, orderedMilestones } from "./phases.ts";
+import { diagnosticDecision, enforceLegacy } from "./contracts.ts";
 import {
   createMessageConnection,
   StreamMessageReader,
@@ -15,7 +16,7 @@ import {
   type MessageConnection,
 } from "vscode-jsonrpc/node";
 
-export type Memory = { serverKb:number; adapterKb:number; totalKb:number };
+export type Memory = { serverKb:number|null; adapterKb:number|null; totalKb:number|null; status?:string; reason?:string };
 export type Measurement<T> = {
   result:T;
   metrics:{ latencyMs:number; memory:{ before:Memory; after:Memory; peak:Memory } };
@@ -62,10 +63,7 @@ type DiagnosticWaiter = {
 export function diagnosticAdmissionDecision(
   mode:DiagnosticVersionMode,params:any,uri:string,version:number,
 ):DiagnosticAdmissionDecision{
-  if(params?.uri!==uri)return {kind:"ignore",mode};
-  if(params?.version===version)return {kind:"verified",mode:"versioned"};
-  if(params?.version===undefined&&mode==="unknown")return {kind:"unavailable",mode:"versionless"};
-  return {kind:"ignore",mode};
+  return diagnosticDecision(mode,params,uri,version);
 }
 
 function nowNs(){ return Number(process.hrtime.bigint()); }
@@ -201,6 +199,7 @@ export abstract class LspScenarioHarness {
       mkdirSync(path.dirname(reportFile),{recursive:true});
       writeFileSync(reportFile,JSON.stringify(report,null,2)+"\n");
       writeSummary(report);
+      enforceLegacy(report);
     }finally{
       await this.closeDocuments();
     }
@@ -295,7 +294,7 @@ export abstract class LspScenarioHarness {
     LspScenarioHarness.phaseMemory.post_steady=memory(LspScenarioHarness.running);
     LspScenarioHarness.phaseMemory.steady_peak=steady
       .map(row=>row.metrics.memory.peak)
-      .reduce((peak,current)=>maxMemory(peak,current),{serverKb:0,adapterKb:0,totalKb:0});
+      .reduce((peak,current)=>maxMemory(peak,current),{serverKb:null,adapterKb:null,totalKb:null});
     return {warmup,steady,stats:latencyStats(steady.map(row=>row.metrics.latencyMs))};
   }
 
@@ -534,25 +533,20 @@ async function waitForJvmdIndex(client:RpcClient){
 }
 
 function memory(running:RunningServer):Memory{
-  const serverKb=rssKb(running.server.pid),adapterKb=rssKb(running.adapter?.pid);
-  return {serverKb,adapterKb,totalKb:serverKb+adapterKb};
+  const serverKb=rssKb(running.server.pid),adapterKb=running.adapter?rssKb(running.adapter.pid):0;
+  const totalKb=serverKb===null||adapterKb===null?null:serverKb+adapterKb;
+  return {serverKb,adapterKb,totalKb,status:totalKb===null?"unavailable":"measured",reason:totalKb===null?"RSS missing or inaccessible; never zero":"root server and adapter only; child processes excluded"};
 }
-function rssKb(pid?:number){
-  if(!pid)return 0;
-  try{
-    const status=readFileSync("/proc/"+pid+"/status","utf8");
-    return Number(status.match(/^VmRSS:\s+(\d+)\s+kB/m)?.[1]??0);
-  }catch{return 0;}
+function rssKb(pid?:number):number|null{
+  if(!pid)return null;
+  try{const field=readFileSync("/proc/"+pid+"/status","utf8").match(/^VmRSS:\s+(\d+)\s+kB/m)?.[1];return field===undefined?null:Number(field);}catch{return null;}
 }
 function maxMemory(a:Memory,b:Memory):Memory{
-  return {
-    serverKb:Math.max(a.serverKb,b.serverKb),
-    adapterKb:Math.max(a.adapterKb,b.adapterKb),
-    totalKb:Math.max(a.totalKb,b.totalKb),
-  };
+  const max=(x:number|null,y:number|null)=>x===null?y:y===null?x:Math.max(x,y);
+  return {serverKb:max(a.serverKb,b.serverKb),adapterKb:max(a.adapterKb,b.adapterKb),totalKb:max(a.totalKb,b.totalKb),status:"sampled peak; coverage follows raw samples"};
 }
 function stop(process?:ChildProcess){if(!process||process.killed)return;process.kill("SIGTERM");}
-function mb(kb:number){return (kb/1024).toFixed(1);}
+function mb(kb:number|null){return kb===null?"unavailable":(kb/1024).toFixed(1);}
 
 function writeSummary(report:any){
   const correctness=report.correctness.operationCorrectness.completion;

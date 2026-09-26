@@ -63,8 +63,12 @@ def _sample(pid):
                               'read_bytes':int(io.get('read_bytes',0)), 'write_bytes':int(io.get('write_bytes',0))})
         except (FileNotFoundError, ProcessLookupError, PermissionError, StopIteration, ValueError):
             pass
-    return {'processes': len(pids), 'rss_bytes': rss, 'cpu_ticks': cpu, 'threads': threads,
-            'read_bytes': read_bytes, 'write_bytes': write_bytes, 'process_samples':processes}
+    complete = bool(processes) and len(processes) == len(pids) and any(p['pid'] == pid for p in processes)
+    return {'processes': len(pids) if complete else None, 'rss_bytes': rss if complete else None,
+            'cpu_ticks': cpu if complete else None, 'threads': threads if complete else None,
+            'read_bytes': read_bytes if complete else None, 'write_bytes': write_bytes if complete else None,
+            'process_samples':processes, 'availability': 'measured' if complete else 'unavailable',
+            'reason': None if complete else 'process tree cannot be completely observed through /proc (permission, visibility, or process exit)'}
 
 
 class ProcessMonitor:
@@ -72,6 +76,7 @@ class ProcessMonitor:
     def __init__(self, pid, interval=.02, output=None):
         self.pid, self.interval = pid, interval
         self.samples, self.stop_event = 0, threading.Event()
+        self.valid_samples = 0
         self.maximum = collections.defaultdict(int)
         self.processes = {}
         self.output = output.open('w') if output else None
@@ -82,15 +87,18 @@ class ProcessMonitor:
         while not self.stop_event.is_set():
             values = _sample(self.pid); self.samples += 1
             processes=values.pop('process_samples',[])
+            if values['availability'] == 'measured': self.valid_samples += 1
             if self.output:
-                self.output.write(json.dumps({'monotonic_ns':time.monotonic_ns(),'processes':processes})+'\n')
+                self.output.write(json.dumps({'monotonic_ns':time.monotonic_ns(),'processes':processes,
+                                             'availability':values['availability'],'reason':values['reason']})+'\n')
             for process in processes:
                 key=(process['pid'],process['start_ticks'])
                 old=self.processes.setdefault(key,dict(process))
                 for field in ('cpu_ticks','read_bytes','write_bytes'):old[field]=max(old[field],process[field])
             for role in ('server','bridge'):
-                values[role+'_rss_bytes']=sum(p['rss_bytes'] for p in processes if p['role']==role)
-            for key, value in values.items(): self.maximum[key] = max(self.maximum[key], value)
+                values[role+'_rss_bytes']=sum(p['rss_bytes'] for p in processes if p['role']==role) if values['availability']=='measured' else None
+            for key, value in values.items():
+                if isinstance(value, (int, float)): self.maximum[key] = max(self.maximum[key], value)
             self.stop_event.wait(self.interval)
 
     def snapshot(self):
@@ -99,32 +107,37 @@ class ProcessMonitor:
         processes = values.pop('process_samples', [])
         return {
             'monotonic_ns': time.monotonic_ns(),
-            'rss_bytes': values.get('rss_bytes', 0),
+            'availability': values['availability'], 'reason': values['reason'],
+            'rss_bytes': values['rss_bytes'],
             'groups': {
                 role: {
-                    'rss_bytes': sum(p['rss_bytes'] for p in processes if p['role'] == role)
+                    'rss_bytes': sum(p['rss_bytes'] for p in processes if p['role'] == role) if values['availability']=='measured' else None
                 }
                 for role in ('server', 'bridge')
             },
-            'processes': values.get('processes', len(processes)),
-            'threads': values.get('threads', 0),
+            'processes': values['processes'],
+            'threads': values['threads'],
         }
 
     def close(self):
         self.stop_event.set(); self.thread.join(timeout=2)
         if self.output:self.output.close()
         values = dict(self.maximum); ticks = os.sysconf('SC_CLK_TCK')
+        available = self.valid_samples > 0
         return {'source': 'Linux /proc, process plus descendants', 'sample_interval_ms': self.interval*1000,
+                'availability': 'measured' if available else 'unavailable',
+                'reason': None if available else 'no complete process-tree samples available',
+                'valid_samples': self.valid_samples, 'unavailable_samples': self.samples-self.valid_samples,
                 'rss_scope':'Sum of process RSS; shared pages can be counted multiple times; not PSS or unique physical memory',
-                'samples': self.samples, 'peak_rss_bytes': values.get('rss_bytes', 0),
-                'cpu_seconds_observed': sum(p['cpu_ticks'] for p in self.processes.values())/ticks,
+                'samples': self.samples, 'peak_rss_bytes': values.get('rss_bytes'),
+                'cpu_seconds_observed': sum(p['cpu_ticks'] for p in self.processes.values())/ticks if available else None,
                 'cpu_scope':'Last observed cumulative CPU of each pid/start-time identity; very short-lived or final unsampled work can be missed',
-                'groups':{role:{'peak_rss_bytes':values.get(role+'_rss_bytes',0),
-                                'cpu_seconds_observed':sum(p['cpu_ticks'] for p in self.processes.values() if p['role']==role)/ticks}
+                'groups':{role:{'peak_rss_bytes':values.get(role+'_rss_bytes'),
+                                'cpu_seconds_observed':sum(p['cpu_ticks'] for p in self.processes.values() if p['role']==role)/ticks if available else None}
                           for role in ('server','bridge')},
-                'peak_processes': values.get('processes', 0), 'peak_threads': values.get('threads', 0),
-                'read_bytes_observed': sum(p['read_bytes'] for p in self.processes.values()),
-                'write_bytes_observed': sum(p['write_bytes'] for p in self.processes.values())}
+                'peak_processes': values.get('processes'), 'peak_threads': values.get('threads'),
+                'read_bytes_observed': sum(p['read_bytes'] for p in self.processes.values()) if available else None,
+                'write_bytes_observed': sum(p['write_bytes'] for p in self.processes.values()) if available else None}
 
 
 def export_jfr(jfr_tool, recording, output, repo=None, settings="profile"):
@@ -206,4 +219,3 @@ def attribute_samples(events, spans, repo=None):
             'precision':'JFR timestamps parsed to microseconds; samples at boundaries may be ambiguous.',
             'allocation':'Statistical ObjectAllocationSample weights; neither exact allocation nor retained memory.',
             'total_events':dict(total),'assigned_events':dict(assigned),'groups':rows}
-

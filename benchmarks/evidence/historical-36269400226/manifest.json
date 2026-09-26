@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "historical-input-not-new-results",
+  "sourceRun": "https://github.com/maxjay/jvmd/actions/runs/36269400226",
+  "sourceCommit": "27d7b4e726f4f2f44ff51833d676eff646ebe683",
+  "artifactId": 10915675295,
+  "archiveSha256": "0b2fe0f0f4c5f6308da823e4fb61e6ea7f3d9588b2bf8f16ff8c40b3bdf08674",
+  "limitations": [
+    "Historical oracle and state semantics; not certified under the new contract",
+    "JDTLS diagnostics version unavailable",
+    "Resolve target equivalence not established",
+    "Single run, not independent performance evidence"
+  ],
+  "files": {
+    "jdtls-report.json": "c8339d616e9b5e719934b2d2a0d20c724736cd377d9ca49a7a6b48e2267d4adf",
+    "jvmd-machine-lifecycle.json": "fd687cf6caf6a7abcf13e4378c24161919a35de750a99f70d1f9a8741ff66b62",
+    "jvmd-report.json": "3671fdc82f3066d30b91c0115e0b5ea7d8dba26ee4156f8e797937c048e03187"
+  }
+}

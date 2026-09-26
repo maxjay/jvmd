@@ -1,4 +1,5 @@
-export function number(value:any){return typeof value==="number"?value:0;}
+import {isDeepStrictEqual} from "node:util";
+export function number(value:any):number|null{return typeof value==="number"&&Number.isFinite(value)?value:null;}
 
 export function indexSummary(status:any){
   const index=status?.result?.index??status?.index??{};
@@ -44,12 +45,14 @@ export function resolverSummary(status:any){
 }
 
 export function numericDelta(after:any,before:any,key:string){
-  return number(after?.[key])-number(before?.[key]);
+  const a=number(after?.[key]),b=number(before?.[key]);
+  return a===null||b===null||a<b?null:a-b;
 }
 
 export function sumNumeric(value:any){
-  if(!value||typeof value!=="object")return 0;
-  return Object.values(value).reduce((sum:any,item:any)=>sum+(typeof item==="number"?item:0),0) as number;
+  if(!value||typeof value!=="object"||!Object.keys(value).length)return null;
+  const values=Object.values(value).map(number);
+  return values.some(x=>x===null)?null:values.reduce<number>((sum,x)=>sum+x!,0);
 }
 
 export function definitionUris(value:any){
@@ -57,45 +60,45 @@ export function definitionUris(value:any){
   return rows.map((row:any)=>row?.uri??row?.targetUri).filter((uri:any)=>typeof uri==="string");
 }
 
-export function definitionCorrect(value:any,expectedUri:string){
-  return definitionUris(value).includes(expectedUri);
+export function definitionCorrect(value:any,expectedUri:string,expectedRange:any){
+  if(!expectedRange)return false;
+  const rows=Array.isArray(value)?value:value?[value]:[];
+  return rows.length===1&&rows[0]&&(rows[0].uri??rows[0].targetUri)===expectedUri
+    &&isDeepStrictEqual(rows[0].targetSelectionRange??rows[0].range,expectedRange);
 }
 
-export function recursiveNumeric(value:any,key:string):number{
-  if(!value||typeof value!=="object")return 0;
-  let total=0;
-  for(const [name,item] of Object.entries(value)){
-    if(name===key&&typeof item==="number")total+=item;
-    if(item&&typeof item==="object")total+=recursiveNumeric(item,key);
-  }
-  return total;
-}
-
+/** Read the advertised aggregate once; never recursively add its actor children. */
 export function compilerEvidence(before:any,after:any){
-  const keys=[
-    "queries","query_ms","configure_calls","configure_ms","classpath_validations",
-    "classpath_validation_ms","binding_computations","diagnostic_files_analysed",
-    "index_publish_enqueue_ms","semantic_facts","semantic_units","semantic_fact_mutations",
-  ];
-  return Object.fromEntries(keys.map(key=>[
-    key,
-    recursiveNumeric(after,key)-recursiveNumeric(before,key),
-  ]));
+  const paths:Record<string,string[]>={
+    queries:["queries"],query_ms:["query_ms"],configure_calls:["configure_calls"],configure_ms:["configure_ms"],
+    classpath_validations:["classpath_validations"],classpath_validation_ms:["classpath_validation_ms"],
+    binding_computations:["binding_computations"],diagnostic_files_analysed:["diagnostic_files_analysed"],
+    index_publish_enqueue_ms:["index_publish_enqueue_ms"],semantic_facts:["resident_semantic_state","semantic_facts"],
+    semantic_units:["resident_semantic_state","semantic_units"],semantic_fact_mutations:["resident_semantic_state","semantic_fact_mutations"],
+  };
+  const at=(v:any,p:string[])=>number(p.reduce((o,k)=>o?.[k],v?.analyzer));
+  return Object.fromEntries(Object.entries(paths).map(([key,path])=>{
+    const a=at(before,path),b=at(after,path);
+    return [key,{status:"unavailable",value:null,scope:"session.analyzer aggregate, counted once",
+      observedBefore:a,observedAfter:b,observedDifference:a===null||b===null?null:b-a,
+      reason:"Status snapshots do not establish stable actor epochs, complete contributor coverage, or causal ownership. Gauge differences are not work counters."}];
+  }));
 }
 
 export function fileStateEvidence(before:any,after:any){
   const keys=["hashes","stat_hits","bytes_hashed","metadata_checks","directory_enumerations","inventory_entries"];
-  return Object.fromEntries(keys.map(key=>[key,number(after?.[key])-number(before?.[key])]));
+  return Object.fromEntries(keys.map(key=>[key,{value:numericDelta(after,before,key),status:numericDelta(after,before,key)===null?"unavailable":"measured",scope:"shared FileStateRegistry observation; not causally exclusive",reason:numericDelta(after,before,key)===null?"missing, non-finite or decreased counter":undefined}]));
 }
 
 export function methodBreakdown(metrics:any[],startNs:number,endNs:number){
   const selected=metrics.filter(row=>row.receivedNs>=startNs&&row.receivedNs<=endNs);
-  const sum=(method:string)=>selected.filter(row=>row.method===method).reduce((total,row)=>total+number(row.latencyMs),0);
   return {
-    documentMutationRpcMs:sum("document.open")+sum("document.change"),
-    diagnosticsRpcMs:sum("lsp.diagnostics"),
+    status:"unavailable",documentMutationRpcMs:null,diagnosticsRpcMs:null,
+    reason:"stderr receipt timestamps do not establish request ownership or server span boundaries; worker durations may overlap",
+    receivedLogs:selected,
     documentOpenCalls:selected.filter(row=>row.method==="document.open").length,
     documentChangeCalls:selected.filter(row=>row.method==="document.change").length,
     diagnosticsCalls:selected.filter(row=>row.method==="lsp.diagnostics").length,
+    countScope:"logs received in client interval; not causally attributed calls",
   };
 }

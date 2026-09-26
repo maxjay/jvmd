@@ -1,4 +1,5 @@
 import { appendFileSync, readFileSync } from "node:fs";
+import { enforceLegacy } from "./harness/contracts.ts";
 
 if(process.argv.length<4)throw new Error("usage: compare.ts <jdtls-report> <jvmd-report>");
 const jdtls=JSON.parse(readFileSync(process.argv[2],"utf8"));
@@ -85,3 +86,5 @@ const lines=[
 ];
 console.log(lines.join("\n"));
 if(process.env.GITHUB_STEP_SUMMARY)appendFileSync(process.env.GITHUB_STEP_SUMMARY,lines.join("\n")+"\n");
+enforceLegacy(jdtls);
+enforceLegacy(jvmd);

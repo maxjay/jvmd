@@ -24,22 +24,28 @@ test("resolver summary distinguishes cold calls from resident fast hits",()=>{
   assert.equal(sumNumeric(after.coldTimings),10);
 });
 
-test("definition oracle accepts only the expected source URI",()=>{
-  assert.equal(definitionCorrect([{uri:"file:///repo/MavenProject.java"}],"file:///repo/MavenProject.java"),true);
-  assert.equal(definitionCorrect([{targetUri:"file:///repo/Other.java"}],"file:///repo/MavenProject.java"),false);
+test("definition oracle requires exact URI and declaration range",()=>{
+  const range={start:{line:4,character:13},end:{line:4,character:25}};
+  assert.equal(definitionCorrect([{uri:"file:///repo/MavenProject.java",range}],"file:///repo/MavenProject.java",range),true);
+  assert.equal(definitionCorrect([{uri:"file:///repo/MavenProject.java"}],"file:///repo/MavenProject.java",range),false);
+  assert.equal(definitionCorrect([{uri:"file:///repo/Other.java",range}],"file:///repo/MavenProject.java",range),false);
 });
 
-test("admission breakdown keeps top-level daemon work separate from compiler evidence",()=>{
-  const metrics=[
-    {method:"document.open",latencyMs:2,receivedNs:10},
-    {method:"lsp.diagnostics",latencyMs:20,receivedNs:20},
-    {method:"lsp.diagnostics",latencyMs:1,receivedNs:21},
-  ];
-  const top=methodBreakdown(metrics,0,30);
-  assert.equal(top.documentMutationRpcMs,2);
-  assert.equal(top.diagnosticsRpcMs,21);
-  const evidence=compilerEvidence({queries:1,resident_semantic_state:{semantic_facts:2}},
-    {queries:3,resident_semantic_state:{semantic_facts:7}});
-  assert.equal(evidence.queries,2);
-  assert.equal(evidence.semantic_facts,5);
+test("stderr timestamps cannot supply causal stage durations",()=>{
+  const top=methodBreakdown([{method:"document.open",latencyMs:90,receivedNs:10},{method:"lsp.diagnostics",latencyMs:90,receivedNs:20}],0,30);
+  assert.equal(top.status,"unavailable");assert.equal(top.documentMutationRpcMs,null);assert.equal(top.diagnosticsRpcMs,null);
+  assert.equal(top.receivedLogs.length,2);
+});
+
+test("aggregate and nested actor copies are never recursively added",()=>{
+  const evidence=compilerEvidence({analyzer:{queries:1,module_compilers:{a:{queries:1}}}},
+    {analyzer:{queries:3,module_compilers:{a:{queries:3}}}});
+  assert.equal(evidence.queries.observedDifference,2);
+  assert.equal(evidence.queries.value,null);assert.equal(evidence.queries.status,"unavailable");
+  assert.equal(evidence.binding_computations.observedDifference,null);
+});
+test("missing and reset counters never become zero",()=>{
+  assert.equal(numericDelta({}, {},"queries"),null);
+  assert.equal(numericDelta({queries:1},{queries:2},"queries"),null);
+  assert.equal(indexSummary({}).artifactsHashed,null);
 });

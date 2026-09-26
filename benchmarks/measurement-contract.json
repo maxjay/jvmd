@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "outcomes": ["pass", "incorrect", "stale", "timeout", "protocol_error", "harness_error", "unsupported", "not_applicable", "unavailable_evidence", "not_run"],
+  "evidenceStates": ["verified", "measured", "unavailable", "contradicted", "not_applicable"],
+  "rules": {
+    "diagnostics": "A matching URI and explicitly present integer version establish only that document version. Versionless observations never establish exact-version admission. Reopened documents need a distinct incarnation or an unavailable attribution result.",
+    "freshness": "A cross-document mutation needs a distinguishing semantic witness for all relevant changed inputs, not merely the queried document version.",
+    "first": "First target operation after fully logged preparation. No target warmup may precede it.",
+    "timing": "Client monotonic request submission through full response receipt; transition submission through correct result. Preserve both. Never add overlapping native spans as elapsed time.",
+    "missing": "An unavailable number is null with a reason. It is never zero.",
+    "gate": "Write raw artifacts before failing on incorrect/stale/error/timeout/not-run mandatory cases. Unsupported requires predeclared capability evidence. Warmup correctness is mandatory.",
+    "statistics": "Independent restored runs are the outer unit. Within-process requests remain nested. Ten independent blocks is the minimum for a public comparative performance claim, not a precision guarantee."
+  },
+  "diagnosticVectors": [
+    {"name":"explicit current", "mode":"unknown", "params":{"uri":"file:///A.java","version":2,"diagnostics":[]},"uri":"file:///A.java","version":2,"expected":"verified"},
+    {"name":"old version", "mode":"versioned", "params":{"uri":"file:///A.java","version":1,"diagnostics":[]},"uri":"file:///A.java","version":2,"expected":"ignore"},
+    {"name":"late versionless", "mode":"versioned", "params":{"uri":"file:///A.java","diagnostics":[]},"uri":"file:///A.java","version":2,"expected":"ignore"},
+    {"name":"versionless server", "mode":"unknown", "params":{"uri":"file:///A.java","diagnostics":[]},"uri":"file:///A.java","version":2,"expected":"unavailable"},
+    {"name":"other document", "mode":"unknown", "params":{"uri":"file:///B.java","version":2,"diagnostics":[]},"uri":"file:///A.java","version":2,"expected":"ignore"},
+    {"name":"string version", "mode":"versioned", "params":{"uri":"file:///A.java","version":"2","diagnostics":[]},"uri":"file:///A.java","version":2,"expected":"ignore"},
+    {"name":"old incarnation", "mode":"versioned", "params":{"uri":"file:///A.java","version":2,"diagnostics":[]},"uri":"file:///A.java","version":2,"incarnation":2,"eventIncarnation":1,"expected":"ignore"},
+    {"name":"reopen attribution absent", "mode":"versioned", "params":{"uri":"file:///A.java","version":2,"diagnostics":[]},"uri":"file:///A.java","version":2,"incarnation":2,"expected":"unavailable"}
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "baseRevision": "d7dbc57bfbe15ee97eecc9b94d185922fd1cff07",
+  "fixRevision": "62440379e5b116ecedbffb891be25a454f74eebf",
+  "kind": "local diagnostic and regression evidence; not comparative timing",
+  "before": "Same session ID returned, but document state changed from one open buffer / generation 1 to zero buffers / generation 0. Test failed.",
+  "after": "New regression plus existing source, namespace, classpath and semantic proof tests: 32 tests, zero failures, zero skips.",
+  "transport": "in-process production Application and Dispatcher; Unix daemon blocked in local execution environment",
+  "normalizations": [
+    "local workspace prefix replaced with <workspace>"
+  ],
+  "hashes": {
+    "before.txt": "47a8f184cfcd3078bc0e6a2f7d9f58633af04fbbb39d8252642a83f2c66c341d",
+    "after.txt": "bc38f3335e274c41a77d727529f52d97a0f7cebd4a5fc357757e5c1319c9b1b8"
+  }
+}

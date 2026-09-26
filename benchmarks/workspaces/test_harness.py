@@ -326,6 +326,10 @@ class HarnessTest(unittest.TestCase):
         child.wait()
         values = monitor.close()
         self.assertGreater(values["samples"], 1)
+        if values["availability"] == "unavailable":
+            self.assertIsNone(values["peak_rss_bytes"])
+            self.assertEqual(0, values["valid_samples"])
+            self.skipTest("environment does not expose child-process /proc metrics; resource integration gate unavailable")
         self.assertGreater(values["peak_rss_bytes"], 8 * 1024 * 1024)
         self.assertGreaterEqual(values["peak_processes"], 1)
 

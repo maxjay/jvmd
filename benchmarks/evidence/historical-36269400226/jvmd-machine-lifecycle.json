@@ -1,0 +1,2530 @@
+{
+  "schema": 1,
+  "phaseModel": {
+    "schema": 2,
+    "states": [
+      "startup",
+      "machine_index",
+      "initialize",
+      "service_ready",
+      "session_open",
+      "workspace_resolution",
+      "workspace_index",
+      "document_admission",
+      "first_use",
+      "warmup",
+      "steady"
+    ],
+    "defaults": {
+      "warmup": 2,
+      "steady_samples": 20
+    },
+    "rules": {
+      "startup": "Process launch and architecture-specific transport availability. This is process lifecycle, not query latency.",
+      "machine_index": "Machine-global dependency/JDK index lifecycle. JVMD reports machine_cold, daemon_restart and resident_daemon separately; servers without an equivalent report n/a.",
+      "initialize": "LSP initialize request send to initialize response receive, followed by initialized notification.",
+      "service_ready": "A server-native normal-service readiness signal such as JDTLS ServiceReady. It is not assumed equivalent to machine indexing or target semantic warmup.",
+      "session_open": "Workspace session establishment. For JVMD this is distinct from daemon startup and machine-index readiness.",
+      "workspace_resolution": "Project/model/module/classpath/source-root resolution. Exact boundaries may be unavailable; server-native resolver evidence must be reported instead of substituted.",
+      "workspace_index": "Workspace-local source/build-artifact indexing or reconciliation. Machine dependency indexing is explicitly excluded. If no authoritative completion barrier exists, readiness is reported unavailable.",
+      "document_admission": "Open/change notifications through an observable current-document/version boundary. Diagnostics and other work occurring here are attributed rather than silently treated as query latency.",
+      "first_use": "First request of the measured operation/target after declared preparation. No operation-specific warmup may precede it.",
+      "warmup": "Symmetric operation-specific requests retained in raw reports but excluded from steady statistics.",
+      "steady": "Measured operation samples after warmup; only correct samples contribute to comparative latency percentiles."
+    }
+  },
+  "server": "jvmd",
+  "revision": "27d7b4e726f4f2f44ff51833d676eff646ebe683",
+  "fixture": "apache/maven@5cd1b60264101080c712accd605180a4bd9222e0",
+  "provenance": {
+    "daemon": "machine_cold → daemon_restart with persisted index → resident sessions → one-artifact incremental reconciliation on the resident daemon",
+    "machineIndex": {
+      "cold": "empty",
+      "restart": "persisted",
+      "resident": "persisted/current",
+      "incremental": "persisted/current + one controlled binary JAR"
+    },
+    "workspace": {
+      "session1": "first open",
+      "session2": "reopen on same resident daemon"
+    },
+    "localWorkspaceState": "resident in daemon; persisted-local readiness not assumed",
+    "machineRepository": {
+      "baseline": "unchanged",
+      "incremental": "one controlled binary JAR added after resident sessions"
+    },
+    "aot": {
+      "machineCold": "rejected: no cache configured for this JVM",
+      "daemonRestart": "rejected: no cache configured for this JVM",
+      "incremental": "rejected: no cache configured for this JVM"
+    },
+    "filesystemCache": "uncontrolled; not flushed",
+    "jdk": "/home/runner/work/_temp/tools/jdk-25.0.4.1+1",
+    "node": "v24.21.0",
+    "runner": {
+      "platform": "linux",
+      "arch": "x64",
+      "cpus": 4
+    }
+  },
+  "machine": {
+    "machineCold": {
+      "mode": "machine_cold",
+      "processStartedNs": 181078186401,
+      "transportAvailableNs": 181469373184,
+      "machineIndexReadyNs": 214983477031,
+      "processToTransportMs": 391.186783,
+      "processToMachineIndexReadyMs": 33905.29063,
+      "machineIndexReconcileMs": 30931.584,
+      "rssAtMachineIndexReadyKb": 2071264,
+      "repository": {
+        "path": "/home/runner/.m2/repository",
+        "jarArtifacts": 194,
+        "sourceJarArtifacts": 0
+      },
+      "index": {
+        "phase": "ready",
+        "artifactsDiscovered": 194,
+        "artifactsScanned": 194,
+        "indexedPublications": 194,
+        "artifactsReused": 0,
+        "artifactsHashed": 194,
+        "faults": 0,
+        "timings": {
+          "scans": 1,
+          "scanMs": 30931.584,
+          "discoveryMs": 40.285,
+          "hashMs": 673.895,
+          "parseMs": 6850.612,
+          "storageMs": 56131.87,
+          "docsMs": 0.096,
+          "linkMs": 0.006,
+          "workspaceIndexLoads": 0,
+          "workspaceIndexLoadMs": 0
+        },
+        "sourcePublisher": {
+          "queued_files": 0,
+          "queued_bytes": 0,
+          "budget_bytes": 33554432,
+          "enqueued": 0,
+          "writes": 0,
+          "coalesced": 0,
+          "skipped": 0,
+          "failures": 0,
+          "dropped": 0
+        },
+        "activeArtifacts": {},
+        "store": {
+          "source_cache_estimated_bytes": 0,
+          "link_passes": 0,
+          "source_file_writes": 0,
+          "metadata_writes": 194,
+          "source_record_decodes": 0,
+          "backend": "rocksdb-sst",
+          "source_cache_budget_bytes": 4194304
+        },
+        "storage": {
+          "admission_waiters": 0,
+          "previous_generation": "",
+          "generation_pins": {},
+          "workspace_state": {
+            "updates": 0,
+            "file_writes": 0,
+            "metadata_writes": 0,
+            "directory_writes": 0,
+            "last": {}
+          },
+          "native_memory": {
+            "cache_usage_bytes": 23663784,
+            "cache_pinned_bytes": 1654608,
+            "cache_and_memtable_budget_bytes": 67108864
+          },
+          "repository": {
+            "is_write_stopped": 0,
+            "file_sync_ms": 10.919155,
+            "estimate_table_readers_mem": 225008,
+            "gram_posting_blocks": 2580855,
+            "published": 194,
+            "activation_verification_reuses": 194,
+            "cur_size_all_mem_tables": 2048,
+            "estimate_pending_compaction_bytes": 0,
+            "native_publication_verifications": 194,
+            "num_running_flushes": 0,
+            "sort_buffer_bytes": 4194304,
+            "sort_peak_bytes": 4194048,
+            "peak_parallel_builds": 4,
+            "sort_merge_and_sst_ms": 19403.034548,
+            "sst_ingest_ms": 1614.936805,
+            "storage_bytes": 260268370,
+            "builds_in_flight": 0,
+            "record_prepare_ms": 9280.829602,
+            "actual_delayed_write_rate": 0,
+            "publication_verify_ms": 2180.840394,
+            "sort_input_records": 7096159,
+            "artifact_locks": 0,
+            "sort_run_records": 7316282,
+            "gram_occurrences": 69414976,
+            "verification_passes": 0,
+            "reused": 0,
+            "sort_spill_ms": 12075.326846,
+            "owner_prefix_queries": 0,
+            "sort_spill_bytes": 177063127,
+            "query_symbol_reads": 0,
+            "query_posting_candidates": 0,
+            "oracle_materializations": 0,
+            "num_running_compactions": 0
+          },
+          "inventory_entries": 194,
+          "validation_failures": 0,
+          "budget_bytes": 134217728,
+          "active_generation": "format-1-jdk25-jvmd-index-v9",
+          "estimated_bytes_in_flight": 0,
+          "backend": "rocksdb-sst",
+          "peak_estimated_bytes_in_flight": 134217728,
+          "budget_wait_ms": 55879.541,
+          "candidate_generation": "format-1-jdk25-jvmd-index-v9",
+          "semantic_state": {
+            "updates": 0,
+            "body_only": 0,
+            "last": {},
+            "reanalyze_total": 0,
+            "api_changes": 0
+          }
+        }
+      },
+      "aotStatus": "rejected: no cache configured for this JVM",
+      "sourceArtifactUpdateCount": "unavailable: current daemon status exposes aggregate reuse/hash counters and docs_ms, not source-JAR update counts",
+      "jdkIndexReadiness": "not part of the current repository machine-index-ready barrier; no separate eager-JDK readiness milestone is exposed"
+    },
+    "daemonRestart": {
+      "mode": "daemon_restart",
+      "processStartedNs": 215325080607,
+      "transportAvailableNs": 215684960727,
+      "machineIndexReadyNs": 218153718173,
+      "processToTransportMs": 359.88012,
+      "processToMachineIndexReadyMs": 2828.637566,
+      "machineIndexReconcileMs": 176.415,
+      "rssAtMachineIndexReadyKb": 136260,
+      "repository": {
+        "path": "/home/runner/.m2/repository",
+        "jarArtifacts": 194,
+        "sourceJarArtifacts": 0
+      },
+      "index": {
+        "phase": "ready",
+        "artifactsDiscovered": 194,
+        "artifactsScanned": 194,
+        "indexedPublications": 0,
+        "artifactsReused": 194,
+        "artifactsHashed": 12,
+        "faults": 0,
+        "timings": {
+          "scans": 1,
+          "scanMs": 176.415,
+          "discoveryMs": 35.515,
+          "hashMs": 158.408,
+          "parseMs": 0,
+          "storageMs": 0,
+          "docsMs": 0.094,
+          "linkMs": 0.006,
+          "workspaceIndexLoads": 0,
+          "workspaceIndexLoadMs": 0
+        },
+        "sourcePublisher": {
+          "queued_files": 0,
+          "queued_bytes": 0,
+          "budget_bytes": 33554432,
+          "enqueued": 0,
+          "writes": 0,
+          "coalesced": 0,
+          "skipped": 0,
+          "failures": 0,
+          "dropped": 0
+        },
+        "activeArtifacts": {},
+        "store": {
+          "metadata_writes": 12,
+          "source_file_writes": 0,
+          "link_passes": 0,
+          "source_cache_estimated_bytes": 0,
+          "source_cache_budget_bytes": 4194304,
+          "backend": "rocksdb-sst",
+          "source_record_decodes": 0
+        },
+        "storage": {
+          "repository": {
+            "gram_occurrences": 0,
+            "sort_run_records": 0,
+            "artifact_locks": 0,
+            "sort_input_records": 0,
+            "publication_verify_ms": 0,
+            "actual_delayed_write_rate": 0,
+            "record_prepare_ms": 0,
+            "builds_in_flight": 0,
+            "storage_bytes": 260268370,
+            "sst_ingest_ms": 0,
+            "sort_merge_and_sst_ms": 0,
+            "peak_parallel_builds": 0,
+            "sort_peak_bytes": 0,
+            "sort_buffer_bytes": 4194304,
+            "num_running_flushes": 0,
+            "native_publication_verifications": 0,
+            "estimate_pending_compaction_bytes": 0,
+            "cur_size_all_mem_tables": 2048,
+            "activation_verification_reuses": 0,
+            "published": 0,
+            "gram_posting_blocks": 0,
+            "estimate_table_readers_mem": 225024,
+            "file_sync_ms": 0,
+            "is_write_stopped": 0,
+            "num_running_compactions": 0,
+            "oracle_materializations": 0,
+            "query_posting_candidates": 0,
+            "query_symbol_reads": 0,
+            "sort_spill_bytes": 0,
+            "owner_prefix_queries": 0,
+            "sort_spill_ms": 0,
+            "reused": 0,
+            "verification_passes": 0
+          },
+          "native_memory": {
+            "cache_and_memtable_budget_bytes": 67108864,
+            "cache_pinned_bytes": 1562112,
+            "cache_usage_bytes": 21420416
+          },
+          "workspace_state": {
+            "directory_writes": 0,
+            "metadata_writes": 0,
+            "file_writes": 0,
+            "updates": 0,
+            "last": {}
+          },
+          "generation_pins": {},
+          "previous_generation": "",
+          "admission_waiters": 0,
+          "semantic_state": {
+            "last": {},
+            "body_only": 0,
+            "updates": 0,
+            "api_changes": 0,
+            "reanalyze_total": 0
+          },
+          "candidate_generation": "format-1-jdk25-jvmd-index-v9",
+          "budget_wait_ms": 55.015,
+          "estimated_bytes_in_flight": 0,
+          "backend": "rocksdb-sst",
+          "peak_estimated_bytes_in_flight": 134217728,
+          "active_generation": "format-1-jdk25-jvmd-index-v9",
+          "budget_bytes": 134217728,
+          "validation_failures": 0,
+          "inventory_entries": 194
+        }
+      },
+      "aotStatus": "rejected: no cache configured for this JVM",
+      "sourceArtifactUpdateCount": "unavailable: current daemon status exposes aggregate reuse/hash counters and docs_ms, not source-JAR update counts",
+      "jdkIndexReadiness": "not part of the current repository machine-index-ready barrier; no separate eager-JDK readiness milestone is exposed"
+    },
+    "incrementalReconcile": {
+      "mode": "incremental_reconcile",
+      "daemon": "resident",
+      "controlledArtifact": "/home/runner/.m2/repository/dev/jvmd/benchmark-lifecycle/1.0/benchmark-lifecycle-1.0.jar",
+      "artifactAddedToReadyMs": 56295.000322,
+      "machineIndexReconcileMs": 299.97600000000006,
+      "repositoryBefore": {
+        "jarArtifacts": 262,
+        "sourceJarArtifacts": 0
+      },
+      "repositoryAfter": {
+        "jarArtifacts": 263,
+        "sourceJarArtifacts": 0
+      },
+      "indexBefore": {
+        "phase": "ready",
+        "artifactsDiscovered": 262,
+        "artifactsScanned": 262,
+        "indexedPublications": 106,
+        "artifactsReused": 1598,
+        "artifactsHashed": 92,
+        "faults": 0,
+        "timings": {
+          "scans": 2,
+          "scanMs": 315.426,
+          "discoveryMs": 61.058,
+          "hashMs": 213.117,
+          "parseMs": 1646.024,
+          "storageMs": 9414.884,
+          "docsMs": 0.341,
+          "linkMs": 0.007,
+          "workspaceIndexLoads": 2,
+          "workspaceIndexLoadMs": 593.986
+        },
+        "sourcePublisher": {
+          "queued_files": 0,
+          "queued_bytes": 0,
+          "budget_bytes": 33554432,
+          "enqueued": 1,
+          "writes": 1,
+          "coalesced": 0,
+          "skipped": 0,
+          "failures": 0,
+          "dropped": 0
+        },
+        "activeArtifacts": {},
+        "store": {
+          "metadata_writes": 131,
+          "source_file_writes": 1,
+          "link_passes": 0,
+          "source_cache_estimated_bytes": 0,
+          "source_cache_budget_bytes": 4194304,
+          "backend": "rocksdb-sst",
+          "source_record_decodes": 0
+        },
+        "storage": {
+          "repository": {
+            "gram_occurrences": 18190392,
+            "sort_run_records": 1373829,
+            "artifact_locks": 0,
+            "sort_input_records": 1841365,
+            "publication_verify_ms": 349.735378,
+            "actual_delayed_write_rate": 0,
+            "record_prepare_ms": 1966.694287,
+            "builds_in_flight": 0,
+            "storage_bytes": 330642105,
+            "sst_ingest_ms": 214.133644,
+            "sort_merge_and_sst_ms": 3287.034488,
+            "peak_parallel_builds": 4,
+            "sort_peak_bytes": 4194047,
+            "sort_buffer_bytes": 4194304,
+            "num_running_flushes": 0,
+            "native_publication_verifications": 106,
+            "estimate_pending_compaction_bytes": 0,
+            "cur_size_all_mem_tables": 2048,
+            "activation_verification_reuses": 0,
+            "published": 106,
+            "gram_posting_blocks": 663864,
+            "estimate_table_readers_mem": 249116,
+            "file_sync_ms": 7.273136,
+            "is_write_stopped": 0,
+            "num_running_compactions": 0,
+            "oracle_materializations": 0,
+            "query_posting_candidates": 28900,
+            "query_symbol_reads": 28900,
+            "sort_spill_bytes": 34125595,
+            "owner_prefix_queries": 0,
+            "sort_spill_ms": 1850.497311,
+            "reused": 0,
+            "verification_passes": 0
+          },
+          "native_memory": {
+            "cache_and_memtable_budget_bytes": 67108864,
+            "cache_pinned_bytes": 3661248,
+            "cache_usage_bytes": 53649328
+          },
+          "workspace_state": {
+            "directory_writes": 0,
+            "metadata_writes": 76,
+            "file_writes": 2245,
+            "updates": 152,
+            "last": {
+              "metadata_writes": 0,
+              "fingerprint": "17500bfab9201f290658ccea5abb2645056ed7c076b7b56100200cc4aa90422f",
+              "unchanged_files": 3,
+              "deleted_files": [],
+              "changed_files": [],
+              "module": "/home/runner/work/_temp/apache-maven-fixture/compat/maven-toolchain-builder|org.apache.maven:maven-toolchain-builder:4.1.0-SNAPSHOT:test",
+              "file_writes": 0,
+              "directory_writes": 0
+            }
+          },
+          "generation_pins": {},
+          "previous_generation": "",
+          "admission_waiters": 0,
+          "semantic_state": {
+            "last": {
+              "context_changed": false,
+              "module": "/home/runner/work/_temp/apache-maven-fixture/impl/maven-core|org.apache.maven:maven-core:4.1.0-SNAPSHOT:main",
+              "api_changed": [
+                "/home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java"
+              ],
+              "body_only": [],
+              "reanalyze": [
+                "/home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java"
+              ],
+              "file": "/home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java"
+            },
+            "body_only": 0,
+            "updates": 1,
+            "api_changes": 1,
+            "reanalyze_total": 1
+          },
+          "candidate_generation": "format-1-jdk25-jvmd-index-v9",
+          "budget_wait_ms": 154.93,
+          "estimated_bytes_in_flight": 0,
+          "backend": "rocksdb-sst",
+          "peak_estimated_bytes_in_flight": 134217728,
+          "active_generation": "format-1-jdk25-jvmd-index-v9",
+          "budget_bytes": 134217728,
+          "validation_failures": 0,
+          "inventory_entries": 262
+        }
+      },
+      "indexAfter": {
+        "phase": "ready",
+        "artifactsDiscovered": 263,
+        "artifactsScanned": 263,
+        "indexedPublications": 107,
+        "artifactsReused": 1860,
+        "artifactsHashed": 105,
+        "faults": 0,
+        "timings": {
+          "scans": 3,
+          "scanMs": 615.402,
+          "discoveryMs": 84.579,
+          "hashMs": 235.553,
+          "parseMs": 1663.935,
+          "storageMs": 9439.86,
+          "docsMs": 0.575,
+          "linkMs": 0.009,
+          "workspaceIndexLoads": 2,
+          "workspaceIndexLoadMs": 593.986
+        },
+        "sourcePublisher": {
+          "queued_files": 0,
+          "queued_bytes": 0,
+          "budget_bytes": 33554432,
+          "enqueued": 1,
+          "writes": 1,
+          "coalesced": 0,
+          "skipped": 0,
+          "failures": 0,
+          "dropped": 0
+        },
+        "activeArtifacts": {},
+        "store": {
+          "metadata_writes": 144,
+          "source_file_writes": 1,
+          "link_passes": 0,
+          "source_cache_estimated_bytes": 0,
+          "source_cache_budget_bytes": 4194304,
+          "backend": "rocksdb-sst",
+          "source_record_decodes": 0
+        },
+        "storage": {
+          "repository": {
+            "gram_occurrences": 18190392,
+            "sort_run_records": 1373829,
+            "artifact_locks": 0,
+            "sort_input_records": 1841365,
+            "publication_verify_ms": 349.735378,
+            "actual_delayed_write_rate": 0,
+            "record_prepare_ms": 1966.694287,
+            "builds_in_flight": 0,
+            "storage_bytes": 330642105,
+            "sst_ingest_ms": 214.133644,
+            "sort_merge_and_sst_ms": 3287.034488,
+            "peak_parallel_builds": 4,
+            "sort_peak_bytes": 4194047,
+            "sort_buffer_bytes": 4194304,
+            "num_running_flushes": 0,
+            "native_publication_verifications": 106,
+            "estimate_pending_compaction_bytes": 0,
+            "cur_size_all_mem_tables": 2048,
+            "activation_verification_reuses": 0,
+            "published": 106,
+            "gram_posting_blocks": 663864,
+            "estimate_table_readers_mem": 249116,
+            "file_sync_ms": 7.273136,
+            "is_write_stopped": 0,
+            "num_running_compactions": 0,
+            "oracle_materializations": 0,
+            "query_posting_candidates": 28900,
+            "query_symbol_reads": 28900,
+            "sort_spill_bytes": 34125595,
+            "owner_prefix_queries": 0,
+            "sort_spill_ms": 1850.497311,
+            "reused": 1,
+            "verification_passes": 0
+          },
+          "native_memory": {
+            "cache_and_memtable_budget_bytes": 67108864,
+            "cache_pinned_bytes": 3661248,
+            "cache_usage_bytes": 53652232
+          },
+          "workspace_state": {
+            "directory_writes": 0,
+            "metadata_writes": 76,
+            "file_writes": 2245,
+            "updates": 152,
+            "last": {
+              "metadata_writes": 0,
+              "fingerprint": "17500bfab9201f290658ccea5abb2645056ed7c076b7b56100200cc4aa90422f",
+              "unchanged_files": 3,
+              "deleted_files": [],
+              "changed_files": [],
+              "module": "/home/runner/work/_temp/apache-maven-fixture/compat/maven-toolchain-builder|org.apache.maven:maven-toolchain-builder:4.1.0-SNAPSHOT:test",
+              "file_writes": 0,
+              "directory_writes": 0
+            }
+          },
+          "generation_pins": {},
+          "previous_generation": "",
+          "admission_waiters": 0,
+          "semantic_state": {
+            "last": {
+              "context_changed": false,
+              "module": "/home/runner/work/_temp/apache-maven-fixture/impl/maven-core|org.apache.maven:maven-core:4.1.0-SNAPSHOT:main",
+              "api_changed": [
+                "/home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java"
+              ],
+              "body_only": [],
+              "reanalyze": [
+                "/home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java"
+              ],
+              "file": "/home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java"
+            },
+            "body_only": 0,
+            "updates": 1,
+            "api_changes": 1,
+            "reanalyze_total": 1
+          },
+          "candidate_generation": "format-1-jdk25-jvmd-index-v9",
+          "budget_wait_ms": 917.095,
+          "estimated_bytes_in_flight": 0,
+          "backend": "rocksdb-sst",
+          "peak_estimated_bytes_in_flight": 134217728,
+          "active_generation": "format-1-jdk25-jvmd-index-v9",
+          "budget_bytes": 134217728,
+          "validation_failures": 0,
+          "inventory_entries": 263
+        }
+      },
+      "indexDelta": {
+        "scans": 1,
+        "scanMs": 299.97600000000006,
+        "discoveryMs": 23.520999999999994,
+        "hashMs": 22.436000000000007,
+        "parseMs": 17.911000000000058,
+        "storageMs": 24.976000000000568,
+        "docsMs": 0.23399999999999993,
+        "linkMs": 0.001999999999999999,
+        "workspaceIndexLoads": 0,
+        "workspaceIndexLoadMs": 0,
+        "reused": 262,
+        "hashed": 13,
+        "indexedPublications": 1
+      },
+      "sourceArtifactUpdateCount": "unavailable: current status does not expose source-JAR update counts separately",
+      "aotStatus": "rejected: no cache configured for this JVM"
+    },
+    "residentDaemon": {
+      "mode": "resident_daemon",
+      "machineIndexReadyBeforeSessions": true,
+      "daemonBaselineRssKb": 136260,
+      "repositoryBeforeSessions": {
+        "jarArtifacts": 194,
+        "sourceJarArtifacts": 0
+      },
+      "repositoryAfterSessions": {
+        "jarArtifacts": 262,
+        "sourceJarArtifacts": 0
+      },
+      "indexServiceDeltaDuringSessions": {
+        "scans": 1,
+        "scanMs": 139.011,
+        "discoveryMs": 25.543,
+        "hashMs": 54.709,
+        "parseMs": 1646.024,
+        "storageMs": 9414.884,
+        "docsMs": 0.24700000000000003,
+        "linkMs": 0.001,
+        "workspaceIndexLoads": 2,
+        "workspaceIndexLoadMs": 593.986,
+        "reused": 1404,
+        "hashed": 80,
+        "indexedPublications": 106
+      },
+      "indexServiceCounterScope": "shared IndexService counters during resident sessions; scan/discovery are machine-repository lifecycle, while indexed publications are not separable into dependency versus workspace-local publications",
+      "localIndexPublisherAfterSessions": {
+        "queued_files": 0,
+        "queued_bytes": 0,
+        "budget_bytes": 33554432,
+        "enqueued": 1,
+        "writes": 1,
+        "coalesced": 0,
+        "skipped": 0,
+        "failures": 0,
+        "dropped": 0
+      },
+      "sessions": [
+        {
+          "label": "first_workspace_open",
+          "session": "s1",
+          "milestones": {
+            "initializeStartedNs": 218167364085,
+            "initializeFinishedNs": 238631166862,
+            "sessionOpenStartedNs": 218167861042,
+            "sessionOpenFinishedNs": 238625863013,
+            "workspaceResolutionStartedNs": "unavailable",
+            "workspaceResolvedNs": "unavailable",
+            "workspaceIndexReadyNs": "unavailable",
+            "documentAdmissionStartedNs": 238835823610,
+            "documentsAdmittedNs": 257674815019,
+            "firstUseStartedNs": 257768962353,
+            "firstUseFinishedNs": 261375590247
+          },
+          "initializeMs": 20463.802777,
+          "sessionOpenMs": 20458.001971,
+          "sessionOpenToFirstCorrectResultMs": 43207.729205,
+          "workspaceResolution": {
+            "status": "cold_resolution_measured_by_resolver_timings",
+            "resolveCalls": 1,
+            "projectModelFastHits": 0,
+            "reportedColdTimingMs": 9986.852315999999,
+            "coldTimings": {
+              "graph_ms": 8131.46109,
+              "models_ms": 116.486409,
+              "settings_ms": 12.602738,
+              "version_ms": 212.949896,
+              "dependencies_ms": 1460.57362,
+              "cache_write_ms": 52.778563
+            },
+            "classpathState": "resolved"
+          },
+          "workspaceIndex": {
+            "ready": "unavailable: registerLocal refresh is asynchronous and no all-current barrier is exposed",
+            "loadCalls": 1,
+            "loadMs": 339.7,
+            "indexServiceWorkDuringSessionOpen": {
+              "scans": 0,
+              "scanMs": 0,
+              "discoveryMs": 0,
+              "hashMs": 36.28400000000002,
+              "parseMs": 1646.024,
+              "storageMs": 9414.884,
+              "docsMs": 0,
+              "linkMs": 0,
+              "workspaceIndexLoads": 1,
+              "workspaceIndexLoadMs": 339.7,
+              "reused": 537,
+              "hashed": 68,
+              "indexedPublications": 106
+            },
+            "counterScope": {
+              "reused": "dependency artifact reuse counter",
+              "hashed": "dependency artifact hash counter",
+              "indexedPublications": "aggregate IndexService publication counter; dependency and workspace-local publications are not separately exposed",
+              "parseMs": "IndexService parse worker time; no authoritative dependency/local attribution field is exposed",
+              "storageMs": "IndexService storage worker time; no authoritative dependency/local attribution field is exposed"
+            },
+            "activeArtifactsAfter": {},
+            "sourcePublisherAfter": {
+              "queued_files": 0,
+              "queued_bytes": 0,
+              "budget_bytes": 33554432,
+              "enqueued": 0,
+              "writes": 0,
+              "coalesced": 0,
+              "skipped": 0,
+              "failures": 0,
+              "dropped": 0
+            }
+          },
+          "admission": {
+            "wallMs": 18838.991409,
+            "documents": [
+              {
+                "method": "textDocument/didOpen",
+                "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                "version": 1,
+                "startedNs": 238835964692,
+                "finishedNs": 257558800131,
+                "durationMs": 18722.835439,
+                "diagnosticAfter": 0,
+                "diagnostic": {
+                  "status": "verified",
+                  "receivedNs": 261405410981,
+                  "durationMs": 22569.446289
+                }
+              },
+              {
+                "method": "textDocument/didOpen",
+                "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/DefaultMavenProjectHelper.java",
+                "version": 1,
+                "startedNs": 257558930107,
+                "finishedNs": 257619107870,
+                "durationMs": 60.177763,
+                "diagnosticAfter": 0,
+                "diagnostic": {
+                  "status": "unavailable",
+                  "reason": "no exact-version diagnostic observed"
+                }
+              },
+              {
+                "method": "textDocument/didChange",
+                "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/DefaultMavenProjectHelper.java",
+                "version": 2,
+                "startedNs": 257619142582,
+                "finishedNs": 257674815019,
+                "durationMs": 55.672437,
+                "diagnosticAfter": 0,
+                "diagnostic": {
+                  "status": "unavailable",
+                  "reason": "no exact-version diagnostic observed"
+                }
+              }
+            ],
+            "topLevelDaemon": {
+              "documentMutationRpcMs": 18830.941649999997,
+              "diagnosticsRpcMs": 0,
+              "documentOpenCalls": 2,
+              "documentChangeCalls": 1,
+              "diagnosticsCalls": 0,
+              "otherOrAdapterMs": 8.049759000001359
+            },
+            "resolverDelta": {
+              "resolveCalls": 0,
+              "projectModelFastHits": 0
+            },
+            "workspaceIndexDelta": {
+              "scans": 0,
+              "scanMs": 0,
+              "discoveryMs": 0,
+              "hashMs": 0,
+              "parseMs": 0,
+              "storageMs": 0,
+              "docsMs": 0,
+              "linkMs": 0,
+              "workspaceIndexLoads": 0,
+              "workspaceIndexLoadMs": 0,
+              "reused": 0,
+              "hashed": 0,
+              "indexedPublications": 0
+            },
+            "sourceObservation": {
+              "hashes": 39,
+              "stat_hits": 1474,
+              "bytes_hashed": 81202563,
+              "metadata_checks": 3731,
+              "directory_enumerations": 352,
+              "inventory_entries": 0
+            },
+            "compilerAndSemanticEvidence": {
+              "queries": 0,
+              "query_ms": 0,
+              "configure_calls": 0,
+              "configure_ms": 0,
+              "classpath_validations": 0,
+              "classpath_validation_ms": 0,
+              "binding_computations": 0,
+              "diagnostic_files_analysed": 0,
+              "index_publish_enqueue_ms": 0,
+              "semantic_facts": 0,
+              "semantic_units": 0,
+              "semantic_fact_mutations": 0
+            },
+            "javacPhaseSplit": "unavailable: current session status exposes aggregate compiler query_ms, not separate parse/enter/attribute durations",
+            "admissionBoundary": "bridge mutation acknowledgement + workspace mutation fence; exact-version diagnostics are optional evidence only",
+            "diagnosticsNote": "diagnostic timing is reported only when an exact requested document version was observed; versionless/missing diagnostics are unavailable and never satisfy admission"
+          },
+          "definition": {
+            "firstUse": {
+              "latencyMs": 3605.691414999994,
+              "correct": true,
+              "result": {
+                "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                "range": {
+                  "start": {
+                    "line": 102,
+                    "character": 13
+                  },
+                  "end": {
+                    "line": 102,
+                    "character": 25
+                  }
+                }
+              }
+            },
+            "warmup": [
+              {
+                "latencyMs": 23.588537999996333,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 14.518902999989223,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              }
+            ],
+            "steady": [
+              {
+                "latencyMs": 14.085951000000932,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 24.698598000002676,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 15.309712000002037,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 12.90053299999272,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 11.44586999999592,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 12.845054999997956,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 14.012655999991694,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 11.491794000001391,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 10.740808999995352,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 10.862331999989692,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 10.627833999998984,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 11.916382999988855,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 9.963759999998729,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 11.418378000002122,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 9.436486999999033,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 9.914225000000442,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 11.568072999987635,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 8.391364000010071,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 10.134296000003815,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 9.037721000000602,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              }
+            ],
+            "steadyStats": {
+              "samples": 20,
+              "p50Ms": 11.418378000002122,
+              "p95Ms": 15.309712000002037,
+              "minMs": 8.391364000010071,
+              "maxMs": 24.698598000002676
+            },
+            "correctness": {
+              "first": true,
+              "warmup": [
+                true,
+                true
+              ],
+              "steady": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ]
+            }
+          },
+          "memory": {
+            "daemonMachineReadyKb": 136260,
+            "daemonBaselineBeforeSessionKb": 136260,
+            "sessionOpenedKb": 1721284,
+            "sessionOpenIncrementKb": 1585024,
+            "afterSteadyKb": 1175320,
+            "afterSessionCloseKb": 1162156
+          },
+          "statusEvidence": {
+            "before": {
+              "index": {
+                "phase": "ready",
+                "artifactsDiscovered": 194,
+                "artifactsScanned": 194,
+                "indexedPublications": 0,
+                "artifactsReused": 194,
+                "artifactsHashed": 12,
+                "faults": 0,
+                "timings": {
+                  "scans": 1,
+                  "scanMs": 176.415,
+                  "discoveryMs": 35.515,
+                  "hashMs": 158.408,
+                  "parseMs": 0,
+                  "storageMs": 0,
+                  "docsMs": 0.094,
+                  "linkMs": 0.006,
+                  "workspaceIndexLoads": 0,
+                  "workspaceIndexLoadMs": 0
+                },
+                "sourcePublisher": {
+                  "queued_files": 0,
+                  "queued_bytes": 0,
+                  "budget_bytes": 33554432,
+                  "enqueued": 0,
+                  "writes": 0,
+                  "coalesced": 0,
+                  "skipped": 0,
+                  "failures": 0,
+                  "dropped": 0
+                },
+                "activeArtifacts": {},
+                "store": {
+                  "metadata_writes": 12,
+                  "source_file_writes": 0,
+                  "link_passes": 0,
+                  "source_cache_estimated_bytes": 0,
+                  "source_cache_budget_bytes": 4194304,
+                  "backend": "rocksdb-sst",
+                  "source_record_decodes": 0
+                },
+                "storage": {
+                  "repository": {
+                    "gram_occurrences": 0,
+                    "sort_run_records": 0,
+                    "artifact_locks": 0,
+                    "sort_input_records": 0,
+                    "publication_verify_ms": 0,
+                    "actual_delayed_write_rate": 0,
+                    "record_prepare_ms": 0,
+                    "builds_in_flight": 0,
+                    "storage_bytes": 260268370,
+                    "sst_ingest_ms": 0,
+                    "sort_merge_and_sst_ms": 0,
+                    "peak_parallel_builds": 0,
+                    "sort_peak_bytes": 0,
+                    "sort_buffer_bytes": 4194304,
+                    "num_running_flushes": 0,
+                    "native_publication_verifications": 0,
+                    "estimate_pending_compaction_bytes": 0,
+                    "cur_size_all_mem_tables": 2048,
+                    "activation_verification_reuses": 0,
+                    "published": 0,
+                    "gram_posting_blocks": 0,
+                    "estimate_table_readers_mem": 225024,
+                    "file_sync_ms": 0,
+                    "is_write_stopped": 0,
+                    "num_running_compactions": 0,
+                    "oracle_materializations": 0,
+                    "query_posting_candidates": 0,
+                    "query_symbol_reads": 0,
+                    "sort_spill_bytes": 0,
+                    "owner_prefix_queries": 0,
+                    "sort_spill_ms": 0,
+                    "reused": 0,
+                    "verification_passes": 0
+                  },
+                  "native_memory": {
+                    "cache_and_memtable_budget_bytes": 67108864,
+                    "cache_pinned_bytes": 1562112,
+                    "cache_usage_bytes": 21420416
+                  },
+                  "workspace_state": {
+                    "directory_writes": 0,
+                    "metadata_writes": 0,
+                    "file_writes": 0,
+                    "updates": 0,
+                    "last": {}
+                  },
+                  "generation_pins": {},
+                  "previous_generation": "",
+                  "admission_waiters": 0,
+                  "semantic_state": {
+                    "last": {},
+                    "body_only": 0,
+                    "updates": 0,
+                    "api_changes": 0,
+                    "reanalyze_total": 0
+                  },
+                  "candidate_generation": "format-1-jdk25-jvmd-index-v9",
+                  "budget_wait_ms": 55.015,
+                  "estimated_bytes_in_flight": 0,
+                  "backend": "rocksdb-sst",
+                  "peak_estimated_bytes_in_flight": 134217728,
+                  "active_generation": "format-1-jdk25-jvmd-index-v9",
+                  "budget_bytes": 134217728,
+                  "validation_failures": 0,
+                  "inventory_entries": 194
+                }
+              },
+              "resolver": {
+                "initialized": false,
+                "resolveCalls": 0,
+                "projectModelFastHits": 0,
+                "projectModelInvalidations": 0,
+                "projectModelResidents": 0,
+                "coldTimings": {},
+                "nativeTimings": {}
+              },
+              "rawAot": "rejected: no cache configured for this JVM"
+            },
+            "afterInitialize": {
+              "index": {
+                "phase": "ready",
+                "artifactsDiscovered": 194,
+                "artifactsScanned": 194,
+                "indexedPublications": 106,
+                "artifactsReused": 731,
+                "artifactsHashed": 80,
+                "faults": 0,
+                "timings": {
+                  "scans": 1,
+                  "scanMs": 176.415,
+                  "discoveryMs": 35.515,
+                  "hashMs": 194.692,
+                  "parseMs": 1646.024,
+                  "storageMs": 9414.884,
+                  "docsMs": 0.094,
+                  "linkMs": 0.006,
+                  "workspaceIndexLoads": 1,
+                  "workspaceIndexLoadMs": 339.7
+                },
+                "sourcePublisher": {
+                  "queued_files": 0,
+                  "queued_bytes": 0,
+                  "budget_bytes": 33554432,
+                  "enqueued": 0,
+                  "writes": 0,
+                  "coalesced": 0,
+                  "skipped": 0,
+                  "failures": 0,
+                  "dropped": 0
+                },
+                "activeArtifacts": {},
+                "store": {
+                  "metadata_writes": 118,
+                  "source_file_writes": 0,
+                  "link_passes": 0,
+                  "source_cache_estimated_bytes": 0,
+                  "source_cache_budget_bytes": 4194304,
+                  "backend": "rocksdb-sst",
+                  "source_record_decodes": 0
+                },
+                "storage": {
+                  "repository": {
+                    "gram_occurrences": 18190392,
+                    "sort_run_records": 1373829,
+                    "artifact_locks": 0,
+                    "sort_input_records": 1841365,
+                    "publication_verify_ms": 349.735378,
+                    "actual_delayed_write_rate": 0,
+                    "record_prepare_ms": 1966.694287,
+                    "builds_in_flight": 0,
+                    "storage_bytes": 330642105,
+                    "sst_ingest_ms": 214.133644,
+                    "sort_merge_and_sst_ms": 3287.034488,
+                    "peak_parallel_builds": 4,
+                    "sort_peak_bytes": 4194047,
+                    "sort_buffer_bytes": 4194304,
+                    "num_running_flushes": 0,
+                    "native_publication_verifications": 106,
+                    "estimate_pending_compaction_bytes": 0,
+                    "cur_size_all_mem_tables": 2048,
+                    "activation_verification_reuses": 0,
+                    "published": 106,
+                    "gram_posting_blocks": 663864,
+                    "estimate_table_readers_mem": 249116,
+                    "file_sync_ms": 7.273136,
+                    "is_write_stopped": 0,
+                    "num_running_compactions": 0,
+                    "oracle_materializations": 0,
+                    "query_posting_candidates": 14450,
+                    "query_symbol_reads": 14450,
+                    "sort_spill_bytes": 34125595,
+                    "owner_prefix_queries": 0,
+                    "sort_spill_ms": 1850.497311,
+                    "reused": 0,
+                    "verification_passes": 0
+                  },
+                  "native_memory": {
+                    "cache_and_memtable_budget_bytes": 67108864,
+                    "cache_pinned_bytes": 2585264,
+                    "cache_usage_bytes": 66974256
+                  },
+                  "workspace_state": {
+                    "directory_writes": 0,
+                    "metadata_writes": 76,
+                    "file_writes": 2245,
+                    "updates": 76,
+                    "last": {
+                      "metadata_writes": 1,
+                      "fingerprint": "17500bfab9201f290658ccea5abb2645056ed7c076b7b56100200cc4aa90422f",
+                      "unchanged_files": 0,
+                      "deleted_files": [],
+                      "changed_files": [
+                        "/home/runner/work/_temp/apache-maven-fixture/compat/maven-toolchain-builder/src/test/java/org/apache/maven/toolchain/building/DefaultToolchainsBuilderTest.java",
+                        "/home/runner/work/_temp/apache-maven-fixture/compat/maven-toolchain-builder/src/test/java/org/apache/maven/toolchain/building/ToolchainsBuildingExceptionTest.java",
+                        "/home/runner/work/_temp/apache-maven-fixture/compat/maven-toolchain-builder/src/test/java/org/apache/maven/toolchain/merge/MavenToolchainMergerTest.java"
+                      ],
+                      "module": "/home/runner/work/_temp/apache-maven-fixture/compat/maven-toolchain-builder|org.apache.maven:maven-toolchain-builder:4.1.0-SNAPSHOT:test",
+                      "file_writes": 3,
+                      "directory_writes": 0
+                    }
+                  },
+                  "generation_pins": {},
+                  "previous_generation": "",
+                  "admission_waiters": 0,
+                  "semantic_state": {
+                    "last": {},
+                    "body_only": 0,
+                    "updates": 0,
+                    "api_changes": 0,
+                    "reanalyze_total": 0
+                  },
+                  "candidate_generation": "format-1-jdk25-jvmd-index-v9",
+                  "budget_wait_ms": 55.739,
+                  "estimated_bytes_in_flight": 0,
+                  "backend": "rocksdb-sst",
+                  "peak_estimated_bytes_in_flight": 134217728,
+                  "active_generation": "format-1-jdk25-jvmd-index-v9",
+                  "budget_bytes": 134217728,
+                  "validation_failures": 0,
+                  "inventory_entries": 194
+                }
+              },
+              "resolver": {
+                "initialized": true,
+                "resolveCalls": 1,
+                "projectModelFastHits": 0,
+                "projectModelInvalidations": 0,
+                "projectModelResidents": 1,
+                "coldTimings": {
+                  "graph_ms": 8131.46109,
+                  "models_ms": 116.486409,
+                  "settings_ms": 12.602738,
+                  "version_ms": 212.949896,
+                  "dependencies_ms": 1460.57362,
+                  "cache_write_ms": 52.778563
+                },
+                "nativeTimings": {}
+              },
+              "rawAot": "rejected: no cache configured for this JVM"
+            }
+          },
+          "localChange": null
+        },
+        {
+          "label": "workspace_reopen",
+          "session": "s2",
+          "milestones": {
+            "initializeStartedNs": 261699525841,
+            "initializeFinishedNs": 262277549086,
+            "sessionOpenStartedNs": 261699592010,
+            "sessionOpenFinishedNs": 262276485255,
+            "workspaceResolutionStartedNs": "unavailable",
+            "workspaceResolvedNs": "unavailable",
+            "workspaceIndexReadyNs": "unavailable",
+            "documentAdmissionStartedNs": 262469533873,
+            "documentsAdmittedNs": 280995398937,
+            "firstUseStartedNs": 281014145057,
+            "firstUseFinishedNs": 281687465264
+          },
+          "initializeMs": 578.023245,
+          "sessionOpenMs": 576.893245,
+          "sessionOpenToFirstCorrectResultMs": 19987.873254,
+          "workspaceResolution": {
+            "status": "resident_project_model_fast_hit; exact resolver duration unavailable",
+            "resolveCalls": 0,
+            "projectModelFastHits": 1,
+            "reportedColdTimingMs": null,
+            "coldTimings": {
+              "graph_ms": 8131.46109,
+              "models_ms": 116.486409,
+              "settings_ms": 12.602738,
+              "version_ms": 212.949896,
+              "dependencies_ms": 1460.57362,
+              "cache_write_ms": 52.778563
+            },
+            "classpathState": "resolved"
+          },
+          "workspaceIndex": {
+            "ready": "unavailable: registerLocal refresh is asynchronous and no all-current barrier is exposed",
+            "loadCalls": 1,
+            "loadMs": 254.286,
+            "indexServiceWorkDuringSessionOpen": {
+              "scans": 0,
+              "scanMs": 0,
+              "discoveryMs": 0,
+              "hashMs": 0,
+              "parseMs": 0,
+              "storageMs": 0,
+              "docsMs": 0,
+              "linkMs": 0,
+              "workspaceIndexLoads": 1,
+              "workspaceIndexLoadMs": 254.286,
+              "reused": 605,
+              "hashed": 0,
+              "indexedPublications": 0
+            },
+            "counterScope": {
+              "reused": "dependency artifact reuse counter",
+              "hashed": "dependency artifact hash counter",
+              "indexedPublications": "aggregate IndexService publication counter; dependency and workspace-local publications are not separately exposed",
+              "parseMs": "IndexService parse worker time; no authoritative dependency/local attribution field is exposed",
+              "storageMs": "IndexService storage worker time; no authoritative dependency/local attribution field is exposed"
+            },
+            "activeArtifactsAfter": {},
+            "sourcePublisherAfter": {
+              "queued_files": 0,
+              "queued_bytes": 0,
+              "budget_bytes": 33554432,
+              "enqueued": 1,
+              "writes": 1,
+              "coalesced": 0,
+              "skipped": 0,
+              "failures": 0,
+              "dropped": 0
+            }
+          },
+          "admission": {
+            "wallMs": 18525.865064,
+            "documents": [
+              {
+                "method": "textDocument/didOpen",
+                "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                "version": 1,
+                "startedNs": 262469562006,
+                "finishedNs": 280887862648,
+                "durationMs": 18418.300642,
+                "diagnosticAfter": 0,
+                "diagnostic": {
+                  "status": "unavailable",
+                  "reason": "no exact-version diagnostic observed"
+                }
+              },
+              {
+                "method": "textDocument/didOpen",
+                "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/DefaultMavenProjectHelper.java",
+                "version": 1,
+                "startedNs": 280887884952,
+                "finishedNs": 280942341141,
+                "durationMs": 54.456189,
+                "diagnosticAfter": 0,
+                "diagnostic": {
+                  "status": "unavailable",
+                  "reason": "no exact-version diagnostic observed"
+                }
+              },
+              {
+                "method": "textDocument/didChange",
+                "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/DefaultMavenProjectHelper.java",
+                "version": 2,
+                "startedNs": 280942378407,
+                "finishedNs": 280995398937,
+                "durationMs": 53.02053,
+                "diagnosticAfter": 0,
+                "diagnostic": {
+                  "status": "unavailable",
+                  "reason": "no exact-version diagnostic observed"
+                }
+              }
+            ],
+            "topLevelDaemon": {
+              "documentMutationRpcMs": 18522.957158999998,
+              "diagnosticsRpcMs": 0,
+              "documentOpenCalls": 2,
+              "documentChangeCalls": 1,
+              "diagnosticsCalls": 0,
+              "otherOrAdapterMs": 2.907905000003666
+            },
+            "resolverDelta": {
+              "resolveCalls": 0,
+              "projectModelFastHits": 0
+            },
+            "workspaceIndexDelta": {
+              "scans": 1,
+              "scanMs": 139.011,
+              "discoveryMs": 25.543,
+              "hashMs": 18.424999999999983,
+              "parseMs": 0,
+              "storageMs": 0,
+              "docsMs": 0.24700000000000003,
+              "linkMs": 0.001,
+              "workspaceIndexLoads": 0,
+              "workspaceIndexLoadMs": 0,
+              "reused": 262,
+              "hashed": 12,
+              "indexedPublications": 0
+            },
+            "sourceObservation": {
+              "hashes": 0,
+              "stat_hits": 1513,
+              "bytes_hashed": 0,
+              "metadata_checks": 3692,
+              "directory_enumerations": 352,
+              "inventory_entries": 0
+            },
+            "compilerAndSemanticEvidence": {
+              "queries": 0,
+              "query_ms": 0,
+              "configure_calls": 0,
+              "configure_ms": 0,
+              "classpath_validations": 0,
+              "classpath_validation_ms": 0,
+              "binding_computations": 0,
+              "diagnostic_files_analysed": 0,
+              "index_publish_enqueue_ms": 0,
+              "semantic_facts": 0,
+              "semantic_units": 0,
+              "semantic_fact_mutations": 0
+            },
+            "javacPhaseSplit": "unavailable: current session status exposes aggregate compiler query_ms, not separate parse/enter/attribute durations",
+            "admissionBoundary": "bridge mutation acknowledgement + workspace mutation fence; exact-version diagnostics are optional evidence only",
+            "diagnosticsNote": "diagnostic timing is reported only when an exact requested document version was observed; versionless/missing diagnostics are unavailable and never satisfy admission"
+          },
+          "definition": {
+            "firstUse": {
+              "latencyMs": 673.3021000000008,
+              "correct": true,
+              "result": {
+                "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                "range": {
+                  "start": {
+                    "line": 102,
+                    "character": 13
+                  },
+                  "end": {
+                    "line": 102,
+                    "character": 25
+                  }
+                }
+              }
+            },
+            "warmup": [
+              {
+                "latencyMs": 12.676499000008334,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 11.744467000011355,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              }
+            ],
+            "steady": [
+              {
+                "latencyMs": 11.975254000004497,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 11.777387000009185,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 11.229061999998521,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 9.751319000002695,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 10.650481999997282,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 11.004999999990105,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 10.111195999998017,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 12.857361000002129,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 11.133283000002848,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 10.133508999992046,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 8.648520999995526,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 8.993507999999565,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 9.773312000004807,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 8.732906999997795,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 8.7100369999971,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 9.036132999986876,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 8.835044999999809,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 8.340727999995579,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 11.349834000007831,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              },
+              {
+                "latencyMs": 8.398344000001089,
+                "correct": true,
+                "result": {
+                  "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                  "range": {
+                    "start": {
+                      "line": 102,
+                      "character": 13
+                    },
+                    "end": {
+                      "line": 102,
+                      "character": 25
+                    }
+                  }
+                }
+              }
+            ],
+            "steadyStats": {
+              "samples": 20,
+              "p50Ms": 9.773312000004807,
+              "p95Ms": 11.975254000004497,
+              "minMs": 8.340727999995579,
+              "maxMs": 12.857361000002129
+            },
+            "correctness": {
+              "first": true,
+              "warmup": [
+                true,
+                true
+              ],
+              "steady": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ]
+            }
+          },
+          "memory": {
+            "daemonMachineReadyKb": 136260,
+            "daemonBaselineBeforeSessionKb": 1162164,
+            "sessionOpenedKb": 1183692,
+            "sessionOpenIncrementKb": 21528,
+            "afterSteadyKb": 1202304,
+            "afterSessionCloseKb": 1195804
+          },
+          "statusEvidence": {
+            "before": {
+              "index": {
+                "phase": "ready",
+                "artifactsDiscovered": 194,
+                "artifactsScanned": 194,
+                "indexedPublications": 106,
+                "artifactsReused": 731,
+                "artifactsHashed": 80,
+                "faults": 0,
+                "timings": {
+                  "scans": 1,
+                  "scanMs": 176.415,
+                  "discoveryMs": 35.515,
+                  "hashMs": 194.692,
+                  "parseMs": 1646.024,
+                  "storageMs": 9414.884,
+                  "docsMs": 0.094,
+                  "linkMs": 0.006,
+                  "workspaceIndexLoads": 1,
+                  "workspaceIndexLoadMs": 339.7
+                },
+                "sourcePublisher": {
+                  "queued_files": 0,
+                  "queued_bytes": 0,
+                  "budget_bytes": 33554432,
+                  "enqueued": 1,
+                  "writes": 1,
+                  "coalesced": 0,
+                  "skipped": 0,
+                  "failures": 0,
+                  "dropped": 0
+                },
+                "activeArtifacts": {},
+                "store": {
+                  "metadata_writes": 119,
+                  "source_file_writes": 1,
+                  "link_passes": 0,
+                  "source_cache_estimated_bytes": 0,
+                  "source_cache_budget_bytes": 4194304,
+                  "backend": "rocksdb-sst",
+                  "source_record_decodes": 0
+                },
+                "storage": {
+                  "repository": {
+                    "gram_occurrences": 18190392,
+                    "sort_run_records": 1373829,
+                    "artifact_locks": 0,
+                    "sort_input_records": 1841365,
+                    "publication_verify_ms": 349.735378,
+                    "actual_delayed_write_rate": 0,
+                    "record_prepare_ms": 1966.694287,
+                    "builds_in_flight": 0,
+                    "storage_bytes": 330642105,
+                    "sst_ingest_ms": 214.133644,
+                    "sort_merge_and_sst_ms": 3287.034488,
+                    "peak_parallel_builds": 4,
+                    "sort_peak_bytes": 4194047,
+                    "sort_buffer_bytes": 4194304,
+                    "num_running_flushes": 0,
+                    "native_publication_verifications": 106,
+                    "estimate_pending_compaction_bytes": 0,
+                    "cur_size_all_mem_tables": 2048,
+                    "activation_verification_reuses": 0,
+                    "published": 106,
+                    "gram_posting_blocks": 663864,
+                    "estimate_table_readers_mem": 249116,
+                    "file_sync_ms": 7.273136,
+                    "is_write_stopped": 0,
+                    "num_running_compactions": 0,
+                    "oracle_materializations": 0,
+                    "query_posting_candidates": 14450,
+                    "query_symbol_reads": 14450,
+                    "sort_spill_bytes": 34125595,
+                    "owner_prefix_queries": 0,
+                    "sort_spill_ms": 1850.497311,
+                    "reused": 0,
+                    "verification_passes": 0
+                  },
+                  "native_memory": {
+                    "cache_and_memtable_budget_bytes": 67108864,
+                    "cache_pinned_bytes": 15959344,
+                    "cache_usage_bytes": 66455056
+                  },
+                  "workspace_state": {
+                    "directory_writes": 0,
+                    "metadata_writes": 76,
+                    "file_writes": 2245,
+                    "updates": 76,
+                    "last": {
+                      "metadata_writes": 1,
+                      "fingerprint": "17500bfab9201f290658ccea5abb2645056ed7c076b7b56100200cc4aa90422f",
+                      "unchanged_files": 0,
+                      "deleted_files": [],
+                      "changed_files": [
+                        "/home/runner/work/_temp/apache-maven-fixture/compat/maven-toolchain-builder/src/test/java/org/apache/maven/toolchain/building/DefaultToolchainsBuilderTest.java",
+                        "/home/runner/work/_temp/apache-maven-fixture/compat/maven-toolchain-builder/src/test/java/org/apache/maven/toolchain/building/ToolchainsBuildingExceptionTest.java",
+                        "/home/runner/work/_temp/apache-maven-fixture/compat/maven-toolchain-builder/src/test/java/org/apache/maven/toolchain/merge/MavenToolchainMergerTest.java"
+                      ],
+                      "module": "/home/runner/work/_temp/apache-maven-fixture/compat/maven-toolchain-builder|org.apache.maven:maven-toolchain-builder:4.1.0-SNAPSHOT:test",
+                      "file_writes": 3,
+                      "directory_writes": 0
+                    }
+                  },
+                  "generation_pins": {},
+                  "previous_generation": "",
+                  "admission_waiters": 0,
+                  "semantic_state": {
+                    "last": {
+                      "context_changed": false,
+                      "module": "/home/runner/work/_temp/apache-maven-fixture/impl/maven-core|org.apache.maven:maven-core:4.1.0-SNAPSHOT:main",
+                      "api_changed": [
+                        "/home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java"
+                      ],
+                      "body_only": [],
+                      "reanalyze": [
+                        "/home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java"
+                      ],
+                      "file": "/home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java"
+                    },
+                    "body_only": 0,
+                    "updates": 1,
+                    "api_changes": 1,
+                    "reanalyze_total": 1
+                  },
+                  "candidate_generation": "format-1-jdk25-jvmd-index-v9",
+                  "budget_wait_ms": 55.739,
+                  "estimated_bytes_in_flight": 0,
+                  "backend": "rocksdb-sst",
+                  "peak_estimated_bytes_in_flight": 134217728,
+                  "active_generation": "format-1-jdk25-jvmd-index-v9",
+                  "budget_bytes": 134217728,
+                  "validation_failures": 0,
+                  "inventory_entries": 194
+                }
+              },
+              "resolver": {
+                "initialized": true,
+                "resolveCalls": 1,
+                "projectModelFastHits": 0,
+                "projectModelInvalidations": 0,
+                "projectModelResidents": 1,
+                "coldTimings": {
+                  "graph_ms": 8131.46109,
+                  "models_ms": 116.486409,
+                  "settings_ms": 12.602738,
+                  "version_ms": 212.949896,
+                  "dependencies_ms": 1460.57362,
+                  "cache_write_ms": 52.778563
+                },
+                "nativeTimings": {}
+              },
+              "rawAot": "rejected: no cache configured for this JVM"
+            },
+            "afterInitialize": {
+              "index": {
+                "phase": "ready",
+                "artifactsDiscovered": 194,
+                "artifactsScanned": 194,
+                "indexedPublications": 106,
+                "artifactsReused": 1336,
+                "artifactsHashed": 80,
+                "faults": 0,
+                "timings": {
+                  "scans": 1,
+                  "scanMs": 176.415,
+                  "discoveryMs": 35.515,
+                  "hashMs": 194.692,
+                  "parseMs": 1646.024,
+                  "storageMs": 9414.884,
+                  "docsMs": 0.094,
+                  "linkMs": 0.006,
+                  "workspaceIndexLoads": 2,
+                  "workspaceIndexLoadMs": 593.986
+                },
+                "sourcePublisher": {
+                  "queued_files": 0,
+                  "queued_bytes": 0,
+                  "budget_bytes": 33554432,
+                  "enqueued": 1,
+                  "writes": 1,
+                  "coalesced": 0,
+                  "skipped": 0,
+                  "failures": 0,
+                  "dropped": 0
+                },
+                "activeArtifacts": {},
+                "store": {
+                  "metadata_writes": 119,
+                  "source_file_writes": 1,
+                  "link_passes": 0,
+                  "source_cache_estimated_bytes": 0,
+                  "source_cache_budget_bytes": 4194304,
+                  "backend": "rocksdb-sst",
+                  "source_record_decodes": 0
+                },
+                "storage": {
+                  "repository": {
+                    "gram_occurrences": 18190392,
+                    "sort_run_records": 1373829,
+                    "artifact_locks": 0,
+                    "sort_input_records": 1841365,
+                    "publication_verify_ms": 349.735378,
+                    "actual_delayed_write_rate": 0,
+                    "record_prepare_ms": 1966.694287,
+                    "builds_in_flight": 0,
+                    "storage_bytes": 330642105,
+                    "sst_ingest_ms": 214.133644,
+                    "sort_merge_and_sst_ms": 3287.034488,
+                    "peak_parallel_builds": 4,
+                    "sort_peak_bytes": 4194047,
+                    "sort_buffer_bytes": 4194304,
+                    "num_running_flushes": 0,
+                    "native_publication_verifications": 106,
+                    "estimate_pending_compaction_bytes": 0,
+                    "cur_size_all_mem_tables": 2048,
+                    "activation_verification_reuses": 0,
+                    "published": 106,
+                    "gram_posting_blocks": 663864,
+                    "estimate_table_readers_mem": 249116,
+                    "file_sync_ms": 7.273136,
+                    "is_write_stopped": 0,
+                    "num_running_compactions": 0,
+                    "oracle_materializations": 0,
+                    "query_posting_candidates": 28900,
+                    "query_symbol_reads": 28900,
+                    "sort_spill_bytes": 34125595,
+                    "owner_prefix_queries": 0,
+                    "sort_spill_ms": 1850.497311,
+                    "reused": 0,
+                    "verification_passes": 0
+                  },
+                  "native_memory": {
+                    "cache_and_memtable_budget_bytes": 67108864,
+                    "cache_pinned_bytes": 15959344,
+                    "cache_usage_bytes": 66950864
+                  },
+                  "workspace_state": {
+                    "directory_writes": 0,
+                    "metadata_writes": 76,
+                    "file_writes": 2245,
+                    "updates": 152,
+                    "last": {
+                      "metadata_writes": 0,
+                      "fingerprint": "17500bfab9201f290658ccea5abb2645056ed7c076b7b56100200cc4aa90422f",
+                      "unchanged_files": 3,
+                      "deleted_files": [],
+                      "changed_files": [],
+                      "module": "/home/runner/work/_temp/apache-maven-fixture/compat/maven-toolchain-builder|org.apache.maven:maven-toolchain-builder:4.1.0-SNAPSHOT:test",
+                      "file_writes": 0,
+                      "directory_writes": 0
+                    }
+                  },
+                  "generation_pins": {},
+                  "previous_generation": "",
+                  "admission_waiters": 0,
+                  "semantic_state": {
+                    "last": {
+                      "context_changed": false,
+                      "module": "/home/runner/work/_temp/apache-maven-fixture/impl/maven-core|org.apache.maven:maven-core:4.1.0-SNAPSHOT:main",
+                      "api_changed": [
+                        "/home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java"
+                      ],
+                      "body_only": [],
+                      "reanalyze": [
+                        "/home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java"
+                      ],
+                      "file": "/home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java"
+                    },
+                    "body_only": 0,
+                    "updates": 1,
+                    "api_changes": 1,
+                    "reanalyze_total": 1
+                  },
+                  "candidate_generation": "format-1-jdk25-jvmd-index-v9",
+                  "budget_wait_ms": 55.993,
+                  "estimated_bytes_in_flight": 0,
+                  "backend": "rocksdb-sst",
+                  "peak_estimated_bytes_in_flight": 134217728,
+                  "active_generation": "format-1-jdk25-jvmd-index-v9",
+                  "budget_bytes": 134217728,
+                  "validation_failures": 0,
+                  "inventory_entries": 194
+                }
+              },
+              "resolver": {
+                "initialized": true,
+                "resolveCalls": 1,
+                "projectModelFastHits": 1,
+                "projectModelInvalidations": 0,
+                "projectModelResidents": 1,
+                "coldTimings": {
+                  "graph_ms": 8131.46109,
+                  "models_ms": 116.486409,
+                  "settings_ms": 12.602738,
+                  "version_ms": 212.949896,
+                  "dependencies_ms": 1460.57362,
+                  "cache_write_ms": 52.778563
+                },
+                "nativeTimings": {}
+              },
+              "rawAot": "rejected: no cache configured for this JVM"
+            }
+          },
+          "localChange": {
+            "mutation": {
+              "method": "textDocument/didChange",
+              "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/DefaultMavenProjectHelper.java",
+              "version": 3,
+              "startedNs": 281938369714,
+              "finishedNs": 281991289072,
+              "durationMs": 52.919358,
+              "diagnosticAfter": 0,
+              "diagnostic": {
+                "status": "unavailable",
+                "reason": "no exact-version diagnostic observed"
+              }
+            },
+            "definition": {
+              "latencyMs": 256.79365900000266,
+              "correct": true,
+              "result": {
+                "uri": "file:///home/runner/work/_temp/apache-maven-fixture/impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java",
+                "range": {
+                  "start": {
+                    "line": 102,
+                    "character": 13
+                  },
+                  "end": {
+                    "line": 102,
+                    "character": 25
+                  }
+                }
+              }
+            },
+            "machineIndexDelta": {
+              "scans": 0,
+              "scanMs": 0,
+              "discoveryMs": 0,
+              "hashMs": 0,
+              "parseMs": 0,
+              "storageMs": 0,
+              "docsMs": 0,
+              "linkMs": 0,
+              "workspaceIndexLoads": 0,
+              "workspaceIndexLoadMs": 0,
+              "reused": 0,
+              "hashed": 0,
+              "indexedPublications": 0
+            },
+            "resolverDelta": {
+              "resolveCalls": 0,
+              "projectModelFastHits": 0
+            },
+            "compilerEvidence": {
+              "queries": 0,
+              "query_ms": 0,
+              "configure_calls": 0,
+              "configure_ms": 0,
+              "classpath_validations": 0,
+              "classpath_validation_ms": 0,
+              "binding_computations": 0,
+              "diagnostic_files_analysed": 0,
+              "index_publish_enqueue_ms": 0,
+              "semantic_facts": 0,
+              "semantic_units": 0,
+              "semantic_fact_mutations": 0
+            },
+            "fileStateEvidence": {
+              "hashes": 0,
+              "stat_hits": 41,
+              "bytes_hashed": 0,
+              "metadata_checks": 41,
+              "directory_enumerations": 0,
+              "inventory_entries": 0
+            },
+            "globalDependencyReindexObserved": false
+          }
+        }
+      ]
+    }
+  }
+}

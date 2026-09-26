@@ -5,6 +5,7 @@ from pathlib import Path
 from urllib.parse import unquote
 from compile import EXPORTS, sha
 from resources import ProcessMonitor
+from contracts import diagnostic_decision
 
 CAPABILITIES = {
     "workspace": {
@@ -156,19 +157,24 @@ class Client:
         return result, elapsed
 
     def diagnostics(self, uri, version, error, since, timeout=90):
+        modes = getattr(self, "diagnostic_modes", {})
+        self.diagnostic_modes = modes
+        key = unquote(uri)
         def matching():
             for message in reversed(self.notifications[since:]):
-                p = message.get("params", {})
-                if (
-                    message.get("method") == "textDocument/publishDiagnostics"
-                    and unquote(p.get("uri", "")) == unquote(uri)
-                    and p.get("version", version) == version
-                ):
-                    diagnostics = p.get("diagnostics", [])
-                    if error and any("missingValue" in str(d) for d in diagnostics):
-                        return p
-                    if not error and not diagnostics:
-                        return p
+                p = dict(message.get("params", {}))
+                if message.get("method") != "textDocument/publishDiagnostics":
+                    continue
+                normalized = dict(p, uri=unquote(p.get("uri", "")))
+                kind, mode = diagnostic_decision(modes.get(key, "unknown"), normalized, key, version)
+                if kind == "ignore":
+                    continue
+                modes[key] = mode
+                if kind == "unavailable":
+                    return dict(p, _admission={"status": "unavailable", "reason": "publishDiagnostics has no document version"})
+                diagnostics = p.get("diagnostics", [])
+                if (error and any("missingValue" in str(d) for d in diagnostics)) or (not error and not diagnostics):
+                    return dict(p, _admission={"status": "verified", "version": version})
             return None
 
         with self.condition:
@@ -413,9 +419,9 @@ def prepare(client, fixture, server, timeout, report):
     _milestone(client, milestones, "workspace_ready")
     memory["workspace_ready"] = client.memory_snapshot()
 
-    # Query documents are admitted only after workspace readiness. Versioned diagnostics are the
-    # explicit cross-server admission boundary; this is therefore settled editor preparation.
+    # Exact-version admission is claimed only when every document supplies that evidence.
     documents = {op["params"]["textDocument"]["uri"]: op["source"] for op in fixture["operations"]}
+    admissions = []
     _milestone(client, milestones, "document_admission_started")
     for uri, source in documents.items():
         since = len(client.notifications)
@@ -423,9 +429,14 @@ def prepare(client, fixture, server, timeout, report):
             "textDocument/didOpen",
             {"textDocument": {"uri": uri, "languageId": "java", "version": 1, "text": source}},
         )
-        client.diagnostics(uri, 1, False, since, timeout)
-    _milestone(client, milestones, "documents_admitted")
-    memory["documents_admitted"] = client.memory_snapshot()
+        evidence = client.diagnostics(uri, 1, False, since, timeout)["_admission"]
+        admissions.append(dict(evidence, uri=uri))
+    finished = _milestone(client, milestones, "document_setup_finished")
+    memory["document_setup_finished"] = client.memory_snapshot()
+    admitted = bool(admissions) and all(a["status"] == "verified" for a in admissions)
+    if admitted:
+        milestones["documents_admitted"] = finished
+        memory["documents_admitted"] = memory["document_setup_finished"]
 
     offsets = {name + "_ms": _offset_ms(client, value) for name, value in milestones.items()}
     return {
@@ -441,7 +452,8 @@ def prepare(client, fixture, server, timeout, report):
         ) / 1e6,
         "document_admission_ms": (
             milestones["documents_admitted"] - milestones["document_admission_started"]
-        ) / 1e6,
+        ) / 1e6 if admitted else None,
+        "document_setup_ms": (finished - milestones["document_admission_started"]) / 1e6,
         "queries": probes,
         "opened_documents": [sentinel_uri, *documents.keys()],
         "readiness": {
@@ -454,9 +466,11 @@ def prepare(client, fixture, server, timeout, report):
             "target_queried": False,
         },
         "document_admission": {
-            "boundary": "versioned zero-error publishDiagnostics for every measured query document",
+            "boundary": "versioned zero-error publishDiagnostics for every measured query document" if admitted else "unavailable: versionless diagnostics cannot prove current-version admission",
+            "status": "verified" if admitted else "unavailable",
+            "documents": admissions,
             "diagnostics_waited": True,
-            "mode": "settled editor admission",
+            "mode": "settled editor admission" if admitted else "document setup complete; current-version admission unverified",
         },
         "memory": memory,
     }
@@ -472,7 +486,7 @@ def run(a, server, repetition, mode, build):
     fixture = create(root / "fixture", a.java_home, a.targets, a.sources)
     write(root / "fixture.json", fixture)
     report = {
-        "schema": 3,
+        "schema": 4,
         "phase_model": PHASE_MODEL["schema"],
         "server": server,
         "mode": mode,

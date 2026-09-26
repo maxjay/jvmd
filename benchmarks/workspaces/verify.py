@@ -160,7 +160,7 @@ def verify(root):
                 "process_spawn",
                 "initialize_received",
                 "workspace_ready",
-                "documents_admitted",
+                "document_setup_finished" if report.get("schema", 2) >= 4 else "documents_admitted",
                 "first_use_started",
                 "first_use_finished",
             ]
@@ -169,6 +169,18 @@ def verify(root):
                 errors.append("benchmark milestones are missing or out of order")
             if report.get("preparation", {}).get("readiness", {}).get("target_queried") is not False:
                 errors.append("measured target was queried during readiness")
+            if report.get("schema", 2) >= 4:
+                admission = report.get("preparation", {}).get("document_admission", {})
+                if admission.get("status") not in ("verified", "unavailable"):
+                    errors.append("document admission evidence missing")
+                if admission.get("status") == "verified" and (
+                    not admission.get("documents") or any(d.get("status") != "verified" for d in admission["documents"])
+                ):
+                    errors.append("exact-version admission not supported for every document")
+                if admission.get("status") == "unavailable" and (
+                    "documents_admitted" in milestones or report.get("preparation", {}).get("document_admission_ms") is not None
+                ):
+                    errors.append("unavailable admission was reported as a measured boundary")
             for key in operations:
                 states = [
                     canonical_state(row["state"])

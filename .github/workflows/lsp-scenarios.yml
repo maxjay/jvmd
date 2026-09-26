@@ -31,11 +31,11 @@ on:
     inputs:
       mode:
         type: choice
-        options: [record, compare]
+        options: [compare]
         default: compare
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: lsp-scenarios-${{ github.event.pull_request.number || github.ref }}
@@ -81,8 +81,11 @@ jobs:
       - name: Install harness dependency
         run: npm install --prefix benchmarks/lsp-scenarios --ignore-scripts
 
-      - name: Harness phase tests
-        run: node --test benchmarks/lsp-scenarios/test/*.test.ts
+      - name: Harness contract tests
+        run: |
+          python3 benchmarks/lsp-scenarios/catalogue.py
+          node --test benchmarks/lsp-scenarios/test/*.test.ts
+          python3 -m unittest discover -s benchmarks/workspaces -p 'test_*.py'
 
       - name: Restore prepared Apache Maven fixture
         id: fixture
@@ -126,7 +129,7 @@ jobs:
       - name: Measure JDTLS phases
         env:
           FIXTURE_ROOT: ${{ runner.temp }}/apache-maven-fixture
-          MODE: ${{ (github.event_name == 'push' && 'record') || (inputs.mode || 'compare') }}
+          MODE: compare
           SERVER: jdtls
           JDTLS_HOME: ${{ runner.temp }}/jdtls
           REPORT_FILE: ${{ runner.temp }}/jdtls-report.json
@@ -144,6 +147,7 @@ jobs:
         run: node benchmarks/lsp-scenarios/compare.ts "$RUNNER_TEMP/jdtls-report.json" "$RUNNER_TEMP/jvmd-report.json"
 
       - name: Upload phase reports
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: lsp-phase-reports
@@ -153,12 +157,3 @@ jobs:
             ${{ runner.temp }}/jvmd-report.json
             ${{ runner.temp }}/jvmd-machine-lifecycle.json
 
-      - name: Commit JDTLS semantic baseline
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add benchmarks/lsp-scenarios/expected/
-          git diff --cached --quiet && exit 0
-          git commit -m "bench: record JDTLS LSP baseline"
-          git push

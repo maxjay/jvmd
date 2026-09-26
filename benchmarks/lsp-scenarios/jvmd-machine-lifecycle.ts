@@ -38,11 +38,11 @@ function nowNs(){return Number(process.hrtime.bigint());}
 function ms(start:number,end:number){return (end-start)/1e6;}
 function sleep(milliseconds:number){return new Promise(resolve=>setTimeout(resolve,milliseconds));}
 function rssKb(pid?:number){
-  if(!pid)return 0;
+  if(!pid)return null;
   try{
     const status=readFileSync("/proc/"+pid+"/status","utf8");
-    return Number(status.match(/^VmRSS:\s+(\d+)\s+kB/m)?.[1]??0);
-  }catch{return 0;}
+    return Number(status.match(/^VmRSS:\s+(\d+)\s+kB/m)?.[1]??NaN);
+  }catch{return null;}
 }
 function daemonResult(envelope:any){return envelope?.result??{};}
 function deltaIndex(after:any,before:any){
@@ -119,7 +119,7 @@ class Daemon {
   transportAvailableNs=0;
   machineIndexReadyNs=0;
   machineReadyStatus:any;
-  machineReadyRssKb=0;
+  machineReadyRssKb:number|null=null;
   private stderrBuffer="";
   constructor(process:ChildProcess,socketPath:string,stateDir:string,control:RpcClient,startedNs:number){
     this.process=process;this.socketPath=socketPath;this.stateDir=stateDir;this.control=control;this.processStartedNs=startedNs;
@@ -400,10 +400,8 @@ async function runDefinitionSession(daemon:Daemon,root:string,label:string,local
       },
       compilerEvidence:compilerEvidence(localBeforeSession,localAfterSession),
       fileStateEvidence:fileStateEvidence(localBeforeSession.file_states,localAfterSession.file_states),
-      globalDependencyReindexObserved:
-        numericDelta(localIndexAfter.timings,localIndexBefore.timings,"scans")!==0
-        ||numericDelta(localIndexAfter,localIndexBefore,"artifactsHashed")!==0
-        ||numericDelta(localIndexAfter,localIndexBefore,"artifactsReused")!==0,
+      globalDependencyReindexObserved:null,
+      reindexEvidence:{status:"unavailable",reason:"scan/hash/reuse activity does not identify exclusive dependency reindex work; see raw index deltas"},
     };
   }
 
@@ -454,7 +452,8 @@ async function runDefinitionSession(daemon:Daemon,root:string,label:string,local
       wallMs:admissionWallMs,documents:spans,
       topLevelDaemon:{
         ...daemonTop,
-        otherOrAdapterMs:Math.max(0,admissionWallMs-daemonTop.documentMutationRpcMs-daemonTop.diagnosticsRpcMs),
+        otherOrAdapterMs:null,
+        residualStatus:"unavailable: no causal union of server spans in the client clock domain",
       },
       resolverDelta:{
         resolveCalls:numericDelta(admissionResolverAfter,admissionResolverBefore,"resolveCalls"),
@@ -476,7 +475,8 @@ async function runDefinitionSession(daemon:Daemon,root:string,label:string,local
       daemonMachineReadyKb:machineReadyRss,
       daemonBaselineBeforeSessionKb:sessionBaselineRss,
       sessionOpenedKb:sessionOpenedRss,
-      sessionOpenIncrementKb:sessionOpenedRss-sessionBaselineRss,
+      sessionOpenIncrementKb:sessionOpenedRss===null||sessionBaselineRss===null?null:sessionOpenedRss-sessionBaselineRss,
+      scope:"daemon RSS only; missing /proc fields are unavailable, not zero; children not included",
       afterSteadyKb:afterSteadyRss,
       afterSessionCloseKb:afterSessionCloseRss,
     },
@@ -494,8 +494,11 @@ function position(text:string,offset:number){
   return {line,character:offset-(newline+1)};
 }
 async function measureDefinition(driver:BridgeDriver,params:any,expectedUri:string):Promise<Operation>{
+  const source=readFileSync(new URL(expectedUri),"utf8"),match=/\bclass\s+(MavenProject)\b/u.exec(source);
+  assert(match,"fixture declaration missing");const offset=match.index+match[0].lastIndexOf(match[1]);
+  const expectedRange={start:position(source,offset),end:position(source,offset+match[1].length)};
   const started=performance.now(),result=await driver.request("textDocument/definition",params);
-  return {latencyMs:performance.now()-started,correct:definitionCorrect(result,expectedUri),result};
+  return {latencyMs:performance.now()-started,correct:definitionCorrect(result,expectedUri,expectedRange),result};
 }
 
 async function main(){
@@ -599,6 +602,7 @@ async function main(){
 }
 
 function fmt(value:any){return value===null||value===undefined?"-":Number(value).toFixed(2);}
+function mib(value:any){return value==null?null:value/1024;}
 function markdown(report:any){
   const m=report.machine;
   const sessions=m.residentDaemon.sessions;
@@ -678,12 +682,12 @@ function markdown(report:any){
     "",
     "| State | first workspace open | workspace reopen |",
     "| --- | ---: | ---: |",
-    "| Machine-ready daemon baseline MB | "+fmt(sessions[0].memory.daemonMachineReadyKb/1024)+" | "+fmt(sessions[1].memory.daemonMachineReadyKb/1024)+" |",
-    "| Daemon immediately before session MB | "+fmt(sessions[0].memory.daemonBaselineBeforeSessionKb/1024)+" | "+fmt(sessions[1].memory.daemonBaselineBeforeSessionKb/1024)+" |",
-    "| After session open MB | "+fmt(sessions[0].memory.sessionOpenedKb/1024)+" | "+fmt(sessions[1].memory.sessionOpenedKb/1024)+" |",
-    "| Session-open RSS increment MB | "+fmt(sessions[0].memory.sessionOpenIncrementKb/1024)+" | "+fmt(sessions[1].memory.sessionOpenIncrementKb/1024)+" |",
-    "| After steady MB | "+fmt(sessions[0].memory.afterSteadyKb/1024)+" | "+fmt(sessions[1].memory.afterSteadyKb/1024)+" |",
-    "| After session close MB | "+fmt(sessions[0].memory.afterSessionCloseKb/1024)+" | "+fmt(sessions[1].memory.afterSessionCloseKb/1024)+" |",
+    "| Machine-ready daemon baseline MB | "+fmt(mib(sessions[0].memory.daemonMachineReadyKb))+" | "+fmt(mib(sessions[1].memory.daemonMachineReadyKb))+" |",
+    "| Daemon immediately before session MB | "+fmt(mib(sessions[0].memory.daemonBaselineBeforeSessionKb))+" | "+fmt(mib(sessions[1].memory.daemonBaselineBeforeSessionKb))+" |",
+    "| After session open MB | "+fmt(mib(sessions[0].memory.sessionOpenedKb))+" | "+fmt(mib(sessions[1].memory.sessionOpenedKb))+" |",
+    "| Session-open RSS increment MB | "+fmt(mib(sessions[0].memory.sessionOpenIncrementKb))+" | "+fmt(mib(sessions[1].memory.sessionOpenIncrementKb))+" |",
+    "| After steady MB | "+fmt(mib(sessions[0].memory.afterSteadyKb))+" | "+fmt(mib(sessions[1].memory.afterSteadyKb))+" |",
+    "| After session close MB | "+fmt(mib(sessions[0].memory.afterSessionCloseKb))+" | "+fmt(mib(sessions[1].memory.afterSessionCloseKb))+" |",
     "",
     "Repository artifacts before resident sessions: **"+m.residentDaemon.repositoryBeforeSessions.jarArtifacts+"**; after sessions/background reconciliation: **"+m.residentDaemon.repositoryAfterSessions.jarArtifacts+"**.",
     "",

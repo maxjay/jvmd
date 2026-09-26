@@ -82,9 +82,130 @@ public final class LspFacade {
             if(!expected.isEmpty()&&!expected.equals(current))
                 throw new RpcException(-32801,"Completion item is stale",Map.of("scip",ref,"expected",expected,"current",current));
             var item=(ObjectNode)nativeParams.deepCopy();
-            // Resolve is the enrichment boundary: replace the shallow completion detail with the
-            // exact current declaration signature after semantic identity has been validated.
-            if(described.hasNonNull("signature"))item.put("detail",described.path("signature").asText());
+            // Resolve is the enrichment boundary. Identity has already selected the exact
+            // declaration; present it in the editor with its declaring owner without rediscovering
+            // the candidate through javac/workspace search.
+            String owner=described.path("declaring").asText("");
+            String label=item.path("label").asText("");
+            if(!owner.isBlank()&&!label.isBlank()){
+                int dot=Math.max(owner.lastIndexOf('.'),owner.lastIndexOf('            String doc=described.path("doc").asText("");
+            if(!doc.isEmpty())item.set("documentation",Json.MAPPER.valueToTree(Map.of("kind","markdown","value",doc)));
+            return query.finish(item);
+        }
+        Path file=path(session,Dispatcher.required(nativeParams.path("textDocument"),"uri"));var arguments=params(file);
+        if(method.equals("textDocument/documentSymbol")){
+            var outline=query.all("symbol.overview",arguments.put("depth",10).put("limit",1000),"symbols");var output=Json.MAPPER.createArrayNode();var parents=new ArrayDeque<JsonNode>();
+            boolean hierarchy=request.path("client").path("textDocument").path("documentSymbol").path("hierarchicalDocumentSymbolSupport").asBoolean();
+            for(var symbol:outline.path("symbols")){
+                var row=Json.MAPPER.createObjectNode().put("name",symbol.path("name").asText()).put("kind",symbolKind(symbol.path("kind").asText()));
+                if(hierarchy){
+                    row.put("detail",symbol.path("signature").asText());row.set("range",symbol.path("range"));row.set("selectionRange",range(symbol));row.putArray("children");
+                    while(!parents.isEmpty()&&parents.getLast().path("end").asInt()<symbol.path("end").asInt())parents.removeLast();
+                    if(parents.isEmpty())output.add(row);else ((ArrayNode)parents.getLast().path("row").path("children")).add(row);
+                    var parent=Json.MAPPER.createObjectNode().put("end",symbol.path("end").asInt());parent.set("row",row);parents.add(parent);
+                }else{row.set("location",location(symbol));row.put("containerName",symbol.path("declaring").asText(""));output.add(row);}
+            }return query.finish(output);
+        }
+        if(method.equals("textDocument/semanticTokens/full")){
+            var tokens=query.all("symbol.semanticTokens",arguments.put("limit",2000),"data");return query.finish(tokens);
+        }
+        var position=nativeParams.path("position");int line=Dispatcher.bounded(position,"line",0,Integer.MAX_VALUE),character=Dispatcher.bounded(position,"character",0,Integer.MAX_VALUE);
+        Documents.offset(documents.text(file),new Documents.Position(line,character));arguments.put("line",line).put("character",character);
+        if(method.equals("textDocument/completion")){
+            var answer=query.call("symbol.completion",arguments.put("limit",50));JsonNode completion=Json.MAPPER.valueToTree(answer.result());var items=Json.MAPPER.createArrayNode();
+            for(var symbol:completion.path("items")){
+                String name=symbol.path("name").asText(),semanticLabel=symbol.path("editor_label").asText(symbol.path("label").asText(name)),kind=symbol.path("kind").asText();
+                boolean type=Set.of("class","interface","enum","record","annotation","type_parameter").contains(kind);
+                var item=Json.MAPPER.createObjectNode()
+                        .put("label",type?name:semanticLabel)
+                        .put("kind",completionKind(kind));
+                if(type&&!semanticLabel.equals(name))item.put("detail",semanticLabel);
+                else if(!type)item.put("detail",semanticLabel);
+                item.set("textEdit",Json.MAPPER.valueToTree(Map.of("range",completion.path("range"),"newText",name)));
+                var data=Json.MAPPER.createObjectNode().put("scip",symbol.path("scip").asText());
+                if(symbol.hasNonNull("resolution_identity"))data.put("resolution_identity",symbol.path("resolution_identity").asText());
+                if(symbol.hasNonNull("semantic_origin"))data.put("semantic_origin",symbol.path("semantic_origin").asText());
+                item.set("data",data);
+                if(symbol.hasNonNull("import"))item.set("additionalTextEdits",Json.MAPPER.valueToTree(List.of(importEdit(documents.text(file),symbol.path("import").asText()))));
+                items.add(item);
+            }return query.finish(Json.MAPPER.valueToTree(Map.of("isIncomplete",answer.truncated(),"items",items)));
+        }
+        if(method.equals("textDocument/signatureHelp")){
+            var signatures=query.one("symbol.signatureHelp",arguments);var items=Json.MAPPER.createArrayNode();
+            for(var signature:signatures.path("signatures")){var row=Json.MAPPER.createObjectNode().put("label",signature.path("label").asText()).put("activeParameter",signature.path("activeParameter").asInt());row.set("parameters",signature.path("parameters"));if(signature.hasNonNull("doc"))row.set("documentation",Json.MAPPER.valueToTree(Map.of("kind","markdown","value",signature.path("doc").asText())));items.add(row);}
+            return query.finish(items.isEmpty()?Json.MAPPER.nullNode():Json.MAPPER.valueToTree(Map.of("signatures",items,"activeSignature",signatures.path("activeSignature").asInt(),"activeParameter",signatures.path("activeParameter").asInt())));
+        }
+        if(!Set.of("textDocument/hover","textDocument/definition","textDocument/references","textDocument/rename","textDocument/prepareRename").contains(method))throw new RpcException(-32601,"Method not found",Map.of("method",method));
+        var symbol=query.one("symbol.atPosition",arguments);
+        if(symbol.path("ambiguous").asBoolean()&&!symbol.hasNonNull("scip")){
+            if(method.equals("textDocument/hover")){
+                var signatures=new ArrayList<String>();for(var candidate:symbol.path("candidates"))signatures.add(candidate.path("signature").asText());
+                return query.finish(Json.MAPPER.valueToTree(Map.of("contents",Map.of("kind","markdown","value","~~~java\n"+String.join("\n",signatures)+"\n~~~"),"range",symbol.path("occurrence").path("range"))));
+            }
+            if(method.equals("textDocument/definition")||method.equals("textDocument/references")){
+                var locations=new LinkedHashMap<String,JsonNode>();
+                for(var candidate:symbol.path("candidates")){
+                    if(method.equals("textDocument/definition")){
+                        if(!candidate.hasNonNull("source_file"))candidate=query.one("symbol.describe",Json.MAPPER.createObjectNode().put("ref",candidate.path("scip").asText()).put("detail","summary").put("doc_depth",1));
+                        var found=location(candidate);if(!found.isNull())locations.putIfAbsent(found.toString(),found);
+                    }else{
+                        var found=query.all("symbol.occurrences",Json.MAPPER.createObjectNode().put("ref",candidate.path("scip").asText()).put("include_declaration",nativeParams.path("context").path("includeDeclaration").asBoolean()).put("limit",1000),"occurrences");
+                        for(var occurrence:found.path("occurrences")){JsonNode value=Json.MAPPER.valueToTree(Map.of("uri",uri(occurrence.path("file").asText()),"range",occurrence.path("range")));locations.putIfAbsent(value.toString(),value);}
+                    }
+                }
+                return query.finish(Json.MAPPER.valueToTree(locations.values()));
+            }
+            if(method.equals("textDocument/rename"))throw RpcException.invalid("This import names multiple overloads; select a declaration or call to rename one overload");
+            return query.finish(Json.MAPPER.nullNode());
+        }
+        if(!symbol.hasNonNull("scip"))return query.finish(Json.MAPPER.nullNode());String ref=symbol.path("scip").asText();
+        if(method.equals("textDocument/hover")){
+            var described=query.one("symbol.describe",Json.MAPPER.createObjectNode().put("ref",ref).put("detail","full").put("doc_depth",0));String signature=described.path("signature").asText(symbol.path("signature").asText());String doc=described.path("doc").asText("");
+            String markdown="~~~java\n"+signature+"\n~~~"+(doc.isEmpty()?"":"\n\n"+doc)+(query.warnings.isEmpty()?"":"\n\n"+String.join("\n\n",query.warnings));
+            var result=Json.MAPPER.createObjectNode();result.set("contents",Json.MAPPER.valueToTree(Map.of("kind","markdown","value",markdown)));result.set("range",symbol.path("occurrence").path("range"));return query.finish(result);
+        }
+        if(method.equals("textDocument/definition")){
+            if(!symbol.hasNonNull("source_file"))symbol=query.one("symbol.describe",Json.MAPPER.createObjectNode().put("ref",ref).put("detail","summary").put("doc_depth",1));return query.finish(location(symbol));
+        }
+        if(method.equals("textDocument/references")){
+            var occurrences=query.all("symbol.occurrences",Json.MAPPER.createObjectNode().put("ref",ref).put("include_declaration",nativeParams.path("context").path("includeDeclaration").asBoolean()).put("limit",1000),"occurrences");var locations=Json.MAPPER.createArrayNode();
+            for(var occurrence:occurrences.path("occurrences"))locations.add(Json.MAPPER.valueToTree(Map.of("uri",uri(occurrence.path("file").asText()),"range",occurrence.path("range"))));return query.finish(locations);
+        }
+        var occurrence=symbol.path("occurrence");if(symbol.path("kind").asText().equals("ctor")){symbol=query.one("symbol.describe",Json.MAPPER.createObjectNode().put("ref",symbol.path("fqn").asText()).put("doc_depth",0));ref=symbol.path("scip").asText();}
+        if(!symbol.hasNonNull("source_file")||symbol.path("source_file").asText().startsWith("jar:"))return query.finish(Json.MAPPER.nullNode());
+        try{path(session,uri(symbol.path("source_file").asText()));}catch(RpcException outside){return query.finish(Json.MAPPER.nullNode());}
+        if(method.equals("textDocument/prepareRename"))return query.finish(Json.MAPPER.valueToTree(Map.of("range",occurrence.path("range"),"placeholder",occurrence.path("token").asText())));
+        var plan=query.one("edit.rename",Json.MAPPER.createObjectNode().put("ref",ref).put("new_name",Dispatcher.required(nativeParams,"newName")).put("dry_run",true));
+        boolean versioned=request.path("client").path("workspace").path("workspaceEdit").path("documentChanges").asBoolean(),renameFiles=false;for(var operation:request.path("client").path("workspace").path("workspaceEdit").path("resourceOperations"))if(operation.asText().equals("rename"))renameFiles=true;
+        var changes=Json.MAPPER.createObjectNode();var documentChanges=Json.MAPPER.createArrayNode();
+        for(var change:plan.path("changes")){
+            Path changed=Path.of(change.path("path").asText());String fileUri=changed.toUri().toString();var edits=Json.MAPPER.createArrayNode();for(var edit:change.path("text_edits"))edits.add(Json.MAPPER.valueToTree(Map.of("range",edit.path("range"),"newText",edit.path("new_text").asText())));
+            if(versioned){var identifier=Json.MAPPER.createObjectNode().put("uri",fileUri);identifier.set("version",Json.MAPPER.valueToTree(documents.version(changed)));documentChanges.add(Json.MAPPER.valueToTree(Map.of("textDocument",identifier,"edits",edits)));}
+            else changes.set(fileUri,edits);
+            if(change.hasNonNull("new_path")){
+                if(!versioned||!renameFiles)throw new RpcException(-32003,"unsupported_capability",Map.of("capability","rename","reason","This client does not support file rename edits"));
+                documentChanges.add(Json.MAPPER.valueToTree(Map.of("kind","rename","oldUri",fileUri,"newUri",Path.of(change.path("new_path").asText()).toUri().toString())));
+            }
+        }
+        return query.finish(Json.MAPPER.valueToTree(versioned?Map.of("documentChanges",documentChanges):Map.of("changes",changes)));
+    }
+    public static Envelope diagnostics(Dispatcher dispatcher,Session session,Documents documents,JsonNode request)throws Exception{
+        Path file=path(session,Dispatcher.required(request,"uri"));var query=new Query(dispatcher,session);
+        var params=Json.MAPPER.createObjectNode().put("limit",1000);params.putArray("paths").add(file.toString());var answer=query.all("diag.get",params,"diagnostics");var result=Json.MAPPER.createObjectNode().put("uri",request.path("uri").asText());var diagnostics=result.putArray("diagnostics");
+        for(var problem:answer.path("diagnostics")){
+            String source=problem.path("file").asText();if(!source.isEmpty()&&!uri(source).equals(file.toUri().toString()))continue;
+            long start=Math.max(0,problem.path("start").asLong()),end=Math.max(start,problem.path("end").asLong());
+            var range=Json.MAPPER.valueToTree(Map.of("start",Documents.position(documents.text(file),start),"end",Documents.position(documents.text(file),end)));
+            int severity=switch(problem.path("kind").asText()){case "ERROR"->1;case "WARNING","MANDATORY_WARNING"->2;default->3;};
+            diagnostics.add(Json.MAPPER.valueToTree(Map.of("range",range,"severity",severity,"code",problem.path("code").asText(),"source","jvmd live","message",problem.path("message").asText(),"data",Map.of("tier",problem.path("tier").asInt(),"source",problem.path("source").asText("live")))));
+        }
+        for(String warning:query.warnings)diagnostics.add(Json.MAPPER.valueToTree(Map.of("range",Map.of("start",Map.of("line",0,"character",0),"end",Map.of("line",0,"character",0)),"severity",2,"source","jvmd","code","jvmd.fidelity","message",warning,"data",Map.of("tier",query.tier,"source","live"))));
+        if(documents.version(file)!=null)result.put("version",documents.version(file));return query.finish(result);
+    }
+}
+));
+                item.put("detail",owner.substring(dot+1)+"."+label);
+            }else if(described.hasNonNull("signature"))item.put("detail",described.path("signature").asText());
             String doc=described.path("doc").asText("");
             if(!doc.isEmpty())item.set("documentation",Json.MAPPER.valueToTree(Map.of("kind","markdown","value",doc)));
             return query.finish(item);

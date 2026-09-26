@@ -43,7 +43,8 @@ public final class Application implements AutoCloseable {
         dispatcher.register("session.open", (_, p) -> {
             awaitReady();
             var session = sessions.open(Path.of(Dispatcher.required(p, "root")));
-            session.put("documents",new Documents(classpathFiles));
+            // Attaching another client must preserve the workspace's live editor state.
+            session.state("documents",()->new Documents(classpathFiles));
             var manifest=p.get("manifest");Path manifestPath=null;boolean optionalManifest=false;
             if(manifest==null){
                 manifestPath=session.root().resolve(".jvmd/workspace.json").toAbsolutePath().normalize();optionalManifest=true;

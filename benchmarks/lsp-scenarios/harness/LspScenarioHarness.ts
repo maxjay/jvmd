@@ -181,7 +181,8 @@ export abstract class LspScenarioHarness {
         assert(completion?.warmup?.every(Boolean),"JVMD CMP semantic oracle mismatch during warmup");
         assert(completion?.steady?.every(Boolean),"JVMD CMP semantic oracle mismatch during steady state");
         for(const [name,correct] of Object.entries(verification.legacy))
-          assert(correct,"JVMD CMP legacy semantic oracle mismatch: "+name);
+          assert(correct,"JVMD CMP legacy semantic oracle mismatch: "+name+
+            " actual="+JSON.stringify(payload.legacy[name]?.result));
       }
       const completionCorrectness=verification.operationCorrectness.completion;
       if(payload.operations.completion&&completionCorrectness){

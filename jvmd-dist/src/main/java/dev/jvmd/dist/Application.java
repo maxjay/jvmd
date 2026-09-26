@@ -305,11 +305,17 @@ public final class Application implements AutoCloseable {
     public Dispatcher dispatcher() { return dispatcher; }
     public Sessions sessions() { return sessions; }
     private static WorkspaceManifest workspace(Session session){return session.state("workspace_manifest",()->new WorkspaceManifest(List.of(session.root()),true));}
+    private static void invalidateAnalysisContexts(Session session){
+        var contexts=(WorkspaceContextManager)session.state("analysis_contexts");
+        if(contexts!=null)contexts.invalidateAll();
+    }
     private static dev.jvmd.resolver.WorkspaceOverlay overlay(Session session,Resolution graph){
         var old=(dev.jvmd.resolver.WorkspaceOverlay)session.state("overlay");
         if(old==null||!graph.fingerprint().equals(session.state("overlay_generation"))){
             if(old!=null)old.close();
-            old=new dev.jvmd.resolver.WorkspaceOverlay(graph.modules(),workspace(session).ignoreVersions());session.put("overlay",old);session.put("overlay_generation",graph.fingerprint());
+            old=new dev.jvmd.resolver.WorkspaceOverlay(graph.modules(),workspace(session).ignoreVersions());
+            old.onFreshnessChange(()->invalidateAnalysisContexts(session));
+            session.put("overlay",old);session.put("overlay_generation",graph.fingerprint());
         }
         return old;
     }
@@ -334,6 +340,9 @@ public final class Application implements AutoCloseable {
         var analyzer=(Analyzer)session.state("analyzer");if(analyzer!=null){analyzer.changed(file);if(!Files.isRegularFile(file)&&(operation.equals("open")||operation.equals("close")))analyzer.sourceMembershipChanged(file);}
         var actorRegistry=(ModuleAnalyzerRegistry)session.state("diagnostic_actors");
         if(actorRegistry!=null)actorRegistry.sourceChanged(file,documents.hash(file));
+        // Analyzer.Context can change when a local dependency crosses built/source-only state.
+        // Editor mutations therefore fence maintained contexts synchronously; unchanged reads stay O(1).
+        invalidateAnalysisContexts(session);
         session.put("last_verification",Map.of("stale",true));
         return Envelope.of(0,"live",Map.of("path",file.toString(),"open",documents.contains(file),"generation",documents.generation()));
     }
@@ -739,7 +748,9 @@ public final class Application implements AutoCloseable {
             Resolution graph;
             try(var stage=RequestScope.stage("application.analyzer.maintainedResolution")){graph=maintainedResolution(session);}
             var contexts=session.state("analysis_contexts",WorkspaceContextManager::new);
-            var context=contexts.context(path,graph,file->createAnalyzerContext(session,file,graph));
+            boolean cacheable;
+            try(var stage=RequestScope.stage("application.analyzer.contextPolicy")){cacheable=contextCacheable(session,graph);}
+            var context=contexts.context(path,graph,cacheable,file->createAnalyzerContext(session,file,graph));
             Analyzer analyzer;
             try(var stage=RequestScope.stage("application.analyzer.instance")){analyzer=session.state("analyzer",()->new Analyzer(classpathFiles));}
             IndexService availableIndex;
@@ -756,6 +767,14 @@ public final class Application implements AutoCloseable {
             return analyzer;
         }
     }
+    private boolean contextCacheable(Session session,Resolution graph){
+        if(graph==null||Boolean.TRUE.equals(session.state("project_model_request_fallback")))return false;
+        // Processor inputs include source bytes, processor jars and lombok.config; retain the
+        // existing validation path for those contexts until they have their own pushed identity.
+        if(graph.modules().stream().anyMatch(module->module.processing().enabled()||module.testProcessing().enabled()))return false;
+        return overlay(session,graph).watchReliable();
+    }
+
     private Analyzer.Context createAnalyzerContext(Session session,Path path,Resolution graph)throws Exception{
         String gav="local:workspace:0",release="25",generation="plain";
         List<String> options=List.of("--release","25");
@@ -886,6 +905,7 @@ public final class Application implements AutoCloseable {
             // session projections at publication makes the new graph visible atomically.
             session.remove("completion_type_cache");
             session.remove("indexed_workspace_bindings");
+            invalidateAnalysisContexts(session);
         }
         session.put("resolution", graph);
         graph.warnings().forEach(session::warn);

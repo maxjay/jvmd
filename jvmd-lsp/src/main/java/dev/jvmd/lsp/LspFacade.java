@@ -88,6 +88,9 @@ public final class LspFacade {
             // Resolve is the enrichment boundary. Identity has already selected the exact
             // declaration; present it with its owner without rediscovering the candidate.
             String owner=described.path("declaring").asText("");
+            // Persisted member rows retain their declaring binary in fqn without source enrichment.
+            if(owner.isBlank()&&Set.of("method","ctor","field","enumconst").contains(described.path("kind").asText()))
+                owner=described.path("fqn").asText("");
             String label=item.path("label").asText("");
             if(!owner.isBlank()&&!label.isBlank()){
                 int dot=Math.max(owner.lastIndexOf('.'),owner.lastIndexOf((char)36));

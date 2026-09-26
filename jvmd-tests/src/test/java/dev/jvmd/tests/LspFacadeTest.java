@@ -83,6 +83,31 @@ class LspFacadeTest {
         }
     }
 
+    @Test void persistedFieldResolveUsesExactOwnerWhenOptionalDeclaringProjectionIsAbsent()throws Exception{
+        String scip="maven fixture/project 1 sample/Project#sources.",identity="field-identity";
+        String label="sources : Set<String>";
+        try(var sessions=new Sessions();var documents=new Documents()){
+            var session=sessions.open(root);var dispatcher=new Dispatcher(sessions,new Metrics());
+            var calls=new java.util.concurrent.atomic.AtomicInteger();
+            dispatcher.register("symbol.describe",(_,params)->{
+                calls.incrementAndGet();
+                assertThat(params.path("ref").asText()).isEqualTo(scip);
+                assertThat(params.path("resolution_identity").asText()).isEqualTo(identity);
+                assertThat(params.path("semantic_origin").asText()).isEqualTo("local");
+                assertThat(params.path("include_doc").asBoolean()).isFalse();
+                return Envelope.of(2,"index",Map.of("scip",scip,"resolution_identity",identity,
+                        "kind","field","fqn","sample.Project","signature","java.util.Set<String> sources"));
+            });
+            var item=Map.of("label",label,"kind",5,"data",Map.of(
+                    "scip",scip,"resolution_identity",identity,"semantic_origin","local"));
+            var response=dev.jvmd.lsp.LspFacade.request(dispatcher,session,documents,
+                    Json.MAPPER.valueToTree(Map.of("method","completionItem/resolve","params",item)));
+            var resolved=Json.MAPPER.valueToTree(response.result()).path("value");
+            assertThat(resolved.path("detail").asText()).isEqualTo("Project."+label);
+            assertThat(calls.get()).isEqualTo(1);
+        }
+    }
+
     @Test void staleCompletionItemIsRejectedBeforeEnrichment()throws Exception{
         Path api=root.resolve("Api.java"),use=root.resolve("Use.java");
         String apiSource="class Api { /** Original. */ int greet(){return 1;} }";

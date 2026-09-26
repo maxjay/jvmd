@@ -1278,3 +1278,39 @@ Temporary tracing and the unsuccessful speculative observation-lock change were 
 
 Remaining: exact-head normal CI, then a new frozen Checkpoint-17 subject. No final-proof
 acceptance or cleanup is claimed yet.
+
+## 2026-09-26 — frozen artifact review: persisted member resolve presentation
+
+The implementation subject `3c698ae1ab2167143f2954226cce51b6804c0b7c` passed exact-head
+[Tests 36249769799](https://github.com/maxjay/jvmd/actions/runs/36249769799),
+[Benchmarks 36249769804](https://github.com/maxjay/jvmd/actions/runs/36249769804), and
+[LSP 36249769882](https://github.com/maxjay/jvmd/actions/runs/36249769882).
+The unchanged frozen [run 36250139721](https://github.com/maxjay/jvmd/actions/runs/36250139721)
+then completed all steps, including native status and all seven JFR matrix scenarios.
+Artifact `10908524216`, digest
+`sha256:da5c08f6d1ce20406e9322115363941a21b22f82a166d1d5368b2c994c2ce8ed`,
+verifies the exact subject and every frozen component identity.
+
+Artifact inspection, rather than workflow color alone, found the legacy resolve oracle
+still false. First-use, repeated, unsaved-edit and all 20 steady completion results are
+correct. The resolved `sources` field instead exposes `java.util.Set<…> sources` where
+the unchanged oracle expects `MavenProject.sources : Set<…>`. This run is therefore
+not accepted as final Checkpoint-17 evidence.
+
+Persisted member rows retain the declaring binary in `fqn` but may omit the optional
+`declaring` source projection. After exact layer and resolution-identity validation,
+LSP resolve now uses that existing member owner for presentation. No lookup, javac
+entry, source discovery, identity relaxation or documentation enrichment was added.
+`LspFacadeTest.persistedFieldResolveUsesExactOwnerWhenOptionalDeclaringProjectionIsAbsent`
+reproduces the old detail mismatch and asserts a single exact describe call with the
+captured identity and origin. All 10 LSP facade and indexed-completion tests pass.
+
+The completed run also discloses limitations that must remain in the final comparison:
+the frozen direct fixtures use an unadmitted/bare Analyzer and retain conservative
+compiler work for several mutations; the frozen proof-counter selectors do not match
+all production status names. Unavailable selectors must not be reported as zero.
+JFR and the existing permanent source/classpath proof regressions provide separate,
+explicitly labelled evidence. No frozen selector, workflow, oracle or hash is changed.
+
+Remaining: rerun the frozen proof on this bounded presentation repair and inspect all
+correctness fields before accepting it; cleanup remains uncommitted.

@@ -512,7 +512,19 @@ async function startJvmd(root:string):Promise<RunningServer>{
   const env={...process.env,JVMD_SOCKET:socket,XDG_CACHE_HOME:path.join(state,"cache"),JVMD_CONFIG:path.join(state,"config.json")};
   writeFileSync(path.join(state,"config.json"),"{}\n");
   const milestones:Record<string,number>={process_spawn:nowNs()};
-  const server=spawn(path.join(image,"bin/java"),[
+  const profileFile=process.env.ISSUE36_CMP_PROFILE_FILE;
+  const profiled=Boolean(profileFile);
+  const java=profiled&&process.env.JAVA_HOME?path.join(process.env.JAVA_HOME,"bin/java"):path.join(image,"bin/java");
+  const profileArgs=profiled?[
+    "--enable-native-access=ALL-UNNAMED",
+    ...["api","util","code","main","platform"].map(pkg=>"--add-exports=jdk.compiler/com.sun.tools.javac."+pkg+"=ALL-UNNAMED"),
+    "-Djvmd.trace=true",
+    "-XX:StartFlightRecording=filename="+path.resolve(profileFile!)+",settings=profile,dumponexit=true",
+    "-XX:FlightRecorderOptions=stackdepth=128",
+    "-Xlog:jfr*=off",
+  ]:[];
+  const server=spawn(java,[
+    ...profileArgs,
     "-Djvmd.socket="+socket,
     "-Djvmd.state="+path.join(state,"state"),
     "-Djvmd.config="+path.join(state,"config.json"),
@@ -528,7 +540,7 @@ async function startJvmd(root:string):Promise<RunningServer>{
   return {
     connection:createMessageConnection(new StreamMessageReader(adapter.stdout!),new StreamMessageWriter(adapter.stdin!)),
     server,adapter,control:readinessClient,milestones,
-    metadata:{mode:"distributed-image JVM plus LSP adapter; AOT cache not enabled",aotCacheUsed:false,residentDaemon:false},
+    metadata:{mode:profiled?"full pinned JDK server for Issue-36 JFR attribution; production LSP adapter":"distributed-image JVM plus LSP adapter; AOT cache not enabled",aotCacheUsed:false,residentDaemon:false,profiledServer:profiled},
   };
 }
 

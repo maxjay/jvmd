@@ -4,6 +4,7 @@ on:
     paths:
       - 'jvmd-*/src/main/**'
       - 'benchmarks/workspaces/**'
+      - 'benchmarks/lsp-scenarios/**'
       - '.github/workflows/issue-36-hotpath-profile.yml'
 permissions:
   contents: read
@@ -67,6 +68,77 @@ jobs:
       - name: Attribute warm request hot paths
         run: |
           python benchmarks/workspaces/run.py             --repo "$PWD"             --build "$RUNNER_TEMP/workflow-build/build.json"             --java-home "$JAVA_HOME"             --resolvers "$PWD/jvmd-dist/target/image/lib/jvmd/resolvers"             --root "$RUNNER_TEMP/results"             --mode attribution --servers jvmd --runs 1 --warmup 5 --samples 20
+      - name: Install LSP harness dependency
+        run: npm install --prefix benchmarks/lsp-scenarios --ignore-scripts
+      - name: Restore prepared Apache Maven fixture
+        id: cmp-fixture
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/apache-maven-fixture
+          key: apache-maven-lsp-v1
+      - name: Prepare Apache Maven fixture
+        if: steps.cmp-fixture.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/apache/maven.git "$RUNNER_TEMP/apache-maven-fixture"
+          git -C "$RUNNER_TEMP/apache-maven-fixture" checkout 5cd1b60264101080c712accd605180a4bd9222e0
+          cd "$RUNNER_TEMP/apache-maven-fixture"
+          mvn -B -DskipTests install
+      - name: Attribute real CMP-01
+        env:
+          FIXTURE_ROOT: ${{ runner.temp }}/apache-maven-fixture
+          MODE: compare
+          SERVER: jvmd
+          REPORT_FILE: ${{ runner.temp }}/cmp/jvmd-report.json
+          ISSUE36_CMP_PROFILE_FILE: ${{ runner.temp }}/cmp/jvmd-cmp.jfr
+        run: |
+          mkdir -p "$RUNNER_TEMP/cmp" "$RUNNER_TEMP/cmp/profile"
+          node benchmarks/lsp-scenarios/run.ts
+          python - <<'PYCODE'
+          import json, os
+          from pathlib import Path
+          from benchmarks.workspaces.resources import export_jfr
+          root=Path(os.environ["RUNNER_TEMP"])/"cmp"
+          export_jfr(Path(os.environ["JAVA_HOME"])/"bin/jfr",root/"jvmd-cmp.jfr",root/"profile",Path.cwd())
+          trace=json.loads((root/"profile/trace.json").read_text())["traceEvents"]
+          by_parent={}
+          for event in trace: by_parent.setdefault(event["args"].get("parent",0),[]).append(event)
+          def descendants(span):
+              result=[];todo=[span]
+              while todo:
+                  parent=todo.pop()
+                  for child in by_parent.get(parent,[]):
+                      result.append(child);todo.append(child["args"].get("span",0))
+              return result
+          rows=[]
+          for top in trace:
+              if top["name"]!="rpc.execute" or top["args"].get("method")!="lsp.request": continue
+              nested=descendants(top["args"].get("span",0))
+              names=[value["name"] for value in nested]
+              if any(name.startswith("completion.") for name in names): kind="completion"
+              elif any("describe" in name or "documentation" in name for name in names): kind="resolve"
+              else: kind="other"
+              rows.append({
+                  "kind":kind,"request":top["args"].get("request"),"duration_ms":top["dur"]/1000,
+                  "cpu_ms":top["args"].get("threadCpuNanos",-1)/1e6,
+                  "allocated_bytes":top["args"].get("threadAllocatedBytes",-1),
+                  "stages":[{"name":value["name"],"duration_ms":value["dur"]/1000,
+                             "work":value["args"].get("work",{})}
+                            for value in sorted(nested,key=lambda value:value["dur"],reverse=True)[:25]]
+              })
+          (root/"cmp-rpc-breakdown.json").write_text(json.dumps(rows,indent=2)+"\n")
+          PYCODE
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ !cancelled() }}
+        with:
+          name: issue-36-real-cmp-profile
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/cmp/jvmd-report.json
+            ${{ runner.temp }}/cmp/cmp-rpc-breakdown.json
+            ${{ runner.temp }}/cmp/profile/attribution.json
+            ${{ runner.temp }}/cmp/profile/trace.json
+            ${{ runner.temp }}/cmp/profile/profiles.json
+            ${{ runner.temp }}/cmp/jvmd-cmp.jfr
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: ${{ !cancelled() }}
         with:

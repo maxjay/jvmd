@@ -1093,3 +1093,34 @@ Failed/deprecated approaches:
 
 Remaining:
 - Checkpoint 15: run the real CMP-01 LSP scenario against normal incomplete `project.`, verify the JDTLS semantic oracle, `completionItem/resolve`, and repeated maintained-state reuse.
+
+## Closeout repair — hierarchy admission and detached archive freshness
+
+Starting SHA: `b086bbd08bb784cd20537063d5c81972bb6cffbf`
+Ending SHA: this repair commit (recorded by the following CI evidence entry).
+
+Changes:
+- A known source parent missing from the semantic read view now declines Tier 1 and uses the existing bounded context fallback. Previously `semanticHierarchyOwners` silently skipped the newly introduced BaseB and returned an empty inherited surface after correctly rejecting the old query proof.
+- `IndexedFileManager` checks the catalogs actually loaded by the compiler before accepting equal environment identity. WatchService delivery is asynchronous; equality alone previously bypassed both timestamp-preserving replacement and deletion checks.
+- Strengthened the existing archive regressions by validating the same accepted environment identity before and after each mutation; both fail on the starting implementation and pass with the repair.
+
+Architecture:
+- Preserves QueryProof/accessibility equality and existing resolution tiers. No broad cache weakening or architecture redesign.
+- The archive check is bounded to loaded compiler catalogs and uses FileStateRegistry's content identity/change-time/inode cache; it does not enumerate source files or rebuild the classpath index. Any metadata cost remains visible in the final proof.
+
+Correctness proof:
+- Reproduced the hierarchy failure individually on the starting SHA.
+- The original JAR test initially passed in isolation; exact-head CI failed at deletion (line 301, missing analyzer_fault). The strengthened same-environment tests deterministically reproduce the underlying freshness bypass for replacement and deletion.
+- Pinned JDK local compilation and 30 focused tests pass: all 16 CompletionPrefixCacheTest cases, all 3 IndexedFileManagerTest cases, all 4 MaintainedCompletionContextTest cases, all 7 SourceProofMutationIntegrationTest cases.
+- Full Phase 4 and exact-head CI are pending; no claim of completion is made from this focused result.
+
+Findings / failed approaches:
+- Merely rejecting every absent parent broadened fallback to absent platform-index facts and violated existing zero-javac tests. Narrowed the repair to known workspace source parents; those existing invariants pass again.
+- Initial direct local Phase-4 runner lacked the Maven resolver bundle/test resources and was not equivalent to CI. Its result is not accepted as the Phase-4 gate.
+- The suspected documentProofCurrent accessibility optimization was not reverted: tracing showed the old hierarchy proof was rejected correctly.
+
+Deferred:
+- Periodic scan/request starvation is tracked separately in #41 with exact profiler run/artifact/digest evidence. No profiler-driven production redesign.
+
+Remaining:
+- Exact-head full Tests/LSP, Checkpoints 15–16 reconciliation, frozen harness restoration and Checkpoint 17, then semantics-neutral cleanup and final CI.

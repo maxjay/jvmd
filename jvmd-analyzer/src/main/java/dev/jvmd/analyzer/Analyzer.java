@@ -2043,7 +2043,12 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 var substituted=parent.substitute(current.substitutions());
                 if(!(substituted instanceof SemanticType.Declared declared))continue;
                 var matches=semanticTypes(declared.name());
-                if(matches.size()!=1)continue;
+                // A known source parent may be newly introduced by a hierarchy edit.
+                // Its absent resident facts cannot prove an empty inherited surface.
+                if(matches.size()!=1){
+                    if(liveSourceState!=null&&liveSourceState.source(declared.name()).isPresent())return null;
+                    continue;
+                }
                 var symbol=matches.getFirst();
                 queue.addLast(new SemanticHierarchyOwner(symbol,declared,semanticTypeSubstitutions(symbol,declared),0));
             }

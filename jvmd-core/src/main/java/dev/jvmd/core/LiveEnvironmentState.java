@@ -25,7 +25,6 @@ final class LiveEnvironmentState implements AutoCloseable {
     private final Map<WatchKey,Registration> watches=new HashMap<>();
     private final Set<Path> watchedPhysical=new HashSet<>();
     private WatchService watcher;
-    private Thread publisher;
     private boolean verificationOnly,trusted,closed;
     private long events,overflows,reconciliations;
 
@@ -58,8 +57,6 @@ final class LiveEnvironmentState implements AutoCloseable {
         }
         reconcileAll();
         trusted=true;
-        if(watcher!=null&&!verificationOnly)
-            publisher=Thread.ofPlatform().daemon(true).name("jvmd-environment-watch").start(this::publishLoop);
     }
 
     synchronized Snapshot snapshot(){var state=tree.state();return new Snapshot(identity(state),state.epoch(),trusted);}
@@ -70,31 +67,15 @@ final class LiveEnvironmentState implements AutoCloseable {
     Snapshot verifyBoundary(boolean transactionEnd)throws IOException{
         synchronized(this){if(closed)throw new IOException("Environment state is closed");}
         if(verificationOnly){reconcileAll();synchronized(this){trusted=true;}return snapshot();}
-        if(transactionEnd)try{
-            RequestScope.settleFilesystemEnd(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(2));
+        try{
+            if(transactionEnd)RequestScope.settleFilesystemEnd(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(2));
+            else RequestScope.settleFilesystemStart(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(2));
         }catch(Exception impossible){
             if(impossible instanceof IOException io)throw io;
             throw new IOException("Environment settlement failed",impossible);
         }
-        // Mutation publication owns the wait. Reads only drain events that are already queued.
         drain(false);
         synchronized(this){if(!trusted){reconcileAll();trusted=true;}return snapshot();}
-    }
-
-    private void publishLoop(){
-        while(true){
-            WatchKey key;
-            try{
-                WatchService current;
-                synchronized(this){current=watcher;if(closed||current==null)return;}
-                key=current.take();
-            }catch(InterruptedException stopped){Thread.currentThread().interrupt();return;}
-            catch(ClosedWatchServiceException stopped){return;}
-            try{process(key);}
-            catch(IOException failed){
-                synchronized(this){trusted=false;verificationOnly=true;}
-            }
-        }
     }
 
     private CompilerInputs.EnvironmentIdentity identity(LiveStateTree.State state){

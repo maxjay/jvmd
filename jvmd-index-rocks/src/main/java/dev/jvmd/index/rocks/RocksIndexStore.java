@@ -34,6 +34,15 @@ public final class RocksIndexStore implements IndexStore {
     private final SourceOverlay sourceOverlay;
     private final Map<Long,Long> unmatched=new HashMap<>();
     private final LinkedHashMap<String,Hash256> semanticProofIdentities=new LinkedHashMap<>(128,.75f,true);
+    private record SemanticLookup(String workspace,SemanticLayer layer,String value,boolean type) {}
+    private record ClasspathLookup(String workspace,String binary) {}
+    // Subscribed detached observations. Their owner refreshes them under the publication monitor,
+    // so proof validation consumes identities without repeating an index search. Eviction merely
+    // requires a new admission; it never certifies an absent or stale observation as equal.
+    private final LinkedHashMap<SemanticLookup,Optional<IndexedSemanticSymbol>> semanticLookups=new LinkedHashMap<>(64,.75f,true);
+    private final LinkedHashMap<ClasspathLookup,ClasspathSearchProof> classpathLookups=new LinkedHashMap<>(32,.75f,true);
+    private final Map<String,ClasspathSequence> classpathSequences=new HashMap<>();
+    private long semanticLookupBuilds,classpathSearchBuilds,classpathSequenceBuilds;
     private long nextArtifact=1,nextSource=0x80000000L;
     private long metadataWrites,sourceWrites;
     private boolean closing,closed;
@@ -72,7 +81,59 @@ public final class RocksIndexStore implements IndexStore {
     private void save(WriteBatch batch,StoredArtifact artifact)throws Exception{
         batch.put(bytes("A|"+key(artifact.id())),Json.MAPPER.writeValueAsBytes(artifact));batch.put(bytes("next-artifact"),bytes(Long.toString(nextArtifact)));
     }
-    private void installed(StoredArtifact artifact){artifacts.put(artifact.id(),artifact);paths.put(artifact.input().context().path(),artifact.id());metadataWrites++;}
+    private void installed(StoredArtifact artifact)throws Exception{
+        var prior=artifacts.put(artifact.id(),artifact);paths.put(artifact.input().context().path(),artifact.id());metadataWrites++;
+        if(!Objects.equals(prior,artifact))refreshSemanticObservations(artifact,null);
+    }
+    private boolean selects(String workspace,SemanticLayer layer,StoredArtifact artifact){
+        var context=artifact.input().context();
+        if(context.kind().equals("sources"))return false;
+        if((layer==SemanticLayer.LOCAL)!=context.kind().equals("local"))return false;
+        return workspace==null||context.gav().startsWith("jdk:")||workspaces.getOrDefault(workspace,List.of()).stream()
+                .anyMatch(entry->entry.path().equals(context.path()));
+    }
+    private void refreshSemanticObservations(StoredArtifact artifact,String workspace)throws Exception{
+        var exact=semanticLookups.keySet().stream().filter(key->artifact==null
+                ?Objects.equals(key.workspace(),workspace):selects(key.workspace(),key.layer(),artifact)).toList();
+        var searches=classpathLookups.keySet().stream().filter(key->artifact==null
+                ?Objects.equals(key.workspace(),workspace):selects(key.workspace(),SemanticLayer.MACHINE,artifact)).toList();
+        var sequences=classpathSequences.keySet().stream().filter(key->artifact==null
+                ?Objects.equals(key,workspace):selects(key,SemanticLayer.MACHINE,artifact)).toList();
+        // Remove before reconstruction. If storage fails after durable publication, no old answer
+        // survives as current; the next admission must retry the failed observation.
+        exact.forEach(semanticLookups::remove);searches.forEach(classpathLookups::remove);
+        sequences.forEach(classpathSequences::remove);
+        for(String key:sequences)classpathSequences.put(key,buildClasspathSequence(key));
+        for(var key:exact)semanticLookups.put(key,Optional.ofNullable(buildSemanticLookup(key)));
+        for(var key:searches)classpathLookups.put(key,buildClasspathSearch(key.workspace(),key.binary()));
+    }
+    private static <K,V> void boundObservations(LinkedHashMap<K,V> values){
+        while(values.size()>512)values.pollFirstEntry();
+    }
+    private IndexedSemanticSymbol buildSemanticLookup(SemanticLookup key)throws Exception{
+        semanticLookupBuilds++;
+        return key.type()?findSemanticType(key.value(),key.workspace(),key.layer())
+                :findSemanticByScip(key.value(),key.workspace(),key.layer());
+    }
+    @Override public synchronized IndexedSemanticSymbol observedSemanticByScip(String scip,String workspace,SemanticLayer layer)throws Exception{
+        return observedSemanticLookup(new SemanticLookup(workspace,layer,scip,false));
+    }
+    @Override public synchronized IndexedSemanticSymbol observedSemanticType(String binary,String workspace,SemanticLayer layer)throws Exception{
+        return observedSemanticLookup(new SemanticLookup(workspace,layer,binary,true));
+    }
+    private IndexedSemanticSymbol observedSemanticLookup(SemanticLookup key)throws UnobservedSemanticQuery{
+        var value=semanticLookups.get(key);if(value==null)throw new UnobservedSemanticQuery();
+        return value.orElse(null);
+    }
+    @Override public synchronized ClasspathSearchProof observedClasspathSearch(String workspace,String binary)throws Exception{
+        var value=classpathLookups.get(new ClasspathLookup(workspace,binary));
+        if(value==null)throw new UnobservedSemanticQuery();return value;
+    }
+    private IndexedSemanticSymbol semanticLookup(SemanticLookup key)throws Exception{
+        var captured=semanticLookups.get(key);if(captured!=null)return captured.orElse(null);
+        var value=buildSemanticLookup(key);semanticLookups.put(key,Optional.ofNullable(value));
+        boundObservations(semanticLookups);return value;
+    }
     private StoredArtifact required(long id){ensureOpen();var value=artifacts.get(id);if(value==null)throw new IllegalArgumentException("Unknown artifact: "+id);return value;}
     private void ensureOpen(){if(closed)throw new IllegalStateException("Index store is closed");}
     private synchronized AutoCloseable admitBuild(){
@@ -196,10 +257,15 @@ public final class RocksIndexStore implements IndexStore {
         }
         if(removed.isEmpty())return false;
         try(var batch=new WriteBatch()){for(var value:removed)batch.delete(bytes("A|"+key(value.id())));state.write(durable,batch);}
-        for(var value:removed){artifacts.remove(value.id());paths.remove(value.input().context().path());unmatched.remove(value.id());}metadataWrites+=removed.size();return true;
+        for(var value:removed){artifacts.remove(value.id());paths.remove(value.input().context().path());unmatched.remove(value.id());}metadataWrites+=removed.size();
+        for(var value:removed)refreshSemanticObservations(value,null);return true;
     }
     @Override public synchronized Map<String,Long> counts(){return Map.of("artifacts",(long)artifacts.size(),"symbols",artifacts.values().stream().mapToLong(StoredArtifact::symbols).sum(),"edges",artifacts.values().stream().mapToLong(StoredArtifact::edges).sum(),"simple_names",artifacts.values().stream().mapToLong(StoredArtifact::simpleNames).sum(),"unmatched_source_members",unmatched.values().stream().mapToLong(Long::longValue).sum());}
     @Override public synchronized Map<String,Object> status(){return Map.of("backend",backend(),"link_passes",0L,"metadata_writes",metadataWrites,"source_file_writes",sourceWrites,"source_record_decodes",sourceOverlay.decoded(),"source_cache_estimated_bytes",sourceOverlay.cacheBytes(),"source_cache_budget_bytes",sourceOverlay.cacheBudget());}
+
+    @Override public synchronized Map<String,Long> semanticWork(){return Map.of(
+            "exact_lookup_builds",semanticLookupBuilds,"classpath_search_builds",classpathSearchBuilds,
+            "classpath_sequence_builds",classpathSequenceBuilds);}
 
     private List<StoredArtifact> selected(String workspace,boolean jdk){
         ensureOpen();
@@ -225,6 +291,10 @@ public final class RocksIndexStore implements IndexStore {
                 .toList();
     }
     @Override public synchronized Optional<ClasspathSequence> semanticClasspathSequence(String workspace){
+        return Optional.of(classpathSequences.computeIfAbsent(workspace,this::buildClasspathSequence));
+    }
+    private ClasspathSequence buildClasspathSequence(String workspace){
+        classpathSequenceBuilds++;
         var entries=new ArrayList<ClasspathSequence.Entry>();
         for(var artifact:selected(workspace,false,SemanticLayer.MACHINE)){
             if(artifact.input().context().kind().equals("sources"))continue;
@@ -232,19 +302,25 @@ public final class RocksIndexStore implements IndexStore {
                     artifact.input().context().path(),
                     Hash256.fromHex(artifact.resolutionIdentity())));
         }
-        return Optional.of(ClasspathSequence.of(entries));
+        return ClasspathSequence.of(entries);
     }
     @Override public synchronized Optional<ClasspathSearchProof> semanticClasspathSearch(String workspace,String binaryName)throws Exception{
-        Objects.requireNonNull(binaryName);
+        Objects.requireNonNull(binaryName);var key=new ClasspathLookup(workspace,binaryName);
+        var captured=classpathLookups.get(key);if(captured!=null)return Optional.of(captured);
+        var value=buildClasspathSearch(workspace,binaryName);classpathLookups.put(key,value);
+        boundObservations(classpathLookups);return Optional.of(value);
+    }
+    private ClasspathSearchProof buildClasspathSearch(String workspace,String binaryName)throws Exception{
+        classpathSearchBuilds++;
         int searched=0;
         for(var artifact:selected(workspace,false,SemanticLayer.MACHINE)){
             if(artifact.input().context().kind().equals("sources"))continue;
             searched++;
             var symbol=semanticType(artifact,binaryName,SemanticLayer.MACHINE);
-            if(symbol!=null)return Optional.of(new ClasspathSearchProof(
-                    binaryName,searched,artifact.input().context().path(),symbol.id(),symbol.resolution().identity()));
+            if(symbol!=null)return new ClasspathSearchProof(
+                    binaryName,searched,artifact.input().context().path(),symbol.id(),symbol.resolution().identity());
         }
-        return Optional.of(new ClasspathSearchProof(binaryName,searched,null,null,null));
+        return new ClasspathSearchProof(binaryName,searched,null,null,null);
     }
 
     private String semanticProofCacheKey(String ownerScip,String value,String workspace,SemanticLayer layer,String domain)throws Exception{
@@ -271,6 +347,7 @@ public final class RocksIndexStore implements IndexStore {
 
     @Override public synchronized List<String> loadWorkspace(String workspace,List<WorkspaceEntry> entries,List<Map.Entry<String,String>> dependencies)throws Exception{
         workspaces.put(workspace,entries.stream().map(e->new WorkspaceEntry(Path.of(e.path()).toAbsolutePath().normalize().toString(),e.scope())).toList());
+        refreshSemanticObservations(null,workspace);
         var classes=new TreeMap<String,Set<String>>();var packages=new TreeMap<String,Set<String>>();
         for(var artifact:selected(workspace,false))for(var symbol:repository.select(symbolsKey(artifact),"0|type|",-1,Integer.MAX_VALUE,s->TYPES.contains(s.kind()))){
             var context=artifact.input().context();String label=context.gav()+" ["+context.path()+"]";
@@ -377,6 +454,9 @@ public final class RocksIndexStore implements IndexStore {
         return byScipFrom(scip,selected(workspace,true,layer));
     }
     @Override public synchronized IndexedSemanticSymbol semanticByScip(String scip,String workspace,SemanticLayer layer)throws Exception{
+        return semanticLookup(new SemanticLookup(workspace,layer,scip,false));
+    }
+    private IndexedSemanticSymbol findSemanticByScip(String scip,String workspace,SemanticLayer layer)throws Exception{
         for(var artifact:selected(workspace,true,layer)){
             var source=sourceOverlay.semanticFirst(artifact.id(),"scip",scip,layer);
             if(source!=null)return source;
@@ -419,6 +499,9 @@ public final class RocksIndexStore implements IndexStore {
         return symbol!=null&&TYPES.contains(symbol.kind())?indexedSemantic(artifact,symbol,layer):null;
     }
     @Override public synchronized IndexedSemanticSymbol semanticType(String binaryName,String workspace,SemanticLayer layer)throws Exception{
+        return semanticLookup(new SemanticLookup(workspace,layer,binaryName,true));
+    }
+    private IndexedSemanticSymbol findSemanticType(String binaryName,String workspace,SemanticLayer layer)throws Exception{
         for(var artifact:selected(workspace,true,layer)){
             var value=semanticType(artifact,binaryName,layer);
             if(value!=null)return value;

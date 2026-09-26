@@ -20,13 +20,30 @@ final class SourceOverlay implements AutoCloseable {
     private record Cached(Map<String,Object> value,long weight) {}
     private final LinkedHashMap<String,Cached> cache=new LinkedHashMap<>(64,.75f,true);
     private final Map<String,IndexStore.IndexedSemanticSymbol> semanticCache=new HashMap<>();
-    SourceOverlay(RocksDB db){this(db,4L*1024*1024);}
-    SourceOverlay(RocksDB db,long budget){this.db=db;this.cacheBudget=budget;}
+    private final Set<Long> sourceArtifacts=new HashSet<>();
+    SourceOverlay(RocksDB db)throws RocksDBException{this(db,4L*1024*1024);}
+    SourceOverlay(RocksDB db,long budget)throws RocksDBException{
+        this.db=db;this.cacheBudget=budget;
+        // Reconstruct membership once on open, including legacy manifests. Jump over each whole
+        // artifact: no source records are decoded. Publication only adds membership; retaining an
+        // empty artifact after removal is conservative, while a negative answer is always exact.
+        try(var iterator=db.newIterator(read)){
+            iterator.seek("L/".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            while(iterator.isValid()){
+                String key=new String(iterator.key(),java.nio.charset.StandardCharsets.UTF_8);
+                if(!key.startsWith("L/"))break;
+                sourceArtifacts.add(Long.parseUnsignedLong(key.substring(2,18),16));
+                iterator.seek((key.substring(0,18)+"0").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            iterator.status();
+        }
+    }
     private void evict(){cache.clear();semanticCache.clear();cacheBytes=0;}
     private KeyedFacts facts(long artifact){return new KeyedFacts(db,"L/"+String.format(Locale.ROOT,"%016x",artifact)+"/");}
     private static String key(String value){return KeyedFacts.part(value);}
     private static String handle(long id){return String.format(Locale.ROOT,"%016x",id);}
     void replace(WriteBatch batch,long artifact,FileStamp file,List<Map<String,Object>> symbols,List<IndexStore.SourceRelationship> edges)throws Exception {
+        sourceArtifacts.add(artifact);
         evict();var records=new ArrayList<KeyedFacts.Fact>();String owner=key(file.file());
         records.add(new KeyedFacts.Fact("f/"+owner,FactCodec.encode(file),Set.of("files")));
         for(var symbol:symbols){
@@ -86,6 +103,7 @@ final class SourceOverlay implements AutoCloseable {
         var result=new ArrayList<Map<String,Object>>(1);facts(artifact).select(read,field+"/"+key(value),false,(id,bytes)->{result.add(decode(artifact,id,bytes));return false;});return result.isEmpty()?null:result.getFirst();
     }
     IndexStore.IndexedSemanticSymbol semanticFirst(long artifact,String field,String value,IndexStore.SemanticLayer layer)throws Exception {
+        if(!sourceArtifacts.contains(artifact))return null;
         var result=new ArrayList<IndexStore.IndexedSemanticSymbol>(1);
         facts(artifact).select(read,field+"/"+key(value),false,(id,bytes)->{result.add(semantic(artifact,id,bytes,layer));return false;});
         return result.isEmpty()?null:result.getFirst();

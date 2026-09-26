@@ -184,23 +184,31 @@ public final class SemanticReadViews {
         };
     }
 
+    /** Proof validation consumes subscribed observations. A missing subscription is UNKNOWN. */
+    public static SemanticReadView observed(IndexStore store,String workspace,IndexStore.SemanticLayer layer){
+        return indexed(store,workspace,layer==IndexStore.SemanticLayer.LOCAL,true);
+    }
     private static SemanticReadView indexed(IndexStore store,String workspace,boolean local){
+        return indexed(store,workspace,local,false);
+    }
+    private static SemanticReadView indexed(IndexStore store,String workspace,boolean local,boolean observed){
         Objects.requireNonNull(store);
         var layer=local?IndexStore.SemanticLayer.LOCAL:IndexStore.SemanticLayer.MACHINE;
         var origin=local?SemanticReadView.Origin.LOCAL:SemanticReadView.Origin.MACHINE;
         return new SemanticReadView(){
             @Override public Symbol symbol(String id)throws Exception{
-                var value=store.semanticByScip(id,workspace,layer);
+                var value=observed?store.observedSemanticByScip(id,workspace,layer):store.semanticByScip(id,workspace,layer);
                 return value==null?null:fromIndexed(value,origin);
             }
             @Override public Symbol type(String binaryName)throws Exception{
-                var value=store.semanticType(binaryName,workspace,layer);
+                var value=observed?store.observedSemanticType(binaryName,workspace,layer):store.semanticType(binaryName,workspace,layer);
                 return value==null?null:fromIndexed(value,origin);
             }
             @Override public SemanticCompleteness completeness(String ownerId)throws Exception{
                 return symbol(ownerId)==null?SemanticCompleteness.UNKNOWN:SemanticCompleteness.COMPLETE;
             }
             @Override public MemberPage members(String ownerId,String prefix,int limit,String cursor)throws Exception{
+                if(observed)throw new IndexStore.UnobservedSemanticQuery();
                 if(symbol(ownerId)==null||limit<=0)return new MemberPage(List.of(),null);
                 var page=store.semanticMembersByOwner(ownerId,prefix,workspace,limit,cursor,layer);
                 var values=new ArrayList<SemanticReadView.Symbol>(page.symbols().size());
@@ -209,6 +217,7 @@ public final class SemanticReadViews {
                 return new MemberPage(values,page.cursor());
             }
             @Override public List<String> directSupertypes(String typeId)throws Exception{
+                if(observed)throw new IndexStore.UnobservedSemanticQuery();
                 if(symbol(typeId)==null)return List.of();
                 var result=new TreeSet<String>();
                 for(var edge:store.relationships(List.of(typeId),true,Set.of("extends","implements"),workspace,layer)){
@@ -222,11 +231,13 @@ public final class SemanticReadViews {
                         var value=symbol(key);yield value==null?Optional.empty():Optional.of(value.resolutionIdentity());
                     }
                     case MEMBER_RANGE -> {
+                        if(observed)throw new IndexStore.UnobservedSemanticQuery();
                         var member=SemanticReadView.parseMemberIdentityKey(key);
                         yield symbol(member.ownerId())==null?Optional.empty()
                                 :Optional.of(store.semanticMemberRangeIdentity(member.ownerId(),member.name(),workspace,layer));
                     }
                     case OVERLOAD_GROUP -> {
+                        if(observed)throw new IndexStore.UnobservedSemanticQuery();
                         var member=SemanticReadView.parseMemberIdentityKey(key);
                         yield symbol(member.ownerId())==null?Optional.empty()
                                 :Optional.of(store.semanticOverloadGroupIdentity(member.ownerId(),member.name(),workspace,layer));

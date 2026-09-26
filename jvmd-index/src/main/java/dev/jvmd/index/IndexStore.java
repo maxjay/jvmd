@@ -24,6 +24,21 @@ public interface IndexStore extends AutoCloseable {
     record SourceRelationship(String sourceScip,String targetScip,String kind) { }
     enum SemanticLayer { LOCAL, MACHINE }
 
+    /** An unobserved/evicted lookup is UNKNOWN, not a proven negative result. */
+    final class UnobservedSemanticQuery extends Exception {
+        public UnobservedSemanticQuery(){super("Semantic observation requires admission");}
+    }
+    default IndexedSemanticSymbol observedSemanticByScip(String scip,String workspace,SemanticLayer layer)throws Exception{
+        throw new UnobservedSemanticQuery();
+    }
+    default IndexedSemanticSymbol observedSemanticType(String binary,String workspace,SemanticLayer layer)throws Exception{
+        throw new UnobservedSemanticQuery();
+    }
+    default ClasspathSearchProof observedClasspathSearch(String workspace,String binary)throws Exception{
+        throw new UnobservedSemanticQuery();
+    }
+
+
     /**
      * Typed detached semantic record. Navigation/search maps remain a separate compatibility surface;
      * semantic consumers carry the already-decoded canonical ResolutionFact directly.
@@ -115,6 +130,8 @@ public interface IndexStore extends AutoCloseable {
 
     Map<String,Long> counts()throws Exception;
     Map<String,Object> status();
+    /** Work performed when admitting/refreshing detached semantic observations, not read hits. */
+    default Map<String,Long> semanticWork(){return Map.of();}
     List<String> loadWorkspace(String workspace,List<WorkspaceEntry> paths,List<Map.Entry<String,String>> dependencies)throws Exception;
     /**
      * Resolution-scoped ordered dependency classpath for one workspace.

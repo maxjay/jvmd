@@ -7,7 +7,7 @@ FILES = {
     'jvmd-dist/src/main/java/dev/jvmd/dist/Application.java': ('application', 'completion analyzer maintainedResolution contextCacheIdentity createAnalyzerContext'),
     'jvmd-dist/src/main/java/dev/jvmd/dist/WorkspaceContextManager.java': ('context', 'context'),
     'jvmd-lsp/src/main/java/dev/jvmd/lsp/LspFacade.java': ('lsp', 'request'),
-    'jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Analyzer.java': ('analyzer', 'configure platformFingerprint semanticOwnerIdentity preciseClasspathSequence reconcileClasspath synchronizeKnownSources touch validatedInputs residentContextKey reusableDocumentSemantic documentProofCurrent currentDocumentContextProof documentContextProof receiverProofIdentity resolutionPathIdentity hierarchyProofIdentity accessibilityProofIdentity namespaceDependencies namespaceTypeIdentity classpathProofIdentity maintainedQualifiedCompletion qualifiedDocumentSemantic residentQualifiedRows ensureSourceSemanticCurrent ensureHierarchySemanticCurrent ensureCompletionSemantics bindings semanticReadView queryHierarchyApi'),
+    'jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Analyzer.java': ('analyzer', 'configure platformFingerprint semanticOwnerIdentity preciseClasspathSequence reconcileClasspath synchronizeKnownSources touch validatedInputs residentContextKey reusableDocumentSemantic documentProofCurrent maintainedHierarchyProofIdentity documentContextProof receiverProofIdentity resolutionPathIdentity hierarchyProofIdentity accessibilityProofIdentity namespaceDependencies namespaceTypeIdentity classpathProofIdentity maintainedQualifiedCompletion qualifiedDocumentSemantic residentQualifiedRows ensureSourceSemanticCurrent ensureHierarchySemanticCurrent ensureCompletionSemantics bindings semanticReadView queryHierarchyApi'),
     'jvmd-analyzer/src/main/java/dev/jvmd/analyzer/CompilerPool.java': ('compiler', 'configure observeSources inputSnapshot cacheValid execute'),
     'jvmd-core/src/main/java/dev/jvmd/core/LiveSourceState.java': ('source', 'settleWatchEvents reconcilePackages reconcilePackage reconcile observe refresh'),
     'jvmd-core/src/main/java/dev/jvmd/core/FileStateRegistry.java': ('files', 'hash stamp inventory'),
@@ -42,7 +42,7 @@ for filename, (prefix, names) in FILES.items():
 # Individual proof domains are timed as well as the encompassing method.
 p=ROOT/'jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Analyzer.java'; s=p.read_text()
 s=s.replace('Hash256 identity=switch(domain){', 'Hash256 identity;\n            try(var domainSpan=dev.jvmd.core.RequestScope.stage("admission.proof."+domain.name())){\n            identity=switch(domain){')
-s=s.replace('dependencies.add(new QueryProof.Dependency(dependency.key(),identity));', '}\n            dependencies.add(new QueryProof.Dependency(dependency.key(),identity));')
+s=s.replace('if(!dependency.identity().equals(identity))return false;', '}\n            if(!dependency.identity().equals(identity))return false;')
 s=s.replace('return new QueryProof(dependencies);', 'try(var digestSpan=dev.jvmd.core.RequestScope.stage("admission.proof.digest")){return new QueryProof(dependencies);}')
 s=s.replace('var query=cached.snapshot().query(start);\n        if(!documentProofCurrent', 'var query=cached.snapshot().query(start);\n        dev.jvmd.core.RequestScope.count("proof_dependencies",query.proof().dependencies().size());\n        if(!documentProofCurrent')
 s=s.replace('var domain=dependency.key().domain();', 'var domain=dependency.key().domain();\n            dev.jvmd.core.RequestScope.count("domain_"+domain.name(),1);')

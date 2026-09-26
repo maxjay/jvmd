@@ -58,6 +58,35 @@ class LiveSourceStateTest {
         }
     }
 
+    @Test void settlementWaitsForAnAlreadyDequeuedSourceMutation()throws Exception{
+        Path file=Files.writeString(root.resolve("A.java"),"class A { int x=1; }");
+        var files=new FileStateRegistry();
+        try(var documents=new Documents(files)){
+            var state=documents.liveState(List.of(root));
+            var watcherField=LiveSourceState.class.getDeclaredField("watchThread");watcherField.setAccessible(true);
+            Thread watcher=(Thread)watcherField.get(state);
+            assertThat(watcher).isNotNull();
+            String changed="class A { int x=2; }";
+            var result=new java.util.concurrent.CompletableFuture<String>();
+            Thread reader=Thread.ofPlatform().unstarted(()->{
+                try{state.settleWatchEvents();result.complete(state.contentHash(file));}
+                catch(Throwable failure){result.completeExceptionally(failure);}
+            });
+            synchronized(files){
+                var timestamp=Files.getLastModifiedTime(file);
+                Files.writeString(file,changed);Files.setLastModifiedTime(file,timestamp);
+                // The watcher has removed the event from its queue but cannot publish its hash.
+                await(Duration.ofSeconds(5),()->watcher.getState()==Thread.State.BLOCKED
+                        &&Arrays.stream(watcher.getStackTrace()).anyMatch(frame->frame.getMethodName().equals("hash")));
+                reader.start();
+                await(Duration.ofSeconds(5),()->result.isDone()||reader.getState()==Thread.State.BLOCKED);
+            }
+            assertThat(result.get(5,java.util.concurrent.TimeUnit.SECONDS))
+                    .isEqualTo(Hashing.sha256(changed.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+            reader.join();
+        }
+    }
+
     @Test void uncertaintyAdvancesEpochEvenWhenReconciliationRestoresSameIdentity()throws Exception{
         Files.writeString(root.resolve("A.java"),"class A {}");
         try(var documents=new Documents(new FileStateRegistry())){

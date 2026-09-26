@@ -1195,3 +1195,25 @@ Findings:
 Remaining:
 - Checkpoint 17 must measure a commit containing these exact restored harness blobs and final production semantics. Only the subject-SHA file changes for that run.
 - No Checkpoint-17 acceptance or Checkpoint-18 cleanup is claimed yet.
+
+## 2026-09-26 — closeout: fence source events already being published
+
+Exact-head Tests run [36247347263](https://github.com/maxjay/jvmd/actions/runs/36247347263)
+passed Phase 4, including both repaired completion regressions, but the later agent-surface
+phase failed `WorkspaceBindingsCacheTest.sourceAndEditorChangesCannotReuseAnOldGraph`:
+a timestamp-preserving `Api.a()` → `Api.b()` caller rewrite returned the old call edge.
+This is a correctness gate, not an optimization follow-up.
+
+`LiveSourceStateTest.settlementWaitsForAnAlreadyDequeuedSourceMutation` now holds the
+file-observation lock after a rewrite, waits until the watcher has dequeued the event,
+and starts graph settlement before allowing publication. Before the repair it
+reliably returned the old source hash. The source watcher and settlement now share an
+event-processing lock, so settlement waits for active content publication even when
+its own queue is empty. The repair adds no source inventory, owner scan, or longer
+filesystem delay. The existing filesystem-delivery follow-up remains separate.
+
+Local verification: all 28 tests in `LiveSourceStateTest`,
+`WorkspaceBindingsCacheTest`, and `CompletionPrefixCacheTest` pass, including all
+16 completion-prefix regressions. The frozen run measuring `341ecc0` is no longer a
+candidate final semantic subject after this repair; a new exact implementation SHA
+must be selected and measured before Checkpoint 17 can be accepted.

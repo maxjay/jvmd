@@ -74,6 +74,7 @@ public final class LspFacade {
             String ref=Dispatcher.required(nativeParams.path("data"),"scip");
             String expected=nativeParams.path("data").path("resolution_identity").asText("");
             var describeParams=Json.MAPPER.createObjectNode().put("ref",ref).put("detail","summary").put("doc_depth",0);
+            if(!expected.isBlank())describeParams.put("resolution_identity",expected);
             if(nativeParams.path("data").path("semantic_origin").isTextual())
                 describeParams.put("semantic_origin",nativeParams.path("data").path("semantic_origin").asText());
             var described=query.one("symbol.describe",describeParams);

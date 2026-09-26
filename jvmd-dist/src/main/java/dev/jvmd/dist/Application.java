@@ -736,14 +736,23 @@ public final class Application implements AutoCloseable {
     private static <T> List<T> slice(List<T> list,int offset,int limit){return List.copyOf(list.subList(Math.min(offset,list.size()),Math.min(list.size(),offset+limit)));}
     private Analyzer analyzer(Session session,Path path)throws Exception{
         try(var trace=RequestScope.stage("application.analyzer")){
-            var graph=maintainedResolution(session);
+            Resolution graph;
+            try(var stage=RequestScope.stage("application.analyzer.maintainedResolution")){graph=maintainedResolution(session);}
             var contexts=session.state("analysis_contexts",WorkspaceContextManager::new);
             var context=contexts.context(path,graph,file->createAnalyzerContext(session,file,graph));
-            var analyzer=session.state("analyzer",()->new Analyzer(classpathFiles));
-            var availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
-            analyzer.configure(context,availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));
-            analyzer.documents(documents(session));
-            analyzer.persistence(config.stateDir().resolve("diagnostics-v2").resolve(Hashing.sha256(session.root().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+            Analyzer analyzer;
+            try(var stage=RequestScope.stage("application.analyzer.instance")){analyzer=session.state("analyzer",()->new Analyzer(classpathFiles));}
+            IndexService availableIndex;
+            try(var stage=RequestScope.stage("application.analyzer.indexLookup")){
+                availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
+            }
+            try(var stage=RequestScope.stage("application.analyzer.configure")){
+                analyzer.configure(context,availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));
+            }
+            try(var stage=RequestScope.stage("application.analyzer.documents")){analyzer.documents(documents(session));}
+            try(var stage=RequestScope.stage("application.analyzer.persistence")){
+                analyzer.persistence(config.stateDir().resolve("diagnostics-v2").resolve(Hashing.sha256(session.root().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+            }
             return analyzer;
         }
     }
@@ -758,17 +767,23 @@ public final class Application implements AutoCloseable {
             options=test?module.testCompilerOptions():module.compilerOptions();generation+=test?":test":":main";
             graph.classpaths().getOrDefault(gav+(test?":test":":main"),java.util.List.of()).forEach(p->classpath.add(Path.of(p)));
             module.sources().forEach(p->sources.add(Path.of(p)));if(test)module.testSources().forEach(p->sources.add(Path.of(p)));
-            for(var dependency:overlay(session,graph).dependencies(graph,gav,test)){
-                boolean sourceOnly=overlay(session,graph).requiresSource(dependency)||documents(session).dirty(Path.of(dependency.directory()));generation+=":"+dependency.gav()+":"+sourceOnly;
-                if(sourceOnly)dependency.sources().forEach(p->sources.add(Path.of(p)));classpath.add(Path.of(dependency.classes()));
-                // A built dependency uses its API; source changes (including preserved mtimes) switch to SOURCE_PATH.
-                coordinates.put(dependency.classes(),dependency.gav());
-                var generated=prepareProcessing(session,dependency,false,graph);
-                if(generated!=null){classpath.addAll(0,generated.classpath());sources.addAll(generated.sourceRoots());binarySources.addAll(generated.binarySources());processorWarnings.addAll(generated.warnings());generation+=":"+generated.fingerprint();}
+            List<Resolution.Module> dependencies;
+            try(var stage=RequestScope.stage("application.analyzer.context.overlayDependencies")){
+                dependencies=overlay(session,graph).dependencies(graph,gav,test);
             }
-            var processing=prepareProcessing(session,module,false,graph);
-            if(processing!=null){classpath.addAll(0,processing.classpath());sources.addAll(0,processing.sourceRoots());binarySources.addAll(processing.binarySources());processorWarnings.addAll(processing.warnings());generation+=":"+processing.fingerprint();coordinates.put(processing.sourceRoots().getFirst().toString(),gav);}
-            if(test){var testOutput=prepareProcessing(session,module,true,graph);if(testOutput!=null){classpath.addAll(0,testOutput.classpath());sources.addAll(0,testOutput.sourceRoots());binarySources.addAll(testOutput.binarySources());processorWarnings.addAll(testOutput.warnings());generation+=":"+testOutput.fingerprint();coordinates.put(testOutput.sourceRoots().getFirst().toString(),gav);}}
+            try(var stage=RequestScope.stage("application.analyzer.context.annotationProcessing")){
+                for(var dependency:dependencies){
+                    boolean sourceOnly=overlay(session,graph).requiresSource(dependency)||documents(session).dirty(Path.of(dependency.directory()));generation+=":"+dependency.gav()+":"+sourceOnly;
+                    if(sourceOnly)dependency.sources().forEach(p->sources.add(Path.of(p)));classpath.add(Path.of(dependency.classes()));
+                    // A built dependency uses its API; source changes (including preserved mtimes) switch to SOURCE_PATH.
+                    coordinates.put(dependency.classes(),dependency.gav());
+                    var generated=prepareProcessing(session,dependency,false,graph);
+                    if(generated!=null){classpath.addAll(0,generated.classpath());sources.addAll(generated.sourceRoots());binarySources.addAll(generated.binarySources());processorWarnings.addAll(generated.warnings());generation+=":"+generated.fingerprint();}
+                }
+                var processing=prepareProcessing(session,module,false,graph);
+                if(processing!=null){classpath.addAll(0,processing.classpath());sources.addAll(0,processing.sourceRoots());binarySources.addAll(processing.binarySources());processorWarnings.addAll(processing.warnings());generation+=":"+processing.fingerprint();coordinates.put(processing.sourceRoots().getFirst().toString(),gav);}
+                if(test){var testOutput=prepareProcessing(session,module,true,graph);if(testOutput!=null){classpath.addAll(0,testOutput.classpath());sources.addAll(0,testOutput.sourceRoots());binarySources.addAll(testOutput.binarySources());processorWarnings.addAll(testOutput.warnings());generation+=":"+testOutput.fingerprint();coordinates.put(testOutput.sourceRoots().getFirst().toString(),gav);}}
+            }
             for(var m:graph.modules()){
                 for(String source:java.util.stream.Stream.concat(m.sources().stream(),m.testSources().stream()).toList()){
                     navigationSources.add(Path.of(source));coordinates.putIfAbsent(source,m.gav());coordinates.putIfAbsent(Path.of(source).toUri().toString(),m.gav());

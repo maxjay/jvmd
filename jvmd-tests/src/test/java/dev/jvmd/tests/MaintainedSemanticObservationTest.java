@@ -76,7 +76,8 @@ class MaintainedSemanticObservationTest {
                 assertThat(store.semanticClasspathSearch("w","p.Target").orElseThrow()).isEqualTo(search);
                 store.semanticClasspathSequence("w");
             }
-            assertThat(store.semanticWork()).isEqualTo(initial);
+            load(index,a,b);
+            assertThat(store.semanticWork()).as("unchanged workspace selection is not a mutation").isEqualTo(initial);
             load(index,b,a);var published=store.semanticWork();
             assertThat(store.semanticType("p.Target","w",layer).id()).isNotEqualTo(first.id());
             assertThat(store.semanticClasspathSearch("w","p.Target").orElseThrow().winnerArtifactKey()).isEqualTo(b.toString());
@@ -98,6 +99,20 @@ class MaintainedSemanticObservationTest {
             assertThat(store.semanticByScip(scip,"w",layer)).isNull();
             assertThat(store.semanticType("p.Missing","w",layer)).isNull();
             assertThat(store.semanticWork()).isEqualTo(removed);
+            store.publishSourceFile(index.artifact(a).id(),source,"restored",List.of(row),2,List.of());
+            // Memory pressure can retire a subscription, but cannot turn UNKNOWN into absence
+            // or trigger index reconstruction inside a read-only proof lookup.
+            store.semanticType("p.Victim","w",layer);
+            for(int i=0;i<600;i++)store.semanticType("p.Other"+i,"w",layer);
+            var bounded=store.semanticWork();
+            assertThatThrownBy(()->store.observedSemanticType("p.Victim","w",layer))
+                    .isInstanceOf(IndexStore.UnobservedSemanticQuery.class);
+            assertThat(store.semanticWork()).isEqualTo(bounded);
+        }
+        try(var reopened=new IndexService(root.resolve("index.db"),repo)){
+            load(reopened,a,b);
+            assertThat(reopened.store().semanticType("p.Missing","w",IndexStore.SemanticLayer.MACHINE))
+                    .as("source artifact membership is reconstructed on reopen").isNotNull();
         }
     }
 

@@ -111,3 +111,19 @@ The production build passes. Existing targeted completion/source/classpath tests
 Broader local suites, after-repair real-LSP A/B, normal benchmark/LSP comparison, frozen proof, cleanup and final exact-head gates remain pending. No repaired latency claim is made yet.
 
 The expanded local phase-3/4 run completed 225 tests: 223 passed; the existing process-tree timeout test exceeded its five-second bound by 106 ms, and the JDK-documentation test hit a corrupt local `lib/src.zip` (`ZipException: zip END header not found`). The targeted semantic suite and the disposable instrumented production build passed. These two local failures are recorded rather than called green; exact-head CI uses the independently checksum-pinned complete JDK.
+
+
+## First repaired controlled experiment — checkpoint 7
+
+Run `36263797352` measured production subject `b8753ee61449ebc8108dbdce8a2650aa10868cbe`. Artifact `10913248258`, SHA-256 `4545cc3ea78c91a1619e2493747485e3d317389fff6fcc666105d540a0d8db8f`. Both modes passed every semantic check, including selected resolve and the unsaved edit, with two correct warmups and twenty correct steady samples each.
+
+| Same repaired binary | Steady client p50 / p95 ms | Server wall p50 ms | Server CPU p50 ms | Allocation p50 bytes |
+|---|---:|---:|---:|---:|
+| MUTATION_VISIBLE | 12.988 / 29.658 | 8.688 | 6.489 | 1,847,920 |
+| EXACT_ADMITTED | 11.087 / 16.220 | 7.158 | 5.071 | 1,848,736 |
+
+The admitted/non-admitted p50 ratio is 0.854 (before: 29.38). Exact-admitted proof validation is 0.204 ms, of which classpath is 0.012 ms and accessibility is 0.052 ms. Its allocation is 35,592 bytes, versus 1,034,288 bytes previously. There are no warm source-current helpers, bindings, package reconciliations or `query.lookup` events. Normal input metadata checks and mutation settlement remain enabled. The instrumented first-use results were 26,148 ms for MUTATION_VISIBLE and 3,101 ms for EXACT_ADMITTED; the former includes work that the latter awaits during diagnostic admission. These are not steady samples and are not described as comparable first-use latency.
+
+The subsequent publication-boundary review adds coverage for artifact context/layer changes, avoids refreshing subscriptions when workspace selection is unchanged, and tests observation eviction as UNKNOWN plus persisted source-overlay reopening. No normal harness or oracle bytes are modified.
+
+The corrupt shared local JDK source archive was isolated by extracting the checksum-verified JDK into a private toolchain directory. The JDK-documentation test then passed, as did the expanded maintained-observation tests. The existing process timeout test still reports about 5.1 seconds in this execution environment; it is unrelated to the semantic changes and is left unchanged.

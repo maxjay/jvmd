@@ -11,7 +11,7 @@ FILES = {
     'jvmd-analyzer/src/main/java/dev/jvmd/analyzer/CompilerPool.java': ('compiler', 'configure observeSources inputSnapshot cacheValid execute'),
     'jvmd-core/src/main/java/dev/jvmd/core/LiveSourceState.java': ('source', 'settleWatchEvents reconcilePackages reconcilePackage reconcile observe refresh'),
     'jvmd-core/src/main/java/dev/jvmd/core/FileStateRegistry.java': ('files', 'hash stamp inventory'),
-    'jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksIndexStore.java': ('rocks', 'semanticClasspathSequence semanticClasspathSearch semanticClasspathIdentity semanticByScip semanticMembersByOwner'),
+    'jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksIndexStore.java': ('rocks', 'semanticClasspathSequence semanticClasspathSearch semanticClasspathIdentity semanticByScip semanticMembersByOwner observedClasspathSearch observedSemanticByScip observedSemanticType buildClasspathSearch buildClasspathSequence buildSemanticLookup'),
 }
 
 def mask_java(s):

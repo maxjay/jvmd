@@ -83,7 +83,10 @@ public final class RocksIndexStore implements IndexStore {
     }
     private void installed(StoredArtifact artifact)throws Exception{
         var prior=artifacts.put(artifact.id(),artifact);paths.put(artifact.input().context().path(),artifact.id());metadataWrites++;
-        if(!Objects.equals(prior,artifact))refreshSemanticObservations(artifact,null);
+        if(!Objects.equals(prior,artifact)){
+            if(prior!=null&&!prior.input().context().equals(artifact.input().context()))refreshSemanticObservations(prior,null);
+            refreshSemanticObservations(artifact,null);
+        }
     }
     private boolean selects(String workspace,SemanticLayer layer,StoredArtifact artifact){
         var context=artifact.input().context();
@@ -346,8 +349,9 @@ public final class RocksIndexStore implements IndexStore {
     }
 
     @Override public synchronized List<String> loadWorkspace(String workspace,List<WorkspaceEntry> entries,List<Map.Entry<String,String>> dependencies)throws Exception{
-        workspaces.put(workspace,entries.stream().map(e->new WorkspaceEntry(Path.of(e.path()).toAbsolutePath().normalize().toString(),e.scope())).toList());
-        refreshSemanticObservations(null,workspace);
+        var normalized=entries.stream().map(e->new WorkspaceEntry(Path.of(e.path()).toAbsolutePath().normalize().toString(),e.scope())).toList();
+        var previous=workspaces.put(workspace,normalized);
+        if(!normalized.equals(previous))refreshSemanticObservations(null,workspace);
         var classes=new TreeMap<String,Set<String>>();var packages=new TreeMap<String,Set<String>>();
         for(var artifact:selected(workspace,false))for(var symbol:repository.select(symbolsKey(artifact),"0|type|",-1,Integer.MAX_VALUE,s->TYPES.contains(s.kind()))){
             var context=artifact.input().context();String label=context.gav()+" ["+context.path()+"]";

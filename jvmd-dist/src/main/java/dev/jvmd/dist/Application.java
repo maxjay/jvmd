@@ -641,7 +641,7 @@ public final class Application implements AutoCloseable {
             var enriched=analyzer==null?null:analyzer.residentDescription(ref);
             if(enriched!=null&&(expected==null||expected.isBlank()
                     ||expected.equals(Objects.toString(enriched.get("resolution_identity"),""))))
-                enriched.forEach((key,value)->{if(value!=null)symbol.put(key,value);});
+                for(var entry:enriched.entrySet())if(entry.getValue()!=null)symbol.put(entry.getKey(),entry.getValue());
         }
         if(!includeDoc){
             symbol.remove("doc");symbol.put("closure",List.of());

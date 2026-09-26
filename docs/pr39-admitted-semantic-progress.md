@@ -127,3 +127,45 @@ The admitted/non-admitted p50 ratio is 0.854 (before: 29.38). Exact-admitted pro
 The subsequent publication-boundary review adds coverage for artifact context/layer changes, avoids refreshing subscriptions when workspace selection is unchanged, and tests observation eviction as UNKNOWN plus persisted source-overlay reopening. No normal harness or oracle bytes are modified.
 
 The corrupt shared local JDK source archive was isolated by extracting the checksum-verified JDK into a private toolchain directory. The JDK-documentation test then passed, as did the expanded maintained-observation tests. The existing process timeout test still reports about 5.1 seconds in this execution environment; it is unrelated to the semantic changes and is left unchanged.
+
+## Normal gates on first repaired production subject
+
+At `b8753ee61449ebc8108dbdce8a2650aa10868cbe`, Tests `36263799965`, Benchmarks `36263799986`, and LSP scenarios `36263800126` all passed. The process-timeout and JDK-documentation failures from the local environment did not fail CI.
+
+Normal LSP artifact `10912189962`, SHA-256 `3855af2e5d8ecdd4624985ab023a5b5bd9aa6f3249e906153b5401c8cd6be238`:
+
+| Server | Admitted steady p50 / p95 ms | Correctness |
+|---|---:|---|
+| JVMD | 12.770 / 16.626 | All first/resolve/edit, 2/2 warmup, 20/20 steady |
+| JDTLS | 89.111 / 159.440 | All first/resolve/edit, 2/2 warmup, 20/20 steady |
+
+Normal prepared artifact `10913029109`, SHA-256 `0fdc9ffd4a34a37089e0d097bfe7bcfef0dc767fcf5d99915516cf5ca6ceb302`. All rows below are 300/300 correct. The previously healthy prepared path is preserved.
+
+| Operation | JVMD p50 / p95 ms | JDTLS p50 / p95 ms |
+|---|---:|---:|
+| Completion | 3.974 / 4.786 | 5.841 / 9.389 |
+| Definition | 3.675 / 4.697 | 2.854 / 5.208 |
+| Dependency definition | 5.447 / 7.138 | 2.999 / 5.422 |
+| Hover | 4.772 / 6.503 | 3.606 / 6.264 |
+| References | 4.710 / 6.079 | 11.499 / 19.145 |
+
+## Frozen proof preparation
+
+The frozen workflow and three proof components are restored byte-for-byte from repository history. Workflow blob remains `5cfa00d9de83faccdb641f5c38776b7719dc991c`; the three required SHA-256 values match the task. Only `subject-sha.txt` selects new production subject `1de2cc1ff1a01a2e06bbe6d441bded9bf643ea4f`, which includes the publication-boundary review and permanent eviction/reopening tests. Normal/frozen LSP dependencies and oracle remain unchanged.
+
+The GitHub connector supports publication and workflow reruns but exposes no dispatch operation. The unchanged frozen workflow requires dispatch on this child branch; its push trigger names the parent branch. The browser currently has no GitHub sign-in. No parent branch, frozen workflow trigger, or repository access policy has been changed to work around this. Frozen run acceptance and subsequent cleanup/final exact-head gates remain pending.
+
+## Reviewed production evidence
+
+Production subject `1de2cc1ff1a01a2e06bbe6d441bded9bf643ea4f` passed Tests `36264179099`, Benchmarks `36264179018`, and LSP scenarios `36264178996`.
+
+The reviewed A/B run `36264175752` also passed. Artifact `10913461320`, SHA-256 `c695d1747e184881e9bfb5d7a834e8e851ca40ab15fd734dcfb9bb722fec127b`, includes explicit instrumentation of observation reads and their reconstruction helpers.
+
+| Same reviewed binary | Client steady p50 / p95 ms | Server wall / CPU p50 ms | Request allocation p50 bytes |
+|---|---:|---:|---:|
+| MUTATION_VISIBLE | 14.054 / 29.025 | 8.917 / 6.847 | 1,848,472 |
+| EXACT_ADMITTED | 12.719 / 18.885 | 6.988 / 4.893 | 1,846,304 |
+
+All first/resolve/edit checks, both warmups and all twenty steady samples passed in each mode. The admitted/non-admitted p50 ratio is 0.905. Admitted proof validation costs 0.236 ms wall/CPU and allocates 37,896 bytes. Its two persisted exact observation reads cost 0.019 ms total, and its classpath observation costs 0.005 ms. Warm traces contain no exact/type lookup builds, classpath-search builds, classpath-sequence builds, persisted posting lookups, bindings, source repair or package reconciliation. Normal input verification and the mutation fence are still present.
+
+All seven unchanged frozen Java scenarios were also executed locally against this subject and their JSON artifacts inspected; none contains a captured failure. Query-matrix results preserve generic substitution, access filtering, static/instance distinctions, hierarchy members, prefix narrowing and unsaved members. Mutation results preserve expected diagnostics and relevant new members; the negative namespace resolves after the relevant source arrives. Classpath replacement changes `getA` to `getA2`, and an unrelated machine artifact leaves workspace C's symbol result byte-for-byte equal and workspace AB's selected order unchanged. Legacy unavailable status fields remain unavailable rather than being fabricated. These local matrix results do not replace the frozen CI workflow's real LSP, compiler-status and JFR evidence; checkpoint 8 is still pending.

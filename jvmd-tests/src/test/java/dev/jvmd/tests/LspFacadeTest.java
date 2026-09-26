@@ -51,12 +51,13 @@ class LspFacadeTest {
             var completion=call(app,session,"textDocument/completion",use,useSource,useSource.indexOf("api.gre")+7,Map.of());
             JsonNode item=null;for(var candidate:completion.path("items"))if(candidate.path("label").asText().startsWith("greet(")){item=candidate;break;}
             assertThat(item).isNotNull();assertThat(item.has("documentation")).isFalse();assertThat(item.path("detail").asText()).contains("greet");
+            String shallowDetail=item.path("detail").asText();
             assertThat(((Map<?,?>)dev.jvmd.lsp.LspFacade.capabilities().get("completionProvider")).get("resolveProvider")).isEqualTo(true);
             var response=TestSupport.request(app.dispatcher(),"lsp.request",Map.of("session",session,"method","completionItem/resolve","params",item,"client",CLIENT));
             assertThat(response.has("error")).as(response.toPrettyString()).isFalse();
             var resolved=response.path("result").path("result").path("value");
             assertThat(resolved.path("label").asText()).startsWith("greet(");
-            assertThat(resolved.path("detail").asText()).contains("greet");
+            assertThat(resolved.path("detail").asText()).contains("Api","greet").isNotEqualTo(shallowDetail);
             assertThat(resolved.path("documentation").path("value").asText()).contains("Greets callers");
         }
     }

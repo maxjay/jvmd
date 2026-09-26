@@ -523,12 +523,12 @@ public final class Application implements AutoCloseable {
         }return List.copyOf(found.values());
     }
     private Envelope describe(Session session,String ref)throws Exception{
-        return describe(session,ref,null,null);
+        return describe(session,ref,null,null,null);
     }
     private Envelope describe(Session session,String ref,WorkspaceBindings.Snapshot validated)throws Exception{
-        return describe(session,ref,validated,null);
+        return describe(session,ref,validated,null,null);
     }
-    private Envelope describe(Session session,String ref,WorkspaceBindings.Snapshot validated,String semanticOrigin)throws Exception{
+    private Envelope describe(Session session,String ref,WorkspaceBindings.Snapshot validated,String semanticOrigin,String expectedIdentity)throws Exception{
         lastDescribeRef=ref;
         if(validated!=null){
             var symbol=validated.symbol(ref);if(symbol!=null)return new Envelope(validated.tier(),"live",false,null,validated.warnings(),symbol);
@@ -541,22 +541,42 @@ public final class Application implements AutoCloseable {
         if(ref.startsWith("maven ")){
             var database=index();bindIndex(session,database);
             String workspace=session.state("resolution")==null?null:session.id();
-            if("machine".equals(semanticOrigin)){
+            if(expectedIdentity!=null&&!expectedIdentity.isBlank()){
+                // Enrichment may use an exact installed copy even when LOCAL source won query
+                // precedence, but only when its semantic resolution identity is byte-for-byte equal.
+                machineExactDescribeAttempts.incrementAndGet();long exactStarted=System.nanoTime();
+                var machine=database.store().byScip(ref,null,IndexStore.SemanticLayer.MACHINE);
+                machineExactDescribeNanos.addAndGet(System.nanoTime()-exactStarted);
+                if(machine!=null&&expectedIdentity.equals(Objects.toString(machine.get("resolution_identity"),""))){
+                    dependencyExactDescribeHits.incrementAndGet();return Envelope.of(2,"index",machine);
+                }
+                machineExactDescribeMisses.incrementAndGet();
+                if("machine".equals(semanticOrigin))
+                    return Envelope.of(2,"index",Map.of("scip",ref,"resolution_identity",""));
+                if("local".equals(semanticOrigin)){
+                    localExactDescribeAttempts.incrementAndGet();exactStarted=System.nanoTime();
+                    var local=database.store().byScip(ref,workspace,IndexStore.SemanticLayer.LOCAL);
+                    localExactDescribeNanos.addAndGet(System.nanoTime()-exactStarted);
+                    if(local!=null&&expectedIdentity.equals(Objects.toString(local.get("resolution_identity"),""))){
+                        localExactDescribeHits.incrementAndGet();dependencyExactDescribeHits.incrementAndGet();
+                        return Envelope.of(2,"index",local);
+                    }
+                    return Envelope.of(2,"index",Map.of("scip",ref,"resolution_identity",""));
+                }
+            }else if("machine".equals(semanticOrigin)){
                 machineExactDescribeAttempts.incrementAndGet();long exactStarted=System.nanoTime();
                 var indexed=database.store().byScip(ref,workspace,IndexStore.SemanticLayer.MACHINE);
                 machineExactDescribeNanos.addAndGet(System.nanoTime()-exactStarted);
                 if(indexed!=null){dependencyExactDescribeHits.incrementAndGet();return Envelope.of(2,"index",indexed);}
                 machineExactDescribeMisses.incrementAndGet();
                 return Envelope.of(2,"index",Map.of("scip",ref,"resolution_identity",""));
-            }
-            if("local".equals(semanticOrigin)){
+            }else if("local".equals(semanticOrigin)){
                 localExactDescribeAttempts.incrementAndGet();long exactStarted=System.nanoTime();
                 var indexed=database.store().byScip(ref,workspace,IndexStore.SemanticLayer.LOCAL);
                 localExactDescribeNanos.addAndGet(System.nanoTime()-exactStarted);
                 if(indexed!=null){localExactDescribeHits.incrementAndGet();dependencyExactDescribeHits.incrementAndGet();return Envelope.of(2,"index",indexed);}
                 return Envelope.of(2,"index",Map.of("scip",ref,"resolution_identity",""));
-            }
-            if(semanticOrigin==null||semanticOrigin.isBlank()){
+            }else{
                 machineExactDescribeAttempts.incrementAndGet();long exactStarted=System.nanoTime();
                 var indexed=database.store().byScip(ref,workspace,IndexStore.SemanticLayer.MACHINE);
                 machineExactDescribeNanos.addAndGet(System.nanoTime()-exactStarted);
@@ -597,7 +617,8 @@ public final class Application implements AutoCloseable {
         String detail=params.path("detail").asText("summary");if(!Set.of("summary","full").contains(detail))throw RpcException.invalid("Unknown documentation detail");
         String origin=params.path("semantic_origin").isTextual()?params.path("semantic_origin").asText():null;
         if(origin!=null&&!Set.of("live","local","machine").contains(origin))throw RpcException.invalid("Unknown semantic_origin");
-        var base=describe(session,Dispatcher.required(params,"ref"),null,origin);
+        String expected=params.path("resolution_identity").isTextual()?params.path("resolution_identity").asText():null;
+        var base=describe(session,Dispatcher.required(params,"ref"),null,origin,expected);
         if(!(base.result() instanceof Map<?,?> raw)||raw.get("scip")==null)return base;
         var symbol=new LinkedHashMap<String,Object>();for(var entry:raw.entrySet())symbol.put(entry.getKey().toString(),entry.getValue());
         if(!symbol.containsKey("id")&&depth==0){

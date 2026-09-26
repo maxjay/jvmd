@@ -16,6 +16,33 @@ import static org.assertj.core.api.Assertions.*;
 class SourceProofMutationIntegrationTest {
     @TempDir Path root;
 
+    @Test void unadmittedSourceDependencyDoesNotSearchPersistedLayersForAnUnusableProof()throws Exception{
+        Path source=Files.createDirectories(root.resolve("src"));
+        Files.writeString(source.resolve("A.java"),"class A { int one(){return 1;} }");
+        String caller="class B { int use(A a){return a.one();} }";
+        Path b=Files.writeString(source.resolve("B.java"),caller);
+        var storage=dev.jvmd.index.IndexStorage.open(root.resolve("index"),64L*1024*1024);
+        var lookups=new java.util.concurrent.atomic.AtomicInteger();
+        var store=(dev.jvmd.index.IndexStore)java.lang.reflect.Proxy.newProxyInstance(
+                getClass().getClassLoader(),new Class<?>[]{dev.jvmd.index.IndexStore.class},(proxy,method,args)->{
+                    if(method.getName().equals("semanticByScip"))lookups.incrementAndGet();
+                    try{return method.invoke(storage.store(),args);}
+                    catch(java.lang.reflect.InvocationTargetException failure){throw failure.getCause();}
+                });
+        var observed=(dev.jvmd.index.IndexStorage)java.lang.reflect.Proxy.newProxyInstance(
+                getClass().getClassLoader(),new Class<?>[]{dev.jvmd.index.IndexStorage.class},(proxy,method,args)->{
+                    if(method.getName().equals("store"))return store;
+                    try{return method.invoke(storage,args);}
+                    catch(java.lang.reflect.InvocationTargetException failure){throw failure.getCause();}
+                });
+        try(var index=new dev.jvmd.index.IndexService(observed,root.resolve("repo"));var analyzer=new Analyzer()){
+            analyzer.configure(new Analyzer.Context("fixture:source-proof:1","25",List.of(),List.of(source),
+                    "source-proof",Map.of(),List.of(),Set.of(),List.of(),List.of(source),true,"workspace"),index,256L*1024*1024);
+            assertThat(diagnostics(analyzer,b,caller)).isEmpty();
+            assertThat(lookups.get()).as("unadmitted A requires conservative source fallback, not persisted exact lookups").isZero();
+        }
+    }
+
     @Test void unrelatedExactAndOverloadChangesDoNotReanalyseProofCoveredCallerButRelevantOverloadDoes()throws Exception{
         Path a=root.resolve("A.java"),b=root.resolve("B.java");
         String first="class A { int one(){return 1;} int two(){return 2;} int foo(Object value){return 3;} int bar(){return 4;} }";

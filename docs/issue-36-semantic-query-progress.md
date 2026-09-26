@@ -1217,3 +1217,35 @@ Local verification: all 28 tests in `LiveSourceStateTest`,
 16 completion-prefix regressions. The frozen run measuring `341ecc0` is no longer a
 candidate final semantic subject after this repair; a new exact implementation SHA
 must be selected and measured before Checkpoint 17 can be accepted.
+
+## 2026-09-26 — frozen proof failure: discard unusable source lookups early
+
+Starting SHA: `c77774cb484176b5f171cc7400aab4369b91a28e`.
+
+The unchanged frozen [run 36247344430](https://github.com/maxjay/jvmd/actions/runs/36247344430)
+measured `341ecc0ec43f8b99b9df10340c03c9bb1a6eb086`. All frozen hash checks passed,
+but CMP-01 timed out waiting for MavenProject version-2 diagnostics after its unsaved
+API edit. The semantic matrix did not execute; this is not accepted Checkpoint-17 evidence.
+Artifact `10908047233`, digest
+`sha256:7caa7390b7db89c7be9fa19d902868bbf861c46127affaebf92b8dd726f02b2c`,
+contains the frozen identity and JFR recording.
+
+JFR thread dumps show the diagnostic module actor accumulating roughly 588 seconds
+of CPU in source-proof construction, repeatedly reaching persisted `semanticByScip`
+lookups through `registerSourceProof` and `addReceiverLookupProof`. This required-proof
+failure is distinct from merely making the disposable profiler green.
+
+The bounded repair skips lower-layer proof construction for a source dependency that
+`currentSourceFact` has already rejected. Such a consumer already loses precise proof
+coverage and uses the existing conservative fallback; persisted facts cannot make the
+unadmitted source current. No freshness check or proof requirement is relaxed.
+
+Permanent regression:
+`SourceProofMutationIntegrationTest.unadmittedSourceDependencyDoesNotSearchPersistedLayersForAnUnusableProof`
+uses the production index with a counting store delegate. Before the repair, a single
+unadmitted dependency made 10 persisted exact lookups; afterward it makes zero and
+still produces correct diagnostics. All 35 focused source-proof, proof-DAG, namespace,
+and completion-prefix tests pass. The frozen workflow and oracle remain unchanged.
+
+Remaining: verify this repair through exact-head CI and rerun Checkpoint 17 on the
+resulting final implementation. No cleanup or final-proof acceptance is claimed.

@@ -382,7 +382,15 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             Path source=null;
             if(fact.sourceFile()!=null)try{source=Path.of(fact.sourceFile()).toAbsolutePath().normalize();}catch(Exception ignored){}
             boolean liveDependency=source!=null&&!source.equals(file)&&liveSourceState!=null&&liveSourceState.accepts(source);
-            if(liveDependency){coveredFiles.add(source);if(!currentSourceFact(fact)){precise=false;coverageFailures.add("stale-source-fact:"+source);}}
+            if(liveDependency){
+                coveredFiles.add(source);
+                if(!currentSourceFact(fact)){
+                    precise=false;coverageFailures.add("stale-source-fact:"+source);
+                    // Persisted facts cannot prove an unadmitted current source. The consumer
+                    // already requires conservative fallback; do not search lower layers for it.
+                    continue;
+                }
+            }
             if(!liveDependency)continue;
 
             var exact=view.identity(QueryProof.Domain.EXACT_SYMBOL,fact.id());

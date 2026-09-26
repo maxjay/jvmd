@@ -137,6 +137,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         final ResidentSemanticState semantic=new ResidentSemanticState();
         final Map<Path,DocumentSemanticCached> documentSemantics=new HashMap<>();
         final LinkedHashMap<String,SymbolDescription> descriptions=new LinkedHashMap<>(16,.75f,true);
+        final LinkedHashMap<String,List<Map<String,Object>>> qualifiedCompletionRows=new LinkedHashMap<>(32,.75f,true);
         final AccessibilityCache accessibility=new AccessibilityCache();
         final Map<String,IndexStore.ClasspathSearchProof> classpathSearchProofs=new TreeMap<>();
         final ClasspathProofEvidence classpathProofEvidence=new ClasspathProofEvidence();
@@ -271,7 +272,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         caches.documentSemantics.clear();
     }
     private void clearSemanticCaches(ModuleCaches caches){
-        clearDocumentSemantics(caches);caches.descriptions.clear();caches.accessibility.clear();caches.semantic.clear();
+        clearDocumentSemantics(caches);caches.descriptions.clear();caches.qualifiedCompletionRows.clear();caches.accessibility.clear();caches.semantic.clear();
         caches.semanticSourceEpoch=-1;caches.classpathSearchProofs.clear();caches.classpathSequence=null;caches.classpathPrecise=false;
     }
     private static SemanticUpdatePolicy.ProofConsumer documentProofConsumer(Path file,int selectorOffset){
@@ -2200,17 +2201,37 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         return List.copyOf(rows);
     }
+    private String residentQualifiedRowsKey(DocumentSemanticSnapshot.QueryContext query,String prefix,int target){
+        var ranges=new ArrayList<Object>();
+        for(var owner:hierarchyOwners(query))
+            ranges.add(List.of(owner.id(),semanticState().memberRangeIdentity(owner.id(),prefix)));
+        return CanonicalDigestWriter.digest("resident-qualified-completion-rows-v1",
+                query.accessibilityKey(),query.receiverType().identity(),query.staticReceiver(),query.staticContext(),
+                Objects.toString(query.enclosingTypeId(),""),query.packageName(),prefix,target,ranges).hex();
+    }
+
     private List<Map<String,Object>> residentQualifiedRows(DocumentSemanticSnapshot.QueryContext query,String prefix,int target){
         try(var trace=RequestScope.stage("completion.tier0.memberRows")){
-            if(query.staticReceiver()){
-                var rows=residentHierarchyRows(query,prefix,target,QualifiedMemberMode.STATIC_ONLY,Set.of(),Set.of());
-                trace.count("scan_target",target);trace.count("rows_returned",rows.size());return rows;
+            var cache=modules.get(context.generation()).qualifiedCompletionRows;
+            String cacheKey=residentQualifiedRowsKey(query,prefix,target);
+            var cached=cache.get(cacheKey);
+            if(cached!=null){
+                trace.cache("proof-hit");trace.count("rows_returned",cached.size());return cached;
             }
-            int scanTarget=Math.max(target,Math.min(4096,target*8));
-            var materialized=residentHierarchyRows(query,prefix,scanTarget,QualifiedMemberMode.ALL,Set.of(),Set.of());
-            var rows=materialized.stream().sorted(qualifiedCompletionOrder(false)).limit(target).toList();
-            trace.count("scan_target",scanTarget);trace.count("rows_materialized",materialized.size());
-            trace.count("rows_sorted",materialized.size());trace.count("rows_returned",rows.size());
+            List<Map<String,Object>> rows;
+            if(query.staticReceiver()){
+                rows=residentHierarchyRows(query,prefix,target,QualifiedMemberMode.STATIC_ONLY,Set.of(),Set.of());
+                trace.count("scan_target",target);
+            }else{
+                int scanTarget=Math.max(target,Math.min(4096,target*8));
+                var materialized=residentHierarchyRows(query,prefix,scanTarget,QualifiedMemberMode.ALL,Set.of(),Set.of());
+                rows=materialized.stream().sorted(qualifiedCompletionOrder(false)).limit(target).toList();
+                trace.count("scan_target",scanTarget);trace.count("rows_materialized",materialized.size());
+                trace.count("rows_sorted",materialized.size());
+            }
+            rows=List.copyOf(rows);cache.put(cacheKey,rows);
+            while(cache.size()>64)cache.remove(cache.keySet().iterator().next());
+            trace.cache("proof-miss");trace.count("rows_returned",rows.size());
             return rows;
         }
     }

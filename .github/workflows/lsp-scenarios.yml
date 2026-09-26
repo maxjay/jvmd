@@ -138,7 +138,17 @@ jobs:
           MODE: compare
           SERVER: jvmd
           REPORT_FILE: ${{ runner.temp }}/jvmd-report.json
+          JDK_JAVA_OPTIONS: >-
+            -Djvmd.trace=true
+            -XX:StartFlightRecording=filename=${{ runner.temp }}/jvmd-cmp.jfr,settings=profile,dumponexit=true
         run: node benchmarks/lsp-scenarios/run.ts
+
+      - name: Export JVMD CMP stage trace
+        if: always()
+        run: |
+          if [[ -f "$RUNNER_TEMP/jvmd-cmp.jfr" ]]; then
+            env -u JDK_JAVA_OPTIONS "$JAVA_HOME/bin/jfr" print --json --events dev.jvmd.Stage "$RUNNER_TEMP/jvmd-cmp.jfr" > "$RUNNER_TEMP/jvmd-cmp-stages.json"
+          fi
 
       - name: Compare phase reports
         run: node benchmarks/lsp-scenarios/compare.ts "$RUNNER_TEMP/jdtls-report.json" "$RUNNER_TEMP/jvmd-report.json"
@@ -152,6 +162,8 @@ jobs:
             ${{ runner.temp }}/jdtls-report.json
             ${{ runner.temp }}/jvmd-report.json
             ${{ runner.temp }}/jvmd-machine-lifecycle.json
+            ${{ runner.temp }}/jvmd-cmp.jfr
+            ${{ runner.temp }}/jvmd-cmp-stages.json
 
       - name: Commit JDTLS semantic baseline
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

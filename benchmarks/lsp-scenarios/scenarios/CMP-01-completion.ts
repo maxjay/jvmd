@@ -55,7 +55,8 @@ export default class CompletionScenario extends LspScenarioHarness {
     const nativeAfterResolve=analyzerEvidence(await this.nativeAnalyzerStatus());
     if(firstCandidate&&nativeBeforeResolve&&nativeAfterResolve){
       assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"queries"),0,
-        "MACHINE completionItem/resolve must not enter javac");
+        "MACHINE completionItem/resolve must not enter javac: "+
+        JSON.stringify({candidate:firstCandidate?.data??null,delta:counterDiff(nativeBeforeResolve,nativeAfterResolve)}));
       assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.workspace_find_calls"),0,
         "MACHINE completionItem/resolve must not enter generic workspaceFind");
       assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.workspace_find_files_scanned"),0,
@@ -152,8 +153,10 @@ function analyzerEvidence(value:any){
   for(const key of ["semantic_fact_mutations","semantic_tree_range_entries_read","semantic_units","semantic_stale_units"])
     result["resident."+key]=typeof resident?.[key]==="number"?resident[key]:null;
   const resolve=value?.resolve_evidence??{};
-  for(const key of ["workspace_find_calls","workspace_find_files_scanned","workspace_bindings_builds","dependency_exact_describe_hits"])
+  for(const key of ["workspace_find_calls","workspace_find_files_scanned","workspace_bindings_builds","dependency_exact_describe_hits",
+                    "machine_exact_describe_attempts","machine_exact_describe_misses","live_describe_rebinds"])
     result["resolve."+key]=typeof resolve?.[key]==="number"?resolve[key]:null;
+  result["resolve.last_describe_ref"]=typeof resolve?.last_describe_ref==="string"?resolve.last_describe_ref:null;
   return result;
 }
 

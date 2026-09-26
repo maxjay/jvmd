@@ -38,6 +38,10 @@ public final class Application implements AutoCloseable {
     private final java.util.concurrent.atomic.AtomicLong machineExactDescribeMisses=new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicLong localExactDescribeAttempts=new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicLong localExactDescribeHits=new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong machineExactDescribeNanos=new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong localExactDescribeNanos=new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong documentationDescribeCalls=new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong documentationDescribeNanos=new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicLong liveDescribeRebinds=new java.util.concurrent.atomic.AtomicLong();
     private volatile String lastDescribeRef="";
     private static final Set<String> COMPLETION_TYPE_KINDS=Set.of("class","interface","enum","record","annotation");
@@ -120,17 +124,28 @@ public final class Application implements AutoCloseable {
             String statusSection=p.path("section").asText("");
             if(statusSection.equals("proof")){
                 var analyzerProof=new LinkedHashMap<String,Object>(interactiveAnalyzer==null?Map.of("initialized",false):interactiveAnalyzer.proofStatus());
-                analyzerProof.put("resolve_evidence",Map.of(
-                        "workspace_find_calls",workspaceFindCalls.get(),
-                        "workspace_find_files_scanned",workspaceFindFilesScanned.get(),
-                        "workspace_bindings_builds",workspaceBindingsBuilds.get(),
-                        "dependency_exact_describe_hits",dependencyExactDescribeHits.get(),
-                        "machine_exact_describe_attempts",machineExactDescribeAttempts.get(),
-                        "machine_exact_describe_misses",machineExactDescribeMisses.get(),
-                        "local_exact_describe_attempts",localExactDescribeAttempts.get(),
-                        "local_exact_describe_hits",localExactDescribeHits.get(),
-                        "live_describe_rebinds",liveDescribeRebinds.get(),
-                        "last_describe_ref",lastDescribeRef));
+                var resolveEvidence=new LinkedHashMap<String,Object>();
+                resolveEvidence.put("workspace_find_calls",workspaceFindCalls.get());
+                resolveEvidence.put("workspace_find_files_scanned",workspaceFindFilesScanned.get());
+                resolveEvidence.put("workspace_bindings_builds",workspaceBindingsBuilds.get());
+                resolveEvidence.put("dependency_exact_describe_hits",dependencyExactDescribeHits.get());
+                resolveEvidence.put("machine_exact_describe_attempts",machineExactDescribeAttempts.get());
+                resolveEvidence.put("machine_exact_describe_misses",machineExactDescribeMisses.get());
+                resolveEvidence.put("machine_exact_describe_ms",machineExactDescribeNanos.get()/1e6);
+                resolveEvidence.put("local_exact_describe_attempts",localExactDescribeAttempts.get());
+                resolveEvidence.put("local_exact_describe_hits",localExactDescribeHits.get());
+                resolveEvidence.put("local_exact_describe_ms",localExactDescribeNanos.get()/1e6);
+                resolveEvidence.put("documentation_describe_calls",documentationDescribeCalls.get());
+                resolveEvidence.put("documentation_describe_ms",documentationDescribeNanos.get()/1e6);
+                resolveEvidence.put("live_describe_rebinds",liveDescribeRebinds.get());
+                resolveEvidence.put("last_describe_ref",lastDescribeRef);
+                var documentation=(dev.jvmd.index.Documentation)s.state("documentation");
+                var documentationStatus=documentation==null?Map.<String,Object>of(
+                        "describe_calls",0L,"describe_ms",0.0,
+                        "ensure_signature_edges_calls",0L,"ensure_signature_edges_ms",0.0,
+                        "inherit_doc_calls",0L,"inherit_doc_ms",0.0):documentation.status();
+                documentationStatus.forEach((key,value)->resolveEvidence.put("documentation."+key,value));
+                analyzerProof.put("resolve_evidence",Collections.unmodifiableMap(resolveEvidence));
                 return new Envelope(0,"live",false,null,s.warnings(),Map.of(
                         "session",s.id(),"root",s.root().toString(),"analyzer",Collections.unmodifiableMap(analyzerProof)));
             }
@@ -527,21 +542,24 @@ public final class Application implements AutoCloseable {
             var database=index();bindIndex(session,database);
             String workspace=session.state("resolution")==null?null:session.id();
             if("machine".equals(semanticOrigin)){
-                machineExactDescribeAttempts.incrementAndGet();
+                machineExactDescribeAttempts.incrementAndGet();long exactStarted=System.nanoTime();
                 var indexed=database.store().byScip(ref,workspace,IndexStore.SemanticLayer.MACHINE);
+                machineExactDescribeNanos.addAndGet(System.nanoTime()-exactStarted);
                 if(indexed!=null){dependencyExactDescribeHits.incrementAndGet();return Envelope.of(2,"index",indexed);}
                 machineExactDescribeMisses.incrementAndGet();
                 return Envelope.of(2,"index",Map.of("scip",ref,"resolution_identity",""));
             }
             if("local".equals(semanticOrigin)){
-                localExactDescribeAttempts.incrementAndGet();
+                localExactDescribeAttempts.incrementAndGet();long exactStarted=System.nanoTime();
                 var indexed=database.store().byScip(ref,workspace,IndexStore.SemanticLayer.LOCAL);
+                localExactDescribeNanos.addAndGet(System.nanoTime()-exactStarted);
                 if(indexed!=null){localExactDescribeHits.incrementAndGet();dependencyExactDescribeHits.incrementAndGet();return Envelope.of(2,"index",indexed);}
                 return Envelope.of(2,"index",Map.of("scip",ref,"resolution_identity",""));
             }
             if(semanticOrigin==null||semanticOrigin.isBlank()){
-                machineExactDescribeAttempts.incrementAndGet();
+                machineExactDescribeAttempts.incrementAndGet();long exactStarted=System.nanoTime();
                 var indexed=database.store().byScip(ref,workspace,IndexStore.SemanticLayer.MACHINE);
+                machineExactDescribeNanos.addAndGet(System.nanoTime()-exactStarted);
                 if(indexed!=null){dependencyExactDescribeHits.incrementAndGet();return Envelope.of(2,"index",indexed);}
                 machineExactDescribeMisses.incrementAndGet();
             }
@@ -592,7 +610,10 @@ public final class Application implements AutoCloseable {
             if(indexed.size()==1){var current=new LinkedHashMap<>(indexed.getFirst());symbol.forEach((key,value)->{if(value!=null)current.put(key,value);});symbol=current;}
         }
         var docs=session.state("documentation",()->new dev.jvmd.index.Documentation(database,config.jdkHome()));
-        var result=docs.describe(symbol,workspace,detail,depth,limit,offset);var warnings=new LinkedHashSet<>(base.warnings());warnings.addAll(result.warnings());
+        long documentationStarted=System.nanoTime();documentationDescribeCalls.incrementAndGet();
+        var result=docs.describe(symbol,workspace,detail,depth,limit,offset);
+        documentationDescribeNanos.addAndGet(System.nanoTime()-documentationStarted);
+        var warnings=new LinkedHashSet<>(base.warnings());warnings.addAll(result.warnings());
         return new Envelope(Math.min(base.tier(),result.tier()),base.source(),result.truncated(),result.cursor(),List.copyOf(warnings),result.result());
     }
     private static int number(Map<?,?> symbol,String key){

@@ -33,6 +33,12 @@ class UnimportedTypeCompletionTest {
             assertThat(item).as(completion.toString()).isNotNull();
             assertThat(item.path("detail").asText()).isEqualTo("lib.Sample");
             assertThat(item.path("textEdit").path("newText").asText()).isEqualTo("Sample");
+            assertThat(item.path("data").path("semantic_origin").asText()).isEqualTo("machine");
+            long beforeResolve=analyzerQueries(app,session);
+            var resolved=TestSupport.request(app.dispatcher(),"lsp.request",Map.of(
+                    "session",session,"method","completionItem/resolve","params",item,"client",Map.of()));
+            assertThat(resolved.has("error")).as(resolved.toPrettyString()).isFalse();
+            assertThat(analyzerQueries(app,session)).as("indexed type resolve must stay off javac").isEqualTo(beforeResolve);
             assertThat(item.path("additionalTextEdits").size()).isEqualTo(1);
             assertThat(item.path("additionalTextEdits").get(0).path("newText").asText()).contains("import lib.Sample;");
             assertThat(item.path("additionalTextEdits").get(0).path("range").path("start").path("character").asInt())

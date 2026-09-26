@@ -65,6 +65,14 @@ export default class CompletionScenario extends LspScenarioHarness {
         "MACHINE completionItem/resolve must not construct workspace bindings");
       assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.dependency_exact_describe_hits"),1,
         "MACHINE completionItem/resolve must use exactly one exact indexed identity lookup");
+      assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.machine_exact_describe_attempts"),1,
+        "MACHINE completionItem/resolve must perform exactly one MACHINE-layer lookup");
+      assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.machine_exact_describe_misses"),0,
+        "MACHINE completionItem/resolve exact lookup must not miss");
+      assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.local_exact_describe_attempts"),0,
+        "MACHINE completionItem/resolve must not resolve through LOCAL state");
+      assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.live_describe_rebinds"),0,
+        "MACHINE completionItem/resolve must not enter live source enrichment");
     }
 
     const nativeBeforeRepeated=analyzerEvidence(await this.nativeAnalyzerStatus());

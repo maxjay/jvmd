@@ -80,9 +80,17 @@ public final class WorkspaceOverlay implements WorkspaceSource,AutoCloseable {
         try{return !fresh(module,false);}catch(IOException e){warnings.add("overlay_io: "+module.gav()+": "+e.getMessage());return true;}
     }
 
+    /** Drain watcher publication once at a request boundary without rescanning clean roots. */
+    public void settleFreshness()throws IOException{
+        synchronized(this){if(verificationOnly||closed)return;}
+        try{RequestScope.settleFilesystemStart(SETTLE_NANOS);}
+        catch(Exception failed){synchronized(this){verificationOnly=true;markAllDirty();}return;}
+        synchronized(this){if(!verificationOnly)drainAvailable();}
+    }
+
     /** Unchanged requests consume the resident decision; scans happen only after relevant mutations. */
     private boolean fresh(Resolution.Module module,boolean test)throws IOException{
-        Freshness state;boolean verify;
+        Freshness state;
         synchronized(this){
             state=freshness.get(freshnessKey(module,test));
             if(state==null){
@@ -90,14 +98,9 @@ public final class WorkspaceOverlay implements WorkspaceSource,AutoCloseable {
                         test?java.util.stream.Stream.concat(module.sources().stream(),module.testSources().stream()).toList():module.sources());
                 freshness.put(freshnessKey(module,test),state);
             }
-            verify=verificationOnly;
         }
-        if(!verify){
-            try{RequestScope.settleFilesystemStart(SETTLE_NANOS);}
-            catch(Exception failed){synchronized(this){verificationOnly=true;markAllDirty();}}
-        }
+        settleFreshness();
         synchronized(this){
-            if(!verificationOnly)drainAvailable();
             if(verificationOnly||!state.initialized||state.dirty){
                 state.value=scanFresh(state.classes,state.sources);state.initialized=true;state.dirty=false;freshnessScans++;
             }

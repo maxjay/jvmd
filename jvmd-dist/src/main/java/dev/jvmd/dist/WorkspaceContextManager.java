@@ -6,34 +6,33 @@ import dev.jvmd.resolver.Resolution;
 import java.nio.file.Path;
 import java.util.*;
 
-/** Constructs each main/test module context once per request, including processor preparation. */
+/** Maintains each main/test analyzer context until its explicit context-input identity changes. */
 final class WorkspaceContextManager {
     @FunctionalInterface interface Factory { Analyzer.Context create(Path file) throws Exception; }
-    private final Map<String,Analyzer.Context> maintained=new HashMap<>();
+    private record Maintained(String identity,Analyzer.Context context) { }
+    private final Map<String,Maintained> maintained=new HashMap<>();
     private long constructions,hits,misses,invalidations;
-    Analyzer.Context context(Path file, Resolution graph, Factory factory) throws Exception {
-        return context(file,graph,false,factory);
-    }
-    Analyzer.Context context(Path file,Resolution graph,boolean cacheable,Factory factory)throws Exception{
+    Analyzer.Context context(Path file,Resolution graph,String identity,Factory factory)throws Exception{
         String key;
         try(var trace=RequestScope.stage("application.analyzer.ownerKey")){key=key(file,graph);}
+        boolean maintain=identity!=null&&!identity.isBlank();
         try(var trace=RequestScope.stage("application.analyzer.contextLookup")){
-            if(cacheable){
+            if(maintain){
                 synchronized(this){
                     var cached=maintained.get(key);
-                    if(cached!=null){hits++;trace.cache("maintained");return cached;}
+                    if(cached!=null&&cached.identity().equals(identity)){hits++;trace.cache("maintained");return cached.context();}
                     misses++;
                 }
             }
-            return RequestScope.memo(List.of(this,key,cacheable),()->{
-                if(cacheable)synchronized(this){
+            return RequestScope.memo(List.of(this,key,Objects.toString(identity,"request")),()->{
+                if(maintain)synchronized(this){
                     var cached=maintained.get(key);
-                    if(cached!=null){hits++;return cached;}
+                    if(cached!=null&&cached.identity().equals(identity)){hits++;return cached.context();}
                 }
                 constructions++;
                 Analyzer.Context created;
                 try(var create=RequestScope.stage("application.analyzer.contextCreate")){created=factory.create(file);}
-                if(cacheable)synchronized(this){maintained.put(key,created);}
+                if(maintain)synchronized(this){maintained.put(key,new Maintained(identity,created));}
                 return created;
             });
         }

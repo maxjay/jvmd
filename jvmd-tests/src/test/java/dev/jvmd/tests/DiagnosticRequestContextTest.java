@@ -12,6 +12,37 @@ import static org.assertj.core.api.Assertions.*;
 class DiagnosticRequestContextTest {
     @TempDir Path temp;
 
+    @Test void procFullCompletionMaintainsAnalyzerContextAcrossUnchangedReads()throws Exception{
+        Files.writeString(temp.resolve("pom.xml"),"""
+                <project xmlns="http://maven.apache.org/POM/4.0.0">
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>fixture</groupId><artifactId>proc-context</artifactId><version>1</version>
+                  <properties>
+                    <maven.compiler.release>25</maven.compiler.release>
+                    <maven.compiler.proc>full</maven.compiler.proc>
+                  </properties>
+                </project>
+                """);
+        Path sources=Files.createDirectories(temp.resolve("src/main/java/fixture"));
+        Files.writeString(sources.resolve("Api.java"),"package fixture; class Api { int value(){return 1;} }\n");
+        Path use=sources.resolve("Use.java");
+        String text="package fixture; class Use { Object f(Api api){ return api.val; } }";
+        Files.writeString(use,text);
+        try(var daemon=new AotDaemon(temp)){
+            String session=daemon.request("session.open",Map.of("root",temp.toString())).path("result").path("session").asText();
+            int cursor=text.indexOf("api.val")+"api.val".length();
+            var params=Map.<String,Object>of("session",session,"path",use.toString(),"line",0,"character",cursor,"limit",50);
+            var first=daemon.request("symbol.completion",params);
+            assertThat(first.path("result").path("items").findValuesAsText("name")).contains("value");
+            var second=daemon.request("symbol.completion",params);
+            assertThat(second.path("result").path("items")).isEqualTo(first.path("result").path("items"));
+            var status=daemon.request("session.status",Map.of("session",session)).path("result");
+            assertThat(status.path("analysis_contexts").path("context_constructions").asLong())
+                    .as("unchanged -proc:full reads must consume the maintained analyzer context").isEqualTo(1L);
+            assertThat(status.path("analysis_contexts").path("maintained_hits").asLong()).isPositive();
+        }
+    }
+
     @Test void workspaceResolutionStaysResidentAcrossUnchangedDiagnosticRpcs()throws Exception{
         Files.writeString(temp.resolve("pom.xml"),"""
                 <project xmlns="http://maven.apache.org/POM/4.0.0">

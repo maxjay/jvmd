@@ -307,7 +307,7 @@ public final class Application implements AutoCloseable {
     private DiagnosticEngine diagnosticAnalyzer(Session session,Path path)throws Exception{
         var graph=maintainedResolution(session);
         var contexts=session.state("analysis_contexts",WorkspaceContextManager::new);
-        var context=contexts.context(path,graph,file->createAnalyzerContext(session,file,graph));
+        var context=contexts.context(path,graph,contextCacheIdentity(session,graph,path),file->createAnalyzerContext(session,file,graph));
         var availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
         long totalBudget=config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size());
         Path persistence=config.stateDir().resolve("diagnostics-v2").resolve(Hashing.sha256(session.root().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)));
@@ -849,9 +849,9 @@ public final class Application implements AutoCloseable {
             Resolution graph;
             try(var stage=RequestScope.stage("application.analyzer.maintainedResolution")){graph=maintainedResolution(session);}
             var contexts=session.state("analysis_contexts",WorkspaceContextManager::new);
-            boolean cacheable;
-            try(var stage=RequestScope.stage("application.analyzer.contextPolicy")){cacheable=contextCacheable(session,graph);}
-            var context=contexts.context(path,graph,cacheable,file->createAnalyzerContext(session,file,graph));
+            String contextIdentity;
+            try(var stage=RequestScope.stage("application.analyzer.contextPolicy")){contextIdentity=contextCacheIdentity(session,graph,path);}
+            var context=contexts.context(path,graph,contextIdentity,file->createAnalyzerContext(session,file,graph));
             Analyzer analyzer;
             try(var stage=RequestScope.stage("application.analyzer.instance")){analyzer=session.state("analyzer",()->new Analyzer(classpathFiles));}
             IndexService availableIndex;
@@ -868,12 +868,55 @@ public final class Application implements AutoCloseable {
             return analyzer;
         }
     }
-    private boolean contextCacheable(Session session,Resolution graph){
-        if(graph==null||Boolean.TRUE.equals(session.state("project_model_request_fallback")))return false;
-        // Processor inputs include source bytes, processor jars and lombok.config; retain the
-        // existing validation path for those contexts until they have their own pushed identity.
-        if(graph.modules().stream().anyMatch(module->module.processing().enabled()||module.testProcessing().enabled()))return false;
-        return overlay(session,graph).watchReliable();
+    /**
+     * Maintained analyzer contexts are valid while project/source-output ownership remains watched.
+     * Source/editor mutations synchronously invalidate contexts; the overlay invalidates them on
+     * source/output filesystem mutations. Processor binaries and lombok.config live outside that
+     * source watch domain, so their exact content identities remain part of this small lookup key.
+     */
+    private String contextCacheIdentity(Session session,Resolution graph,Path path)throws Exception{
+        if(graph==null||Boolean.TRUE.equals(session.state("project_model_request_fallback")))return null;
+        var workspaceOverlay=overlay(session,graph);
+        workspaceOverlay.settleFreshness();
+        if(!workspaceOverlay.watchReliable())return null;
+        var module=WorkspaceContextManager.owner(path,graph);if(module==null)return null;
+        boolean test=module.testSources().stream().anyMatch(root->path.startsWith(Path.of(root)));
+        var localOutputs=new HashSet<Path>();
+        for(var candidate:graph.modules()){
+            localOutputs.add(Path.of(candidate.classes()).toAbsolutePath().normalize());
+            localOutputs.add(Path.of(candidate.testClasses()).toAbsolutePath().normalize());
+        }
+        var binaryHashes=new TreeMap<String,String>();
+        var processing=new ArrayList<Object>();
+        if(!addProcessingIdentity(processing,binaryHashes,localOutputs,module.processing(),Path.of(module.directory()),workspaceOverlay))return null;
+        if(test&&!addProcessingIdentity(processing,binaryHashes,localOutputs,module.testProcessing(),Path.of(module.directory()),workspaceOverlay))return null;
+        for(var dependency:workspaceOverlay.dependencies(graph,module.gav(),test))
+            if(!addProcessingIdentity(processing,binaryHashes,localOutputs,dependency.processing(),Path.of(dependency.directory()),workspaceOverlay))return null;
+        return CompilerInputs.compose("analyzer-context-maintained-v1",graph.fingerprint(),module.gav(),test,
+                workspaceOverlay.freshnessGeneration(),processing,binaryHashes);
+    }
+    private boolean addProcessingIdentity(List<Object> identities,Map<String,String> binaryHashes,Set<Path> localOutputs,
+                                          Resolution.Processing processing,Path moduleDirectory,
+                                          dev.jvmd.resolver.WorkspaceOverlay workspaceOverlay)throws Exception{
+        if(!processing.enabled()){identities.add(List.of(false));return true;}
+        var paths=new ArrayList<Object>();
+        for(String value:processing.path()){
+            Path candidate=Path.of(value).toAbsolutePath().normalize();
+            if(Files.isDirectory(candidate)){
+                if(!localOutputs.contains(candidate))return false;
+                paths.add(List.of(candidate.toString(),"workspace-output",workspaceOverlay.freshnessGeneration()));
+            }else paths.add(List.of(candidate.toString(),binaryHashes.computeIfAbsent(candidate.toString(),key->{
+                try{return classpathFiles.hash(candidate);}catch(Exception error){throw new java.io.UncheckedIOException(
+                        error instanceof java.io.IOException io?io:new java.io.IOException(error));}
+            })));
+        }
+        var lombokConfigs=new ArrayList<Object>();
+        if(processing.lombok())for(Path current=moduleDirectory.toAbsolutePath().normalize();current!=null;current=current.getParent()){
+            Path config=current.resolve("lombok.config");
+            lombokConfigs.add(List.of(config.toString(),classpathFiles.hash(config)));
+        }
+        identities.add(List.of(true,processing.names(),processing.lombok(),processing.generatedDirectory(),paths,lombokConfigs));
+        return true;
     }
 
     private Analyzer.Context createAnalyzerContext(Session session,Path path,Resolution graph)throws Exception{

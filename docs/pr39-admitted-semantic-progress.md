@@ -177,3 +177,70 @@ The frozen workflow was dispatched as run `36265625832` against `1de2cc1ff1a01a2
 The repair advances the existing source revision when publication prunes overlay owners, so both maintained observations and existing source-revision-dependent caches see the transition. Old/new artifact selections and batches of removals now have their complete affected observation set removed before any reconstruction; a failed refresh cannot leave a later affected selection stale. This changes mutation publication only, not the warm read path. The focused maintained-observation, source-proof mutation, classpath-search and legacy source-migration suites pass: 15 tests, zero failures. The earlier frozen run will be superseded by a run on this corrected production subject.
 
 Additional reviewed-subject normal LSP evidence: run `36264178996`, artifact `10914005224`, SHA-256 `bd7bef7c0c6d02d48376880a7a001974d1c2314bca29a59881f7f6d140424266`. JVMD steady p50/p95 is 10.932/12.987 ms; same-run JDTLS is 63.890/106.559 ms. Every correctness field is true for each server, including all twenty steady samples.
+
+## Corrected final production performance
+
+Corrected production subject: `f1d6f56011d9dd05314ea4a555d0e73e7cf8ec19`. Selector-only child head: `377ece53f33a3ef05118d2e987f4e950024c0b23`. Frozen run `36265974315` selects the former. Run `36265625832` was cancelled by the unchanged workflow concurrency policy when superseded; it is not accepted evidence.
+
+The final A/B run `36265932106` passed on the selector-only head, with the same production bytes. Artifact `10914257308`, SHA-256 `9530854a80a260775c8428b8a56663ceabf343dd116b2af8acbf7e9414ea62ca`:
+
+| Same corrected binary | Client steady p50 / p95 ms | Server wall / CPU p50 ms | Request allocation p50 bytes |
+|---|---:|---:|---:|
+| MUTATION_VISIBLE | 12.525 / 15.654 | 7.763 / 5.692 | 1,844,576 |
+| EXACT_ADMITTED | 12.858 / 21.097 | 8.367 / 6.279 | 1,848,200 |
+
+The admitted/non-admitted p50 ratio is 1.027. All first/resolve/edit, two warmup and twenty steady correctness checks remain true in both modes. Admitted proof validation is 0.275 ms and 37,960 allocated bytes. Explicit instrumentation again records zero warm persisted lookup/structure reconstruction, bindings, source repair, hierarchy recovery or package reconciliation.
+
+Normal prepared run `36265934335` passed. Artifact `10914431743`, SHA-256 `dcac18f7975a49e3ae45c07572dc6fac7a3088e87ce6224a05f66e51bde9a88e`; all rows are 300/300 correct:
+
+| Operation | JVMD p50 / p95 ms | JDTLS p50 / p95 ms |
+|---|---:|---:|
+| Completion | 4.066 / 5.662 | 6.227 / 10.531 |
+| Definition | 3.666 / 4.729 | 3.060 / 5.542 |
+| Dependency definition | 5.632 / 7.734 | 3.156 / 6.339 |
+| Hover | 4.976 / 6.948 | 3.857 / 7.728 |
+| References | 4.967 / 7.488 | 13.247 / 21.882 |
+
+All three normal gates passed on selector-only head `377ece53f33a3ef05118d2e987f4e950024c0b23`: Tests `36265934383`, Benchmarks `36265934335`, and LSP scenarios `36265934327`. This includes the new stale-source-pruning regression. Final cleaned-head checks remain a separate required gate.
+
+The corrected normal LSP artifact `10913933116`, SHA-256 `6ff04f20acb6a56973a56c97482765e5b7cf14b1990b7aaec444d2c6636765c4`, reports JVMD steady p50/p95 10.757/13.691 ms and same-run JDTLS 79.298/137.541 ms. Both servers pass first completion, selected resolve, unsaved edit, two warmups and all twenty steady samples.
+
+## Accepted unchanged frozen proof — checkpoint 8
+
+Accepted run [36265974315](https://github.com/maxjay/jvmd/actions/runs/36265974315), production subject `f1d6f56011d9dd05314ea4a555d0e73e7cf8ec19`, control head `377ece53f33a3ef05118d2e987f4e950024c0b23`. Artifact `10914302653`, verified ZIP SHA-256 `919ee8aa0267dafa4098cf54c41d9d27147380c756fff210544b2747f6b492e9`. The artifact confirms the unchanged workflow blob and all three frozen component hashes listed above; the workflow also verifies all six frozen LSP dependency/oracle blobs.
+
+The artifact was inspected beyond workflow status. Real Maven completion returns 50 first-use candidates, correct selected resolve, correct repetition and unsaved edit, 2/2 correct warmups and 20/20 correct steady samples. All 34 direct operation result objects in the six measured semantic scenarios equal those in parent accepted run `36250899729` exactly, including names, labels, tiers, warnings and diagnostic codes. The seventh machine/workspace scenario preserves workspace C's symbol result and A/B's selected order, with zero index faults. No captured failure or warning appears in the matrix.
+
+| Frozen real Maven metric | Parent accepted subject | Corrected child subject |
+|---|---:|---:|
+| First completion | 2,866.110 ms | 2,448.203 ms |
+| Steady p50 / p95 | 485.523 / 494.722 ms | 11.854 / 17.497 ms |
+| Selected-field resolve | 928.329 ms | 1,329.639 ms |
+| Companion cold compiler queries | 2 | 1 |
+| Companion cold binding computations | 1 | 0 |
+
+The companion status probe is a separate cold request, not a warm-request javac measurement. The controlled A/B trace and permanent admitted-state regressions establish warm zero-javac behavior. Direct prefix `get` and `getM` retain zero javac queries. Direct relevant/unrelated semantic mutation operations now each attribute one query rather than two, while returning exactly the same results.
+
+Allocation and cold-operation limits remain visible:
+
+| Frozen direct operation | Parent / child latency ms | Parent / child request allocation bytes |
+|---|---:|---:|
+| First incomplete statement | 420.674 / 681.931 | 39,553,264 / 50,861,928 |
+| First negative namespace | 320.569 / 581.152 | 31,284,160 / 42,718,184 |
+| First classpath fixture request | 219.681 / 439.655 | 33,644,160 / 44,900,168 |
+| Generic fallback | 97.290 / 139.882 | 22,598,960 / 22,557,832 |
+| Warm prefix `get` | 4.669 / 5.937 | 379,536 / 315,384 |
+| Warm prefix `getM` | 3.425 / 5.197 | 325,944 / 298,096 |
+| Body-only mutation | 50.447 / 25.150 | 3,035,272 / 1,028,736 |
+| Unrelated member mutation | 31.376 / 21.258 | 1,311,248 / 887,656 |
+| Relevant range mutation | 30.129 / 35.496 | 1,324,040 / 934,304 |
+
+Single cold direct operations generally measured slower in this run, and their first-operation allocations increased by approximately 11 MB in several scenarios. Selected cold resolve also measured slower. No cold/allocation-wide improvement is claimed, and cross-run wall differences are not treated as deterministic causal attribution. The unchanged prepared benchmark remains healthy across all five editor operations. The reproducible same-binary admission multiplier is removed.
+
+All eight JFR recordings and their summaries/allocation reports are retained in the artifact. The direct matrix recordings contain normal compiler stages. As in the parent's frozen proof, the multi-process CMP recording contains some malformed class/site names; precise CMP allocation-site attribution is not claimed. The separate A/B recordings supply intact request-thread timing/work evidence. Removed legacy proof counters remain unavailable in frozen status, never interpreted as zero or replaced by fabricated projections.
+
+## Cleanup and final gate — checkpoints 9–10
+
+The cleanup commit removes both temporary workflows, both admission profiling scripts, and the restored frozen proof directory/selector. It retains the three permanent maintained-observation regressions and the operational semantic-work counters they exercise. No production code, permanent test, normal workflow, fixture or LSP oracle changes after accepted frozen subject `f1d6f56011d9dd05314ea4a555d0e73e7cf8ec19`.
+
+Parent Issue-36 progress/checklist history is appended with the new subject and accepted proof; historical slow and cold-regression measurements are preserved. Exact final child-head Tests, Benchmarks and LSP results are recorded in [PR #46](https://github.com/maxjay/jvmd/pull/46) after verification. The child remains based on `issue-36-semantic-query`; neither the parent nor main is changed or merged by this task.

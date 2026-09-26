@@ -20,8 +20,8 @@ export default class CompletionScenario extends LspScenarioHarness {
       caller.text,
       "\n    private void benchmarkCompletion(MavenProject project) {\n        project."+marker+"\n    }\n",
     );
+    const position=positionAtMarker(callerWithProbe,marker);
     const finalCaller=callerWithProbe.replace(marker,"");
-    const position=positionAfter(finalCaller,"project.");
 
     await this.change(caller.uri,finalCaller);
     await this.endDocumentAdmission();
@@ -152,14 +152,6 @@ export default class CompletionScenario extends LspScenarioHarness {
 function positionAtMarker(source:string,marker:string){
   const cursor=source.indexOf(marker);
   assert(cursor>=0);
-  const before=source.slice(0,cursor).split("\n");
-  return {line:before.length-1,character:before.at(-1)!.length};
-}
-
-function positionAfter(source:string,needle:string){
-  const offset=source.indexOf(needle);
-  assert(offset>=0);
-  const cursor=offset+needle.length;
   const before=source.slice(0,cursor).split("\n");
   return {line:before.length-1,character:before.at(-1)!.length};
 }

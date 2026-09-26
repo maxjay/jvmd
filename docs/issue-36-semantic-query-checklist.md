@@ -196,3 +196,25 @@ and supplemental permanent proof assertions; unavailable values are not reported
 Closeout: cleanup head `03f3ca68d7b27145bb0b360cfbf84edcb01600f9` passed all three
 normal workflows. The final documentation-only head keeps the same production, tests
 and workflow content; its exact-head validation links are maintained in PR #39.
+
+## Child PR #46 — admitted-read performance follow-on
+
+The parent closeout above is retained as history. The child remains stacked on
+`issue-36-semantic-query`; final child-head validation links are maintained in
+[PR #46](https://github.com/maxjay/jvmd/pull/46).
+
+- [x] Same-binary admission multiplier reproduced and attributed to persisted proof reconstruction.
+- [x] Warm proof reads consume maintained observations, with UNKNOWN fallback and existing freshness fences.
+- [x] Permanent work-count, publication, eviction/reopening and equal-binary source-pruning regressions retained.
+- [x] Corrected subject's normal Tests, Benchmarks and LSP gates passed (`36265934383`, `36265934335`, `36265934327`).
+- [x] Corrected A/B passed: admitted 12.858/21.097 ms, mutation-visible 12.525/15.654 ms, all correctness checks true.
+- [x] Frozen proof rerun without changing harness bytes: subject `f1d6f56011d9dd05314ea4a555d0e73e7cf8ec19`, run `36265974315`.
+- [x] Artifact inspected: real CMP correctness true; all 34 direct semantic results equal the accepted parent proof; unaffected workspace results preserved.
+- [x] Cold resolve/direct allocation regressions and unavailable legacy counters disclosed.
+- [x] Temporary profiling workflow/scripts and restored frozen machinery removed again after acceptance.
+- [x] Append-only evidence reconciles the new production subject and preserves historical measurements.
+
+Artifact `10914302653`, verified SHA-256
+`919ee8aa0267dafa4098cf54c41d9d27147380c756fff210544b2747f6b492e9`.
+Cleanup changes no production or permanent test bytes. The final cleaned child head
+must pass all three normal gates before PR #46 is marked ready for review.

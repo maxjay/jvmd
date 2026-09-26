@@ -1573,3 +1573,48 @@ and closed. Main remains `eb45487f08a986d3a5ef2acd3666177e332cdc9b`.
 
 Remaining implementation work for this closeout: none. Stop after the final
 exact-head documentation-commit gates are verified; do not resume optimization.
+
+## 2026-09-26 — child PR #46 repairs fully admitted semantic reads
+
+The earlier closeout and measurements above remain historical evidence. Child
+[PR #46](https://github.com/maxjay/jvmd/pull/46), based on this branch, investigated
+the fully admitted warm-read slowdown. Its same-binary experiment measured
+23.706 ms mutation-visible versus 696.546 ms exact-admitted completion p50.
+Request-time proof reconstruction consumed 684.279 ms, predominantly CPU in
+persisted classpath and accessibility lookups after source fact publication.
+The proof digest itself cost only 0.038 ms.
+
+The child maintains detached persisted observations at publication, consumes them
+through read-only APIs during validation, and treats missing/evicted observations
+as UNKNOWN. It preserves existing mutation fencing, precise DAG propagation,
+source/JAR freshness and conservative fallback. A permanent regression also fixes
+source-overlay pruning when binary metadata remains equal. See the full mutation
+audit, safety argument and limitations in
+[the child investigation](pr39-admitted-semantic-progress.md).
+
+New accepted production subject: `f1d6f56011d9dd05314ea4a555d0e73e7cf8ec19`.
+Unchanged frozen [run 36265974315](https://github.com/maxjay/jvmd/actions/runs/36265974315),
+artifact `10914302653`, verified SHA-256
+`919ee8aa0267dafa4098cf54c41d9d27147380c756fff210544b2747f6b492e9`.
+Workflow blob `5cfa00d9de83faccdb641f5c38776b7719dc991c`, all three proof components,
+and all six normal LSP dependency/oracle hashes remain identical.
+
+All real CMP correctness fields pass, including 20/20 steady samples. All 34 direct
+semantic result objects match the earlier accepted proof exactly; the seventh
+machine/workspace scenario preserves unaffected selections and has zero faults.
+Frozen steady completion is now 11.854/17.497 ms p50/p95, compared with the earlier
+485.523/494.722 ms. The corrected controlled A/B reports 12.525/15.654 ms
+mutation-visible and 12.858/21.097 ms admitted, with no warm semantic reconstruction.
+Normal LSP reports JVMD 10.757/13.691 ms versus JDTLS 79.298/137.541 ms, all correct.
+Prepared completion remains 4.066/5.662 ms and 300/300 correct; the other four
+prepared editor operations are also 300/300 correct.
+
+Cold regressions are not erased: frozen selected resolve measured 1,329.639 ms
+versus 928.329 ms, and several first direct operations allocate about 11 MB more.
+The child report preserves the cold latency/allocation table and the inherited
+multi-process CMP JFR symbol limitation. No universal cold/allocation gain is claimed.
+
+The child cleanup removes the restored proof and temporary admission profiler again,
+with production/permanent tests unchanged from the accepted subject. Exact final
+child-head CI links are maintained in PR #46. This append does not merge PR #39 or
+claim that its historical head contains the child's changes.

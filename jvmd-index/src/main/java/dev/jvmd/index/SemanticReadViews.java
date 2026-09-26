@@ -12,28 +12,22 @@ public final class SemanticReadViews {
         Objects.requireNonNull(state);
         return new SemanticReadView(){
             @Override public Symbol symbol(String id){
-                try(var trace=dev.jvmd.core.RequestScope.stage("semantic.read.live.symbol")){
-                    SemanticFact fact=state.symbol(id);trace.count("hits",fact==null?0:1);return fact==null?null:fromResident(fact);
-                }
+                SemanticFact fact=state.symbol(id);return fact==null?null:fromResident(fact);
             }
             @Override public Symbol type(String binaryName){
-                try(var trace=dev.jvmd.core.RequestScope.stage("semantic.read.live.type")){
-                    SemanticFact fact=state.type(binaryName);trace.count("hits",fact==null?0:1);return fact==null?null:fromResident(fact);
-                }
+                SemanticFact fact=state.type(binaryName);return fact==null?null:fromResident(fact);
             }
             @Override public SemanticCompleteness completeness(String ownerId){return state.completeness(ownerId);}
             @Override public MemberPage members(String ownerId,String prefix,int limit,String cursor){
-                try(var trace=dev.jvmd.core.RequestScope.stage("semantic.read.live.members")){
-                    if(limit<=0)return new MemberPage(List.of(),null);
-                    var values=new ArrayList<SemanticReadView.Symbol>(Math.min(limit+1,64));
-                    var range=state.memberCursor(ownerId,prefix,cursor);
-                    SemanticFact fact;while(values.size()<=limit&&(fact=range.next())!=null)values.add(fromResident(fact));
-                    boolean more=values.size()>limit;
-                    if(more)values.removeLast();
-                    String next=more?state.symbol(values.getLast().id()).orderedKey():null;
-                    trace.count("rows_decoded",values.size());trace.count("truncated",more?1:0);
-                    return new MemberPage(values,next);
-                }
+                if(limit<=0)return new MemberPage(List.of(),null);
+                var values=new ArrayList<SemanticReadView.Symbol>(Math.min(limit+1,64));
+                var range=state.memberCursor(ownerId,prefix,cursor);
+                SemanticFact fact;while(values.size()<=limit&&(fact=range.next())!=null)values.add(fromResident(fact));
+                boolean more=values.size()>limit;
+                if(more)values.removeLast();
+                String next=more?state.symbol(values.getLast().id()).orderedKey():null;
+
+                return new MemberPage(values,next);
             }
             @Override public List<String> directSupertypes(String typeId){
                 return state.directSupertypeIds(typeId);
@@ -121,29 +115,26 @@ public final class SemanticReadViews {
             }
 
             @Override public MemberPage members(String ownerId,String prefix,int limit,String cursor)throws Exception{
-                try(var trace=dev.jvmd.core.RequestScope.stage("semantic.read.overlay.members")){
-                    if(limit<=0)return new MemberPage(List.of(),null);
-                    int offset=overlayOffset(cursor);
-                    int target=Math.addExact(Math.addExact(offset,limit),1);
-                    var merged=new LinkedHashMap<String,Symbol>();
-                    boolean lowerMayContainMore=false;int layersVisited=0;
-                    for(var layer:layers){
-                        if(layer.symbol(ownerId)==null)continue;layersVisited++;
-                        var page=layer.members(ownerId,prefix,target,null);
-                        for(var value:page.symbols())merged.putIfAbsent(value.resolution().symbolKey(),value);
-                        if(page.cursor()!=null)lowerMayContainMore=true;
-                        var completeness=layer.completeness(ownerId);
-                        if(completeness==SemanticCompleteness.COMPLETE||completeness==SemanticCompleteness.UNKNOWN)break;
-                    }
-                    var ordered=new ArrayList<>(merged.values());
-                    ordered.sort(Comparator.comparing(Symbol::name)
-                            .thenComparing(value->value.resolution().symbolKey()));
-                    int from=Math.min(offset,ordered.size()),to=Math.min(ordered.size(),Math.addExact(from,limit));
-                    boolean more=to<ordered.size()||lowerMayContainMore;
-                    trace.count("layers",layersVisited);trace.count("rows_materialized",merged.size());
-                    trace.count("rows_returned",to-from);trace.count("sort_rows",ordered.size());
-                    return new MemberPage(List.copyOf(ordered.subList(from,to)),more?"overlay:"+to:null);
+                if(limit<=0)return new MemberPage(List.of(),null);
+                int offset=overlayOffset(cursor);
+                int target=Math.addExact(Math.addExact(offset,limit),1);
+                var merged=new LinkedHashMap<String,Symbol>();
+                boolean lowerMayContainMore=false;
+                for(var layer:layers){
+                    if(layer.symbol(ownerId)==null)continue;
+                    var page=layer.members(ownerId,prefix,target,null);
+                    for(var value:page.symbols())merged.putIfAbsent(value.resolution().symbolKey(),value);
+                    if(page.cursor()!=null)lowerMayContainMore=true;
+                    var completeness=layer.completeness(ownerId);
+                    if(completeness==SemanticCompleteness.COMPLETE||completeness==SemanticCompleteness.UNKNOWN)break;
                 }
+                var ordered=new ArrayList<>(merged.values());
+                ordered.sort(Comparator.comparing(Symbol::name)
+                        .thenComparing(value->value.resolution().symbolKey()));
+                int from=Math.min(offset,ordered.size()),to=Math.min(ordered.size(),Math.addExact(from,limit));
+                boolean more=to<ordered.size()||lowerMayContainMore;
+
+                return new MemberPage(List.copyOf(ordered.subList(from,to)),more?"overlay:"+to:null);
             }
 
             @Override public List<String> directSupertypes(String typeId)throws Exception{
@@ -197,32 +188,25 @@ public final class SemanticReadViews {
         Objects.requireNonNull(store);
         var layer=local?IndexStore.SemanticLayer.LOCAL:IndexStore.SemanticLayer.MACHINE;
         var origin=local?SemanticReadView.Origin.LOCAL:SemanticReadView.Origin.MACHINE;
-        String stagePrefix=local?"semantic.read.local.":"semantic.read.machine.";
         return new SemanticReadView(){
             @Override public Symbol symbol(String id)throws Exception{
-                try(var trace=dev.jvmd.core.RequestScope.stage(stagePrefix+"symbol")){
-                    var value=store.semanticByScip(id,workspace,layer);trace.count("hits",value==null?0:1);
-                    return value==null?null:fromIndexed(value,origin);
-                }
+                var value=store.semanticByScip(id,workspace,layer);
+                return value==null?null:fromIndexed(value,origin);
             }
             @Override public Symbol type(String binaryName)throws Exception{
-                try(var trace=dev.jvmd.core.RequestScope.stage(stagePrefix+"type")){
-                    var value=store.semanticType(binaryName,workspace,layer);trace.count("hits",value==null?0:1);
-                    return value==null?null:fromIndexed(value,origin);
-                }
+                var value=store.semanticType(binaryName,workspace,layer);
+                return value==null?null:fromIndexed(value,origin);
             }
             @Override public SemanticCompleteness completeness(String ownerId)throws Exception{
                 return symbol(ownerId)==null?SemanticCompleteness.UNKNOWN:SemanticCompleteness.COMPLETE;
             }
             @Override public MemberPage members(String ownerId,String prefix,int limit,String cursor)throws Exception{
-                try(var trace=dev.jvmd.core.RequestScope.stage(stagePrefix+"members")){
-                    if(symbol(ownerId)==null||limit<=0)return new MemberPage(List.of(),null);
-                    var page=store.semanticMembersByOwner(ownerId,prefix,workspace,limit,cursor,layer);
-                    var values=new ArrayList<SemanticReadView.Symbol>(page.symbols().size());
-                    for(var value:page.symbols())values.add(fromIndexed(value,origin));
-                    trace.count("rows_decoded",values.size());trace.count("truncated",page.cursor()==null?0:1);
-                    return new MemberPage(values,page.cursor());
-                }
+                if(symbol(ownerId)==null||limit<=0)return new MemberPage(List.of(),null);
+                var page=store.semanticMembersByOwner(ownerId,prefix,workspace,limit,cursor,layer);
+                var values=new ArrayList<SemanticReadView.Symbol>(page.symbols().size());
+                for(var value:page.symbols())values.add(fromIndexed(value,origin));
+
+                return new MemberPage(values,page.cursor());
             }
             @Override public List<String> directSupertypes(String typeId)throws Exception{
                 if(symbol(typeId)==null)return List.of();

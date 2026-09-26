@@ -28,22 +28,6 @@ public final class Application implements AutoCloseable {
     private volatile java.util.concurrent.CompletableFuture<IndexService> index;
     private volatile IndexService bootstrappingIndex;
     private final java.util.concurrent.atomic.AtomicBoolean closed=new java.util.concurrent.atomic.AtomicBoolean();
-    // Temporary Issue-36 proof counters. Deltas are sampled around completionItem/resolve and
-    // removed with the Checkpoint-18 measurement tooling.
-    private final java.util.concurrent.atomic.AtomicLong workspaceFindCalls=new java.util.concurrent.atomic.AtomicLong();
-    private final java.util.concurrent.atomic.AtomicLong workspaceFindFilesScanned=new java.util.concurrent.atomic.AtomicLong();
-    private final java.util.concurrent.atomic.AtomicLong workspaceBindingsBuilds=new java.util.concurrent.atomic.AtomicLong();
-    private final java.util.concurrent.atomic.AtomicLong dependencyExactDescribeHits=new java.util.concurrent.atomic.AtomicLong();
-    private final java.util.concurrent.atomic.AtomicLong machineExactDescribeAttempts=new java.util.concurrent.atomic.AtomicLong();
-    private final java.util.concurrent.atomic.AtomicLong machineExactDescribeMisses=new java.util.concurrent.atomic.AtomicLong();
-    private final java.util.concurrent.atomic.AtomicLong localExactDescribeAttempts=new java.util.concurrent.atomic.AtomicLong();
-    private final java.util.concurrent.atomic.AtomicLong localExactDescribeHits=new java.util.concurrent.atomic.AtomicLong();
-    private final java.util.concurrent.atomic.AtomicLong machineExactDescribeNanos=new java.util.concurrent.atomic.AtomicLong();
-    private final java.util.concurrent.atomic.AtomicLong localExactDescribeNanos=new java.util.concurrent.atomic.AtomicLong();
-    private final java.util.concurrent.atomic.AtomicLong documentationDescribeCalls=new java.util.concurrent.atomic.AtomicLong();
-    private final java.util.concurrent.atomic.AtomicLong documentationDescribeNanos=new java.util.concurrent.atomic.AtomicLong();
-    private final java.util.concurrent.atomic.AtomicLong liveDescribeRebinds=new java.util.concurrent.atomic.AtomicLong();
-    private volatile String lastDescribeRef="";
     private static final Set<String> COMPLETION_TYPE_KINDS=Set.of("class","interface","enum","record","annotation");
     private record TypeCompletionCache(String generation,String prefix,List<Map<String,Object>> rows,boolean complete) { }
     public Application(Config config) {
@@ -122,33 +106,7 @@ public final class Application implements AutoCloseable {
         dispatcher.register("session.status", (s, p) -> {
             var actorRegistry=(ModuleAnalyzerRegistry)s.state("diagnostic_actors");var interactiveAnalyzer=(Analyzer)s.state("analyzer");
             String statusSection=p.path("section").asText("");
-            if(statusSection.equals("proof")){
-                var analyzerProof=new LinkedHashMap<String,Object>(interactiveAnalyzer==null?Map.of("initialized",false):interactiveAnalyzer.proofStatus());
-                var resolveEvidence=new LinkedHashMap<String,Object>();
-                resolveEvidence.put("workspace_find_calls",workspaceFindCalls.get());
-                resolveEvidence.put("workspace_find_files_scanned",workspaceFindFilesScanned.get());
-                resolveEvidence.put("workspace_bindings_builds",workspaceBindingsBuilds.get());
-                resolveEvidence.put("dependency_exact_describe_hits",dependencyExactDescribeHits.get());
-                resolveEvidence.put("machine_exact_describe_attempts",machineExactDescribeAttempts.get());
-                resolveEvidence.put("machine_exact_describe_misses",machineExactDescribeMisses.get());
-                resolveEvidence.put("machine_exact_describe_ms",machineExactDescribeNanos.get()/1e6);
-                resolveEvidence.put("local_exact_describe_attempts",localExactDescribeAttempts.get());
-                resolveEvidence.put("local_exact_describe_hits",localExactDescribeHits.get());
-                resolveEvidence.put("local_exact_describe_ms",localExactDescribeNanos.get()/1e6);
-                resolveEvidence.put("documentation_describe_calls",documentationDescribeCalls.get());
-                resolveEvidence.put("documentation_describe_ms",documentationDescribeNanos.get()/1e6);
-                resolveEvidence.put("live_describe_rebinds",liveDescribeRebinds.get());
-                resolveEvidence.put("last_describe_ref",lastDescribeRef);
-                var documentation=(dev.jvmd.index.Documentation)s.state("documentation");
-                var documentationStatus=documentation==null?Map.<String,Object>of(
-                        "describe_calls",0L,"describe_ms",0.0,
-                        "ensure_signature_edges_calls",0L,"ensure_signature_edges_ms",0.0,
-                        "inherit_doc_calls",0L,"inherit_doc_ms",0.0):documentation.status();
-                documentationStatus.forEach((key,value)->resolveEvidence.put("documentation."+key,value));
-                analyzerProof.put("resolve_evidence",Collections.unmodifiableMap(resolveEvidence));
-                return new Envelope(0,"live",false,null,s.warnings(),Map.of(
-                        "session",s.id(),"root",s.root().toString(),"analyzer",Collections.unmodifiableMap(analyzerProof)));
-            }
+
             var analyzerStatus=actorRegistry!=null?actorRegistry.analyzerStatus(interactiveAnalyzer==null?Map.of():interactiveAnalyzer.status())
                     :interactiveAnalyzer==null?Map.of("initialized",false):interactiveAnalyzer.status();
             if(statusSection.equals("analyzer"))
@@ -473,7 +431,7 @@ public final class Application implements AutoCloseable {
         WorkspaceBindings.InputSource inputSource=()->workspaceModuleInputs(session,currentGraph);
         if(!load)return cache.peek(inputSource);
         return cache.getBatch(inputSource,documents(session),(long)config.heapCeilingMb()*1024*1024/Math.max(1,sessions.list().size())/4,files->{
-            workspaceBindingsBuilds.incrementAndGet();
+
             var groups=new LinkedHashMap<String,LinkedHashMap<Path,String>>();
             for(var entry:files.entrySet())groups.computeIfAbsent(WorkspaceContextManager.key(entry.getKey(),currentGraph),_->new LinkedHashMap<>()).put(entry.getKey(),entry.getValue());
             var results=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();
@@ -512,17 +470,17 @@ public final class Application implements AutoCloseable {
         }return page(tier,"live","symbols",symbols,offset,limit,List.copyOf(warnings));
     }
     private List<Map<String,Object>> workspaceFind(Session session,String ref,boolean substring)throws Exception{
-        workspaceFindCalls.incrementAndGet();
+
         if(session.state("workspace_bindings")!=null)try(var cached=workspaceBindings(session,false)){
             if(cached!=null&&cached.diagnostics().stream().noneMatch(d->d.kind().equals("ERROR")))return cached.find(ref,substring,Set.of(),Integer.MAX_VALUE,null).symbols();
         }
         var found=new LinkedHashMap<String,Map<String,Object>>();
         if(ref.contains(")/")){
-            for(Path file:sourceFiles(session)){workspaceFindFilesScanned.incrementAndGet();var snapshot=analyzer(session,file).bindings(file,documents(session).text(file),null);if(snapshot.result()!=null)for(var symbol:snapshot.result().symbols().values())if(Analyzer.matches(symbol,ref,substring))found.put(symbol.get("scip").toString(),symbol);}
+            for(Path file:sourceFiles(session)){var snapshot=analyzer(session,file).bindings(file,documents(session).text(file),null);if(snapshot.result()!=null)for(var symbol:snapshot.result().symbols().values())if(Analyzer.matches(symbol,ref,substring))found.put(symbol.get("scip").toString(),symbol);}
             return List.copyOf(found.values());
         }
         for(Path file:sourceFiles(session)){
-            workspaceFindFilesScanned.incrementAndGet();
+
             var analyzer=analyzer(session,file);int offset=0;var declarations=new ArrayList<Map<String,Object>>();
             do{
                 var outline=analyzer.overview(file,documents(session).text(file),10,1000,offset);
@@ -539,7 +497,6 @@ public final class Application implements AutoCloseable {
         return describe(session,ref,validated,null,null);
     }
     private Envelope describe(Session session,String ref,WorkspaceBindings.Snapshot validated,String semanticOrigin,String expectedIdentity)throws Exception{
-        lastDescribeRef=ref;
         if(validated!=null){
             var symbol=validated.symbol(ref);if(symbol!=null)return new Envelope(validated.tier(),"live",false,null,validated.warnings(),symbol);
             var direct=validated.lookup(ref);if(direct.size()==1)return new Envelope(validated.tier(),"live",false,null,validated.warnings(),direct.getFirst());
@@ -548,25 +505,25 @@ public final class Application implements AutoCloseable {
         // independent of the SCIP scheme (Maven, JDK, or another machine artifact), and require
         // captured resolution identity equality before enrichment. No source discovery is allowed.
         if("machine".equals(semanticOrigin)){
-            machineExactDescribeAttempts.incrementAndGet();long exactStarted=System.nanoTime();
+
             var database=index();
             var indexed=database.store().byScip(ref,null,IndexStore.SemanticLayer.MACHINE);
-            machineExactDescribeNanos.addAndGet(System.nanoTime()-exactStarted);
+
             if(indexed!=null&&(expectedIdentity==null||expectedIdentity.isBlank()
                     ||expectedIdentity.equals(Objects.toString(indexed.get("resolution_identity"),"")))){
-                dependencyExactDescribeHits.incrementAndGet();return Envelope.of(2,"index",indexed);
+                return Envelope.of(2,"index",indexed);
             }
-            machineExactDescribeMisses.incrementAndGet();
+
             return Envelope.of(2,"index",Map.of("scip",ref,"resolution_identity",""));
         }
         if("local".equals(semanticOrigin)){
-            localExactDescribeAttempts.incrementAndGet();long exactStarted=System.nanoTime();
+
             var database=index();String workspace=session.state("resolution")==null?null:session.id();
             var indexed=database.store().byScip(ref,workspace,IndexStore.SemanticLayer.LOCAL);
-            localExactDescribeNanos.addAndGet(System.nanoTime()-exactStarted);
+
             if(indexed!=null&&(expectedIdentity==null||expectedIdentity.isBlank()
                     ||expectedIdentity.equals(Objects.toString(indexed.get("resolution_identity"),"")))){
-                localExactDescribeHits.incrementAndGet();dependencyExactDescribeHits.incrementAndGet();
+
                 return Envelope.of(2,"index",indexed);
             }
             return Envelope.of(2,"index",Map.of("scip",ref,"resolution_identity",""));
@@ -575,19 +532,19 @@ public final class Application implements AutoCloseable {
         if(ref.startsWith("maven ")){
             var database=index();String workspace=session.state("resolution")==null?null:session.id();
             if(expectedIdentity!=null&&!expectedIdentity.isBlank()){
-                machineExactDescribeAttempts.incrementAndGet();long exactStarted=System.nanoTime();
+
                 var machine=database.store().byScip(ref,null,IndexStore.SemanticLayer.MACHINE);
-                machineExactDescribeNanos.addAndGet(System.nanoTime()-exactStarted);
+
                 if(machine!=null&&expectedIdentity.equals(Objects.toString(machine.get("resolution_identity"),""))){
-                    dependencyExactDescribeHits.incrementAndGet();return Envelope.of(2,"index",machine);
+                    return Envelope.of(2,"index",machine);
                 }
-                machineExactDescribeMisses.incrementAndGet();
+
             }else{
-                machineExactDescribeAttempts.incrementAndGet();long exactStarted=System.nanoTime();
+
                 var indexed=database.store().byScip(ref,workspace,IndexStore.SemanticLayer.MACHINE);
-                machineExactDescribeNanos.addAndGet(System.nanoTime()-exactStarted);
-                if(indexed!=null){dependencyExactDescribeHits.incrementAndGet();return Envelope.of(2,"index",indexed);}
-                machineExactDescribeMisses.incrementAndGet();
+
+                if(indexed!=null){return Envelope.of(2,"index",indexed);}
+
             }
         }
         var analyzer=(Analyzer)session.state("analyzer");
@@ -611,7 +568,7 @@ public final class Application implements AutoCloseable {
                 }
                 if(file!=null&&(Files.isRegularFile(Path.of(file.toString()))||documents(session).contains(Path.of(file.toString())))&&symbol.get("name_start") instanceof Number position){
                     Path path=Path.of(file.toString());
-                    liveDescribeRebinds.incrementAndGet();
+
                     String text=documents(session).text(path);var snapshot=analyzer(session,path).bindings(path,text,position.intValue());if(snapshot.result()!=null){var current=snapshot.result().symbols().get(ref);if(current!=null)return new Envelope(snapshot.tier(),"live",false,null,snapshot.warnings(),current);}
                 }else return Envelope.of(2,"live",symbol);
             }
@@ -659,9 +616,9 @@ public final class Application implements AutoCloseable {
             if(indexed.size()==1){var current=new LinkedHashMap<>(indexed.getFirst());symbol.forEach((key,value)->{if(value!=null)current.put(key,value);});symbol=current;}
         }
         var docs=session.state("documentation",()->new dev.jvmd.index.Documentation(database,config.jdkHome()));
-        long documentationStarted=System.nanoTime();documentationDescribeCalls.incrementAndGet();
+
         var result=docs.describe(symbol,workspace,detail,depth,limit,offset);
-        documentationDescribeNanos.addAndGet(System.nanoTime()-documentationStarted);
+
         var warnings=new LinkedHashSet<>(base.warnings());warnings.addAll(result.warnings());
         return new Envelope(Math.min(base.tier(),result.tier()),base.source(),result.truncated(),result.cursor(),List.copyOf(warnings),result.result());
     }
@@ -847,28 +804,20 @@ public final class Application implements AutoCloseable {
     }
     private static <T> List<T> slice(List<T> list,int offset,int limit){return List.copyOf(list.subList(Math.min(offset,list.size()),Math.min(list.size(),offset+limit)));}
     private Analyzer analyzer(Session session,Path path)throws Exception{
-        try(var trace=RequestScope.stage("application.analyzer")){
-            Resolution graph;
-            try(var stage=RequestScope.stage("application.analyzer.maintainedResolution")){graph=maintainedResolution(session);}
-            var contexts=session.state("analysis_contexts",WorkspaceContextManager::new);
-            String contextIdentity;
-            try(var stage=RequestScope.stage("application.analyzer.contextPolicy")){contextIdentity=contextCacheIdentity(session,graph,path);}
-            var context=contexts.context(path,graph,contextIdentity,file->createAnalyzerContext(session,file,graph));
-            Analyzer analyzer;
-            try(var stage=RequestScope.stage("application.analyzer.instance")){analyzer=session.state("analyzer",()->new Analyzer(classpathFiles));}
-            IndexService availableIndex;
-            try(var stage=RequestScope.stage("application.analyzer.indexLookup")){
-                availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
-            }
-            try(var stage=RequestScope.stage("application.analyzer.configure")){
-                analyzer.configure(context,availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));
-            }
-            try(var stage=RequestScope.stage("application.analyzer.documents")){analyzer.documents(documents(session));}
-            try(var stage=RequestScope.stage("application.analyzer.persistence")){
-                analyzer.persistence(config.stateDir().resolve("diagnostics-v2").resolve(Hashing.sha256(session.root().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))));
-            }
-            return analyzer;
-        }
+        Resolution graph;
+        graph=maintainedResolution(session);
+        var contexts=session.state("analysis_contexts",WorkspaceContextManager::new);
+        String contextIdentity;
+        contextIdentity=contextCacheIdentity(session,graph,path);
+        var context=contexts.context(path,graph,contextIdentity,file->createAnalyzerContext(session,file,graph));
+        Analyzer analyzer;
+        analyzer=session.state("analyzer",()->new Analyzer(classpathFiles));
+        IndexService availableIndex;
+        availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
+        analyzer.configure(context,availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));
+        analyzer.documents(documents(session));
+        analyzer.persistence(config.stateDir().resolve("diagnostics-v2").resolve(Hashing.sha256(session.root().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+        return analyzer;
     }
     /**
      * Maintained analyzer contexts are valid while project/source-output ownership remains watched.
@@ -933,22 +882,18 @@ public final class Application implements AutoCloseable {
             graph.classpaths().getOrDefault(gav+(test?":test":":main"),java.util.List.of()).forEach(p->classpath.add(Path.of(p)));
             module.sources().forEach(p->sources.add(Path.of(p)));if(test)module.testSources().forEach(p->sources.add(Path.of(p)));
             List<Resolution.Module> dependencies;
-            try(var stage=RequestScope.stage("application.analyzer.context.overlayDependencies")){
-                dependencies=overlay(session,graph).dependencies(graph,gav,test);
+            dependencies=overlay(session,graph).dependencies(graph,gav,test);
+            for(var dependency:dependencies){
+                boolean sourceOnly=overlay(session,graph).requiresSource(dependency)||documents(session).dirty(Path.of(dependency.directory()));generation+=":"+dependency.gav()+":"+sourceOnly;
+                if(sourceOnly)dependency.sources().forEach(p->sources.add(Path.of(p)));classpath.add(Path.of(dependency.classes()));
+                // A built dependency uses its API; source changes (including preserved mtimes) switch to SOURCE_PATH.
+                coordinates.put(dependency.classes(),dependency.gav());
+                var generated=prepareProcessing(session,dependency,false,graph);
+                if(generated!=null){classpath.addAll(0,generated.classpath());sources.addAll(generated.sourceRoots());binarySources.addAll(generated.binarySources());processorWarnings.addAll(generated.warnings());generation+=":"+generated.fingerprint();}
             }
-            try(var stage=RequestScope.stage("application.analyzer.context.annotationProcessing")){
-                for(var dependency:dependencies){
-                    boolean sourceOnly=overlay(session,graph).requiresSource(dependency)||documents(session).dirty(Path.of(dependency.directory()));generation+=":"+dependency.gav()+":"+sourceOnly;
-                    if(sourceOnly)dependency.sources().forEach(p->sources.add(Path.of(p)));classpath.add(Path.of(dependency.classes()));
-                    // A built dependency uses its API; source changes (including preserved mtimes) switch to SOURCE_PATH.
-                    coordinates.put(dependency.classes(),dependency.gav());
-                    var generated=prepareProcessing(session,dependency,false,graph);
-                    if(generated!=null){classpath.addAll(0,generated.classpath());sources.addAll(generated.sourceRoots());binarySources.addAll(generated.binarySources());processorWarnings.addAll(generated.warnings());generation+=":"+generated.fingerprint();}
-                }
-                var processing=prepareProcessing(session,module,false,graph);
-                if(processing!=null){classpath.addAll(0,processing.classpath());sources.addAll(0,processing.sourceRoots());binarySources.addAll(processing.binarySources());processorWarnings.addAll(processing.warnings());generation+=":"+processing.fingerprint();coordinates.put(processing.sourceRoots().getFirst().toString(),gav);}
-                if(test){var testOutput=prepareProcessing(session,module,true,graph);if(testOutput!=null){classpath.addAll(0,testOutput.classpath());sources.addAll(0,testOutput.sourceRoots());binarySources.addAll(testOutput.binarySources());processorWarnings.addAll(testOutput.warnings());generation+=":"+testOutput.fingerprint();coordinates.put(testOutput.sourceRoots().getFirst().toString(),gav);}}
-            }
+            var processing=prepareProcessing(session,module,false,graph);
+            if(processing!=null){classpath.addAll(0,processing.classpath());sources.addAll(0,processing.sourceRoots());binarySources.addAll(processing.binarySources());processorWarnings.addAll(processing.warnings());generation+=":"+processing.fingerprint();coordinates.put(processing.sourceRoots().getFirst().toString(),gav);}
+            if(test){var testOutput=prepareProcessing(session,module,true,graph);if(testOutput!=null){classpath.addAll(0,testOutput.classpath());sources.addAll(0,testOutput.sourceRoots());binarySources.addAll(testOutput.binarySources());processorWarnings.addAll(testOutput.warnings());generation+=":"+testOutput.fingerprint();coordinates.put(testOutput.sourceRoots().getFirst().toString(),gav);}}
             for(var m:graph.modules()){
                 for(String source:java.util.stream.Stream.concat(m.sources().stream(),m.testSources().stream()).toList()){
                     navigationSources.add(Path.of(source));coordinates.putIfAbsent(source,m.gav());coordinates.putIfAbsent(Path.of(source).toUri().toString(),m.gav());
@@ -1058,7 +1003,7 @@ public final class Application implements AutoCloseable {
         if(graph.modules().stream().anyMatch(m->m.processing().lombok()||m.testProcessing().lombok()))session.warn("lombok_reduced_fidelity: generated member bodies and positions are unavailable");
         if(index!=null && index.isDone() && !index.isCompletedExceptionally()) bindIndex(session,index.join());
         return graph;
-    
+
         }
     }
     private synchronized void initializeIndex(boolean scan) {

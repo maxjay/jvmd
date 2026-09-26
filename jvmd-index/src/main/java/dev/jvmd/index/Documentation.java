@@ -13,7 +13,6 @@ public final class Documentation {
     private final Path sourceZip;
     private final Map<String,String> packages=new HashMap<>();
     private final Set<String> attempted=new HashSet<>();
-    private long describeCalls,describeNanos,ensureSignatureCalls,ensureSignatureNanos,inheritCalls,inheritNanos;
 
     public Documentation(IndexService index,Path jdkHome){
         this.index=index;sourceZip=jdkHome.resolve("lib/src.zip");
@@ -40,22 +39,18 @@ public final class Documentation {
     }
 
     private String inherited(String scip,String workspace,Set<String> visited)throws Exception{
-        long started=System.nanoTime();inheritCalls++;
-        try{
-            if(!visited.add(scip))return null;
-            var symbol=index.store().byScip(scip,workspace);if(symbol==null)return null;
-            String doc=(String)symbol.get("doc");if(doc==null||!doc.contains("{@inheritDoc}"))return doc;
-            for(var parent:index.store().overrideParents(scip,workspace,100)){
-                String parentScip=Objects.toString(parent.get("scip"),"");if(parentScip.isBlank())continue;
-                String value=inherited(parentScip,workspace,visited);
-                if(value!=null&&!value.isBlank())return doc.replace("{@inheritDoc}",value);
-            }
-            return doc;
-        }finally{inheritNanos+=System.nanoTime()-started;}
+        if(!visited.add(scip))return null;
+        var symbol=index.store().byScip(scip,workspace);if(symbol==null)return null;
+        String doc=(String)symbol.get("doc");if(doc==null||!doc.contains("{@inheritDoc}"))return doc;
+        for(var parent:index.store().overrideParents(scip,workspace,100)){
+            String parentScip=Objects.toString(parent.get("scip"),"");if(parentScip.isBlank())continue;
+            String value=inherited(parentScip,workspace,visited);
+            if(value!=null&&!value.isBlank())return doc.replace("{@inheritDoc}",value);
+        }
+        return doc;
     }
     private void ensureSignatureEdges(String workspace)throws Exception{
-        long started=System.nanoTime();ensureSignatureCalls++;
-        try{index.ensureSignatureEdges(workspace);}finally{ensureSignatureNanos+=System.nanoTime()-started;}
+        index.ensureSignatureEdges(workspace);
     }
 
     private Map<String,Object> documented(Map<String,Object> original,String detail,String workspace)throws Exception{
@@ -73,36 +68,27 @@ public final class Documentation {
     }
 
     public Envelope describe(Map<String,Object> symbol,String workspace,String detail,int depth,int limit,int offset)throws Exception{
-        long started=System.nanoTime();describeCalls++;
-        try{
-            if(!Set.of("summary","full").contains(detail)||depth<0||depth>10||limit<1||limit>200||offset<0)
-                throw RpcException.invalid("Invalid documentation detail, depth, limit or cursor");
-            String scip=Objects.toString(symbol.get("scip"),"");
-            if(depth>0&&!scip.isBlank())ensureSignatureEdges(workspace);
-            var root=documented(symbol,detail,workspace);var closure=new ArrayList<Map<String,Object>>();boolean more=false;
-            if(depth>0&&!scip.isBlank()){
-                completeJdk(scip,depth,workspace);
-                int scan=offset;
-                while(closure.size()<=limit){
-                    var values=reachable(scip,depth,limit+1,scan,workspace);if(values.isEmpty())break;
-                    for(var member:values){
-                        scan++;closure.add(documented(member,detail,workspace));
-                        if(closure.size()>limit){scan--;more=true;break;}
-                    }
-                    if(more||values.size()<limit+1)break;
+        if(!Set.of("summary","full").contains(detail)||depth<0||depth>10||limit<1||limit>200||offset<0)
+            throw RpcException.invalid("Invalid documentation detail, depth, limit or cursor");
+        String scip=Objects.toString(symbol.get("scip"),"");
+        if(depth>0&&!scip.isBlank())ensureSignatureEdges(workspace);
+        var root=documented(symbol,detail,workspace);var closure=new ArrayList<Map<String,Object>>();boolean more=false;
+        if(depth>0&&!scip.isBlank()){
+            completeJdk(scip,depth,workspace);
+            int scan=offset;
+            while(closure.size()<=limit){
+                var values=reachable(scip,depth,limit+1,scan,workspace);if(values.isEmpty())break;
+                for(var member:values){
+                    scan++;closure.add(documented(member,detail,workspace));
+                    if(closure.size()>limit){scan--;more=true;break;}
                 }
-                root.put("closure",closure.subList(0,Math.min(limit,closure.size())));
-                return new Envelope(symbol.get("tier") instanceof Number t?t.intValue():2,"index",more,more?Integer.toString(scan):null,List.of(),root);
+                if(more||values.size()<limit+1)break;
             }
-            root.put("closure",List.of());
-            return new Envelope(symbol.get("tier") instanceof Number t?t.intValue():2,symbol.containsKey("id")?"index":"live",false,null,List.of(),root);
-        }finally{describeNanos+=System.nanoTime()-started;}
-    }
-
-    public Map<String,Object> status(){
-        return Map.of("describe_calls",describeCalls,"describe_ms",describeNanos/1e6,
-                "ensure_signature_edges_calls",ensureSignatureCalls,"ensure_signature_edges_ms",ensureSignatureNanos/1e6,
-                "inherit_doc_calls",inheritCalls,"inherit_doc_ms",inheritNanos/1e6);
+            root.put("closure",closure.subList(0,Math.min(limit,closure.size())));
+            return new Envelope(symbol.get("tier") instanceof Number t?t.intValue():2,"index",more,more?Integer.toString(scan):null,List.of(),root);
+        }
+        root.put("closure",List.of());
+        return new Envelope(symbol.get("tier") instanceof Number t?t.intValue():2,symbol.containsKey("id")?"index":"live",false,null,List.of(),root);
     }
 
     public static Map<String,Object> withBody(Map<String,Object> symbol)throws Exception{

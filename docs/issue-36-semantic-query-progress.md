@@ -1314,3 +1314,229 @@ explicitly labelled evidence. No frozen selector, workflow, oracle or hash is ch
 
 Remaining: rerun the frozen proof on this bounded presentation repair and inspect all
 correctness fields before accepting it; cleanup remains uncommitted.
+
+
+## Checkpoint 17 — accepted frozen final proof, with measured regressions and limits
+
+Baseline subject: `eb45487f08a986d3a5ef2acd3666177e332cdc9b`.
+Final production subject: `e0445dc8b5186f997483e277fac2e656392056a5`.
+Selection-only commit: `1126561c6d2a505f32311c6105bbd93177db2a59`.
+
+Accepted [run 36250899729](https://github.com/maxjay/jvmd/actions/runs/36250899729),
+artifact `10909745246`, digest
+`sha256:9e8384c3be79f1bf1bdb4fdbadec0642e1542beb80eaef7229c81198fd22e3cb`.
+The downloaded ZIP digest was verified. Baseline [run 36070534515](https://github.com/maxjay/jvmd/actions/runs/36070534515),
+artifact `10837938429`, digest
+`sha256:56a1bac58b1b9d7e3b69e0acb7375303fd5e9fb31c9b4208348fdb8692570f7b`.
+The artifact identities match all three frozen source SHA-256 values and workflow
+blob `5cfa00d9de83faccdb641f5c38776b7719dc991c`. The measured subject's LSP harness,
+scenario, expected oracle, runner, phase helper and package hashes passed unchanged.
+Only the measured subject selector changed in the frozen components.
+
+### Correctness
+
+| Frozen check | Baseline | Final |
+|---|---|---|
+| Real Maven first completion | Empty, incorrect | Correct, 50 candidates |
+| Legacy selected-field resolve | Incorrect/unavailable | Correct owner, label, detail and insertion |
+| Repeated and unsaved-API-edit completion | Incorrect | Both correct |
+| Warmup / steady completion | 0/2 and 0/20 correct | 2/2 and 20/20 correct |
+| Direct incomplete statement | Empty | Includes `getOne` and inherited members |
+| Parameter, field, static, chained, generic, deep/wide hierarchy, access, overlay | Exercised | Expected surfaces, no analyzer faults |
+| Relevant API / exact-symbol mutations | Exercised | New members and expected incompatible-type diagnostic |
+| Namespace negative / unrelated / newly valid | Unresolved / unresolved / resolved | Same correct transition |
+| Classpath A replacement | `getA` → `getA2` | Same correct transition |
+| Machine C change; workspace selects A/B | A/B selection stable | A/B selection stable |
+
+No captured operation reports a harness `failure` or `analyzer_fault`. Deliberate
+unresolved-name and incompatible-type diagnostics remain expected results.
+Workflow success alone was insufficient: the preceding run's false resolve result
+was inspected, repaired, and rerun before this acceptance.
+
+### Real CMP latency and work — same frozen harness
+
+| Metric | Baseline | Final | Interpretation |
+|---|---:|---:|---|
+| First-use completion | 1,261.506 ms, incorrect | 2,866.110 ms, correct | Initial cost increased; baseline is not a correct-latency comparator |
+| Steady p50 / p95 | 529.359 / 665.684 ms, incorrect | 485.523 / 494.722 ms, correct | 20 final correct samples |
+| Selected-field resolve | No candidate | 928.329 ms, correct | Frozen recording includes cold enrichment/context costs |
+| Companion CMP compiler queries | Before unavailable; after 4 | 0 → 2 | Separate cold native-status probe; not a warm-query delta |
+| Companion binding computations | After 2 | 0 → 1 | Measured native status |
+| Companion resident mutations / reads | After 265 / 0 | 0 → 512 / 255 | Four final resident units |
+| Warm direct prefix `get` / `getM` queries | 0 / 0 | 0 / 0 | Detached proof reuse retained |
+| CMP steady peak process-tree RSS | 1,270,144 KiB | 1,192,592 KiB | Process-tree measurement |
+
+These frozen values are deliberately not replaced by the faster expanded-CP15
+numbers. CP15 measured a different preparation/instrumentation state; its zero-query
+repeated completion and exact MACHINE resolve evidence remains historical evidence,
+not a substitute for these final same-harness measurements.
+
+### Direct latency, javac and resident-range table
+
+The frozen direct fixtures begin with a bare/unadmitted Analyzer, including an absent
+production index in the classpath fixture. Their conservative admission work is shown
+as measured. They do not establish the separately tested admitted Tier-0/Tier-1 zero-javac
+claim. An arrow means baseline → final; latency is milliseconds.
+
+| Probe | Latency ms | Compiler queries | Resident entries read | Fact mutations |
+|---|---:|---:|---:|---:|
+| query-matrix/incomplete_statement | 902.316 → 420.674 | 2 → 1 | 0 → 14 | 0 → 19 |
+| query-matrix/parameter | 160.180 → 99.622 | 1 → 1 | 14 → 14 | 19 → 19 |
+| query-matrix/field | 98.150 → 81.845 | 1 → 1 | 14 → 14 | 20 → 20 |
+| query-matrix/static_receiver | 90.659 → 66.646 | 1 → 1 | 15 → 15 | 20 → 20 |
+| query-matrix/chained | 92.868 → 69.196 | 1 → 1 | 14 → 14 | 22 → 22 |
+| query-matrix/generic_fallback | 137.955 → 97.290 | 1 → 1 | 71 → 71 | 75 → 75 |
+| query-matrix/deep_hierarchy | 85.844 → 61.666 | 1 → 1 | 2 → 2 | 35 → 35 |
+| query-matrix/wide_hierarchy | 99.407 → 71.211 | 1 → 1 | 65 → 65 | 82 → 82 |
+| query-matrix/access_filtering | 77.346 → 52.785 | 1 → 1 | 7 → 7 | 26 → 26 |
+| query-matrix/prefix_narrowing.g | 59.845 → 47.051 | 1 → 1 | 4 → 4 | 18 → 18 |
+| query-matrix/prefix_narrowing.get | 3.515 → 4.669 | 0 → 0 | 3 → 3 | 0 → 0 |
+| query-matrix/prefix_narrowing.getM | 3.175 → 3.425 | 0 → 0 | 2 → 2 | 0 → 0 |
+| query-matrix/unsaved_overlay | 50.513 → 35.241 | 1 → 1 | 3 → 3 | 17 → 17 |
+| semantic-mutations/initial | 957.040 → 418.952 | 1 → 1 | 2 → 2 | 17 → 17 |
+| semantic-mutations/body_only | 38.643 → 50.447 | 1 → 1 | 2 → 0 | 0 → 0 |
+| semantic-mutations/unrelated_api_member | 31.196 → 31.376 | 2 → 2 | 2 → 2 | 1 → 1 |
+| semantic-mutations/relevant_range_member | 31.318 → 30.129 | 2 → 2 | 3 → 3 | 1 → 1 |
+| dependency-proofs/exact_symbol_irrelevant | 30.883 → 30.802 | 1 → 1 | 0 → 0 | 0 → 1 |
+| dependency-proofs/exact_symbol_relevant | 21.539 → 40.763 | 1 → 2 | 0 → 0 | 0 → 1 |
+| dependency-proofs/overload_irrelevant | 16.839 → 13.764 | 1 → 1 | 0 → 0 | 0 → 0 |
+| dependency-proofs/overload_relevant | 18.013 → 15.556 | 1 → 1 | 0 → 0 | 0 → 0 |
+| dependency-proofs/downstream_consumer | 19.148 → 24.856 | 1 → 1 | 0 → 0 | 0 → 2 |
+| namespace-negative/initial_negative | 782.927 → 320.569 | 1 → 1 | 0 → 0 | 2 → 2 |
+| namespace-negative/unrelated_namespace | 75.691 → 59.104 | 1 → 1 | 0 → 0 | 0 → 0 |
+| namespace-negative/relevant_namespace | 61.033 → 57.811 | 1 → 1 | 0 → 0 | 1 → 1 |
+| hierarchy-mutation/direct_parent_change | 20.233 → 32.701 | 1 → 2 | 0 → 0 | 0 → 1 |
+| hierarchy-mutation/ancestor_irrelevant_member | 18.355 → 26.862 | 1 → 2 | 0 → 0 | 0 → 1 |
+| hierarchy-mutation/downstream_after_equal_surface | 14.747 → 15.418 | 1 → 1 | 0 → 0 | 0 → 0 |
+| classpath-composition/initial | 579.167 → 219.681 | 1 → 1 | 2 → 2 | 16 → 16 |
+| classpath-composition/unreferenced_c_change | 72.802 → 61.737 | 1 → 1 | 2 → 2 | 0 → 0 |
+| classpath-composition/relevant_a_change | 66.953 → 84.413 | 1 → 1 | 2 → 2 | 2 → 2 |
+| classpath-composition/reorder_b_c_after_winner | 97.860 → 58.869 | 1 → 1 | 2 → 2 | 16 → 16 |
+| classpath-composition/insert_after_winner | 69.197 → 56.006 | 1 → 1 | 2 → 2 | 16 → 16 |
+| classpath-composition/remove_unreferenced_d | 57.595 → 60.196 | 1 → 1 | 2 → 2 | 16 → 16 |
+
+### Allocation and JFR
+
+Request-thread allocations are measured directly. The all-live-thread column is the
+frozen harness's difference between sums over currently live threads, not an exact
+whole-process allocation counter; thread termination can affect that balance.
+
+| Probe | Request-thread bytes, baseline → final | All-live-thread balance bytes, baseline → final |
+|---|---:|---:|
+| query-matrix/incomplete_statement | 55,570,680 → 39,553,264 | 58,147,192 → 42,129,448 |
+| query-matrix/parameter | 17,396,920 → 15,292,664 | 17,409,416 → 15,295,224 |
+| query-matrix/generic_fallback | 20,303,752 → 22,598,960 | 20,306,376 → 22,603,200 |
+| query-matrix/prefix_narrowing.get | 258,072 → 379,536 | 258,072 → 379,536 |
+| query-matrix/prefix_narrowing.getM | 252,560 → 325,944 | 252,560 → 325,944 |
+| semantic-mutations/body_only | 1,889,248 → 3,035,272 | 1,889,352 → 3,035,272 |
+| semantic-mutations/unrelated_api_member | 1,018,928 → 1,311,248 | 1,018,928 → 1,311,248 |
+| semantic-mutations/relevant_range_member | 1,068,176 → 1,324,040 | 1,068,280 → 1,324,144 |
+| classpath-composition/unreferenced_c_change | 11,998,144 → 12,417,792 | 11,998,248 → 12,417,792 |
+
+| JFR recording | Parse / enter-attribute / prepare, baseline → final | Sampled allocation weight B, baseline → final | Max post-GC heap B, baseline → final |
+|---|---:|---:|---:|
+| classpath-composition | 6/6/6 → 6/6/6 | 273,209,912 → 289,144,384 | 48,679,408 → 45,273,736 |
+| cmp01 | unavailable in production image | 33,816,215,040 → 59,333,288,128 | 723,517,440 → 939,524,096 |
+| dependency-proofs | 8/8/8 → 9/9/9 | 108,969,736 → 113,040,256 | 19,735,128 → 19,855,520 |
+| hierarchy-mutation | 8/8/8 → 10/10/10 | 105,754,048 → 109,890,768 | 18,967,760 → 19,249,088 |
+| machine-workspace-composition | 0/0/0 → 0/0/0 | 151,983,320 → 154,474,032 | 19,679,496 → 19,982,152 |
+| namespace-negative | 3/3/3 → 3/3/3 | 122,706,200 → 125,770,248 | 20,777,144 → 25,603,920 |
+| query-matrix | 12/12/12 → 11/11/11 | 280,620,096 → 246,604,736 | 38,177,512 → 50,828,736 |
+| semantic-mutations | 6/6/6 → 6/6/6 | 113,460,736 → 117,154,392 | 21,906,640 → 22,801,376 |
+
+Post-GC heap is a retained-memory proxy, not a heap-dump retained-size measurement.
+The CMP recording contains malformed decoded stack/class names (the frozen workflow
+passes a shared recording filename through inherited `JAVA_TOOL_OPTIONS`). Its raw
+sample-weight and heap totals are retained as artifact observations; precise CMP
+allocation-site attribution is not trustworthy and is not claimed. Direct full-JDK
+matrix recordings provide intact compiler-stage and allocation evidence. No JFR
+filename, workflow, reader, or Stage-0 contract was changed to hide this limitation.
+
+### Proof propagation and classpath diff evidence
+
+The frozen selectors for `proof_validations`, `proof_validation_hits`,
+`proof_invalidations`, `derived_proofs_recomputed`, `proof_propagation_stopped_equal`,
+`consumers_*`, namespace/negative counters, machine-index range counters and
+`classpath_artifacts_reconsidered` remain unavailable (`Long.MIN_VALUE`), not zero.
+The production status names differ, and the bare classpath fixture lacks the production
+index needed for precise classpath transitions. Frozen machine/workspace root selectors
+also return null. Exact old/new root hex values and a complete same-harness consumer
+counter comparison are therefore not available. This is a disclosed measurement limit,
+not evidence that production propagation or composition performs no work.
+
+Intact JFR document-proof validation events in the final direct recordings:
+
+| Recording | Validation hit | Validation miss |
+|---|---:|---:|
+| query-matrix | 2 | 0 |
+| semantic-mutations | 1 | 3 |
+
+The following are separately labelled executable permanent proofs on the final
+implementation, not invented frozen-baseline counters. They retain exact work assertions:
+
+| Boundary | Permanent evidence | Asserted final work/result |
+|---|---|---|
+| Body-only, disjoint exact/overload member | `SourceProofMutationIntegrationTest` | 0 invalidated source consumers; disjoint edits visit 0 proof consumers; 0 coarse fallback |
+| Relevant exact/overload/member range | Same class | Direct source consumer invalidated; matching range changes; disjoint prefix stays reusable |
+| Unrelated namespace / negative membership | Same class; `NamespaceResolutionProofsTest` | 0 visited consumers for unrelated domains; newly valid searched domain invalidates the direct consumer |
+| Equal leaf / derived fixed point | `SemanticProofDagTest` | Equal leaf: 0 callbacks; changed leaf with equal derived proof: 1 recomputation, 1 equal stop, 0 downstream calls |
+| Relevant overload propagation | Same class | Exactly B and C recomputed; unrelated overload group: 0 callbacks |
+| Admitted parameter/field/static/chained receivers and `project.` | `MaintainedCompletionContextTest` | 0 query-side javac; no dependency promotion into resident state |
+| Exact resolve origins and stale identities | `LspFacadeTest`, `UnimportedTypeCompletionTest`, `SemanticReadViewTest` | Stale/wrong layer rejected; exact MACHINE resolve adds 0 javac queries; LIVE > LOCAL > MACHINE |
+
+| Classpath/composition boundary | Frozen observation | Permanent precise proof |
+|---|---|---|
+| Single changed leaf | Bare classpath still 1 query | `ClasspathSequenceTest`: old/new roots differ; exactly `[73,74) → [73,74)` among 128 slots |
+| Insert / remove / reorder | Correct results; 1 query each | Exact intervals `[2,2) → [2,3)`, `[2,3) → [2,2)`, `[1,3) → [1,3)` |
+| Unreferenced later artifact / reorder after winner | Correct `getA`/`getA2`, 1 query | `ClasspathLifecycleIntegrationTest`: 0 search proofs reconsidered |
+| Search changes but winner stays equal | Not selected by frozen counter names | 1 search reconsidered, 1 equal result, 0 semantic consumers visited |
+| Relevant winner change | Correct `getA2`, 1 query | 1 search changed; 1 consumer visited and changed |
+| Machine C change, workspace A/B | A/B selection unchanged; root selectors null | `MachineWorkspaceIdentityTest`: machine root changes; A/B dependency and workspace roots remain equal |
+| Workspace selecting C | Correct C remains selected | C root changes; exact one-slot `[0,1) → [0,1)` diff |
+
+### Regressions and disposition
+
+- Frozen CMP first-use and resolve are substantially slower than the expanded CP15
+  observation; final first-use is also slower than the incorrect baseline. The final
+  correct steady values remain visible above. No cross-preparation speedup is claimed.
+- Bare direct exact-symbol relevant and hierarchy probes increase from 1 to 2 compiler
+  queries. Unrelated API/namespace/classpath probes retain conservative work. These
+  measurements are not relabelled as admitted proof reuse.
+- Prefix `get` request allocation rises from 258,072 to 379,536 B; `getM` rises from
+  252,560 to 325,944 B. Body-only allocation rises from 1,889,248 to 3,035,272 B.
+  The full table and JFR weights retain the other allocation regressions.
+- The frozen proof completed without repairing the disposable profiler. Periodic
+  scan/request starvation (#41), cold lifecycle cost (#43), and remaining warm-operation
+  tuning (#44) remain follow-ups. No further architecture or performance redesign is
+  part of this closeout.
+
+Acceptance: all frozen semantic results, including resolve, are correct; the bounded
+required regressions are repaired; the unchanged before/after measurements and their
+limits are recorded. Checkpoint 18 may now remove measurement-only plumbing while
+preserving these production semantics and permanent work-count regressions.
+
+## Checkpoint 18 — semantics-neutral cleanup prepared
+
+Measured production subject remains `e0445dc8b5186f997483e277fac2e656392056a5`.
+Cleanup removes both Issue-36 workflows, all four `benchmarks/issue-36-proof` files,
+the compact `proof` status projection, resolve/documentation counters, and Issue-36
+hotpath/JFR spans and counters. The generic frozen LSP files remain at baseline hashes.
+No semantic lookup, resolution identity, source/classpath freshness fence, proof DAG
+edge, fixed-point decision, origin precedence, or documentation-depth rule changes.
+The only DAG edit removes a tracing-only visited-node accumulator.
+
+Normal operational analyzer/module status, source/classpath propagation evidence and
+pre-existing generic compiler/request tracing remain: these independently support
+normal diagnosis and permanent correctness/work-bound assertions. They are not the
+removed compact proof endpoint. Permanent regressions remain in the normal phase gates.
+
+Local verification: all production/test sources compile and 60 focused permanent
+proof, completion, resolve, documentation and edit tests pass. Final exact-head normal
+CI, final checklist reconciliation, and the PR's final validation links are still pending.
+
+The exact subject-selector head `1126561c6d2a505f32311c6105bbd93177db2a59`
+(which differs from the measured production subject only in the selector file) also
+passed normal [Tests 36250902877](https://github.com/maxjay/jvmd/actions/runs/36250902877),
+[Benchmarks 36250902882](https://github.com/maxjay/jvmd/actions/runs/36250902882), and
+[LSP 36250902854](https://github.com/maxjay/jvmd/actions/runs/36250902854).
+The next commit contains the cleanup above; its exact-head CI is the remaining gate.

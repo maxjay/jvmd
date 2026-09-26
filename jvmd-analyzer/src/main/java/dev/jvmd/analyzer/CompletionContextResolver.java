@@ -51,9 +51,8 @@ public final class CompletionContextResolver {
     private CompletionContextResolver(){}
 
     public static Resolved resolve(String text,CompletionProbe.Shape probe,SemanticReadView view,TypeLookup lookup)throws Exception{
-        try(var trace=dev.jvmd.core.RequestScope.stage("completion.tier1.resolve")){
         Objects.requireNonNull(text);Objects.requireNonNull(probe);Objects.requireNonNull(view);Objects.requireNonNull(lookup);
-        trace.count("calls",1);trace.count("source_chars",text.length());
+
         if(!probe.qualified())return null;
         int dot=previousCode(text,probe.selectorStart()-1);
         if(dot<0||text.charAt(dot)!='.')return null;
@@ -74,7 +73,6 @@ public final class CompletionContextResolver {
         }
         return new Resolved(state.owner(),state.type(),state.staticReceiver(),pkg,
                 enclosing==null?null:enclosing.id(),enclosingName,staticContext,resolutionNames(text,pkg));
-        }
     }
 
     private static State base(String segment,String text,int receiverEnd,String pkg,SemanticReadView.Symbol enclosing,
@@ -292,7 +290,7 @@ public final class CompletionContextResolver {
     }
 
     private static java.util.regex.Matcher matcher(Pattern pattern,CharSequence input){
-        dev.jvmd.core.RequestScope.count("regex_matchers",1);return pattern.matcher(input);
+        return pattern.matcher(input);
     }
     private static String receiverExpression(String text,int dot){
         String prefix=text.substring(0,dot);
@@ -420,7 +418,7 @@ public final class CompletionContextResolver {
 
     /** Replace comments and literals with spaces while preserving offsets and line breaks. */
     private static String codeMask(String source){
-        dev.jvmd.core.RequestScope.count("mask_calls",1);dev.jvmd.core.RequestScope.count("masked_chars",source.length());
+
         var out=new StringBuilder(source);int i=0;
         while(i<source.length()){
             char c=source.charAt(i);

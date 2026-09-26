@@ -14,28 +14,26 @@ final class WorkspaceContextManager {
     private long constructions,hits,misses,invalidations;
     Analyzer.Context context(Path file,Resolution graph,String identity,Factory factory)throws Exception{
         String key;
-        try(var trace=RequestScope.stage("application.analyzer.ownerKey")){key=key(file,graph);}
+        key=key(file,graph);
         boolean maintain=identity!=null&&!identity.isBlank();
-        try(var trace=RequestScope.stage("application.analyzer.contextLookup")){
-            if(maintain){
-                synchronized(this){
-                    var cached=maintained.get(key);
-                    if(cached!=null&&cached.identity().equals(identity)){hits++;trace.cache("maintained");return cached.context();}
-                    misses++;
-                }
+        if(maintain){
+            synchronized(this){
+                var cached=maintained.get(key);
+                if(cached!=null&&cached.identity().equals(identity)){hits++;return cached.context();}
+                misses++;
             }
-            return RequestScope.memo(List.of(this,key,Objects.toString(identity,"request")),()->{
-                if(maintain)synchronized(this){
-                    var cached=maintained.get(key);
-                    if(cached!=null&&cached.identity().equals(identity)){hits++;return cached.context();}
-                }
-                constructions++;
-                Analyzer.Context created;
-                try(var create=RequestScope.stage("application.analyzer.contextCreate")){created=factory.create(file);}
-                if(maintain)synchronized(this){maintained.put(key,new Maintained(identity,created));}
-                return created;
-            });
         }
+        return RequestScope.memo(List.of(this,key,Objects.toString(identity,"request")),()->{
+            if(maintain)synchronized(this){
+                var cached=maintained.get(key);
+                if(cached!=null&&cached.identity().equals(identity)){hits++;return cached.context();}
+            }
+            constructions++;
+            Analyzer.Context created;
+            created=factory.create(file);
+            if(maintain)synchronized(this){maintained.put(key,new Maintained(identity,created));}
+            return created;
+        });
     }
     synchronized void invalidateAll(){if(!maintained.isEmpty()){maintained.clear();invalidations++;}}
     synchronized boolean hasMaintained(){return !maintained.isEmpty();}

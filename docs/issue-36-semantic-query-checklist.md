@@ -157,22 +157,26 @@ This checklist is authoritative. A box is checked only when the implementation e
 - [x] Machine/workspace composition.
 
 ## Checkpoint 17 — final frozen before/after proof
-- [ ] Exact final subject SHA recorded.
-- [ ] Same frozen harness used; only subject SHA changed.
-- [ ] Correctness table.
-- [ ] Latency table.
-- [ ] Allocation table.
-- [ ] Javac-use table.
-- [ ] Proof-propagation table.
-- [ ] Classpath-diff table.
-- [ ] Evidence artifacts/run links.
-- [ ] Regressions disclosed.
+- [x] Exact final subject SHA recorded.
+- [x] Same frozen harness used; only subject SHA changed.
+- [x] Correctness table.
+- [x] Latency table.
+- [x] Allocation table.
+- [x] Javac-use table.
+- [x] Proof-propagation table.
+- [x] Classpath-diff table.
+- [x] Evidence artifacts/run links.
+- [x] Regressions disclosed.
+
+Checkpoint-17 evidence: run `36250899729`, subject `e0445dc8b5186f997483e277fac2e656392056a5`.
+The progress entry explicitly distinguishes frozen measurements, unavailable selectors,
+and supplemental permanent proof assertions; unavailable values are not reported as zero.
 
 ## Checkpoint 18 — cleanup
-- [ ] Temporary Issue #36 workflow deleted.
-- [ ] Temporary JFR/proof harness deleted.
-- [ ] Proof-only counters deleted.
-- [ ] Permanent semantic regressions retained; no wall-clock assertions.
+- [x] Temporary Issue #36 workflow deleted.
+- [x] Temporary JFR/proof harness deleted.
+- [x] Proof-only counters deleted.
+- [x] Permanent semantic regressions retained; no wall-clock assertions.
 - [ ] Checklist fully reconciled.
 - [ ] Final append-only progress entry added.
 - [ ] PR body contains final architecture/results/limitations.

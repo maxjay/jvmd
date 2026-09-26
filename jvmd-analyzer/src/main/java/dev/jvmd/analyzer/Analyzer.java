@@ -319,31 +319,35 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var symbol=view.type(binary);return symbol==null?Optional.empty():Optional.of(symbol.resolutionIdentity());
     }
     private boolean addReceiverLookupProof(Map<QueryProof.Key,Hash256> values,SemanticReadView view,
-                                           String receiverType,String memberName,boolean call)throws Exception{
+                                           String receiverType,String memberName,boolean call,
+                                           Collection<String> failures)throws Exception{
         var queue=new ArrayDeque<String>();queue.add(receiverType);var seen=new HashSet<String>();
         while(!queue.isEmpty()){
             String owner=queue.removeFirst();if(!seen.add(owner))continue;
-            var symbol=view.symbol(owner);if(symbol==null)return false;
+            var symbol=view.symbol(owner);
+            if(symbol==null){failures.add("receiver-owner-missing:"+owner);return false;}
             var typeIdentity=view.identity(QueryProof.Domain.EXACT_SYMBOL,owner);
-            if(typeIdentity.isEmpty())return false;
+            if(typeIdentity.isEmpty()){failures.add("receiver-owner-exact-missing:"+owner);return false;}
             addProofDependency(values,new QueryProof.Dependency(QueryProof.Domain.EXACT_SYMBOL,owner,typeIdentity.get()));
 
             var memberProof=call?SemanticQueryProofs.overload(view,owner,memberName)
                     :SemanticQueryProofs.range(view,owner,memberName);
-            if(memberProof.isEmpty())return false;
+            if(memberProof.isEmpty()){
+                failures.add("receiver-member-domain-missing:"+owner+"#"+memberName+":"+view.completeness(owner));
+                return false;
+            }
             for(var dependency:memberProof.get().dependencies())addProofDependency(values,dependency);
 
             for(var parent:symbol.directSupertypes()){
                 if(!(parent instanceof SemanticType.Declared declared))continue;
-                // This proof governs source mutations. A platform/dependency parent cannot change
-                // because this workspace source changed; changing the direct-supertype relation
-                // itself changes the exact owner type identity above. A known workspace parent,
-                // however, must have current maintained semantics and participates recursively.
                 String binary=declared.name().replace((char)36,'.');
                 boolean workspaceParent=liveSourceState!=null&&liveSourceState.source(binary).isPresent();
                 if(!workspaceParent)continue;
-                var parentSymbol=view.symbol(declared.symbolId());if(parentSymbol==null)return false;
-                if(!currentSourceFact(semanticState().symbol(declared.symbolId())))return false;
+                var parentSymbol=view.symbol(declared.symbolId());
+                if(parentSymbol==null){failures.add("receiver-parent-missing:"+declared.symbolId());return false;}
+                if(!currentSourceFact(semanticState().symbol(declared.symbolId()))){
+                    failures.add("receiver-parent-stale:"+declared.symbolId());return false;
+                }
                 queue.addLast(declared.symbolId());
             }
         }
@@ -381,7 +385,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                     for(var reference:references){
                         if(reference.receiverType()==null){
                             precise=false;coverageFailures.add("missing-receiver:"+fact.id());
-                        }else if(!addReceiverLookupProof(values,view,reference.receiverType(),fact.name(),edge.kind().equals("calls"))){
+                        }else if(!addReceiverLookupProof(values,view,reference.receiverType(),fact.name(),edge.kind().equals("calls"),coverageFailures)){
                             precise=false;coverageFailures.add("incomplete-receiver-lookup:"+reference.receiverType()+"#"+fact.name());
                         }
                     }

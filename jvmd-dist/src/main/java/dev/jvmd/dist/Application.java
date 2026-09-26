@@ -761,25 +761,22 @@ public final class Application implements AutoCloseable {
                             &&preferredKind.equals(Objects.toString(member.get("kind"),""))))
                         .findFirst().ifPresent(selected::add);
             }
-            if(!selected.isEmpty()){
-                var seenDiagnostics=new LinkedHashSet<String>();
-                for(var member:selected){
-                    int focus;
-                    if(member.get("body_start") instanceof Number body&&body.intValue()>=0)focus=Math.min(text.length(),body.intValue()+1);
-                    else if(member.get("name_start") instanceof Number name)focus=Math.min(text.length(),name.intValue());
-                    else focus=Math.min(text.length(),((Number)member.get("source_start")).intValue());
-                    var result=analyzer.bindings(file,text,focus);tier=Math.min(tier,result.tier());warnings.addAll(result.warnings());
-                    for(var problem:result.diagnostics()){
-                        String key=problem.code()+"|"+problem.file()+"|"+problem.start()+"|"+problem.end()+"|"+problem.message();
-                        if(seenDiagnostics.add(key))diagnostics.add(problem);
-                    }
-                }
-            }else{
-                var result=analyzer.diagnostics(file,text);tier=Math.min(tier,result.tier());warnings.addAll(result.warnings());
-                for(var problem:(List<dev.jvmd.analyzer.CompilerPool.Problem>)((Map<?,?>)result.result()).get("diagnostics")){
-                    boolean inTouched=problem.start()>=0&&touchedRanges.stream().anyMatch(range->problem.start()>=range[0]&&problem.start()<=range[1]);
-                    if(problem.start()<0||inTouched)diagnostics.add(problem);
-                }
+            // Verify the real edited source once, then project diagnostics onto the touched
+            // semantic members. Focused source is useful for interactive queries, but it must not
+            // become the authority for an edit's verification result: javac recovery can omit or
+            // reshape a newly inserted invalid member in the focused projection.
+            var verification=analyzer.diagnostics(file,text);tier=Math.min(tier,verification.tier());warnings.addAll(verification.warnings());
+            var relevantRanges=new ArrayList<int[]>();
+            if(!selected.isEmpty())for(var member:selected)
+                if(member.get("source_start") instanceof Number start&&member.get("source_end") instanceof Number end)
+                    relevantRanges.add(new int[]{start.intValue(),end.intValue()});
+            if(relevantRanges.isEmpty())relevantRanges.addAll(touchedRanges);
+            var seenDiagnostics=new LinkedHashSet<String>();
+            for(var problem:(List<dev.jvmd.analyzer.CompilerPool.Problem>)((Map<?,?>)verification.result()).get("diagnostics")){
+                boolean relevant=problem.start()<0||problem.start()>=0&&relevantRanges.stream()
+                        .anyMatch(range->problem.start()>=range[0]&&problem.start()<=range[1]);
+                String key=problem.code()+"|"+problem.file()+"|"+problem.start()+"|"+problem.end()+"|"+problem.message();
+                if(relevant&&seenDiagnostics.add(key))diagnostics.add(problem);
             }
             for(var member:selected){var row=new LinkedHashMap<String,Object>();row.put("path",file.toString());row.put("scip",member.get("scip"));row.put("range",member.get("range"));members.add(row);}
         }

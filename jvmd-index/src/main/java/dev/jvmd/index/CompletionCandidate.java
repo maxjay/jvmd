@@ -15,20 +15,26 @@ public record CompletionCandidate(
         String label,
         String editorLabel,
         List<ParameterLabel> parameters,
-        Hash256 resolutionIdentity) {
+        Hash256 resolutionIdentity,
+        SemanticReadView.Origin origin) {
     public CompletionCandidate(String id,String name,String kind,String structuralSignature,String declaringType,
                                String sourceFile,Set<String> modifiers,String label,List<ParameterLabel> parameters){
-        this(id,name,kind,structuralSignature,declaringType,sourceFile,modifiers,label,label,parameters,null);
+        this(id,name,kind,structuralSignature,declaringType,sourceFile,modifiers,label,label,parameters,null,SemanticReadView.Origin.LIVE);
     }
     public CompletionCandidate(String id,String name,String kind,String structuralSignature,String declaringType,
                                String sourceFile,Set<String> modifiers,String label,String editorLabel,List<ParameterLabel> parameters){
-        this(id,name,kind,structuralSignature,declaringType,sourceFile,modifiers,label,editorLabel,parameters,null);
+        this(id,name,kind,structuralSignature,declaringType,sourceFile,modifiers,label,editorLabel,parameters,null,SemanticReadView.Origin.LIVE);
+    }
+    public CompletionCandidate(String id,String name,String kind,String structuralSignature,String declaringType,
+                               String sourceFile,Set<String> modifiers,String label,String editorLabel,List<ParameterLabel> parameters,
+                               Hash256 resolutionIdentity){
+        this(id,name,kind,structuralSignature,declaringType,sourceFile,modifiers,label,editorLabel,parameters,resolutionIdentity,SemanticReadView.Origin.LIVE);
     }
     public CompletionCandidate {
         Objects.requireNonNull(id);Objects.requireNonNull(name);Objects.requireNonNull(kind);
         structuralSignature=Objects.requireNonNullElse(structuralSignature,"");
         modifiers=Set.copyOf(modifiers);label=Objects.requireNonNullElse(label,name);
-        editorLabel=Objects.requireNonNullElse(editorLabel,label);parameters=List.copyOf(parameters);
+        editorLabel=Objects.requireNonNullElse(editorLabel,label);parameters=List.copyOf(parameters);origin=Objects.requireNonNull(origin);
     }
     public record ParameterLabel(int start,int end) { }
 

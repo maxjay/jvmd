@@ -73,7 +73,10 @@ public final class LspFacade {
             if(!nativeParams.isObject())throw RpcException.invalid("Completion item must be an object");
             String ref=Dispatcher.required(nativeParams.path("data"),"scip");
             String expected=nativeParams.path("data").path("resolution_identity").asText("");
-            var described=query.one("symbol.describe",Json.MAPPER.createObjectNode().put("ref",ref).put("detail","summary").put("doc_depth",0));
+            var describeParams=Json.MAPPER.createObjectNode().put("ref",ref).put("detail","summary").put("doc_depth",0);
+            if(nativeParams.path("data").path("semantic_origin").isTextual())
+                describeParams.put("semantic_origin",nativeParams.path("data").path("semantic_origin").asText());
+            var described=query.one("symbol.describe",describeParams);
             String current=described.path("resolution_identity").asText("");
             if(!expected.isEmpty()&&!expected.equals(current))
                 throw new RpcException(-32801,"Completion item is stale",Map.of("scip",ref,"expected",expected,"current",current));
@@ -115,6 +118,7 @@ public final class LspFacade {
                 item.set("textEdit",Json.MAPPER.valueToTree(Map.of("range",completion.path("range"),"newText",name)));
                 var data=Json.MAPPER.createObjectNode().put("scip",symbol.path("scip").asText());
                 if(symbol.hasNonNull("resolution_identity"))data.put("resolution_identity",symbol.path("resolution_identity").asText());
+                if(symbol.hasNonNull("semantic_origin"))data.put("semantic_origin",symbol.path("semantic_origin").asText());
                 item.set("data",data);
                 if(symbol.hasNonNull("import"))item.set("additionalTextEdits",Json.MAPPER.valueToTree(List.of(importEdit(documents.text(file),symbol.path("import").asText()))));
                 items.add(item);

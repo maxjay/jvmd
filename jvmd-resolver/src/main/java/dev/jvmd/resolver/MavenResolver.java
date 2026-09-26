@@ -77,12 +77,15 @@ public final class MavenResolver implements AutoCloseable {
             }
             for(Path path=input;path!=null&&!path.equals(directory)&&path.startsWith(directory);path=path.getParent())relevant.add(path);
         }
-        synchronized boolean current(){
-            if(closed||dirty)return false;
+        boolean current(){
+            synchronized(this){if(closed||dirty)return false;}
             try{RequestScope.settleFilesystemStart(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(2));}
-            catch(Exception failed){dirty=true;reliable=false;return false;}
-            drain(false);
-            return !dirty;
+            catch(Exception failed){synchronized(this){dirty=true;reliable=false;}return false;}
+            synchronized(this){
+                if(closed||dirty)return false;
+                drain(false);
+                return !dirty;
+            }
         }
         private void publishLoop(){
             while(true){

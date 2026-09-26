@@ -137,24 +137,24 @@ This checklist is authoritative. A box is checked only when the implementation e
 - [x] No dependency hierarchy discovery through javac when indexed proof suffices.
 
 ## Checkpoint 15 — CMP-01 correctness
-- [ ] Normal incomplete `project.` returns expected MavenProject candidates.
-- [ ] `completionItem/resolve` remains valid.
-- [ ] Repeated completion uses maintained state.
-- [ ] Semantic oracle remains unchanged.
-- [ ] LSP scenario is correct.
+- [x] Normal incomplete `project.` returns expected MavenProject candidates.
+- [x] `completionItem/resolve` remains valid.
+- [x] Repeated completion uses maintained state.
+- [x] Semantic oracle remains unchanged.
+- [x] LSP scenario is correct.
 
 ## Checkpoint 16 — mutation/invalidation proof
-- [ ] Body-only edit.
-- [ ] Unrelated API member.
-- [ ] Relevant API member/range.
-- [ ] Exact-symbol irrelevant/relevant changes.
-- [ ] Overload irrelevant/relevant changes.
-- [ ] Hierarchy fixed-point stop.
-- [ ] Namespace irrelevant/relevant changes.
-- [ ] Negative lookup unchanged/newly-valid.
-- [ ] Unsaved source.
-- [ ] Module switching.
-- [ ] Machine/workspace composition.
+- [x] Body-only edit.
+- [x] Unrelated API member.
+- [x] Relevant API member/range.
+- [x] Exact-symbol irrelevant/relevant changes.
+- [x] Overload irrelevant/relevant changes.
+- [x] Hierarchy fixed-point stop.
+- [x] Namespace irrelevant/relevant changes.
+- [x] Negative lookup unchanged/newly-valid.
+- [x] Unsaved source.
+- [x] Module switching.
+- [x] Machine/workspace composition.
 
 ## Checkpoint 17 — final frozen before/after proof
 - [ ] Exact final subject SHA recorded.

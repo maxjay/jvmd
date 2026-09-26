@@ -39,6 +39,14 @@ class UnimportedTypeCompletionTest {
                     "session",session,"method","completionItem/resolve","params",item,"client",Map.of()));
             assertThat(resolved.has("error")).as(resolved.toPrettyString()).isFalse();
             assertThat(analyzerQueries(app,session)).as("indexed type resolve must stay off javac").isEqualTo(beforeResolve);
+            // The same SCIP is absent from LOCAL. Exact origin selection must reject it,
+            // rather than silently resolving the MACHINE declaration through another layer.
+            var wrongLayer=(com.fasterxml.jackson.databind.node.ObjectNode)item.deepCopy();
+            ((com.fasterxml.jackson.databind.node.ObjectNode)wrongLayer.path("data")).put("semantic_origin","local");
+            var rejected=TestSupport.request(app.dispatcher(),"lsp.request",Map.of(
+                    "session",session,"method","completionItem/resolve","params",wrongLayer,"client",Map.of()));
+            assertThat(rejected.path("error").path("code").asInt()).isEqualTo(-32801);
+            assertThat(analyzerQueries(app,session)).isEqualTo(beforeResolve);
             assertThat(item.path("additionalTextEdits").size()).isEqualTo(1);
             assertThat(item.path("additionalTextEdits").get(0).path("newText").asText()).contains("import lib.Sample;");
             assertThat(item.path("additionalTextEdits").get(0).path("range").path("start").path("character").asInt())
@@ -65,6 +73,9 @@ class UnimportedTypeCompletionTest {
         Path file=sourceRoot.resolve("Use.java");
         String source="package app; import lib.Sample; class Use { Object read(Sample value){ return value.lab; } }";
         Files.writeString(file,source);
+        // No prior query has cached this file's outline/bindings. Generic workspace
+        // discovery would enter javac here and fail the zero-query resolve assertion.
+        Files.writeString(sourceRoot.resolve("Unqueried.java"),"package app; class Unqueried { int distinct; }");
 
         try(var app=new Application(config)){
             String session=TestSupport.open(app,project);

@@ -1124,3 +1124,74 @@ Deferred:
 
 Remaining:
 - Exact-head full Tests/LSP, Checkpoints 15–16 reconciliation, frozen harness restoration and Checkpoint 17, then semantics-neutral cleanup and final CI.
+
+## Checkpoint 16 — closeout executable-proof reconciliation
+
+Starting SHA: `ef654160abdcf43cf06ff68ca59d7685285efc7d`.
+Ending SHA: this documentation/test reconciliation commit; production semantics remain at the starting SHA.
+
+Changes / architecture:
+- Audited the unchecked items against existing production paths and permanent executable regressions. No new semantic architecture was needed.
+- Re-ran 40 focused permanent tests under the pinned JDK: all pass. The Tests workflow at the starting SHA also completed Phase 4 successfully (run `36246918894`, job `108417710339`); full workflow completion is recorded separately.
+
+| Required boundary | Permanent executable proof |
+| --- | --- |
+| Body-only edit | `SourceProofMutationIntegrationTest.bodyOnlyMutationAttributesOnlyChangedSource`: only the changed source attributes; no dependent query, published semantic leaf or coarse invalidation. |
+| Unrelated API member | `maintainedCompletionRangeIgnoresDisjointMemberAndChangesForMatchingPrefix`: disjoint `set*` keeps the `get*` proof and zero-query read. |
+| Relevant API member/range | Same test: adding `getSomething` changes the direct proof consumer and returns the new candidate without query-side attribution. |
+| Exact symbol, irrelevant/relevant | `unrelatedExactAndOverloadChangesDoNotReanalyseProofCoveredCallerButRelevantOverloadDoes` and `relevantExactInstanceMemberChangeReconsidersDirectConsumer`: unrelated `two` preserves `one`; changed `one` reconsiders the caller and produces the expected diagnostic. |
+| Overload, irrelevant/relevant | Same overload test: `bar` preserves `foo`; `foo(String)` reconsiders its direct caller. `SemanticProofDagTest.overloadProofChangePropagatesThroughDerivedOutputButUnrelatedGroupDoesNot` protects propagation. |
+| Hierarchy fixed point | `hierarchyReconsiderationStopsWhenReanalysedConsumerFactsStayEqual`: changed ancestor A reconsiders B; equal B facts stop before C. `SemanticProofDagTest.hierarchyDerivedFixedPointStopsBeforeDownstreamConsumer` protects the equality stop. |
+| Namespace, irrelevant/relevant | `namespaceMutationReconsidersOnlySearchedDomains` and `NamespaceResolutionProofsTest`: unrelated packages preserve resolution; searched-domain changes reconsider it. |
+| Negative lookup, unchanged/newly valid | `realSourceMembershipUsesNegativeResolutionProofDomains`: unsaved `s.Random` does not rerun unresolved `q.Widget`; adding/removing `q.Widget` updates the direct consumer. |
+| Unsaved source | The production mutation tests use `Documents.open/change` and `Analyzer.changed`; `DocumentContextProofTest.focusedDocumentProofReusesAcrossUnrelatedEditsAndRejectsRelevantLexicalEdits` checks detached context reuse and rejection. |
+| Module switching | `ResidentCompletionCorrectnessTest.moduleSwitchingPreservesResidentSemanticState`: A→B→A restores A's exact resident root and fact count. |
+| Machine/workspace composition | `MachineWorkspaceIdentityTest.unrelatedMachineArtifactChangeLeavesSelectedWorkspaceMathematicallyEqual` and `relevantMachineArtifactChangeChangesOnlyWorkspacesThatSelectIt`; `ClasspathLifecycleIntegrationTest.realClasspathLifecycleUsesSearchProofFixedPointsAndProofDag` protects the production configure/lazy mutation path. |
+
+Findings:
+- Existing coverage was sufficient for every Checkpoint-16 box. The checklist lagged implementation.
+- These focused tests establish semantics and work counts, not the frozen before/after measurement gate.
+
+Remaining:
+- Checkpoint-15 exact-head LSP evidence; frozen Checkpoint 17; semantics-neutral Checkpoint 18 and final CI.
+
+## Frozen-harness compatibility restoration
+
+Starting SHA: `ef654160abdcf43cf06ff68ca59d7685285efc7d`.
+Ending SHA: this commit; no production semantic changes.
+
+Changes:
+- Restored `LspScenarioHarness.ts` and `CMP-01-completion.ts` to their exact baseline/main blobs: `c03aaf64125e6f8a5bcf9c1ca913d888016639e5` and `54a1f2b90de331971be6a12d7bffe3584dd6d807`.
+- Removed their Issue-36 native-status/JFR/resolve assertions and admission-mode edits. The frozen workflow and its hash checks are unchanged.
+- Permanent `LspFacadeTest.staleCompletionItemIsRejectedBeforeEnrichment` retains stale identity protection; `UnimportedTypeCompletionTest` retains MACHINE zero-javac resolve, now additionally checks wrong LOCAL-origin rejection and an unqueried workspace file that generic discovery would attribute. `SemanticReadViewTest` retains exact layer addressing and LIVE > LOCAL > MACHINE composition.
+
+Correctness proof:
+- 28 focused tests pass: completion cache (16), archive manager (3), unimported type completion (3), LSP facade (6).
+- All 9 harness tests pass after installing its declared dependency, including late versionless diagnostics rejection.
+- Frozen workflow blob remains `5cfa00d9de83faccdb641f5c38776b7719dc991c`; no hash check or semantic oracle was weakened.
+
+Remaining:
+- Record exact-head CI; set only the measured subject SHA and run the unchanged frozen proof after Checkpoint-15 evidence is green.
+
+## Checkpoint 15 — exact-head CMP/LSP closeout evidence
+
+Starting and final production SHA: `ef654160abdcf43cf06ff68ca59d7685285efc7d`.
+
+Correctness proof:
+- Exact-head [Tests run 36246918894](https://github.com/maxjay/jvmd/actions/runs/36246918894): green, including all normal phases and Phase 4.
+- Exact-head [Benchmarks run 36246918889](https://github.com/maxjay/jvmd/actions/runs/36246918889): green.
+- Exact-head [LSP scenarios run 36246918887](https://github.com/maxjay/jvmd/actions/runs/36246918887): green, including the expanded real Apache Maven CMP-01 semantic oracle, legacy resolve, repeated zero-query completion and exact MACHINE resolve invariants.
+- LSP artifact `10907578725`, digest `sha256:3b0bafb5235408eb21761f6e6f75365b3200c4f29130565af9cf20aa479ac614`.
+- Frozen expected `CMP-01.json` remains baseline blob `ecd13e7f2ea627675eeb3dca9100601d7f826c6a`.
+
+Architecture:
+- Maintained context/member reads and exact semantic-origin resolve are accepted. No further completionItem/resolve production changes.
+- The already-green expanded CMP instrumentation is replaced by the frozen baseline harness; its permanent invariants are retained in the regressions cited above.
+
+Findings:
+- The earlier local process-tree timeout failure did not reproduce in this exact-head Tests run. No unrelated production fix was made.
+- The disposable profiler also happened to pass on this head; this does not close #41 or expand this PR.
+
+Remaining:
+- Checkpoint 17 must measure a commit containing these exact restored harness blobs and final production semantics. Only the subject-SHA file changes for that run.
+- No Checkpoint-17 acceptance or Checkpoint-18 cleanup is claimed yet.

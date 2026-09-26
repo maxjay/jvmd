@@ -36,7 +36,6 @@ type RunningServer = {
   connection:MessageConnection;
   server:ChildProcess;
   adapter?:ChildProcess;
-  control?:RpcClient;
   milestones:Record<string,number>;
   metadata:Record<string,unknown>;
 };
@@ -81,7 +80,6 @@ export abstract class LspScenarioHarness {
   private static diagnosticWaiters:DiagnosticWaiter[]=[];
   private static diagnosticSequence=0;
   private static diagnosticVersionMode:DiagnosticVersionMode="unknown";
-  private static diagnosticAdmissionUnavailableReason?:string;
   private static milestones:Record<string,number>={};
   private static phaseMemory:Record<string,Memory>={};
   private static documentAdmissionStarted=false;
@@ -97,8 +95,7 @@ export abstract class LspScenarioHarness {
     this.serverId=(process.env.SERVER??"jvmd")==="jdtls"?"jdtls":"jvmd";
     this.running=await startServer(this.fixtureRoot);
     this.milestones={...this.running.milestones};
-    this.diagnostics=[];this.diagnosticWaiters=[];this.diagnosticSequence=0;this.diagnosticVersionMode="unknown";
-    this.diagnosticAdmissionUnavailableReason=undefined;this.openDocuments.clear();
+    this.diagnostics=[];this.diagnosticWaiters=[];this.diagnosticSequence=0;this.diagnosticVersionMode="unknown";this.openDocuments.clear();
     this.phaseMemory={};this.documentAdmissionStarted=false;
 
     let serviceReadyResolve:()=>void=()=>{};
@@ -161,7 +158,6 @@ export abstract class LspScenarioHarness {
       this.running.connection.sendNotification("exit");
     }finally{
       this.running.connection.dispose();
-      this.running.control?.close();
       stop(this.running.adapter);
       stop(this.running.server);
     }
@@ -171,19 +167,6 @@ export abstract class LspScenarioHarness {
     try{
       const payload=await this.scenario();
       const verification=this.verify(payload);
-      if(LspScenarioHarness.mode==="compare"&&LspScenarioHarness.serverId==="jvmd"){
-        const completion=verification.operationCorrectness.completion;
-        if(!completion?.firstUse)
-          throw new assert.AssertionError({
-            message:"JVMD CMP semantic oracle mismatch on first use: "+this.completionMismatch(payload.operations.completion?.firstUse?.result),
-            actual:false,expected:true,operator:"semantic oracle",
-          });
-        assert(completion?.warmup?.every(Boolean),"JVMD CMP semantic oracle mismatch during warmup");
-        assert(completion?.steady?.every(Boolean),"JVMD CMP semantic oracle mismatch during steady state");
-        for(const [name,correct] of Object.entries(verification.legacy))
-          assert(correct,"JVMD CMP legacy semantic oracle mismatch: "+name+
-            " actual="+JSON.stringify(payload.legacy[name]?.result));
-      }
       const completionCorrectness=verification.operationCorrectness.completion;
       if(payload.operations.completion&&completionCorrectness){
         payload.operations.completion.correctStats=latencyStats(
@@ -244,10 +227,7 @@ export abstract class LspScenarioHarness {
   protected documentAdmissionBoundary(){
     return LspScenarioHarness.diagnosticVersionMode==="versioned"
       ?"verified by exact-version publishDiagnostics"
-      :"unavailable: "+(LspScenarioHarness.diagnosticAdmissionUnavailableReason
-          ??(LspScenarioHarness.diagnosticVersionMode==="versionless"
-            ?"versionless publishDiagnostics cannot prove the current document version"
-            :"no exact-version diagnostic boundary was established"));
+      :"unavailable: versionless publishDiagnostics cannot prove the current document version";
   }
 
   protected async open(relativePath:string){
@@ -279,17 +259,6 @@ export abstract class LspScenarioHarness {
 
   protected request<T>(method:string,params:unknown):Promise<T>{
     return LspScenarioHarness.running.connection.sendRequest(method,params);
-  }
-
-  protected async nativeAnalyzerStatus(){
-    if(LspScenarioHarness.serverId!=="jvmd"||!LspScenarioHarness.running.control)return null;
-    const daemon:any=await LspScenarioHarness.running.control.call("daemon.status",{});
-    const sessions:any[]=daemon?.result?.sessions??[];
-    const wanted=path.resolve(LspScenarioHarness.fixtureRoot);
-    const selected=sessions.find(row=>path.resolve(String(row?.root??""))===wanted)??(sessions.length===1?sessions[0]:undefined);
-    assert(selected?.session,"JVMD benchmark session not visible through daemon.status");
-    const status:any=await LspScenarioHarness.running.control.call("session.status",{session:selected.session,section:"proof"});
-    return status?.result?.analyzer??null;
   }
 
   protected async measure<T,U>(request:()=>Promise<T>,normalise:(value:T)=>U):Promise<Measurement<U>>{
@@ -339,11 +308,6 @@ export abstract class LspScenarioHarness {
   }
 
   private async waitForDiagnostics(uri:string,version:number,afterSequence:number):Promise<DiagnosticAdmissionResult>{
-    if(LspScenarioHarness.serverId==="jvmd"){
-      const reason="JVMD request visibility is guaranteed by its workspace mutation fence; exact-version publishDiagnostics is not awaited before first use";
-      LspScenarioHarness.diagnosticAdmissionUnavailableReason=reason;
-      return {status:"unavailable",reason};
-    }
     if(LspScenarioHarness.diagnosticVersionMode==="versionless")return {
       status:"unavailable",
       reason:"server diagnostics are versionless; current-version admission cannot be verified",
@@ -377,21 +341,6 @@ export abstract class LspScenarioHarness {
       LspScenarioHarness.running.connection.sendNotification("textDocument/didClose",{textDocument:{uri}});
     }
     LspScenarioHarness.openDocuments.clear();
-  }
-
-  private completionMismatch(actual:unknown){
-    const expectedDir=path.resolve(process.env.EXPECTED_DIR??"benchmarks/lsp-scenarios/expected");
-    const expected:any=JSON.parse(readFileSync(path.join(expectedDir,this.id+".json"),"utf8"));
-    const wanted:any[]=Array.isArray(expected?.first?.result)?expected.first.result:[];
-    const got:any[]=Array.isArray(actual)?actual as any[]:[];
-    const wantedByLabel=new Map(wanted.map(item=>[String(item.label),item]));
-    const gotByLabel=new Map(got.map(item=>[String(item.label),item]));
-    const missing=[...wantedByLabel.keys()].filter(label=>!gotByLabel.has(label));
-    const extra=[...gotByLabel.keys()].filter(label=>!wantedByLabel.has(label));
-    const changed=[...wantedByLabel.keys()].filter(label=>{
-      const right=gotByLabel.get(label);return right!==undefined&&!isDeepStrictEqual(wantedByLabel.get(label),right);
-    }).map(label=>({label,expected:wantedByLabel.get(label),actual:gotByLabel.get(label)}));
-    return JSON.stringify({expectedCount:wanted.length,actualCount:got.length,missing,extra,changed});
   }
 
   private verify(payload:ScenarioPayload){
@@ -461,12 +410,10 @@ export abstract class LspScenarioHarness {
         versionVerification:"verified",
         mode:"settled editor admission",
       }:{
-        boundary:this.documentAdmissionBoundary(),
-        diagnosticsWaited:LspScenarioHarness.serverId!=="jvmd",
+        boundary:"unavailable: versionless publishDiagnostics cannot prove the requested document version",
+        diagnosticsWaited:true,
         versionVerification:"unavailable",
-        mode:LspScenarioHarness.serverId==="jvmd"
-          ?"document setup sent; request visibility is mutation-fenced; diagnostic admission not claimed"
-          :"document setup completed; current-version diagnostic admission not claimed",
+        mode:"document setup completed; current-version admission not claimed",
       },
     };
   }
@@ -489,7 +436,7 @@ export abstract class LspScenarioHarness {
         localWorkspaceState:"fresh/unknown",
         documents:"opened after server-native readiness; admission is measured only when exact diagnostic versions make it verifiable",
         semanticTarget:"not queried before first_use",
-        diagnosticsWaitedBeforeFirstUse:LspScenarioHarness.serverId!=="jvmd",
+        diagnosticsWaitedBeforeFirstUse:true,
         diagnosticAdmissionBoundary:this.documentAdmissionBoundary(),
         warmupCount:PHASE_MODEL.defaults.warmup,
         steadySamples:PHASE_MODEL.defaults.steady_samples,
@@ -512,19 +459,7 @@ async function startJvmd(root:string):Promise<RunningServer>{
   const env={...process.env,JVMD_SOCKET:socket,XDG_CACHE_HOME:path.join(state,"cache"),JVMD_CONFIG:path.join(state,"config.json")};
   writeFileSync(path.join(state,"config.json"),"{}\n");
   const milestones:Record<string,number>={process_spawn:nowNs()};
-  const profileFile=process.env.ISSUE36_CMP_PROFILE_FILE;
-  const profiled=Boolean(profileFile);
-  const java=profiled&&process.env.JAVA_HOME?path.join(process.env.JAVA_HOME,"bin/java"):path.join(image,"bin/java");
-  const profileArgs=profiled?[
-    "--enable-native-access=ALL-UNNAMED",
-    ...["api","util","code","main","platform"].map(pkg=>"--add-exports=jdk.compiler/com.sun.tools.javac."+pkg+"=ALL-UNNAMED"),
-    "-Djvmd.trace=true",
-    "-XX:StartFlightRecording=filename="+path.resolve(profileFile!)+",settings=profile,dumponexit=true",
-    "-XX:FlightRecorderOptions=stackdepth=128",
-    "-Xlog:jfr*=off",
-  ]:[];
-  const server=spawn(java,[
-    ...profileArgs,
+  const server=spawn(path.join(image,"bin/java"),[
     "-Djvmd.socket="+socket,
     "-Djvmd.state="+path.join(state,"state"),
     "-Djvmd.config="+path.join(state,"config.json"),
@@ -533,14 +468,15 @@ async function startJvmd(root:string):Promise<RunningServer>{
   ],{env,stdio:["ignore","ignore","inherit"]});
   const readinessClient=await waitForJvmdTransport(socket);
   milestones.transport_available=nowNs();
-  await waitForJvmdIndex(readinessClient);
+  try{await waitForJvmdIndex(readinessClient);}
+  finally{readinessClient.close();}
   milestones.daemon_index_ready=nowNs();
   const adapter=spawn(path.join(image,"bin/jvmd-lsp"),["--root",root,"--socket",socket],{env,stdio:["pipe","pipe","inherit"]});
   milestones.adapter_spawned=nowNs();
   return {
     connection:createMessageConnection(new StreamMessageReader(adapter.stdout!),new StreamMessageWriter(adapter.stdin!)),
-    server,adapter,control:readinessClient,milestones,
-    metadata:{mode:profiled?"full pinned JDK server for Issue-36 JFR attribution; production LSP adapter":"distributed-image JVM plus LSP adapter; AOT cache not enabled",aotCacheUsed:false,residentDaemon:false,profiledServer:profiled},
+    server,adapter,milestones,
+    metadata:{mode:"distributed-image JVM plus LSP adapter; AOT cache not enabled",aotCacheUsed:false,residentDaemon:false},
   };
 }
 

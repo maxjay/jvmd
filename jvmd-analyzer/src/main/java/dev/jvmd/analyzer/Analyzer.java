@@ -1908,6 +1908,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         value.put("kind",candidate.kind());value.put("signature",candidate.structuralSignature());value.put("label",candidate.label());
         value.put("editor_label",candidate.editorLabel());
         if(candidate.resolutionIdentity()!=null)value.put("resolution_identity",candidate.resolutionIdentity().hex());
+        value.put("semantic_origin",candidate.origin().name().toLowerCase(Locale.ROOT));
         value.put("modifiers",candidate.modifiers().stream().sorted().toList());
         if(candidate.sourceFile()!=null)value.put("source_file",candidate.sourceFile());
         var parameters=new ArrayList<Map<String,Object>>();
@@ -2012,7 +2013,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             label=value.toString();editorLabel=editor.toString();
         }
         return new CompletionCandidate(fact.id(),fact.name(),fact.kind(),fact.signature(),fact.resolution().ownerKey(),
-                fact.sourceFile(),fact.modifiers(),label,editorLabel,labels,fact.resolutionIdentity());
+                fact.sourceFile(),fact.modifiers(),label,editorLabel,labels,fact.resolutionIdentity(),fact.origin());
     }
 
     private record SemanticHierarchyOwner(SemanticReadView.Symbol symbol,SemanticType.Declared instantiated,

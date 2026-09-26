@@ -739,7 +739,16 @@ public final class Application implements AutoCloseable {
             for(int[] touched:touchedRanges){
                 while(touched[0]<touched[1]&&Character.isWhitespace(text.charAt(touched[0])))touched[0]++;
                 while(touched[1]>touched[0]&&Character.isWhitespace(text.charAt(touched[1]-1)))touched[1]--;
-                var enclosing=declarations.stream().filter(s->s.get("source_start") instanceof Number start&&s.get("source_end") instanceof Number end&&start.intValue()<=touched[0]&&end.intValue()>=touched[1]).min(Comparator.comparingInt(s->((Number)s.get("source_end")).intValue()-((Number)s.get("source_start")).intValue()));
+                var enclosing=declarations.stream()
+                        // A type declaration is only a lexical container for inserted member text.
+                        // If javac recovery has not materialised the new invalid member yet, choosing
+                        // the enclosing class would focus declarations and hide body diagnostics.
+                        // Leave that case unselected so the bounded full-diagnostic fallback filters
+                        // diagnostics to the exact touched range.
+                        .filter(member->!Set.of("class","interface","enum","record","annotation").contains(Objects.toString(member.get("kind"),"")))
+                        .filter(member->member.get("source_start") instanceof Number start&&member.get("source_end") instanceof Number end
+                                &&start.intValue()<=touched[0]&&end.intValue()>=touched[1])
+                        .min(Comparator.comparingInt(member->((Number)member.get("source_end")).intValue()-((Number)member.get("source_start")).intValue()));
                 if(enclosing.isPresent())selected.add(enclosing.get());
             }
             if(selected.isEmpty()&&preferredMember!=null){

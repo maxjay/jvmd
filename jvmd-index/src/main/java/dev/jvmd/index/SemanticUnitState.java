@@ -12,6 +12,7 @@ public record SemanticUnitState(
         String namespaceIdentity,
         String documentationIdentity,
         Set<String> dependencies,
+        SemanticCompleteness completeness,
         long uncertaintyGeneration) {
 
     public SemanticUnitState {
@@ -21,7 +22,7 @@ public record SemanticUnitState(
         apiIdentity=Objects.requireNonNullElse(apiIdentity,"");
         namespaceIdentity=Objects.requireNonNullElse(namespaceIdentity,"");
         documentationIdentity=Objects.requireNonNullElse(documentationIdentity,"");
-        dependencies=Set.copyOf(dependencies);
+        dependencies=Set.copyOf(dependencies);completeness=Objects.requireNonNull(completeness);
         if(uncertaintyGeneration<0)throw new IllegalArgumentException("uncertaintyGeneration");
     }
 

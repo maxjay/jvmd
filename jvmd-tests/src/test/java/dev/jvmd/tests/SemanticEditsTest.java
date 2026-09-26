@@ -44,12 +44,34 @@ class SemanticEditsTest {
             var replaced=call(app,session,"edit.replaceBody",Map.of("ref","Example/okay()","body","{return 9;}"));
             assertThat(replaced.path("applied").asBoolean()).isTrue();assertThat(replaced.path("diagnostics").isEmpty()).isTrue();assertThat(replaced.path("members").size()).isEqualTo(1);
             var inserted=call(app,session,"edit.insert",Map.of("ref","Example/okay()","position","after","code","int added(){return nope;}"));
-            assertThat(inserted.path("diagnostics").size()).isEqualTo(1);assertThat(inserted.path("diagnostics").get(0).path("code").asText()).contains("cant.resolve");
+            assertThat(inserted.path("diagnostics").size()).as(inserted.toPrettyString()).isEqualTo(1);assertThat(inserted.path("diagnostics").get(0).path("code").asText()).contains("cant.resolve");
             String text=Files.readString(file);int offset=text.indexOf("nope");
             var fixed=call(app,session,"edit.text",Map.of("text_edits",List.of(Map.of("path",file.toString(),"start",offset,"end",offset+4,"new_text","11"))));
             assertThat(fixed.path("diagnostics").isEmpty()).isTrue();assertThat(Files.readString(file)).contains("return 11;","return missing;");
             var broken=call(app,session,"edit.replaceBody",Map.of("ref","Example/okay()","body","{return unknown;}"));
             assertThat(broken.path("diagnostics").size()).isEqualTo(1);assertThat(broken.path("verified").asBoolean()).isFalse();
+        }
+    }
+    @Test void transactionalEditsNeverExposeTemporaryJavaSources()throws Exception{
+        Path source=Files.writeString(root.resolve("Before.java"),"class Before {}"),target=root.resolve("After.java");
+        var plan=TextEdits.prepare(List.of(new TextEdits.Edit(source,6,12,"After")),Map.of(source,target));
+        try(var watcher=FileSystems.getDefault().newWatchService()){
+            root.register(watcher,StandardWatchEventKinds.ENTRY_CREATE);
+            TextEdits.apply(plan);
+            var createdSources=new HashSet<Path>();
+            long deadline=System.nanoTime()+Duration.ofSeconds(5).toNanos();
+            while(!createdSources.contains(target)&&System.nanoTime()<deadline){
+                var key=watcher.poll(100,java.util.concurrent.TimeUnit.MILLISECONDS);
+                if(key==null)continue;
+                for(var event:key.pollEvents()){
+                    assertThat(event.kind()).isNotEqualTo(StandardWatchEventKinds.OVERFLOW);
+                    Path created=root.resolve((Path)event.context());
+                    if(created.toString().endsWith(".java"))createdSources.add(created);
+                }
+                key.reset();
+            }
+            assertThat(createdSources).containsExactly(target);
+            assertThat(source).doesNotExist();assertThat(Files.readString(target)).isEqualTo("class After {}");
         }
     }
     @Test void invalidOrStalePlansNeverPartiallyApply()throws Exception{

@@ -14,6 +14,13 @@ class ResidentSemanticStateTest {
         return new SemanticFact(id,owner,name,"method","int "+name+"()",null,Set.of("public"),"/src/A.java","p",
                 "p.A/"+name+"()","p.A",type,List.of(),List.of(),List.of(),false,api,"ns-"+name,doc);
     }
+    private static SemanticFact method(String id,String owner,String name,String descriptor,
+                                       List<SemanticType> parameters,SemanticType returns){
+        var type=new SemanticType.Executable(parameters,returns,List.of());
+        return new SemanticFact(id,owner,name,"method",returns.display()+" "+name+descriptor,descriptor,Set.of("public"),
+                "/src/A.java","p","p.A/"+name+descriptor,"p.A",type,List.of(),List.of(),List.of(),false,
+                "api-"+id,"ns-"+name,"doc-"+id);
+    }
     private static SemanticFact type(String id,String name,String api){
         return type(id,name,api,List.of());
     }
@@ -151,6 +158,49 @@ class ResidentSemanticStateTest {
         assertThat(((Number)state.status().get("semantic_fact_mutations")).longValue()).isGreaterThan(mutations);
     }
 
+    @Test void resolutionRangeAndOverloadIdentitiesArePreciselyScoped()throws Exception{
+        var owner=type("A#","A","api-A");
+        var getOne=method("A#getOne()I","A#","getOne","()I",List.of(),new SemanticType.Primitive("int"));
+        var getTwo=method("A#getTwo()I","A#","getTwo","()I",List.of(),new SemanticType.Primitive("int"));
+        var setOne=method("A#setOne()I","A#","setOne","()I",List.of(),new SemanticType.Primitive("int"));
+        var state=new ResidentSemanticState();
+        state.admit(snapshot("one",owner,getOne,getTwo,setOne));
+
+        var getRange=state.memberRangeIdentity("A#","get");
+        var exactGetOne=state.symbol(getOne.id()).resolutionIdentity();
+        var view=SemanticReadViews.resident(state);
+        var rangeProof=SemanticQueryProofs.range(view,"A#","get").orElseThrow();
+        var exactProof=SemanticQueryProofs.exact(view,getOne.id()).orElseThrow();
+
+        var setChanged=method("A#setOne()J","A#","setOne","()J",List.of(),new SemanticType.Primitive("long"));
+        state.admit(snapshot("two",owner,getOne,getTwo,setChanged));
+        assertThat(state.memberRangeIdentity("A#","get")).isEqualTo(getRange);
+        assertThat(state.symbol(getOne.id()).resolutionIdentity()).isEqualTo(exactGetOne);
+        assertThat(SemanticQueryProofs.range(view,"A#","get").orElseThrow()).isEqualTo(rangeProof);
+        assertThat(SemanticQueryProofs.exact(view,getOne.id()).orElseThrow()).isEqualTo(exactProof);
+
+        var getTwoChanged=method("A#getTwo()J","A#","getTwo","()J",List.of(),new SemanticType.Primitive("long"));
+        state.admit(snapshot("three",owner,getOne,getTwoChanged,setChanged));
+        assertThat(state.memberRangeIdentity("A#","get")).isNotEqualTo(getRange);
+        assertThat(SemanticQueryProofs.range(view,"A#","get").orElseThrow()).isNotEqualTo(rangeProof);
+
+        var fooInt=method("A#foo(I)I","A#","foo","(I)I",List.of(new SemanticType.Primitive("int")),new SemanticType.Primitive("int"));
+        state.admit(snapshot("four",owner,getOne,getTwoChanged,setChanged,fooInt));
+        var fooGroup=state.overloadGroupIdentity("A#","foo");
+        var overloadProof=SemanticQueryProofs.overload(view,"A#","foo").orElseThrow();
+
+        var bar=method("A#bar()I","A#","bar","()I",List.of(),new SemanticType.Primitive("int"));
+        state.admit(snapshot("five",owner,getOne,getTwoChanged,setChanged,fooInt,bar));
+        assertThat(state.overloadGroupIdentity("A#","foo")).isEqualTo(fooGroup);
+        assertThat(SemanticQueryProofs.overload(view,"A#","foo").orElseThrow()).isEqualTo(overloadProof);
+
+        var stringType=new SemanticType.Declared("java/lang/String#","java.lang.String",List.of());
+        var fooString=method("A#foo(Ljava/lang/String;)I","A#","foo","(Ljava/lang/String;)I",List.of(stringType),new SemanticType.Primitive("int"));
+        state.admit(snapshot("six",owner,getOne,getTwoChanged,setChanged,fooInt,bar,fooString));
+        assertThat(state.overloadGroupIdentity("A#","foo")).isNotEqualTo(fooGroup);
+        assertThat(SemanticQueryProofs.overload(view,"A#","foo").orElseThrow()).isNotEqualTo(overloadProof);
+    }
+
     @Test void receiverHierarchyAggregateChangesOnlyWithEffectiveApi(){
         var state=new ResidentSemanticState();
         var base=type("Base#","Base","api-base");
@@ -186,18 +236,30 @@ class ResidentSemanticStateTest {
         var b=type("B#","B","api-B");
         state.admit(snapshotUnit("unit:a","content-a",a));
         state.admit(snapshotUnit("unit:b","content-b",b));
-        long generation=((Number)state.status().get("semantic_uncertainty_generation")).longValue();
+        var before=state.status();
+        long generation=((Number)before.get("semantic_uncertainty_generation")).longValue();
+        long mutations=((Number)before.get("semantic_fact_mutations")).longValue();
+        Object facts=before.get("semantic_facts"),units=before.get("semantic_units");
+        String hierarchy=state.hierarchyApi("A#");
 
         state.markHierarchyUncertain();
 
-        assertThat(state.status()).containsEntry("semantic_stale_units",0);
-        assertThat(((Number)state.status().get("semantic_uncertainty_generation")).longValue()).isEqualTo(generation+1);
+        var uncertain=state.status();
+        assertThat(uncertain).containsEntry("semantic_stale_units",0)
+                .containsEntry("semantic_facts",facts)
+                .containsEntry("semantic_units",units)
+                .containsEntry("semantic_fact_mutations",mutations);
+        assertThat(((Number)uncertain.get("semantic_uncertainty_generation")).longValue()).isEqualTo(generation+1);
+        assertThat(state.hierarchyApi("A#")).isNotEqualTo(hierarchy);
         assertThat(state.unitCurrent("unit:a",null)).isFalse();
         assertThat(state.unitCurrent("unit:b",null)).isFalse();
+        assertThat(state.completeness("A#")).isEqualTo(SemanticCompleteness.UNKNOWN);
 
         state.admit(snapshotUnit("unit:a","content-a",a));
         assertThat(state.unitCurrent("unit:a",null)).isTrue();
         assertThat(state.unitCurrent("unit:b",null)).isFalse();
+        assertThat(state.completeness("A#")).isNotEqualTo(SemanticCompleteness.UNKNOWN);
+        assertThat(((Number)state.status().get("semantic_fact_mutations")).longValue()).isEqualTo(mutations);
     }
 
     @Test void sourceStalenessInvalidatesHierarchyIdentityUntilBodyOnlyReadmission(){

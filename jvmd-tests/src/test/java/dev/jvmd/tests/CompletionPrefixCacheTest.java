@@ -23,9 +23,13 @@ class CompletionPrefixCacheTest {
         Path file=Files.writeString(root.resolve("Use.java"),text("g"));var documents=new Documents();documents.open(file,text("g"),1);
         try(var analyzer=new Analyzer()){
             analyzer.configure(context(),null,256L*1024*1024);analyzer.documents(documents);int version=1;
+            Long narrowedQueries=null;
             for(String prefix:List.of("g","ge","get","getP","getPe","getPet","getPets")){
                 String text=text(prefix);documents.change(file,++version,List.of(new Documents.Change(null,text)));analyzer.changed(file,documents.hash(file));analyzer.documents(documents);
                 var result=complete(analyzer,file,text,prefix);
+                long currentQueries=((Number)analyzer.status().get("queries")).longValue();
+                if(narrowedQueries==null)narrowedQueries=currentQueries;
+                else assertThat(currentQueries).as("prefix narrowing must not re-enter javac").isEqualTo(narrowedQueries);
                 try(var fresh=new Analyzer()){
                     fresh.configure(context(),null,256L*1024*1024);fresh.documents(documents);
                     assertThat(result).isEqualTo(complete(fresh,file,text,prefix));
@@ -194,14 +198,74 @@ class CompletionPrefixCacheTest {
             analyzer.configure(context(),null,256L*1024*1024);
             var before=complete(analyzer,file,source,"get").path("items").findValuesAsText("name");
             assertThat(before).contains("getA").doesNotContain("getB");
+            long warm=((Number)analyzer.status().get("queries")).longValue();
+
+            complete(analyzer,file,source,"get");
+            assertThat(((Number)analyzer.status().get("queries")).longValue())
+                    .as("unchanged negative namespace proof must reuse without javac")
+                    .isEqualTo(warm);
+
+            Path unrelatedDir=Files.createDirectories(root.resolve("c"));
+            Files.writeString(unrelatedDir.resolve("Other.java"),"package c; public class Other {}");
+            complete(analyzer,file,source,"get");
+            assertThat(((Number)analyzer.status().get("queries")).longValue())
+                    .as("unsearched namespace must not invalidate this lookup")
+                    .isEqualTo(warm);
+
             Files.writeString(competing,"package b; class Api { public int getB(){return 3;} }");
             var bodyOnly=complete(analyzer,file,source,"get").path("items").findValuesAsText("name");
             assertThat(bodyOnly).contains("getA").doesNotContain("getB");
 
+            long beforeVisibility=((Number)analyzer.status().get("queries")).longValue();
             Files.writeString(competing,"package b; public class Api { public int getB(){return 2;} }");
             var after=complete(analyzer,file,source,"get").path("items").findValuesAsText("name");
 
             assertThat(after).doesNotContain("getA");
+            assertThat(((Number)analyzer.status().get("queries")).longValue())
+                    .as("newly viable searched domain must invalidate the cached context")
+                    .isGreaterThan(beforeVisibility);
+        }
+    }
+
+    @Test void currentPackageWinnerIgnoresWildcardNamespaceChanges()throws Exception{
+        Path p=Files.createDirectories(root.resolve("p")),q=Files.createDirectories(root.resolve("q"));
+        Files.writeString(p.resolve("Api.java"),"package p; public class Api { public int getP(){return 1;} }");
+        Path competing=Files.writeString(q.resolve("Api.java"),"package q; class Api { public int getQ(){return 2;} }");
+        String source="package p; import q.*; class Use { Object call(Api api){return api.get();} }";
+        Path file=Files.writeString(p.resolve("Use.java"),source);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);
+            var first=complete(analyzer,file,source,"get").path("items").findValuesAsText("name");
+            assertThat(first).contains("getP").doesNotContain("getQ");
+            long queries=((Number)analyzer.status().get("queries")).longValue();
+
+            Files.writeString(competing,"package q; public class Api { public int getQ(){return 3;} }");
+            var after=complete(analyzer,file,source,"get").path("items").findValuesAsText("name");
+            assertThat(after).contains("getP").doesNotContain("getQ");
+            assertThat(((Number)analyzer.status().get("queries")).longValue())
+                    .as("wildcard namespace is not searched after a current-package winner")
+                    .isEqualTo(queries);
+        }
+    }
+
+    @Test void explicitImportWinnerIgnoresWildcardNamespaceChanges()throws Exception{
+        Path p=Files.createDirectories(root.resolve("p")),a=Files.createDirectories(root.resolve("a")),b=Files.createDirectories(root.resolve("b"));
+        Files.writeString(a.resolve("Api.java"),"package a; public class Api { public int getA(){return 1;} protected int protectedValue(){return 2;} }");
+        Path competing=Files.writeString(b.resolve("Api.java"),"package b; class Api { public int getB(){return 2;} }");
+        String source="package p; import a.Api; import b.*; class Use { Object call(Api api){return api.;} }";
+        Path file=Files.writeString(p.resolve("Use.java"),source);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);
+            var first=complete(analyzer,file,source,"").path("items").findValuesAsText("name");
+            assertThat(first).contains("getA").doesNotContain("getB");
+            long queries=((Number)analyzer.status().get("queries")).longValue();
+
+            Files.writeString(competing,"package b; public class Api { public int getB(){return 3;} }");
+            var after=complete(analyzer,file,source,"").path("items").findValuesAsText("name");
+            assertThat(after).contains("getA").doesNotContain("getB");
+            assertThat(((Number)analyzer.status().get("queries")).longValue())
+                    .as("wildcard namespace is not searched when a single-type import wins")
+                    .isEqualTo(queries);
         }
     }
 

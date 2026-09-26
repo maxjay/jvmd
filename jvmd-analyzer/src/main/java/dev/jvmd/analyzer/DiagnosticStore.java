@@ -44,7 +44,7 @@ public final class DiagnosticStore {
     }
     private State lookup(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint){
         var key=new Key(file,sourceHash,contextFingerprint,classpathFingerprint);var value=files.get(key);
-        if(value==null&&snapshots!=null){value=snapshots.restore(key);if(value!=null)put(file,sourceHash,contextFingerprint,classpathFingerprint,value.diagnostics(),value.apiFingerprint(),value.dependencies(),value.contribution(),false);}
+        if(value==null&&snapshots!=null){value=snapshots.restore(key);if(value!=null)put(file,sourceHash,contextFingerprint,classpathFingerprint,value.diagnostics(),value.apiFingerprint(),value.dependencies(),value.contribution(),false,classpathFingerprint);}
         if(value==null)misses++;else hits++;
         return value;
     }
@@ -53,12 +53,23 @@ public final class DiagnosticStore {
         put(file,sourceHash,contextFingerprint,classpathFingerprint,diagnostics,null,Set.of());
     }
     public void put(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint,Envelope diagnostics,String apiFingerprint,Set<Path> dependencies){
-        put(file,sourceHash,contextFingerprint,classpathFingerprint,diagnostics,apiFingerprint,dependencies,null,true);
+        put(file,sourceHash,contextFingerprint,classpathFingerprint,diagnostics,apiFingerprint,dependencies,null,true,classpathFingerprint);
     }
     public void put(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint,Envelope diagnostics,String apiFingerprint,Set<Path> dependencies,FileSemanticContribution contribution){
-        put(file,sourceHash,contextFingerprint,classpathFingerprint,diagnostics,apiFingerprint,dependencies,contribution,true);
+        put(file,sourceHash,contextFingerprint,classpathFingerprint,diagnostics,apiFingerprint,dependencies,contribution,true,classpathFingerprint);
     }
-    private void put(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint,Envelope diagnostics,String apiFingerprint,Set<Path> dependencies,FileSemanticContribution contribution,boolean persist){
+    /**
+     * Keep a precise in-memory validity key while persisting under the conservative compiler-input
+     * stamp. Proof state is rebuilt after restart; persisted snapshots therefore must remain
+     * discoverable before the proof DAG has been rehydrated.
+     */
+    public void put(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint,Envelope diagnostics,
+                    String apiFingerprint,Set<Path> dependencies,FileSemanticContribution contribution,
+                    String persistenceClasspathFingerprint){
+        put(file,sourceHash,contextFingerprint,classpathFingerprint,diagnostics,apiFingerprint,dependencies,contribution,true,
+                Objects.requireNonNull(persistenceClasspathFingerprint));
+    }
+    private void put(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint,Envelope diagnostics,String apiFingerprint,Set<Path> dependencies,FileSemanticContribution contribution,boolean persist,String persistenceClasspathFingerprint){
         Path normalized=file.toAbsolutePath().normalize();
         for(var key:List.copyOf(files.keySet()))if(key.file().equals(normalized)&&key.contextFingerprint().equals(contextFingerprint))remove(key);
         var key=new Key(normalized,sourceHash,contextFingerprint,classpathFingerprint);
@@ -66,7 +77,8 @@ public final class DiagnosticStore {
         long size;
         try{size=512L+2L*dev.jvmd.core.Json.MAPPER.writeValueAsBytes(diagnostics).length+2L*key.toString().length()+dependencies.stream().mapToLong(p->128L+2L*p.toString().length()).sum();}
         catch(Exception error){throw new IllegalArgumentException("Diagnostic state is not detached",error);}
-        files.put(key,state);weights.put(key,size);bytes+=size;puts++;trim();if(persist&&snapshots!=null&&inputs!=null)snapshots.save(key,state,inputs);
+        files.put(key,state);weights.put(key,size);bytes+=size;puts++;trim();if(persist&&snapshots!=null&&inputs!=null)
+            snapshots.save(new Key(normalized,sourceHash,contextFingerprint,persistenceClasspathFingerprint),state,inputs);
     }
 
     public void invalidate(Collection<Path> paths){

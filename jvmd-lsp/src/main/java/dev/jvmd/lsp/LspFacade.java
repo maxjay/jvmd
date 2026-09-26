@@ -72,9 +72,30 @@ public final class LspFacade {
         if(method.equals("completionItem/resolve")){
             if(!nativeParams.isObject())throw RpcException.invalid("Completion item must be an object");
             String ref=Dispatcher.required(nativeParams.path("data"),"scip");
-            var described=query.one("symbol.describe",Json.MAPPER.createObjectNode().put("ref",ref).put("detail","summary").put("doc_depth",0));
+            String expected=nativeParams.path("data").path("resolution_identity").asText("");
+            var describeParams=Json.MAPPER.createObjectNode().put("ref",ref).put("detail","summary").put("doc_depth",0);
+            if(!expected.isBlank())describeParams.put("resolution_identity",expected);
+            if(nativeParams.path("data").path("semantic_origin").isTextual())
+                describeParams.put("semantic_origin",nativeParams.path("data").path("semantic_origin").asText());
+            // Documentation is optional LSP enrichment. Keep field resolution on the exact maintained
+            // declaration path; callable items retain the existing documentation enrichment behavior.
+            describeParams.put("include_doc",nativeParams.path("kind").asInt()!=5);
+            var described=query.one("symbol.describe",describeParams);
+            String current=described.path("resolution_identity").asText("");
+            if(!expected.isEmpty()&&!expected.equals(current))
+                throw new RpcException(-32801,"Completion item is stale",Map.of("scip",ref,"expected",expected,"current",current));
             var item=(ObjectNode)nativeParams.deepCopy();
-            if(!item.hasNonNull("detail")&&described.hasNonNull("signature"))item.put("detail",described.path("signature").asText());
+            // Resolve is the enrichment boundary. Identity has already selected the exact
+            // declaration; present it with its owner without rediscovering the candidate.
+            String owner=described.path("declaring").asText("");
+            // Persisted member rows retain their declaring binary in fqn without source enrichment.
+            if(owner.isBlank()&&Set.of("method","ctor","field","enumconst").contains(described.path("kind").asText()))
+                owner=described.path("fqn").asText("");
+            String label=item.path("label").asText("");
+            if(!owner.isBlank()&&!label.isBlank()){
+                int dot=Math.max(owner.lastIndexOf('.'),owner.lastIndexOf((char)36));
+                item.put("detail",owner.substring(dot+1)+"."+label);
+            }else if(described.hasNonNull("signature"))item.put("detail",described.path("signature").asText());
             String doc=described.path("doc").asText("");
             if(!doc.isEmpty())item.set("documentation",Json.MAPPER.valueToTree(Map.of("kind","markdown","value",doc)));
             return query.finish(item);
@@ -99,10 +120,20 @@ public final class LspFacade {
         var position=nativeParams.path("position");int line=Dispatcher.bounded(position,"line",0,Integer.MAX_VALUE),character=Dispatcher.bounded(position,"character",0,Integer.MAX_VALUE);
         Documents.offset(documents.text(file),new Documents.Position(line,character));arguments.put("line",line).put("character",character);
         if(method.equals("textDocument/completion")){
-            var answer=query.call("symbol.completion",arguments.put("limit",100));JsonNode completion=Json.MAPPER.valueToTree(answer.result());var items=Json.MAPPER.createArrayNode();
+            var answer=query.call("symbol.completion",arguments.put("limit",50));JsonNode completion=Json.MAPPER.valueToTree(answer.result());var items=Json.MAPPER.createArrayNode();
             for(var symbol:completion.path("items")){
-                var item=Json.MAPPER.createObjectNode().put("label",symbol.path("name").asText()).put("detail",symbol.path("label").asText()).put("kind",completionKind(symbol.path("kind").asText()));
-                item.set("textEdit",Json.MAPPER.valueToTree(Map.of("range",completion.path("range"),"newText",symbol.path("name").asText())));item.set("data",Json.MAPPER.valueToTree(Map.of("scip",symbol.path("scip").asText())));
+                String name=symbol.path("name").asText(),semanticLabel=symbol.path("editor_label").asText(symbol.path("label").asText(name)),kind=symbol.path("kind").asText();
+                boolean type=Set.of("class","interface","enum","record","annotation","type_parameter").contains(kind);
+                var item=Json.MAPPER.createObjectNode()
+                        .put("label",type?name:semanticLabel)
+                        .put("kind",completionKind(kind));
+                if(type&&!semanticLabel.equals(name))item.put("detail",semanticLabel);
+                else if(!type)item.put("detail",semanticLabel);
+                item.set("textEdit",Json.MAPPER.valueToTree(Map.of("range",completion.path("range"),"newText",name)));
+                var data=Json.MAPPER.createObjectNode().put("scip",symbol.path("scip").asText());
+                if(symbol.hasNonNull("resolution_identity"))data.put("resolution_identity",symbol.path("resolution_identity").asText());
+                if(symbol.hasNonNull("semantic_origin"))data.put("semantic_origin",symbol.path("semantic_origin").asText());
+                item.set("data",data);
                 if(symbol.hasNonNull("import"))item.set("additionalTextEdits",Json.MAPPER.valueToTree(List.of(importEdit(documents.text(file),symbol.path("import").asText()))));
                 items.add(item);
             }return query.finish(Json.MAPPER.valueToTree(Map.of("isIncomplete",answer.truncated(),"items",items)));

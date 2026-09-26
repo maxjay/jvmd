@@ -24,8 +24,10 @@ public final class WorkspaceOverlay implements WorkspaceSource,AutoCloseable {
     private final Map<WatchKey,Path> watchKeys=new HashMap<>();
     private final Set<Path> watchedDirectories=new HashSet<>();
     private WatchService watcher;
+    private Thread publisher;
+    private Runnable freshnessListener;
     private boolean verificationOnly,closed;
-    private long freshnessScans,watchEvents,watchOverflows;
+    private long freshnessScans,watchEvents,watchOverflows,freshnessGeneration;
 
     public WorkspaceOverlay(List<Resolution.Module> modules,boolean ignoreVersions){this(modules,ignoreVersions,true);}
     /**
@@ -45,6 +47,7 @@ public final class WorkspaceOverlay implements WorkspaceSource,AutoCloseable {
         if(watchFreshness)try{
             watcher=FileSystems.getDefault().newWatchService();
             for(var state:freshness.values()){registerPath(state.classes);for(Path source:state.sources)registerPath(source);}
+            publisher=Thread.ofPlatform().daemon(true).name("jvmd-workspace-overlay-watch").start(this::publishLoop);
         }catch(IOException|UnsupportedOperationException unavailable){
             verificationOnly=true;closeWatcher();warnings.add("overlay_watch_unavailable: "+unavailable.getClass().getSimpleName());
         }else verificationOnly=true;
@@ -77,46 +80,83 @@ public final class WorkspaceOverlay implements WorkspaceSource,AutoCloseable {
         try{return !fresh(module,false);}catch(IOException e){warnings.add("overlay_io: "+module.gav()+": "+e.getMessage());return true;}
     }
 
-    /** Unchanged requests consume the resident decision; scans happen only after relevant mutations. */
-    private synchronized boolean fresh(Resolution.Module module,boolean test)throws IOException{
-        var state=freshness.get(freshnessKey(module,test));
-        if(state==null){
-            state=new Freshness(Path.of(test?module.testClasses():module.classes()),
-                    test?java.util.stream.Stream.concat(module.sources().stream(),module.testSources().stream()).toList():module.sources());
-            freshness.put(freshnessKey(module,test),state);
-        }
-        if(!verificationOnly)settleAndDrain();
-        if(verificationOnly||!state.initialized||state.dirty){
-            state.value=scanFresh(state.classes,state.sources);state.initialized=true;state.dirty=false;freshnessScans++;
-        }
-        return state.value;
-    }
-    private void settleAndDrain()throws IOException{
+    /** Drain watcher publication once at a request boundary without rescanning clean roots. */
+    public void settleFreshness()throws IOException{
+        synchronized(this){if(verificationOnly||closed)return;}
         try{RequestScope.settleFilesystemStart(SETTLE_NANOS);}
-        catch(Exception failed){verificationOnly=true;markAllDirty();return;}
-        WatchService current=watcher;if(current==null){verificationOnly=true;markAllDirty();return;}
-        for(WatchKey key;(key=current.poll())!=null;)process(key);
+        catch(Exception failed){synchronized(this){verificationOnly=true;markAllDirty();}return;}
+        synchronized(this){if(!verificationOnly)drainAvailable();}
     }
-    private void process(WatchKey key)throws IOException{
-        Path directory=watchKeys.get(key);
-        if(directory==null){key.reset();return;}
+
+    /** Unchanged requests consume the resident decision; scans happen only after relevant mutations. */
+    private boolean fresh(Resolution.Module module,boolean test)throws IOException{
+        Freshness state;
+        synchronized(this){
+            state=freshness.get(freshnessKey(module,test));
+            if(state==null){
+                state=new Freshness(Path.of(test?module.testClasses():module.classes()),
+                        test?java.util.stream.Stream.concat(module.sources().stream(),module.testSources().stream()).toList():module.sources());
+                freshness.put(freshnessKey(module,test),state);
+            }
+        }
+        settleFreshness();
+        synchronized(this){
+            if(verificationOnly||!state.initialized||state.dirty){
+                state.value=scanFresh(state.classes,state.sources);state.initialized=true;state.dirty=false;freshnessScans++;
+            }
+            return state.value;
+        }
+    }
+    private void publishLoop(){
+        while(true){
+            WatchKey key;
+            try{var current=watcher;if(current==null)return;key=current.take();}
+            catch(InterruptedException stopped){Thread.currentThread().interrupt();return;}
+            catch(ClosedWatchServiceException stopped){return;}
+            Runnable listener=null;
+            try{
+                synchronized(this){
+                    if(closed)return;
+                    if(process(key)){freshnessGeneration++;listener=freshnessListener;}
+                }
+            }catch(IOException failed){
+                synchronized(this){verificationOnly=true;markAllDirty();freshnessGeneration++;listener=freshnessListener;}
+            }
+            if(listener!=null)try{listener.run();}catch(RuntimeException ignored){}
+        }
+    }
+    private void drainAvailable()throws IOException{
+        WatchService current=watcher;if(current==null){verificationOnly=true;markAllDirty();return;}
+        for(WatchKey key;(key=current.poll())!=null;)if(process(key)){
+            freshnessGeneration++;var listener=freshnessListener;if(listener!=null)listener.run();
+        }
+    }
+    private boolean process(WatchKey key)throws IOException{
+        Path directory=watchKeys.get(key);boolean relevant=false;
+        if(directory==null){key.reset();return false;}
         for(var event:key.pollEvents()){
             watchEvents++;
-            if(event.kind()==StandardWatchEventKinds.OVERFLOW){watchOverflows++;markAllDirty();continue;}
-            if(!(event.context() instanceof Path relative)){markAllDirty();continue;}
-            Path changed=normalize(directory.resolve(relative));markAffected(changed);
+            if(event.kind()==StandardWatchEventKinds.OVERFLOW){watchOverflows++;markAllDirty();relevant=true;continue;}
+            if(!(event.context() instanceof Path relative)){markAllDirty();relevant=true;continue;}
+            Path changed=normalize(directory.resolve(relative));relevant|=markAffected(changed);
             if(event.kind()==StandardWatchEventKinds.ENTRY_CREATE&&Files.isDirectory(changed,LinkOption.NOFOLLOW_LINKS))registerTree(changed);
         }
         if(!key.reset()){
-            watchKeys.remove(key);watchedDirectories.remove(directory);verificationOnly=true;markAllDirty();
+            watchKeys.remove(key);watchedDirectories.remove(directory);verificationOnly=true;markAllDirty();relevant=true;
         }
+        return relevant;
     }
-    private void markAffected(Path changed){
+    private boolean markAffected(Path changed){
+        boolean relevant=false;
         for(var state:freshness.values()){
-            if(intersects(changed,state.classes)){state.dirty=true;continue;}
-            for(Path source:state.sources)if(intersects(changed,source)){state.dirty=true;break;}
+            if(intersects(changed,state.classes)){state.dirty=true;relevant=true;continue;}
+            for(Path source:state.sources)if(intersects(changed,source)){state.dirty=true;relevant=true;break;}
         }
+        return relevant;
     }
+    public synchronized void onFreshnessChange(Runnable listener){freshnessListener=listener;}
+    public synchronized boolean watchReliable(){return !verificationOnly&&!closed&&watcher!=null;}
+    public synchronized long freshnessGeneration(){return freshnessGeneration;}
     private static boolean intersects(Path changed,Path root){return changed.startsWith(root)||root.startsWith(changed);}
     private void markAllDirty(){for(var state:freshness.values())state.dirty=true;}
 
@@ -165,10 +205,10 @@ public final class WorkspaceOverlay implements WorkspaceSource,AutoCloseable {
         return Map.of("modules",modules.stream().map(m->Map.of("gav",m.gav(),"directory",m.directory(),"source_roots",m.sources(),"test_source_roots",m.testSources())).toList(),
                 "warnings",warnings(),"errors",warnings.stream().filter(w->w.startsWith("overlay_cycle:")||w.startsWith("overlay_duplicate:")).toList(),
                 "freshness_scans",freshnessScans,"freshness_watch_events",watchEvents,"freshness_watch_overflows",watchOverflows,
-                "freshness_verification_only",verificationOnly);
+                "freshness_generation",freshnessGeneration,"freshness_verification_only",verificationOnly);
     }
     private static String freshnessKey(Resolution.Module module,boolean test){return module.gav()+"|"+test;}
     private static Path normalize(Path path){return path.toAbsolutePath().normalize();}
     private synchronized void closeWatcher(){var current=watcher;watcher=null;if(current!=null)try{current.close();}catch(IOException ignored){}watchKeys.clear();watchedDirectories.clear();}
-    @Override public synchronized void close(){if(closed)return;closed=true;closeWatcher();}
+    @Override public synchronized void close(){if(closed)return;closed=true;freshnessListener=null;closeWatcher();}
 }

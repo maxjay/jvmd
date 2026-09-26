@@ -55,6 +55,18 @@ public record SemanticDeclaration(
         TypeElement declaringType=identity.declaring(element);
         String fqn=declaringType==null?null:identity.binaryName(declaringType);
         String declaring=declaringType==null?null:declaringType.getQualifiedName().toString();
+        var parameterizable=element instanceof Parameterizable p?p:null;
+        var parameterElements=parameterizable==null?List.<TypeParameterElement>of():List.copyOf(parameterizable.getTypeParameters());
+        var typeParameters=parameterElements.stream().map(identity::scip).toList();
+        var typeParameterBounds=parameterElements.stream().map(parameter->{
+            var bounds=parameter.getBounds().stream().map(value->SemanticFacts.type(identity,value)).toList();
+            if(bounds.size()==1&&bounds.getFirst() instanceof SemanticType.Declared declaredBound
+                    &&declaredBound.name().equals("java.lang.Object"))return List.<SemanticType>of();
+            return bounds;
+        }).toList();
+        var supertypes=element instanceof TypeElement t?task.getTypes().directSupertypes(t.asType()).stream().map(value->SemanticFacts.type(identity,value)).toList():List.<SemanticType>of();
+        var parameterNames=element instanceof ExecutableElement method?method.getParameters().stream().map(p->p.getSimpleName().toString()).toList():List.<String>of();
+        boolean varargs=element instanceof ExecutableElement method&&method.isVarArgs();
 
         if(reusable!=null
                 &&reusable.id().equals(id)
@@ -68,19 +80,18 @@ public record SemanticDeclaration(
                 &&reusable.packageName().equals(pkg)
                 &&reusable.namePath().equals(namePath)
                 &&Objects.equals(reusable.fqn(),fqn)
+                &&reusable.typeParameters().equals(typeParameters)
+                &&reusable.typeParameterBounds().equals(typeParameterBounds)
+                &&reusable.directSupertypes().equals(supertypes)
+                &&reusable.varargs()==varargs
                 &&reusable.apiIdentity().equals(api)
                 &&reusable.namespaceIdentity().equals(namespace)
                 &&reusable.documentationIdentity().equals(documentationIdentity)){
             return new SemanticDeclaration(reusable,gav,declaring,typeParameterDisplays,apiDeclaration,documentation,signatureComplete);
         }
 
-        var typeParameters=element instanceof Parameterizable p?p.getTypeParameters().stream().map(identity::scip).toList():List.<String>of();
-        var supertypes=element instanceof TypeElement t?task.getTypes().directSupertypes(t.asType()).stream().map(value->SemanticFacts.type(identity,value)).toList():List.<SemanticType>of();
-        var parameterNames=element instanceof ExecutableElement method?method.getParameters().stream().map(p->p.getSimpleName().toString()).toList():List.<String>of();
-        boolean varargs=element instanceof ExecutableElement method&&method.isVarArgs();
-
         var fact=new SemanticFact(id,owner,name,kind,signature,erased,modifiers,source,pkg,namePath,fqn,
-                SemanticFacts.type(identity,element.asType()),typeParameters,supertypes,parameterNames,varargs,
+                SemanticFacts.type(identity,element.asType()),typeParameters,typeParameterBounds,supertypes,parameterNames,varargs,
                 api,namespace,documentationIdentity);
         return new SemanticDeclaration(fact,gav,declaring,typeParameterDisplays,apiDeclaration,documentation,signatureComplete);
     }

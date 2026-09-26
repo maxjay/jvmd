@@ -35,6 +35,7 @@ public final class LiveSourceState implements AutoCloseable {
     private long sourceHistoryFloor,inputEpoch;
     private static final int MAX_SOURCE_CHANGES=32768;
     private final Map<WatchKey,Path> watchKeys=new HashMap<>();
+    private final Object watchProcessing=new Object();
     private final Set<Path> watchedDirectories=new HashSet<>();
     private WatchService watcher;
     private Thread watchThread;
@@ -119,7 +120,11 @@ public final class LiveSourceState implements AutoCloseable {
         if(current==null){reconcile();return;}
         try{RequestScope.settleFilesystemStart(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(2));}
         catch(Exception failed){markUncertain("source watch settlement failed");reconcile();return;}
-        for(WatchKey key;(key=current.poll())!=null;)processWatchKey(key);
+        // A background reader can already have dequeued an event. Its content publication
+        // must finish before an empty queue is accepted as settled.
+        synchronized(watchProcessing){
+            for(WatchKey key;(key=current.poll())!=null;)processWatchKey(key);
+        }
         synchronized(this){if(!trusted)reconcile();}
     }
 
@@ -329,6 +334,9 @@ public final class LiveSourceState implements AutoCloseable {
         }
     }
     private void processWatchKey(WatchKey key)throws IOException{
+        synchronized(watchProcessing){processWatchKeyLocked(key);}
+    }
+    private void processWatchKeyLocked(WatchKey key)throws IOException{
         Path directory; synchronized(this){directory=watchKeys.get(key);}
         boolean reconcile=false;
         if(directory==null){key.reset();return;}

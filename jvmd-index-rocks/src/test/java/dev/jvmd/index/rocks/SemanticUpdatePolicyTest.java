@@ -25,6 +25,28 @@ class SemanticUpdatePolicyTest {
         assertThat(live.dependants(a)).isEmpty();assertThat(live.dependants(c)).isEmpty();
         assertThat(live.unresolved(Set.of("Missing"))).isEmpty();
     }
+    @Test void preciseClasspathEnvironmentDoesNotWidenToEveryFile(){
+        var postings=new SemanticUpdatePolicy.Postings(){
+            public Set<Path> dependants(Path file){return Set.of();}
+            public Set<Path> unresolved(Set<String> exports){return Set.of();}
+            public Set<Path> files(){return Set.of(root.resolve("A"),root.resolve("B"),root.resolve("C"));}
+        };
+        var bodyBefore=value("A","1","api",Set.of(),Set.of("A"),Set.of());
+        var bodyAfter=value("A","2","api",Set.of(),Set.of("A"),Set.of());
+
+        var precise=SemanticUpdatePolicy.decide(
+                List.of(new SemanticUpdatePolicy.Change(bodyBefore,bodyAfter)),
+                SemanticUpdatePolicy.EnvironmentTransition.PRECISE_CLASSPATH,postings);
+        assertThat(precise.reanalyze()).containsExactly(bodyAfter.file());
+        assertThat(precise.contextChanged()).isFalse();
+
+        var unknown=SemanticUpdatePolicy.decide(
+                List.of(new SemanticUpdatePolicy.Change(bodyBefore,bodyAfter)),
+                SemanticUpdatePolicy.EnvironmentTransition.UNKNOWN,postings);
+        assertThat(unknown.reanalyze()).containsExactlyInAnyOrder(root.resolve("A"),root.resolve("B"),root.resolve("C"));
+        assertThat(unknown.contextChanged()).isTrue();
+    }
+
     @Test void liveAndRocksAgreeAcrossReplacementDeletionCyclesAndUnresolvedChanges()throws Exception{
         var live=new SemanticUpdatePolicy.Live();
         try(var rocks=new RocksSemanticInvalidation(root.resolve("store"))){

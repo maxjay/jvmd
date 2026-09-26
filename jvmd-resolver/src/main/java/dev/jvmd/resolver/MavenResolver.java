@@ -18,19 +18,25 @@ public final class MavenResolver implements AutoCloseable {
     private Method call;
     private boolean closed;
     private double bootstrapMillis;
-    private long resolveCalls,residentHits,residentInvalidations,retiredWatchEvents,retiredWatchOverflows;
+    private long resolveCalls,resolveWorkspaceCalls,residentHits,residentInvalidations,retiredWatchEvents,retiredWatchOverflows;
 
-    private record RequestCacheKey(Path root,List<Path> roots,boolean ignoreVersions){
-        RequestCacheKey{root=root.toAbsolutePath().normalize();roots=roots.stream().map(path->path.toAbsolutePath().normalize()).toList();}
+    private record RequestCacheKey(Path root,List<Path> roots,boolean ignoreVersions,List<Path> lifecycleInputs){
+        RequestCacheKey{
+            root=root.toAbsolutePath().normalize();
+            roots=roots.stream().map(path->path.toAbsolutePath().normalize()).toList();
+            lifecycleInputs=lifecycleInputs.stream().map(path->path.toAbsolutePath().normalize()).distinct().sorted().toList();
+        }
     }
     private static final class Resident implements AutoCloseable {
         final Resolution resolution;
         final ProjectModelState model;
         final ProjectModelWatch watch;
-        Resident(ProjectModelState.Resolved resolved)throws Exception{
-            resolution=resolved.resolution();model=resolved.model();watch=new ProjectModelWatch(model);
+        Resident(ProjectModelState.Resolved resolved,Collection<Path> lifecycleInputs,Runnable invalidated)throws Exception{
+            resolution=resolved.resolution();model=resolved.model();watch=new ProjectModelWatch(model,lifecycleInputs,invalidated);
         }
         boolean current(){return watch.current();}
+        boolean reliable(){return watch.reliable();}
+        void invalidated(Runnable listener){watch.invalidated(listener);}
         @Override public void close(){watch.close();}
     }
     /**
@@ -41,21 +47,29 @@ public final class MavenResolver implements AutoCloseable {
         private final Set<Path> relevant=new HashSet<>();
         private final Map<WatchKey,Path> directories=new HashMap<>();
         private WatchService watcher;
-        private boolean dirty,closed;
+        private Thread publisher;
+        private Runnable invalidated;
+        private boolean dirty,closed,reliable;
         private long events,overflows;
 
-        ProjectModelWatch(ProjectModelState state)throws Exception{
+        ProjectModelWatch(ProjectModelState state,Collection<Path> lifecycleInputs,Runnable invalidated)throws Exception{
+            this.invalidated=invalidated;
             try{
                 watcher=FileSystems.getDefault().newWatchService();
                 for(var input:state.inputs())register(Path.of(input.path()).toAbsolutePath().normalize());
+                for(Path input:lifecycleInputs)register(input.toAbsolutePath().normalize());
+                reliable=true;
+                publisher=Thread.ofPlatform().daemon(true).name("jvmd-project-model-watch").start(this::publishLoop);
             }catch(Exception unavailable){
-                dirty=true;close();
+                dirty=true;reliable=false;closeWatcher();
             }
         }
+        synchronized void invalidated(Runnable listener){invalidated=listener;}
+        synchronized boolean reliable(){return reliable&&!closed;}
         private void register(Path input)throws java.io.IOException{
             Path directory=input.getParent();
             while(directory!=null&&!Files.isDirectory(directory,LinkOption.NOFOLLOW_LINKS))directory=directory.getParent();
-            if(directory==null){dirty=true;return;}
+            if(directory==null){dirty=true;reliable=false;return;}
             Path watched=directory;
             if(!directories.containsValue(watched)){
                 var key=watched.register(watcher,StandardWatchEventKinds.ENTRY_CREATE,StandardWatchEventKinds.ENTRY_MODIFY,StandardWatchEventKinds.ENTRY_DELETE);
@@ -63,34 +77,73 @@ public final class MavenResolver implements AutoCloseable {
             }
             for(Path path=input;path!=null&&!path.equals(directory)&&path.startsWith(directory);path=path.getParent())relevant.add(path);
         }
-        synchronized boolean current(){
-            if(closed||dirty)return false;
+        boolean current(){
+            synchronized(this){if(closed||dirty)return false;}
             try{RequestScope.settleFilesystemStart(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(2));}
-            catch(Exception failed){dirty=true;return false;}
-            drain();
-            return !dirty;
+            catch(Exception failed){synchronized(this){dirty=true;reliable=false;}return false;}
+            synchronized(this){
+                if(closed||dirty)return false;
+                drain(false);
+                return !dirty;
+            }
         }
-        private void drain(){
-            if(watcher==null){dirty=true;return;}
-            for(WatchKey key;(key=watcher.poll())!=null;)process(key);
+        private void publishLoop(){
+            while(true){
+                WatchKey key;
+                try{var current=watcher;if(current==null)return;key=current.take();}
+                catch(InterruptedException stopped){Thread.currentThread().interrupt();return;}
+                catch(ClosedWatchServiceException stopped){return;}
+                Runnable listener=null;
+                synchronized(this){
+                    if(closed)return;
+                    boolean becameDirty=process(key);
+                    if(becameDirty)listener=invalidated;
+                }
+                if(listener!=null)try{listener.run();}catch(RuntimeException failed){
+                    System.getLogger("jvmd.resolver").log(System.Logger.Level.WARNING,"Project-model invalidation publication failed",failed);
+                }
+            }
         }
-        private void process(WatchKey key){
-            Path directory=directories.get(key);
+        private void drain(boolean publish){
+            if(watcher==null){dirty=true;reliable=false;return;}
+            for(WatchKey key;(key=watcher.poll())!=null;){
+                boolean becameDirty=process(key);
+                if(publish&&becameDirty&&invalidated!=null)invalidated.run();
+            }
+        }
+        /** Caller holds this monitor. */
+        private boolean process(WatchKey key){
+            Path directory=directories.get(key);boolean becameDirty=false;
             for(var event:key.pollEvents()){
                 events++;
-                if(event.kind()==StandardWatchEventKinds.OVERFLOW){overflows++;dirty=true;continue;}
-                if(directory==null||!(event.context() instanceof Path relative)){dirty=true;continue;}
+                if(event.kind()==StandardWatchEventKinds.OVERFLOW){
+                    overflows++;reliable=false;
+                    if(!dirty){dirty=true;becameDirty=true;}
+                    continue;
+                }
+                if(directory==null||!(event.context() instanceof Path relative)){
+                    reliable=false;
+                    if(!dirty){dirty=true;becameDirty=true;}
+                    continue;
+                }
                 Path changed=directory.resolve(relative).toAbsolutePath().normalize();
-                if(relevant.contains(changed))dirty=true;
+                if(relevant.contains(changed)&&!dirty){dirty=true;becameDirty=true;}
             }
-            if(!key.reset()){directories.remove(key);dirty=true;}
+            if(!key.reset()){
+                directories.remove(key);reliable=false;
+                if(!dirty){dirty=true;becameDirty=true;}
+            }
+            return becameDirty;
         }
-        synchronized long events(){drain();return events;}
-        synchronized long overflows(){drain();return overflows;}
-        @Override public synchronized void close(){
-            if(closed)return;closed=true;var current=watcher;watcher=null;
+        synchronized long events(){return events;}
+        synchronized long overflows(){return overflows;}
+        private void closeWatcher(){
+            var current=watcher;watcher=null;
             if(current!=null)try{current.close();}catch(java.io.IOException ignored){}
-            directories.clear();relevant.clear();
+        }
+        @Override public synchronized void close(){
+            if(closed)return;closed=true;reliable=false;closeWatcher();
+            directories.clear();relevant.clear();invalidated=null;
         }
     }
 
@@ -152,8 +205,8 @@ public final class MavenResolver implements AutoCloseable {
         retiredWatchEvents+=resident.watch.events();retiredWatchOverflows+=resident.watch.overflows();
         resident.close();residents.remove(key);
     }
-    private void install(RequestCacheKey key,ProjectModelState.Resolved resolved)throws Exception{
-        retire(key,residents.get(key));residents.put(key,new Resident(resolved));
+    private void install(RequestCacheKey key,ProjectModelState.Resolved resolved,Runnable invalidated)throws Exception{
+        retire(key,residents.get(key));residents.put(key,new Resident(resolved,key.lifecycleInputs(),invalidated));
         while(residents.size()>MAX_RESIDENTS){
             var oldest=residents.entrySet().iterator().next();retire(oldest.getKey(),oldest.getValue());
         }
@@ -164,7 +217,7 @@ public final class MavenResolver implements AutoCloseable {
             var result=Json.MAPPER.convertValue(invoke("status",Map.of(),null),new TypeReference<Map<String,Object>>(){});
             long activeEvents=0,activeOverflows=0;
             for(var resident:residents.values()){activeEvents+=resident.watch.events();activeOverflows+=resident.watch.overflows();}
-            result.put("bootstrap_ms",bootstrapMillis);result.put("resolve_calls",resolveCalls);
+            result.put("bootstrap_ms",bootstrapMillis);result.put("resolve_calls",resolveCalls);result.put("resolve_workspace_calls",resolveWorkspaceCalls);
             result.put("request_cache_hits",residentHits);result.put("project_model_fast_hits",residentHits);
             result.put("project_model_invalidations",residentInvalidations);result.put("project_model_residents",residents.size());
             result.put("project_model_watch_events",retiredWatchEvents+activeEvents);result.put("project_model_watch_overflows",retiredWatchOverflows+activeOverflows);
@@ -181,13 +234,31 @@ public final class MavenResolver implements AutoCloseable {
     }
 
     public synchronized Resolution resolveWorkspace(Path root,List<Path> roots,boolean ignoreVersions) throws Exception {
+        return resolveWorkspace(root,roots,ignoreVersions,List.of(),null);
+    }
+    /**
+     * Resolve/publish one workspace and attach a mutation listener to the accepted model-input watch.
+     * Ordinary editor reads do not call this method; the listener owns refresh after a relevant event.
+     */
+    public synchronized Resolution resolveWorkspace(Path root,List<Path> roots,boolean ignoreVersions,
+                                                    Collection<Path> lifecycleInputs,Runnable invalidated) throws Exception {
         if(closed)throw new IllegalStateException("Resolver is closed");
-        var key=new RequestCacheKey(root,roots,ignoreVersions);var resident=residents.get(key);
+        resolveWorkspaceCalls++;
+        var key=new RequestCacheKey(root,roots,ignoreVersions,List.copyOf(lifecycleInputs));
+        if(invalidated!=null)for(var entry:new ArrayList<>(residents.entrySet()))
+            if(entry.getKey().root().equals(key.root())&&!entry.getKey().equals(key))retire(entry.getKey(),entry.getValue());
+        var resident=residents.get(key);
+        if(resident!=null)resident.invalidated(invalidated);
         if(resident!=null&&resident.current()){residentHits++;return resident.resolution.cachedCopy();}
         if(resident!=null){residentInvalidations++;retire(key,resident);}
         resolveCalls++;
         var resolved=Json.MAPPER.treeToValue(invoke("resolve",Map.of("root",root.toString(),"roots",roots.stream().map(Path::toString).toList(),"ignore_versions",ignoreVersions),null),ProjectModelState.Resolved.class);
-        install(key,resolved);return resolved.resolution();
+        install(key,resolved,invalidated);return resolved.resolution();
+    }
+    /** Whether mutation publication is reliable for the currently installed workspace resident. */
+    public synchronized boolean workspaceWatchReliable(Path root,List<Path> roots,boolean ignoreVersions,Collection<Path> lifecycleInputs){
+        var resident=residents.get(new RequestCacheKey(root,roots,ignoreVersions,List.copyOf(lifecycleInputs)));
+        return resident!=null&&resident.reliable();
     }
 
     @Override public synchronized void close() {

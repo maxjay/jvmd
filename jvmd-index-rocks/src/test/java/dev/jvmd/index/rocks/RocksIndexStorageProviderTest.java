@@ -9,6 +9,76 @@ import static org.assertj.core.api.Assertions.*;
 class RocksIndexStorageProviderTest {
     @TempDir Path temp;
 
+    @Test void machineSemanticViewQueriesOwnerPrefixWithoutResidentPromotion()throws Exception{
+        Path root=temp.resolve("machine-members"),jar=Files.writeString(temp.resolve("dependency.jar"),"fixture");
+        var key=ArtifactIndexFormat.key("c".repeat(64),"signatures");
+        var symbols=java.util.List.of(
+                new ArtifactIndexFormat.SymbolRecord(0,-1,"dep.Parent","dep.Parent","Parent","class","class dep.Parent",null,1,"dep/Parent.class",java.util.List.of(),"{}"),
+                new ArtifactIndexFormat.SymbolRecord(1,-1,"dep.Child","dep.Child","Child","class","class dep.Child",null,1,"dep/Child.class",java.util.List.of(),"{}"),
+                new ArtifactIndexFormat.SymbolRecord(2,1,"dep.Child#getAlpha()I","dep.Child","getAlpha","method","int getAlpha()","()I",1,"dep/Child.class",java.util.List.of(),"{}"),
+                new ArtifactIndexFormat.SymbolRecord(3,1,"dep.Child#setBeta()V","dep.Child","setBeta","method","void setBeta()","()V",1,"dep/Child.class",java.util.List.of(),"{}"),
+                new ArtifactIndexFormat.SymbolRecord(4,0,"dep.Parent#getInherited()I","dep.Parent","getInherited","method","int getInherited()","()I",1,"dep/Parent.class",java.util.List.of(),"{}"));
+        var facts=new ArtifactIndexFormat.ArtifactData(key,symbols,
+                java.util.List.of(new ArtifactIndexFormat.Relationship(1,"dep.Parent","extends")));
+        var input=new IndexStore.ArtifactInput(new ArtifactContext("g:a:1","jar",jar.toString()),key,Files.size(jar),1);
+        try(var storage=IndexStorage.open(root,8L*1024*1024)){
+            storage.store().publishBinary(input,facts,java.util.Set.of());
+            storage.store().loadWorkspace("w",java.util.List.of(new IndexStore.WorkspaceEntry(jar.toString(),"compile")),java.util.List.of());
+            var child=storage.store().findNamePrefix("Child","w",10,java.util.Set.of("class")).getFirst();
+            var view=SemanticReadViews.machine(storage.store(),"w");
+            String childScip=child.get("scip").toString();
+
+            var page=view.members(childScip,"get",1,null);
+            assertThat(page.symbols()).extracting(SemanticReadView.Symbol::name).containsExactly("getAlpha");
+            assertThat(page.symbols().getFirst().origin()).isEqualTo(SemanticReadView.Origin.MACHINE);
+            assertThat(view.symbol(childScip).resolutionIdentity()).isNotNull();
+
+            String parentScip=view.directSupertypes(childScip).getFirst();
+            assertThat(view.symbol(parentScip).name()).isEqualTo("Parent");
+            assertThat(view.members(parentScip,"get",10,null).symbols())
+                    .extracting(SemanticReadView.Symbol::name).containsExactly("getInherited");
+
+            assertThat(repositoryStatus(storage)).containsEntry("oracle_materializations",0L);
+            assertThat(((Number)repositoryStatus(storage).get("owner_prefix_queries")).longValue()).isEqualTo(2L);
+        }
+    }
+
+    @Test void localAndMachineSemanticLayersRemainIndependentlyAddressable()throws Exception{
+        Path root=temp.resolve("layer-overlap");
+        Path machinePath=Files.writeString(temp.resolve("machine.jar"),"machine");
+        Path localPath=Files.createDirectories(temp.resolve("local-classes"));
+        var machineKey=ArtifactIndexFormat.key("d".repeat(64),"signatures");
+        var localKey=ArtifactIndexFormat.key("e".repeat(64),"local-signatures");
+        var symbols=java.util.List.of(
+                new ArtifactIndexFormat.SymbolRecord(0,-1,"dep.Shared","dep.Shared","Shared","class",
+                        "class dep.Shared",null,1,"dep/Shared.class",java.util.List.of(),"{}"),
+                new ArtifactIndexFormat.SymbolRecord(1,0,"dep.Shared#value()I","dep.Shared","value","method",
+                        "int value()","()I",1,"dep/Shared.class",java.util.List.of(),"{}"));
+        var machineFacts=new ArtifactIndexFormat.ArtifactData(machineKey,symbols,java.util.List.of());
+        var localFacts=new ArtifactIndexFormat.ArtifactData(localKey,symbols,java.util.List.of());
+        var machineContext=new ArtifactContext("g:a:1","jar",machinePath.toString());
+        var localContext=new ArtifactContext("g:a:1","local",localPath.toString());
+
+        try(var storage=IndexStorage.open(root,8L*1024*1024)){
+            storage.store().publishBinary(new IndexStore.ArtifactInput(machineContext,machineKey,Files.size(machinePath),1),machineFacts,java.util.Set.of());
+            storage.store().publishBinary(new IndexStore.ArtifactInput(localContext,localKey,0,1),localFacts,java.util.Set.of());
+            storage.store().loadWorkspace("w",java.util.List.of(
+                    new IndexStore.WorkspaceEntry(localPath.toString(),"local"),
+                    new IndexStore.WorkspaceEntry(machinePath.toString(),"compile")),java.util.List.of());
+
+            String shared=machineContext.scip(symbols.getFirst());
+            var local=SemanticReadViews.local(storage.store(),"w");
+            var machine=SemanticReadViews.machine(storage.store(),"w");
+
+            assertThat(local.symbol(shared).origin()).isEqualTo(SemanticReadView.Origin.LOCAL);
+            assertThat(machine.symbol(shared).origin()).isEqualTo(SemanticReadView.Origin.MACHINE);
+            assertThat(local.members(shared,"value",10,null).symbols()).singleElement()
+                    .satisfies(symbol->assertThat(symbol.origin()).isEqualTo(SemanticReadView.Origin.LOCAL));
+            assertThat(machine.members(shared,"value",10,null).symbols()).singleElement()
+                    .satisfies(symbol->assertThat(symbol.origin()).isEqualTo(SemanticReadView.Origin.MACHINE));
+        }
+    }
+
     @Test void candidateValidationStreamsOnReopenAndReusesOwnedPublicationProof()throws Exception{
         var key=ArtifactIndexFormat.key("a".repeat(64),"signatures");
         var symbol=new ArtifactIndexFormat.SymbolRecord(0,-1,"dep.Type","dep.Type","Type","class","class dep.Type",null,1,"dep/Type.class",java.util.List.of(),"{}");

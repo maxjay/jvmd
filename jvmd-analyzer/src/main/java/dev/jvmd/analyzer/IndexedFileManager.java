@@ -139,9 +139,12 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     private List<Path> classInputs(){return modulePaths.isEmpty()?classpath:classpath.stream().filter(path->modulePaths.values().stream().noneMatch(paths->paths.contains(path))).toList();}
     public void validateClasspath(CompilerInputs.EnvironmentIdentity current){
         try {
+            // A watcher may not have published a replacement/deletion yet. Validate the
+            // archives actually used by this compiler before trusting an equal environment.
+            // FileStateRegistry retains content hashes behind change-time/inode evidence.
+            for(var catalog:catalogs.values())if(!catalog.stamp().equals(stamp(catalog.path())))throw new IOException("Loaded classpath changed: "+catalog.path());
             if(current.equals(acceptedEnvironment))return;
             for(Path path:classpath)if(path.toString().endsWith(".jar")&&!Files.isRegularFile(path))throw new IOException("Missing classpath archive: "+path);
-            for(var catalog:catalogs.values())if(!catalog.stamp().equals(stamp(catalog.path())))throw new IOException("Loaded classpath changed: "+catalog.path());
             if(acceptedEnvironment!=null&&!current.equals(acceptedEnvironment)){
                 environmentChanges++;throw new IOException("classpath changed during analysis");
             }

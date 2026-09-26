@@ -6,6 +6,11 @@ on:
     paths:
       - 'benchmarks/phase-model.json'
       - 'benchmarks/lsp-scenarios/**'
+      - 'jvmd-analyzer/**'
+      - 'jvmd-index/**'
+      - 'jvmd-index-rocks/**'
+      - 'jvmd-dist/**'
+      - 'jvmd-lsp/**'
       - 'shim/src/**'
       - 'shim/test/**'
       - '.github/workflows/lsp-scenarios.yml'
@@ -14,6 +19,11 @@ on:
     paths:
       - 'benchmarks/phase-model.json'
       - 'benchmarks/lsp-scenarios/**'
+      - 'jvmd-analyzer/**'
+      - 'jvmd-index/**'
+      - 'jvmd-index-rocks/**'
+      - 'jvmd-dist/**'
+      - 'jvmd-lsp/**'
       - 'shim/src/**'
       - 'shim/test/**'
       - '.github/workflows/lsp-scenarios.yml'

@@ -46,6 +46,9 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
         return actor.handle;
     }
 
+    public void sourceChanged(Path path,String hash)throws Exception{
+        changed(path,hash);
+    }
     private void changed(Path path,String hash)throws Exception{
         path=path.toAbsolutePath().normalize();FileSemanticContribution previous;
         List<Actor> snapshot;
@@ -72,6 +75,15 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
         long cpu=0;for(var entry:actors.entrySet()){detail.put(entry.getKey(),entry.getValue().status());cpu+=entry.getValue().cpuNanos();}
         return Map.of("initialized",true,"parallelism",parallelism,"actor_count",actors.size(),
                 "cpu_ms",Math.round(cpu/1000.0)/1000.0,"known_api_contributions",contributions.size(),"actors",detail);
+    }
+    /** Compact proof surface: cumulative javac query count for each instantiated module actor. */
+    public synchronized Map<String,Long> queryCounts()throws Exception{
+        var result=new LinkedHashMap<String,Long>();
+        for(var entry:actors.entrySet()){
+            Object value=entry.getValue().status().get("queries");
+            result.put(entry.getKey(),value instanceof Number number?number.longValue():0L);
+        }
+        return Collections.unmodifiableMap(result);
     }
     public Map<String,Object> analyzerStatus(Map<String,Object> additional)throws Exception{
         List<Map<String,Object>> states=new ArrayList<>();if(additional!=null&&!additional.isEmpty())states.add(additional);

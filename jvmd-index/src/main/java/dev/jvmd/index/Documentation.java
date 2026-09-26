@@ -49,19 +49,30 @@ public final class Documentation {
         }
         return doc;
     }
+    private void ensureSignatureEdges(String workspace)throws Exception{
+        index.ensureSignatureEdges(workspace);
+    }
 
     private Map<String,Object> documented(Map<String,Object> original,String detail,String workspace)throws Exception{
         var symbol=new LinkedHashMap<>(original);String scip=Objects.toString(original.get("scip"),"");
-        String doc=scip.isBlank()?(String)original.get("doc"):inherited(scip,workspace,new HashSet<>());
+        String doc=(String)original.get("doc");
+        if(!scip.isBlank()&&doc==null){
+            var current=index.store().byScip(scip,workspace);
+            if(current!=null)doc=(String)current.get("doc");
+        }
+        if(!scip.isBlank()&&doc!=null&&doc.contains("{@inheritDoc}")){
+            ensureSignatureEdges(workspace);
+            doc=inherited(scip,workspace,new HashSet<>());
+        }
         symbol.put("doc",detail.equals("summary")?DocMarkdown.summary(doc):doc);return symbol;
     }
 
     public Envelope describe(Map<String,Object> symbol,String workspace,String detail,int depth,int limit,int offset)throws Exception{
         if(!Set.of("summary","full").contains(detail)||depth<0||depth>10||limit<1||limit>200||offset<0)
             throw RpcException.invalid("Invalid documentation detail, depth, limit or cursor");
-        index.ensureSignatureEdges(workspace);
-        var root=documented(symbol,detail,workspace);var closure=new ArrayList<Map<String,Object>>();boolean more=false;
         String scip=Objects.toString(symbol.get("scip"),"");
+        if(depth>0&&!scip.isBlank())ensureSignatureEdges(workspace);
+        var root=documented(symbol,detail,workspace);var closure=new ArrayList<Map<String,Object>>();boolean more=false;
         if(depth>0&&!scip.isBlank()){
             completeJdk(scip,depth,workspace);
             int scan=offset;

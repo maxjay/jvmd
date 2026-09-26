@@ -33,6 +33,20 @@ class UnimportedTypeCompletionTest {
             assertThat(item).as(completion.toString()).isNotNull();
             assertThat(item.path("detail").asText()).isEqualTo("lib.Sample");
             assertThat(item.path("textEdit").path("newText").asText()).isEqualTo("Sample");
+            assertThat(item.path("data").path("semantic_origin").asText()).isEqualTo("machine");
+            long beforeResolve=analyzerQueries(app,session);
+            var resolved=TestSupport.request(app.dispatcher(),"lsp.request",Map.of(
+                    "session",session,"method","completionItem/resolve","params",item,"client",Map.of()));
+            assertThat(resolved.has("error")).as(resolved.toPrettyString()).isFalse();
+            assertThat(analyzerQueries(app,session)).as("indexed type resolve must stay off javac").isEqualTo(beforeResolve);
+            // The same SCIP is absent from LOCAL. Exact origin selection must reject it,
+            // rather than silently resolving the MACHINE declaration through another layer.
+            var wrongLayer=(com.fasterxml.jackson.databind.node.ObjectNode)item.deepCopy();
+            ((com.fasterxml.jackson.databind.node.ObjectNode)wrongLayer.path("data")).put("semantic_origin","local");
+            var rejected=TestSupport.request(app.dispatcher(),"lsp.request",Map.of(
+                    "session",session,"method","completionItem/resolve","params",wrongLayer,"client",Map.of()));
+            assertThat(rejected.path("error").path("code").asInt()).isEqualTo(-32801);
+            assertThat(analyzerQueries(app,session)).isEqualTo(beforeResolve);
             assertThat(item.path("additionalTextEdits").size()).isEqualTo(1);
             assertThat(item.path("additionalTextEdits").get(0).path("newText").asText()).contains("import lib.Sample;");
             assertThat(item.path("additionalTextEdits").get(0).path("range").path("start").path("character").asInt())
@@ -46,6 +60,41 @@ class UnimportedTypeCompletionTest {
             long after=indexQueries(app,session);
             assertThat(memberCompletion.path("result").path("result").path("items").findValuesAsText("name")).doesNotContain("Sample");
             assertThat(after-before).isZero();
+        }
+    }
+
+    @Test void dependencyCompletionResolveDoesNotScanWorkspaceSource()throws Exception{
+        var config=TestSupport.config(root,Duration.ofHours(4));
+        installDependency(config.m2Repo());
+        Path project=MavenFixtures.project(root.resolve("resolve-project"),
+                "<properties><maven.compiler.release>25</maven.compiler.release></properties><dependencies>"+
+                        MavenFixtures.dependency("library","1")+"</dependencies>");
+        Path sourceRoot=Files.createDirectories(project.resolve("src/main/java/app"));
+        Path file=sourceRoot.resolve("Use.java");
+        String source="package app; import lib.Sample; class Use { Object read(Sample value){ return value.lab; } }";
+        Files.writeString(file,source);
+        // No prior query has cached this file's outline/bindings. Generic workspace
+        // discovery would enter javac here and fail the zero-query resolve assertion.
+        Files.writeString(sourceRoot.resolve("Unqueried.java"),"package app; class Unqueried { int distinct; }");
+
+        try(var app=new Application(config)){
+            String session=TestSupport.open(app,project);
+            TestSupport.request(app.dispatcher(),"document.open",Map.of(
+                    "session",session,"path",file.toString(),"version",1,"text",source));
+            var completion=lspCompletion(app,session,file,source,source.indexOf("value.lab")+"value.lab".length());
+            JsonNode item=null;
+            for(var candidate:completion.path("items"))if(candidate.path("label").asText().startsWith("label(")){item=candidate;break;}
+            assertThat(item).as(completion.toString()).isNotNull();
+            assertThat(item.path("data").path("scip").asText()).startsWith("maven fixture/library 1 ");
+
+            long before=analyzerQueries(app,session);
+            var response=TestSupport.request(app.dispatcher(),"lsp.request",Map.of(
+                    "session",session,"method","completionItem/resolve","params",item,"client",Map.of()));
+            assertThat(response.has("error")).as(response.toPrettyString()).isFalse();
+            assertThat(response.path("result").path("result").path("value").path("label").asText()).startsWith("label(");
+            assertThat(analyzerQueries(app,session))
+                    .as("dependency resolve must use the indexed SCIP directly rather than scanning workspace source")
+                    .isEqualTo(before);
         }
     }
 
@@ -79,6 +128,11 @@ class UnimportedTypeCompletionTest {
         var response=TestSupport.request(app.dispatcher(),"lsp.request",Map.of("session",session,"method","textDocument/completion","params",params,"client",Map.of()));
         assertThat(response.has("error")).as(response.toString()).isFalse();
         return response.path("result").path("result").path("value");
+    }
+
+    private static long analyzerQueries(Application app,String session){
+        return TestSupport.request(app.dispatcher(),"session.status",Map.of("session",session,"section","analyzer"))
+                .path("result").path("result").path("analyzer").path("queries").asLong();
     }
 
     private static long indexQueries(Application app,String session){

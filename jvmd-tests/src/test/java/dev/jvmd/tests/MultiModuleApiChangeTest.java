@@ -32,22 +32,28 @@ class MultiModuleApiChangeTest {
             String session=TestSupport.open(app,root);
             assertThat(request(app,"diag.get",Map.of("session",session,"limit",1000)).path("diagnostics").isEmpty()).isTrue();
             var before=request(app,"session.status",Map.of("session",session));
-            long independentQueries=independentQueries(before);
+            long independentQueries=independentQueries(app,session);
+            assertThat(before.path("diagnostics").path("last").path("files_total").asInt())
+                    .as(before.toPrettyString()).isGreaterThanOrEqualTo(96);
             for(int i=0;i<4;i++){
                 boolean changed=i%2==0;String type=changed?"String":"int",value=changed?"\"changed\"":"1";
                 Files.writeString(base,"package fixture.core; public class Core0 { public static "+type+" value(){return "+value+";} }");
                 var result=request(app,"diag.get",Map.of("session",session,"limit",1000));
                 assertThat(result.path("diagnostics").size()).isEqualTo(changed?32:0);
                 var status=request(app,"session.status",Map.of("session",session));
-                assertThat(independentQueries(status)).as("unrelated module stays cached after signature change %s",i).isEqualTo(independentQueries);
+                assertThat(independentQueries(app,session))
+                        .as("independent module must receive no additional javac work after signature change %s",i)
+                        .isEqualTo(independentQueries);
                 assertThat(status.path("diagnostics").path("last").path("files_valid").asInt()).isGreaterThanOrEqualTo(32);
             }
         }
     }
-    private static long independentQueries(JsonNode status){
-        var compilers=status.path("analyzer").path("module_compilers");long count=0;boolean found=false;
-        for(var entry:compilers.properties())if(entry.getKey().contains(":independent:1:main")){found=true;count+=entry.getValue().path("queries").asLong();}
-        assertThat(found).isTrue();return count;
+    private static long independentQueries(Application app,String session){
+        var status=request(app,"session.status",Map.of("session",session,"section","module_actors"));
+        long queries=0;
+        for(var entry:status.path("actor_queries").properties())
+            if(entry.getKey().replace('\\','/').contains("/independent:false"))queries+=entry.getValue().asLong();
+        return queries;
     }
     private static JsonNode request(Application app,String method,Map<String,?> parameters){
         var response=TestSupport.request(app.dispatcher(),method,parameters);assertThat(response.has("error")).withFailMessage(response.toPrettyString()).isFalse();

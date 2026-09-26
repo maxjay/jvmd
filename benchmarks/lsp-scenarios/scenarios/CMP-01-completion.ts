@@ -19,7 +19,7 @@ export default class CompletionScenario extends LspScenarioHarness {
     const callerWithProbe=insertBeforeLastBrace(
       caller.text,
       "\n    private void benchmarkCompletion(MavenProject project) {\n        project."+marker+"\n    }\n"+
-      "    private void benchmarkMachineCompletion(java.util.ArrayList<String> values) {\n        values."+machineMarker+"\n    }\n",
+      "    private void benchmarkMachineCompletion(java.util.ArrayList values) {\n        values."+machineMarker+"\n    }\n",
     );
     const finalCaller=callerWithProbe.replace(marker,"").replace(machineMarker,"");
     const position=positionAfter(finalCaller,"project.");

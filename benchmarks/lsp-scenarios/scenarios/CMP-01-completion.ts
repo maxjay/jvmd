@@ -15,17 +15,17 @@ export default class CompletionScenario extends LspScenarioHarness {
       "impl/maven-core/src/main/java/org/apache/maven/project/DefaultMavenProjectHelper.java",
     );
 
-    const marker="/*BENCH_CURSOR*/";
+    const marker="/*BENCH_CURSOR*/",machineMarker="/*BENCH_MACHINE_CURSOR*/";
     const callerWithProbe=insertBeforeLastBrace(
       caller.text,
-      "\n    private void benchmarkCompletion(MavenProject project) {\n        project."+marker+"\n    }\n",
+      "\n    private void benchmarkCompletion(MavenProject project) {\n        project."+marker+"\n    }\n"+
+      "    private void benchmarkMachineCompletion(java.util.ArrayList<String> values) {\n        values."+machineMarker+"\n    }\n",
     );
-    const offset=callerWithProbe.indexOf(marker);
-    assert(offset>=0);
-    const before=callerWithProbe.slice(0,offset).split("\n");
-    const position={line:before.length-1,character:before.at(-1)!.length};
+    const finalCaller=callerWithProbe.replace(marker,"").replace(machineMarker,"");
+    const position=positionAfter(finalCaller,"project.");
+    const machinePosition=positionAfter(finalCaller,"values.");
 
-    await this.change(caller.uri,callerWithProbe.replace(marker,""));
+    await this.change(caller.uri,finalCaller);
     await this.endDocumentAdmission();
 
     const completion=()=>this.request<CompletionResponse>("textDocument/completion",{
@@ -34,13 +34,12 @@ export default class CompletionScenario extends LspScenarioHarness {
       context:{triggerKind:2,triggerCharacter:"."},
     });
 
-    let firstCandidate:any,machineCandidate:any;
+    let firstCandidate:any;
     const nativeBeforeFirst=analyzerEvidence(await this.nativeAnalyzerStatus());
     this.beginFirstUse();
     const firstUse=await this.measure(completion,response=>{
       const items=Array.isArray(response)?response:response?.items??[];
       firstCandidate=items[0];
-      machineCandidate=items.find((item:any)=>item?.data?.semantic_origin==="machine");
       return normaliseCompletion(response);
     });
     this.finishFirstUse();
@@ -54,38 +53,47 @@ export default class CompletionScenario extends LspScenarioHarness {
         )
       :undefined;
 
-    // Separately prove the exact MACHINE resolve lifecycle on a candidate whose semantic origin is
-    // explicitly MACHINE. This avoids conflating a LIVE workspace declaration with dependency lookup.
+    // Separately prove exact MACHINE completion/resolve on a type whose semantic state comes from
+    // the machine/JDK index. This does not participate in the legacy project. oracle.
     const nativeBeforeResolve=analyzerEvidence(await this.nativeAnalyzerStatus());
-    if(nativeBeforeResolve)assert(machineCandidate,"JVMD CMP completion must expose a MACHINE-origin candidate for resolve proof");
-    const machineResolved=machineCandidate
-      ?await this.measure(
-          ()=>this.request<any>("completionItem/resolve",machineCandidate),
-          normaliseResolvedCompletion,
-        )
-      :undefined;
-    const nativeAfterResolve=analyzerEvidence(await this.nativeAnalyzerStatus());
-    if(machineCandidate&&nativeBeforeResolve&&nativeAfterResolve){
-      assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"queries"),0,
+    let machineResolved:any;
+    if(nativeBeforeResolve){
+      const machineResponse=await this.request<CompletionResponse>("textDocument/completion",{
+        textDocument:{uri:caller.uri},
+        position:machinePosition,
+        context:{triggerKind:2,triggerCharacter:"."},
+      });
+      const machineItems=Array.isArray(machineResponse)?machineResponse:machineResponse?.items??[];
+      const machineCandidate=machineItems.find((item:any)=>item?.data?.semantic_origin==="machine");
+      assert(machineCandidate,"JVMD machine probe must expose a MACHINE-origin candidate for resolve proof");
+      const beforeMachineResolve=analyzerEvidence(await this.nativeAnalyzerStatus());
+      machineResolved=await this.measure(
+        ()=>this.request<any>("completionItem/resolve",machineCandidate),
+        normaliseResolvedCompletion,
+      );
+      const afterMachineResolve=analyzerEvidence(await this.nativeAnalyzerStatus());
+      assert(beforeMachineResolve&&afterMachineResolve);
+      assert.equal(counterDelta(beforeMachineResolve,afterMachineResolve,"queries"),0,
         "MACHINE completionItem/resolve must not enter javac: "+
-        JSON.stringify({candidate:machineCandidate?.data??null,delta:counterDiff(nativeBeforeResolve,nativeAfterResolve)}));
-      assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.workspace_find_calls"),0,
+        JSON.stringify({candidate:machineCandidate?.data??null,delta:counterDiff(beforeMachineResolve,afterMachineResolve)}));
+      assert.equal(counterDelta(beforeMachineResolve,afterMachineResolve,"resolve.workspace_find_calls"),0,
         "MACHINE completionItem/resolve must not enter generic workspaceFind");
-      assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.workspace_find_files_scanned"),0,
+      assert.equal(counterDelta(beforeMachineResolve,afterMachineResolve,"resolve.workspace_find_files_scanned"),0,
         "MACHINE completionItem/resolve must scan zero workspace source files");
-      assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.workspace_bindings_builds"),0,
+      assert.equal(counterDelta(beforeMachineResolve,afterMachineResolve,"resolve.workspace_bindings_builds"),0,
         "MACHINE completionItem/resolve must not construct workspace bindings");
-      assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.dependency_exact_describe_hits"),1,
+      assert.equal(counterDelta(beforeMachineResolve,afterMachineResolve,"resolve.dependency_exact_describe_hits"),1,
         "MACHINE completionItem/resolve must use exactly one exact indexed identity lookup");
-      assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.machine_exact_describe_attempts"),1,
+      assert.equal(counterDelta(beforeMachineResolve,afterMachineResolve,"resolve.machine_exact_describe_attempts"),1,
         "MACHINE completionItem/resolve must perform exactly one MACHINE-layer lookup");
-      assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.machine_exact_describe_misses"),0,
+      assert.equal(counterDelta(beforeMachineResolve,afterMachineResolve,"resolve.machine_exact_describe_misses"),0,
         "MACHINE completionItem/resolve exact lookup must not miss");
-      assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.local_exact_describe_attempts"),0,
+      assert.equal(counterDelta(beforeMachineResolve,afterMachineResolve,"resolve.local_exact_describe_attempts"),0,
         "MACHINE completionItem/resolve must not resolve through LOCAL state");
-      assert.equal(counterDelta(nativeBeforeResolve,nativeAfterResolve,"resolve.live_describe_rebinds"),0,
+      assert.equal(counterDelta(beforeMachineResolve,afterMachineResolve,"resolve.live_describe_rebinds"),0,
         "MACHINE completionItem/resolve must not enter live source enrichment");
     }
+    const nativeAfterResolve=analyzerEvidence(await this.nativeAnalyzerStatus());
 
     const nativeBeforeRepeated=analyzerEvidence(await this.nativeAnalyzerStatus());
     const rest=await this.measureWarmupAndSteady(completion,normaliseCompletion);
@@ -129,6 +137,14 @@ export default class CompletionScenario extends LspScenarioHarness {
       },
     };
   }
+}
+
+function positionAfter(source:string,needle:string){
+  const offset=source.indexOf(needle);
+  assert(offset>=0);
+  const cursor=offset+needle.length;
+  const before=source.slice(0,cursor).split("\n");
+  return {line:before.length-1,character:before.at(-1)!.length};
 }
 
 function insertBeforeLastBrace(source:string,text:string){

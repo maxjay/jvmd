@@ -153,6 +153,10 @@ public final class Application implements AutoCloseable {
                     :interactiveAnalyzer==null?Map.of("initialized",false):interactiveAnalyzer.status();
             if(statusSection.equals("analyzer"))
                 return new Envelope(0,"live",false,null,s.warnings(),Map.of("session",s.id(),"root",s.root().toString(),"analyzer",analyzerStatus));
+            if(statusSection.equals("module_actors"))
+                return new Envelope(0,"live",false,null,s.warnings(),Map.of(
+                        "session",s.id(),"root",s.root().toString(),
+                        "actor_queries",actorRegistry==null?Map.of():actorRegistry.queryCounts()));
             var graph=(Resolution)s.state("resolution");var result=new LinkedHashMap<String,Object>();
             result.put("shared_classpath_files",classpathFiles.status());
             result.put("diagnostics",s.state("diagnostics")==null?Map.of("initialized",false):diagnostics(s).status());result.put("file_states",documents(s).fileStates().status());result.put("analysis_contexts",s.state("analysis_contexts")==null?Map.of():((WorkspaceContextManager)s.state("analysis_contexts")).status());

@@ -319,8 +319,19 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var symbol=view.type(binary);return symbol==null?Optional.empty():Optional.of(symbol.resolutionIdentity());
     }
     private boolean addReceiverLookupProof(Map<QueryProof.Key,Hash256> values,SemanticReadView view,
-                                           String receiverType,String memberName,boolean call,
+                                           String receiverType,String selectedOwner,String memberName,boolean call,
                                            Collection<String> failures)throws Exception{
+        // If javac selected a declaration on an ancestor, the conclusion is an effective hierarchy
+        // lookup. Bind it to the receiver hierarchy so any ancestor API mutation reconsiders this
+        // direct consumer. A direct declaration (receiver == owner) remains name/range selective.
+        if(selectedOwner!=null&&!selectedOwner.equals(receiverType)){
+            var hierarchy=view.identity(QueryProof.Domain.HIERARCHY,receiverType);
+            if(hierarchy.isEmpty()){
+                failures.add("receiver-hierarchy-missing:"+receiverType);return false;
+            }
+            addProofDependency(values,new QueryProof.Dependency(QueryProof.Domain.HIERARCHY,receiverType,hierarchy.get()));
+            return true;
+        }
         var queue=new ArrayDeque<String>();queue.add(receiverType);var seen=new HashSet<String>();
         while(!queue.isEmpty()){
             String owner=queue.removeFirst();if(!seen.add(owner))continue;
@@ -343,12 +354,13 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 String binary=declared.name().replace((char)36,'.');
                 boolean workspaceParent=liveSourceState!=null&&liveSourceState.source(binary).isPresent();
                 if(!workspaceParent)continue;
-                var parentSymbol=view.symbol(declared.symbolId());
-                if(parentSymbol==null){failures.add("receiver-parent-missing:"+declared.symbolId());return false;}
-                if(!currentSourceFact(semanticState().symbol(declared.symbolId()))){
-                    failures.add("receiver-parent-stale:"+declared.symbolId());return false;
+                var parentSymbol=view.type(binary);
+                if(parentSymbol==null){failures.add("receiver-parent-missing:"+binary);return false;}
+                var residentParent=semanticState().symbol(parentSymbol.id());
+                if(residentParent==null||!currentSourceFact(residentParent)){
+                    failures.add("receiver-parent-stale:"+parentSymbol.id());return false;
                 }
-                queue.addLast(declared.symbolId());
+                queue.addLast(parentSymbol.id());
             }
         }
         return true;
@@ -385,7 +397,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                     for(var reference:references){
                         if(reference.receiverType()==null){
                             precise=false;coverageFailures.add("missing-receiver:"+fact.id());
-                        }else if(!addReceiverLookupProof(values,view,reference.receiverType(),fact.name(),edge.kind().equals("calls"),coverageFailures)){
+                        }else if(!addReceiverLookupProof(values,view,reference.receiverType(),fact.ownerId(),fact.name(),edge.kind().equals("calls"),coverageFailures)){
                             precise=false;coverageFailures.add("incomplete-receiver-lookup:"+reference.receiverType()+"#"+fact.name());
                         }
                     }

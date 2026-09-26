@@ -82,7 +82,9 @@ public final class LspFacade {
             if(!expected.isEmpty()&&!expected.equals(current))
                 throw new RpcException(-32801,"Completion item is stale",Map.of("scip",ref,"expected",expected,"current",current));
             var item=(ObjectNode)nativeParams.deepCopy();
-            if(!item.hasNonNull("detail")&&described.hasNonNull("signature"))item.put("detail",described.path("signature").asText());
+            // Resolve is the enrichment boundary: replace the shallow completion detail with the
+            // exact current declaration signature after semantic identity has been validated.
+            if(described.hasNonNull("signature"))item.put("detail",described.path("signature").asText());
             String doc=described.path("doc").asText("");
             if(!doc.isEmpty())item.set("documentation",Json.MAPPER.valueToTree(Map.of("kind","markdown","value",doc)));
             return query.finish(item);

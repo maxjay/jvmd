@@ -88,7 +88,10 @@ public final class LspFacade {
             String owner=described.path("declaring").asText("");
             String label=item.path("label").asText("");
             if(!owner.isBlank()&&!label.isBlank()){
-                int dot=Math.max(owner.lastIndexOf('.'),owner.lastIndexOf('            String doc=described.path("doc").asText("");
+                int dot=Math.max(owner.lastIndexOf('.'),owner.lastIndexOf((char)36));
+                item.put("detail",owner.substring(dot+1)+"."+label);
+            }else if(described.hasNonNull("signature"))item.put("detail",described.path("signature").asText());
+            String doc=described.path("doc").asText("");
             if(!doc.isEmpty())item.set("documentation",Json.MAPPER.valueToTree(Map.of("kind","markdown","value",doc)));
             return query.finish(item);
         }

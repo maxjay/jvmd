@@ -154,8 +154,11 @@ function analyzerEvidence(value:any){
     result["resident."+key]=typeof resident?.[key]==="number"?resident[key]:null;
   const resolve=value?.resolve_evidence??{};
   for(const key of ["workspace_find_calls","workspace_find_files_scanned","workspace_bindings_builds","dependency_exact_describe_hits",
-                    "machine_exact_describe_attempts","machine_exact_describe_misses","local_exact_describe_attempts",
-                    "local_exact_describe_hits","live_describe_rebinds"])
+                    "machine_exact_describe_attempts","machine_exact_describe_misses","machine_exact_describe_ms",
+                    "local_exact_describe_attempts","local_exact_describe_hits","local_exact_describe_ms",
+                    "documentation_describe_calls","documentation_describe_ms","documentation.describe_calls",
+                    "documentation.describe_ms","documentation.ensure_signature_edges_calls","documentation.ensure_signature_edges_ms",
+                    "documentation.inherit_doc_calls","documentation.inherit_doc_ms","live_describe_rebinds"])
     result["resolve."+key]=typeof resolve?.[key]==="number"?resolve[key]:null;
   result["resolve.last_describe_ref"]=typeof resolve?.last_describe_ref==="string"?resolve.last_describe_ref:null;
   return result;

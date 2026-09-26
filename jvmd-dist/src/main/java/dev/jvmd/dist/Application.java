@@ -719,7 +719,13 @@ public final class Application implements AutoCloseable {
             }
             if(selected.isEmpty()&&preferredMember!=null){
                 String preferredScip=Objects.toString(preferredMember.get("scip"),"");
-                declarations.stream().filter(member->preferredScip.equals(Objects.toString(member.get("scip"),""))).findFirst().ifPresent(selected::add);
+                String preferredPath=Objects.toString(preferredMember.get("name_path"),"");
+                String preferredKind=Objects.toString(preferredMember.get("kind"),"");
+                declarations.stream().filter(member->
+                        preferredScip.equals(Objects.toString(member.get("scip"),""))
+                        ||(!preferredPath.isBlank()&&preferredPath.equals(Objects.toString(member.get("name_path"),""))
+                            &&preferredKind.equals(Objects.toString(member.get("kind"),""))))
+                        .findFirst().ifPresent(selected::add);
             }
             if(!selected.isEmpty()){
                 var seenDiagnostics=new LinkedHashSet<String>();

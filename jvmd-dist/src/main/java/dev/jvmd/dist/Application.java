@@ -10,6 +10,7 @@ import dev.jvmd.core.*;
 import dev.jvmd.resolver.MavenResolver;
 import dev.jvmd.resolver.Resolution;
 import dev.jvmd.index.IndexService;
+import dev.jvmd.index.IndexStore;
 import dev.jvmd.index.SymbolReadView;
 import dev.jvmd.index.IndexStorage;
 import dev.jvmd.index.IndexSemanticState;

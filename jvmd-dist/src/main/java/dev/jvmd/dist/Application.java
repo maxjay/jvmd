@@ -538,16 +538,37 @@ public final class Application implements AutoCloseable {
             var symbol=validated.symbol(ref);if(symbol!=null)return new Envelope(validated.tier(),"live",false,null,validated.warnings(),symbol);
             var direct=validated.lookup(ref);if(direct.size()==1)return new Envelope(validated.tier(),"live",false,null,validated.warnings(),direct.getFirst());
         }
-        // A canonical Maven SCIP can name an exact MACHINE declaration even when the same symbol
-        // was observed incidentally in a focused javac binding. Prefer the indexed declaration
-        // before any source-position freshness work; LOCAL/source artifacts still fall through to
-        // the live path below.
+        // A completion item carries its semantic layer. Resolve that exact layer directly,
+        // independent of the SCIP scheme (Maven, JDK, or another machine artifact), and require
+        // captured resolution identity equality before enrichment. No source discovery is allowed.
+        if("machine".equals(semanticOrigin)){
+            machineExactDescribeAttempts.incrementAndGet();long exactStarted=System.nanoTime();
+            var database=index();
+            var indexed=database.store().byScip(ref,null,IndexStore.SemanticLayer.MACHINE);
+            machineExactDescribeNanos.addAndGet(System.nanoTime()-exactStarted);
+            if(indexed!=null&&(expectedIdentity==null||expectedIdentity.isBlank()
+                    ||expectedIdentity.equals(Objects.toString(indexed.get("resolution_identity"),"")))){
+                dependencyExactDescribeHits.incrementAndGet();return Envelope.of(2,"index",indexed);
+            }
+            machineExactDescribeMisses.incrementAndGet();
+            return Envelope.of(2,"index",Map.of("scip",ref,"resolution_identity",""));
+        }
+        if("local".equals(semanticOrigin)){
+            localExactDescribeAttempts.incrementAndGet();long exactStarted=System.nanoTime();
+            var database=index();String workspace=session.state("resolution")==null?null:session.id();
+            var indexed=database.store().byScip(ref,workspace,IndexStore.SemanticLayer.LOCAL);
+            localExactDescribeNanos.addAndGet(System.nanoTime()-exactStarted);
+            if(indexed!=null&&(expectedIdentity==null||expectedIdentity.isBlank()
+                    ||expectedIdentity.equals(Objects.toString(indexed.get("resolution_identity"),"")))){
+                localExactDescribeHits.incrementAndGet();dependencyExactDescribeHits.incrementAndGet();
+                return Envelope.of(2,"index",indexed);
+            }
+            return Envelope.of(2,"index",Map.of("scip",ref,"resolution_identity",""));
+        }
+        // Legacy callers without semantic origin retain the Maven exact-index shortcut.
         if(ref.startsWith("maven ")){
-            var database=index();bindIndex(session,database);
-            String workspace=session.state("resolution")==null?null:session.id();
+            var database=index();String workspace=session.state("resolution")==null?null:session.id();
             if(expectedIdentity!=null&&!expectedIdentity.isBlank()){
-                // Enrichment may use an exact installed copy even when LOCAL source won query
-                // precedence, but only when its semantic resolution identity is byte-for-byte equal.
                 machineExactDescribeAttempts.incrementAndGet();long exactStarted=System.nanoTime();
                 var machine=database.store().byScip(ref,null,IndexStore.SemanticLayer.MACHINE);
                 machineExactDescribeNanos.addAndGet(System.nanoTime()-exactStarted);
@@ -555,31 +576,6 @@ public final class Application implements AutoCloseable {
                     dependencyExactDescribeHits.incrementAndGet();return Envelope.of(2,"index",machine);
                 }
                 machineExactDescribeMisses.incrementAndGet();
-                if("machine".equals(semanticOrigin))
-                    return Envelope.of(2,"index",Map.of("scip",ref,"resolution_identity",""));
-                if("local".equals(semanticOrigin)){
-                    localExactDescribeAttempts.incrementAndGet();exactStarted=System.nanoTime();
-                    var local=database.store().byScip(ref,workspace,IndexStore.SemanticLayer.LOCAL);
-                    localExactDescribeNanos.addAndGet(System.nanoTime()-exactStarted);
-                    if(local!=null&&expectedIdentity.equals(Objects.toString(local.get("resolution_identity"),""))){
-                        localExactDescribeHits.incrementAndGet();dependencyExactDescribeHits.incrementAndGet();
-                        return Envelope.of(2,"index",local);
-                    }
-                    return Envelope.of(2,"index",Map.of("scip",ref,"resolution_identity",""));
-                }
-            }else if("machine".equals(semanticOrigin)){
-                machineExactDescribeAttempts.incrementAndGet();long exactStarted=System.nanoTime();
-                var indexed=database.store().byScip(ref,workspace,IndexStore.SemanticLayer.MACHINE);
-                machineExactDescribeNanos.addAndGet(System.nanoTime()-exactStarted);
-                if(indexed!=null){dependencyExactDescribeHits.incrementAndGet();return Envelope.of(2,"index",indexed);}
-                machineExactDescribeMisses.incrementAndGet();
-                return Envelope.of(2,"index",Map.of("scip",ref,"resolution_identity",""));
-            }else if("local".equals(semanticOrigin)){
-                localExactDescribeAttempts.incrementAndGet();long exactStarted=System.nanoTime();
-                var indexed=database.store().byScip(ref,workspace,IndexStore.SemanticLayer.LOCAL);
-                localExactDescribeNanos.addAndGet(System.nanoTime()-exactStarted);
-                if(indexed!=null){localExactDescribeHits.incrementAndGet();dependencyExactDescribeHits.incrementAndGet();return Envelope.of(2,"index",indexed);}
-                return Envelope.of(2,"index",Map.of("scip",ref,"resolution_identity",""));
             }else{
                 machineExactDescribeAttempts.incrementAndGet();long exactStarted=System.nanoTime();
                 var indexed=database.store().byScip(ref,workspace,IndexStore.SemanticLayer.MACHINE);

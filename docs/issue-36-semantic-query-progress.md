@@ -1540,3 +1540,36 @@ passed normal [Tests 36250902877](https://github.com/maxjay/jvmd/actions/runs/36
 [Benchmarks 36250902882](https://github.com/maxjay/jvmd/actions/runs/36250902882), and
 [LSP 36250902854](https://github.com/maxjay/jvmd/actions/runs/36250902854).
 The next commit contains the cleanup above; its exact-head CI is the remaining gate.
+
+## Checkpoint 18 — final closeout
+
+Cleanup SHA: `03f3ca68d7b27145bb0b360cfbf84edcb01600f9`.
+Ending SHA: this documentation-only reconciliation commit. Production, permanent tests
+and normal workflows are unchanged from the verified cleanup head.
+
+Exact cleanup-head gates are green:
+- [Tests 36251666686](https://github.com/maxjay/jvmd/actions/runs/36251666686), including all normal phases and all 16 `CompletionPrefixCacheTest` regressions.
+- [Benchmarks 36251666680](https://github.com/maxjay/jvmd/actions/runs/36251666680).
+- [LSP scenarios 36251666701](https://github.com/maxjay/jvmd/actions/runs/36251666701).
+
+The final documentation-only head's exact workflow links are maintained in
+[PR #39](https://github.com/maxjay/jvmd/pull/39). Its production semantics remain those
+measured at `e0445dc8b5186f997483e277fac2e656392056a5`; cleanup only removes observation
+plumbing. No production work follows the accepted frozen proof.
+
+Final audit: both temporary workflows are absent; the temporary proof directory and
+subject selector are absent; the compact proof endpoint, resolve counters and temporary
+hotpath counters/spans are absent. Only the checklist and append-only progress log
+remain under Issue-36 filenames. Permanent correctness/work-count tests and normal
+operational metrics remain. Restored LSP harness/scenario hashes are still exactly
+`c03aaf64125e6f8a5bcf9c1ca913d888016639e5` and
+`54a1f2b90de331971be6a12d7bffe3584dd6d807`.
+
+The checklist is reconciled through Checkpoint 18. The PR body contains the final
+architecture, accepted subject/run/artifact/digest, same-harness tables, permanent
+proof evidence, measurement gaps and visible performance regressions. Follow-ups
+#41, #43 and #44 remain separate; the required edit-staging regression #45 is fixed
+and closed. Main remains `eb45487f08a986d3a5ef2acd3666177e332cdc9b`.
+
+Remaining implementation work for this closeout: none. Stop after the final
+exact-head documentation-commit gates are verified; do not resume optimization.

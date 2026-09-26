@@ -177,18 +177,22 @@ and supplemental permanent proof assertions; unavailable values are not reported
 - [x] Temporary JFR/proof harness deleted.
 - [x] Proof-only counters deleted.
 - [x] Permanent semantic regressions retained; no wall-clock assertions.
-- [ ] Checklist fully reconciled.
-- [ ] Final append-only progress entry added.
-- [ ] PR body contains final architecture/results/limitations.
-- [ ] Exact-head Tests green.
-- [ ] Exact-head Benchmarks green.
-- [ ] Exact-head LSP scenarios green where applicable.
+- [x] Checklist fully reconciled.
+- [x] Final append-only progress entry added.
+- [x] PR body contains final architecture/results/limitations.
+- [x] Exact-head Tests green.
+- [x] Exact-head Benchmarks green.
+- [x] Exact-head LSP scenarios green where applicable.
 
 ## Definition of done
-- [ ] Incomplete-source completion is correct without turning javac into the ordinary member database.
-- [ ] Maintained semantic state is queried directly across LIVE / LOCAL / MACHINE layers.
-- [ ] Reusable conclusions carry precise semantic proof dependencies.
-- [ ] Fine-grained invalidation is proof-driven for exact symbols, overloads, member ranges, namespaces, negative resolution, hierarchy and classpath resolution.
-- [ ] Semantic propagation stops on proof equality.
-- [ ] Coarse invalidation remains only as a conservative fallback.
-- [ ] Exact same-harness before/after evidence is complete and all temporary proof plumbing is removed.
+- [x] Incomplete-source completion is correct without turning javac into the ordinary member database.
+- [x] Maintained semantic state is queried directly across LIVE / LOCAL / MACHINE layers.
+- [x] Reusable conclusions carry precise semantic proof dependencies.
+- [x] Fine-grained invalidation is proof-driven for exact symbols, overloads, member ranges, namespaces, negative resolution, hierarchy and classpath resolution.
+- [x] Semantic propagation stops on proof equality.
+- [x] Coarse invalidation remains only as a conservative fallback.
+- [x] Exact same-harness before/after evidence is complete and all temporary proof plumbing is removed.
+
+Closeout: cleanup head `03f3ca68d7b27145bb0b360cfbf84edcb01600f9` passed all three
+normal workflows. The final documentation-only head keeps the same production, tests
+and workflow content; its exact-head validation links are maintained in PR #39.

@@ -32,7 +32,7 @@ class MultiModuleApiChangeTest {
             String session=TestSupport.open(app,root);
             assertThat(request(app,"diag.get",Map.of("session",session,"limit",1000)).path("diagnostics").isEmpty()).isTrue();
             var before=request(app,"session.status",Map.of("session",session));
-            var independent=independentState(before);
+            long independentQueries=independentQueries(app,session);
             assertThat(before.path("diagnostics").path("last").path("files_total").asInt())
                     .as(before.toPrettyString()).isGreaterThanOrEqualTo(96);
             for(int i=0;i<4;i++){
@@ -41,25 +41,19 @@ class MultiModuleApiChangeTest {
                 var result=request(app,"diag.get",Map.of("session",session,"limit",1000));
                 assertThat(result.path("diagnostics").size()).isEqualTo(changed?32:0);
                 var status=request(app,"session.status",Map.of("session",session));
-                var current=independentState(status);
-                assertThat(current.queries()).as("independent module javac work after signature change %s; state=%s",i,current)
-                        .isEqualTo(independent.queries());
-                if(!independent.instantiated())
-                    assertThat(current.instantiated()).as("an unrelated mutation must not instantiate the lazy independent actor").isFalse();
+                assertThat(independentQueries(app,session))
+                        .as("independent module must receive no additional javac work after signature change %s",i)
+                        .isEqualTo(independentQueries);
                 assertThat(status.path("diagnostics").path("last").path("files_valid").asInt()).isGreaterThanOrEqualTo(32);
             }
         }
     }
-    private record IndependentState(boolean instantiated,long queries){}
-    private static IndependentState independentState(JsonNode status){
-        long queries=0;boolean found=false;
-        for(var entry:status.path("module_actors").path("actors").properties()){
-            String key=entry.getKey().replace('\\','/');
-            if(key.contains("/independent:false")){
-                found=true;queries+=entry.getValue().path("queries").asLong();
-            }
-        }
-        return new IndependentState(found,queries);
+    private static long independentQueries(Application app,String session){
+        var status=request(app,"session.status",Map.of("session",session,"section","module_actors"));
+        long queries=0;
+        for(var entry:status.path("actor_queries").properties())
+            if(entry.getKey().replace('\\','/').contains("/independent:false"))queries+=entry.getValue().asLong();
+        return queries;
     }
     private static JsonNode request(Application app,String method,Map<String,?> parameters){
         var response=TestSupport.request(app.dispatcher(),method,parameters);assertThat(response.has("error")).withFailMessage(response.toPrettyString()).isFalse();

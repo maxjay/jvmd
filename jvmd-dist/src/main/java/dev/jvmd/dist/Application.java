@@ -271,6 +271,10 @@ public final class Application implements AutoCloseable {
             if(!candidatePackage.equals(packageName)&&!publicType)continue;
             var row=new LinkedHashMap<String,Object>();
             for(String key:List.of("scip","name","name_path","kind","signature","fqn","resolution_identity"))if(symbol.get(key)!=null)row.put(key,symbol.get(key));
+            // Prefix type completion is sourced directly from the persisted index. Preserve the
+            // selected artifact layer so completionItem/resolve can perform an exact layer lookup
+            // instead of rediscovering provenance through live javac state.
+            row.put("semantic_origin","local".equals(Objects.toString(symbol.get("artifact_kind"),""))?"local":"machine");
             row.put("label",fqn);
             if(needsImport(fqn,packageName,imported))row.put("import",fqn);
             types.putIfAbsent(fqn,Collections.unmodifiableMap(row));

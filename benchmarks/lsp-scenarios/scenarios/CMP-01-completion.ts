@@ -18,12 +18,10 @@ export default class CompletionScenario extends LspScenarioHarness {
     const marker="/*BENCH_CURSOR*/",machineMarker="/*BENCH_MACHINE_CURSOR*/";
     const callerWithProbe=insertBeforeLastBrace(
       caller.text,
-      "\n    private void benchmarkCompletion(MavenProject project) {\n        project."+marker+"\n    }\n"+
-      "    private void benchmarkMachineCompletion(java.util.ArrayList values) {\n        values."+machineMarker+"\n    }\n",
+      "\n    private void benchmarkCompletion(MavenProject project) {\n        project."+marker+"\n    }\n",
     );
-    const finalCaller=callerWithProbe.replace(marker,"").replace(machineMarker,"");
+    const finalCaller=callerWithProbe.replace(marker,"");
     const position=positionAfter(finalCaller,"project.");
-    const machinePosition=positionAfter(finalCaller,"values.");
 
     await this.change(caller.uri,finalCaller);
     await this.endDocumentAdmission();
@@ -58,14 +56,24 @@ export default class CompletionScenario extends LspScenarioHarness {
     const nativeBeforeResolve=analyzerEvidence(await this.nativeAnalyzerStatus());
     let machineResolved:any;
     if(nativeBeforeResolve){
+      const machineCaller=insertBeforeLastBrace(
+        finalCaller,
+        "\n    private "+machineMarker+"ArrayL benchmarkMachineValue;\n",
+      ).replace(machineMarker,"");
+      const machinePosition=positionAfter(machineCaller,"ArrayL");
+      await this.change(caller.uri,machineCaller);
       const machineResponse=await this.request<CompletionResponse>("textDocument/completion",{
         textDocument:{uri:caller.uri},
         position:machinePosition,
-        context:{triggerKind:2,triggerCharacter:"."},
+        context:{triggerKind:1},
       });
       const machineItems=Array.isArray(machineResponse)?machineResponse:machineResponse?.items??[];
-      const machineCandidate=machineItems.find((item:any)=>item?.data?.semantic_origin==="machine");
-      assert(machineCandidate,"JVMD machine probe must expose a MACHINE-origin candidate for resolve proof");
+      const machineCandidate=machineItems.find((item:any)=>
+        item?.label==="ArrayList"&&item?.data?.semantic_origin==="machine");
+      assert(machineCandidate,
+        "JVMD machine type probe must expose ArrayList as a MACHINE-origin candidate: "+
+        JSON.stringify(machineItems.slice(0,20).map((item:any)=>({label:item?.label,origin:item?.data?.semantic_origin}))));
+
       const beforeMachineResolve=analyzerEvidence(await this.nativeAnalyzerStatus());
       machineResolved=await this.measure(
         ()=>this.request<any>("completionItem/resolve",machineCandidate),

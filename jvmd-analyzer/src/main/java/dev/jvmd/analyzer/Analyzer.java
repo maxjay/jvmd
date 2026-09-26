@@ -2322,13 +2322,17 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return outcome.result();
     }
 
-    public Map<String,Object> residentDescription(String ref)throws Exception{
+    private SemanticFact currentResidentFact(String ref)throws Exception{
         var fact=semanticState().symbol(ref);if(fact==null)return null;
         if(fact.sourceFile()!=null&&liveSourceState!=null)try{
             Path source=Path.of(fact.sourceFile()).toAbsolutePath().normalize();
-            if(liveSourceState.accepts(source)){ensureSourceSemanticCurrent(source);fact=semanticState().symbol(ref);if(fact==null)return null;}
+            if(liveSourceState.accepts(source)){ensureSourceSemanticCurrent(source);fact=semanticState().symbol(ref);}
         }catch(Exception ignored){}
-        var description=loadResidentDescription(fact);var value=new LinkedHashMap<String,Object>();
+        return fact;
+    }
+
+    private Map<String,Object> residentDescription(SemanticFact fact,SymbolDescription description){
+        var value=new LinkedHashMap<String,Object>();
         value.put("scip",fact.id());value.put("name",fact.name());value.put("name_path",fact.namePath());value.put("kind",fact.kind());
         value.put("signature",description==null?fact.structuralSignature():description.detailedSignature());value.put("resolved",true);
         value.put("resolution_identity",fact.resolutionIdentity().hex());
@@ -2345,6 +2349,16 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             }
         }
         return Collections.unmodifiableMap(value);
+    }
+
+    /** Exact maintained LIVE declaration projection; no javac enrichment is performed. */
+    public Map<String,Object> residentFactDescription(String ref)throws Exception{
+        var fact=currentResidentFact(ref);return fact==null?null:residentDescription(fact,null);
+    }
+
+    /** Optional richer LIVE declaration enrichment after the exact maintained fact has been selected. */
+    public Map<String,Object> residentDescription(String ref)throws Exception{
+        var fact=currentResidentFact(ref);return fact==null?null:residentDescription(fact,loadResidentDescription(fact));
     }
 
     public List<Map<String,Object>> known(String ref){

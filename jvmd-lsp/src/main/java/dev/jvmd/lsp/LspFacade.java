@@ -77,6 +77,9 @@ public final class LspFacade {
             if(!expected.isBlank())describeParams.put("resolution_identity",expected);
             if(nativeParams.path("data").path("semantic_origin").isTextual())
                 describeParams.put("semantic_origin",nativeParams.path("data").path("semantic_origin").asText());
+            // Documentation is optional LSP enrichment. Keep field resolution on the exact maintained
+            // declaration path; callable items retain the existing documentation enrichment behavior.
+            describeParams.put("include_doc",nativeParams.path("kind").asInt()!=5);
             var described=query.one("symbol.describe",describeParams);
             String current=described.path("resolution_identity").asText("");
             if(!expected.isEmpty()&&!expected.equals(current))

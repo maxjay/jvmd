@@ -62,6 +62,27 @@ class LspFacadeTest {
         }
     }
 
+    @Test void fieldResolveUsesMaintainedDeclarationWithoutJavacOrOptionalDocumentation()throws Exception{
+        Path api=root.resolve("Api.java"),use=root.resolve("Use.java");
+        String apiSource="class Api { /** Field docs are optional completion enrichment. */ int value; }";
+        String useSource="class Use { int call(Api api){return api.val;} }";
+        Files.writeString(api,apiSource);Files.writeString(use,useSource);
+        try(var app=new Application(TestSupport.config(root,Duration.ofHours(4)))){
+            String session=TestSupport.open(app,root);
+            var completion=call(app,session,"textDocument/completion",use,useSource,useSource.indexOf("api.val")+7,Map.of());
+            JsonNode item=null;for(var candidate:completion.path("items"))if(candidate.path("label").asText().startsWith("value")){item=candidate;break;}
+            assertThat(item).as(completion.toString()).isNotNull();
+            long before=analyzerQueries(app,session);
+            var response=TestSupport.request(app.dispatcher(),"lsp.request",Map.of(
+                    "session",session,"method","completionItem/resolve","params",item,"client",CLIENT));
+            assertThat(response.has("error")).as(response.toPrettyString()).isFalse();
+            var resolved=response.path("result").path("result").path("value");
+            assertThat(resolved.path("detail").asText()).contains("Api","value");
+            assertThat(resolved.has("documentation")).isFalse();
+            assertThat(analyzerQueries(app,session)).as("exact LIVE field resolve must not enter javac").isEqualTo(before);
+        }
+    }
+
     @Test void staleCompletionItemIsRejectedBeforeEnrichment()throws Exception{
         Path api=root.resolve("Api.java"),use=root.resolve("Use.java");
         String apiSource="class Api { /** Original. */ int greet(){return 1;} }";
@@ -95,6 +116,11 @@ class LspFacadeTest {
             assertThat(rename.path("documentChanges").get(1).path("newUri").asText()).isEqualTo(root.resolve("Renamed.java").toUri().toString());assertThat(Files.exists(root.resolve("Renamed.java"))).isFalse();
         }
     }
+    private static long analyzerQueries(Application app,String session){
+        return TestSupport.request(app.dispatcher(),"session.status",Map.of("session",session,"section","analyzer"))
+                .path("result").path("result").path("analyzer").path("queries").asLong();
+    }
+
     @Test void aliasedWorkspaceKeepsUnsavedDocumentsAndDiagnosticUris()throws Exception{
         Path actual=Files.createDirectories(root.resolve("workspace")).toRealPath();
         Path alias=Files.createSymbolicLink(root.resolve("linked-workspace"),actual);

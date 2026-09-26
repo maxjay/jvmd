@@ -589,6 +589,15 @@ public final class Application implements AutoCloseable {
             }
         }
         var analyzer=(Analyzer)session.state("analyzer");
+        if("live".equals(semanticOrigin)&&analyzer!=null){
+            var resident=analyzer.residentFactDescription(ref);
+            if(resident!=null){
+                String current=Objects.toString(resident.get("resolution_identity"),"");
+                if(expectedIdentity==null||expectedIdentity.isBlank()||expectedIdentity.equals(current))
+                    return Envelope.of(2,"live",resident);
+                return Envelope.of(2,"live",Map.of("scip",ref,"resolution_identity",current));
+            }
+        }
         if((ref.startsWith("maven ")||ref.startsWith("local "))&&analyzer!=null){
             var known=analyzer.known(ref);if(known.size()==1){var symbol=known.getFirst();var file=symbol.get("source_file");
                 if(file!=null&&session.state("workspace_bindings")!=null){
@@ -622,9 +631,22 @@ public final class Application implements AutoCloseable {
         String origin=params.path("semantic_origin").isTextual()?params.path("semantic_origin").asText():null;
         if(origin!=null&&!Set.of("live","local","machine").contains(origin))throw RpcException.invalid("Unknown semantic_origin");
         String expected=params.path("resolution_identity").isTextual()?params.path("resolution_identity").asText():null;
-        var base=describe(session,Dispatcher.required(params,"ref"),null,origin,expected);
+        boolean includeDoc=!params.has("include_doc")||params.path("include_doc").asBoolean();
+        String ref=Dispatcher.required(params,"ref");
+        var base=describe(session,ref,null,origin,expected);
         if(!(base.result() instanceof Map<?,?> raw)||raw.get("scip")==null)return base;
         var symbol=new LinkedHashMap<String,Object>();for(var entry:raw.entrySet())symbol.put(entry.getKey().toString(),entry.getValue());
+        if(includeDoc&&"live".equals(origin)){
+            var analyzer=(Analyzer)session.state("analyzer");
+            var enriched=analyzer==null?null:analyzer.residentDescription(ref);
+            if(enriched!=null&&(expected==null||expected.isBlank()
+                    ||expected.equals(Objects.toString(enriched.get("resolution_identity"),""))))
+                enriched.forEach((key,value)->{if(value!=null)symbol.put(key,value);});
+        }
+        if(!includeDoc){
+            symbol.remove("doc");symbol.put("closure",List.of());
+            return new Envelope(base.tier(),base.source(),base.truncated(),base.cursor(),base.warnings(),symbol);
+        }
         if(!symbol.containsKey("id")&&depth==0){
             if(detail.equals("summary"))symbol.put("doc",dev.jvmd.index.DocMarkdown.summary((String)symbol.get("doc")));symbol.put("closure",List.of());
             return new Envelope(base.tier(),base.source(),base.truncated(),base.cursor(),base.warnings(),symbol);

@@ -84,8 +84,7 @@ public final class RocksIndexStore implements IndexStore {
     private void installed(StoredArtifact artifact)throws Exception{
         var prior=artifacts.put(artifact.id(),artifact);paths.put(artifact.input().context().path(),artifact.id());metadataWrites++;
         if(!Objects.equals(prior,artifact)){
-            if(prior!=null&&!prior.input().context().equals(artifact.input().context()))refreshSemanticObservations(prior,null);
-            refreshSemanticObservations(artifact,null);
+            refreshSemanticObservations(prior==null?List.of(artifact):List.of(prior,artifact),null);
         }
     }
     private boolean selects(String workspace,SemanticLayer layer,StoredArtifact artifact){
@@ -95,15 +94,15 @@ public final class RocksIndexStore implements IndexStore {
         return workspace==null||context.gav().startsWith("jdk:")||workspaces.getOrDefault(workspace,List.of()).stream()
                 .anyMatch(entry->entry.path().equals(context.path()));
     }
-    private void refreshSemanticObservations(StoredArtifact artifact,String workspace)throws Exception{
-        var exact=semanticLookups.keySet().stream().filter(key->artifact==null
-                ?Objects.equals(key.workspace(),workspace):selects(key.workspace(),key.layer(),artifact)).toList();
-        var searches=classpathLookups.keySet().stream().filter(key->artifact==null
-                ?Objects.equals(key.workspace(),workspace):selects(key.workspace(),SemanticLayer.MACHINE,artifact)).toList();
-        var sequences=classpathSequences.keySet().stream().filter(key->artifact==null
-                ?Objects.equals(key,workspace):selects(key,SemanticLayer.MACHINE,artifact)).toList();
+    private void refreshSemanticObservations(List<StoredArtifact> changed,String workspace)throws Exception{
+        var exact=semanticLookups.keySet().stream().filter(key->changed.isEmpty()
+                ?Objects.equals(key.workspace(),workspace):changed.stream().anyMatch(artifact->selects(key.workspace(),key.layer(),artifact))).toList();
+        var searches=classpathLookups.keySet().stream().filter(key->changed.isEmpty()
+                ?Objects.equals(key.workspace(),workspace):changed.stream().anyMatch(artifact->selects(key.workspace(),SemanticLayer.MACHINE,artifact))).toList();
+        var sequences=classpathSequences.keySet().stream().filter(key->changed.isEmpty()
+                ?Objects.equals(key,workspace):changed.stream().anyMatch(artifact->selects(key,SemanticLayer.MACHINE,artifact))).toList();
         // Remove before reconstruction. If storage fails after durable publication, no old answer
-        // survives as current; the next admission must retry the failed observation.
+        // survives as current, including across old/new layers or a batch of removed artifacts.
         exact.forEach(semanticLookups::remove);searches.forEach(classpathLookups::remove);
         sequences.forEach(classpathSequences::remove);
         for(String key:sequences)classpathSequences.put(key,buildClasspathSequence(key));
@@ -169,13 +168,17 @@ public final class RocksIndexStore implements IndexStore {
             Long existing=paths.get(input.context().path());long id=existing==null?nextArtifact++:existing;
             var previous=artifacts.get(id);
             boolean same=previous!=null&&previous.input().key().equals(input.key());
-            var value=new StoredArtifact(id,input,docs,same?previous.codeKey():null,ArtifactIndexFormat.resolutionIdentity(facts).hex(),facts.symbols().size(),facts.relationships().size(),!classReferences.isEmpty(),previous==null?0:previous.sourceRevision(),facts.symbols().stream().filter(symbol->TYPES.contains(symbol.kind())).count());
+            StoredArtifact value;
             try(var batch=new WriteBatch()){
+                long sourceRevision=previous==null?0:previous.sourceRevision();
                 // Preserve unchanged source files when another file changes the module fingerprint.
                 if(input.context().kind().equals("local"))for(var file:sourceOverlay.files(id)){
                     Path path=Path.of(file.file());
-                    if(!Files.isRegularFile(path)||!Hashing.sha256(path).equals(file.hash()))sourceOverlay.remove(batch,id,file.file());
+                    if(!Files.isRegularFile(path)||!Hashing.sha256(path).equals(file.hash())){
+                        sourceOverlay.remove(batch,id,file.file());sourceRevision++;
+                    }
                 }
+                value=new StoredArtifact(id,input,docs,same?previous.codeKey():null,ArtifactIndexFormat.resolutionIdentity(facts).hex(),facts.symbols().size(),facts.relationships().size(),!classReferences.isEmpty(),sourceRevision,facts.symbols().stream().filter(symbol->TYPES.contains(symbol.kind())).count());
                 save(batch,value);state.write(durable,batch);
             }
             installed(value);return id;
@@ -261,7 +264,7 @@ public final class RocksIndexStore implements IndexStore {
         if(removed.isEmpty())return false;
         try(var batch=new WriteBatch()){for(var value:removed)batch.delete(bytes("A|"+key(value.id())));state.write(durable,batch);}
         for(var value:removed){artifacts.remove(value.id());paths.remove(value.input().context().path());unmatched.remove(value.id());}metadataWrites+=removed.size();
-        for(var value:removed)refreshSemanticObservations(value,null);return true;
+        refreshSemanticObservations(removed,null);return true;
     }
     @Override public synchronized Map<String,Long> counts(){return Map.of("artifacts",(long)artifacts.size(),"symbols",artifacts.values().stream().mapToLong(StoredArtifact::symbols).sum(),"edges",artifacts.values().stream().mapToLong(StoredArtifact::edges).sum(),"simple_names",artifacts.values().stream().mapToLong(StoredArtifact::simpleNames).sum(),"unmatched_source_members",unmatched.values().stream().mapToLong(Long::longValue).sum());}
     @Override public synchronized Map<String,Object> status(){return Map.of("backend",backend(),"link_passes",0L,"metadata_writes",metadataWrites,"source_file_writes",sourceWrites,"source_record_decodes",sourceOverlay.decoded(),"source_cache_estimated_bytes",sourceOverlay.cacheBytes(),"source_cache_budget_bytes",sourceOverlay.cacheBudget());}
@@ -351,7 +354,7 @@ public final class RocksIndexStore implements IndexStore {
     @Override public synchronized List<String> loadWorkspace(String workspace,List<WorkspaceEntry> entries,List<Map.Entry<String,String>> dependencies)throws Exception{
         var normalized=entries.stream().map(e->new WorkspaceEntry(Path.of(e.path()).toAbsolutePath().normalize().toString(),e.scope())).toList();
         var previous=workspaces.put(workspace,normalized);
-        if(!normalized.equals(previous))refreshSemanticObservations(null,workspace);
+        if(!normalized.equals(previous))refreshSemanticObservations(List.of(),workspace);
         var classes=new TreeMap<String,Set<String>>();var packages=new TreeMap<String,Set<String>>();
         for(var artifact:selected(workspace,false))for(var symbol:repository.select(symbolsKey(artifact),"0|type|",-1,Integer.MAX_VALUE,s->TYPES.contains(s.kind()))){
             var context=artifact.input().context();String label=context.gav()+" ["+context.path()+"]";

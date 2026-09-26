@@ -116,6 +116,31 @@ class MaintainedSemanticObservationTest {
         }
     }
 
+    @Test void unchangedArtifactPublicationStillRetiresRemovedSourceObservations()throws Exception{
+        Path repo=Files.createDirectories(root.resolve("repo"));
+        Path module=Files.createDirectories(root.resolve("module"));
+        Path source=Files.writeString(module.resolve("Gone.java"),"package p; class Gone {}");
+        try(var index=new IndexService(root.resolve("index.db"),repo)){
+            var store=index.store();var layer=IndexStore.SemanticLayer.LOCAL;
+            var key=ArtifactIndexFormat.key("1".repeat(64),"local-signatures");
+            var input=new IndexStore.ArtifactInput(new ArtifactContext("fixture:app:1","local",module.toString()),key,0,0);
+            var facts=new ArtifactIndexFormat.ArtifactData(key,List.of(),List.of());
+            long id=store.publishArtifact(input,facts,Set.of(),Map.of());
+            load(index,module);
+            String scip="maven fixture/app 1 p/Gone#";
+            var row=Map.<String,Object>of("scip",scip,"name","Gone","fqn","p.Gone","kind","class",
+                    "binary_key","p.Gone","source_file",source.toString());
+            store.publishSourceFile(id,source,Hashing.sha256(source),List.of(row),2,List.of());
+            assertThat(store.semanticType("p.Gone","w",layer)).isNotNull();
+            Files.delete(source);
+            // Binary metadata can be equal while publication removes a stale source overlay.
+            store.publishArtifact(input,facts,Set.of(),Map.of());
+            var published=store.semanticWork();
+            assertThat(store.observedSemanticType("p.Gone","w",layer)).isNull();
+            assertThat(store.semanticWork()).isEqualTo(published);
+        }
+    }
+
     private static void load(IndexService index,Path... paths)throws Exception{
         index.loadWorkspace("w",Arrays.stream(paths).map(path->new IndexService.WorkspaceArtifact(path.toString(),"compile")).toList(),List.of());
     }

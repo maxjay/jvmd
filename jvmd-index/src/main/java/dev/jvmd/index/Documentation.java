@@ -61,6 +61,10 @@ public final class Documentation {
     private Map<String,Object> documented(Map<String,Object> original,String detail,String workspace)throws Exception{
         var symbol=new LinkedHashMap<>(original);String scip=Objects.toString(original.get("scip"),"");
         String doc=(String)original.get("doc");
+        if(!scip.isBlank()&&doc==null){
+            var current=index.store().byScip(scip,workspace);
+            if(current!=null)doc=(String)current.get("doc");
+        }
         if(!scip.isBlank()&&doc!=null&&doc.contains("{@inheritDoc}")){
             ensureSignatureEdges(workspace);
             doc=inherited(scip,workspace,new HashSet<>());

@@ -10,6 +10,38 @@ import static org.assertj.core.api.Assertions.*;
 class RocksArtifactRepositoryTest {
     @TempDir Path temp;
 
+    @Test void ownerPrefixPostingIsBoundedOrderedAndCursorResumable()throws Exception{
+        var key=new ArtifactIndexFormat.Key("e".repeat(64),ArtifactIndexFormat.FORMAT_VERSION,
+                ArtifactIndexFormat.INDEXER_VERSION,Runtime.version().feature(),"signatures");
+        var symbols=new ArrayList<ArtifactIndexFormat.SymbolRecord>();
+        symbols.add(new ArtifactIndexFormat.SymbolRecord(0,-1,"fixture.Owner","fixture.Owner","Owner","class",
+                "class fixture.Owner",null,1,"fixture/Owner.class",List.of(),"{}"));
+        symbols.add(new ArtifactIndexFormat.SymbolRecord(1,-1,"fixture.Other","fixture.Other","Other","class",
+                "class fixture.Other",null,1,"fixture/Other.class",List.of(),"{}"));
+        for(int i=0;i<200;i++){
+            int id=symbols.size();boolean owner=(i&1)==0;String name=String.format(Locale.ROOT,"get%03d",i);
+            String type=owner?"fixture.Owner":"fixture.Other";int ownerId=owner?0:1;
+            symbols.add(new ArtifactIndexFormat.SymbolRecord(id,ownerId,type+"#"+name+"()V",type,name,"method",
+                    "void "+name+"()","()V",1,(owner?"fixture/Owner.class":"fixture/Other.class"),List.of(),"{}"));
+        }
+        var data=new ArtifactIndexFormat.ArtifactData(key,List.copyOf(symbols),List.of());
+        try(var store=new RocksArtifactRepository(temp.resolve("owner-prefix"))){
+            store.publish(data,Set.of());
+            long reads=((Number)store.status().get("query_symbol_reads")).longValue();
+            var first=store.ownerMembers(key.cacheKey(),"fixture.Owner","get",4,null);
+            assertThat(first.symbols()).extracting(ArtifactIndexFormat.SymbolRecord::name)
+                    .containsExactly("get000","get002","get004","get006");
+            assertThat(first.cursor()).isNotNull();
+            assertThat(((Number)store.status().get("query_symbol_reads")).longValue()-reads).isEqualTo(5L);
+            assertThat(store.status()).containsEntry("owner_prefix_queries",1L).containsEntry("oracle_materializations",0L);
+
+            var second=store.ownerMembers(key.cacheKey(),"fixture.Owner","get",4,first.cursor());
+            assertThat(second.symbols()).extracting(ArtifactIndexFormat.SymbolRecord::name)
+                    .containsExactly("get008","get010","get012","get014");
+            assertThat(second.symbols()).noneMatch(symbol->symbol.ownerId()!=0);
+        }
+    }
+
     @Test void boundedPagesRejectUnusableIdsBeforeDecodingButPreserveCustomRanks()throws Exception{
         var data=facts(5000,0);String key=data.key().cacheKey();
         try(var store=new RocksArtifactRepository(temp.resolve("bounded-page"))){

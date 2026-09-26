@@ -39,15 +39,23 @@ public final class ResidentSemanticState {
     private record Entry(String key,SemanticFact fact,Hash256 valueIdentity,Aggregate contribution,BigInteger priority) { }
     private static final class Node {
         final Entry entry;final Node left,right;final Hash256 merkle;
+        final AlgebraicAccumulator.Value resolutionRange;
+        final String minKey,maxKey;
         Node(Entry entry,Node left,Node right){
             this.entry=entry;this.left=left;this.right=right;
             merkle=CanonicalDigestWriter.digest("resident-node-v1",left==null?EMPTY_HASH:left.merkle,entry.key(),entry.valueIdentity(),right==null?EMPTY_HASH:right.merkle);
+            var self=AlgebraicAccumulator.contribution("semantic-member-range-v1",entry.key(),entry.fact().resolutionIdentity());
+            resolutionRange=(left==null?AlgebraicAccumulator.Value.ZERO:left.resolutionRange)
+                    .plus(self).plus(right==null?AlgebraicAccumulator.Value.ZERO:right.resolutionRange);
+            minKey=left==null?entry.key():left.minKey;
+            maxKey=right==null?entry.key():right.maxKey;
         }
     }
 
     private Node root;
     private final Map<String,SemanticFact> symbols=new HashMap<>();
     private final Map<String,String> typesByFqn=new HashMap<>();
+    private final Map<String,Set<String>> typesBySimpleName=new HashMap<>();
     private final Map<String,SemanticUnitState> units=new HashMap<>();
     private final Map<String,Aggregate> memberAggregates=new HashMap<>();
     private Aggregate semanticAggregate=Aggregate.ZERO;
@@ -122,9 +130,9 @@ public final class ResidentSemanticState {
 
     public synchronized SemanticDelta removeUnit(String unit){
         var previous=units.get(unit);
-        if(previous==null)return new SemanticDelta(unit,null,"",SemanticUnitMerkle.empty(),List.of(),List.of(),Set.of(),"","","",Set.of());
+        if(previous==null)return new SemanticDelta(unit,null,"",SemanticUnitMerkle.empty(),List.of(),List.of(),Set.of(),"","","",Set.of(),SemanticCompleteness.UNKNOWN);
         var removed=previous.facts().ids();
-        var delta=new SemanticDelta(unit,previous.sourceFile(),"",SemanticUnitMerkle.empty(),List.of(),List.of(),removed,"","","",Set.of());
+        var delta=new SemanticDelta(unit,previous.sourceFile(),"",SemanticUnitMerkle.empty(),List.of(),List.of(),removed,"","","",Set.of(),previous.completeness());
         apply(delta);units.remove(unit);return delta;
     }
 
@@ -153,6 +161,10 @@ public final class ResidentSemanticState {
     }
 
     public synchronized SemanticFact symbol(String id){return symbols.get(id);}
+    /** Direct maintained hierarchy edges for the canonical type, without walking ancestors. */
+    public synchronized List<String> directSupertypeIds(String typeId){
+        var values=new ArrayList<>(directSupers.getOrDefault(typeId,Set.of()));values.sort(String::compareTo);return List.copyOf(values);
+    }
     public synchronized SemanticUnitState unit(String unit){return units.get(unit);}
     /** Resolve a canonical declaration to the retained semantic unit that owns it. */
     public synchronized String unitForFact(String id){
@@ -169,10 +181,27 @@ public final class ResidentSemanticState {
     public synchronized String unitForType(String fqn){
         String id=typesByFqn.get(fqn);return id==null?null:unitForFact(id);
     }
+    /** Exact retained type declaration by canonical binary/FQN identity. */
+    public synchronized SemanticFact type(String fqn){
+        String id=typesByFqn.get(fqn);return id==null?null:symbols.get(id);
+    }
+    /** Bounded maintained simple-name lookup; ambiguity is preserved for Java resolution filtering. */
+    public synchronized List<SemanticFact> typesByName(String simpleName){
+        var ids=typesBySimpleName.getOrDefault(Objects.requireNonNullElse(simpleName,""),Set.of());
+        if(ids.isEmpty())return List.of();
+        return ids.stream().map(symbols::get).filter(Objects::nonNull)
+                .sorted(Comparator.comparing((SemanticFact fact)->Objects.requireNonNullElse(fact.fqn(),"")).thenComparing(SemanticFact::id))
+                .toList();
+    }
     public synchronized boolean unitCurrent(String unit,String contentIdentity){
         var state=units.get(unit);if(state==null||staleUnits.containsKey(unit)
                 ||state.uncertaintyGeneration()!=uncertaintyGeneration)return false;
         return contentIdentity==null||Objects.equals(contentIdentity,state.contentIdentity());
+    }
+    /** Completeness is authoritative only while the owning semantic unit is current. */
+    public synchronized SemanticCompleteness completeness(String factId){
+        String unit=unitForFact(factId);if(unit==null||!unitCurrent(unit,null))return SemanticCompleteness.UNKNOWN;
+        var state=units.get(unit);return state==null?SemanticCompleteness.UNKNOWN:state.completeness();
     }
     public synchronized SemanticFact unitType(String unit,String fqn){
         var state=units.get(unit);if(state==null)return null;
@@ -208,8 +237,15 @@ public final class ResidentSemanticState {
     }
 
     public synchronized MemberCursor memberCursor(String ownerId,String namePrefix){
+        return memberCursor(ownerId,namePrefix,null);
+    }
+
+    /** Resume a member range strictly after a previously returned ordered fact key. */
+    public synchronized MemberCursor memberCursor(String ownerId,String namePrefix,String afterOrderedKey){
         String prefix=SemanticFact.memberPrefix(ownerId,namePrefix);
-        return new MemberCursor(root,prefix,prefix+"\uffff");
+        String lower=afterOrderedKey==null?prefix:afterOrderedKey+"\0";
+        if(!lower.startsWith(prefix))throw new IllegalArgumentException("Member cursor does not belong to requested owner/prefix");
+        return new MemberCursor(root,lower,prefix+"\uffff");
     }
 
     public List<SemanticFact> members(String ownerId,String namePrefix,int limit){
@@ -222,11 +258,25 @@ public final class ResidentSemanticState {
     public synchronized Aggregate memberAggregate(String ownerId){
         return memberAggregates.getOrDefault(ownerId,Aggregate.ZERO);
     }
+    /** Resolution-only identity for one direct owner/name-prefix domain. */
+    public synchronized Hash256 memberRangeIdentity(String ownerId,String namePrefix){
+        String prefix=SemanticFact.memberPrefix(ownerId,Objects.requireNonNullElse(namePrefix,""));
+        return resolutionRange(root,prefix,prefix+"\uffff").identity("semantic-member-range-v1");
+    }
+    /** Resolution-only identity for the exact overload group of one member name. */
+    public synchronized Hash256 overloadGroupIdentity(String ownerId,String name){
+        String prefix=SemanticFact.memberPrefix(ownerId,Objects.requireNonNullElse(name,""))+"\0";
+        var exact=resolutionRange(root,prefix,prefix+"\uffff").identity("semantic-member-range-v1");
+        return CanonicalDigestWriter.digest("semantic-overload-group-v1",exact);
+    }
     /** Constant-time validity identity for the effective API reachable from a receiver type. */
     public synchronized String hierarchyApi(String typeId){
         return CanonicalDigestWriter.digest("hierarchy-validity-v2",uncertaintyGeneration,
                 hierarchyApis.getOrDefault(typeId,EMPTY)).hex();
     }
+
+    /** O(1) uncertainty fence generation for proof-backed cache keys. */
+    public synchronized long uncertaintyGeneration(){return uncertaintyGeneration;}
 
     public synchronized Identity identity(){
         String structural=root==null?EMPTY:root.merkle.hex();
@@ -237,7 +287,7 @@ public final class ResidentSemanticState {
 
     public synchronized void clear(){
         if(root==null&&symbols.isEmpty()&&units.isEmpty())return;
-        root=null;symbols.clear();typesByFqn.clear();units.clear();memberAggregates.clear();semanticAggregate=Aggregate.ZERO;directSupers.clear();directSubs.clear();hierarchyApis.clear();staleUnits.clear();staleAggregate=new AlgebraicAccumulator("semantic-stale-v2");uncertaintyGeneration=0;epoch++;
+        root=null;symbols.clear();typesByFqn.clear();typesBySimpleName.clear();units.clear();memberAggregates.clear();semanticAggregate=Aggregate.ZERO;directSupers.clear();directSubs.clear();hierarchyApis.clear();staleUnits.clear();staleAggregate=new AlgebraicAccumulator("semantic-stale-v2");uncertaintyGeneration=0;epoch++;
     }
 
     /** Conservative retained-size estimate used only for semantic cache budgeting/retirement. */
@@ -266,7 +316,7 @@ public final class ResidentSemanticState {
 
     private SemanticUnitState nextUnitState(SemanticDelta delta){
         return new SemanticUnitState(delta.unit(),delta.sourceFile(),delta.contentIdentity(),delta.facts(),
-                delta.apiIdentity(),delta.namespaceIdentity(),delta.documentationIdentity(),delta.dependencies(),uncertaintyGeneration);
+                delta.apiIdentity(),delta.namespaceIdentity(),delta.documentationIdentity(),delta.dependencies(),delta.completeness(),uncertaintyGeneration);
     }
 
     private String freshnessIdentity(){
@@ -354,10 +404,18 @@ public final class ResidentSemanticState {
     }
 
     private void indexType(SemanticFact fact){
-        if(fact.typeDeclaration()&&fact.fqn()!=null&&!fact.fqn().isBlank())typesByFqn.put(fact.fqn(),fact.id());
+        if(!fact.typeDeclaration()||fact.fqn()==null||fact.fqn().isBlank())return;
+        typesByFqn.put(fact.fqn(),fact.id());
+        var ids=new TreeSet<>(typesBySimpleName.getOrDefault(fact.name(),Set.of()));
+        ids.add(fact.id());typesBySimpleName.put(fact.name(),Set.copyOf(ids));
     }
     private void unindexType(SemanticFact fact){
-        if(fact.typeDeclaration()&&fact.fqn()!=null&&!fact.fqn().isBlank())typesByFqn.remove(fact.fqn(),fact.id());
+        if(!fact.typeDeclaration()||fact.fqn()==null||fact.fqn().isBlank())return;
+        typesByFqn.remove(fact.fqn(),fact.id());
+        var ids=new TreeSet<>(typesBySimpleName.getOrDefault(fact.name(),Set.of()));
+        ids.remove(fact.id());
+        if(ids.isEmpty())typesBySimpleName.remove(fact.name());
+        else typesBySimpleName.put(fact.name(),Set.copyOf(ids));
     }
     private void addFact(SemanticFact fact){
         indexType(fact);
@@ -387,6 +445,17 @@ public final class ResidentSemanticState {
 
     private static BigInteger point(String domain,String value){
         return Hash256.sha256((domain+"\0"+Objects.requireNonNullElse(value,"")).getBytes(StandardCharsets.UTF_8)).unsignedInteger().mod(FIELD);
+    }
+
+    private static AlgebraicAccumulator.Value resolutionRange(Node node,String lower,String upper){
+        if(node==null||node.maxKey.compareTo(lower)<0||node.minKey.compareTo(upper)>0)
+            return AlgebraicAccumulator.Value.ZERO;
+        if(node.minKey.compareTo(lower)>=0&&node.maxKey.compareTo(upper)<=0)return node.resolutionRange;
+        var result=resolutionRange(node.left,lower,upper);
+        if(node.entry.key().compareTo(lower)>=0&&node.entry.key().compareTo(upper)<=0)
+            result=result.plus(AlgebraicAccumulator.contribution("semantic-member-range-v1",
+                    node.entry.key(),node.entry.fact().resolutionIdentity()));
+        return result.plus(resolutionRange(node.right,lower,upper));
     }
 
     private Node newNode(Entry entry,Node left,Node right){return new Node(entry,left,right);}

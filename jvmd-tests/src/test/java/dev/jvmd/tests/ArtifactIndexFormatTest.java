@@ -15,6 +15,9 @@ class ArtifactIndexFormatTest {
     @Test void streamingSymbolValidationPreservesBoundsNullabilityAndTruncationChecks()throws Exception{
         var symbol=new ArtifactIndexFormat.SymbolRecord(0,-1,"fixture.Type","fixture.Type","Type","class","class Type",null,1,null,List.of("value"),"{}");
         byte[] encoded=ArtifactIndexFormat.encodeSymbol(symbol);
+        var decoded=ArtifactIndexFormat.decodeSymbol(encoded);
+        assertThat(decoded.resolution().toMap()).isEqualTo(symbol.resolution().toMap());
+        assertThat(decoded.resolution().identity()).isEqualTo(symbol.resolution().identity());
         assertThat(ArtifactIndexFormat.validateSymbol(encoded,0,1)).isTrue();
         assertThat(ArtifactIndexFormat.validateSymbol(encoded,1,2)).isFalse();
         for(int length=0;length<encoded.length;length++){

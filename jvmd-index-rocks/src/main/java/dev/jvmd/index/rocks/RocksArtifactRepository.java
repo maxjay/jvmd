@@ -37,7 +37,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
     private final Object ingestLock=new Object();
     private final AtomicLong published=new AtomicLong(),reused=new AtomicLong();
     private final AtomicLong sortPeakBytes=new AtomicLong(),sortSpillBytes=new AtomicLong();
-    private final AtomicLong queryPostingCandidates=new AtomicLong(),querySymbolReads=new AtomicLong();
+    private final AtomicLong queryPostingCandidates=new AtomicLong(),querySymbolReads=new AtomicLong(),ownerPrefixQueries=new AtomicLong();
     private final AtomicLong prepareNanos=new AtomicLong(),spillNanos=new AtomicLong(),sstNanos=new AtomicLong(),
             syncNanos=new AtomicLong(),ingestNanos=new AtomicLong(),verifyNanos=new AtomicLong(),
             sortInputRecords=new AtomicLong(),sortRunRecords=new AtomicLong(),gramOccurrences=new AtomicLong(),gramBlocks=new AtomicLong();
@@ -314,6 +314,42 @@ public final class RocksArtifactRepository implements AutoCloseable {
     }
     public boolean referencesClass(String cacheKey,String fqn)throws Exception{return db.get(key(cacheKey,"6|class|"+fqn))!=null;}
 
+    public record OwnerPage(List<ArtifactIndexFormat.SymbolRecord> symbols,String cursor) {
+        public OwnerPage { symbols=List.copyOf(symbols); }
+    }
+
+    /**
+     * Bounded direct-member lookup. The owner posting is a pointer-only secondary ordering over the
+     * canonical symbol records; it does not duplicate symbol payloads.
+     */
+    public OwnerPage ownerMembers(String cacheKey,String ownerBinaryKey,String namePrefix,int limit,String cursor)throws Exception{
+        if(limit<=0)return new OwnerPage(List.of(),null);
+        Integer owner=binaryId(cacheKey,ownerBinaryKey);if(owner==null)return new OwnerPage(List.of(),null);
+        ownerPrefixQueries.incrementAndGet();
+        String ownerPrefix="9|owner|"+hex8(owner)+"|";
+        String rangePrefix=ownerPrefix+Objects.requireNonNullElse(namePrefix,"");
+        byte[] prefix=key(cacheKey,rangePrefix);
+        byte[] start=cursor==null?prefix:key(cacheKey,ownerPrefix+cursor);
+        var rows=new ArrayList<ArtifactIndexFormat.SymbolRecord>(Math.min(limit+1,64));
+        var tokens=new ArrayList<String>(Math.min(limit+1,64));
+        long candidates=0,reads=0;
+        try(var iterator=db.newIterator()){
+            for(iterator.seek(start);iterator.isValid()&&rows.size()<=limit;iterator.next()){
+                byte[] current=iterator.key();if(!startsWith(current,prefix))break;
+                String suffix=new String(current,StandardCharsets.UTF_8).substring(cacheKey.length()+1+ownerPrefix.length());
+                if(cursor!=null&&suffix.equals(cursor))continue;
+                candidates++;int id=PostingCodec.lastId(current);reads++;
+                var symbol=symbol(cacheKey,id);
+                if(symbol==null)throw new IOException("Owner posting references missing symbol: "+id);
+                rows.add(symbol);tokens.add(suffix);
+            }
+            iterator.status();
+        }finally{queryPostingCandidates.addAndGet(candidates);querySymbolReads.addAndGet(reads);}
+        boolean more=rows.size()>limit;
+        if(more){rows.removeLast();tokens.removeLast();}
+        return new OwnerPage(rows,more?tokens.getLast():null);
+    }
+
     public List<Integer> nameIds(String cacheKey,String namePrefix,int limit){return idsByPrefix(cacheKey,"3|name|"+namePrefix,limit);}
     public List<Integer> reverseSources(String cacheKey,String target,String kind,int limit){return idsByPrefix(cacheKey,"5|reverse|"+target+"|"+kind+"|",limit);}
     public List<Integer> pathIds(String cacheKey,String pathPrefix,int limit){return idsByPrefix(cacheKey,"7|path|"+pathPrefix,limit);}
@@ -370,6 +406,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
         result.put("sort_input_records",sortInputRecords.get());result.put("sort_run_records",sortRunRecords.get());
         result.put("gram_occurrences",gramOccurrences.get());result.put("gram_posting_blocks",gramBlocks.get());
         result.put("query_posting_candidates",queryPostingCandidates.get());result.put("query_symbol_reads",querySymbolReads.get());
+        result.put("owner_prefix_queries",ownerPrefixQueries.get());
         result.put("verification_passes",verificationPasses.get());result.put("native_publication_verifications",nativePublicationVerifications.get());result.put("activation_verification_reuses",activationVerificationReuses.get());result.put("oracle_materializations",oracleMaterializations.get());
         for(String property:List.of("estimate-pending-compaction-bytes","num-running-compactions","num-running-flushes",
                 "actual-delayed-write-rate","is-write-stopped","estimate-table-readers-mem","cur-size-all-mem-tables"))
@@ -420,6 +457,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
             entries.add(relativeKey("2|binary|"+symbol.key()),intBytes(symbol.id()));
             entries.add(relativeKey("2|scip|"+scipSuffix(symbol)+"|"+symbolId),EMPTY);
             entries.add(relativeKey("3|name|"+symbol.name()+"|"+symbolId),EMPTY);
+            if(symbol.ownerId()>=0)entries.add(relativeKey("9|owner|"+hex8(symbol.ownerId())+"|"+symbol.name()+"|"+symbolId),EMPTY);
             String namePath=ArtifactContext.namePath(symbol);
             entries.add(relativeKey("7|path|"+namePath+"|"+symbolId),EMPTY);
 

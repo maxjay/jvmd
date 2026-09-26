@@ -38,17 +38,29 @@ public record DocumentSemanticSnapshot(
             String enclosingTypeId,
             boolean staticContext,
             List<CompletionCandidate> scopedCandidates,
-            String accessibilityKey) {
+            String accessibilityKey,
+            QueryProof proof) {
+        public QueryContext(int selectorOffset,SemanticType receiverType,String receiverSymbolId,boolean staticReceiver,
+                            String packageName,String enclosingTypeId,boolean staticContext,
+                            List<CompletionCandidate> scopedCandidates,String accessibilityKey){
+            this(selectorOffset,receiverType,receiverSymbolId,staticReceiver,packageName,enclosingTypeId,staticContext,
+                    scopedCandidates,accessibilityKey,QueryProof.empty());
+        }
         public QueryContext {
             if(selectorOffset<0)throw new IllegalArgumentException("selectorOffset");
             Objects.requireNonNull(receiverType);
             packageName=Objects.requireNonNullElse(packageName,"");
             scopedCandidates=List.copyOf(scopedCandidates);
             accessibilityKey=Objects.requireNonNullElse(accessibilityKey,"");
+            proof=Objects.requireNonNull(proof);
         }
         public QueryContext withAccessibilityKey(String key){
             return new QueryContext(selectorOffset,receiverType,receiverSymbolId,staticReceiver,packageName,enclosingTypeId,
-                    staticContext,scopedCandidates,key);
+                    staticContext,scopedCandidates,key,proof);
+        }
+        public QueryContext withProof(QueryProof value){
+            return new QueryContext(selectorOffset,receiverType,receiverSymbolId,staticReceiver,packageName,enclosingTypeId,
+                    staticContext,scopedCandidates,accessibilityKey,value);
         }
     }
 

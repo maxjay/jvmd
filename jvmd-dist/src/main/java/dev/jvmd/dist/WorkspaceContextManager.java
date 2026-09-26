@@ -6,14 +6,37 @@ import dev.jvmd.resolver.Resolution;
 import java.nio.file.Path;
 import java.util.*;
 
-/** Constructs each main/test module context once per request, including processor preparation. */
+/** Maintains each main/test analyzer context until its explicit context-input identity changes. */
 final class WorkspaceContextManager {
     @FunctionalInterface interface Factory { Analyzer.Context create(Path file) throws Exception; }
-    private long constructions;
-    Analyzer.Context context(Path file, Resolution graph, Factory factory) throws Exception {
-        String key=key(file,graph);
-        return RequestScope.memo(List.of(this,key),()->{constructions++;return factory.create(file);});
+    private record Maintained(String identity,Analyzer.Context context) { }
+    private final Map<String,Maintained> maintained=new HashMap<>();
+    private long constructions,hits,misses,invalidations;
+    Analyzer.Context context(Path file,Resolution graph,String identity,Factory factory)throws Exception{
+        String key;
+        key=key(file,graph);
+        boolean maintain=identity!=null&&!identity.isBlank();
+        if(maintain){
+            synchronized(this){
+                var cached=maintained.get(key);
+                if(cached!=null&&cached.identity().equals(identity)){hits++;return cached.context();}
+                misses++;
+            }
+        }
+        return RequestScope.memo(List.of(this,key,Objects.toString(identity,"request")),()->{
+            if(maintain)synchronized(this){
+                var cached=maintained.get(key);
+                if(cached!=null&&cached.identity().equals(identity)){hits++;return cached.context();}
+            }
+            constructions++;
+            Analyzer.Context created;
+            created=factory.create(file);
+            if(maintain)synchronized(this){maintained.put(key,new Maintained(identity,created));}
+            return created;
+        });
     }
+    synchronized void invalidateAll(){if(!maintained.isEmpty()){maintained.clear();invalidations++;}}
+    synchronized boolean hasMaintained(){return !maintained.isEmpty();}
     static String key(Path file,Resolution graph){
         var module=owner(file,graph);
         return module==null?"plain":module.directory()+":"+
@@ -28,5 +51,7 @@ final class WorkspaceContextManager {
                 .max(Comparator.comparingInt(m->java.util.stream.Stream.concat(m.sources().stream(),m.testSources().stream())
                         .filter(root->file.startsWith(Path.of(root))).mapToInt(String::length).max().orElse(0))).orElse(fallback);
     }
-    Map<String,Object> status(){return Map.of("context_constructions",constructions);}
+    synchronized Map<String,Object> status(){return Map.of(
+            "context_constructions",constructions,"maintained_contexts",maintained.size(),
+            "maintained_hits",hits,"maintained_misses",misses,"invalidations",invalidations);}
 }

@@ -78,6 +78,41 @@ class ResidentCompletionCorrectnessTest {
         }
     }
 
+    @Test void repeatedWideQualifiedCompletionReusesProofIdenticalRows()throws Exception{
+        var api=new StringBuilder("class Api {\n");
+        for(int i=0;i<180;i++)api.append("int member").append(String.format("%03d",i)).append("(){return ").append(i).append(";}\n");
+        api.append("}");
+        Path apiFile=Files.writeString(root.resolve("Api.java"),api);
+        String source="class Use { Object f(Api api){ return api.; } }";
+        Path use=Files.writeString(root.resolve("Use.java"),source);
+        try(var analyzer=new Analyzer()){
+            analyzer.configure(context(),null,256L*1024*1024);
+            var first=complete(analyzer,use,source,"api.",200);
+            assertThat(first.findValuesAsText("name")).contains("member000","member179");
+            @SuppressWarnings("unchecked") var firstState=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            long firstReads=((Number)firstState.get("semantic_tree_range_entries_read")).longValue();
+
+            assertThat(complete(analyzer,use,source,"api.",200)).isEqualTo(first);
+            @SuppressWarnings("unchecked") var repeatedState=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            assertThat(((Number)repeatedState.get("semantic_tree_range_entries_read")).longValue())
+                    .as("proof-identical completion must reuse the ranked resident surface").isEqualTo(firstReads);
+
+            String bodyOnly=api.toString().replace("return 0;","return 999;");
+            Files.writeString(apiFile,bodyOnly);analyzer.changed(apiFile);
+            assertThat(complete(analyzer,use,source,"api.",200)).isEqualTo(first);
+            @SuppressWarnings("unchecked") var bodyState=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            assertThat(((Number)bodyState.get("semantic_tree_range_entries_read")).longValue())
+                    .as("body-only mutation keeps the completion member-range proof equal").isEqualTo(firstReads);
+
+            String relevant=bodyOnly.substring(0,bodyOnly.lastIndexOf('}'))+"int member180(){return 180;}\n}";
+            Files.writeString(apiFile,relevant);analyzer.changed(apiFile);
+            var changed=complete(analyzer,use,source,"api.",200);
+            assertThat(changed.findValuesAsText("name")).contains("member180");
+            @SuppressWarnings("unchecked") var changedState=(Map<String,Object>)analyzer.status().get("resident_semantic_state");
+            assertThat(((Number)changedState.get("semantic_tree_range_entries_read")).longValue()).isGreaterThan(firstReads);
+        }
+    }
+
     @Test void qualifiedCompletionReadsPastFilteredRangeEntries()throws Exception{
         var api=new StringBuilder("class Api {\n");
         for(int i=0;i<16;i++)api.append("private int a").append(String.format("%02d",i)).append("(){return ").append(i).append(";}\n");

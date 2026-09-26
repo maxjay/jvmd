@@ -15,12 +15,14 @@ class IndexedFileManagerTest {
   Path jar=IndexFixtures.jar(temp,"replace","package fixture; public class Sample { public int value(){return 1;} }",true);
   var compiler=ToolProvider.getSystemJavaCompiler();
   try(var manager=new IndexedFileManager(compiler.getStandardFileManager(null,null,null),List.of(jar),List.of(),null,1024*1024)){
+   var environment=new dev.jvmd.core.CompilerInputs.EnvironmentIdentity("fixture");
+   manager.validateClasspath(environment);
    var first=manager.getJavaFileForInput(StandardLocation.CLASS_PATH,"fixture.Sample",JavaFileObject.Kind.CLASS);
    assertThat(first).isNotNull();try(var in=first.openInputStream()){assertThat(in.readAllBytes()).isNotEmpty();}
    var timestamp=Files.getLastModifiedTime(jar);
    IndexFixtures.jar(temp,"replace","package fixture; public class Sample { public String value(){return \"changed\";} }",true);
    Files.setLastModifiedTime(jar,timestamp);
-   assertThatThrownBy(()->manager.validateClasspath(new dev.jvmd.core.CompilerInputs.EnvironmentIdentity("fixture"))).isInstanceOf(java.io.UncheckedIOException.class);
+   assertThatThrownBy(()->manager.validateClasspath(environment)).isInstanceOf(java.io.UncheckedIOException.class);
   }
  }
  @Test void completesPrivateSupportTypesAndDoesNotHideDeletedJars()throws Exception{
@@ -33,7 +35,10 @@ class IndexedFileManagerTest {
     task.analyze();assertThat(diagnostics.getDiagnostics()).noneMatch(d->d.getKind()==Diagnostic.Kind.ERROR);
     var file=manager.getJavaFileForInput(StandardLocation.CLASS_PATH,"fixture.Sample",JavaFileObject.Kind.CLASS);byte[] original;try(var in=file.openInputStream()){original=in.readAllBytes();}try(var in=file.openInputStream()){assertThat(in.readAllBytes()).isEqualTo(original);}
     assertThat(manager.status().get("class_byte_hits")).isPositive();assertThat(manager.status().get("class_bytes")).isLessThanOrEqualTo(1024*1024);
-    Files.delete(jar);assertThatThrownBy(file::openInputStream).isInstanceOf(java.io.UncheckedIOException.class);
+    var environment=new dev.jvmd.core.CompilerInputs.EnvironmentIdentity("fixture");
+    manager.validateClasspath(environment);
+    Files.delete(jar);assertThatThrownBy(()->manager.validateClasspath(environment)).isInstanceOf(java.io.UncheckedIOException.class);
+    assertThatThrownBy(file::openInputStream).isInstanceOf(java.io.UncheckedIOException.class);
    }
   }
  }

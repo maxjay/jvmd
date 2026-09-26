@@ -24,8 +24,12 @@ class AnnotationProcessingBindingsTest {
         try(var app=new Application(config)){
             String session=TestSupport.open(app,root);assertClean(app,session,List.of(use));
             assertClean(app,session,List.of(use));
-            var state=TestSupport.request(app.dispatcher(),"session.status",Map.of("session",session)).path("result").path("result").path("annotation_processing");
-            assertThat(state.path("runs").asLong()).isEqualTo(1);assertThat(state.path("cache_hits").asLong()).isGreaterThan(0);
+            var status=TestSupport.request(app.dispatcher(),"session.status",Map.of("session",session)).path("result").path("result");
+            var state=status.path("annotation_processing");
+            assertThat(state.path("runs").asLong()).isEqualTo(1);
+            assertThat(status.path("analysis_contexts").path("context_constructions").asLong()).isEqualTo(1);
+            assertThat(status.path("analysis_contexts").path("maintained_hits").asLong())
+                    .as("unchanged diagnostics must reuse the maintained processor-aware context").isPositive();
             try(var paths=Files.walk(config.stateDir().resolve("apt"))){assertThat(paths.anyMatch(p->p.getFileName().toString().equals("PersonMapperImpl.java"))).isTrue();}
             var verified=new Verifier(config).verify(root,Json.MAPPER.createObjectNode(),Duration.ofMinutes(2));assertThat(verified.exitCode()).withFailMessage(verified.output()).isZero();
             assertClean(app,session,List.of(use));

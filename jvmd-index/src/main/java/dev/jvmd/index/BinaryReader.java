@@ -11,7 +11,19 @@ import java.util.jar.JarFile;
 public final class BinaryReader {
     /** Implements 4.4: symbol metadata detached from class-file buffers. */
     public record Symbol(String key, String fqn, String name, String owner, String kind, String signature,
-                         String descriptor, int flags, String entry, List<String> parameters, Map<String,Object> metadata) { }
+                         String descriptor, int flags, String entry, List<String> parameters, Map<String,Object> metadata,
+                         SemanticType semanticType, List<String> typeParameters, List<List<SemanticType>> typeParameterBounds,
+                         List<SemanticType> directSupertypes, boolean varargs) {
+        public Symbol {
+            parameters=List.copyOf(parameters);metadata=new LinkedHashMap<>(metadata);
+            typeParameters=List.copyOf(typeParameters);
+            typeParameterBounds=typeParameterBounds.stream().map(List::copyOf).toList();
+            directSupertypes=List.copyOf(directSupertypes);
+        }
+    }
+    private record Generic(List<String> ids,List<List<SemanticType>> bounds) {
+        Generic { ids=List.copyOf(ids);bounds=bounds.stream().map(List::copyOf).toList(); }
+    }
     /** Implements 4.4: unresolved structural edges linked after each artifact transaction. */
     public record Edge(String src, String target, String kind) { }
     /** Implements 4.4: one artifact's detached skeleton, plus source-join models scoped to that read. */
@@ -34,7 +46,6 @@ public final class BinaryReader {
             int flags=model.flags().flagsMask();
             for(var inner:model.findAttribute(Attributes.innerClasses()).stream().flatMap(a->a.classes().stream()).toList())
                 if(inner.innerClass().asInternalName().equals(model.thisClass().asInternalName())) flags=inner.flagsMask();
-            if(!local && !visible(flags)) continue;
             String kind=(flags&ClassFile.ACC_ANNOTATION)!=0?"annotation":(flags&ClassFile.ACC_INTERFACE)!=0?"interface":(flags&ClassFile.ACC_ENUM)!=0?"enum":model.findAttribute(Attributes.record()).isPresent()?"record":"class";
             var metadata=metadata(model); metadata.put("binary_name",owner);
             model.findAttribute(Attributes.innerClasses()).ifPresent(a->metadata.put("inner_classes",a.classes().stream().map(i->name(i.innerClass())).toList()));
@@ -53,20 +64,38 @@ public final class BinaryReader {
                 if(!model.interfaces().isEmpty()) declaration+=(kind.equals("interface")?" extends ":" implements ")+String.join(", ",model.interfaces().stream().map(BinaryReader::name).toList());
             }
             String outer=owner.contains("$")?owner.substring(0,owner.lastIndexOf('$')):null;
-            symbols.add(new Symbol(owner,owner,simple(owner),outer,kind,declaration,null,flags,entry,List.of(),metadata));
-            model.superclass().ifPresent(c->edges.add(new Edge(owner,name(c),"extends")));
-            model.interfaces().forEach(c->edges.add(new Edge(owner,name(c),kind.equals("interface")?"extends":"implements")));
+            Generic classParameters=generic.map(value->generic(value.typeParameters())).orElseGet(BinaryReader::emptyGeneric);
+            var typeArguments=classParameters.ids().stream().map(id->(SemanticType)new SemanticType.Variable(id,id)).toList();
+            String semanticName=owner.replace('$','.');
+            var semanticType=new SemanticType.Declared(semanticName,semanticName,typeArguments);
+            List<SemanticType> directSupertypes;
+            if(generic.isPresent()){
+                var value=generic.get();var parents=new ArrayList<SemanticType>();
+                parents.add(semantic(value.superclassSignature()));
+                value.superinterfaceSignatures().forEach(parent->parents.add(semantic(parent)));
+                directSupertypes=List.copyOf(parents);
+            }else{
+                var parents=new ArrayList<SemanticType>();
+                model.superclass().ifPresent(parent->parents.add(declared(name(parent))));
+                model.interfaces().forEach(parent->parents.add(declared(name(parent))));
+                directSupertypes=List.copyOf(parents);
+            }
+            symbols.add(new Symbol(owner,owner,simple(owner),outer,kind,declaration,null,flags,entry,List.of(),metadata,
+                    semanticType,classParameters.ids(),classParameters.bounds(),directSupertypes,false));
+            model.superclass().ifPresent(parent->edges.add(new Edge(owner,name(parent),"extends")));
+            model.interfaces().forEach(parent->edges.add(new Edge(owner,name(parent),kind.equals("interface")?"extends":"implements")));
             annotations(model,owner,edges);
             for(var field:model.fields()) {
-                if(!local&&!visible(field.flags().flagsMask()))continue;
                 String key=owner+"#"+field.fieldName().stringValue();
                 Signature type=field.findAttribute(Attributes.signature()).map(a->a.asTypeSignature()).orElseGet(()->Signature.of(field.fieldTypeSymbol()));
-                symbols.add(new Symbol(key,owner,field.fieldName().stringValue(),owner,(field.flags().flagsMask()&ClassFile.ACC_ENUM)!=0?"enumconst":"field",Signatures.type(type)+" "+field.fieldName().stringValue(),field.fieldType().stringValue(),field.flags().flagsMask(),entry,List.of(),metadata(field)));
+                symbols.add(new Symbol(key,owner,field.fieldName().stringValue(),owner,(field.flags().flagsMask()&ClassFile.ACC_ENUM)!=0?"enumconst":"field",
+                        Signatures.type(type)+" "+field.fieldName().stringValue(),field.fieldType().stringValue(),field.flags().flagsMask(),entry,List.of(),metadata(field),
+                        semantic(type),List.of(),List.of(),List.of(),false));
                 Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"return_type"))); annotations(field,key,edges);
             }
             for(var method:model.methods()) {
                 int mf=method.flags().flagsMask(); String methodName=method.methodName().stringValue();
-                if(methodName.equals("<clinit>") || (mf & ClassFile.ACC_BRIDGE)!=0 || !local&&!visible(mf))continue;
+                if(methodName.equals("<clinit>") || (mf & ClassFile.ACC_BRIDGE)!=0)continue;
                 String key=owner+"#"+methodName+method.methodType().stringValue();
                 var sig=method.findAttribute(Attributes.signature()).map(a->a.asMethodSignature()).orElseGet(()->MethodSignature.of(method.methodTypeSymbol()));
                 var names=new ArrayList<String>();
@@ -80,7 +109,16 @@ public final class BinaryReader {
                 if(!sig.throwableSignatures().isEmpty())signature+=" throws "+String.join(", ",sig.throwableSignatures().stream().map(Signatures::type).toList());
                 else if(!thrown.isEmpty())signature+=" throws "+String.join(", ",thrown);
                 var data=metadata(method);data.put("parameter_names_from_class",stored.isPresent());data.put("return_type",Signatures.type(sig.result()));data.put("parameter_types",sig.arguments().stream().map(Signatures::type).toList());data.put("type_parameters",Signatures.parameters(sig.typeParameters()));
-                symbols.add(new Symbol(key,owner,ctor?simple(owner):methodName,owner,ctor?"ctor":"method",signature,method.methodType().stringValue(),mf,entry,List.copyOf(names),data));
+                Generic methodParameters=generic(sig.typeParameters());
+                var semanticThrown=!sig.throwableSignatures().isEmpty()
+                        ?sig.throwableSignatures().stream().map(BinaryReader::semantic).toList()
+                        :thrown.stream().map(BinaryReader::declared).toList();
+                var semanticMethod=new SemanticType.Executable(
+                        sig.arguments().stream().map(BinaryReader::semantic).toList(),
+                        semantic(sig.result()),semanticThrown);
+                symbols.add(new Symbol(key,owner,ctor?simple(owner):methodName,owner,ctor?"ctor":"method",
+                        signature,method.methodType().stringValue(),mf,entry,List.copyOf(names),data,
+                        semanticMethod,methodParameters.ids(),methodParameters.bounds(),List.of(),(mf&ClassFile.ACC_VARARGS)!=0));
                 for(var type:sig.arguments())Signatures.referenced(type).forEach(t->edges.add(new Edge(key,t,"param_type")));
                 Signatures.referenced(sig.result()).forEach(t->edges.add(new Edge(key,t,"return_type")));
                 for(var type:method.methodTypeSymbol().parameterArray())Signatures.referenced(Signature.of(type)).forEach(t->edges.add(new Edge(key,t,"param_type")));
@@ -93,6 +131,52 @@ public final class BinaryReader {
         if(!exports.isEmpty())for(var symbol:symbols)if(symbol.key().equals(symbol.fqn()))symbol.metadata().put("module_exports",exports);
         return new Content(List.copyOf(symbols),List.copyOf(edges),classes,List.copyOf(warnings));
     }
+    private static Generic emptyGeneric(){return new Generic(List.of(),List.of());}
+    private static Generic generic(List<Signature.TypeParam> parameters){
+        if(parameters.isEmpty())return emptyGeneric();
+        var ids=new ArrayList<String>(parameters.size());
+        var bounds=new ArrayList<List<SemanticType>>(parameters.size());
+        for(var parameter:parameters){
+            ids.add(parameter.identifier());
+            var values=new ArrayList<SemanticType>();
+            parameter.classBound().ifPresent(bound->{
+                var value=semantic(bound);
+                if(!(value instanceof SemanticType.Declared declared&&declared.name().equals("java.lang.Object")))values.add(value);
+            });
+            parameter.interfaceBounds().forEach(bound->values.add(semantic(bound)));
+            bounds.add(List.copyOf(values));
+        }
+        return new Generic(ids,bounds);
+    }
+    private static SemanticType declared(String binary){
+        String value=binary.replace('$','.');
+        return new SemanticType.Declared(value,value,List.of());
+    }
+    private static SemanticType semantic(Signature signature){
+        return switch(signature){
+            case Signature.BaseTypeSig base -> new SemanticType.Primitive(Signatures.type(base));
+            case Signature.ArrayTypeSig array -> new SemanticType.Array(semantic(array.componentSignature()));
+            case Signature.TypeVarSig variable -> new SemanticType.Variable(variable.identifier(),variable.identifier());
+            case Signature.ClassTypeSig type -> {
+                String name=rawName(type);
+                var arguments=new ArrayList<SemanticType>();
+                for(var argument:type.typeArgs())arguments.add(switch(argument){
+                    case Signature.TypeArg.Unbounded _ -> new SemanticType.Wildcard(null,null);
+                    case Signature.TypeArg.Bounded bounded -> switch(bounded.wildcardIndicator()){
+                        case NONE -> semantic(bounded.boundType());
+                        case EXTENDS -> new SemanticType.Wildcard(semantic(bounded.boundType()),null);
+                        case SUPER -> new SemanticType.Wildcard(null,semantic(bounded.boundType()));
+                    };
+                });
+                yield new SemanticType.Declared(name,name,List.copyOf(arguments));
+            }
+        };
+    }
+    private static String rawName(Signature.ClassTypeSig type){
+        String current=type.className().replace('/','.').replace('$','.');
+        return type.outerType().map(parent->rawName(parent)+"."+current).orElse(current);
+    }
+
     private static void parse(byte[] bytes,String entry,Map<String,ClassModel> classes,Map<String,String> entries,List<String> warnings) {
         try {var model=ClassFile.of().parse(bytes);String name=name(model.thisClass());classes.put(name,model);entries.put(name,entry);}
         catch(IllegalArgumentException e){warnings.add("malformed_class: "+entry+": "+e.getClass().getSimpleName());}

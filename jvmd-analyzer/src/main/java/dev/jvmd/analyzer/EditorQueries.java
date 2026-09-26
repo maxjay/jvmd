@@ -9,7 +9,7 @@ import javax.lang.model.type.*;
 
 /** Implements 4.9: invocation signature help from public javac APIs. Completion queries resident detached semantics. */
 public final class EditorQueries {
-    public static final String MARKER="__jvmd_completion__";
+    public static final String MARKER=CompletionProbe.MARKER;
     private EditorQueries() { }
     private static boolean accessible(Trees trees,Scope scope,Element element,DeclaredType owner){
         if(scope==null)return !element.getModifiers().contains(Modifier.PRIVATE);

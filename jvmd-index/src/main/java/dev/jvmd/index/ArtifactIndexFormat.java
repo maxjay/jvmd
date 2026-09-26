@@ -12,7 +12,7 @@ import java.util.*;
  */
 public final class ArtifactIndexFormat {
     public static final int FORMAT_VERSION=1;
-    public static final String INDEXER_VERSION="jvmd-index-v8";
+    public static final String INDEXER_VERSION="jvmd-index-v9";
     private static final byte[] MAGIC="JVIDX001".getBytes(StandardCharsets.US_ASCII);
     private static final int MAX_STRINGS=5_000_000,MAX_SYMBOLS=5_000_000,MAX_RELATIONSHIPS=20_000_000,MAX_STRING_BYTES=32*1024*1024;
 
@@ -28,8 +28,15 @@ public final class ArtifactIndexFormat {
         }
     }
     public record SymbolRecord(int id,int ownerId,String key,String fqn,String name,String kind,String signature,
-                               String descriptor,int flags,String entry,List<String> parameters,String metadataJson) {
-        public SymbolRecord{parameters=List.copyOf(parameters);}
+                               String descriptor,int flags,String entry,List<String> parameters,String metadataJson,
+                               ResolutionFact resolution) {
+        public SymbolRecord(int id,int ownerId,String key,String fqn,String name,String kind,String signature,
+                            String descriptor,int flags,String entry,List<String> parameters,String metadataJson){
+            this(id,ownerId,key,fqn,name,kind,signature,descriptor,flags,entry,parameters,metadataJson,
+                    ResolutionFact.legacy(Objects.toString(key,"<invalid>"),Objects.toString(fqn,""),
+                            Objects.toString(name,""),Objects.toString(kind,"unknown"),descriptor,flags));
+        }
+        public SymbolRecord{parameters=List.copyOf(parameters);Objects.requireNonNull(resolution);}
     }
     public record Relationship(int sourceId,String target,String kind) { }
     public record ArtifactData(Key key,List<SymbolRecord> symbols,List<Relationship> relationships) {
@@ -45,6 +52,57 @@ public final class ArtifactIndexFormat {
     public static String documentationKey(Key binary,String sourceSha256){
         if(sourceSha256==null||!sourceSha256.matches("[0-9a-f]{64}"))throw new IllegalArgumentException("sourceSha256");
         return Hashing.sha256((binary.cacheKey()+"\0"+sourceSha256).getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Java-resolution identity of one indexed artifact generation.
+     *
+     * Deliberately excludes the raw binary SHA, class-entry path, parameter display names and the
+     * separately published documentation overlay. Two bytecode generations with the same indexed
+     * Java semantic surface therefore retain the same resolution identity.
+     */
+    private static final Set<String> RESOLUTION_METADATA=Set.of(
+            "generic_signature","binary_name","inner_classes","nest_host","nest_members",
+            "permitted_subclasses","record_components","module_exports",
+            "return_type","parameter_types","type_parameters","scip_return_disambiguated");
+
+    /** Canonical Java-resolution identity shared with LIVE source facts. */
+    public static Hash256 symbolResolutionIdentity(SymbolRecord symbol){
+        return Objects.requireNonNull(symbol).resolution().identity();
+    }
+
+    /**
+     * Normalized Java semantic identity of an artifact.
+     *
+     * Storage/index generation inputs in Key are deliberately excluded. A format/indexer/runtime
+     * generation change with identical normalized facts and relationships retains this identity.
+     */
+    public static Hash256 resolutionIdentity(ArtifactData data){
+        Objects.requireNonNull(data);
+        var symbols=data.symbols().stream()
+                .sorted(Comparator.comparing(symbol->symbol.resolution().symbolKey()))
+                .map(symbol->new Object[]{symbol.resolution().symbolKey(),symbolResolutionIdentity(symbol)})
+                .toList();
+        var byId=new HashMap<Integer,SymbolRecord>();for(var symbol:data.symbols())byId.put(symbol.id(),symbol);
+        var relationships=data.relationships().stream().map(edge->{
+                    var source=byId.get(edge.sourceId());
+                    if(source==null)throw new IllegalArgumentException("Unknown relationship source: "+edge.sourceId());
+                    return new Object[]{source.resolution().symbolKey(),edge.target(),edge.kind()};
+                }).sorted(Comparator.comparing(value->value[0].toString()+"\0"+value[1]+"\0"+value[2])).toList();
+        return CanonicalDigestWriter.digest("artifact-java-resolution-v1",symbols,relationships);
+    }
+
+    private static List<Object> resolutionMetadata(String metadataJson){
+        try{
+            var node=Json.MAPPER.readTree(Objects.requireNonNullElse(metadataJson,"{}"));
+            var result=new ArrayList<Object>();
+            var names=new ArrayList<String>();node.fieldNames().forEachRemaining(names::add);names.sort(String::compareTo);
+            for(String name:names)if(RESOLUTION_METADATA.contains(name))
+                result.add(new Object[]{name,node.get(name).toString()});
+            return List.copyOf(result);
+        }catch(IOException invalid){
+            throw new IllegalArgumentException("Invalid artifact symbol metadata",invalid);
+        }
     }
 
     public static ArtifactData from(BinaryReader.Content content,Key key)throws Exception{
@@ -72,8 +130,11 @@ public final class ArtifactIndexFormat {
                 metadata=new LinkedHashMap<>(metadata);
                 metadata.put("scip_return_disambiguated",true);
             }
+            var resolution=ResolutionFact.canonical(symbol.key(),symbol.owner(),symbol.kind(),symbol.name(),symbol.descriptor(),
+                    ResolutionFact.modifiers(symbol.flags(),symbol.kind()),ResolutionFact.packageName(symbol.fqn()),symbol.semanticType(),
+                    symbol.typeParameters(),symbol.typeParameterBounds(),symbol.directSupertypes(),symbol.varargs());
             symbols.add(new SymbolRecord(i,owner,symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),symbol.signature(),
-                    symbol.descriptor(),symbol.flags(),symbol.entry(),symbol.parameters(),canonicalJson(metadata)));
+                    symbol.descriptor(),symbol.flags(),symbol.entry(),symbol.parameters(),canonicalJson(metadata),resolution));
         }
         var relationships=new LinkedHashSet<Relationship>();
         for(var edge:relationshipFacts){
@@ -94,7 +155,7 @@ public final class ArtifactIndexFormat {
         if(data.key().formatVersion()!=FORMAT_VERSION)throw new IllegalArgumentException("Unsupported format version: "+data.key().formatVersion());
         var strings=new TreeSet<String>();
         for(var symbol:data.symbols()){
-            for(String value:List.of(symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),symbol.metadataJson()))strings.add(value);
+            for(String value:List.of(symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),symbol.metadataJson(),symbol.resolution().encode()))strings.add(value);
             if(symbol.signature()!=null)strings.add(symbol.signature());
             if(symbol.descriptor()!=null)strings.add(symbol.descriptor());
             if(symbol.entry()!=null)strings.add(symbol.entry());
@@ -113,6 +174,7 @@ public final class ArtifactIndexFormat {
                 out.writeInt(symbol.id());out.writeInt(symbol.ownerId());out.writeInt(symbol.flags());
                 out.writeInt(id(ids,symbol.key()));out.writeInt(id(ids,symbol.fqn()));out.writeInt(id(ids,symbol.name()));out.writeInt(id(ids,symbol.kind()));
                 out.writeInt(id(ids,symbol.signature()));out.writeInt(id(ids,symbol.descriptor()));out.writeInt(id(ids,symbol.entry()));out.writeInt(id(ids,symbol.metadataJson()));
+                out.writeInt(id(ids,symbol.resolution().encode()));
                 out.writeInt(symbol.parameters().size());for(String parameter:symbol.parameters())out.writeInt(id(ids,parameter));
             }
             out.writeInt(data.relationships().size());
@@ -123,7 +185,7 @@ public final class ArtifactIndexFormat {
         result.write(MAGIC);result.write(checksum);result.write(body);return result.toByteArray();
     }
 
-    /** Individually addressable records keep a single lookup independent of artifact size. */
+    /** Individually addressable records keep one typed lookup independent of artifact size. */
     public static byte[] encodeSymbol(SymbolRecord symbol)throws IOException{
         var bytes=new ByteArrayOutputStream();
         try(var out=new DataOutputStream(bytes)){
@@ -132,6 +194,7 @@ public final class ArtifactIndexFormat {
                     symbol.descriptor(),symbol.entry(),symbol.metadataJson()}){
                 out.writeBoolean(value!=null);if(value!=null)writeString(out,value);
             }
+            writeResolution(out,symbol.resolution());
             out.writeInt(symbol.parameters().size());for(String value:symbol.parameters())writeString(out,value);
         }
         return bytes.toByteArray();
@@ -141,15 +204,17 @@ public final class ArtifactIndexFormat {
         try(var in=new DataInputStream(new ByteArrayInputStream(bytes))){
             int id=in.readInt(),owner=in.readInt(),flags=in.readInt();var fields=new String[8];
             for(int i=0;i<fields.length;i++)fields[i]=in.readBoolean()?readString(in):null;
+            if(id<0||owner< -1||fields[0]==null||fields[1]==null||fields[2]==null||fields[3]==null||fields[7]==null)
+                throw new IOException("Invalid symbol record");
+            ResolutionFact resolution=readResolution(in);
             int count=bounded(in.readInt(),1_000_000,"parameter count");var parameters=new ArrayList<String>(count);
             for(int i=0;i<count;i++)parameters.add(readString(in));
-            if(id<0||owner< -1||in.available()!=0||fields[0]==null||fields[1]==null||fields[2]==null||fields[3]==null||fields[7]==null)
-                throw new IOException("Invalid symbol record");
-            return new SymbolRecord(id,owner,fields[0],fields[1],fields[2],fields[3],fields[4],fields[5],flags,fields[6],parameters,fields[7]);
+            if(in.available()!=0)throw new IOException("Trailing symbol record bytes");
+            return new SymbolRecord(id,owner,fields[0],fields[1],fields[2],fields[3],fields[4],fields[5],flags,fields[6],parameters,fields[7],resolution);
         }
     }
 
-    /** Validate the same record shape without allocating decoded strings or a symbol model. */
+    /** Validate the same compact record shape without constructing semantic objects. */
     public static boolean validateSymbol(byte[] bytes,long expectedId,long symbolCount)throws IOException{
         var input=java.nio.ByteBuffer.wrap(bytes);
         try{
@@ -159,6 +224,7 @@ public final class ArtifactIndexFormat {
                 if(input.get()!=0)skipString(input);
                 else if(field<4||field==7)throw new IOException("Invalid symbol record");
             }
+            skipResolution(input);
             int count=bounded(input.getInt(),1_000_000,"parameter count");
             for(int i=0;i<count;i++)skipString(input);
             if(input.hasRemaining())throw new IOException("Invalid symbol record");
@@ -169,6 +235,119 @@ public final class ArtifactIndexFormat {
         int size=bounded(input.getInt(),MAX_STRING_BYTES,"string size");
         if(size>input.remaining())throw new EOFException("Truncated symbol record");
         input.position(input.position()+size);
+    }
+
+    private static void writeResolution(DataOutputStream out,ResolutionFact value)throws IOException{
+        writeString(out,value.symbolKey());
+        out.writeBoolean(value.ownerKey()!=null);if(value.ownerKey()!=null)writeString(out,value.ownerKey());
+        writeString(out,value.kind());writeString(out,value.name());writeString(out,value.erasedDescriptor());
+        out.writeInt(value.modifiers().size());for(String modifier:value.modifiers().stream().sorted().toList())writeString(out,modifier);
+        writeString(out,value.packageName());writeType(out,value.type());
+        out.writeInt(value.typeParameters().size());
+        for(var parameter:value.typeParameters()){
+            out.writeInt(parameter.bounds().size());for(var bound:parameter.bounds())writeType(out,bound);
+        }
+        out.writeInt(value.directSupertypes().size());for(var parent:value.directSupertypes())writeType(out,parent);
+        out.writeBoolean(value.varargs());out.write(value.identity().bytes());
+    }
+
+    private static ResolutionFact readResolution(DataInputStream in)throws IOException{
+        String symbol=readString(in),owner=in.readBoolean()?readString(in):null;
+        String kind=readString(in),name=readString(in),descriptor=readString(in);
+        int modifierCount=bounded(in.readInt(),64,"resolution modifier count");var modifiers=new LinkedHashSet<String>();
+        for(int i=0;i<modifierCount;i++)modifiers.add(readString(in));
+        String pkg=readString(in);SemanticType type=readType(in);
+        int parameterCount=bounded(in.readInt(),1024,"resolution type parameter count");
+        var parameters=new ArrayList<ResolutionFact.TypeParameter>(parameterCount);
+        for(int i=0;i<parameterCount;i++){
+            int boundCount=bounded(in.readInt(),1024,"resolution bound count");var bounds=new ArrayList<SemanticType>(boundCount);
+            for(int j=0;j<boundCount;j++)bounds.add(readType(in));parameters.add(new ResolutionFact.TypeParameter(bounds));
+        }
+        int parentCount=bounded(in.readInt(),4096,"resolution supertype count");var parents=new ArrayList<SemanticType>(parentCount);
+        for(int i=0;i<parentCount;i++)parents.add(readType(in));
+        boolean varargs=in.readBoolean();byte[] identity=in.readNBytes(Hash256.BYTES);
+        if(identity.length!=Hash256.BYTES)throw new EOFException("Truncated resolution identity");
+        return new ResolutionFact(symbol,owner,kind,name,descriptor,modifiers,pkg,type,parameters,parents,varargs,new Hash256(identity));
+    }
+
+    private static void writeType(DataOutputStream out,SemanticType type)throws IOException{
+        switch(type){
+            case SemanticType.Primitive value -> {out.writeByte(1);writeString(out,value.name());}
+            case SemanticType.Declared value -> {
+                out.writeByte(2);writeString(out,value.symbolId());writeString(out,value.name());
+                out.writeInt(value.arguments().size());for(var argument:value.arguments())writeType(out,argument);
+            }
+            case SemanticType.Variable value -> {out.writeByte(3);writeString(out,value.symbolId());writeString(out,value.name());}
+            case SemanticType.Array value -> {out.writeByte(4);writeType(out,value.component());}
+            case SemanticType.Executable value -> {
+                out.writeByte(5);out.writeInt(value.parameters().size());for(var parameter:value.parameters())writeType(out,parameter);
+                writeType(out,value.returns());out.writeInt(value.thrown().size());for(var thrown:value.thrown())writeType(out,thrown);
+            }
+            case SemanticType.Wildcard value -> {
+                out.writeByte(6);out.writeBoolean(value.extendsBound()!=null);if(value.extendsBound()!=null)writeType(out,value.extendsBound());
+                out.writeBoolean(value.superBound()!=null);if(value.superBound()!=null)writeType(out,value.superBound());
+            }
+            case SemanticType.Intersection value -> {
+                out.writeByte(7);out.writeInt(value.bounds().size());for(var bound:value.bounds())writeType(out,bound);
+            }
+            case SemanticType.Unknown value -> {out.writeByte(8);writeString(out,value.text());}
+        }
+    }
+
+    private static SemanticType readType(DataInputStream in)throws IOException{
+        return switch(in.readUnsignedByte()){
+            case 1 -> new SemanticType.Primitive(readString(in));
+            case 2 -> {
+                String id=readString(in),name=readString(in);int count=bounded(in.readInt(),4096,"type argument count");
+                var args=new ArrayList<SemanticType>(count);for(int i=0;i<count;i++)args.add(readType(in));
+                yield new SemanticType.Declared(id,name,args);
+            }
+            case 3 -> new SemanticType.Variable(readString(in),readString(in));
+            case 4 -> new SemanticType.Array(readType(in));
+            case 5 -> {
+                int count=bounded(in.readInt(),4096,"parameter type count");var params=new ArrayList<SemanticType>(count);
+                for(int i=0;i<count;i++)params.add(readType(in));SemanticType returns=readType(in);
+                int thrownCount=bounded(in.readInt(),4096,"thrown type count");var thrown=new ArrayList<SemanticType>(thrownCount);
+                for(int i=0;i<thrownCount;i++)thrown.add(readType(in));
+                yield new SemanticType.Executable(params,returns,thrown);
+            }
+            case 6 -> {
+                SemanticType ext=in.readBoolean()?readType(in):null;SemanticType sup=in.readBoolean()?readType(in):null;
+                yield new SemanticType.Wildcard(ext,sup);
+            }
+            case 7 -> {
+                int count=bounded(in.readInt(),4096,"intersection bound count");var bounds=new ArrayList<SemanticType>(count);
+                for(int i=0;i<count;i++)bounds.add(readType(in));yield new SemanticType.Intersection(bounds);
+            }
+            case 8 -> new SemanticType.Unknown(readString(in));
+            default -> throw new IOException("Invalid semantic type tag");
+        };
+    }
+
+    private static void skipResolution(java.nio.ByteBuffer input)throws IOException{
+        skipString(input);if(input.get()!=0)skipString(input);skipString(input);skipString(input);skipString(input);
+        int modifiers=bounded(input.getInt(),64,"resolution modifier count");for(int i=0;i<modifiers;i++)skipString(input);
+        skipString(input);skipType(input);
+        int parameters=bounded(input.getInt(),1024,"resolution type parameter count");
+        for(int i=0;i<parameters;i++){int bounds=bounded(input.getInt(),1024,"resolution bound count");for(int j=0;j<bounds;j++)skipType(input);}
+        int parents=bounded(input.getInt(),4096,"resolution supertype count");for(int i=0;i<parents;i++)skipType(input);
+        input.get();if(input.remaining()<Hash256.BYTES)throw new EOFException("Truncated resolution identity");input.position(input.position()+Hash256.BYTES);
+    }
+
+    private static void skipType(java.nio.ByteBuffer input)throws IOException{
+        switch(Byte.toUnsignedInt(input.get())){
+            case 1,8 -> skipString(input);
+            case 2 -> {skipString(input);skipString(input);int count=bounded(input.getInt(),4096,"type argument count");for(int i=0;i<count;i++)skipType(input);}
+            case 3 -> {skipString(input);skipString(input);}
+            case 4 -> skipType(input);
+            case 5 -> {
+                int count=bounded(input.getInt(),4096,"parameter type count");for(int i=0;i<count;i++)skipType(input);
+                skipType(input);int thrown=bounded(input.getInt(),4096,"thrown type count");for(int i=0;i<thrown;i++)skipType(input);
+            }
+            case 6 -> {if(input.get()!=0)skipType(input);if(input.get()!=0)skipType(input);}
+            case 7 -> {int count=bounded(input.getInt(),4096,"intersection bound count");for(int i=0;i<count;i++)skipType(input);}
+            default -> throw new IOException("Invalid semantic type tag");
+        }
     }
 
     public static ArtifactData decode(byte[] encoded)throws Exception{
@@ -188,10 +367,11 @@ public final class ArtifactIndexFormat {
                 int id=in.readInt(),owner=in.readInt(),flags=in.readInt();
                 String localKey=value(strings,in.readInt()),fqn=value(strings,in.readInt()),name=value(strings,in.readInt()),kind=value(strings,in.readInt());
                 String signature=valueOrNull(strings,in.readInt()),descriptor=valueOrNull(strings,in.readInt()),entry=valueOrNull(strings,in.readInt()),metadata=value(strings,in.readInt());
+                String resolution=value(strings,in.readInt());
                 int parameterCount=bounded(in.readInt(),1_000_000,"parameter count");var parameters=new ArrayList<String>(parameterCount);
                 for(int p=0;p<parameterCount;p++)parameters.add(value(strings,in.readInt()));
                 if(id!=i)throw new IOException("Non-canonical local symbol id");
-                symbols.add(new SymbolRecord(id,owner,localKey,fqn,name,kind,signature,descriptor,flags,entry,List.copyOf(parameters),metadata));
+                symbols.add(new SymbolRecord(id,owner,localKey,fqn,name,kind,signature,descriptor,flags,entry,List.copyOf(parameters),metadata,ResolutionFact.decode(resolution)));
             }
             int relationCount=bounded(in.readInt(),MAX_RELATIONSHIPS,"relationship count");var relations=new ArrayList<Relationship>(relationCount);
             for(int i=0;i<relationCount;i++){

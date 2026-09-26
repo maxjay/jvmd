@@ -37,7 +37,7 @@ class LspFacadeTest {
             var tokens=call(app,session,"textDocument/semanticTokens/full",file,source,0,Map.of());assertThat(tokens.path("data").size()).isGreaterThan(30);assertThat(tokens.path("data").size()%5).isZero();assertThat(tokens.path("resultId").asText()).hasSize(64);
             String unsaved=source.replace("return value(1,name);","return name.len;");
             var opened=TestSupport.request(app.dispatcher(),"document.open",Map.of("session",session,"path",file.toString(),"version",1,"text",unsaved));assertThat(opened.has("error")).isFalse();
-            var completion=call(app,session,"textDocument/completion",file,unsaved,unsaved.indexOf("name.len")+8,Map.of());assertThat(completion.path("items").toString()).contains("\"label\":\"length\"");assertThat(completion.path("items").get(0).path("textEdit").path("range").isObject()).isTrue();
+            var completion=call(app,session,"textDocument/completion",file,unsaved,unsaved.indexOf("name.len")+8,Map.of());assertThat(completion.path("items").toString()).contains("\"label\":\"length() : int\"");assertThat(completion.path("items").get(0).path("textEdit").path("range").isObject()).isTrue();
             assertThat(Files.readString(file)).isEqualTo(source);
         }
     }
@@ -49,15 +49,86 @@ class LspFacadeTest {
         try(var app=new Application(TestSupport.config(root,Duration.ofHours(4)))){
             String session=TestSupport.open(app,root);
             var completion=call(app,session,"textDocument/completion",use,useSource,useSource.indexOf("api.gre")+7,Map.of());
-            JsonNode item=null;for(var candidate:completion.path("items"))if(candidate.path("label").asText().equals("greet")){item=candidate;break;}
+            JsonNode item=null;for(var candidate:completion.path("items"))if(candidate.path("label").asText().startsWith("greet(")){item=candidate;break;}
             assertThat(item).isNotNull();assertThat(item.has("documentation")).isFalse();assertThat(item.path("detail").asText()).contains("greet");
+            String shallowDetail=item.path("detail").asText();
             assertThat(((Map<?,?>)dev.jvmd.lsp.LspFacade.capabilities().get("completionProvider")).get("resolveProvider")).isEqualTo(true);
             var response=TestSupport.request(app.dispatcher(),"lsp.request",Map.of("session",session,"method","completionItem/resolve","params",item,"client",CLIENT));
             assertThat(response.has("error")).as(response.toPrettyString()).isFalse();
             var resolved=response.path("result").path("result").path("value");
-            assertThat(resolved.path("label").asText()).isEqualTo("greet");
-            assertThat(resolved.path("detail").asText()).contains("greet");
+            assertThat(resolved.path("label").asText()).startsWith("greet(");
+            assertThat(resolved.path("detail").asText()).contains("Api","greet").isNotEqualTo(shallowDetail);
             assertThat(resolved.path("documentation").path("value").asText()).contains("Greets callers");
+        }
+    }
+
+    @Test void fieldResolveUsesMaintainedDeclarationWithoutJavacOrOptionalDocumentation()throws Exception{
+        Path api=root.resolve("Api.java"),use=root.resolve("Use.java");
+        String apiSource="class Api { /** Field docs are optional completion enrichment. */ int value; }";
+        String useSource="class Use { int call(Api api){return api.val;} }";
+        Files.writeString(api,apiSource);Files.writeString(use,useSource);
+        try(var app=new Application(TestSupport.config(root,Duration.ofHours(4)))){
+            String session=TestSupport.open(app,root);
+            var completion=call(app,session,"textDocument/completion",use,useSource,useSource.indexOf("api.val")+7,Map.of());
+            JsonNode item=null;for(var candidate:completion.path("items"))if(candidate.path("label").asText().startsWith("value")){item=candidate;break;}
+            assertThat(item).as(completion.toString()).isNotNull();
+            long before=analyzerQueries(app,session);
+            var response=TestSupport.request(app.dispatcher(),"lsp.request",Map.of(
+                    "session",session,"method","completionItem/resolve","params",item,"client",CLIENT));
+            assertThat(response.has("error")).as(response.toPrettyString()).isFalse();
+            var resolved=response.path("result").path("result").path("value");
+            assertThat(resolved.path("detail").asText()).contains("Api","value");
+            assertThat(resolved.has("documentation")).isFalse();
+            assertThat(analyzerQueries(app,session)).as("exact LIVE field resolve must not enter javac").isEqualTo(before);
+        }
+    }
+
+    @Test void persistedFieldResolveUsesExactOwnerWhenOptionalDeclaringProjectionIsAbsent()throws Exception{
+        String scip="maven fixture/project 1 sample/Project#sources.",identity="field-identity";
+        String label="sources : Set<String>";
+        try(var sessions=new Sessions();var documents=new Documents()){
+            var session=sessions.open(root);var dispatcher=new Dispatcher(sessions,new Metrics());
+            var calls=new java.util.concurrent.atomic.AtomicInteger();
+            dispatcher.register("symbol.describe",(_,params)->{
+                calls.incrementAndGet();
+                assertThat(params.path("ref").asText()).isEqualTo(scip);
+                assertThat(params.path("resolution_identity").asText()).isEqualTo(identity);
+                assertThat(params.path("semantic_origin").asText()).isEqualTo("local");
+                assertThat(params.path("include_doc").asBoolean()).isFalse();
+                return Envelope.of(2,"index",Map.of("scip",scip,"resolution_identity",identity,
+                        "kind","field","fqn","sample.Project","signature","java.util.Set<String> sources"));
+            });
+            var item=Map.of("label",label,"kind",5,"data",Map.of(
+                    "scip",scip,"resolution_identity",identity,"semantic_origin","local"));
+            var response=dev.jvmd.lsp.LspFacade.request(dispatcher,session,documents,
+                    Json.MAPPER.valueToTree(Map.of("method","completionItem/resolve","params",item)));
+            var resolved=Json.MAPPER.valueToTree(response.result()).path("value");
+            assertThat(resolved.path("detail").asText()).isEqualTo("Project."+label);
+            assertThat(calls.get()).isEqualTo(1);
+        }
+    }
+
+    @Test void staleCompletionItemIsRejectedBeforeEnrichment()throws Exception{
+        Path api=root.resolve("Api.java"),use=root.resolve("Use.java");
+        String apiSource="class Api { /** Original. */ int greet(){return 1;} }";
+        String useSource="class Use { Object call(Api api){return api.gre;} }";
+        Files.writeString(api,apiSource);Files.writeString(use,useSource);
+        try(var app=new Application(TestSupport.config(root,Duration.ofHours(4)))){
+            String session=TestSupport.open(app,root);
+            var completion=call(app,session,"textDocument/completion",use,useSource,useSource.indexOf("api.gre")+7,Map.of());
+            JsonNode item=null;for(var candidate:completion.path("items"))if(candidate.path("label").asText().startsWith("greet(")){item=candidate;break;}
+            assertThat(item).as(completion.toString()).isNotNull();
+            assertThat(item.path("data").path("resolution_identity").asText()).isNotBlank();
+
+            String changed="class Api { /** Current. */ String greet(){return \"changed\";} }";
+            var opened=TestSupport.request(app.dispatcher(),"document.open",Map.of(
+                    "session",session,"path",api.toString(),"version",1,"text",changed));
+            assertThat(opened.has("error")).as(opened.toString()).isFalse();
+
+            var response=TestSupport.request(app.dispatcher(),"lsp.request",Map.of(
+                    "session",session,"method","completionItem/resolve","params",item,"client",CLIENT));
+            assertThat(response.path("error").path("code").asInt()).isEqualTo(-32801);
+            assertThat(response.path("error").path("message").asText()).contains("stale");
         }
     }
 
@@ -70,6 +141,11 @@ class LspFacadeTest {
             assertThat(rename.path("documentChanges").get(1).path("newUri").asText()).isEqualTo(root.resolve("Renamed.java").toUri().toString());assertThat(Files.exists(root.resolve("Renamed.java"))).isFalse();
         }
     }
+    private static long analyzerQueries(Application app,String session){
+        return TestSupport.request(app.dispatcher(),"session.status",Map.of("session",session,"section","analyzer"))
+                .path("result").path("result").path("analyzer").path("queries").asLong();
+    }
+
     @Test void aliasedWorkspaceKeepsUnsavedDocumentsAndDiagnosticUris()throws Exception{
         Path actual=Files.createDirectories(root.resolve("workspace")).toRealPath();
         Path alias=Files.createSymbolicLink(root.resolve("linked-workspace"),actual);

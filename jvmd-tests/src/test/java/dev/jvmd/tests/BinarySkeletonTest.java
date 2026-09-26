@@ -13,7 +13,7 @@ class BinarySkeletonTest {
   var method=content.symbols().stream().filter(s->s.name().equals("transform")).findFirst().orElseThrow();
   assertThat(method.signature()).contains("<U extends java.lang.CharSequence>","java.util.List<U>","T input","U text");
   assertThat(method.parameters()).containsExactly("input","text");assertThat(method.descriptor()).isEqualTo("(Ljava/lang/Number;Ljava/lang/CharSequence;)Ljava/util/List;");
-  assertThat(content.symbols()).noneMatch(s->s.name().equals("hidden"));assertThat(content.symbols()).anyMatch(s->s.name().equals("protectedValue"));
+  assertThat(content.symbols()).anyMatch(s->s.name().equals("hidden"));assertThat(content.symbols()).anyMatch(s->s.name().equals("protectedValue"));
   assertThat(content.symbols()).anyMatch(s->s.fqn().equals("fixture.Sample$Nested"));
   assertThat(content.edges()).anyMatch(e->e.kind().equals("return_type")&&e.target().equals("java.util.List"));
  }

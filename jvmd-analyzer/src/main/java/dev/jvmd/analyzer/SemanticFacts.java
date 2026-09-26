@@ -180,7 +180,11 @@ public final class SemanticFacts {
         if(!seen.add(id))return;
         String binary=identity.binaryName(type);
         if(!residentTypeCurrent.test(id,binary)){
-            var snapshot=snapshotForType(task,identity,type);snapshots.putIfAbsent(snapshot.unit(),snapshot);
+            var snapshot=snapshotForType(task,identity,type);
+            var partial=new SemanticSnapshot(snapshot.unit(),snapshot.sourceFile(),snapshot.contentIdentity(),
+                    snapshot.facts(),snapshot.descriptions(),snapshot.apiIdentity(),snapshot.namespaceIdentity(),
+                    snapshot.documentationIdentity(),snapshot.dependencies(),SemanticCompleteness.PARTIAL);
+            snapshots.putIfAbsent(partial.unit(),partial);
         }
         for(var parent:task.getTypes().directSupertypes(declared))hierarchySnapshots(task,identity,parent,seen,snapshots,residentTypeCurrent);
     }

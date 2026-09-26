@@ -36,6 +36,8 @@ public final class Application implements AutoCloseable {
     private final java.util.concurrent.atomic.AtomicLong dependencyExactDescribeHits=new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicLong machineExactDescribeAttempts=new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicLong machineExactDescribeMisses=new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong localExactDescribeAttempts=new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong localExactDescribeHits=new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicLong liveDescribeRebinds=new java.util.concurrent.atomic.AtomicLong();
     private volatile String lastDescribeRef="";
     private static final Set<String> COMPLETION_TYPE_KINDS=Set.of("class","interface","enum","record","annotation");
@@ -125,6 +127,8 @@ public final class Application implements AutoCloseable {
                         "dependency_exact_describe_hits",dependencyExactDescribeHits.get(),
                         "machine_exact_describe_attempts",machineExactDescribeAttempts.get(),
                         "machine_exact_describe_misses",machineExactDescribeMisses.get(),
+                        "local_exact_describe_attempts",localExactDescribeAttempts.get(),
+                        "local_exact_describe_hits",localExactDescribeHits.get(),
                         "live_describe_rebinds",liveDescribeRebinds.get(),
                         "last_describe_ref",lastDescribeRef));
                 return new Envelope(0,"live",false,null,s.warnings(),Map.of(
@@ -504,9 +508,12 @@ public final class Application implements AutoCloseable {
         }return List.copyOf(found.values());
     }
     private Envelope describe(Session session,String ref)throws Exception{
-        return describe(session,ref,null);
+        return describe(session,ref,null,null);
     }
     private Envelope describe(Session session,String ref,WorkspaceBindings.Snapshot validated)throws Exception{
+        return describe(session,ref,validated,null);
+    }
+    private Envelope describe(Session session,String ref,WorkspaceBindings.Snapshot validated,String semanticOrigin)throws Exception{
         lastDescribeRef=ref;
         if(validated!=null){
             var symbol=validated.symbol(ref);if(symbol!=null)return new Envelope(validated.tier(),"live",false,null,validated.warnings(),symbol);
@@ -517,15 +524,27 @@ public final class Application implements AutoCloseable {
         // before any source-position freshness work; LOCAL/source artifacts still fall through to
         // the live path below.
         if(ref.startsWith("maven ")){
-            machineExactDescribeAttempts.incrementAndGet();
             var database=index();bindIndex(session,database);
-            var indexed=database.store().byScip(ref,session.state("resolution")==null?null:session.id(),
-                    IndexStore.SemanticLayer.MACHINE);
-            if(indexed!=null){
-                dependencyExactDescribeHits.incrementAndGet();
-                return Envelope.of(2,"index",indexed);
+            String workspace=session.state("resolution")==null?null:session.id();
+            if("machine".equals(semanticOrigin)){
+                machineExactDescribeAttempts.incrementAndGet();
+                var indexed=database.store().byScip(ref,workspace,IndexStore.SemanticLayer.MACHINE);
+                if(indexed!=null){dependencyExactDescribeHits.incrementAndGet();return Envelope.of(2,"index",indexed);}
+                machineExactDescribeMisses.incrementAndGet();
+                return Envelope.of(2,"index",Map.of("scip",ref,"resolution_identity",""));
             }
-            machineExactDescribeMisses.incrementAndGet();
+            if("local".equals(semanticOrigin)){
+                localExactDescribeAttempts.incrementAndGet();
+                var indexed=database.store().byScip(ref,workspace,IndexStore.SemanticLayer.LOCAL);
+                if(indexed!=null){localExactDescribeHits.incrementAndGet();dependencyExactDescribeHits.incrementAndGet();return Envelope.of(2,"index",indexed);}
+                return Envelope.of(2,"index",Map.of("scip",ref,"resolution_identity",""));
+            }
+            if(semanticOrigin==null||semanticOrigin.isBlank()){
+                machineExactDescribeAttempts.incrementAndGet();
+                var indexed=database.store().byScip(ref,workspace,IndexStore.SemanticLayer.MACHINE);
+                if(indexed!=null){dependencyExactDescribeHits.incrementAndGet();return Envelope.of(2,"index",indexed);}
+                machineExactDescribeMisses.incrementAndGet();
+            }
         }
         var analyzer=(Analyzer)session.state("analyzer");
         if((ref.startsWith("maven ")||ref.startsWith("local "))&&analyzer!=null){
@@ -558,7 +577,9 @@ public final class Application implements AutoCloseable {
     private Envelope describeDocumented(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
         int depth=Dispatcher.bounded(params,"doc_depth",0,10),limit=Dispatcher.limit(params,50,200),offset=cursor(params);
         String detail=params.path("detail").asText("summary");if(!Set.of("summary","full").contains(detail))throw RpcException.invalid("Unknown documentation detail");
-        var base=describe(session,Dispatcher.required(params,"ref"));
+        String origin=params.path("semantic_origin").isTextual()?params.path("semantic_origin").asText():null;
+        if(origin!=null&&!Set.of("live","local","machine").contains(origin))throw RpcException.invalid("Unknown semantic_origin");
+        var base=describe(session,Dispatcher.required(params,"ref"),null,origin);
         if(!(base.result() instanceof Map<?,?> raw)||raw.get("scip")==null)return base;
         var symbol=new LinkedHashMap<String,Object>();for(var entry:raw.entrySet())symbol.put(entry.getKey().toString(),entry.getValue());
         if(!symbol.containsKey("id")&&depth==0){

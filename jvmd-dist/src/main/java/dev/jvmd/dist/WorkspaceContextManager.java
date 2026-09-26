@@ -11,8 +11,14 @@ final class WorkspaceContextManager {
     @FunctionalInterface interface Factory { Analyzer.Context create(Path file) throws Exception; }
     private long constructions;
     Analyzer.Context context(Path file, Resolution graph, Factory factory) throws Exception {
-        String key=key(file,graph);
-        return RequestScope.memo(List.of(this,key),()->{constructions++;return factory.create(file);});
+        String key;
+        try(var trace=RequestScope.stage("application.analyzer.ownerKey")){key=key(file,graph);}
+        try(var trace=RequestScope.stage("application.analyzer.contextLookup")){
+            return RequestScope.memo(List.of(this,key),()->{
+                constructions++;
+                try(var create=RequestScope.stage("application.analyzer.contextCreate")){return factory.create(file);}
+            });
+        }
     }
     static String key(Path file,Resolution graph){
         var module=owner(file,graph);

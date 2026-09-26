@@ -44,7 +44,7 @@ class SemanticEditsTest {
             var replaced=call(app,session,"edit.replaceBody",Map.of("ref","Example/okay()","body","{return 9;}"));
             assertThat(replaced.path("applied").asBoolean()).isTrue();assertThat(replaced.path("diagnostics").isEmpty()).isTrue();assertThat(replaced.path("members").size()).isEqualTo(1);
             var inserted=call(app,session,"edit.insert",Map.of("ref","Example/okay()","position","after","code","int added(){return nope;}"));
-            assertThat(inserted.path("diagnostics").size()).isEqualTo(1);assertThat(inserted.path("diagnostics").get(0).path("code").asText()).contains("cant.resolve");
+            assertThat(inserted.path("diagnostics").size()).as(inserted.toPrettyString()).isEqualTo(1);assertThat(inserted.path("diagnostics").get(0).path("code").asText()).contains("cant.resolve");
             String text=Files.readString(file);int offset=text.indexOf("nope");
             var fixed=call(app,session,"edit.text",Map.of("text_edits",List.of(Map.of("path",file.toString(),"start",offset,"end",offset+4,"new_text","11"))));
             assertThat(fixed.path("diagnostics").isEmpty()).isTrue();assertThat(Files.readString(file)).contains("return 11;","return missing;");

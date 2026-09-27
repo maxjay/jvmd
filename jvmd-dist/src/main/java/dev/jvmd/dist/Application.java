@@ -805,20 +805,27 @@ public final class Application implements AutoCloseable {
     }
     private static <T> List<T> slice(List<T> list,int offset,int limit){return List.copyOf(list.subList(Math.min(offset,list.size()),Math.min(list.size(),offset+limit)));}
     private Analyzer analyzer(Session session,Path path)throws Exception{
+        try(var preparation=RequestScope.stage("analyzer.context.prepare")){
         Resolution graph;
-        graph=maintainedResolution(session);
+        try(var span=RequestScope.stage("project.maintained_resolution")){graph=maintainedResolution(session);}
         var contexts=session.state("analysis_contexts",WorkspaceContextManager::new);
         String contextIdentity;
-        contextIdentity=contextCacheIdentity(session,graph,path);
-        var context=contexts.context(path,graph,contextIdentity,file->createAnalyzerContext(session,file,graph));
+        try(var span=RequestScope.stage("analyzer.context.identity")){contextIdentity=contextCacheIdentity(session,graph,path);}
+        Analyzer.Context context;
+        try(var span=RequestScope.stage("analyzer.context.lookup")){
+            context=contexts.context(path,graph,contextIdentity,file->{
+                try(var creation=RequestScope.stage("analyzer.context.create")){return createAnalyzerContext(session,file,graph);}
+            });
+        }
         Analyzer analyzer;
         analyzer=session.state("analyzer",()->new Analyzer(classpathFiles));
         IndexService availableIndex;
         availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
-        analyzer.configure(context,availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));
+        try(var span=RequestScope.stage("analyzer.configure")){analyzer.configure(context,availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));}
         analyzer.documents(documents(session));
         analyzer.persistence(config.stateDir().resolve("diagnostics-v2").resolve(Hashing.sha256(session.root().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))));
         return analyzer;
+        }
     }
     /**
      * Maintained analyzer contexts are valid while project/source-output ownership remains watched.
@@ -921,7 +928,11 @@ public final class Application implements AutoCloseable {
         var roots=(test?module.testSources():module.sources()).stream().filter(p->!p.equals(settings.generatedDirectory())&&!p.contains("/generated-sources")&&!p.contains("/generated-test-sources")).map(Path::of).toList();
         var classpath=new ArrayList<Path>(graph.classpaths().getOrDefault(module.gav()+(test?":test":":main"),List.of()).stream().map(Path::of).toList());
         if(test&&session.state("apt:"+module.gav()+":main") instanceof AnnotationProcessing.Output main)classpath.addAll(0,main.classpath());
-        var result=processor.prepare(new AnnotationProcessing.Request(module.gav()+(test?":test":":main"),Path.of(module.directory()),roots,classpath,settings.path().stream().map(Path::of).toList(),settings.names(),test?module.testCompilerOptions():module.compilerOptions(),settings.lombok()),java.time.Duration.ofSeconds(60));
+        AnnotationProcessing.Output result;
+        try(var span=RequestScope.stage("annotation_processing.prepare")){
+            span.count("modules",1);span.count("source_roots",roots.size());span.count("classpath_entries",classpath.size());
+            result=processor.prepare(new AnnotationProcessing.Request(module.gav()+(test?":test":":main"),Path.of(module.directory()),roots,classpath,settings.path().stream().map(Path::of).toList(),settings.names(),test?module.testCompilerOptions():module.compilerOptions(),settings.lombok()),java.time.Duration.ofSeconds(60));
+        }
         session.put("apt:"+module.gav()+(test?":test":":main"),result);result.warnings().forEach(session::warn);return result;
     }
     private static dev.jvmd.runtime.RunManager runs(Session session){return session.state("runs",()->new dev.jvmd.runtime.RunManager(session.id()));}

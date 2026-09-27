@@ -46,7 +46,7 @@ answers. Development pilots are not frozen, independent comparison blocks.
 | A13 | blocked | Product/direct/pipe profiles separated; normal product AOT acceptance unavailable locally |
 | A14 | blocked | No public comparative performance claim; independent blocks and uncertainty analysis remain |
 | A15 | partial | Artifact-only reducer reproduces tested summaries and rejects tampering/interruption/concealed failures; full native bundle reduction and final gate remain. |
-| A16 | blocked | Historical long-open evidence preserved; native causal investigation remains |
+| A16 | pass for the reproduced diagnostic path | Session/context/processor spans explain the reproduced long open; no claim of identical causation for every historical run. See `long-open-diagnosis.md`. |
 | A17 | pass for workflow/publication method | CI push removed; branch changes are published through the GitHub connector |
 | A18 | pass for isolated retention fix | Before/after reproducer logs and 32 passing targeted production tests; later changes require fresh validation |
 
@@ -129,3 +129,31 @@ which is joining the Java indexing thread while that thread waits in its indexer
 loop. This is a captured shutdown wait, not a claim of a fully explained defect.
 Selected witnesses are in `benchmarks/evidence/lifecycle-followup-2026-09-27/`;
 that directory explicitly does not claim to be the full raw experiment bundle.
+
+## Causal attribution and optional metrics
+
+The next Apache replay recorded 23 external compiler launches whose invocation
+intervals cover 15.527 seconds of a 16.358-second native RPC. These launches occur
+inside annotation-processor preparation during document maintenance. The client
+request took 16.367 seconds; the second open took 112.920 ms. Exact definition and
+unchanged copied-input checks passed. Raw stage events and request records are
+committed in `benchmarks/evidence/actor-attribution-2026-09-27/`. See
+`long-open-diagnosis.md` for the interval semantics and limits.
+
+The clean packaged Unix pilot at 2bbe9542 passed LIFE-01–07, LIFE-09–10 and the
+Apache case. LIFE-08 remained incorrect. The traced product profile failed
+because the jlink image omits `jdk.management` but tracing referenced its extended
+ThreadMXBean. A separate reduced-runtime reproducer fails with
+`NoClassDefFoundError` before the fix and returns the unchanged request result
+afterward. The fix records unavailable allocation counters as -1 and caches that
+capability failure. It does not add a zero-work claim or alter analyzer decisions.
+Ten targeted production tests passed, followed by a successful final regression
+run for the exact optional-counter patch. The actor attribution changes are kept
+separate from the optional-module correctness fix in Git history.
+
+Full CI native artifacts were uploaded (1.17 GB). The connector's download limit
+is 512 MiB, so the workflow now additionally packages bounded review ZIPs containing
+raw requests, native JFR recordings, stage reductions, logs and original checksum
+inventories. The full bundle is retained. A local 86-file review ZIP was checked
+for ZIP CRC and every selected file's SHA-256. Review copies explicitly identify
+themselves as subsets and cannot stand in for a complete-bundle acceptance gate.

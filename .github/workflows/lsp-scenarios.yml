@@ -192,3 +192,20 @@ jobs:
           path: |
             ${{ runner.temp }}/native-lifecycle-clean
             ${{ runner.temp }}/native-lifecycle-traced
+
+      - name: Package bounded review copies
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          python3 benchmarks/workspaces/package_evidence.py "$RUNNER_TEMP/native-lifecycle-clean" "$RUNNER_TEMP/native-clean-review.zip"
+          python3 benchmarks/workspaces/package_evidence.py "$RUNNER_TEMP/native-lifecycle-traced" "$RUNNER_TEMP/native-traced-review.zip"
+
+      - name: Upload native lifecycle review copies
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-lifecycle-review
+          retention-days: 7
+          compression-level: 0
+          path: |
+            ${{ runner.temp }}/native-clean-review.zip
+            ${{ runner.temp }}/native-traced-review.zip

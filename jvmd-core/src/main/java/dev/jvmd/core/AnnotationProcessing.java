@@ -130,6 +130,7 @@ public final class AnnotationProcessing implements AutoCloseable {
     }
     private record Exit(int exitCode,boolean timedOut) { }
     private Exit invoke(Request request,List<Path> inputs,Path generated,Path classes,Path work,Path log,String mode,Duration timeout)throws Exception {
+        try(var span=RequestScope.stage("annotation_processing.invoke")){
         var args=new ArrayList<String>();
         for(int i=0;i<request.compilerOptions().size();i++){
             String option=request.compilerOptions().get(i);
@@ -146,6 +147,7 @@ public final class AnnotationProcessing implements AutoCloseable {
         var builder=new ProcessBuilder(config.jdkHome().resolve("bin/javac").toString(),"-J-Xmx256m","@"+arguments).directory(request.directory().toFile()).redirectErrorStream(true);
         builder.environment().put("JAVA_HOME",config.jdkHome().toString());
         var process=builder.start();active=process;process.getOutputStream().close();
+        span.count("forked_compilers",1);span.count("input_sources",inputs.size());
         var ioFailure=new java.util.concurrent.atomic.AtomicReference<IOException>();
         Thread reader=Thread.ofVirtual().name("jvmd-processor-output").start(()->{
             try(var input=process.getInputStream();var output=Files.newOutputStream(log,StandardOpenOption.CREATE,StandardOpenOption.TRUNCATE_EXISTING)){
@@ -158,8 +160,10 @@ public final class AnnotationProcessing implements AutoCloseable {
             boolean finished=process.waitFor(timeout.toMillis(),TimeUnit.MILLISECONDS);
             if(!finished)kill(process);reader.join(5000);if(reader.isAlive()){process.getInputStream().close();reader.interrupt();}
             if(ioFailure.get()!=null&&finished)throw ioFailure.get();
+            span.outcome(finished&&process.exitValue()==0?"completed":"failed");
             return new Exit(finished?process.exitValue():-1,!finished);
         }finally{if(process.isAlive())kill(process);active=null;}
+        }
     }
     private static String quote(String value){return "\""+value.replace("\\","\\\\").replace("\"","\\\"").replace("\n","\\n").replace("\r","\\r")+"\"";}
     private static String join(List<Path> paths){return paths.stream().map(Path::toString).collect(java.util.stream.Collectors.joining(File.pathSeparator));}

@@ -9,7 +9,7 @@ import {ProtocolClient} from "./ProtocolClient.ts";
 import {sha} from "./fixture.ts";
 
 export type LaunchOptions={server:"jvmd"|"jdtls";profile:"product"|"direct"|"pipe"|"custom";root:string;state:string;
-  javaHome:string;image:string;jdtlsHome?:string;pipeBuild?:string;customCommand?:string[];repository:string;trace?:boolean;environment?:Record<string,string>};
+  javaHome:string;image:string;jdtlsHome?:string;pipeBuild?:string;customCommand?:string[];repository:string;trace?:boolean;environment?:Record<string,string>;journalDirectory?:string;reuseState?:boolean};
 export type Launch={client:ProtocolClient;metadata:any;stop:()=>Promise<void>};
 const EXPORTS=["api","util","code","main","platform"].map(p=>"--add-exports=jdk.compiler/com.sun.tools.javac."+p+"=ALL-UNNAMED");
 
@@ -22,15 +22,15 @@ export async function launch(o:LaunchOptions):Promise<Launch> {
     XDG_CACHE_HOME:path.join(o.state,"cache"),JVMD_SOCKET:path.join(socketDirectory,"daemon.sock"),JAVA_TOOL_OPTIONS:"-Xmx1024m"};
   writeFileSync(config,JSON.stringify({jdk_home:o.javaHome,m2_repo:o.repository,index_on_start:true,heap_ceiling_mb:1024}));
   let command:string[],daemon:ChildProcess|undefined;
-  const metadata:any={server:o.server,profile:o.profile,process:"fresh",machineState:"empty",
-    launchStartedNs:String(started),filesystemCache:"OS cache uncontrolled",repository:o.repository,aot:{status:"unavailable",reason:"runtime acceptance not yet observed"}};
+  const metadata:any={server:o.server,profile:o.profile,process:"fresh",machineState:o.reuseState?"persisted":"empty",
+    launchStartedNs:String(started),stateDirectory:o.state,workspaceRoot:o.root,filesystemCache:"OS cache uncontrolled",repository:o.repository,aot:{status:"unavailable",reason:"runtime acceptance not yet observed"}};
   if(o.customCommand){
     assert.equal(o.profile,"custom","explicit command requires custom diagnostic profile");command=o.customCommand;
     metadata.performanceClaimsAllowed=false;
   }else if(o.server==="jdtls"){
     assert(o.jdtlsHome,"JDTLS_HOME required");
-    const configuration=path.join(o.state,"equinox-config");mkdirSync(configuration);
-    copyFileSync(path.join(o.jdtlsHome,"config_linux/config.ini"),path.join(configuration,"config.ini"));
+    const configuration=path.join(o.state,"equinox-config");mkdirSync(configuration,{recursive:true});
+    if(!o.reuseState)copyFileSync(path.join(o.jdtlsHome,"config_linux/config.ini"),path.join(configuration,"config.ini"));
     const launcher=readdirSync(path.join(o.jdtlsHome,"plugins")).find(n=>/^org\.eclipse\.equinox\.launcher_.*\.jar$/u.test(n));
     assert(launcher,"JDTLS launcher missing");
     command=[path.join(o.javaHome,"bin/java"),"-Xmx1024m","-Declipse.application=org.eclipse.jdt.ls.core.id1","-Dosgi.install.area="+o.jdtlsHome,
@@ -80,8 +80,8 @@ export async function launch(o:LaunchOptions):Promise<Launch> {
     if(o.profile==="direct")metadata.aot={status:"not_applicable",reason:"explicitly disabled diagnostic profile"};
   }
   metadata.command=command;metadata.environment={...o.environment,JAVA_TOOL_OPTIONS:env.JAVA_TOOL_OPTIONS,XDG_CACHE_HOME:env.XDG_CACHE_HOME,JVMD_SOCKET:env.JVMD_SOCKET};metadata.javaHome=o.javaHome;metadata.trace=!!o.trace;
-  writeFileSync(path.join(o.state,"launch.json"),JSON.stringify(metadata,null,2)+"\n");
-  const client=new ProtocolClient(command,{env,stderr,journalDirectory:path.dirname(o.state)});
+  writeFileSync(path.join(o.state,o.reuseState?"reopen-launch.json":"launch.json"),JSON.stringify(metadata,null,2)+"\n");
+  const client=new ProtocolClient(command,{env,stderr,journalDirectory:o.journalDirectory??path.dirname(o.state)});
   daemon?.on("error",e=>{client.protocolErrors.push("daemon launch: "+e.message);client.child.kill();});
   return {client,metadata,stop:async()=>{
     try{await client.shutdown();}finally{

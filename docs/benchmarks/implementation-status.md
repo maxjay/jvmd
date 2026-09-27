@@ -4,8 +4,8 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 174 case definitions, 208 passing TypeScript
-harness tests, and 107 required variants (106 implemented, 0 partial, 1 absent).
+Latest implementation inventory: 175 case definitions, 213 passing TypeScript
+harness tests, and 107 required variants (107 implemented, 0 partial, 0 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -28,8 +28,9 @@ its admission and resource semantics are being brought under the same contract.
 
 ## Current limits and gates
 
-The local environment refuses Unix socket creation and cannot read child-process
-`/proc` metrics. Pipe runs are explicitly diagnostic. They do not establish normal
+The local environment still refuses Unix socket creation. Child-process `/proc`
+status is now readable, but the cgroup hierarchy is not writable or delegated;
+complete process-family accounting remains unproven. Pipe runs are explicitly diagnostic. They do not establish normal
 daemon attachment, scheduler behaviour, process-tree resource costs or AOT use.
 JDTLS can run here, and its failures are retained rather than treated as expected
 answers. Development pilots are not frozen, independent comparison blocks.
@@ -1337,3 +1338,30 @@ each retain one stale immediate inventory before correct settled inventory and
 symbol visibility. All nine JVMD routes are unsupported. All 18 reports finalized,
 full inventories verify and reducer integrity issues are empty; see
 `benchmarks/evidence/project-scopes-2026-09-27/`.
+
+
+## Persisted reopen completes the required source variants
+
+SES-01 now has a separate persisted-state reopen case. It verifies saved String
+field semantics, applies and verifies an unsaved int overlay, closes the first
+client's buffers and process, hashes nonempty retained server state twice, then
+launches a new process against that exact state directory. The new client starts
+without live buffers and must resolve the original saved String declaration.
+The state snapshot interval is outside request timings; this proves reuse of
+persisted files, not an inferred cache hit or a Unix lifecycle claim in pipe mode.
+
+Seed and reopened sessions have independent immutable protocol/process journals,
+request identities and reports. An unclean seed shutdown prevents relaunch and
+remains a failure. Artifact-only validation checks both phases, state identity,
+clock boundaries and original saved/unsaved/reopened source payloads. The review
+packager retains both histories. Five tests run the actual runner against correct,
+leaking, empty-state and failed-seed peers, and reject snapshot/answer tampering.
+All 213 harness tests pass. The source ledger now accounts for all 107 required
+variants in 175 cases; full execution and the acceptance gates remain separate.
+
+Mode replay at `074041e` finalized all eight cases with a verified complete
+inventory and no reducer integrity issues. All four JDTLS cases lack exact-version
+admission because publications are versionless; later declared stages are still
+collected. All four JVMD command routes are unsupported. Legal versionless
+notifications are not labelled protocol errors. Raw histories are preserved in
+`benchmarks/evidence/diagnostic-modes-2026-09-27/`.

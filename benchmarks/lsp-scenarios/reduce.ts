@@ -3,6 +3,7 @@ import {readFileSync,writeFileSync,existsSync,readdirSync} from "node:fs";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 import {sha} from "./harness/fixture.ts";
+import {persistedSessionOracle} from "./harness/persisted.ts";
 import {validUnofferedSelection} from "./harness/completionSelection.ts";
 import {CONTRACT} from "./harness/contracts.ts";
 import {reduceVariants} from "./variants.ts";
@@ -159,6 +160,19 @@ export function reduceBundle(root:string,verifyHashes=true){
         time=BigInt(row.timeNs);
       }
       if(["pass","not_applicable"].includes(report.outcome)&&(!lifecycle.some(row=>row.event==="process_exit"&&row.code===0&&!row.signal)||lifecycle.at(-1)?.event!=="stdio_closed"||lifecycle.some(row=>["forced_kill","shutdown_deadline","process_error","process_exit_unobserved"].includes(row.event))))caseIssues.push("case pass without observed clean process exit");
+    }
+    if(caseId==="SES-01/persisted-reopen"&&report.outcome!=="unsupported"){
+      const seedDir=path.join(dir,"seed-session"),seedFile=path.join(seedDir,"report.json");
+      if(existsSync(seedFile)){
+        const seed=read(seedFile),seedEvents=lines(path.join(seedDir,"events.jsonl")),seedOps=lines(path.join(seedDir,"operations.jsonl"));
+        caseIssues.push(...validateCase(seed,seedEvents,lines(path.join(seedDir,"exchanges.jsonl")),seedOps).map(issue=>"persisted seed: "+issue));
+        if(JSON.stringify(seed.processLifecycle)!==JSON.stringify(lines(path.join(seedDir,"process.jsonl"))))caseIssues.push("persisted seed process journal differs from report");
+        if(report.outcome==="pass")try{
+          if(JSON.stringify(read(path.join(dir,"persisted-state.json")))!==JSON.stringify(report.persistedEvidence))throw Error("persisted snapshot record differs from report");
+          if(JSON.stringify(report.operations)!==JSON.stringify(operations)||JSON.stringify(seed.operations)!==JSON.stringify(seedOps))throw Error("persisted phase operation files differ from reports");
+          persistedSessionOracle({...report,operations},{...seed,operations:seedOps},seedEvents,events);
+        }catch(error){caseIssues.push("persisted reopen evidence invalid: "+String(error));}
+      }else if(report.outcome==="pass")caseIssues.push("persisted reopen lacks seed process evidence");
     }
     if(report.caseId!==caseId||report.server!==server||report.block!==block)caseIssues.push("planned case identity mismatch");
     if(report.finalized!==true)caseIssues.push("case interrupted before finalization");

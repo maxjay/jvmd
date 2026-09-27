@@ -29,9 +29,24 @@
         {
           "id": "SES-01/persisted-reopen",
           "requirement": "Reopen with persisted state; do not retain unsaved buffers across restart.",
-          "implementation": "not_implemented",
-          "remaining": "Native restart cases exist separately; this LSP family does not reopen the saved server state.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "SES-01/persisted-reopen",
+              "operations": [
+                {
+                  "endpoint": "textDocument/hover",
+                  "states": [
+                    "after_reopen"
+                  ]
+                }
+              ],
+              "assertions": [
+                "fresh client has no inherited unsaved buffers",
+                "reopened source equals the unchanged saved source"
+              ]
+            }
+          ]
         }
       ]
     },

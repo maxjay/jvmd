@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "074041e295c4e3c2f6db9c860e458872069a3df2",
+  "sourceDrift": false,
+  "outcomes": {
+    "pass": 0,
+    "incorrect": 0,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 0,
+    "harness_error": 0,
+    "unsupported": 4,
+    "not_applicable": 0,
+    "unavailable_evidence": 4,
+    "not_run": 0
+  },
+  "originalReducerIntegrityIssues": [],
+  "package": {
+    "file": "protocol-review.tar.xz",
+    "bytes": 145536,
+    "sha256": "e4494091c3ec9ff4b7d85ff7b391bb5b1f156c8dbe2d6439e046deb7a623edd6",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "verified",
+    "unsealedFiles": {},
+    "members": 80
+  },
+  "shutdownErrors": {},
+  "explanation": "Four JDTLS cases finish unavailable_evidence because publications omit versions; all declared diagnostic stages are collected, including syntax control and changed compiler settings. Four JVMD command routes are unsupported. No versionless publication is promoted to exact-version proof.",
+  "claims": {
+    "publicComparativePerformance": false
+  }
+}

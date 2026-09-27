@@ -26,7 +26,7 @@ export const transitionPolicy=(timeoutMs:number)=>({maxAttempts:100,retryDelayMs
   preparationFailure:"record preparation operations and a blocked target; never fabricate an unsent target request"});
 export type PreparationOptions={gradleHome?:string;protoc?:string;protobufJava?:string;alternateJavaHome?:string;timeoutMs?:number};
 export type CaseDefinition={id:string;family:string;apis:string[];method?:string;capability?:string;variant:string;
-  run:(c:ScenarioContext)=>Promise<void>;freshnessRequired?:boolean;correctnessOnly?:boolean;extension?:boolean;command?:string;fixture?:Record<string,string>;sourceDirectory?:string;
+  run:(c:ScenarioContext)=>Promise<void>;freshnessRequired?:boolean;correctnessOnly?:boolean;extension?:boolean;command?:string;fixture?:Record<string,string>;sourceDirectory?:string;persistedReopen?:boolean;
   prepare?:(fixture:Fixture,javaHome:string,options?:PreparationOptions)=>void;cleanup?:(fixture:Fixture,javaHome:string)=>void};
 export class ScenarioContext {
   client:ProtocolClient;fixture:Fixture;server:string;timeout:number;warmup:number;samples:number;
@@ -38,6 +38,7 @@ export class ScenarioContext {
   versions=new Map<string,number>();incarnations=new Map<string,number>();
   seriesExpectations:any[]=[];mutations:any[]=[];diagnosticObservations:any[]=[];
   notApplicableEvidence?:any;
+  reopenPersisted?:()=>Promise<ScenarioContext>;
   registrations:any[]=[];serverActions:any[]=[];initializedNs?:string;
   settings:Record<string,any>;
   constructor(client:ProtocolClient,fixture:Fixture,server:string,timeout:number,warmup:number,samples:number){

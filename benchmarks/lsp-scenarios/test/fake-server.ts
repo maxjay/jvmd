@@ -1,4 +1,6 @@
 /** Deliberately wrong LSP peer for subprocess gate tests. Never used for performance. */
+import {mkdirSync,writeFileSync,existsSync,readFileSync} from "node:fs";
+import path from "node:path";
 import {Framing,encode} from "../../../shim/src/transport.ts";
 const send=(v:any)=>process.stdout.write(encode({jsonrpc:"2.0",...v}));
 const documents=new Map<string,string>();let completionCount=0,delayedTypePreparation=false;
@@ -6,16 +8,25 @@ const originalDocuments=new Map<string,string>();
 const pos=(text:string,at:number)=>{const prefix=text.slice(0,at);return {line:prefix.split("\n").length-1,character:at-prefix.lastIndexOf("\n")-1};};
 const span=(text:string,at:number,length:number)=>({start:pos(text,at),end:pos(text,at+length)});
 const mode=process.argv[2];
+const persistedRoot=process.env.JVMD_CONFIG?path.join(path.dirname(process.env.JVMD_CONFIG),"store"):undefined;
+const persistedMarker=persistedRoot?path.join(persistedRoot,"mock-state.json"):undefined;
+const reopened=!!persistedMarker&&existsSync(persistedMarker);
+if(mode.startsWith("persisted-")&&persistedRoot&&mode!=="persisted-empty"){mkdirSync(persistedRoot,{recursive:true});if(!reopened)writeFileSync(persistedMarker!,JSON.stringify({bufferType:"int"}));}
+
 if(mode==="shutdown-hang")setInterval(()=>{},1000);
 const framing=new Framing("headers",message=>{
   const {id,method,params}=message;
   if(method==="initialized"){send({method:"language/status",params:{type:"ServiceReady"}});return;}
   if(method==="textDocument/didOpen"){documents.set(params.textDocument.uri,params.textDocument.text);originalDocuments.set(params.textDocument.uri,params.textDocument.text);}
   if(method==="textDocument/didChange")documents.set(params.textDocument.uri,params.contentChanges[0].text);
-  if(method==="exit"){if(mode!=="shutdown-hang")process.exit(mode==="shutdown-nonzero"?1:0);return;}
+  if(method==="exit"){if(mode!=="shutdown-hang")process.exit(mode==="shutdown-nonzero"||(mode==="persisted-seed-shutdown"&&!reopened)?1:0);return;}
   if(id===undefined)return;
-  if(method==="initialize"){send({id,result:{capabilities:{documentSymbolProvider:true,workspaceSymbolProvider:true,typeHierarchyProvider:true,renameProvider:{prepareProvider:true},completionProvider:{resolveProvider:true},definitionProvider:true,callHierarchyProvider:true,codeLensProvider:{resolveProvider:true},executeCommandProvider:{commands:["java.project.resolveWorkspaceSymbol","java.edit.handlePasteEvent","java.navigate.openTypeHierarchy","java.navigate.resolveTypeHierarchy"]}}}});return;}
+  if(method==="initialize"){send({id,result:{capabilities:{hoverProvider:true,documentSymbolProvider:true,workspaceSymbolProvider:true,typeHierarchyProvider:true,renameProvider:{prepareProvider:true},completionProvider:{resolveProvider:true},definitionProvider:true,callHierarchyProvider:true,codeLensProvider:{resolveProvider:true},executeCommandProvider:{commands:["java.project.resolveWorkspaceSymbol","java.edit.handlePasteEvent","java.navigate.openTypeHierarchy","java.navigate.resolveTypeHierarchy"]}}}});return;}
   if(method==="shutdown"){if(mode!=="shutdown-hang")send({id,result:null});return;}
+  if(mode.startsWith("persisted-")&&method==="textDocument/hover"){
+    const source=documents.get(params.textDocument.uri)??"",type=reopened&&mode==="persisted-leak"?"int":source.includes("public int label")?"int":"String";
+    send({id,result:{contents:{kind:"markdown",value:type+" label"}}});return;
+  }
   if(mode.startsWith("selection-")){
     if(method==="textDocument/completion"){send({id,result:{items:[{label:"name()",kind:2,data:{token:"original"},...(mode==="selection-missing"?{}:{command:{title:"selected",command:"java.completion.onDidSelect",arguments:["original"]}})}],isIncomplete:false}});return;}
     if(method==="completionItem/resolve"){send({id,result:{...params,documentation:"NAME_DOC_V1"}});return;}

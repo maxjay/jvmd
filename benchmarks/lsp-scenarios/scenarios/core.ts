@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {writeFileSync} from "node:fs";
+import {writeFileSync,readFileSync} from "node:fs";
 import {type CaseDefinition,type ScenarioContext} from "../harness/ScenarioContext.ts";
 import {position,range,selected,exactLocations,hoverOracle,signatureOracle,completionOracle,chooseMethod,completionEffect,markup,decodeTokens,locations} from "../harness/oracles.ts";
 import {planWorkspaceEdit} from "../harness/workspaceEdit.ts";
@@ -29,6 +29,19 @@ export const coreCases:CaseDefinition[]=[
   {id:"SES-01/start-stop",family:"SES-01",apis:["API-001","API-002","API-003","API-004"],variant:"fresh",
     run:async c=>{await c.open("Customer.java");await c.query("textDocument/hover",p(c,"Customer.java","name()"),v=>hoverOracle(v,"name","String"));
       c.assert("advertised completion usable in capability record",!!c.capabilities.completionProvider);}},
+  {id:"SES-01/persisted-reopen",family:"SES-01",apis:["API-001","API-002","API-003","API-004","API-047"],capability:"hoverProvider",persistedReopen:true,variant:"fresh process with the same verified persisted state; unsaved overlay is never replayed",run:async c=>{
+    const file=c.file("Customer.java"),saved=readFileSync(file.path,"utf8");await c.open("Customer.java");
+    await c.query("textDocument/hover",p(c,"Customer.java","label"),v=>hoverOracle(v,"label","String"),"saved_baseline");
+    const overlay=saved.replace('public String label = "Ada";','public int label = 7;').replace('return label;','return String.valueOf(label);');
+    const changed=c.change("Customer.java",overlay);c.mutations.push({kind:"unsaved_overlay",uri:file.uri,version:changed.version,triggerNs:String(changed.trigger)});
+    await c.query("textDocument/hover",p(c,"Customer.java","label"),v=>hoverOracle(v,"label","int"),"unsaved_overlay");
+    c.assert("persisted seed leaves saved source unchanged",readFileSync(file.path,"utf8")===saved);
+    assert(c.reopenPersisted,"runner did not supply persisted restart lifecycle");const reopened=await c.reopenPersisted();
+    reopened.assert("fresh client has no inherited unsaved buffers",reopened.documents.size===0);
+    await reopened.open("Customer.java");
+    await reopened.query("textDocument/hover",p(reopened,"Customer.java","label"),v=>hoverOracle(v,"label","String"),"after_reopen",undefined,"saved String declaration restored after a new process; former int overlay is not replayed");
+    reopened.assert("reopened source equals the unchanged saved source",reopened.text("Customer.java")===saved&&readFileSync(file.path,"utf8")===saved);
+  }},
   {id:"SES-02/cancel",family:"SES-02",apis:["API-005"],variant:"outstanding-or-completed race",correctnessOnly:true,
     run:async c=>{await pair(c);const params={...p(c,"Use.java","number()"),context:{includeDeclaration:true}};
       const pending=c.client.request("textDocument/references",params,c.timeout),id=c.client.next;

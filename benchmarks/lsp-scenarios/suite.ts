@@ -20,6 +20,7 @@ import {symbolCases,symbolFilterCases} from "./scenarios/symbols.ts";
 import {createFixture,sha,inventory} from "./harness/fixture.ts";
 import {ScenarioContext,CAPABILITIES,SETTINGS,transitionPolicy,type CaseDefinition} from "./harness/ScenarioContext.ts";
 import {launch,type LaunchOptions} from "./harness/launch.ts";
+import {persistedDirectory,persistedSnapshot,persistedStateOracle} from "./harness/persisted.ts";
 import {CONTRACT} from "./harness/contracts.ts";
 import {sourceInventory} from "./harness/sourceInventory.ts";
 
@@ -53,7 +54,7 @@ export async function main(args=process.argv.slice(2)){
   const git=(...args:string[])=>{const x=spawnSync("git",args,{encoding:"utf8"});assert.equal(x.status,0,x.stderr);return x.stdout.trim();};
   const manifest:any={schemaVersion:1,contract:CONTRACT.schemaVersion,createdAt:new Date().toISOString(),revision:git("rev-parse","HEAD"),
     sourceTree:git("rev-parse","HEAD^{tree}"),sourceInputs:sourceInventory(),registry:cases.map(({run,prepare,cleanup,...c})=>c),workingChanges:git("status","--porcelain"),
-    plan:{caseIds:selected.map(c=>c.id),servers,blocks,warmup,samples,timeout,transitionPolicy:transitionPolicy(timeout),compiledArtifactPolicy:"two-project build success requires preserved post-response class snapshots; RPC and artifact observation intervals are separate",profile,serverOrder:"alternate per independent block",reset:"fresh fixture and server state per independent case",seed:0},
+    plan:{caseIds:selected.map(c=>c.id),servers,blocks,warmup,samples,timeout,transitionPolicy:transitionPolicy(timeout),compiledArtifactPolicy:"two-project build success requires preserved post-response class snapshots; RPC and artifact observation intervals are separate",profile,serverOrder:"alternate per independent block",reset:"fresh fixture and initial server state per case; declared persisted-reopen case alone restarts the verified saved state",seed:0},
     capabilities:CAPABILITIES,settings:SETTINGS,environment:{node:process.version,platform:process.platform,arch:process.arch,cpus:os.cpus().length,memoryBytes:os.totalmem()},
     claims:{publicComparativePerformance:false,reason:blocks<10?"fewer than ten independent blocks":"requires complete valid matched results, resource scope, and uncertainty analysis"}};
   write(path.join(root,"manifest.json"),manifest);
@@ -67,22 +68,44 @@ export async function main(args=process.argv.slice(2)){
       fixtureIdentity:fixture.identity,profile:server==="jdtls"?"direct":profile,outcome:"harness_error",operations:[],assertions:[],correctnessOnly:!!def.correctnessOnly,finalized:false};
     write(path.join(caseRoot,"report.json"),report);
     let running:Awaited<ReturnType<typeof launch>>|undefined,context:ScenarioContext|undefined;
+    const capture=(c:ScenarioContext,r:Awaited<ReturnType<typeof launch>>)=>({launch:r.metadata,capabilities:c.capabilities,operations:c.operations,seriesExpectations:c.seriesExpectations,mutations:c.mutations,assertions:c.assertions,serverActions:c.serverActions,diagnosticObservations:c.diagnosticObservations,initializedNs:c.initializedNs,settings:c.settings,protocolErrors:r.client.protocolErrors,processLifecycle:r.client.processLifecycle,spawnNs:String(r.client.spawnNs)});
     try{
       def.prepare?.(fixture,path.resolve(a["java-home"]??process.env.JAVA_HOME??""),{gradleHome:a["gradle-home"],protoc:a.protoc,protobufJava:a["protobuf-java"],alternateJavaHome:a["alternate-java-home"],timeoutMs:timeout});
       fixture.inputs=inventory(fixture.root);fixture.identity=sha(JSON.stringify(fixture.inputs));report.fixtureIdentity=fixture.identity;write(path.join(caseRoot,"fixture.json"),fixture);
       const customCommand=a["command-json"]?JSON.parse(readFileSync(a["command-json"],"utf8")):undefined;
-      running=await launch({server,profile:server==="jdtls"&&profile!=="custom"?"direct":profile,root:fixture.root,state:path.join(caseRoot,"runtime"),
+      const launchOptions:LaunchOptions={server,profile:server==="jdtls"&&profile!=="custom"?"direct":profile,root:fixture.root,state:path.join(caseRoot,"runtime"),
         javaHome:path.resolve(a["java-home"]??process.env.JAVA_HOME??""),image:path.resolve(a.image??"jvmd-dist/target/image"),
-        jdtlsHome:a["jdtls-home"]??process.env.JDTLS_HOME,pipeBuild:a["pipe-build"],repository:path.join(caseRoot,"repository"),customCommand,trace:a.trace==="true",environment:fixture.environment});
+        jdtlsHome:a["jdtls-home"]??process.env.JDTLS_HOME,pipeBuild:a["pipe-build"],repository:path.join(caseRoot,"repository"),customCommand,trace:a.trace==="true",environment:fixture.environment};
+      running=await launch({...launchOptions,...(def.persistedReopen?{journalDirectory:path.join(caseRoot,"seed-session")}:{})});
       report.launch=running.metadata;
       context=new ScenarioContext(running.client,fixture,server,timeout,warmup,samples);context.javaHome=path.resolve(a["java-home"]??process.env.JAVA_HOME??"");await context.initialize();report.capabilities=context.capabilities;
+      if(def.persistedReopen)context.reopenPersisted=async()=>{
+        assert(!report.persistedEvidence,"persisted reopen can occur only once");const seed=context!,previous=running!;
+        const seedReport:any={...report,...capture(seed,previous),caseId:def.id+"/seed",artifactDirectory:"seed-session",outcome:"pass",finalized:false};
+        report.persistedEvidence={seedStopped:false};
+        try{for(const name of Object.keys(fixture.files))if(seed.documents.has(seed.file(name).uri))seed.close(name);await previous.stop();report.persistedEvidence.seedStopped=true;}
+        catch(error){seedReport.shutdownError=String(error);seedReport.outcome="protocol_error";throw error;}
+        finally{
+          running=undefined;Object.assign(seedReport,capture(seed,previous));seedReport.finalized=true;write(path.join(caseRoot,"seed-session/report.json"),seedReport);
+          jsonl(path.join(caseRoot,"seed-session/operations.jsonl"),seed.operations);report.persistedSeed={artifactDirectory:"seed-session",outcome:seedReport.outcome};
+        }
+        assert(seed.operations.every(o=>o.outcome==="pass")&&seed.assertions.every(a=>a.passed),"persisted seed has failed evidence");
+        const state=persistedDirectory(launchOptions.state,server,profile);
+        report.persistedEvidence.afterSeed=persistedSnapshot(state);
+        report.persistedEvidence.beforeReopen=persistedSnapshot(state);report.persistedEvidence.reopenStartedNs=String(process.hrtime.bigint());persistedStateOracle(report.persistedEvidence);
+        write(path.join(caseRoot,"persisted-state.json"),report.persistedEvidence);
+        running=await launch({...launchOptions,reuseState:true,journalDirectory:caseRoot});report.launch=running.metadata;
+        context=new ScenarioContext(running.client,fixture,server,timeout,warmup,samples);context.javaHome=seed.javaHome;
+        assert.equal(context.documents.size,0,"new client inherited live buffers");await context.initialize();report.capabilities=context.capabilities;return context;
+      };
+
       if(!capability(context.capabilities,def.capability)||(def.extension&&server==="jvmd")||(def.command&&!context.capabilities.executeCommandProvider?.commands?.includes(def.command))){
         report.outcome="unsupported";report.supportEvidence={source:def.extension&&server==="jvmd"?"jvmd-lsp LspFacade dispatch table at tested revision; Java extensions not implemented":"initialize response",capability:def.capability,command:def.command,value:context.capabilities};
       }else{
         await def.run(context);assert(context.operations.length>0||def.correctnessOnly,"case executed no measured operation");report.outcome=context.operations.find(o=>o.outcome!=="pass")?.outcome??(context.notApplicableEvidence?"not_applicable":"pass");
       }
     }catch(error){
-      report.error=String(error);report.outcome=context?.operations.find(o=>o.outcome!=="pass")?.outcome??(error instanceof assert.AssertionError&&context?.initializedNs?"incorrect":"harness_error");
+      report.error=String(error);report.outcome=context?.operations.find(o=>o.outcome!=="pass")?.outcome??(report.persistedEvidence?.seedStopped===false?"protocol_error":error instanceof assert.AssertionError&&context?.initializedNs?"incorrect":"harness_error");
     }finally{
       if(running){try{if(context)for(const name of Object.keys(context.fixture.files))if(context.documents.has(context.file(name).uri))context.close(name);await running.stop();}catch(error){report.shutdownError=String(error);if(["pass","not_applicable"].includes(report.outcome))report.outcome="protocol_error";}
         report.protocolErrors=running.client.protocolErrors;
@@ -91,7 +114,7 @@ export async function main(args=process.argv.slice(2)){
         jsonl(path.join(caseRoot,"events.jsonl"),running.client.events);jsonl(path.join(caseRoot,"exchanges.jsonl"),running.client.exchanges);
         report.spawnNs=String(running.client.spawnNs);
       }
-      if(context){report.notApplicableEvidence=context.notApplicableEvidence;report.operations=context.operations;report.seriesExpectations=context.seriesExpectations;report.mutations=context.mutations;report.assertions=context.assertions;report.serverActions=context.serverActions;report.diagnosticObservations=context.diagnosticObservations;
+      if(context){if(!running){report.protocolErrors=context.client.protocolErrors;report.processLifecycle=context.client.processLifecycle;report.spawnNs=String(context.client.spawnNs);jsonl(path.join(caseRoot,"events.jsonl"),context.client.events);jsonl(path.join(caseRoot,"exchanges.jsonl"),context.client.exchanges);}jsonl(path.join(caseRoot,"process.jsonl"),context.client.processLifecycle);report.notApplicableEvidence=context.notApplicableEvidence;report.operations=context.operations;report.seriesExpectations=context.seriesExpectations;report.mutations=context.mutations;report.assertions=context.assertions;report.serverActions=context.serverActions;report.diagnosticObservations=context.diagnosticObservations;
         report.initializedNs=context.initializedNs;report.settings=context.settings;jsonl(path.join(caseRoot,"operations.jsonl"),context.operations);}
       try{def.cleanup?.(fixture,path.resolve(a["java-home"]??process.env.JAVA_HOME??""));}catch(error){report.cleanupError=String(error);if(["pass","not_applicable"].includes(report.outcome))report.outcome="harness_error";}
       report.preparation=fixture.preparation;

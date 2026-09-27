@@ -4,7 +4,7 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 148 case definitions, 135 passing TypeScript
+Latest implementation inventory: 148 case definitions, 143 passing TypeScript
 harness tests, and 107 required variants (75 implemented, 23 partial, 9 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
@@ -955,3 +955,25 @@ partial local files before resuming that edit.
 
 The remaining specification gates and public-comparison prohibition still
 apply. The draft is unfinished.
+
+## Recovery and diagnostic publication oracle
+
+The replacement execution environment did not retain the interrupted corrected
+symbol capture. The branch was restored from `8319fef`; all 135 existing tests
+passed. A fresh corrected replay now runs in a separate frozen checkout at that
+revision, using the pinned JDTLS archive and a locally rebuilt pipe adapter.
+The interrupted capture remains unverified.
+
+The diagnostic oracle now distinguishes a current caller version from a current
+provider generation. After a provider-only edit, empty and warning-only caller
+publications remain pending. Admission requires the unique String-to-int error
+at the declared invocation, an exact caller version, a proven incarnation and
+a publication within the declared time window. Wrong current-version errors
+are incorrect; unrelated, stale and late publications cannot satisfy admission.
+Versionless evidence remains unavailable or ignored under the shared contract.
+Eight adversarial tests cover these rules, including malformed warnings and
+UTF-16 boundaries; all 143 harness tests pass.
+
+This checkpoint adds the oracle, not executable diagnostic cases. Variant
+counts remain 75 implemented, 23 partial and 9 absent until observer journals,
+independent compiler witnesses and complete cases are wired and tested.

@@ -169,8 +169,9 @@ jobs:
 
       # These are correctness/diagnostic pilots. One block cannot authorize a
       # comparative performance claim. Failures do not suppress later capture.
+      # Cancellation stops new experiments; artifact uploads still run.
       - name: Native lifecycle with packaged daemon and shim
-        if: always() && steps.build.outcome == 'success'
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
           node benchmarks/lsp-scenarios/jvmd-machine-lifecycle.ts --matrix \
             --profile product --java-home "$JAVA_HOME" \
@@ -179,7 +180,7 @@ jobs:
             --apache-repository "$HOME/.m2/repository"
 
       - name: Separate lifecycle attribution profile
-        if: always() && steps.build.outcome == 'success'
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
           node benchmarks/lsp-scenarios/jvmd-machine-lifecycle.ts --matrix \
             --profile product --java-home "$JAVA_HOME" \
@@ -188,7 +189,7 @@ jobs:
             --apache-repository "$HOME/.m2/repository"
 
       - name: Protobuf generation and generated-type readiness
-        if: always() && steps.jdtls.outcome == 'success' && steps.protobuf-tools.outcome == 'success'
+        if: ${{ !cancelled() && steps.jdtls.outcome == 'success' && steps.protobuf-tools.outcome == 'success' }}
         run: |
           node benchmarks/lsp-scenarios/run.ts --servers jdtls --profile direct \
             --java-home "$JAVA_HOME" --jdtls-home "$RUNNER_TEMP/jdtls" \

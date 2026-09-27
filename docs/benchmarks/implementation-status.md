@@ -4,6 +4,11 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
+Latest implementation inventory: 113 case definitions, 52 passing TypeScript
+harness tests, and 107 required variants (48 implemented, 43 partial, 16 absent).
+Implementation is not execution evidence. The checkpoint notes below retain
+historical counts; the current variant ledger is authoritative for source scope.
+
 ## Reviewable changes so far
 
 | Previous behaviour | Implemented change | Evidence |
@@ -315,3 +320,18 @@ signature-local active-parameter precedence; the client advertises that support.
 All 50 harness tests pass. The variant ledger now has 44 implemented, 45 partial
 and 18 absent requirements. Real-server validation of this new batch remains
 pending, and no performance claim is enabled.
+
+## Actual call-graph mutations
+
+REL-01 now has independently reset incoming/outgoing add/remove cases. Preparation
+and expansion have separate unchanged series. Mutation cases enumerate exact
+current call-site ranges and reacquire the hierarchy item for every immediate,
+retry and settled expansion. Removing the sole outgoing call must return no edge;
+unrelated methods cannot substitute for the expected caller/callee. Resulting
+sources compile independently after measurement.
+
+Two subprocess tests serve stale pre-edit graphs through the actual runner. An
+added incoming call and a removed outgoing call both fail while retaining their
+raw replies. All 52 TypeScript tests pass. The source ledger has 48 implemented,
+43 partial and 16 absent requirements; real-server call-graph validation is still
+pending and performance claims remain disabled.

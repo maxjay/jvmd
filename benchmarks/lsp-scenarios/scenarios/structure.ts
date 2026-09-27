@@ -46,19 +46,31 @@ export const structureCases:CaseDefinition[]=[
       for(const name of ["Customer","name","number","join"]){const row=rows.find(r=>symbolName(r)===name);assert(row);assert.equal(selected(c.text("Customer.java"),row.selectionRange),name);}
     });
   }},
-  ...["incoming","outgoing"].map(direction=>({id:"REL-01/"+direction,family:"REL-01",apis:["API-063",direction==="incoming"?"API-064":"API-065"],capability:"callHierarchyProvider",variant:"exact call sites and fresh prepared item",
-    run:async(c:ScenarioContext)=>{await c.open("Calls.java");const prepare=async()=>{
-      const items=await c.query("textDocument/prepareCallHierarchy",at(c,"Calls.java","int b()",5),v=>{assert.equal(v.length,1);symbolOracle(c,v,"Calls.java","b");});return items[0];};
-      const oracle=(value:any)=>{assert.equal(value.length,1);const row=value[0];symbolOracle(c,[direction==="incoming"?row.from:row.to],"Calls.java",direction==="incoming"?"a":"c");
+  ...["incoming","outgoing"].flatMap(direction=>["first-repeat","add","remove"].map(mutation=>({id:"REL-01/"+direction+(mutation==="first-repeat"?"":"-"+mutation),family:"REL-01",apis:["API-063",direction==="incoming"?"API-064":"API-065",...(mutation==="first-repeat"?[]:["API-011"])],capability:"callHierarchyProvider",variant:`independent ${mutation} ${direction} call graph`,
+    run:async(c:ScenarioContext)=>{await c.open("Calls.java");
+      const prepareParams=()=>at(c,"Calls.java","int b()",5);
+      const prepareOracle=(v:any)=>{assert.equal(v.length,1);symbolOracle(c,v,"Calls.java","b");};
+      const prepare=async()=>{const items=await c.query("textDocument/prepareCallHierarchy",prepareParams(),prepareOracle,"item_acquisition");return items[0];};
+      const oracle=(value:any)=>{
         const text=c.text("Calls.java"),token=direction==="incoming"?"b()":"c()",want=[];let start=text.indexOf("return ");
         if(direction==="outgoing")start=text.indexOf("return ",text.indexOf("int b()"));
         const end=text.indexOf(";",start);while((start=text.indexOf(token,start))>=0&&start<end){want.push({uri:c.file("Calls.java").uri,range:range(text,token,start)});start+=token.length;}
+        assert(Array.isArray(value));if(want.length===0){assert.deepEqual(value,[]);return;}
+        assert.equal(value.length,1);const row=value[0];symbolOracle(c,[direction==="incoming"?row.from:row.to],"Calls.java",direction==="incoming"?"a":"c");
         exactLocations(row.fromRanges.map((r:any)=>({uri:c.file("Calls.java").uri,range:r})),want);
       };
-      let item=await prepare();await c.series("callHierarchy/"+direction+"Calls",{item},oracle);
-      const trigger=c.change("Calls.java","\n"+c.text("Calls.java")).trigger;item=await prepare();
-      await c.query("callHierarchy/"+direction+"Calls",{item},oracle,"changed",trigger,"fresh hierarchy item and shifted exact call-site ranges");
-    }})),
+      if(mutation==="first-repeat"){
+        const items=await c.series("textDocument/prepareCallHierarchy",prepareParams(),prepareOracle);
+        await c.series("callHierarchy/"+direction+"Calls",{item:items[0]},oracle);return;
+      }
+      await c.query("callHierarchy/"+direction+"Calls",{item:await prepare()},oracle,"baseline");
+      const before=c.text("Calls.java");let after:string;
+      if(direction==="incoming")after=before.replace("return b() + b();",mutation==="add"?"return b() + b() + b();":"return b();");
+      else after=before.replace("return c();",mutation==="add"?"return c() + c();":"return 3;");
+      c.assert("one declared call graph mutation",after!==before,{direction,mutation});
+      const trigger=c.change("Calls.java",after).trigger;
+      await c.transition("callHierarchy/"+direction+"Calls",async()=>({item:await prepare()}),oracle,trigger,`${mutation} one exact call site; fresh preparation on every attempt`);c.compileOracle();
+    }}))),
   ...["supertypes","subtypes"].map(direction=>({id:"REL-02/"+direction,family:"REL-02",apis:["API-066",direction==="supertypes"?"API-067":"API-068"],capability:"typeHierarchyProvider",variant:"direct related type and parent change",
     run:async(c:ScenarioContext)=>{await c.open("Hierarchy.java");
       const focus=direction==="supertypes"?"Child":"Base";

@@ -11,8 +11,8 @@ import {createFixture} from "../harness/fixture.ts";
 
 const runner=fileURLToPath(new URL("../run.ts",import.meta.url));
 const fake=fileURLToPath(new URL("./fake-server.ts",import.meta.url));
-for(const [mode,caseId] of [["wrong-warmup","CMP-01/first-repeat"],["stale-provider","CMP-01/api-edit"],["wrong-range","NAV-01/definition"]]){
-  test("actual runner rejects "+mode+" and retains raw evidence",()=>{
+for(const [mode,caseId] of [["wrong-warmup","CMP-01/first-repeat"],["stale-provider","CMP-01/api-edit"],["wrong-range","NAV-01/definition"],["stale-call-graph","REL-01/incoming-add"],["stale-call-graph","REL-01/outgoing-remove"]]){
+  test("actual runner rejects "+mode+" in "+caseId+" and retains raw evidence",()=>{
     const tmp=mkdtempSync(path.join(os.tmpdir(),"jvmd-gate-"));
     try{
       const command=path.join(tmp,"command.json"),output=path.join(tmp,"run");

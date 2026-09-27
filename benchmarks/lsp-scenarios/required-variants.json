@@ -1120,30 +1120,198 @@
         {
           "id": "REL-01/first",
           "requirement": "Prepare and expand incoming/outgoing graphs; exact calls and both A call sites; unrelated D excluded.",
-          "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "REL-01/incoming",
+              "operations": [
+                {
+                  "endpoint": "callHierarchy/incomingCalls",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/prepareCallHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "REL-01/outgoing",
+              "operations": [
+                {
+                  "endpoint": "callHierarchy/outgoingCalls",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/prepareCallHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
         },
         {
           "id": "REL-01/repeat",
           "requirement": "Unchanged repeats of prepare and expansions.",
-          "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "REL-01/incoming",
+              "operations": [
+                {
+                  "endpoint": "callHierarchy/incomingCalls",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/prepareCallHierarchy",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "REL-01/outgoing",
+              "operations": [
+                {
+                  "endpoint": "callHierarchy/outgoingCalls",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/prepareCallHierarchy",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
         },
         {
           "id": "REL-01/add",
           "requirement": "Add one call; fresh prepared item gives exact new graph and call-site set.",
-          "implementation": "not_implemented",
-          "remaining": "Existing hierarchy transition only shifts a line; it does not change the call set.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "REL-01/incoming-add",
+              "operations": [
+                {
+                  "endpoint": "callHierarchy/incomingCalls",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/prepareCallHierarchy",
+                  "states": [
+                    "item_acquisition"
+                  ]
+                }
+              ],
+              "assertions": [
+                "one declared call graph mutation",
+                "independent javac validation"
+              ]
+            },
+            {
+              "caseId": "REL-01/outgoing-add",
+              "operations": [
+                {
+                  "endpoint": "callHierarchy/outgoingCalls",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/prepareCallHierarchy",
+                  "states": [
+                    "item_acquisition"
+                  ]
+                }
+              ],
+              "assertions": [
+                "one declared call graph mutation",
+                "independent javac validation"
+              ]
+            }
+          ]
         },
         {
           "id": "REL-01/remove",
           "requirement": "Remove one call; fresh prepared item gives exact reduced graph and call-site set.",
-          "implementation": "not_implemented",
-          "remaining": "Existing hierarchy transition only shifts a line; it does not change the call set.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "REL-01/incoming-remove",
+              "operations": [
+                {
+                  "endpoint": "callHierarchy/incomingCalls",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/prepareCallHierarchy",
+                  "states": [
+                    "item_acquisition"
+                  ]
+                }
+              ],
+              "assertions": [
+                "one declared call graph mutation",
+                "independent javac validation"
+              ]
+            },
+            {
+              "caseId": "REL-01/outgoing-remove",
+              "operations": [
+                {
+                  "endpoint": "callHierarchy/outgoingCalls",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/prepareCallHierarchy",
+                  "states": [
+                    "item_acquisition"
+                  ]
+                }
+              ],
+              "assertions": [
+                "one declared call graph mutation",
+                "independent javac validation"
+              ]
+            }
+          ]
         }
       ]
     },

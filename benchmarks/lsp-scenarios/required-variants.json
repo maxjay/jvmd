@@ -1826,23 +1826,95 @@
         {
           "id": "FMT-02/imports",
           "requirement": "Organize imports; expected edits only, compile and unchanged repeat.",
-          "implementation": "partial",
-          "remaining": "Import/save route applies edits and compiles but has no unchanged-repeat check.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "FMT-02/imports-request",
+              "operations": [
+                {
+                  "endpoint": "java/organizeImports",
+                  "states": [
+                    "first_use",
+                    "idempotence"
+                  ]
+                }
+              ],
+              "assertions": [
+                "cleanup preserves every unrelated source",
+                "repeated cleanup preserves exact source state",
+                "independent javac validation",
+                "organize imports preserves all non-import fixture code"
+              ]
+            },
+            {
+              "caseId": "FMT-02/imports-command",
+              "operations": [
+                {
+                  "endpoint": "java.edit.organizeImports",
+                  "states": [
+                    "first_use",
+                    "idempotence"
+                  ]
+                }
+              ],
+              "assertions": [
+                "cleanup preserves every unrelated source",
+                "repeated cleanup preserves exact source state",
+                "independent javac validation",
+                "organize imports preserves all non-import fixture code"
+              ]
+            }
+          ]
         },
         {
           "id": "FMT-02/manual",
           "requirement": "Manual cleanup; expected edits only, compile and unchanged repeat.",
-          "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "FMT-02/cleanup",
+              "operations": [
+                {
+                  "endpoint": "java/cleanup",
+                  "states": [
+                    "first_use",
+                    "idempotence"
+                  ]
+                }
+              ],
+              "assertions": [
+                "cleanup preserves every unrelated source",
+                "repeated cleanup preserves exact source state",
+                "independent javac validation",
+                "manual cleanup only inserts the configured override annotation"
+              ]
+            }
+          ]
         },
         {
           "id": "FMT-02/pre-save",
           "requirement": "Pre-save cleanup/import route; expected edits only, compile and unchanged repeat.",
-          "implementation": "partial",
-          "remaining": "Import/save route applies edits and compiles but has no unchanged-repeat check.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "FMT-02/imports-save",
+              "operations": [
+                {
+                  "endpoint": "textDocument/willSaveWaitUntil",
+                  "states": [
+                    "first_use",
+                    "idempotence"
+                  ]
+                }
+              ],
+              "assertions": [
+                "cleanup preserves every unrelated source",
+                "repeated cleanup preserves exact source state",
+                "independent javac validation",
+                "organize imports preserves all non-import fixture code"
+              ]
+            }
+          ]
         },
         {
           "id": "FMT-02/scope",

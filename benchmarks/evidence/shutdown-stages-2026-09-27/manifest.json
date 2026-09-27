@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "scope": "Single-block diagnostic replay; raw review subset, not complete experiment or performance comparison",
+  "revision": "53e582a80d63116a4b354736c467645434c78261",
+  "archive": {
+    "file": "protocol-review.tar.xz",
+    "bytes": 97760,
+    "sha256": "8ad536dd52a3031ae4276327a1f6882c43a1adafe166ce93f8436261c5529724",
+    "everySelectedFileHash": "verified"
+  },
+  "plan": {
+    "caseIds": [
+      "CMP-02/hover"
+    ],
+    "servers": [
+      "jvmd",
+      "jdtls"
+    ],
+    "blocks": 1,
+    "warmup": 1,
+    "samples": 2,
+    "timeout": 30000,
+    "profile": "pipe",
+    "serverOrder": "alternate per independent block",
+    "reset": "fresh fixture and server state per independent case",
+    "seed": 0
+  },
+  "sourceDrift": false,
+  "integrityIssues": [],
+  "sourceManifestSha256": "96a87ff74f8fb643ff33dedfbb384694e23877305af2eb92ba938cf2691c4642",
+  "originalChecksumInventorySha256": "69965d773e52047be680be9d16d3fd5c81eaf970a1d09aa5b6432d7b8b92546b",
+  "cases": [
+    {
+      "server": "jdtls",
+      "profile": "direct",
+      "outcome": "protocol_error",
+      "allSemanticOperationsPassed": true,
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}",
+      "harnessForcedKill": false,
+      "shutdownStages": [
+        {
+          "event": "shutdown_begin",
+          "millisecondsSinceShutdown": 0.0
+        },
+        {
+          "event": "shutdown_response",
+          "millisecondsSinceShutdown": 4.130705
+        },
+        {
+          "event": "exit_notified",
+          "millisecondsSinceShutdown": 4.236705
+        },
+        {
+          "event": "stdin_ended",
+          "millisecondsSinceShutdown": 4.317266
+        },
+        {
+          "event": "process_exit",
+          "millisecondsSinceShutdown": 60030.919103,
+          "code": 1,
+          "signal": null
+        },
+        {
+          "event": "stdio_closed",
+          "millisecondsSinceShutdown": 60031.050402,
+          "code": 1,
+          "signal": null
+        }
+      ]
+    },
+    {
+      "server": "jvmd",
+      "profile": "pipe",
+      "outcome": "pass",
+      "allSemanticOperationsPassed": true,
+      "shutdownError": null,
+      "harnessForcedKill": false,
+      "shutdownStages": [
+        {
+          "event": "shutdown_begin",
+          "millisecondsSinceShutdown": 0.0
+        },
+        {
+          "event": "shutdown_response",
+          "millisecondsSinceShutdown": 4.533223
+        },
+        {
+          "event": "exit_notified",
+          "millisecondsSinceShutdown": 4.692723
+        },
+        {
+          "event": "stdin_ended",
+          "millisecondsSinceShutdown": 4.958755
+        },
+        {
+          "event": "process_exit",
+          "millisecondsSinceShutdown": 53.269172,
+          "code": 0,
+          "signal": null
+        },
+        {
+          "event": "stdio_closed",
+          "millisecondsSinceShutdown": 53.437326,
+          "code": 0,
+          "signal": null
+        }
+      ]
+    }
+  ],
+  "interpretation": [
+    "Both servers return correct hover replies. JVMD pipe exits cleanly; JDTLS direct exits with code 1 after about sixty seconds.",
+    "The JDTLS client shutdown reply precedes process exit by about sixty seconds. The client neither times out nor kills the process.",
+    "JDTLS source at the logged build revision 08eafe6 schedules an internal one-minute forced exit. The observed timing is consistent with that path, but why termination was delayed remains unresolved.",
+    "These are diagnostic observations in different profiles, not comparative performance estimates."
+  ],
+  "files": {
+    "harness-tests.txt": "0b205fb984db8ad3e422ea82c343ea0ab0bce8a0226e4f7ebfd7b6a105aba596"
+  }
+}

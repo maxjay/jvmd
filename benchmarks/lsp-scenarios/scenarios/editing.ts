@@ -13,22 +13,40 @@ const format={tabSize:4,insertSpaces:true};
 const nonemptyEdit=(v:any)=>assert(v&&(v.changes||v.documentChanges),"workspace edit missing");
 function organized(c:ScenarioContext){const s=c.text("Imports.java");c.assert("used List import retained",s.includes("import java.util.List;"));c.assert("unused Set import removed",!s.includes("import java.util.Set;"));c.assert("field preserved",s.includes("public List<String> values;"));}
 function preview(c:ScenarioContext,edit:any){return planWorkspaceEdit(c.fixture.root,Object.keys(c.fixture.files).map(name=>({uri:c.file(name).uri,text:c.text(name),version:c.documents.get(c.file(name).uri)?.version??null,open:c.documents.has(c.file(name).uri)})),edit);}
+const texts=(c:ScenarioContext)=>Object.fromEntries(Object.keys(c.fixture.files).sort().map(name=>[name,c.text(name)]));
+function onlyTargetChanged(c:ScenarioContext,before:Record<string,string>,name:string){
+  const after=texts(c);assert.deepEqual(Object.keys(after),Object.keys(before),"cleanup changed fixture membership");
+  for(const file of Object.keys(before))if(file!==name)assert.equal(after[file],before[file],"cleanup changed unrelated source: "+file);
+  c.assert("cleanup preserves every unrelated source",true);
+}
 export const editingCases:CaseDefinition[]=[
   ...["request","command","save"].map(route=>({id:"FMT-02/imports-"+route,family:"FMT-02",apis:[route==="request"?"API-081":route==="command"?"API-082":"API-014"],
     extension:route!=="save",command:route==="command"?"java.edit.organizeImports":undefined,capability:route==="save"?"textDocumentSync.willSaveWaitUntil":undefined,
-    fixture:{"Imports.java":imports},variant:"organize and apply; used import retained; unused import removed",
-    run:async(c:ScenarioContext)=>{await c.open("Imports.java");
-      if(route==="request"){const edit=await c.query("java/organizeImports",action(c,"Imports.java","Imports"),nonemptyEdit);c.applyWorkspaceEdit(edit);}
-      else if(route==="command"){
-        const before=c.serverActions.length;await c.execute("java.edit.organizeImports",[c.file("Imports.java").uri],v=>assert(v!==false));
-        c.assert("organize command requested client edit application",c.serverActions.slice(before).some(x=>x.method==="workspace/applyEdit"));
-      }else{const edits=await c.query("textDocument/willSaveWaitUntil",{textDocument:{uri:c.file("Imports.java").uri},reason:1},v=>assert(Array.isArray(v)&&v.length>0));c.change("Imports.java",applyTextEdits(c.text("Imports.java"),edits));}
-      organized(c);c.compileOracle();
+    fixture:{"Imports.java":imports},variant:"independent organize route preserves unrelated code and is stable on repeat",
+    run:async(c:ScenarioContext)=>{await c.open("Imports.java");const before=texts(c);
+      const run=async(state:string)=>{
+        if(route==="request"){
+          const edit=await c.query("java/organizeImports",action(c,"Imports.java","Imports"),v=>{if(state==="first_use")nonemptyEdit(v);else if(v)assert.equal(preview(c,v).get(c.file("Imports.java").uri)?.text,c.text("Imports.java"));},state);
+          if(edit)c.applyWorkspaceEdit(edit);
+        }else if(route==="command"){
+          const start=c.serverActions.length;await c.execute("java.edit.organizeImports",[c.file("Imports.java").uri],v=>assert(v!==false),state);
+          if(state==="first_use")c.assert("organize command requested client edit application",c.serverActions.slice(start).some(x=>x.method==="workspace/applyEdit"));
+        }else{
+          const source=c.text("Imports.java"),edits=await c.query("textDocument/willSaveWaitUntil",{textDocument:{uri:c.file("Imports.java").uri},reason:1},v=>{if(state==="first_use")assert(Array.isArray(v)&&v.length>0);else assert.equal(applyTextEdits(source,v??[]),source);},state);
+          const after=applyTextEdits(source,edits??[]);if(after!==source)c.change("Imports.java",after);
+        }
+      };
+      await run("first_use");organized(c);onlyTargetChanged(c,before,"Imports.java");
+      c.assert("organize imports preserves all non-import fixture code",c.text("Imports.java").replace(/\s/gu,"")===imports.replace("import java.util.Set;","").replace(/\s/gu,""));c.compileOracle();
+      const organizedState=texts(c);await run("idempotence");assert.deepEqual(texts(c),organizedState,"repeated organize-imports changed source");c.assert("repeated cleanup preserves exact source state",true);
     }})),
   {id:"FMT-02/cleanup",family:"FMT-02",apis:["API-083"],extension:true,fixture:{"Clean.java":clean},variant:"configured addOverride cleanup; idempotence",run:async c=>{
-    await c.open("Clean.java");const edit=await c.query("java/cleanup",{uri:c.file("Clean.java").uri},nonemptyEdit);c.applyWorkspaceEdit(edit);
+    await c.open("Clean.java");const before=texts(c),edit=await c.query("java/cleanup",{uri:c.file("Clean.java").uri},nonemptyEdit);c.applyWorkspaceEdit(edit);
     c.assert("override annotation added to existing method",/@Override\s+public String toString/u.test(c.text("Clean.java")));c.assert("method body preserved",c.text("Clean.java").includes('return "ok";'));c.compileOracle();
-    await c.query("java/cleanup",{uri:c.file("Clean.java").uri},v=>{if(v&&(v.changes||v.documentChanges)){const after=preview(c,v);assert.equal(after.get(c.file("Clean.java").uri)?.text,c.text("Clean.java"));}},"idempotence");
+    onlyTargetChanged(c,before,"Clean.java");
+    c.assert("manual cleanup only inserts the configured override annotation",c.text("Clean.java").replace(/\s/gu,"")===clean.replace("public String toString","@Override public String toString").replace(/\s/gu,""));
+    const cleanedState=texts(c),again=await c.query("java/cleanup",{uri:c.file("Clean.java").uri},v=>{if(v&&(v.changes||v.documentChanges)){const after=preview(c,v);assert.equal(after.get(c.file("Clean.java").uri)?.text,c.text("Clean.java"));}},"idempotence");
+    if(again)c.applyWorkspaceEdit(again);assert.deepEqual(texts(c),cleanedState,"repeated manual cleanup changed source");c.assert("repeated cleanup preserves exact source state",true);
   }},
   {id:"FMT-01/string",family:"FMT-01",apis:["API-080"],command:"java.edit.stringFormatting",variant:"raw source formatting preserves tokens and is stable",run:async c=>{
     const source=c.file("Format.java").text;

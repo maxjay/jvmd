@@ -5,7 +5,7 @@ that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
 Latest implementation inventory: 115 case definitions, 64 passing TypeScript
-harness tests, and 107 required variants (54 implemented, 40 partial, 13 absent).
+harness tests, and 107 required variants (57 implemented, 37 partial, 13 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -459,3 +459,28 @@ daemon/helper lifetime resource costs.
 and a peer that ignores shutdown/exit and requires a recorded forced kill.
 The JDTLS shutdown cause remains unresolved; the new timestamps improve future
 diagnosis without changing prior failed dispositions.
+
+## Cleanup repeat checks and measured shutdown disposition
+
+Import organization now runs an unchanged second request independently through
+the request, command and pre-save routes. Every route must preserve the complete
+source state on repeat. The first result must retain the used import and all
+non-import code, remove the unused import and leave every unrelated source byte
+unchanged. Manual cleanup has the same exclusion/idempotence checks and may only
+insert the configured override annotation. Independent compilation remains
+required. Source scope is 57 implemented, 37 partial and 13 absent variants;
+64 harness tests pass. A supported-server cleanup replay is still required.
+
+The first process-stage replay at `53e582a` returned correct hover results for
+both servers. JVMD's diagnostic pipe process exited with code 0. JDTLS's direct
+process returned its shutdown response 4.131 ms after shutdown began, received
+the client's exit notification at 4.237 ms, and exited with code 1 at
+60,030.919 ms. The harness recorded neither a shutdown timeout nor a forced kill.
+This separates a prompt protocol acknowledgement from delayed process
+termination; it does not establish a comparative performance estimate or prove
+the cause of the delay. The pinned JDTLS one-minute exit timer remains a
+source-supported explanation consistent with the timing.
+
+`benchmarks/evidence/shutdown-stages-2026-09-27/` preserves the hash-verified
+protocol/process journals, runtime logs and stage table. Source drift is false
+and artifact integrity checks pass. The JDTLS case remains `protocol_error`.

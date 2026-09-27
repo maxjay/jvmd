@@ -20,7 +20,11 @@ const framing=new Framing("headers",message=>{
     const uri=[...documents.keys()].find(u=>u.endsWith("/SearchCase.java"))!,source=documents.get(uri)!;
     const rows=[...source.matchAll(/(interface|class) (Benchmark\w+)[^\n]*/gu)].map(m=>({name:m[2],kind:m[1]==="interface"?11:5,location:{uri,range:span(source,m.index+m[1].length+1,m[2].length)}}));
     if(method==="workspace/symbol"||method==="java/searchSymbols"){send({id,result:rows});return;}
-    if(method==="workspace/executeCommand"){const item=JSON.parse(params.arguments[0]);send({id,result:item});return;}
+    if(method==="workspace/executeCommand"){
+      const item=JSON.parse(params.arguments[0]);
+      if(!["Class","Interface"].includes(item.kind)){send({id,error:{code:-32602,message:"workspace symbol command kind must use enum name"}});return;}
+      send({id,result:{...item,kind:item.kind==="Class"?5:11}});return;
+    }
     const types=[...source.matchAll(/(interface|class) (Benchmark\w+)[^\n]*/gu)].map(m=>{
       const row:any={name:m[2],kind:m[1]==="interface"?11:5,range:span(source,m.index,m[0].length),selectionRange:span(source,m.index+m[1].length+1,m[2].length),uri,children:[]};
       if(row.kind===11){const at=source.indexOf("int local();");row.children.push({name:"local()",kind:6,range:span(source,at,12),selectionRange:span(source,at+4,5),uri});

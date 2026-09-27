@@ -5,6 +5,7 @@ import {readFileSync,writeFileSync,mkdirSync,existsSync} from "node:fs";
 import {type CaseDefinition,type ScenarioContext} from "../harness/ScenarioContext.ts";
 import {position,range,exactLocations,selected,completionOracle} from "../harness/oracles.ts";
 import {JDK_PROBE,prepareJdkSwitch,jdkUpdateOracle,vmInventoryOracle,compilerWitnessOracle} from "../harness/jdkSwitch.ts";
+import {workspaceSymbolArgument} from "../harness/symbols.ts";
 
 const normalize=(uri:string)=>path.resolve(fileURLToPath(uri));
 const document=(c:ScenarioContext)=>c.file("Customer.java").uri;
@@ -94,7 +95,7 @@ export const projectCases:CaseDefinition[]=[
     }}))),
   {id:"NAV-03/search-filter",family:"NAV-03",apis:["API-058","API-060"],extension:true,variant:"source/project/limit filter and resolve original workspace symbol",run:async c=>{
     const rows=await c.series("java/searchSymbols",{query:"Customer",projectName:"benchmark",sourceOnly:true,maxResults:1},v=>{assert.equal(v.length,1);assert.equal(v[0].name,"Customer");assert.equal(normalize(v[0].location.uri),normalize(document(c)));});
-    await c.execute("java.project.resolveWorkspaceSymbol",[JSON.stringify(rows[0])],v=>{assert.equal(v.name,"Customer");assert.equal(normalize(v.location.uri),normalize(document(c)));assert.equal(selected(c.text("Customer.java"),v.location.range),"Customer");});
+    await c.execute("java.project.resolveWorkspaceSymbol",[workspaceSymbolArgument(rows[0])],v=>{assert.equal(v.name,"Customer");assert.equal(normalize(v.location.uri),normalize(document(c)));assert.equal(selected(c.text("Customer.java"),v.location.range),"Customer");});
   }},
   {id:"NAV-01/qualified-name",family:"NAV-01",apis:["API-061"],command:"java.getFullyQualifiedName",variant:"exact declared type name",run:async c=>{
     await c.open("Customer.java");await c.series("workspace/executeCommand",{command:"java.getFullyQualifiedName",arguments:[JSON.stringify(at(c,"Customer.java","Customer"))]},v=>assert.equal(v,"bench.Customer"));

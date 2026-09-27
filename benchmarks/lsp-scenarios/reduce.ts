@@ -7,6 +7,7 @@ import {CONTRACT} from "./harness/contracts.ts";
 import {reduceVariants} from "./variants.ts";
 import {isRenameRejection,isInvalidRenameRequest} from "./harness/rename.ts";
 import {validateTransitionAttempts} from "./harness/transitions.ts";
+import {workspaceSymbolArgument} from "./harness/symbols.ts";
 
 const read=(file:string)=>JSON.parse(readFileSync(file,"utf8"));
 const lines=(file:string)=>existsSync(file)?readFileSync(file,"utf8").split("\n").filter(Boolean).map(s=>JSON.parse(s)):[];
@@ -44,7 +45,9 @@ export function validateCase(report:any,events:any[],exchanges:any[],operations:
       check(["workspace/symbol","java/searchSymbols"].includes(original?.endpoint)&&original.outcome==="pass"&&!original.error
         &&JSON.stringify(original.stateBefore)===JSON.stringify(op.stateBefore)&&BigInt(original.endNs)<=BigInt(op.startNs)
         &&["workspace/symbol","java/searchSymbols"].includes(source?.method)&&resolved?.params?.command==="java.project.resolveWorkspaceSymbol"
-        &&Array.isArray(source.result)&&source.result.some((item:any)=>resolved.params.arguments?.[0]===JSON.stringify(item)),"workspace symbol item provenance mismatch");
+        &&[undefined,"workspace_symbol_named_enum"].includes(op.originEncoding)&&Array.isArray(source.result)&&source.result.some((item:any)=>{
+          try{return resolved.params.arguments?.[0]===(op.originEncoding==="workspace_symbol_named_enum"?workspaceSymbolArgument(item):JSON.stringify(item));}catch{return false;}
+        }),"workspace symbol item provenance mismatch");
     }
     if(op.endpoint==="java.navigate.resolveTypeHierarchy"){
       const original=operations.find(o=>o.requestId===op.originRequestId),source=byId.get(op.originRequestId),resolved=byId.get(op.requestId);

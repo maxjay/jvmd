@@ -4,7 +4,7 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 148 case definitions, 134 passing TypeScript
+Latest implementation inventory: 148 case definitions, 135 passing TypeScript
 harness tests, and 107 required variants (75 implemented, 23 partial, 9 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
@@ -878,3 +878,44 @@ cases. All 134 harness tests pass. The real binary preparation also succeeds
 locally. The four NAV-03 variants are now implemented in source (75 total), while
 real-server replay remains required; execution failures are separate from that
 implementation disposition. There are 23 partial and 9 absent variants.
+
+## Workspace-symbol command encoding correction
+
+The first symbol replay also exposed a command encoding error: the original LSP
+SymbolInformation has numeric kind, but java.project.resolveWorkspaceSymbol uses
+plain Gson and expects the enum name inside its JSON string argument. The
+vscode-java provider explicitly performs this conversion. The benchmark now
+maps that one field (11 to Interface, 5 to Class, etc.) while preserving the
+original item and every other returned field. Both the newer independent route
+and the older search-filter case use the same encoder.
+
+Issued-item provenance is checked against that declared serialization, not a
+fabricated symbol. Every resolve operation records the named-enum encoding;
+artifact reduction reconstructs the argument from the original raw search
+reply. Older records retain their original numeric serialization when validating
+provenance, and their protocol failures remain failures. The fake command now
+rejects numeric enums too, so the previous mistake fails the subprocess gate.
+All 135 harness tests pass. Real replay of the corrected wire argument remains
+required; the original three resolve protocol failures are harness mistakes.
+
+## Initial symbol replay and preserved harness mistakes
+
+The thirty-case frozen replay at `770c576` records nine passes, six incorrect
+cases, three protocol errors and twelve unsupported cases. JVMD passes all three
+standard outline variants. JDTLS passes all three workspace-search variants and
+all three single-project filtered-search variants, including additions and
+renames. These successes have no failed immediate semantic reply.
+
+The six JDTLS outline cases fail the original package-selection oracle before
+reaching their mutation; all six also retain nonzero shutdown exits. Their raw
+baseline replies satisfy the corrected oracle when replayed without a server.
+The three resolve cases fail the original numeric-enum command argument. Those
+nine primary failures are identified harness mistakes, not attributed server
+semantic defects. Missing remaining samples after the early aborts remain in
+the original reducer output.
+
+`benchmarks/evidence/symbols-initial-2026-09-27/` preserves every raw exchange and
+failure, the original revision and checksum inventory, plus explicit review
+classifications. The complete original inventory verifies; source inputs are
+stable. This capture predates both wire/package corrections and the two-project
+filter controls. Corrected full transitions still require real-server replay.

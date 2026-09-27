@@ -5,7 +5,7 @@ import {spawnSync} from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
-import {SYMBOL_SOURCES,symbolDeclarations,exactSearchSymbols,exactSearchOutline} from "../harness/symbols.ts";
+import {SYMBOL_SOURCES,symbolDeclarations,exactSearchSymbols,exactSearchOutline,workspaceSymbolArgument} from "../harness/symbols.ts";
 import {ScenarioContext} from "../harness/ScenarioContext.ts";
 import {createFixture} from "../harness/fixture.ts";
 import {symbolCases} from "../scenarios/symbols.ts";
@@ -14,6 +14,12 @@ import {range} from "../harness/oracles.ts";
 
 const uri="file:///fixture/SearchCase.java",parentUri="file:///fixture/SymbolParent.java",source=SYMBOL_SOURCES["SearchCase.java"];
 const types=symbolDeclarations(source,uri),rows=types.map(t=>({name:t.name,kind:t.kind,location:{uri:t.uri,range:t.selection}}));
+test("Java symbol command uses named enum serialization without changing the issued item",()=>{
+  const original={...rows[0],data:{opaque:"preserved"}},before=structuredClone(original),encoded=JSON.parse(workspaceSymbolArgument(original));
+  assert.equal(encoded.kind,"Interface");assert.deepEqual({...encoded,kind:original.kind},original);assert.deepEqual(original,before);
+  assert.equal(JSON.parse(workspaceSymbolArgument(rows[1])).kind,"Class");
+  for(const kind of [0,27,5.5,"Class",null])assert.throws(()=>workspaceSymbolArgument({...original,kind}));
+});
 test("symbol search rejects stale names, homonyms, wrong kinds, use ranges and extra declarations",()=>{
   exactSearchSymbols(rows,types);
   for(const value of [rows.slice(1),[...rows,rows[0]],rows.map((r,i)=>i? r:{...r,name:"BenchmarkAfter"}),
@@ -54,8 +60,9 @@ test("symbol resolve rejects forged and stale original items before sending",asy
     let requests=0;const client={events:[],journal:()=>{},notify:()=>process.hrtime.bigint(),request:async()=>({id:++requests,result:rows,startNs:"1",endNs:"2"})} as any;
     const c=new ScenarioContext(client,createFixture(tmp,SYMBOL_SOURCES),"jdtls",100,1,1);await c.open("SearchCase.java");
     const original=await c.query("workspace/symbol",{},()=>{});
-    await assert.rejects(c.execute("java.project.resolveWorkspaceSymbol",[JSON.stringify({...original[0],name:"forged"})],()=>{}));
-    c.change("SearchCase.java",source+"\n");await assert.rejects(c.execute("java.project.resolveWorkspaceSymbol",[JSON.stringify(original[0])],()=>{}));assert.equal(requests,1);
+    await assert.rejects(c.execute("java.project.resolveWorkspaceSymbol",[workspaceSymbolArgument({...original[0],name:"forged"})],()=>{}));
+    await c.execute("java.project.resolveWorkspaceSymbol",[workspaceSymbolArgument(original[0])],()=>{});
+    c.change("SearchCase.java",source+"\n");await assert.rejects(c.execute("java.project.resolveWorkspaceSymbol",[workspaceSymbolArgument(original[0])],()=>{}));assert.equal(requests,2);
   }finally{rmSync(tmp,{recursive:true,force:true});}
 });
 for(const mutation of ["new","renamed"])test(`symbol ${mutation} keeps a stale immediate result after a successful retry`,async()=>{

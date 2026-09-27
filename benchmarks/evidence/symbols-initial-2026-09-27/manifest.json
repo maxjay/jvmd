@@ -1,0 +1,1279 @@
+{
+  "schemaVersion": 1,
+  "scope": "Raw protocol review subset; not complete experiment bundle or comparative performance evidence",
+  "revision": "770c576f4b5e0bee8b9d83de6cadd5e0cbc36d5c",
+  "archive": {
+    "file": "protocol-review.tar.xz",
+    "bytes": 197604,
+    "sha256": "167541d54937584f1e905153851127464ee1666dcc0ac82d05e369b30574a53a",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "verified",
+    "unsealedFiles": {},
+    "members": 269
+  },
+  "plan": {
+    "caseIds": [
+      "NAV-03/outline-first-repeat",
+      "NAV-03/outline-new",
+      "NAV-03/outline-renamed",
+      "NAV-03/extended-first-repeat",
+      "NAV-03/extended-new",
+      "NAV-03/extended-renamed",
+      "NAV-03/search-first-repeat",
+      "NAV-03/search-new",
+      "NAV-03/search-renamed",
+      "NAV-03/filtered-search-first-repeat",
+      "NAV-03/filtered-search-new",
+      "NAV-03/filtered-search-renamed",
+      "NAV-03/resolve-first-repeat",
+      "NAV-03/resolve-new",
+      "NAV-03/resolve-renamed"
+    ],
+    "servers": [
+      "jvmd",
+      "jdtls"
+    ],
+    "blocks": 1,
+    "warmup": 1,
+    "samples": 2,
+    "timeout": 30000,
+    "transitionPolicy": {
+      "maxAttempts": 100,
+      "retryDelayMs": 20,
+      "deadlineMs": 30000,
+      "perRequestTimeoutMs": 30000,
+      "clock": "client monotonic",
+      "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+      "settledProbe": "one additional correct response after the first correct response",
+      "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+    },
+    "profile": "pipe",
+    "serverOrder": "alternate per independent block",
+    "reset": "fresh fixture and server state per independent case",
+    "seed": 0
+  },
+  "sourceDrift": false,
+  "initialReducerIntegrityIssues": [
+    "01-jdtls-NAV-03-outline-first-repeat: series sample missing or reordered: textDocument/documentSymbol warmup 1",
+    "01-jdtls-NAV-03-outline-first-repeat: series sample missing or reordered: textDocument/documentSymbol steady 2",
+    "01-jdtls-NAV-03-outline-first-repeat: series sample missing or reordered: textDocument/documentSymbol steady 3",
+    "01-jdtls-NAV-03-extended-first-repeat: series sample missing or reordered: java/extendedDocumentSymbol warmup 1",
+    "01-jdtls-NAV-03-extended-first-repeat: series sample missing or reordered: java/extendedDocumentSymbol steady 2",
+    "01-jdtls-NAV-03-extended-first-repeat: series sample missing or reordered: java/extendedDocumentSymbol steady 3",
+    "01-jdtls-NAV-03-resolve-first-repeat: series sample missing or reordered: workspace/executeCommand warmup 1",
+    "01-jdtls-NAV-03-resolve-first-repeat: series sample missing or reordered: workspace/executeCommand steady 2",
+    "01-jdtls-NAV-03-resolve-first-repeat: series sample missing or reordered: workspace/executeCommand steady 3"
+  ],
+  "sourceManifestSha256": "57cd0f131aa38ad386a37c5bf2dd989524ef40a332301dee04a3dcfae0e93541",
+  "originalChecksumInventorySha256": "91006b4a607e6982169bf3c62ad03a347e83552ad0fcdd151012544aaae7f50d",
+  "outcomes": {
+    "pass": 9,
+    "incorrect": 6,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 3,
+    "harness_error": 0,
+    "unsupported": 12,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "cases": [
+    {
+      "server": "jdtls",
+      "caseId": "NAV-03/extended-first-repeat",
+      "profile": "direct",
+      "outcome": "incorrect",
+      "error": "AssertionError [ERR_ASSERTION]: java/extendedDocumentSymbol: AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n    end: {\n+     character: 14,\n-     character: 13,\n      line: 0\n    },\n    start: {\n+     character: 0,\n-     character: 8,\n      line: 0\n    }\n  }\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n",
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}",
+      "seriesExpectations": [
+        {
+          "method": "java/extendedDocumentSymbol",
+          "endpoint": "java/extendedDocumentSymbol",
+          "firstOperationIndex": 0,
+          "firstUse": 1,
+          "warmup": 1,
+          "steady": 2
+        }
+      ],
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 1,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "reviewClassification": "harness oracle mistake: valid whole-package selection rejected; shutdown failures remain recorded separately"
+    },
+    {
+      "server": "jdtls",
+      "caseId": "NAV-03/extended-new",
+      "profile": "direct",
+      "outcome": "incorrect",
+      "error": "AssertionError [ERR_ASSERTION]: java/extendedDocumentSymbol: AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n    end: {\n+     character: 14,\n-     character: 13,\n      line: 0\n    },\n    start: {\n+     character: 0,\n-     character: 8,\n      line: 0\n    }\n  }\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n",
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}",
+      "seriesExpectations": [],
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 1,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "reviewClassification": "harness oracle mistake: valid whole-package selection rejected; shutdown failures remain recorded separately"
+    },
+    {
+      "server": "jdtls",
+      "caseId": "NAV-03/extended-renamed",
+      "profile": "direct",
+      "outcome": "incorrect",
+      "error": "AssertionError [ERR_ASSERTION]: java/extendedDocumentSymbol: AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n    end: {\n+     character: 14,\n-     character: 13,\n      line: 0\n    },\n    start: {\n+     character: 0,\n-     character: 8,\n      line: 0\n    }\n  }\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n",
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}",
+      "seriesExpectations": [],
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 1,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "reviewClassification": "harness oracle mistake: valid whole-package selection rejected; shutdown failures remain recorded separately"
+    },
+    {
+      "server": "jdtls",
+      "caseId": "NAV-03/filtered-search-first-repeat",
+      "profile": "direct",
+      "outcome": "pass",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [
+        {
+          "method": "java/searchSymbols",
+          "endpoint": "java/searchSymbols",
+          "firstOperationIndex": 0,
+          "firstUse": 1,
+          "warmup": 1,
+          "steady": 2
+        }
+      ],
+      "assertions": [
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "filtered-search",
+            "mutation": "first-repeat"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "filtered-search",
+            "mutation": "first-repeat"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "filtered-search",
+            "mutation": "first-repeat"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "filtered-search",
+            "mutation": "first-repeat"
+          }
+        }
+      ],
+      "operationOutcomes": {
+        "pass": 4,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    },
+    {
+      "server": "jdtls",
+      "caseId": "NAV-03/filtered-search-new",
+      "profile": "direct",
+      "outcome": "pass",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [
+        {
+          "kind": "transition",
+          "transitionId": "transition-1",
+          "method": "java/searchSymbols",
+          "firstOperationIndex": 1,
+          "triggerNs": "6836091141875",
+          "witness": "new declaration has exact current identity; every previous unmodified declaration remains; old renamed declaration is absent",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response",
+            "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+          },
+          "deadlineNs": "6866091452395",
+          "attemptCount": 1,
+          "attempts": [
+            {
+              "attempt": 1,
+              "startNs": "6836091586134",
+              "endNs": "6836118732331",
+              "outcome": "pass",
+              "stage": "complete",
+              "immediate": {
+                "preparationOperationIds": [],
+                "operationId": "op-2"
+              },
+              "settled": {
+                "preparationOperationIds": [],
+                "operationId": "op-3"
+              }
+            }
+          ],
+          "firstTargetRequest": "sent",
+          "termination": "settled",
+          "endedNs": "6836118732331",
+          "settledOperationId": "op-3"
+        }
+      ],
+      "assertions": [
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "filtered-search",
+            "mutation": "new"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "filtered-search",
+            "mutation": "new"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "filtered-search",
+            "mutation": "new"
+          }
+        },
+        {
+          "name": "one declaration mutation preserves all unrelated source states",
+          "passed": true
+        },
+        {
+          "name": "saved declaration matches the open buffer",
+          "passed": true
+        },
+        {
+          "name": "independent javac validation",
+          "passed": true,
+          "elapsedMs": 639.445068,
+          "stdout": "",
+          "stderr": "",
+          "error": ""
+        }
+      ],
+      "operationOutcomes": {
+        "pass": 3,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    },
+    {
+      "server": "jdtls",
+      "caseId": "NAV-03/filtered-search-renamed",
+      "profile": "direct",
+      "outcome": "pass",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [
+        {
+          "kind": "transition",
+          "transitionId": "transition-1",
+          "method": "java/searchSymbols",
+          "firstOperationIndex": 1,
+          "triggerNs": "6850286696724",
+          "witness": "renamed declaration has exact current identity; every previous unmodified declaration remains; old renamed declaration is absent",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response",
+            "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+          },
+          "deadlineNs": "6880287012648",
+          "attemptCount": 1,
+          "attempts": [
+            {
+              "attempt": 1,
+              "startNs": "6850287117438",
+              "endNs": "6850317644596",
+              "outcome": "pass",
+              "stage": "complete",
+              "immediate": {
+                "preparationOperationIds": [],
+                "operationId": "op-2"
+              },
+              "settled": {
+                "preparationOperationIds": [],
+                "operationId": "op-3"
+              }
+            }
+          ],
+          "firstTargetRequest": "sent",
+          "termination": "settled",
+          "endedNs": "6850317644596",
+          "settledOperationId": "op-3"
+        }
+      ],
+      "assertions": [
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "filtered-search",
+            "mutation": "renamed"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "filtered-search",
+            "mutation": "renamed"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "filtered-search",
+            "mutation": "renamed"
+          }
+        },
+        {
+          "name": "one declaration mutation preserves all unrelated source states",
+          "passed": true
+        },
+        {
+          "name": "saved declaration matches the open buffer",
+          "passed": true
+        },
+        {
+          "name": "independent javac validation",
+          "passed": true,
+          "elapsedMs": 735.640097,
+          "stdout": "",
+          "stderr": "",
+          "error": ""
+        }
+      ],
+      "operationOutcomes": {
+        "pass": 3,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    },
+    {
+      "server": "jdtls",
+      "caseId": "NAV-03/outline-first-repeat",
+      "profile": "direct",
+      "outcome": "incorrect",
+      "error": "AssertionError [ERR_ASSERTION]: textDocument/documentSymbol: AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n    end: {\n+     character: 14,\n-     character: 13,\n      line: 0\n    },\n    start: {\n+     character: 0,\n-     character: 8,\n      line: 0\n    }\n  }\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n",
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}",
+      "seriesExpectations": [
+        {
+          "method": "textDocument/documentSymbol",
+          "endpoint": "textDocument/documentSymbol",
+          "firstOperationIndex": 0,
+          "firstUse": 1,
+          "warmup": 1,
+          "steady": 2
+        }
+      ],
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 1,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "reviewClassification": "harness oracle mistake: valid whole-package selection rejected; shutdown failures remain recorded separately"
+    },
+    {
+      "server": "jdtls",
+      "caseId": "NAV-03/outline-new",
+      "profile": "direct",
+      "outcome": "incorrect",
+      "error": "AssertionError [ERR_ASSERTION]: textDocument/documentSymbol: AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n    end: {\n+     character: 14,\n-     character: 13,\n      line: 0\n    },\n    start: {\n+     character: 0,\n-     character: 8,\n      line: 0\n    }\n  }\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n",
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}",
+      "seriesExpectations": [],
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 1,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "reviewClassification": "harness oracle mistake: valid whole-package selection rejected; shutdown failures remain recorded separately"
+    },
+    {
+      "server": "jdtls",
+      "caseId": "NAV-03/outline-renamed",
+      "profile": "direct",
+      "outcome": "incorrect",
+      "error": "AssertionError [ERR_ASSERTION]: textDocument/documentSymbol: AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n    end: {\n+     character: 14,\n-     character: 13,\n      line: 0\n    },\n    start: {\n+     character: 0,\n-     character: 8,\n      line: 0\n    }\n  }\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n",
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}",
+      "seriesExpectations": [],
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 1,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "reviewClassification": "harness oracle mistake: valid whole-package selection rejected; shutdown failures remain recorded separately"
+    },
+    {
+      "server": "jdtls",
+      "caseId": "NAV-03/resolve-first-repeat",
+      "profile": "direct",
+      "outcome": "protocol_error",
+      "error": "AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Property must not be null: kind\",\"data\":{\"message\":\"Property must not be null: kind\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n",
+      "shutdownError": null,
+      "seriesExpectations": [
+        {
+          "method": "workspace/executeCommand",
+          "endpoint": "java.project.resolveWorkspaceSymbol",
+          "firstOperationIndex": 1,
+          "firstUse": 1,
+          "warmup": 1,
+          "steady": 2
+        }
+      ],
+      "assertions": [
+        {
+          "name": "workspace symbol was issued to this client in the current document state",
+          "passed": true,
+          "detail": {
+            "endpoint": "java.project.resolveWorkspaceSymbol",
+            "origin": {
+              "method": "workspace/symbol",
+              "state": "[{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-first-repeat/fixture/bench/Customer.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42\",\"diskSha256\":\"16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-first-repeat/fixture/bench/Use.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd\",\"diskSha256\":\"b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-first-repeat/fixture/bench/Unrelated.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"a94cfc522c0bbca6c2969eb88d8b9e35816d82ed90f0ac45a90c3e2551117629\",\"diskSha256\":\"a94cfc522c0bbca6c2969eb88d8b9e35816d82ed90f0ac45a90c3e2551117629\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-first-repeat/fixture/bench/Hierarchy.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc\",\"diskSha256\":\"28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-first-repeat/fixture/bench/Calls.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4\",\"diskSha256\":\"c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-first-repeat/fixture/bench/Format.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625\",\"diskSha256\":\"ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-first-repeat/fixture/bench/Generate.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22\",\"diskSha256\":\"643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-first-repeat/fixture/bench/SymbolParent.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"6fc8ad0f08599eb2c57942e13147c1224e2c97e3e7982558117d414abb3c8b43\",\"diskSha256\":\"6fc8ad0f08599eb2c57942e13147c1224e2c97e3e7982558117d414abb3c8b43\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-first-repeat/fixture/bench/SearchCase.java\",\"version\":1,\"incarnation\":1,\"open\":true,\"sha256\":\"5581d8eee49239b3d2a589b538b347d872ee7c612ebebf099737889d9ca74f91\",\"diskSha256\":\"5581d8eee49239b3d2a589b538b347d872ee7c612ebebf099737889d9ca74f91\"}]",
+              "requestId": 2
+            }
+          }
+        }
+      ],
+      "operationOutcomes": {
+        "pass": 1,
+        "incorrect": 0,
+        "protocol_error": 1,
+        "timeout": 0
+      },
+      "reviewClassification": "harness wire encoding mistake: command requires named enum inside JSON argument"
+    },
+    {
+      "server": "jdtls",
+      "caseId": "NAV-03/resolve-new",
+      "profile": "direct",
+      "outcome": "protocol_error",
+      "error": "AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Property must not be null: kind\",\"data\":{\"message\":\"Property must not be null: kind\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n",
+      "shutdownError": null,
+      "seriesExpectations": [],
+      "assertions": [
+        {
+          "name": "workspace symbol was issued to this client in the current document state",
+          "passed": true,
+          "detail": {
+            "endpoint": "java.project.resolveWorkspaceSymbol",
+            "origin": {
+              "method": "workspace/symbol",
+              "state": "[{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-new/fixture/bench/Customer.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42\",\"diskSha256\":\"16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-new/fixture/bench/Use.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd\",\"diskSha256\":\"b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-new/fixture/bench/Unrelated.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"a94cfc522c0bbca6c2969eb88d8b9e35816d82ed90f0ac45a90c3e2551117629\",\"diskSha256\":\"a94cfc522c0bbca6c2969eb88d8b9e35816d82ed90f0ac45a90c3e2551117629\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-new/fixture/bench/Hierarchy.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc\",\"diskSha256\":\"28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-new/fixture/bench/Calls.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4\",\"diskSha256\":\"c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-new/fixture/bench/Format.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625\",\"diskSha256\":\"ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-new/fixture/bench/Generate.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22\",\"diskSha256\":\"643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-new/fixture/bench/SymbolParent.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"6fc8ad0f08599eb2c57942e13147c1224e2c97e3e7982558117d414abb3c8b43\",\"diskSha256\":\"6fc8ad0f08599eb2c57942e13147c1224e2c97e3e7982558117d414abb3c8b43\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-new/fixture/bench/SearchCase.java\",\"version\":1,\"incarnation\":1,\"open\":true,\"sha256\":\"5581d8eee49239b3d2a589b538b347d872ee7c612ebebf099737889d9ca74f91\",\"diskSha256\":\"5581d8eee49239b3d2a589b538b347d872ee7c612ebebf099737889d9ca74f91\"}]",
+              "requestId": 2
+            }
+          }
+        }
+      ],
+      "operationOutcomes": {
+        "pass": 1,
+        "incorrect": 0,
+        "protocol_error": 1,
+        "timeout": 0
+      },
+      "reviewClassification": "harness wire encoding mistake: command requires named enum inside JSON argument"
+    },
+    {
+      "server": "jdtls",
+      "caseId": "NAV-03/resolve-renamed",
+      "profile": "direct",
+      "outcome": "protocol_error",
+      "error": "AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Property must not be null: kind\",\"data\":{\"message\":\"Property must not be null: kind\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n",
+      "shutdownError": null,
+      "seriesExpectations": [],
+      "assertions": [
+        {
+          "name": "workspace symbol was issued to this client in the current document state",
+          "passed": true,
+          "detail": {
+            "endpoint": "java.project.resolveWorkspaceSymbol",
+            "origin": {
+              "method": "workspace/symbol",
+              "state": "[{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-renamed/fixture/bench/Customer.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42\",\"diskSha256\":\"16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-renamed/fixture/bench/Use.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd\",\"diskSha256\":\"b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-renamed/fixture/bench/Unrelated.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"a94cfc522c0bbca6c2969eb88d8b9e35816d82ed90f0ac45a90c3e2551117629\",\"diskSha256\":\"a94cfc522c0bbca6c2969eb88d8b9e35816d82ed90f0ac45a90c3e2551117629\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-renamed/fixture/bench/Hierarchy.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc\",\"diskSha256\":\"28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-renamed/fixture/bench/Calls.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4\",\"diskSha256\":\"c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-renamed/fixture/bench/Format.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625\",\"diskSha256\":\"ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-renamed/fixture/bench/Generate.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22\",\"diskSha256\":\"643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-renamed/fixture/bench/SymbolParent.java\",\"version\":null,\"incarnation\":0,\"open\":false,\"sha256\":\"6fc8ad0f08599eb2c57942e13147c1224e2c97e3e7982558117d414abb3c8b43\",\"diskSha256\":\"6fc8ad0f08599eb2c57942e13147c1224e2c97e3e7982558117d414abb3c8b43\"},{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/symbols-replay/01-jdtls-NAV-03-resolve-renamed/fixture/bench/SearchCase.java\",\"version\":1,\"incarnation\":1,\"open\":true,\"sha256\":\"5581d8eee49239b3d2a589b538b347d872ee7c612ebebf099737889d9ca74f91\",\"diskSha256\":\"5581d8eee49239b3d2a589b538b347d872ee7c612ebebf099737889d9ca74f91\"}]",
+              "requestId": 2
+            }
+          }
+        }
+      ],
+      "operationOutcomes": {
+        "pass": 1,
+        "incorrect": 0,
+        "protocol_error": 1,
+        "timeout": 0
+      },
+      "reviewClassification": "harness wire encoding mistake: command requires named enum inside JSON argument"
+    },
+    {
+      "server": "jdtls",
+      "caseId": "NAV-03/search-first-repeat",
+      "profile": "direct",
+      "outcome": "pass",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [
+        {
+          "method": "workspace/symbol",
+          "endpoint": "workspace/symbol",
+          "firstOperationIndex": 0,
+          "firstUse": 1,
+          "warmup": 1,
+          "steady": 2
+        }
+      ],
+      "assertions": [
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "search",
+            "mutation": "first-repeat"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "search",
+            "mutation": "first-repeat"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "search",
+            "mutation": "first-repeat"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "search",
+            "mutation": "first-repeat"
+          }
+        }
+      ],
+      "operationOutcomes": {
+        "pass": 4,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    },
+    {
+      "server": "jdtls",
+      "caseId": "NAV-03/search-new",
+      "profile": "direct",
+      "outcome": "pass",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [
+        {
+          "kind": "transition",
+          "transitionId": "transition-1",
+          "method": "workspace/symbol",
+          "firstOperationIndex": 1,
+          "triggerNs": "6792789465254",
+          "witness": "new declaration has exact current identity; every previous unmodified declaration remains; old renamed declaration is absent",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response",
+            "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+          },
+          "deadlineNs": "6822789721018",
+          "attemptCount": 1,
+          "attempts": [
+            {
+              "attempt": 1,
+              "startNs": "6792789735622",
+              "endNs": "6792902549335",
+              "outcome": "pass",
+              "stage": "complete",
+              "immediate": {
+                "preparationOperationIds": [],
+                "operationId": "op-2"
+              },
+              "settled": {
+                "preparationOperationIds": [],
+                "operationId": "op-3"
+              }
+            }
+          ],
+          "firstTargetRequest": "sent",
+          "termination": "settled",
+          "endedNs": "6792902549335",
+          "settledOperationId": "op-3"
+        }
+      ],
+      "assertions": [
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "search",
+            "mutation": "new"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "search",
+            "mutation": "new"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "search",
+            "mutation": "new"
+          }
+        },
+        {
+          "name": "one declaration mutation preserves all unrelated source states",
+          "passed": true
+        },
+        {
+          "name": "saved declaration matches the open buffer",
+          "passed": true
+        },
+        {
+          "name": "independent javac validation",
+          "passed": true,
+          "elapsedMs": 730.713783,
+          "stdout": "",
+          "stderr": "",
+          "error": ""
+        }
+      ],
+      "operationOutcomes": {
+        "pass": 3,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    },
+    {
+      "server": "jdtls",
+      "caseId": "NAV-03/search-renamed",
+      "profile": "direct",
+      "outcome": "pass",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [
+        {
+          "kind": "transition",
+          "transitionId": "transition-1",
+          "method": "workspace/symbol",
+          "firstOperationIndex": 1,
+          "triggerNs": "6807169974017",
+          "witness": "renamed declaration has exact current identity; every previous unmodified declaration remains; old renamed declaration is absent",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response",
+            "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+          },
+          "deadlineNs": "6837170239107",
+          "attemptCount": 1,
+          "attempts": [
+            {
+              "attempt": 1,
+              "startNs": "6807170254794",
+              "endNs": "6807292623773",
+              "outcome": "pass",
+              "stage": "complete",
+              "immediate": {
+                "preparationOperationIds": [],
+                "operationId": "op-2"
+              },
+              "settled": {
+                "preparationOperationIds": [],
+                "operationId": "op-3"
+              }
+            }
+          ],
+          "firstTargetRequest": "sent",
+          "termination": "settled",
+          "endedNs": "6807292623773",
+          "settledOperationId": "op-3"
+        }
+      ],
+      "assertions": [
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "search",
+            "mutation": "renamed"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "search",
+            "mutation": "renamed"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "search",
+            "mutation": "renamed"
+          }
+        },
+        {
+          "name": "one declaration mutation preserves all unrelated source states",
+          "passed": true
+        },
+        {
+          "name": "saved declaration matches the open buffer",
+          "passed": true
+        },
+        {
+          "name": "independent javac validation",
+          "passed": true,
+          "elapsedMs": 736.108188,
+          "stdout": "",
+          "stderr": "",
+          "error": ""
+        }
+      ],
+      "operationOutcomes": {
+        "pass": 3,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    },
+    {
+      "server": "jvmd",
+      "caseId": "NAV-03/extended-first-repeat",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [],
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    },
+    {
+      "server": "jvmd",
+      "caseId": "NAV-03/extended-new",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [],
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    },
+    {
+      "server": "jvmd",
+      "caseId": "NAV-03/extended-renamed",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [],
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    },
+    {
+      "server": "jvmd",
+      "caseId": "NAV-03/filtered-search-first-repeat",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [],
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    },
+    {
+      "server": "jvmd",
+      "caseId": "NAV-03/filtered-search-new",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [],
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    },
+    {
+      "server": "jvmd",
+      "caseId": "NAV-03/filtered-search-renamed",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [],
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    },
+    {
+      "server": "jvmd",
+      "caseId": "NAV-03/outline-first-repeat",
+      "profile": "pipe",
+      "outcome": "pass",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [
+        {
+          "method": "textDocument/documentSymbol",
+          "endpoint": "textDocument/documentSymbol",
+          "firstOperationIndex": 0,
+          "firstUse": 1,
+          "warmup": 1,
+          "steady": 2
+        }
+      ],
+      "assertions": [
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "outline",
+            "mutation": "first-repeat"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "outline",
+            "mutation": "first-repeat"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "outline",
+            "mutation": "first-repeat"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "outline",
+            "mutation": "first-repeat"
+          }
+        }
+      ],
+      "operationOutcomes": {
+        "pass": 4,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    },
+    {
+      "server": "jvmd",
+      "caseId": "NAV-03/outline-new",
+      "profile": "pipe",
+      "outcome": "pass",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [
+        {
+          "kind": "transition",
+          "transitionId": "transition-1",
+          "method": "textDocument/documentSymbol",
+          "firstOperationIndex": 1,
+          "triggerNs": "6417353997184",
+          "witness": "new declaration has exact current identity; every previous unmodified declaration remains; old renamed declaration is absent",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response",
+            "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+          },
+          "deadlineNs": "6447354689641",
+          "attemptCount": 1,
+          "attempts": [
+            {
+              "attempt": 1,
+              "startNs": "6417354714701",
+              "endNs": "6417405037666",
+              "outcome": "pass",
+              "stage": "complete",
+              "immediate": {
+                "preparationOperationIds": [],
+                "operationId": "op-2"
+              },
+              "settled": {
+                "preparationOperationIds": [],
+                "operationId": "op-3"
+              }
+            }
+          ],
+          "firstTargetRequest": "sent",
+          "termination": "settled",
+          "endedNs": "6417405037666",
+          "settledOperationId": "op-3"
+        }
+      ],
+      "assertions": [
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "outline",
+            "mutation": "new"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "outline",
+            "mutation": "new"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "outline",
+            "mutation": "new"
+          }
+        },
+        {
+          "name": "one declaration mutation preserves all unrelated source states",
+          "passed": true
+        },
+        {
+          "name": "saved declaration matches the open buffer",
+          "passed": true
+        },
+        {
+          "name": "independent javac validation",
+          "passed": true,
+          "elapsedMs": 961.453224,
+          "stdout": "",
+          "stderr": "",
+          "error": ""
+        }
+      ],
+      "operationOutcomes": {
+        "pass": 3,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    },
+    {
+      "server": "jvmd",
+      "caseId": "NAV-03/outline-renamed",
+      "profile": "pipe",
+      "outcome": "pass",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [
+        {
+          "kind": "transition",
+          "transitionId": "transition-1",
+          "method": "textDocument/documentSymbol",
+          "firstOperationIndex": 1,
+          "triggerNs": "6488577569030",
+          "witness": "renamed declaration has exact current identity; every previous unmodified declaration remains; old renamed declaration is absent",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response",
+            "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+          },
+          "deadlineNs": "6518578039156",
+          "attemptCount": 1,
+          "attempts": [
+            {
+              "attempt": 1,
+              "startNs": "6488578058763",
+              "endNs": "6488627448949",
+              "outcome": "pass",
+              "stage": "complete",
+              "immediate": {
+                "preparationOperationIds": [],
+                "operationId": "op-2"
+              },
+              "settled": {
+                "preparationOperationIds": [],
+                "operationId": "op-3"
+              }
+            }
+          ],
+          "firstTargetRequest": "sent",
+          "termination": "settled",
+          "endedNs": "6488627448949",
+          "settledOperationId": "op-3"
+        }
+      ],
+      "assertions": [
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "outline",
+            "mutation": "renamed"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "outline",
+            "mutation": "renamed"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "outline",
+            "mutation": "renamed"
+          }
+        },
+        {
+          "name": "one declaration mutation preserves all unrelated source states",
+          "passed": true
+        },
+        {
+          "name": "saved declaration matches the open buffer",
+          "passed": true
+        },
+        {
+          "name": "independent javac validation",
+          "passed": true,
+          "elapsedMs": 1037.560821,
+          "stdout": "",
+          "stderr": "",
+          "error": ""
+        }
+      ],
+      "operationOutcomes": {
+        "pass": 3,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    },
+    {
+      "server": "jvmd",
+      "caseId": "NAV-03/resolve-first-repeat",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [],
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    },
+    {
+      "server": "jvmd",
+      "caseId": "NAV-03/resolve-new",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [],
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    },
+    {
+      "server": "jvmd",
+      "caseId": "NAV-03/resolve-renamed",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [],
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    },
+    {
+      "server": "jvmd",
+      "caseId": "NAV-03/search-first-repeat",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [],
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    },
+    {
+      "server": "jvmd",
+      "caseId": "NAV-03/search-new",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [],
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    },
+    {
+      "server": "jvmd",
+      "caseId": "NAV-03/search-renamed",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [],
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      }
+    }
+  ],
+  "review": {
+    "knownHarnessMistakes": [
+      "Package selection may cover entire declaration; six baseline oracles were too narrow",
+      "Workspace-symbol resolve command serializes kind as enum name; three commands used numeric kind"
+    ],
+    "successfulSemantics": [
+      "JVMD standard outline first/repeat, new and renamed cases pass",
+      "JDTLS workspace search and filtered search first/repeat, new and renamed cases pass"
+    ],
+    "shutdown": "All six JDTLS outline cases also record nonzero shutdown; these remain independent failures",
+    "captureInventory": "verified",
+    "limits": [
+      "One diagnostic block; JVMD pipe transport; uncontrolled OS caches",
+      "Package/wire failures are harness mistakes, not server correctness evidence",
+      "Six original raw JDTLS package baselines pass the corrected package rule, but rerun of full corrected transitions is still required"
+    ]
+  }
+}

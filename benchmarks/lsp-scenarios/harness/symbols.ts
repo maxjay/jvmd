@@ -6,6 +6,13 @@ export const SYMBOL_SOURCES={
   "SymbolParent.java":"package bench;\npublic interface SymbolParent { int inherited(); }\n",
   "SearchCase.java":"package bench;\ninterface BenchmarkBefore extends SymbolParent { int local(); }\nclass BenchmarkAnchor {}\n",
 };
+const SYMBOL_KINDS=["File","Module","Namespace","Package","Class","Method","Property","Field","Constructor","Enum","Interface","Function","Variable","Constant","String","Number","Boolean","Array","Object","Key","Null","EnumMember","Struct","Event","Operator","TypeParameter"];
+/** This Java command uses plain Gson, not the LSP numeric-enum adapter.
+ * Match vscode-java's named-enum serialization; preserve the issued item. */
+export function workspaceSymbolArgument(item:any){
+  assert(Number.isInteger(item?.kind)&&item.kind>=1&&item.kind<=SYMBOL_KINDS.length,"workspace symbol has invalid LSP kind");
+  return JSON.stringify({...item,kind:SYMBOL_KINDS[item.kind-1]});
+}
 export function symbolDeclarations(source:string,uri:string){
   return [...source.matchAll(/(interface|class) (Benchmark\w+)[^\n]*/gu)].map(m=>({name:m[2],kind:m[1]==="interface"?11:5,uri,
     selection:range(source,m[2],m.index),range:range(source,m[0],m.index)}));

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {writeFileSync,readFileSync} from "node:fs";
 import {type CaseDefinition,type ScenarioContext} from "../harness/ScenarioContext.ts";
-import {SYMBOL_SOURCES,symbolDeclarations,exactSearchSymbols,exactSearchOutline} from "../harness/symbols.ts";
+import {SYMBOL_SOURCES,symbolDeclarations,exactSearchSymbols,exactSearchOutline,workspaceSymbolArgument} from "../harness/symbols.ts";
 import {prepareSymbolFilters,exactFilteredSymbols} from "../harness/symbolFilters.ts";
 import {sha} from "../harness/fixture.ts";
 
@@ -25,7 +25,7 @@ export const symbolCases:CaseDefinition[]=routes.flatMap(route=>["first-repeat",
       if(route.id==="filtered-search")return {query:"Benchmark",projectName:"benchmark",sourceOnly:true,maxResults:100};
       const original=await c.query("workspace/symbol",{query:"Benchmark"},v=>exactSearchSymbols(v,declarations()),"item_acquisition");
       const item=original.find((v:any)=>v.name===selected);assert(item,"selected original symbol missing");
-      return {command:route.command,arguments:[JSON.stringify(item)]};
+      return {command:route.command,arguments:[workspaceSymbolArgument(item)]};
     };
     const oracle=(value:any)=>{
       if(route.id==="outline"||route.id==="extended")exactSearchOutline(value,c.text("SearchCase.java"),file.uri,c.text("SymbolParent.java"),parent.uri,route.id==="extended");

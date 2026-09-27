@@ -8,6 +8,7 @@ import {type Fixture,sha} from "./fixture.ts";
 import {planWorkspaceEdit} from "./workspaceEdit.ts";
 import {applyTextEdits,offset,type Position} from "./oracles.ts";
 import {isRenameRejection,isInvalidRenameRequest} from "./rename.ts";
+import {workspaceSymbolArgument} from "./symbols.ts";
 
 export const CAPABILITIES={
   general:{positionEncodings:["utf-16"]},
@@ -114,7 +115,7 @@ export class ScenarioContext {
     }
     const row=await this.client.request(method,params,this.timeout);
     if(!row.error&&["workspace/symbol","java/searchSymbols"].includes(endpoint)&&Array.isArray(row.result))
-      for(const item of row.result)this.workspaceSymbolOrigins.set(JSON.stringify(item),{method:endpoint,state:JSON.stringify(before),requestId:row.id});
+      for(const item of row.result)try{this.workspaceSymbolOrigins.set(workspaceSymbolArgument(item),{method:endpoint,state:JSON.stringify(before),requestId:row.id});}catch{/* The semantic oracle below records malformed returned items. */}
     if(!row.error&&endpoint==="java.navigate.openTypeHierarchy"&&row.result&&typeof row.result==="object")
       this.legacyHierarchyOrigins.set(JSON.stringify(row.result),{method:endpoint,state:JSON.stringify(before),requestId:row.id});
     if(!row.error){const items=method==="textDocument/completion"?(Array.isArray(row.result)?row.result:row.result?.items):row.result;
@@ -122,7 +123,7 @@ export class ScenarioContext {
     }
     const record:any={schemaVersion:1,clockDomain:"client",requestEventId:this.client.events.find(e=>e.direction==="send"&&e.message.id===row.id)?.sequence,responseEventId:this.client.events.find(e=>e.direction==="receive"&&e.message.id===row.id)?.sequence,operationId:"op-"+(this.operations.length+1),method,endpoint,state,requestId:row.id,startNs:row.startNs,endNs:row.endNs,
       latencyMs:Number(BigInt(row.endNs)-BigInt(row.startNs))/1e6,stateBefore:before,
-      originRequestId:origin?.requestId,rawResult:row.result,error:row.error,responsePolicy,outcome:row.error?(row.error.kind==="timeout"?"timeout":"protocol_error"):"pass",
+      originRequestId:origin?.requestId,originEncoding:endpoint==="java.project.resolveWorkspaceSymbol"?"workspace_symbol_named_enum":undefined,rawResult:row.result,error:row.error,responsePolicy,outcome:row.error?(row.error.kind==="timeout"?"timeout":"protocol_error"):"pass",
       freshness:{status:freshnessWitness?"verified":"not_applicable",witness:freshnessWitness??"unchanged fixture; semantic oracle checked"}};
     if(trigger!==undefined){record.triggerNs=String(trigger);record.transitionMs=Number(BigInt(row.endNs)-trigger)/1e6;}
     const validationStart=now();

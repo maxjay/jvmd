@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import {now} from "./ProtocolClient.ts";
 import {type ScenarioContext} from "./ScenarioContext.ts";
 import {classifyDiagnostic,diagnosticPolicy,DIAGNOSTIC_CALLER,DIAGNOSTIC_PROVIDER,DIAGNOSTIC_CHANGED_PROVIDER,type DiagnosticExpectation} from "./diagnostics.ts";
+import {isModeKind,modeDiagnosticPolicy,validateModeTrigger} from "./modeDiagnostics.ts";
 import {type DiagnosticVersionMode} from "./contracts.ts";
 
-export async function observeDiagnostics(c:ScenarioContext,input:Omit<DiagnosticExpectation,"deadlineNs">,since:number,state:string){
-  const policy=diagnosticPolicy(c.timeout),expectation={...input,deadlineNs:String(BigInt(input.triggerNs)+BigInt(policy.deadlineMs)*1000000n)};
+export async function observeDiagnostics(c:ScenarioContext,input:Omit<DiagnosticExpectation,"deadlineNs">,since:number,state:string,options:{continueUnavailable?:boolean}={}){
+  const policy=(isModeKind(input.kind)?modeDiagnosticPolicy:diagnosticPolicy)(c.timeout),expectation={...input,deadlineNs:String(BigInt(input.triggerNs)+BigInt(policy.deadlineMs)*1000000n)};
   assert.deepEqual(c.fixture.preparation?.diagnosticPolicy,policy,"diagnostic policy must be declared before server launch");
-  const trigger=c.client.events.find(e=>e.direction==="send"&&e.timeNs===input.triggerNs&&["textDocument/didOpen","textDocument/didChange"].includes(e.message.method));
+  const trigger=c.client.events.find(e=>e.direction==="send"&&e.timeNs===input.triggerNs&&["textDocument/didOpen","textDocument/didChange",...(input.kind==="compiler_rejected"?["workspace/executeCommand"]:[])].includes(e.message.method));
   assert(trigger,"diagnostic trigger must be a recorded document notification");
   const observationId="diagnostic-"+(c.diagnosticObservations.length+1),start={schemaVersion:1,clockDomain:"client",event:"started",observationId,
     expectation,policy,state,triggerEventId:trigger.sequence,afterEventId:c.client.notifications[since-1]?.sequence??0};
@@ -21,7 +22,7 @@ export async function observeDiagnostics(c:ScenarioContext,input:Omit<Diagnostic
       rawResult:publication?.params,outcome,reason,freshness:outcome==="pass"?{status:"verified",witness:reason}:outcome==="incorrect"?{status:"contradicted",reason}:{status:"unavailable",reason}};
     c.recordOperation(operation);
     journal({schemaVersion:1,clockDomain:"client",event:"finished",observationId,operationId,outcome,reason,publicationCount:count,endNs});
-    assert.equal(outcome,"pass",reason);return operation;
+    if(!(outcome==="unavailable_evidence"&&options.continueUnavailable))assert.equal(outcome,"pass",reason);return operation;
   };
   for(;;){
     if(count>=policy.maxPublications)return finish("unavailable_evidence","publication_limit");
@@ -52,10 +53,10 @@ export function validateDiagnosticObservations(report:any,events:any[],operation
     while(offset<journal.length){
       const start=journal[offset++];assert.equal(start.event,"started");assert(!observations.has(start.observationId));observations.add(start.observationId);
       assert.deepEqual(start.policy,report.preparation?.diagnosticPolicy);
-      assert.deepEqual(start.policy,diagnosticPolicy(start.policy.deadlineMs));
+      assert.deepEqual(start.policy,(isModeKind(start.expectation.kind)?modeDiagnosticPolicy:diagnosticPolicy)(start.policy.deadlineMs));
       const exp:DiagnosticExpectation=start.expectation;assert.equal(exp.deadlineNs,String(BigInt(exp.triggerNs)+BigInt(start.policy.deadlineMs)*1000000n));
       const trigger=events.find(e=>e.sequence===start.triggerEventId);
-      assert(trigger?.direction==="send"&&trigger.timeNs===exp.triggerNs&&["textDocument/didOpen","textDocument/didChange"].includes(trigger.message.method));
+      assert(trigger?.direction==="send"&&trigger.timeNs===exp.triggerNs&&["textDocument/didOpen","textDocument/didChange",...(exp.kind==="compiler_rejected"?["workspace/executeCommand"]:[])].includes(trigger.message.method));
       assert(Number.isInteger(start.afterEventId)&&start.afterEventId>=0&&start.afterEventId<trigger.sequence);
       const documents=new Map<string,any>(),incarnations=new Map<string,number>();
       for(const e of events.filter(e=>e.sequence<=trigger.sequence&&e.direction==="send")){
@@ -68,7 +69,8 @@ export function validateDiagnosticObservations(report:any,events:any[],operation
         if(e.message.method==="textDocument/didClose")documents.delete(d.uri);
       }
       assert.deepEqual(documents.get(exp.uri),{text:exp.source,version:exp.version,incarnation:exp.incarnation},"diagnostic expectation differs from actual open buffer");
-      if(exp.kind==="valid"){assert.equal(trigger.message.method,"textDocument/didOpen");assert.equal(trigger.message.params.textDocument.uri,exp.uri);}
+      if(isModeKind(exp.kind))validateModeTrigger(exp,trigger,events,documents,report);
+      else if(exp.kind==="valid"){assert.equal(trigger.message.method,"textDocument/didOpen");assert.equal(trigger.message.params.textDocument.uri,exp.uri);}
       else{
         assert.equal(exp.kind,"provider_mismatch");assert.equal(exp.source,DIAGNOSTIC_CALLER);assert.equal(trigger.message.method,"textDocument/didChange");
         const provider=trigger.message.params.textDocument.uri;assert.notEqual(provider,exp.uri);assert.equal(documents.get(provider)?.text,DIAGNOSTIC_CHANGED_PROVIDER);

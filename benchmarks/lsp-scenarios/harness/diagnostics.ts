@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {diagnosticDecision,type DiagnosticVersionMode} from "./contracts.ts";
+import {isModeKind,modeDiagnosticOracle,type ModeKind} from "./modeDiagnostics.ts";
 import {range,selected} from "./oracles.ts";
 
 export const DIAGNOSTIC_PROVIDER="package bench;\npublic class DiagnosticProvider { public int number() { return 7; } }\n";
@@ -7,7 +8,7 @@ export const DIAGNOSTIC_CHANGED_PROVIDER=DIAGNOSTIC_PROVIDER.replace("int number
 export const DIAGNOSTIC_CALLER="package bench;\npublic class DiagnosticCaller { public int value(DiagnosticProvider p) { return p.number(); } }\n";
 export const DIAGNOSTIC_SOURCES={"DiagnosticProvider.java":DIAGNOSTIC_PROVIDER,"DiagnosticCaller.java":DIAGNOSTIC_CALLER};
 export type DiagnosticExpectation={
-  kind:"valid"|"provider_mismatch";uri:string;version:number;incarnation:number;source:string;
+  kind:"valid"|"provider_mismatch"|ModeKind;uri:string;version:number;incarnation:number;source:string;
   triggerNs:string;deadlineNs:string;
 };
 export type DiagnosticDisposition={
@@ -36,6 +37,7 @@ export function classifyDiagnostic(expectation:DiagnosticExpectation,publication
       selected(expectation.source,d.range); // Also validates UTF-16 and bounds.
     }
     const errors=params.diagnostics.filter((d:any)=>d.severity===undefined||d.severity===1);
+    if(isModeKind(expectation.kind))return result(modeDiagnosticOracle(expectation.kind,expectation.source,errors),"declared compiler/loose-file mode witness");
     if(expectation.kind==="valid"){
       assert.equal(errors.length,0,"valid source has an error diagnostic");
       return result("pass","exact current version has no error diagnostics");

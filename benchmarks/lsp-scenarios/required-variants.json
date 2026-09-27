@@ -451,16 +451,70 @@
         {
           "id": "PRJ-02/unchanged",
           "requirement": "No-change settings/JDK and diagnostic baseline.",
-          "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "PRJ-02/compiler-unchanged",
+              "operations": [
+                {
+                  "endpoint": "java.project.getSettings",
+                  "states": [
+                    "first_use",
+                    "steady"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/publishDiagnostics",
+                  "states": [
+                    "baseline_valid"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent diagnostic mode compiler witnesses verified",
+                "compiler mode preserves every source byte and document version",
+                "compiler mode has exactly the declared configuration mutation"
+              ]
+            }
+          ]
         },
         {
           "id": "PRJ-02/compiler-change",
           "requirement": "Compiler setting change changes reported environment and acceptance/diagnostics.",
-          "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "PRJ-02/compiler-change",
+              "operations": [
+                {
+                  "endpoint": "java.project.getSettings",
+                  "states": [
+                    "first_use",
+                    "steady",
+                    "changed_environment"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/publishDiagnostics",
+                  "states": [
+                    "baseline_valid",
+                    "changed_diagnostic"
+                  ]
+                },
+                {
+                  "endpoint": "java.project.updateSettings",
+                  "states": [
+                    "compiler_change"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent diagnostic mode compiler witnesses verified",
+                "compiler mode preserves every source byte and document version",
+                "compiler mode has exactly the declared configuration mutation"
+              ]
+            }
+          ]
         },
         {
           "id": "PRJ-02/jdk-switch",
@@ -4778,16 +4832,59 @@
         {
           "id": "DIA-01/syntax-only",
           "requirement": "Syntax-only loose-file mode diagnoses syntax without semantic errors.",
-          "implementation": "not_implemented",
-          "remaining": "No independent current-content/scope witness for this diagnostic variant.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "DIA-01/syntax-only",
+              "operations": [
+                {
+                  "endpoint": "java.project.refreshDiagnostics",
+                  "states": [
+                    "mode_selection"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/publishDiagnostics",
+                  "states": [
+                    "semantic_probe",
+                    "syntax_control"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent diagnostic mode compiler witnesses verified",
+                "diagnostic mode changes only the selected unsaved loose buffer"
+              ]
+            }
+          ]
         },
         {
           "id": "DIA-01/full",
           "requirement": "Full loose-file mode diagnoses semantic errors as well as syntax.",
-          "implementation": "not_implemented",
-          "remaining": "No independent current-content/scope witness for this diagnostic variant.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "DIA-01/full",
+              "operations": [
+                {
+                  "endpoint": "java.project.refreshDiagnostics",
+                  "states": [
+                    "mode_selection"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/publishDiagnostics",
+                  "states": [
+                    "semantic_probe"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent diagnostic mode compiler witnesses verified",
+                "diagnostic mode changes only the selected unsaved loose buffer"
+              ]
+            }
+          ]
         }
       ]
     }

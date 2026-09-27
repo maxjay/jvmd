@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "f9b068eb46105690a8d5010ef6042e7bff7ca30e",
+  "sourceDrift": false,
+  "outcomes": {
+    "pass": 6,
+    "incorrect": 2,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 1,
+    "harness_error": 0,
+    "unsupported": 9,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "originalReducerIntegrityIssues": [],
+  "package": {
+    "file": "protocol-review.tar.xz",
+    "bytes": 184356,
+    "sha256": "de5ff0d6f3ce88b945b6dfd38410c4d3a624b5bb3e9d0d9cda1a86e0ed652715",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "verified",
+    "unsealedFiles": {},
+    "members": 167
+  },
+  "observations": [
+    "JDTLS initial membership/main-test classification, both dependency scopes, both independent source-root changes and corrected stack mapping pass.",
+    "Corrected declaration operations pass; shutdown exits 1 without forced kill.",
+    "Workspace add/remove each return the previous project inventory on the immediate request, then correct settled inventory and root-specific symbol visibility. First failures remain incorrect.",
+    "All nine JVMD routes are unsupported."
+  ],
+  "claims": {
+    "publicComparativePerformance": false
+  }
+}

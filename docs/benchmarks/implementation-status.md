@@ -4,8 +4,8 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 170 case definitions, 199 passing TypeScript
-harness tests, and 107 required variants (102 implemented, 2 partial, 3 absent).
+Latest implementation inventory: 174 case definitions, 208 passing TypeScript
+harness tests, and 107 required variants (106 implemented, 0 partial, 1 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -1305,3 +1305,35 @@ Pinned server sources and original failures are preserved in
 an incorrect immediate implementation target, empty post-movement super-links,
 and separate nonzero shutdowns. It does not stand in for the corrected replay.
 Source scope is now 170 cases, 102 implemented variants, 2 partial and 3 absent.
+
+
+## Compiler and loose-file diagnostic modes
+
+Four independent cases complete unchanged/changed compiler settings and
+syntax-only/full loose-file diagnostics. Compiler witnesses prove the same record
+source compiles at release 17 and is rejected at release 11. Loose-file witnesses
+separately prove valid, semantic-error and syntax-error sources before launch.
+The actual loose file is outside the sole declared source root. Syntax-only mode
+must suppress the semantic error and positively detect a subsequent syntax error;
+full mode must locate the exact missing-name error. Compiler changes preserve
+all source bytes and versions, so a positive new language rejection is required
+in addition to reported settings.
+
+The observer and artifact-only audit retain exact version/incarnation admission,
+mode-command acknowledgement, original buffers, compiler evidence and every
+publication decision. Versionless evidence remains unavailable. These new cases
+continue after that specific unavailable disposition to collect later declared
+stages; the initial failure remains in the case outcome. Wrong current-version
+answers still fail immediately. Nine new adversarial/integration tests cover mode
+confusion, wrong ranges, forged compiler releases and inputs, missing mode
+acknowledgements, full scenario execution and raw-journal replay. All 208 tests
+pass; real mode replay remains pending. Only persisted reopen remains absent
+from the 107-variant source ledger (174 case definitions).
+
+Real replay at `f9b068e` passes main/test project classification, both real
+dependency scopes, independent source-root add/remove and corrected stack mapping.
+Inherited-declaration requests pass but shutdown exits 1. Workspace add and remove
+each retain one stale immediate inventory before correct settled inventory and
+symbol visibility. All nine JVMD routes are unsupported. All 18 reports finalized,
+full inventories verify and reducer integrity issues are empty; see
+`benchmarks/evidence/project-scopes-2026-09-27/`.

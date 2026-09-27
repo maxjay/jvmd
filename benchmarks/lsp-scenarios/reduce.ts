@@ -101,7 +101,7 @@ export function validateCase(report:any,events:any[],exchanges:any[],operations:
     check(!!resolve&&JSON.stringify(byId.get(resolve.requestId)?.params)===JSON.stringify(report.notApplicableEvidence?.selectedItem),"not-offered resolve did not send the original selected item");
   }
   if(report.outcome==="unsupported")check(!!report.supportEvidence?.source,"unsupported without evidence");
-  if(["DIA-01/valid","DIA-01/provider-edit"].includes(report.caseId))for(const op of operations)if(op.method==="textDocument/publishDiagnostics")check(!!op.diagnosticObservationId,"diagnostic case operation lacks observer identity");
+  if(["DIA-01/valid","DIA-01/provider-edit","DIA-01/syntax-only","DIA-01/full","PRJ-02/compiler-unchanged","PRJ-02/compiler-change"].includes(report.caseId))for(const op of operations)if(op.method==="textDocument/publishDiagnostics")check(!!op.diagnosticObservationId,"diagnostic case operation lacks observer identity");
   issues.push(...validateDiagnosticObservations(report,events,operations));
   return issues;
 }

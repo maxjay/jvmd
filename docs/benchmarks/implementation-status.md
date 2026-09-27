@@ -4,8 +4,8 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 160 case definitions, 179 passing TypeScript
-harness tests, and 107 required variants (82 implemented, 20 partial, 5 absent).
+Latest implementation inventory: 166 case definitions, 184 passing TypeScript
+harness tests, and 107 required variants (85 implemented, 17 partial, 5 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -1182,3 +1182,22 @@ inventory and reducer integrity verify. The preserved dispatch-bytecode evidence
 supports a file-before-folder lookup explanation, explicitly an inference rather
 than an instrumented branch trace. See `import-scope-cases.md` and the raw capture
 in `benchmarks/evidence/import-scope-2026-09-27/`.
+
+## Dependency-source and attachment variants
+
+Ten independently reset cases now cover class-file/document content without
+attachment, with matching attachment, and after attachment replacement; an
+unattached decompiler case; and all three metadata states. Content and metadata
+requests have separate timers. Updated cases retain immediate, retry, settled and
+repeat observations. Exact archive paths, authored source comments and complete
+attached source distinguish generations; binary/archive bytes and caller state
+remain fixed. Unattached text uses semantic declarations rather than a decompiler
+text golden. Fixture compilation records tool identities, commands and JAR hashes.
+
+All 184 harness tests pass. A real prelaunch fixture build verifies six archives.
+The first real replay exposed a harness error: binary definitions were required
+to end in `.java`, while the actual opaque JDTLS URI correctly ends in `.class`.
+The corrected check names the exact JAR/class and preserves its server handle.
+The four failed setup attempts are retained in
+`benchmarks/evidence/dependency-baseline-2026-09-27/`; additional unsealed runtime
+files retain failed-inventory status. Corrected supported-server replay is pending.

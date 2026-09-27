@@ -488,23 +488,202 @@
         {
           "id": "ENV-02/unattached",
           "requirement": "First/repeated unattached content routes identify correct class without byte-for-byte decompiler comparison.",
-          "implementation": "partial",
-          "remaining": "Only decompile has an unattached series; content routes need independent unattached cases.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "ENV-02/class-content-unattached",
+              "operations": [
+                {
+                  "endpoint": "java/classFileContents",
+                  "states": [
+                    "first_use",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "dependency content matches declared attachment state",
+                "independent javac validation",
+                "source retrieval preserves binary and all archive bytes",
+                "source retrieval preserves caller and unrelated document states"
+              ]
+            },
+            {
+              "caseId": "ENV-02/document-content-unattached",
+              "operations": [
+                {
+                  "endpoint": "workspace/textDocumentContent",
+                  "states": [
+                    "first_use",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "dependency content matches declared attachment state",
+                "independent javac validation",
+                "source retrieval preserves binary and all archive bytes",
+                "source retrieval preserves caller and unrelated document states"
+              ]
+            },
+            {
+              "caseId": "ENV-02/attachment-metadata-unattached",
+              "operations": [
+                {
+                  "endpoint": "java.project.resolveSourceAttachment",
+                  "states": [
+                    "first_use",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "attachment metadata matches the exact declared archive",
+                "source retrieval preserves binary and all archive bytes",
+                "source retrieval preserves caller and unrelated document states"
+              ]
+            },
+            {
+              "caseId": "ENV-02/decompile",
+              "operations": [
+                {
+                  "endpoint": "java.decompile",
+                  "states": [
+                    "first_use",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "decompiled content identifies binary A without attachment comments",
+                "source retrieval preserves binary and all archive bytes",
+                "source retrieval preserves caller and unrelated document states"
+              ]
+            }
+          ]
         },
         {
           "id": "ENV-02/attached",
           "requirement": "First/repeated content and metadata requests identify matching attachment and known comment.",
-          "implementation": "partial",
-          "remaining": "Content series exist; attachment metadata is not independently repeated.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "ENV-02/class-content",
+              "operations": [
+                {
+                  "endpoint": "java/classFileContents",
+                  "states": [
+                    "first_use",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "dependency content matches declared attachment state",
+                "independent javac validation",
+                "source retrieval preserves binary and all archive bytes",
+                "source retrieval preserves caller and unrelated document states"
+              ]
+            },
+            {
+              "caseId": "ENV-02/document-content",
+              "operations": [
+                {
+                  "endpoint": "workspace/textDocumentContent",
+                  "states": [
+                    "first_use",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "dependency content matches declared attachment state",
+                "independent javac validation",
+                "source retrieval preserves binary and all archive bytes",
+                "source retrieval preserves caller and unrelated document states"
+              ]
+            },
+            {
+              "caseId": "ENV-02/attachment-metadata",
+              "operations": [
+                {
+                  "endpoint": "java.project.resolveSourceAttachment",
+                  "states": [
+                    "first_use",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "attachment metadata matches the exact declared archive",
+                "source retrieval preserves binary and all archive bytes",
+                "source retrieval preserves caller and unrelated document states"
+              ]
+            }
+          ]
         },
         {
           "id": "ENV-02/updated",
           "requirement": "Updated attachment metadata and first/repeated content match new source without changing binary.",
-          "implementation": "partial",
-          "remaining": "Updated source is fetched once; updated metadata and repeated content witnesses remain missing.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "ENV-02/class-content-updated",
+              "operations": [
+                {
+                  "endpoint": "java/classFileContents",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled",
+                    "changed_repeat"
+                  ]
+                }
+              ],
+              "assertions": [
+                "dependency content matches declared attachment state",
+                "independent javac validation",
+                "source retrieval preserves binary and all archive bytes",
+                "source retrieval preserves caller and unrelated document states"
+              ]
+            },
+            {
+              "caseId": "ENV-02/document-content-updated",
+              "operations": [
+                {
+                  "endpoint": "workspace/textDocumentContent",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled",
+                    "changed_repeat"
+                  ]
+                }
+              ],
+              "assertions": [
+                "dependency content matches declared attachment state",
+                "independent javac validation",
+                "source retrieval preserves binary and all archive bytes",
+                "source retrieval preserves caller and unrelated document states"
+              ]
+            },
+            {
+              "caseId": "ENV-02/source-attachment",
+              "operations": [
+                {
+                  "endpoint": "java.project.resolveSourceAttachment",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled",
+                    "changed_repeat"
+                  ]
+                }
+              ],
+              "assertions": [
+                "attachment metadata matches the exact declared archive",
+                "source retrieval preserves binary and all archive bytes",
+                "source retrieval preserves caller and unrelated document states"
+              ]
+            }
+          ]
         }
       ]
     },

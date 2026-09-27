@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "0f5353ffcea221f37adcf7d1970a3bd0a346d66c",
+  "sourceDrift": false,
+  "outcomes": {
+    "pass": 0,
+    "incorrect": 4,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 0,
+    "harness_error": 0,
+    "unsupported": 0,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "originalReducerIntegrityIssues": [],
+  "package": {
+    "file": "protocol-review.tar.xz",
+    "bytes": 82768,
+    "sha256": "9318ecef32ca3b77f234619ee9c274deacfc352844c51274e9dcd33a04918645",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "failed",
+    "unsealedFiles": {
+      "01-jdtls-ENV-02-source-attachment/runtime/equinox-config/org.eclipse.core.runtime/.manager/.tmp74.instance": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "01-jdtls-ENV-02-source-attachment/runtime/equinox-config/org.eclipse.equinox.app/.manager/.tmp75.instance": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "members": 46
+  },
+  "explanation": "All four cases stopped at an incorrect harness assertion expecting a .java dependency URI. The observed JDTLS definition URI correctly identifies library-A.jar/dep/Library.class. No target content/attachment result is inferred. This capture preserves the setup mistake and its shutdown outcomes.",
+  "claims": {
+    "publicComparativePerformance": false
+  }
+}

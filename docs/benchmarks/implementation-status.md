@@ -253,3 +253,33 @@ independent semantic replay or the remaining performance/resource gates.
 All 45 TypeScript tests pass, including missing operations/assertions, missing
 server/block evidence, partial implementation despite passing API cases,
 unsupported without evidence, and a successful block concealing a failed block.
+
+## Independent file and use mutations
+
+There are now 107 case definitions. Completed cancellation has a subsequent
+correctness probe; DOC-01 has an unchanged read series; external create, modify
+and delete start from independent fixtures. External search and caller-visibility
+routes are separate cases so a missing workspace-symbol capability cannot hide
+supported definition/hover checks. Added/removed uses have independent reference
+cases under both declaration flags and independent highlight cases. The fixture
+now has an actual unrelated `number()` homonym. Symbol rename also compiles the
+edited project. The ledger records 40 implemented, 48 partial and 19 absent
+requirements; implementation still does not imply a passing experiment.
+
+The first JDTLS pilot exposed two harness/oracle defects: rejecting an empty
+`changes` map alongside `documentChanges`, and choosing a fixture name that
+collided with a JDK type in workspace search. The edit planner now follows LSP
+3.17's documentChanges precedence, including when a fallback map is nonempty;
+the external provider has a distinct fixture name. All 46 harness tests pass.
+The original failed bundles are retained separately from reruns.
+
+The corrected four-case JDTLS pilot passed symbol rename (including compilation
+and homonym protection) and external creation. Modification and deletion returned
+stale immediate search results, followed by correct retries and settled probes;
+both cases remain incorrect. A broader pilot had correct hover/highlight replies
+but nonzero shutdown exits, which remain protocol failures. The JVMD pipe pilot
+passed completed cancellation, repeated hover, both reference flags and their
+add/remove variants, and rename. Highlights were explicitly unsupported. Its
+external cases exposed the missing workspace-symbol capability check; the new
+separate search route addresses that harness gap without declaring file-change
+semantics unsupported. Final route-specific validation remains in progress.

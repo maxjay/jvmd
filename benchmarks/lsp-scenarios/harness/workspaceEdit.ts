@@ -6,7 +6,10 @@ import {applyTextEdits} from "./oracles.ts";
 export type EditorFile={uri:string;text:string;version:number|null;open:boolean;diskText?:string};
 /** Validate the entire transaction before touching a buffer or file. */
 export function planWorkspaceEdit(root:string,initial:EditorFile[],edit:any){
-  assert(!(edit?.changes&&edit?.documentChanges),"ambiguous WorkspaceEdit representations");
+  // We advertise versioned document edits. LSP 3.17 WorkspaceEdit specifies
+  // that documentChanges takes precedence when both representations occur.
+  // Do not combine them or apply a fallback edit a second time.
+  // https://github.com/microsoft/language-server-protocol/blob/gh-pages/_specifications/lsp/3.17/types/workspaceEdit.md
   const changes:any[]=edit?.documentChanges??Object.entries<any[]>(edit?.changes??{}).map(([uri,edits])=>({textDocument:{uri,version:null},edits}));
   assert(Array.isArray(changes)&&changes.length>0,"workspace edit empty");
   const files=new Map(initial.map(f=>[f.uri,{...f}]));

@@ -7,18 +7,34 @@ import {exactLocations,range,position,hoverOracle,selected} from "../harness/ora
 import {createFixture,inventory} from "../harness/fixture.ts";
 const at=(c:ScenarioContext,file:string,token:string)=>({textDocument:{uri:c.file(file).uri},position:position(c.text(file),c.text(file).indexOf(token)+1)});
 const normalize=(uri:string)=>path.resolve(fileURLToPath(uri));
-const dynamic='package bench;\npublic class Dynamic { public String value() { return "first"; } }\n';
+const dynamic='package bench;\npublic class BenchmarkExternalProvider { public String value() { return "first"; } }\n';
 export const fileCases:CaseDefinition[]=[
-  {id:"DOC-02/external-create-edit-delete",family:"DOC-02",apis:["API-015"],fixture:{"ExternalUse.java":"package bench;\npublic class ExternalUse { public Object read(Dynamic d) { return d.value(); } }\n"},variant:"closed provider external lifecycle with caller visibility",run:async c=>{
-    await c.open("ExternalUse.java");const trigger=c.createDisk("Dynamic.java","bench/Dynamic.java",dynamic);
-    const provider=c.file("Dynamic.java");await c.transition("textDocument/definition",()=>at(c,"ExternalUse.java","value()"),v=>exactLocations(v,[{uri:provider.uri,range:range(c.text("Dynamic.java"),"value")}]),trigger,"new Dynamic.value declaration at exact URI and range");
-    const changed=c.writeDisk("Dynamic.java",dynamic.replace('String value() { return "first";','int value() { return 19;'));
-    await c.transition("textDocument/hover",()=>at(c,"ExternalUse.java","value()"),v=>hoverOracle(v,"value","int"),changed,"closed provider value now returns int");c.compileOracle();
-    const since=c.client.notifications.length,removed=c.deleteDisk("Dynamic.java");
-    await c.transition("textDocument/definition",()=>at(c,"ExternalUse.java","value()"),v=>exactLocations(v,[]),removed,"removed provider cannot remain a navigation target");
-    const diag=await c.client.notification("textDocument/publishDiagnostics",p=>p.uri===c.file("ExternalUse.java").uri&&p.diagnostics?.some((d:any)=>String(d.message).includes("Dynamic")),since,c.timeout);
-    c.assert("deletion invalidates caller type",diag.params.diagnostics.some((d:any)=>selected(c.text("ExternalUse.java"),d.range)==="Dynamic"));
-  }},
+  ...["create","modify","delete"].flatMap(mutation=>["external","search"].map(route=>({id:`DOC-02/${route}-${mutation}`,family:"DOC-02",apis:["API-015"],capability:route==="search"?"workspaceSymbolProvider":"definitionProvider",fixture:{"ExternalUse.java":"package bench;\npublic class ExternalUse { public Object read(BenchmarkExternalProvider d) { return d.value(); } }\n",...(mutation==="create"?{}:{"BenchmarkExternalProvider.java":dynamic})},variant:`independently reset ${route} probe for external ${mutation}`,run:async(c:ScenarioContext)=>{
+    await c.open("ExternalUse.java");
+    const definition=(v:any)=>exactLocations(v,[{uri:c.file("BenchmarkExternalProvider.java").uri,range:range(c.text("BenchmarkExternalProvider.java"),"value")}]);
+    const symbol=(v:any)=>{assert(Array.isArray(v));const rows=v.filter(r=>r.name==="BenchmarkExternalProvider");assert.equal(rows.length,1);
+      assert.equal(rows[0].kind,5);exactLocations(rows.map(r=>r.location),[{uri:c.file("BenchmarkExternalProvider.java").uri,range:range(c.text("BenchmarkExternalProvider.java"),"BenchmarkExternalProvider")}]);};
+    if(mutation!=="create"){
+      if(route==="search")await c.query("workspace/symbol",{query:"BenchmarkExternalProvider"},symbol,"baseline");
+      else{
+        await c.query("textDocument/definition",at(c,"ExternalUse.java","value()"),definition,"baseline");
+        await c.query("textDocument/hover",at(c,"ExternalUse.java","value()"),v=>hoverOracle(v,"value","String"),"baseline");
+      }
+    }
+    const since=c.client.notifications.length;
+    const trigger=mutation==="create"?c.createDisk("BenchmarkExternalProvider.java","bench/BenchmarkExternalProvider.java",dynamic):mutation==="modify"?
+      c.writeDisk("BenchmarkExternalProvider.java","\n"+dynamic.replace('String value() { return "first";','int value() { return 19;')):c.deleteDisk("BenchmarkExternalProvider.java");
+    if(route==="search")await c.transition("workspace/symbol",()=>({query:"BenchmarkExternalProvider"}),mutation==="delete"?v=>assert.deepEqual(v,[]):symbol,trigger,mutation==="delete"?"deleted BenchmarkExternalProvider is absent from symbol search":"BenchmarkExternalProvider symbol has exact current URI and declaration range");
+    else await c.transition("textDocument/definition",()=>at(c,"ExternalUse.java","value()"),mutation==="delete"?v=>exactLocations(v,[]):definition,trigger,"external "+mutation+" changes exact caller target");
+    if(route==="external"&&mutation!=="delete"){
+      await c.transition("textDocument/hover",()=>at(c,"ExternalUse.java","value()"),v=>hoverOracle(v,"value",mutation==="modify"?"int":"String"),trigger,"external provider return type follows disk content");c.compileOracle();
+    }else if(route==="external"){
+      const diag=await c.client.notification("textDocument/publishDiagnostics",p=>p.uri===c.file("ExternalUse.java").uri&&p.diagnostics?.some((d:any)=>String(d.message).includes("BenchmarkExternalProvider")),since,c.timeout);
+      c.assert("deletion invalidates caller type",diag.params.diagnostics.some((d:any)=>selected(c.text("ExternalUse.java"),d.range)==="BenchmarkExternalProvider"));
+      c.recordOperation({schemaVersion:1,operationId:"external-delete-diagnostic",method:"textDocument/publishDiagnostics",state:"changed_diagnostic",outcome:"pass",startNs:String(trigger),endNs:diag.timeNs,triggerNs:String(trigger),transitionMs:Number(BigInt(diag.timeNs)-trigger)/1e6,rawResult:diag.params,freshness:{status:"verified",witness:"previously resolved provider removed; new BenchmarkExternalProvider error at exact caller range"}});
+    }
+    c.assert("exactly one external mutation",c.mutations.filter(m=>m.kind.startsWith("external_")).length===1);
+  }}))),
   {id:"REF-01/file-rename",family:"REF-01",apis:["API-016"],capability:"workspace.fileOperations.willRename",variant:"rename public provider file, apply server edit, update callers and compile",run:async c=>{
     await c.open("Customer.java");await c.open("Use.java");const before=c.file("Customer.java").uri,after=pathToFileURL(path.join(c.fixture.root,"bench/Client.java")).href,files=[{oldUri:before,newUri:after}];
     const edit=await c.query("workspace/willRenameFiles",{files},v=>assert(v?.documentChanges||v?.changes));c.applyWorkspaceEdit(edit);

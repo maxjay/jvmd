@@ -25,14 +25,16 @@ export const structureCases:CaseDefinition[]=[
     await c.open("Hierarchy.java");const text=c.text("Hierarchy.java"),base=text.indexOf("class Base"),child=text.indexOf("class Child");
     await c.series("textDocument/implementation",at(c,"Hierarchy.java","value()"),v=>exactLocations(v,[loc(c,"Hierarchy.java","value",base),loc(c,"Hierarchy.java","value",child)]));
   }},
-  {id:"NAV-02/highlights",family:"NAV-02",apis:["API-054"],capability:"documentHighlightProvider",variant:"exact local uses then added use",run:async c=>{
+  ...["first-repeat","add","remove"].map(mutation=>({id:"NAV-02/highlights"+(mutation==="first-repeat"?"":"-"+mutation),family:"NAV-02",apis:["API-054",...(mutation==="first-repeat"?[]:["API-011"])],capability:"documentHighlightProvider",variant:"independent exact local uses: "+mutation,run:async(c:ScenarioContext)=>{
     await c.open("Customer.java");await c.open("Use.java");
     const oracle=(v:any)=>{assert(Array.isArray(v));const want=[];let start=0,text=c.text("Use.java");while((start=text.indexOf("number",start))>=0){want.push(loc(c,"Use.java","number",start));start+=6;}
       exactLocations(v.map(r=>({uri:c.file("Use.java").uri,range:r.range})),want);};
-    await c.series("textDocument/documentHighlight",at(c,"Use.java","number()"),oracle);
-    const trigger=c.change("Use.java",c.text("Use.java").replace("return customer.number();","return customer.number() + customer.number();")).trigger;
-    await c.transition("textDocument/documentHighlight",()=>at(c,"Use.java","number()"),oracle,trigger,"four exact caller ranges after adding a use");
-  }},
+    if(mutation==="first-repeat"){await c.series("textDocument/documentHighlight",at(c,"Use.java","number()"),oracle);return;}
+    await c.query("textDocument/documentHighlight",at(c,"Use.java","number()"),oracle,"baseline");
+    const text=c.text("Use.java"),after=mutation==="add"?text.replace("return customer.number();","return customer.number() + customer.number();"):text.replace("customer.number() + customer.number()","customer.number()");
+    const trigger=c.change("Use.java",after).trigger;
+    await c.transition("textDocument/documentHighlight",()=>at(c,"Use.java","number()"),oracle,trigger,`${mutation} one independently enumerated local use`);
+  }})),
   {id:"NAV-03/workspace-symbol",family:"NAV-03",apis:["API-057"],capability:"workspaceSymbolProvider",variant:"exact symbol then saved new declaration",run:async c=>{
     await c.open("Customer.java");await c.series("workspace/symbol",{query:"Customer"},v=>symbolOracle(c,v,"Customer.java","Customer"));
     const text=c.text("Customer.java")+"\nclass CustomerChanged {}\n";c.change("Customer.java",text);const trigger=c.writeDisk("Customer.java",text);c.save("Customer.java");

@@ -64,9 +64,24 @@
         {
           "id": "SES-02/completed",
           "requirement": "Cancel a completed request; verify one terminal response and a subsequent correct query.",
-          "implementation": "partial",
-          "remaining": "Current case sends completed cancellation last, without a following correctness probe.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "SES-02/completed",
+              "operations": [
+                {
+                  "endpoint": "textDocument/references",
+                  "states": [
+                    "before_cancel",
+                    "after_completed_cancel"
+                  ]
+                }
+              ],
+              "assertions": [
+                "completed cancellation preserves exactly one terminal response"
+              ]
+            }
+          ]
         }
       ]
     },
@@ -97,9 +112,23 @@
         {
           "id": "DOC-01/repeat",
           "requirement": "Unchanged repeated hover uses the same buffer.",
-          "implementation": "partial",
-          "remaining": "Open case measures only one read, not an unchanged series.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "DOC-01/repeat",
+              "operations": [
+                {
+                  "endpoint": "textDocument/hover",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
         },
         {
           "id": "DOC-01/unsaved",
@@ -171,23 +200,136 @@
         {
           "id": "DOC-02/create",
           "requirement": "Independent fresh fixture: externally create a closed provider; its symbol appears.",
-          "implementation": "partial",
-          "remaining": "Current external lifecycle case chains create/modify/delete instead of resetting before this variant.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "DOC-02/external-create",
+              "operations": [
+                {
+                  "endpoint": "textDocument/definition",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/hover",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exactly one external mutation",
+                "independent javac validation"
+              ]
+            },
+            {
+              "caseId": "DOC-02/search-create",
+              "operations": [
+                {
+                  "endpoint": "workspace/symbol",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exactly one external mutation"
+              ]
+            }
+          ]
         },
         {
           "id": "DOC-02/modify",
           "requirement": "Independent fresh fixture with provider already present: external modification replaces old symbol data.",
-          "implementation": "partial",
-          "remaining": "Current external lifecycle case chains create/modify/delete instead of resetting before this variant.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "DOC-02/external-modify",
+              "operations": [
+                {
+                  "endpoint": "textDocument/definition",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/hover",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exactly one external mutation",
+                "independent javac validation"
+              ]
+            },
+            {
+              "caseId": "DOC-02/search-modify",
+              "operations": [
+                {
+                  "endpoint": "workspace/symbol",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exactly one external mutation"
+              ]
+            }
+          ]
         },
         {
           "id": "DOC-02/delete",
           "requirement": "Independent fresh fixture with provider already present: external deletion removes symbol and diagnoses caller.",
-          "implementation": "partial",
-          "remaining": "Current external lifecycle case chains create/modify/delete instead of resetting before this variant.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "DOC-02/external-delete",
+              "operations": [
+                {
+                  "endpoint": "textDocument/definition",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/publishDiagnostics",
+                  "states": [
+                    "changed_diagnostic"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exactly one external mutation",
+                "deletion invalidates caller type"
+              ]
+            },
+            {
+              "caseId": "DOC-02/search-delete",
+              "operations": [
+                {
+                  "endpoint": "workspace/symbol",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exactly one external mutation"
+              ]
+            }
+          ]
         }
       ]
     },
@@ -780,16 +922,102 @@
         {
           "id": "NAV-02/add",
           "requirement": "Independent added use updates references under both declaration flags and local highlights.",
-          "implementation": "partial",
-          "remaining": "Highlight addition exists, but references under both declaration flags lack the mutation.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "NAV-02/references-false-add",
+              "operations": [
+                {
+                  "endpoint": "textDocument/references",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "one caller use changed"
+              ]
+            },
+            {
+              "caseId": "NAV-02/references-true-add",
+              "operations": [
+                {
+                  "endpoint": "textDocument/references",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "one caller use changed"
+              ]
+            },
+            {
+              "caseId": "NAV-02/highlights-add",
+              "operations": [
+                {
+                  "endpoint": "textDocument/documentHighlight",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
         },
         {
           "id": "NAV-02/remove",
           "requirement": "Independent removed use updates references under both declaration flags and local highlights.",
-          "implementation": "not_implemented",
-          "remaining": "No independently reset removed-use cases.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "NAV-02/references-false-remove",
+              "operations": [
+                {
+                  "endpoint": "textDocument/references",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "one caller use changed"
+              ]
+            },
+            {
+              "caseId": "NAV-02/references-true-remove",
+              "operations": [
+                {
+                  "endpoint": "textDocument/references",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "one caller use changed"
+              ]
+            },
+            {
+              "caseId": "NAV-02/highlights-remove",
+              "operations": [
+                {
+                  "endpoint": "textDocument/documentHighlight",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
         }
       ]
     },
@@ -1255,9 +1483,26 @@
         {
           "id": "REF-01/symbol",
           "requirement": "Independent symbol rename updates exact declarations/uses, preserves homonyms and compiles.",
-          "implementation": "partial",
-          "remaining": "Exact rename and homonym assertions exist, but independent compilation is missing.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "REF-01/rename",
+              "operations": [
+                {
+                  "endpoint": "textDocument/rename",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "all three caller uses renamed",
+                "old caller uses removed",
+                "unrelated source untouched",
+                "independent javac validation"
+              ]
+            }
+          ]
         },
         {
           "id": "REF-01/file",

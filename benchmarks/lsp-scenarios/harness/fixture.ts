@@ -28,6 +28,7 @@ public class Use {
 public class Unrelated {
     public String name() { return "unrelated"; }
     public String label = "unrelated";
+    public int number() { return 73; }
 }
 `,
   "Hierarchy.java":`package bench;

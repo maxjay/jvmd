@@ -34,17 +34,24 @@ export const coreCases:CaseDefinition[]=[
       c.client.notify("$/cancelRequest",{id});const result=await pending;
       c.assert("cancel has exactly one valid terminal outcome",!result.error||result.error.code===-32800,result);
       if(!result.error)referenceOracle(c,true)(result.result);
-      await c.query("textDocument/references",params,referenceOracle(c,true));
-      c.client.notify("$/cancelRequest",{id});}},
-  ...["open","edit","save","discard"].map(variant=>({id:"DOC-01/"+variant,family:"DOC-01",apis:["API-010","API-013",...(variant!=="open"?["API-011"]:[]),...(variant==="save"?["API-012"]:[])],variant,
+      await c.query("textDocument/references",params,referenceOracle(c,true));}},
+  {id:"SES-02/completed",family:"SES-02",apis:["API-005"],variant:"cancel already completed request then verify next query",correctnessOnly:true,
+    run:async c=>{await pair(c);const params={...p(c,"Use.java","number()"),context:{includeDeclaration:true}};
+      await c.query("textDocument/references",params,referenceOracle(c,true),"before_cancel");const id=c.operations.at(-1).requestId;
+      c.client.notify("$/cancelRequest",{id});
+      await c.query("textDocument/references",params,referenceOracle(c,true),"after_completed_cancel");
+      c.assert("completed cancellation preserves exactly one terminal response",c.client.events.filter(e=>e.direction==="receive"&&e.message.id===id&&!e.message.method).length===1);
+    }},
+  ...["open","repeat","edit","save","discard"].map(variant=>({id:"DOC-01/"+variant,family:"DOC-01",apis:["API-010","API-013",...(["edit","save","discard"].includes(variant)?["API-011"]:[]),...(variant==="save"?["API-012"]:[])],variant,
     run:async(c:ScenarioContext)=>{
       const original=c.file("Customer.java").text;
       const edited=original.replace('public String label = "Ada";','public int label = 7;').replace('return label;','return String.valueOf(label);');
       await c.open("Customer.java");let trigger:bigint|undefined,type="String";
-      if(variant!=="open"){trigger=c.change("Customer.java",edited).trigger;type="int";}
+      if(["edit","save","discard"].includes(variant)){trigger=c.change("Customer.java",edited).trigger;type="int";}
       if(variant==="save"){writeFileSync(c.file("Customer.java").path,edited);trigger=c.save("Customer.java");c.close("Customer.java");await c.open("Customer.java",edited);}
       if(variant==="discard"){c.close("Customer.java");const opened=await c.open("Customer.java",original);trigger=opened.trigger;type="String";}
-      if(trigger===undefined)await c.query("textDocument/hover",p(c,"Customer.java","label"),v=>hoverOracle(v,"label",type));
+      if(variant==="repeat")await c.series("textDocument/hover",p(c,"Customer.java","label"),v=>hoverOracle(v,"label",type));
+      else if(trigger===undefined)await c.query("textDocument/hover",p(c,"Customer.java","label"),v=>hoverOracle(v,"label",type));
       else await c.transition("textDocument/hover",()=>p(c,"Customer.java","label"),v=>hoverOracle(v,"label",type),trigger,"buffer field type is "+type);
     }})),
   {id:"CMP-01/first-repeat",family:"CMP-01",apis:["API-044"],method:"textDocument/completion",capability:"completionProvider",variant:"first/repeat without resolve",
@@ -87,6 +94,15 @@ export const coreCases:CaseDefinition[]=[
       await c.transition("textDocument/definition",()=>p(c,"Use.java","number()"),numberOracle(c),trigger,"provider target selection range shifted by one line");}},
   ...[false,true].map(include=>({id:"NAV-02/references-"+include,family:"NAV-02",apis:["API-053"],method:"textDocument/references",capability:"referencesProvider",variant:"includeDeclaration="+include,
     run:async(c:ScenarioContext)=>{await pair(c);await c.open("Unrelated.java");await c.series("textDocument/references",{...p(c,"Use.java","number()"),context:{includeDeclaration:include}},referenceOracle(c,include));}})),
+  ...[false,true].flatMap(include=>["add","remove"].map(mutation=>({id:`NAV-02/references-${include}-${mutation}`,family:"NAV-02",apis:["API-053","API-011"],capability:"referencesProvider",variant:`independent ${mutation} use; includeDeclaration=${include}`,
+    run:async(c:ScenarioContext)=>{await pair(c);await c.open("Unrelated.java");
+      const params=()=>({...p(c,"Use.java","number()"),context:{includeDeclaration:include}});
+      await c.query("textDocument/references",params(),referenceOracle(c,include),"baseline");
+      const text=c.text("Use.java"),after=mutation==="add"?text.replace("return customer.number();","return customer.number() + customer.number();"):text.replace("customer.number() + customer.number()","customer.number()");
+      c.assert("one caller use changed",Math.abs((after.match(/customer\.number\(\)/gu)??[]).length-(text.match(/customer\.number\(\)/gu)??[]).length)===1);
+      const trigger=c.change("Use.java",after).trigger;
+      await c.transition("textDocument/references",params,referenceOracle(c,include),trigger,`${mutation} one exact caller range; unrelated number declaration excluded`);
+    }}))),
   {id:"NAV-03/document-symbol",family:"NAV-03",apis:["API-055"],method:"textDocument/documentSymbol",capability:"documentSymbolProvider",variant:"first/repeat",
     run:async c=>{await c.open("Customer.java");await c.series("textDocument/documentSymbol",{textDocument:{uri:c.file("Customer.java").uri}},v=>{
       const flatten=(xs:any[]):any[]=>xs.flatMap(x=>[x,...flatten(x.children??[])]);const rows=flatten(v??[]);
@@ -106,7 +122,7 @@ export const coreCases:CaseDefinition[]=[
       const edit=await c.query("textDocument/rename",{...p(c,"Use.java","number()"),newName:"identifier"},v=>assert(v?.changes||v?.documentChanges));
       c.applyWorkspaceEdit(edit);c.assert("declaration renamed",c.text("Customer.java").includes("int identifier()"));
       c.assert("all three caller uses renamed",(c.text("Use.java").match(/customer\.identifier\(\)/gu)??[]).length===3);
-      c.assert("old caller uses removed",!c.text("Use.java").includes("customer.number()"));c.assert("unrelated source untouched",c.text("Unrelated.java")===other);}},
+      c.assert("old caller uses removed",!c.text("Use.java").includes("customer.number()"));c.assert("unrelated source untouched",c.text("Unrelated.java")===other);c.compileOracle();}},
   {id:"DIA-01/error-fix",family:"DIA-01",apis:["API-010","API-011","API-111"],variant:"error publication and exact-version clear",
     run:async c=>{const original=c.file("Customer.java").text;const broken=original.replace("return 7;","return missingValue;");
       const since=c.client.notifications.length,opened=await c.open("Customer.java",broken);

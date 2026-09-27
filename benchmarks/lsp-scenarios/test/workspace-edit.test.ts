@@ -5,6 +5,15 @@ import {range} from "../harness/oracles.ts";
 
 const uri="file:///fixture/A.java",source="class A {}";
 const initial=[{uri,text:source,version:4,open:true}];
+test("versioned document edits take precedence over empty or populated fallback changes",()=>{
+  const documentChanges=[{textDocument:{uri,version:4},edits:[{range:range(source,"A"),newText:"Renamed"}]}];
+  for(const changes of [{},{[uri]:[{range:range(source,"A"),newText:"WrongFallback"}]}]){
+    const next=planWorkspaceEdit("/fixture",initial,{changes,documentChanges});
+    assert.equal(next.get(uri)?.text,"class Renamed {}");assert.equal(initial[0].text,source);
+  }
+  // An empty preferred representation is not permission to apply the fallback.
+  assert.throws(()=>planWorkspaceEdit("/fixture",initial,{changes:{[uri]:[{range:range(source,"A"),newText:"WrongFallback"}]},documentChanges:[]}));
+});
 test("ordered create, text edit, and rename operations preserve source identity",()=>{
   const next=planWorkspaceEdit("/fixture",initial,{documentChanges:[
     {kind:"create",uri:"file:///fixture/B.java"},

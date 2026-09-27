@@ -3,6 +3,12 @@ import {mkdirSync,readFileSync,writeFileSync,readdirSync,existsSync} from "node:
 import {spawnSync} from "node:child_process";
 import path from "node:path";
 import os from "node:os";
+import {reduceBundle,writeReduction} from "./reduce.ts";
+import {refactoringCases} from "./scenarios/refactoring.ts";
+import {fileCases} from "./scenarios/files.ts";
+import {dependencyCases} from "./scenarios/dependencies.ts";
+import {editingCases} from "./scenarios/editing.ts";
+import {projectCases} from "./scenarios/projects.ts";
 import {generationCases} from "./scenarios/generation.ts";
 import {structureCases} from "./scenarios/structure.ts";
 import {coreCases} from "./scenarios/core.ts";
@@ -11,7 +17,7 @@ import {ScenarioContext,CAPABILITIES,SETTINGS,type CaseDefinition} from "./harne
 import {launch,type LaunchOptions} from "./harness/launch.ts";
 import {CONTRACT} from "./harness/contracts.ts";
 
-export const cases:CaseDefinition[]=[...coreCases,...structureCases,...generationCases];
+export const cases:CaseDefinition[]=[...coreCases,...structureCases,...generationCases,...projectCases,...editingCases,...dependencyCases,...fileCases,...refactoringCases];
 const write=(p:string,v:any)=>writeFileSync(p,JSON.stringify(v,null,2)+"\n");
 const jsonl=(p:string,rows:any[])=>writeFileSync(p,rows.map(r=>JSON.stringify(r)).join("\n")+(rows.length?"\n":""));
 function capability(c:any,key:string|undefined){return key===undefined?true:!!key.split(".").reduce((v,k)=>v?.[k],c);}
@@ -39,20 +45,26 @@ export async function main(args=process.argv.slice(2)){
   const profile=(a.profile??"product") as LaunchOptions["profile"];assert(["product","direct","pipe","custom"].includes(profile));
   assert(a.output,"--output is required (must not already exist)");const root=path.resolve(a.output);assert(!existsSync(root),"output already exists: "+root);mkdirSync(root,{recursive:true});
   const git=(...args:string[])=>{const x=spawnSync("git",args,{encoding:"utf8"});assert.equal(x.status,0,x.stderr);return x.stdout.trim();};
+  const sourceFiles=git("ls-files","--cached","--others","--exclude-standard").split("\n").filter(f=>existsSync(f));
+  const sourceInputs=()=>Object.fromEntries(sourceFiles.map(f=>[f,sha(readFileSync(f))]));
   const manifest:any={schemaVersion:1,contract:CONTRACT.schemaVersion,createdAt:new Date().toISOString(),revision:git("rev-parse","HEAD"),
-    sourceTree:git("rev-parse","HEAD^{tree}"),workingChanges:git("status","--porcelain"),
+    sourceTree:git("rev-parse","HEAD^{tree}"),sourceInputs:sourceInputs(),registry:cases.map(({run,prepare,...c})=>c),workingChanges:git("status","--porcelain"),
     plan:{caseIds:selected.map(c=>c.id),servers,blocks,warmup,samples,timeout,profile,serverOrder:"alternate per independent block",reset:"fresh fixture and server state per independent case",seed:0},
     capabilities:CAPABILITIES,settings:SETTINGS,environment:{node:process.version,platform:process.platform,arch:process.arch,cpus:os.cpus().length,memoryBytes:os.totalmem()},
     claims:{publicComparativePerformance:false,reason:blocks<10?"fewer than ten independent blocks":"requires complete valid matched results, resource scope, and uncertainty analysis"}};
   write(path.join(root,"manifest.json"),manifest);
+  write(path.join(root,"catalogue.json"),JSON.parse(readFileSync(new URL("./catalogue.json",import.meta.url),"utf8")));
   const reports:any[]=[];
   for(let block=0;block<blocks;block++)for(const def of selected)for(const server of block%2?[...servers].reverse():servers){
     const caseRoot=path.join(root,`${String(block+1).padStart(2,"0")}-${server}-${def.id.replaceAll("/","-")}`);mkdirSync(caseRoot);
-    const fixture=createFixture(path.join(caseRoot,"fixture"),def.fixture);write(path.join(caseRoot,"fixture.json"),fixture);
+    const fixture=createFixture(path.join(caseRoot,"fixture"),def.fixture,def.sourceDirectory);write(path.join(caseRoot,"fixture.json"),fixture);
     const report:any={schemaVersion:1,caseId:def.id,family:def.family,apiIds:def.apis,variant:def.variant,block:block+1,server,
-      fixtureIdentity:fixture.identity,profile:server==="jdtls"?"direct":profile,outcome:"harness_error",operations:[],assertions:[],correctnessOnly:!!def.correctnessOnly};
+      fixtureIdentity:fixture.identity,profile:server==="jdtls"?"direct":profile,outcome:"harness_error",operations:[],assertions:[],correctnessOnly:!!def.correctnessOnly,finalized:false};
+    write(path.join(caseRoot,"report.json"),report);
     let running:Awaited<ReturnType<typeof launch>>|undefined,context:ScenarioContext|undefined;
     try{
+      def.prepare?.(fixture,path.resolve(a["java-home"]??process.env.JAVA_HOME??""));
+      fixture.inputs=inventory(fixture.root);fixture.identity=sha(JSON.stringify(fixture.inputs));report.fixtureIdentity=fixture.identity;write(path.join(caseRoot,"fixture.json"),fixture);
       const customCommand=a["command-json"]?JSON.parse(readFileSync(a["command-json"],"utf8")):undefined;
       running=await launch({server,profile:server==="jdtls"&&profile!=="custom"?"direct":profile,root:fixture.root,state:path.join(caseRoot,"runtime"),
         javaHome:path.resolve(a["java-home"]??process.env.JAVA_HOME??""),image:path.resolve(a.image??"jvmd-dist/target/image"),
@@ -65,7 +77,7 @@ export async function main(args=process.argv.slice(2)){
         await def.run(context);assert(context.operations.length>0||def.correctnessOnly,"case executed no measured operation");report.outcome=context.operations.find(o=>o.outcome!=="pass")?.outcome??"pass";
       }
     }catch(error){
-      report.error=String(error);report.outcome=context?.operations.find(o=>o.outcome!=="pass")?.outcome??(context?.assertions.some(x=>!x.passed)?"incorrect":"harness_error");
+      report.error=String(error);report.outcome=context?.operations.find(o=>o.outcome!=="pass")?.outcome??(error instanceof assert.AssertionError&&context?.initializedNs?"incorrect":"harness_error");
     }finally{
       if(running){try{if(context)for(const name of Object.keys(context.fixture.files))if(context.documents.has(context.file(name).uri))context.close(name);await running.stop();}catch(error){report.shutdownError=String(error);if(report.outcome==="pass")report.outcome="protocol_error";}
         report.protocolErrors=running.client.protocolErrors;
@@ -73,31 +85,16 @@ export async function main(args=process.argv.slice(2)){
         jsonl(path.join(caseRoot,"events.jsonl"),running.client.events);jsonl(path.join(caseRoot,"exchanges.jsonl"),running.client.exchanges);
         report.spawnNs=String(running.client.spawnNs);
       }
-      if(context){report.operations=context.operations;report.seriesExpectations=context.seriesExpectations;report.assertions=context.assertions;report.serverActions=context.serverActions;
+      if(context){report.operations=context.operations;report.seriesExpectations=context.seriesExpectations;report.mutations=context.mutations;report.assertions=context.assertions;report.serverActions=context.serverActions;
         report.initializedNs=context.initializedNs;jsonl(path.join(caseRoot,"operations.jsonl"),context.operations);}
-      report.artifactDirectory=path.relative(root,caseRoot);write(path.join(caseRoot,"report.json"),report);reports.push(report);
+      for(const file of ["events.jsonl","exchanges.jsonl","operations.jsonl"])if(!existsSync(path.join(caseRoot,file)))writeFileSync(path.join(caseRoot,file),"");
+      report.finalized=true;report.artifactDirectory=path.relative(root,caseRoot);write(path.join(caseRoot,"report.json"),report);reports.push(report);
       console.log(JSON.stringify({caseId:report.caseId,server,block:block+1,outcome:report.outcome,error:report.error}));
     }
   }
-  const catalogue=JSON.parse(readFileSync(new URL("./catalogue.json",import.meta.url),"utf8"));
-  const coverage=catalogue.apis.map((api:any)=>{
-    const implemented=cases.filter(c=>c.apis.includes(api.id));const executions=reports.filter(r=>r.apiIds.includes(api.id));
-    return {apiId:api.id,method:api.method,role:api.testUse,caseIds:implemented.map(c=>c.id),
-      status:api.testUse==="Reference only"?"reference_only":implemented.length?"implemented":"not_implemented",
-      executions:executions.map(r=>({server:r.server,caseId:r.caseId,block:r.block,outcome:r.outcome})),
-      supportEvidence:executions.filter(r=>r.outcome==="unsupported").map(r=>r.supportEvidence)};
-  });
-  write(path.join(root,"coverage.json"),coverage);
-  const summary={schemaVersion:1,planned:blocks*servers.length*selected.length,executed:reports.length,
-    outcomes:Object.fromEntries(CONTRACT.outcomes.map((s:string)=>[s,reports.filter(r=>r.outcome===s).length])),
-    complete:reports.length===blocks*servers.length*selected.length&&reports.every(r=>["pass","unsupported","not_applicable"].includes(r.outcome)),
-    scope:"selected cases only; catalogue coverage and unavailable evidence remain explicit",publicComparativePerformance:false};
-  write(path.join(root,"summary.json"),summary);
+  manifest.finalSourceInputs=sourceInputs();manifest.sourceDrift=JSON.stringify(manifest.sourceInputs)!==JSON.stringify(manifest.finalSourceInputs);write(path.join(root,"manifest.json"),manifest);
   jsonl(path.join(root,"cases.jsonl"),reports.map(({operations,...r})=>r));
-  const lines=["# LSP benchmark evidence","",`Selected cases: ${summary.executed}/${summary.planned}. Public comparative performance claims: disabled.`,"",
-    "| Case | Server | Block | Outcome | Details |","|---|---|---:|---|---|",...reports.map(r=>`| ${r.caseId} | ${r.server} | ${r.block} | ${r.outcome} | ${String(r.error??r.supportEvidence?.capability??"").replaceAll("|","/").replaceAll("\n"," ")} |`),"",
-    "Each case has its own fixture, process state, raw protocol transcript, request intervals, semantic assertions and outcome. Unsupported cases are not passes. See coverage.json for unimplemented catalogue entries.",""];
-  writeFileSync(path.join(root,"report.md"),lines.join("\n"));
-  const hashes=inventory(root);writeFileSync(path.join(root,"checksums.sha256"),Object.entries(hashes).map(([p,h])=>h+"  "+p).join("\n")+"\n");
-  assert(summary.complete,"Selected benchmark cases failed; raw artifacts preserved in "+root);
+  const seal=()=>writeFileSync(path.join(root,"checksums.sha256"),Object.entries(inventory(root)).filter(([p])=>p!=="checksums.sha256").map(([p,h])=>h+"  "+p).join("\n")+"\n");
+  seal();const reduction=reduceBundle(root);writeReduction(root,reduction);seal();
+  assert(reduction.summary.complete,"Selected benchmark cases failed; raw artifacts preserved in "+root);
 }

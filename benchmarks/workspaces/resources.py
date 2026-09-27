@@ -13,7 +13,7 @@ def _process_tree(root_pid):
             try:
                 tail = stat_file.read_text().rpartition(') ')[2].split()
                 by_parent[int(tail[1])].append(int(stat_file.parent.name))
-            except (FileNotFoundError, ProcessLookupError, PermissionError, ValueError, IndexError):
+            except (FileNotFoundError, ProcessLookupError, ValueError, IndexError):
                 pass
         pending, found = [root_pid], set()
         while pending:
@@ -33,10 +33,10 @@ def _process_tree(root_pid):
             for task in Path(f'/proc/{pid}/task').glob('*/children'):
                 try:
                     children.extend(int(value) for value in task.read_text().split())
-                except (FileNotFoundError, ProcessLookupError, PermissionError, ValueError):
+                except (FileNotFoundError, ProcessLookupError, ValueError):
                     continue
             Path(f'/proc/{pid}/stat').read_text()
-        except (FileNotFoundError, ProcessLookupError, PermissionError, ValueError):
+        except (FileNotFoundError, ProcessLookupError, ValueError):
             continue
         found.add(pid); pending.extend(children)
     return found
@@ -45,7 +45,10 @@ def _process_tree(root_pid):
 def _sample(pid):
     rss = cpu = read_bytes = write_bytes = threads = 0
     processes = []
-    pids = _process_tree(pid)
+    try:
+        pids = _process_tree(pid)
+    except PermissionError:
+        pids = set()
     for child in pids:
         try:
             stat = Path(f'/proc/{child}/stat').read_text().rpartition(') ')[2].split()
@@ -219,3 +222,22 @@ def attribute_samples(events, spans, repo=None):
             'precision':'JFR timestamps parsed to microseconds; samples at boundaries may be ambiguous.',
             'allocation':'Statistical ObjectAllocationSample weights; neither exact allocation nor retained memory.',
             'total_events':dict(total),'assigned_events':dict(assigned),'groups':rows}
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="External process-family observations for either benchmark harness")
+    parser.add_argument("--pid", type=int, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--stop-file", type=Path, required=True)
+    parser.add_argument("--interval", type=float, default=.02)
+    args = parser.parse_args()
+    args.output.mkdir(parents=True, exist_ok=True)
+    monitor = ProcessMonitor(args.pid, interval=args.interval, output=args.output / "resource-samples.jsonl")
+    try:
+        while not args.stop_file.exists():
+            time.sleep(.05)
+    finally:
+        result = monitor.close()
+        result["limitations"] = "Sampled RSS and process-family CPU/I/O observations; short-lived children between samples can be missed. RSS includes shared pages and is not retained heap."
+        (args.output / "resources.json").write_text(json.dumps(result, indent=2)+"\n")

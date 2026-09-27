@@ -31,12 +31,12 @@ answers. Development pilots are not frozen, independent comparison blocks.
 
 | Gate | Current disposition | Remaining evidence |
 |---|---|---|
-| A01 | blocked | Local restoration passes; verify connector repository round trip |
+| A01 | pass | Connector-decoded repository bytes match the intact workbook SHA-256 and ZIP CRC; see `benchmarks/evidence/workbook-roundtrip.json` |
 | A02 | fail | Complete executable coverage for supported targets; no unimplemented target may be classified unsupported |
 | A03 | pass for shared admission contract; broader cases pending | Shared vectors and cross-file stale-result subprocess test |
-| A04 | pass locally | Actual runner and comparator reject injected wrong output after saving artifacts; integration workflow still to run |
+| A04 | pass for tested gates | Runner/comparator reject injected wrong output; all three CI jobs passed on c5c10fd2. New checkpoint requires fresh CI. |
 | A05 | blocked | CMP-01 variants are implemented; full supported-server execution and oracle review remain |
-| A06 | blocked | Raw histories and series plans exist; final artifact validator remains |
+| A06 | partial | Live protocol journals, immediate/settled probes, source-drift detection and artifact-only checks are implemented; complete case histories still require full execution. |
 | A07 | blocked | Retained-state regression reproduced/fixed; normal detach/disposal/restart/machine matrix remains |
 | A08 | blocked | Existing semantic proof tests pass; full benchmark mutation/ownership matrix remains |
 | A09 | blocked | Request and transition intervals exist; final causal reconstruction remains |
@@ -45,10 +45,51 @@ answers. Development pilots are not frozen, independent comparison blocks.
 | A12 | blocked | Fixture hashes and pipe source checks exist; full experiment inventories remain |
 | A13 | blocked | Product/direct/pipe profiles separated; normal product AOT acceptance unavailable locally |
 | A14 | blocked | No public comparative performance claim; independent blocks and uncertainty analysis remain |
-| A15 | blocked | Raw artifacts written; independent reducer and final validation remain |
+| A15 | partial | Artifact-only reducer reproduces tested summaries and rejects tampering/interruption/concealed failures; full native bundle reduction and final gate remain. |
 | A16 | blocked | Historical long-open evidence preserved; native causal investigation remains |
 | A17 | pass for workflow/publication method | CI push removed; branch changes are published through the GitHub connector |
 | A18 | pass for isolated retention fix | Before/after reproducer logs and 32 passing targeted production tests; later changes require fresh validation |
 
 The full specification remains the acceptance contract. This file must be updated
 with final evidence and dispositions; an intermediate draft is not task completion.
+
+## Checkpoint: 2026-09-27
+
+93 executable case definitions now map to 105 of the 106 target API entries.
+This is implementation coverage, not a statement that 105 APIs passed. Protobuf
+source generation (API-043) still needs its real prepared Gradle/protoc fixture.
+The reducer checks observed protocol methods as well as declared mappings, so a
+case declaration alone cannot establish executed coverage. Required variants and
+supported-server validation remain open.
+
+Added transactional workspace edits, deterministic binary/source JAR fixtures,
+project/build/configuration cases, refactoring and generation cases, and explicit
+file/workspace lifecycle changes. Generated-code checks now include independent
+compilation and selected runtime behaviour. Several new cases still need their
+first supported-server run.
+
+36 TypeScript tests pass. Python: 31 tests, 30 pass and one explicit process-resource
+integration skip. Maven offline build and image assembly completed. AOT runtime
+acceptance remains a separate, unproved gate. The artifact reducer is tested
+against interrupted runs, changed raw results, failed assertions, missing samples,
+and a failed immediate response followed by a successful settled retry.
+
+The first new native matrix pipe pilot passed LIFE-01–07 and LIFE-09–10 semantic
+checks. LIFE-08 failed when changed bytes at the same dependency coordinate did
+not immediately expose the new member. The pilot does not establish settling time
+or the cause, and pipe results do not prove Unix transport/scheduler/product AOT.
+The bounded pressure leg observed accessibility-cache eviction and then checked
+recovery. Process-family metrics remain unavailable in this local environment.
+
+The JDTLS generation pilot applied and compiled all six generators, but each case
+ended in a shutdown protocol failure. Other development pilots exposed oracle
+mistakes (implicit Object superclass, invocation ranges, enum wire values and
+command JSON encoding); corrected definitions need reruns. Stale responses and
+incorrect caller identities remain recorded separately from those harness errors.
+Two longer pilots were interrupted by the execution service; partial journals are
+preserved and cannot pass artifact reduction.
+
+Public comparative performance claims remain disabled. Native attribution,
+observer overhead, complete variant coverage, long Apache Maven document-open
+causality and independent final blocks are still required. This is a published
+work checkpoint, not completion of the worker specification.

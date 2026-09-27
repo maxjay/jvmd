@@ -56,18 +56,18 @@ public class Generate {
 `,
 };
 export const sha=(v:string|Buffer)=>createHash("sha256").update(v).digest("hex");
-export type Fixture={root:string;files:Record<string,{path:string;uri:string;text:string}>;identity:string;inputs:Record<string,string>};
-export function createFixture(root:string,extra:Record<string,string>={}):Fixture{
-  mkdirSync(path.join(root,"bench"),{recursive:true});mkdirSync(path.join(root,".settings"),{recursive:true});
+export type Fixture={root:string;files:Record<string,{path:string;uri:string;text:string}>;identity:string;inputs:Record<string,string>;classpath?:string[]};
+export function createFixture(root:string,extra:Record<string,string>={},sourceDirectory=""):Fixture{
+  mkdirSync(path.join(root,sourceDirectory,"bench"),{recursive:true});mkdirSync(path.join(root,".settings"),{recursive:true});
   const metadata:Record<string,string>={
     ".project":'<projectDescription><name>benchmark</name><buildSpec><buildCommand><name>org.eclipse.jdt.core.javabuilder</name><arguments/></buildCommand></buildSpec><natures><nature>org.eclipse.jdt.core.javanature</nature></natures></projectDescription>',
-    ".classpath":'<classpath><classpathentry kind="src" path=""/><classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/><classpathentry kind="output" path="bin"/></classpath>',
+    ".classpath":'<classpath><classpathentry kind="src" path="'+sourceDirectory+'"/><classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/><classpathentry kind="output" path="bin"/></classpath>',
     ".settings/org.eclipse.jdt.core.prefs":"eclipse.preferences.version=1\norg.eclipse.jdt.core.compiler.compliance=17\norg.eclipse.jdt.core.compiler.source=17\norg.eclipse.jdt.core.compiler.codegen.targetPlatform=17\n",
   };
   const files:Fixture["files"]={},inputs:Record<string,string>={};
   for(const [name,text] of Object.entries(metadata)){writeFileSync(path.join(root,name),text);inputs[name]=sha(text);}
   for(const [name,text] of Object.entries({...SOURCES,...extra})){
-    const file=path.join(root,"bench",name);writeFileSync(file,text);files[name]={path:file,uri:pathToFileURL(file).href,text};inputs["bench/"+name]=sha(text);
+    const file=path.join(root,sourceDirectory,"bench",name);writeFileSync(file,text);files[name]={path:file,uri:pathToFileURL(file).href,text};inputs[path.join(sourceDirectory,"bench",name)]=sha(text);
   }
   return {root,files,identity:sha(JSON.stringify(inputs)),inputs};
 }

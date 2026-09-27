@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    "LIFE-01",
+    "LIFE-02",
+    "LIFE-03",
+    "LIFE-04",
+    "LIFE-05",
+    "LIFE-06",
+    "LIFE-07",
+    "LIFE-08",
+    "LIFE-09",
+    "LIFE-10"
+  ],
+  "profile": "pipe",
+  "trace": true,
+  "heapMb": 256,
+  "edits": 8,
+  "seed": 0,
+  "idleMs": 5000,
+  "activeQueries": 20,
+  "filesystemCache": "uncontrolled",
+  "reset": "fresh dedicated machine store; retained only for specified transitions",
+  "repositoryInputs": {
+    "dep/library/1/library-1-sources.jar": "5562cc771da2646f1b91781dde6cfc405b375bc7313a7be35d5a0f46a080994c",
+    "dep/library/1/library-1.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+    "dep/library/1/library-1.pom": "516d13929c0cd436cb0b872f1dc2a8b34c404bd41318a3fc3ab3f831b77aff98"
+  },
+  "workspaceInputs": {
+    "Value.java": "3a5884755e8a8c4b32b4b6c45a39c06b426673cddb33264300889c307dc1706f"
+  },
+  "dependencyInputs": [
+    {
+      "pom.xml": "bf24dfd92f95b218838ef2f2768b6b3a14d36ed33d68435abf9ab0d5b41e7eb9",
+      "src/main/java/bench/Dependent.java": "c38e927d25989d929dd9830c9c38fc00879ed491b09e5cc43c16b66676804449"
+    },
+    {
+      "pom.xml": "99d126fa95440db1d0847896c1e6534f3a45ddacef971e2aedf8f78415c6694e",
+      "src/main/java/bench/Dependent.java": "c38e927d25989d929dd9830c9c38fc00879ed491b09e5cc43c16b66676804449"
+    }
+  ],
+  "claims": {
+    "publicComparativePerformance": false,
+    "unixLifecycle": false,
+    "causalZeroWork": false,
+    "reason": "scoped native counter completeness and observer overhead must be established separately"
+  }
+}

@@ -1,0 +1,248 @@
+{
+  "schemaVersion": 1,
+  "id": "LIFE-08",
+  "outcome": "incorrect",
+  "profile": "pipe",
+  "startNs": "45782264267739",
+  "operations": [
+    {
+      "mutation": "identical-new-path",
+      "triggerNs": "45782264684895",
+      "before": {
+        "dep/library/1/library-1-sources.jar": "5562cc771da2646f1b91781dde6cfc405b375bc7313a7be35d5a0f46a080994c",
+        "dep/library/1/library-1.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1.pom": "516d13929c0cd436cb0b872f1dc2a8b34c404bd41318a3fc3ab3f831b77aff98"
+      },
+      "after": {
+        "copy/same-bytes.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1-sources.jar": "5562cc771da2646f1b91781dde6cfc405b375bc7313a7be35d5a0f46a080994c",
+        "dep/library/1/library-1.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1.pom": "516d13929c0cd436cb0b872f1dc2a8b34c404bd41318a3fc3ab3f831b77aff98"
+      },
+      "changed": [
+        "copy/same-bytes.jar"
+      ]
+    },
+    {
+      "root": "/workspace/scratch/c9ab7d11d4a9/evidence/native-matrix-pipe-pilot/dependent",
+      "startNs": "45782265088912",
+      "endNs": "45782277786551",
+      "result": {
+        "isIncomplete": false,
+        "items": [
+          {
+            "label": "original() : String",
+            "kind": 2,
+            "detail": "original() : String",
+            "textEdit": {
+              "range": {
+                "start": {
+                  "line": 0,
+                  "character": 85
+                },
+                "end": {
+                  "line": 0,
+                  "character": 93
+                }
+              },
+              "newText": "original"
+            },
+            "data": {
+              "scip": "maven dep/library 1 dep/Library#original().",
+              "resolution_identity": "4150705aa2fc44278782eab3d684386255ee413081581e9174445bac4143f4ea",
+              "semantic_origin": "machine"
+            }
+          }
+        ]
+      },
+      "outcome": "pass"
+    },
+    {
+      "root": "/workspace/scratch/c9ab7d11d4a9/evidence/native-matrix-pipe-pilot/shared",
+      "startNs": "45782277809535",
+      "endNs": "45782285675476",
+      "result": {
+        "isIncomplete": false,
+        "items": [
+          {
+            "label": "original() : String",
+            "kind": 2,
+            "detail": "original() : String",
+            "textEdit": {
+              "range": {
+                "start": {
+                  "line": 0,
+                  "character": 85
+                },
+                "end": {
+                  "line": 0,
+                  "character": 93
+                }
+              },
+              "newText": "original"
+            },
+            "data": {
+              "scip": "maven dep/library 1 dep/Library#original().",
+              "resolution_identity": "4150705aa2fc44278782eab3d684386255ee413081581e9174445bac4143f4ea",
+              "semantic_origin": "machine"
+            }
+          }
+        ]
+      },
+      "outcome": "pass"
+    },
+    {
+      "mutation": "new-artifact",
+      "triggerNs": "45782309743824",
+      "before": {
+        "copy/same-bytes.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1-sources.jar": "5562cc771da2646f1b91781dde6cfc405b375bc7313a7be35d5a0f46a080994c",
+        "dep/library/1/library-1.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1.pom": "516d13929c0cd436cb0b872f1dc2a8b34c404bd41318a3fc3ab3f831b77aff98"
+      },
+      "after": {
+        "copy/same-bytes.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1-sources.jar": "5562cc771da2646f1b91781dde6cfc405b375bc7313a7be35d5a0f46a080994c",
+        "dep/library/1/library-1.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1.pom": "516d13929c0cd436cb0b872f1dc2a8b34c404bd41318a3fc3ab3f831b77aff98",
+        "other/new-bytes.jar": "6b6881ecacabc769fbac19f15205aa8d00df685236ac509348d76cf03bbbcd21"
+      },
+      "changed": [
+        "other/new-bytes.jar"
+      ]
+    },
+    {
+      "root": "/workspace/scratch/c9ab7d11d4a9/evidence/native-matrix-pipe-pilot/dependent",
+      "startNs": "45782310061152",
+      "endNs": "45782317957438",
+      "result": {
+        "isIncomplete": false,
+        "items": [
+          {
+            "label": "original() : String",
+            "kind": 2,
+            "detail": "original() : String",
+            "textEdit": {
+              "range": {
+                "start": {
+                  "line": 0,
+                  "character": 85
+                },
+                "end": {
+                  "line": 0,
+                  "character": 93
+                }
+              },
+              "newText": "original"
+            },
+            "data": {
+              "scip": "maven dep/library 1 dep/Library#original().",
+              "resolution_identity": "4150705aa2fc44278782eab3d684386255ee413081581e9174445bac4143f4ea",
+              "semantic_origin": "machine"
+            }
+          }
+        ]
+      },
+      "outcome": "pass"
+    },
+    {
+      "root": "/workspace/scratch/c9ab7d11d4a9/evidence/native-matrix-pipe-pilot/shared",
+      "startNs": "45782317992199",
+      "endNs": "45782325825733",
+      "result": {
+        "isIncomplete": false,
+        "items": [
+          {
+            "label": "original() : String",
+            "kind": 2,
+            "detail": "original() : String",
+            "textEdit": {
+              "range": {
+                "start": {
+                  "line": 0,
+                  "character": 85
+                },
+                "end": {
+                  "line": 0,
+                  "character": 93
+                }
+              },
+              "newText": "original"
+            },
+            "data": {
+              "scip": "maven dep/library 1 dep/Library#original().",
+              "resolution_identity": "4150705aa2fc44278782eab3d684386255ee413081581e9174445bac4143f4ea",
+              "semantic_origin": "machine"
+            }
+          }
+        ]
+      },
+      "outcome": "pass"
+    },
+    {
+      "mutation": "same-coordinate-bytes",
+      "triggerNs": "45782346388942",
+      "before": {
+        "copy/same-bytes.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1-sources.jar": "5562cc771da2646f1b91781dde6cfc405b375bc7313a7be35d5a0f46a080994c",
+        "dep/library/1/library-1.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1.pom": "516d13929c0cd436cb0b872f1dc2a8b34c404bd41318a3fc3ab3f831b77aff98",
+        "other/new-bytes.jar": "6b6881ecacabc769fbac19f15205aa8d00df685236ac509348d76cf03bbbcd21"
+      },
+      "after": {
+        "copy/same-bytes.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1-sources.jar": "5562cc771da2646f1b91781dde6cfc405b375bc7313a7be35d5a0f46a080994c",
+        "dep/library/1/library-1.jar": "6b6881ecacabc769fbac19f15205aa8d00df685236ac509348d76cf03bbbcd21",
+        "dep/library/1/library-1.pom": "516d13929c0cd436cb0b872f1dc2a8b34c404bd41318a3fc3ab3f831b77aff98",
+        "other/new-bytes.jar": "6b6881ecacabc769fbac19f15205aa8d00df685236ac509348d76cf03bbbcd21"
+      },
+      "changed": [
+        "dep/library/1/library-1.jar"
+      ]
+    },
+    {
+      "root": "/workspace/scratch/c9ab7d11d4a9/evidence/native-matrix-pipe-pilot/dependent",
+      "startNs": "45782346993795",
+      "endNs": "45782359089976",
+      "result": {
+        "isIncomplete": false,
+        "items": [
+          {
+            "label": "original() : String",
+            "kind": 2,
+            "detail": "original() : String",
+            "textEdit": {
+              "range": {
+                "start": {
+                  "line": 0,
+                  "character": 85
+                },
+                "end": {
+                  "line": 0,
+                  "character": 93
+                }
+              },
+              "newText": "original"
+            },
+            "data": {
+              "scip": "maven dep/library 1 dep/Library#original().",
+              "resolution_identity": "4150705aa2fc44278782eab3d684386255ee413081581e9174445bac4143f4ea",
+              "semantic_origin": "machine"
+            }
+          }
+        ]
+      },
+      "outcome": "incorrect",
+      "error": "AssertionError [ERR_ASSERTION]: required completion missing: next"
+    }
+  ],
+  "assertions": [],
+  "nativeWork": {
+    "status": "unavailable",
+    "value": null,
+    "reason": "no complete scoped counter boundary"
+  },
+  "error": "AssertionError [ERR_ASSERTION]: required completion missing: next",
+  "endNs": "45782359840335",
+  "elapsedMs": 95.572596
+}

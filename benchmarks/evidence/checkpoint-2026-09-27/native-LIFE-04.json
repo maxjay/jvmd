@@ -1,0 +1,1535 @@
+{
+  "schemaVersion": 1,
+  "id": "LIFE-04",
+  "outcome": "pass",
+  "profile": "pipe",
+  "startNs": "45781403762266",
+  "operations": [],
+  "assertions": [],
+  "nativeWork": {
+    "status": "unavailable",
+    "value": null,
+    "reason": "no complete scoped counter boundary"
+  },
+  "before": {
+    "result": {
+      "contents": {
+        "kind": "markdown",
+        "value": "~~~java\npublic int marker\n~~~"
+      },
+      "range": {
+        "start": {
+          "line": 0,
+          "character": 32
+        },
+        "end": {
+          "line": 0,
+          "character": 38
+        }
+      }
+    },
+    "state": {
+      "shared_classpath_files": {
+        "metadata_checks": 42,
+        "directory_enumerations": 2,
+        "inventory_entries": 2,
+        "entries": 5,
+        "bytes_hashed": 156881664,
+        "inventory_evictions": 0,
+        "stat_hits": 26,
+        "hashes": 5
+      },
+      "diagnostics": {
+        "initialized": false
+      },
+      "file_states": {
+        "metadata_checks": 42,
+        "directory_enumerations": 2,
+        "inventory_entries": 2,
+        "entries": 5,
+        "bytes_hashed": 156881664,
+        "inventory_evictions": 0,
+        "stat_hits": 26,
+        "hashes": 5
+      },
+      "analysis_contexts": {
+        "maintained_hits": 0,
+        "maintained_misses": 0,
+        "maintained_contexts": 0,
+        "context_constructions": 2,
+        "invalidations": 0
+      },
+      "workspace_bindings": {
+        "initialized": false
+      },
+      "documents": {
+        "generation": 2,
+        "open_documents": 1,
+        "bytes": 94,
+        "live_source_states": 1
+      },
+      "session": "s1",
+      "root": "/workspace/scratch/c9ab7d11d4a9/evidence/native-matrix-pipe-pilot/workspace",
+      "classpath_state": "unresolved",
+      "classpath_entries": 0,
+      "overlay": {},
+      "metrics": {
+        "faults": 0,
+        "methods": {
+          "session.open": {
+            "p50_ms": 1.292259,
+            "count": 2,
+            "p95_ms": 2229.679913
+          },
+          "lsp.request": {
+            "p50_ms": 21.358454,
+            "count": 5,
+            "p95_ms": 665.119201
+          },
+          "document.open": {
+            "p50_ms": 0.634838,
+            "count": 2,
+            "p95_ms": 1.575167
+          },
+          "session.status": {
+            "p50_ms": 3.805231,
+            "count": 2,
+            "p95_ms": 12.641927
+          },
+          "daemon.status": {
+            "p50_ms": 0.998886,
+            "count": 2,
+            "p95_ms": 1.357826
+          },
+          "document.close": {
+            "p50_ms": 3.036647,
+            "count": 1,
+            "p95_ms": 3.036647
+          },
+          "document.change": {
+            "p50_ms": 2.377162,
+            "count": 1,
+            "p95_ms": 2.377162
+          }
+        }
+      },
+      "annotation_processing": {
+        "initialized": false
+      },
+      "analyzer": {
+        "input_validation": {
+          "observations": 4,
+          "environment_live": {
+            "trusted": true,
+            "watch_overflows": 0,
+            "tracked_files": 3,
+            "watch_events": 0,
+            "full_reconciliations": 1,
+            "epoch": 3,
+            "verification_only": false
+          },
+          "snapshot_rebuilds": 2,
+          "validation_ns": 9281271
+        },
+        "queries": 4,
+        "batch_queries": 0,
+        "batch_files": 0,
+        "query_ms": 257.208,
+        "configure_calls": 4,
+        "configure_ms": 31.666,
+        "classpath_validations": 8,
+        "classpath_validation_ms": 0.252,
+        "release_platform_initializations": 1,
+        "release_platform_reuses": 3,
+        "recycles": 0,
+        "faults": 0,
+        "heap_growth_bytes": 38769992,
+        "heap_budget_bytes": 134217728,
+        "class_byte_hits": 0,
+        "source_list_calls": 4,
+        "class_bytes": 0,
+        "source_list_entries": 4,
+        "source_catalog_precise": 0,
+        "source_catalog_files": 0,
+        "class_byte_loads": 0,
+        "source_catalog_builds": 0,
+        "classpath_changes": 0,
+        "source_state_generation": 2,
+        "pool_statistics": "3 reused Contexts\n1 newly created Contexts\n0 polluted Contexts\n0 removed Contexts\n",
+        "persistent_snapshots": {
+          "writes": 0,
+          "queued_bytes": 0,
+          "dropped": 0,
+          "hits": 0,
+          "failures": 0,
+          "corrupt": 0,
+          "misses": 0
+        },
+        "focus_layout_cache_entries": 2,
+        "focus_layout_parses": 2,
+        "outline_cache_entries": 0,
+        "configured": true,
+        "binding_cache_entries": 1,
+        "binding_cache_hits": 0,
+        "binding_computations": 4,
+        "classpath_fingerprints": 0,
+        "diagnostic_store": {
+          "entries": 0,
+          "hits": 0,
+          "invalidation_reasons": {
+            "SOURCE_CONTENT_CHANGED": 1
+          },
+          "bytes": 0,
+          "puts": 0,
+          "budget_bytes": 16777216,
+          "evictions": 0,
+          "misses": 0,
+          "invalidations": 0
+        },
+        "diagnostic_files_analysed": 0,
+        "diagnostic_files_reused": 0,
+        "index_record_source_calls": 0,
+        "index_record_source_ms": 0,
+        "index_publish_enqueue_ms": 0,
+        "source_publisher": {
+          "queued_files": 0,
+          "queued_bytes": 0,
+          "budget_bytes": 33554432,
+          "enqueued": 0,
+          "writes": 0,
+          "coalesced": 0,
+          "skipped": 0,
+          "failures": 0,
+          "dropped": 0
+        },
+        "api_fingerprint_changes": 0,
+        "api_fingerprint_unchanged": 0,
+        "pending_api_files": 1,
+        "conditional_files": 0,
+        "dependencies": {
+          "reverse_edges": 0,
+          "stale_files": [],
+          "tracked_files": 1
+        },
+        "live_source_state": {
+          "events": 10,
+          "stale_semantic_updates": 0,
+          "watched_directories": 1,
+          "semantic_current": false,
+          "targeted_reconciliations": 0,
+          "pending_semantic_files": 1,
+          "epoch": 2,
+          "merkle": "8bb942c8fb8eb381f1c975e2c292871e5f77bb9a4d957db7e1617ff1036d16c3",
+          "uncertainty": "",
+          "verification_only": false,
+          "reconciliations": 0,
+          "overflows": 0,
+          "semantic_updates": 0,
+          "input_epoch": 2,
+          "trusted": true,
+          "files": 1
+        },
+        "resident_semantic_state": {
+          "semantic_documentation": "6aeb287ecf73574491313338c065800672e1068e96089c32a7297c6fb3f7466f",
+          "semantic_facts": 0,
+          "semantic_descriptions": 0,
+          "semantic_units": 0,
+          "semantic_root": "b205ae728dde6909d3e486ed0d2ee9a9e3aa557ae9b2cf6d115977ce1aab2dfc",
+          "semantic_api": "863bb0043faa5a857dd40f47e1fc6376c31a4ca8d9a6c90822f403203ee8358f",
+          "semantic_hierarchy_aggregates": 0,
+          "semantic_membership": "20791c19d9e325d16dcf0f7fcdbf9827c9bb33a886f838379597c16b5417dbaa",
+          "semantic_epoch": 0,
+          "semantic_stale_units": 0,
+          "semantic_fact_mutations": 0,
+          "semantic_tree_range_entries_read": 0,
+          "semantic_tree_entries": 0,
+          "semantic_stale_aggregate": "6241d1d96241d45057d641f07a2ac07d07cdeb4e2bc388d026963e764a39b17c",
+          "semantic_stale_aggregate_cardinality": 0,
+          "semantic_uncertainty_generation": 0,
+          "semantic_member_aggregates": 0,
+          "semantic_estimated_bytes": 0,
+          "semantic_namespace": "b5e4aed0521a0a36d66107097a832a41d62d7c07a5579952886d5bde9cb701c5"
+        },
+        "completion_requests": 0,
+        "resident_description_loads": 0,
+        "resident_description_cache_hits": 0,
+        "source_proof_evidence": {
+          "proof_consumers_fallback": 0,
+          "proof_consumers_recomputed": 0,
+          "proof_consumers_stopped_equal": 0,
+          "last_proof_consumers_changed": 0,
+          "proof_consumers_visited": 0,
+          "last_proof_consumers_fallback": 0,
+          "source_consumers_invalidated": 0,
+          "last_leaves_published": 0,
+          "last_coverage_failures": [],
+          "last_proof_consumers_stopped_equal": 0,
+          "last_source_consumers_invalidated": 0,
+          "last_proof_consumers_recomputed": 0,
+          "proof_consumers_changed": 0,
+          "last_coverage_file": "",
+          "last_pre_proof_dependant_invalidations": 0,
+          "transitions": 0,
+          "coverage_failures_by_file": {},
+          "last_coarse_fallback_files": 0,
+          "pre_proof_dependant_invalidations": 0,
+          "coarse_fallback_files": 0,
+          "leaves_published": 0,
+          "last_proof_consumers_visited": 0
+        },
+        "semantic_read_work": {
+          "source_semantic_repairs": 0,
+          "document_proof_checks": 0,
+          "document_proof_builds": 0,
+          "hierarchy_recoveries": 0
+        },
+        "resident_description_cache_entries": 0,
+        "resident_accessibility_cache": {
+          "evictions": 0,
+          "hits": 0,
+          "max_member_ids": 32768,
+          "member_ids": 0,
+          "entries": 0,
+          "max_entries": 16,
+          "misses": 0
+        },
+        "document_semantic_contexts": 0,
+        "semantic_proof_consumers": 0,
+        "classpath_proof_precise": true,
+        "classpath_search_proofs": 0,
+        "classpath_proof_evidence": {
+          "proof_consumers_equal": 0,
+          "last_consumers_equal": 0,
+          "proof_consumers_visited": 0,
+          "last_unavailable": 0,
+          "last_broad_context_invalidations": 0,
+          "last_reconsidered": 0,
+          "last_changed": 0,
+          "last_equal": 0,
+          "last_consumers_changed": 0,
+          "last_consumers_fallback": 0,
+          "proof_consumers_fallback": 0,
+          "search_proofs_unavailable": 0,
+          "transitions": 0,
+          "search_proofs_changed": 0,
+          "proof_consumers_changed": 0,
+          "search_proofs_equal": 0,
+          "broad_context_invalidations": 0,
+          "coarse_fallbacks": 0,
+          "validated_input_reconciliations": 0,
+          "last_consumers_visited": 0,
+          "last_intervals": [],
+          "structural_intervals": 0,
+          "search_proofs_reconsidered": 0
+        },
+        "resident_semantic_generations": {
+          "plain": {
+            "facts": 0,
+            "estimated_bytes": 0,
+            "units": 0,
+            "family": "plain"
+          }
+        },
+        "resident_semantic_generation_count": 1,
+        "resident_semantic_generation_families": 1,
+        "resident_semantic_budget_bytes": 67108864,
+        "resident_semantic_estimated_bytes": 0,
+        "resident_semantic_over_budget_bytes": 0,
+        "resident_semantic_retired_generations": 0,
+        "resident_semantic_retired_bytes": 0,
+        "compiler_retired_generations": 0,
+        "module_compilers": {
+          "plain": {
+            "input_validation": {
+              "observations": 4,
+              "environment_live": {
+                "trusted": true,
+                "watch_overflows": 0,
+                "tracked_files": 3,
+                "watch_events": 0,
+                "full_reconciliations": 1,
+                "epoch": 3,
+                "verification_only": false
+              },
+              "snapshot_rebuilds": 2,
+              "validation_ns": 9281271
+            },
+            "queries": 4,
+            "batch_queries": 0,
+            "batch_files": 0,
+            "query_ms": 257.208,
+            "configure_calls": 4,
+            "configure_ms": 31.666,
+            "classpath_validations": 8,
+            "classpath_validation_ms": 0.252,
+            "release_platform_initializations": 1,
+            "release_platform_reuses": 3,
+            "recycles": 0,
+            "faults": 0,
+            "heap_growth_bytes": 38769992,
+            "heap_budget_bytes": 134217728,
+            "class_byte_hits": 0,
+            "source_list_calls": 4,
+            "class_bytes": 0,
+            "source_list_entries": 4,
+            "source_catalog_precise": 0,
+            "source_catalog_files": 0,
+            "class_byte_loads": 0,
+            "source_catalog_builds": 0,
+            "classpath_changes": 0,
+            "source_state_generation": 2,
+            "pool_statistics": "3 reused Contexts\n1 newly created Contexts\n0 polluted Contexts\n0 removed Contexts\n"
+          }
+        }
+      },
+      "module_actors": {
+        "initialized": false
+      },
+      "runs": [],
+      "index": {
+        "artifacts": 2,
+        "edges": 2,
+        "simple_names": 1,
+        "unmatched_source_members": 0,
+        "symbols": 3,
+        "source_publisher": {
+          "queued_files": 0,
+          "queued_bytes": 0,
+          "budget_bytes": 33554432,
+          "enqueued": 0,
+          "writes": 0,
+          "coalesced": 0,
+          "skipped": 0,
+          "failures": 0,
+          "dropped": 0
+        },
+        "phase": "ready",
+        "total": 2,
+        "scanned": 2,
+        "indexed": 0,
+        "reused": 2,
+        "hashes": 0,
+        "faults": 0,
+        "warnings": [],
+        "active_artifacts": {},
+        "store": {
+          "source_cache_estimated_bytes": 0,
+          "link_passes": 0,
+          "source_file_writes": 0,
+          "metadata_writes": 0,
+          "source_record_decodes": 0,
+          "backend": "rocksdb-sst",
+          "source_cache_budget_bytes": 4194304
+        },
+        "storage": {
+          "admission_waiters": 0,
+          "previous_generation": "",
+          "generation_pins": {},
+          "workspace_state": {
+            "updates": 0,
+            "file_writes": 0,
+            "metadata_writes": 0,
+            "directory_writes": 0,
+            "last": {}
+          },
+          "native_memory": {
+            "cache_usage_bytes": 267008,
+            "cache_pinned_bytes": 263296,
+            "cache_and_memtable_budget_bytes": 67108864
+          },
+          "repository": {
+            "is_write_stopped": 0,
+            "file_sync_ms": 0,
+            "estimate_table_readers_mem": 4016,
+            "gram_posting_blocks": 0,
+            "published": 0,
+            "activation_verification_reuses": 0,
+            "cur_size_all_mem_tables": 2048,
+            "estimate_pending_compaction_bytes": 0,
+            "native_publication_verifications": 0,
+            "num_running_flushes": 0,
+            "sort_buffer_bytes": 4194304,
+            "sort_peak_bytes": 0,
+            "peak_parallel_builds": 0,
+            "sort_merge_and_sst_ms": 0,
+            "sst_ingest_ms": 0,
+            "storage_bytes": 5302,
+            "builds_in_flight": 0,
+            "record_prepare_ms": 0,
+            "actual_delayed_write_rate": 0,
+            "publication_verify_ms": 0,
+            "sort_input_records": 0,
+            "artifact_locks": 0,
+            "sort_run_records": 0,
+            "gram_occurrences": 0,
+            "verification_passes": 0,
+            "reused": 0,
+            "sort_spill_ms": 0,
+            "owner_prefix_queries": 0,
+            "sort_spill_bytes": 0,
+            "query_symbol_reads": 0,
+            "query_posting_candidates": 0,
+            "oracle_materializations": 0,
+            "num_running_compactions": 0
+          },
+          "inventory_entries": 1,
+          "validation_failures": 0,
+          "budget_bytes": 33554432,
+          "active_generation": "format-1-jdk25-jvmd-index-v9",
+          "estimated_bytes_in_flight": 0,
+          "backend": "rocksdb-sst",
+          "peak_estimated_bytes_in_flight": 9437184,
+          "budget_wait_ms": 0.02,
+          "candidate_generation": "format-1-jdk25-jvmd-index-v9",
+          "semantic_state": {
+            "updates": 0,
+            "body_only": 0,
+            "last": {},
+            "reanalyze_total": 0,
+            "api_changes": 0
+          }
+        },
+        "read_backend": "rocksdb-sst",
+        "timings": {
+          "storage_ms": 0,
+          "docs_ms": 1.106,
+          "discovery_ms": 2.618,
+          "link_ms": 0.003,
+          "workspace_resolution_calls": 0,
+          "scan_ms": 20.226,
+          "query_ms": 0,
+          "scans": 1,
+          "hash_ms": 0,
+          "query_calls": 0,
+          "workspace_resolution_ms": 0,
+          "parse_ms": 0
+        }
+      },
+      "capabilities": {
+        "mcp_tools": 14,
+        "analysis_tiers": [
+          0,
+          1,
+          2
+        ],
+        "runtime": true
+      }
+    },
+    "diskSha256": "3a5884755e8a8c4b32b4b6c45a39c06b426673cddb33264300889c307dc1706f"
+  },
+  "afterA": {
+    "result": {
+      "contents": {
+        "kind": "markdown",
+        "value": "~~~java\npublic int marker\n~~~"
+      },
+      "range": {
+        "start": {
+          "line": 0,
+          "character": 32
+        },
+        "end": {
+          "line": 0,
+          "character": 38
+        }
+      }
+    },
+    "state": {
+      "shared_classpath_files": {
+        "metadata_checks": 49,
+        "directory_enumerations": 2,
+        "inventory_entries": 2,
+        "entries": 5,
+        "bytes_hashed": 156881664,
+        "inventory_evictions": 0,
+        "stat_hits": 33,
+        "hashes": 5
+      },
+      "diagnostics": {
+        "initialized": false
+      },
+      "file_states": {
+        "metadata_checks": 49,
+        "directory_enumerations": 2,
+        "inventory_entries": 2,
+        "entries": 5,
+        "bytes_hashed": 156881664,
+        "inventory_evictions": 0,
+        "stat_hits": 33,
+        "hashes": 5
+      },
+      "analysis_contexts": {
+        "maintained_hits": 0,
+        "maintained_misses": 0,
+        "maintained_contexts": 0,
+        "context_constructions": 3,
+        "invalidations": 0
+      },
+      "workspace_bindings": {
+        "initialized": false
+      },
+      "documents": {
+        "generation": 2,
+        "open_documents": 1,
+        "bytes": 94,
+        "live_source_states": 1
+      },
+      "session": "s1",
+      "root": "/workspace/scratch/c9ab7d11d4a9/evidence/native-matrix-pipe-pilot/workspace",
+      "classpath_state": "unresolved",
+      "classpath_entries": 0,
+      "overlay": {},
+      "metrics": {
+        "faults": 0,
+        "methods": {
+          "session.open": {
+            "p50_ms": 1.292259,
+            "count": 3,
+            "p95_ms": 2229.679913
+          },
+          "lsp.request": {
+            "p50_ms": 20.136039,
+            "count": 7,
+            "p95_ms": 665.119201
+          },
+          "document.open": {
+            "p50_ms": 0.634838,
+            "count": 2,
+            "p95_ms": 1.575167
+          },
+          "session.status": {
+            "p50_ms": 6.364142,
+            "count": 3,
+            "p95_ms": 12.641927
+          },
+          "daemon.status": {
+            "p50_ms": 0.998886,
+            "count": 2,
+            "p95_ms": 1.357826
+          },
+          "document.close": {
+            "p50_ms": 3.036647,
+            "count": 1,
+            "p95_ms": 3.036647
+          },
+          "document.change": {
+            "p50_ms": 2.377162,
+            "count": 1,
+            "p95_ms": 2.377162
+          }
+        }
+      },
+      "annotation_processing": {
+        "initialized": false
+      },
+      "analyzer": {
+        "input_validation": {
+          "observations": 6,
+          "environment_live": {
+            "trusted": true,
+            "watch_overflows": 0,
+            "tracked_files": 3,
+            "watch_events": 0,
+            "full_reconciliations": 1,
+            "epoch": 3,
+            "verification_only": false
+          },
+          "snapshot_rebuilds": 2,
+          "validation_ns": 9496319
+        },
+        "queries": 6,
+        "batch_queries": 0,
+        "batch_files": 0,
+        "query_ms": 271.623,
+        "configure_calls": 6,
+        "configure_ms": 31.693,
+        "classpath_validations": 12,
+        "classpath_validation_ms": 0.269,
+        "release_platform_initializations": 1,
+        "release_platform_reuses": 5,
+        "recycles": 0,
+        "faults": 0,
+        "heap_growth_bytes": 39818568,
+        "heap_budget_bytes": 134217728,
+        "class_byte_hits": 0,
+        "source_list_calls": 6,
+        "class_bytes": 0,
+        "source_list_entries": 6,
+        "source_catalog_precise": 0,
+        "source_catalog_files": 0,
+        "class_byte_loads": 0,
+        "source_catalog_builds": 0,
+        "classpath_changes": 0,
+        "source_state_generation": 2,
+        "pool_statistics": "5 reused Contexts\n1 newly created Contexts\n0 polluted Contexts\n0 removed Contexts\n",
+        "persistent_snapshots": {
+          "writes": 0,
+          "queued_bytes": 0,
+          "dropped": 0,
+          "hits": 0,
+          "failures": 0,
+          "corrupt": 0,
+          "misses": 0
+        },
+        "focus_layout_cache_entries": 2,
+        "focus_layout_parses": 2,
+        "outline_cache_entries": 0,
+        "configured": true,
+        "binding_cache_entries": 1,
+        "binding_cache_hits": 0,
+        "binding_computations": 6,
+        "classpath_fingerprints": 0,
+        "diagnostic_store": {
+          "entries": 0,
+          "hits": 0,
+          "invalidation_reasons": {
+            "SOURCE_CONTENT_CHANGED": 1
+          },
+          "bytes": 0,
+          "puts": 0,
+          "budget_bytes": 16777216,
+          "evictions": 0,
+          "misses": 0,
+          "invalidations": 0
+        },
+        "diagnostic_files_analysed": 0,
+        "diagnostic_files_reused": 0,
+        "index_record_source_calls": 0,
+        "index_record_source_ms": 0,
+        "index_publish_enqueue_ms": 0,
+        "source_publisher": {
+          "queued_files": 0,
+          "queued_bytes": 0,
+          "budget_bytes": 33554432,
+          "enqueued": 0,
+          "writes": 0,
+          "coalesced": 0,
+          "skipped": 0,
+          "failures": 0,
+          "dropped": 0
+        },
+        "api_fingerprint_changes": 0,
+        "api_fingerprint_unchanged": 0,
+        "pending_api_files": 1,
+        "conditional_files": 0,
+        "dependencies": {
+          "reverse_edges": 0,
+          "stale_files": [],
+          "tracked_files": 1
+        },
+        "live_source_state": {
+          "events": 14,
+          "stale_semantic_updates": 0,
+          "watched_directories": 1,
+          "semantic_current": false,
+          "targeted_reconciliations": 0,
+          "pending_semantic_files": 1,
+          "epoch": 2,
+          "merkle": "8bb942c8fb8eb381f1c975e2c292871e5f77bb9a4d957db7e1617ff1036d16c3",
+          "uncertainty": "",
+          "verification_only": false,
+          "reconciliations": 0,
+          "overflows": 0,
+          "semantic_updates": 0,
+          "input_epoch": 2,
+          "trusted": true,
+          "files": 1
+        },
+        "resident_semantic_state": {
+          "semantic_documentation": "6aeb287ecf73574491313338c065800672e1068e96089c32a7297c6fb3f7466f",
+          "semantic_facts": 0,
+          "semantic_descriptions": 0,
+          "semantic_units": 0,
+          "semantic_root": "b205ae728dde6909d3e486ed0d2ee9a9e3aa557ae9b2cf6d115977ce1aab2dfc",
+          "semantic_api": "863bb0043faa5a857dd40f47e1fc6376c31a4ca8d9a6c90822f403203ee8358f",
+          "semantic_hierarchy_aggregates": 0,
+          "semantic_membership": "20791c19d9e325d16dcf0f7fcdbf9827c9bb33a886f838379597c16b5417dbaa",
+          "semantic_epoch": 0,
+          "semantic_stale_units": 0,
+          "semantic_fact_mutations": 0,
+          "semantic_tree_range_entries_read": 0,
+          "semantic_tree_entries": 0,
+          "semantic_stale_aggregate": "6241d1d96241d45057d641f07a2ac07d07cdeb4e2bc388d026963e764a39b17c",
+          "semantic_stale_aggregate_cardinality": 0,
+          "semantic_uncertainty_generation": 0,
+          "semantic_member_aggregates": 0,
+          "semantic_estimated_bytes": 0,
+          "semantic_namespace": "b5e4aed0521a0a36d66107097a832a41d62d7c07a5579952886d5bde9cb701c5"
+        },
+        "completion_requests": 0,
+        "resident_description_loads": 0,
+        "resident_description_cache_hits": 0,
+        "source_proof_evidence": {
+          "proof_consumers_fallback": 0,
+          "proof_consumers_recomputed": 0,
+          "proof_consumers_stopped_equal": 0,
+          "last_proof_consumers_changed": 0,
+          "proof_consumers_visited": 0,
+          "last_proof_consumers_fallback": 0,
+          "source_consumers_invalidated": 0,
+          "last_leaves_published": 0,
+          "last_coverage_failures": [],
+          "last_proof_consumers_stopped_equal": 0,
+          "last_source_consumers_invalidated": 0,
+          "last_proof_consumers_recomputed": 0,
+          "proof_consumers_changed": 0,
+          "last_coverage_file": "",
+          "last_pre_proof_dependant_invalidations": 0,
+          "transitions": 0,
+          "coverage_failures_by_file": {},
+          "last_coarse_fallback_files": 0,
+          "pre_proof_dependant_invalidations": 0,
+          "coarse_fallback_files": 0,
+          "leaves_published": 0,
+          "last_proof_consumers_visited": 0
+        },
+        "semantic_read_work": {
+          "source_semantic_repairs": 0,
+          "document_proof_checks": 0,
+          "document_proof_builds": 0,
+          "hierarchy_recoveries": 0
+        },
+        "resident_description_cache_entries": 0,
+        "resident_accessibility_cache": {
+          "evictions": 0,
+          "hits": 0,
+          "max_member_ids": 32768,
+          "member_ids": 0,
+          "entries": 0,
+          "max_entries": 16,
+          "misses": 0
+        },
+        "document_semantic_contexts": 0,
+        "semantic_proof_consumers": 0,
+        "classpath_proof_precise": true,
+        "classpath_search_proofs": 0,
+        "classpath_proof_evidence": {
+          "proof_consumers_equal": 0,
+          "last_consumers_equal": 0,
+          "proof_consumers_visited": 0,
+          "last_unavailable": 0,
+          "last_broad_context_invalidations": 0,
+          "last_reconsidered": 0,
+          "last_changed": 0,
+          "last_equal": 0,
+          "last_consumers_changed": 0,
+          "last_consumers_fallback": 0,
+          "proof_consumers_fallback": 0,
+          "search_proofs_unavailable": 0,
+          "transitions": 0,
+          "search_proofs_changed": 0,
+          "proof_consumers_changed": 0,
+          "search_proofs_equal": 0,
+          "broad_context_invalidations": 0,
+          "coarse_fallbacks": 0,
+          "validated_input_reconciliations": 0,
+          "last_consumers_visited": 0,
+          "last_intervals": [],
+          "structural_intervals": 0,
+          "search_proofs_reconsidered": 0
+        },
+        "resident_semantic_generations": {
+          "plain": {
+            "facts": 0,
+            "estimated_bytes": 0,
+            "units": 0,
+            "family": "plain"
+          }
+        },
+        "resident_semantic_generation_count": 1,
+        "resident_semantic_generation_families": 1,
+        "resident_semantic_budget_bytes": 67108864,
+        "resident_semantic_estimated_bytes": 0,
+        "resident_semantic_over_budget_bytes": 0,
+        "resident_semantic_retired_generations": 0,
+        "resident_semantic_retired_bytes": 0,
+        "compiler_retired_generations": 0,
+        "module_compilers": {
+          "plain": {
+            "input_validation": {
+              "observations": 6,
+              "environment_live": {
+                "trusted": true,
+                "watch_overflows": 0,
+                "tracked_files": 3,
+                "watch_events": 0,
+                "full_reconciliations": 1,
+                "epoch": 3,
+                "verification_only": false
+              },
+              "snapshot_rebuilds": 2,
+              "validation_ns": 9496319
+            },
+            "queries": 6,
+            "batch_queries": 0,
+            "batch_files": 0,
+            "query_ms": 271.623,
+            "configure_calls": 6,
+            "configure_ms": 31.693,
+            "classpath_validations": 12,
+            "classpath_validation_ms": 0.269,
+            "release_platform_initializations": 1,
+            "release_platform_reuses": 5,
+            "recycles": 0,
+            "faults": 0,
+            "heap_growth_bytes": 39818568,
+            "heap_budget_bytes": 134217728,
+            "class_byte_hits": 0,
+            "source_list_calls": 6,
+            "class_bytes": 0,
+            "source_list_entries": 6,
+            "source_catalog_precise": 0,
+            "source_catalog_files": 0,
+            "class_byte_loads": 0,
+            "source_catalog_builds": 0,
+            "classpath_changes": 0,
+            "source_state_generation": 2,
+            "pool_statistics": "5 reused Contexts\n1 newly created Contexts\n0 polluted Contexts\n0 removed Contexts\n"
+          }
+        }
+      },
+      "module_actors": {
+        "initialized": false
+      },
+      "runs": [],
+      "index": {
+        "artifacts": 2,
+        "edges": 2,
+        "simple_names": 1,
+        "unmatched_source_members": 0,
+        "symbols": 3,
+        "source_publisher": {
+          "queued_files": 0,
+          "queued_bytes": 0,
+          "budget_bytes": 33554432,
+          "enqueued": 0,
+          "writes": 0,
+          "coalesced": 0,
+          "skipped": 0,
+          "failures": 0,
+          "dropped": 0
+        },
+        "phase": "ready",
+        "total": 2,
+        "scanned": 2,
+        "indexed": 0,
+        "reused": 2,
+        "hashes": 0,
+        "faults": 0,
+        "warnings": [],
+        "active_artifacts": {},
+        "store": {
+          "source_cache_estimated_bytes": 0,
+          "link_passes": 0,
+          "source_file_writes": 0,
+          "metadata_writes": 0,
+          "source_record_decodes": 0,
+          "backend": "rocksdb-sst",
+          "source_cache_budget_bytes": 4194304
+        },
+        "storage": {
+          "admission_waiters": 0,
+          "previous_generation": "",
+          "generation_pins": {},
+          "workspace_state": {
+            "updates": 0,
+            "file_writes": 0,
+            "metadata_writes": 0,
+            "directory_writes": 0,
+            "last": {}
+          },
+          "native_memory": {
+            "cache_usage_bytes": 267008,
+            "cache_pinned_bytes": 263296,
+            "cache_and_memtable_budget_bytes": 67108864
+          },
+          "repository": {
+            "is_write_stopped": 0,
+            "file_sync_ms": 0,
+            "estimate_table_readers_mem": 4016,
+            "gram_posting_blocks": 0,
+            "published": 0,
+            "activation_verification_reuses": 0,
+            "cur_size_all_mem_tables": 2048,
+            "estimate_pending_compaction_bytes": 0,
+            "native_publication_verifications": 0,
+            "num_running_flushes": 0,
+            "sort_buffer_bytes": 4194304,
+            "sort_peak_bytes": 0,
+            "peak_parallel_builds": 0,
+            "sort_merge_and_sst_ms": 0,
+            "sst_ingest_ms": 0,
+            "storage_bytes": 5302,
+            "builds_in_flight": 0,
+            "record_prepare_ms": 0,
+            "actual_delayed_write_rate": 0,
+            "publication_verify_ms": 0,
+            "sort_input_records": 0,
+            "artifact_locks": 0,
+            "sort_run_records": 0,
+            "gram_occurrences": 0,
+            "verification_passes": 0,
+            "reused": 0,
+            "sort_spill_ms": 0,
+            "owner_prefix_queries": 0,
+            "sort_spill_bytes": 0,
+            "query_symbol_reads": 0,
+            "query_posting_candidates": 0,
+            "oracle_materializations": 0,
+            "num_running_compactions": 0
+          },
+          "inventory_entries": 1,
+          "validation_failures": 0,
+          "budget_bytes": 33554432,
+          "active_generation": "format-1-jdk25-jvmd-index-v9",
+          "estimated_bytes_in_flight": 0,
+          "backend": "rocksdb-sst",
+          "peak_estimated_bytes_in_flight": 9437184,
+          "budget_wait_ms": 0.02,
+          "candidate_generation": "format-1-jdk25-jvmd-index-v9",
+          "semantic_state": {
+            "updates": 0,
+            "body_only": 0,
+            "last": {},
+            "reanalyze_total": 0,
+            "api_changes": 0
+          }
+        },
+        "read_backend": "rocksdb-sst",
+        "timings": {
+          "storage_ms": 0,
+          "docs_ms": 1.106,
+          "discovery_ms": 2.618,
+          "link_ms": 0.003,
+          "workspace_resolution_calls": 0,
+          "scan_ms": 20.226,
+          "query_ms": 0,
+          "scans": 1,
+          "hash_ms": 0,
+          "query_calls": 0,
+          "workspace_resolution_ms": 0,
+          "parse_ms": 0
+        }
+      },
+      "capabilities": {
+        "mcp_tools": 14,
+        "analysis_tiers": [
+          0,
+          1,
+          2
+        ],
+        "runtime": true
+      }
+    },
+    "diskSha256": "3a5884755e8a8c4b32b4b6c45a39c06b426673cddb33264300889c307dc1706f"
+  },
+  "afterB": {
+    "result": {
+      "contents": {
+        "kind": "markdown",
+        "value": "~~~java\npublic int marker\n~~~"
+      },
+      "range": {
+        "start": {
+          "line": 0,
+          "character": 32
+        },
+        "end": {
+          "line": 0,
+          "character": 38
+        }
+      }
+    },
+    "state": {
+      "shared_classpath_files": {
+        "metadata_checks": 56,
+        "directory_enumerations": 2,
+        "inventory_entries": 2,
+        "entries": 5,
+        "bytes_hashed": 156881664,
+        "inventory_evictions": 0,
+        "stat_hits": 40,
+        "hashes": 5
+      },
+      "diagnostics": {
+        "initialized": false
+      },
+      "file_states": {
+        "metadata_checks": 56,
+        "directory_enumerations": 2,
+        "inventory_entries": 2,
+        "entries": 5,
+        "bytes_hashed": 156881664,
+        "inventory_evictions": 0,
+        "stat_hits": 40,
+        "hashes": 5
+      },
+      "analysis_contexts": {
+        "maintained_hits": 0,
+        "maintained_misses": 0,
+        "maintained_contexts": 0,
+        "context_constructions": 4,
+        "invalidations": 0
+      },
+      "workspace_bindings": {
+        "initialized": false
+      },
+      "documents": {
+        "generation": 2,
+        "open_documents": 1,
+        "bytes": 94,
+        "live_source_states": 1
+      },
+      "session": "s1",
+      "root": "/workspace/scratch/c9ab7d11d4a9/evidence/native-matrix-pipe-pilot/workspace",
+      "classpath_state": "unresolved",
+      "classpath_entries": 0,
+      "overlay": {},
+      "metrics": {
+        "faults": 0,
+        "methods": {
+          "session.open": {
+            "p50_ms": 1.292259,
+            "count": 3,
+            "p95_ms": 2229.679913
+          },
+          "lsp.request": {
+            "p50_ms": 18.07965,
+            "count": 8,
+            "p95_ms": 665.119201
+          },
+          "document.open": {
+            "p50_ms": 0.634838,
+            "count": 2,
+            "p95_ms": 1.575167
+          },
+          "session.status": {
+            "p50_ms": 3.805231,
+            "count": 4,
+            "p95_ms": 12.641927
+          },
+          "daemon.status": {
+            "p50_ms": 0.998886,
+            "count": 2,
+            "p95_ms": 1.357826
+          },
+          "document.close": {
+            "p50_ms": 3.036647,
+            "count": 1,
+            "p95_ms": 3.036647
+          },
+          "document.change": {
+            "p50_ms": 2.377162,
+            "count": 1,
+            "p95_ms": 2.377162
+          }
+        }
+      },
+      "annotation_processing": {
+        "initialized": false
+      },
+      "analyzer": {
+        "input_validation": {
+          "observations": 8,
+          "environment_live": {
+            "trusted": true,
+            "watch_overflows": 0,
+            "tracked_files": 3,
+            "watch_events": 0,
+            "full_reconciliations": 1,
+            "epoch": 3,
+            "verification_only": false
+          },
+          "snapshot_rebuilds": 2,
+          "validation_ns": 9735933
+        },
+        "queries": 8,
+        "batch_queries": 0,
+        "batch_files": 0,
+        "query_ms": 284.207,
+        "configure_calls": 8,
+        "configure_ms": 31.703,
+        "classpath_validations": 16,
+        "classpath_validation_ms": 0.299,
+        "release_platform_initializations": 1,
+        "release_platform_reuses": 7,
+        "recycles": 0,
+        "faults": 0,
+        "heap_growth_bytes": 40867144,
+        "heap_budget_bytes": 134217728,
+        "class_byte_hits": 0,
+        "source_list_calls": 8,
+        "class_bytes": 0,
+        "source_list_entries": 8,
+        "source_catalog_precise": 0,
+        "source_catalog_files": 0,
+        "class_byte_loads": 0,
+        "source_catalog_builds": 0,
+        "classpath_changes": 0,
+        "source_state_generation": 2,
+        "pool_statistics": "7 reused Contexts\n1 newly created Contexts\n0 polluted Contexts\n0 removed Contexts\n",
+        "persistent_snapshots": {
+          "writes": 0,
+          "queued_bytes": 0,
+          "dropped": 0,
+          "hits": 0,
+          "failures": 0,
+          "corrupt": 0,
+          "misses": 0
+        },
+        "focus_layout_cache_entries": 2,
+        "focus_layout_parses": 2,
+        "outline_cache_entries": 0,
+        "configured": true,
+        "binding_cache_entries": 1,
+        "binding_cache_hits": 0,
+        "binding_computations": 8,
+        "classpath_fingerprints": 0,
+        "diagnostic_store": {
+          "entries": 0,
+          "hits": 0,
+          "invalidation_reasons": {
+            "SOURCE_CONTENT_CHANGED": 1
+          },
+          "bytes": 0,
+          "puts": 0,
+          "budget_bytes": 16777216,
+          "evictions": 0,
+          "misses": 0,
+          "invalidations": 0
+        },
+        "diagnostic_files_analysed": 0,
+        "diagnostic_files_reused": 0,
+        "index_record_source_calls": 0,
+        "index_record_source_ms": 0,
+        "index_publish_enqueue_ms": 0,
+        "source_publisher": {
+          "queued_files": 0,
+          "queued_bytes": 0,
+          "budget_bytes": 33554432,
+          "enqueued": 0,
+          "writes": 0,
+          "coalesced": 0,
+          "skipped": 0,
+          "failures": 0,
+          "dropped": 0
+        },
+        "api_fingerprint_changes": 0,
+        "api_fingerprint_unchanged": 0,
+        "pending_api_files": 1,
+        "conditional_files": 0,
+        "dependencies": {
+          "reverse_edges": 0,
+          "stale_files": [],
+          "tracked_files": 1
+        },
+        "live_source_state": {
+          "events": 18,
+          "stale_semantic_updates": 0,
+          "watched_directories": 1,
+          "semantic_current": false,
+          "targeted_reconciliations": 0,
+          "pending_semantic_files": 1,
+          "epoch": 2,
+          "merkle": "8bb942c8fb8eb381f1c975e2c292871e5f77bb9a4d957db7e1617ff1036d16c3",
+          "uncertainty": "",
+          "verification_only": false,
+          "reconciliations": 0,
+          "overflows": 0,
+          "semantic_updates": 0,
+          "input_epoch": 2,
+          "trusted": true,
+          "files": 1
+        },
+        "resident_semantic_state": {
+          "semantic_documentation": "6aeb287ecf73574491313338c065800672e1068e96089c32a7297c6fb3f7466f",
+          "semantic_facts": 0,
+          "semantic_descriptions": 0,
+          "semantic_units": 0,
+          "semantic_root": "b205ae728dde6909d3e486ed0d2ee9a9e3aa557ae9b2cf6d115977ce1aab2dfc",
+          "semantic_api": "863bb0043faa5a857dd40f47e1fc6376c31a4ca8d9a6c90822f403203ee8358f",
+          "semantic_hierarchy_aggregates": 0,
+          "semantic_membership": "20791c19d9e325d16dcf0f7fcdbf9827c9bb33a886f838379597c16b5417dbaa",
+          "semantic_epoch": 0,
+          "semantic_stale_units": 0,
+          "semantic_fact_mutations": 0,
+          "semantic_tree_range_entries_read": 0,
+          "semantic_tree_entries": 0,
+          "semantic_stale_aggregate": "6241d1d96241d45057d641f07a2ac07d07cdeb4e2bc388d026963e764a39b17c",
+          "semantic_stale_aggregate_cardinality": 0,
+          "semantic_uncertainty_generation": 0,
+          "semantic_member_aggregates": 0,
+          "semantic_estimated_bytes": 0,
+          "semantic_namespace": "b5e4aed0521a0a36d66107097a832a41d62d7c07a5579952886d5bde9cb701c5"
+        },
+        "completion_requests": 0,
+        "resident_description_loads": 0,
+        "resident_description_cache_hits": 0,
+        "source_proof_evidence": {
+          "proof_consumers_fallback": 0,
+          "proof_consumers_recomputed": 0,
+          "proof_consumers_stopped_equal": 0,
+          "last_proof_consumers_changed": 0,
+          "proof_consumers_visited": 0,
+          "last_proof_consumers_fallback": 0,
+          "source_consumers_invalidated": 0,
+          "last_leaves_published": 0,
+          "last_coverage_failures": [],
+          "last_proof_consumers_stopped_equal": 0,
+          "last_source_consumers_invalidated": 0,
+          "last_proof_consumers_recomputed": 0,
+          "proof_consumers_changed": 0,
+          "last_coverage_file": "",
+          "last_pre_proof_dependant_invalidations": 0,
+          "transitions": 0,
+          "coverage_failures_by_file": {},
+          "last_coarse_fallback_files": 0,
+          "pre_proof_dependant_invalidations": 0,
+          "coarse_fallback_files": 0,
+          "leaves_published": 0,
+          "last_proof_consumers_visited": 0
+        },
+        "semantic_read_work": {
+          "source_semantic_repairs": 0,
+          "document_proof_checks": 0,
+          "document_proof_builds": 0,
+          "hierarchy_recoveries": 0
+        },
+        "resident_description_cache_entries": 0,
+        "resident_accessibility_cache": {
+          "evictions": 0,
+          "hits": 0,
+          "max_member_ids": 32768,
+          "member_ids": 0,
+          "entries": 0,
+          "max_entries": 16,
+          "misses": 0
+        },
+        "document_semantic_contexts": 0,
+        "semantic_proof_consumers": 0,
+        "classpath_proof_precise": true,
+        "classpath_search_proofs": 0,
+        "classpath_proof_evidence": {
+          "proof_consumers_equal": 0,
+          "last_consumers_equal": 0,
+          "proof_consumers_visited": 0,
+          "last_unavailable": 0,
+          "last_broad_context_invalidations": 0,
+          "last_reconsidered": 0,
+          "last_changed": 0,
+          "last_equal": 0,
+          "last_consumers_changed": 0,
+          "last_consumers_fallback": 0,
+          "proof_consumers_fallback": 0,
+          "search_proofs_unavailable": 0,
+          "transitions": 0,
+          "search_proofs_changed": 0,
+          "proof_consumers_changed": 0,
+          "search_proofs_equal": 0,
+          "broad_context_invalidations": 0,
+          "coarse_fallbacks": 0,
+          "validated_input_reconciliations": 0,
+          "last_consumers_visited": 0,
+          "last_intervals": [],
+          "structural_intervals": 0,
+          "search_proofs_reconsidered": 0
+        },
+        "resident_semantic_generations": {
+          "plain": {
+            "facts": 0,
+            "estimated_bytes": 0,
+            "units": 0,
+            "family": "plain"
+          }
+        },
+        "resident_semantic_generation_count": 1,
+        "resident_semantic_generation_families": 1,
+        "resident_semantic_budget_bytes": 67108864,
+        "resident_semantic_estimated_bytes": 0,
+        "resident_semantic_over_budget_bytes": 0,
+        "resident_semantic_retired_generations": 0,
+        "resident_semantic_retired_bytes": 0,
+        "compiler_retired_generations": 0,
+        "module_compilers": {
+          "plain": {
+            "input_validation": {
+              "observations": 8,
+              "environment_live": {
+                "trusted": true,
+                "watch_overflows": 0,
+                "tracked_files": 3,
+                "watch_events": 0,
+                "full_reconciliations": 1,
+                "epoch": 3,
+                "verification_only": false
+              },
+              "snapshot_rebuilds": 2,
+              "validation_ns": 9735933
+            },
+            "queries": 8,
+            "batch_queries": 0,
+            "batch_files": 0,
+            "query_ms": 284.207,
+            "configure_calls": 8,
+            "configure_ms": 31.703,
+            "classpath_validations": 16,
+            "classpath_validation_ms": 0.299,
+            "release_platform_initializations": 1,
+            "release_platform_reuses": 7,
+            "recycles": 0,
+            "faults": 0,
+            "heap_growth_bytes": 40867144,
+            "heap_budget_bytes": 134217728,
+            "class_byte_hits": 0,
+            "source_list_calls": 8,
+            "class_bytes": 0,
+            "source_list_entries": 8,
+            "source_catalog_precise": 0,
+            "source_catalog_files": 0,
+            "class_byte_loads": 0,
+            "source_catalog_builds": 0,
+            "classpath_changes": 0,
+            "source_state_generation": 2,
+            "pool_statistics": "7 reused Contexts\n1 newly created Contexts\n0 polluted Contexts\n0 removed Contexts\n"
+          }
+        }
+      },
+      "module_actors": {
+        "initialized": false
+      },
+      "runs": [],
+      "index": {
+        "artifacts": 2,
+        "edges": 2,
+        "simple_names": 1,
+        "unmatched_source_members": 0,
+        "symbols": 3,
+        "source_publisher": {
+          "queued_files": 0,
+          "queued_bytes": 0,
+          "budget_bytes": 33554432,
+          "enqueued": 0,
+          "writes": 0,
+          "coalesced": 0,
+          "skipped": 0,
+          "failures": 0,
+          "dropped": 0
+        },
+        "phase": "ready",
+        "total": 2,
+        "scanned": 2,
+        "indexed": 0,
+        "reused": 2,
+        "hashes": 0,
+        "faults": 0,
+        "warnings": [],
+        "active_artifacts": {},
+        "store": {
+          "source_cache_estimated_bytes": 0,
+          "link_passes": 0,
+          "source_file_writes": 0,
+          "metadata_writes": 0,
+          "source_record_decodes": 0,
+          "backend": "rocksdb-sst",
+          "source_cache_budget_bytes": 4194304
+        },
+        "storage": {
+          "admission_waiters": 0,
+          "previous_generation": "",
+          "generation_pins": {},
+          "workspace_state": {
+            "updates": 0,
+            "file_writes": 0,
+            "metadata_writes": 0,
+            "directory_writes": 0,
+            "last": {}
+          },
+          "native_memory": {
+            "cache_usage_bytes": 267008,
+            "cache_pinned_bytes": 263296,
+            "cache_and_memtable_budget_bytes": 67108864
+          },
+          "repository": {
+            "is_write_stopped": 0,
+            "file_sync_ms": 0,
+            "estimate_table_readers_mem": 4016,
+            "gram_posting_blocks": 0,
+            "published": 0,
+            "activation_verification_reuses": 0,
+            "cur_size_all_mem_tables": 2048,
+            "estimate_pending_compaction_bytes": 0,
+            "native_publication_verifications": 0,
+            "num_running_flushes": 0,
+            "sort_buffer_bytes": 4194304,
+            "sort_peak_bytes": 0,
+            "peak_parallel_builds": 0,
+            "sort_merge_and_sst_ms": 0,
+            "sst_ingest_ms": 0,
+            "storage_bytes": 5302,
+            "builds_in_flight": 0,
+            "record_prepare_ms": 0,
+            "actual_delayed_write_rate": 0,
+            "publication_verify_ms": 0,
+            "sort_input_records": 0,
+            "artifact_locks": 0,
+            "sort_run_records": 0,
+            "gram_occurrences": 0,
+            "verification_passes": 0,
+            "reused": 0,
+            "sort_spill_ms": 0,
+            "owner_prefix_queries": 0,
+            "sort_spill_bytes": 0,
+            "query_symbol_reads": 0,
+            "query_posting_candidates": 0,
+            "oracle_materializations": 0,
+            "num_running_compactions": 0
+          },
+          "inventory_entries": 1,
+          "validation_failures": 0,
+          "budget_bytes": 33554432,
+          "active_generation": "format-1-jdk25-jvmd-index-v9",
+          "estimated_bytes_in_flight": 0,
+          "backend": "rocksdb-sst",
+          "peak_estimated_bytes_in_flight": 9437184,
+          "budget_wait_ms": 0.02,
+          "candidate_generation": "format-1-jdk25-jvmd-index-v9",
+          "semantic_state": {
+            "updates": 0,
+            "body_only": 0,
+            "last": {},
+            "reanalyze_total": 0,
+            "api_changes": 0
+          }
+        },
+        "read_backend": "rocksdb-sst",
+        "timings": {
+          "storage_ms": 0,
+          "docs_ms": 1.106,
+          "discovery_ms": 2.618,
+          "link_ms": 0.003,
+          "workspace_resolution_calls": 0,
+          "scan_ms": 20.226,
+          "query_ms": 0,
+          "scans": 1,
+          "hash_ms": 0,
+          "query_calls": 0,
+          "workspace_resolution_ms": 0,
+          "parse_ms": 0
+        }
+      },
+      "capabilities": {
+        "mcp_tools": 14,
+        "analysis_tiers": [
+          0,
+          1,
+          2
+        ],
+        "runtime": true
+      }
+    },
+    "diskSha256": "3a5884755e8a8c4b32b4b6c45a39c06b426673cddb33264300889c307dc1706f"
+  },
+  "documentVersion": 2,
+  "endNs": "45781600340103",
+  "elapsedMs": 196.577837
+}

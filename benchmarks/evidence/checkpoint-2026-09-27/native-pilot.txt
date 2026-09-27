@@ -1,0 +1,27 @@
+{"caseId":"LIFE-01","outcome":"pass"}
+{"caseId":"LIFE-02","outcome":"pass"}
+{"caseId":"LIFE-03","outcome":"pass"}
+{"caseId":"LIFE-04","outcome":"pass"}
+{"caseId":"LIFE-05","outcome":"pass"}
+{"caseId":"LIFE-06","outcome":"pass"}
+{"caseId":"LIFE-07","outcome":"pass"}
+{"caseId":"LIFE-08","outcome":"incorrect","error":"AssertionError [ERR_ASSERTION]: required completion missing: next"}
+{"caseId":"LIFE-09","outcome":"pass"}
+{"caseId":"LIFE-10","outcome":"pass"}
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Lifecycle evidence gates remain open; all attempted states and failures preserved at /workspace/scratch/c9ab7d11d4a9/evidence/native-matrix-pipe-pilot
+    at lifecycleMatrix (file:///workspace/scratch/c9ab7d11d4a9/jvmd-benchmark/benchmarks/lsp-scenarios/harness/lifecycleMatrix.ts:103:3)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///workspace/scratch/c9ab7d11d4a9/jvmd-benchmark/benchmarks/lsp-scenarios/jvmd-machine-lifecycle.ts:704:103 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

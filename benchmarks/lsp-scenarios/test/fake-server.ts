@@ -13,7 +13,9 @@ const framing=new Framing("headers",message=>{
   if(method==="shutdown"){send({id,result:null});return;}
   if(method==="textDocument/completion"){
     completionCount++;
+    if(mode==="hang")return;
     const items=(mode==="wrong-warmup"&&completionCount===2?[]:["name","number"]).map(label=>({label,kind:2}));
+    if(mode==="delayed-provider"&&completionCount>=3)items.push({label:"next",kind:2});
     // stale-provider never returns next(), despite receipt of the provider edit.
     send({id,result:{items,isIncomplete:false}});return;
   }

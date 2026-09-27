@@ -524,7 +524,7 @@ async function main(){
   const residentIndexBefore=indexSummary(restart.machineReadyStatus);
   const repositoryBeforeSessions=inventoryRepository(repository);
   const session1=await runDefinitionSession(restart,root,"first_workspace_open",false);
-  const session2=await runDefinitionSession(restart,root,"workspace_reopen",true);
+  const session2=await runDefinitionSession(restart,root,"disposed_workspace_reopen",true);
 
   const repositoryAfterSessions=inventoryRepository(repository);
   let settledStatus=await restart.status();
@@ -585,7 +585,7 @@ async function main(){
     provenance:{
       daemon:"machine_cold → daemon_restart with persisted index → resident sessions → one-artifact incremental reconciliation on the resident daemon",
       machineIndex:{cold:"empty",restart:"persisted",resident:"persisted/current",incremental:"persisted/current + one controlled binary JAR"},
-      workspace:{session1:"first open",session2:"reopen on same resident daemon"},
+      workspace:{session1:"first open",session2:"explicitly disposed session reopened on same resident daemon"},
       localWorkspaceState:"resident in daemon; persisted-local readiness not assumed",
       machineRepository:{baseline:"unchanged",incremental:"one controlled binary JAR added after resident sessions"},
       aot:{machineCold:machineCold.aotStatus,daemonRestart:daemonRestart.aotStatus,incremental:incrementalReconcile.aotStatus},
@@ -598,6 +598,7 @@ async function main(){
   const output=path.resolve(process.env.MACHINE_REPORT_FILE??path.join(lifecycleRoot,"jvmd-machine-lifecycle.json"));
   writeFileSync(output,JSON.stringify(report,null,2)+"\n");
   const summary=markdown(report);console.log(summary);
+  assert(residentDaemon.sessions.every(s=>s.definition.correctness.first&&s.definition.correctness.warmup.every(Boolean)&&s.definition.correctness.steady.every(Boolean)),"Lifecycle query correctness failed; artifacts preserved");
   if(process.env.GITHUB_STEP_SUMMARY)writeFileSync(process.env.GITHUB_STEP_SUMMARY,summary+"\n",{flag:"a"});
 }
 
@@ -615,7 +616,7 @@ function markdown(report:any){
     "| Metric | machine cold | daemon restart | incremental reconcile | resident daemon |",
     "| --- | ---: | ---: | ---: | ---: |",
     "| Process → machine index ready | "+fmt(cold.processToMachineIndexReadyMs)+" | "+fmt(restart.processToMachineIndexReadyMs)+" | already running | already paid |",
-    "| Index reconciliation | "+fmt(cold.machineIndexReconcileMs)+" | "+fmt(restart.machineIndexReconcileMs)+" | "+fmt(incremental.machineIndexReconcileMs)+" | 0 on session attach |",
+    "| Index reconciliation | "+fmt(cold.machineIndexReconcileMs)+" | "+fmt(restart.machineIndexReconcileMs)+" | "+fmt(incremental.machineIndexReconcileMs)+" | unavailable |",
     "| Artifacts discovered / current | "+cold.index.artifactsDiscovered+" | "+restart.index.artifactsDiscovered+" | "+incremental.indexAfter.artifactsDiscovered+" | "+m.residentDaemon.repositoryAfterSessions.jarArtifacts+" |",
     "| Artifacts reused during reconcile | "+cold.index.artifactsReused+" | "+restart.index.artifactsReused+" | "+incremental.indexDelta.reused+" | - |",
     "| Artifacts hashed during reconcile | "+cold.index.artifactsHashed+" | "+restart.index.artifactsHashed+" | "+incremental.indexDelta.hashed+" | - |",
@@ -624,7 +625,7 @@ function markdown(report:any){
     "| Hash ms | "+fmt(cold.index.timings.hashMs)+" | "+fmt(restart.index.timings.hashMs)+" | "+fmt(incremental.indexDelta.hashMs)+" | - |",
     "| Parse ms | "+fmt(cold.index.timings.parseMs)+" | "+fmt(restart.index.timings.parseMs)+" | "+fmt(incremental.indexDelta.parseMs)+" | - |",
     "| Storage worker-time ms | "+fmt(cold.index.timings.storageMs)+" | "+fmt(restart.index.timings.storageMs)+" | "+fmt(incremental.indexDelta.storageMs)+" | - |",
-    "| Docs/source phase ms | "+fmt(cold.index.timings.docsMs)+" | "+fmt(restart.index.timings.docsMs)+" | "+fmt(incremental.indexDelta.docsMs)+" | 0 on session attach |",
+    "| Docs/source phase ms | "+fmt(cold.index.timings.docsMs)+" | "+fmt(restart.index.timings.docsMs)+" | "+fmt(incremental.indexDelta.docsMs)+" | unavailable |",
     "| Link ms | "+fmt(cold.index.timings.linkMs)+" | "+fmt(restart.index.timings.linkMs)+" | "+fmt(incremental.indexDelta.linkMs)+" | - |",
     "| Source/doc artifacts updated | unavailable | unavailable | unavailable | n/a |",
     "| Artifact added → next reconciliation observed (scanner cadence included) | - | - | "+fmt(incremental.artifactAddedToReadyMs)+" | - |",
@@ -700,4 +701,4 @@ function markdown(report:any){
   return lines.join("\n");
 }
 
-await main();
+if(process.argv[2]==="--matrix"){const {lifecycleMatrix}=await import("./harness/lifecycleMatrix.ts");await lifecycleMatrix(process.argv.slice(3));}else await main();

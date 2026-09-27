@@ -81,7 +81,7 @@ export async function launch(o:LaunchOptions):Promise<Launch> {
   }
   metadata.command=command;metadata.environment={JAVA_TOOL_OPTIONS:env.JAVA_TOOL_OPTIONS,XDG_CACHE_HOME:env.XDG_CACHE_HOME,JVMD_SOCKET:env.JVMD_SOCKET};metadata.javaHome=o.javaHome;metadata.trace=!!o.trace;
   writeFileSync(path.join(o.state,"launch.json"),JSON.stringify(metadata,null,2)+"\n");
-  const client=new ProtocolClient(command,{env,stderr});
+  const client=new ProtocolClient(command,{env,stderr,journalDirectory:path.dirname(o.state)});
   daemon?.on("error",e=>{client.protocolErrors.push("daemon launch: "+e.message);client.child.kill();});
   return {client,metadata,stop:async()=>{
     try{await client.shutdown();}finally{

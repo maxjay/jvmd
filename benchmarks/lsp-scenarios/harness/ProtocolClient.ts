@@ -1,4 +1,6 @@
 import {spawn,type ChildProcess} from "node:child_process";
+import {appendFileSync,mkdirSync} from "node:fs";
+import path from "node:path";
 import {EventEmitter} from "node:events";
 import {Framing,encode} from "../../../shim/src/transport.ts";
 
@@ -7,12 +9,16 @@ export type Exchange={id:number;method:string;params:any;startNs:string;endNs:st
 export class ProtocolClient {
   child:ChildProcess;
   events:any[]=[];exchanges:Exchange[]=[];notifications:any[]=[];protocolErrors:string[]=[];
+  traceContext?:Record<string,string>;
   next=0;emitter=new EventEmitter();spawnNs=now();exited:Promise<number|null>;
   private pending=new Map<number,{method:string;params:any;start:bigint;resolve:(v:Exchange)=>void;timer:ReturnType<typeof setTimeout>}>();
   private bytes=0;private ended=false;
+  private journalDirectory?:string;
   onServerRequest:(method:string,params:any)=>Promise<any>=async method=>{throw new Error("unhandled server request: "+method);};
-  constructor(command:string[],options:{cwd?:string;env?:NodeJS.ProcessEnv;stderr?:number}={}){
+  constructor(command:string[],options:{cwd?:string;env?:NodeJS.ProcessEnv;stderr?:number;journalDirectory?:string}={}){
     if(!Array.isArray(command)||!command.length)throw new Error("server command missing");
+    this.journalDirectory=options.journalDirectory;
+    if(this.journalDirectory)mkdirSync(this.journalDirectory,{recursive:true});
     this.child=spawn(command[0],command.slice(1),{cwd:options.cwd,env:options.env??process.env,stdio:["pipe","pipe",options.stderr??"inherit"]});
     this.exited=new Promise(resolve=>this.child.once("exit",code=>{this.ended=true;this.failPending("server exited: "+code);resolve(code);}));
     this.child.once("error",error=>{this.ended=true;this.protocolErrors.push(error.message);this.failPending(error.message);});
@@ -23,26 +29,28 @@ export class ProtocolClient {
   private record(direction:string,message:any,time:bigint){
     this.bytes+=JSON.stringify(message).length;
     if(this.bytes>64*1024*1024){this.protocolErrors.push("bounded protocol recording exceeded 64 MiB");this.child.kill();return;}
-    this.events.push({schemaVersion:1,sequence:this.events.length+1,clockDomain:"client",timeNs:String(time),direction,message});
+    const row={schemaVersion:1,sequence:this.events.length+1,clockDomain:"client",timeNs:String(time),direction,message};
+    this.events.push(row);this.journal("events",row);
   }
+  journal(name:string,row:any){if(this.journalDirectory)appendFileSync(path.join(this.journalDirectory,name+".jsonl"),JSON.stringify(row)+"\n");}
   notify(method:string,params:any={}):bigint {
     const message={jsonrpc:"2.0",method,params};const bytes=encode(message),t=now();
     this.child.stdin!.write(bytes);this.record("send",message,t);return t;
   }
   request(method:string,params:any={},timeoutMs=180000):Promise<Exchange>{
     if(this.ended)return Promise.reject(new Error("request after server exit"));
-    const id=++this.next,message={jsonrpc:"2.0",id,method,params},bytes=encode(message),start=now();
+    const id=++this.next,message={jsonrpc:"2.0",id,method,params,...(this.traceContext?{_jvmdTrace:this.traceContext}:{})},bytes=encode(message),start=now();
     return new Promise(resolve=>{
       const timer=setTimeout(()=>this.finish(id,undefined,{kind:"timeout",message:method+" timed out"}),timeoutMs);
       this.pending.set(id,{method,params,start,resolve,timer});
       this.child.stdin!.write(bytes);this.record("send",message,start);
     });
   }
-  private finish(id:number,result:any,error?:any){
+  private finish(id:number,result:any,error?:any,endedAt=now()){
     const p=this.pending.get(id);if(!p){this.protocolErrors.push("duplicate or unknown terminal response: "+id);return;}
     this.pending.delete(id);clearTimeout(p.timer);
-    const row:Exchange={id,method:p.method,params:p.params,startNs:String(p.start),endNs:String(now()),...(error?{error}:{result})};
-    this.exchanges.push(row);p.resolve(row);
+    const row:Exchange={id,method:p.method,params:p.params,startNs:String(p.start),endNs:String(endedAt),...(error?{error}:{result})};
+    this.exchanges.push(row);this.journal("exchanges",row);p.resolve(row);
   }
   private failPending(reason:string){for(const id of [...this.pending.keys()])this.finish(id,undefined,{kind:"protocol_error",message:reason});this.emitter.emit("notification");}
   private receive(message:any){
@@ -55,7 +63,7 @@ export class ProtocolClient {
         const reply={jsonrpc:"2.0",id:message.id,error:{code:-32601,message:String(error)}};
         this.child.stdin!.write(encode(reply));this.record("send",reply,now());
       });
-    }else if(message.id!==undefined)this.finish(message.id,message.result,message.error);
+    }else if(message.id!==undefined)this.finish(message.id,message.result,message.error,t);
     else {this.notifications.push({params:message.params,method:message.method,timeNs:String(t),sequence:this.events.length});this.emitter.emit("notification");}
   }
   async notification(method:string,predicate:(params:any)=>boolean,since=0,timeoutMs=180000):Promise<any>{

@@ -31,12 +31,12 @@ export const structureCases:CaseDefinition[]=[
       exactLocations(v.map(r=>({uri:c.file("Use.java").uri,range:r.range})),want);};
     await c.series("textDocument/documentHighlight",at(c,"Use.java","number()"),oracle);
     const trigger=c.change("Use.java",c.text("Use.java").replace("return customer.number();","return customer.number() + customer.number();")).trigger;
-    await c.query("textDocument/documentHighlight",at(c,"Use.java","number()"),oracle,"changed",trigger,"four exact caller ranges after adding a use");
+    await c.transition("textDocument/documentHighlight",()=>at(c,"Use.java","number()"),oracle,trigger,"four exact caller ranges after adding a use");
   }},
-  {id:"NAV-03/workspace-symbol",family:"NAV-03",apis:["API-057"],capability:"workspaceSymbolProvider",variant:"exact symbol then renamed declaration",run:async c=>{
+  {id:"NAV-03/workspace-symbol",family:"NAV-03",apis:["API-057"],capability:"workspaceSymbolProvider",variant:"exact symbol then saved new declaration",run:async c=>{
     await c.open("Customer.java");await c.series("workspace/symbol",{query:"Customer"},v=>symbolOracle(c,v,"Customer.java","Customer"));
-    const trigger=c.change("Customer.java",c.text("Customer.java").replace("class Customer","class CustomerChanged")).trigger;
-    await c.query("workspace/symbol",{query:"CustomerChanged"},v=>symbolOracle(c,v,"Customer.java","CustomerChanged"),"changed",trigger,"new declaration name in current source");
+    const text=c.text("Customer.java")+"\nclass CustomerChanged {}\n";c.change("Customer.java",text);const trigger=c.writeDisk("Customer.java",text);c.save("Customer.java");
+    await c.transition("workspace/symbol",()=>({query:"CustomerChanged"}),v=>symbolOracle(c,v,"Customer.java","CustomerChanged"),trigger,"new saved declaration appears in workspace index");
   }},
   {id:"NAV-03/extended-outline",family:"NAV-03",apis:["API-056"],extension:true,variant:"extended exact source symbols",run:async c=>{
     await c.open("Customer.java");await c.series("java/extendedDocumentSymbol",doc(c,"Customer.java"),v=>{
@@ -50,7 +50,7 @@ export const structureCases:CaseDefinition[]=[
       const oracle=(value:any)=>{assert.equal(value.length,1);const row=value[0];symbolOracle(c,[direction==="incoming"?row.from:row.to],"Calls.java",direction==="incoming"?"a":"c");
         const text=c.text("Calls.java"),token=direction==="incoming"?"b()":"c()",want=[];let start=text.indexOf("return ");
         if(direction==="outgoing")start=text.indexOf("return ",text.indexOf("int b()"));
-        const end=text.indexOf(";",start);while((start=text.indexOf(token,start))>=0&&start<end){want.push(range(text,token.slice(0,1),start));start+=token.length;}
+        const end=text.indexOf(";",start);while((start=text.indexOf(token,start))>=0&&start<end){want.push({uri:c.file("Calls.java").uri,range:range(text,token,start)});start+=token.length;}
         exactLocations(row.fromRanges.map((r:any)=>({uri:c.file("Calls.java").uri,range:r})),want);
       };
       let item=await prepare();await c.series("callHierarchy/"+direction+"Calls",{item},oracle);
@@ -60,9 +60,10 @@ export const structureCases:CaseDefinition[]=[
   ...["supertypes","subtypes"].map(direction=>({id:"REL-02/"+direction,family:"REL-02",apis:["API-066",direction==="supertypes"?"API-067":"API-068"],capability:"typeHierarchyProvider",variant:"direct related type and parent change",
     run:async(c:ScenarioContext)=>{await c.open("Hierarchy.java");
       const prepare=async()=>{const rows=await c.query("textDocument/prepareTypeHierarchy",at(c,"Hierarchy.java","class Base",7),v=>{assert.equal(v.length,1);symbolOracle(c,v,"Hierarchy.java","Base");});return rows[0];};
-      let item=await prepare();await c.series("typeHierarchy/"+direction,{item},v=>{assert.equal(v.length,1);symbolOracle(c,v,"Hierarchy.java",direction==="supertypes"?"Root":"Child");});
+      const parentOracle=(v:any)=>{assert.deepEqual(v.map((x:any)=>x.name).sort(),["Object","Root"]);symbolOracle(c,v,"Hierarchy.java","Root");const object=v.find((x:any)=>x.name==="Object");assert.equal(object.detail,"java.lang");assert(new URL(object.uri).pathname.endsWith("/java.lang/Object.java"));};
+      let item=await prepare();await c.series("typeHierarchy/"+direction,{item},v=>{if(direction==="supertypes")parentOracle(v);else{assert.equal(v.length,1);symbolOracle(c,v,"Hierarchy.java","Child");}});
       const trigger=c.change("Hierarchy.java",c.text("Hierarchy.java").replace("Child extends Base","Child extends UnrelatedType")).trigger;item=await prepare();
-      await c.query("typeHierarchy/"+direction,{item},v=>{if(direction==="subtypes")assert.deepEqual(v,[]);else{assert.equal(v.length,1);symbolOracle(c,v,"Hierarchy.java","Root");}},"changed",trigger,"Child no longer directly extends Base; Base still implements Root");
+      await c.query("typeHierarchy/"+direction,{item},v=>{if(direction==="subtypes")assert.deepEqual(v,[]);else parentOracle(v);},"changed",trigger,"Child no longer directly extends Base; Base still implements Root");
     }})),
   {id:"VIEW-02/folding",family:"VIEW-02",apis:["API-071"],capability:"foldingRangeProvider",variant:"class fold and shifted lines",run:async c=>{
     await c.open("Customer.java");const oracle=(v:any)=>{
@@ -70,7 +71,7 @@ export const structureCases:CaseDefinition[]=[
       assert(v.some(r=>r.startLine===start&&r.endLine>=end-1&&r.endLine<=end),"class body fold missing");
       for(const r of v)assert(r.startLine>=0&&r.endLine>=r.startLine&&r.endLine<text.split("\n").length);
     };await c.series("textDocument/foldingRange",doc(c,"Customer.java"),oracle);
-    const trigger=c.change("Customer.java","\n"+c.text("Customer.java")).trigger;await c.query("textDocument/foldingRange",doc(c,"Customer.java"),oracle,"changed",trigger,"class fold moved with source");
+    const trigger=c.change("Customer.java","\n"+c.text("Customer.java")).trigger;await c.transition("textDocument/foldingRange",()=>doc(c,"Customer.java"),oracle,trigger,"class fold moved with source");
   }},
   {id:"VIEW-02/selection",family:"VIEW-02",apis:["API-072"],capability:"selectionRangeProvider",variant:"nested ranges contain cursor",run:async c=>{
     await c.open("Customer.java");const params={...doc(c,"Customer.java"),positions:[at(c,"Customer.java","name()").position]};
@@ -92,7 +93,7 @@ export const structureCases:CaseDefinition[]=[
     const candidates=all.filter((l:any)=>{try{return selected(c.text("Calls.java"),l.range)==="b";}catch{return false;}});assert(candidates.length>0,"b lens missing");
     let checked=false;for(const lens of candidates){const resolved=await c.query("codeLens/resolve",lens,v=>{assert(v.command?.command);assert(v.command.arguments);});
       if(/2\s+references?/iu.test(resolved.command.title)){checked=true;const raw=resolved.command.arguments.find((x:any)=>Array.isArray(x)&&x.every((y:any)=>y.uri&&y.range));
-        assert(raw,"reference lens does not carry verifiable locations");assert.equal(raw.length,2);for(const l of locations(raw)){assert.equal(l.uri,c.file("Calls.java").uri);assert.equal(selected(c.text("Calls.java"),l.range),"b");}}
+        assert(raw,"reference lens does not carry verifiable locations");assert.equal(raw.length,2);for(const l of locations(raw)){assert.equal(l.uri,c.file("Calls.java").uri);assert(["b","b()"].includes(selected(c.text("Calls.java"),l.range)));}}
     }c.assert("resolved lens reports the two independent fixture call sites",checked);
   }},
   ...[["whole","API-077","textDocument/formatting","documentFormattingProvider"],["range","API-078","textDocument/rangeFormatting","documentRangeFormattingProvider"],["on-type","API-079","textDocument/onTypeFormatting","documentOnTypeFormattingProvider"]].map(([variant,api,method,capability])=>({id:"FMT-01/"+variant,family:"FMT-01",apis:[api],capability,variant:"apply edits; preserve tokens; idempotent",

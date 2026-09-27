@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "kind": "development checkpoint",
+  "performanceClaimsAllowed": false,
+  "nativeProfile": "pipe",
+  "nativeEdits": 8,
+  "nativeResults": {
+    "pass": [
+      "LIFE-01",
+      "LIFE-02",
+      "LIFE-03",
+      "LIFE-04",
+      "LIFE-05",
+      "LIFE-06",
+      "LIFE-07",
+      "LIFE-09",
+      "LIFE-10"
+    ],
+    "incorrect": [
+      "LIFE-08"
+    ]
+  },
+  "limitations": [
+    "development pilot, not frozen independent blocks",
+    "Unix socket/scheduler/AOT evidence unavailable",
+    "native source-attachment/removal legs were not reached after the first same-coordinate failure",
+    "long editing count reduced to 8 for this declared pilot; final default 128 remains to run"
+  ],
+  "files": {
+    "native-pilot.txt": "79c722e6557949b07334e35f7354ad8403c9a5805317dd2aa1245523b8c003be",
+    "native-LIFE-09.json": "10a42f0efe18070a8aa1f5baddbac15d7fbe639d1452a2431821980fb7195c89",
+    "native-LIFE-08.json": "8dee214daf7c8cbc4ee23faf8545370000be6703dab91ae603f2b77d2d2bb967",
+    "python-tests.txt": "736853e00b951401fffa05dc85ad6672d11f093d5663aef040ed29808eb631fa",
+    "typescript-tests.txt": "ebfd8702f849516f312babff2291dc5cb9209418f1375938c777ff16837e9ffa",
+    "native-manifest.json": "9d6ffdd54724f188c4e5ffa3ed644241ad2aa425077bdef18c1739ed25f5e691",
+    "native-LIFE-04.json": "eeeb41a7dafe1e68c4b4217f2e478fb8b8093abc8b11c1301bae86feeb9b24c4"
+  }
+}

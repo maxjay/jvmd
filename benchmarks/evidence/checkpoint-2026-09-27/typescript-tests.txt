@@ -1,0 +1,44 @@
+✔ shared diagnostic contract: explicit current (4.581808ms)
+✔ shared diagnostic contract: old version (0.113858ms)
+✔ shared diagnostic contract: late versionless (0.076053ms)
+✔ shared diagnostic contract: versionless server (0.073428ms)
+✔ shared diagnostic contract: other document (0.070484ms)
+✔ shared diagnostic contract: string version (0.060129ms)
+✔ shared diagnostic contract: old incarnation (0.082182ms)
+✔ shared diagnostic contract: reopen attribution absent (0.057134ms)
+✔ missing metrics are unavailable; counter resets are not zero work (0.227436ms)
+✔ inclusive spans use interval union; mixed clocks and inverted spans fail (1.992344ms)
+✔ actual comparator writes diagnostic output and exits nonzero for incorrect warmup (103.020569ms)
+✔ late versionless diagnostics cannot satisfy a new-version admission wait (0.915653ms)
+✔ versionless-only diagnostics make current-version admission unavailable (0.14927ms)
+✔ machine index summary preserves reuse and phase timings (0.854853ms)
+✔ resolver summary distinguishes cold calls from resident fast hits (0.215378ms)
+✔ definition oracle requires exact URI and declaration range (0.359852ms)
+✔ stderr timestamps cannot supply causal stage durations (0.232163ms)
+✔ aggregate and nested actor copies are never recursively added (0.260504ms)
+✔ missing and reset counters never become zero (0.111004ms)
+✔ canonical phase model preserves first use before warmup and steady (1.320101ms)
+✔ steady statistics exclude discarded warmups by construction (0.194497ms)
+✔ milestones and cold elapsed time use one monotonic timeline (0.18292ms)
+✔ artifact-only reduction reproduces the runner and rejects altered raw evidence (327.329987ms)
+✔ a successful settled retry cannot erase the incorrect immediate response (325.139947ms)
+✔ interruption retains live protocol evidence and cannot pass reduction (273.265639ms)
+✔ reducer refuses a pass that conceals a failed assertion (0.428012ms)
+✔ actual runner rejects wrong-warmup and retains raw evidence (284.643895ms)
+✔ actual runner rejects stale-provider and retains raw evidence (2389.642619ms)
+✔ actual runner rejects wrong-range and retains raw evidence (280.997367ms)
+✔ location oracle rejects wrong range even when URI agrees (2.320819ms)
+✔ UTF-16 edits reject split characters, overlaps and missing import edits (0.809606ms)
+✔ completion resolve selection rejects ambiguous overloads (0.462233ms)
+✔ reopen advances incarnation and never reuses a version (1.861611ms)
+✔ ordered create, text edit, and rename operations preserve source identity (2.743628ms)
+✔ a stale late edit rejects the whole transaction before client mutation (0.864577ms)
+✔ resource edits cannot escape the fixture or overwrite silently (0.379861ms)
+ℹ tests 36
+ℹ suites 0
+ℹ pass 36
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3153.373086

@@ -6,6 +6,7 @@ import {sha} from "./harness/fixture.ts";
 import {CONTRACT} from "./harness/contracts.ts";
 import {reduceVariants} from "./variants.ts";
 import {isRenameRejection,isInvalidRenameRequest} from "./harness/rename.ts";
+import {validateTransitionAttempts} from "./harness/transitions.ts";
 
 const read=(file:string)=>JSON.parse(readFileSync(file,"utf8"));
 const lines=(file:string)=>existsSync(file)?readFileSync(file,"utf8").split("\n").filter(Boolean).map(s=>JSON.parse(s)):[];
@@ -48,7 +49,12 @@ export function validateCase(report:any,events:any[],exchanges:any[],operations:
     if(op.outcome==="pass"){check((!op.error||expectedRejection)&&!op.assertionError,"pass conceals error");check(["verified","not_applicable"].includes(op.freshness?.status),"pass without freshness disposition");}
   }
   for(const s of report.seriesExpectations??[]){
-    if(s.kind==="transition"){check(operations.slice(s.firstOperationIndex).find(o=>o.method===s.method&&o.state!=="item_acquisition")?.state==="changed_immediate","immediate probe missing");
+    if(s.kind==="transition"){
+      if(s.attempts)issues.push(...validateTransitionAttempts(s,operations));
+      const blocked=s.firstTargetRequest==="blocked_by_preparation"&&s.attempts?.[0]?.immediate?.operationId===null
+        &&s.attempts[0].stage==="prepare_immediate"&&s.attempts[0].outcome==="failed"
+        &&s.attempts[0].immediate.preparationOperationIds.some((id:string)=>operations.some(o=>o.operationId===id&&o.outcome!=="pass"));
+      check(blocked||operations.slice(s.firstOperationIndex).find(o=>o.method===s.method&&o.state!=="item_acquisition")?.state==="changed_immediate","immediate probe missing");
       if(s.probePolicy){
         check(Number.isInteger(s.probePolicy.maxAttempts)&&s.probePolicy.maxAttempts>0,"invalid probe attempt limit");
         check(Number.isInteger(s.attemptCount)&&s.attemptCount>0&&s.attemptCount<=s.probePolicy.maxAttempts,"probe attempt count outside policy");
@@ -93,8 +99,18 @@ export function reduceBundle(root:string,verifyHashes=true){
     if(!existsSync(file)){reports.push({caseId,server,block,outcome:"not_run",reason:"planned case has no final report"});continue;}
     const report=read(file),events=lines(path.join(dir,"events.jsonl")),exchanges=lines(path.join(dir,"exchanges.jsonl")),operations=lines(path.join(dir,"operations.jsonl"));
     const caseIssues=validateCase(report,events,exchanges,operations);
+    const transitions=(report.seriesExpectations??[]).filter((s:any)=>s.kind==="transition"&&s.attempts);
+    if(transitions.length){
+      const journal=lines(path.join(dir,"transitions.jsonl"));
+      const expected=transitions.flatMap((s:any)=>s.attempts.map((attempt:any)=>({schemaVersion:1,clockDomain:"client",event:"attempt_finished",transitionId:s.transitionId,...attempt})));
+      if(JSON.stringify(journal.filter(row=>row.event==="attempt_finished"))!==JSON.stringify(expected))caseIssues.push("transition journal differs from report");
+      const starts=transitions.flatMap((s:any)=>s.attempts.map((attempt:any)=>({schemaVersion:1,clockDomain:"client",event:"attempt_started",transitionId:s.transitionId,attempt:attempt.attempt,startNs:attempt.startNs})));
+      if(JSON.stringify(journal.filter(row=>row.event==="attempt_started"))!==JSON.stringify(starts)||journal.length!==starts.length+expected.length)caseIssues.push("transition start journal differs from report");
+      if(JSON.stringify(journal)!==JSON.stringify(starts.flatMap((start:any,i:number)=>[start,expected[i]])))caseIssues.push("transition journal event order differs from report");
+    }
     if(manifest.plan.transitionPolicy)for(const series of report.seriesExpectations??[]){
       if(series.kind==="transition"&&JSON.stringify(series.probePolicy)!==JSON.stringify(manifest.plan.transitionPolicy))caseIssues.push("transition probe policy differs from predeclared plan");
+      if(series.kind==="transition"&&manifest.plan.transitionPolicy.preparationFailure&&!Array.isArray(series.attempts))caseIssues.push("declared transition attempt evidence missing");
     }
     if(report.processLifecycle){
       const lifecycle=lines(path.join(dir,"process.jsonl"));

@@ -4,7 +4,7 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 129 case definitions, 106 passing TypeScript
+Latest implementation inventory: 129 case definitions, 107 passing TypeScript
 harness tests, and 107 required variants (70 implemented, 26 partial, 11 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
@@ -711,3 +711,25 @@ by default, preserves them only as explicitly failed-inventory evidence, and
 never treats changed sealed payloads as valid. All 106 harness tests pass. The source ledger has 70
 implemented variants, 26 partial and 11 absent. These strengthened generator
 cases still require real-server replay, and no comparison claim is enabled.
+
+## Preparation failures are recorded before target requests
+
+Each transition attempt now records separate preparation and target operation
+IDs for its first and settled probes, a monotonic interval, stopping stage and
+outcome. Start/finish records are written to `transitions.jsonl` as the attempt
+runs. If fresh-item acquisition fails, the target is explicitly blocked; no
+target request, response or zero-duration sample is invented. Retry delays remain
+outside the failed attempt's interval. The predeclared policy names this rule.
+
+The reducer replays operation ownership, time order, target state and exact
+start/finish journal contents. A missing immediate target is accounted for only
+when an identified preparation operation failed. The failed operation remains
+incorrect even if a later retry and settled response succeed. Legacy artifacts
+without attempt records retain their earlier validation behaviour.
+
+A subprocess regression injects one stale preparation, then correct replies.
+It proves the case remains incorrect, no immediate expansion was sent, the retry
+and settled expansion succeed, and the records have no missing-evidence issue.
+Forged blocked-target claims, missing settled targets and rewritten journals
+fail validation. All 107 harness tests pass; the implementation inventory remains
+129 cases and 70 implemented, 26 partial and 11 absent variants.

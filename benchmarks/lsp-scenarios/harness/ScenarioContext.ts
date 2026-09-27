@@ -21,7 +21,8 @@ export const CAPABILITIES={
 };
 export const SETTINGS={java:{format:{enabled:true,onType:{enabled:true}},autobuild:{enabled:true},import:{maven:{enabled:false},gradle:{enabled:false}},signatureHelp:{enabled:true},edit:{smartSemicolonDetection:{enabled:true}},cleanup:{actions:["addOverride"]},saveActions:{organizeImports:true,cleanup:true},inlayHints:{parameterNames:{enabled:"all"}},referencesCodeLens:{enabled:true},implementationsCodeLens:{enabled:true}}};
 export const transitionPolicy=(timeoutMs:number)=>({maxAttempts:100,retryDelayMs:20,deadlineMs:timeoutMs,perRequestTimeoutMs:timeoutMs,
-  clock:"client monotonic",deadlineCheck:"after a failed attempt; in-flight requests retain their declared timeout",settledProbe:"one additional correct response after the first correct response"});
+  clock:"client monotonic",deadlineCheck:"after a failed attempt; in-flight requests retain their declared timeout",settledProbe:"one additional correct response after the first correct response",
+  preparationFailure:"record preparation operations and a blocked target; never fabricate an unsent target request"});
 export type PreparationOptions={gradleHome?:string;protoc?:string;protobufJava?:string};
 export type CaseDefinition={id:string;family:string;apis:string[];method?:string;capability?:string;variant:string;
   run:(c:ScenarioContext)=>Promise<void>;freshnessRequired?:boolean;correctnessOnly?:boolean;extension?:boolean;command?:string;fixture?:Record<string,string>;sourceDirectory?:string;
@@ -132,18 +133,34 @@ export class ScenarioContext {
   }
   async transition(method:string,params:()=>any|Promise<any>,oracle:(result:any)=>void,trigger:bigint,witness:string){
     const policy=transitionPolicy(this.timeout),deadline=now()+BigInt(policy.deadlineMs)*1000000n;let attempt=0;const transitionId="transition-"+(this.seriesExpectations.length+1);
-    const expectation={kind:"transition",transitionId,method,firstOperationIndex:this.operations.length,triggerNs:String(trigger),witness,probePolicy:policy,deadlineNs:String(deadline),attemptCount:0,termination:null as string|null,endedNs:null as string|null,settledOperationId:null as string|null};this.seriesExpectations.push(expectation);
+    const expectation={kind:"transition",transitionId,method,firstOperationIndex:this.operations.length,triggerNs:String(trigger),witness,probePolicy:policy,deadlineNs:String(deadline),attemptCount:0,attempts:[] as any[],firstTargetRequest:null as string|null,termination:null as string|null,endedNs:null as string|null,settledOperationId:null as string|null};this.seriesExpectations.push(expectation);
     for(;;){
       attempt++;expectation.attemptCount=attempt;
+      const observation:any={attempt,startNs:String(now()),endNs:null,outcome:"running",stage:"prepare_immediate"};expectation.attempts.push(observation);
+      this.client.journal("transitions",{schemaVersion:1,clockDomain:"client",event:"attempt_started",transitionId,attempt,startNs:observation.startNs});
+      const invoke=async(phase:"immediate"|"settled",state:string)=>{
+        const step:any={preparationOperationIds:[],operationId:null};observation[phase]=step;observation.stage="prepare_"+phase;
+        const preparationStart=this.operations.length;let requestParams:any;
+        try{requestParams=await params();}finally{step.preparationOperationIds=this.operations.slice(preparationStart).map(o=>o.operationId);}
+        observation.stage="query_"+phase;const targetIndex=this.operations.length;
+        try{return await this.query(method,requestParams,oracle,state,trigger,witness);}
+        finally{step.operationId=this.operations[targetIndex]?.operationId??null;}
+      };
       try{
-        await this.query(method,await params(),oracle,attempt===1?"changed_immediate":"changed_retry_"+attempt,trigger,witness);
+        await invoke("immediate",attempt===1?"changed_immediate":"changed_retry_"+attempt);
         // A successful immediate response is retained separately from the settled probe.
-        const result=await this.query(method,await params(),oracle,"changed_settled",trigger,witness);
-        expectation.settledOperationId=this.operations.at(-1).operationId;expectation.termination="settled";expectation.endedNs=String(now());return result;
+        const result=await invoke("settled","changed_settled");observation.outcome="pass";observation.stage="complete";observation.endNs=String(now());
+        expectation.settledOperationId=this.operations.at(-1).operationId;expectation.termination="settled";expectation.endedNs=observation.endNs;return result;
       }
       catch(error){
+        observation.outcome="failed";observation.error=String(error);observation.endNs=String(now());
         if(now()>=deadline||attempt>=policy.maxAttempts){expectation.termination=now()>=deadline?"deadline":"attempt_limit";expectation.endedNs=String(now());throw error;}
         await new Promise(resolve=>setTimeout(resolve,policy.retryDelayMs));
+      }
+      finally{
+        observation.endNs??=String(now());
+        if(attempt===1)expectation.firstTargetRequest=observation.immediate?.operationId?"sent":observation.stage==="prepare_immediate"?"blocked_by_preparation":"blocked_before_request";
+        this.client.journal("transitions",{schemaVersion:1,clockDomain:"client",event:"attempt_finished",transitionId,...observation});
       }
     }
   }

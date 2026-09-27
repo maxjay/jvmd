@@ -1,7 +1,7 @@
 /** Deliberately wrong LSP peer for subprocess gate tests. Never used for performance. */
 import {Framing,encode} from "../../../shim/src/transport.ts";
 const send=(v:any)=>process.stdout.write(encode({jsonrpc:"2.0",...v}));
-const documents=new Map<string,string>();let completionCount=0;
+const documents=new Map<string,string>();let completionCount=0,delayedTypePreparation=false;
 const originalDocuments=new Map<string,string>();
 const pos=(text:string,at:number)=>{const prefix=text.slice(0,at);return {line:prefix.split("\n").length-1,character:at-prefix.lastIndexOf("\n")-1};};
 const span=(text:string,at:number,length:number)=>({start:pos(text,at),end:pos(text,at+length)});
@@ -46,7 +46,8 @@ const framing=new Framing("headers",message=>{
   }
   if(method==="textDocument/prepareTypeHierarchy"||method.startsWith("typeHierarchy/")){
     const uri=[...documents.keys()].find(uri=>uri.endsWith("/Hierarchy.java"))!,current=documents.get(uri)!;
-    const source=mode==="stale-type-hierarchy"&&method!=="textDocument/prepareTypeHierarchy"?originalDocuments.get(uri)!:current;
+    let source=mode==="stale-type-hierarchy"&&method!=="textDocument/prepareTypeHierarchy"?originalDocuments.get(uri)!:current;
+    if(mode==="delayed-type-preparation"&&method==="textDocument/prepareTypeHierarchy"&&current!==originalDocuments.get(uri)&&!delayedTypePreparation){source=originalDocuments.get(uri)!;delayedTypePreparation=true;}
     const item=(name:string)=>{const start=source.indexOf("class "+name),end=source.indexOf("\n",start);return {name,kind:5,uri,range:span(source,start,end-start),selectionRange:span(source,start+6,name.length),data:{token:"issued-"+id}};};
     if(method==="textDocument/prepareTypeHierarchy"){const line=current.split("\n")[params.position.line];send({id,result:[item(line.includes("class Child")?"Child":"Base")]});return;}
     const parent=source.includes("Child extends Base")?"Base":"UnrelatedType";

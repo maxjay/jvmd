@@ -1,0 +1,586 @@
+{
+  "schemaVersion": 1,
+  "scope": "Raw protocol review subset; not complete experiment bundle or comparative performance evidence",
+  "revision": "354a97ce37958700b15a0a7e2c10f58e8becc100",
+  "archive": {
+    "file": "protocol-review.tar.xz",
+    "bytes": 126148,
+    "sha256": "4ce3b694c924e3927483d15eefc057c72d9eb375ff7e4f1676caf50cdc1b0a3a",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "verified",
+    "unsealedFiles": {},
+    "members": 63
+  },
+  "plan": {
+    "caseIds": [
+      "NAV-02/references-false-add",
+      "REL-02/supertypes",
+      "REL-02/legacy-both-parent-change"
+    ],
+    "servers": [
+      "jvmd",
+      "jdtls"
+    ],
+    "blocks": 1,
+    "warmup": 1,
+    "samples": 2,
+    "timeout": 30000,
+    "transitionPolicy": {
+      "maxAttempts": 100,
+      "retryDelayMs": 20,
+      "deadlineMs": 30000,
+      "perRequestTimeoutMs": 30000,
+      "clock": "client monotonic",
+      "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+      "settledProbe": "one additional correct response after the first correct response",
+      "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+    },
+    "profile": "pipe",
+    "serverOrder": "alternate per independent block",
+    "reset": "fresh fixture and server state per independent case",
+    "seed": 0
+  },
+  "sourceDrift": false,
+  "integrityIssues": [],
+  "sourceManifestSha256": "9bc72574461e6e33a662628e3e67bfa4f75531f556cc903779aed7a910f9265d",
+  "originalChecksumInventorySha256": "bc872a3fe550ad96bcc4a390e9365d2d924093df1b4fb4e6e1a6dedbbf48cede",
+  "outcomes": {
+    "pass": 2,
+    "incorrect": 2,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 0,
+    "harness_error": 0,
+    "unsupported": 2,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "cases": [
+    {
+      "server": "jdtls",
+      "caseId": "NAV-02/references-false-add",
+      "profile": "direct",
+      "outcome": "pass",
+      "error": null,
+      "shutdownError": null,
+      "operationOutcomes": {
+        "pass": 3,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "transitions": [
+        {
+          "kind": "transition",
+          "transitionId": "transition-1",
+          "method": "textDocument/references",
+          "firstOperationIndex": 1,
+          "triggerNs": "4536827435583",
+          "witness": "add one exact caller range; unrelated number declaration excluded",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response",
+            "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+          },
+          "deadlineNs": "4566827691055",
+          "attemptCount": 1,
+          "attempts": [
+            {
+              "attempt": 1,
+              "startNs": "4536827713205",
+              "endNs": "4536923320571",
+              "outcome": "pass",
+              "stage": "complete",
+              "immediate": {
+                "preparationOperationIds": [],
+                "operationId": "op-2"
+              },
+              "settled": {
+                "preparationOperationIds": [],
+                "operationId": "op-3"
+              }
+            }
+          ],
+          "firstTargetRequest": "sent",
+          "termination": "settled",
+          "endedNs": "4536923320571",
+          "settledOperationId": "op-3"
+        }
+      ]
+    },
+    {
+      "server": "jdtls",
+      "caseId": "REL-02/legacy-both-parent-change",
+      "profile": "direct",
+      "outcome": "incorrect",
+      "error": null,
+      "shutdownError": null,
+      "operationOutcomes": {
+        "pass": 6,
+        "incorrect": 2,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "transitions": [
+        {
+          "kind": "transition",
+          "transitionId": "transition-1",
+          "method": "workspace/executeCommand",
+          "firstOperationIndex": 2,
+          "triggerNs": "4619413188299",
+          "witness": "Child now extends UnrelatedType and is absent below Base; fresh raw legacy item on every attempt",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response",
+            "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+          },
+          "deadlineNs": "4649413403856",
+          "attemptCount": 3,
+          "attempts": [
+            {
+              "attempt": 1,
+              "startNs": "4619413433699",
+              "endNs": "4619424192529",
+              "outcome": "failed",
+              "stage": "prepare_immediate",
+              "immediate": {
+                "preparationOperationIds": [
+                  "op-3"
+                ],
+                "operationId": null
+              },
+              "error": "AssertionError [ERR_ASSERTION]: workspace/executeCommand: AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 31,\n-     character: 40,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"
+            },
+            {
+              "attempt": 2,
+              "startNs": "4619444436264",
+              "endNs": "4619451724730",
+              "outcome": "failed",
+              "stage": "prepare_immediate",
+              "immediate": {
+                "preparationOperationIds": [
+                  "op-4"
+                ],
+                "operationId": null
+              },
+              "error": "AssertionError [ERR_ASSERTION]: workspace/executeCommand: AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 31,\n-     character: 40,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"
+            },
+            {
+              "attempt": 3,
+              "startNs": "4619471904946",
+              "endNs": "4619584855318",
+              "outcome": "pass",
+              "stage": "complete",
+              "immediate": {
+                "preparationOperationIds": [
+                  "op-5"
+                ],
+                "operationId": "op-6"
+              },
+              "settled": {
+                "preparationOperationIds": [
+                  "op-7"
+                ],
+                "operationId": "op-8"
+              }
+            }
+          ],
+          "firstTargetRequest": "blocked_by_preparation",
+          "termination": "settled",
+          "endedNs": "4619584855318",
+          "settledOperationId": "op-8"
+        }
+      ]
+    },
+    {
+      "server": "jdtls",
+      "caseId": "REL-02/supertypes",
+      "profile": "direct",
+      "outcome": "incorrect",
+      "error": null,
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}",
+      "operationOutcomes": {
+        "pass": 12,
+        "incorrect": 16,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "transitions": [
+        {
+          "kind": "transition",
+          "transitionId": "transition-3",
+          "method": "typeHierarchy/supertypes",
+          "firstOperationIndex": 8,
+          "triggerNs": "4546949986264",
+          "witness": "Child has a different direct parent and no longer appears under Base; fresh item for every expansion",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response",
+            "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+          },
+          "deadlineNs": "4576950049517",
+          "attemptCount": 17,
+          "attempts": [
+            {
+              "attempt": 1,
+              "startNs": "4546950063909",
+              "endNs": "4546978242273",
+              "outcome": "failed",
+              "stage": "prepare_immediate",
+              "immediate": {
+                "preparationOperationIds": [
+                  "op-9"
+                ],
+                "operationId": null
+              },
+              "error": "AssertionError [ERR_ASSERTION]: textDocument/prepareTypeHierarchy: AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"
+            },
+            {
+              "attempt": 2,
+              "startNs": "4546998552925",
+              "endNs": "4547005456735",
+              "outcome": "failed",
+              "stage": "prepare_immediate",
+              "immediate": {
+                "preparationOperationIds": [
+                  "op-10"
+                ],
+                "operationId": null
+              },
+              "error": "AssertionError [ERR_ASSERTION]: textDocument/prepareTypeHierarchy: AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"
+            },
+            {
+              "attempt": 3,
+              "startNs": "4547025721418",
+              "endNs": "4547030741515",
+              "outcome": "failed",
+              "stage": "prepare_immediate",
+              "immediate": {
+                "preparationOperationIds": [
+                  "op-11"
+                ],
+                "operationId": null
+              },
+              "error": "AssertionError [ERR_ASSERTION]: textDocument/prepareTypeHierarchy: AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"
+            },
+            {
+              "attempt": 4,
+              "startNs": "4547051095713",
+              "endNs": "4547057834482",
+              "outcome": "failed",
+              "stage": "prepare_immediate",
+              "immediate": {
+                "preparationOperationIds": [
+                  "op-12"
+                ],
+                "operationId": null
+              },
+              "error": "AssertionError [ERR_ASSERTION]: textDocument/prepareTypeHierarchy: AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"
+            },
+            {
+              "attempt": 5,
+              "startNs": "4547077737238",
+              "endNs": "4547084579584",
+              "outcome": "failed",
+              "stage": "prepare_immediate",
+              "immediate": {
+                "preparationOperationIds": [
+                  "op-13"
+                ],
+                "operationId": null
+              },
+              "error": "AssertionError [ERR_ASSERTION]: textDocument/prepareTypeHierarchy: AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"
+            },
+            {
+              "attempt": 6,
+              "startNs": "4547104882657",
+              "endNs": "4547110125825",
+              "outcome": "failed",
+              "stage": "prepare_immediate",
+              "immediate": {
+                "preparationOperationIds": [
+                  "op-14"
+                ],
+                "operationId": null
+              },
+              "error": "AssertionError [ERR_ASSERTION]: textDocument/prepareTypeHierarchy: AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"
+            },
+            {
+              "attempt": 7,
+              "startNs": "4547130410476",
+              "endNs": "4547135282583",
+              "outcome": "failed",
+              "stage": "prepare_immediate",
+              "immediate": {
+                "preparationOperationIds": [
+                  "op-15"
+                ],
+                "operationId": null
+              },
+              "error": "AssertionError [ERR_ASSERTION]: textDocument/prepareTypeHierarchy: AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"
+            },
+            {
+              "attempt": 8,
+              "startNs": "4547155533392",
+              "endNs": "4547160317065",
+              "outcome": "failed",
+              "stage": "prepare_immediate",
+              "immediate": {
+                "preparationOperationIds": [
+                  "op-16"
+                ],
+                "operationId": null
+              },
+              "error": "AssertionError [ERR_ASSERTION]: textDocument/prepareTypeHierarchy: AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"
+            },
+            {
+              "attempt": 9,
+              "startNs": "4547180562865",
+              "endNs": "4547185194547",
+              "outcome": "failed",
+              "stage": "prepare_immediate",
+              "immediate": {
+                "preparationOperationIds": [
+                  "op-17"
+                ],
+                "operationId": null
+              },
+              "error": "AssertionError [ERR_ASSERTION]: textDocument/prepareTypeHierarchy: AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"
+            },
+            {
+              "attempt": 10,
+              "startNs": "4547205620099",
+              "endNs": "4547210174544",
+              "outcome": "failed",
+              "stage": "prepare_immediate",
+              "immediate": {
+                "preparationOperationIds": [
+                  "op-18"
+                ],
+                "operationId": null
+              },
+              "error": "AssertionError [ERR_ASSERTION]: textDocument/prepareTypeHierarchy: AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"
+            },
+            {
+              "attempt": 11,
+              "startNs": "4547230422168",
+              "endNs": "4547234762279",
+              "outcome": "failed",
+              "stage": "prepare_immediate",
+              "immediate": {
+                "preparationOperationIds": [
+                  "op-19"
+                ],
+                "operationId": null
+              },
+              "error": "AssertionError [ERR_ASSERTION]: textDocument/prepareTypeHierarchy: AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"
+            },
+            {
+              "attempt": 12,
+              "startNs": "4547255025637",
+              "endNs": "4547259792692",
+              "outcome": "failed",
+              "stage": "prepare_immediate",
+              "immediate": {
+                "preparationOperationIds": [
+                  "op-20"
+                ],
+                "operationId": null
+              },
+              "error": "AssertionError [ERR_ASSERTION]: textDocument/prepareTypeHierarchy: AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"
+            },
+            {
+              "attempt": 13,
+              "startNs": "4547279851555",
+              "endNs": "4547287993890",
+              "outcome": "failed",
+              "stage": "prepare_immediate",
+              "immediate": {
+                "preparationOperationIds": [
+                  "op-21"
+                ],
+                "operationId": null
+              },
+              "error": "AssertionError [ERR_ASSERTION]: textDocument/prepareTypeHierarchy: AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"
+            },
+            {
+              "attempt": 14,
+              "startNs": "4547308274597",
+              "endNs": "4547312751980",
+              "outcome": "failed",
+              "stage": "prepare_immediate",
+              "immediate": {
+                "preparationOperationIds": [
+                  "op-22"
+                ],
+                "operationId": null
+              },
+              "error": "AssertionError [ERR_ASSERTION]: textDocument/prepareTypeHierarchy: AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"
+            },
+            {
+              "attempt": 15,
+              "startNs": "4547333007553",
+              "endNs": "4547337889157",
+              "outcome": "failed",
+              "stage": "prepare_immediate",
+              "immediate": {
+                "preparationOperationIds": [
+                  "op-23"
+                ],
+                "operationId": null
+              },
+              "error": "AssertionError [ERR_ASSERTION]: textDocument/prepareTypeHierarchy: AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"
+            },
+            {
+              "attempt": 16,
+              "startNs": "4547358110794",
+              "endNs": "4547365295635",
+              "outcome": "failed",
+              "stage": "prepare_immediate",
+              "immediate": {
+                "preparationOperationIds": [
+                  "op-24"
+                ],
+                "operationId": null
+              },
+              "error": "AssertionError [ERR_ASSERTION]: textDocument/prepareTypeHierarchy: AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"
+            },
+            {
+              "attempt": 17,
+              "startNs": "4547385546168",
+              "endNs": "4547410660195",
+              "outcome": "pass",
+              "stage": "complete",
+              "immediate": {
+                "preparationOperationIds": [
+                  "op-25"
+                ],
+                "operationId": "op-26"
+              },
+              "settled": {
+                "preparationOperationIds": [
+                  "op-27"
+                ],
+                "operationId": "op-28"
+              }
+            }
+          ],
+          "firstTargetRequest": "blocked_by_preparation",
+          "termination": "settled",
+          "endedNs": "4547410660195",
+          "settledOperationId": "op-28"
+        }
+      ]
+    },
+    {
+      "server": "jvmd",
+      "caseId": "NAV-02/references-false-add",
+      "profile": "pipe",
+      "outcome": "pass",
+      "error": null,
+      "shutdownError": null,
+      "operationOutcomes": {
+        "pass": 3,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "transitions": [
+        {
+          "kind": "transition",
+          "transitionId": "transition-1",
+          "method": "textDocument/references",
+          "firstOperationIndex": 1,
+          "triggerNs": "4515440501303",
+          "witness": "add one exact caller range; unrelated number declaration excluded",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response",
+            "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+          },
+          "deadlineNs": "4545440886294",
+          "attemptCount": 1,
+          "attempts": [
+            {
+              "attempt": 1,
+              "startNs": "4515440916671",
+              "endNs": "4515608429439",
+              "outcome": "pass",
+              "stage": "complete",
+              "immediate": {
+                "preparationOperationIds": [],
+                "operationId": "op-2"
+              },
+              "settled": {
+                "preparationOperationIds": [],
+                "operationId": "op-3"
+              }
+            }
+          ],
+          "firstTargetRequest": "sent",
+          "termination": "settled",
+          "endedNs": "4515608429439",
+          "settledOperationId": "op-3"
+        }
+      ]
+    },
+    {
+      "server": "jvmd",
+      "caseId": "REL-02/legacy-both-parent-change",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "transitions": []
+    },
+    {
+      "server": "jvmd",
+      "caseId": "REL-02/supertypes",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "transitions": []
+    }
+  ],
+  "interpretation": [
+    "Both JVMD and JDTLS pass independent reference addition with an immediate target request and settled confirmation in one attempt.",
+    "JDTLS modern supertype and legacy parent-change transitions block the initial expansion because fresh-item preparation is stale. They settle on attempts 17 and 3, respectively, while retaining incorrect outcomes.",
+    "Original acquisition and expansion identities, times and started/finished attempt journals validate without integrity issues or source drift. No immediate expansion is fabricated.",
+    "The modern JDTLS supertype case additionally retains nonzero shutdown without a harness kill. JVMD declares both hierarchy routes unsupported.",
+    "All original bundle hashes and inventory membership verify at packaging. This is one diagnostic block, not comparative performance evidence."
+  ]
+}

@@ -1,0 +1,29 @@
+{"caseId":"GEN-01/overrides","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"GEN-01/overrides","server":"jdtls","block":1,"outcome":"protocol_error"}
+{"caseId":"GEN-01/equals-hashCode","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"GEN-01/equals-hashCode","server":"jdtls","block":1,"outcome":"protocol_error"}
+{"caseId":"GEN-01/toString","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"GEN-01/toString","server":"jdtls","block":1,"outcome":"incorrect"}
+{"caseId":"GEN-01/accessors","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"GEN-01/accessors","server":"jdtls","block":1,"outcome":"pass"}
+{"caseId":"GEN-01/constructors","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"GEN-01/constructors","server":"jdtls","block":1,"outcome":"protocol_error"}
+{"caseId":"GEN-01/delegates","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"GEN-01/delegates","server":"jdtls","block":1,"outcome":"protocol_error"}
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Selected benchmark cases failed; raw artifacts preserved in /workspace/scratch/c9ab7d11d4a9/generation-replay
+    at main (file:///workspace/scratch/c9ab7d11d4a9/jvmd/benchmarks/lsp-scenarios/suite.ts:103:3)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///workspace/scratch/c9ab7d11d4a9/jvmd/benchmarks/lsp-scenarios/run.ts:6:3 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

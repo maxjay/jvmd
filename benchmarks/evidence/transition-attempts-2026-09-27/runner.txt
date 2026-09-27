@@ -1,0 +1,23 @@
+{"caseId":"NAV-02/references-false-add","server":"jvmd","block":1,"outcome":"pass"}
+{"caseId":"NAV-02/references-false-add","server":"jdtls","block":1,"outcome":"pass"}
+{"caseId":"REL-02/supertypes","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"REL-02/supertypes","server":"jdtls","block":1,"outcome":"incorrect"}
+{"caseId":"REL-02/legacy-both-parent-change","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"REL-02/legacy-both-parent-change","server":"jdtls","block":1,"outcome":"incorrect"}
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Selected benchmark cases failed; raw artifacts preserved in /workspace/scratch/c9ab7d11d4a9/transition-replay
+    at main (file:///workspace/scratch/c9ab7d11d4a9/jvmd/benchmarks/lsp-scenarios/suite.ts:103:3)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///workspace/scratch/c9ab7d11d4a9/jvmd/benchmarks/lsp-scenarios/run.ts:6:3 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

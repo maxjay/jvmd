@@ -733,3 +733,39 @@ and settled expansion succeed, and the records have no missing-evidence issue.
 Forged blocked-target claims, missing settled targets and rewritten journals
 fail validation. All 107 harness tests pass; the implementation inventory remains
 129 cases and 70 implemented, 26 partial and 11 absent variants.
+
+## Generator replay
+
+At `6a14f2c`, all six JDTLS generator cases pass exact member/field preservation,
+post-generation status, live declarations, independent compilation, reflected
+member signatures and runtime behaviour. Accessors pass completely. Overrides,
+equals/hashCode, constructors and delegates retain nonzero shutdown exits, with
+no harness kill. ToString returns seventeen stale `exists:false` replies before
+the eighteenth attempt and its settled probe recognize the generated member;
+its overall case remains incorrect. JVMD declares all six routes unsupported.
+
+`benchmarks/evidence/generation-2026-09-27/` preserves the twelve-case pilot.
+All originally sealed files match their hashes and source inputs are stable.
+Archive validation again found two additional zero-byte runtime files outside
+the original inventory; their metadata change times postdate the checksum seal.
+They are included with explicit failed-inventory status and unchanged original
+checksums. The cause is unproven, and this capture is not claimed to be fully
+sealed. It predates the new attempt journals and does not provide retroactive
+execution evidence for those records. Comparison claims remain disabled.
+
+## Real replay of preparation/target boundaries
+
+At `354a97c`, JVMD and JDTLS both pass independent reference addition with an
+immediate target and settled confirmation in one attempt. JDTLS modern supertype
+and legacy parent-change scenarios explicitly record `blocked_by_preparation`:
+their first fresh-item responses are stale, so no immediate expansion is sent.
+They settle on attempts seventeen and three respectively, and remain incorrect.
+The modern case additionally retains its nonzero shutdown exit. JVMD declares
+both hierarchy routes unsupported.
+
+All attempt journals, operation identities, timing order and raw exchanges
+validate without integrity issues or source drift. The complete original file
+inventory verifies at packaging. `benchmarks/evidence/transition-attempts-2026-09-27/`
+preserves the six-case review subset: two passes, two incorrect cases and two
+unsupported cases. This directly exercises the new blocked-preparation records;
+it does not erase the earlier failed captures or enable a performance claim.

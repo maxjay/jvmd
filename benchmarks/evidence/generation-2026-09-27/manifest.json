@@ -1,0 +1,778 @@
+{
+  "schemaVersion": 1,
+  "scope": "Raw protocol review subset with explicit unsealed runtime files; not complete experiment bundle or comparative performance evidence",
+  "revision": "6a14f2c9678a8e91a47af836af4f566e5fc64f35",
+  "archive": {
+    "file": "protocol-review.tar.xz",
+    "bytes": 147088,
+    "sha256": "46eb7a6bb1d1e04d7ba6363b9738ea598bb9433830d1d04d2f187deea2986bf1",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "failed",
+    "unsealedFiles": {
+      "01-jdtls-GEN-01-delegates/runtime/equinox-config/org.eclipse.core.runtime/.manager/.tmp74.instance": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "01-jdtls-GEN-01-delegates/runtime/equinox-config/org.eclipse.equinox.app/.manager/.tmp75.instance": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "members": 112
+  },
+  "plan": {
+    "caseIds": [
+      "GEN-01/overrides",
+      "GEN-01/equals-hashCode",
+      "GEN-01/toString",
+      "GEN-01/accessors",
+      "GEN-01/constructors",
+      "GEN-01/delegates"
+    ],
+    "servers": [
+      "jvmd",
+      "jdtls"
+    ],
+    "blocks": 1,
+    "warmup": 1,
+    "samples": 2,
+    "timeout": 30000,
+    "transitionPolicy": {
+      "maxAttempts": 100,
+      "retryDelayMs": 20,
+      "deadlineMs": 30000,
+      "perRequestTimeoutMs": 30000,
+      "clock": "client monotonic",
+      "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+      "settledProbe": "one additional correct response after the first correct response"
+    },
+    "profile": "pipe",
+    "serverOrder": "alternate per independent block",
+    "reset": "fresh fixture and server state per independent case",
+    "seed": 0
+  },
+  "sourceDrift": false,
+  "integrityIssues": [
+    "artifact outside original checksum inventory: 01-jdtls-GEN-01-delegates/runtime/equinox-config/org.eclipse.core.runtime/.manager/.tmp74.instance",
+    "artifact outside original checksum inventory: 01-jdtls-GEN-01-delegates/runtime/equinox-config/org.eclipse.equinox.app/.manager/.tmp75.instance"
+  ],
+  "sourceManifestSha256": "366fb64444ede2cf3e5de30f8ccfaf3156666d9dfdc275eee4473e06a9a6132d",
+  "originalChecksumInventorySha256": "1e46ee37deb41cc9ec07111a8cd4cb68b950f58687a5049e0adb6ed57e8f4032",
+  "outcomes": {
+    "pass": 1,
+    "incorrect": 1,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 4,
+    "harness_error": 0,
+    "unsupported": 6,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "cases": [
+    {
+      "server": "jdtls",
+      "caseId": "GEN-01/accessors",
+      "profile": "direct",
+      "outcome": "pass",
+      "error": null,
+      "shutdownError": null,
+      "assertions": [
+        {
+          "name": "generator proposes edit without changing client state",
+          "passed": true
+        },
+        {
+          "name": "generator changes selected document",
+          "passed": true
+        },
+        {
+          "name": "generator preserves unrelated sources and fields",
+          "passed": true
+        },
+        {
+          "name": "generation has one exact document-change trigger",
+          "passed": true
+        },
+        {
+          "name": "existing-member status and exact live declarations verified",
+          "passed": true
+        },
+        {
+          "name": "independent javac validation",
+          "passed": true,
+          "elapsedMs": 5217.593593,
+          "stdout": "",
+          "stderr": "",
+          "error": ""
+        },
+        {
+          "name": "independent generated-code behaviour",
+          "passed": true,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "name": "compiled member set matches only selected generation",
+          "passed": true
+        }
+      ],
+      "operationOutcomes": {
+        "pass": 10,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "transitions": [
+        {
+          "kind": "transition",
+          "transitionId": "transition-2",
+          "method": "java/resolveUnimplementedAccessors",
+          "firstOperationIndex": 5,
+          "triggerNs": "4227572666837",
+          "witness": "status recognizes selected generated members and preserves unselected choices",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response"
+          },
+          "deadlineNs": "4257572935493",
+          "attemptCount": 1,
+          "termination": "settled",
+          "endedNs": "4227604268208",
+          "settledOperationId": "op-7"
+        },
+        {
+          "kind": "transition",
+          "transitionId": "transition-3",
+          "method": "textDocument/documentSymbol",
+          "firstOperationIndex": 7,
+          "triggerNs": "4227572666837",
+          "witness": "exact current generated member declarations and preserved fields",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response"
+          },
+          "deadlineNs": "4257604289006",
+          "attemptCount": 1,
+          "termination": "settled",
+          "endedNs": "4227627800056",
+          "settledOperationId": "op-9"
+        }
+      ]
+    },
+    {
+      "server": "jdtls",
+      "caseId": "GEN-01/constructors",
+      "profile": "direct",
+      "outcome": "protocol_error",
+      "error": null,
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}",
+      "assertions": [
+        {
+          "name": "generator proposes edit without changing client state",
+          "passed": true
+        },
+        {
+          "name": "generator changes selected document",
+          "passed": true
+        },
+        {
+          "name": "generator preserves unrelated sources and fields",
+          "passed": true
+        },
+        {
+          "name": "generation has one exact document-change trigger",
+          "passed": true
+        },
+        {
+          "name": "constructor status lists superclass choices; existence requires outline and bytecode",
+          "passed": true
+        },
+        {
+          "name": "existing-member status and exact live declarations verified",
+          "passed": true
+        },
+        {
+          "name": "independent javac validation",
+          "passed": true,
+          "elapsedMs": 1053.218802,
+          "stdout": "",
+          "stderr": "",
+          "error": ""
+        },
+        {
+          "name": "independent generated-code behaviour",
+          "passed": true,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "name": "compiled member set matches only selected generation",
+          "passed": true
+        }
+      ],
+      "operationOutcomes": {
+        "pass": 9,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "transitions": [
+        {
+          "kind": "transition",
+          "transitionId": "transition-2",
+          "method": "textDocument/documentSymbol",
+          "firstOperationIndex": 6,
+          "triggerNs": "4241020119274",
+          "witness": "exact current generated member declarations and preserved fields",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response"
+          },
+          "deadlineNs": "4271040609894",
+          "attemptCount": 1,
+          "termination": "settled",
+          "endedNs": "4241524645337",
+          "settledOperationId": "op-8"
+        }
+      ]
+    },
+    {
+      "server": "jdtls",
+      "caseId": "GEN-01/delegates",
+      "profile": "direct",
+      "outcome": "protocol_error",
+      "error": null,
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}",
+      "assertions": [
+        {
+          "name": "generator proposes edit without changing client state",
+          "passed": true
+        },
+        {
+          "name": "generator changes selected document",
+          "passed": true
+        },
+        {
+          "name": "generator preserves unrelated sources and fields",
+          "passed": true
+        },
+        {
+          "name": "generation has one exact document-change trigger",
+          "passed": true
+        },
+        {
+          "name": "existing-member status and exact live declarations verified",
+          "passed": true
+        },
+        {
+          "name": "independent javac validation",
+          "passed": true,
+          "elapsedMs": 1287.629284,
+          "stdout": "",
+          "stderr": "",
+          "error": ""
+        },
+        {
+          "name": "independent generated-code behaviour",
+          "passed": true,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "name": "compiled member set matches only selected generation",
+          "passed": true
+        }
+      ],
+      "operationOutcomes": {
+        "pass": 10,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "transitions": [
+        {
+          "kind": "transition",
+          "transitionId": "transition-2",
+          "method": "java/checkDelegateMethodsStatus",
+          "firstOperationIndex": 5,
+          "triggerNs": "4309814566329",
+          "witness": "status recognizes selected generated members and preserves unselected choices",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response"
+          },
+          "deadlineNs": "4339815374785",
+          "attemptCount": 1,
+          "termination": "settled",
+          "endedNs": "4309861767482",
+          "settledOperationId": "op-7"
+        },
+        {
+          "kind": "transition",
+          "transitionId": "transition-3",
+          "method": "textDocument/documentSymbol",
+          "firstOperationIndex": 7,
+          "triggerNs": "4309814566329",
+          "witness": "exact current generated member declarations and preserved fields",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response"
+          },
+          "deadlineNs": "4339861774150",
+          "attemptCount": 1,
+          "termination": "settled",
+          "endedNs": "4309883578090",
+          "settledOperationId": "op-9"
+        }
+      ]
+    },
+    {
+      "server": "jdtls",
+      "caseId": "GEN-01/equals-hashCode",
+      "profile": "direct",
+      "outcome": "protocol_error",
+      "error": null,
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}",
+      "assertions": [
+        {
+          "name": "generator proposes edit without changing client state",
+          "passed": true
+        },
+        {
+          "name": "generator changes selected document",
+          "passed": true
+        },
+        {
+          "name": "generator preserves unrelated sources and fields",
+          "passed": true
+        },
+        {
+          "name": "generation has one exact document-change trigger",
+          "passed": true
+        },
+        {
+          "name": "existing-member status and exact live declarations verified",
+          "passed": true
+        },
+        {
+          "name": "independent javac validation",
+          "passed": true,
+          "elapsedMs": 1029.90835,
+          "stdout": "",
+          "stderr": "",
+          "error": ""
+        },
+        {
+          "name": "independent generated-code behaviour",
+          "passed": true,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "name": "compiled member set matches only selected generation",
+          "passed": true
+        }
+      ],
+      "operationOutcomes": {
+        "pass": 10,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "transitions": [
+        {
+          "kind": "transition",
+          "transitionId": "transition-2",
+          "method": "java/checkHashCodeEqualsStatus",
+          "firstOperationIndex": 5,
+          "triggerNs": "4086636304486",
+          "witness": "status recognizes selected generated members and preserves unselected choices",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response"
+          },
+          "deadlineNs": "4116636547109",
+          "attemptCount": 1,
+          "termination": "settled",
+          "endedNs": "4086680282539",
+          "settledOperationId": "op-7"
+        },
+        {
+          "kind": "transition",
+          "transitionId": "transition-3",
+          "method": "textDocument/documentSymbol",
+          "firstOperationIndex": 7,
+          "triggerNs": "4086636304486",
+          "witness": "exact current generated member declarations and preserved fields",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response"
+          },
+          "deadlineNs": "4116680295170",
+          "attemptCount": 1,
+          "termination": "settled",
+          "endedNs": "4087074830850",
+          "settledOperationId": "op-9"
+        }
+      ]
+    },
+    {
+      "server": "jdtls",
+      "caseId": "GEN-01/overrides",
+      "profile": "direct",
+      "outcome": "protocol_error",
+      "error": null,
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}",
+      "assertions": [
+        {
+          "name": "generator proposes edit without changing client state",
+          "passed": true
+        },
+        {
+          "name": "generator changes selected document",
+          "passed": true
+        },
+        {
+          "name": "generator preserves unrelated sources and fields",
+          "passed": true
+        },
+        {
+          "name": "generation has one exact document-change trigger",
+          "passed": true
+        },
+        {
+          "name": "existing-member status and exact live declarations verified",
+          "passed": true
+        },
+        {
+          "name": "independent javac validation",
+          "passed": true,
+          "elapsedMs": 1063.801283,
+          "stdout": "",
+          "stderr": "",
+          "error": ""
+        },
+        {
+          "name": "independent generated-code behaviour",
+          "passed": true,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "name": "compiled member set matches only selected generation",
+          "passed": true
+        }
+      ],
+      "operationOutcomes": {
+        "pass": 10,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "transitions": [
+        {
+          "kind": "transition",
+          "transitionId": "transition-2",
+          "method": "java/listOverridableMethods",
+          "firstOperationIndex": 5,
+          "triggerNs": "4017868333715",
+          "witness": "status recognizes selected generated members and preserves unselected choices",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response"
+          },
+          "deadlineNs": "4047868787603",
+          "attemptCount": 1,
+          "termination": "settled",
+          "endedNs": "4017928514791",
+          "settledOperationId": "op-7"
+        },
+        {
+          "kind": "transition",
+          "transitionId": "transition-3",
+          "method": "textDocument/documentSymbol",
+          "firstOperationIndex": 7,
+          "triggerNs": "4017868333715",
+          "witness": "exact current generated member declarations and preserved fields",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response"
+          },
+          "deadlineNs": "4047928521631",
+          "attemptCount": 1,
+          "termination": "settled",
+          "endedNs": "4017974780188",
+          "settledOperationId": "op-9"
+        }
+      ]
+    },
+    {
+      "server": "jdtls",
+      "caseId": "GEN-01/toString",
+      "profile": "direct",
+      "outcome": "incorrect",
+      "error": null,
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}",
+      "assertions": [
+        {
+          "name": "generator proposes edit without changing client state",
+          "passed": true
+        },
+        {
+          "name": "generator changes selected document",
+          "passed": true
+        },
+        {
+          "name": "generator preserves unrelated sources and fields",
+          "passed": true
+        },
+        {
+          "name": "generation has one exact document-change trigger",
+          "passed": true
+        },
+        {
+          "name": "existing-member status and exact live declarations verified",
+          "passed": true
+        },
+        {
+          "name": "independent javac validation",
+          "passed": true,
+          "elapsedMs": 903.136006,
+          "stdout": "",
+          "stderr": "",
+          "error": ""
+        },
+        {
+          "name": "independent generated-code behaviour",
+          "passed": true,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "name": "compiled member set matches only selected generation",
+          "passed": true
+        }
+      ],
+      "operationOutcomes": {
+        "pass": 10,
+        "incorrect": 17,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "transitions": [
+        {
+          "kind": "transition",
+          "transitionId": "transition-2",
+          "method": "java/checkToStringStatus",
+          "firstOperationIndex": 5,
+          "triggerNs": "4155738329037",
+          "witness": "status recognizes selected generated members and preserves unselected choices",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response"
+          },
+          "deadlineNs": "4185739096886",
+          "attemptCount": 18,
+          "termination": "settled",
+          "endedNs": "4156200176055",
+          "settledOperationId": "op-24"
+        },
+        {
+          "kind": "transition",
+          "transitionId": "transition-3",
+          "method": "textDocument/documentSymbol",
+          "firstOperationIndex": 24,
+          "triggerNs": "4155738329037",
+          "witness": "exact current generated member declarations and preserved fields",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response"
+          },
+          "deadlineNs": "4186200196453",
+          "attemptCount": 1,
+          "termination": "settled",
+          "endedNs": "4156222090942",
+          "settledOperationId": "op-26"
+        }
+      ]
+    },
+    {
+      "server": "jvmd",
+      "caseId": "GEN-01/accessors",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "transitions": []
+    },
+    {
+      "server": "jvmd",
+      "caseId": "GEN-01/constructors",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "transitions": []
+    },
+    {
+      "server": "jvmd",
+      "caseId": "GEN-01/delegates",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "transitions": []
+    },
+    {
+      "server": "jvmd",
+      "caseId": "GEN-01/equals-hashCode",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "transitions": []
+    },
+    {
+      "server": "jvmd",
+      "caseId": "GEN-01/overrides",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "transitions": []
+    },
+    {
+      "server": "jvmd",
+      "caseId": "GEN-01/toString",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "assertions": [],
+      "operationOutcomes": {
+        "pass": 0,
+        "incorrect": 0,
+        "protocol_error": 0,
+        "timeout": 0
+      },
+      "transitions": []
+    }
+  ],
+  "inventoryAudit": {
+    "originalChecksumMtimeUtc": "2026-09-27T15:57:25.902262+00:00",
+    "unsealedFiles": {
+      "01-jdtls-GEN-01-delegates/runtime/equinox-config/org.eclipse.core.runtime/.manager/.tmp74.instance": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "mtimeUtc": "2026-09-27T15:56:20.468393+00:00",
+        "ctimeUtc": "2026-09-27T15:57:32.418202+00:00"
+      },
+      "01-jdtls-GEN-01-delegates/runtime/equinox-config/org.eclipse.equinox.app/.manager/.tmp75.instance": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "mtimeUtc": "2026-09-27T15:56:20.617912+00:00",
+        "ctimeUtc": "2026-09-27T15:57:32.418202+00:00"
+      }
+    }
+  },
+  "interpretation": [
+    "All six JDTLS generators pass exact selected member sets, post-generation status, independent compilation, bytecode reflection and runtime behaviour.",
+    "Accessors pass completely. Overrides, equals/hashCode, constructors and delegates retain nonzero shutdown exits without harness kills.",
+    "ToString returns 17 stale false status replies before a correct first result on attempt 18 and a correct settled result; its case remains incorrect.",
+    "JVMD explicitly declares all six generation routes unsupported.",
+    "Every originally sealed file matches its hash, but two additional zero-byte runtime files are outside the original inventory. They are archived explicitly, with original checksums unchanged. Their metadata change times postdate the seal; cause is unproven.",
+    "This capture predates transition attempt journals and cannot retroactively establish their execution. No fully sealed or comparative performance result is claimed."
+  ]
+}

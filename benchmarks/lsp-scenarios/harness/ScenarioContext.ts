@@ -63,7 +63,9 @@ export class ScenarioContext {
   async initialize(){
     const row=await this.client.request("initialize",{processId:process.pid,rootUri:pathToFileURL(this.fixture.root).href,
       workspaceFolders:this.workspaceFolders(),capabilities:CAPABILITIES,
-      initializationOptions:{settings:this.settings,extendedClientCapabilities:{classFileContentsSupport:true,advancedOrganizeImportsSupport:true}}},this.timeout);
+      // Pinned JDTLS BaseInitHandler reads its URI-array initialization option
+      // before falling back to rootUri; the standard field alone imports one root.
+      initializationOptions:{settings:this.settings,...(this.server==="jdtls"?{workspaceFolders:this.workspaceFolders().map(f=>f.uri)}:{}),extendedClientCapabilities:{classFileContentsSupport:true,advancedOrganizeImportsSupport:true}}},this.timeout);
     assert(!row.error,"initialize failed: "+JSON.stringify(row.error));this.capabilities=row.result.capabilities;this.initializedNs=row.endNs;
     this.client.notify("initialized",{});this.client.notify("workspace/didChangeConfiguration",{settings:this.settings});
     if(this.server==="jdtls")await this.client.notification("language/status",p=>p?.type==="ServiceReady",0,this.timeout);

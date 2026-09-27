@@ -25,12 +25,13 @@ test("limit control accepts any valid one of several matches, never empty, dupli
   for(const wrong of [[],rows(primary),[rows(primary)[0],rows(primary)[0]],[binary]])assert.throws(()=>exactFilteredSymbols(wrong,expected));
   assert.throws(()=>exactFilteredSymbols(rows(foreign),{sources:foreign,binary:false,limit:1}),/too few matching/u);
 });
-test("all declared workspace folders agree across initialize and server callback",async()=>{
+for(const server of ["jvmd","jdtls"])test(`all declared workspace folders agree across ${server} initialize and server callback`,async()=>{
   const tmp=mkdtempSync(path.join(os.tmpdir(),"symbol-folders-"));
   try{
     const fixture=createFixture(tmp);fixture.workspaceFolders=[{uri:"file:///first",name:"first"},{uri:"file:///second",name:"second"}];
-    const calls:any[]=[],client={notify:()=>{},request:async(method:string,params:any)=>{calls.push({method,params});return {result:{capabilities:{}},endNs:"1"};}} as any;
-    const c=new ScenarioContext(client,fixture,"jvmd",100,1,1);await c.initialize();
+    const calls:any[]=[],client={notify:()=>{},notification:async()=>({}),request:async(method:string,params:any)=>{calls.push({method,params});return {result:{capabilities:{}},endNs:"1"};}} as any;
+    const c=new ScenarioContext(client,fixture,server,100,1,1);await c.initialize();
+    assert.deepEqual(calls[0].params.initializationOptions.workspaceFolders,server==="jdtls"?fixture.workspaceFolders.map(f=>f.uri):undefined);
     assert.deepEqual(calls[0].params.workspaceFolders,fixture.workspaceFolders);assert.deepEqual(await client.onServerRequest("workspace/workspaceFolders",{}),fixture.workspaceFolders);
   }finally{rmSync(tmp,{recursive:true,force:true});}
 });

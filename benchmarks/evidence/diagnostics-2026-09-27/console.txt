@@ -1,0 +1,21 @@
+{"caseId":"DIA-01/valid","server":"jvmd","block":1,"outcome":"pass"}
+{"caseId":"DIA-01/valid","server":"jdtls","block":1,"outcome":"unavailable_evidence","error":"AssertionError [ERR_ASSERTION]: deadline\n+ actual - expected\n\n+ 'unavailable_evidence'\n- 'pass'\n"}
+{"caseId":"DIA-01/provider-edit","server":"jvmd","block":1,"outcome":"timeout","error":"AssertionError [ERR_ASSERTION]: deadline\n\n'timeout' !== 'pass'\n"}
+{"caseId":"DIA-01/provider-edit","server":"jdtls","block":1,"outcome":"unavailable_evidence","error":"AssertionError [ERR_ASSERTION]: deadline\n+ actual - expected\n\n+ 'unavailable_evidence'\n- 'pass'\n"}
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Selected benchmark cases failed; raw artifacts preserved in /workspace/scratch/c9ab7d11d4a9/diagnostics-replay
+    at main (file:///workspace/scratch/c9ab7d11d4a9/jvmd-next/benchmarks/lsp-scenarios/suite.ts:105:3)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///workspace/scratch/c9ab7d11d4a9/jvmd-next/benchmarks/lsp-scenarios/run.ts:6:3 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

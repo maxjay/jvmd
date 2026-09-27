@@ -4,7 +4,7 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 150 case definitions, 153 passing TypeScript
+Latest implementation inventory: 150 case definitions, 154 passing TypeScript
 harness tests, and 107 required variants (77 implemented, 23 partial, 7 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
@@ -1006,3 +1006,38 @@ All 153 harness tests pass; catalogue validation remains 106 target APIs in
 28 families. There are now 150 cases and 77 implemented, 23 partial, 7 absent
 variants. These are source implementation counts. Real diagnostic pilots and
 the remaining acceptance gates are still required. See `diagnostic-cases.md`.
+
+## Recovered symbol replay and multi-root initialization correction
+
+The fresh corrected symbol capture at `8319fef` completes all 26 selected
+server/case pairs: 7 pass, 3 incorrect, 6 protocol errors and 10 unsupported.
+All 62 semantic operations outside the three filter failures pass. This includes
+standard/extended outlines, new/renamed declarations and named-enum original-item
+resolution. Six JDTLS outline cases retain their nonzero shutdown exits.
+The original reducer has no integrity issues, source inputs remain stable, and
+the complete original checksum inventory verifies during review packaging.
+
+The three filter failures expose another harness setup mistake: the secondary
+project is absent from global search. Pinned JDTLS `BaseInitHandler` reads the
+URI-array `initializationOptions.workspaceFolders`, falling back to rootUri;
+sending only the standard initialize field imports one project. Initialization
+now sends both representations for JDTLS, and the test covers both server paths.
+The failed capture remains in `benchmarks/evidence/symbols-corrected-2026-09-27/`;
+its results are not retrospectively healed. The multi-root correction requires
+a new filter-control replay. All 154 harness tests pass.
+
+## First compiler-backed diagnostic pilot
+
+The frozen four-case pilot at `5639add` records one pass, one timeout and two
+unavailable-evidence outcomes. JVMD passes valid-source exact-version admission.
+Its provider-only edit does not produce the required fresh caller mismatch within
+the declared 30-second window. JDTLS's versionless caller publications cannot
+prove exact current-version validity; both cases stop at baseline admission, so
+no JDTLS provider-edit outcome is inferred. All four shutdowns complete cleanly.
+
+`benchmarks/evidence/diagnostics-2026-09-27/` preserves compiler witnesses, raw
+publications and replayable observer decisions. Original reduction reports no
+integrity issues, and all originally sealed payload hashes still match. Packaging
+discovers six additional runtime files and preserves them explicitly as unsealed
+evidence. The capture is not described as fully sealed. The public-comparison
+prohibition and all remaining specification gates are unchanged.

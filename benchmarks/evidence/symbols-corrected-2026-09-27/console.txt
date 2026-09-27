@@ -1,0 +1,43 @@
+{"caseId":"NAV-03/outline-first-repeat","server":"jvmd","block":1,"outcome":"pass"}
+{"caseId":"NAV-03/outline-first-repeat","server":"jdtls","block":1,"outcome":"protocol_error"}
+{"caseId":"NAV-03/outline-new","server":"jvmd","block":1,"outcome":"pass"}
+{"caseId":"NAV-03/outline-new","server":"jdtls","block":1,"outcome":"protocol_error"}
+{"caseId":"NAV-03/outline-renamed","server":"jvmd","block":1,"outcome":"pass"}
+{"caseId":"NAV-03/outline-renamed","server":"jdtls","block":1,"outcome":"protocol_error"}
+{"caseId":"NAV-03/extended-first-repeat","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"NAV-03/extended-first-repeat","server":"jdtls","block":1,"outcome":"protocol_error"}
+{"caseId":"NAV-03/extended-new","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"NAV-03/extended-new","server":"jdtls","block":1,"outcome":"protocol_error"}
+{"caseId":"NAV-03/extended-renamed","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"NAV-03/extended-renamed","server":"jdtls","block":1,"outcome":"protocol_error"}
+{"caseId":"NAV-03/resolve-first-repeat","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"NAV-03/resolve-first-repeat","server":"jdtls","block":1,"outcome":"pass"}
+{"caseId":"NAV-03/resolve-new","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"NAV-03/resolve-new","server":"jdtls","block":1,"outcome":"pass"}
+{"caseId":"NAV-03/resolve-renamed","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"NAV-03/resolve-renamed","server":"jdtls","block":1,"outcome":"pass"}
+{"caseId":"NAV-03/filter-controls-first-repeat","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"NAV-03/filter-controls-first-repeat","server":"jdtls","block":1,"outcome":"incorrect","error":"AssertionError [ERR_ASSERTION]: java/searchSymbols: AssertionError [ERR_ASSERTION]: project/source filter includes excluded or omits selected declarations\n+ actual - expected\n\n  [\n    'BenchmarkAnchor',\n    'BenchmarkBefore',\n    'BenchmarkBinary',\n-   'BenchmarkForeign'\n  ]\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"}
+{"caseId":"NAV-03/filter-controls-new","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"NAV-03/filter-controls-new","server":"jdtls","block":1,"outcome":"incorrect","error":"AssertionError [ERR_ASSERTION]: java/searchSymbols: AssertionError [ERR_ASSERTION]: project/source filter includes excluded or omits selected declarations\n+ actual - expected\n\n  [\n    'BenchmarkAdded',\n    'BenchmarkAnchor',\n    'BenchmarkBefore',\n    'BenchmarkBinary',\n-   'BenchmarkForeign'\n  ]\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"}
+{"caseId":"NAV-03/filter-controls-renamed","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"NAV-03/filter-controls-renamed","server":"jdtls","block":1,"outcome":"incorrect","error":"AssertionError [ERR_ASSERTION]: java/searchSymbols: AssertionError [ERR_ASSERTION]: project/source filter includes excluded or omits selected declarations\n+ actual - expected\n\n  [\n    'BenchmarkAfter',\n    'BenchmarkAnchor',\n    'BenchmarkBinary',\n-   'BenchmarkForeign'\n  ]\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"}
+{"caseId":"NAV-03/search-filter","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"NAV-03/search-filter","server":"jdtls","block":1,"outcome":"pass"}
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Selected benchmark cases failed; raw artifacts preserved in /workspace/scratch/c9ab7d11d4a9/symbols-corrected-recovered
+    at main (file:///workspace/scratch/c9ab7d11d4a9/jvmd/benchmarks/lsp-scenarios/suite.ts:104:3)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///workspace/scratch/c9ab7d11d4a9/jvmd/[eval1]:5:1 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

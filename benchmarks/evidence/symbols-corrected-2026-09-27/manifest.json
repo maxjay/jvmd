@@ -1,0 +1,330 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "8319fef83c79d7109c4749804d521cb0bf230cfe",
+  "sourceTree": "2e64f4b5ca809b2bc819939d99761bb4594c1300",
+  "sourceDrift": false,
+  "plan": {
+    "caseIds": [
+      "NAV-03/outline-first-repeat",
+      "NAV-03/outline-new",
+      "NAV-03/outline-renamed",
+      "NAV-03/extended-first-repeat",
+      "NAV-03/extended-new",
+      "NAV-03/extended-renamed",
+      "NAV-03/resolve-first-repeat",
+      "NAV-03/resolve-new",
+      "NAV-03/resolve-renamed",
+      "NAV-03/filter-controls-first-repeat",
+      "NAV-03/filter-controls-new",
+      "NAV-03/filter-controls-renamed",
+      "NAV-03/search-filter"
+    ],
+    "servers": [
+      "jvmd",
+      "jdtls"
+    ],
+    "blocks": 1,
+    "warmup": 1,
+    "samples": 2,
+    "timeout": 30000,
+    "transitionPolicy": {
+      "maxAttempts": 100,
+      "retryDelayMs": 20,
+      "deadlineMs": 30000,
+      "perRequestTimeoutMs": 30000,
+      "clock": "client monotonic",
+      "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+      "settledProbe": "one additional correct response after the first correct response",
+      "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+    },
+    "profile": "pipe",
+    "serverOrder": "alternate per independent block",
+    "reset": "fresh fixture and server state per independent case",
+    "seed": 0
+  },
+  "outcomes": {
+    "pass": 7,
+    "incorrect": 3,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 6,
+    "harness_error": 0,
+    "unsupported": 10,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "originalReducerIntegrityIssues": [],
+  "package": {
+    "file": "symbols-corrected-review.tar.xz",
+    "bytes": 195312,
+    "sha256": "58436465a5c28f90ced08fc48a8bf5d57c33e0ce02f09d4c0312dc598c3b4954",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "verified",
+    "unsealedFiles": {},
+    "members": 239
+  },
+  "cases": [
+    {
+      "caseId": "NAV-03/extended-first-repeat",
+      "server": "jdtls",
+      "outcome": "protocol_error",
+      "operations": 4,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}"
+    },
+    {
+      "caseId": "NAV-03/extended-new",
+      "server": "jdtls",
+      "outcome": "protocol_error",
+      "operations": 3,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}"
+    },
+    {
+      "caseId": "NAV-03/extended-renamed",
+      "server": "jdtls",
+      "outcome": "protocol_error",
+      "operations": 3,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}"
+    },
+    {
+      "caseId": "NAV-03/filter-controls-first-repeat",
+      "server": "jdtls",
+      "outcome": "incorrect",
+      "operations": 5,
+      "operationFailures": [
+        {
+          "state": "filter_control_all",
+          "outcome": "incorrect",
+          "reason": "AssertionError [ERR_ASSERTION]: project/source filter includes excluded or omits selected declarations\n+ actual - expected\n\n  [\n    'BenchmarkAnchor',\n    'BenchmarkBefore',\n    'BenchmarkBinary',\n-   'BenchmarkForeign'\n  ]\n"
+        }
+      ],
+      "error": "AssertionError [ERR_ASSERTION]: java/searchSymbols: AssertionError [ERR_ASSERTION]: project/source filter includes excluded or omits selected declarations\n+ actual - expected\n\n  [\n    'BenchmarkAnchor',\n    'BenchmarkBefore',\n    'BenchmarkBinary',\n-   'BenchmarkForeign'\n  ]\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n",
+      "shutdownError": null
+    },
+    {
+      "caseId": "NAV-03/filter-controls-new",
+      "server": "jdtls",
+      "outcome": "incorrect",
+      "operations": 4,
+      "operationFailures": [
+        {
+          "state": "filter_control_all",
+          "outcome": "incorrect",
+          "reason": "AssertionError [ERR_ASSERTION]: project/source filter includes excluded or omits selected declarations\n+ actual - expected\n\n  [\n    'BenchmarkAdded',\n    'BenchmarkAnchor',\n    'BenchmarkBefore',\n    'BenchmarkBinary',\n-   'BenchmarkForeign'\n  ]\n"
+        }
+      ],
+      "error": "AssertionError [ERR_ASSERTION]: java/searchSymbols: AssertionError [ERR_ASSERTION]: project/source filter includes excluded or omits selected declarations\n+ actual - expected\n\n  [\n    'BenchmarkAdded',\n    'BenchmarkAnchor',\n    'BenchmarkBefore',\n    'BenchmarkBinary',\n-   'BenchmarkForeign'\n  ]\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n",
+      "shutdownError": null
+    },
+    {
+      "caseId": "NAV-03/filter-controls-renamed",
+      "server": "jdtls",
+      "outcome": "incorrect",
+      "operations": 4,
+      "operationFailures": [
+        {
+          "state": "filter_control_all",
+          "outcome": "incorrect",
+          "reason": "AssertionError [ERR_ASSERTION]: project/source filter includes excluded or omits selected declarations\n+ actual - expected\n\n  [\n    'BenchmarkAfter',\n    'BenchmarkAnchor',\n    'BenchmarkBinary',\n-   'BenchmarkForeign'\n  ]\n"
+        }
+      ],
+      "error": "AssertionError [ERR_ASSERTION]: java/searchSymbols: AssertionError [ERR_ASSERTION]: project/source filter includes excluded or omits selected declarations\n+ actual - expected\n\n  [\n    'BenchmarkAfter',\n    'BenchmarkAnchor',\n    'BenchmarkBinary',\n-   'BenchmarkForeign'\n  ]\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n",
+      "shutdownError": null
+    },
+    {
+      "caseId": "NAV-03/outline-first-repeat",
+      "server": "jdtls",
+      "outcome": "protocol_error",
+      "operations": 4,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}"
+    },
+    {
+      "caseId": "NAV-03/outline-new",
+      "server": "jdtls",
+      "outcome": "protocol_error",
+      "operations": 3,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}"
+    },
+    {
+      "caseId": "NAV-03/outline-renamed",
+      "server": "jdtls",
+      "outcome": "protocol_error",
+      "operations": 3,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}"
+    },
+    {
+      "caseId": "NAV-03/resolve-first-repeat",
+      "server": "jdtls",
+      "outcome": "pass",
+      "operations": 5,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": null
+    },
+    {
+      "caseId": "NAV-03/resolve-new",
+      "server": "jdtls",
+      "outcome": "pass",
+      "operations": 6,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": null
+    },
+    {
+      "caseId": "NAV-03/resolve-renamed",
+      "server": "jdtls",
+      "outcome": "pass",
+      "operations": 6,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": null
+    },
+    {
+      "caseId": "NAV-03/search-filter",
+      "server": "jdtls",
+      "outcome": "pass",
+      "operations": 5,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": null
+    },
+    {
+      "caseId": "NAV-03/extended-first-repeat",
+      "server": "jvmd",
+      "outcome": "unsupported",
+      "operations": 0,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": null
+    },
+    {
+      "caseId": "NAV-03/extended-new",
+      "server": "jvmd",
+      "outcome": "unsupported",
+      "operations": 0,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": null
+    },
+    {
+      "caseId": "NAV-03/extended-renamed",
+      "server": "jvmd",
+      "outcome": "unsupported",
+      "operations": 0,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": null
+    },
+    {
+      "caseId": "NAV-03/filter-controls-first-repeat",
+      "server": "jvmd",
+      "outcome": "unsupported",
+      "operations": 0,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": null
+    },
+    {
+      "caseId": "NAV-03/filter-controls-new",
+      "server": "jvmd",
+      "outcome": "unsupported",
+      "operations": 0,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": null
+    },
+    {
+      "caseId": "NAV-03/filter-controls-renamed",
+      "server": "jvmd",
+      "outcome": "unsupported",
+      "operations": 0,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": null
+    },
+    {
+      "caseId": "NAV-03/outline-first-repeat",
+      "server": "jvmd",
+      "outcome": "pass",
+      "operations": 4,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": null
+    },
+    {
+      "caseId": "NAV-03/outline-new",
+      "server": "jvmd",
+      "outcome": "pass",
+      "operations": 3,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": null
+    },
+    {
+      "caseId": "NAV-03/outline-renamed",
+      "server": "jvmd",
+      "outcome": "pass",
+      "operations": 3,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": null
+    },
+    {
+      "caseId": "NAV-03/resolve-first-repeat",
+      "server": "jvmd",
+      "outcome": "unsupported",
+      "operations": 0,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": null
+    },
+    {
+      "caseId": "NAV-03/resolve-new",
+      "server": "jvmd",
+      "outcome": "unsupported",
+      "operations": 0,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": null
+    },
+    {
+      "caseId": "NAV-03/resolve-renamed",
+      "server": "jvmd",
+      "outcome": "unsupported",
+      "operations": 0,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": null
+    },
+    {
+      "caseId": "NAV-03/search-filter",
+      "server": "jvmd",
+      "outcome": "unsupported",
+      "operations": 0,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": null
+    }
+  ],
+  "claims": {
+    "publicComparativePerformance": false,
+    "scope": "one-block diagnostic pipe/direct pilot; no product lifecycle or independent performance comparison"
+  },
+  "review": {
+    "semanticSuccesses": "JVMD standard outline variants; JDTLS standard/extended outline, original-item resolve, older search-filter; six JDTLS outline cases still fail shutdown.",
+    "knownHarnessMistake": "Three filter controls omit BenchmarkForeign because initialize sends standard workspaceFolders but not the URI-array initializationOptions.workspaceFolders read by pinned BaseInitHandler. The corrected initialization requires a separate replay.",
+    "pinnedSource": "https://github.com/eclipse-jdtls/eclipse.jdt.ls/blob/08eafe6/org.eclipse.jdt.ls.core/src/org/eclipse/jdt/ls/core/internal/handlers/BaseInitHandler.java"
+  }
+}

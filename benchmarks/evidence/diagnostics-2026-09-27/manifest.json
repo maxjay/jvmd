@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "5639add46cd29e7bb72dd14f8e440f840435e412",
+  "sourceTree": "8e2e5f46084da8ad711e20e305c585ecebdc8800",
+  "sourceDrift": false,
+  "plan": {
+    "caseIds": [
+      "DIA-01/valid",
+      "DIA-01/provider-edit"
+    ],
+    "servers": [
+      "jvmd",
+      "jdtls"
+    ],
+    "blocks": 1,
+    "warmup": 1,
+    "samples": 2,
+    "timeout": 30000,
+    "transitionPolicy": {
+      "maxAttempts": 100,
+      "retryDelayMs": 20,
+      "deadlineMs": 30000,
+      "perRequestTimeoutMs": 30000,
+      "clock": "client monotonic",
+      "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+      "settledProbe": "one additional correct response after the first correct response",
+      "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+    },
+    "profile": "pipe",
+    "serverOrder": "alternate per independent block",
+    "reset": "fresh fixture and server state per independent case",
+    "seed": 0
+  },
+  "outcomes": {
+    "pass": 1,
+    "incorrect": 0,
+    "stale": 0,
+    "timeout": 1,
+    "protocol_error": 0,
+    "harness_error": 0,
+    "unsupported": 0,
+    "not_applicable": 0,
+    "unavailable_evidence": 2,
+    "not_run": 0
+  },
+  "originalReducerIntegrityIssues": [],
+  "package": {
+    "file": "diagnostics-review.tar.xz",
+    "bytes": 125624,
+    "sha256": "f686c430b9d903b38036424031389697afb4fcdea964f73090481b952ff87673",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "failed",
+    "unsealedFiles": {
+      "01-jdtls-DIA-01-provider-edit/runtime/equinox-config/org.eclipse.core.runtime/.manager/.tmp74.instance": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "01-jdtls-DIA-01-provider-edit/runtime/equinox-config/org.eclipse.equinox.app/.manager/.tmp75.instance": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "01-jdtls-DIA-01-provider-edit/runtime/workspace/.metadata/.plugins/org.eclipse.core.resources/.projects/benchmark/.markers.snap": {
+        "bytes": 216,
+        "sha256": "bf0cd76d2cd67a1cedbb992b835d96d144deb37dd7b9747e86591994cf27e8bb"
+      },
+      "01-jdtls-DIA-01-provider-edit/runtime/workspace/.metadata/.plugins/org.eclipse.core.resources/.projects/benchmark/.syncinfo.snap": {
+        "bytes": 16,
+        "sha256": "e42ae93474e9c14b9a33ea021d885fbcb5280a5acbb7ef238df5952d2963e770"
+      },
+      "01-jdtls-DIA-01-provider-edit/runtime/workspace/.metadata/.plugins/org.eclipse.core.resources/.root/.markers.snap": {
+        "bytes": 16,
+        "sha256": "e42ae93474e9c14b9a33ea021d885fbcb5280a5acbb7ef238df5952d2963e770"
+      },
+      "01-jdtls-DIA-01-provider-edit/runtime/workspace/.metadata/.plugins/org.eclipse.core.resources/0.snap": {
+        "bytes": 819,
+        "sha256": "37ed2e5ff232941745fbfef46253c04f2cd9a1d9e0eba6d6a59510ac6d98789d"
+      }
+    },
+    "members": 56
+  },
+  "cases": [
+    {
+      "caseId": "DIA-01/provider-edit",
+      "server": "jdtls",
+      "outcome": "unavailable_evidence",
+      "operations": 1,
+      "operationFailures": [
+        {
+          "state": "baseline_valid",
+          "outcome": "unavailable_evidence",
+          "reason": "deadline"
+        }
+      ],
+      "error": "AssertionError [ERR_ASSERTION]: deadline\n+ actual - expected\n\n+ 'unavailable_evidence'\n- 'pass'\n",
+      "shutdownError": null
+    },
+    {
+      "caseId": "DIA-01/valid",
+      "server": "jdtls",
+      "outcome": "unavailable_evidence",
+      "operations": 1,
+      "operationFailures": [
+        {
+          "state": "valid",
+          "outcome": "unavailable_evidence",
+          "reason": "deadline"
+        }
+      ],
+      "error": "AssertionError [ERR_ASSERTION]: deadline\n+ actual - expected\n\n+ 'unavailable_evidence'\n- 'pass'\n",
+      "shutdownError": null
+    },
+    {
+      "caseId": "DIA-01/provider-edit",
+      "server": "jvmd",
+      "outcome": "timeout",
+      "operations": 2,
+      "operationFailures": [
+        {
+          "state": "provider_changed",
+          "outcome": "timeout",
+          "reason": "deadline"
+        }
+      ],
+      "error": "AssertionError [ERR_ASSERTION]: deadline\n\n'timeout' !== 'pass'\n",
+      "shutdownError": null
+    },
+    {
+      "caseId": "DIA-01/valid",
+      "server": "jvmd",
+      "outcome": "pass",
+      "operations": 1,
+      "operationFailures": [],
+      "error": null,
+      "shutdownError": null
+    }
+  ],
+  "claims": {
+    "publicComparativePerformance": false,
+    "scope": "one-block diagnostic pipe/direct pilot; no product lifecycle or independent performance comparison"
+  },
+  "review": {
+    "jvmd": "Valid-source exact-version admission passes. Provider-only edit reaches the deadline without the required caller mismatch.",
+    "jdtls": "Versionless caller publications cannot establish current-version valid baseline in either case. Provider edit is not performed because baseline admission fails.",
+    "inventory": "All originally sealed payload hashes verify. Six additional runtime files are preserved explicitly as unsealed; the original checksum inventory is not repaired.",
+    "shutdown": "All four cases observe clean shutdown."
+  }
+}

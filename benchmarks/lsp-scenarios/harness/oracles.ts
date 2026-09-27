@@ -36,6 +36,18 @@ export function applyTextEdits(text:string,edits:any[],mode:"insert"|"replace"="
   for(const e of rows.reverse())text=text.slice(0,e.start)+e.text+text.slice(e.end);
   return text;
 }
+export function applyScopedTextEdits(text:string,edits:any[],scope:Range):string {
+  const start=offset(text,scope.start),end=offset(text,scope.end);
+  assert(end>start&&end-start<text.length,"formatting selection must be narrower than the document");
+  assert(Array.isArray(edits),"text edits must be an array");
+  for(const edit of edits){
+    assert(offset(text,edit.range.start)>=start&&offset(text,edit.range.end)<=end,"formatting edit escapes selection");
+  }
+  const result=applyTextEdits(text,edits);
+  assert.equal(result.slice(0,start),text.slice(0,start),"formatting changed prefix outside selection");
+  assert(result.endsWith(text.slice(end)),"formatting changed suffix outside selection");
+  return result;
+}
 export function completionItems(value:any):any[] {
   assert(value!==null,"completion result is null");
   const items=Array.isArray(value)?value:value.items;assert(Array.isArray(items),"invalid completion list");return items;

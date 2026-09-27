@@ -1752,9 +1752,25 @@
         {
           "id": "FMT-01/selection",
           "requirement": "Independent non-whole-file selection formatting respects scope, preserves code and is idempotent.",
-          "implementation": "partial",
-          "remaining": "Current range is the whole file; no narrow selection scope witness.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "FMT-01/range",
+              "operations": [
+                {
+                  "endpoint": "textDocument/rangeFormatting",
+                  "states": [
+                    "first_use",
+                    "idempotence"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent javac validation",
+                "narrow formatting preserves both unformatted neighbours"
+              ]
+            }
+          ]
         },
         {
           "id": "FMT-01/on-type",
@@ -1781,9 +1797,24 @@
         {
           "id": "FMT-01/string",
           "requirement": "Independent raw-string formatting preserves code and is idempotent.",
-          "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "FMT-01/string",
+              "operations": [
+                {
+                  "endpoint": "java.edit.stringFormatting",
+                  "states": [
+                    "first_use",
+                    "idempotence"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent javac validation"
+              ]
+            }
+          ]
         }
       ]
     },

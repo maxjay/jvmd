@@ -4,8 +4,8 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 115 case definitions, 58 passing TypeScript
-harness tests, and 107 required variants (52 implemented, 42 partial, 13 absent).
+Latest implementation inventory: 115 case definitions, 59 passing TypeScript
+harness tests, and 107 required variants (54 implemented, 40 partial, 13 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -392,3 +392,25 @@ advertise code-lens support and the refresh request handler already implemented.
 references and a duplicated reference with the correct count. Source inventory is
 115 cases and 107 variants: 52 implemented, 42 partial and 13 absent. These are
 implementation dispositions; supported-server replay is still required.
+
+## Narrow formatting and stronger mutation-test prerequisites
+
+The range-formatting case now selects only the middle method in a dedicated
+fixture. Deliberately unformatted methods before and after it must remain byte
+identical. Both initial and idempotence requests reject edits outside the selected
+method. The first formatting operation validates its edit scope and unchanged
+fixture code before it can be recorded as successful. Raw-string formatting now
+also compiles the returned source independently. Other formatter routes retain
+their own fresh fixtures.
+
+The first reference-lens pilot exposed a harness bug: declaration lookup found
+the letter `b` in `public`, rejecting the correct returned method lens. The lookup
+now starts at the method name. Stale-lens and stale-call-graph subprocess tests
+require a passing baseline and an incorrect immediate post-mutation response,
+so a failure during setup cannot satisfy a stale-result test. The initial lens
+pilot is development evidence, not evidence of JDTLS semantic failure; its
+corrected replay remains required.
+
+59 harness tests pass. The inventory is 115 cases and 107 variants: 54 implemented,
+40 partial and 13 absent. Supported-server formatting replay and the broader
+worker-specification gates remain open.

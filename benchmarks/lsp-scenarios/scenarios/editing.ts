@@ -34,6 +34,7 @@ export const editingCases:CaseDefinition[]=[
     const source=c.file("Format.java").text;
     const formatted=await c.execute("java.edit.stringFormatting",[source,null,"0"],v=>{assert.equal(typeof v,"string");assert.equal(v.replace(/\s/gu,""),source.replace(/\s/gu,""));assert.notEqual(v,source);});
     await c.execute("java.edit.stringFormatting",[formatted,null,"0"],v=>assert.equal(v,formatted),"idempotence");
+    await c.open("Format.java",formatted);c.compileOracle();
   }},
   {id:"FMT-03/string-paste",family:"FMT-03",apis:["API-084"],command:"java.edit.handlePasteEvent",variant:"escape a quoted string and compile applied paste",fixture:{"Paste.java":'package bench;\npublic class Paste { public String text = ""; }\n'},run:async c=>{
     await c.open("Paste.java");const source=c.text("Paste.java"),at=source.indexOf('""')+1,r={start:position(source,at),end:position(source,at)};

@@ -25,6 +25,10 @@ for(const [mode,caseId] of [["wrong-warmup","CMP-01/first-repeat"],["stale-provi
       const rows=readFileSync(path.join(caseRoot,"operations.jsonl"),"utf8").trim().split("\n").map(l=>JSON.parse(l));
       assert.equal(rows.at(-1).outcome,"incorrect");
       if(mode==="wrong-warmup"){assert.equal(rows[0].outcome,"pass");assert.equal(rows[1].state,"warmup");}
+      if(mode==="stale-lens"||mode==="stale-call-graph"){
+        assert(rows.some(r=>r.state==="baseline"&&r.outcome==="pass"),"stale test never established a correct baseline");
+        assert(rows.some(r=>r.state==="changed_immediate"&&r.outcome==="incorrect"),"stale test did not fail after mutation");
+      }
       assert(readFileSync(path.join(caseRoot,"events.jsonl"),"utf8").includes('"direction":"receive"'));
     }finally{rmSync(tmp,{recursive:true,force:true});}
   });

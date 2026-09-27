@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {isDeepStrictEqual} from "node:util";
 import {SETTINGS,type CaseDefinition,type ScenarioContext} from "../harness/ScenarioContext.ts";
-import {position,range,selected,exactLocations,exactCallGraph,exactReferenceLens,offset,applyTextEdits} from "../harness/oracles.ts";
+import {position,range,selected,exactLocations,exactCallGraph,exactReferenceLens,offset,applyTextEdits,applyScopedTextEdits} from "../harness/oracles.ts";
 
 const at=(c:ScenarioContext,file:string,token:string,shift=1)=>({textDocument:{uri:c.file(file).uri},position:position(c.text(file),c.text(file).indexOf(token)+shift)});
 const loc=(c:ScenarioContext,file:string,token:string,from=0)=>({uri:c.file(file).uri,range:range(c.text(file),token,from)});
@@ -113,7 +113,7 @@ export const structureCases:CaseDefinition[]=[
     prepare:fixture=>{fixture.settings=structuredClone(SETTINGS);fixture.settings.java.implementationsCodeLens.enabled="none";},
     run:async(c:ScenarioContext)=>{
       await c.open("Calls.java");
-      const declaration=()=>range(c.text("Calls.java"),"b",c.text("Calls.java").indexOf("public int b()"));
+      const declaration=()=>range(c.text("Calls.java"),"b",c.text("Calls.java").indexOf("int b()")+4);
       const select=(value:any)=>{assert(Array.isArray(value),"lens list missing");const candidates=value.filter(l=>isDeepStrictEqual(l.range,declaration()));assert.equal(candidates.length,1,"expected one reference lens at exact b declaration");return candidates[0];};
       const acquire=async()=>select(await c.query("textDocument/codeLens",doc(c,"Calls.java"),select,"item_acquisition"));
       const oracle=(value:any)=>{
@@ -132,12 +132,16 @@ export const structureCases:CaseDefinition[]=[
       const trigger=c.change("Calls.java",after).trigger;
       await c.transition("codeLens/resolve",acquire,oracle,trigger,`${mutation} one exact reference; newly acquired lens for every attempt`);c.compileOracle();
     }})),
-  ...[["whole","API-077","textDocument/formatting","documentFormattingProvider"],["range","API-078","textDocument/rangeFormatting","documentRangeFormattingProvider"],["on-type","API-079","textDocument/onTypeFormatting","documentOnTypeFormattingProvider"]].map(([variant,api,method,capability])=>({id:"FMT-01/"+variant,family:"FMT-01",apis:[api],capability,variant:"apply edits; preserve tokens; idempotent",
+  ...[["whole","API-077","textDocument/formatting","documentFormattingProvider"],["range","API-078","textDocument/rangeFormatting","documentRangeFormattingProvider"],["on-type","API-079","textDocument/onTypeFormatting","documentOnTypeFormattingProvider"]].map(([variant,api,method,capability])=>({id:"FMT-01/"+variant,family:"FMT-01",apis:[api],capability,variant:"apply edits; preserve tokens and scope; idempotent",
+    ...(variant==="range"?{fixture:{"Format.java":"package bench;\npublic class Format {\n    public int untouched( ){return 9+1;}\n    public int value( ){return 1+2;}\n    public int trailing( ){return 4+5;}\n}\n"}}:{}),
     run:async(c:ScenarioContext)=>{await c.open("Format.java");const params=()=>({...doc(c,"Format.java"),options:{tabSize:4,insertSpaces:true},
-      ...(variant==="range"?{range:{start:{line:0,character:0},end:position(c.text("Format.java"),c.text("Format.java").length)}}:{}),
+      ...(variant==="range"?{range:{start:position(c.text("Format.java"),c.text("Format.java").indexOf("    public int value")),end:position(c.text("Format.java"),c.text("Format.java").indexOf("    public int trailing"))}}:{}),
       ...(variant==="on-type"?{position:position(c.text("Format.java"),c.text("Format.java").lastIndexOf("}")+1),ch:"}"}:{})});
-      const before=c.text("Format.java"),edits=await c.query(method,params(),v=>assert(Array.isArray(v)&&v.length>0));
-      const after=applyTextEdits(before,edits);c.assert("formatting changes only fixture whitespace",after.replace(/\s/gu,"")===before.replace(/\s/gu,""));
-      c.change("Format.java",after);c.compileOracle();await c.query(method,params(),v=>assert.equal(applyTextEdits(after,v??[]),after),"idempotence");
+      const before=c.text("Format.java"),scope=params().range;
+      const apply=(text:string,edits:any[],scope:any)=>variant==="range"?applyScopedTextEdits(text,edits,scope):applyTextEdits(text,edits);
+      const edits=await c.query(method,params(),v=>{assert(Array.isArray(v)&&v.length>0);const after=apply(before,v,scope);assert.notEqual(after,before,"formatter made no change");assert.equal(after.replace(/\s/gu,""),before.replace(/\s/gu,""),"formatting changes fixture code");});
+      const after=apply(before,edits,scope);c.assert("formatting changes only fixture whitespace",after.replace(/\s/gu,"")===before.replace(/\s/gu,""));
+      if(variant==="range")c.assert("narrow formatting preserves both unformatted neighbours",after.includes("    public int untouched( ){return 9+1;}")&&after.includes("    public int trailing( ){return 4+5;}"));
+      c.change("Format.java",after);c.compileOracle();const again=params();await c.query(method,again,v=>assert.equal(apply(after,v??[],again.range),after),"idempotence");
     }})),
 ];

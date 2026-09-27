@@ -1,0 +1,10 @@
+Exception in thread "main" java.lang.NoClassDefFoundError: com/sun/management/ThreadMXBean
+	at dev.jvmd.core.RequestScope$Counters.allocated(RequestScope.java:170)
+	at dev.jvmd.core.RequestScope$Span.<init>(RequestScope.java:145)
+	at dev.jvmd.core.RequestScope.stage(RequestScope.java:98)
+	at dev.jvmd.core.RequestScope.traced(RequestScope.java:91)
+	at TraceModuleProbe.main(TraceModuleProbe.java:1)
+Caused by: java.lang.ClassNotFoundException: com.sun.management.ThreadMXBean
+	at java.base/jdk.internal.loader.BuiltinClassLoader.loadClass(BuiltinClassLoader.java:580)
+	at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:490)
+	... 5 more

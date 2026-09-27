@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "reproducer": "Same packaged Java runtime; same request; AOT explicitly disabled to isolate optional-module availability",
+  "before": "exit 1: missing com.sun.management.ThreadMXBean",
+  "after": "exit 0: ok",
+  "ciRun": "https://github.com/maxjay/jvmd/actions/runs/36289970694",
+  "ciArtifact": "https://github.com/maxjay/jvmd/actions/runs/36289970694/artifacts/10921798267",
+  "ciArtifactSha256": "f3d46ac610d673c2479c2358602fb642eb44100821bb9205acf15f998ace15a7",
+  "ciArtifactBytes": 1170571170,
+  "beforeSourceSha256": "7ac20c3702def44c222f97fa92d9ba462e01f262906dc83e196fde1b889d30cb",
+  "afterSourceSha256": "34d815ad7be74cdc50aa915be5496d478a573418c10ed3d2641f2e15920dc90a"
+}

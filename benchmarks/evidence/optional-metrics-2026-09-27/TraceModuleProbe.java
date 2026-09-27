@@ -1,0 +1,1 @@
+public class TraceModuleProbe { public static void main(String[] args) throws Exception { var value=dev.jvmd.core.RequestScope.traced("probe","trace-test","probe-1","unchanged",()->"ok"); if(!value.equals("ok")) throw new AssertionError(value); System.out.println(value); } }

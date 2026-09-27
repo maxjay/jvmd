@@ -77,6 +77,19 @@ export function hoverOracle(value:any,symbol:string,type:string,doc?:string):voi
   assert(new RegExp("\\b"+type+"\\b").test(content),"hover type wrong");
   if(doc)assert(content.includes(doc),"hover documentation marker missing");
 }
+export function signatureOracle(value:any,method:string,types:string[],activeParameter:number):void {
+  assert(Array.isArray(value?.signatures)&&value.signatures.length>0,"signature list missing");
+  const requested=value.activeSignature??0;assert(Number.isInteger(requested)&&requested>=0,"invalid active signature");
+  // LSP 3.17 defaults an out-of-range activeSignature to zero and prefers the
+  // selected SignatureInformation.activeParameter over the enclosing value.
+  const signature=value.signatures[requested<value.signatures.length?requested:0];
+  const match=new RegExp("\\b"+method+"\\s*\\(([^)]*)\\)").exec(signature.label);assert(match,"active signature names wrong method");
+  const parameters=match[1].split(",");assert.equal(parameters.length,types.length,"wrong parameter count");
+  for(const [i,type] of types.entries())assert(new RegExp("\\b"+type+"\\b").test(parameters[i]),"active signature parameter type wrong at "+i);
+  const selectedParameter=signature.activeParameter??value.activeParameter??0;
+  assert(Number.isInteger(selectedParameter)&&selectedParameter>=0,"invalid active parameter");
+  assert.equal(selectedParameter<parameters.length?selectedParameter:0,activeParameter,"wrong active argument");
+}
 export function decodeTokens(value:any,legend:any,text:string):any[] {
   assert(Array.isArray(value?.data)&&value.data.length%5===0,"invalid semantic token encoding");
   let line=0,character=0;const tokens=[];

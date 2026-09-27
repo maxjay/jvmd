@@ -761,16 +761,72 @@
         {
           "id": "CMP-02/repeat",
           "requirement": "Unchanged repeats for hover and signature help.",
-          "implementation": "partial",
-          "remaining": "Signature help currently has no unchanged series.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "CMP-02/hover",
+              "operations": [
+                {
+                  "endpoint": "textDocument/hover",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "CMP-02/signature",
+              "operations": [
+                {
+                  "endpoint": "textDocument/signatureHelp",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
         },
         {
           "id": "CMP-02/declaration-edit",
           "requirement": "Declaration/docs and signature mutation are visible at caller through their respective requests.",
-          "implementation": "not_implemented",
-          "remaining": "No independent declaration/signature mutation cases.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "CMP-02/hover-edit",
+              "operations": [
+                {
+                  "endpoint": "textDocument/hover",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "CMP-02/signature-edit",
+              "operations": [
+                {
+                  "endpoint": "textDocument/signatureHelp",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent javac validation"
+              ]
+            }
+          ]
         },
         {
           "id": "CMP-02/cursor",
@@ -1219,9 +1275,35 @@
         {
           "id": "VIEW-01/shift",
           "requirement": "Source edit shifts spans; tokens and hints match changed source and requested range.",
-          "implementation": "partial",
-          "remaining": "Token shift exists; inlay-hint shift case is missing.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "VIEW-01/tokens",
+              "operations": [
+                {
+                  "endpoint": "textDocument/semanticTokens/full",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "VIEW-01/inlay-hints",
+              "operations": [
+                {
+                  "endpoint": "textDocument/inlayHint",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
         }
       ]
     },
@@ -1299,9 +1381,35 @@
         {
           "id": "VIEW-02/shift",
           "requirement": "Line-shifting edit updates both folds and selection ranges.",
-          "implementation": "partial",
-          "remaining": "Fold shift exists; selection-range shift case is missing.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "VIEW-02/folding",
+              "operations": [
+                {
+                  "endpoint": "textDocument/foldingRange",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "VIEW-02/selection",
+              "operations": [
+                {
+                  "endpoint": "textDocument/selectionRange",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
         }
       ]
     },

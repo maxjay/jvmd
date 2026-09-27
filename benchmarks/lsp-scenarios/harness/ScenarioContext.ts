@@ -13,6 +13,7 @@ export const CAPABILITIES={
   workspace:{configuration:true,workspaceFolders:true,applyEdit:true,fileOperations:{willRename:true,didRename:true,didCreate:true,didDelete:true},workspaceEdit:{documentChanges:true,resourceOperations:["create","rename","delete"]},
     symbol:{resolveSupport:{properties:["location.range"]}}},
   textDocument:{synchronization:{didSave:true,willSave:true,willSaveWaitUntil:true},publishDiagnostics:{versionSupport:true},completion:{completionItem:{snippetSupport:false,resolveSupport:{properties:["documentation","detail","additionalTextEdits"]}}},
+    signatureHelp:{signatureInformation:{activeParameterSupport:true,parameterInformation:{labelOffsetSupport:true},documentationFormat:["markdown","plaintext"]}},
     documentSymbol:{hierarchicalDocumentSymbolSupport:true},codeAction:{codeActionLiteralSupport:{codeActionKind:{valueSet:["quickfix","refactor","source"]}},resolveSupport:{properties:["edit"]}},
     semanticTokens:{requests:{full:true},tokenTypes:["namespace","type","class","enum","interface","struct","typeParameter","parameter","variable","property","enumMember","event","function","method","macro","keyword","modifier","comment","string","number","regexp","operator","decorator"],tokenModifiers:["declaration","definition","readonly","static","deprecated","abstract","async","modification","documentation","defaultLibrary"],formats:["relative"]}},
 };

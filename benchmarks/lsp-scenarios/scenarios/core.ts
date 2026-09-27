@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {writeFileSync} from "node:fs";
 import {type CaseDefinition,type ScenarioContext} from "../harness/ScenarioContext.ts";
-import {position,range,selected,exactLocations,hoverOracle,completionOracle,chooseMethod,completionEffect,markup,decodeTokens,locations} from "../harness/oracles.ts";
+import {position,range,selected,exactLocations,hoverOracle,signatureOracle,completionOracle,chooseMethod,completionEffect,markup,decodeTokens,locations} from "../harness/oracles.ts";
 
 const p=(c:ScenarioContext,file:string,token:string,shift=1)=>({textDocument:{uri:c.file(file).uri},position:position(c.text(file),c.text(file).indexOf(token)+shift)});
 async function pair(c:ScenarioContext){await c.open("Customer.java");await c.open("Use.java");}
@@ -81,13 +81,20 @@ export const coreCases:CaseDefinition[]=[
       await c.transition("completionItem/resolve",async()=>chooseMethod(await c.query("textDocument/completion",complete(c),v=>completionOracle(v,["name"]),"item_acquisition",trigger),"name"),v=>assert(markup(v.documentation).includes("NAME_DOC_V2")),trigger,"updated NAME_DOC_V2 on freshly acquired item");}},
   {id:"CMP-02/hover",family:"CMP-02",apis:["API-047"],method:"textDocument/hover",capability:"hoverProvider",variant:"first/repeat",
     run:async c=>{await pair(c);await c.series("textDocument/hover",p(c,"Use.java","name()"),v=>hoverOracle(v,"name","String","NAME_DOC_V1"));}},
-  {id:"CMP-02/signature",family:"CMP-02",apis:["API-048"],method:"textDocument/signatureHelp",capability:"signatureHelpProvider",variant:"cursor active argument",
+  {id:"CMP-02/signature",family:"CMP-02",apis:["API-048"],method:"textDocument/signatureHelp",capability:"signatureHelpProvider",variant:"first/repeat and cursor active argument",
     run:async c=>{await pair(c);const source=c.text("Use.java"),base=source.indexOf('customer.join("a", 2)');
       for(const [i,off] of [[0,base+'customer.join('.length],[1,base+'customer.join("a", '.length]])
-        await c.query("textDocument/signatureHelp",{textDocument:{uri:c.file("Use.java").uri},position:position(source,off)},v=>{
-          assert(v?.signatures?.length>0);assert(v.signatures.some((s:any)=>s.label.includes("join")&&s.label.includes("String")&&s.label.includes("int")));
-          assert.equal(v.activeParameter??v.signatures[v.activeSignature??0].activeParameter,i);
-        },i===0?"first_use":"cursor_change");}},
+        if(i===0)await c.series("textDocument/signatureHelp",{textDocument:{uri:c.file("Use.java").uri},position:position(source,off)},v=>signatureOracle(v,"join",["String","int"],i));
+        else await c.query("textDocument/signatureHelp",{textDocument:{uri:c.file("Use.java").uri},position:position(source,off)},v=>signatureOracle(v,"join",["String","int"],i),"cursor_change");}},
+  {id:"CMP-02/hover-edit",family:"CMP-02",apis:["API-047","API-011"],capability:"hoverProvider",variant:"unsaved declaration type and documentation edit at unchanged caller",
+    run:async c=>{await pair(c);await c.query("textDocument/hover",p(c,"Use.java","name()"),v=>hoverOracle(v,"name","String","NAME_DOC_V1"),"baseline");
+      const trigger=c.change("Customer.java",c.text("Customer.java").replace("public String name()","public CharSequence name()").replace("NAME_DOC_V1","NAME_DOC_V2")).trigger;
+      await c.transition("textDocument/hover",()=>p(c,"Use.java","name()"),v=>{hoverOracle(v,"name","CharSequence","NAME_DOC_V2");assert(!markup(v.contents).includes("NAME_DOC_V1"));},trigger,"changed return type and NAME_DOC_V2 on the same caller expression");}},
+  {id:"CMP-02/signature-edit",family:"CMP-02",apis:["API-048","API-011"],capability:"signatureHelpProvider",variant:"unsaved provider parameter type edit at unchanged caller",
+    run:async c=>{await pair(c);const params=()=>{const text=c.text("Use.java"),at=text.indexOf('customer.join("a", ')+ 'customer.join("a", '.length;return {textDocument:{uri:c.file("Use.java").uri},position:position(text,at)};};
+      await c.query("textDocument/signatureHelp",params(),v=>signatureOracle(v,"join",["String","int"],1),"baseline");
+      const trigger=c.change("Customer.java",c.text("Customer.java").replace("String left, int right","String left, long right")).trigger;
+      await c.transition("textDocument/signatureHelp",params,v=>signatureOracle(v,"join",["String","long"],1),trigger,"changed long parameter replaces int in the active caller signature");c.compileOracle();}},
   {id:"NAV-01/definition",family:"NAV-01",apis:["API-050"],method:"textDocument/definition",capability:"definitionProvider",variant:"first/repeat/declaration move",
     run:async c=>{await pair(c);await c.series("textDocument/definition",p(c,"Use.java","number()"),numberOracle(c));
       const trigger=c.change("Customer.java","\n"+c.text("Customer.java")).trigger;

@@ -61,11 +61,12 @@ export const structureCases:CaseDefinition[]=[
     }})),
   ...["supertypes","subtypes"].map(direction=>({id:"REL-02/"+direction,family:"REL-02",apis:["API-066",direction==="supertypes"?"API-067":"API-068"],capability:"typeHierarchyProvider",variant:"direct related type and parent change",
     run:async(c:ScenarioContext)=>{await c.open("Hierarchy.java");
-      const prepare=async()=>{const rows=await c.query("textDocument/prepareTypeHierarchy",at(c,"Hierarchy.java","class Base",7),v=>{assert.equal(v.length,1);symbolOracle(c,v,"Hierarchy.java","Base");});return rows[0];};
-      const parentOracle=(v:any)=>{assert.deepEqual(v.map((x:any)=>x.name).sort(),["Object","Root"]);symbolOracle(c,v,"Hierarchy.java","Root");const object=v.find((x:any)=>x.name==="Object");assert.equal(object.detail,"java.lang");assert(new URL(object.uri).pathname.endsWith("/java.lang/Object.java"));};
+      const focus=direction==="supertypes"?"Child":"Base";
+      const prepare=async()=>{const rows=await c.query("textDocument/prepareTypeHierarchy",at(c,"Hierarchy.java","class "+focus,7),v=>{assert.equal(v.length,1);symbolOracle(c,v,"Hierarchy.java",focus);},"item_acquisition");return rows[0];};
+      const parentOracle=(v:any)=>{const parent=c.text("Hierarchy.java").includes("Child extends Base")?"Base":"UnrelatedType";assert.equal(v.length,1);symbolOracle(c,v,"Hierarchy.java",parent);};
       let item=await prepare();await c.series("typeHierarchy/"+direction,{item},v=>{if(direction==="supertypes")parentOracle(v);else{assert.equal(v.length,1);symbolOracle(c,v,"Hierarchy.java","Child");}});
-      const trigger=c.change("Hierarchy.java",c.text("Hierarchy.java").replace("Child extends Base","Child extends UnrelatedType")).trigger;item=await prepare();
-      await c.query("typeHierarchy/"+direction,{item},v=>{if(direction==="subtypes")assert.deepEqual(v,[]);else parentOracle(v);},"changed",trigger,"Child no longer directly extends Base; Base still implements Root");
+      const trigger=c.change("Hierarchy.java",c.text("Hierarchy.java").replace("Child extends Base","Child extends UnrelatedType")).trigger;
+      await c.transition("typeHierarchy/"+direction,async()=>({item:await prepare()}),v=>{if(direction==="subtypes")assert.deepEqual(v,[]);else parentOracle(v);},trigger,"Child has a different direct parent and no longer appears under Base; fresh item for every expansion");
     }})),
   {id:"VIEW-02/folding",family:"VIEW-02",apis:["API-071"],capability:"foldingRangeProvider",variant:"class fold and shifted lines",run:async c=>{
     await c.open("Customer.java");const oracle=(v:any)=>{
@@ -76,19 +77,24 @@ export const structureCases:CaseDefinition[]=[
     const trigger=c.change("Customer.java","\n"+c.text("Customer.java")).trigger;await c.transition("textDocument/foldingRange",()=>doc(c,"Customer.java"),oracle,trigger,"class fold moved with source");
   }},
   {id:"VIEW-02/selection",family:"VIEW-02",apis:["API-072"],capability:"selectionRangeProvider",variant:"nested ranges contain cursor",run:async c=>{
-    await c.open("Customer.java");const params={...doc(c,"Customer.java"),positions:[at(c,"Customer.java","name()").position]};
-    await c.series("textDocument/selectionRange",params,v=>{assert.equal(v.length,1);let row=v[0],lastStart=Infinity,lastEnd=-1,count=0;const cursor=offset(c.text("Customer.java"),params.positions[0]);
+    await c.open("Customer.java");const params=()=>({...doc(c,"Customer.java"),positions:[at(c,"Customer.java","name()").position]});
+    const oracle=(v:any)=>{assert.equal(v.length,1);let row=v[0],lastStart=Infinity,lastEnd=-1,count=0,identifier=false;const cursor=offset(c.text("Customer.java"),params().positions[0]);
       while(row){assert(++count<32,"cyclic/overdeep selection chain");const a=offset(c.text("Customer.java"),row.range.start),b=offset(c.text("Customer.java"),row.range.end);
-        assert(a<=cursor&&b>=cursor&&a<=lastStart&&b>=lastEnd);lastStart=a;lastEnd=b;row=row.parent;}assert(count>=2);
-    });
+        assert(a<=cursor&&b>=cursor&&a<=lastStart&&b>=lastEnd);identifier ||= selected(c.text("Customer.java"),row.range)==="name";lastStart=a;lastEnd=b;row=row.parent;}assert(count>=2);assert(identifier,"selection chain omits current method identifier");};
+    await c.series("textDocument/selectionRange",params(),oracle);
+    const trigger=c.change("Customer.java","\n\n\n"+c.text("Customer.java")).trigger;
+    await c.transition("textDocument/selectionRange",params,oracle,trigger,"identifier and enclosing selection ranges follow three inserted lines");
   }},
   {id:"VIEW-01/inlay-hints",family:"VIEW-01",apis:["API-074"],capability:"inlayHintProvider",variant:"argument names within requested range",run:async c=>{
-    await c.open("Customer.java");await c.open("Use.java");const text=c.text("Use.java"),r=range(text,'customer.join("a", 2)');
-    await c.series("textDocument/inlayHint",{...doc(c,"Use.java"),range:r},v=>{
+    await c.open("Customer.java");await c.open("Use.java");const params=()=>({...doc(c,"Use.java"),range:range(c.text("Use.java"),'customer.join("a", 2)')});
+    const oracle=(v:any)=>{const text=c.text("Use.java"),r=params().range;
       assert(Array.isArray(v));const labels=v.map(h=>typeof h.label==="string"?h.label:h.label.map((x:any)=>x.value).join(""));
       assert(labels.some(x=>x.includes("left")));assert(labels.some(x=>x.includes("right")));
       for(const h of v){const x=offset(text,h.position);assert(x>=offset(text,r.start)&&x<=offset(text,r.end));}
-    });
+    };
+    await c.series("textDocument/inlayHint",params(),oracle);
+    const trigger=c.change("Use.java","\n\n\n"+c.text("Use.java")).trigger;
+    await c.transition("textDocument/inlayHint",params,oracle,trigger,"both parameter hints lie inside the shifted call range");
   }},
   {id:"VIEW-03/code-lens",family:"VIEW-03",apis:["API-075","API-076"],capability:"codeLensProvider",variant:"resolve reference lens from this response",run:async c=>{
     await c.open("Calls.java");const all=await c.query("textDocument/codeLens",doc(c,"Calls.java"),v=>assert(Array.isArray(v)&&v.length>0));

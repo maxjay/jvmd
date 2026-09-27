@@ -298,3 +298,20 @@ The archive contains review subsets, not complete performance evidence.
 Cancelled workflows now stop starting further native/protobuf experiments while
 still uploading their captured evidence. Ordinary correctness failures continue
 to allow the other diagnostic profiles to run.
+
+## Signature and span-shift follow-up
+
+There are now 109 case definitions. Signature help has an unchanged series plus
+an independently reset provider-parameter mutation. Hover has a distinct return
+type/documentation mutation at the unchanged caller. Inlay hints and selection
+ranges now probe inserted lines using ranges calculated from the current source.
+Type-hierarchy mutation probes use a freshly prepared item on every attempt;
+the supertype probe targets Child so changing its parent must change the answer.
+The previous Base-supertype probe could not distinguish that mutation.
+
+The signature oracle validates the active overload's parameter types in order,
+not any signature or the return type. It follows LSP 3.17 defaults and the
+signature-local active-parameter precedence; the client advertises that support.
+All 50 harness tests pass. The variant ledger now has 44 implemented, 45 partial
+and 18 absent requirements. Real-server validation of this new batch remains
+pending, and no performance claim is enabled.

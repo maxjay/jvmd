@@ -541,3 +541,23 @@ case additionally checks exact final source, unrelated files and runtime string
 value; those new assertions require their own replay and are not claimed by the
 earlier archive. Inventory: 116 cases, 61 implemented variants, 34 partial and
 12 absent. All 67 harness tests pass.
+
+## Final replay for this checkpoint
+
+The `b8dc461` replay verifies the newly declared probe policy with independent
+reference addition on both JVMD and JDTLS. Both immediate and settled replies
+pass, and each transition records one attempt terminating as `settled`. JDTLS
+also passes the stronger string-paste checks: exact escaped source, unchanged
+unrelated files, independent compilation and runtime string value. Its nonzero
+shutdown exit remains `protocol_error`; JVMD declares string paste unsupported.
+
+The four-case pilot has two passes, one protocol failure and one unsupported
+disposition. Every semantic operation and assertion passes, with no source drift
+or integrity issues. `benchmarks/evidence/paste-probe-2026-09-27/` preserves the
+raw protocol/process review subset, declared plan, transition records and hashes.
+
+GitHub Tests and Benchmarks passed at `fb447f6`. Later-head workflows have their
+own dispositions and must not inherit that result. The implementation remains
+a draft: 34 partial and 12 absent variants, full semantic replay, accepted AOT,
+complete lifetime resources, observer overhead and independent comparison blocks
+remain outstanding. No comparative-performance claim has been enabled.

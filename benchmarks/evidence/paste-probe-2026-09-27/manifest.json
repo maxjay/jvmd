@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "scope": "Raw protocol review subset; not complete experiment bundle or comparative performance evidence",
+  "revision": "b8dc461ee0c2f47ddf3fb3bd3431c940a7f991f7",
+  "archive": {
+    "file": "protocol-review.tar.xz",
+    "bytes": 107936,
+    "sha256": "06850cc475d4f5f9f423869210c0962a439ec64b26dba7ac9bf817a8f8ea8c52",
+    "everySelectedFileHash": "verified"
+  },
+  "plan": {
+    "caseIds": [
+      "NAV-02/references-false-add",
+      "FMT-03/string-paste"
+    ],
+    "servers": [
+      "jvmd",
+      "jdtls"
+    ],
+    "blocks": 1,
+    "warmup": 1,
+    "samples": 2,
+    "timeout": 30000,
+    "transitionPolicy": {
+      "maxAttempts": 100,
+      "retryDelayMs": 20,
+      "deadlineMs": 30000,
+      "perRequestTimeoutMs": 30000,
+      "clock": "client monotonic",
+      "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+      "settledProbe": "one additional correct response after the first correct response"
+    },
+    "profile": "pipe",
+    "serverOrder": "alternate per independent block",
+    "reset": "fresh fixture and server state per independent case",
+    "seed": 0
+  },
+  "sourceDrift": false,
+  "integrityIssues": [],
+  "sourceManifestSha256": "d9ef162e57c9e7707aff843c5cd15cc609e2200c08a86afc4304a40ab02e33ef",
+  "originalChecksumInventorySha256": "12d9924a96fd2f4018a2ec18e36e344d738d4c72138133839da5bec2d8a030fd",
+  "outcomes": {
+    "pass": 2,
+    "incorrect": 0,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 1,
+    "harness_error": 0,
+    "unsupported": 1,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "cases": [
+    {
+      "server": "jdtls",
+      "caseId": "FMT-03/string-paste",
+      "profile": "direct",
+      "outcome": "protocol_error",
+      "assertions": [
+        "cleanup preserves every unrelated source",
+        "string paste preserves the exact escaped target",
+        "independent javac validation",
+        "independent generated-code behaviour"
+      ],
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}",
+      "transitions": []
+    },
+    {
+      "server": "jdtls",
+      "caseId": "NAV-02/references-false-add",
+      "profile": "direct",
+      "outcome": "pass",
+      "assertions": [
+        "one caller use changed"
+      ],
+      "shutdownError": null,
+      "transitions": [
+        {
+          "kind": "transition",
+          "transitionId": "transition-1",
+          "method": "textDocument/references",
+          "firstOperationIndex": 1,
+          "triggerNs": "6883670387634",
+          "witness": "add one exact caller range; unrelated number declaration excluded",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response"
+          },
+          "deadlineNs": "6913670494786",
+          "attemptCount": 1,
+          "termination": "settled",
+          "endedNs": "6883728632949",
+          "settledOperationId": "op-3"
+        }
+      ]
+    },
+    {
+      "server": "jvmd",
+      "caseId": "FMT-03/string-paste",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "assertions": [],
+      "shutdownError": null,
+      "transitions": []
+    },
+    {
+      "server": "jvmd",
+      "caseId": "NAV-02/references-false-add",
+      "profile": "pipe",
+      "outcome": "pass",
+      "assertions": [
+        "one caller use changed"
+      ],
+      "shutdownError": null,
+      "transitions": [
+        {
+          "kind": "transition",
+          "transitionId": "transition-1",
+          "method": "textDocument/references",
+          "firstOperationIndex": 1,
+          "triggerNs": "6876769946593",
+          "witness": "add one exact caller range; unrelated number declaration excluded",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response"
+          },
+          "deadlineNs": "6906770181397",
+          "attemptCount": 1,
+          "termination": "settled",
+          "endedNs": "6876863802058",
+          "settledOperationId": "op-3"
+        }
+      ]
+    }
+  ],
+  "interpretation": [
+    "Both servers pass the independent reference-addition case, including first changed and settled probes under the predeclared policy.",
+    "JDTLS passes the strengthened string-paste source, exclusion, compilation and runtime assertions but remains protocol_error because it exits with code 1.",
+    "JVMD explicitly declares the string-paste command unsupported.",
+    "Single-block diagnostic profiles do not establish comparative performance."
+  ]
+}

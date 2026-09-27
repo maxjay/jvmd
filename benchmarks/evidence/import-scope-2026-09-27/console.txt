@@ -1,0 +1,21 @@
+{"caseId":"FMT-02/imports-folder","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"FMT-02/imports-folder","server":"jdtls","block":1,"outcome":"incorrect","error":"AssertionError [ERR_ASSERTION]: workspace/executeCommand: AssertionError [ERR_ASSERTION]: organize imports did not keep exactly the used import\n+ actual - expected\n\n+ 'packagebench.selected;importjava.util.Set;importjava.util.List;'\n- 'packagebench.selected;importjava.util.List;'\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"}
+{"caseId":"FMT-02/imports-project","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"FMT-02/imports-project","server":"jdtls","block":1,"outcome":"pass"}
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Selected benchmark cases failed; raw artifacts preserved in /workspace/scratch/c9ab7d11d4a9/import-scope-replay
+    at main (file:///workspace/scratch/c9ab7d11d4a9/jvmd-next/benchmarks/lsp-scenarios/suite.ts:107:3)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///workspace/scratch/c9ab7d11d4a9/jvmd-next/benchmarks/lsp-scenarios/run.ts:6:3 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

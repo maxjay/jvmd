@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "93286698b73ed2e03ff1b7889cfd7cae705fa8c2",
+  "sourceDrift": false,
+  "plan": {
+    "caseIds": [
+      "FMT-02/imports-folder",
+      "FMT-02/imports-project"
+    ],
+    "servers": [
+      "jvmd",
+      "jdtls"
+    ],
+    "blocks": 1,
+    "warmup": 1,
+    "samples": 2,
+    "timeout": 30000,
+    "transitionPolicy": {
+      "maxAttempts": 100,
+      "retryDelayMs": 20,
+      "deadlineMs": 30000,
+      "perRequestTimeoutMs": 30000,
+      "clock": "client monotonic",
+      "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+      "settledProbe": "one additional correct response after the first correct response",
+      "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+    },
+    "compiledArtifactPolicy": "two-project build success requires preserved post-response class snapshots; RPC and artifact observation intervals are separate",
+    "profile": "pipe",
+    "serverOrder": "alternate per independent block",
+    "reset": "fresh fixture and server state per independent case",
+    "seed": 0
+  },
+  "outcomes": {
+    "pass": 1,
+    "incorrect": 1,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 0,
+    "harness_error": 0,
+    "unsupported": 2,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "originalReducerIntegrityIssues": [],
+  "package": {
+    "file": "protocol-review.tar.xz",
+    "bytes": 121068,
+    "sha256": "eede47fd7c30b0357479ff04c2b823553c14841deda2dd6089de953a248ef2aa",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "verified",
+    "unsealedFiles": {},
+    "members": 42
+  },
+  "dispatchArchive": {
+    "file": "dispatch-bytecode.tar.xz",
+    "bytes": 21740,
+    "sha256": "1c311b42ec74a5a7756c0f2c7469c25f369d328f8b9b719eabeaa85cf7be44bf",
+    "roundTrip": "verified"
+  },
+  "cases": [
+    {
+      "caseId": "FMT-02/imports-folder",
+      "server": "jdtls",
+      "outcome": "incorrect",
+      "shutdownError": null,
+      "operations": [
+        {
+          "endpoint": "java/searchSymbols",
+          "state": "scope_presence",
+          "outcome": "pass",
+          "assertionError": null
+        },
+        {
+          "endpoint": "java.edit.organizeImports",
+          "state": "first_use",
+          "outcome": "incorrect",
+          "assertionError": "AssertionError [ERR_ASSERTION]: organize imports did not keep exactly the used import\n+ actual - expected\n\n+ 'packagebench.selected;importjava.util.Set;importjava.util.List;'\n- 'packagebench.selected;importjava.util.List;'\n"
+        }
+      ],
+      "assertions": [
+        {
+          "name": "scope candidates include nested sibling lookalike and foreign project sources",
+          "passed": true
+        },
+        {
+          "name": "independent javac validation",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "caseId": "FMT-02/imports-project",
+      "server": "jdtls",
+      "outcome": "pass",
+      "shutdownError": null,
+      "operations": [
+        {
+          "endpoint": "java/searchSymbols",
+          "state": "scope_presence",
+          "outcome": "pass",
+          "assertionError": null
+        },
+        {
+          "endpoint": "java.edit.organizeImports",
+          "state": "first_use",
+          "outcome": "pass",
+          "assertionError": null
+        },
+        {
+          "endpoint": "java.edit.organizeImports",
+          "state": "idempotence",
+          "outcome": "pass",
+          "assertionError": null
+        }
+      ],
+      "assertions": [
+        {
+          "name": "scope candidates include nested sibling lookalike and foreign project sources",
+          "passed": true
+        },
+        {
+          "name": "independent javac validation",
+          "passed": true
+        },
+        {
+          "name": "scope edit changes exactly selected files and preserves excluded sources",
+          "passed": true
+        },
+        {
+          "name": "open-buffer scope edits leave all on-disk sources unchanged",
+          "passed": true
+        },
+        {
+          "name": "independent javac validation",
+          "passed": true
+        },
+        {
+          "name": "independent generated-code behaviour",
+          "passed": true
+        },
+        {
+          "name": "scope repeat preserves exact source state",
+          "passed": true
+        },
+        {
+          "name": "scope edit preserves unrelated document versions and membership",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "caseId": "FMT-02/imports-folder",
+      "server": "jvmd",
+      "outcome": "unsupported",
+      "shutdownError": null,
+      "operations": [],
+      "assertions": []
+    },
+    {
+      "caseId": "FMT-02/imports-project",
+      "server": "jvmd",
+      "outcome": "unsupported",
+      "shutdownError": null,
+      "operations": [],
+      "assertions": []
+    }
+  ],
+  "review": {
+    "result": "JDTLS project cleanup passes exact five-file edits, excluded-project preservation, compilation/runtime and repeat. Folder cleanup returns an empty client edit after presence of all six candidates is proven. Both JVMD commands are unsupported. All four shutdowns are clean.",
+    "dispatchInference": "Pinned JDTLS tries getFileForLocation first and falls back to container lookup only on null. Installed resourceFor constructs a file handle for a multi-segment project-relative path without a disk-type check. This is consistent with a folder URI reaching the file branch and returning no edit; the actual branch was not instrumented.",
+    "scopeLimitation": "The observed empty folder edit does not exercise the package substring predicate. Do not claim that sibling files were edited.",
+    "sourceReview": {
+      "repository": "eclipse-jdtls/eclipse.jdt.ls",
+      "revision": "08eafe6",
+      "commandBlob": "405b15eac093194c5155d9e9275eafa628608a03",
+      "testsBlob": "5499efa723a5ba60d15aa0f092b01d5de97dc025",
+      "testsObservation": "Package/project tests call helpers directly; generic dispatch tests cover file input, invalid input and null."
+    }
+  },
+  "claims": {
+    "publicComparativePerformance": false
+  }
+}

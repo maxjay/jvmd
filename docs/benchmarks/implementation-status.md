@@ -1174,3 +1174,11 @@ case includes nested packages plus prefix/substring lookalikes; the project case
 includes another imported project. `import-scope-cases.md` defines the boundaries,
 including client edit callbacks within the command round trip. All 179 harness
 tests pass; this source checkpoint still requires its real-server replay.
+
+The real scope replay at `9328669` passes JDTLS project cleanup and records an
+empty, incorrect folder edit despite positive candidate presence. Both JVMD
+routes are unsupported; all four processes shut down cleanly. Full checksum
+inventory and reducer integrity verify. The preserved dispatch-bytecode evidence
+supports a file-before-folder lookup explanation, explicitly an inference rather
+than an instrumented branch trace. See `import-scope-cases.md` and the raw capture
+in `benchmarks/evidence/import-scope-2026-09-27/`.

@@ -46,3 +46,25 @@ path includes `src/org/eclipse/jdt/ls/core`), Git blob
 reason to include both prefix and substring lookalikes, not evidence of a runtime
 failure by itself. Eight adversarial tests cover scope expansion, omitted targets,
 foreign edits, resource deletion, literal changes and non-idempotent repeats.
+
+## Real-server replay at `9328669`
+
+JDTLS passes the project case: all five intended files change, foreign project
+sources remain fixed, compiled behaviour is correct and repeat is exact. The
+folder case returns an empty `workspace/applyEdit` after all six candidates were
+found. Its selected imports remain unchanged, so it is incorrect. JVMD declares
+both commands unsupported. All four shutdowns are clean; the full inventory
+verifies and artifact reduction reports no integrity issues.
+
+The installed command binary tries `getFileForLocation` before container lookup,
+and uses the container only if the file lookup returns null. The installed
+resource manager constructs a file handle for a multi-segment project-relative
+path without checking its disk type. That is consistent with the folder URI
+reaching file dispatch and producing no edit. This is a source/bytecode inference,
+not an instrumented observation of the chosen branch. The empty edit does not
+exercise or prove a failure in the separate package-substring predicate.
+
+The pinned upstream tests cover package/project helpers directly; their generic
+command tests cover file, invalid and null input. Raw commands, callbacks, source
+states, independent validation, binary identities and disassembly are preserved
+in `benchmarks/evidence/import-scope-2026-09-27/`.

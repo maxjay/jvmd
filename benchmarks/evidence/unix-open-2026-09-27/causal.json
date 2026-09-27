@@ -1,0 +1,392 @@
+{
+  "schemaVersion": 2,
+  "epoch": "apache:596809414375",
+  "invocations": [
+    {
+      "groupId": "[\"native-request\",8691,4]",
+      "identityKind": "native-request",
+      "invocation": null,
+      "epoch": "apache:596809414375",
+      "nativeRequestIds": [
+        4
+      ],
+      "nativeClockDomain": "jvm:apache:596809414375:8691",
+      "clientRequest": null,
+      "clientLinkStatus": "unavailable",
+      "parentIssues": [],
+      "recordingCompleteness": "unavailable: parent validation does not prove loss-free recording",
+      "stages": {
+        "session.queue": {
+          "spans": 1,
+          "intervalUnionNs": "693853",
+          "inclusiveWorkerNs": "693853",
+          "observedCounters": {},
+          "counterScopeComplete": false,
+          "spanIds": [
+            50
+          ]
+        },
+        "project.maintained_resolution": {
+          "spans": 1,
+          "intervalUnionNs": "18344",
+          "inclusiveWorkerNs": "18344",
+          "observedCounters": {},
+          "counterScopeComplete": false,
+          "spanIds": [
+            54
+          ]
+        },
+        "analyzer.context.identity": {
+          "spans": 1,
+          "intervalUnionNs": "255758552",
+          "inclusiveWorkerNs": "255758552",
+          "observedCounters": {
+            "metadata_checks": 72,
+            "bytes_hashed": 9959556,
+            "files_hashed": 36
+          },
+          "counterScopeComplete": false,
+          "spanIds": [
+            55
+          ]
+        },
+        "annotation_processing.invoke": {
+          "spans": 23,
+          "intervalUnionNs": "33646043514",
+          "inclusiveWorkerNs": "33646043514",
+          "observedCounters": {
+            "forked_compilers": 23,
+            "input_sources": 996
+          },
+          "counterScopeComplete": false,
+          "spanIds": [
+            61,
+            63,
+            65,
+            67,
+            69,
+            71,
+            73,
+            75,
+            77,
+            79,
+            81,
+            84,
+            86,
+            88,
+            90,
+            92,
+            94,
+            96,
+            98,
+            100,
+            102,
+            104,
+            106
+          ]
+        },
+        "annotation_processing.prepare": {
+          "spans": 24,
+          "intervalUnionNs": "33827910018",
+          "inclusiveWorkerNs": "33827910018",
+          "observedCounters": {
+            "modules": 24,
+            "source_roots": 24,
+            "classpath_entries": 201
+          },
+          "counterScopeComplete": false,
+          "spanIds": [
+            60,
+            62,
+            64,
+            66,
+            68,
+            70,
+            72,
+            74,
+            76,
+            78,
+            80,
+            82,
+            83,
+            85,
+            87,
+            89,
+            91,
+            93,
+            95,
+            97,
+            99,
+            101,
+            103,
+            105
+          ]
+        },
+        "analyzer.context.create": {
+          "spans": 1,
+          "intervalUnionNs": "33889088441",
+          "inclusiveWorkerNs": "33889088441",
+          "observedCounters": {
+            "metadata_checks": 1
+          },
+          "counterScopeComplete": false,
+          "spanIds": [
+            59
+          ]
+        },
+        "analyzer.context.lookup": {
+          "spans": 1,
+          "intervalUnionNs": "33893897640",
+          "inclusiveWorkerNs": "33893897640",
+          "observedCounters": {},
+          "counterScopeComplete": false,
+          "spanIds": [
+            58
+          ]
+        },
+        "analyzer.configure": {
+          "spans": 1,
+          "intervalUnionNs": "100546249",
+          "inclusiveWorkerNs": "100546249",
+          "observedCounters": {
+            "metadata_checks": 6,
+            "bytes_hashed": 71243007,
+            "files_hashed": 3
+          },
+          "counterScopeComplete": false,
+          "spanIds": [
+            107
+          ]
+        },
+        "analyzer.context.prepare": {
+          "spans": 1,
+          "intervalUnionNs": "34389959928",
+          "inclusiveWorkerNs": "34389959928",
+          "observedCounters": {
+            "metadata_checks": 2448,
+            "inventories": 309
+          },
+          "counterScopeComplete": false,
+          "spanIds": [
+            53
+          ]
+        },
+        "session.execute": {
+          "spans": 1,
+          "intervalUnionNs": "34395383325",
+          "inclusiveWorkerNs": "34395383325",
+          "observedCounters": {},
+          "counterScopeComplete": false,
+          "spanIds": [
+            51
+          ]
+        },
+        "response.encode": {
+          "spans": 1,
+          "intervalUnionNs": "2758696",
+          "inclusiveWorkerNs": "2758696",
+          "observedCounters": {},
+          "counterScopeComplete": false,
+          "spanIds": [
+            110
+          ]
+        },
+        "rpc.execute": {
+          "spans": 1,
+          "intervalUnionNs": "34399555844",
+          "inclusiveWorkerNs": "34399555844",
+          "observedCounters": {},
+          "counterScopeComplete": false,
+          "spanIds": [
+            49
+          ]
+        }
+      },
+      "nativeRequestIntervalUnionNs": "34399555844",
+      "observedSpanUnionNs": "34399555844",
+      "clientMinusNativeResidualNs": null,
+      "residualStatus": "unavailable: clock domains and interval boundaries differ",
+      "compilerZeroWork": {
+        "status": "unavailable",
+        "value": null,
+        "reason": "absence of an observed stage is not a complete-scope negative proof"
+      }
+    },
+    {
+      "groupId": "[\"native-request\",8691,5]",
+      "identityKind": "native-request",
+      "invocation": null,
+      "epoch": "apache:596809414375",
+      "nativeRequestIds": [
+        5
+      ],
+      "nativeClockDomain": "jvm:apache:596809414375:8691",
+      "clientRequest": null,
+      "clientLinkStatus": "unavailable",
+      "parentIssues": [],
+      "recordingCompleteness": "unavailable: parent validation does not prove loss-free recording",
+      "stages": {
+        "session.queue": {
+          "spans": 1,
+          "intervalUnionNs": "34391255541",
+          "inclusiveWorkerNs": "34391255541",
+          "observedCounters": {},
+          "counterScopeComplete": false,
+          "spanIds": [
+            108
+          ]
+        },
+        "project.maintained_resolution": {
+          "spans": 1,
+          "intervalUnionNs": "3216",
+          "inclusiveWorkerNs": "3216",
+          "observedCounters": {},
+          "counterScopeComplete": false,
+          "spanIds": [
+            112
+          ]
+        },
+        "analyzer.context.identity": {
+          "spans": 1,
+          "intervalUnionNs": "6311386",
+          "inclusiveWorkerNs": "6311386",
+          "observedCounters": {
+            "metadata_checks": 36
+          },
+          "counterScopeComplete": false,
+          "spanIds": [
+            113
+          ]
+        },
+        "annotation_processing.prepare": {
+          "spans": 24,
+          "intervalUnionNs": "83366081",
+          "inclusiveWorkerNs": "83366081",
+          "observedCounters": {
+            "modules": 24,
+            "source_roots": 24,
+            "classpath_entries": 201
+          },
+          "counterScopeComplete": false,
+          "spanIds": [
+            116,
+            117,
+            118,
+            119,
+            120,
+            121,
+            122,
+            123,
+            124,
+            125,
+            126,
+            127,
+            128,
+            129,
+            130,
+            131,
+            132,
+            133,
+            134,
+            135,
+            136,
+            137,
+            138,
+            139
+          ]
+        },
+        "analyzer.context.create": {
+          "spans": 1,
+          "intervalUnionNs": "89226561",
+          "inclusiveWorkerNs": "89226561",
+          "observedCounters": {
+            "metadata_checks": 2
+          },
+          "counterScopeComplete": false,
+          "spanIds": [
+            115
+          ]
+        },
+        "analyzer.context.lookup": {
+          "spans": 1,
+          "intervalUnionNs": "89612423",
+          "inclusiveWorkerNs": "89612423",
+          "observedCounters": {},
+          "counterScopeComplete": false,
+          "spanIds": [
+            114
+          ]
+        },
+        "analyzer.configure": {
+          "spans": 1,
+          "intervalUnionNs": "3321717",
+          "inclusiveWorkerNs": "3321717",
+          "observedCounters": {
+            "metadata_checks": 3
+          },
+          "counterScopeComplete": false,
+          "spanIds": [
+            140
+          ]
+        },
+        "analyzer.context.prepare": {
+          "spans": 1,
+          "intervalUnionNs": "99466214",
+          "inclusiveWorkerNs": "99466214",
+          "observedCounters": {},
+          "counterScopeComplete": false,
+          "spanIds": [
+            111
+          ]
+        },
+        "session.execute": {
+          "spans": 1,
+          "intervalUnionNs": "104505163",
+          "inclusiveWorkerNs": "104505163",
+          "observedCounters": {},
+          "counterScopeComplete": false,
+          "spanIds": [
+            109
+          ]
+        },
+        "response.encode": {
+          "spans": 1,
+          "intervalUnionNs": "182071",
+          "inclusiveWorkerNs": "182071",
+          "observedCounters": {},
+          "counterScopeComplete": false,
+          "spanIds": [
+            141
+          ]
+        },
+        "rpc.execute": {
+          "spans": 1,
+          "intervalUnionNs": "34497016431",
+          "inclusiveWorkerNs": "34497016431",
+          "observedCounters": {},
+          "counterScopeComplete": false,
+          "spanIds": [
+            52
+          ]
+        }
+      },
+      "nativeRequestIntervalUnionNs": "34497016431",
+      "observedSpanUnionNs": "34497016431",
+      "clientMinusNativeResidualNs": null,
+      "residualStatus": "unavailable: clock domains and interval boundaries differ",
+      "compilerZeroWork": {
+        "status": "unavailable",
+        "value": null,
+        "reason": "absence of an observed stage is not a complete-scope negative proof"
+      }
+    }
+  ],
+  "semantics": "Native unions use one JVM clock. Worker sums remain inclusive and may overlap. Detached descendants may end after the root response. No native total is subtracted from client latency.",
+  "identitySemantics": "Explicit invocation joins client/native records. Untagged requests use process + native request identity; no cross-process or client join is inferred. Unattributed spans remain separate.",
+  "unmatchedNativeGroups": [
+    "[\"native-request\",8691,4]",
+    "[\"native-request\",8691,5]"
+  ],
+  "unmatchedNativeInvocations": [],
+  "unmatchedClientInvocations": []
+}

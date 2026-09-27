@@ -224,3 +224,10 @@ generation, unchanged output bytes, compilation, serialization/consumer checks
 and clean shutdown. Its immediate type lookup was empty and its retry/settled
 lookups passed. The incorrect first reply is retained. No comparison claim is
 enabled by either pilot.
+
+The recovered Unix JFR was exported again with the pinned, hash-verified JDK.
+Request 4 records 33.646 seconds in 23 compiler invocations. Request 5 spends
+34.391 seconds queued and 104.505 ms executing. Selected raw events and an exactly
+reproducible reduction are committed in `benchmarks/evidence/unix-open-2026-09-27/`.
+The native identities stay separate; no missing client identity is invented.
+See `long-open-diagnosis.md` for the queue/execution table and evidence limits.

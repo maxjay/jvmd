@@ -1,0 +1,3630 @@
+[
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:42.615876419Z",
+      "duration": "PT0.000001716S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "session.queue",
+      "outcome": "started",
+      "cache": "not recorded",
+      "counters": "{}",
+      "request": 4,
+      "span": 50,
+      "parent": 49,
+      "process": 8691,
+      "startNanos": 659354057240,
+      "durationNanos": 693853,
+      "threadCpuNanos": -1,
+      "threadAllocatedBytes": -1,
+      "queued": true,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:42.621266462Z",
+      "duration": "PT0.000019103S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "project.maintained_resolution",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{}",
+      "request": 4,
+      "span": 54,
+      "parent": 53,
+      "process": 8691,
+      "startNanos": 659360150990,
+      "durationNanos": 18344,
+      "threadCpuNanos": 18503,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:42.622158039Z",
+      "duration": "PT0.255177777S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "analyzer.context.identity",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"metadata_checks\":72,\"bytes_hashed\":9959556,\"files_hashed\":36}",
+      "request": 4,
+      "span": 55,
+      "parent": 53,
+      "process": 8691,
+      "startNanos": 659361038192,
+      "durationNanos": 255758552,
+      "threadCpuNanos": 157939902,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:42.920804695Z",
+      "duration": "PT1.28026984S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "completed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":11}",
+      "request": 4,
+      "span": 61,
+      "parent": 60,
+      "process": 8691,
+      "startNanos": 659660385188,
+      "durationNanos": 1283275062,
+      "threadCpuNanos": 2761798,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:42.910376165Z",
+      "duration": "PT1.29233918S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":1}",
+      "request": 4,
+      "span": 60,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 659649927022,
+      "durationNanos": 1295381756,
+      "threadCpuNanos": 14774358,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:44.221469304Z",
+      "duration": "PT2.316549496S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "failed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":178}",
+      "request": 4,
+      "span": 63,
+      "parent": 62,
+      "process": 8691,
+      "startNanos": 660964106688,
+      "durationNanos": 2321991979,
+      "threadCpuNanos": 1107028,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:44.207374687Z",
+      "duration": "PT2.332372367S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":4}",
+      "request": 4,
+      "span": 62,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 660949983244,
+      "durationNanos": 2337850033,
+      "threadCpuNanos": 16924296,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:46.547515974Z",
+      "duration": "PT1.151158591S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "completed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":2}",
+      "request": 4,
+      "span": 65,
+      "parent": 64,
+      "process": 8691,
+      "startNanos": 663295622555,
+      "durationNanos": 1153860912,
+      "threadCpuNanos": 851361,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:46.543070418Z",
+      "duration": "PT1.155840052S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":3}",
+      "request": 4,
+      "span": 64,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 663291165138,
+      "durationNanos": 1158560369,
+      "threadCpuNanos": 5545577,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:47.702490049Z",
+      "duration": "PT1.039417838S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "completed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":1}",
+      "request": 4,
+      "span": 67,
+      "parent": 66,
+      "process": 8691,
+      "startNanos": 664453313773,
+      "durationNanos": 1041854186,
+      "threadCpuNanos": 792491,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:47.700042710Z",
+      "duration": "PT1.042030395S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":3}",
+      "request": 4,
+      "span": 66,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 664450859475,
+      "durationNanos": 1044480598,
+      "threadCpuNanos": 3258045,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:48.744668258Z",
+      "duration": "PT1.06621977S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "completed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":1}",
+      "request": 4,
+      "span": 69,
+      "parent": 68,
+      "process": 8691,
+      "startNanos": 665497938995,
+      "durationNanos": 1068721935,
+      "threadCpuNanos": 779535,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:48.742684132Z",
+      "duration": "PT1.068425545S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":3}",
+      "request": 4,
+      "span": 68,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 665495953923,
+      "durationNanos": 1070934584,
+      "threadCpuNanos": 2863995,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:49.814637343Z",
+      "duration": "PT1.016693673S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "completed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":2}",
+      "request": 4,
+      "span": 71,
+      "parent": 70,
+      "process": 8691,
+      "startNanos": 666570425123,
+      "durationNanos": 1019077601,
+      "threadCpuNanos": 652921,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:49.812150441Z",
+      "duration": "PT1.019349639S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":3}",
+      "request": 4,
+      "span": 70,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 666567930790,
+      "durationNanos": 1021748411,
+      "threadCpuNanos": 3187468,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:50.833334274Z",
+      "duration": "PT1.188405035S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "completed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":4}",
+      "request": 4,
+      "span": 73,
+      "parent": 72,
+      "process": 8691,
+      "startNanos": 667591516125,
+      "durationNanos": 1191189990,
+      "threadCpuNanos": 698132,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:50.832163814Z",
+      "duration": "PT1.189794255S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":2}",
+      "request": 4,
+      "span": 72,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 667590341012,
+      "durationNanos": 1192590342,
+      "threadCpuNanos": 2039447,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:52.025157234Z",
+      "duration": "PT0.985574715S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "completed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":1}",
+      "request": 4,
+      "span": 75,
+      "parent": 74,
+      "process": 8691,
+      "startNanos": 668786139466,
+      "durationNanos": 987910925,
+      "threadCpuNanos": 732872,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:52.022840054Z",
+      "duration": "PT0.988057649S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":2}",
+      "request": 4,
+      "span": 74,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 668783815556,
+      "durationNanos": 990407031,
+      "threadCpuNanos": 2955454,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:53.017082968Z",
+      "duration": "PT1.461590562S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "failed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":37}",
+      "request": 4,
+      "span": 77,
+      "parent": 76,
+      "process": 8691,
+      "startNanos": 669780421036,
+      "durationNanos": 1465028341,
+      "threadCpuNanos": 700194,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:53.011772900Z",
+      "duration": "PT1.467018585S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":5}",
+      "request": 4,
+      "span": 76,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 669775097426,
+      "durationNanos": 1470478452,
+      "threadCpuNanos": 6142464,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:54.481762704Z",
+      "duration": "PT1.368456695S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "completed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":10}",
+      "request": 4,
+      "span": 79,
+      "parent": 78,
+      "process": 8691,
+      "startNanos": 671248550405,
+      "durationNanos": 1371667675,
+      "threadCpuNanos": 663397,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:54.479457884Z",
+      "duration": "PT1.37099648S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":3}",
+      "request": 4,
+      "span": 78,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 671246238572,
+      "durationNanos": 1374221651,
+      "threadCpuNanos": 3210696,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:55.881556451Z",
+      "duration": "PT3.465849446S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "failed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":163}",
+      "request": 4,
+      "span": 81,
+      "parent": 80,
+      "process": 8691,
+      "startNanos": 672651628786,
+      "durationNanos": 3473995890,
+      "threadCpuNanos": 1290526,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:55.853890796Z",
+      "duration": "PT3.493666971S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":19}",
+      "request": 4,
+      "span": 80,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 672623901980,
+      "durationNanos": 3501882750,
+      "threadCpuNanos": 29120527,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:59.348942541Z",
+      "duration": "PT0.005640121S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":6}",
+      "request": 4,
+      "span": 82,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 676127169292,
+      "durationNanos": 5652020,
+      "threadCpuNanos": 5341757,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:59.357495309Z",
+      "duration": "PT1.271925346S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "completed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":7}",
+      "request": 4,
+      "span": 84,
+      "parent": 83,
+      "process": 8691,
+      "startNanos": 676135741014,
+      "durationNanos": 1274909822,
+      "threadCpuNanos": 843948,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:59.355351009Z",
+      "duration": "PT1.274257639S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":6}",
+      "request": 4,
+      "span": 83,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 676133593200,
+      "durationNanos": 1277247898,
+      "threadCpuNanos": 3181654,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:00.635517847Z",
+      "duration": "PT1.255571098S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "completed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":4}",
+      "request": 4,
+      "span": 86,
+      "parent": 85,
+      "process": 8691,
+      "startNanos": 677416765394,
+      "durationNanos": 1258515614,
+      "threadCpuNanos": 688431,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:00.630013230Z",
+      "duration": "PT1.261291373S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":16}",
+      "request": 4,
+      "span": 85,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 677411250884,
+      "durationNanos": 1264251141,
+      "threadCpuNanos": 6423046,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:01.898824359Z",
+      "duration": "PT1.290640875S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "completed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":9}",
+      "request": 4,
+      "span": 88,
+      "parent": 87,
+      "process": 8691,
+      "startNanos": 678683037187,
+      "durationNanos": 1293668030,
+      "threadCpuNanos": 817856,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:01.892056034Z",
+      "duration": "PT1.297656971S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":17}",
+      "request": 4,
+      "span": 87,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 678676255481,
+      "durationNanos": 1300703595,
+      "threadCpuNanos": 7823148,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:03.193831296Z",
+      "duration": "PT1.314462607S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "completed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":27}",
+      "request": 4,
+      "span": 90,
+      "parent": 89,
+      "process": 8691,
+      "startNanos": 679981088128,
+      "durationNanos": 1317546845,
+      "threadCpuNanos": 649489,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:03.191101935Z",
+      "duration": "PT1.317372351S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":1}",
+      "request": 4,
+      "span": 89,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 679978350979,
+      "durationNanos": 1320470728,
+      "threadCpuNanos": 3567910,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:04.514662176Z",
+      "duration": "PT1.365784458S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "failed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":11}",
+      "request": 4,
+      "span": 92,
+      "parent": 91,
+      "process": 8691,
+      "startNanos": 681305022348,
+      "durationNanos": 1368972764,
+      "threadCpuNanos": 659452,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:04.510041454Z",
+      "duration": "PT1.370521553S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":7}",
+      "request": 4,
+      "span": 91,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 681300390082,
+      "durationNanos": 1373747397,
+      "threadCpuNanos": 5164807,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:05.899099233Z",
+      "duration": "PT1.85341195S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "failed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":110}",
+      "request": 4,
+      "span": 94,
+      "parent": 93,
+      "process": 8691,
+      "startNanos": 682692709507,
+      "durationNanos": 1857767162,
+      "threadCpuNanos": 953783,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:05.883330352Z",
+      "duration": "PT1.869303355S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":14}",
+      "request": 4,
+      "span": 93,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 682676904248,
+      "durationNanos": 1873703764,
+      "threadCpuNanos": 16486432,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:07.757247276Z",
+      "duration": "PT1.176235421S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "completed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":9}",
+      "request": 4,
+      "span": 96,
+      "parent": 95,
+      "process": 8691,
+      "startNanos": 684555228591,
+      "durationNanos": 1178994666,
+      "threadCpuNanos": 596386,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:07.753216392Z",
+      "duration": "PT1.180430657S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":5}",
+      "request": 4,
+      "span": 95,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 684551187480,
+      "durationNanos": 1183208159,
+      "threadCpuNanos": 4490454,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:08.937560825Z",
+      "duration": "PT1.48235687S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "failed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":23}",
+      "request": 4,
+      "span": 98,
+      "parent": 97,
+      "process": 8691,
+      "startNanos": 685738314312,
+      "durationNanos": 1485838036,
+      "threadCpuNanos": 734235,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:08.934310853Z",
+      "duration": "PT1.485721906S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":11}",
+      "request": 4,
+      "span": 97,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 685735060157,
+      "durationNanos": 1489215952,
+      "threadCpuNanos": 4107783,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:10.422696722Z",
+      "duration": "PT1.152201011S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "failed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":3}",
+      "request": 4,
+      "span": 100,
+      "parent": 99,
+      "process": 8691,
+      "startNanos": 687226942758,
+      "durationNanos": 1154903755,
+      "threadCpuNanos": 644551,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:10.420744793Z",
+      "duration": "PT1.154262892S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":7}",
+      "request": 4,
+      "span": 99,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 687224988750,
+      "durationNanos": 1156976453,
+      "threadCpuNanos": 2713248,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:11.578744910Z",
+      "duration": "PT1.181441461S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "completed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":4}",
+      "request": 4,
+      "span": 102,
+      "parent": 101,
+      "process": 8691,
+      "startNanos": 688385708136,
+      "durationNanos": 1184212445,
+      "threadCpuNanos": 701492,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:11.575950633Z",
+      "duration": "PT1.184427032S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":7}",
+      "request": 4,
+      "span": 101,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 688382907849,
+      "durationNanos": 1187210816,
+      "threadCpuNanos": 3574731,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:12.762871760Z",
+      "duration": "PT1.141018215S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "failed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":3}",
+      "request": 4,
+      "span": 104,
+      "parent": 103,
+      "process": 8691,
+      "startNanos": 689572617862,
+      "durationNanos": 1143695758,
+      "threadCpuNanos": 612647,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:12.761030256Z",
+      "duration": "PT1.142969106S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":7}",
+      "request": 4,
+      "span": 103,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 689570773309,
+      "durationNanos": 1145657248,
+      "threadCpuNanos": 2570184,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:13.946742042Z",
+      "duration": "PT2.742001175S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.invoke",
+      "outcome": "failed",
+      "cache": "not recorded",
+      "counters": "{\"forked_compilers\":1,\"input_sources\":376}",
+      "request": 4,
+      "span": 106,
+      "parent": 105,
+      "process": 8691,
+      "startNanos": 690759266130,
+      "durationNanos": 2748444121,
+      "threadCpuNanos": 943769,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:13.904092350Z",
+      "duration": "PT2.784785408S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":49}",
+      "request": 4,
+      "span": 105,
+      "parent": 59,
+      "process": 8691,
+      "startNanos": 690716524646,
+      "durationNanos": 2791328870,
+      "threadCpuNanos": 43697204,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:42.881905592Z",
+      "duration": "PT33.809600418S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "analyzer.context.create",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"metadata_checks\":1}",
+      "request": 4,
+      "span": 59,
+      "parent": 58,
+      "process": 8691,
+      "startNanos": 659621393875,
+      "durationNanos": 33889088441,
+      "threadCpuNanos": 238431209,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:42.877412653Z",
+      "duration": "PT33.814402152S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "analyzer.context.lookup",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{}",
+      "request": 4,
+      "span": 58,
+      "parent": 53,
+      "process": 8691,
+      "startNanos": 659616897868,
+      "durationNanos": 33893897640,
+      "threadCpuNanos": 242464635,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.704421817Z",
+      "duration": "PT0.100313566S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "analyzer.configure",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"metadata_checks\":6,\"bytes_hashed\":71243007,\"files_hashed\":3}",
+      "request": 4,
+      "span": 107,
+      "parent": 53,
+      "process": 8691,
+      "startNanos": 693523427710,
+      "durationNanos": 100546249,
+      "threadCpuNanos": 100223562,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:42.621260570Z",
+      "duration": "PT34.30930416S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "analyzer.context.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"metadata_checks\":2448,\"inventories\":309}",
+      "request": 4,
+      "span": 53,
+      "parent": 51,
+      "process": 8691,
+      "startNanos": 659360137485,
+      "durationNanos": 34389959928,
+      "threadCpuNanos": 614709270,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:42.615953792Z",
+      "duration": "PT34.314703716S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "session.execute",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{}",
+      "request": 4,
+      "span": 51,
+      "parent": 49,
+      "process": 8691,
+      "startNanos": 659354818326,
+      "durationNanos": 34395383325,
+      "threadCpuNanos": 616363181,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.930752671Z",
+      "duration": "PT0.000001055S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "session.queue",
+      "outcome": "started",
+      "cache": "not recorded",
+      "counters": "{}",
+      "request": 5,
+      "span": 108,
+      "parent": 52,
+      "process": 8691,
+      "startNanos": 659359045175,
+      "durationNanos": 34391255541,
+      "threadCpuNanos": -1,
+      "threadAllocatedBytes": -1,
+      "queued": true,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.930843452Z",
+      "duration": "PT0.002752425S",
+      "eventThread": {
+        "osName": null,
+        "osThreadId": 0,
+        "javaName": "",
+        "javaThreadId": 46,
+        "group": {
+          "parent": null,
+          "name": "VirtualThreads"
+        },
+        "virtual": true
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "response.encode",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{}",
+      "request": 4,
+      "span": 110,
+      "parent": 49,
+      "process": 8691,
+      "startNanos": 693750389818,
+      "durationNanos": 2758696,
+      "threadCpuNanos": -1,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": true
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:42.615158459Z",
+      "duration": "PT34.318872325S",
+      "eventThread": {
+        "osName": null,
+        "osThreadId": 0,
+        "javaName": "",
+        "javaThreadId": 46,
+        "group": {
+          "parent": null,
+          "name": "VirtualThreads"
+        },
+        "virtual": true
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "rpc.execute",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{}",
+      "request": 4,
+      "span": 49,
+      "parent": 0,
+      "process": 8691,
+      "startNanos": 659354029139,
+      "durationNanos": 34399555844,
+      "threadCpuNanos": -1,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": true
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.935771338Z",
+      "duration": "PT0.00000357S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "project.maintained_resolution",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{}",
+      "request": 5,
+      "span": 112,
+      "parent": 111,
+      "process": 8691,
+      "startNanos": 693755328873,
+      "durationNanos": 3216,
+      "threadCpuNanos": 3200,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.935794141Z",
+      "duration": "PT0.006303592S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "analyzer.context.identity",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"metadata_checks\":36}",
+      "request": 5,
+      "span": 113,
+      "parent": 111,
+      "process": 8691,
+      "startNanos": 693755351682,
+      "durationNanos": 6311386,
+      "threadCpuNanos": 2987394,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.943146530Z",
+      "duration": "PT0.001361175S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":1}",
+      "request": 5,
+      "span": 116,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693762718216,
+      "durationNanos": 1362896,
+      "threadCpuNanos": 1353356,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.944598016Z",
+      "duration": "PT0.006750045S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":4}",
+      "request": 5,
+      "span": 117,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693764175090,
+      "durationNanos": 6761306,
+      "threadCpuNanos": 6764235,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.951473969Z",
+      "duration": "PT0.002591432S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":3}",
+      "request": 5,
+      "span": 118,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693771066354,
+      "durationNanos": 2331102,
+      "threadCpuNanos": 2392672,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.954161516Z",
+      "duration": "PT0.001466786S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":3}",
+      "request": 5,
+      "span": 119,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693773754453,
+      "durationNanos": 1473957,
+      "threadCpuNanos": 1469317,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.956081777Z",
+      "duration": "PT0.000797876S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":3}",
+      "request": 5,
+      "span": 120,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693775316332,
+      "durationNanos": 1161811,
+      "threadCpuNanos": 805084,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.956941939Z",
+      "duration": "PT0.000975895S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":3}",
+      "request": 5,
+      "span": 121,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693776548784,
+      "durationNanos": 976386,
+      "threadCpuNanos": 977687,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.957975281Z",
+      "duration": "PT0.000503538S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":2}",
+      "request": 5,
+      "span": 122,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693777584731,
+      "durationNanos": 504010,
+      "threadCpuNanos": 504524,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.958528103Z",
+      "duration": "PT0.000556039S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":2}",
+      "request": 5,
+      "span": 123,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693778138999,
+      "durationNanos": 555480,
+      "threadCpuNanos": 556847,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.959142831Z",
+      "duration": "PT0.003769174S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":5}",
+      "request": 5,
+      "span": 124,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693778754810,
+      "durationNanos": 3775072,
+      "threadCpuNanos": 3776967,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.962988587Z",
+      "duration": "PT0.001474637S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":3}",
+      "request": 5,
+      "span": 125,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693782608825,
+      "durationNanos": 1476223,
+      "threadCpuNanos": 1477535,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.964540380Z",
+      "duration": "PT0.01180449S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":19}",
+      "request": 5,
+      "span": 126,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693784164481,
+      "durationNanos": 11828697,
+      "threadCpuNanos": 11795068,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.976464281Z",
+      "duration": "PT0.002339815S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":6}",
+      "request": 5,
+      "span": 127,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693796115798,
+      "durationNanos": 2343329,
+      "threadCpuNanos": 2304816,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.978938858Z",
+      "duration": "PT0.001365194S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":6}",
+      "request": 5,
+      "span": 128,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693798595487,
+      "durationNanos": 1367131,
+      "threadCpuNanos": 1368158,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.980419648Z",
+      "duration": "PT0.003845869S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":16}",
+      "request": 5,
+      "span": 129,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693800080144,
+      "durationNanos": 3852279,
+      "threadCpuNanos": 3852994,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.984349290Z",
+      "duration": "PT0.003184977S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":17}",
+      "request": 5,
+      "span": 130,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693804020044,
+      "durationNanos": 3190750,
+      "threadCpuNanos": 3192068,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.987597875Z",
+      "duration": "PT0.000857023S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":1}",
+      "request": 5,
+      "span": 131,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693807276712,
+      "durationNanos": 857218,
+      "threadCpuNanos": 858705,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.988516281Z",
+      "duration": "PT0.001578596S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":7}",
+      "request": 5,
+      "span": 132,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693808197204,
+      "durationNanos": 1580925,
+      "threadCpuNanos": 1582125,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.990156924Z",
+      "duration": "PT0.003820832S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":14}",
+      "request": 5,
+      "span": 133,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693809841845,
+      "durationNanos": 3827067,
+      "threadCpuNanos": 3828510,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.994039411Z",
+      "duration": "PT0.002582581S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":5}",
+      "request": 5,
+      "span": 134,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693813733425,
+      "durationNanos": 2586771,
+      "threadCpuNanos": 2588236,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.996679209Z",
+      "duration": "PT0.001703701S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":11}",
+      "request": 5,
+      "span": 135,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693816379358,
+      "durationNanos": 1706250,
+      "threadCpuNanos": 1707329,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.998442128Z",
+      "duration": "PT0.00103124S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":7}",
+      "request": 5,
+      "span": 136,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693818146782,
+      "durationNanos": 1031604,
+      "threadCpuNanos": 1033131,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.999535019Z",
+      "duration": "PT0.001181881S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":7}",
+      "request": 5,
+      "span": 137,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693819241811,
+      "durationNanos": 1183096,
+      "threadCpuNanos": 1184071,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:17.000769286Z",
+      "duration": "PT0.001039939S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":7}",
+      "request": 5,
+      "span": 138,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693820479356,
+      "durationNanos": 1040611,
+      "threadCpuNanos": 1041970,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:17.001863455Z",
+      "duration": "PT0.026539166S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "annotation_processing.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"modules\":1,\"source_roots\":1,\"classpath_entries\":49}",
+      "request": 5,
+      "span": 139,
+      "parent": 115,
+      "process": 8691,
+      "startNanos": 693821576136,
+      "durationNanos": 26592110,
+      "threadCpuNanos": 26520304,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.942468261Z",
+      "duration": "PT0.089023796S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "analyzer.context.create",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"metadata_checks\":2}",
+      "request": 5,
+      "span": 115,
+      "parent": 114,
+      "process": 8691,
+      "startNanos": 693762039675,
+      "durationNanos": 89226561,
+      "threadCpuNanos": 88480702,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.942128171Z",
+      "duration": "PT0.089401805S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "analyzer.context.lookup",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{}",
+      "request": 5,
+      "span": 114,
+      "parent": 111,
+      "process": 8691,
+      "startNanos": 693761699952,
+      "durationNanos": 89612423,
+      "threadCpuNanos": 88852518,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:17.031550229Z",
+      "duration": "PT0.003319525S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "analyzer.configure",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{\"metadata_checks\":3}",
+      "request": 5,
+      "span": 140,
+      "parent": 111,
+      "process": 8691,
+      "startNanos": 693851332859,
+      "durationNanos": 3321717,
+      "threadCpuNanos": 3325395,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.935767892Z",
+      "duration": "PT0.099227913S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "analyzer.context.prepare",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{}",
+      "request": 5,
+      "span": 111,
+      "parent": 109,
+      "process": 8691,
+      "startNanos": 693755318746,
+      "durationNanos": 99466214,
+      "threadCpuNanos": 95372520,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:16.930761924Z",
+      "duration": "PT0.104259857S",
+      "eventThread": {
+        "osName": "jvmd-session-s1",
+        "osThreadId": 8866,
+        "javaName": "jvmd-session-s1",
+        "javaThreadId": 55,
+        "group": {
+          "parent": {
+            "parent": null,
+            "name": "system"
+          },
+          "name": "VirtualThreads"
+        },
+        "virtual": false
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "session.execute",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{}",
+      "request": 5,
+      "span": 109,
+      "parent": 52,
+      "process": 8691,
+      "startNanos": 693750307187,
+      "durationNanos": 104505163,
+      "threadCpuNanos": 98670698,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": false
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:34:17.035182370Z",
+      "duration": "PT0.000181393S",
+      "eventThread": {
+        "osName": null,
+        "osThreadId": 0,
+        "javaName": "",
+        "javaThreadId": 358,
+        "group": {
+          "parent": null,
+          "name": "VirtualThreads"
+        },
+        "virtual": true
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "response.encode",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{}",
+      "request": 5,
+      "span": 141,
+      "parent": 52,
+      "process": 8691,
+      "startNanos": 693854973778,
+      "durationNanos": 182071,
+      "threadCpuNanos": -1,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": true
+    }
+  },
+  {
+    "type": "dev.jvmd.Stage",
+    "values": {
+      "startTime": "2026-09-27T03:33:42.620140229Z",
+      "duration": "PT34.416104885S",
+      "eventThread": {
+        "osName": null,
+        "osThreadId": 0,
+        "javaName": "",
+        "javaThreadId": 358,
+        "group": {
+          "parent": null,
+          "name": "VirtualThreads"
+        },
+        "virtual": true
+      },
+      "stackTrace": null,
+      "workflow": "",
+      "invocation": "",
+      "revision": "",
+      "method": "document.open",
+      "stage": "rpc.execute",
+      "outcome": "observed",
+      "cache": "not recorded",
+      "counters": "{}",
+      "request": 5,
+      "span": 52,
+      "parent": 0,
+      "process": 8691,
+      "startNanos": 659359022889,
+      "durationNanos": 34497016431,
+      "threadCpuNanos": -1,
+      "threadAllocatedBytes": -1,
+      "queued": false,
+      "virtualThread": true
+    }
+  }
+]

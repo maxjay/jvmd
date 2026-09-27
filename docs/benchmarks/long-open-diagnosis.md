@@ -68,3 +68,40 @@ Record processor preparation and child compiler costs in the document-maintenanc
 stage. Investigating whether that preparation can be deferred or reused more
 widely is a separate production change requiring correctness evidence; this
 benchmark work does not silently remove it to improve a timing.
+
+## Packaged Unix replay: distinguish queueing from execution
+
+The traced Unix CI replay at `1c29254` reproduces compiler preparation and also
+exposes the queue boundary that the serial pipe pilot could not show. Two native
+`document.open` requests overlap. Native request 5 waits behind request 4 on the
+session worker; its RPC duration is mostly waiting, not a second compiler pass.
+
+| Native JVM boundary | Request 4 | Request 5 |
+|---|---:|---:|
+| RPC interval union | 34,399.556 ms | 34,497.016 ms |
+| Session queue | 0.694 ms | 34,391.256 ms |
+| Session execution | 34,395.383 ms | 104.505 ms |
+| Processor preparation, interval union | 33,827.910 ms | 83.366 ms |
+| External compiler invocation, interval union | 33,646.044 ms | No spans recorded |
+| Recorded compiler launches | 23 | No counters recorded |
+
+The compiler spans record 996 input-source instances. Preparation visits 24
+modules, 24 source roots and 201 classpath entries per request. These inclusive
+stage observations overlap; adding the two RPC durations would double-count
+much of the user-visible wait. A missing compiler span remains unavailable
+evidence about zero work, not proof of zero work.
+
+The raw selected stage events, their source JFR hash and a schema-2 reduction are
+in `benchmarks/evidence/unix-open-2026-09-27/`. Recompute with
+`reduce_native(events, [], manifest['epoch'])` from `causal.py`. Native identity
+is `(epoch, process, request)`. These shim-originated requests have no explicit
+client invocation identity, so the reduction makes no client/native join.
+All selected parent chains resolve. That check does not prove a loss-free trace.
+
+The separately recorded client milestones are 61,670.402 ms for attachment and
+36,139.471 ms from two opens to the exact definition result in the traced run;
+the clean run records 58,321.354 ms and 24,773.674 ms respectively. There is only
+one ordered clean/traced pair, so their difference is not a profiling-overhead
+bound or a speed comparison. Both profiles report AOT archive rejection and
+continue in normal execution. This replay establishes neither accepted AOT
+execution nor complete helper-process resource costs.

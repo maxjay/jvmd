@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "scope": "Selected raw JFR stage events for two packaged Unix document.open requests; not a complete experiment bundle",
+  "ciRevision": "1c2925449bdde7ad96507d66516b4e6b3ba81298",
+  "ciRun": "https://github.com/maxjay/jvmd/actions/runs/36291226091",
+  "reviewArtifactId": 10922606116,
+  "reviewArtifactSha256": "fc2424cf64655108a37bd0e5f6cbd8245a5730d6a96b71af7c492f9f616e536d",
+  "epoch": "apache:596809414375",
+  "sourceJfrSha256": "05a6d74cd1f42aab9fb14dd021ccc5e0f689153ca507305398003afec8b36335",
+  "sourceStageExportSha256": "5ba4148fa6f93198aec9bcc62bf54227c8199fa383f36ef775a0f00f27bd9c16",
+  "selection": {
+    "eventType": "dev.jvmd.Stage",
+    "process": 8691,
+    "nativeRequests": [
+      4,
+      5
+    ],
+    "selectedEvents": 91,
+    "exportedEvents": 171
+  },
+  "reducerRevision": "40ad7f4d820fe720c24de0183f7f583e67036202",
+  "reducerSha256": "243be847782e9b95adf200923eeca7e573e603eb49fb6cf2e072690a95f940b2",
+  "exportJdk": "Temurin 25.0.4.1+1",
+  "limits": [
+    "No client invocation identity on these native requests; no inferred client join.",
+    "Parent validation does not prove loss-free recording.",
+    "No complete process-tree accounting, accepted AOT evidence, or observer-overhead bound.",
+    "One ordered clean/traced pair cannot support a performance comparison."
+  ],
+  "files": {
+    "causal.json": "99ea774357e0d271ed3e74e19d04dbd50c4bab04da9a511420e33c6c4cb449b9",
+    "stage-events.json": "828fd5b165b0bc8fb16261b08a1f83bc6cd736e5c38926f42a632ceb053a4522"
+  }
+}

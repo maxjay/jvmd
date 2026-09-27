@@ -6,6 +6,7 @@ import {SETTINGS,type CaseDefinition,type ScenarioContext} from "../harness/Scen
 import {range,position,offset,selected,hoverOracle,applyTextEdits,chooseMethod,completionOracle,exactLocations} from "../harness/oracles.ts";
 import {noApplicableAction} from "../harness/codeActions.ts";
 import {SELECTION_COMMAND} from "../harness/completionSelection.ts";
+import {exactRefactor,sourceSnapshot,extractedSource,EXTRACT_SOURCE,EXTRACT_PROBE} from "../harness/refactors.ts";
 import {planWorkspaceEdit} from "../harness/workspaceEdit.ts";
 
 const imports="package bench;\nimport java.util.Set;\nimport java.util.List;\npublic class Imports { public List<String> values; }\n";
@@ -131,17 +132,45 @@ export const editingCases:CaseDefinition[]=[
     c.assert("clean-context actions preserve every source state",JSON.stringify(c.state())===JSON.stringify(before));
     c.assert("no-action requests never apply an edit",!c.serverActions.slice(actions).some(a=>a.method==="workspace/applyEdit"));
   }},
-  {id:"REF-03/change-signature",family:"REF-03",apis:["API-090","API-091"],extension:true,variant:"rename method through signature refactor and update callers",run:async c=>{
-    await c.open("Customer.java");await c.open("Use.java");const context=action(c,"Customer.java","join");
-    const info=await c.query("java/getChangeSignatureInfo",context,v=>{assert.equal(v.methodName,"join");assert.equal(v.returnType,"String");assert.deepEqual(v.parameters.map((x:any)=>x.name),["left","right"]);assert(v.methodIdentifier);});
-    const result=await c.query("java/getRefactorEdit",{command:"changeSignature",context,options:format,commandArguments:[info.methodIdentifier,false,"combine",info.modifier,info.returnType,info.parameters,info.exceptions??[],false]},v=>{assert(!v?.errorMessage);nonemptyEdit(v?.edit);});
-    c.applyWorkspaceEdit(result.edit);c.assert("declaration renamed",c.text("Customer.java").includes("combine(String"));c.assert("caller updated",c.text("Use.java").includes('customer.combine("a", 2)'));c.compileOracle();
+  {id:"REF-02/refactor",family:"REF-02",apis:["API-088","API-089"],capability:"codeActionProvider",fixture:{"RefactorProbe.java":EXTRACT_SOURCE},variant:"discover local extraction by complete edit effect; preserve behaviour and unrelated sources",run:async c=>{
+    await c.open("RefactorProbe.java");const before=sourceSnapshot(c),uri=c.file("RefactorProbe.java").uri;
+    const params=action(c,"RefactorProbe.java","value + 1");params.context={diagnostics:[],only:["refactor.extract"]} as any;
+    const actions=await c.query("textDocument/codeAction",params,v=>assert(Array.isArray(v)&&v.length>0));let chosen:any;
+    for(const candidate of actions.filter((a:any)=>a.kind?.startsWith("refactor.extract"))){
+      const resolved=candidate.edit?candidate:await c.query("codeAction/resolve",candidate,v=>assert(v&&v.kind===candidate.kind),"resolve_candidate");
+      const edit=resolved.edit??(resolved.command?.command==="java.apply.workspaceEdit"?resolved.command.arguments?.[0]:undefined);
+      if(!edit)continue;
+      let matches=false,reason="";
+      try{
+        const planned=preview(c,edit);assert.deepEqual([...planned.keys()].sort(),Object.values(c.fixture.files).map(f=>f.uri).sort());
+        for(const [name,f] of Object.entries(c.fixture.files))if(f.uri!==uri)assert.equal(planned.get(f.uri)?.text,c.text(name));
+        extractedSource(planned.get(uri)!.text);matches=true;
+      }catch(error){reason=String(error);}
+      c.client.journal("refactor-candidates",{kind:candidate.kind,originalItem:candidate,resolved,selected:matches,reason});
+      if(matches){chosen=edit;break;}
+    }
+    c.assert("discovered action has exactly the selected extraction effect",!!chosen);c.applyWorkspaceEdit(chosen);
+    extractedSource(c.text("RefactorProbe.java"));exactRefactor(before,sourceSnapshot(c),{"bench/RefactorProbe.java":c.text("RefactorProbe.java")});
+    c.assert("refactor preserves exact source membership and unrelated states",true);c.compileOracle(EXTRACT_PROBE);
   }},
-  {id:"REF-03/extract-selection",family:"REF-03",apis:["API-090","API-092"],extension:true,variant:"infer and extract arithmetic expression",run:async c=>{
-    await c.open("Format.java");const context=action(c,"Format.java","1+2"),text=c.text("Format.java");
-    const choices=await c.query("java/inferSelection",{command:"extractVariable",context},v=>assert(Array.isArray(v)&&v.some((x:any)=>text.slice(x.offset,x.offset+x.length)==="1+2")));
-    const selection=choices.find((x:any)=>text.slice(x.offset,x.offset+x.length)==="1+2");
+  {id:"REF-03/change-signature",family:"REF-03",apis:["API-090","API-091"],extension:true,variant:"rename method and reverse parameters; exact caller updates and independent behaviour",run:async c=>{
+    await c.open("Customer.java");await c.open("Use.java");const before=sourceSnapshot(c),context=action(c,"Customer.java","join");
+    const info=await c.query("java/getChangeSignatureInfo",context,v=>{assert.equal(v.methodName,"join");assert.equal(v.returnType,"String");assert.equal(v.modifier,"public");assert.deepEqual(v.parameters.map((x:any)=>[x.name,x.type,x.originalIndex]),[["left","String",0],["right","int",1]]);assert(v.methodIdentifier);});
+    const result=await c.query("java/getRefactorEdit",{command:"changeSignature",context,options:format,commandArguments:[info.methodIdentifier,false,"combine",info.modifier,info.returnType,[info.parameters[1],info.parameters[0]],info.exceptions??[],false]},v=>{assert(!v?.errorMessage);nonemptyEdit(v?.edit);});
+    c.applyWorkspaceEdit(result.edit);exactRefactor(before,sourceSnapshot(c),{
+      "bench/Customer.java":before["bench/Customer.java"].text.replace("join(String left, int right)","combine(int right, String left)"),
+      "bench/Use.java":before["bench/Use.java"].text.replace('customer.join("a", 2)','customer.combine(2, "a")')});
+    c.assert("chosen signature and every caller match exact independent sources",true);c.assert("refactor preserves exact source membership and unrelated states",true);
+    c.compileOracle('package bench; public class HarnessOracle { public static void main(String[] args) { Customer c=new Customer(); Use u=new Use(); if(!c.combine(2,"a").equals("a2") || !c.combine(8,"z").equals("z8") || !u.join(c).equals("a2") || !u.read(c).equals("Ada") || u.count(c)!=7 || u.twice(c)!=14) throw new AssertionError("signature behaviour changed"); } }');
+  }},
+  {id:"REF-03/extract-selection",family:"REF-03",apis:["API-090","API-092"],extension:true,variant:"infer exact selection and extract a linked local; preserve behaviour and all unrelated sources",run:async c=>{
+    await c.open("Format.java");const before=sourceSnapshot(c),context=action(c,"Format.java","1+2"),text=c.text("Format.java");
+    const choices=await c.query("java/inferSelection",{command:"extractVariable",context},v=>assert(Array.isArray(v)&&v.some((x:any)=>x.offset===text.indexOf("1+2")&&x.length===3)));
+    const selection=choices.find((x:any)=>x.offset===text.indexOf("1+2")&&x.length===3);
     const result=await c.query("java/getRefactorEdit",{command:"extractVariable",context,commandArguments:[selection],options:format},v=>{assert(!v?.errorMessage);nonemptyEdit(v?.edit);});
-    c.applyWorkspaceEdit(result.edit);const after=c.text("Format.java");c.assert("expression extracted to local int",/int\s+\w+\s*=\s*1\s*\+\s*2/u.test(after));c.assert("method returns extracted local",/return\s+\w+\s*;/u.test(after));c.compileOracle();
+    c.applyWorkspaceEdit(result.edit);extractedSource(c.text("Format.java"),text,"1+2","$local");
+    exactRefactor(before,sourceSnapshot(c),{"bench/Format.java":c.text("Format.java")});
+    c.assert("selected expression is the returned extracted local",true);c.assert("refactor preserves exact source membership and unrelated states",true);
+    c.compileOracle('package bench; public class HarnessOracle { public static void main(String[] args) { if(new Format().value()!=3) throw new AssertionError("extracted expression changed"); } }');
   }},
 ];

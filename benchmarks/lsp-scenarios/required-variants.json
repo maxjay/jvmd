@@ -3709,9 +3709,26 @@
         {
           "id": "REF-02/refactor",
           "requirement": "Discover simple refactor by effect, apply and independently verify behaviour.",
-          "implementation": "not_implemented",
-          "remaining": "Direct extension refactors do not exercise discovery and resolution through code actions.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "REF-02/refactor",
+              "operations": [
+                {
+                  "endpoint": "textDocument/codeAction",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "discovered action has exactly the selected extraction effect",
+                "refactor preserves exact source membership and unrelated states",
+                "independent javac validation",
+                "independent generated-code behaviour"
+              ]
+            }
+          ]
         },
         {
           "id": "REF-02/none",
@@ -3753,30 +3770,122 @@
         {
           "id": "REF-03/extract",
           "requirement": "Independent extract selection; valid choices, edit and compilation.",
-          "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "REF-03/extract-selection",
+              "operations": [
+                {
+                  "endpoint": "java/inferSelection",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "java/getRefactorEdit",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "selected expression is the returned extracted local",
+                "refactor preserves exact source membership and unrelated states",
+                "independent javac validation",
+                "independent generated-code behaviour"
+              ]
+            }
+          ]
         },
         {
           "id": "REF-03/signature",
           "requirement": "Independent change signature; chosen name/parameters and callers updated; compilation.",
-          "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "REF-03/change-signature",
+              "operations": [
+                {
+                  "endpoint": "java/getChangeSignatureInfo",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "java/getRefactorEdit",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "chosen signature and every caller match exact independent sources",
+                "refactor preserves exact source membership and unrelated states",
+                "independent javac validation",
+                "independent generated-code behaviour"
+              ]
+            }
+          ]
         },
         {
           "id": "REF-03/move",
           "requirement": "Independent move; chosen destination and callers reflected; compilation.",
-          "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "REF-03/move-resource",
+              "operations": [
+                {
+                  "endpoint": "java/getMoveDestinations",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "java/move",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "move has exact destination package and all reference updates",
+                "refactor preserves exact source membership and unrelated states",
+                "independent javac validation",
+                "independent generated-code behaviour"
+              ]
+            }
+          ]
         },
         {
           "id": "REF-03/interface",
           "requirement": "Independent extract interface; selected members and implementation reflected; compilation.",
-          "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "REF-03/extract-interface",
+              "operations": [
+                {
+                  "endpoint": "java/checkExtractInterfaceStatus",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "java/getRefactorEdit",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "interface has only selected member and original implementation is preserved",
+                "refactor preserves exact source membership and unrelated states",
+                "independent javac validation",
+                "independent generated-code behaviour"
+              ]
+            }
+          ]
         }
       ]
     },

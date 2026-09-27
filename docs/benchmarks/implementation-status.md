@@ -4,8 +4,8 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 166 case definitions, 190 passing TypeScript
-harness tests, and 107 required variants (87 implemented, 15 partial, 5 absent).
+Latest implementation inventory: 167 case definitions, 195 passing TypeScript
+harness tests, and 107 required variants (92 implemented, 11 partial, 4 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -1224,3 +1224,32 @@ metadata requests consequently used an altered URI. The fix preserves the
 original URI exactly, with a regression using its real escaped form. The original
 20-case capture remains in `benchmarks/evidence/dependency-handle-2026-09-27/`;
 its complete inventory verifies. It is not evidence of a server content defect.
+
+
+## Corrected dependency replay and complete refactor effect checks
+
+The capture at `6a13a09` passes all ten JDTLS dependency cases after preserving
+its original escaped binary handles. JVMD reports ten unsupported routes. JDTLS
+completion selection passes; JVMD correctly records an unoffered optional
+command with the original-item resolve witness. The JDTLS no-action requests
+pass, but shutdown exits 1 without a kill, so that case remains a protocol error.
+All 24 reports finalized, the complete original inventory verifies, and reducer
+integrity issues are empty. Raw review evidence is preserved in
+`benchmarks/evidence/dependency-corrected-2026-09-27/`. This is one-block semantic
+evidence, not a public performance comparison.
+
+Code-action discovery now has an independent refactor case. It selects local
+extraction by complete edit effect, preserves original items for resolution,
+and rejects unrelated edits without relying on action titles. Extension
+refactors now check exact source membership and untouched document states.
+Signature refactoring changes both the name and parameter order, checks every
+caller and executes independent probes. Extraction binds the selected expression
+to its returned local. Move checks both callers and the selected package; interface
+extraction checks precisely the selected member and preserved implementation.
+All four routes compile and execute independently authored behaviour checks.
+
+Five adversarial tests reject altered literals, wrong parameters/callers,
+unrelated edits or incarnation changes, extra/missing sources, wrong extracted
+expressions and wrong return locals. All 195 harness tests pass. Source inventory:
+167 cases and 107 variants, 92 implemented, 11 partial, 4 absent. Real refactor
+replay remains required.

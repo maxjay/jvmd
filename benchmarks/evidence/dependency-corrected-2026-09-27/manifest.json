@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "6a13a0992a960e768a72b18d83ec92538090d044",
+  "sourceDrift": false,
+  "outcomes": {
+    "pass": 11,
+    "incorrect": 0,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 1,
+    "harness_error": 0,
+    "unsupported": 11,
+    "not_applicable": 1,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "originalReducerIntegrityIssues": [],
+  "package": {
+    "file": "protocol-review.tar.xz",
+    "bytes": 211756,
+    "sha256": "aac34ee89e20492ec2cc591e0bbf5926f8b510ab0de7e61f350aa93bf64d0903",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "verified",
+    "unsealedFiles": {},
+    "members": 215
+  },
+  "explanation": "All ten JDTLS dependency cases pass using the original opaque binary handle; all ten JVMD routes are unsupported. JDTLS selection passes, JVMD original completion item does not offer a selection command and the resolver witness establishes not_applicable. JDTLS no-action requests pass but shutdown exits code 1 without a forced kill; the case and run remain failed. One block is semantic evidence, not a performance comparison.",
+  "claims": {
+    "publicComparativePerformance": false
+  }
+}

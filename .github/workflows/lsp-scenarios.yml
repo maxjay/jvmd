@@ -6,6 +6,8 @@ on:
     paths:
       - 'benchmarks/phase-model.json'
       - 'benchmarks/lsp-scenarios/**'
+      - 'benchmarks/workspaces/**'
+      - 'benchmarks/measurement-contract.json'
       - 'jvmd-analyzer/**'
       - 'jvmd-index/**'
       - 'jvmd-index-rocks/**'
@@ -19,6 +21,8 @@ on:
     paths:
       - 'benchmarks/phase-model.json'
       - 'benchmarks/lsp-scenarios/**'
+      - 'benchmarks/workspaces/**'
+      - 'benchmarks/measurement-contract.json'
       - 'jvmd-analyzer/**'
       - 'jvmd-index/**'
       - 'jvmd-index-rocks/**'
@@ -103,6 +107,7 @@ jobs:
           mvn -B -DskipTests install
 
       - name: Build JVMD
+        id: build
         run: |
           mvn -B -DskipTests install
           bash jvmd-dist/assemble.sh
@@ -146,6 +151,26 @@ jobs:
       - name: Compare phase reports
         run: node benchmarks/lsp-scenarios/compare.ts "$RUNNER_TEMP/jdtls-report.json" "$RUNNER_TEMP/jvmd-report.json"
 
+      # These are correctness/diagnostic pilots. One block cannot authorize a
+      # comparative performance claim. Failures do not suppress later capture.
+      - name: Native lifecycle with packaged daemon and shim
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          node benchmarks/lsp-scenarios/jvmd-machine-lifecycle.ts --matrix \
+            --profile product --java-home "$JAVA_HOME" \
+            --output "$RUNNER_TEMP/native-lifecycle-clean" --edits 128 --trace false \
+            --apache-fixture "$RUNNER_TEMP/apache-maven-fixture" \
+            --apache-repository "$HOME/.m2/repository"
+
+      - name: Separate lifecycle attribution profile
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          node benchmarks/lsp-scenarios/jvmd-machine-lifecycle.ts --matrix \
+            --profile product --java-home "$JAVA_HOME" \
+            --output "$RUNNER_TEMP/native-lifecycle-traced" --edits 128 --trace true \
+            --apache-fixture "$RUNNER_TEMP/apache-maven-fixture" \
+            --apache-repository "$HOME/.m2/repository"
+
       - name: Upload phase reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -157,3 +182,13 @@ jobs:
             ${{ runner.temp }}/jvmd-report.json
             ${{ runner.temp }}/jvmd-machine-lifecycle.json
 
+      - name: Upload native lifecycle raw evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-lifecycle-evidence
+          retention-days: 7
+          include-hidden-files: true
+          path: |
+            ${{ runner.temp }}/native-lifecycle-clean
+            ${{ runner.temp }}/native-lifecycle-traced

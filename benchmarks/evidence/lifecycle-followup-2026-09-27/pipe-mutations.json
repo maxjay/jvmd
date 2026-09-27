@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 1,
+  "classification": "development diagnostic; not comparative performance evidence",
+  "sourceRevision": "58bbd42b9eb33dc70cdc4c76836cfd71cd7dbf3c with uncommitted lifecycle changes",
+  "edits": 128,
+  "cases": {
+    "LIFE-01": "pass",
+    "LIFE-02": "pass",
+    "LIFE-03": "pass",
+    "LIFE-04": "pass",
+    "LIFE-05": "pass",
+    "LIFE-06": "pass",
+    "LIFE-07": "pass",
+    "LIFE-08": "incorrect",
+    "LIFE-09": "pass",
+    "LIFE-10": "pass"
+  },
+  "transitions": [
+    {
+      "mutation": "identical-new-path",
+      "triggerNs": "46864051951973",
+      "before": {
+        "dep/library/1/library-1-sources.jar": "5562cc771da2646f1b91781dde6cfc405b375bc7313a7be35d5a0f46a080994c",
+        "dep/library/1/library-1.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1.pom": "516d13929c0cd436cb0b872f1dc2a8b34c404bd41318a3fc3ab3f831b77aff98"
+      },
+      "after": {
+        "copy/same-bytes.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1-sources.jar": "5562cc771da2646f1b91781dde6cfc405b375bc7313a7be35d5a0f46a080994c",
+        "dep/library/1/library-1.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1.pom": "516d13929c0cd436cb0b872f1dc2a8b34c404bd41318a3fc3ab3f831b77aff98"
+      },
+      "changed": [
+        "copy/same-bytes.jar"
+      ],
+      "firstCorrectNs": "46864089321510",
+      "settledNs": "46864147714285",
+      "attempts": 2,
+      "deadlineMs": 5000,
+      "maxAttempts": 128,
+      "outcome": "settled"
+    },
+    {
+      "mutation": "new-artifact",
+      "triggerNs": "46864148343555",
+      "before": {
+        "copy/same-bytes.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1-sources.jar": "5562cc771da2646f1b91781dde6cfc405b375bc7313a7be35d5a0f46a080994c",
+        "dep/library/1/library-1.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1.pom": "516d13929c0cd436cb0b872f1dc2a8b34c404bd41318a3fc3ab3f831b77aff98"
+      },
+      "after": {
+        "copy/same-bytes.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1-sources.jar": "5562cc771da2646f1b91781dde6cfc405b375bc7313a7be35d5a0f46a080994c",
+        "dep/library/1/library-1.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1.pom": "516d13929c0cd436cb0b872f1dc2a8b34c404bd41318a3fc3ab3f831b77aff98",
+        "other/new-bytes.jar": "6b6881ecacabc769fbac19f15205aa8d00df685236ac509348d76cf03bbbcd21"
+      },
+      "changed": [
+        "other/new-bytes.jar"
+      ],
+      "firstCorrectNs": "46864179946732",
+      "settledNs": "46864236145380",
+      "attempts": 2,
+      "deadlineMs": 5000,
+      "maxAttempts": 128,
+      "outcome": "settled"
+    },
+    {
+      "mutation": "same-coordinate-bytes",
+      "triggerNs": "46864236418864",
+      "before": {
+        "copy/same-bytes.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1-sources.jar": "5562cc771da2646f1b91781dde6cfc405b375bc7313a7be35d5a0f46a080994c",
+        "dep/library/1/library-1.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1.pom": "516d13929c0cd436cb0b872f1dc2a8b34c404bd41318a3fc3ab3f831b77aff98",
+        "other/new-bytes.jar": "6b6881ecacabc769fbac19f15205aa8d00df685236ac509348d76cf03bbbcd21"
+      },
+      "after": {
+        "copy/same-bytes.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1-sources.jar": "5562cc771da2646f1b91781dde6cfc405b375bc7313a7be35d5a0f46a080994c",
+        "dep/library/1/library-1.jar": "6b6881ecacabc769fbac19f15205aa8d00df685236ac509348d76cf03bbbcd21",
+        "dep/library/1/library-1.pom": "516d13929c0cd436cb0b872f1dc2a8b34c404bd41318a3fc3ab3f831b77aff98",
+        "other/new-bytes.jar": "6b6881ecacabc769fbac19f15205aa8d00df685236ac509348d76cf03bbbcd21"
+      },
+      "changed": [
+        "dep/library/1/library-1.jar"
+      ],
+      "firstCorrectNs": null,
+      "settledNs": null,
+      "attempts": 110,
+      "deadlineMs": 5000,
+      "maxAttempts": 128,
+      "outcome": "not_settled"
+    },
+    {
+      "mutation": "source-attachment",
+      "triggerNs": "46869243744228",
+      "before": {
+        "copy/same-bytes.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1-sources.jar": "5562cc771da2646f1b91781dde6cfc405b375bc7313a7be35d5a0f46a080994c",
+        "dep/library/1/library-1.jar": "6b6881ecacabc769fbac19f15205aa8d00df685236ac509348d76cf03bbbcd21",
+        "dep/library/1/library-1.pom": "516d13929c0cd436cb0b872f1dc2a8b34c404bd41318a3fc3ab3f831b77aff98",
+        "other/new-bytes.jar": "6b6881ecacabc769fbac19f15205aa8d00df685236ac509348d76cf03bbbcd21"
+      },
+      "after": {
+        "copy/same-bytes.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1-sources.jar": "9cd63c357b6c8ed5d8bc0ef7f1096542934ce6337f72762ae5af87b8e9f7aeca",
+        "dep/library/1/library-1.jar": "6b6881ecacabc769fbac19f15205aa8d00df685236ac509348d76cf03bbbcd21",
+        "dep/library/1/library-1.pom": "516d13929c0cd436cb0b872f1dc2a8b34c404bd41318a3fc3ab3f831b77aff98",
+        "other/new-bytes.jar": "6b6881ecacabc769fbac19f15205aa8d00df685236ac509348d76cf03bbbcd21"
+      },
+      "changed": [
+        "dep/library/1/library-1-sources.jar"
+      ],
+      "firstCorrectNs": null,
+      "settledNs": null,
+      "attempts": 112,
+      "deadlineMs": 5000,
+      "maxAttempts": 128,
+      "outcome": "not_settled"
+    },
+    {
+      "mutation": "removal",
+      "triggerNs": "46874274468051",
+      "before": {
+        "copy/same-bytes.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1-sources.jar": "9cd63c357b6c8ed5d8bc0ef7f1096542934ce6337f72762ae5af87b8e9f7aeca",
+        "dep/library/1/library-1.jar": "6b6881ecacabc769fbac19f15205aa8d00df685236ac509348d76cf03bbbcd21",
+        "dep/library/1/library-1.pom": "516d13929c0cd436cb0b872f1dc2a8b34c404bd41318a3fc3ab3f831b77aff98",
+        "other/new-bytes.jar": "6b6881ecacabc769fbac19f15205aa8d00df685236ac509348d76cf03bbbcd21"
+      },
+      "after": {
+        "copy/same-bytes.jar": "b8313d962bb758c9af9e8ed75538dec740511cf243c829780518fade83875681",
+        "dep/library/1/library-1-sources.jar": "9cd63c357b6c8ed5d8bc0ef7f1096542934ce6337f72762ae5af87b8e9f7aeca",
+        "dep/library/1/library-1.pom": "516d13929c0cd436cb0b872f1dc2a8b34c404bd41318a3fc3ab3f831b77aff98",
+        "other/new-bytes.jar": "6b6881ecacabc769fbac19f15205aa8d00df685236ac509348d76cf03bbbcd21"
+      },
+      "changed": [
+        "dep/library/1/library-1.jar"
+      ],
+      "firstCorrectNs": null,
+      "settledNs": null,
+      "attempts": 128,
+      "deadlineMs": 5000,
+      "maxAttempts": 128,
+      "outcome": "not_settled"
+    }
+  ],
+  "rawOperations": 1184,
+  "rawCaseSha256": "9e6bfafd7f628656a8cb9f83608d98b762bfda644aafd613506506cf29f03808",
+  "limitations": [
+    "Source-attachment leg followed an unsettled binary replacement; its separate cause is not established. The current definition tests the attachment before changing the binary.",
+    "The removal leg hit its explicit 128-attempt bound before five seconds; elapsed intervals are retained in the original raw case.",
+    "Pipe does not establish Unix transport or scheduler behavior. Process metrics unavailable locally."
+  ]
+}

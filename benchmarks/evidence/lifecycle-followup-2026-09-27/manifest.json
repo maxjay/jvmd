@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "scope": "selected diagnostic witnesses, not a complete independently replayable bundle",
+  "files": {
+    "apache-open.json": "93c2f2130dc98ee56320eefa65607fdc56ba1c5748496237bd97d50544a43846",
+    "jdtls-shutdown-threads.txt": "92b279907d1ed2b33110d9e44e9e5a19acdba417e557acd4994825d3f66008f2",
+    "pipe-mutations.json": "eb950545a504213ef3ed16ffc637373abaae56e02feb254c2837775ac8b145b8",
+    "python-tests.txt": "844cf4c363fc52b136597ba903d7851136b9d90b1ba794b0c79188807f23bb95",
+    "typescript-tests.txt": "a7026d8796b81291fd8a63d017797f94220c12b7e5c6ec15917e85444b66c188"
+  }
+}

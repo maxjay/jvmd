@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {mkdirSync,writeFileSync,readFileSync,copyFileSync,existsSync,rmSync,appendFileSync} from "node:fs";
+import {mkdirSync,writeFileSync,readFileSync,copyFileSync,existsSync,rmSync,appendFileSync,cpSync} from "node:fs";
 import {spawnSync} from "node:child_process";
 import path from "node:path";
 import {pathToFileURL} from "node:url";
@@ -8,7 +8,7 @@ import {NativeDaemon,type NativeOptions} from "./nativeDaemon.ts";
 import {createFixture,inventory,sha} from "./fixture.ts";
 import {dependencyFixture} from "./dependencies.ts";
 import {hoverOracle,position,completionOracle,chooseMethod,markup,exactLocations,range} from "./oracles.ts";
-import {now} from "./ProtocolClient.ts";
+import {now,ProtocolClient} from "./ProtocolClient.ts";
 const write=(file:string,value:any)=>writeFileSync(file,JSON.stringify(value,null,2)+"\n");
 const unwrap=(value:any)=>{assert(value?.result,"native envelope missing result");return value.result;};
 const delay=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -16,19 +16,32 @@ const disk='public class Value { public String marker = "disk"; }\n';
 const live='public class Value { public int marker = 42; }\n';
 class Peer {
   static count=0;id="peer-"+(++Peer.count);
-  bridge:LspBridge;daemon:NativeDaemon;root:string;responses=new Map<number,any>();events:any[]=[];next=0;session="";client:any;documents=new Map<string,{text:string,version:number}>();
-  constructor(daemon:NativeDaemon,root:string,client:any){this.daemon=daemon;this.root=root;this.client=client;
-    this.bridge=new LspBridge(async()=>({call:(method,params)=>daemon.call(method,params,client)}),root,message=>{this.events.push({direction:"receive",timeNs:String(now()),message});if(message.id!==undefined)this.responses.set(Number(message.id),message);},code=>{this.events.push({event:"shim_exit",code,timeNs:String(now())});});}
-  static async attach(daemon:NativeDaemon,root:string){const peer=new Peer(daemon,root,await daemon.reader());const uri=pathToFileURL(root).href;
+  bridge?:LspBridge;protocol?:ProtocolClient;daemon:NativeDaemon;root:string;responses=new Map<number,any>();events:any[]=[];next=0;session="";closed=false;documents=new Map<string,{text:string,version:number}>();
+  constructor(daemon:NativeDaemon,root:string){this.daemon=daemon;this.root=root;
+    const directory=path.join(daemon.options.output,this.id);mkdirSync(directory);
+    if(daemon.pipe){
+      this.bridge=new LspBridge(async()=>({call:(method,params)=>daemon.call(method,params)}),root,message=>{this.record({direction:"receive",timeNs:String(now()),message});if(message.id!==undefined)this.responses.set(Number(message.id),message);},code=>{this.record({event:"shim_exit",code,timeNs:String(now())});});
+    }else{
+      const command=[path.join(daemon.options.image,"bin/jvmd-lsp"),"--root",root,"--socket",daemon.socket];
+      this.protocol=new ProtocolClient(command,{env:{...process.env,JVMD_CONFIG:path.join(daemon.options.output,"config.json"),JVMD_SOCKET:daemon.socket},stderr:daemon.stderr,journalDirectory:directory});
+      daemon.trackPeer(this.protocol.child);write(path.join(directory,"launch.json"),{command,pid:this.protocol.child.pid,root,epoch:daemon.epoch,profile:"packaged shim process"});
+    }
+  }
+  record(event:any){const row={schemaVersion:1,sequence:this.events.length+1,...event};this.events.push(row);appendFileSync(path.join(this.daemon.options.output,this.id,"events.jsonl"),JSON.stringify(row)+"\n");}
+  static async attach(daemon:NativeDaemon,root:string){const peer=new Peer(daemon,root);const uri=pathToFileURL(root).href;
     await peer.request("initialize",{processId:process.pid,rootUri:uri,workspaceFolders:[{uri,name:path.basename(root)}],capabilities:{workspace:{configuration:true},textDocument:{publishDiagnostics:{versionSupport:true}}}});await peer.notify("initialized");
-    peer.session=unwrap(daemon.calls.filter(c=>c.method==="session.open"&&c.params.root===root).at(-1).result).session;assert(peer.session);return peer;}
-  async request(method:string,params:any){const id=++this.next,message={jsonrpc:"2.0",id,method,params};this.events.push({direction:"send",message,timeNs:String(now())});await this.bridge.handle(message);const response=this.responses.get(id);assert(response,"missing shim response");this.responses.delete(id);assert(!response.error,JSON.stringify(response.error));return response.result;}
-  async notify(method:string,params:any={}){const message={jsonrpc:"2.0",method,params};this.events.push({direction:"send",message,timeNs:String(now())});await this.bridge.handle(message);}
+    if(daemon.pipe)peer.session=unwrap(daemon.calls.filter(c=>c.method==="session.open"&&c.params.root===root).at(-1).result).session;
+    else{const rows=unwrap(await daemon.call("daemon.status")).sessions.filter((s:any)=>path.resolve(s.root)===root);assert.equal(rows.length,1);peer.session=rows[0].session;}
+    assert(peer.session);return peer;}
+  async request(method:string,params:any){
+    if(this.protocol){const response=await this.protocol.request(method,params,180000);assert(!response.error,JSON.stringify(response.error));return response.result;}
+    const id=++this.next,message={jsonrpc:"2.0",id,method,params};this.record({direction:"send",message,timeNs:String(now())});await this.bridge!.handle(message);const response=this.responses.get(id);assert(response,"missing shim response");this.responses.delete(id);assert(!response.error,JSON.stringify(response.error));return response.result;}
+  async notify(method:string,params:any={}){if(this.protocol){this.protocol.notify(method,params);return;}const message={jsonrpc:"2.0",method,params};this.record({direction:"send",message,timeNs:String(now())});await this.bridge!.handle(message);}
   async open(file:string,text:string,version=1){const uri=pathToFileURL(file).href;this.documents.set(uri,{text,version});await this.notify("textDocument/didOpen",{textDocument:{uri,languageId:"java",version,text}});}
   async change(file:string,text:string){const uri=pathToFileURL(file).href,old=this.documents.get(uri);assert(old);const version=old.version+1;this.documents.set(uri,{text,version});await this.notify("textDocument/didChange",{textDocument:{uri,version},contentChanges:[{text}]});}
   async hover(file:string,text:string,type:string){const result=await this.request("textDocument/hover",{textDocument:{uri:pathToFileURL(file).href},position:position(text,text.indexOf("marker")+1)});hoverOracle(result,"marker",type);return result;}
-  async close(){await this.request("shutdown",{});await this.notify("exit");await this.bridge.drained();}
-  persist(output:string){write(path.join(output,this.id+".json"),{schemaVersion:1,id:this.id,epoch:this.daemon.epoch,root:this.root,session:this.session,events:this.events});}
+  async close(){if(this.closed)return;this.closed=true;if(this.protocol)await this.protocol.shutdown(15000);else{await this.request("shutdown",{});await this.notify("exit");await this.bridge!.drained();}}
+  persist(output:string){write(path.join(output,this.id+".json"),{schemaVersion:1,id:this.id,epoch:this.daemon.epoch,root:this.root,session:this.session,profile:this.protocol?"packaged shim process":"in-process bridge over diagnostic pipe",events:this.protocol?.events??this.events});}
 }
 export async function lifecycleMatrix(args:string[]){
   const a:Record<string,string>={};for(let i=0;i<args.length;i+=2){assert(args[i].startsWith("--")&&args[i+1]);a[args[i].slice(2)]=args[i+1];}
@@ -43,9 +56,14 @@ export async function lifecycleMatrix(args:string[]){
   const root=path.join(output,"workspace"),newRoot=path.join(output,"new-workspace");for(const p of [root,newRoot]){mkdirSync(p);writeFileSync(path.join(p,"Value.java"),disk);}
   const dependencyRoot=(name:string)=>{const root=path.join(output,name);mkdirSync(path.join(root,"src/main/java/bench"),{recursive:true});writeFileSync(path.join(root,"pom.xml"),`<project><modelVersion>4.0.0</modelVersion><groupId>bench</groupId><artifactId>${name}</artifactId><version>1</version><properties><maven.compiler.release>17</maven.compiler.release></properties><dependencies><dependency><groupId>dep</groupId><artifactId>library</artifactId><version>1</version></dependency></dependencies></project>`);const file=path.join(root,"src/main/java/bench/Dependent.java"),text='package bench; public class Dependent { public String read(dep.Library l) { return l.original(); } }\n';writeFileSync(file,text);return {root,file,text};};
   const dependent=dependencyRoot("dependent"),shared=dependencyRoot("shared");
-  const plan={schemaVersion:1,cases:Array.from({length:10},(_,i)=>"LIFE-"+String(i+1).padStart(2,"0")),profile,trace:a.trace==="true",heapMb:256,edits,seed:0,idleMs:5000,activeQueries:20,
+  const git=(...args:string[])=>{const r=spawnSync("git",args,{encoding:"utf8"});assert.equal(r.status,0,r.stderr);return r.stdout.trim();};
+  const sourceInputs=()=>Object.fromEntries(git("ls-files","--cached","--others","--exclude-standard").split("\n").filter(f=>existsSync(f)).map(f=>[f,sha(readFileSync(f))]));
+  const initialSources=sourceInputs();
+  const plan={schemaVersion:1,revision:git("rev-parse","HEAD"),workingChanges:git("status","--porcelain"),sourceInputs:initialSources,toolchain:{javaRelease:readFileSync(path.join(javaHome,"release"),"utf8"),javaSha256:sha(readFileSync(path.join(javaHome,"bin/java"))),modulesSha256:sha(readFileSync(path.join(javaHome,"lib/modules")))},imageInputs:profile==="pipe"?null:inventory(image),cases:Array.from({length:10},(_,i)=>"LIFE-"+String(i+1).padStart(2,"0")),profile,trace:a.trace==="true",heapMb:256,edits,seed:0,idleMs:5000,activeQueries:20,
     filesystemCache:"uncontrolled",reset:"fresh dedicated machine store; retained only for specified transitions",repositoryInputs:inventory(repository),workspaceInputs:inventory(root),dependencyInputs:[inventory(dependent.root),inventory(shared.root)],
+    peerProfile:profile==="pipe"?"in-process bridge over diagnostic pipe":"packaged shim process",
     claims:{publicComparativePerformance:false,unixLifecycleEligible:profile!=="pipe",causalZeroWork:false,reason:"scoped native counter completeness and observer overhead must be established separately"}};
+  if(a["apache-fixture"])plan.cases.push("APACHE/document-open");
   write(path.join(output,"manifest.json"),plan);
   const rows:any[]=[],peers:Peer[]=[],daemons:NativeDaemon[]=[];let daemon:NativeDaemon|undefined,A:Peer|undefined,B:Peer|undefined,D:Peer|undefined,E:Peer|undefined;
   const base={profile,javaHome,image,pipeBuild:a["pipe-build"],repository,state:path.join(output,"machine-state"),trace:plan.trace,heapMb:plan.heapMb};
@@ -55,30 +73,67 @@ export async function lifecycleMatrix(args:string[]){
   const snapshot=async(name:string)=>{assert(daemon);const value=unwrap(await daemon.call("daemon.status"));write(path.join(output,name+".json"),{schemaVersion:1,epoch:daemon.epoch,clockDomain:"client",observedNs:String(now()),value,nativeWork:{status:"unavailable",reason:"aggregate status lacks a complete actor/epoch accounting boundary"}});return value;};
   const runCase=async(id:string,body:(row:any)=>Promise<void>)=>{const start=now(),row:any={schemaVersion:1,id,outcome:"not_run",profile,startNs:String(start),operations:[],assertions:[],nativeWork:{status:"unavailable",value:null,reason:"no complete scoped counter boundary"}};rows.push(row);if(daemon)daemon.phase=id;
     try{if(id!=="LIFE-01"&&(!daemon||daemon.process.exitCode!==null)){row.reason="previous daemon lifecycle prerequisite failed";return;}await body(row);row.outcome??="pass";if(row.outcome==="not_run")row.outcome="pass";}catch(error){row.outcome=error instanceof assert.AssertionError?"incorrect":"harness_error";row.error=String(error);}
-    finally{row.endNs=String(now());row.elapsedMs=Number(BigInt(row.endNs)-start)/1e6;write(path.join(output,id+".json"),row);console.log(JSON.stringify({caseId:id,outcome:row.outcome,error:row.error}));}};
+    finally{row.endNs=String(now());row.elapsedMs=Number(BigInt(row.endNs)-start)/1e6;write(path.join(output,id.replaceAll("/","-")+".json"),row);console.log(JSON.stringify({caseId:id,outcome:row.outcome,error:row.error}));}};
+  const recordOperation=(row:any,operation:any)=>{const value={schemaVersion:1,caseId:row.id,operationId:row.id+":"+(row.operations.length+1),...operation};row.operations.push(value);appendFileSync(path.join(output,"lifecycle-operations.jsonl"),JSON.stringify(value)+"\n");};
   const witness=async(peer:Peer,type:string,text:string=disk)=>{const result=await peer.hover(path.join(peer.root,"Value.java"),text,type);return {result,state:await status(peer),diskSha256:sha(readFileSync(path.join(peer.root,"Value.java")))};};
   try{
     await runCase("LIFE-01",async row=>{assert(!existsSync(base.state));const d=await launch("fresh");d.phase=row.id;A=await attach(root);await A.open(path.join(root,"Value.java"),disk);row.witness=await witness(A,"String");row.launchToFirstCorrectMs=Number(now()-d.startedNs)/1e6;row.machine=await snapshot("fresh-status");row.initialStore="absent before launch";row.aot=row.machine.aot_cache??{status:"unavailable"};});
     await runCase("LIFE-02",async row=>{assert(daemon&&A);await A.close();const first=daemon.epoch;await daemon.close();row.persistedInputs=inventory(base.state);assert(Object.keys(row.persistedInputs).length,"restart has no persisted state to retain");const d=await launch("restarted");d.phase=row.id;assert.notEqual(d.epoch,first);A=await attach(root);await A.open(path.join(root,"Value.java"),disk);row.witness=await witness(A,"String");row.launchToFirstCorrectMs=Number(now()-d.startedNs)/1e6;row.machine=await snapshot("restart-status");});
     await runCase("LIFE-03",async row=>{assert(daemon&&A);const before=await snapshot("resident-before");assert(!before.sessions.some((s:any)=>s.root===newRoot));const peer=await attach(newRoot);assert.notEqual(peer.session,A.session);await peer.open(path.join(newRoot,"Value.java"),disk);row.witness=await witness(peer,"String");row.daemonEpoch=daemon.epoch;await peer.close();});
     await runCase("LIFE-04",async row=>{assert(daemon&&A);await A.change(path.join(root,"Value.java"),live);row.before=await witness(A,"int",live);B=await attach(root);assert.equal(B.session,A.session);row.afterA=await witness(A,"int",live);row.afterB=await witness(B,"int",live);assert.deepEqual(row.afterA.state.documents,row.before.state.documents);assert.equal(readFileSync(path.join(root,"Value.java"),"utf8"),disk);const diag=unwrap(await daemon.call("lsp.diagnostics",{session:A.session,uri:pathToFileURL(path.join(root,"Value.java")).href}));assert.equal(diag.value.version,2);row.documentVersion=2;await B.close();});
-    await runCase("LIFE-05",async row=>{assert(daemon&&A);const session=A.session,from=daemon.calls.length;await A.close();row.detachCalls=daemon.calls.slice(from);assert(row.detachCalls.some(c=>c.method==="document.close"));assert(!row.detachCalls.some(c=>c.method==="session.close"));A=await attach(root);assert.equal(A.session,session);await A.open(path.join(root,"Value.java"),disk);row.witness=await witness(A,"String");row.retainedSession=session;row.liveDocuments="normal shim exit closed its open documents";});
+    await runCase("LIFE-05",async row=>{assert(daemon&&A);const session=A.session,from=daemon.calls.length;await A.close();row.detachCalls=daemon.calls.slice(from);if(daemon.pipe){assert(row.detachCalls.some(c=>c.method==="document.close"));assert(!row.detachCalls.some(c=>c.method==="session.close"));}row.detachedPeer=A.id;row.afterDetach=await status(A);assert.equal(row.afterDetach.documents.open_documents,0);A=await attach(root);assert.equal(A.session,session);row.witness=await witness(A,"String");await A.open(path.join(root,"Value.java"),disk);row.retainedSession=session;row.liveDocuments="normal shim exit closed its open documents";});
     await runCase("LIFE-06",async row=>{assert(daemon&&A);const previous=A.session;await A.close();const closed=unwrap(await daemon.call("session.close",{session:previous}));assert.equal(closed.ack,true);row.afterDisposal=await snapshot("disposed-status");assert(!row.afterDisposal.sessions.some((s:any)=>s.session===previous));A=await attach(root);assert.notEqual(A.session,previous);await A.open(path.join(root,"Value.java"),disk);row.witness=await witness(A,"String");row.previousSession=previous;row.newSession=A.session;});
     await runCase("LIFE-07",async row=>{assert(daemon&&A);const active=witness(A,"String"),opening=attach(dependent.root);[row.unaffected,D]=await Promise.all([active,opening]);E=await attach(shared.root);assert.notEqual(D!.session,E.session);await D!.open(dependent.file,dependent.text);await E.open(shared.file,shared.text);
       for(const [peer,f] of [[D,dependent],[E,shared]] as const){const result=await peer!.request("textDocument/completion",{textDocument:{uri:pathToFileURL(f.file).href},position:position(f.text,f.text.indexOf("original()"))});completionOracle(result,["original"],["next"]);row.operations.push({root:f.root,session:peer!.session,result,state:await status(peer!)});}row.sharedDependencySha256=sha(readFileSync(binary));row.firstWorkspaceAfter=await witness(A,"String");});
-    await runCase("LIFE-08",async row=>{assert(daemon&&A&&D&&E);const check=async(expected:string,forbidden:string)=>{for(const [peer,f] of [[D,dependent],[E,shared]] as const){const started=now();const result=await peer!.request("textDocument/completion",{textDocument:{uri:pathToFileURL(f.file).href},position:position(f.text,f.text.indexOf("original()"))});const op:any={root:f.root,startNs:String(started),endNs:String(now()),result,outcome:"pass"};row.operations.push(op);try{completionOracle(result,expected?[expected]:[],expected?[forbidden]:["original","next"]);}catch(error){op.outcome="incorrect";op.error=String(error);throw error;}}await witness(A!,"String");};
-      for(const mutation of ["identical-new-path","new-artifact","same-coordinate-bytes","source-attachment","removal"]){const before=inventory(repository),started=now();
+    await runCase("LIFE-08",async row=>{
+      assert(daemon&&A&&D&&E);
+      row.transitions=[];
+      for(const mutation of ["identical-new-path","new-artifact","source-attachment","same-coordinate-bytes","removal"]){
+        const before=inventory(repository),trigger=now();
         if(mutation==="identical-new-path"){mkdirSync(path.join(repository,"copy"));copyFileSync(binary,path.join(repository,"copy/same-bytes.jar"));}
         if(mutation==="new-artifact"){mkdirSync(path.join(repository,"other"));copyFileSync(path.join(lib,"library-B.jar"),path.join(repository,"other/new-bytes.jar"));}
         if(mutation==="same-coordinate-bytes")copyFileSync(path.join(lib,"library-B.jar"),binary);
-        if(mutation==="source-attachment")copyFileSync(path.join(lib,"library-B-sources-v2.jar"),sourceJar);
+        if(mutation==="source-attachment")copyFileSync(path.join(lib,"library-A-sources-v2.jar"),sourceJar);
         if(mutation==="removal")rmSync(binary);
-        const after=inventory(repository),changed=[...new Set([...Object.keys(before),...Object.keys(after)])].filter(k=>before[k]!==after[k]);assert.equal(changed.length,1,"mutation must change exactly one artifact identity");row.operations.push({mutation,triggerNs:String(started),before,after,changed});
-        await check(mutation==="removal"?"":(["same-coordinate-bytes","source-attachment"].includes(mutation)?"next":"original"),["same-coordinate-bytes","source-attachment"].includes(mutation)?"original":"next");
-        if(mutation==="source-attachment"){
-          const list=await D.request("textDocument/completion",{textDocument:{uri:pathToFileURL(dependent.file).href},position:position(dependent.text,dependent.text.indexOf("original()"))});
-          const item=chooseMethod(list,"next"),resolved=await D.request("completionItem/resolve",item);assert(markup(resolved.documentation).includes("MEMBER_DOC_ATTACHED_V2"),"changed source attachment documentation not visible");row.sourceAttachmentFreshness={status:"verified",result:resolved,witness:"MEMBER_DOC_ATTACHED_V2 belongs to next() in replacement attachment"};
-        }
+        const after=inventory(repository),changed=[...new Set([...Object.keys(before),...Object.keys(after)])].filter(k=>before[k]!==after[k]);
+        assert.equal(changed.length,1,"mutation must change exactly one artifact identity");
+        const transition:any={mutation,triggerNs:String(trigger),before,after,changed,firstCorrectNs:null,settledNs:null,attempts:0,deadlineMs:5000,maxAttempts:128};row.transitions.push(transition);
+        recordOperation(row,{kind:"mutation",...transition});
+        const expected=mutation==="removal"?"":(mutation==="same-coordinate-bytes"?"next":"original");
+        const deadline=Date.now()+transition.deadlineMs;let consecutive=0;
+        do{
+          transition.attempts++;
+          const state=transition.attempts===1?"changed_immediate":consecutive?"changed_settled":"changed_retry_"+transition.attempts;
+          let correct=true;
+          for(const [peer,f] of [[D,dependent],[E,shared]] as const){
+            const start=now();const op:any={mutation,state,root:f.root,kind:"completion_visibility",triggerNs:String(trigger),startNs:String(start),outcome:"pass"};
+            try{
+              op.result=await peer.request("textDocument/completion",{textDocument:{uri:pathToFileURL(f.file).href},position:position(f.text,f.text.indexOf("original()"))});op.endNs=String(now());
+              completionOracle(op.result,expected?[expected]:[],expected?[expected==="next"?"original":"next"]:["original","next"]);
+            }catch(error){correct=false;op.outcome=error instanceof assert.AssertionError?"incorrect":"protocol_error";op.error=String(error);row.outcome=op.outcome;}
+            finally{op.endNs??=String(now());op.latencyMs=Number(BigInt(op.endNs)-start)/1e6;op.changeToResultMs=Number(BigInt(op.endNs)-trigger)/1e6;recordOperation(row,op);}
+          }
+          const unaffectedStart=now();const unaffected:any={mutation,state,kind:"unaffected_workspace",startNs:String(unaffectedStart),outcome:"pass"};
+          try{unaffected.result=await A.hover(path.join(root,"Value.java"),disk,"String");}
+          catch(error){correct=false;unaffected.outcome="incorrect";unaffected.error=String(error);row.outcome="incorrect";}
+          finally{unaffected.endNs=String(now());recordOperation(row,unaffected);}
+          if(mutation==="source-attachment"){
+            const op:any={mutation,state,kind:"source_attachment_resolve",startNs:String(now()),outcome:"pass"};
+            try{
+              const list=await D.request("textDocument/completion",{textDocument:{uri:pathToFileURL(dependent.file).href},position:position(dependent.text,dependent.text.indexOf("original()"))});
+              op.origin=list;const item=chooseMethod(list,"original");op.item=item;op.result=await D.request("completionItem/resolve",item);
+              assert(markup(op.result.documentation).includes("MEMBER_DOC_ATTACHED_V2"),"changed source attachment documentation not visible");
+            }catch(error){correct=false;op.outcome="incorrect";op.error=String(error);row.outcome="incorrect";}
+            finally{op.endNs=String(now());recordOperation(row,op);}
+          }
+          if(correct){transition.firstCorrectNs??=String(now());consecutive++;if(consecutive===2){transition.settledNs=String(now());break;}}
+          else consecutive=0;
+          if(Date.now()>=deadline||transition.attempts>=transition.maxAttempts)break;
+          await delay(20);
+        }while(true);
+        transition.outcome=transition.settledNs?"settled":"not_settled";
+        if(!transition.settledNs)row.outcome="incorrect";
+        recordOperation(row,{kind:"transition_result",...transition});
       }
     });
     await runCase("LIFE-09",async row=>{assert(daemon&&A);row.before=await status(A);
@@ -92,15 +147,35 @@ export async function lifecycleMatrix(args:string[]){
       for(let i=0;i<edits;i++){const text=i%2?disk:live;await A.change(path.join(root,"Value.java"),text);const start=now(),result=await A.hover(path.join(root,"Value.java"),text,i%2?"String":"int");row.operations.push({edit:i,version:i+2,startNs:String(start),endNs:String(now()),outcome:"pass",result});if(i%16===0)row.operations.at(-1).state=await status(A);}await A.change(path.join(root,"Value.java"),disk);row.recovered=await witness(A,"String");row.after=await status(A);if(row.eviction.status==="unavailable")row.outcome="unavailable_evidence";});
     await runCase("LIFE-10",async row=>{assert(daemon&&A);row.idleStartNs=String(now());await delay(plan.idleMs);row.idleEndNs=String(now());row.idlePolicy="no status polls, mutations or target requests during idle interval";
       for(let i=0;i<plan.activeQueries;i++){const from=now(),maintenance=daemon.call("daemon.status"),probe=A.hover(path.join(root,"Value.java"),disk,"String");const [state,result]=await Promise.all([maintenance,probe]);row.operations.push({iteration:i,startNs:String(from),endNs:String(now()),result,outcome:"pass",maintenance:state});}row.activePolicy="one explicit status request overlaps each correct interactive query";row.after=await snapshot("maintenance-after");});
-    if(a["apache-fixture"])await runCase("APACHE/document-open",async row=>{assert(daemon);const project=path.resolve(a["apache-fixture"]),peer=await attach(project),provider=path.join(project,"impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java"),caller=path.join(project,"impl/maven-core/src/main/java/org/apache/maven/project/DefaultMavenProjectHelper.java"),providerText=readFileSync(provider,"utf8"),original=readFileSync(caller,"utf8");const inserted="\n private void benchmarkLifecycle(MavenProject project) { project.toString(); }\n",text=original.slice(0,original.lastIndexOf("}"))+inserted+"}\n",start=now();
-      await peer.open(provider,providerText);await peer.open(caller,text);row.documentActionsFinishedNs=String(now());const value=await peer.request("textDocument/definition",{textDocument:{uri:pathToFileURL(caller).href},position:position(text,text.lastIndexOf("MavenProject project")+2)});exactLocations(value,[{uri:pathToFileURL(provider).href,range:range(providerText,"MavenProject",providerText.indexOf("class MavenProject"))}]);row.endToEndMs=Number(now()-start)/1e6;row.result=value;row.state=await status(peer);row.cause=plan.trace?"Inspect native invocation spans and JFR samples; no cause inferred solely from wall time":"unavailable: rerun separate attribution profile";await peer.close();});
+    if(a["apache-fixture"])await runCase("APACHE/document-open",async row=>{
+      assert(a["apache-repository"],"prepared Apache experiment requires its declared dependency repository");
+      const input=path.resolve(a["apache-fixture"]),repositoryInput=path.resolve(a["apache-repository"]);
+      const head=spawnSync("git",["-C",input,"rev-parse","HEAD"],{encoding:"utf8"});assert.equal(head.status,0,head.stderr);assert.equal(head.stdout.trim(),"5cd1b60264101080c712accd605180a4bd9222e0");
+      for(const peer of peers)await peer.close();await daemon!.close();
+      const project=path.join(output,"apache-workspace"),apacheRepository=path.join(output,"apache-repository");
+      cpSync(input,project,{recursive:true,filter:p=>path.basename(p)!==".git"});cpSync(repositoryInput,apacheRepository,{recursive:true});
+      const inputs={fixtureRevision:head.stdout.trim(),workspace:inventory(project),repository:inventory(apacheRepository)};
+      write(path.join(output,"apache-inputs.json"),inputs);
+      const d=await NativeDaemon.start({...base,repository:apacheRepository,state:path.join(output,"apache-state"),output:path.join(output,"apache"),heapMb:1024});daemons.push(d);daemon=d;d.phase=row.id;
+      const attachedAt=now(),peer=await attach(project);row.attachFinishedNs=String(now());row.attachMs=Number(BigInt(row.attachFinishedNs)-attachedAt)/1e6;
+      const provider=path.join(project,"impl/maven-core/src/main/java/org/apache/maven/project/MavenProject.java"),caller=path.join(project,"impl/maven-core/src/main/java/org/apache/maven/project/DefaultMavenProjectHelper.java"),providerText=readFileSync(provider,"utf8"),original=readFileSync(caller,"utf8");
+      const inserted="\n private void benchmarkLifecycle(MavenProject project) { project.toString(); }\n",text=original.slice(0,original.lastIndexOf("}"))+inserted+"}\n",start=now();
+      for(const [file,content] of [[provider,providerText],[caller,text]]){const begin=now(),from=d.calls.length;await peer.open(file,content);recordOperation(row,{kind:"document_open_submission",uri:pathToFileURL(file).href,contentSha256:sha(content),startNs:String(begin),endNs:String(now()),nativeInvocations:d.calls.slice(from).map(c=>c.trace.invocation),boundary:d.pipe?"diagnostic bridge waits for native document.open":"packaged shim notification submitted; completion established by later semantic probe"});}
+      row.documentActionsFinishedNs=String(now());const value=await peer.request("textDocument/definition",{textDocument:{uri:pathToFileURL(caller).href},position:position(text,text.lastIndexOf("MavenProject project")+2)});
+      exactLocations(value,[{uri:pathToFileURL(provider).href,range:range(providerText,"MavenProject",providerText.indexOf("class MavenProject"))}]);row.endToEndMs=Number(now()-start)/1e6;row.result=value;row.state=await status(peer);
+      row.cause={status:"unresolved",evidence:plan.trace?"Native invocation spans and JFR samples captured for independent causal analysis":"clean profile; attribution requires a separate matched run"};
+      await peer.close();await d.close();
+      row.finalInventory={workspace:inventory(project),repository:inventory(apacheRepository)};
+      assert.deepEqual(row.finalInventory.workspace,inputs.workspace,"unexpected prepared workspace drift");assert.deepEqual(row.finalInventory.repository,inputs.repository,"unexpected prepared dependency drift");
+    });
   }finally{
-    for(const peer of peers){try{peer.persist(output);}catch{}}
-    for(const d of daemons)if(d.process.exitCode===null)await d.close().catch(error=>rows.push({id:"shutdown",outcome:"protocol_error",error:String(error)}));
+    for(const peer of peers){try{await peer.close();}catch(error){rows.push({id:peer.id+"/shutdown",outcome:"protocol_error",error:String(error)});}peer.persist(output);}
+    for(const d of daemons)await d.close().catch(error=>rows.push({id:"shutdown",outcome:"protocol_error",error:String(error)}));
     for(const d of daemons)if(plan.trace&&existsSync(path.join(d.options.output,"server.jfr"))){const result=spawnSync("python3",["benchmarks/workspaces/causal.py","--directory",d.options.output,"--java-home",javaHome,"--repo",process.cwd()],{encoding:"utf8",timeout:60000,maxBuffer:8*1024*1024});write(path.join(d.options.output,"profile-export.json"),{schemaVersion:1,exitCode:result.status,error:String(result.error??""),stderr:result.stderr});}
+    if(JSON.stringify(sourceInputs())!==JSON.stringify(initialSources))rows.push({id:"source-integrity",outcome:"harness_error",error:"repository source inputs changed during the experiment"});
     const resources=daemons.map(d=>{const file=path.join(d.options.output,"resources.json");return {epoch:d.epoch,...(existsSync(file)?JSON.parse(readFileSync(file,"utf8")):{availability:"unavailable",reason:"resource collector did not finish"})};});
-    const summary={schemaVersion:1,resourceScopeComplete:resources.length>0&&resources.every(r=>r.availability==="measured"&&r.valid_samples>0),cases:rows.map(({operations,...r})=>r),resources,complete:rows.length>=10&&rows.every(r=>r.outcome==="pass"),claims:plan.claims};write(path.join(output,"summary.json"),summary);
+    const summary={schemaVersion:1,scope:"development lifecycle correctness subset",resourceScopeComplete:resources.length>0&&resources.every(r=>r.availability==="measured"&&r.valid_samples>0),cases:rows.map(({operations,...r})=>r),resources,semanticComplete:rows.length===plan.cases.length&&rows.every(r=>r.outcome==="pass"),complete:false,evidenceGaps:["observer overhead and complete scoped counter accounting require separate experiments",...(profile==="pipe"?["Unix daemon and packaged shim lifecycle not exercised"]:[])],claims:plan.claims};write(path.join(output,"summary.json"),summary);
     writeFileSync(path.join(output,"checksums.sha256"),Object.entries(inventory(output)).filter(([p])=>p!=="checksums.sha256").map(([p,h])=>h+"  "+p).join("\n")+"\n");
   }
-  assert(rows.length>=10&&rows.every(r=>r.outcome==="pass"),"Lifecycle evidence gates remain open; all attempted states and failures preserved at "+output);
+  assert(rows.length===plan.cases.length&&rows.every(r=>r.outcome==="pass"),"Lifecycle evidence gates remain open; all attempted states and failures preserved at "+output);
 }

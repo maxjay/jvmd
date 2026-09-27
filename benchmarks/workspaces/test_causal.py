@@ -16,3 +16,12 @@ class CausalTest(unittest.TestCase):
         def span(pid, sid): return {'type':'dev.jvmd.Stage', 'values':{'process':pid,'span':sid,'invocation':'a','durationNanos':1,'startNanos':4,'stage':'rpc.execute','counters':'{}'}}
         with self.assertRaisesRegex(ValueError, 'clock domains'): reduce_native([span(1,1),span(2,2)], [call], 'epoch')
         with self.assertRaisesRegex(ValueError, 'duplicate'): reduce_native([span(1,1),span(1,1)], [call], 'epoch')
+
+    def test_background_spans_without_invocations_remain_unmatched(self):
+        events = [{'type': 'dev.jvmd.Stage', 'values': {
+            'process': 1, 'span': 1, 'invocation': None, 'durationNanos': 4,
+            'startNanos': 2, 'stage': 'background.index', 'counters': '{}'}}]
+        result = reduce_native(events, [{'trace': {'invocation': 'request'}}], 'epoch')
+        self.assertEqual([''], result['unmatchedNativeInvocations'])
+        self.assertEqual(['request'], result['unmatchedClientInvocations'])
+        self.assertIsNone(result['invocations'][0]['clientRequest'])

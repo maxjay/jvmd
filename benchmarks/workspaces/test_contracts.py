@@ -42,6 +42,37 @@ class ContractTest(unittest.TestCase):
         self.assertIsNone(result["rss_bytes"])
         self.assertIsNone(result["cpu_ticks"])
 
+    def test_overlapping_peer_trees_are_counted_once_and_missing_roots_fail(self):
+        from unittest.mock import patch
+        from resources import _sample
+        stat = ['0'] * 22
+        stat[11], stat[12], stat[19], stat[21] = '2', '3', '100', '4'
+        class File:
+            def __init__(self, name): self.name = str(name)
+            def read_text(self):
+                if self.name.endswith('/stat'): return '1 (java) ' + ' '.join(stat)
+                if self.name.endswith('/status'): return 'Threads: 1'
+                if self.name.endswith('/io'): return 'read_bytes: 10\nwrite_bytes: 20'
+                raise AssertionError(self.name)
+            def read_bytes(self): return b'/jdk/bin/java\0'
+            @property
+            def name(self): return self._name
+            @name.setter
+            def name(self, value): self._name = value
+        # Use actual Path for role classification, mocked files only for /proc.
+        real_path = Path
+        with patch('resources.Path', side_effect=lambda name: File(name) if str(name).startswith('/proc/') else real_path(name)):
+            with patch('resources._process_tree', side_effect=lambda root: {1, 2} if root == 1 else {2}):
+                sample = _sample(1, [2])
+            self.assertEqual('measured', sample['availability'])
+            self.assertEqual(2, sample['processes'])
+            self.assertEqual(10, sample['cpu_ticks'])
+            self.assertEqual(20, sample['read_bytes'])
+            with patch('resources._process_tree', side_effect=lambda root: {1, 2} if root == 1 else set()):
+                sample = _sample(1, [3])
+            self.assertEqual('unavailable', sample['availability'])
+            self.assertIsNone(sample['rss_bytes'])
+
 
 if __name__ == "__main__":
     unittest.main()

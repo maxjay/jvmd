@@ -42,13 +42,17 @@ def _process_tree(root_pid):
     return found
 
 
-def _sample(pid):
+def _sample(pid, extra_roots=()):
     rss = cpu = read_bytes = write_bytes = threads = 0
     processes = []
     try:
-        pids = _process_tree(pid)
+        roots = {pid, *extra_roots}
+        trees = [_process_tree(root) for root in roots]
+        pids = set().union(*trees)
+        roots_observed = all(root in tree for root, tree in zip(roots, trees))
     except PermissionError:
         pids = set()
+        roots_observed = False
     for child in pids:
         try:
             stat = Path(f'/proc/{child}/stat').read_text().rpartition(') ')[2].split()
@@ -66,7 +70,7 @@ def _sample(pid):
                               'read_bytes':int(io.get('read_bytes',0)), 'write_bytes':int(io.get('write_bytes',0))})
         except (FileNotFoundError, ProcessLookupError, PermissionError, StopIteration, ValueError):
             pass
-    complete = bool(processes) and len(processes) == len(pids) and any(p['pid'] == pid for p in processes)
+    complete = roots_observed and bool(processes) and len(processes) == len(pids)
     return {'processes': len(pids) if complete else None, 'rss_bytes': rss if complete else None,
             'cpu_ticks': cpu if complete else None, 'threads': threads if complete else None,
             'read_bytes': read_bytes if complete else None, 'write_bytes': write_bytes if complete else None,
@@ -76,8 +80,9 @@ def _sample(pid):
 
 class ProcessMonitor:
     """Periodically sample a server and all descendants from outside the JVM."""
-    def __init__(self, pid, interval=.02, output=None):
+    def __init__(self, pid, interval=.02, output=None, roots_file=None):
         self.pid, self.interval = pid, interval
+        self.roots_file = roots_file
         self.samples, self.stop_event = 0, threading.Event()
         self.valid_samples = 0
         self.maximum = collections.defaultdict(int)
@@ -88,12 +93,13 @@ class ProcessMonitor:
 
     def _run(self):
         while not self.stop_event.is_set():
-            values = _sample(self.pid); self.samples += 1
+            values = self._sample(); self.samples += 1
             processes=values.pop('process_samples',[])
             if values['availability'] == 'measured': self.valid_samples += 1
             if self.output:
                 self.output.write(json.dumps({'monotonic_ns':time.monotonic_ns(),'processes':processes,
                                              'availability':values['availability'],'reason':values['reason']})+'\n')
+                self.output.flush()
             for process in processes:
                 key=(process['pid'],process['start_ticks'])
                 old=self.processes.setdefault(key,dict(process))
@@ -104,9 +110,13 @@ class ProcessMonitor:
                 if isinstance(value, (int, float)): self.maximum[key] = max(self.maximum[key], value)
             self.stop_event.wait(self.interval)
 
+    def _sample(self):
+        roots = json.loads(self.roots_file.read_text()) if self.roots_file else []
+        return _sample(self.pid, roots)
+
     def snapshot(self):
         """Current external process-tree memory at a benchmark phase boundary."""
-        values = _sample(self.pid)
+        values = self._sample()
         processes = values.pop('process_samples', [])
         return {
             'monotonic_ns': time.monotonic_ns(),
@@ -127,7 +137,7 @@ class ProcessMonitor:
         if self.output:self.output.close()
         values = dict(self.maximum); ticks = os.sysconf('SC_CLK_TCK')
         available = self.valid_samples > 0
-        return {'source': 'Linux /proc, process plus descendants', 'sample_interval_ms': self.interval*1000,
+        return {'source': 'Linux /proc, process and declared peer roots plus descendants, deduplicated by PID', 'sample_interval_ms': self.interval*1000,
                 'availability': 'measured' if available else 'unavailable',
                 'reason': None if available else 'no complete process-tree samples available',
                 'valid_samples': self.valid_samples, 'unavailable_samples': self.samples-self.valid_samples,
@@ -231,9 +241,10 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--stop-file", type=Path, required=True)
     parser.add_argument("--interval", type=float, default=.02)
+    parser.add_argument("--roots-file", type=Path)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    monitor = ProcessMonitor(args.pid, interval=args.interval, output=args.output / "resource-samples.jsonl")
+    monitor = ProcessMonitor(args.pid, interval=args.interval, output=args.output / "resource-samples.jsonl", roots_file=args.roots_file)
     try:
         while not args.stop_file.exists():
             time.sleep(.05)

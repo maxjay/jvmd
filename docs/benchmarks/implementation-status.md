@@ -34,7 +34,7 @@ answers. Development pilots are not frozen, independent comparison blocks.
 | A01 | pass | Connector-decoded repository bytes match the intact workbook SHA-256 and ZIP CRC; see `benchmarks/evidence/workbook-roundtrip.json` |
 | A02 | fail | Complete executable coverage for supported targets; no unimplemented target may be classified unsupported |
 | A03 | pass for shared admission contract; broader cases pending | Shared vectors and cross-file stale-result subprocess test |
-| A04 | pass for tested gates | Runner/comparator reject injected wrong output; all three CI jobs passed on c5c10fd2. New checkpoint requires fresh CI. |
+| A04 | pass for tested gates | Runner/comparator reject injected wrong output; all three CI jobs passed on c5c10fd2. All three CI jobs also passed at 58bbd42b; those jobs did not yet execute the new native matrix. |
 | A05 | blocked | CMP-01 variants are implemented; full supported-server execution and oracle review remain |
 | A06 | partial | Live protocol journals, immediate/settled probes, source-drift detection and artifact-only checks are implemented; complete case histories still require full execution. |
 | A07 | blocked | Retained-state regression reproduced/fixed; normal detach/disposal/restart/machine matrix remains |
@@ -93,3 +93,39 @@ Public comparative performance claims remain disabled. Native attribution,
 observer overhead, complete variant coverage, long Apache Maven document-open
 causality and independent final blocks are still required. This is a published
 work checkpoint, not completion of the worker specification.
+
+## Lifecycle follow-up
+
+The next checkpoint adds packaged shim processes for Unix runs, live peer
+journals, actual peer shutdown, strict daemon exit checks, and resource sampling
+of both the daemon and separately launched shim trees without double counting.
+CI now runs separate clean and traced product lifecycle pilots and uploads their
+raw artifacts with read-only repository permissions. These remain correctness
+and diagnostic subsets, not final independent performance blocks.
+
+37 TypeScript tests pass. Python: 33 tests, 32 pass and one explicit process
+visibility skip. New tests cover failed daemon shutdown, overlapping process-tree
+roots, missing peer visibility, and JFR background events without invocation IDs.
+
+The second pipe lifecycle pilot used 128 edits and retained all five artifact
+mutation histories. Same-coordinate replacement remained stale throughout its
+bounded retries; removal also failed. The attachment leg in that pilot depended
+on the preceding stale binary result, so it cannot establish an independent
+attachment defect. The current definition tests attachment changes against the
+original unchanged binary first. All failed immediate responses remain recorded.
+
+An isolated copy of the prepared Apache Maven fixture reproduced a 17.065-second
+first native document-open response and a 108.4-ms second response. The definition
+oracle and final input inventories passed. Tracing recorded 39 hashed files,
+166,841,112 hashed bytes and 92 inventories in the first request, but lacked a
+session-worker execution span. Its full cause remains unresolved. A brief JDTLS
+diagnostic overlapped this development pilot, so these numbers are not isolated
+performance estimates. A slash in the case ID also broke its per-case report
+filename after measurement; the raw journals, JFR and final summary survived,
+and that serialization bug is corrected.
+
+A separate JDTLS shutdown thread dump shows Equinox waiting for framework stop,
+which is joining the Java indexing thread while that thread waits in its indexer
+loop. This is a captured shutdown wait, not a claim of a fully explained defect.
+Selected witnesses are in `benchmarks/evidence/lifecycle-followup-2026-09-27/`;
+that directory explicitly does not claim to be the full raw experiment bundle.

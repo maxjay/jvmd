@@ -1041,3 +1041,20 @@ integrity issues, and all originally sealed payload hashes still match. Packagin
 discovers six additional runtime files and preserves them explicitly as unsealed
 evidence. The capture is not described as fully sealed. The public-comparison
 prohibition and all remaining specification gates are unchanged.
+
+## Corrected two-project filter capture
+
+The focused replay at `3993d75` passes all three JDTLS filter-control cases:
+first/repeat, added declaration and renamed declaration. All 46 operations pass,
+including the complete primary declaration probes followed by twelve controls
+per case. Global, primary-project, secondary-project, source-only and bounded
+result queries now prove their inclusions and exclusions against both a present
+foreign source and a real binary. Changed declarations satisfy immediate and
+settled probes, and all three shutdowns are clean. No initial failed capture is
+rewritten or silently reclassified.
+
+`benchmarks/evidence/symbol-filters-2026-09-27/` preserves the raw replay. Original
+reduction has no integrity issues and source hashes stay fixed. Every originally
+sealed artifact still verifies, but packaging discovers additional runtime files
+and preserves them with failed-inventory status. This is semantic diagnostic
+evidence, not a fully sealed or public comparative performance result.

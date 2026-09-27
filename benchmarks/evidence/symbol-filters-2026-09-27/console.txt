@@ -1,0 +1,3 @@
+{"caseId":"NAV-03/filter-controls-first-repeat","server":"jdtls","block":1,"outcome":"pass"}
+{"caseId":"NAV-03/filter-controls-new","server":"jdtls","block":1,"outcome":"pass"}
+{"caseId":"NAV-03/filter-controls-renamed","server":"jdtls","block":1,"outcome":"pass"}

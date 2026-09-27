@@ -1,0 +1,274 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "3993d75632dfc8708a8736486026233e1ba8ae12",
+  "sourceTree": "a8b54f39f8db0f54dd02a473bd10af7465bac7da",
+  "sourceDrift": false,
+  "plan": {
+    "caseIds": [
+      "NAV-03/filter-controls-first-repeat",
+      "NAV-03/filter-controls-new",
+      "NAV-03/filter-controls-renamed"
+    ],
+    "servers": [
+      "jdtls"
+    ],
+    "blocks": 1,
+    "warmup": 1,
+    "samples": 2,
+    "timeout": 30000,
+    "transitionPolicy": {
+      "maxAttempts": 100,
+      "retryDelayMs": 20,
+      "deadlineMs": 30000,
+      "perRequestTimeoutMs": 30000,
+      "clock": "client monotonic",
+      "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+      "settledProbe": "one additional correct response after the first correct response",
+      "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+    },
+    "profile": "direct",
+    "serverOrder": "alternate per independent block",
+    "reset": "fresh fixture and server state per independent case",
+    "seed": 0
+  },
+  "outcomes": {
+    "pass": 3,
+    "incorrect": 0,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 0,
+    "harness_error": 0,
+    "unsupported": 0,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "originalReducerIntegrityIssues": [],
+  "package": {
+    "file": "symbol-filters-review.tar.xz",
+    "bytes": 90200,
+    "sha256": "bdf8183c8dba0d6f2ec32a98ca5420da1571b1f250d0d0130f2a87e5e20ae6de",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "failed",
+    "unsealedFiles": {
+      "01-jdtls-NAV-03-filter-controls-renamed/runtime/equinox-config/org.eclipse.core.runtime/.manager/.tmp74.instance": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "01-jdtls-NAV-03-filter-controls-renamed/runtime/equinox-config/org.eclipse.equinox.app/.manager/.tmp75.instance": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "members": 39
+  },
+  "cases": [
+    {
+      "caseId": "NAV-03/filter-controls-first-repeat",
+      "outcome": "pass",
+      "operations": 16,
+      "failedOperations": 0,
+      "shutdownError": null,
+      "assertions": [
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "filtered-search",
+            "mutation": "first-repeat"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "filtered-search",
+            "mutation": "first-repeat"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "filtered-search",
+            "mutation": "first-repeat"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "filtered-search",
+            "mutation": "first-repeat"
+          }
+        },
+        {
+          "name": "project source and limit filters have present excluded candidates",
+          "passed": true,
+          "detail": {
+            "primary": [
+              "BenchmarkBefore",
+              "BenchmarkAnchor"
+            ],
+            "other": [
+              "BenchmarkForeign"
+            ],
+            "binary": "BenchmarkBinary",
+            "limit": 1
+          }
+        },
+        {
+          "name": "filter controls preserve secondary sources and binary bytes",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "caseId": "NAV-03/filter-controls-new",
+      "outcome": "pass",
+      "operations": 15,
+      "failedOperations": 0,
+      "shutdownError": null,
+      "assertions": [
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "filtered-search",
+            "mutation": "new"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "filtered-search",
+            "mutation": "new"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "filtered-search",
+            "mutation": "new"
+          }
+        },
+        {
+          "name": "one declaration mutation preserves all unrelated source states",
+          "passed": true
+        },
+        {
+          "name": "saved declaration matches the open buffer",
+          "passed": true
+        },
+        {
+          "name": "project source and limit filters have present excluded candidates",
+          "passed": true,
+          "detail": {
+            "primary": [
+              "BenchmarkBefore",
+              "BenchmarkAnchor",
+              "BenchmarkAdded"
+            ],
+            "other": [
+              "BenchmarkForeign"
+            ],
+            "binary": "BenchmarkBinary",
+            "limit": 1
+          }
+        },
+        {
+          "name": "filter controls preserve secondary sources and binary bytes",
+          "passed": true
+        },
+        {
+          "name": "independent javac validation",
+          "passed": true,
+          "elapsedMs": 752.96703,
+          "stdout": "",
+          "stderr": "",
+          "error": ""
+        }
+      ]
+    },
+    {
+      "caseId": "NAV-03/filter-controls-renamed",
+      "outcome": "pass",
+      "operations": 15,
+      "failedOperations": 0,
+      "shutdownError": null,
+      "assertions": [
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "filtered-search",
+            "mutation": "renamed"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "filtered-search",
+            "mutation": "renamed"
+          }
+        },
+        {
+          "name": "exact current symbol identities and declaring-source ranges",
+          "passed": true,
+          "detail": {
+            "route": "filtered-search",
+            "mutation": "renamed"
+          }
+        },
+        {
+          "name": "one declaration mutation preserves all unrelated source states",
+          "passed": true
+        },
+        {
+          "name": "saved declaration matches the open buffer",
+          "passed": true
+        },
+        {
+          "name": "project source and limit filters have present excluded candidates",
+          "passed": true,
+          "detail": {
+            "primary": [
+              "BenchmarkAfter",
+              "BenchmarkAnchor"
+            ],
+            "other": [
+              "BenchmarkForeign"
+            ],
+            "binary": "BenchmarkBinary",
+            "limit": 1
+          }
+        },
+        {
+          "name": "filter controls preserve secondary sources and binary bytes",
+          "passed": true
+        },
+        {
+          "name": "independent javac validation",
+          "passed": true,
+          "elapsedMs": 753.236818,
+          "stdout": "",
+          "stderr": "",
+          "error": ""
+        }
+      ]
+    }
+  ],
+  "review": {
+    "semanticEvidence": "All three JDTLS multi-root filter cases pass; complete primary declaration probes precede twelve global/project/source/limit controls per case. Excluded foreign source and binary candidates are present. New/renamed declarations satisfy immediate and settled probes.",
+    "shutdown": "All three shutdowns are clean.",
+    "inventory": "Every originally sealed hash verifies. Additional runtime files are retained explicitly; this capture is not fully sealed.",
+    "supersedesNoEvidence": "Earlier failed captures remain unchanged and identified as missing multi-root initialization."
+  },
+  "claims": {
+    "publicComparativePerformance": false,
+    "scope": "one-block direct JDTLS diagnostic pilot"
+  }
+}

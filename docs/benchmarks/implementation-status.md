@@ -4,8 +4,8 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 150 case definitions, 154 passing TypeScript
-harness tests, and 107 required variants (77 implemented, 23 partial, 7 absent).
+Latest implementation inventory: 158 case definitions, 167 passing TypeScript
+harness tests, and 107 required variants (81 implemented, 20 partial, 6 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -1058,3 +1058,32 @@ reduction has no integrity issues and source hashes stay fixed. Every originally
 sealed artifact still verifies, but packaging discovers additional runtime files
 and preserves them with failed-inventory status. This is semantic diagnostic
 evidence, not a fully sealed or public comparative performance result.
+
+## Independent two-project build variants
+
+Eight new BLD-01 cases cover workspace and selected-project routes for full,
+unchanged incremental, changed-source and compile-error builds. Each case resets
+both projects. Automatic builds are disabled. Unchanged/changed cases establish
+an explicit full-build baseline; the changed case then edits one disk source
+and immediately requests an incremental build. Validation executes the server's
+class file, requiring value 13 instead of 7. Mere class-file existence is no
+longer sufficient. Workspace builds also verify the peer's distinct value 73.
+
+Independent prelaunch javac/runtime witnesses verify all three valid behaviours
+and the unique primary/peer compile errors. Project builds preserve unselected
+output bytes; all target runs check complete source membership and unrelated
+source hashes. Unchanged bytes are not interpreted as zero compilation work.
+
+After the target operation, positive scope controls place a known source error
+outside a selected successful project. Building that project must succeed;
+building the whole workspace must report the error at its exact URI/range. The
+compile-error variant uses its initially broken primary project as the excluded
+error and builds the valid peer. Scope controls cannot warm the preceding target.
+Raw notifications support diagnostic assertions without invented notification
+latency, and no editor buffer is opened to change build behaviour.
+
+All 167 harness tests pass, including wrong-scope, stale-output and wrong-status
+injections. Actual compiler preparation verifies the three runtime values and
+two unique failures. Source inventory is now 158 cases and 81 implemented, 20
+partial, 6 absent variants. These implementation counts await real build replay.
+The complete experiment and public-comparison acceptance gates remain open.

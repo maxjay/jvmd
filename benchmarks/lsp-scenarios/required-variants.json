@@ -516,30 +516,284 @@
         {
           "id": "BLD-01/full",
           "requirement": "Independent full build of selected scope; status, diagnostics and scope witness agree.",
-          "implementation": "partial",
-          "remaining": "Two-project independent scope and diagnostic witnesses are incomplete; changed-source case is absent.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "BLD-01/two-project-workspace-full",
+              "operations": [
+                {
+                  "endpoint": "java/buildWorkspace",
+                  "states": [
+                    "full_build"
+                  ]
+                },
+                {
+                  "endpoint": "java/buildProjects",
+                  "states": [
+                    "scope_control_excludes_error"
+                  ]
+                },
+                {
+                  "endpoint": "java/buildWorkspace",
+                  "states": [
+                    "scope_control_includes_error"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent build compiler witnesses verified",
+                "automatic builds disabled for explicit build experiment",
+                "build preserves source membership and exact non-target bytes",
+                "build status agrees with exact source diagnostic",
+                "two-project positive controls prove selected and workspace scope",
+                "build experiment never opens editor buffers or applies server edits"
+              ]
+            },
+            {
+              "caseId": "BLD-01/two-project-projects-full",
+              "operations": [
+                {
+                  "endpoint": "java/buildProjects",
+                  "states": [
+                    "full_build"
+                  ]
+                },
+                {
+                  "endpoint": "java/buildProjects",
+                  "states": [
+                    "scope_control_excludes_error"
+                  ]
+                },
+                {
+                  "endpoint": "java/buildWorkspace",
+                  "states": [
+                    "scope_control_includes_error"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent build compiler witnesses verified",
+                "automatic builds disabled for explicit build experiment",
+                "build preserves source membership and exact non-target bytes",
+                "build status agrees with exact source diagnostic",
+                "two-project positive controls prove selected and workspace scope",
+                "build experiment never opens editor buffers or applies server edits",
+                "project build preserves unselected output bytes"
+              ]
+            }
+          ]
         },
         {
           "id": "BLD-01/unchanged",
           "requirement": "Independent unchanged incremental build after established baseline; scope witness and diagnostics agree.",
-          "implementation": "partial",
-          "remaining": "Two-project independent scope and diagnostic witnesses are incomplete; changed-source case is absent.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "BLD-01/two-project-workspace-unchanged",
+              "operations": [
+                {
+                  "endpoint": "java/buildWorkspace",
+                  "states": [
+                    "unchanged_build"
+                  ]
+                },
+                {
+                  "endpoint": "java/buildProjects",
+                  "states": [
+                    "scope_control_excludes_error"
+                  ]
+                },
+                {
+                  "endpoint": "java/buildWorkspace",
+                  "states": [
+                    "scope_control_includes_error"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent build compiler witnesses verified",
+                "automatic builds disabled for explicit build experiment",
+                "build preserves source membership and exact non-target bytes",
+                "build status agrees with exact source diagnostic",
+                "two-project positive controls prove selected and workspace scope",
+                "build experiment never opens editor buffers or applies server edits",
+                "unchanged build preserves output bytes without claiming zero work"
+              ]
+            },
+            {
+              "caseId": "BLD-01/two-project-projects-unchanged",
+              "operations": [
+                {
+                  "endpoint": "java/buildProjects",
+                  "states": [
+                    "unchanged_build"
+                  ]
+                },
+                {
+                  "endpoint": "java/buildProjects",
+                  "states": [
+                    "scope_control_excludes_error"
+                  ]
+                },
+                {
+                  "endpoint": "java/buildWorkspace",
+                  "states": [
+                    "scope_control_includes_error"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent build compiler witnesses verified",
+                "automatic builds disabled for explicit build experiment",
+                "build preserves source membership and exact non-target bytes",
+                "build status agrees with exact source diagnostic",
+                "two-project positive controls prove selected and workspace scope",
+                "build experiment never opens editor buffers or applies server edits",
+                "project build preserves unselected output bytes",
+                "unchanged build preserves output bytes without claiming zero work"
+              ]
+            }
+          ]
         },
         {
           "id": "BLD-01/changed",
           "requirement": "Independent changed-source build; selected compiled output and diagnostics reflect change.",
-          "implementation": "not_implemented",
-          "remaining": "Two-project independent scope and diagnostic witnesses are incomplete; changed-source case is absent.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "BLD-01/two-project-workspace-changed",
+              "operations": [
+                {
+                  "endpoint": "java/buildWorkspace",
+                  "states": [
+                    "changed_build"
+                  ]
+                },
+                {
+                  "endpoint": "java/buildProjects",
+                  "states": [
+                    "scope_control_excludes_error"
+                  ]
+                },
+                {
+                  "endpoint": "java/buildWorkspace",
+                  "states": [
+                    "scope_control_includes_error"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent build compiler witnesses verified",
+                "automatic builds disabled for explicit build experiment",
+                "build preserves source membership and exact non-target bytes",
+                "build status agrees with exact source diagnostic",
+                "two-project positive controls prove selected and workspace scope",
+                "build experiment never opens editor buffers or applies server edits"
+              ]
+            },
+            {
+              "caseId": "BLD-01/two-project-projects-changed",
+              "operations": [
+                {
+                  "endpoint": "java/buildProjects",
+                  "states": [
+                    "changed_build"
+                  ]
+                },
+                {
+                  "endpoint": "java/buildProjects",
+                  "states": [
+                    "scope_control_excludes_error"
+                  ]
+                },
+                {
+                  "endpoint": "java/buildWorkspace",
+                  "states": [
+                    "scope_control_includes_error"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent build compiler witnesses verified",
+                "automatic builds disabled for explicit build experiment",
+                "build preserves source membership and exact non-target bytes",
+                "build status agrees with exact source diagnostic",
+                "two-project positive controls prove selected and workspace scope",
+                "build experiment never opens editor buffers or applies server edits",
+                "project build preserves unselected output bytes"
+              ]
+            }
+          ]
         },
         {
           "id": "BLD-01/error",
           "requirement": "Independent compile-error build; status and exact source diagnostic agree.",
-          "implementation": "partial",
-          "remaining": "Two-project independent scope and diagnostic witnesses are incomplete; changed-source case is absent.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "BLD-01/two-project-workspace-error",
+              "operations": [
+                {
+                  "endpoint": "java/buildWorkspace",
+                  "states": [
+                    "error_build"
+                  ]
+                },
+                {
+                  "endpoint": "java/buildProjects",
+                  "states": [
+                    "scope_control_excludes_error"
+                  ]
+                },
+                {
+                  "endpoint": "java/buildWorkspace",
+                  "states": [
+                    "scope_control_includes_error"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent build compiler witnesses verified",
+                "automatic builds disabled for explicit build experiment",
+                "build preserves source membership and exact non-target bytes",
+                "build status agrees with exact source diagnostic",
+                "two-project positive controls prove selected and workspace scope",
+                "build experiment never opens editor buffers or applies server edits"
+              ]
+            },
+            {
+              "caseId": "BLD-01/two-project-projects-error",
+              "operations": [
+                {
+                  "endpoint": "java/buildProjects",
+                  "states": [
+                    "error_build"
+                  ]
+                },
+                {
+                  "endpoint": "java/buildProjects",
+                  "states": [
+                    "scope_control_excludes_error"
+                  ]
+                },
+                {
+                  "endpoint": "java/buildWorkspace",
+                  "states": [
+                    "scope_control_includes_error"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent build compiler witnesses verified",
+                "automatic builds disabled for explicit build experiment",
+                "build preserves source membership and exact non-target bytes",
+                "build status agrees with exact source diagnostic",
+                "two-project positive controls prove selected and workspace scope",
+                "build experiment never opens editor buffers or applies server edits",
+                "project build preserves unselected output bytes"
+              ]
+            }
+          ]
         }
       ]
     },

@@ -38,7 +38,7 @@ def package(root, output, allow_unsealed_files=False):
     for report in reports:
         case = report.parent.relative_to(root).as_posix()
         names.update(case + '/' + name for name in ['report.json', 'fixture.json',
-                     'operations.jsonl', 'process.jsonl', 'transitions.jsonl', 'diagnostic-observations.jsonl', 'diagnostic-compiler.json', 'events.jsonl', 'exchanges.jsonl',
+                     'operations.jsonl', 'process.jsonl', 'transitions.jsonl', 'diagnostic-observations.jsonl', 'diagnostic-compiler.json', 'build-compiler.json', 'events.jsonl', 'exchanges.jsonl',
                      'runtime/launch.json', 'runtime/stderr.log', 'runtime/workspace/.metadata/.log']
                      if (root / case / name).is_file())
     payloads = {name: (root / name).read_bytes() for name in sorted(names)}

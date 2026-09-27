@@ -3,7 +3,8 @@ import path from "node:path";
 import {pathToFileURL,fileURLToPath} from "node:url";
 import {readFileSync,writeFileSync,mkdirSync,existsSync} from "node:fs";
 import {type CaseDefinition,type ScenarioContext} from "../harness/ScenarioContext.ts";
-import {position,range,exactLocations,selected} from "../harness/oracles.ts";
+import {position,range,exactLocations,selected,completionOracle} from "../harness/oracles.ts";
+import {JDK_PROBE,prepareJdkSwitch,jdkUpdateOracle,vmInventoryOracle,compilerWitnessOracle} from "../harness/jdkSwitch.ts";
 
 const normalize=(uri:string)=>path.resolve(fileURLToPath(uri));
 const document=(c:ScenarioContext)=>c.file("Customer.java").uri;
@@ -41,10 +42,34 @@ export const projectCases:CaseDefinition[]=[
       await c.transition("workspace/executeCommand",()=>({command:"java.project.getSettings",arguments:[document(c),[compliance]]}),v=>assert.equal(v[compliance],"21"),trigger,"refreshed compiler compliance is 21");
     }})),
   {id:"PRJ-02/jdk",family:"PRJ-02",apis:["API-038","API-039","API-028"],command:"java.project.updateJdk",variant:"select the pinned runtime and verify actual project VM",run:async c=>{
-    await c.execute("java.vm.getAllInstalls",[],v=>assert(JSON.stringify(v).includes(path.resolve(c.javaHome)),"pinned VM absent from installed VM inventory"));
-    await c.execute("java.project.updateJdk",[rootUri(c),c.javaHome],v=>assert(v!==false,"project rejected pinned JDK"));
+    await c.execute("java.vm.getAllInstalls",[],v=>vmInventoryOracle(v,[c.javaHome]));
+    await c.execute("java.project.updateJdk",[rootUri(c),c.javaHome],v=>jdkUpdateOracle(v,c.javaHome));
     await c.execute("java.project.getSettings",[document(c),[vmKey]],v=>assert.equal(path.resolve(v[vmKey]),path.resolve(c.javaHome)),"after_jdk_selection");
   }},
+  {id:"PRJ-02/jdk-switch",family:"PRJ-02",apis:["API-038","API-039","API-028"],command:"java.project.updateJdk",freshnessRequired:true,
+    variant:"switch JDK 17 to the newer server JDK; unchanged source exposes List.getFirst only on the new platform",fixture:{"JdkProbe.java":JDK_PROBE},prepare:prepareJdkSwitch,run:async c=>{
+      const preparation=c.fixture.preparation!;assert.equal(preparation.status,"verified");compilerWitnessOracle(preparation.witness);
+      c.assert("independent JDK compilers disagree only on the selected new API",true,preparation.witness);
+      const old=preparation.jdks.old.home,next=preparation.jdks.new.home,uri=c.file("JdkProbe.java").uri;
+      const keys=[vmKey,compliance,sourceVersion,targetVersion,"org.eclipse.jdt.core.compiler.release"];
+      const environment=(home:string)=>(v:any)=>{assert.equal(path.resolve(v[vmKey]),home);for(const key of keys.slice(1,4))assert.equal(v[key],"17");assert.equal(v[keys[4]],"disabled");};
+      await c.execute("java.vm.getAllInstalls",[],v=>vmInventoryOracle(v,[old,next]),"baseline_inventory");
+      // Baseline setup is explicit and outside the measured old-to-new transition.
+      await c.execute("java.project.updateJdk",[rootUri(c),old],v=>jdkUpdateOracle(v,old),"baseline_setup");
+      await c.execute("java.project.getSettings",[uri,keys],environment(old),"baseline_environment");
+      await c.open("JdkProbe.java");const before=c.state();
+      const params={textDocument:{uri},position:position(c.text("JdkProbe.java"),c.text("JdkProbe.java").indexOf("values.getFirst()")+8)};
+      await c.series("textDocument/completion",params,v=>completionOracle(v,["get"],["getFirst"]));
+      await c.execute("java.project.updateJdk",[rootUri(c),next],v=>jdkUpdateOracle(v,next),"jdk_change");
+      const change=c.operations.at(-1),trigger=BigInt(change.startNs);
+      c.mutations.push({kind:"project_jdk",before:old,after:next,triggerNs:String(trigger),acknowledgedNs:change.endNs,operationId:change.operationId,
+        boundary:"updateJdk request send through immediate and settled semantic replies"});
+      await c.transition("textDocument/completion",()=>params,v=>completionOracle(v,["get","getFirst"]),trigger,"unchanged List receiver exposes getFirst only after switching the project platform from JDK 17");
+      await c.execute("java.project.getSettings",[uri,keys],environment(next),"changed_environment");
+      await c.execute("java.vm.getAllInstalls",[],v=>vmInventoryOracle(v,[old,next]),"changed_inventory");
+      c.assert("JDK switch preserves every source byte and open document version",JSON.stringify(c.state())===JSON.stringify(before));
+      c.assert("no server workspace edit during JDK switch",!c.serverActions.some(a=>a.method==="workspace/applyEdit"));
+    }},
   ...["runtime","test"].map(scope=>({id:"ENV-01/classpath-"+scope,family:"ENV-01",apis:["API-031","API-035"],command:"java.project.getClasspaths",variant:"declared "+scope+" scope and source roots",
     run:async(c:ScenarioContext)=>{
       await c.open("Customer.java");await c.series("workspace/executeCommand",{command:"java.project.getClasspaths",arguments:[document(c),JSON.stringify({scope})]},v=>{

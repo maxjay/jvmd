@@ -4,8 +4,8 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 129 case definitions, 107 passing TypeScript
-harness tests, and 107 required variants (70 implemented, 26 partial, 11 absent).
+Latest implementation inventory: 130 case definitions, 116 passing TypeScript
+harness tests, and 107 required variants (71 implemented, 26 partial, 10 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -769,3 +769,29 @@ inventory verifies at packaging. `benchmarks/evidence/transition-attempts-2026-0
 preserves the six-case review subset: two passes, two incorrect cases and two
 unsupported cases. This directly exercises the new blocked-preparation records;
 it does not erase the earlier failed captures or enable a performance claim.
+
+## A real project JDK switch
+
+PRJ-02/jdk-switch now requires two real full JDK installations: JDK 17 through
+`--alternate-java-home`, and JDK 21 or newer through `--java-home`. Each release,
+canonical path and regular-file inventory is recorded. An independent javac
+witness first compiles the identical List.getFirst source under both platforms:
+17 must reject precisely that method, the newer JDK must compile it and return
+the expected first list item at runtime. Both use source/target 17; release
+emulation is explicitly disabled. Missing tools are preparation failures.
+
+The live scenario establishes the old project VM, unchanged compiler settings
+and a nonempty baseline that contains get but excludes getFirst. After the one
+old-to-new update, its very next request probes completion. No metadata query
+or independent compilation hides immediate readiness. All retries remain in
+the transition journal. The new VM and unchanged language settings must then
+be reported accurately; every source byte and open document version must stay
+unchanged. A successful-looking update object with success:false is rejected,
+including in the older same-home case.
+
+Nine tests exercise false acknowledgements, misleading VM inventories, unrelated
+compiler failures, empty baselines, stale API replies and inaccurate reported
+environments. The two real compiler witnesses also pass locally with Temurin
+17.0.20.1 and 25.0.4.1. This implementation still needs its first real LSP replay;
+it does not promote development timings into comparison evidence. See
+`jdk-switch-case.md` for the exact execution contract.

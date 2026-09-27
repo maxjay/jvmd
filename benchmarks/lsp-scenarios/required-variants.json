@@ -383,9 +383,50 @@
         {
           "id": "PRJ-02/jdk-switch",
           "requirement": "Switch between two installed JDKs; reported environment and API acceptance follow the selected JDK.",
-          "implementation": "not_implemented",
-          "remaining": "Existing updateJdk chooses the same pinned home; two distinct JDK environments are not exercised.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "PRJ-02/jdk-switch",
+              "operations": [
+                {
+                  "endpoint": "java.vm.getAllInstalls",
+                  "states": [
+                    "baseline_inventory",
+                    "changed_inventory"
+                  ]
+                },
+                {
+                  "endpoint": "java.project.updateJdk",
+                  "states": [
+                    "baseline_setup",
+                    "jdk_change"
+                  ]
+                },
+                {
+                  "endpoint": "java.project.getSettings",
+                  "states": [
+                    "baseline_environment",
+                    "changed_environment"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/completion",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent JDK compilers disagree only on the selected new API",
+                "JDK switch preserves every source byte and open document version",
+                "no server workspace edit during JDK switch"
+              ]
+            }
+          ]
         }
       ]
     },

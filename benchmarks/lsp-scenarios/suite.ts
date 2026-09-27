@@ -30,7 +30,7 @@ export function argumentsFor(args:string[]){
     if(key==="list"){result.list="true";continue;}
     assert(args[i+1]&&!args[i+1].startsWith("--"),"missing value for "+args[i]);result[key]=args[++i];
   }
-  const allowed=new Set(["list","servers","profile","output","java-home","image","jdtls-home","pipe-build","only","blocks","samples","warmup","timeout-ms","command-json","trace","gradle-home","protoc","protobuf-java"]);
+  const allowed=new Set(["list","servers","profile","output","java-home","alternate-java-home","image","jdtls-home","pipe-build","only","blocks","samples","warmup","timeout-ms","command-json","trace","gradle-home","protoc","protobuf-java"]);
   for(const k of Object.keys(result))assert(allowed.has(k),"unknown option: "+k);
   return result;
 }
@@ -64,7 +64,7 @@ export async function main(args=process.argv.slice(2)){
     write(path.join(caseRoot,"report.json"),report);
     let running:Awaited<ReturnType<typeof launch>>|undefined,context:ScenarioContext|undefined;
     try{
-      def.prepare?.(fixture,path.resolve(a["java-home"]??process.env.JAVA_HOME??""),{gradleHome:a["gradle-home"],protoc:a.protoc,protobufJava:a["protobuf-java"]});
+      def.prepare?.(fixture,path.resolve(a["java-home"]??process.env.JAVA_HOME??""),{gradleHome:a["gradle-home"],protoc:a.protoc,protobufJava:a["protobuf-java"],alternateJavaHome:a["alternate-java-home"]});
       fixture.inputs=inventory(fixture.root);fixture.identity=sha(JSON.stringify(fixture.inputs));report.fixtureIdentity=fixture.identity;write(path.join(caseRoot,"fixture.json"),fixture);
       const customCommand=a["command-json"]?JSON.parse(readFileSync(a["command-json"],"utf8")):undefined;
       running=await launch({server,profile:server==="jdtls"&&profile!=="custom"?"direct":profile,root:fixture.root,state:path.join(caseRoot,"runtime"),

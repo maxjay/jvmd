@@ -24,10 +24,19 @@ function execute(javaHome:string,tool:string,args:string[],cwd:string){
 export function buildRuntimeOracle(result:any,expected:number){
   assert.equal(result.status,0,"server-built class must execute successfully");assert.equal(result.signal,null);assert.equal(result.error,"");assert.equal(result.stdout,expected+"\n","compiled behaviour is stale or from the wrong project");
 }
+export function snapshotBuildClass(root:string,name:string,directory:string){
+  const source=path.join(root,"bin/bench/"+name+".class");assert(existsSync(source),"server-built class missing: "+source);
+  const readStartNs=String(process.hrtime.bigint()),bytes=readFileSync(source),readEndNs=String(process.hrtime.bigint());
+  const file=path.join(directory,"bench",name+".class");mkdirSync(path.dirname(file),{recursive:true});writeFileSync(file,bytes,{flag:"wx"});
+  return {source,path:file,classpath:directory,sha256:sha(bytes),bytes:bytes.length,readStartNs,readEndNs,
+    boundary:"class bytes observed after build response; not proof of their state at response receipt"};
+}
 export function verifyBuildOutput(c:ScenarioContext,root:string,name:string,expected:number){
-  const file=path.join(root,"bin/bench/"+name+".class");assert(existsSync(file),"server-built class missing: "+file);
-  const result=execute(path.resolve(c.javaHome),"java",["-cp",path.join(root,"bin"),"bench."+name],root);
-  c.assertions.push({name:"server-built class has expected behaviour",passed:result.status===0&&result.stdout===expected+"\n",detail:{root,name,expected,classSha256:sha(readFileSync(file)),result}});
+  const directory=path.resolve(c.fixture.root,"../build-output-oracle",`${c.operations.length+1}-${c.assertions.length+1}`),snapshot={...snapshotBuildClass(root,name,directory),artifactPath:path.relative(path.resolve(c.fixture.root,".."),path.join(directory,"bench",name+".class"))};
+  const result=execute(path.resolve(c.javaHome),"java",["-cp",snapshot.classpath,"bench."+name],directory);
+  const unchanged=sha(readFileSync(snapshot.path))===snapshot.sha256;
+  c.assertions.push({name:"server-built class has expected behaviour",passed:unchanged&&result.status===0&&result.stdout===expected+"\n",detail:{root,name,expected,operationId:"op-"+(c.operations.length+1),snapshot,result}});
+  assert(unchanged,"preserved class snapshot changed during validation");
   buildRuntimeOracle(result,expected);
 }
 export function buildDiagnosticOracle(params:any,uri:string,source:string,token:string){

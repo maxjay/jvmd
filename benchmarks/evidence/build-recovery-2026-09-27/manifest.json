@@ -1,0 +1,261 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "3db59d15a80d1bb13b58d9a6408ddef67053aa63",
+  "sourceDrift": false,
+  "plan": {
+    "caseIds": [
+      "BLD-01/two-project-workspace-changed",
+      "BLD-01/two-project-projects-changed"
+    ],
+    "servers": [
+      "jdtls"
+    ],
+    "blocks": 1,
+    "warmup": 1,
+    "samples": 2,
+    "timeout": 30000,
+    "transitionPolicy": {
+      "maxAttempts": 100,
+      "retryDelayMs": 20,
+      "deadlineMs": 30000,
+      "perRequestTimeoutMs": 30000,
+      "clock": "client monotonic",
+      "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+      "settledProbe": "one additional correct response after the first correct response",
+      "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+    },
+    "profile": "direct",
+    "serverOrder": "alternate per independent block",
+    "reset": "fresh fixture and server state per independent case",
+    "seed": 0
+  },
+  "outcomes": {
+    "pass": 0,
+    "incorrect": 2,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 0,
+    "harness_error": 0,
+    "unsupported": 0,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "originalReducerIntegrityIssues": [],
+  "package": {
+    "file": "build-recovery-review.tar.xz",
+    "bytes": 92620,
+    "sha256": "ac545997097abbcbe24c9acdd4f54a40e58ec90e893cf33fd94f578585ecb69b",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "verified",
+    "unsealedFiles": {},
+    "members": 30
+  },
+  "cases": [
+    {
+      "caseId": "BLD-01/two-project-projects-changed",
+      "outcome": "incorrect",
+      "attempts": [
+        {
+          "kind": "transition",
+          "transitionId": "transition-1",
+          "method": "java/buildProjects",
+          "firstOperationIndex": 1,
+          "triggerNs": "3731489739607",
+          "witness": "server-built class executes changed value 13 instead of 7",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response",
+            "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+          },
+          "deadlineNs": "3761489884217",
+          "attemptCount": 2,
+          "attempts": [
+            {
+              "attempt": 1,
+              "startNs": "3731489897662",
+              "endNs": "3731593673760",
+              "outcome": "failed",
+              "stage": "query_immediate",
+              "immediate": {
+                "preparationOperationIds": [],
+                "operationId": "op-2"
+              },
+              "error": "AssertionError [ERR_ASSERTION]: java/buildProjects: AssertionError [ERR_ASSERTION]: compiled behaviour is stale or from the wrong project\n\n'7\\n' !== '13\\n'\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"
+            },
+            {
+              "attempt": 2,
+              "startNs": "3731614337976",
+              "endNs": "3731717903802",
+              "outcome": "pass",
+              "stage": "complete",
+              "immediate": {
+                "preparationOperationIds": [],
+                "operationId": "op-3"
+              },
+              "settled": {
+                "preparationOperationIds": [],
+                "operationId": "op-4"
+              }
+            }
+          ],
+          "firstTargetRequest": "sent",
+          "termination": "settled",
+          "endedNs": "3731717903802",
+          "settledOperationId": "op-4"
+        }
+      ],
+      "operations": [
+        {
+          "state": "baseline_build",
+          "outcome": "pass",
+          "latencyMs": 865.82223,
+          "transitionMs": null
+        },
+        {
+          "state": "changed_immediate",
+          "outcome": "incorrect",
+          "latencyMs": 67.091685,
+          "transitionMs": 67.691747
+        },
+        {
+          "state": "changed_retry_2",
+          "outcome": "pass",
+          "latencyMs": 26.423173,
+          "transitionMs": 151.367088
+        },
+        {
+          "state": "changed_settled",
+          "outcome": "pass",
+          "latencyMs": 2.618455,
+          "transitionMs": 189.662967
+        },
+        {
+          "state": "scope_control_excludes_error",
+          "outcome": "pass",
+          "latencyMs": 75.53086,
+          "transitionMs": null
+        },
+        {
+          "state": "scope_control_includes_error",
+          "outcome": "pass",
+          "latencyMs": 273.094907,
+          "transitionMs": null
+        }
+      ],
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}"
+    },
+    {
+      "caseId": "BLD-01/two-project-workspace-changed",
+      "outcome": "incorrect",
+      "attempts": [
+        {
+          "kind": "transition",
+          "transitionId": "transition-1",
+          "method": "java/buildWorkspace",
+          "firstOperationIndex": 1,
+          "triggerNs": "3662337109624",
+          "witness": "server-built class executes changed value 13 instead of 7",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response",
+            "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+          },
+          "deadlineNs": "3692337625620",
+          "attemptCount": 2,
+          "attempts": [
+            {
+              "attempt": 1,
+              "startNs": "3662337671225",
+              "endNs": "3662390035986",
+              "outcome": "failed",
+              "stage": "query_immediate",
+              "immediate": {
+                "preparationOperationIds": [],
+                "operationId": "op-2"
+              },
+              "error": "AssertionError [ERR_ASSERTION]: java/buildWorkspace: AssertionError [ERR_ASSERTION]: compiled behaviour is stale or from the wrong project\n\n'7\\n' !== '13\\n'\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"
+            },
+            {
+              "attempt": 2,
+              "startNs": "3662410692915",
+              "endNs": "3662559185531",
+              "outcome": "pass",
+              "stage": "complete",
+              "immediate": {
+                "preparationOperationIds": [],
+                "operationId": "op-3"
+              },
+              "settled": {
+                "preparationOperationIds": [],
+                "operationId": "op-4"
+              }
+            }
+          ],
+          "firstTargetRequest": "sent",
+          "termination": "settled",
+          "endedNs": "3662559185531",
+          "settledOperationId": "op-4"
+        }
+      ],
+      "operations": [
+        {
+          "state": "baseline_build",
+          "outcome": "pass",
+          "latencyMs": 896.495085,
+          "transitionMs": null
+        },
+        {
+          "state": "changed_immediate",
+          "outcome": "incorrect",
+          "latencyMs": 8.792465,
+          "transitionMs": 10.065436
+        },
+        {
+          "state": "changed_retry_2",
+          "outcome": "pass",
+          "latencyMs": 21.553933,
+          "transitionMs": 95.517044
+        },
+        {
+          "state": "changed_settled",
+          "outcome": "pass",
+          "latencyMs": 2.527968,
+          "transitionMs": 160.695639
+        },
+        {
+          "state": "scope_control_excludes_error",
+          "outcome": "pass",
+          "latencyMs": 107.517604,
+          "transitionMs": null
+        },
+        {
+          "state": "scope_control_includes_error",
+          "outcome": "pass",
+          "latencyMs": 97.824326,
+          "transitionMs": null
+        }
+      ],
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}"
+    }
+  ],
+  "review": {
+    "result": "Both routes retain a wrong immediate class behaviour of 7, pass the second attempt and the settled value-13 validation, then pass scope controls. Both cases remain incorrect and both retain shutdown failures.",
+    "inventory": "Complete original checksum inventory verifies.",
+    "measurementLimitation": "This historical capture executed live class files after response receipt, without preserving a byte snapshot. It does not establish class contents at the reply timestamp. New source records a separate immutable class-observation boundary and requires another replay.",
+    "recovery": "Repeated build requests can advance compilation; this is probe-driven recovery."
+  },
+  "claims": {
+    "publicComparativePerformance": false
+  }
+}

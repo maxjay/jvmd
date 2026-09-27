@@ -11,9 +11,12 @@ reset between cases; automatic builds are explicitly disabled.
 | Changed | Explicit successful full baseline, then one source edit | Immediate incremental build | Success and runtime value 13 replacing 7 |
 | Error | Unique invalid primary source prepared before launch | Full build | Error status and one exact missing-symbol diagnostic |
 
-Request send to response receipt is the build interval. Child JVMs that execute
-the server-built classes run during validation after response receipt. They are
-recorded independently and do not extend the request interval. Output hashes
+Request send to response receipt is the build interval. Class-byte observation starts after response receipt and has its own recorded
+read interval. Validation executes an immutable copied class, not the live output
+folder. Its child JVM runs after that snapshot and does not extend the request
+interval. RPC duration, trigger-to-artifact-observation time and validation work
+are separate; observing correct bytes later does not prove they were present
+when the reply arrived. Output hashes
 show content equality; they never establish zero compiler work.
 
 Before launch, a separately identified javac compiles the baseline and changed
@@ -53,3 +56,9 @@ correct settled build. Every failed result remains in the case. These extra buil
 requests can themselves advance compilation; the recovery interval is explicitly
 probe-driven and is not a passive background-readiness measurement. The initial
 `75be95e` capture stops after its wrong immediate result and remains unchanged.
+
+Each snapshot is included in the review archive and linked to its operation. The
+reducer verifies the saved byte hash, the post-response observation interval and
+the separately computed artifact transition time. Earlier build captures retain
+their live-output validation limitation; they are not retroactively assigned
+snapshot evidence.

@@ -4,17 +4,18 @@ import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,rmSync} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
-import {createFixture} from "../harness/fixture.ts";
+import {createFixture,sha} from "../harness/fixture.ts";
 import {ScenarioContext,SETTINGS} from "../harness/ScenarioContext.ts";
-import {buildParams,buildRuntimeOracle,buildDiagnosticOracle,BUILD_SOURCE,BUILD_ERROR,BUILD_PEER,type BuildScope,type BuildVariant} from "../harness/builds.ts";
+import {buildParams,buildRuntimeOracle,buildDiagnosticOracle,snapshotBuildClass,BUILD_SOURCE,BUILD_ERROR,BUILD_PEER,type BuildScope,type BuildVariant} from "../harness/builds.ts";
 import {runBuildCase} from "../scenarios/builds.ts";
+import {validateCase} from "../reduce.ts";
 import {range} from "../harness/oracles.ts";
 
 function setup(variant:BuildVariant,mode="correct"){
   const tmp=mkdtempSync(path.join(os.tmpdir(),"build-scope-")),fixture=createFixture(path.join(tmp,"primary"),{"BuildProbe.java":variant==="error"?BUILD_ERROR:BUILD_SOURCE},"src"),peer=createFixture(path.join(tmp,"peer"),{"BuildPeer.java":BUILD_PEER},"src");
   fixture.settings=structuredClone(SETTINGS);fixture.settings.java.autobuild.enabled=false;fixture.preparation={status:"verified",peer};
   const notifications:any[]=[],events:any[]=[],calls:any[]=[],order:string[]=[];let next=0;
-  const emit=(direction:string,message:any)=>{const e={sequence:events.length+1,timeNs:String(process.hrtime.bigint()),direction,message};events.push(e);return e;};
+  const emit=(direction:string,message:any)=>{const e={schemaVersion:1,clockDomain:"client",sequence:events.length+1,timeNs:String(process.hrtime.bigint()),direction,message};events.push(e);return e;};
   const client:any={events,notifications,journal:()=>{},notify:(method:string,params:any)=>BigInt(emit("send",{method,params}).timeNs),
     request:async(method:string,params:any)=>{
       const id=++next,start=emit("send",{id,method,params});calls.push({method,params});order.push("build");
@@ -50,6 +51,29 @@ for(const [scope,variant,mode] of [["projects","full","wrong-scope"],["workspace
 test("compiled class behaviour rejects stale, foreign and failed output",()=>{
   const good={status:0,signal:null,error:"",stdout:"13\n"};buildRuntimeOracle(good,13);
   for(const wrong of [{...good,stdout:"7\n"},{...good,stdout:"73\n"},{...good,status:1},{...good,signal:"SIGKILL"},{...good,error:"ENOENT"}])assert.throws(()=>buildRuntimeOracle(wrong,13));
+});
+test("compiled-output validation preserves one byte snapshot even if live output changes",()=>{
+  const tmp=mkdtempSync(path.join(os.tmpdir(),"class-observation-"));try{
+    const root=path.join(tmp,"project"),file=path.join(root,"bin/bench/BuildProbe.class");mkdirSync(path.dirname(file),{recursive:true});writeFileSync(file,"first class bytes");
+    const snapshot=snapshotBuildClass(root,"BuildProbe",path.join(tmp,"snapshot"));writeFileSync(file,"new class bytes");
+    assert.equal(readFileSync(snapshot.path,"utf8"),"first class bytes");assert.equal(snapshot.sha256,sha("first class bytes"));
+    assert.notEqual(sha(readFileSync(file)),snapshot.sha256);assert(BigInt(snapshot.readEndNs)>=BigInt(snapshot.readStartNs));
+    assert.throws(()=>snapshotBuildClass(root,"BuildProbe",snapshot.classpath),/EEXIST/u);
+  }finally{rmSync(tmp,{recursive:true,force:true});}
+});
+test("request and post-response artifact boundaries remain separate and replay detects tampering",async()=>{
+  const s=setup("full");try{
+    const trigger=process.hrtime.bigint();
+    await s.c.query("java/buildWorkspace",true,()=>{
+      const observed=String(process.hrtime.bigint());s.c.assertions.push({passed:true,detail:{operationId:"op-1",snapshot:{readStartNs:observed,readEndNs:observed,sha256:sha("snapshot")}}});
+    },"changed_immediate",trigger,"class observation");
+    const op=s.c.operations[0];assert(BigInt(op.artifactObservedNs)>=BigInt(op.endNs));assert.equal(op.measurementKind,"request_with_artifact_observation");
+    const events=s.c.client.events,exchange={id:op.requestId,method:op.method,params:true,startNs:op.startNs,endNs:op.endNs,result:op.rawResult},report={assertions:s.c.assertions};
+    assert.deepEqual(validateCase(report,events,[exchange],[op]),[]);
+    for(const change of [(o:any)=>o.artifactObservedNs=o.endNs,(o:any)=>o.artifactObservations[0].readStartNs="0",(o:any)=>o.artifactObservations[0].sha256=sha("other"),(o:any)=>o.artifactTransitionMs=0]){
+      const bad=structuredClone(op);change(bad);assert(validateCase(report,events,[exchange],[bad]).length);
+    }
+  }finally{s.close();}
 });
 test("build diagnostic requires the unique error in the selected file and exact token span",()=>{
   const uri="file:///BuildProbe.java",d={severity:1,message:"missingBuildValue cannot be resolved",range:range(BUILD_ERROR,"missingBuildValue")},good={uri,diagnostics:[d]};

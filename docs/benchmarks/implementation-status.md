@@ -4,7 +4,7 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 158 case definitions, 169 passing TypeScript
+Latest implementation inventory: 158 case definitions, 171 passing TypeScript
 harness tests, and 107 required variants (81 implemented, 20 partial, 6 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
@@ -1124,3 +1124,27 @@ binary's reset/loop/shutdown code, not a proven triggering interleaving.
 protocol/process records, exact bytecode and the runnable probe. Instrumentation
 can contaminate stdout framing after exit; it is separated from normal benchmark
 evidence. Two additional runtime files remain explicitly unsealed.
+
+## Changed-build recovery and compiled-artifact observation boundary
+
+The focused replay at `3db59d1` retains the wrong immediate class behaviour in
+both routes, then records a correct second attempt, a correct settled check and
+successful scope controls. Both cases remain incorrect and retain shutdown
+failures. `benchmarks/evidence/build-recovery-2026-09-27/` preserves every attempt;
+the complete original inventory verifies and the reducer has no integrity issues.
+
+Review exposed a separate measurement limitation: previous build validation
+executed a live class file after the response. A changing output could therefore
+move the observation boundary or disagree with a later file hash. Those historic
+captures do not prove the class contents at response receipt. They are preserved
+with that limitation, not retrospectively upgraded.
+
+New validation copies each class once, records its read interval and hash, then
+executes that preserved copy and verifies it remains unchanged. Operations link
+the class snapshot and expose a distinct artifact-observation interval alongside
+the RPC interval. The reducer checks the boundary, witness link and actual saved
+bytes, and refuses a successful new build operation without the declared snapshot.
+Review archives include the copied class files. All 171 tests pass, including
+changing live output during validation and tampered observation timing/hashes.
+Source variant counts remain 81 implemented, 20 partial and 6 absent; real snapshot
+replay and the full experiment gates are still separate obligations.

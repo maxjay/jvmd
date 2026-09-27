@@ -26,6 +26,15 @@ export function validateCase(report:any,events:any[],exchanges:any[],operations:
     check(!ids.has(op.operationId),"duplicate operation "+op.operationId);ids.add(op.operationId);
     check(CONTRACT.outcomes.includes(op.outcome),"unknown outcome");check(BigInt(op.endNs)>=BigInt(op.startNs),"negative operation interval");
     if(op.triggerNs)check(BigInt(op.startNs)>=BigInt(op.triggerNs),"operation starts before its trigger");
+    if(op.artifactObservations){
+      const witnesses=(report.assertions??[]).filter((a:any)=>a.detail?.operationId===op.operationId&&a.detail?.snapshot);
+      check(JSON.stringify(witnesses.map((a:any)=>a.detail.snapshot))===JSON.stringify(op.artifactObservations),"artifact observation differs from validation witness");
+      check(op.measurementKind==="request_with_artifact_observation"&&op.freshness?.boundary==="post_response_artifact_snapshot","artifact observation boundary missing");
+      let end=0n;
+      for(const s of op.artifactObservations){check(BigInt(s.readStartNs)>=BigInt(op.endNs)&&BigInt(s.readEndNs)>=BigInt(s.readStartNs),"artifact observation predates response or has negative interval");check(/^[a-f0-9]{64}$/u.test(s.sha256),"artifact observation hash invalid");if(BigInt(s.readEndNs)>end)end=BigInt(s.readEndNs);}
+      check(op.artifactObservedNs===String(end),"artifact observation terminal boundary mismatch");
+      if(op.triggerNs)check(op.artifactTransitionMs===Number(end-BigInt(op.triggerNs))/1e6,"artifact transition interval mismatch");
+    }
     if(op.requestId!==undefined){const exchange=byId.get(op.requestId);check(!!exchange,"missing exchange "+op.requestId);
       if(exchange){check(exchange.method===op.method,"exchange method mismatch");check(exchange.startNs===op.startNs&&exchange.endNs===op.endNs,"exchange interval mismatch");
         check((op.endpoint??op.method)===(exchange.method==="workspace/executeCommand"?exchange.params.command:exchange.method),"exchange endpoint mismatch");
@@ -112,6 +121,15 @@ export function reduceBundle(root:string,verifyHashes=true){
     if(!existsSync(file)){reports.push({caseId,server,block,outcome:"not_run",reason:"planned case has no final report"});continue;}
     const report=read(file),events=lines(path.join(dir,"events.jsonl")),exchanges=lines(path.join(dir,"exchanges.jsonl")),operations=lines(path.join(dir,"operations.jsonl"));
     const caseIssues=validateCase(report,events,exchanges,operations);
+    if(manifest.plan.compiledArtifactPolicy&&report.caseId.startsWith("BLD-01/two-project-"))for(const op of operations){
+      const needsOutput=op.rawResult===1||(op.method==="java/buildWorkspace"&&op.state==="error_build");
+      if(op.outcome==="pass"&&needsOutput&&!op.artifactObservations?.length)caseIssues.push("build pass lacks declared compiled artifact snapshots");
+    }
+    for(const op of operations)for(const snapshot of op.artifactObservations??[]){
+      if(typeof snapshot.artifactPath!=="string"||path.isAbsolute(snapshot.artifactPath)){caseIssues.push("invalid artifact snapshot path");continue;}
+      const file=path.resolve(dir,snapshot.artifactPath);
+      if(!file.startsWith(path.resolve(dir)+path.sep)||!existsSync(file)||sha(readFileSync(file))!==snapshot.sha256)caseIssues.push("preserved compiled artifact differs from observed bytes");
+    }
     if(report.diagnosticObservations?.length&&JSON.stringify(lines(path.join(dir,"diagnostic-observations.jsonl")))!==JSON.stringify(report.diagnosticObservations))caseIssues.push("diagnostic journal differs from report");
     const transitions=(report.seriesExpectations??[]).filter((s:any)=>s.kind==="transition"&&s.attempts);
     if(transitions.length){
@@ -142,7 +160,7 @@ export function reduceBundle(root:string,verifyHashes=true){
     issues.push(...caseIssues.map(s=>name+": "+s));
     reports.push({...report,operations,validationIssues:caseIssues,validatedOutcome:caseIssues.length&&report.outcome==="pass"?"harness_error":report.outcome});
     const groups=new Map<string,any[]>();for(const op of operations){const key=JSON.stringify([op.endpoint??op.method,op.state,op.measurementKind??(op.requestId===undefined?"notification_transition":"request")]);if(!groups.has(key))groups.set(key,[]);groups.get(key)!.push(op);}
-    for(const [key,rows] of groups){const [endpoint,state,measurementKind]=JSON.parse(key);metrics.push({caseId,server,block,endpoint,state,measurementKind,...stats(rows),transitionMedianMs:quantile(rows.filter(o=>o.outcome==="pass"&&o.transitionMs!==undefined).map(o=>o.transitionMs),.5)});}
+    for(const [key,rows] of groups){const [endpoint,state,measurementKind]=JSON.parse(key);metrics.push({caseId,server,block,endpoint,state,measurementKind,...stats(rows),transitionMedianMs:quantile(rows.filter(o=>o.outcome==="pass"&&o.transitionMs!==undefined).map(o=>o.transitionMs),.5),artifactObservationMedianMs:quantile(rows.filter(o=>o.outcome==="pass"&&o.artifactTransitionMs!==undefined).map(o=>o.artifactTransitionMs),.5)});}
     for(const api of catalogue.apis){const matching=events.filter(e=>e.message.method&&(api.kind==="C"?e.message.method==="workspace/executeCommand"&&e.message.params?.command===api.method:e.message.method===api.method));
       if(matching.length){if(!apiEvents.has(api.id))apiEvents.set(api.id,[]);apiEvents.get(api.id)!.push({caseId,server,block,eventIds:matching.map(e=>e.sequence),declaredTarget:report.apiIds.includes(api.id)});}}
   }

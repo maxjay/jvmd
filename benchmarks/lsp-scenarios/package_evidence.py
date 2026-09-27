@@ -41,6 +41,7 @@ def package(root, output, allow_unsealed_files=False):
                      'operations.jsonl', 'process.jsonl', 'transitions.jsonl', 'diagnostic-observations.jsonl', 'diagnostic-compiler.json', 'build-compiler.json', 'events.jsonl', 'exchanges.jsonl',
                      'runtime/launch.json', 'runtime/stderr.log', 'runtime/workspace/.metadata/.log']
                      if (root / case / name).is_file())
+        names.update(p.relative_to(root).as_posix() for p in (root / case / 'build-output-oracle').rglob('*.class') if p.is_file())
     payloads = {name: (root / name).read_bytes() for name in sorted(names)}
     for name, data in payloads.items():
         if name != 'checksums.sha256' and name not in extra and digest(data) != sealed.get(name):

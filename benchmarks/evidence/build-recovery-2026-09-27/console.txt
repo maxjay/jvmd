@@ -1,0 +1,19 @@
+{"caseId":"BLD-01/two-project-workspace-changed","server":"jdtls","block":1,"outcome":"incorrect"}
+{"caseId":"BLD-01/two-project-projects-changed","server":"jdtls","block":1,"outcome":"incorrect"}
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Selected benchmark cases failed; raw artifacts preserved in /workspace/scratch/c9ab7d11d4a9/build-recovery-replay
+    at main (file:///workspace/scratch/c9ab7d11d4a9/jvmd/benchmarks/lsp-scenarios/suite.ts:106:3)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///workspace/scratch/c9ab7d11d4a9/jvmd/benchmarks/lsp-scenarios/run.ts:6:3 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

@@ -131,6 +131,13 @@ export class ScenarioContext {
     const validationStart=now();
     if(responsePolicy==="rename_rejection"&&isRenameRejection(row.error)){record.outcome="pass";record.expectedRejection="rename_rejection";}
     if(!row.error)try{oracle(row.result);}catch(e){record.outcome="incorrect";record.assertionError=String(e);record.freshness={status:"contradicted",reason:String(e)};}
+    const artifacts=this.assertions.filter(a=>a.detail?.operationId===record.operationId&&a.detail?.snapshot).map(a=>a.detail.snapshot);
+    if(artifacts.length){
+      record.artifactObservations=artifacts;record.measurementKind="request_with_artifact_observation";
+      record.artifactObservedNs=String(artifacts.reduce((end,s)=>BigInt(s.readEndNs)>end?BigInt(s.readEndNs):end,0n));
+      record.freshness.boundary="post_response_artifact_snapshot";
+      if(trigger!==undefined)record.artifactTransitionMs=Number(BigInt(record.artifactObservedNs)-trigger)/1e6;
+    }
     record.validationMs=Number(now()-validationStart)/1e6;this.recordOperation(record);
     assert.equal(record.outcome,"pass",`${method}: ${record.assertionError??JSON.stringify(row.error)}`);
     return row.result;

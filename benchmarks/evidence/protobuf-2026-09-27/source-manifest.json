@@ -1,0 +1,2212 @@
+{
+  "schemaVersion": 1,
+  "contract": 1,
+  "createdAt": "2026-09-27T03:31:15.399Z",
+  "revision": "1c2925449bdde7ad96507d66516b4e6b3ba81298",
+  "sourceTree": "a0b211a1ccb1d6cb3fb1ade6a12251d6576834ca",
+  "sourceInputs": {
+    "benchmarks/lsp-scenarios/harness/protobuf.ts": "361894acea2d7a0fa0bb7a17c7e001050518a09aa81cd3a7435bdb313933655f",
+    "benchmarks/lsp-scenarios/scenarios/protobuf.ts": "6eb28854689c0312a2a07324cf6ee5f9a405c0ba3b1efbc78eb8748645c27688",
+    "benchmarks/lsp-scenarios/test/protobuf.test.ts": "792a70850fc678308ca23d9a7c5749c45297a33b4f8bcffed53eaad40aafedfe",
+    ".github/workflows/benchmark-report.yml": "86356180793d1431b0a5e8dd5a9ed7b6c240061753f0ba9ba0cb31e1e8ef6b08",
+    ".github/workflows/checkpoints.yml": "71ce009b8d09074c29d92c431dd0fd28cea9063f3b277e654ea2723c5c670df5",
+    ".github/workflows/index-redesign-fast.yml": "5c59cfff89af9a02fcf063bebe6ffbf05299e433e620c73d8c2212abcb6c3f83",
+    ".github/workflows/lsp-scenarios.yml": "5698f34b761869d006e243f21e5fd114df52b5d1988a1eebacfb54a0af15db81",
+    ".github/workflows/releases.yml": "5a04a56a548fd1cf8e7917578ff68f2bae2a2ca03603e0ec98df34d18734e815",
+    ".github/workflows/workflow-benchmarks.yml": "04488d9a71ff67ecdb7790261502ac1e0cf15a8bc66c74410c95de7fff7b61d8",
+    ".gitignore": "32dfc4f0f885d477d47b16d31d75ab340f2a782009939dfe79be34de9b81c821",
+    "DEPENDENCIES.md": "6d87159b297423d09fc2f554ef6d15a75a303dc1425fe7bf312972ec1573271c",
+    "LICENSE": "6a55dc509dbe93c7aa1bf026b7ccbd1e195bf1f4f59c005a7d93aa58399dcd4c",
+    "README.md": "e2523ef6a744429125c1579b5078d183e62768f16e42936bfb0a0371dcc44e48",
+    "benchmarks/evidence/actor-attribution-2026-09-27/document-open-calls.jsonl": "edc9a51861bb38d4bdeaa558e926a95190ba9aaf3d82a57368db4753bc987da2",
+    "benchmarks/evidence/actor-attribution-2026-09-27/document-open-reduction.json": "cd066fcd9c3ed52c4a5c7a90d73faeacada360f85d85941ec5d65471e8b694d0",
+    "benchmarks/evidence/actor-attribution-2026-09-27/document-open-stage-events.json": "0415996bbfb5b931c9cd096033bd7ee4eb22a99ec276d3be73749b421b0426bf",
+    "benchmarks/evidence/actor-attribution-2026-09-27/manifest.json": "ae265d18f2e10ce759bc9e6ccf4a2167bc5488d1d1a8062d9da99c12bf5cab74",
+    "benchmarks/evidence/actor-attribution-2026-09-27/production-tests.txt": "414e31a77dcb81adb0c1fde69a5b822a6c98f4ab651e0b9700ca792deaec76cd",
+    "benchmarks/evidence/actor-attribution-2026-09-27/provenance.json": "a987ba8068c51bd5da6353f1035fec96b41befae224826f2eb9d3e087ff8098c",
+    "benchmarks/evidence/checkpoint-2026-09-27/manifest.json": "64b2cc166e9c18f3c52b89438dfbe553c3e922762e01e240d27aecdd61fdc789",
+    "benchmarks/evidence/checkpoint-2026-09-27/native-LIFE-04.json": "eeeb41a7dafe1e68c4b4217f2e478fb8b8093abc8b11c1301bae86feeb9b24c4",
+    "benchmarks/evidence/checkpoint-2026-09-27/native-LIFE-08.json": "8dee214daf7c8cbc4ee23faf8545370000be6703dab91ae603f2b77d2d2bb967",
+    "benchmarks/evidence/checkpoint-2026-09-27/native-LIFE-09.json": "10a42f0efe18070a8aa1f5baddbac15d7fbe639d1452a2431821980fb7195c89",
+    "benchmarks/evidence/checkpoint-2026-09-27/native-manifest.json": "9d6ffdd54724f188c4e5ffa3ed644241ad2aa425077bdef18c1739ed25f5e691",
+    "benchmarks/evidence/checkpoint-2026-09-27/native-pilot.txt": "79c722e6557949b07334e35f7354ad8403c9a5805317dd2aa1245523b8c003be",
+    "benchmarks/evidence/checkpoint-2026-09-27/python-tests.txt": "736853e00b951401fffa05dc85ad6672d11f093d5663aef040ed29808eb631fa",
+    "benchmarks/evidence/checkpoint-2026-09-27/typescript-tests.txt": "ebfd8702f849516f312babff2291dc5cb9209418f1375938c777ff16837e9ffa",
+    "benchmarks/evidence/historical-36269400226/jdtls-report.json": "c8339d616e9b5e719934b2d2a0d20c724736cd377d9ca49a7a6b48e2267d4adf",
+    "benchmarks/evidence/historical-36269400226/jvmd-machine-lifecycle.json": "fd687cf6caf6a7abcf13e4378c24161919a35de750a99f70d1f9a8741ff66b62",
+    "benchmarks/evidence/historical-36269400226/jvmd-report.json": "3671fdc82f3066d30b91c0115e0b5ea7d8dba26ee4156f8e797937c048e03187",
+    "benchmarks/evidence/historical-36269400226/manifest.json": "77528afb9453e8bea1dd9e0b6f21a7220d703c6d6ca4bbfbebb42268bb13d3e9",
+    "benchmarks/evidence/lifecycle-followup-2026-09-27/apache-open.json": "93c2f2130dc98ee56320eefa65607fdc56ba1c5748496237bd97d50544a43846",
+    "benchmarks/evidence/lifecycle-followup-2026-09-27/jdtls-shutdown-threads.txt": "92b279907d1ed2b33110d9e44e9e5a19acdba417e557acd4994825d3f66008f2",
+    "benchmarks/evidence/lifecycle-followup-2026-09-27/manifest.json": "1a4794ea12bc1e6b9b7ed5e631f6dd116d9228a97958d859eb501829e9fb2e16",
+    "benchmarks/evidence/lifecycle-followup-2026-09-27/pipe-mutations.json": "eb950545a504213ef3ed16ffc637373abaae56e02feb254c2837775ac8b145b8",
+    "benchmarks/evidence/lifecycle-followup-2026-09-27/python-tests.txt": "844cf4c363fc52b136597ba903d7851136b9d90b1ba794b0c79188807f23bb95",
+    "benchmarks/evidence/lifecycle-followup-2026-09-27/typescript-tests.txt": "a7026d8796b81291fd8a63d017797f94220c12b7e5c6ec15917e85444b66c188",
+    "benchmarks/evidence/optional-metrics-2026-09-27/TraceModuleProbe.java": "3a46e1e72a010b99118ac59ce98ece7db1f1a8dc334db456016a5e16272ed15e",
+    "benchmarks/evidence/optional-metrics-2026-09-27/after.txt": "dc51b8c96c2d745df3bd5590d990230a482fd247123599548e0632fdbf97fc22",
+    "benchmarks/evidence/optional-metrics-2026-09-27/before-controlled.txt": "72840ebef17421d94d0e51f3907d0a0d6bf0193db8d1180cb093baadec5457dc",
+    "benchmarks/evidence/optional-metrics-2026-09-27/exact-revision-tests.txt": "00b7d2c66d3ecd2760cb5d25ca5cdebfa1a9b44609c97332ee7480f31c071600",
+    "benchmarks/evidence/optional-metrics-2026-09-27/manifest.json": "3e792205a3bf4ab2e96c49970e4fe0b51c3bc874996ff9800999a0845b1e12c2",
+    "benchmarks/evidence/optional-metrics-2026-09-27/production-tests.txt": "a1ba7700c93ca4bebe4bdf828d6743850771c998a8db57bf12d8289d90581bef",
+    "benchmarks/evidence/optional-metrics-2026-09-27/provenance.json": "d96f9a7ee9e322d6a5f70b4ef6eec547ea000bc451e8812e61396889c9a9f239",
+    "benchmarks/evidence/retained-attach/after.txt": "bc38f3335e274c41a77d727529f52d97a0f7cebd4a5fc357757e5c1319c9b1b8",
+    "benchmarks/evidence/retained-attach/before.txt": "47a8f184cfcd3078bc0e6a2f7d9f58633af04fbbb39d8252642a83f2c66c341d",
+    "benchmarks/evidence/retained-attach/manifest.json": "c08663eab57a616a79771ae379720065bd51f765f4790bbdfc766271b005d06e",
+    "benchmarks/evidence/workbook-roundtrip.json": "7e96ed6d67799ff80e894d06d862f54d3e78bccfac1c3b57959e27e92b5db160",
+    "benchmarks/lsp-scenarios/.gitignore": "75dd9122b775f2d4ca4a99df0e4f099cc414dd1b0d11df46563350e8ac576882",
+    "benchmarks/lsp-scenarios/JDTLS_API_and_Test_Scenarios.xlsx": "6fa34e33381384e6a831c6715ee2a76bfdba9f064a4927e9660b831fa6d21796",
+    "benchmarks/lsp-scenarios/catalogue.json": "a09bf1f410e68f7f4b282168ed547029220beb6101be4e3e93571caca2558210",
+    "benchmarks/lsp-scenarios/catalogue.py": "d9ad1be0dc7311df84b9d7ef493ae4b75623ca85cf532754cbaeca1bde61450b",
+    "benchmarks/lsp-scenarios/compare.ts": "02b807064744e29e439360d2cd3133d753a9a67e55637c4dfeed8baa1d541189",
+    "benchmarks/lsp-scenarios/expected/CMP-01.json": "06e6dff25713d07fc72dd8a063b56ba0aa7ed758b61ad3bd051c8a976ecdac34",
+    "benchmarks/lsp-scenarios/harness/LspScenarioHarness.ts": "a3f6a7f6061473f4693a52c21c5cdfed9e221e09f94e54840f7735d0d89e389e",
+    "benchmarks/lsp-scenarios/harness/ProtocolClient.ts": "0f9985d08dab6c057c73bfad77598437c98a367085b9d817c788fb48d7d93dce",
+    "benchmarks/lsp-scenarios/harness/ScenarioContext.ts": "a33ce9ad86f2bd6d8911d44b139c6977ff8ab9ad37538127a698d588e651b90d",
+    "benchmarks/lsp-scenarios/harness/contracts.ts": "03c921cff0f13ca2cff7c922fadbc8fdece597211b782478c0e3fe5c6052e5ab",
+    "benchmarks/lsp-scenarios/harness/dependencies.ts": "343a93b645c06a7abcf74b7b52c34551baef59bffddd86ba66877ba128d19f2c",
+    "benchmarks/lsp-scenarios/harness/fixture.ts": "8c8d68ab0b5fcd401871583a74c4ddf4339e1bdd373c6eef3a743763098cb4b2",
+    "benchmarks/lsp-scenarios/harness/jvmdLifecycle.ts": "1f9a3cbc0807c8818803e572eaea03eb9fc4dd7db2b40f1321391113423b60b5",
+    "benchmarks/lsp-scenarios/harness/launch.ts": "c62acd8b808d9062c5e72c8f384056c48feba9af6ea280841f572e859fa524a9",
+    "benchmarks/lsp-scenarios/harness/lifecycleMatrix.ts": "1671decd323b87804feebb3b29024a046172a7dacc73b7a040cb18494db68071",
+    "benchmarks/lsp-scenarios/harness/nativeDaemon.ts": "1bbc1f6ce566703cff6a4d0e91fbb18ec48d3adc95a7471145c317c62f4f94f9",
+    "benchmarks/lsp-scenarios/harness/oracles.ts": "48a2f70a8f179baf711dae30ab3ea0f23507230ef6139200396da2f24144b72f",
+    "benchmarks/lsp-scenarios/harness/phases.ts": "5c94861579f126b42716220062a5417eb39b969c0aa1920c1f33819e707a649c",
+    "benchmarks/lsp-scenarios/harness/workspaceEdit.ts": "715d7f21c0de6803b048d66892534b797f046fd57828aad859a360e9fdaa39a9",
+    "benchmarks/lsp-scenarios/jvmd-machine-lifecycle.ts": "41c813918769c499712b2fa84c80224a41097060753ed1ceaefe96770501eafb",
+    "benchmarks/lsp-scenarios/package-lock.json": "4786a8d6781697fc3d6eeb8ac0e43ee2193cd677daf721927c1bba0cd9686646",
+    "benchmarks/lsp-scenarios/package.json": "6334c7a4a269f6cde9785a0f33ad31c57876c2f994094c5eb5f342d46a18975d",
+    "benchmarks/lsp-scenarios/reduce.ts": "9a2fc3106a0070936e73ec6c409079e0f48615d55d56cb0f85a6abc80e2521fb",
+    "benchmarks/lsp-scenarios/run.ts": "98ca37906604cb1099937c8a336105a394025d9f2a61287e32cb87bbef10acea",
+    "benchmarks/lsp-scenarios/scenarios/CMP-01-completion.ts": "aefd8463c5c9c4881c06dd3218c08bf45d6f70eb31ebcf7319e087fe4171da53",
+    "benchmarks/lsp-scenarios/scenarios/core.ts": "09c16ac365ad5c39e49c37182008e84e4685f2a071d28d8d6d327ecacbca242d",
+    "benchmarks/lsp-scenarios/scenarios/dependencies.ts": "880089afead60f98fae64b066772a3b0489c73f1d5e53af5f50dbdeca17061a8",
+    "benchmarks/lsp-scenarios/scenarios/editing.ts": "053a710ec9affd551abf5fb4e58e3d76eadf9d2789d0f9d6c0e7f2d97b8779eb",
+    "benchmarks/lsp-scenarios/scenarios/files.ts": "6fec542791bd5e4ee26b58ebd89191e275cba039982d2cd665a62c7f75ad5590",
+    "benchmarks/lsp-scenarios/scenarios/generation.ts": "454c75545577aff634afe21527b968fbb739a29865da5eacae0bd569198708f6",
+    "benchmarks/lsp-scenarios/scenarios/projects.ts": "85ddd5c06c263a9e5baea567fceb343c70e33c4e4f5a5db66070030023f75f80",
+    "benchmarks/lsp-scenarios/scenarios/refactoring.ts": "9ed5532a54afde5e96cc309ff4c34dcb1862632aeb9001e4536fca8c0486ed7b",
+    "benchmarks/lsp-scenarios/scenarios/structure.ts": "526e2e1dbb725f04d7bf6ff652e52cddc235dfc306bc34a8fdc3548d9335f996",
+    "benchmarks/lsp-scenarios/suite.ts": "0c184c96d51a46054b69251a3f7bdbc350d3f98eeedd657a42342af65646b439",
+    "benchmarks/lsp-scenarios/test/contracts.test.ts": "b8842a265d16869a7f03c4f4c54a0a8839e625c26dc6ddd8078b6541f45290c8",
+    "benchmarks/lsp-scenarios/test/diagnostic-admission.test.ts": "9d20ed5f2bfa1edf94f9c57519092555406449128419214f6900badea9ba8f2e",
+    "benchmarks/lsp-scenarios/test/fake-server.ts": "12e5876825c4c3d0843ee86c84837f9cb93353f617366f8f4eddd2acd26ef62a",
+    "benchmarks/lsp-scenarios/test/jvmd-lifecycle.test.ts": "6b84b512d301149fc7a5bd73ea2ef415f2cc1a6f7abeba17ce3b91c2a447f19b",
+    "benchmarks/lsp-scenarios/test/native-lifecycle.test.ts": "e5f8b058a47bdf80d970b40a6a12d2a4319cb63fe7a6f516db4b01d66ca7e0a4",
+    "benchmarks/lsp-scenarios/test/phases.test.ts": "abddd542312f48e9de32e941cf7175aea09c2777d86bf53e09631a356ae309df",
+    "benchmarks/lsp-scenarios/test/reducer.test.ts": "a01950c432a081066aeeb6c5b380c57dc1d7380733235fd11b54bf424bc32af6",
+    "benchmarks/lsp-scenarios/test/runner.test.ts": "8591aed61c72d31b4d0756f554ec3978317b7617a71fd4e2fa833f9100604ae3",
+    "benchmarks/lsp-scenarios/test/workspace-edit.test.ts": "b08b951e257ce727151151adb74ca81d43fb56193858165b1f656381c37acd2d",
+    "benchmarks/measurement-contract.json": "0ec6bc55f9526027b9057a66954fb5432b9d0857ea87ec987c2731a67c6fdfd2",
+    "benchmarks/phase-model.json": "985a76496e2b6ca76d4f71356e869956d619c386633ad080fe513a2b4e168379",
+    "benchmarks/workspaces/.gitignore": "32dae3052f331ee34d628ef535709b301259a45df7c7522c4d35dcf49873f00b",
+    "benchmarks/workspaces/StdioApplication.java": "70ebe806c51cc95b13aeb06ee606f1bdc0207ba2a0888f254e25c47fd3b8a644",
+    "benchmarks/workspaces/bridge.ts": "525e78ca3b0e12d4b89c3f22436f163a6608a073ef1e11421c0cb745bf735c6c",
+    "benchmarks/workspaces/causal.py": "a8dc6bef1ce2c19b609d7293a953e18d84e707f726cefdde2f35bee48c9d13c7",
+    "benchmarks/workspaces/check.py": "0912feb173164d96c6d7162e4fbde4015d1d9228896d08a99be4973b2cd30efc",
+    "benchmarks/workspaces/compile.py": "b17b1eac74db9881e03796274a2a27d283587ca6903b978fefe8e95a57d3fa77",
+    "benchmarks/workspaces/contracts.py": "6f4191fd3f71ee9a97117bde841106652e0ade54415bb259b2ca48cb1d968c55",
+    "benchmarks/workspaces/fixture.py": "a8ce582c158f40c55691f41e02c125a5e8e05d8b3e1fc58ca1839bbac594f34d",
+    "benchmarks/workspaces/package_evidence.py": "f8607690353727798a5d93fdc38ff7fe215147618ebd7d9626eb526015201d05",
+    "benchmarks/workspaces/resources.py": "c37c75ee6600ab38ed2bb3fcb6b5dfebaa4bd418dc1b1bb695d0867d11ef419c",
+    "benchmarks/workspaces/run.py": "c52f28287352a42ce071f8b4f327448942c185bf5b651e3e0eee95df55076569",
+    "benchmarks/workspaces/summarize.py": "effe17c6b145ff8a181eeeaa3c3a85c58d755ec62d080c74c8d2d482aed79da6",
+    "benchmarks/workspaces/test_causal.py": "67f9e8f80e0d37b02aca6321d5b22a9dabae15f6d52afcaa6516cefdf5a2f380",
+    "benchmarks/workspaces/test_check.py": "2e121959fe97b537ebcecbbe291e5017524c26d87ab4816507965f00043bc9fc",
+    "benchmarks/workspaces/test_contracts.py": "d00287bba1a3ef6b84546ade5abe93ac07665cad3840e2ca9490f7973f725caf",
+    "benchmarks/workspaces/test_harness.py": "3243ef1d41b7476a99270753e60fe1958a0fe9c127905c384fb59390a260029b",
+    "benchmarks/workspaces/verify.py": "f08c9e96b700a54af5e6750d0daf157861e2ff2f94fdc8f2f4978e84e45bf6dd",
+    "docs/api/mcp-tools.json": "d05f92d372d872f49a22a2ec9ff41649502fdbab1a210fdf82cf371d3f5f77b3",
+    "docs/benchmarks/implementation-status.md": "7badfcfae52ce1ec7fcac988819201eb0d176e6b7b21a5ecaf83c4e9d5a83c50",
+    "docs/benchmarks/long-open-diagnosis.md": "e9dc1d4d31c10031931e26ff9d82283acffe6cfdcd2a06548146dbe4fa6ea15e",
+    "docs/benchmarks/worker-specification.md": "47cfbc563a60bc0aac4fdc09138b2d5c831cf1c80fec63978171ecd4fa388ddc",
+    "docs/install.md": "8ea372a34fcaee6f8236c5c501d980b8b955311778aa0f3f86cd8f545bcbece7",
+    "docs/integration.md": "8d599962c3c1627ba3202d7b8a7cad6f218ce47150be5b3c76a392117795853e",
+    "docs/issue-36-semantic-query-checklist.md": "504749606a81433f14f16d3ff35d8f435e4d392ac0108f7b0e8a17551f4400ef",
+    "docs/issue-36-semantic-query-progress.md": "ad5668f2740faa16e10561ad8d0c71679adc9ac1354547c924733cd556ed45d1",
+    "docs/live-state-tree-checklist.md": "e7c5c35cd2ba7fdcf2672ffa562743b80bf20b3efca13aea1774b3ba90268a2c",
+    "docs/live-state-tree-progress.md": "9203910a80028b3ceede1f7178b74b632dc2d5762fb801a4993fd0ae2a0108e4",
+    "docs/pr39-admitted-semantic-progress.md": "6e4540f6f565c4d4142a44830993753aa3663d45aa789e1431bf60eee6d22fb3",
+    "jvmd-analyzer/pom.xml": "395468fececbc5e88d0bd8714354be6eb366730dc83fe5f2ea7db3ed6b941230",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Analyzer.java": "e7e0e0c798a85c47d7461799fc5436ea7b06f0624b5c9c75ab5b3b40fe1998d9",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/ApiFingerprint.java": "955abb971e04558fc9460ea019b365a04d252ed9ebd41de9cd11f22c2677adcb",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Bindings.java": "b570ff2ec720629a11f0acfc8481fdec0b27d5cd5b7034a71e7cda20ab4defe3",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/CompilerPool.java": "ef12ae1f92c314046f98b0f974a04a89d68e4b19c098c3c01bf6fa9d4ee06d8d",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/CompletionContextResolver.java": "cc70e6ac2754dd85f632ef4604764d44ab4ac59c64260e10f9ba4419248b57f1",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/CompletionProbe.java": "b8e78b0eb19be33b5d032b8fce53cf5e97e34babfd3bf552a181a0875bdcc320",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Dependencies.java": "d80b4d408f24145461d738f244984c75e3c10e48b65ebd2ad07f9012394ea9da",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/DiagnosticEngine.java": "cb41c11ce9ed0de298cda28abaa1582b1b384c788bbafa7ac6b2fa24476d3432",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/DiagnosticSnapshots.java": "9583dd7e65a45283a94bf08a32731dc29cae7c918abaccb947afd41f942c43e1",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/DiagnosticStore.java": "35f5b3a35ff49b071eaf59b7000fc5fae397efc021b04800a85a899d222a87d2",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/EditorQueries.java": "81cabbf98a4f82e5639c009a1cc38b28075cd0a8d6ce9dc1829d668011b5e845",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Focusing.java": "536bdb6bb6cb3a4f1fd5d7f99c9422dea9e722f41c6b3d0fa788bc7b3c98b822",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/IndexedFileManager.java": "5089ef60ac6ad90394ef32d8a8b6e54b4619823eedabd84c9f5acc546f8abdde",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/NamespaceResolutionProofs.java": "963f111a448e1ec7ef89fe798349b85b47b4bfe1bb345825f4594e4e1da9d080",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Parser.java": "580c15fa310a69481615a5f240ebc4def6ee9fc01306601dfed4fc94fb7f1232",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/ReleasePlatformCache.java": "49722cbed6b0939762e47c9abec23bd8ed716ad04e13f769520d07960ded551d",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/SemanticContributions.java": "08da954abff041ae612d8cb1d67a8c13beb0227c5477aec6ec2ba3436e1cec07",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/SemanticDeclaration.java": "a281b5a7bf9570bcab297dbec127a34ec9a8984a2073080e647afee7659ae4ea",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/SemanticFacts.java": "1afb7eddea9e911065ef9424edb5d333c5bfe2548f18eab5615aa2f93329a604",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/SourceText.java": "bb0751f419c8356fd5a73c52243a89285dfb88840b6322e58a56af6a36f020ce",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/SymbolIdentity.java": "bd7ed796d085bf1f16e2606e61429463a6138814596097a32d94f938f696297b",
+    "jvmd-analyzer/src/main/java/module-info.java": "cedd6274cf6b6d814a3bb6f07977a11d5bd74dccc321cc4c80846880f9b8ca4d",
+    "jvmd-core/pom.xml": "a5c18fa11f304d4379c9bd1854dda4001582d321ff8455e63d96a7c5d27b9ce3",
+    "jvmd-core/src/main/java/dev/jvmd/core/AlgebraicAccumulator.java": "2c176ec3ff4252b686be63d9eb8ae9684e9bf15b0f58dca13c646790bfd349d8",
+    "jvmd-core/src/main/java/dev/jvmd/core/AnnotationProcessing.java": "0aa4be420a686db3866482bcb46b0b75e30a1eaec42f70627a3642e47ac0a0c5",
+    "jvmd-core/src/main/java/dev/jvmd/core/AotStatus.java": "453c4ad167e2400b2705172e16288409a74f20f7c3e1ea5d68b88c64878847f4",
+    "jvmd-core/src/main/java/dev/jvmd/core/CanonicalDigestWriter.java": "006682ff5891292572ff9c1314e2e9de1c9a67e115bb2c96695c60878e1d285f",
+    "jvmd-core/src/main/java/dev/jvmd/core/CompilerInputs.java": "79a467d9b1ede22d92029e62392714a589ba2025e95e2d6cde5b5ed17cb7b217",
+    "jvmd-core/src/main/java/dev/jvmd/core/Config.java": "db5a801299b2b90235ca30dfcda2baf5c43f874bc2894085482d834b9ce542dd",
+    "jvmd-core/src/main/java/dev/jvmd/core/Dispatcher.java": "133466af2e1c3fc7a54458d28d7c6f5941abcedec0da42d3bacacc53ef79ed49",
+    "jvmd-core/src/main/java/dev/jvmd/core/Documents.java": "e45eeadbff129ab80023e22ad421a776c461effd4ffcb5c0dd586b1f3cc6a562",
+    "jvmd-core/src/main/java/dev/jvmd/core/Envelope.java": "74ca3966888396c81710c8304a43e4a05545e9914b331ee79e3705a4d3db3053",
+    "jvmd-core/src/main/java/dev/jvmd/core/FileInventory.java": "74769e429eb575d9941d438594bedad62d38261f81b6c6a8ebc1f75422577816",
+    "jvmd-core/src/main/java/dev/jvmd/core/FileStateRegistry.java": "29cece3b706e2a3a64ea3e5cf8a44d3bdffe0be53e443fbdc281b1b693389f44",
+    "jvmd-core/src/main/java/dev/jvmd/core/Framing.java": "d1564fcebf55d062b56e3c90caf50ec18fe5125ae00acf57b316054cc318cfe3",
+    "jvmd-core/src/main/java/dev/jvmd/core/Hash256.java": "f26b1862eb12dc346b7c3f6f256ad87cec1092c1f2df44af41baa182d95c6337",
+    "jvmd-core/src/main/java/dev/jvmd/core/Hashing.java": "2414696ea496238edcaa0989bf8685147c5343cfc12ec25b7c58c4e5537d2d06",
+    "jvmd-core/src/main/java/dev/jvmd/core/JavaTypes.java": "56ac6ae3e19dd9c53d096152918aa41cabf262e3d15d8f0595e6ec4f2f752d1d",
+    "jvmd-core/src/main/java/dev/jvmd/core/Json.java": "353f752309480cc17a22f4b0c4d05e6505dad87b0e3c73b1ac8102cd7064a060",
+    "jvmd-core/src/main/java/dev/jvmd/core/LiveEnvironmentState.java": "28e53e218c297e43e2b873bdbae28cfb83f2b09e5ad0e07f28590dd9c77906e7",
+    "jvmd-core/src/main/java/dev/jvmd/core/LiveSourceState.java": "ff79be4d272652a36ba97bccefdf88fe93f781f846f9cb9ec77cd21dc75f66d5",
+    "jvmd-core/src/main/java/dev/jvmd/core/LiveStateTree.java": "1caf4ec020fd80aaaec90a783092c8f01f6ea5cda363114dc0f5612220950eed",
+    "jvmd-core/src/main/java/dev/jvmd/core/Metrics.java": "50db26d825b1d1b6584234fb168dd68d923c43022a517abe38cb6a9c369a2304",
+    "jvmd-core/src/main/java/dev/jvmd/core/NamePath.java": "2fefe3facf4198e27ce05175549dd12f85d603ba608ef5cf211d37c89b45c6b6",
+    "jvmd-core/src/main/java/dev/jvmd/core/RequestScope.java": "34d815ad7be74cdc50aa915be5496d478a573418c10ed3d2641f2e15920dc90a",
+    "jvmd-core/src/main/java/dev/jvmd/core/ResponseBudget.java": "6f7220bf7dc8e61256ff4111b4aece10806ca7b0ea666136df72b895da26ea04",
+    "jvmd-core/src/main/java/dev/jvmd/core/RpcException.java": "0b644414070698fe1dccf293c02d23f36a46bbc15c390a8dc4929a9b1a571939",
+    "jvmd-core/src/main/java/dev/jvmd/core/Session.java": "417ebd1e6987b8af391584c21c7f3fa945ae4849d49e39f10c0a2709784494a3",
+    "jvmd-core/src/main/java/dev/jvmd/core/Sessions.java": "aabcb0ff0ed5f98ef4f60076993615d0b0f39155b46cf57cd0726b3c23bff1c0",
+    "jvmd-core/src/main/java/dev/jvmd/core/TextEdits.java": "87ba79001cf16c12ac42fb7bb400b82f661b06e547b88e111082079c368d78f0",
+    "jvmd-core/src/main/java/dev/jvmd/core/UnixServer.java": "6056316d28f5cf4ebcc2bacfb3f43f984d90eebbb065aaec1b152f074ce3f23a",
+    "jvmd-core/src/main/java/dev/jvmd/core/Verifier.java": "19a471e5eca5ced08408f3ae6409ac9c06850e92b46bc8c8d7d56fbff6424a30",
+    "jvmd-core/src/main/java/dev/jvmd/core/WorkspaceManifest.java": "246b4c8874e0c653a5892a22bddb519182aa67f7011289ee22a6f5e28670f3f6",
+    "jvmd-core/src/main/java/module-info.java": "2aa72d04803f9a73a8bda52e955831fd4e6bfd2481e18a4133b5d078c71f66ab",
+    "jvmd-dist/assemble.sh": "46f4ffc540aa9e9b485c020755cc74cc45bea6001032ab0ddc05b4fc7b800a96",
+    "jvmd-dist/export-api.py": "fedd08822264c06a495f7ccd94851a776f55dde9cae40907eea08456a2075d91",
+    "jvmd-dist/install-wsl.ps1": "5a5e84cedbc4e15c38734e5a2b4c8c7e8b2fa22567bdb2e8f5ed3648c120df7f",
+    "jvmd-dist/install.sh": "930c473292ae4e3ef263fdc41253d08745eac5fb7649678bfba1acf960e11a5f",
+    "jvmd-dist/jvmd": "d4db6a2c95c75ee3ab6e987affa06d79439510b84bfd6611d7158b8715af796c",
+    "jvmd-dist/jvmd-lsp": "21268ae12c5aa59de5593b99d70600c249a9dc0dbd1f39b854adf627e0a2d998",
+    "jvmd-dist/jvmd-mcp": "34ad2789ed05dea878671dd71f2149f240f50ef9f2e0033da645853b73cb9727",
+    "jvmd-dist/licenses/rocksdb/LICENSE.Apache": "8c6db340475136df3c1201d458fa5755698eace76e510471ecc9d857d6083dac",
+    "jvmd-dist/licenses/rocksdb/LICENSE.leveldb": "b0ec9f0c7b258c2004f06b2542cecac98d301ecf3db3afede83646eafd34862b",
+    "jvmd-dist/pom.xml": "dc56ab73312ad3b6ce8725d55f4fe1ee589baad8449b5ce0aeabf8c16953a51b",
+    "jvmd-dist/release/build.py": "231feb36ad9548062bcb9d4f13023b2ea2191de99545c93c2314b68d2e81c00a",
+    "jvmd-dist/release/smoke.py": "0597cabff2c10398fbb11879333ecdbdef69f80ffe5471f4a232d520ef76b45d",
+    "jvmd-dist/release/test-wsl.ps1": "311b506f7be5eba6456cda43d5f6156e4fd286dec94b243085d1f068ebfcc692",
+    "jvmd-dist/release/toolchains.json": "ae527165b76e9de52c10327991ed7dfad2f7505d7562eb4e26c4b3bfefe9af98",
+    "jvmd-dist/src/main/java/dev/jvmd/dist/Application.java": "c1f56fabb5e28e472feccd94bf92d188db7ef8bbae931ddd38935f79ab8395cc",
+    "jvmd-dist/src/main/java/dev/jvmd/dist/BindingFacts.java": "2ffeff980f5b2fe4c05b7936ba3c60254d3ebf8793befd06976782d929e80993",
+    "jvmd-dist/src/main/java/dev/jvmd/dist/IndexSmoke.java": "0c0790f8a77196bcc22ca0da260c08d52433ad3b0d589c872eef865873b7cb20",
+    "jvmd-dist/src/main/java/dev/jvmd/dist/ModuleAnalyzerRegistry.java": "bc45deeeaec421932e3b5c12b476ee33334841ed014f7ecd591c51f36cd56d30",
+    "jvmd-dist/src/main/java/dev/jvmd/dist/WorkspaceAnalysisCoordinator.java": "bc8d2f3ca9cc49fc5e6a54862a82bc821bd228cbc7ef3b64bc6b51a2cda26da7",
+    "jvmd-dist/src/main/java/dev/jvmd/dist/WorkspaceBindings.java": "66950dd03091cd460668ea060eea6744690b9e1aab28c0697e52942599b55ce9",
+    "jvmd-dist/src/main/java/dev/jvmd/dist/WorkspaceContextManager.java": "051eca4db61c79fdaf9de1e8110d469e86de7f8ce6ce3db5c995fa8696797ca8",
+    "jvmd-dist/src/main/java/dev/jvmd/dist/WorkspaceReadView.java": "71a64efe591b9ab64a6e7eab17dc116a0648f820fcd017caa7695509357fd749",
+    "jvmd-dist/src/main/java/module-info.java": "a36865771d1ef9b85c32db168be83458f4b6ee9655f27dc46d77d21dcede2b9b",
+    "jvmd-dist/train-aot.sh": "6fef4560c969f37449af09f12b9365bf50543b256ee72e44df7ecb8281325f05",
+    "jvmd-index-rocks/pom.xml": "a822b796ab49b14d0c6687c25c13ae1b555a9c744e3618ca724ce6d9657fa730",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/GramPostings.java": "32653a3047a8fe171a43b1dde893c2d4e760c42ac1f134a2ca658df9bf1a592d",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/GramSet.java": "1ab6c04971d222034b4d7bfb4a2df5e36128176fcb3ab51ea05abd2f31e8827b",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/KeyedFacts.java": "be18da1d452c513b2cfdcb08d52bee497b0f3db7069605b997d599802e641b17",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/PostingCodec.java": "4505cead805545e071759e48c9866a65d1075975fc83e701902ad0d6b557115c",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksArtifactAdmission.java": "3caa9acf4491c6ef453ef5926a3420851587a4537b50f00d3e6f9580670412f2",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksArtifactInventory.java": "ae115ccd2370d5d076d62ea54b2ff6abc83c7e43c6ccbcaad672f69654d784aa",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksArtifactRepository.java": "898af1781b51710d76866a29ff16392b621c726f9a1f3f92295d069756572b38",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksIndexSemanticState.java": "a06c8084837f854b9e0a3a5303a9bd34ea496b92ebf4c8a2a6a1cb1dc7ad06ae",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksIndexStorage.java": "8b882fa47e80312f19edb1575e0e3fee4b92a7e62c7b436d95632e26017e0a96",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksIndexStorageProvider.java": "e89531cf5e0682939fc3240d2ac1148a60f8eb55f75b7cb7f5d380445d85aa30",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksIndexStore.java": "d0046d37eebfad01622184ce48c56652db14dfcbb765f5d1193228f91c5593bb",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksMemory.java": "1045b8a611270e97bebd1ba62c70d904daab51c86580af6e8989e8e6547fefd3",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksMigrationManager.java": "f63aac6d1a6858d56045af7efe05537d12bb95077528b620fd2bca4384c75fdf",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksSemanticInvalidation.java": "c75ad7aa9ff55b24bec65ff9d3080fe9a350b076059b79b098aa112a5fdd4b56",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksWorkspaceState.java": "ea9db4efb3a6e651cde2b933d8e6f55aae881a4e7bc6897298683fe3b262d801",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/SourceOverlay.java": "63323d3af3f184791bf7b5643e66e6a6d114da737397fef3a5781aca4ea45d3b",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/SstSorter.java": "8a4b5eabff4e6e3e6be6499e9e5c8ff59c3be181503769910edb38c201c21cfb",
+    "jvmd-index-rocks/src/main/java/module-info.java": "367dd18ae834bafa08f9656ce3708f4ebc80b08279a1511164bcc666e5473300",
+    "jvmd-index-rocks/src/main/resources/META-INF/services/dev.jvmd.index.IndexStorageProvider": "3fac48b851269d9d1184798ba75e215824cf491d3a322768a28f972e14975c0e",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/GramPostingsTest.java": "032ff706d4b66f734bf0887e2bc156d7ab228efe780c08a9cc3e8a59fa6c0e4b",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/GramSetTest.java": "e397778dbedb4e30cfdbd986fea4cecbfa2249745144eea830f76cc7dd0bd981",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/PostingCodecTest.java": "97755b85312bcea065b6235a5360f6f1348e0da9af64ecdd644dcb1c091dce63",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/RocksArtifactInventoryTest.java": "2d8e70b74b6dd743c2f434f5823a276e9582cf4b4aa2b4b131fb8910d8321e95",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/RocksArtifactRepositoryTest.java": "c7ce62fd1ad9ac365ff802096da22301d870a1b35b55ab54c28fb5c23489609d",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/RocksIndexStorageProviderTest.java": "08910267590c9ea5529fb0a01912fbacd173efa88e545e2b3e1f224fd76df5b9",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/RocksMigrationManagerTest.java": "01f098a605e2d57b84587ea1bc26395cd6b36422ac2a8a3343dff9e8b8bf93b0",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/RocksSemanticInvalidationTest.java": "84ae202774f486dde2ce9953737ff5501b7d2898aae08db0ca527e0bb8df7ab0",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/RocksWorkspaceStateTest.java": "046169c0685e5f399196196f81949ecabf21c1426438fe9977f23f4949c1a9c2",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/SemanticUpdatePolicyTest.java": "b04b8d328325b0dca10f19d3027c4d982aee1bc943adf921b756febefe79e0af",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/SourceOverlayTest.java": "a4e0d377317ee1c1f006c25d55ed7c8dda777ede8678c3224e0fe360668ad23f",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/SstSorterTest.java": "a0975ed7ddea5268c5b6851f421d59899a3fbfd38a3cab3427e7558e5bb54630",
+    "jvmd-index/pom.xml": "46492cfe13c8e478b9aa017d4201ad843630f97863c0a11358f03b21aaa72ce6",
+    "jvmd-index/src/main/java/dev/jvmd/index/ArtifactAdmission.java": "5faad6ca496923730ee0ec9bb7414065c79d111f25aa56d23061a1582003f31e",
+    "jvmd-index/src/main/java/dev/jvmd/index/ArtifactContext.java": "3527fe2d16e7b30db66cb0d9310524d33db1492df9398b54cf7fb60cb3f6aa4b",
+    "jvmd-index/src/main/java/dev/jvmd/index/ArtifactIndexFormat.java": "64218989798f044ff6ad8781028c3b9fbdbcbdabc822e45052c5ffec8b151015",
+    "jvmd-index/src/main/java/dev/jvmd/index/ArtifactInventory.java": "e993b9284232c4d918056ae97a58940e51d8d15891e9c3c2670a4f21ffd2fa90",
+    "jvmd-index/src/main/java/dev/jvmd/index/BinaryReader.java": "62c2b1bbf28b0aaf267de6bb8c4f1354057a7ed85fdb2015da2ed72133cd6375",
+    "jvmd-index/src/main/java/dev/jvmd/index/ClasspathSearchProofs.java": "3cf289fefb755e516a0c2974bf31d51196b052713b993c519ec7bce55d9626da",
+    "jvmd-index/src/main/java/dev/jvmd/index/ClasspathSequence.java": "8a6a5065603248dbbecd2d992d6fab8adc1acd03fb8c6307cd009f13da395bbb",
+    "jvmd-index/src/main/java/dev/jvmd/index/CodePass.java": "5784078cdd06c9d88458b19233eb0d2ca525370666fbc03cd6d798f92c527faa",
+    "jvmd-index/src/main/java/dev/jvmd/index/CodeReader.java": "ab60680b05bafdf12e2bac51f880b68f99f3360098debad02ca223fed48169b9",
+    "jvmd-index/src/main/java/dev/jvmd/index/CompletionCandidate.java": "18da538194089f47ba514e668ee8e8222d537bd3ed6ae28cd795e5fe6eb99bfc",
+    "jvmd-index/src/main/java/dev/jvmd/index/DocMarkdown.java": "022fce752de4bb2f9b781abdc1663d2790097f5daa4496c8fc2fd241f654d26e",
+    "jvmd-index/src/main/java/dev/jvmd/index/DocumentSemanticSnapshot.java": "5f65912a249380cffea3d384ee442d93839d7036430223a574b4f84611f0bafb",
+    "jvmd-index/src/main/java/dev/jvmd/index/Documentation.java": "a44072860130e1e3ad483eea11fae16aaee00a21aca002263bdb5dcfa89b6f36",
+    "jvmd-index/src/main/java/dev/jvmd/index/EdgeScope.java": "33e0a329dd3f1fd5943cde93dd251b171d8a6eccd48a60cd95d5280db3ecc05a",
+    "jvmd-index/src/main/java/dev/jvmd/index/FactCodec.java": "e0ecb1245f52a52712817242ad838af359c11b16251313882c0386b595382555",
+    "jvmd-index/src/main/java/dev/jvmd/index/FileSemanticContribution.java": "ee869f7b980aaa90416d9b76401c9f91675ac60133359f70ef7ec329950d8054",
+    "jvmd-index/src/main/java/dev/jvmd/index/IndexSemanticState.java": "c593a5e185807b27cccadbf93db11f3b5f02cbe12fa742a7ef7d52d5a9b61f07",
+    "jvmd-index/src/main/java/dev/jvmd/index/IndexService.java": "3bc8c2a999a65633e9a2852ae23048a41ad556d19f14ba973e6466023515dfd2",
+    "jvmd-index/src/main/java/dev/jvmd/index/IndexStorage.java": "e6ace51c6a58e890d562cf8ead24b71cbb45c1eb4dc662e5c62ddefe46b70e54",
+    "jvmd-index/src/main/java/dev/jvmd/index/IndexStorageProvider.java": "fda1556d7c18059bf09a88179ccdb6f693e4fece9d03de7f37c0bdeed00bfe8e",
+    "jvmd-index/src/main/java/dev/jvmd/index/IndexStore.java": "0a099472888e51675fe643d9bb68fca8cc96663006188b6ab3bdd672713f722d",
+    "jvmd-index/src/main/java/dev/jvmd/index/LocalArtifacts.java": "e572a364a40f86ff126dd0819579d828c73447a5d8fe7afdb4684df41e42f8d6",
+    "jvmd-index/src/main/java/dev/jvmd/index/MachineDependencyState.java": "0f8f3fc34affce1e8c9b55730f8e7d237ad9158f3bebca95e07ac862b0bb7d43",
+    "jvmd-index/src/main/java/dev/jvmd/index/QueryProof.java": "fa168032789271b3a457be446b4c819ea77380333afbddc341d45d4f7154c208",
+    "jvmd-index/src/main/java/dev/jvmd/index/ResidentSemanticState.java": "5a2be61082e7c781dd347b93647b7522917538bdb7890895dc16932250ca13b2",
+    "jvmd-index/src/main/java/dev/jvmd/index/ResolutionFact.java": "31c0c85206b0aa2ad83dcc304d2a01097b1aeb1103328fac8a726d231e0da126",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticCompleteness.java": "d2303f9a2a61cd8f85e4a1af283dad1b099eeda26d3daadcf69e38a6a8b59d4c",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticDelta.java": "b995ac1232f6d61bcad60e090e53a20a6d36fce6632f59e4277529bb3790c113",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticFact.java": "42e08e88130471ac2538335f806d9f72600423cd0524bfa9c542e4d751a2228d",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticQueryProofs.java": "49bb1cea5d73af315c9f7e3bc7e68947e4b4399a7af54b71382c38e39d0ab155",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticReadView.java": "b1c3347b3d1362c03ac6c209f187bf52825c18fd7f409fc0b0b8f39fbfbb104d",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticReadViews.java": "ebebc95422529aeff8475a6c8f5c548a2e977df1ab60344aa2883a4bdf033187",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticSnapshot.java": "30416785f0ddcf5dd0aafc892599d22f475b39f65ac305bfa59e9a5fdbbb9577",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticType.java": "2ace622dbe24f0f269da34447c989125f0b51c5a39f6c5765a23e18b7180fc59",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticUnitMerkle.java": "c0751524a258b354ff2a0944d9db26c00875e1244abfaa3c441e673d8eb87225",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticUnitState.java": "5080010c670e5f2f3034a102dc04e8beab38f94ef80fafff68fde3907ad7ad75",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticUpdatePolicy.java": "a717b6901fb5bce9b28c7074e2117242c4d9f7a4000eaa0eb37aeb48262324bb",
+    "jvmd-index/src/main/java/dev/jvmd/index/Signatures.java": "ec9e8fa3eb1b78c0ca60af037869c3006df795cfc24888a16c238f3702811522",
+    "jvmd-index/src/main/java/dev/jvmd/index/SourceIndexPublisher.java": "acf2d3e3541851af9ce6302adb1525440f9975e90fef58ea31d8d98f8e4b6b49",
+    "jvmd-index/src/main/java/dev/jvmd/index/SourceJoin.java": "b2e83f72d27c4607371ae174e97b39bd7ea5fb22a6f48fcfe83564363660b115",
+    "jvmd-index/src/main/java/dev/jvmd/index/SymbolDescription.java": "c50407ac9735a771ce877e93c2089db670f83ffa18c2688b42f88328678b7abe",
+    "jvmd-index/src/main/java/dev/jvmd/index/SymbolReadView.java": "311ab543f3320b56571e0d8ce68034d00671188032511a057cf82ec9b6e8a022",
+    "jvmd-index/src/main/java/dev/jvmd/index/WorkspaceSemanticIdentity.java": "7816d6ab421df59af794f5da17642990836e29742edcb7d3ebf985acb366d833",
+    "jvmd-index/src/main/java/module-info.java": "d4554a7242e625b96b5462e48b1b2baa8b373204fa2698de93abe8d60058c708",
+    "jvmd-lsp/pom.xml": "14689e350e724e629d6d6e9f6605f3625792f5cdce99d04285991355f4017202",
+    "jvmd-lsp/src/main/java/dev/jvmd/lsp/LspFacade.java": "2960bdbb76fa6e9355846cdff9539ae4fc29927c14ce77efded0cbff8fd97197",
+    "jvmd-lsp/src/main/java/module-info.java": "89d5268262dc6202056f9ce2b4e1366b5e8304a69018c35498b77f1ec7096492",
+    "jvmd-mcp/pom.xml": "f2d1e59b6f11f2db1814916520c49390c1e52e07c98eb6b7d079f2a33e686ea2",
+    "jvmd-mcp/src/main/java/dev/jvmd/mcp/McpTools.java": "f35ae2664a24beddf7c8ce55e3978cb8f47cf3def7ffbf79b6345065dd99a679",
+    "jvmd-mcp/src/main/java/module-info.java": "73e2aeb6d700c8a1e204a2cd1e50ce6fd7194efb4e42639a9204c491984a4c33",
+    "jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/Bundle.java": "97f0ff10ca0cbc38e80a3134c97e09e47d24a00de6b6abf5fd283aa21af00426",
+    "jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/CompilerSettings.java": "846939ce7a953b26363575f79482ec319e92081732785d914ae83f1473ac2a23",
+    "jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/MavenEngine.java": "8f4dcb80afb696dcaf8af8fad5525e7f1abd4ede49d7383ea149a2d3fe77c480",
+    "jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/Models.java": "794a27c646ecdcda6437d717ba2ac957c0f0f0f38e181166edd9fc583d8769d2",
+    "jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/OverlayReader.java": "f885b58997fcea6b5e810b44e010321fe56db7b64f8e6271c84bfc4bcd3a447e",
+    "jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/ProcessorSettings.java": "5238fea50d63e36c8c3c52e1f16f1e134a8d003eef8ce260bf92ccf1eb8a92d7",
+    "jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/ReactorPoms.java": "13c4c09eb38bd4a41edc1737fb8aa99ebf73ea8606dc9a186026d760eeb76104",
+    "jvmd-resolver/maven3/pom.xml": "d197a0b69a4fbcf026a535c56cc8817477e63ef94e7ddf411a50d1d74ad47f05",
+    "jvmd-resolver/maven3/src/main/java/dev/jvmd/resolver/engine/VersionModels.java": "afb83b9fbd2553b56a396c590e0836bb93900a9640f0d148d6c187011f2b17a7",
+    "jvmd-resolver/maven4/pom.xml": "e39f83ec04a10bf36737b40f38e525a1b5a5b0a90a044e00fe13975c21b3fceb",
+    "jvmd-resolver/maven4/src/main/java/dev/jvmd/resolver/engine/Credentials.java": "a38e4f4efe3b563caef00094ec1485477d63984b5d6f90b84dc075a69a299556",
+    "jvmd-resolver/maven4/src/main/java/dev/jvmd/resolver/engine/NativeSession.java": "674637a3d02465e168c1c652e23de4561c945026c307fe4976c7c961eaad4ce9",
+    "jvmd-resolver/maven4/src/main/java/dev/jvmd/resolver/engine/VersionModels.java": "e1b93d15b85f05c3f8c873a3b81a5644c7b34121d3f1046cd4522dcd59859c25",
+    "jvmd-resolver/pom.xml": "9196867d5d7a1d9cb7a73489111ccf592774a72f8c05fc0974f00dd4d268dcf9",
+    "jvmd-resolver/src/main/java/dev/jvmd/resolver/MavenEnvironment.java": "874b922b37f08ff56628a205cae4effe774471f8f755f872e94988d3f82a0231",
+    "jvmd-resolver/src/main/java/dev/jvmd/resolver/MavenResolver.java": "261c95090577d805a05cf9524253ec1aecb4dc691f75657bf46dccfdbfa013f8",
+    "jvmd-resolver/src/main/java/dev/jvmd/resolver/ProjectModelState.java": "aa58d6674c4aed4a2478399a0626c28f03d1e025c5f49e7f6d8bf65c52187785",
+    "jvmd-resolver/src/main/java/dev/jvmd/resolver/Resolution.java": "dac76fbbea1f2c37835e8f60d4e454eecc4aa9b2b08cbcb273d757428fd4fb48",
+    "jvmd-resolver/src/main/java/dev/jvmd/resolver/WorkspaceOverlay.java": "11d54297dbdbc7104cc1af9e7669848c91f178c6ca13245d33cedf50804611ed",
+    "jvmd-resolver/src/main/java/dev/jvmd/resolver/WorkspaceSource.java": "0edf93aa682527f9ff0f8ac53d1413378a9ce73dff1ffdc301b33e241c71c616",
+    "jvmd-resolver/src/main/java/module-info.java": "acff35b552e3c4a690efbd427c35b2c1d2eb214ca18adec5fb06abc46c54473c",
+    "jvmd-runtime/pom.xml": "410be82de0f0e8d62373a3347c48560f3363b13795d1ea230e0fe653b416bddc",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/CompiledEvaluation.java": "a69ce4632dcf9c8179f899e9a1c5ab7978de1e5e6b12e738562d67412bfc2ef8",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/DebugSession.java": "8f4742ac954d76a4ad2614b36bd16231f527c33c8868ee099dc9c31d719bba30",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/EvaluationBridge.java": "9fce9f89c87007a92008776533d9f468f114bd9eb895edacf33adda33e63990c",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/EvaluationCompiler.java": "ca85d3d94a9776fc3423a3bad009e05e2898b3fe54a3d5beadf820103dde9384",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/EvaluationSupport.java": "3e21b2e4b7898103d9de52ca8d4d03567d9ae740d52f23c411c671687951dd0c",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/ExpressionEvaluator.java": "d3a8c6232e762162ef1c2256f0ba42307f0d61960d9254e89c9d9cec6d698369",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/FlightRecorder.java": "eb61d6bd476b64c559f1cd1e3064a6ecf5a7404b6d83d34b19c4e88a2b4b0795",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/HotSwap.java": "e3c6066bb69367baeadd2520d9323e2ace957c842ad3eababf41efb523f0cce8",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/InProcessCompiler.java": "124ed88f41303bf80ecb3b7219bdcb5c409fb5c0e8bf811690090f766fc0707f",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/Inspection.java": "f22f2733a8152ed725cd1e144d8bf832cded41d5879da15e6da21ca9cfeb8e12",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/JavaRuntime.java": "8313cd501fa986501bc531877301cef780d64f41a8b538e952e8efa117d18091",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/MemoryView.java": "00eda65c0b2f60b535629459ba192495537189347f6438b85e00280fb4e21fe2",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/ObjectHandles.java": "190d7e83754ba6bc534c1bf378f6c37dee2f32569839e96956c79850d77ed40f",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/RunManager.java": "1e8988d466d6273b23de1c5aa47876ba54b7c72ad07c099e5f290a13e4d1d9c9",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/RuntimeCompiler.java": "7050e14a05eaa8485ea2d458858ad91a106b6407cb3cf53137d535f9e1365720",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/SourceLookup.java": "27c4374031d71e056ff752e9807ad7c495b7def316c3be78ba86f66ffa29adf0",
+    "jvmd-runtime/src/main/java/module-info.java": "207c615275ee820509989caad0a3888816a5ecefe7f79af99e1670eb40295c53",
+    "jvmd-tests/corpus/fetch.sh": "16d54b37585e058a5b136fc4292d91f080a58eaa7a3aa5677b9430fb9b997c31",
+    "jvmd-tests/floors.json": "104c5de8d91597d44daa634fa9ec6be5d9fad9a6b3d85bea41ba6c19580ef167",
+    "jvmd-tests/pom.xml": "e4d2a62cdc3a0ebd0a102b1b99c9a904a9eea96ffafd5b3b7ed42d7e48bf08ff",
+    "jvmd-tests/smoke/AotFixture.java": "b4a7a60568b1e421b35f88a7a2fff54dda0d55f3f827f2b14e8986cb2c04f3d0",
+    "jvmd-tests/smoke/JdiSmoke.java": "b22ece93427607d2cdcd2165b3337e6e26a074e1e620388217c6f12b29e31d9e",
+    "jvmd-tests/smoke/compiler/TolerantCompilerSmoke.java": "196fd8804c9654ef40c9ebdc081dc38d80c48330508a7126c0a3336a86cebd65",
+    "jvmd-tests/smoke/fixtures/base/dev/jvmd/smoke/Debuggee.java": "f86bb225a9b835fc9b5d89c419b33c7368ba68fc9b8df1f82dd8a0f853504169",
+    "jvmd-tests/smoke/fixtures/base/dev/jvmd/smoke/SwapTarget.java": "5c4743301e7dc3b4055e6f4a7f0c8627790b071ee5cbe29d1a7f05d3295b47bf",
+    "jvmd-tests/smoke/fixtures/body/dev/jvmd/smoke/SwapTarget.java": "1ae2e133ac581b748b2504d230dca9e658d8a4f7c0eaef89de983cdb855e3071",
+    "jvmd-tests/smoke/fixtures/enhanced/dev/jvmd/smoke/SwapTarget.java": "4706bef4ad265a7e45a0fa79725e1bf630fd45dc0ff9056d551feb52e53c5fb9",
+    "jvmd-tests/smoke/index/pom.xml": "cfe811f95151ddc247e25e98f407a03a508b7992cbceed63ffbca2aabe9fa2e0",
+    "jvmd-tests/smoke/index/src/main/java/dev/jvmd/smoke/IndexSmoke.java": "62f12ca3e73877bb32747205afef9bd6a6794ab6b1100b4a572246cd04212562",
+    "jvmd-tests/smoke/index/src/main/java/dev/jvmd/smoke/SourceJoin.java": "426fcca0ad4ba733b5ad5fdb817faa33ca140748a16588d46bfab48dbc539057",
+    "jvmd-tests/smoke/resolver/pom.xml": "7f2b100b4194b48a8aac7e89273f2a1c5aaa5a78fbb4c30f44ee82c69ae25d57",
+    "jvmd-tests/smoke/resolver/src/main/java/dev/jvmd/smoke/ResolverOfflineSmoke.java": "a7499262fe3bae8909783fc269f1fef02dca9dd8dcb97d00ec37bbdf326c14ca",
+    "jvmd-tests/smoke/resolver/warmup/pom.xml": "1a209de8201eadc8eba2db09a44440cff981f398d3d0f90c69708692aee61d32",
+    "jvmd-tests/smoke/run-aot.sh": "5cadcb9e56f9ef3b26a709360c6d3e2dcec886a9509e8c0522ef0e4242d083f2",
+    "jvmd-tests/smoke/run-compiler.sh": "33854030bfc787c1f9127fc5a207ac130af74ac2a3511140af371dcde0a3e327",
+    "jvmd-tests/smoke/run-index.sh": "1f5a5efc24e25c82f6999c9762686cfa5d0187998b7f49e160ed6cb33236bbe2",
+    "jvmd-tests/smoke/run-jdi.sh": "54e46d3ec852b7f1db18d2c8c24f353dcc43564fc09024aba69c61ddeab18d4e",
+    "jvmd-tests/smoke/run-resolver.sh": "b1c3be4cb7b9ad920be289ceec0fc8f6018349396858ae207167c639478a693b",
+    "jvmd-tests/src/test/java/dev/jvmd/index/IndexDatabase.java": "7a71f5d0f6ca39037c116289af61ebe5646151f7276439e3810303e9ae8c2882",
+    "jvmd-tests/src/test/java/dev/jvmd/index/SqliteIndexStore.java": "0523127ead58d662db8d30b0807b8d3b8a817831f6bebc1ac6ff747a718f4bc8",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/AnalyzerFaultDegradeTest.java": "35fb5876e02f3cdc1e99faf65abba30d1657c0a500bcc687a77aa543c1235003",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/AnnotationFixtures.java": "9f7efb347237aa3bdbfd848f40f1a671f3db04240fb1f3598fb814ef616bfa23",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/AnnotationProcessingBindingsTest.java": "5141d3e9a98e8b8a5dca087b40bb9bffadf3ce46d8d510063b5ce85f914d17d2",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/AotDaemon.java": "ae116ba2cc11397148d9c5d91a3ce2594991110d81a190562bd3db7c6358ead4",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/AotRuntimeStatusTest.java": "063c23bc10ce6c88bdaf2a20c675b12d899b4cd3ba07eebc52d5f7544b43fcaf",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/AotTrainingScriptTest.java": "403bdc7b779a891820f859846817bdd5aaf2acf9d00f698e80dbc4013bf1f691",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ApiFingerprintInvalidationTest.java": "7f1823e02fc2f477ff0c7107c8c58eb364e772c0124218baa2fd026e9c9eaf81",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ArtifactIndexFormatTest.java": "531d0c8f61fbcee32c805e63563bd5d0943584deb6b88ac54aa8992fed6f55e8",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ArtifactResolutionIdentityTest.java": "9bdc4f205ac16ee871769850a5484c71e5fd6660c22cf6be0377ee9dcde2fb41",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ArtifactSignatureVariantTest.java": "4e984756ebcf5149eb7fe07d08c57225f86a7b96078b8fbaa529fa69fadbac64",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/AuthenticatedRepositoryTest.java": "e92e61e3648de041b7a6855183c80324d64b2124f4bec6118432411da4b15933",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/BatchBindingsTest.java": "b1dedca3e0be60818cd9b48da009a86b3e51ad70a8fefdbb38f61c0b6dc51edc",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/BatchDiagnosticsTest.java": "d77ba8c9ab5017139104849f997867faf9f59995fd38662e9dcdee3bc22bade2",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/BinarySkeletonTest.java": "7e95cd1c39bb14ef8c5eeb04b76de36609b8a3c21b50a3f7843d80bb1149ca91",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/BuiltWorkspaceReaderTest.java": "c45afe199f97c630766db79602233075ef51747ec151e2a6882a3ec413024773",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CanonicalResolutionIdentityTest.java": "81f4a76557f020e63ac362c4d67f71df5c75d88e629ff67d82d34d0071783a86",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ClasspathLifecycleIntegrationTest.java": "3384e33c027db74bcfa029289d1180da0b9c2dbfdbebff597283fb1326d79a53",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ClasspathSearchProofIntegrationTest.java": "7926d1a1504355c096f1ec2c1e8812f9f00986b594ba4e6b5d74347eae2b448c",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ClasspathSequenceTest.java": "a3caf1042897c3fa8cbd5c86b462eaa49bd7d14334abb2dc1fe2596f1809d3c6",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CompactConstructorBindingsTest.java": "6102250c0986e14b52b073742782910649a9aeca62fbbc84b61fbd33b633f0c9",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CompiledEvaluationTest.java": "9b4fa2b7f87571e8eb28775cb4c59c71939137c6e27e6f8f41201958bbbd920a",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CompiledSourcePoolReuseTest.java": "ec33061a10c332b96d9b2c3487e7833424fd0614e0a3066f8dbdcfb119752bcd",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CompilerInputsTest.java": "6635dee084047a00b06f78a67760628cff155775fd997e35b3432d28f39436d5",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CompilerPoolLifecycleTest.java": "06936a656d1a5fc8be29055270f3ab96c01408a9f3fb93f08c248400846cc27d",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CompletionContextResolverTest.java": "61e64aa2b9526cdbf6a75dfb186b1e637d3d6d67a4a7c191e670a00f96af184f",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CompletionPrefixCacheTest.java": "dbff230ad55fc424e2a23185340b4c23715574113cb0b7abcbd815e4b38fc595",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CompletionProbeTest.java": "5ef6bbb67b48f5f32005d9e654ff250affa1f78160b1a4ebec5dd6672e83062a",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ConflictLosersTest.java": "5086e446610621b1844f0a3bae7dc82bdbd1ced0f4ffa3fbbec14acc741559b7",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CorpusAgentSessionTest.java": "278dd5acb9e47fdf74118c71c1f6e57f7779c3e824a2ef85b819fc557a4c4885",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CorpusLspSessionTest.java": "ecd1f833f28c596204b86eb6544ec0ddfc0189c89ea96ae129ee30b740c583b1",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DaemonIndexReadinessTest.java": "8deccf7c2ae3676e5142f312609a315972f1bf8476aa11fd944aa05a0d604c93",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DebugInformationTest.java": "d190a4bfc819bd54428596a4da05e941afee0304aabb8cf7b90155f6e3d089ef",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DebuggerSteppingTest.java": "d8214894b392247092c70da560e7159aac39a106f1eef7f5cf552d911bfacb79",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DependencyDefinitionTest.java": "d1b4aa9cc902f90c738d311f9baea0ce321e01856759b987ed0b54fcee2483b1",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DependencyFindPaginationTest.java": "f4f4bc139d8c4f778262e1238287e53ddb4769568ef575fbdfbc12c9abc7b2f5",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DependencyGraphToolTest.java": "b210975f5a2b82879d3db0eeffac2745f41f64a395b415abfc9c4ad1a9be5279",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DependencyHierarchyTest.java": "af18cee12c5d92559c773921460b3f32a1336faaeaf4c263c25d931a73f90b49",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DiagnosticIdentityTest.java": "45d5ff866d5831338cda9d497823d2a8ec232880cb38c07f9d3f2ab7d530f3f8",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DiagnosticRequestContextTest.java": "4970f3bb8e2e089d82f52ffbbeae41d601946a75c4b5cd04c66141ada787100b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DiagnosticSchedulingTest.java": "84016e3b85a178666e030b811982184ea51421e7ec7f21cb3fb59753a14ea428",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DocumentContextProofTest.java": "b78097537d68a46413dc906ef9ae583eb742876e98ffae2e0ba55d03f31c235d",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DocumentSynchronizationTest.java": "ed47b3bb541278f18b9ec7c1c7c4f12ab6f47ee6507c8c73f39c3667f56ca9d3",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/EagerRepositoryIndexTest.java": "fdb7466b24e512b10a02c5eb0e355f265f927cf279cdadb8d1d92b477961fdf4",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/EffectiveCompilerOptionsTest.java": "0f790289423ded03bedcf60a4adcfc547fc09cd27ea70df05cbe65662fb133d7",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/EnhancedHotSwapTest.java": "aec83e44a474a77d39037d3b0b6b9d7e615f918595cc8b995d466c05203164fe",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/EnvelopeTest.java": "db25673757b868505cc77e83ac4f5d4f4acc1d70c3398706283a17df687e30a5",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/EvaluationDeadlineTest.java": "3c743121b31ac63431d2bb4bca082fb4fe839ff6cd8b9cda08bc9e305cca4cb7",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ExternalAnnotationProcessingTest.java": "d667635526a49e1103a35ffcb20fc75cfffef850427a57646d7a7269ade4cd50",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ExternalSourceRootTest.java": "d4c171b665faee3b7af14bf5bd275b3b70c90db96f72ef7efc503cfb6ced7246",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/FileInventoryTest.java": "252d9d36b3032df9470181acfebf3c6d20c1731f87d348560f463a8918858c87",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/FindDepthPaginationTest.java": "2eb727d88438bb1d2990126dc20a53e75882deef02d6f9a30bb883dd6628c4b3",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/FocusedSignatureDependencyTest.java": "fc1e827c08603cbdbda15876b58d04c853270eeb236e4734244faa694b6acef7",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/FocusingTest.java": "6cb1c2277e5d0574546370ed8c12c502dd642d99f4cc5fce8fe857c90f50ba7e",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ForbiddenIdentifiersTest.java": "592bfedddd1d94b1259c8f7de9c4121124b671ae9c938e10dc19422635f00d5d",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/GeneratedSourcePathTest.java": "18188caccf8cee3430c1d77ff303f23f1127db401520b303ea43167511dcfe56",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/HotswapAgentTest.java": "1e668d80fba29283bc92aeafee04f58d7b70a67e0a8ba38e122f8cb6d03acdf1",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/IdentifierSweepTest.java": "725e156c9ed3a0207e40dd11b1e7c59ef1d06063f5f5bdcce3733b5b3af99479",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/IdentifierTokensTest.java": "ac536b887a868d6d2019c31ec2ac448661cdd941c9e75276878c153052787760",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/IdleShutdownTest.java": "1ef5524112f6e77cb7f2f7cecbc4a8b7ab972a14edad93bf8e5ded3b65bd02f6",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/IndexFixtures.java": "446f9fa8f1fe70097187bcc054a26c42c46e55e6f6ee00e3c381865677922389",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/IndexInvalidationTest.java": "2c6bb8a82f442db06f9e874eb2646d98ce67a42f5625cf290b0b1f6f53a1e1d8",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/IndexMembershipMigrationTest.java": "24cb1287411c8067f44654333561189225a8085fcee12ece640b3b1f48cb1cac",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/IndexSchemaTest.java": "6aa8d2ce9547e3ec565a2d36daaee3d21ec3299363d027332047575aff74e6ad",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/IndexSearchTest.java": "287ce5521cefca9fabe1075749164569d60a366ac82906e12c31f909c8a9e41e",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/IndexStoreContractTest.java": "77ebc4f5d3fb429e3dd7bbddc3dde7699b529d1b83ecb916178d1471e06dc19d",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/IndexedFileManagerTest.java": "71d01aa452e1d1cd30a20fa1a6fa5aac53ed900722f5d2bc0203fdb226e07d39",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/InheritDocTest.java": "cf9ca41e31f99953ac14a234122cb04aa4e2c8cec75af8f267ec4dbc0fb19ac4",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/InputBoundaryRepairTest.java": "9b153c30280c7a7b24bbce6e29bea12587fb756c583050b2389cb535f604716b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/JlinkImageTest.java": "93fdec22bb140bb12f7c8fae863abcb332a339d035106ba9193d0d828bcdd045",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/JsonRpcServerTest.java": "4b4029d1603f521d124efe8fb41b9cace10b4bfca64494340a4be0cc01586f43",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/LazyCodeReferencesTest.java": "97e1221d64b0e873540ac6433c4e43e06af34c782bd153cb99fc87a54f06e4e1",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/LiveSourceStateTest.java": "993686c07f1e85500c317b2038e23cbc2c07f32aec0fbe71fea2fcb4426468e6",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/LiveStateTreeTest.java": "fd701f8c49c168b64816fa560c60a77cde3bc6ab90b7e41c675c65c2286ffc79",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/LiveVerifiedAgreementTest.java": "8b494b2d9a0a1c727dc64f1c0673e8e78895681271545428069440816ab43a93",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/LiveVerifiedDiagnosticsTest.java": "3c6d7c5463b25f3c0e39f9a6e846ffb22d8911ae396d5e980a2534fbe7680640",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/LocalModuleIndexTest.java": "3d943fadbdf98d7d16e99bea49badb4e2c944897d1ccf7a4750f3721e7e11930",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/LombokPolicyTest.java": "91575545c6693e789f5db0231ab6e36d22521df168ae81b62da84753b37ea6f9",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/LspFacadeTest.java": "5f185b184b2bba385fe7690ad8835eada10b8ab92807281814be1eaacf32f481",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/LspStdioTest.java": "f92fd609a7f44cf7efcaccf40e9dcb5b7708e47f43991cd99b0876ef7ed0cdbd",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/MachineSemanticQueryProofTest.java": "f4d8ba92d3de35c10c7aea90a531f76f9549ceb4ebb73cbe3767263c229e0fcf",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/MachineWorkspaceIdentityTest.java": "7577f6ecb188cf586f7ba560a4cead61358190e15f598c58f549f88232413263",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/MaintainedCompletionContextTest.java": "82201691a29316b6e7f308c3cb6a2a3545fb773063b5b05c06bc15042cbf9e61",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/MaintainedSemanticObservationTest.java": "ee9035ac84b98d427220788a320e75238400b656cfddbfd49c8c8cfd3db9ffa3",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/Maven383CompatibilityTest.java": "25d74853ee44805092ea364b9332cb51553eec073f8a7938bdabfc388f0ffff6",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/Maven4ResolutionTest.java": "c29f25604d26bf17cdcc27c3871f8aa5f8dc96e4a338cdb079343942db9f5b95",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/MavenBundleIsolationTest.java": "bcc7804ac5e52a4198f1d7bb3657216b6aeaa81ac2c07400c9488af03a655e51",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/MavenFixtures.java": "5aa1adc5a940d6928fa447c2647838e2da21a255b8868bb0fd03c628148a5840",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/MavenWorkspaceResolutionTest.java": "f5cf1dd72189b35316fe74b9456d279a8ea36f157ac7dc2574283f56d10339a3",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/McpResponseBudgetTest.java": "eadc92504a02c00e5a5533988f5dced8c557aafde90c38fb46a9f77c5e195f9b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/McpStdioTest.java": "ccfc1d8138208ca550f20bec5cab131e351c2cffda764a01616525e6f1887b3b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/McpToolSchemasTest.java": "8ca51838e8f90a1c5773021bf00f0b607502792df8da2ffdb61339d200b54264",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ModularAnalysisTest.java": "aed1f1b123c0e58b3f1a9bf4104879d3000b53f58a8944b2e740e4be783b5e8c",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ModuleAnalyzerContextReuseTest.java": "7bd50ff4cf9b30d3816f006e658463ce85e70e685a3d439970638240225f5537",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ModuleArchitectureTest.java": "49bee6eafb9a890685d44e45644da147dd80fe7b6dbf9ca4a461fa670dd2e7d9",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/MultiModuleApiChangeTest.java": "8cadd80400c4eb9bf3f1ed0c41064ded63137ea55b283f7304d8d87b69838705",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/MultiReleaseIndexTest.java": "34a5dca0f88081ce5801363ab16da39b064b83e9ebb1e76d665b5b240ee25f19",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/NamePathResolutionTest.java": "73405efe874cd6584a32e57f7924ce6c81429fdea42c374e67ebce292aadb892",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/NamespaceResolutionProofsTest.java": "c65f74dafcddaa780041788213aad05ccbc94fd81b09d8c6ee716daa9b322c39",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ObjectHandleExpiryTest.java": "3d31d88205c2f3ca5e56023629c30ecd4aad7647f273095b13935e3a7cb1ddf6",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/OfflineFirstResolutionTest.java": "5b96476d11e384f78ca11222132fabdcaae61c6c365da01f758d60799fe40b03",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/OverlayFixtures.java": "797e03f8763ca4290a40d1f006a92554dcc5b505b33a0f2bd51fa2dd8949166a",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/PackageOverviewTest.java": "22220c6e87ae0bc20c9e41e1759d76bb0e9102c3790abcc5d4c640f0719dc60e",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ParseOverviewTest.java": "9fae47e52466d064ea6685d3cee85c926191918eec103cffb03cd554f7de3c14",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/PersistentDiagnosticsTest.java": "f6d86fb34f42443107aae47a231010aecf1bcab4fc8aecddc26d284cdf13dbbd",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/PomChangeClasspathDiffTest.java": "2927321be5c8f537252c8952e0ba8765fd37d67ed97b06f137a2857c65b46185",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ProjectResolutionHotPathTest.java": "31b63061944a95fee4db7622503973febc0744b049d55c11a007681f1eee02c8",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/QueryProofTest.java": "7ef467c32a81800c3f8b5026609fdd0589ac65e1c69ff6bba592e4c218b79e2b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ReferenceIndexStorage.java": "27737a60cba0b0040286014f36d3424a35931fea004d45572b95d1738913d0a7",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ReleasePlatformReuseTest.java": "29d8b026d1c101f867ddb4a2741be3a813f2d5676b71cbc7bc1a14da72a8c0b7",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RepositoryIndexExitTest.java": "8a7ce45b28fb58058cab42c40359818bdfb1ef953033083c85f058a4bf4a1168",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RequestScopeConcurrencyTest.java": "7e6d45459a1d0e1ec3934b71ffd62d46c54622c5621da63f94ac1d14e3b267ad",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RequestScopeOptionalMetricsTest.java": "c8d668f6fe54201bf7970dc034adf05083aab2b3587c8fcc1f2aec88a45f0458",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RequestScopeTraceTest.java": "44d5f185b908240610b9bd9241f9406c6472ce6407e3d656c3231c4a429502d2",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ResidentCompletionCorrectnessTest.java": "62ef6d88aa6b52df5a45012e0a953089cc28d9d05699dcfb94469ae56fbe41cc",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ResidentSemanticStateTest.java": "0770b739b8f7d06602ca02dbdcf99134bb0451277fef7b265fd11fe3fcd7924c",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ResolutionCacheTest.java": "73ceaf3b1b08725715f2d6fde693acfb2f52c27ae4994e974b9a6b5cdc492d9a",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ResolverBootstrapTest.java": "449b9ac06a0dd982153f422806dc8a4fda722861dbc26beebfb873a2d616d20c",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ResolverMajorAlignmentTest.java": "825f9c945ce2bb8082005d954da4f5f0ccd3f1923a205e2b5711c3a1250e4f76",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ResponseBudgetTest.java": "100634ea5bc6e1cb13c593a753e28fe643b7e15e8218e40f0a9fdac728061ae1",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RetainedSessionAttachTest.java": "6cf739071e3dc26a0f1c0808807fd288bcdeb99f2c00d56f2f68f0c70736820b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ReverseDependencyInvalidationTest.java": "bed438a3d8e23910bdd2f3b2bdd35865b21cec34eebf17faa454e6c77d07f1e0",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RocksSqliteAgreementTest.java": "4f756658520d1c42832a2f1f2cdf4a8932da931ccb2f853688e369a0fdbe4386",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RocksStorageIntegrationTest.java": "97bc4ff84f70d8fe46765238ec2ba74415f15d7249630c27f4b2c46c377e2a7b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RocksStoreIntegrationTest.java": "7cc618fa065670dda455352ce7ae41ce23d654c1b09557cf8f958cf217063ad7",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RuntimeCompilerIsolationTest.java": "9b67658e06c0bfba61bd774a6a4b0baebd85fb97858c8b17dde1e1c3d609ffcb",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RuntimeFixtures.java": "cef4c1df99ab4f7b09af026e77089d5a00945df02ce4b9cc58095f6b71e967ca",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RuntimeInspectionTest.java": "79e0815b10779c793fe3ca59d3d2288303c06d7521f6a703be66b0eb05feeccc",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RuntimeProtocolTest.java": "58d19994bc8ba150c342a6124c0276dfc987d91608d37e202f2c8a2bf675393b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ScopedNamePathTest.java": "938538fa941c571ec4c00069b87d3b3c8865e939e01d07fadce3dcb9b37ae8e2",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SemanticClasspathIdentityTest.java": "b50b05c42194a655ba1d7c1b7ec989c7fa2a547c1595e9ecc7164a1023a79423",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SemanticEditsTest.java": "6770ceb2048075b3cdb6ae2eedbb99779dcb33f6a37f95b3c16e942722ec265f",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SemanticFactLifetimeTest.java": "7ac01ae7b8ab5482b2b88188637d1fd06b7c46fa2f990e015aa0a93e8933e750",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SemanticFactResolutionIdentityTest.java": "bac02094e2352bb577e023223f93c6b839898f59d5065130095df2b2b21fd534",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SemanticProofDagTest.java": "fee294d8b21335b91d6e64789af24a1849fcdbad5f8e2df35d25c2c6275b27af",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SemanticReadViewTest.java": "89cc906abb20ac1c55831c5c75a9a74fed28695cc87d56326c51a4734b8e1d6b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SessionManagerTest.java": "69ff3b1214639f2237a81b64a2f4a8988d43855d4c591331b7cd9b717b038364",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SharedClasspathIdentityTest.java": "5f659293a93cc62f8d18b6a1a713f85a315ed45457eb87efe292c0ee322086f5",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SignatureClosureTest.java": "95074e6e1db915d1cd082d4bfa3fcdbfa79cce34020326fbc17daed50b4ba611",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SourceContextReuseTest.java": "1dd976edd7034ad9fdf36f678e96650cae3909844eb9bd1fec33f7ea56ed76f8",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SourceDocumentationJoinTest.java": "3c95ed588911b0a74b2458a631ec017465064823a44e4606c0adc406c409ab98",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SourceEditBinaryCacheTest.java": "f492a31d3eed37a29e3cf7985c5bedb8ae4035cea6abfcbbfc22f605854c5796",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SourceFactsMigrationTest.java": "418a69f67ceedee0e0a395d70ecb9f032ff1fddbe38f062505f786f7c1cb2e9a",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SourceIndexPublisherTest.java": "97bd24eb2d278dbdcf1d3581caf97f4f16fe0649ee207badd6d675bdf4ce962f",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SourceJarBodyTest.java": "90fd0d0c5aba33630205c142a48182fe1d95582fa7bde88d1726cb32be1d0b45",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SourceOverlayNavigationTest.java": "64ecd0380f7d2ec88cb75870cf68c9bf79a4efa2bcf19edf33ed4b21050a8e7b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SourceProofMutationIntegrationTest.java": "703d93445ce1f8593e7aa464e2d3b9dfa8a0150262dc6159640c26ec04559c9a",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/StaticImportRenameTest.java": "76e9a8c09a6e71f9bbbd8bfd10a81236a7be82db436997418266cd0b9d7cb3cf",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/StructuredRequestLogTest.java": "e725f12be2d2bbd3498d9a9c1e896f6f1d1fe470c8bec7451187794e5f08029c",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SyntaxDiagnosticsTest.java": "d046b4cb244f684e8c9942d1ed15305938b0a6a81a72efbcabaf76908da2121b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/TestSupport.java": "0349ad674cc1c6425657bc7ac2cbe85532c39a06d2cbb21faa6efbf9476958a6",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/TierOneOverviewTest.java": "0a35910bb7b44c69e695e97a72cfa9bbf61398fad33b118c8d6401960dd5a81c",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/TolerantAttributionTest.java": "5ea4d8bf078961a7d726aebb06e0850b61e712f7b527e20017fa2ca00b5a4366",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/UnimportedTypeCompletionTest.java": "bb4aeb760ad6249a3623fb7ca81c19b1e325a840f5760026982ef787d599368e",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/UnsavedDocumentsTest.java": "6a63073a0e41d317f93a7c49bf68e99388e5bddc21ae4d19868521162f9e9c06",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceBindingsCacheTest.java": "6272315e2ca48f66c33d9b9154d9c265ff3efde508d5b012988c7bb2b6129a08",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceBindingsTest.java": "3fab7acedf945f4decabb974b457808f19af048e199ee5315575d959316bc6eb",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceDebugSourceTest.java": "c7831de12262b75c54eff289a29ef456382fade66b19efe4af1414149356bc92",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceIndexLoadTest.java": "c7976aba7cf2daff99f7f2b03185c38f81c0932181365cb6b8510b966855a55c",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceManifestTest.java": "97c57ec72ccc48d31c822f4f4c70b811496edf67cd107737db94d304eed0aa9a",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceReaderSmokeTest.java": "9183054ffd906234d808b8635efc5337a26bb253f73f81114bd7bae3a099ecdd",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceSemanticProtocolTest.java": "176a172f137b75703feca66a3f9e89a5a3ada858fcfdf1f63f227fd5bc400f06",
+    "jvmd-tests/src/test/resources/dev/jvmd/index/schema-1.sql": "85da73819a607923e4f7765919ed2193899a2ff484e7f1dd1f2a57d2cf5e1f33",
+    "jvmd-tests/src/test/resources/dev/jvmd/index/schema-2.sql": "4ecccacdee89fc2f8ba1c7b5538973d2cf5d2e755d77dc9a703fe6a73deabb77",
+    "jvmd-tests/src/test/resources/dev/jvmd/index/schema-3.sql": "25393b8721f945faa14cec43cfe81a98700b96212ba22e59741f11f93c2add5d",
+    "jvmd-tests/src/test/resources/dev/jvmd/index/schema-4.sql": "da7513664b6fed8258d2a7186baade9090883ba1a05697eba735e2f679427ce7",
+    "jvmd-tests/src/test/resources/mcp-tools.json": "535a01b89f99f43a7c31b4dd41ad23804060a59fb625ae28ae35e43a7d64b9e2",
+    "pom.xml": "b8eed8905c4cea3457267000c77e75e9ea443ce25274d55e9549dbca8dcc502f",
+    "shim/package.json": "248960e377dbf24751b478ff2d97abad2ecaf2490621ab01c4d8020539c4e0e0",
+    "shim/src/lsp.ts": "c61645dcf1325082a122074dce913c17966c2a16a2cffd6fdeb5dea93ce0a6a5",
+    "shim/src/main.ts": "70de5c10e41ce961267fa2a5c48f2d3e73593ce70b8d7e81535238194d7a8f86",
+    "shim/src/mcp.ts": "5d6574d5fe3c7674ebab139592c4d48083f5b9421638d89d1fa4399d2cf36b36",
+    "shim/src/transport.ts": "80d126270c40ed28c6262651be8309a1ce19289704ec12330c8dba621ee4a684",
+    "shim/test/lsp.test.ts": "53b743e44a7d3d7e8b9eaee62891ddbff138fc59ffc0e0b42dfe7084589fbcf3",
+    "shim/test/mcp.test.ts": "4e6c6a936cb4b4f2ce1bb58c0488ba7029a23e26799dd5916297f06c31253bfb",
+    "shim/test/transport.test.ts": "a956c5cd668c505394747e3c02279900f9ec9429722c283d501ae891bffc12bb"
+  },
+  "registry": [
+    {
+      "id": "SES-01/start-stop",
+      "family": "SES-01",
+      "apis": [
+        "API-001",
+        "API-002",
+        "API-003",
+        "API-004"
+      ],
+      "variant": "fresh"
+    },
+    {
+      "id": "SES-02/cancel",
+      "family": "SES-02",
+      "apis": [
+        "API-005"
+      ],
+      "variant": "outstanding-or-completed race",
+      "correctnessOnly": true
+    },
+    {
+      "id": "DOC-01/open",
+      "family": "DOC-01",
+      "apis": [
+        "API-010",
+        "API-013"
+      ],
+      "variant": "open"
+    },
+    {
+      "id": "DOC-01/edit",
+      "family": "DOC-01",
+      "apis": [
+        "API-010",
+        "API-013",
+        "API-011"
+      ],
+      "variant": "edit"
+    },
+    {
+      "id": "DOC-01/save",
+      "family": "DOC-01",
+      "apis": [
+        "API-010",
+        "API-013",
+        "API-011",
+        "API-012"
+      ],
+      "variant": "save"
+    },
+    {
+      "id": "DOC-01/discard",
+      "family": "DOC-01",
+      "apis": [
+        "API-010",
+        "API-013",
+        "API-011"
+      ],
+      "variant": "discard"
+    },
+    {
+      "id": "CMP-01/first-repeat",
+      "family": "CMP-01",
+      "apis": [
+        "API-044"
+      ],
+      "method": "textDocument/completion",
+      "capability": "completionProvider",
+      "variant": "first/repeat without resolve"
+    },
+    {
+      "id": "CMP-01/narrow",
+      "family": "CMP-01",
+      "apis": [
+        "API-044",
+        "API-011"
+      ],
+      "method": "textDocument/completion",
+      "capability": "completionProvider",
+      "variant": "narrower prefix"
+    },
+    {
+      "id": "CMP-01/api-edit",
+      "family": "CMP-01",
+      "apis": [
+        "API-044",
+        "API-011"
+      ],
+      "method": "textDocument/completion",
+      "capability": "completionProvider",
+      "variant": "cross-document API edit"
+    },
+    {
+      "id": "CMP-01/resolve",
+      "family": "CMP-01",
+      "apis": [
+        "API-045"
+      ],
+      "method": "completionItem/resolve",
+      "capability": "completionProvider.resolveProvider",
+      "variant": "resolve exact name()"
+    },
+    {
+      "id": "CMP-01/apply",
+      "family": "CMP-01",
+      "apis": [
+        "API-044",
+        "API-045"
+      ],
+      "method": "textDocument/completion",
+      "capability": "completionProvider",
+      "variant": "apply returned text and import edits"
+    },
+    {
+      "id": "CMP-01/edit-resolve",
+      "family": "CMP-01",
+      "apis": [
+        "API-044",
+        "API-045"
+      ],
+      "method": "completionItem/resolve",
+      "capability": "completionProvider.resolveProvider",
+      "variant": "fresh item after API edit"
+    },
+    {
+      "id": "CMP-02/hover",
+      "family": "CMP-02",
+      "apis": [
+        "API-047"
+      ],
+      "method": "textDocument/hover",
+      "capability": "hoverProvider",
+      "variant": "first/repeat"
+    },
+    {
+      "id": "CMP-02/signature",
+      "family": "CMP-02",
+      "apis": [
+        "API-048"
+      ],
+      "method": "textDocument/signatureHelp",
+      "capability": "signatureHelpProvider",
+      "variant": "cursor active argument"
+    },
+    {
+      "id": "NAV-01/definition",
+      "family": "NAV-01",
+      "apis": [
+        "API-050"
+      ],
+      "method": "textDocument/definition",
+      "capability": "definitionProvider",
+      "variant": "first/repeat/declaration move"
+    },
+    {
+      "id": "NAV-02/references-false",
+      "family": "NAV-02",
+      "apis": [
+        "API-053"
+      ],
+      "method": "textDocument/references",
+      "capability": "referencesProvider",
+      "variant": "includeDeclaration=false"
+    },
+    {
+      "id": "NAV-02/references-true",
+      "family": "NAV-02",
+      "apis": [
+        "API-053"
+      ],
+      "method": "textDocument/references",
+      "capability": "referencesProvider",
+      "variant": "includeDeclaration=true"
+    },
+    {
+      "id": "NAV-03/document-symbol",
+      "family": "NAV-03",
+      "apis": [
+        "API-055"
+      ],
+      "method": "textDocument/documentSymbol",
+      "capability": "documentSymbolProvider",
+      "variant": "first/repeat"
+    },
+    {
+      "id": "VIEW-01/tokens",
+      "family": "VIEW-01",
+      "apis": [
+        "API-073"
+      ],
+      "method": "textDocument/semanticTokens/full",
+      "capability": "semanticTokensProvider",
+      "variant": "first/repeat/line shift"
+    },
+    {
+      "id": "REF-01/prepare",
+      "family": "REF-01",
+      "apis": [
+        "API-086"
+      ],
+      "method": "textDocument/prepareRename",
+      "capability": "renameProvider",
+      "variant": "valid symbol"
+    },
+    {
+      "id": "REF-01/rename",
+      "family": "REF-01",
+      "apis": [
+        "API-087"
+      ],
+      "method": "textDocument/rename",
+      "capability": "renameProvider",
+      "variant": "exact uses and homonym protection"
+    },
+    {
+      "id": "DIA-01/error-fix",
+      "family": "DIA-01",
+      "apis": [
+        "API-010",
+        "API-011",
+        "API-111"
+      ],
+      "variant": "error publication and exact-version clear"
+    },
+    {
+      "id": "NAV-01/declaration",
+      "family": "NAV-01",
+      "apis": [
+        "API-049"
+      ],
+      "capability": "declarationProvider",
+      "variant": "exact declaration"
+    },
+    {
+      "id": "NAV-01/type-definition",
+      "family": "NAV-01",
+      "apis": [
+        "API-051"
+      ],
+      "capability": "typeDefinitionProvider",
+      "variant": "exact receiver type"
+    },
+    {
+      "id": "NAV-01/implementation",
+      "family": "NAV-01",
+      "apis": [
+        "API-052"
+      ],
+      "capability": "implementationProvider",
+      "variant": "interface implementations exclude homonym"
+    },
+    {
+      "id": "NAV-02/highlights",
+      "family": "NAV-02",
+      "apis": [
+        "API-054"
+      ],
+      "capability": "documentHighlightProvider",
+      "variant": "exact local uses then added use"
+    },
+    {
+      "id": "NAV-03/workspace-symbol",
+      "family": "NAV-03",
+      "apis": [
+        "API-057"
+      ],
+      "capability": "workspaceSymbolProvider",
+      "variant": "exact symbol then saved new declaration"
+    },
+    {
+      "id": "NAV-03/extended-outline",
+      "family": "NAV-03",
+      "apis": [
+        "API-056"
+      ],
+      "extension": true,
+      "variant": "extended exact source symbols"
+    },
+    {
+      "id": "REL-01/incoming",
+      "family": "REL-01",
+      "apis": [
+        "API-063",
+        "API-064"
+      ],
+      "capability": "callHierarchyProvider",
+      "variant": "exact call sites and fresh prepared item"
+    },
+    {
+      "id": "REL-01/outgoing",
+      "family": "REL-01",
+      "apis": [
+        "API-063",
+        "API-065"
+      ],
+      "capability": "callHierarchyProvider",
+      "variant": "exact call sites and fresh prepared item"
+    },
+    {
+      "id": "REL-02/supertypes",
+      "family": "REL-02",
+      "apis": [
+        "API-066",
+        "API-067"
+      ],
+      "capability": "typeHierarchyProvider",
+      "variant": "direct related type and parent change"
+    },
+    {
+      "id": "REL-02/subtypes",
+      "family": "REL-02",
+      "apis": [
+        "API-066",
+        "API-068"
+      ],
+      "capability": "typeHierarchyProvider",
+      "variant": "direct related type and parent change"
+    },
+    {
+      "id": "VIEW-02/folding",
+      "family": "VIEW-02",
+      "apis": [
+        "API-071"
+      ],
+      "capability": "foldingRangeProvider",
+      "variant": "class fold and shifted lines"
+    },
+    {
+      "id": "VIEW-02/selection",
+      "family": "VIEW-02",
+      "apis": [
+        "API-072"
+      ],
+      "capability": "selectionRangeProvider",
+      "variant": "nested ranges contain cursor"
+    },
+    {
+      "id": "VIEW-01/inlay-hints",
+      "family": "VIEW-01",
+      "apis": [
+        "API-074"
+      ],
+      "capability": "inlayHintProvider",
+      "variant": "argument names within requested range"
+    },
+    {
+      "id": "VIEW-03/code-lens",
+      "family": "VIEW-03",
+      "apis": [
+        "API-075",
+        "API-076"
+      ],
+      "capability": "codeLensProvider",
+      "variant": "resolve reference lens from this response"
+    },
+    {
+      "id": "FMT-01/whole",
+      "family": "FMT-01",
+      "apis": [
+        "API-077"
+      ],
+      "capability": "documentFormattingProvider",
+      "variant": "apply edits; preserve tokens; idempotent"
+    },
+    {
+      "id": "FMT-01/range",
+      "family": "FMT-01",
+      "apis": [
+        "API-078"
+      ],
+      "capability": "documentRangeFormattingProvider",
+      "variant": "apply edits; preserve tokens; idempotent"
+    },
+    {
+      "id": "FMT-01/on-type",
+      "family": "FMT-01",
+      "apis": [
+        "API-079"
+      ],
+      "capability": "documentOnTypeFormattingProvider",
+      "variant": "apply edits; preserve tokens; idempotent"
+    },
+    {
+      "id": "GEN-01/overrides",
+      "family": "GEN-01",
+      "apis": [
+        "API-096",
+        "API-097"
+      ],
+      "extension": true,
+      "variant": "one selected generator; apply and compile"
+    },
+    {
+      "id": "GEN-01/equals-hashCode",
+      "family": "GEN-01",
+      "apis": [
+        "API-098",
+        "API-099"
+      ],
+      "extension": true,
+      "variant": "one selected generator; apply and compile"
+    },
+    {
+      "id": "GEN-01/toString",
+      "family": "GEN-01",
+      "apis": [
+        "API-100",
+        "API-101"
+      ],
+      "extension": true,
+      "variant": "one selected generator; apply and compile"
+    },
+    {
+      "id": "GEN-01/accessors",
+      "family": "GEN-01",
+      "apis": [
+        "API-102",
+        "API-103"
+      ],
+      "extension": true,
+      "variant": "one selected generator; apply and compile"
+    },
+    {
+      "id": "GEN-01/constructors",
+      "family": "GEN-01",
+      "apis": [
+        "API-104",
+        "API-105"
+      ],
+      "extension": true,
+      "variant": "one selected generator; apply and compile"
+    },
+    {
+      "id": "GEN-01/delegates",
+      "family": "GEN-01",
+      "apis": [
+        "API-106",
+        "API-107"
+      ],
+      "extension": true,
+      "variant": "one selected generator; apply and compile"
+    },
+    {
+      "id": "PRJ-01/membership",
+      "family": "PRJ-01",
+      "apis": [
+        "API-025",
+        "API-030"
+      ],
+      "command": "java.project.getAll",
+      "variant": "exact imported project and main-source classification"
+    },
+    {
+      "id": "PRJ-01/reimport",
+      "family": "PRJ-01",
+      "apis": [
+        "API-026",
+        "API-025"
+      ],
+      "command": "java.project.import",
+      "variant": "explicit import preserves exact membership"
+    },
+    {
+      "id": "PRJ-02/compiler-settings",
+      "family": "PRJ-02",
+      "apis": [
+        "API-028",
+        "API-029",
+        "API-022"
+      ],
+      "command": "java.project.updateSettings",
+      "variant": "reported compiler settings follow one declared change"
+    },
+    {
+      "id": "PRJ-02/refresh-single",
+      "family": "PRJ-02",
+      "apis": [
+        "API-023",
+        "API-028"
+      ],
+      "extension": true,
+      "variant": "on-disk compiler configuration then refresh"
+    },
+    {
+      "id": "PRJ-02/refresh-multiple",
+      "family": "PRJ-02",
+      "apis": [
+        "API-024",
+        "API-028"
+      ],
+      "extension": true,
+      "variant": "on-disk compiler configuration then refresh"
+    },
+    {
+      "id": "PRJ-02/jdk",
+      "family": "PRJ-02",
+      "apis": [
+        "API-038",
+        "API-039",
+        "API-028"
+      ],
+      "command": "java.project.updateJdk",
+      "variant": "select the pinned runtime and verify actual project VM"
+    },
+    {
+      "id": "ENV-01/classpath-runtime",
+      "family": "ENV-01",
+      "apis": [
+        "API-031",
+        "API-035"
+      ],
+      "command": "java.project.getClasspaths",
+      "variant": "declared runtime scope and source roots"
+    },
+    {
+      "id": "ENV-01/classpath-test",
+      "family": "ENV-01",
+      "apis": [
+        "API-031",
+        "API-035"
+      ],
+      "command": "java.project.getClasspaths",
+      "variant": "declared test scope and source roots"
+    },
+    {
+      "id": "ENV-01/classpath-roundtrip",
+      "sourceDirectory": "src",
+      "family": "ENV-01",
+      "apis": [
+        "API-032",
+        "API-028"
+      ],
+      "command": "java.project.updateClassPaths",
+      "variant": "read current entries, update once, verify identical entries"
+    },
+    {
+      "id": "BLD-01/workspace-full",
+      "family": "BLD-01",
+      "apis": [
+        "API-040"
+      ],
+      "extension": true,
+      "variant": "workspace full"
+    },
+    {
+      "id": "BLD-01/workspace-incremental",
+      "family": "BLD-01",
+      "apis": [
+        "API-040"
+      ],
+      "extension": true,
+      "variant": "workspace incremental"
+    },
+    {
+      "id": "BLD-01/workspace-error",
+      "family": "BLD-01",
+      "apis": [
+        "API-040"
+      ],
+      "extension": true,
+      "variant": "workspace error"
+    },
+    {
+      "id": "BLD-01/projects-full",
+      "family": "BLD-01",
+      "apis": [
+        "API-041"
+      ],
+      "extension": true,
+      "variant": "projects full"
+    },
+    {
+      "id": "BLD-01/projects-incremental",
+      "family": "BLD-01",
+      "apis": [
+        "API-041"
+      ],
+      "extension": true,
+      "variant": "projects incremental"
+    },
+    {
+      "id": "BLD-01/projects-error",
+      "family": "BLD-01",
+      "apis": [
+        "API-041"
+      ],
+      "extension": true,
+      "variant": "projects error"
+    },
+    {
+      "id": "NAV-03/search-filter",
+      "family": "NAV-03",
+      "apis": [
+        "API-058",
+        "API-060"
+      ],
+      "extension": true,
+      "variant": "source/project/limit filter and resolve original workspace symbol"
+    },
+    {
+      "id": "NAV-01/qualified-name",
+      "family": "NAV-01",
+      "apis": [
+        "API-061"
+      ],
+      "command": "java.getFullyQualifiedName",
+      "variant": "exact declared type name"
+    },
+    {
+      "id": "NAV-01/stack-location",
+      "family": "NAV-01",
+      "apis": [
+        "API-062"
+      ],
+      "command": "java.project.resolveStackTraceLocation",
+      "variant": "known frame source line"
+    },
+    {
+      "id": "NAV-01/super-link",
+      "family": "NAV-01",
+      "apis": [
+        "API-059"
+      ],
+      "extension": true,
+      "variant": "overriding method links to the direct superclass declaration"
+    },
+    {
+      "id": "BLD-02/first-unchanged-repeat",
+      "family": "BLD-02",
+      "apis": [
+        "API-043"
+      ],
+      "command": "java.protobuf.generateSources",
+      "sourceDirectory": "src/main/java",
+      "fixture": {
+        "ProtoUse.java": "package bench;\nimport bench.generated.Greeting;\npublic class ProtoUse {\n    public String message() { return Greeting.newBuilder().setMessage(\"hello\").build().getMessage(); }\n}\n"
+      },
+      "variant": "real main/test protoc generation; independent compilation and serialization; type readiness; unchanged repeat"
+    },
+    {
+      "id": "FMT-02/imports-request",
+      "family": "FMT-02",
+      "apis": [
+        "API-081"
+      ],
+      "extension": true,
+      "fixture": {
+        "Imports.java": "package bench;\nimport java.util.Set;\nimport java.util.List;\npublic class Imports { public List<String> values; }\n"
+      },
+      "variant": "organize and apply; used import retained; unused import removed"
+    },
+    {
+      "id": "FMT-02/imports-command",
+      "family": "FMT-02",
+      "apis": [
+        "API-082"
+      ],
+      "extension": true,
+      "command": "java.edit.organizeImports",
+      "fixture": {
+        "Imports.java": "package bench;\nimport java.util.Set;\nimport java.util.List;\npublic class Imports { public List<String> values; }\n"
+      },
+      "variant": "organize and apply; used import retained; unused import removed"
+    },
+    {
+      "id": "FMT-02/imports-save",
+      "family": "FMT-02",
+      "apis": [
+        "API-014"
+      ],
+      "extension": false,
+      "capability": "textDocumentSync.willSaveWaitUntil",
+      "fixture": {
+        "Imports.java": "package bench;\nimport java.util.Set;\nimport java.util.List;\npublic class Imports { public List<String> values; }\n"
+      },
+      "variant": "organize and apply; used import retained; unused import removed"
+    },
+    {
+      "id": "FMT-02/cleanup",
+      "family": "FMT-02",
+      "apis": [
+        "API-083"
+      ],
+      "extension": true,
+      "fixture": {
+        "Clean.java": "package bench;\npublic class Clean { public String toString() { return \"ok\"; } }\n"
+      },
+      "variant": "configured addOverride cleanup; idempotence"
+    },
+    {
+      "id": "FMT-01/string",
+      "family": "FMT-01",
+      "apis": [
+        "API-080"
+      ],
+      "command": "java.edit.stringFormatting",
+      "variant": "raw source formatting preserves tokens and is stable"
+    },
+    {
+      "id": "FMT-03/string-paste",
+      "family": "FMT-03",
+      "apis": [
+        "API-084"
+      ],
+      "command": "java.edit.handlePasteEvent",
+      "variant": "escape a quoted string and compile applied paste",
+      "fixture": {
+        "Paste.java": "package bench;\npublic class Paste { public String text = \"\"; }\n"
+      }
+    },
+    {
+      "id": "FMT-03/file-paste",
+      "family": "FMT-03",
+      "apis": [
+        "API-020"
+      ],
+      "command": "java.project.resolveText",
+      "variant": "file path inferred from package and public type"
+    },
+    {
+      "id": "FMT-03/semicolon",
+      "family": "FMT-03",
+      "apis": [
+        "API-085"
+      ],
+      "command": "java.edit.smartSemicolonDetection",
+      "variant": "semicolon suggested after constructor call",
+      "fixture": {
+        "Semi.java": "package bench;\npublic class Semi {\n    private String text = new String()\n}\n"
+      }
+    },
+    {
+      "id": "CMP-01/selection-command",
+      "family": "CMP-01",
+      "apis": [
+        "API-046"
+      ],
+      "command": "java.completion.onDidSelect",
+      "variant": "select the exact returned name member"
+    },
+    {
+      "id": "REF-02/quickfix",
+      "family": "REF-02",
+      "apis": [
+        "API-088",
+        "API-089"
+      ],
+      "capability": "codeActionProvider",
+      "fixture": {
+        "Quick.java": "package bench;\npublic class Quick { public List<String> values; }\n"
+      },
+      "variant": "resolve actions by effect; apply missing List import"
+    },
+    {
+      "id": "REF-02/no-action",
+      "family": "REF-02",
+      "apis": [
+        "API-088"
+      ],
+      "capability": "codeActionProvider",
+      "variant": "no quick fix on clean package declaration"
+    },
+    {
+      "id": "REF-03/change-signature",
+      "family": "REF-03",
+      "apis": [
+        "API-090",
+        "API-091"
+      ],
+      "extension": true,
+      "variant": "rename method through signature refactor and update callers"
+    },
+    {
+      "id": "REF-03/extract-selection",
+      "family": "REF-03",
+      "apis": [
+        "API-090",
+        "API-092"
+      ],
+      "extension": true,
+      "variant": "infer and extract arithmetic expression"
+    },
+    {
+      "id": "ENV-02/class-content",
+      "family": "ENV-02",
+      "apis": [
+        "API-018"
+      ],
+      "fixture": {
+        "DependencyUse.java": "package bench;\npublic class DependencyUse { public String value(dep.Library library) { return library.original(); } }\n"
+      },
+      "extension": true,
+      "variant": "binary declaration resolves to exact attached source"
+    },
+    {
+      "id": "ENV-02/document-content",
+      "family": "ENV-02",
+      "apis": [
+        "API-017"
+      ],
+      "fixture": {
+        "DependencyUse.java": "package bench;\npublic class DependencyUse { public String value(dep.Library library) { return library.original(); } }\n"
+      },
+      "extension": false,
+      "capability": "workspace.textDocumentContent",
+      "variant": "binary declaration resolves to exact attached source"
+    },
+    {
+      "id": "ENV-02/decompile",
+      "family": "ENV-02",
+      "apis": [
+        "API-019"
+      ],
+      "command": "java.decompile",
+      "fixture": {
+        "DependencyUse.java": "package bench;\npublic class DependencyUse { public String value(dep.Library library) { return library.original(); } }\n"
+      },
+      "variant": "no source attachment; compiled class member and constant recovered"
+    },
+    {
+      "id": "ENV-02/source-attachment",
+      "family": "ENV-02",
+      "apis": [
+        "API-036",
+        "API-037",
+        "API-018"
+      ],
+      "command": "java.project.updateSourceAttachment",
+      "fixture": {
+        "DependencyUse.java": "package bench;\npublic class DependencyUse { public String value(dep.Library library) { return library.original(); } }\n"
+      },
+      "variant": "replace source attachment; binary unchanged; fresh source witness"
+    },
+    {
+      "id": "ENV-01/classpath-replacement",
+      "family": "ENV-01",
+      "apis": [
+        "API-028",
+        "API-032",
+        "API-031"
+      ],
+      "command": "java.project.updateClassPaths",
+      "sourceDirectory": "src",
+      "fixture": {
+        "DependencyUse.java": "package bench;\npublic class DependencyUse { public String value(dep.Library library) { return library.original(); } }\n"
+      },
+      "variant": "replace A with B; old member removed and new member visible at unchanged caller"
+    },
+    {
+      "id": "DOC-02/external-create-edit-delete",
+      "family": "DOC-02",
+      "apis": [
+        "API-015"
+      ],
+      "fixture": {
+        "ExternalUse.java": "package bench;\npublic class ExternalUse { public Object read(Dynamic d) { return d.value(); } }\n"
+      },
+      "variant": "closed provider external lifecycle with caller visibility"
+    },
+    {
+      "id": "REF-01/file-rename",
+      "family": "REF-01",
+      "apis": [
+        "API-016"
+      ],
+      "capability": "workspace.fileOperations.willRename",
+      "variant": "rename public provider file, apply server edit, update callers and compile"
+    },
+    {
+      "id": "PRJ-01/workspace-folders",
+      "family": "PRJ-01",
+      "apis": [
+        "API-021",
+        "API-025"
+      ],
+      "command": "java.project.getAll",
+      "variant": "add and remove a second independent workspace; exact project set"
+    },
+    {
+      "id": "PRJ-01/import-membership",
+      "family": "PRJ-01",
+      "apis": [
+        "API-027",
+        "API-025"
+      ],
+      "command": "java.project.changeImportedProjects",
+      "variant": "explicit remove/reimport updates project membership"
+    },
+    {
+      "id": "GEN-01/module-info",
+      "family": "GEN-01",
+      "apis": [
+        "API-108"
+      ],
+      "command": "java.project.createModuleInfo",
+      "sourceDirectory": "src",
+      "variant": "module descriptor exports exact fixture package and compiles"
+    },
+    {
+      "id": "DIA-01/explicit-validate",
+      "family": "DIA-01",
+      "apis": [
+        "API-109",
+        "API-111"
+      ],
+      "extension": true,
+      "variant": "explicit validation of uniquely broken current source"
+    },
+    {
+      "id": "DIA-01/explicit-refresh",
+      "family": "DIA-01",
+      "apis": [
+        "API-110",
+        "API-111"
+      ],
+      "extension": false,
+      "command": "java.project.refreshDiagnostics",
+      "variant": "explicit validation of uniquely broken current source"
+    },
+    {
+      "id": "REL-02/legacy-hierarchy",
+      "family": "REL-02",
+      "apis": [
+        "API-069",
+        "API-070"
+      ],
+      "command": "java.navigate.openTypeHierarchy",
+      "variant": "legacy hierarchy item provenance and exact parents/children"
+    },
+    {
+      "id": "ENV-01/source-path",
+      "family": "ENV-01",
+      "apis": [
+        "API-033",
+        "API-034",
+        "API-035"
+      ],
+      "command": "java.project.addToSourcePath",
+      "sourceDirectory": "src",
+      "variant": "add/remove independent source root; exact reported membership"
+    },
+    {
+      "id": "REF-03/move-resource",
+      "family": "REF-03",
+      "apis": [
+        "API-093",
+        "API-094"
+      ],
+      "extension": true,
+      "sourceDirectory": "src",
+      "variant": "move class to another package and apply exact reference updates"
+    },
+    {
+      "id": "REF-03/extract-interface",
+      "family": "REF-03",
+      "apis": [
+        "API-095",
+        "API-090"
+      ],
+      "extension": true,
+      "variant": "extract only name() to selected package and compile implementation"
+    }
+  ],
+  "workingChanges": "M benchmarks/lsp-scenarios/harness/ScenarioContext.ts\n M benchmarks/lsp-scenarios/harness/fixture.ts\n M benchmarks/lsp-scenarios/harness/launch.ts\n M benchmarks/lsp-scenarios/suite.ts\n?? benchmarks/lsp-scenarios/harness/protobuf.ts\n?? benchmarks/lsp-scenarios/scenarios/protobuf.ts\n?? benchmarks/lsp-scenarios/test/protobuf.test.ts",
+  "plan": {
+    "caseIds": [
+      "BLD-02/first-unchanged-repeat"
+    ],
+    "servers": [
+      "jdtls"
+    ],
+    "blocks": 1,
+    "warmup": 1,
+    "samples": 1,
+    "timeout": 90000,
+    "profile": "direct",
+    "serverOrder": "alternate per independent block",
+    "reset": "fresh fixture and server state per independent case",
+    "seed": 0
+  },
+  "capabilities": {
+    "general": {
+      "positionEncodings": [
+        "utf-16"
+      ]
+    },
+    "workspace": {
+      "configuration": true,
+      "workspaceFolders": true,
+      "applyEdit": true,
+      "fileOperations": {
+        "willRename": true,
+        "didRename": true,
+        "didCreate": true,
+        "didDelete": true
+      },
+      "workspaceEdit": {
+        "documentChanges": true,
+        "resourceOperations": [
+          "create",
+          "rename",
+          "delete"
+        ]
+      },
+      "symbol": {
+        "resolveSupport": {
+          "properties": [
+            "location.range"
+          ]
+        }
+      }
+    },
+    "textDocument": {
+      "synchronization": {
+        "didSave": true,
+        "willSave": true,
+        "willSaveWaitUntil": true
+      },
+      "publishDiagnostics": {
+        "versionSupport": true
+      },
+      "completion": {
+        "completionItem": {
+          "snippetSupport": false,
+          "resolveSupport": {
+            "properties": [
+              "documentation",
+              "detail",
+              "additionalTextEdits"
+            ]
+          }
+        }
+      },
+      "documentSymbol": {
+        "hierarchicalDocumentSymbolSupport": true
+      },
+      "codeAction": {
+        "codeActionLiteralSupport": {
+          "codeActionKind": {
+            "valueSet": [
+              "quickfix",
+              "refactor",
+              "source"
+            ]
+          }
+        },
+        "resolveSupport": {
+          "properties": [
+            "edit"
+          ]
+        }
+      },
+      "semanticTokens": {
+        "requests": {
+          "full": true
+        },
+        "tokenTypes": [
+          "namespace",
+          "type",
+          "class",
+          "enum",
+          "interface",
+          "struct",
+          "typeParameter",
+          "parameter",
+          "variable",
+          "property",
+          "enumMember",
+          "event",
+          "function",
+          "method",
+          "macro",
+          "keyword",
+          "modifier",
+          "comment",
+          "string",
+          "number",
+          "regexp",
+          "operator",
+          "decorator"
+        ],
+        "tokenModifiers": [
+          "declaration",
+          "definition",
+          "readonly",
+          "static",
+          "deprecated",
+          "abstract",
+          "async",
+          "modification",
+          "documentation",
+          "defaultLibrary"
+        ],
+        "formats": [
+          "relative"
+        ]
+      }
+    }
+  },
+  "settings": {
+    "java": {
+      "format": {
+        "enabled": true,
+        "onType": {
+          "enabled": true
+        }
+      },
+      "autobuild": {
+        "enabled": true
+      },
+      "import": {
+        "maven": {
+          "enabled": false
+        },
+        "gradle": {
+          "enabled": false
+        }
+      },
+      "signatureHelp": {
+        "enabled": true
+      },
+      "edit": {
+        "smartSemicolonDetection": {
+          "enabled": true
+        }
+      },
+      "cleanup": {
+        "actions": [
+          "addOverride"
+        ]
+      },
+      "saveActions": {
+        "organizeImports": true,
+        "cleanup": true
+      },
+      "inlayHints": {
+        "parameterNames": {
+          "enabled": "all"
+        }
+      },
+      "referencesCodeLens": {
+        "enabled": true
+      },
+      "implementationsCodeLens": {
+        "enabled": true
+      }
+    }
+  },
+  "environment": {
+    "node": "v24.19.0",
+    "platform": "linux",
+    "arch": "x64",
+    "cpus": 9,
+    "memoryBytes": 10451496960
+  },
+  "claims": {
+    "publicComparativePerformance": false,
+    "reason": "fewer than ten independent blocks"
+  },
+  "finalSourceInputs": {
+    "benchmarks/lsp-scenarios/harness/protobuf.ts": "361894acea2d7a0fa0bb7a17c7e001050518a09aa81cd3a7435bdb313933655f",
+    "benchmarks/lsp-scenarios/scenarios/protobuf.ts": "6eb28854689c0312a2a07324cf6ee5f9a405c0ba3b1efbc78eb8748645c27688",
+    "benchmarks/lsp-scenarios/test/protobuf.test.ts": "792a70850fc678308ca23d9a7c5749c45297a33b4f8bcffed53eaad40aafedfe",
+    ".github/workflows/benchmark-report.yml": "86356180793d1431b0a5e8dd5a9ed7b6c240061753f0ba9ba0cb31e1e8ef6b08",
+    ".github/workflows/checkpoints.yml": "71ce009b8d09074c29d92c431dd0fd28cea9063f3b277e654ea2723c5c670df5",
+    ".github/workflows/index-redesign-fast.yml": "5c59cfff89af9a02fcf063bebe6ffbf05299e433e620c73d8c2212abcb6c3f83",
+    ".github/workflows/lsp-scenarios.yml": "5698f34b761869d006e243f21e5fd114df52b5d1988a1eebacfb54a0af15db81",
+    ".github/workflows/releases.yml": "5a04a56a548fd1cf8e7917578ff68f2bae2a2ca03603e0ec98df34d18734e815",
+    ".github/workflows/workflow-benchmarks.yml": "04488d9a71ff67ecdb7790261502ac1e0cf15a8bc66c74410c95de7fff7b61d8",
+    ".gitignore": "32dfc4f0f885d477d47b16d31d75ab340f2a782009939dfe79be34de9b81c821",
+    "DEPENDENCIES.md": "6d87159b297423d09fc2f554ef6d15a75a303dc1425fe7bf312972ec1573271c",
+    "LICENSE": "6a55dc509dbe93c7aa1bf026b7ccbd1e195bf1f4f59c005a7d93aa58399dcd4c",
+    "README.md": "e2523ef6a744429125c1579b5078d183e62768f16e42936bfb0a0371dcc44e48",
+    "benchmarks/evidence/actor-attribution-2026-09-27/document-open-calls.jsonl": "edc9a51861bb38d4bdeaa558e926a95190ba9aaf3d82a57368db4753bc987da2",
+    "benchmarks/evidence/actor-attribution-2026-09-27/document-open-reduction.json": "cd066fcd9c3ed52c4a5c7a90d73faeacada360f85d85941ec5d65471e8b694d0",
+    "benchmarks/evidence/actor-attribution-2026-09-27/document-open-stage-events.json": "0415996bbfb5b931c9cd096033bd7ee4eb22a99ec276d3be73749b421b0426bf",
+    "benchmarks/evidence/actor-attribution-2026-09-27/manifest.json": "ae265d18f2e10ce759bc9e6ccf4a2167bc5488d1d1a8062d9da99c12bf5cab74",
+    "benchmarks/evidence/actor-attribution-2026-09-27/production-tests.txt": "414e31a77dcb81adb0c1fde69a5b822a6c98f4ab651e0b9700ca792deaec76cd",
+    "benchmarks/evidence/actor-attribution-2026-09-27/provenance.json": "a987ba8068c51bd5da6353f1035fec96b41befae224826f2eb9d3e087ff8098c",
+    "benchmarks/evidence/checkpoint-2026-09-27/manifest.json": "64b2cc166e9c18f3c52b89438dfbe553c3e922762e01e240d27aecdd61fdc789",
+    "benchmarks/evidence/checkpoint-2026-09-27/native-LIFE-04.json": "eeeb41a7dafe1e68c4b4217f2e478fb8b8093abc8b11c1301bae86feeb9b24c4",
+    "benchmarks/evidence/checkpoint-2026-09-27/native-LIFE-08.json": "8dee214daf7c8cbc4ee23faf8545370000be6703dab91ae603f2b77d2d2bb967",
+    "benchmarks/evidence/checkpoint-2026-09-27/native-LIFE-09.json": "10a42f0efe18070a8aa1f5baddbac15d7fbe639d1452a2431821980fb7195c89",
+    "benchmarks/evidence/checkpoint-2026-09-27/native-manifest.json": "9d6ffdd54724f188c4e5ffa3ed644241ad2aa425077bdef18c1739ed25f5e691",
+    "benchmarks/evidence/checkpoint-2026-09-27/native-pilot.txt": "79c722e6557949b07334e35f7354ad8403c9a5805317dd2aa1245523b8c003be",
+    "benchmarks/evidence/checkpoint-2026-09-27/python-tests.txt": "736853e00b951401fffa05dc85ad6672d11f093d5663aef040ed29808eb631fa",
+    "benchmarks/evidence/checkpoint-2026-09-27/typescript-tests.txt": "ebfd8702f849516f312babff2291dc5cb9209418f1375938c777ff16837e9ffa",
+    "benchmarks/evidence/historical-36269400226/jdtls-report.json": "c8339d616e9b5e719934b2d2a0d20c724736cd377d9ca49a7a6b48e2267d4adf",
+    "benchmarks/evidence/historical-36269400226/jvmd-machine-lifecycle.json": "fd687cf6caf6a7abcf13e4378c24161919a35de750a99f70d1f9a8741ff66b62",
+    "benchmarks/evidence/historical-36269400226/jvmd-report.json": "3671fdc82f3066d30b91c0115e0b5ea7d8dba26ee4156f8e797937c048e03187",
+    "benchmarks/evidence/historical-36269400226/manifest.json": "77528afb9453e8bea1dd9e0b6f21a7220d703c6d6ca4bbfbebb42268bb13d3e9",
+    "benchmarks/evidence/lifecycle-followup-2026-09-27/apache-open.json": "93c2f2130dc98ee56320eefa65607fdc56ba1c5748496237bd97d50544a43846",
+    "benchmarks/evidence/lifecycle-followup-2026-09-27/jdtls-shutdown-threads.txt": "92b279907d1ed2b33110d9e44e9e5a19acdba417e557acd4994825d3f66008f2",
+    "benchmarks/evidence/lifecycle-followup-2026-09-27/manifest.json": "1a4794ea12bc1e6b9b7ed5e631f6dd116d9228a97958d859eb501829e9fb2e16",
+    "benchmarks/evidence/lifecycle-followup-2026-09-27/pipe-mutations.json": "eb950545a504213ef3ed16ffc637373abaae56e02feb254c2837775ac8b145b8",
+    "benchmarks/evidence/lifecycle-followup-2026-09-27/python-tests.txt": "844cf4c363fc52b136597ba903d7851136b9d90b1ba794b0c79188807f23bb95",
+    "benchmarks/evidence/lifecycle-followup-2026-09-27/typescript-tests.txt": "a7026d8796b81291fd8a63d017797f94220c12b7e5c6ec15917e85444b66c188",
+    "benchmarks/evidence/optional-metrics-2026-09-27/TraceModuleProbe.java": "3a46e1e72a010b99118ac59ce98ece7db1f1a8dc334db456016a5e16272ed15e",
+    "benchmarks/evidence/optional-metrics-2026-09-27/after.txt": "dc51b8c96c2d745df3bd5590d990230a482fd247123599548e0632fdbf97fc22",
+    "benchmarks/evidence/optional-metrics-2026-09-27/before-controlled.txt": "72840ebef17421d94d0e51f3907d0a0d6bf0193db8d1180cb093baadec5457dc",
+    "benchmarks/evidence/optional-metrics-2026-09-27/exact-revision-tests.txt": "00b7d2c66d3ecd2760cb5d25ca5cdebfa1a9b44609c97332ee7480f31c071600",
+    "benchmarks/evidence/optional-metrics-2026-09-27/manifest.json": "3e792205a3bf4ab2e96c49970e4fe0b51c3bc874996ff9800999a0845b1e12c2",
+    "benchmarks/evidence/optional-metrics-2026-09-27/production-tests.txt": "a1ba7700c93ca4bebe4bdf828d6743850771c998a8db57bf12d8289d90581bef",
+    "benchmarks/evidence/optional-metrics-2026-09-27/provenance.json": "d96f9a7ee9e322d6a5f70b4ef6eec547ea000bc451e8812e61396889c9a9f239",
+    "benchmarks/evidence/retained-attach/after.txt": "bc38f3335e274c41a77d727529f52d97a0f7cebd4a5fc357757e5c1319c9b1b8",
+    "benchmarks/evidence/retained-attach/before.txt": "47a8f184cfcd3078bc0e6a2f7d9f58633af04fbbb39d8252642a83f2c66c341d",
+    "benchmarks/evidence/retained-attach/manifest.json": "c08663eab57a616a79771ae379720065bd51f765f4790bbdfc766271b005d06e",
+    "benchmarks/evidence/workbook-roundtrip.json": "7e96ed6d67799ff80e894d06d862f54d3e78bccfac1c3b57959e27e92b5db160",
+    "benchmarks/lsp-scenarios/.gitignore": "75dd9122b775f2d4ca4a99df0e4f099cc414dd1b0d11df46563350e8ac576882",
+    "benchmarks/lsp-scenarios/JDTLS_API_and_Test_Scenarios.xlsx": "6fa34e33381384e6a831c6715ee2a76bfdba9f064a4927e9660b831fa6d21796",
+    "benchmarks/lsp-scenarios/catalogue.json": "a09bf1f410e68f7f4b282168ed547029220beb6101be4e3e93571caca2558210",
+    "benchmarks/lsp-scenarios/catalogue.py": "d9ad1be0dc7311df84b9d7ef493ae4b75623ca85cf532754cbaeca1bde61450b",
+    "benchmarks/lsp-scenarios/compare.ts": "02b807064744e29e439360d2cd3133d753a9a67e55637c4dfeed8baa1d541189",
+    "benchmarks/lsp-scenarios/expected/CMP-01.json": "06e6dff25713d07fc72dd8a063b56ba0aa7ed758b61ad3bd051c8a976ecdac34",
+    "benchmarks/lsp-scenarios/harness/LspScenarioHarness.ts": "a3f6a7f6061473f4693a52c21c5cdfed9e221e09f94e54840f7735d0d89e389e",
+    "benchmarks/lsp-scenarios/harness/ProtocolClient.ts": "0f9985d08dab6c057c73bfad77598437c98a367085b9d817c788fb48d7d93dce",
+    "benchmarks/lsp-scenarios/harness/ScenarioContext.ts": "a33ce9ad86f2bd6d8911d44b139c6977ff8ab9ad37538127a698d588e651b90d",
+    "benchmarks/lsp-scenarios/harness/contracts.ts": "03c921cff0f13ca2cff7c922fadbc8fdece597211b782478c0e3fe5c6052e5ab",
+    "benchmarks/lsp-scenarios/harness/dependencies.ts": "343a93b645c06a7abcf74b7b52c34551baef59bffddd86ba66877ba128d19f2c",
+    "benchmarks/lsp-scenarios/harness/fixture.ts": "8c8d68ab0b5fcd401871583a74c4ddf4339e1bdd373c6eef3a743763098cb4b2",
+    "benchmarks/lsp-scenarios/harness/jvmdLifecycle.ts": "1f9a3cbc0807c8818803e572eaea03eb9fc4dd7db2b40f1321391113423b60b5",
+    "benchmarks/lsp-scenarios/harness/launch.ts": "c62acd8b808d9062c5e72c8f384056c48feba9af6ea280841f572e859fa524a9",
+    "benchmarks/lsp-scenarios/harness/lifecycleMatrix.ts": "1671decd323b87804feebb3b29024a046172a7dacc73b7a040cb18494db68071",
+    "benchmarks/lsp-scenarios/harness/nativeDaemon.ts": "1bbc1f6ce566703cff6a4d0e91fbb18ec48d3adc95a7471145c317c62f4f94f9",
+    "benchmarks/lsp-scenarios/harness/oracles.ts": "48a2f70a8f179baf711dae30ab3ea0f23507230ef6139200396da2f24144b72f",
+    "benchmarks/lsp-scenarios/harness/phases.ts": "5c94861579f126b42716220062a5417eb39b969c0aa1920c1f33819e707a649c",
+    "benchmarks/lsp-scenarios/harness/workspaceEdit.ts": "715d7f21c0de6803b048d66892534b797f046fd57828aad859a360e9fdaa39a9",
+    "benchmarks/lsp-scenarios/jvmd-machine-lifecycle.ts": "41c813918769c499712b2fa84c80224a41097060753ed1ceaefe96770501eafb",
+    "benchmarks/lsp-scenarios/package-lock.json": "4786a8d6781697fc3d6eeb8ac0e43ee2193cd677daf721927c1bba0cd9686646",
+    "benchmarks/lsp-scenarios/package.json": "6334c7a4a269f6cde9785a0f33ad31c57876c2f994094c5eb5f342d46a18975d",
+    "benchmarks/lsp-scenarios/reduce.ts": "9a2fc3106a0070936e73ec6c409079e0f48615d55d56cb0f85a6abc80e2521fb",
+    "benchmarks/lsp-scenarios/run.ts": "98ca37906604cb1099937c8a336105a394025d9f2a61287e32cb87bbef10acea",
+    "benchmarks/lsp-scenarios/scenarios/CMP-01-completion.ts": "aefd8463c5c9c4881c06dd3218c08bf45d6f70eb31ebcf7319e087fe4171da53",
+    "benchmarks/lsp-scenarios/scenarios/core.ts": "09c16ac365ad5c39e49c37182008e84e4685f2a071d28d8d6d327ecacbca242d",
+    "benchmarks/lsp-scenarios/scenarios/dependencies.ts": "880089afead60f98fae64b066772a3b0489c73f1d5e53af5f50dbdeca17061a8",
+    "benchmarks/lsp-scenarios/scenarios/editing.ts": "053a710ec9affd551abf5fb4e58e3d76eadf9d2789d0f9d6c0e7f2d97b8779eb",
+    "benchmarks/lsp-scenarios/scenarios/files.ts": "6fec542791bd5e4ee26b58ebd89191e275cba039982d2cd665a62c7f75ad5590",
+    "benchmarks/lsp-scenarios/scenarios/generation.ts": "454c75545577aff634afe21527b968fbb739a29865da5eacae0bd569198708f6",
+    "benchmarks/lsp-scenarios/scenarios/projects.ts": "85ddd5c06c263a9e5baea567fceb343c70e33c4e4f5a5db66070030023f75f80",
+    "benchmarks/lsp-scenarios/scenarios/refactoring.ts": "9ed5532a54afde5e96cc309ff4c34dcb1862632aeb9001e4536fca8c0486ed7b",
+    "benchmarks/lsp-scenarios/scenarios/structure.ts": "526e2e1dbb725f04d7bf6ff652e52cddc235dfc306bc34a8fdc3548d9335f996",
+    "benchmarks/lsp-scenarios/suite.ts": "0c184c96d51a46054b69251a3f7bdbc350d3f98eeedd657a42342af65646b439",
+    "benchmarks/lsp-scenarios/test/contracts.test.ts": "b8842a265d16869a7f03c4f4c54a0a8839e625c26dc6ddd8078b6541f45290c8",
+    "benchmarks/lsp-scenarios/test/diagnostic-admission.test.ts": "9d20ed5f2bfa1edf94f9c57519092555406449128419214f6900badea9ba8f2e",
+    "benchmarks/lsp-scenarios/test/fake-server.ts": "12e5876825c4c3d0843ee86c84837f9cb93353f617366f8f4eddd2acd26ef62a",
+    "benchmarks/lsp-scenarios/test/jvmd-lifecycle.test.ts": "6b84b512d301149fc7a5bd73ea2ef415f2cc1a6f7abeba17ce3b91c2a447f19b",
+    "benchmarks/lsp-scenarios/test/native-lifecycle.test.ts": "e5f8b058a47bdf80d970b40a6a12d2a4319cb63fe7a6f516db4b01d66ca7e0a4",
+    "benchmarks/lsp-scenarios/test/phases.test.ts": "abddd542312f48e9de32e941cf7175aea09c2777d86bf53e09631a356ae309df",
+    "benchmarks/lsp-scenarios/test/reducer.test.ts": "a01950c432a081066aeeb6c5b380c57dc1d7380733235fd11b54bf424bc32af6",
+    "benchmarks/lsp-scenarios/test/runner.test.ts": "8591aed61c72d31b4d0756f554ec3978317b7617a71fd4e2fa833f9100604ae3",
+    "benchmarks/lsp-scenarios/test/workspace-edit.test.ts": "b08b951e257ce727151151adb74ca81d43fb56193858165b1f656381c37acd2d",
+    "benchmarks/measurement-contract.json": "0ec6bc55f9526027b9057a66954fb5432b9d0857ea87ec987c2731a67c6fdfd2",
+    "benchmarks/phase-model.json": "985a76496e2b6ca76d4f71356e869956d619c386633ad080fe513a2b4e168379",
+    "benchmarks/workspaces/.gitignore": "32dae3052f331ee34d628ef535709b301259a45df7c7522c4d35dcf49873f00b",
+    "benchmarks/workspaces/StdioApplication.java": "70ebe806c51cc95b13aeb06ee606f1bdc0207ba2a0888f254e25c47fd3b8a644",
+    "benchmarks/workspaces/bridge.ts": "525e78ca3b0e12d4b89c3f22436f163a6608a073ef1e11421c0cb745bf735c6c",
+    "benchmarks/workspaces/causal.py": "a8dc6bef1ce2c19b609d7293a953e18d84e707f726cefdde2f35bee48c9d13c7",
+    "benchmarks/workspaces/check.py": "0912feb173164d96c6d7162e4fbde4015d1d9228896d08a99be4973b2cd30efc",
+    "benchmarks/workspaces/compile.py": "b17b1eac74db9881e03796274a2a27d283587ca6903b978fefe8e95a57d3fa77",
+    "benchmarks/workspaces/contracts.py": "6f4191fd3f71ee9a97117bde841106652e0ade54415bb259b2ca48cb1d968c55",
+    "benchmarks/workspaces/fixture.py": "a8ce582c158f40c55691f41e02c125a5e8e05d8b3e1fc58ca1839bbac594f34d",
+    "benchmarks/workspaces/package_evidence.py": "f8607690353727798a5d93fdc38ff7fe215147618ebd7d9626eb526015201d05",
+    "benchmarks/workspaces/resources.py": "c37c75ee6600ab38ed2bb3fcb6b5dfebaa4bd418dc1b1bb695d0867d11ef419c",
+    "benchmarks/workspaces/run.py": "c52f28287352a42ce071f8b4f327448942c185bf5b651e3e0eee95df55076569",
+    "benchmarks/workspaces/summarize.py": "effe17c6b145ff8a181eeeaa3c3a85c58d755ec62d080c74c8d2d482aed79da6",
+    "benchmarks/workspaces/test_causal.py": "67f9e8f80e0d37b02aca6321d5b22a9dabae15f6d52afcaa6516cefdf5a2f380",
+    "benchmarks/workspaces/test_check.py": "2e121959fe97b537ebcecbbe291e5017524c26d87ab4816507965f00043bc9fc",
+    "benchmarks/workspaces/test_contracts.py": "d00287bba1a3ef6b84546ade5abe93ac07665cad3840e2ca9490f7973f725caf",
+    "benchmarks/workspaces/test_harness.py": "3243ef1d41b7476a99270753e60fe1958a0fe9c127905c384fb59390a260029b",
+    "benchmarks/workspaces/verify.py": "f08c9e96b700a54af5e6750d0daf157861e2ff2f94fdc8f2f4978e84e45bf6dd",
+    "docs/api/mcp-tools.json": "d05f92d372d872f49a22a2ec9ff41649502fdbab1a210fdf82cf371d3f5f77b3",
+    "docs/benchmarks/implementation-status.md": "7badfcfae52ce1ec7fcac988819201eb0d176e6b7b21a5ecaf83c4e9d5a83c50",
+    "docs/benchmarks/long-open-diagnosis.md": "e9dc1d4d31c10031931e26ff9d82283acffe6cfdcd2a06548146dbe4fa6ea15e",
+    "docs/benchmarks/worker-specification.md": "47cfbc563a60bc0aac4fdc09138b2d5c831cf1c80fec63978171ecd4fa388ddc",
+    "docs/install.md": "8ea372a34fcaee6f8236c5c501d980b8b955311778aa0f3f86cd8f545bcbece7",
+    "docs/integration.md": "8d599962c3c1627ba3202d7b8a7cad6f218ce47150be5b3c76a392117795853e",
+    "docs/issue-36-semantic-query-checklist.md": "504749606a81433f14f16d3ff35d8f435e4d392ac0108f7b0e8a17551f4400ef",
+    "docs/issue-36-semantic-query-progress.md": "ad5668f2740faa16e10561ad8d0c71679adc9ac1354547c924733cd556ed45d1",
+    "docs/live-state-tree-checklist.md": "e7c5c35cd2ba7fdcf2672ffa562743b80bf20b3efca13aea1774b3ba90268a2c",
+    "docs/live-state-tree-progress.md": "9203910a80028b3ceede1f7178b74b632dc2d5762fb801a4993fd0ae2a0108e4",
+    "docs/pr39-admitted-semantic-progress.md": "6e4540f6f565c4d4142a44830993753aa3663d45aa789e1431bf60eee6d22fb3",
+    "jvmd-analyzer/pom.xml": "395468fececbc5e88d0bd8714354be6eb366730dc83fe5f2ea7db3ed6b941230",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Analyzer.java": "e7e0e0c798a85c47d7461799fc5436ea7b06f0624b5c9c75ab5b3b40fe1998d9",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/ApiFingerprint.java": "955abb971e04558fc9460ea019b365a04d252ed9ebd41de9cd11f22c2677adcb",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Bindings.java": "b570ff2ec720629a11f0acfc8481fdec0b27d5cd5b7034a71e7cda20ab4defe3",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/CompilerPool.java": "ef12ae1f92c314046f98b0f974a04a89d68e4b19c098c3c01bf6fa9d4ee06d8d",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/CompletionContextResolver.java": "cc70e6ac2754dd85f632ef4604764d44ab4ac59c64260e10f9ba4419248b57f1",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/CompletionProbe.java": "b8e78b0eb19be33b5d032b8fce53cf5e97e34babfd3bf552a181a0875bdcc320",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Dependencies.java": "d80b4d408f24145461d738f244984c75e3c10e48b65ebd2ad07f9012394ea9da",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/DiagnosticEngine.java": "cb41c11ce9ed0de298cda28abaa1582b1b384c788bbafa7ac6b2fa24476d3432",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/DiagnosticSnapshots.java": "9583dd7e65a45283a94bf08a32731dc29cae7c918abaccb947afd41f942c43e1",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/DiagnosticStore.java": "35f5b3a35ff49b071eaf59b7000fc5fae397efc021b04800a85a899d222a87d2",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/EditorQueries.java": "81cabbf98a4f82e5639c009a1cc38b28075cd0a8d6ce9dc1829d668011b5e845",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Focusing.java": "536bdb6bb6cb3a4f1fd5d7f99c9422dea9e722f41c6b3d0fa788bc7b3c98b822",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/IndexedFileManager.java": "5089ef60ac6ad90394ef32d8a8b6e54b4619823eedabd84c9f5acc546f8abdde",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/NamespaceResolutionProofs.java": "963f111a448e1ec7ef89fe798349b85b47b4bfe1bb345825f4594e4e1da9d080",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Parser.java": "580c15fa310a69481615a5f240ebc4def6ee9fc01306601dfed4fc94fb7f1232",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/ReleasePlatformCache.java": "49722cbed6b0939762e47c9abec23bd8ed716ad04e13f769520d07960ded551d",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/SemanticContributions.java": "08da954abff041ae612d8cb1d67a8c13beb0227c5477aec6ec2ba3436e1cec07",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/SemanticDeclaration.java": "a281b5a7bf9570bcab297dbec127a34ec9a8984a2073080e647afee7659ae4ea",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/SemanticFacts.java": "1afb7eddea9e911065ef9424edb5d333c5bfe2548f18eab5615aa2f93329a604",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/SourceText.java": "bb0751f419c8356fd5a73c52243a89285dfb88840b6322e58a56af6a36f020ce",
+    "jvmd-analyzer/src/main/java/dev/jvmd/analyzer/SymbolIdentity.java": "bd7ed796d085bf1f16e2606e61429463a6138814596097a32d94f938f696297b",
+    "jvmd-analyzer/src/main/java/module-info.java": "cedd6274cf6b6d814a3bb6f07977a11d5bd74dccc321cc4c80846880f9b8ca4d",
+    "jvmd-core/pom.xml": "a5c18fa11f304d4379c9bd1854dda4001582d321ff8455e63d96a7c5d27b9ce3",
+    "jvmd-core/src/main/java/dev/jvmd/core/AlgebraicAccumulator.java": "2c176ec3ff4252b686be63d9eb8ae9684e9bf15b0f58dca13c646790bfd349d8",
+    "jvmd-core/src/main/java/dev/jvmd/core/AnnotationProcessing.java": "0aa4be420a686db3866482bcb46b0b75e30a1eaec42f70627a3642e47ac0a0c5",
+    "jvmd-core/src/main/java/dev/jvmd/core/AotStatus.java": "453c4ad167e2400b2705172e16288409a74f20f7c3e1ea5d68b88c64878847f4",
+    "jvmd-core/src/main/java/dev/jvmd/core/CanonicalDigestWriter.java": "006682ff5891292572ff9c1314e2e9de1c9a67e115bb2c96695c60878e1d285f",
+    "jvmd-core/src/main/java/dev/jvmd/core/CompilerInputs.java": "79a467d9b1ede22d92029e62392714a589ba2025e95e2d6cde5b5ed17cb7b217",
+    "jvmd-core/src/main/java/dev/jvmd/core/Config.java": "db5a801299b2b90235ca30dfcda2baf5c43f874bc2894085482d834b9ce542dd",
+    "jvmd-core/src/main/java/dev/jvmd/core/Dispatcher.java": "133466af2e1c3fc7a54458d28d7c6f5941abcedec0da42d3bacacc53ef79ed49",
+    "jvmd-core/src/main/java/dev/jvmd/core/Documents.java": "e45eeadbff129ab80023e22ad421a776c461effd4ffcb5c0dd586b1f3cc6a562",
+    "jvmd-core/src/main/java/dev/jvmd/core/Envelope.java": "74ca3966888396c81710c8304a43e4a05545e9914b331ee79e3705a4d3db3053",
+    "jvmd-core/src/main/java/dev/jvmd/core/FileInventory.java": "74769e429eb575d9941d438594bedad62d38261f81b6c6a8ebc1f75422577816",
+    "jvmd-core/src/main/java/dev/jvmd/core/FileStateRegistry.java": "29cece3b706e2a3a64ea3e5cf8a44d3bdffe0be53e443fbdc281b1b693389f44",
+    "jvmd-core/src/main/java/dev/jvmd/core/Framing.java": "d1564fcebf55d062b56e3c90caf50ec18fe5125ae00acf57b316054cc318cfe3",
+    "jvmd-core/src/main/java/dev/jvmd/core/Hash256.java": "f26b1862eb12dc346b7c3f6f256ad87cec1092c1f2df44af41baa182d95c6337",
+    "jvmd-core/src/main/java/dev/jvmd/core/Hashing.java": "2414696ea496238edcaa0989bf8685147c5343cfc12ec25b7c58c4e5537d2d06",
+    "jvmd-core/src/main/java/dev/jvmd/core/JavaTypes.java": "56ac6ae3e19dd9c53d096152918aa41cabf262e3d15d8f0595e6ec4f2f752d1d",
+    "jvmd-core/src/main/java/dev/jvmd/core/Json.java": "353f752309480cc17a22f4b0c4d05e6505dad87b0e3c73b1ac8102cd7064a060",
+    "jvmd-core/src/main/java/dev/jvmd/core/LiveEnvironmentState.java": "28e53e218c297e43e2b873bdbae28cfb83f2b09e5ad0e07f28590dd9c77906e7",
+    "jvmd-core/src/main/java/dev/jvmd/core/LiveSourceState.java": "ff79be4d272652a36ba97bccefdf88fe93f781f846f9cb9ec77cd21dc75f66d5",
+    "jvmd-core/src/main/java/dev/jvmd/core/LiveStateTree.java": "1caf4ec020fd80aaaec90a783092c8f01f6ea5cda363114dc0f5612220950eed",
+    "jvmd-core/src/main/java/dev/jvmd/core/Metrics.java": "50db26d825b1d1b6584234fb168dd68d923c43022a517abe38cb6a9c369a2304",
+    "jvmd-core/src/main/java/dev/jvmd/core/NamePath.java": "2fefe3facf4198e27ce05175549dd12f85d603ba608ef5cf211d37c89b45c6b6",
+    "jvmd-core/src/main/java/dev/jvmd/core/RequestScope.java": "34d815ad7be74cdc50aa915be5496d478a573418c10ed3d2641f2e15920dc90a",
+    "jvmd-core/src/main/java/dev/jvmd/core/ResponseBudget.java": "6f7220bf7dc8e61256ff4111b4aece10806ca7b0ea666136df72b895da26ea04",
+    "jvmd-core/src/main/java/dev/jvmd/core/RpcException.java": "0b644414070698fe1dccf293c02d23f36a46bbc15c390a8dc4929a9b1a571939",
+    "jvmd-core/src/main/java/dev/jvmd/core/Session.java": "417ebd1e6987b8af391584c21c7f3fa945ae4849d49e39f10c0a2709784494a3",
+    "jvmd-core/src/main/java/dev/jvmd/core/Sessions.java": "aabcb0ff0ed5f98ef4f60076993615d0b0f39155b46cf57cd0726b3c23bff1c0",
+    "jvmd-core/src/main/java/dev/jvmd/core/TextEdits.java": "87ba79001cf16c12ac42fb7bb400b82f661b06e547b88e111082079c368d78f0",
+    "jvmd-core/src/main/java/dev/jvmd/core/UnixServer.java": "6056316d28f5cf4ebcc2bacfb3f43f984d90eebbb065aaec1b152f074ce3f23a",
+    "jvmd-core/src/main/java/dev/jvmd/core/Verifier.java": "19a471e5eca5ced08408f3ae6409ac9c06850e92b46bc8c8d7d56fbff6424a30",
+    "jvmd-core/src/main/java/dev/jvmd/core/WorkspaceManifest.java": "246b4c8874e0c653a5892a22bddb519182aa67f7011289ee22a6f5e28670f3f6",
+    "jvmd-core/src/main/java/module-info.java": "2aa72d04803f9a73a8bda52e955831fd4e6bfd2481e18a4133b5d078c71f66ab",
+    "jvmd-dist/assemble.sh": "46f4ffc540aa9e9b485c020755cc74cc45bea6001032ab0ddc05b4fc7b800a96",
+    "jvmd-dist/export-api.py": "fedd08822264c06a495f7ccd94851a776f55dde9cae40907eea08456a2075d91",
+    "jvmd-dist/install-wsl.ps1": "5a5e84cedbc4e15c38734e5a2b4c8c7e8b2fa22567bdb2e8f5ed3648c120df7f",
+    "jvmd-dist/install.sh": "930c473292ae4e3ef263fdc41253d08745eac5fb7649678bfba1acf960e11a5f",
+    "jvmd-dist/jvmd": "d4db6a2c95c75ee3ab6e987affa06d79439510b84bfd6611d7158b8715af796c",
+    "jvmd-dist/jvmd-lsp": "21268ae12c5aa59de5593b99d70600c249a9dc0dbd1f39b854adf627e0a2d998",
+    "jvmd-dist/jvmd-mcp": "34ad2789ed05dea878671dd71f2149f240f50ef9f2e0033da645853b73cb9727",
+    "jvmd-dist/licenses/rocksdb/LICENSE.Apache": "8c6db340475136df3c1201d458fa5755698eace76e510471ecc9d857d6083dac",
+    "jvmd-dist/licenses/rocksdb/LICENSE.leveldb": "b0ec9f0c7b258c2004f06b2542cecac98d301ecf3db3afede83646eafd34862b",
+    "jvmd-dist/pom.xml": "dc56ab73312ad3b6ce8725d55f4fe1ee589baad8449b5ce0aeabf8c16953a51b",
+    "jvmd-dist/release/build.py": "231feb36ad9548062bcb9d4f13023b2ea2191de99545c93c2314b68d2e81c00a",
+    "jvmd-dist/release/smoke.py": "0597cabff2c10398fbb11879333ecdbdef69f80ffe5471f4a232d520ef76b45d",
+    "jvmd-dist/release/test-wsl.ps1": "311b506f7be5eba6456cda43d5f6156e4fd286dec94b243085d1f068ebfcc692",
+    "jvmd-dist/release/toolchains.json": "ae527165b76e9de52c10327991ed7dfad2f7505d7562eb4e26c4b3bfefe9af98",
+    "jvmd-dist/src/main/java/dev/jvmd/dist/Application.java": "c1f56fabb5e28e472feccd94bf92d188db7ef8bbae931ddd38935f79ab8395cc",
+    "jvmd-dist/src/main/java/dev/jvmd/dist/BindingFacts.java": "2ffeff980f5b2fe4c05b7936ba3c60254d3ebf8793befd06976782d929e80993",
+    "jvmd-dist/src/main/java/dev/jvmd/dist/IndexSmoke.java": "0c0790f8a77196bcc22ca0da260c08d52433ad3b0d589c872eef865873b7cb20",
+    "jvmd-dist/src/main/java/dev/jvmd/dist/ModuleAnalyzerRegistry.java": "bc45deeeaec421932e3b5c12b476ee33334841ed014f7ecd591c51f36cd56d30",
+    "jvmd-dist/src/main/java/dev/jvmd/dist/WorkspaceAnalysisCoordinator.java": "bc8d2f3ca9cc49fc5e6a54862a82bc821bd228cbc7ef3b64bc6b51a2cda26da7",
+    "jvmd-dist/src/main/java/dev/jvmd/dist/WorkspaceBindings.java": "66950dd03091cd460668ea060eea6744690b9e1aab28c0697e52942599b55ce9",
+    "jvmd-dist/src/main/java/dev/jvmd/dist/WorkspaceContextManager.java": "051eca4db61c79fdaf9de1e8110d469e86de7f8ce6ce3db5c995fa8696797ca8",
+    "jvmd-dist/src/main/java/dev/jvmd/dist/WorkspaceReadView.java": "71a64efe591b9ab64a6e7eab17dc116a0648f820fcd017caa7695509357fd749",
+    "jvmd-dist/src/main/java/module-info.java": "a36865771d1ef9b85c32db168be83458f4b6ee9655f27dc46d77d21dcede2b9b",
+    "jvmd-dist/train-aot.sh": "6fef4560c969f37449af09f12b9365bf50543b256ee72e44df7ecb8281325f05",
+    "jvmd-index-rocks/pom.xml": "a822b796ab49b14d0c6687c25c13ae1b555a9c744e3618ca724ce6d9657fa730",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/GramPostings.java": "32653a3047a8fe171a43b1dde893c2d4e760c42ac1f134a2ca658df9bf1a592d",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/GramSet.java": "1ab6c04971d222034b4d7bfb4a2df5e36128176fcb3ab51ea05abd2f31e8827b",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/KeyedFacts.java": "be18da1d452c513b2cfdcb08d52bee497b0f3db7069605b997d599802e641b17",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/PostingCodec.java": "4505cead805545e071759e48c9866a65d1075975fc83e701902ad0d6b557115c",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksArtifactAdmission.java": "3caa9acf4491c6ef453ef5926a3420851587a4537b50f00d3e6f9580670412f2",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksArtifactInventory.java": "ae115ccd2370d5d076d62ea54b2ff6abc83c7e43c6ccbcaad672f69654d784aa",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksArtifactRepository.java": "898af1781b51710d76866a29ff16392b621c726f9a1f3f92295d069756572b38",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksIndexSemanticState.java": "a06c8084837f854b9e0a3a5303a9bd34ea496b92ebf4c8a2a6a1cb1dc7ad06ae",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksIndexStorage.java": "8b882fa47e80312f19edb1575e0e3fee4b92a7e62c7b436d95632e26017e0a96",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksIndexStorageProvider.java": "e89531cf5e0682939fc3240d2ac1148a60f8eb55f75b7cb7f5d380445d85aa30",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksIndexStore.java": "d0046d37eebfad01622184ce48c56652db14dfcbb765f5d1193228f91c5593bb",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksMemory.java": "1045b8a611270e97bebd1ba62c70d904daab51c86580af6e8989e8e6547fefd3",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksMigrationManager.java": "f63aac6d1a6858d56045af7efe05537d12bb95077528b620fd2bca4384c75fdf",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksSemanticInvalidation.java": "c75ad7aa9ff55b24bec65ff9d3080fe9a350b076059b79b098aa112a5fdd4b56",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksWorkspaceState.java": "ea9db4efb3a6e651cde2b933d8e6f55aae881a4e7bc6897298683fe3b262d801",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/SourceOverlay.java": "63323d3af3f184791bf7b5643e66e6a6d114da737397fef3a5781aca4ea45d3b",
+    "jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/SstSorter.java": "8a4b5eabff4e6e3e6be6499e9e5c8ff59c3be181503769910edb38c201c21cfb",
+    "jvmd-index-rocks/src/main/java/module-info.java": "367dd18ae834bafa08f9656ce3708f4ebc80b08279a1511164bcc666e5473300",
+    "jvmd-index-rocks/src/main/resources/META-INF/services/dev.jvmd.index.IndexStorageProvider": "3fac48b851269d9d1184798ba75e215824cf491d3a322768a28f972e14975c0e",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/GramPostingsTest.java": "032ff706d4b66f734bf0887e2bc156d7ab228efe780c08a9cc3e8a59fa6c0e4b",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/GramSetTest.java": "e397778dbedb4e30cfdbd986fea4cecbfa2249745144eea830f76cc7dd0bd981",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/PostingCodecTest.java": "97755b85312bcea065b6235a5360f6f1348e0da9af64ecdd644dcb1c091dce63",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/RocksArtifactInventoryTest.java": "2d8e70b74b6dd743c2f434f5823a276e9582cf4b4aa2b4b131fb8910d8321e95",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/RocksArtifactRepositoryTest.java": "c7ce62fd1ad9ac365ff802096da22301d870a1b35b55ab54c28fb5c23489609d",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/RocksIndexStorageProviderTest.java": "08910267590c9ea5529fb0a01912fbacd173efa88e545e2b3e1f224fd76df5b9",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/RocksMigrationManagerTest.java": "01f098a605e2d57b84587ea1bc26395cd6b36422ac2a8a3343dff9e8b8bf93b0",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/RocksSemanticInvalidationTest.java": "84ae202774f486dde2ce9953737ff5501b7d2898aae08db0ca527e0bb8df7ab0",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/RocksWorkspaceStateTest.java": "046169c0685e5f399196196f81949ecabf21c1426438fe9977f23f4949c1a9c2",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/SemanticUpdatePolicyTest.java": "b04b8d328325b0dca10f19d3027c4d982aee1bc943adf921b756febefe79e0af",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/SourceOverlayTest.java": "a4e0d377317ee1c1f006c25d55ed7c8dda777ede8678c3224e0fe360668ad23f",
+    "jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/SstSorterTest.java": "a0975ed7ddea5268c5b6851f421d59899a3fbfd38a3cab3427e7558e5bb54630",
+    "jvmd-index/pom.xml": "46492cfe13c8e478b9aa017d4201ad843630f97863c0a11358f03b21aaa72ce6",
+    "jvmd-index/src/main/java/dev/jvmd/index/ArtifactAdmission.java": "5faad6ca496923730ee0ec9bb7414065c79d111f25aa56d23061a1582003f31e",
+    "jvmd-index/src/main/java/dev/jvmd/index/ArtifactContext.java": "3527fe2d16e7b30db66cb0d9310524d33db1492df9398b54cf7fb60cb3f6aa4b",
+    "jvmd-index/src/main/java/dev/jvmd/index/ArtifactIndexFormat.java": "64218989798f044ff6ad8781028c3b9fbdbcbdabc822e45052c5ffec8b151015",
+    "jvmd-index/src/main/java/dev/jvmd/index/ArtifactInventory.java": "e993b9284232c4d918056ae97a58940e51d8d15891e9c3c2670a4f21ffd2fa90",
+    "jvmd-index/src/main/java/dev/jvmd/index/BinaryReader.java": "62c2b1bbf28b0aaf267de6bb8c4f1354057a7ed85fdb2015da2ed72133cd6375",
+    "jvmd-index/src/main/java/dev/jvmd/index/ClasspathSearchProofs.java": "3cf289fefb755e516a0c2974bf31d51196b052713b993c519ec7bce55d9626da",
+    "jvmd-index/src/main/java/dev/jvmd/index/ClasspathSequence.java": "8a6a5065603248dbbecd2d992d6fab8adc1acd03fb8c6307cd009f13da395bbb",
+    "jvmd-index/src/main/java/dev/jvmd/index/CodePass.java": "5784078cdd06c9d88458b19233eb0d2ca525370666fbc03cd6d798f92c527faa",
+    "jvmd-index/src/main/java/dev/jvmd/index/CodeReader.java": "ab60680b05bafdf12e2bac51f880b68f99f3360098debad02ca223fed48169b9",
+    "jvmd-index/src/main/java/dev/jvmd/index/CompletionCandidate.java": "18da538194089f47ba514e668ee8e8222d537bd3ed6ae28cd795e5fe6eb99bfc",
+    "jvmd-index/src/main/java/dev/jvmd/index/DocMarkdown.java": "022fce752de4bb2f9b781abdc1663d2790097f5daa4496c8fc2fd241f654d26e",
+    "jvmd-index/src/main/java/dev/jvmd/index/DocumentSemanticSnapshot.java": "5f65912a249380cffea3d384ee442d93839d7036430223a574b4f84611f0bafb",
+    "jvmd-index/src/main/java/dev/jvmd/index/Documentation.java": "a44072860130e1e3ad483eea11fae16aaee00a21aca002263bdb5dcfa89b6f36",
+    "jvmd-index/src/main/java/dev/jvmd/index/EdgeScope.java": "33e0a329dd3f1fd5943cde93dd251b171d8a6eccd48a60cd95d5280db3ecc05a",
+    "jvmd-index/src/main/java/dev/jvmd/index/FactCodec.java": "e0ecb1245f52a52712817242ad838af359c11b16251313882c0386b595382555",
+    "jvmd-index/src/main/java/dev/jvmd/index/FileSemanticContribution.java": "ee869f7b980aaa90416d9b76401c9f91675ac60133359f70ef7ec329950d8054",
+    "jvmd-index/src/main/java/dev/jvmd/index/IndexSemanticState.java": "c593a5e185807b27cccadbf93db11f3b5f02cbe12fa742a7ef7d52d5a9b61f07",
+    "jvmd-index/src/main/java/dev/jvmd/index/IndexService.java": "3bc8c2a999a65633e9a2852ae23048a41ad556d19f14ba973e6466023515dfd2",
+    "jvmd-index/src/main/java/dev/jvmd/index/IndexStorage.java": "e6ace51c6a58e890d562cf8ead24b71cbb45c1eb4dc662e5c62ddefe46b70e54",
+    "jvmd-index/src/main/java/dev/jvmd/index/IndexStorageProvider.java": "fda1556d7c18059bf09a88179ccdb6f693e4fece9d03de7f37c0bdeed00bfe8e",
+    "jvmd-index/src/main/java/dev/jvmd/index/IndexStore.java": "0a099472888e51675fe643d9bb68fca8cc96663006188b6ab3bdd672713f722d",
+    "jvmd-index/src/main/java/dev/jvmd/index/LocalArtifacts.java": "e572a364a40f86ff126dd0819579d828c73447a5d8fe7afdb4684df41e42f8d6",
+    "jvmd-index/src/main/java/dev/jvmd/index/MachineDependencyState.java": "0f8f3fc34affce1e8c9b55730f8e7d237ad9158f3bebca95e07ac862b0bb7d43",
+    "jvmd-index/src/main/java/dev/jvmd/index/QueryProof.java": "fa168032789271b3a457be446b4c819ea77380333afbddc341d45d4f7154c208",
+    "jvmd-index/src/main/java/dev/jvmd/index/ResidentSemanticState.java": "5a2be61082e7c781dd347b93647b7522917538bdb7890895dc16932250ca13b2",
+    "jvmd-index/src/main/java/dev/jvmd/index/ResolutionFact.java": "31c0c85206b0aa2ad83dcc304d2a01097b1aeb1103328fac8a726d231e0da126",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticCompleteness.java": "d2303f9a2a61cd8f85e4a1af283dad1b099eeda26d3daadcf69e38a6a8b59d4c",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticDelta.java": "b995ac1232f6d61bcad60e090e53a20a6d36fce6632f59e4277529bb3790c113",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticFact.java": "42e08e88130471ac2538335f806d9f72600423cd0524bfa9c542e4d751a2228d",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticQueryProofs.java": "49bb1cea5d73af315c9f7e3bc7e68947e4b4399a7af54b71382c38e39d0ab155",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticReadView.java": "b1c3347b3d1362c03ac6c209f187bf52825c18fd7f409fc0b0b8f39fbfbb104d",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticReadViews.java": "ebebc95422529aeff8475a6c8f5c548a2e977df1ab60344aa2883a4bdf033187",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticSnapshot.java": "30416785f0ddcf5dd0aafc892599d22f475b39f65ac305bfa59e9a5fdbbb9577",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticType.java": "2ace622dbe24f0f269da34447c989125f0b51c5a39f6c5765a23e18b7180fc59",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticUnitMerkle.java": "c0751524a258b354ff2a0944d9db26c00875e1244abfaa3c441e673d8eb87225",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticUnitState.java": "5080010c670e5f2f3034a102dc04e8beab38f94ef80fafff68fde3907ad7ad75",
+    "jvmd-index/src/main/java/dev/jvmd/index/SemanticUpdatePolicy.java": "a717b6901fb5bce9b28c7074e2117242c4d9f7a4000eaa0eb37aeb48262324bb",
+    "jvmd-index/src/main/java/dev/jvmd/index/Signatures.java": "ec9e8fa3eb1b78c0ca60af037869c3006df795cfc24888a16c238f3702811522",
+    "jvmd-index/src/main/java/dev/jvmd/index/SourceIndexPublisher.java": "acf2d3e3541851af9ce6302adb1525440f9975e90fef58ea31d8d98f8e4b6b49",
+    "jvmd-index/src/main/java/dev/jvmd/index/SourceJoin.java": "b2e83f72d27c4607371ae174e97b39bd7ea5fb22a6f48fcfe83564363660b115",
+    "jvmd-index/src/main/java/dev/jvmd/index/SymbolDescription.java": "c50407ac9735a771ce877e93c2089db670f83ffa18c2688b42f88328678b7abe",
+    "jvmd-index/src/main/java/dev/jvmd/index/SymbolReadView.java": "311ab543f3320b56571e0d8ce68034d00671188032511a057cf82ec9b6e8a022",
+    "jvmd-index/src/main/java/dev/jvmd/index/WorkspaceSemanticIdentity.java": "7816d6ab421df59af794f5da17642990836e29742edcb7d3ebf985acb366d833",
+    "jvmd-index/src/main/java/module-info.java": "d4554a7242e625b96b5462e48b1b2baa8b373204fa2698de93abe8d60058c708",
+    "jvmd-lsp/pom.xml": "14689e350e724e629d6d6e9f6605f3625792f5cdce99d04285991355f4017202",
+    "jvmd-lsp/src/main/java/dev/jvmd/lsp/LspFacade.java": "2960bdbb76fa6e9355846cdff9539ae4fc29927c14ce77efded0cbff8fd97197",
+    "jvmd-lsp/src/main/java/module-info.java": "89d5268262dc6202056f9ce2b4e1366b5e8304a69018c35498b77f1ec7096492",
+    "jvmd-mcp/pom.xml": "f2d1e59b6f11f2db1814916520c49390c1e52e07c98eb6b7d079f2a33e686ea2",
+    "jvmd-mcp/src/main/java/dev/jvmd/mcp/McpTools.java": "f35ae2664a24beddf7c8ce55e3978cb8f47cf3def7ffbf79b6345065dd99a679",
+    "jvmd-mcp/src/main/java/module-info.java": "73e2aeb6d700c8a1e204a2cd1e50ce6fd7194efb4e42639a9204c491984a4c33",
+    "jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/Bundle.java": "97f0ff10ca0cbc38e80a3134c97e09e47d24a00de6b6abf5fd283aa21af00426",
+    "jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/CompilerSettings.java": "846939ce7a953b26363575f79482ec319e92081732785d914ae83f1473ac2a23",
+    "jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/MavenEngine.java": "8f4dcb80afb696dcaf8af8fad5525e7f1abd4ede49d7383ea149a2d3fe77c480",
+    "jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/Models.java": "794a27c646ecdcda6437d717ba2ac957c0f0f0f38e181166edd9fc583d8769d2",
+    "jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/OverlayReader.java": "f885b58997fcea6b5e810b44e010321fe56db7b64f8e6271c84bfc4bcd3a447e",
+    "jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/ProcessorSettings.java": "5238fea50d63e36c8c3c52e1f16f1e134a8d003eef8ce260bf92ccf1eb8a92d7",
+    "jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/ReactorPoms.java": "13c4c09eb38bd4a41edc1737fb8aa99ebf73ea8606dc9a186026d760eeb76104",
+    "jvmd-resolver/maven3/pom.xml": "d197a0b69a4fbcf026a535c56cc8817477e63ef94e7ddf411a50d1d74ad47f05",
+    "jvmd-resolver/maven3/src/main/java/dev/jvmd/resolver/engine/VersionModels.java": "afb83b9fbd2553b56a396c590e0836bb93900a9640f0d148d6c187011f2b17a7",
+    "jvmd-resolver/maven4/pom.xml": "e39f83ec04a10bf36737b40f38e525a1b5a5b0a90a044e00fe13975c21b3fceb",
+    "jvmd-resolver/maven4/src/main/java/dev/jvmd/resolver/engine/Credentials.java": "a38e4f4efe3b563caef00094ec1485477d63984b5d6f90b84dc075a69a299556",
+    "jvmd-resolver/maven4/src/main/java/dev/jvmd/resolver/engine/NativeSession.java": "674637a3d02465e168c1c652e23de4561c945026c307fe4976c7c961eaad4ce9",
+    "jvmd-resolver/maven4/src/main/java/dev/jvmd/resolver/engine/VersionModels.java": "e1b93d15b85f05c3f8c873a3b81a5644c7b34121d3f1046cd4522dcd59859c25",
+    "jvmd-resolver/pom.xml": "9196867d5d7a1d9cb7a73489111ccf592774a72f8c05fc0974f00dd4d268dcf9",
+    "jvmd-resolver/src/main/java/dev/jvmd/resolver/MavenEnvironment.java": "874b922b37f08ff56628a205cae4effe774471f8f755f872e94988d3f82a0231",
+    "jvmd-resolver/src/main/java/dev/jvmd/resolver/MavenResolver.java": "261c95090577d805a05cf9524253ec1aecb4dc691f75657bf46dccfdbfa013f8",
+    "jvmd-resolver/src/main/java/dev/jvmd/resolver/ProjectModelState.java": "aa58d6674c4aed4a2478399a0626c28f03d1e025c5f49e7f6d8bf65c52187785",
+    "jvmd-resolver/src/main/java/dev/jvmd/resolver/Resolution.java": "dac76fbbea1f2c37835e8f60d4e454eecc4aa9b2b08cbcb273d757428fd4fb48",
+    "jvmd-resolver/src/main/java/dev/jvmd/resolver/WorkspaceOverlay.java": "11d54297dbdbc7104cc1af9e7669848c91f178c6ca13245d33cedf50804611ed",
+    "jvmd-resolver/src/main/java/dev/jvmd/resolver/WorkspaceSource.java": "0edf93aa682527f9ff0f8ac53d1413378a9ce73dff1ffdc301b33e241c71c616",
+    "jvmd-resolver/src/main/java/module-info.java": "acff35b552e3c4a690efbd427c35b2c1d2eb214ca18adec5fb06abc46c54473c",
+    "jvmd-runtime/pom.xml": "410be82de0f0e8d62373a3347c48560f3363b13795d1ea230e0fe653b416bddc",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/CompiledEvaluation.java": "a69ce4632dcf9c8179f899e9a1c5ab7978de1e5e6b12e738562d67412bfc2ef8",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/DebugSession.java": "8f4742ac954d76a4ad2614b36bd16231f527c33c8868ee099dc9c31d719bba30",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/EvaluationBridge.java": "9fce9f89c87007a92008776533d9f468f114bd9eb895edacf33adda33e63990c",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/EvaluationCompiler.java": "ca85d3d94a9776fc3423a3bad009e05e2898b3fe54a3d5beadf820103dde9384",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/EvaluationSupport.java": "3e21b2e4b7898103d9de52ca8d4d03567d9ae740d52f23c411c671687951dd0c",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/ExpressionEvaluator.java": "d3a8c6232e762162ef1c2256f0ba42307f0d61960d9254e89c9d9cec6d698369",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/FlightRecorder.java": "eb61d6bd476b64c559f1cd1e3064a6ecf5a7404b6d83d34b19c4e88a2b4b0795",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/HotSwap.java": "e3c6066bb69367baeadd2520d9323e2ace957c842ad3eababf41efb523f0cce8",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/InProcessCompiler.java": "124ed88f41303bf80ecb3b7219bdcb5c409fb5c0e8bf811690090f766fc0707f",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/Inspection.java": "f22f2733a8152ed725cd1e144d8bf832cded41d5879da15e6da21ca9cfeb8e12",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/JavaRuntime.java": "8313cd501fa986501bc531877301cef780d64f41a8b538e952e8efa117d18091",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/MemoryView.java": "00eda65c0b2f60b535629459ba192495537189347f6438b85e00280fb4e21fe2",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/ObjectHandles.java": "190d7e83754ba6bc534c1bf378f6c37dee2f32569839e96956c79850d77ed40f",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/RunManager.java": "1e8988d466d6273b23de1c5aa47876ba54b7c72ad07c099e5f290a13e4d1d9c9",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/RuntimeCompiler.java": "7050e14a05eaa8485ea2d458858ad91a106b6407cb3cf53137d535f9e1365720",
+    "jvmd-runtime/src/main/java/dev/jvmd/runtime/SourceLookup.java": "27c4374031d71e056ff752e9807ad7c495b7def316c3be78ba86f66ffa29adf0",
+    "jvmd-runtime/src/main/java/module-info.java": "207c615275ee820509989caad0a3888816a5ecefe7f79af99e1670eb40295c53",
+    "jvmd-tests/corpus/fetch.sh": "16d54b37585e058a5b136fc4292d91f080a58eaa7a3aa5677b9430fb9b997c31",
+    "jvmd-tests/floors.json": "104c5de8d91597d44daa634fa9ec6be5d9fad9a6b3d85bea41ba6c19580ef167",
+    "jvmd-tests/pom.xml": "e4d2a62cdc3a0ebd0a102b1b99c9a904a9eea96ffafd5b3b7ed42d7e48bf08ff",
+    "jvmd-tests/smoke/AotFixture.java": "b4a7a60568b1e421b35f88a7a2fff54dda0d55f3f827f2b14e8986cb2c04f3d0",
+    "jvmd-tests/smoke/JdiSmoke.java": "b22ece93427607d2cdcd2165b3337e6e26a074e1e620388217c6f12b29e31d9e",
+    "jvmd-tests/smoke/compiler/TolerantCompilerSmoke.java": "196fd8804c9654ef40c9ebdc081dc38d80c48330508a7126c0a3336a86cebd65",
+    "jvmd-tests/smoke/fixtures/base/dev/jvmd/smoke/Debuggee.java": "f86bb225a9b835fc9b5d89c419b33c7368ba68fc9b8df1f82dd8a0f853504169",
+    "jvmd-tests/smoke/fixtures/base/dev/jvmd/smoke/SwapTarget.java": "5c4743301e7dc3b4055e6f4a7f0c8627790b071ee5cbe29d1a7f05d3295b47bf",
+    "jvmd-tests/smoke/fixtures/body/dev/jvmd/smoke/SwapTarget.java": "1ae2e133ac581b748b2504d230dca9e658d8a4f7c0eaef89de983cdb855e3071",
+    "jvmd-tests/smoke/fixtures/enhanced/dev/jvmd/smoke/SwapTarget.java": "4706bef4ad265a7e45a0fa79725e1bf630fd45dc0ff9056d551feb52e53c5fb9",
+    "jvmd-tests/smoke/index/pom.xml": "cfe811f95151ddc247e25e98f407a03a508b7992cbceed63ffbca2aabe9fa2e0",
+    "jvmd-tests/smoke/index/src/main/java/dev/jvmd/smoke/IndexSmoke.java": "62f12ca3e73877bb32747205afef9bd6a6794ab6b1100b4a572246cd04212562",
+    "jvmd-tests/smoke/index/src/main/java/dev/jvmd/smoke/SourceJoin.java": "426fcca0ad4ba733b5ad5fdb817faa33ca140748a16588d46bfab48dbc539057",
+    "jvmd-tests/smoke/resolver/pom.xml": "7f2b100b4194b48a8aac7e89273f2a1c5aaa5a78fbb4c30f44ee82c69ae25d57",
+    "jvmd-tests/smoke/resolver/src/main/java/dev/jvmd/smoke/ResolverOfflineSmoke.java": "a7499262fe3bae8909783fc269f1fef02dca9dd8dcb97d00ec37bbdf326c14ca",
+    "jvmd-tests/smoke/resolver/warmup/pom.xml": "1a209de8201eadc8eba2db09a44440cff981f398d3d0f90c69708692aee61d32",
+    "jvmd-tests/smoke/run-aot.sh": "5cadcb9e56f9ef3b26a709360c6d3e2dcec886a9509e8c0522ef0e4242d083f2",
+    "jvmd-tests/smoke/run-compiler.sh": "33854030bfc787c1f9127fc5a207ac130af74ac2a3511140af371dcde0a3e327",
+    "jvmd-tests/smoke/run-index.sh": "1f5a5efc24e25c82f6999c9762686cfa5d0187998b7f49e160ed6cb33236bbe2",
+    "jvmd-tests/smoke/run-jdi.sh": "54e46d3ec852b7f1db18d2c8c24f353dcc43564fc09024aba69c61ddeab18d4e",
+    "jvmd-tests/smoke/run-resolver.sh": "b1c3be4cb7b9ad920be289ceec0fc8f6018349396858ae207167c639478a693b",
+    "jvmd-tests/src/test/java/dev/jvmd/index/IndexDatabase.java": "7a71f5d0f6ca39037c116289af61ebe5646151f7276439e3810303e9ae8c2882",
+    "jvmd-tests/src/test/java/dev/jvmd/index/SqliteIndexStore.java": "0523127ead58d662db8d30b0807b8d3b8a817831f6bebc1ac6ff747a718f4bc8",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/AnalyzerFaultDegradeTest.java": "35fb5876e02f3cdc1e99faf65abba30d1657c0a500bcc687a77aa543c1235003",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/AnnotationFixtures.java": "9f7efb347237aa3bdbfd848f40f1a671f3db04240fb1f3598fb814ef616bfa23",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/AnnotationProcessingBindingsTest.java": "5141d3e9a98e8b8a5dca087b40bb9bffadf3ce46d8d510063b5ce85f914d17d2",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/AotDaemon.java": "ae116ba2cc11397148d9c5d91a3ce2594991110d81a190562bd3db7c6358ead4",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/AotRuntimeStatusTest.java": "063c23bc10ce6c88bdaf2a20c675b12d899b4cd3ba07eebc52d5f7544b43fcaf",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/AotTrainingScriptTest.java": "403bdc7b779a891820f859846817bdd5aaf2acf9d00f698e80dbc4013bf1f691",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ApiFingerprintInvalidationTest.java": "7f1823e02fc2f477ff0c7107c8c58eb364e772c0124218baa2fd026e9c9eaf81",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ArtifactIndexFormatTest.java": "531d0c8f61fbcee32c805e63563bd5d0943584deb6b88ac54aa8992fed6f55e8",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ArtifactResolutionIdentityTest.java": "9bdc4f205ac16ee871769850a5484c71e5fd6660c22cf6be0377ee9dcde2fb41",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ArtifactSignatureVariantTest.java": "4e984756ebcf5149eb7fe07d08c57225f86a7b96078b8fbaa529fa69fadbac64",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/AuthenticatedRepositoryTest.java": "e92e61e3648de041b7a6855183c80324d64b2124f4bec6118432411da4b15933",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/BatchBindingsTest.java": "b1dedca3e0be60818cd9b48da009a86b3e51ad70a8fefdbb38f61c0b6dc51edc",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/BatchDiagnosticsTest.java": "d77ba8c9ab5017139104849f997867faf9f59995fd38662e9dcdee3bc22bade2",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/BinarySkeletonTest.java": "7e95cd1c39bb14ef8c5eeb04b76de36609b8a3c21b50a3f7843d80bb1149ca91",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/BuiltWorkspaceReaderTest.java": "c45afe199f97c630766db79602233075ef51747ec151e2a6882a3ec413024773",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CanonicalResolutionIdentityTest.java": "81f4a76557f020e63ac362c4d67f71df5c75d88e629ff67d82d34d0071783a86",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ClasspathLifecycleIntegrationTest.java": "3384e33c027db74bcfa029289d1180da0b9c2dbfdbebff597283fb1326d79a53",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ClasspathSearchProofIntegrationTest.java": "7926d1a1504355c096f1ec2c1e8812f9f00986b594ba4e6b5d74347eae2b448c",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ClasspathSequenceTest.java": "a3caf1042897c3fa8cbd5c86b462eaa49bd7d14334abb2dc1fe2596f1809d3c6",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CompactConstructorBindingsTest.java": "6102250c0986e14b52b073742782910649a9aeca62fbbc84b61fbd33b633f0c9",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CompiledEvaluationTest.java": "9b4fa2b7f87571e8eb28775cb4c59c71939137c6e27e6f8f41201958bbbd920a",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CompiledSourcePoolReuseTest.java": "ec33061a10c332b96d9b2c3487e7833424fd0614e0a3066f8dbdcfb119752bcd",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CompilerInputsTest.java": "6635dee084047a00b06f78a67760628cff155775fd997e35b3432d28f39436d5",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CompilerPoolLifecycleTest.java": "06936a656d1a5fc8be29055270f3ab96c01408a9f3fb93f08c248400846cc27d",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CompletionContextResolverTest.java": "61e64aa2b9526cdbf6a75dfb186b1e637d3d6d67a4a7c191e670a00f96af184f",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CompletionPrefixCacheTest.java": "dbff230ad55fc424e2a23185340b4c23715574113cb0b7abcbd815e4b38fc595",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CompletionProbeTest.java": "5ef6bbb67b48f5f32005d9e654ff250affa1f78160b1a4ebec5dd6672e83062a",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ConflictLosersTest.java": "5086e446610621b1844f0a3bae7dc82bdbd1ced0f4ffa3fbbec14acc741559b7",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CorpusAgentSessionTest.java": "278dd5acb9e47fdf74118c71c1f6e57f7779c3e824a2ef85b819fc557a4c4885",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/CorpusLspSessionTest.java": "ecd1f833f28c596204b86eb6544ec0ddfc0189c89ea96ae129ee30b740c583b1",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DaemonIndexReadinessTest.java": "8deccf7c2ae3676e5142f312609a315972f1bf8476aa11fd944aa05a0d604c93",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DebugInformationTest.java": "d190a4bfc819bd54428596a4da05e941afee0304aabb8cf7b90155f6e3d089ef",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DebuggerSteppingTest.java": "d8214894b392247092c70da560e7159aac39a106f1eef7f5cf552d911bfacb79",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DependencyDefinitionTest.java": "d1b4aa9cc902f90c738d311f9baea0ce321e01856759b987ed0b54fcee2483b1",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DependencyFindPaginationTest.java": "f4f4bc139d8c4f778262e1238287e53ddb4769568ef575fbdfbc12c9abc7b2f5",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DependencyGraphToolTest.java": "b210975f5a2b82879d3db0eeffac2745f41f64a395b415abfc9c4ad1a9be5279",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DependencyHierarchyTest.java": "af18cee12c5d92559c773921460b3f32a1336faaeaf4c263c25d931a73f90b49",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DiagnosticIdentityTest.java": "45d5ff866d5831338cda9d497823d2a8ec232880cb38c07f9d3f2ab7d530f3f8",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DiagnosticRequestContextTest.java": "4970f3bb8e2e089d82f52ffbbeae41d601946a75c4b5cd04c66141ada787100b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DiagnosticSchedulingTest.java": "84016e3b85a178666e030b811982184ea51421e7ec7f21cb3fb59753a14ea428",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DocumentContextProofTest.java": "b78097537d68a46413dc906ef9ae583eb742876e98ffae2e0ba55d03f31c235d",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/DocumentSynchronizationTest.java": "ed47b3bb541278f18b9ec7c1c7c4f12ab6f47ee6507c8c73f39c3667f56ca9d3",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/EagerRepositoryIndexTest.java": "fdb7466b24e512b10a02c5eb0e355f265f927cf279cdadb8d1d92b477961fdf4",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/EffectiveCompilerOptionsTest.java": "0f790289423ded03bedcf60a4adcfc547fc09cd27ea70df05cbe65662fb133d7",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/EnhancedHotSwapTest.java": "aec83e44a474a77d39037d3b0b6b9d7e615f918595cc8b995d466c05203164fe",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/EnvelopeTest.java": "db25673757b868505cc77e83ac4f5d4f4acc1d70c3398706283a17df687e30a5",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/EvaluationDeadlineTest.java": "3c743121b31ac63431d2bb4bca082fb4fe839ff6cd8b9cda08bc9e305cca4cb7",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ExternalAnnotationProcessingTest.java": "d667635526a49e1103a35ffcb20fc75cfffef850427a57646d7a7269ade4cd50",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ExternalSourceRootTest.java": "d4c171b665faee3b7af14bf5bd275b3b70c90db96f72ef7efc503cfb6ced7246",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/FileInventoryTest.java": "252d9d36b3032df9470181acfebf3c6d20c1731f87d348560f463a8918858c87",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/FindDepthPaginationTest.java": "2eb727d88438bb1d2990126dc20a53e75882deef02d6f9a30bb883dd6628c4b3",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/FocusedSignatureDependencyTest.java": "fc1e827c08603cbdbda15876b58d04c853270eeb236e4734244faa694b6acef7",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/FocusingTest.java": "6cb1c2277e5d0574546370ed8c12c502dd642d99f4cc5fce8fe857c90f50ba7e",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ForbiddenIdentifiersTest.java": "592bfedddd1d94b1259c8f7de9c4121124b671ae9c938e10dc19422635f00d5d",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/GeneratedSourcePathTest.java": "18188caccf8cee3430c1d77ff303f23f1127db401520b303ea43167511dcfe56",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/HotswapAgentTest.java": "1e668d80fba29283bc92aeafee04f58d7b70a67e0a8ba38e122f8cb6d03acdf1",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/IdentifierSweepTest.java": "725e156c9ed3a0207e40dd11b1e7c59ef1d06063f5f5bdcce3733b5b3af99479",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/IdentifierTokensTest.java": "ac536b887a868d6d2019c31ec2ac448661cdd941c9e75276878c153052787760",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/IdleShutdownTest.java": "1ef5524112f6e77cb7f2f7cecbc4a8b7ab972a14edad93bf8e5ded3b65bd02f6",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/IndexFixtures.java": "446f9fa8f1fe70097187bcc054a26c42c46e55e6f6ee00e3c381865677922389",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/IndexInvalidationTest.java": "2c6bb8a82f442db06f9e874eb2646d98ce67a42f5625cf290b0b1f6f53a1e1d8",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/IndexMembershipMigrationTest.java": "24cb1287411c8067f44654333561189225a8085fcee12ece640b3b1f48cb1cac",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/IndexSchemaTest.java": "6aa8d2ce9547e3ec565a2d36daaee3d21ec3299363d027332047575aff74e6ad",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/IndexSearchTest.java": "287ce5521cefca9fabe1075749164569d60a366ac82906e12c31f909c8a9e41e",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/IndexStoreContractTest.java": "77ebc4f5d3fb429e3dd7bbddc3dde7699b529d1b83ecb916178d1471e06dc19d",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/IndexedFileManagerTest.java": "71d01aa452e1d1cd30a20fa1a6fa5aac53ed900722f5d2bc0203fdb226e07d39",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/InheritDocTest.java": "cf9ca41e31f99953ac14a234122cb04aa4e2c8cec75af8f267ec4dbc0fb19ac4",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/InputBoundaryRepairTest.java": "9b153c30280c7a7b24bbce6e29bea12587fb756c583050b2389cb535f604716b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/JlinkImageTest.java": "93fdec22bb140bb12f7c8fae863abcb332a339d035106ba9193d0d828bcdd045",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/JsonRpcServerTest.java": "4b4029d1603f521d124efe8fb41b9cace10b4bfca64494340a4be0cc01586f43",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/LazyCodeReferencesTest.java": "97e1221d64b0e873540ac6433c4e43e06af34c782bd153cb99fc87a54f06e4e1",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/LiveSourceStateTest.java": "993686c07f1e85500c317b2038e23cbc2c07f32aec0fbe71fea2fcb4426468e6",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/LiveStateTreeTest.java": "fd701f8c49c168b64816fa560c60a77cde3bc6ab90b7e41c675c65c2286ffc79",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/LiveVerifiedAgreementTest.java": "8b494b2d9a0a1c727dc64f1c0673e8e78895681271545428069440816ab43a93",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/LiveVerifiedDiagnosticsTest.java": "3c6d7c5463b25f3c0e39f9a6e846ffb22d8911ae396d5e980a2534fbe7680640",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/LocalModuleIndexTest.java": "3d943fadbdf98d7d16e99bea49badb4e2c944897d1ccf7a4750f3721e7e11930",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/LombokPolicyTest.java": "91575545c6693e789f5db0231ab6e36d22521df168ae81b62da84753b37ea6f9",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/LspFacadeTest.java": "5f185b184b2bba385fe7690ad8835eada10b8ab92807281814be1eaacf32f481",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/LspStdioTest.java": "f92fd609a7f44cf7efcaccf40e9dcb5b7708e47f43991cd99b0876ef7ed0cdbd",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/MachineSemanticQueryProofTest.java": "f4d8ba92d3de35c10c7aea90a531f76f9549ceb4ebb73cbe3767263c229e0fcf",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/MachineWorkspaceIdentityTest.java": "7577f6ecb188cf586f7ba560a4cead61358190e15f598c58f549f88232413263",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/MaintainedCompletionContextTest.java": "82201691a29316b6e7f308c3cb6a2a3545fb773063b5b05c06bc15042cbf9e61",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/MaintainedSemanticObservationTest.java": "ee9035ac84b98d427220788a320e75238400b656cfddbfd49c8c8cfd3db9ffa3",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/Maven383CompatibilityTest.java": "25d74853ee44805092ea364b9332cb51553eec073f8a7938bdabfc388f0ffff6",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/Maven4ResolutionTest.java": "c29f25604d26bf17cdcc27c3871f8aa5f8dc96e4a338cdb079343942db9f5b95",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/MavenBundleIsolationTest.java": "bcc7804ac5e52a4198f1d7bb3657216b6aeaa81ac2c07400c9488af03a655e51",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/MavenFixtures.java": "5aa1adc5a940d6928fa447c2647838e2da21a255b8868bb0fd03c628148a5840",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/MavenWorkspaceResolutionTest.java": "f5cf1dd72189b35316fe74b9456d279a8ea36f157ac7dc2574283f56d10339a3",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/McpResponseBudgetTest.java": "eadc92504a02c00e5a5533988f5dced8c557aafde90c38fb46a9f77c5e195f9b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/McpStdioTest.java": "ccfc1d8138208ca550f20bec5cab131e351c2cffda764a01616525e6f1887b3b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/McpToolSchemasTest.java": "8ca51838e8f90a1c5773021bf00f0b607502792df8da2ffdb61339d200b54264",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ModularAnalysisTest.java": "aed1f1b123c0e58b3f1a9bf4104879d3000b53f58a8944b2e740e4be783b5e8c",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ModuleAnalyzerContextReuseTest.java": "7bd50ff4cf9b30d3816f006e658463ce85e70e685a3d439970638240225f5537",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ModuleArchitectureTest.java": "49bee6eafb9a890685d44e45644da147dd80fe7b6dbf9ca4a461fa670dd2e7d9",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/MultiModuleApiChangeTest.java": "8cadd80400c4eb9bf3f1ed0c41064ded63137ea55b283f7304d8d87b69838705",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/MultiReleaseIndexTest.java": "34a5dca0f88081ce5801363ab16da39b064b83e9ebb1e76d665b5b240ee25f19",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/NamePathResolutionTest.java": "73405efe874cd6584a32e57f7924ce6c81429fdea42c374e67ebce292aadb892",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/NamespaceResolutionProofsTest.java": "c65f74dafcddaa780041788213aad05ccbc94fd81b09d8c6ee716daa9b322c39",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ObjectHandleExpiryTest.java": "3d31d88205c2f3ca5e56023629c30ecd4aad7647f273095b13935e3a7cb1ddf6",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/OfflineFirstResolutionTest.java": "5b96476d11e384f78ca11222132fabdcaae61c6c365da01f758d60799fe40b03",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/OverlayFixtures.java": "797e03f8763ca4290a40d1f006a92554dcc5b505b33a0f2bd51fa2dd8949166a",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/PackageOverviewTest.java": "22220c6e87ae0bc20c9e41e1759d76bb0e9102c3790abcc5d4c640f0719dc60e",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ParseOverviewTest.java": "9fae47e52466d064ea6685d3cee85c926191918eec103cffb03cd554f7de3c14",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/PersistentDiagnosticsTest.java": "f6d86fb34f42443107aae47a231010aecf1bcab4fc8aecddc26d284cdf13dbbd",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/PomChangeClasspathDiffTest.java": "2927321be5c8f537252c8952e0ba8765fd37d67ed97b06f137a2857c65b46185",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ProjectResolutionHotPathTest.java": "31b63061944a95fee4db7622503973febc0744b049d55c11a007681f1eee02c8",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/QueryProofTest.java": "7ef467c32a81800c3f8b5026609fdd0589ac65e1c69ff6bba592e4c218b79e2b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ReferenceIndexStorage.java": "27737a60cba0b0040286014f36d3424a35931fea004d45572b95d1738913d0a7",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ReleasePlatformReuseTest.java": "29d8b026d1c101f867ddb4a2741be3a813f2d5676b71cbc7bc1a14da72a8c0b7",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RepositoryIndexExitTest.java": "8a7ce45b28fb58058cab42c40359818bdfb1ef953033083c85f058a4bf4a1168",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RequestScopeConcurrencyTest.java": "7e6d45459a1d0e1ec3934b71ffd62d46c54622c5621da63f94ac1d14e3b267ad",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RequestScopeOptionalMetricsTest.java": "c8d668f6fe54201bf7970dc034adf05083aab2b3587c8fcc1f2aec88a45f0458",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RequestScopeTraceTest.java": "44d5f185b908240610b9bd9241f9406c6472ce6407e3d656c3231c4a429502d2",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ResidentCompletionCorrectnessTest.java": "62ef6d88aa6b52df5a45012e0a953089cc28d9d05699dcfb94469ae56fbe41cc",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ResidentSemanticStateTest.java": "0770b739b8f7d06602ca02dbdcf99134bb0451277fef7b265fd11fe3fcd7924c",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ResolutionCacheTest.java": "73ceaf3b1b08725715f2d6fde693acfb2f52c27ae4994e974b9a6b5cdc492d9a",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ResolverBootstrapTest.java": "449b9ac06a0dd982153f422806dc8a4fda722861dbc26beebfb873a2d616d20c",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ResolverMajorAlignmentTest.java": "825f9c945ce2bb8082005d954da4f5f0ccd3f1923a205e2b5711c3a1250e4f76",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ResponseBudgetTest.java": "100634ea5bc6e1cb13c593a753e28fe643b7e15e8218e40f0a9fdac728061ae1",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RetainedSessionAttachTest.java": "6cf739071e3dc26a0f1c0808807fd288bcdeb99f2c00d56f2f68f0c70736820b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ReverseDependencyInvalidationTest.java": "bed438a3d8e23910bdd2f3b2bdd35865b21cec34eebf17faa454e6c77d07f1e0",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RocksSqliteAgreementTest.java": "4f756658520d1c42832a2f1f2cdf4a8932da931ccb2f853688e369a0fdbe4386",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RocksStorageIntegrationTest.java": "97bc4ff84f70d8fe46765238ec2ba74415f15d7249630c27f4b2c46c377e2a7b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RocksStoreIntegrationTest.java": "7cc618fa065670dda455352ce7ae41ce23d654c1b09557cf8f958cf217063ad7",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RuntimeCompilerIsolationTest.java": "9b67658e06c0bfba61bd774a6a4b0baebd85fb97858c8b17dde1e1c3d609ffcb",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RuntimeFixtures.java": "cef4c1df99ab4f7b09af026e77089d5a00945df02ce4b9cc58095f6b71e967ca",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RuntimeInspectionTest.java": "79e0815b10779c793fe3ca59d3d2288303c06d7521f6a703be66b0eb05feeccc",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/RuntimeProtocolTest.java": "58d19994bc8ba150c342a6124c0276dfc987d91608d37e202f2c8a2bf675393b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/ScopedNamePathTest.java": "938538fa941c571ec4c00069b87d3b3c8865e939e01d07fadce3dcb9b37ae8e2",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SemanticClasspathIdentityTest.java": "b50b05c42194a655ba1d7c1b7ec989c7fa2a547c1595e9ecc7164a1023a79423",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SemanticEditsTest.java": "6770ceb2048075b3cdb6ae2eedbb99779dcb33f6a37f95b3c16e942722ec265f",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SemanticFactLifetimeTest.java": "7ac01ae7b8ab5482b2b88188637d1fd06b7c46fa2f990e015aa0a93e8933e750",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SemanticFactResolutionIdentityTest.java": "bac02094e2352bb577e023223f93c6b839898f59d5065130095df2b2b21fd534",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SemanticProofDagTest.java": "fee294d8b21335b91d6e64789af24a1849fcdbad5f8e2df35d25c2c6275b27af",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SemanticReadViewTest.java": "89cc906abb20ac1c55831c5c75a9a74fed28695cc87d56326c51a4734b8e1d6b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SessionManagerTest.java": "69ff3b1214639f2237a81b64a2f4a8988d43855d4c591331b7cd9b717b038364",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SharedClasspathIdentityTest.java": "5f659293a93cc62f8d18b6a1a713f85a315ed45457eb87efe292c0ee322086f5",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SignatureClosureTest.java": "95074e6e1db915d1cd082d4bfa3fcdbfa79cce34020326fbc17daed50b4ba611",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SourceContextReuseTest.java": "1dd976edd7034ad9fdf36f678e96650cae3909844eb9bd1fec33f7ea56ed76f8",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SourceDocumentationJoinTest.java": "3c95ed588911b0a74b2458a631ec017465064823a44e4606c0adc406c409ab98",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SourceEditBinaryCacheTest.java": "f492a31d3eed37a29e3cf7985c5bedb8ae4035cea6abfcbbfc22f605854c5796",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SourceFactsMigrationTest.java": "418a69f67ceedee0e0a395d70ecb9f032ff1fddbe38f062505f786f7c1cb2e9a",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SourceIndexPublisherTest.java": "97bd24eb2d278dbdcf1d3581caf97f4f16fe0649ee207badd6d675bdf4ce962f",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SourceJarBodyTest.java": "90fd0d0c5aba33630205c142a48182fe1d95582fa7bde88d1726cb32be1d0b45",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SourceOverlayNavigationTest.java": "64ecd0380f7d2ec88cb75870cf68c9bf79a4efa2bcf19edf33ed4b21050a8e7b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SourceProofMutationIntegrationTest.java": "703d93445ce1f8593e7aa464e2d3b9dfa8a0150262dc6159640c26ec04559c9a",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/StaticImportRenameTest.java": "76e9a8c09a6e71f9bbbd8bfd10a81236a7be82db436997418266cd0b9d7cb3cf",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/StructuredRequestLogTest.java": "e725f12be2d2bbd3498d9a9c1e896f6f1d1fe470c8bec7451187794e5f08029c",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/SyntaxDiagnosticsTest.java": "d046b4cb244f684e8c9942d1ed15305938b0a6a81a72efbcabaf76908da2121b",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/TestSupport.java": "0349ad674cc1c6425657bc7ac2cbe85532c39a06d2cbb21faa6efbf9476958a6",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/TierOneOverviewTest.java": "0a35910bb7b44c69e695e97a72cfa9bbf61398fad33b118c8d6401960dd5a81c",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/TolerantAttributionTest.java": "5ea4d8bf078961a7d726aebb06e0850b61e712f7b527e20017fa2ca00b5a4366",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/UnimportedTypeCompletionTest.java": "bb4aeb760ad6249a3623fb7ca81c19b1e325a840f5760026982ef787d599368e",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/UnsavedDocumentsTest.java": "6a63073a0e41d317f93a7c49bf68e99388e5bddc21ae4d19868521162f9e9c06",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceBindingsCacheTest.java": "6272315e2ca48f66c33d9b9154d9c265ff3efde508d5b012988c7bb2b6129a08",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceBindingsTest.java": "3fab7acedf945f4decabb974b457808f19af048e199ee5315575d959316bc6eb",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceDebugSourceTest.java": "c7831de12262b75c54eff289a29ef456382fade66b19efe4af1414149356bc92",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceIndexLoadTest.java": "c7976aba7cf2daff99f7f2b03185c38f81c0932181365cb6b8510b966855a55c",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceManifestTest.java": "97c57ec72ccc48d31c822f4f4c70b811496edf67cd107737db94d304eed0aa9a",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceReaderSmokeTest.java": "9183054ffd906234d808b8635efc5337a26bb253f73f81114bd7bae3a099ecdd",
+    "jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceSemanticProtocolTest.java": "176a172f137b75703feca66a3f9e89a5a3ada858fcfdf1f63f227fd5bc400f06",
+    "jvmd-tests/src/test/resources/dev/jvmd/index/schema-1.sql": "85da73819a607923e4f7765919ed2193899a2ff484e7f1dd1f2a57d2cf5e1f33",
+    "jvmd-tests/src/test/resources/dev/jvmd/index/schema-2.sql": "4ecccacdee89fc2f8ba1c7b5538973d2cf5d2e755d77dc9a703fe6a73deabb77",
+    "jvmd-tests/src/test/resources/dev/jvmd/index/schema-3.sql": "25393b8721f945faa14cec43cfe81a98700b96212ba22e59741f11f93c2add5d",
+    "jvmd-tests/src/test/resources/dev/jvmd/index/schema-4.sql": "da7513664b6fed8258d2a7186baade9090883ba1a05697eba735e2f679427ce7",
+    "jvmd-tests/src/test/resources/mcp-tools.json": "535a01b89f99f43a7c31b4dd41ad23804060a59fb625ae28ae35e43a7d64b9e2",
+    "pom.xml": "b8eed8905c4cea3457267000c77e75e9ea443ce25274d55e9549dbca8dcc502f",
+    "shim/package.json": "248960e377dbf24751b478ff2d97abad2ecaf2490621ab01c4d8020539c4e0e0",
+    "shim/src/lsp.ts": "c61645dcf1325082a122074dce913c17966c2a16a2cffd6fdeb5dea93ce0a6a5",
+    "shim/src/main.ts": "70de5c10e41ce961267fa2a5c48f2d3e73593ce70b8d7e81535238194d7a8f86",
+    "shim/src/mcp.ts": "5d6574d5fe3c7674ebab139592c4d48083f5b9421638d89d1fa4399d2cf36b36",
+    "shim/src/transport.ts": "80d126270c40ed28c6262651be8309a1ce19289704ec12330c8dba621ee4a684",
+    "shim/test/lsp.test.ts": "53b743e44a7d3d7e8b9eaee62891ddbff138fc59ffc0e0b42dfe7084589fbcf3",
+    "shim/test/mcp.test.ts": "4e6c6a936cb4b4f2ce1bb58c0488ba7029a23e26799dd5916297f06c31253bfb",
+    "shim/test/transport.test.ts": "a956c5cd668c505394747e3c02279900f9ec9429722c283d501ae891bffc12bb"
+  },
+  "sourceDrift": false
+}

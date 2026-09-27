@@ -1,0 +1,1364 @@
+{
+  "schemaVersion": 1,
+  "caseId": "BLD-02/first-unchanged-repeat",
+  "family": "BLD-02",
+  "apiIds": [
+    "API-043"
+  ],
+  "variant": "real main/test protoc generation; independent compilation and serialization; type readiness; unchanged repeat",
+  "block": 1,
+  "server": "jdtls",
+  "fixtureIdentity": "6c178662a13df28935c3cda2185fabcf1ed269b32ea79faf0b3376544d89b4b8",
+  "profile": "direct",
+  "outcome": "incorrect",
+  "operations": [
+    {
+      "schemaVersion": 1,
+      "clockDomain": "client",
+      "requestEventId": 31,
+      "responseEventId": 33,
+      "operationId": "op-1",
+      "method": "workspace/executeCommand",
+      "endpoint": "java.project.getAll",
+      "state": "import_witness",
+      "requestId": 2,
+      "startNs": "49615230469564",
+      "endNs": "49615244313396",
+      "latencyMs": 13.843832,
+      "stateBefore": [
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Customer.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42",
+          "diskSha256": "16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Use.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd",
+          "diskSha256": "b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Unrelated.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "33e67cf639537a318f125f8fdfebfeadc3db914aa883ea085d56ce14f48b5acb",
+          "diskSha256": "33e67cf639537a318f125f8fdfebfeadc3db914aa883ea085d56ce14f48b5acb"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Hierarchy.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc",
+          "diskSha256": "28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Calls.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4",
+          "diskSha256": "c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Format.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625",
+          "diskSha256": "ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Generate.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22",
+          "diskSha256": "643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/ProtoUse.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "a9713005e36f0999d4b067c47a311f7c80daa6cafdf8d0dd8b74189504b54d06",
+          "diskSha256": "a9713005e36f0999d4b067c47a311f7c80daa6cafdf8d0dd8b74189504b54d06"
+        }
+      ],
+      "rawResult": [
+        "file:/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/"
+      ],
+      "outcome": "pass",
+      "freshness": {
+        "status": "not_applicable",
+        "witness": "unchanged fixture; semantic oracle checked"
+      },
+      "validationMs": 0.697491
+    },
+    {
+      "schemaVersion": 1,
+      "clockDomain": "client",
+      "requestEventId": 35,
+      "responseEventId": 41,
+      "operationId": "op-2",
+      "method": "workspace/executeCommand",
+      "endpoint": "java.protobuf.generateSources",
+      "state": "first_generation",
+      "requestId": 3,
+      "startNs": "49615246164340",
+      "endNs": "49618901663565",
+      "latencyMs": 3655.499225,
+      "stateBefore": [
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Customer.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42",
+          "diskSha256": "16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Use.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd",
+          "diskSha256": "b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Unrelated.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "33e67cf639537a318f125f8fdfebfeadc3db914aa883ea085d56ce14f48b5acb",
+          "diskSha256": "33e67cf639537a318f125f8fdfebfeadc3db914aa883ea085d56ce14f48b5acb"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Hierarchy.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc",
+          "diskSha256": "28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Calls.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4",
+          "diskSha256": "c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Format.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625",
+          "diskSha256": "ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Generate.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22",
+          "diskSha256": "643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/ProtoUse.java",
+          "version": 1,
+          "incarnation": 1,
+          "open": true,
+          "sha256": "a9713005e36f0999d4b067c47a311f7c80daa6cafdf8d0dd8b74189504b54d06",
+          "diskSha256": "a9713005e36f0999d4b067c47a311f7c80daa6cafdf8d0dd8b74189504b54d06"
+        }
+      ],
+      "rawResult": null,
+      "outcome": "pass",
+      "freshness": {
+        "status": "not_applicable",
+        "witness": "unchanged fixture; semantic oracle checked"
+      },
+      "validationMs": 0.072497
+    },
+    {
+      "schemaVersion": 1,
+      "clockDomain": "client",
+      "requestEventId": 43,
+      "responseEventId": 48,
+      "operationId": "op-3",
+      "method": "textDocument/definition",
+      "endpoint": "textDocument/definition",
+      "state": "changed_immediate",
+      "requestId": 4,
+      "startNs": "49618903817547",
+      "endNs": "49619138029446",
+      "latencyMs": 234.211899,
+      "stateBefore": [
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Customer.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42",
+          "diskSha256": "16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Use.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd",
+          "diskSha256": "b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Unrelated.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "33e67cf639537a318f125f8fdfebfeadc3db914aa883ea085d56ce14f48b5acb",
+          "diskSha256": "33e67cf639537a318f125f8fdfebfeadc3db914aa883ea085d56ce14f48b5acb"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Hierarchy.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc",
+          "diskSha256": "28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Calls.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4",
+          "diskSha256": "c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Format.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625",
+          "diskSha256": "ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Generate.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22",
+          "diskSha256": "643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/ProtoUse.java",
+          "version": 1,
+          "incarnation": 1,
+          "open": true,
+          "sha256": "a9713005e36f0999d4b067c47a311f7c80daa6cafdf8d0dd8b74189504b54d06",
+          "diskSha256": "a9713005e36f0999d4b067c47a311f7c80daa6cafdf8d0dd8b74189504b54d06"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/Greeting.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "a9739aaf147aff2ed2f0fc0727c778272b6d831a9a1034b4a82034936f8e4d08",
+          "diskSha256": "a9739aaf147aff2ed2f0fc0727c778272b6d831a9a1034b4a82034936f8e4d08"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/GreetingOrBuilder.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "66b439c5031f9e21d8d12cc2179a67fbe50da8058f21ff02aa8365c38e83eddb",
+          "diskSha256": "66b439c5031f9e21d8d12cc2179a67fbe50da8058f21ff02aa8365c38e83eddb"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/GreetingSchema.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "bbc11941852434536e40992d7719602b0b8ef1abda0c45f71734d414f832e46f",
+          "diskSha256": "bbc11941852434536e40992d7719602b0b8ef1abda0c45f71734d414f832e46f"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/test/java/bench/generated/TestGreeting.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "67bdc666d19c40572a6808698fefaff0d226bbe6ceead6769eb2d82a53714571",
+          "diskSha256": "67bdc666d19c40572a6808698fefaff0d226bbe6ceead6769eb2d82a53714571"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/test/java/bench/generated/TestGreetingOrBuilder.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "76fcf37e95e8796efcda013f8c816daa5b61659e04a775903f7932a5bd2befe6",
+          "diskSha256": "76fcf37e95e8796efcda013f8c816daa5b61659e04a775903f7932a5bd2befe6"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/test/java/bench/generated/TestGreetingSchema.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "8fb4198288eff58c1369ca8f36113db8f9f3935b105361b306012e2322bbd6c7",
+          "diskSha256": "8fb4198288eff58c1369ca8f36113db8f9f3935b105361b306012e2322bbd6c7"
+        }
+      ],
+      "rawResult": [],
+      "outcome": "incorrect",
+      "freshness": {
+        "status": "contradicted",
+        "reason": "AssertionError [ERR_ASSERTION]: location identities/ranges differ\n+ actual - expected\n\n+ []\n- [\n-   '{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/Greeting.java\",\"range\":{\"start\":{\"line\":8,\"character\":19},\"end\":{\"line\":8,\"character\":27}}}'\n- ]\n"
+      },
+      "triggerNs": "49615246164340",
+      "transitionMs": 3891.865106,
+      "assertionError": "AssertionError [ERR_ASSERTION]: location identities/ranges differ\n+ actual - expected\n\n+ []\n- [\n-   '{\"uri\":\"file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/Greeting.java\",\"range\":{\"start\":{\"line\":8,\"character\":19},\"end\":{\"line\":8,\"character\":27}}}'\n- ]\n",
+      "validationMs": 1.26562
+    },
+    {
+      "schemaVersion": 1,
+      "clockDomain": "client",
+      "requestEventId": 49,
+      "responseEventId": 50,
+      "operationId": "op-4",
+      "method": "textDocument/definition",
+      "endpoint": "textDocument/definition",
+      "state": "changed_retry_2",
+      "requestId": 5,
+      "startNs": "49619160784620",
+      "endNs": "49619178957793",
+      "latencyMs": 18.173173,
+      "stateBefore": [
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Customer.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42",
+          "diskSha256": "16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Use.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd",
+          "diskSha256": "b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Unrelated.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "33e67cf639537a318f125f8fdfebfeadc3db914aa883ea085d56ce14f48b5acb",
+          "diskSha256": "33e67cf639537a318f125f8fdfebfeadc3db914aa883ea085d56ce14f48b5acb"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Hierarchy.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc",
+          "diskSha256": "28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Calls.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4",
+          "diskSha256": "c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Format.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625",
+          "diskSha256": "ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Generate.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22",
+          "diskSha256": "643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/ProtoUse.java",
+          "version": 1,
+          "incarnation": 1,
+          "open": true,
+          "sha256": "a9713005e36f0999d4b067c47a311f7c80daa6cafdf8d0dd8b74189504b54d06",
+          "diskSha256": "a9713005e36f0999d4b067c47a311f7c80daa6cafdf8d0dd8b74189504b54d06"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/Greeting.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "a9739aaf147aff2ed2f0fc0727c778272b6d831a9a1034b4a82034936f8e4d08",
+          "diskSha256": "a9739aaf147aff2ed2f0fc0727c778272b6d831a9a1034b4a82034936f8e4d08"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/GreetingOrBuilder.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "66b439c5031f9e21d8d12cc2179a67fbe50da8058f21ff02aa8365c38e83eddb",
+          "diskSha256": "66b439c5031f9e21d8d12cc2179a67fbe50da8058f21ff02aa8365c38e83eddb"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/GreetingSchema.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "bbc11941852434536e40992d7719602b0b8ef1abda0c45f71734d414f832e46f",
+          "diskSha256": "bbc11941852434536e40992d7719602b0b8ef1abda0c45f71734d414f832e46f"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/test/java/bench/generated/TestGreeting.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "67bdc666d19c40572a6808698fefaff0d226bbe6ceead6769eb2d82a53714571",
+          "diskSha256": "67bdc666d19c40572a6808698fefaff0d226bbe6ceead6769eb2d82a53714571"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/test/java/bench/generated/TestGreetingOrBuilder.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "76fcf37e95e8796efcda013f8c816daa5b61659e04a775903f7932a5bd2befe6",
+          "diskSha256": "76fcf37e95e8796efcda013f8c816daa5b61659e04a775903f7932a5bd2befe6"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/test/java/bench/generated/TestGreetingSchema.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "8fb4198288eff58c1369ca8f36113db8f9f3935b105361b306012e2322bbd6c7",
+          "diskSha256": "8fb4198288eff58c1369ca8f36113db8f9f3935b105361b306012e2322bbd6c7"
+        }
+      ],
+      "rawResult": [
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/Greeting.java",
+          "range": {
+            "start": {
+              "line": 8,
+              "character": 19
+            },
+            "end": {
+              "line": 8,
+              "character": 27
+            }
+          }
+        }
+      ],
+      "outcome": "pass",
+      "freshness": {
+        "status": "verified",
+        "witness": "generated Greeting resolves to its exact newly generated declaration after client file-change delivery"
+      },
+      "triggerNs": "49615246164340",
+      "transitionMs": 3932.793453,
+      "validationMs": 0.157563
+    },
+    {
+      "schemaVersion": 1,
+      "clockDomain": "client",
+      "requestEventId": 51,
+      "responseEventId": 52,
+      "operationId": "op-5",
+      "method": "textDocument/definition",
+      "endpoint": "textDocument/definition",
+      "state": "changed_settled",
+      "requestId": 6,
+      "startNs": "49619179899845",
+      "endNs": "49619190609480",
+      "latencyMs": 10.709635,
+      "stateBefore": [
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Customer.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42",
+          "diskSha256": "16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Use.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd",
+          "diskSha256": "b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Unrelated.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "33e67cf639537a318f125f8fdfebfeadc3db914aa883ea085d56ce14f48b5acb",
+          "diskSha256": "33e67cf639537a318f125f8fdfebfeadc3db914aa883ea085d56ce14f48b5acb"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Hierarchy.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc",
+          "diskSha256": "28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Calls.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4",
+          "diskSha256": "c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Format.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625",
+          "diskSha256": "ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Generate.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22",
+          "diskSha256": "643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/ProtoUse.java",
+          "version": 1,
+          "incarnation": 1,
+          "open": true,
+          "sha256": "a9713005e36f0999d4b067c47a311f7c80daa6cafdf8d0dd8b74189504b54d06",
+          "diskSha256": "a9713005e36f0999d4b067c47a311f7c80daa6cafdf8d0dd8b74189504b54d06"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/Greeting.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "a9739aaf147aff2ed2f0fc0727c778272b6d831a9a1034b4a82034936f8e4d08",
+          "diskSha256": "a9739aaf147aff2ed2f0fc0727c778272b6d831a9a1034b4a82034936f8e4d08"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/GreetingOrBuilder.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "66b439c5031f9e21d8d12cc2179a67fbe50da8058f21ff02aa8365c38e83eddb",
+          "diskSha256": "66b439c5031f9e21d8d12cc2179a67fbe50da8058f21ff02aa8365c38e83eddb"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/GreetingSchema.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "bbc11941852434536e40992d7719602b0b8ef1abda0c45f71734d414f832e46f",
+          "diskSha256": "bbc11941852434536e40992d7719602b0b8ef1abda0c45f71734d414f832e46f"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/test/java/bench/generated/TestGreeting.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "67bdc666d19c40572a6808698fefaff0d226bbe6ceead6769eb2d82a53714571",
+          "diskSha256": "67bdc666d19c40572a6808698fefaff0d226bbe6ceead6769eb2d82a53714571"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/test/java/bench/generated/TestGreetingOrBuilder.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "76fcf37e95e8796efcda013f8c816daa5b61659e04a775903f7932a5bd2befe6",
+          "diskSha256": "76fcf37e95e8796efcda013f8c816daa5b61659e04a775903f7932a5bd2befe6"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/test/java/bench/generated/TestGreetingSchema.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "8fb4198288eff58c1369ca8f36113db8f9f3935b105361b306012e2322bbd6c7",
+          "diskSha256": "8fb4198288eff58c1369ca8f36113db8f9f3935b105361b306012e2322bbd6c7"
+        }
+      ],
+      "rawResult": [
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/Greeting.java",
+          "range": {
+            "start": {
+              "line": 8,
+              "character": 19
+            },
+            "end": {
+              "line": 8,
+              "character": 27
+            }
+          }
+        }
+      ],
+      "outcome": "pass",
+      "freshness": {
+        "status": "verified",
+        "witness": "generated Greeting resolves to its exact newly generated declaration after client file-change delivery"
+      },
+      "triggerNs": "49615246164340",
+      "transitionMs": 3944.44514,
+      "validationMs": 0.074009
+    },
+    {
+      "schemaVersion": 1,
+      "clockDomain": "client",
+      "requestEventId": 53,
+      "responseEventId": 59,
+      "operationId": "op-6",
+      "method": "workspace/executeCommand",
+      "endpoint": "java.protobuf.generateSources",
+      "state": "unchanged_repeat",
+      "requestId": 7,
+      "startNs": "49619191337576",
+      "endNs": "49619325133522",
+      "latencyMs": 133.795946,
+      "stateBefore": [
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Customer.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42",
+          "diskSha256": "16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Use.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd",
+          "diskSha256": "b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Unrelated.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "33e67cf639537a318f125f8fdfebfeadc3db914aa883ea085d56ce14f48b5acb",
+          "diskSha256": "33e67cf639537a318f125f8fdfebfeadc3db914aa883ea085d56ce14f48b5acb"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Hierarchy.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc",
+          "diskSha256": "28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Calls.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4",
+          "diskSha256": "c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Format.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625",
+          "diskSha256": "ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Generate.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22",
+          "diskSha256": "643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/ProtoUse.java",
+          "version": 1,
+          "incarnation": 1,
+          "open": true,
+          "sha256": "a9713005e36f0999d4b067c47a311f7c80daa6cafdf8d0dd8b74189504b54d06",
+          "diskSha256": "a9713005e36f0999d4b067c47a311f7c80daa6cafdf8d0dd8b74189504b54d06"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/Greeting.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "a9739aaf147aff2ed2f0fc0727c778272b6d831a9a1034b4a82034936f8e4d08",
+          "diskSha256": "a9739aaf147aff2ed2f0fc0727c778272b6d831a9a1034b4a82034936f8e4d08"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/GreetingOrBuilder.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "66b439c5031f9e21d8d12cc2179a67fbe50da8058f21ff02aa8365c38e83eddb",
+          "diskSha256": "66b439c5031f9e21d8d12cc2179a67fbe50da8058f21ff02aa8365c38e83eddb"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/GreetingSchema.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "bbc11941852434536e40992d7719602b0b8ef1abda0c45f71734d414f832e46f",
+          "diskSha256": "bbc11941852434536e40992d7719602b0b8ef1abda0c45f71734d414f832e46f"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/test/java/bench/generated/TestGreeting.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "67bdc666d19c40572a6808698fefaff0d226bbe6ceead6769eb2d82a53714571",
+          "diskSha256": "67bdc666d19c40572a6808698fefaff0d226bbe6ceead6769eb2d82a53714571"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/test/java/bench/generated/TestGreetingOrBuilder.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "76fcf37e95e8796efcda013f8c816daa5b61659e04a775903f7932a5bd2befe6",
+          "diskSha256": "76fcf37e95e8796efcda013f8c816daa5b61659e04a775903f7932a5bd2befe6"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/test/java/bench/generated/TestGreetingSchema.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "8fb4198288eff58c1369ca8f36113db8f9f3935b105361b306012e2322bbd6c7",
+          "diskSha256": "8fb4198288eff58c1369ca8f36113db8f9f3935b105361b306012e2322bbd6c7"
+        }
+      ],
+      "rawResult": null,
+      "outcome": "pass",
+      "freshness": {
+        "status": "not_applicable",
+        "witness": "unchanged fixture; semantic oracle checked"
+      },
+      "validationMs": 0.064365
+    },
+    {
+      "schemaVersion": 1,
+      "clockDomain": "client",
+      "requestEventId": 60,
+      "responseEventId": 61,
+      "operationId": "op-7",
+      "method": "textDocument/definition",
+      "endpoint": "textDocument/definition",
+      "state": "unchanged_repeat_type_ready",
+      "requestId": 8,
+      "startNs": "49619326391130",
+      "endNs": "49619339272023",
+      "latencyMs": 12.880893,
+      "stateBefore": [
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Customer.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42",
+          "diskSha256": "16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Use.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd",
+          "diskSha256": "b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Unrelated.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "33e67cf639537a318f125f8fdfebfeadc3db914aa883ea085d56ce14f48b5acb",
+          "diskSha256": "33e67cf639537a318f125f8fdfebfeadc3db914aa883ea085d56ce14f48b5acb"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Hierarchy.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc",
+          "diskSha256": "28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Calls.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4",
+          "diskSha256": "c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Format.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625",
+          "diskSha256": "ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Generate.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22",
+          "diskSha256": "643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/ProtoUse.java",
+          "version": 1,
+          "incarnation": 1,
+          "open": true,
+          "sha256": "a9713005e36f0999d4b067c47a311f7c80daa6cafdf8d0dd8b74189504b54d06",
+          "diskSha256": "a9713005e36f0999d4b067c47a311f7c80daa6cafdf8d0dd8b74189504b54d06"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/Greeting.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "a9739aaf147aff2ed2f0fc0727c778272b6d831a9a1034b4a82034936f8e4d08",
+          "diskSha256": "a9739aaf147aff2ed2f0fc0727c778272b6d831a9a1034b4a82034936f8e4d08"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/GreetingOrBuilder.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "66b439c5031f9e21d8d12cc2179a67fbe50da8058f21ff02aa8365c38e83eddb",
+          "diskSha256": "66b439c5031f9e21d8d12cc2179a67fbe50da8058f21ff02aa8365c38e83eddb"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/GreetingSchema.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "bbc11941852434536e40992d7719602b0b8ef1abda0c45f71734d414f832e46f",
+          "diskSha256": "bbc11941852434536e40992d7719602b0b8ef1abda0c45f71734d414f832e46f"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/test/java/bench/generated/TestGreeting.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "67bdc666d19c40572a6808698fefaff0d226bbe6ceead6769eb2d82a53714571",
+          "diskSha256": "67bdc666d19c40572a6808698fefaff0d226bbe6ceead6769eb2d82a53714571"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/test/java/bench/generated/TestGreetingOrBuilder.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "76fcf37e95e8796efcda013f8c816daa5b61659e04a775903f7932a5bd2befe6",
+          "diskSha256": "76fcf37e95e8796efcda013f8c816daa5b61659e04a775903f7932a5bd2befe6"
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/test/java/bench/generated/TestGreetingSchema.java",
+          "version": null,
+          "incarnation": 0,
+          "open": false,
+          "sha256": "8fb4198288eff58c1369ca8f36113db8f9f3935b105361b306012e2322bbd6c7",
+          "diskSha256": "8fb4198288eff58c1369ca8f36113db8f9f3935b105361b306012e2322bbd6c7"
+        }
+      ],
+      "rawResult": [
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/Greeting.java",
+          "range": {
+            "start": {
+              "line": 8,
+              "character": 19
+            },
+            "end": {
+              "line": 8,
+              "character": 27
+            }
+          }
+        }
+      ],
+      "outcome": "pass",
+      "freshness": {
+        "status": "not_applicable",
+        "witness": "unchanged fixture; semantic oracle checked"
+      },
+      "validationMs": 0.077325
+    }
+  ],
+  "assertions": [
+    {
+      "name": "selected fixture was imported as a named Gradle project",
+      "passed": true,
+      "detail": {
+        "projectName": "benchmark-fixture",
+        "projectDescription": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<projectDescription>\n\t<name>benchmark-fixture</name>\n\t<comment>Project fixture created by Buildship.</comment>\n\t<projects>\n\t</projects>\n\t<buildSpec>\n\t\t<buildCommand>\n\t\t\t<name>org.eclipse.jdt.core.javabuilder</name>\n\t\t\t<arguments>\n\t\t\t</arguments>\n\t\t</buildCommand>\n\t\t<buildCommand>\n\t\t\t<name>org.eclipse.buildship.core.gradleprojectbuilder</name>\n\t\t\t<arguments>\n\t\t\t</arguments>\n\t\t</buildCommand>\n\t</buildSpec>\n\t<natures>\n\t\t<nature>org.eclipse.jdt.core.javanature</nature>\n\t\t<nature>org.eclipse.buildship.core.gradleprojectnature</nature>\n\t</natures>\n\t<filteredResources>\n\t\t<filter>\n\t\t\t<id>1790479884634</id>\n\t\t\t<name></name>\n\t\t\t<type>30</type>\n\t\t\t<matcher>\n\t\t\t\t<id>org.eclipse.core.resources.regexFilterMatcher</id>\n\t\t\t\t<arguments>node_modules|\\.git|__CREATED_BY_JAVA_LANGUAGE_SERVER__</arguments>\n\t\t\t</matcher>\n\t\t</filter>\n\t</filteredResources>\n</projectDescription>\n"
+      }
+    },
+    {
+      "name": "import has not generated any source",
+      "passed": true
+    },
+    {
+      "name": "both Gradle tasks generated exactly their declared Java outputs",
+      "passed": true,
+      "detail": {
+        "actual": [
+          "build/generated/sources/proto/main/java/bench/generated/Greeting.java",
+          "build/generated/sources/proto/main/java/bench/generated/GreetingOrBuilder.java",
+          "build/generated/sources/proto/main/java/bench/generated/GreetingSchema.java",
+          "build/generated/sources/proto/test/java/bench/generated/TestGreeting.java",
+          "build/generated/sources/proto/test/java/bench/generated/TestGreetingOrBuilder.java",
+          "build/generated/sources/proto/test/java/bench/generated/TestGreetingSchema.java"
+        ],
+        "expected": [
+          "build/generated/sources/proto/main/java/bench/generated/Greeting.java",
+          "build/generated/sources/proto/main/java/bench/generated/GreetingOrBuilder.java",
+          "build/generated/sources/proto/main/java/bench/generated/GreetingSchema.java",
+          "build/generated/sources/proto/test/java/bench/generated/TestGreeting.java",
+          "build/generated/sources/proto/test/java/bench/generated/TestGreetingOrBuilder.java",
+          "build/generated/sources/proto/test/java/bench/generated/TestGreetingSchema.java"
+        ]
+      }
+    },
+    {
+      "name": "unchanged generation preserves exact paths and bytes without duplicate declarations",
+      "passed": true,
+      "detail": {
+        "first": {
+          "build/generated/sources/proto/main/java/bench/generated/Greeting.java": "a9739aaf147aff2ed2f0fc0727c778272b6d831a9a1034b4a82034936f8e4d08",
+          "build/generated/sources/proto/main/java/bench/generated/GreetingOrBuilder.java": "66b439c5031f9e21d8d12cc2179a67fbe50da8058f21ff02aa8365c38e83eddb",
+          "build/generated/sources/proto/main/java/bench/generated/GreetingSchema.java": "bbc11941852434536e40992d7719602b0b8ef1abda0c45f71734d414f832e46f",
+          "build/generated/sources/proto/test/java/bench/generated/TestGreeting.java": "67bdc666d19c40572a6808698fefaff0d226bbe6ceead6769eb2d82a53714571",
+          "build/generated/sources/proto/test/java/bench/generated/TestGreetingOrBuilder.java": "76fcf37e95e8796efcda013f8c816daa5b61659e04a775903f7932a5bd2befe6",
+          "build/generated/sources/proto/test/java/bench/generated/TestGreetingSchema.java": "8fb4198288eff58c1369ca8f36113db8f9f3935b105361b306012e2322bbd6c7"
+        },
+        "repeated": {
+          "build/generated/sources/proto/main/java/bench/generated/Greeting.java": "a9739aaf147aff2ed2f0fc0727c778272b6d831a9a1034b4a82034936f8e4d08",
+          "build/generated/sources/proto/main/java/bench/generated/GreetingOrBuilder.java": "66b439c5031f9e21d8d12cc2179a67fbe50da8058f21ff02aa8365c38e83eddb",
+          "build/generated/sources/proto/main/java/bench/generated/GreetingSchema.java": "bbc11941852434536e40992d7719602b0b8ef1abda0c45f71734d414f832e46f",
+          "build/generated/sources/proto/test/java/bench/generated/TestGreeting.java": "67bdc666d19c40572a6808698fefaff0d226bbe6ceead6769eb2d82a53714571",
+          "build/generated/sources/proto/test/java/bench/generated/TestGreetingOrBuilder.java": "76fcf37e95e8796efcda013f8c816daa5b61659e04a775903f7932a5bd2befe6",
+          "build/generated/sources/proto/test/java/bench/generated/TestGreetingSchema.java": "8fb4198288eff58c1369ca8f36113db8f9f3935b105361b306012e2322bbd6c7"
+        }
+      }
+    },
+    {
+      "name": "independent javac validation",
+      "passed": true,
+      "elapsedMs": 800.191833,
+      "stdout": "",
+      "stderr": "",
+      "error": ""
+    },
+    {
+      "name": "independent generated-code behaviour",
+      "passed": true,
+      "stdout": "",
+      "stderr": "WARNING: A terminally deprecated method in sun.misc.Unsafe has been called\nWARNING: sun.misc.Unsafe::arrayBaseOffset has been called by com.google.protobuf.UnsafeUtil$MemoryAccessor (file:/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/lib/protobuf-java-3.21.4.jar)\nWARNING: Please consider reporting this to the maintainers of class com.google.protobuf.UnsafeUtil$MemoryAccessor\nWARNING: sun.misc.Unsafe::arrayBaseOffset will be removed in a future release\n"
+    }
+  ],
+  "correctnessOnly": false,
+  "finalized": true,
+  "launch": {
+    "server": "jdtls",
+    "profile": "direct",
+    "process": "fresh",
+    "machineState": "empty",
+    "launchStartedNs": "49606213755372",
+    "filesystemCache": "OS cache uncontrolled",
+    "repository": "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/repository",
+    "aot": {
+      "status": "not_applicable"
+    },
+    "launcherSha256": "9b3b1da60813ac5fa09dd5c198f1884be7076d0a5daec54faa3f351a787e34b7",
+    "command": [
+      "/workspace/scratch/c9ab7d11d4a9/toolchain/private-jdk/jdk-25.0.4.1+1/bin/java",
+      "-Xmx1024m",
+      "-Declipse.application=org.eclipse.jdt.ls.core.id1",
+      "-Dosgi.install.area=/workspace/scratch/c9ab7d11d4a9/toolchain/jdtls-1.61.0",
+      "-Dosgi.bundles.defaultStartLevel=4",
+      "-Declipse.product=org.eclipse.jdt.ls.core.product",
+      "-Dlog.level=WARNING",
+      "--add-modules=ALL-SYSTEM",
+      "--add-opens",
+      "java.base/java.util=ALL-UNNAMED",
+      "--add-opens",
+      "java.base/java.lang=ALL-UNNAMED",
+      "-jar",
+      "/workspace/scratch/c9ab7d11d4a9/toolchain/jdtls-1.61.0/plugins/org.eclipse.equinox.launcher_1.8.0.v20260804-1928.jar",
+      "-configuration",
+      "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/runtime/equinox-config",
+      "-data",
+      "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/runtime/workspace"
+    ],
+    "environment": {
+      "GRADLE_USER_HOME": "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/gradle-user-home",
+      "JAVA_TOOL_OPTIONS": "-Xmx1024m",
+      "XDG_CACHE_HOME": "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/runtime/cache",
+      "JVMD_SOCKET": "/tmp/jbm-waRKvr/daemon.sock"
+    },
+    "javaHome": "/workspace/scratch/c9ab7d11d4a9/toolchain/private-jdk/jdk-25.0.4.1+1",
+    "trace": false
+  },
+  "capabilities": {
+    "textDocumentSync": {
+      "openClose": true,
+      "change": 2,
+      "willSave": true,
+      "willSaveWaitUntil": true,
+      "save": {
+        "includeText": true
+      }
+    },
+    "hoverProvider": true,
+    "completionProvider": {
+      "resolveProvider": true,
+      "triggerCharacters": [
+        ".",
+        "@",
+        "#",
+        "*",
+        " "
+      ]
+    },
+    "signatureHelpProvider": {
+      "triggerCharacters": [
+        "(",
+        ","
+      ]
+    },
+    "definitionProvider": true,
+    "typeDefinitionProvider": true,
+    "implementationProvider": true,
+    "referencesProvider": true,
+    "documentHighlightProvider": true,
+    "documentSymbolProvider": true,
+    "workspaceSymbolProvider": true,
+    "codeActionProvider": {
+      "codeActionKinds": [
+        "quickfix",
+        "refactor",
+        "refactor.extract",
+        "refactor.inline",
+        "refactor.rewrite",
+        "source",
+        "source.organizeImports"
+      ],
+      "resolveProvider": false
+    },
+    "codeLensProvider": {
+      "resolveProvider": true
+    },
+    "documentFormattingProvider": true,
+    "documentRangeFormattingProvider": true,
+    "documentOnTypeFormattingProvider": {
+      "firstTriggerCharacter": ";",
+      "moreTriggerCharacter": [
+        "\n",
+        "}"
+      ]
+    },
+    "renameProvider": {
+      "prepareProvider": true
+    },
+    "foldingRangeProvider": true,
+    "declarationProvider": true,
+    "executeCommandProvider": {
+      "commands": [
+        "java.project.import",
+        "java.project.changeImportedProjects",
+        "java.navigate.openTypeHierarchy",
+        "java.project.resolveStackTraceLocation",
+        "java.edit.handlePasteEvent",
+        "java.edit.stringFormatting",
+        "java.project.getSettings",
+        "java.project.resolveWorkspaceSymbol",
+        "java.project.upgradeGradle",
+        "java.project.createModuleInfo",
+        "java.vm.getAllInstalls",
+        "java.edit.organizeImports",
+        "java.project.refreshDiagnostics",
+        "java.getFullyQualifiedName",
+        "java.project.removeFromSourcePath",
+        "java.project.listSourcePaths",
+        "java.project.updateSettings",
+        "java.project.getAll",
+        "java.reloadBundles",
+        "java.project.isTestFile",
+        "java.project.resolveText",
+        "java.project.getClasspaths",
+        "java.navigate.resolveTypeHierarchy",
+        "java.getTroubleshootingInfo",
+        "java.edit.smartSemicolonDetection",
+        "java.project.updateSourceAttachment",
+        "java.project.updateClassPaths",
+        "java.decompile",
+        "java.protobuf.generateSources",
+        "java.project.resolveSourceAttachment",
+        "java.project.updateJdk",
+        "java.project.addToSourcePath",
+        "java.completion.onDidSelect"
+      ]
+    },
+    "workspace": {
+      "workspaceFolders": {
+        "supported": true,
+        "changeNotifications": true
+      },
+      "fileOperations": {
+        "willRename": {
+          "filters": [
+            {
+              "pattern": {
+                "glob": "**/*.java",
+                "matches": "file"
+              },
+              "scheme": "file"
+            },
+            {
+              "pattern": {
+                "glob": "**",
+                "matches": "folder"
+              },
+              "scheme": "file"
+            }
+          ]
+        }
+      },
+      "textDocumentContent": {
+        "schemes": [
+          "jdt"
+        ]
+      }
+    },
+    "typeHierarchyProvider": true,
+    "callHierarchyProvider": true,
+    "selectionRangeProvider": true,
+    "semanticTokensProvider": {
+      "legend": {
+        "tokenTypes": [
+          "namespace",
+          "class",
+          "interface",
+          "enum",
+          "enumMember",
+          "type",
+          "typeParameter",
+          "method",
+          "property",
+          "variable",
+          "parameter",
+          "modifier",
+          "keyword",
+          "decorator",
+          "annotationMember",
+          "record",
+          "recordComponent"
+        ],
+        "tokenModifiers": [
+          "abstract",
+          "static",
+          "readonly",
+          "deprecated",
+          "declaration",
+          "documentation",
+          "public",
+          "private",
+          "protected",
+          "native",
+          "generic",
+          "typeArgument",
+          "importDeclaration",
+          "constructor"
+        ]
+      },
+      "range": false,
+      "full": {
+        "delta": false
+      },
+      "documentSelector": [
+        {
+          "language": "java",
+          "scheme": "file"
+        },
+        {
+          "language": "java",
+          "scheme": "jdt"
+        }
+      ]
+    },
+    "inlayHintProvider": true
+  },
+  "protocolErrors": [],
+  "spawnNs": "49606214915686",
+  "seriesExpectations": [
+    {
+      "kind": "transition",
+      "transitionId": "transition-1",
+      "method": "textDocument/definition",
+      "firstOperationIndex": 2,
+      "triggerNs": "49615246164340",
+      "witness": "generated Greeting resolves to its exact newly generated declaration after client file-change delivery",
+      "settledOperationId": "op-5"
+    }
+  ],
+  "mutations": [
+    {
+      "kind": "generated_file_observation",
+      "changes": [
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/Greeting.java",
+          "type": 1
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/GreetingOrBuilder.java",
+          "type": 1
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/main/java/bench/generated/GreetingSchema.java",
+          "type": 1
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/test/java/bench/generated/TestGreeting.java",
+          "type": 1
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/test/java/bench/generated/TestGreetingOrBuilder.java",
+          "type": 1
+        },
+        {
+          "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/build/generated/sources/proto/test/java/bench/generated/TestGreetingSchema.java",
+          "type": 1
+        }
+      ],
+      "triggerNs": "49618903168599",
+      "generationOperationId": "op-2"
+    }
+  ],
+  "serverActions": [],
+  "initializedNs": "49608487522112",
+  "settings": {
+    "java": {
+      "format": {
+        "enabled": true,
+        "onType": {
+          "enabled": true
+        }
+      },
+      "autobuild": {
+        "enabled": true
+      },
+      "import": {
+        "maven": {
+          "enabled": false
+        },
+        "gradle": {
+          "enabled": true,
+          "home": "/workspace/scratch/c9ab7d11d4a9/toolchain/gradle-9.1.0",
+          "java": {
+            "home": "/workspace/scratch/c9ab7d11d4a9/toolchain/private-jdk/jdk-25.0.4.1+1"
+          },
+          "user": {
+            "home": "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/gradle-user-home"
+          },
+          "offline": {
+            "enabled": true
+          },
+          "wrapper": {
+            "enabled": false
+          }
+        }
+      },
+      "signatureHelp": {
+        "enabled": true
+      },
+      "edit": {
+        "smartSemicolonDetection": {
+          "enabled": true
+        }
+      },
+      "cleanup": {
+        "actions": [
+          "addOverride"
+        ]
+      },
+      "saveActions": {
+        "organizeImports": true,
+        "cleanup": true
+      },
+      "inlayHints": {
+        "parameterNames": {
+          "enabled": "all"
+        }
+      },
+      "referencesCodeLens": {
+        "enabled": true
+      },
+      "implementationsCodeLens": {
+        "enabled": true
+      },
+      "configuration": {
+        "runtimes": [
+          {
+            "name": "JavaSE-25",
+            "path": "/workspace/scratch/c9ab7d11d4a9/toolchain/private-jdk/jdk-25.0.4.1+1",
+            "default": true
+          }
+        ]
+      },
+      "jdt": {
+        "ls": {
+          "protobufSupport": {
+            "enabled": true
+          }
+        }
+      }
+    }
+  },
+  "preparation": {
+    "kind": "real-protoc-gradle-tasks",
+    "pins": {
+      "gradleVersion": "9.1.0",
+      "gradleArchiveSha256": "a17ddd85a26b6a7f5ddb71ff8b05fc5104c0202c6e64782429790c933686c806",
+      "gradleTreeSha256": "acaf7c1df152e0a1fb37eea6f5ef3095de912aaa727c89516fabf3ce4d81cadf",
+      "protocVersion": "3.21.4",
+      "protocSha256": "ae5ddc97b85d0a3a39db70c0eabe93e3f83a5d4617d354b932dc88f307e6e2ec",
+      "protobufJavaSha256": "85d0a5b8b7e14395cd4489533433cb18eae6b197b9b5030ac0e67e679beafa8e"
+    },
+    "gradleHome": "/workspace/scratch/c9ab7d11d4a9/toolchain/gradle-9.1.0",
+    "gradleUserHome": "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/gradle-user-home",
+    "inputTreeSha256": "acaf7c1df152e0a1fb37eea6f5ef3095de912aaa727c89516fabf3ce4d81cadf",
+    "preGeneratedSources": false,
+    "network": "offline Gradle; all dependencies are local pinned files",
+    "cleanupScope": "owned per-case Gradle user home; no shared daemon is stopped"
+  },
+  "artifactDirectory": "01-jdtls-BLD-02-first-unchanged-repeat"
+}

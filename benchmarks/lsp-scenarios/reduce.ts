@@ -40,7 +40,7 @@ export function validateCase(report:any,events:any[],exchanges:any[],operations:
   if(report.outcome==="pass"){
     check(operations.length>0||report.correctnessOnly,"pass without operations");check(operations.every(o=>o.outcome==="pass"),"case pass conceals failed operation");
     check((report.assertions??[]).every((a:any)=>a.passed===true),"case pass conceals failed assertion");
-    check(!(report.protocolErrors?.length||report.shutdownError||report.error),"case pass conceals protocol/harness error");
+    check(!(report.protocolErrors?.length||report.shutdownError||report.cleanupError||report.error),"case pass conceals protocol/harness error");
   }
   if(report.outcome==="unsupported")check(!!report.supportEvidence?.source,"unsupported without evidence");
   return issues;

@@ -1,0 +1,164 @@
+{
+  "root": "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture",
+  "files": {
+    "Customer.java": {
+      "path": "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Customer.java",
+      "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Customer.java",
+      "text": "package bench;\n/** A customer in the exact benchmark fixture. */\npublic class Customer {\n    public String label = \"Ada\";\n    /** NAME_DOC_V1 */\n    public String name() { return label; }\n    /** NUMBER_DOC_V1 */\n    public int number() { return 7; }\n    /** JOIN_DOC_V1 */\n    public String join(String left, int right) { return left + right; }\n}\n"
+    },
+    "Use.java": {
+      "path": "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Use.java",
+      "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Use.java",
+      "text": "package bench;\npublic class Use {\n    public String read(Customer customer) { return customer.name(); }\n    public int count(Customer customer) { return customer.number(); }\n    public int twice(Customer customer) { return customer.number() + customer.number(); }\n    public String join(Customer customer) { return customer.join(\"a\", 2); }\n}\n"
+    },
+    "Unrelated.java": {
+      "path": "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Unrelated.java",
+      "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Unrelated.java",
+      "text": "package bench;\npublic class Unrelated {\n    public String name() { return \"unrelated\"; }\n    public String label = \"unrelated\";\n}\n"
+    },
+    "Hierarchy.java": {
+      "path": "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Hierarchy.java",
+      "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Hierarchy.java",
+      "text": "package bench;\ninterface Root { int value(); }\nclass Base implements Root { public int value() { return 1; } }\nclass Child extends Base { public int value() { return 2; } }\nclass UnrelatedType { public int value() { return 3; } }\n"
+    },
+    "Calls.java": {
+      "path": "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Calls.java",
+      "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Calls.java",
+      "text": "package bench;\npublic class Calls {\n    public int a() { return b() + b(); }\n    public int b() { return c(); }\n    public int c() { return 3; }\n    public int d() { return 4; }\n}\n"
+    },
+    "Format.java": {
+      "path": "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Format.java",
+      "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Format.java",
+      "text": "package bench;\npublic class Format {public int value( ){return 1+2;}}\n"
+    },
+    "Generate.java": {
+      "path": "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Generate.java",
+      "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/Generate.java",
+      "text": "package bench;\npublic class Generate {\n    private String name;\n    private int number;\n    private Customer delegate;\n}\n"
+    },
+    "ProtoUse.java": {
+      "path": "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/ProtoUse.java",
+      "uri": "file:///workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/src/main/java/bench/ProtoUse.java",
+      "text": "package bench;\nimport bench.generated.Greeting;\npublic class ProtoUse {\n    public String message() { return Greeting.newBuilder().setMessage(\"hello\").build().getMessage(); }\n}\n"
+    }
+  },
+  "identity": "6c178662a13df28935c3cda2185fabcf1ed269b32ea79faf0b3376544d89b4b8",
+  "inputs": {
+    "build.gradle": "f2173e4d40c579e02f1326b8328a2a210bf43b442f99ab2b97e35eab70288288",
+    "gradle.properties": "88fa45e154f4ce7b6cedd5a839fa5028df5dac1f70a237b961be9f032206ee10",
+    "lib/protobuf-java-3.21.4.jar": "85d0a5b8b7e14395cd4489533433cb18eae6b197b9b5030ac0e67e679beafa8e",
+    "settings.gradle": "69db097b5d5cf454adfcb6bc5bd946fb99521e524c5eafc3ff6463fb9664341c",
+    "src/main/java/bench/Calls.java": "c82e0b40da61e3cb3145bfdb52dd395b24cc9574adc2e0da5d9544999e8355f4",
+    "src/main/java/bench/Customer.java": "16cd4427419fb538b15a9b5313676325ba0b69fc20f8939c86c3874f25d55b42",
+    "src/main/java/bench/Format.java": "ba5df4db47a70780520aee2151380925f503af1cc4daf36b6924f25a73c86625",
+    "src/main/java/bench/Generate.java": "643021fb11485ab42f568e4a57b3b604c9dd8ab1e1e44294ff578cf9fc48ef22",
+    "src/main/java/bench/Hierarchy.java": "28cc96ca8b5d4a00c423dd40484d8df1452c24bdde26250b888f9d3ebe4833bc",
+    "src/main/java/bench/ProtoUse.java": "a9713005e36f0999d4b067c47a311f7c80daa6cafdf8d0dd8b74189504b54d06",
+    "src/main/java/bench/Unrelated.java": "33e67cf639537a318f125f8fdfebfeadc3db914aa883ea085d56ce14f48b5acb",
+    "src/main/java/bench/Use.java": "b7537076d3669372e15a30ddf90656cb4f2553c7c7d81d011a98a1e94e2138bd",
+    "src/main/proto/greeting.proto": "47d3900eeef43efde8ff2a0514ce4962248c25a74c0f52ef2c7bfcf11da4232a",
+    "src/test/proto/test_greeting.proto": "8d5e4d984de41055764104f7cf22b6880c353e658bc32395abf28339a1e266f4",
+    "tools/protoc": "ae5ddc97b85d0a3a39db70c0eabe93e3f83a5d4617d354b932dc88f307e6e2ec"
+  },
+  "classpath": [
+    "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/fixture/lib/protobuf-java-3.21.4.jar"
+  ],
+  "environment": {
+    "GRADLE_USER_HOME": "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/gradle-user-home"
+  },
+  "settings": {
+    "java": {
+      "format": {
+        "enabled": true,
+        "onType": {
+          "enabled": true
+        }
+      },
+      "autobuild": {
+        "enabled": true
+      },
+      "import": {
+        "maven": {
+          "enabled": false
+        },
+        "gradle": {
+          "enabled": true,
+          "home": "/workspace/scratch/c9ab7d11d4a9/toolchain/gradle-9.1.0",
+          "java": {
+            "home": "/workspace/scratch/c9ab7d11d4a9/toolchain/private-jdk/jdk-25.0.4.1+1"
+          },
+          "user": {
+            "home": "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/gradle-user-home"
+          },
+          "offline": {
+            "enabled": true
+          },
+          "wrapper": {
+            "enabled": false
+          }
+        }
+      },
+      "signatureHelp": {
+        "enabled": true
+      },
+      "edit": {
+        "smartSemicolonDetection": {
+          "enabled": true
+        }
+      },
+      "cleanup": {
+        "actions": [
+          "addOverride"
+        ]
+      },
+      "saveActions": {
+        "organizeImports": true,
+        "cleanup": true
+      },
+      "inlayHints": {
+        "parameterNames": {
+          "enabled": "all"
+        }
+      },
+      "referencesCodeLens": {
+        "enabled": true
+      },
+      "implementationsCodeLens": {
+        "enabled": true
+      },
+      "configuration": {
+        "runtimes": [
+          {
+            "name": "JavaSE-25",
+            "path": "/workspace/scratch/c9ab7d11d4a9/toolchain/private-jdk/jdk-25.0.4.1+1",
+            "default": true
+          }
+        ]
+      },
+      "jdt": {
+        "ls": {
+          "protobufSupport": {
+            "enabled": true
+          }
+        }
+      }
+    }
+  },
+  "preparation": {
+    "kind": "real-protoc-gradle-tasks",
+    "pins": {
+      "gradleVersion": "9.1.0",
+      "gradleArchiveSha256": "a17ddd85a26b6a7f5ddb71ff8b05fc5104c0202c6e64782429790c933686c806",
+      "gradleTreeSha256": "acaf7c1df152e0a1fb37eea6f5ef3095de912aaa727c89516fabf3ce4d81cadf",
+      "protocVersion": "3.21.4",
+      "protocSha256": "ae5ddc97b85d0a3a39db70c0eabe93e3f83a5d4617d354b932dc88f307e6e2ec",
+      "protobufJavaSha256": "85d0a5b8b7e14395cd4489533433cb18eae6b197b9b5030ac0e67e679beafa8e"
+    },
+    "gradleHome": "/workspace/scratch/c9ab7d11d4a9/toolchain/gradle-9.1.0",
+    "gradleUserHome": "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4/01-jdtls-BLD-02-first-unchanged-repeat/gradle-user-home",
+    "inputTreeSha256": "acaf7c1df152e0a1fb37eea6f5ef3095de912aaa727c89516fabf3ce4d81cadf",
+    "preGeneratedSources": false,
+    "network": "offline Gradle; all dependencies are local pinned files",
+    "cleanupScope": "owned per-case Gradle user home; no shared daemon is stopped"
+  }
+}

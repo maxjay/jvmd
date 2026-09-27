@@ -17,8 +17,10 @@ export const CAPABILITIES={
     semanticTokens:{requests:{full:true},tokenTypes:["namespace","type","class","enum","interface","struct","typeParameter","parameter","variable","property","enumMember","event","function","method","macro","keyword","modifier","comment","string","number","regexp","operator","decorator"],tokenModifiers:["declaration","definition","readonly","static","deprecated","abstract","async","modification","documentation","defaultLibrary"],formats:["relative"]}},
 };
 export const SETTINGS={java:{format:{enabled:true,onType:{enabled:true}},autobuild:{enabled:true},import:{maven:{enabled:false},gradle:{enabled:false}},signatureHelp:{enabled:true},edit:{smartSemicolonDetection:{enabled:true}},cleanup:{actions:["addOverride"]},saveActions:{organizeImports:true,cleanup:true},inlayHints:{parameterNames:{enabled:"all"}},referencesCodeLens:{enabled:true},implementationsCodeLens:{enabled:true}}};
+export type PreparationOptions={gradleHome?:string;protoc?:string;protobufJava?:string};
 export type CaseDefinition={id:string;family:string;apis:string[];method?:string;capability?:string;variant:string;
-  run:(c:ScenarioContext)=>Promise<void>;freshnessRequired?:boolean;correctnessOnly?:boolean;extension?:boolean;command?:string;fixture?:Record<string,string>;sourceDirectory?:string;prepare?:(fixture:Fixture,javaHome:string)=>void};
+  run:(c:ScenarioContext)=>Promise<void>;freshnessRequired?:boolean;correctnessOnly?:boolean;extension?:boolean;command?:string;fixture?:Record<string,string>;sourceDirectory?:string;
+  prepare?:(fixture:Fixture,javaHome:string,options?:PreparationOptions)=>void;cleanup?:(fixture:Fixture,javaHome:string)=>void};
 export class ScenarioContext {
   client:ProtocolClient;fixture:Fixture;server:string;timeout:number;warmup:number;samples:number;
   javaHome=process.env.JAVA_HOME??"";
@@ -27,12 +29,14 @@ export class ScenarioContext {
   versions=new Map<string,number>();incarnations=new Map<string,number>();
   seriesExpectations:any[]=[];mutations:any[]=[];
   registrations:any[]=[];serverActions:any[]=[];initializedNs?:string;
+  settings:Record<string,any>;
   constructor(client:ProtocolClient,fixture:Fixture,server:string,timeout:number,warmup:number,samples:number){
     Object.assign(this,{client,fixture,server,timeout,warmup,samples});
     this.client=client;this.fixture=fixture;this.server=server;this.timeout=timeout;this.warmup=warmup;this.samples=samples;
+    this.settings=structuredClone(fixture.settings??SETTINGS);
     client.onServerRequest=async(method,params)=>{
       this.serverActions.push({method,params,timeNs:String(now())});
-      if(method==="workspace/configuration")return (params?.items??[]).map((item:any)=>String(item.section??"").split(".").filter(Boolean).reduce((v:any,key:string)=>v?.[key],SETTINGS));
+      if(method==="workspace/configuration")return (params?.items??[]).map((item:any)=>String(item.section??"").split(".").filter(Boolean).reduce((v:any,key:string)=>v?.[key],this.settings));
       if(method==="workspace/workspaceFolders")return [{uri:pathToFileURL(fixture.root).href,name:"benchmark"}];
       if(method==="client/registerCapability"){this.registrations.push(...params.registrations);return null;}
       if(method==="client/unregisterCapability")return null;
@@ -49,9 +53,9 @@ export class ScenarioContext {
   async initialize(){
     const row=await this.client.request("initialize",{processId:process.pid,rootUri:pathToFileURL(this.fixture.root).href,
       workspaceFolders:[{uri:pathToFileURL(this.fixture.root).href,name:"benchmark"}],capabilities:CAPABILITIES,
-      initializationOptions:{settings:SETTINGS,extendedClientCapabilities:{classFileContentsSupport:true,advancedOrganizeImportsSupport:true}}},this.timeout);
+      initializationOptions:{settings:this.settings,extendedClientCapabilities:{classFileContentsSupport:true,advancedOrganizeImportsSupport:true}}},this.timeout);
     assert(!row.error,"initialize failed: "+JSON.stringify(row.error));this.capabilities=row.result.capabilities;this.initializedNs=row.endNs;
-    this.client.notify("initialized",{});this.client.notify("workspace/didChangeConfiguration",{settings:SETTINGS});
+    this.client.notify("initialized",{});this.client.notify("workspace/didChangeConfiguration",{settings:this.settings});
     if(this.server==="jdtls")await this.client.notification("language/status",p=>p?.type==="ServiceReady",0,this.timeout);
   }
   async open(name:string,text=this.text(name)){

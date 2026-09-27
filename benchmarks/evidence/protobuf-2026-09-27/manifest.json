@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "scope": "Selected raw diagnostic witnesses, not a complete experiment bundle",
+  "sourceBundle": "/workspace/scratch/c9ab7d11d4a9/evidence/protobuf-jdtls-pilot-4",
+  "outcome": "incorrect",
+  "sourceDrift": false,
+  "publicPerformanceClaims": false,
+  "files": {
+    "source-manifest.json": "74053103e6101779a08118eed70a5e290c68e0eebe2bfada7f8a036c359fc8ad",
+    "source-checksums.sha256": "2478e3cdeb9081300fcd517bf69d489d73de777e7fb86a7b87522b0b78593681",
+    "report.json": "42954243640c9df8eb6f2f6944ca20ebba19d67deb0ba23d260b74e3111c9f66",
+    "operations.jsonl": "873f65b58ece19c8b508c65fb6b4bfd382c9d49b5397a233faeeabded2ba5eb1",
+    "fixture.json": "96cb07b20918c595d24bda581cd53a0c8f00bd71f2027d2cfc44962a539511d7",
+    "events.jsonl": "fb5618f34127a7714f5c42e8b25d776231bc8c47c456686efe5a833233722b45",
+    "exchanges.jsonl": "f204e9cb5554b4252f650f5d53a4e9ceb95613dda65fe1fc175c32a1a866fbe8",
+    "generated-first.json": "67831c3ad15c620abdbf6c1dc2feef73ff4707cde8a1654ab285150d73120579",
+    "generated-repeat.json": "67831c3ad15c620abdbf6c1dc2feef73ff4707cde8a1654ab285150d73120579",
+    "gradle-cleanup.json": "39eddb6b89dc6276e2011f6035a677975e09b505ba166aca591c567786fe87ac",
+    "harness-tests.txt": "eed29597ceda7cba13d14422fa78769701861ce99930adef10aceb0f693260a8"
+  }
+}

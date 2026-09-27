@@ -1,0 +1,13 @@
+{
+  "command": [
+    "/workspace/scratch/c9ab7d11d4a9/toolchain/gradle-9.1.0/bin/gradle",
+    "--stop",
+    "--offline",
+    "--console=plain"
+  ],
+  "status": 0,
+  "signal": null,
+  "stdout": "\nWelcome to Gradle 9.1.0!\n\nHere are the highlights of this release:\n - Full Java 25 support\n - Native task graph visualization\n - Enhanced console output\n\nFor more details see https://docs.gradle.org/9.1.0/release-notes.html\n\nStopping Daemon(s)\n1 Daemon stopped\n",
+  "stderr": "",
+  "error": ""
+}

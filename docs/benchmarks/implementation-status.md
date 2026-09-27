@@ -55,9 +55,10 @@ with final evidence and dispositions; an intermediate draft is not task completi
 
 ## Checkpoint: 2026-09-27
 
-93 executable case definitions now map to 105 of the 106 target API entries.
-This is implementation coverage, not a statement that 105 APIs passed. Protobuf
-source generation (API-043) still needs its real prepared Gradle/protoc fixture.
+94 executable case definitions now map to all 106 target API entries.
+This is implementation coverage, not a statement that 106 APIs passed. Protobuf
+source generation (API-043) now has its real Gradle/protoc fixture; see the
+protobuf follow-up below for its failed immediate-readiness result.
 The reducer checks observed protocol methods as well as declared mappings, so a
 case declaration alone cannot establish executed coverage. Required variants and
 supported-server validation remain open.
@@ -157,3 +158,23 @@ raw requests, native JFR recordings, stage reductions, logs and original checksu
 inventories. The full bundle is retained. A local 86-file review ZIP was checked
 for ZIP CRC and every selected file's SHA-256. Review copies explicitly identify
 themselves as subsets and cannot stand in for a complete-bundle acceptance gate.
+
+## Protobuf follow-up
+
+BLD-02 now uses verified Gradle/protoc/runtime inputs, separate main/test schemas,
+actual compiler Exec tasks, per-fixture settings on all LSP configuration paths,
+and isolated Gradle state. It measures generation and generated-type readiness
+separately, records created-file notifications, checks unchanged-repeat bytes,
+and independently compiles and executes the generated code after measurement.
+
+The local JDTLS pilot generated all six expected files. Compilation, serialization
+round trips, consumer execution, unchanged repeat and shutdown checks passed.
+Its first definition lookup was empty; the next and settled lookups were correct.
+The failed first reply remains in the report and makes the case incorrect. See
+`protobuf-case.md` for the setup contract and earlier harness-development errors.
+No catalogue pass or performance claim follows from closing this implementation
+gap. CI now collects the same case's complete raw bundle.
+
+All 39 TypeScript harness tests pass after this follow-up, including rejection of
+a successful no-op generation command and consistent per-fixture configuration.
+Selected raw pilot witnesses are in `benchmarks/evidence/protobuf-2026-09-27/`.

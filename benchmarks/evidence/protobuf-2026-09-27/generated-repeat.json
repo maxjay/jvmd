@@ -1,0 +1,8 @@
+{
+  "build/generated/sources/proto/main/java/bench/generated/Greeting.java": "a9739aaf147aff2ed2f0fc0727c778272b6d831a9a1034b4a82034936f8e4d08",
+  "build/generated/sources/proto/main/java/bench/generated/GreetingOrBuilder.java": "66b439c5031f9e21d8d12cc2179a67fbe50da8058f21ff02aa8365c38e83eddb",
+  "build/generated/sources/proto/main/java/bench/generated/GreetingSchema.java": "bbc11941852434536e40992d7719602b0b8ef1abda0c45f71734d414f832e46f",
+  "build/generated/sources/proto/test/java/bench/generated/TestGreeting.java": "67bdc666d19c40572a6808698fefaff0d226bbe6ceead6769eb2d82a53714571",
+  "build/generated/sources/proto/test/java/bench/generated/TestGreetingOrBuilder.java": "76fcf37e95e8796efcda013f8c816daa5b61659e04a775903f7932a5bd2befe6",
+  "build/generated/sources/proto/test/java/bench/generated/TestGreetingSchema.java": "8fb4198288eff58c1369ca8f36113db8f9f3935b105361b306012e2322bbd6c7"
+}

@@ -9,6 +9,7 @@ import {fileCases} from "./scenarios/files.ts";
 import {dependencyCases} from "./scenarios/dependencies.ts";
 import {editingCases} from "./scenarios/editing.ts";
 import {projectCases} from "./scenarios/projects.ts";
+import {protobufCases} from "./scenarios/protobuf.ts";
 import {generationCases} from "./scenarios/generation.ts";
 import {structureCases} from "./scenarios/structure.ts";
 import {coreCases} from "./scenarios/core.ts";
@@ -17,7 +18,7 @@ import {ScenarioContext,CAPABILITIES,SETTINGS,type CaseDefinition} from "./harne
 import {launch,type LaunchOptions} from "./harness/launch.ts";
 import {CONTRACT} from "./harness/contracts.ts";
 
-export const cases:CaseDefinition[]=[...coreCases,...structureCases,...generationCases,...projectCases,...editingCases,...dependencyCases,...fileCases,...refactoringCases];
+export const cases:CaseDefinition[]=[...coreCases,...structureCases,...generationCases,...projectCases,...protobufCases,...editingCases,...dependencyCases,...fileCases,...refactoringCases];
 const write=(p:string,v:any)=>writeFileSync(p,JSON.stringify(v,null,2)+"\n");
 const jsonl=(p:string,rows:any[])=>writeFileSync(p,rows.map(r=>JSON.stringify(r)).join("\n")+(rows.length?"\n":""));
 function capability(c:any,key:string|undefined){return key===undefined?true:!!key.split(".").reduce((v,k)=>v?.[k],c);}
@@ -28,7 +29,7 @@ export function argumentsFor(args:string[]){
     if(key==="list"){result.list="true";continue;}
     assert(args[i+1]&&!args[i+1].startsWith("--"),"missing value for "+args[i]);result[key]=args[++i];
   }
-  const allowed=new Set(["list","servers","profile","output","java-home","image","jdtls-home","pipe-build","only","blocks","samples","warmup","timeout-ms","command-json","trace"]);
+  const allowed=new Set(["list","servers","profile","output","java-home","image","jdtls-home","pipe-build","only","blocks","samples","warmup","timeout-ms","command-json","trace","gradle-home","protoc","protobuf-java"]);
   for(const k of Object.keys(result))assert(allowed.has(k),"unknown option: "+k);
   return result;
 }
@@ -48,7 +49,7 @@ export async function main(args=process.argv.slice(2)){
   const sourceFiles=git("ls-files","--cached","--others","--exclude-standard").split("\n").filter(f=>existsSync(f));
   const sourceInputs=()=>Object.fromEntries(sourceFiles.map(f=>[f,sha(readFileSync(f))]));
   const manifest:any={schemaVersion:1,contract:CONTRACT.schemaVersion,createdAt:new Date().toISOString(),revision:git("rev-parse","HEAD"),
-    sourceTree:git("rev-parse","HEAD^{tree}"),sourceInputs:sourceInputs(),registry:cases.map(({run,prepare,...c})=>c),workingChanges:git("status","--porcelain"),
+    sourceTree:git("rev-parse","HEAD^{tree}"),sourceInputs:sourceInputs(),registry:cases.map(({run,prepare,cleanup,...c})=>c),workingChanges:git("status","--porcelain"),
     plan:{caseIds:selected.map(c=>c.id),servers,blocks,warmup,samples,timeout,profile,serverOrder:"alternate per independent block",reset:"fresh fixture and server state per independent case",seed:0},
     capabilities:CAPABILITIES,settings:SETTINGS,environment:{node:process.version,platform:process.platform,arch:process.arch,cpus:os.cpus().length,memoryBytes:os.totalmem()},
     claims:{publicComparativePerformance:false,reason:blocks<10?"fewer than ten independent blocks":"requires complete valid matched results, resource scope, and uncertainty analysis"}};
@@ -63,12 +64,12 @@ export async function main(args=process.argv.slice(2)){
     write(path.join(caseRoot,"report.json"),report);
     let running:Awaited<ReturnType<typeof launch>>|undefined,context:ScenarioContext|undefined;
     try{
-      def.prepare?.(fixture,path.resolve(a["java-home"]??process.env.JAVA_HOME??""));
+      def.prepare?.(fixture,path.resolve(a["java-home"]??process.env.JAVA_HOME??""),{gradleHome:a["gradle-home"],protoc:a.protoc,protobufJava:a["protobuf-java"]});
       fixture.inputs=inventory(fixture.root);fixture.identity=sha(JSON.stringify(fixture.inputs));report.fixtureIdentity=fixture.identity;write(path.join(caseRoot,"fixture.json"),fixture);
       const customCommand=a["command-json"]?JSON.parse(readFileSync(a["command-json"],"utf8")):undefined;
       running=await launch({server,profile:server==="jdtls"&&profile!=="custom"?"direct":profile,root:fixture.root,state:path.join(caseRoot,"runtime"),
         javaHome:path.resolve(a["java-home"]??process.env.JAVA_HOME??""),image:path.resolve(a.image??"jvmd-dist/target/image"),
-        jdtlsHome:a["jdtls-home"]??process.env.JDTLS_HOME,pipeBuild:a["pipe-build"],repository:path.join(caseRoot,"repository"),customCommand,trace:a.trace==="true"});
+        jdtlsHome:a["jdtls-home"]??process.env.JDTLS_HOME,pipeBuild:a["pipe-build"],repository:path.join(caseRoot,"repository"),customCommand,trace:a.trace==="true",environment:fixture.environment});
       report.launch=running.metadata;
       context=new ScenarioContext(running.client,fixture,server,timeout,warmup,samples);context.javaHome=path.resolve(a["java-home"]??process.env.JAVA_HOME??"");await context.initialize();report.capabilities=context.capabilities;
       if(!capability(context.capabilities,def.capability)||(def.extension&&server==="jvmd")||(def.command&&!context.capabilities.executeCommandProvider?.commands?.includes(def.command))){
@@ -86,7 +87,9 @@ export async function main(args=process.argv.slice(2)){
         report.spawnNs=String(running.client.spawnNs);
       }
       if(context){report.operations=context.operations;report.seriesExpectations=context.seriesExpectations;report.mutations=context.mutations;report.assertions=context.assertions;report.serverActions=context.serverActions;
-        report.initializedNs=context.initializedNs;jsonl(path.join(caseRoot,"operations.jsonl"),context.operations);}
+        report.initializedNs=context.initializedNs;report.settings=context.settings;jsonl(path.join(caseRoot,"operations.jsonl"),context.operations);}
+      try{def.cleanup?.(fixture,path.resolve(a["java-home"]??process.env.JAVA_HOME??""));}catch(error){report.cleanupError=String(error);if(report.outcome==="pass")report.outcome="harness_error";}
+      report.preparation=fixture.preparation;
       for(const file of ["events.jsonl","exchanges.jsonl","operations.jsonl"])if(!existsSync(path.join(caseRoot,file)))writeFileSync(path.join(caseRoot,file),"");
       report.finalized=true;report.artifactDirectory=path.relative(root,caseRoot);write(path.join(caseRoot,"report.json"),report);reports.push(report);
       console.log(JSON.stringify({caseId:report.caseId,server,block:block+1,outcome:report.outcome,error:report.error}));

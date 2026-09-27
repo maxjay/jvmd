@@ -125,11 +125,27 @@ jobs:
           key: jdtls-338e7e73d61836651ba2453919a0d34fa763eb4e7c03342092309bffb8934c64
 
       - name: Install JDTLS
+        id: jdtls
         run: |
           mkdir -p "$RUNNER_TEMP/jdtls"
           [[ -f "$RUNNER_TEMP/jdtls.tar.gz" ]] || curl -fsSL --retry 3             https://download.eclipse.org/jdtls/milestones/1.61.0/jdt-language-server-1.61.0-202609031315.tar.gz             -o "$RUNNER_TEMP/jdtls.tar.gz"
           printf '%s  %s\n'             338e7e73d61836651ba2453919a0d34fa763eb4e7c03342092309bffb8934c64             "$RUNNER_TEMP/jdtls.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/jdtls.tar.gz" -C "$RUNNER_TEMP/jdtls"
+
+      - name: Prepare pinned protobuf tools
+        id: protobuf-tools
+        run: |
+          mkdir -p "$RUNNER_TEMP/protobuf-tools"
+          cd "$RUNNER_TEMP/protobuf-tools"
+          curl -fsSL --retry 3 https://downloads.gradle.org/distributions/gradle-9.1.0-bin.zip -o gradle.zip
+          curl -fsSL --retry 3 https://repo.maven.apache.org/maven2/com/google/protobuf/protoc/3.21.4/protoc-3.21.4-linux-x86_64.exe -o protoc
+          curl -fsSL --retry 3 https://repo.maven.apache.org/maven2/com/google/protobuf/protobuf-java/3.21.4/protobuf-java-3.21.4.jar -o protobuf-java.jar
+          printf '%s\n' \
+            'a17ddd85a26b6a7f5ddb71ff8b05fc5104c0202c6e64782429790c933686c806  gradle.zip' \
+            'ae5ddc97b85d0a3a39db70c0eabe93e3f83a5d4617d354b932dc88f307e6e2ec  protoc' \
+            '85d0a5b8b7e14395cd4489533433cb18eae6b197b9b5030ac0e67e679beafa8e  protobuf-java.jar' | sha256sum -c -
+          unzip -q gradle.zip
+          chmod +x protoc gradle-9.1.0/bin/gradle
 
       - name: Measure JDTLS phases
         env:
@@ -170,6 +186,26 @@ jobs:
             --output "$RUNNER_TEMP/native-lifecycle-traced" --edits 128 --trace true \
             --apache-fixture "$RUNNER_TEMP/apache-maven-fixture" \
             --apache-repository "$HOME/.m2/repository"
+
+      - name: Protobuf generation and generated-type readiness
+        if: always() && steps.jdtls.outcome == 'success' && steps.protobuf-tools.outcome == 'success'
+        run: |
+          node benchmarks/lsp-scenarios/run.ts --servers jdtls --profile direct \
+            --java-home "$JAVA_HOME" --jdtls-home "$RUNNER_TEMP/jdtls" \
+            --gradle-home "$RUNNER_TEMP/protobuf-tools/gradle-9.1.0" \
+            --protoc "$RUNNER_TEMP/protobuf-tools/protoc" \
+            --protobuf-java "$RUNNER_TEMP/protobuf-tools/protobuf-java.jar" \
+            --only BLD-02 --blocks 1 --warmup 1 --samples 1 --timeout-ms 90000 \
+            --output "$RUNNER_TEMP/protobuf-evidence"
+
+      - name: Upload protobuf raw evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: protobuf-evidence
+          retention-days: 7
+          include-hidden-files: true
+          path: ${{ runner.temp }}/protobuf-evidence
 
       - name: Upload phase reports
         if: always()

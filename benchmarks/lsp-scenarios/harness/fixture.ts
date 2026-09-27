@@ -56,7 +56,8 @@ public class Generate {
 `,
 };
 export const sha=(v:string|Buffer)=>createHash("sha256").update(v).digest("hex");
-export type Fixture={root:string;files:Record<string,{path:string;uri:string;text:string}>;identity:string;inputs:Record<string,string>;classpath?:string[]};
+export type Fixture={root:string;files:Record<string,{path:string;uri:string;text:string}>;identity:string;inputs:Record<string,string>;classpath?:string[];
+  settings?:Record<string,any>;environment?:Record<string,string>;preparation?:Record<string,any>};
 export function createFixture(root:string,extra:Record<string,string>={},sourceDirectory=""):Fixture{
   mkdirSync(path.join(root,sourceDirectory,"bench"),{recursive:true});mkdirSync(path.join(root,".settings"),{recursive:true});
   const metadata:Record<string,string>={

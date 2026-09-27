@@ -1,0 +1,4 @@
+{"caseId":"PRJ-02/jdk","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"PRJ-02/jdk","server":"jdtls","block":1,"outcome":"pass"}
+{"caseId":"PRJ-02/jdk-switch","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"PRJ-02/jdk-switch","server":"jdtls","block":1,"outcome":"pass"}

@@ -795,3 +795,22 @@ environments. The two real compiler witnesses also pass locally with Temurin
 17.0.20.1 and 25.0.4.1. This implementation still needs its first real LSP replay;
 it does not promote development timings into comparison evidence. See
 `jdk-switch-case.md` for the exact execution contract.
+
+## Real JDK-switch replay
+
+At `7b72684`, JDTLS passes both the tightened same-home command case and the
+real JDK 17 to 25 switch. Before switching, completion includes get and excludes
+getFirst. The immediate and settled replies after the switch both include
+getFirst; the reported VM changes and the compiler language settings remain at
+17. Every source byte and document version is preserved. Both cases shut down
+successfully. JVMD records the command as unsupported from initialize evidence.
+
+The independent JDK compilers establish the expected API difference and the
+new-platform runtime returns the first element. `benchmarks/evidence/jdk-switch-2026-09-27/`
+preserves raw replies, transition attempts and toolchain/compiler identities.
+All originally sealed files match and source inputs are stable. Packaging again
+found additional runtime files outside the original inventory. Those files and
+their metadata are preserved with explicit failed-inventory status; the original
+seal is unchanged and the cause is unproven. The original reducer recorded two
+passes and two unsupported cases, but this capture is not fully sealed and
+provides no comparative performance estimate.

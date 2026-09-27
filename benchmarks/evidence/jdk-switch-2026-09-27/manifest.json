@@ -1,0 +1,293 @@
+{
+  "schemaVersion": 1,
+  "scope": "Raw protocol review subset; not complete experiment bundle or comparative performance evidence",
+  "revision": "7b72684c2e69bc0fc71e47c988d0fb3e2bb49249",
+  "archive": {
+    "file": "protocol-review.tar.xz",
+    "bytes": 134324,
+    "sha256": "2a304626a60657e4b83614d28565b0573ade72026d85311276f69dc675d01ff5",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "failed",
+    "unsealedFiles": {
+      "01-jdtls-PRJ-02-jdk-switch/runtime/equinox-config/org.eclipse.core.runtime/.manager/.tmp74.instance": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "01-jdtls-PRJ-02-jdk-switch/runtime/equinox-config/org.eclipse.equinox.app/.manager/.tmp75.instance": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "01-jdtls-PRJ-02-jdk-switch/runtime/workspace/.metadata/.plugins/org.eclipse.core.resources/.projects/benchmark/.markers.snap": {
+        "bytes": 216,
+        "sha256": "4ce0dcbdd791f5d80a0385cf9e0588b4aea17c53fd7a56b484ef3407997d168a"
+      },
+      "01-jdtls-PRJ-02-jdk-switch/runtime/workspace/.metadata/.plugins/org.eclipse.core.resources/.projects/benchmark/.syncinfo.snap": {
+        "bytes": 16,
+        "sha256": "e42ae93474e9c14b9a33ea021d885fbcb5280a5acbb7ef238df5952d2963e770"
+      },
+      "01-jdtls-PRJ-02-jdk-switch/runtime/workspace/.metadata/.plugins/org.eclipse.core.resources/.root/.markers.snap": {
+        "bytes": 16,
+        "sha256": "e42ae93474e9c14b9a33ea021d885fbcb5280a5acbb7ef238df5952d2963e770"
+      },
+      "01-jdtls-PRJ-02-jdk-switch/runtime/workspace/.metadata/.plugins/org.eclipse.core.resources/0.snap": {
+        "bytes": 751,
+        "sha256": "2088fda0dc134417c8d506d3d17952aa93f1e3224fc05f94e6ed8e679645738f"
+      }
+    },
+    "members": 49
+  },
+  "plan": {
+    "caseIds": [
+      "PRJ-02/jdk",
+      "PRJ-02/jdk-switch"
+    ],
+    "servers": [
+      "jvmd",
+      "jdtls"
+    ],
+    "blocks": 1,
+    "warmup": 1,
+    "samples": 2,
+    "timeout": 30000,
+    "transitionPolicy": {
+      "maxAttempts": 100,
+      "retryDelayMs": 20,
+      "deadlineMs": 30000,
+      "perRequestTimeoutMs": 30000,
+      "clock": "client monotonic",
+      "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+      "settledProbe": "one additional correct response after the first correct response",
+      "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+    },
+    "profile": "pipe",
+    "serverOrder": "alternate per independent block",
+    "reset": "fresh fixture and server state per independent case",
+    "seed": 0
+  },
+  "sourceDrift": false,
+  "initialReducerIntegrityIssues": [],
+  "inventoryDisposition": "FAILED: additional runtime files discovered after original seal; cause unproven; original seal unchanged",
+  "unsealedFileMetadata": {
+    "01-jdtls-PRJ-02-jdk-switch/runtime/equinox-config/org.eclipse.core.runtime/.manager/.tmp74.instance": {
+      "size": 0,
+      "mtimeNs": 1790525960562548044,
+      "ctimeNs": 1790525979172611775
+    },
+    "01-jdtls-PRJ-02-jdk-switch/runtime/equinox-config/org.eclipse.equinox.app/.manager/.tmp75.instance": {
+      "size": 0,
+      "mtimeNs": 1790525960711082954,
+      "ctimeNs": 1790525979172611775
+    },
+    "01-jdtls-PRJ-02-jdk-switch/runtime/workspace/.metadata/.plugins/org.eclipse.core.resources/.projects/benchmark/.markers.snap": {
+      "size": 216,
+      "mtimeNs": 1790525962799272084,
+      "ctimeNs": 1790525979172611775
+    },
+    "01-jdtls-PRJ-02-jdk-switch/runtime/workspace/.metadata/.plugins/org.eclipse.core.resources/.projects/benchmark/.syncinfo.snap": {
+      "size": 16,
+      "mtimeNs": 1790525962799272084,
+      "ctimeNs": 1790525979172611775
+    },
+    "01-jdtls-PRJ-02-jdk-switch/runtime/workspace/.metadata/.plugins/org.eclipse.core.resources/.root/.markers.snap": {
+      "size": 16,
+      "mtimeNs": 1790525962798703136,
+      "ctimeNs": 1790525979172611775
+    },
+    "01-jdtls-PRJ-02-jdk-switch/runtime/workspace/.metadata/.plugins/org.eclipse.core.resources/0.snap": {
+      "size": 751,
+      "mtimeNs": 1790525962797181351,
+      "ctimeNs": 1790525979172611775
+    }
+  },
+  "originalSealMtimeNs": 1790525974452659942,
+  "sourceManifestSha256": "ddf6b999ebe46a717c209821be7f506fce13cdb3c9728b0719bfd2eda24bc8c7",
+  "originalChecksumInventorySha256": "27a3855e8a1e8504c9e8614b61e591f3182e0749508803fee378bfb9ea81db99",
+  "outcomes": {
+    "pass": 2,
+    "incorrect": 0,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 0,
+    "harness_error": 0,
+    "unsupported": 2,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "cases": [
+    {
+      "server": "jdtls",
+      "caseId": "PRJ-02/jdk",
+      "profile": "direct",
+      "outcome": "pass",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [],
+      "assertions": []
+    },
+    {
+      "server": "jdtls",
+      "caseId": "PRJ-02/jdk-switch",
+      "profile": "direct",
+      "outcome": "pass",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [
+        {
+          "method": "textDocument/completion",
+          "endpoint": "textDocument/completion",
+          "firstOperationIndex": 3,
+          "firstUse": 1,
+          "warmup": 1,
+          "steady": 2
+        },
+        {
+          "kind": "transition",
+          "transitionId": "transition-2",
+          "method": "textDocument/completion",
+          "firstOperationIndex": 8,
+          "triggerNs": "5694099212034",
+          "witness": "unchanged List receiver exposes getFirst only after switching the project platform from JDK 17",
+          "probePolicy": {
+            "maxAttempts": 100,
+            "retryDelayMs": 20,
+            "deadlineMs": 30000,
+            "perRequestTimeoutMs": 30000,
+            "clock": "client monotonic",
+            "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+            "settledProbe": "one additional correct response after the first correct response",
+            "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+          },
+          "deadlineNs": "5725010179356",
+          "attemptCount": 1,
+          "attempts": [
+            {
+              "attempt": 1,
+              "startNs": "5695010208319",
+              "endNs": "5695135965192",
+              "outcome": "pass",
+              "stage": "complete",
+              "immediate": {
+                "preparationOperationIds": [],
+                "operationId": "op-9"
+              },
+              "settled": {
+                "preparationOperationIds": [],
+                "operationId": "op-10"
+              }
+            }
+          ],
+          "firstTargetRequest": "sent",
+          "termination": "settled",
+          "endedNs": "5695135965192",
+          "settledOperationId": "op-10"
+        }
+      ],
+      "assertions": [
+        {
+          "name": "independent JDK compilers disagree only on the selected new API",
+          "passed": true,
+          "detail": {
+            "old": {
+              "command": [
+                "/workspace/scratch/c9ab7d11d4a9/tools/jdk-17.0.20.1+1/bin/javac",
+                "-proc:none",
+                "-source",
+                "17",
+                "-target",
+                "17",
+                "-XDrawDiagnostics",
+                "-d",
+                "/workspace/scratch/c9ab7d11d4a9/jdk-switch-replay/01-jdtls-PRJ-02-jdk-switch/jdk-switch-oracle/old",
+                "/workspace/scratch/c9ab7d11d4a9/jdk-switch-replay/01-jdtls-PRJ-02-jdk-switch/jdk-switch-oracle/JdkProbe.java"
+              ],
+              "startNs": "5684273763117",
+              "endNs": "5684958438284",
+              "status": 1,
+              "signal": null,
+              "stdout": "",
+              "stderr": "JdkProbe.java:4:68: compiler.err.cant.resolve.location.args: kindname.method, getFirst, , , (compiler.misc.location.1: kindname.variable, values, java.util.List<java.lang.String>)\n1 error\n",
+              "error": ""
+            },
+            "new": {
+              "command": [
+                "/workspace/scratch/c9ab7d11d4a9/tools/jdk-25.0.4.1+1/bin/javac",
+                "-proc:none",
+                "-source",
+                "17",
+                "-target",
+                "17",
+                "-XDrawDiagnostics",
+                "-d",
+                "/workspace/scratch/c9ab7d11d4a9/jdk-switch-replay/01-jdtls-PRJ-02-jdk-switch/jdk-switch-oracle/new",
+                "/workspace/scratch/c9ab7d11d4a9/jdk-switch-replay/01-jdtls-PRJ-02-jdk-switch/jdk-switch-oracle/JdkProbe.java"
+              ],
+              "startNs": "5684958849698",
+              "endNs": "5685539710450",
+              "status": 0,
+              "signal": null,
+              "stdout": "",
+              "stderr": "- compiler.warn.source.no.system.modules.path: 17, (compiler.misc.source.no.system.modules.path.with.target: 17, 17)\n1 warning\n",
+              "error": ""
+            },
+            "runtime": {
+              "command": [
+                "/workspace/scratch/c9ab7d11d4a9/tools/jdk-25.0.4.1+1/bin/java",
+                "-cp",
+                "/workspace/scratch/c9ab7d11d4a9/jdk-switch-replay/01-jdtls-PRJ-02-jdk-switch/jdk-switch-oracle/new",
+                "bench.JdkProbe"
+              ],
+              "startNs": "5685540084895",
+              "endNs": "5685578764970",
+              "status": 0,
+              "signal": null,
+              "stdout": "first=one\n",
+              "stderr": "",
+              "error": ""
+            }
+          }
+        },
+        {
+          "name": "JDK switch preserves every source byte and open document version",
+          "passed": true
+        },
+        {
+          "name": "no server workspace edit during JDK switch",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "server": "jvmd",
+      "caseId": "PRJ-02/jdk",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [],
+      "assertions": []
+    },
+    {
+      "server": "jvmd",
+      "caseId": "PRJ-02/jdk-switch",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "seriesExpectations": [],
+      "assertions": []
+    }
+  ],
+  "jdk17Download": {
+    "url": "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz",
+    "checksumUrl": "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz.sha256.txt",
+    "sha256": "3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e",
+    "bytes": 193252603
+  },
+  "limits": [
+    "One diagnostic block; JVMD pipe transport; uncontrolled OS caches",
+    "Independent compiler witnesses occur before server launch",
+    "Command capability, not tool availability, establishes unsupported JVMD status",
+    "Original inventory is incomplete; all originally sealed files still match their hashes"
+  ]
+}

@@ -68,6 +68,16 @@ export function reduceBundle(root:string,verifyHashes=true){
     if(!existsSync(file)){reports.push({caseId,server,block,outcome:"not_run",reason:"planned case has no final report"});continue;}
     const report=read(file),events=lines(path.join(dir,"events.jsonl")),exchanges=lines(path.join(dir,"exchanges.jsonl")),operations=lines(path.join(dir,"operations.jsonl"));
     const caseIssues=validateCase(report,events,exchanges,operations);
+    if(report.processLifecycle){
+      const lifecycle=lines(path.join(dir,"process.jsonl"));
+      if(JSON.stringify(lifecycle)!==JSON.stringify(report.processLifecycle))caseIssues.push("process journal differs from report");
+      let time=0n;
+      for(const [i,row] of lifecycle.entries()){
+        if(row.schemaVersion!==1||row.clockDomain!=="client"||row.sequence!==i+1||BigInt(row.timeNs)<time)caseIssues.push("invalid process lifecycle event");
+        time=BigInt(row.timeNs);
+      }
+      if(report.outcome==="pass"&&(!lifecycle.some(row=>row.event==="process_exit"&&row.code===0&&!row.signal)||lifecycle.at(-1)?.event!=="stdio_closed"||lifecycle.some(row=>["forced_kill","shutdown_deadline","process_error","process_exit_unobserved"].includes(row.event))))caseIssues.push("case pass without observed clean process exit");
+    }
     if(report.caseId!==caseId||report.server!==server||report.block!==block)caseIssues.push("planned case identity mismatch");
     if(report.finalized!==true)caseIssues.push("case interrupted before finalization");
     if(sealed&&verifyHashes)for(const n of ["report.json","events.jsonl","exchanges.jsonl","operations.jsonl","fixture.json"])if(!covered.has(name+"/"+n))caseIssues.push("artifact outside checksum inventory: "+n);

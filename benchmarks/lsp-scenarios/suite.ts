@@ -82,6 +82,7 @@ export async function main(args=process.argv.slice(2)){
     }finally{
       if(running){try{if(context)for(const name of Object.keys(context.fixture.files))if(context.documents.has(context.file(name).uri))context.close(name);await running.stop();}catch(error){report.shutdownError=String(error);if(report.outcome==="pass")report.outcome="protocol_error";}
         report.protocolErrors=running.client.protocolErrors;
+        report.processLifecycle=running.client.processLifecycle;
         if(report.protocolErrors.length&&report.outcome==="pass")report.outcome="protocol_error";
         jsonl(path.join(caseRoot,"events.jsonl"),running.client.events);jsonl(path.join(caseRoot,"exchanges.jsonl"),running.client.exchanges);
         report.spawnNs=String(running.client.spawnNs);

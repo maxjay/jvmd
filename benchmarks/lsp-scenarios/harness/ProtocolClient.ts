@@ -9,10 +9,12 @@ export type Exchange={id:number;method:string;params:any;startNs:string;endNs:st
 export class ProtocolClient {
   child:ChildProcess;
   events:any[]=[];exchanges:Exchange[]=[];notifications:any[]=[];protocolErrors:string[]=[];
+  processLifecycle:any[]=[];
   traceContext?:Record<string,string>;
   next=0;emitter=new EventEmitter();spawnNs=now();exited:Promise<number|null>;
   private pending=new Map<number,{method:string;params:any;start:bigint;resolve:(v:Exchange)=>void;timer:ReturnType<typeof setTimeout>}>();
   private bytes=0;private ended=false;
+  private closed:Promise<number|null>;
   private journalDirectory?:string;
   onServerRequest:(method:string,params:any)=>Promise<any>=async method=>{throw new Error("unhandled server request: "+method);};
   constructor(command:string[],options:{cwd?:string;env?:NodeJS.ProcessEnv;stderr?:number;journalDirectory?:string}={}){
@@ -20,8 +22,11 @@ export class ProtocolClient {
     this.journalDirectory=options.journalDirectory;
     if(this.journalDirectory)mkdirSync(this.journalDirectory,{recursive:true});
     this.child=spawn(command[0],command.slice(1),{cwd:options.cwd,env:options.env??process.env,stdio:["pipe","pipe",options.stderr??"inherit"]});
-    this.exited=new Promise(resolve=>this.child.once("exit",code=>{this.ended=true;this.failPending("server exited: "+code);resolve(code);}));
-    this.child.once("error",error=>{this.ended=true;this.protocolErrors.push(error.message);this.failPending(error.message);});
+    this.processEvent("launch_requested",{command},this.spawnNs);
+    this.child.once("spawn",()=>this.processEvent("spawned",{pid:this.child.pid}));
+    this.exited=new Promise(resolve=>this.child.once("exit",(code,signal)=>{this.processEvent("process_exit",{pid:this.child.pid,code,signal});this.ended=true;this.failPending("server exited: "+code);resolve(code);}));
+    this.closed=new Promise(resolve=>this.child.once("close",(code,signal)=>{this.processEvent("stdio_closed",{code,signal});resolve(code);}));
+    this.child.once("error",error=>{this.processEvent("process_error",{message:error.message});this.ended=true;this.protocolErrors.push(error.message);this.failPending(error.message);});
     this.child.stdin!.on("error",error=>{this.protocolErrors.push("stdin: "+error.message);this.failPending(error.message);});
     const framing=new Framing("headers",message=>this.receive(message));
     this.child.stdout!.on("data",chunk=>{try{framing.push(chunk);}catch(e){this.protocolErrors.push(String(e));this.failPending(String(e));}});
@@ -33,6 +38,10 @@ export class ProtocolClient {
     this.events.push(row);this.journal("events",row);
   }
   journal(name:string,row:any){if(this.journalDirectory)appendFileSync(path.join(this.journalDirectory,name+".jsonl"),JSON.stringify(row)+"\n");}
+  private processEvent(event:string,detail:any={},time=now()){
+    const row={schemaVersion:1,sequence:this.processLifecycle.length+1,clockDomain:"client",timeNs:String(time),event,...detail};
+    this.processLifecycle.push(row);this.journal("process",row);
+  }
   notify(method:string,params:any={}):bigint {
     const message={jsonrpc:"2.0",method,params};const bytes=encode(message),t=now();
     this.child.stdin!.write(bytes);this.record("send",message,t);return t;
@@ -77,12 +86,29 @@ export class ProtocolClient {
     });
   }
   async shutdown(timeoutMs=70000):Promise<void>{
-    if(this.ended){if(this.child.exitCode!==0)throw new Error("server already exited uncleanly: "+this.child.exitCode);return;}
+    const waitForExit=(deadlineMs:number)=>new Promise<{code:number|null;timedOut:boolean}>(resolve=>{
+      const timer=setTimeout(()=>resolve({code:null,timedOut:true}),deadlineMs);
+      void this.closed.then(code=>{clearTimeout(timer);resolve({code,timedOut:false});});
+    });
+    if(this.ended){
+      const final=await waitForExit(timeoutMs);
+      if(final.timedOut)this.processEvent("process_exit_unobserved",{reason:"output streams did not close",graceMs:timeoutMs});
+      if(this.child.exitCode!==0||final.timedOut)throw new Error("server already exited uncleanly: "+this.child.exitCode);
+      return;
+    }
+    this.processEvent("shutdown_begin",{timeoutMs});
     const result=await this.request("shutdown",{},timeoutMs);
-    this.notify("exit");this.child.stdin!.end();
-    let timer:ReturnType<typeof setTimeout>|undefined;
-    const code=await Promise.race([this.exited,new Promise<null>(resolve=>{timer=setTimeout(()=>{this.child.kill("SIGKILL");resolve(null);},timeoutMs);})]);
-    if(timer)clearTimeout(timer);
-    if(result.error||code!==0)throw new Error("unclean shutdown: "+JSON.stringify({error:result.error,code}));
+    this.processEvent("shutdown_response",{requestId:result.id,error:result.error??null},BigInt(result.endNs));
+    const sent=this.notify("exit");this.processEvent("exit_notified",{},sent);this.child.stdin!.end();this.processEvent("stdin_ended");
+    let final=await waitForExit(timeoutMs);const forced=final.timedOut;
+    if(forced){
+      this.processEvent("shutdown_deadline",{timeoutMs});
+      const delivered=this.child.kill("SIGKILL");this.processEvent("forced_kill",{signal:"SIGKILL",delivered});
+      // Observe exit and stream closure before callers seal journals; requesting
+      // a kill is not itself evidence that the child terminated or output drained.
+      final=await waitForExit(5000);
+      if(final.timedOut)this.processEvent("process_exit_unobserved",{graceMs:5000});
+    }
+    if(result.error||forced||final.code!==0)throw new Error("unclean shutdown: "+JSON.stringify({error:result.error,code:final.code,forced,exitObserved:!final.timedOut}));
   }
 }

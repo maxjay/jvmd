@@ -4,7 +4,7 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 115 case definitions, 61 passing TypeScript
+Latest implementation inventory: 115 case definitions, 64 passing TypeScript
 harness tests, and 107 required variants (54 implemented, 40 partial, 13 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
@@ -439,3 +439,23 @@ paths preserve unusual filenames. Artifact-only reduction rejects every file
 missing from the checksum inventory, including an omitted experiment manifest.
 61 harness tests pass; the new tests exercise source additions/deletions and
 unsealed extra files/manifests. Other source and acceptance counts are unchanged.
+
+## Process shutdown observations
+
+Each new LSP client run journals launch request, actual spawn, shutdown request
+and reply, exit notification, input closure, observed process exit and output
+stream closure with client monotonic timestamps. Exit status and signal are
+retained. Shutdown timeout and forced kill are distinct observations; requesting
+a kill is not treated as proof that a process has exited. The client waits for
+observed termination and drained streams before the runner seals its journals.
+
+Artifact reduction cross-checks the process journal against the final case report
+and rejects a pass without an observed clean exit and closed streams. Legacy
+bundles without process journals remain readable; they do not gain these missing
+observations retroactively. This tracks the launched peer process, not complete
+daemon/helper lifetime resource costs.
+
+64 harness tests pass. Controlled subprocesses cover a clean exit, nonzero exit
+and a peer that ignores shutdown/exit and requires a recorded forced kill.
+The JDTLS shutdown cause remains unresolved; the new timestamps improve future
+diagnosis without changing prior failed dispositions.

@@ -6,14 +6,15 @@ const originalDocuments=new Map<string,string>();
 const pos=(text:string,at:number)=>{const prefix=text.slice(0,at);return {line:prefix.split("\n").length-1,character:at-prefix.lastIndexOf("\n")-1};};
 const span=(text:string,at:number,length:number)=>({start:pos(text,at),end:pos(text,at+length)});
 const mode=process.argv[2];
+if(mode==="shutdown-hang")setInterval(()=>{},1000);
 const framing=new Framing("headers",message=>{
   const {id,method,params}=message;
   if(method==="textDocument/didOpen"){documents.set(params.textDocument.uri,params.textDocument.text);originalDocuments.set(params.textDocument.uri,params.textDocument.text);}
   if(method==="textDocument/didChange")documents.set(params.textDocument.uri,params.contentChanges[0].text);
-  if(method==="exit"){process.exit(0);return;}
+  if(method==="exit"){if(mode!=="shutdown-hang")process.exit(mode==="shutdown-nonzero"?1:0);return;}
   if(id===undefined)return;
   if(method==="initialize"){send({id,result:{capabilities:{completionProvider:{resolveProvider:true},definitionProvider:true,callHierarchyProvider:true,codeLensProvider:{resolveProvider:true}}}});return;}
-  if(method==="shutdown"){send({id,result:null});return;}
+  if(method==="shutdown"){if(mode!=="shutdown-hang")send({id,result:null});return;}
   if(method==="textDocument/completion"){
     completionCount++;
     if(mode==="hang")return;

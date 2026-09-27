@@ -4,7 +4,7 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 115 case definitions, 59 passing TypeScript
+Latest implementation inventory: 115 case definitions, 61 passing TypeScript
 harness tests, and 107 required variants (54 implemented, 40 partial, 13 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
@@ -414,3 +414,28 @@ corrected replay remains required.
 59 harness tests pass. The inventory is 115 cases and 107 variants: 54 implemented,
 40 partial and 13 absent. Supported-server formatting replay and the broader
 worker-specification gates remain open.
+
+## Lens/format replay and complete inventory checks
+
+At `25eba1c`, JDTLS passes all three reference-lens cases and raw-string formatting.
+Narrow formatting passes its initial scope/preservation check, independent
+compilation and idempotence, but exits with code 1 and remains `protocol_error`.
+JVMD explicitly reports all five routes unsupported. The ten-case pilot has
+four passes, one protocol failure and five unsupported dispositions, with no
+source drift or integrity issues. The initial lens development pilot is retained
+and explicitly ineligible as evidence of server correctness.
+
+`benchmarks/evidence/lens-format-2026-09-27/` preserves both raw review subsets,
+including JDTLS runtime logs. In the failed formatting case, JDTLS logs receipt
+of shutdown and exit, then application/plugin shutdown, followed by a Gradle
+background-job exception. The pinned JDTLS source at `08eafe6` schedules a
+forced exit after one minute; the observed delay is consistent with that path.
+These observations do not prove why the process stayed alive. No shutdown error
+has been converted into a pass or used as a request-correctness failure.
+
+The LSP runner now re-enumerates repository files for its final source snapshot,
+detecting additions and removals as well as changed bytes. NUL-delimited Git
+paths preserve unusual filenames. Artifact-only reduction rejects every file
+missing from the checksum inventory, including an omitted experiment manifest.
+61 harness tests pass; the new tests exercise source additions/deletions and
+unsealed extra files/manifests. Other source and acceptance counts are unchanged.

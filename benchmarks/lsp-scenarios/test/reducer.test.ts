@@ -30,6 +30,19 @@ test("a successful settled retry cannot erase the incorrect immediate response",
     assert(rows.some(r=>r.state==="changed_immediate"&&r.outcome==="incorrect"));assert(rows.some(r=>r.state==="changed_settled"&&r.outcome==="pass"));
   }finally{rmSync(tmp,{recursive:true,force:true});}
 });
+test("sealed bundles reject unlisted files and unsealed experiment manifests",()=>{
+  const {tmp,output,args}=setup("correct");try{
+    const run=spawnSync(process.execPath,args,{encoding:"utf8",timeout:15000});assert.equal(run.status,0,run.stderr);
+    const extra=path.join(output,"unrecorded-evidence.json");writeFileSync(extra,"{}");
+    const added=reduceBundle(output);assert.equal(added.summary.complete,false);
+    assert(added.summary.integrityIssues.includes("artifact outside checksum inventory: unrecorded-evidence.json"));
+    rmSync(extra);
+    const checksums=path.join(output,"checksums.sha256");
+    writeFileSync(checksums,readFileSync(checksums,"utf8").split("\n").filter(row=>!row.endsWith("  manifest.json")).join("\n"));
+    const omitted=reduceBundle(output);assert.equal(omitted.summary.complete,false);
+    assert(omitted.summary.integrityIssues.includes("artifact outside checksum inventory: manifest.json"));
+  }finally{rmSync(tmp,{recursive:true,force:true});}
+});
 test("interruption retains live protocol evidence and cannot pass reduction",async()=>{
   const {tmp,output,args}=setup("hang");const run=spawn(process.execPath,args,{stdio:"ignore"});const done=new Promise(resolve=>run.once("exit",resolve));
   try{

@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "scope": "Raw protocol review subsets; not complete experiment bundles or comparative performance evidence",
+  "archive": {
+    "file": "protocol-reviews.tar.xz",
+    "bytes": 135460,
+    "sha256": "c45e9d4dbee6c58a1c45e12753db11424e27c14bbdfe93d5561f338bf41e9596",
+    "everySelectedFileHash": "verified"
+  },
+  "bundles": [
+    {
+      "bundle": "code-lens-pilot",
+      "revision": "c7ff373f0e61ce7399a1622d48a97ceddf1f36fd",
+      "plan": {
+        "caseIds": [
+          "VIEW-03/code-lens",
+          "VIEW-03/code-lens-add",
+          "VIEW-03/code-lens-remove"
+        ],
+        "servers": [
+          "jvmd",
+          "jdtls"
+        ],
+        "blocks": 1,
+        "warmup": 1,
+        "samples": 2,
+        "timeout": 30000,
+        "profile": "pipe",
+        "serverOrder": "alternate per independent block",
+        "reset": "fresh fixture and server state per independent case",
+        "seed": 0
+      },
+      "sourceDrift": false,
+      "sourceManifestSha256": "ca828ed32711d66dff7a9736ac374e40414630749cadcbf9d9a805061893129d",
+      "originalChecksumInventorySha256": "9c0b6462e7ddc867eb02ed755e287f3c8869f797535a8f15183cb9ba376b7950",
+      "outcomes": {
+        "pass": 0,
+        "incorrect": 3,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 0,
+        "harness_error": 0,
+        "unsupported": 3,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      },
+      "integrityIssues": [
+        "01-jdtls-VIEW-03-code-lens: series sample missing or reordered: textDocument/codeLens warmup 1",
+        "01-jdtls-VIEW-03-code-lens: series sample missing or reordered: textDocument/codeLens steady 2",
+        "01-jdtls-VIEW-03-code-lens: series sample missing or reordered: textDocument/codeLens steady 3"
+      ],
+      "correctnessClaimEligible": false,
+      "selectedFiles": 52
+    },
+    {
+      "bundle": "lens-format-pilot-fixed",
+      "revision": "25eba1cbf4722b96bf1399d57215f3f050048045",
+      "plan": {
+        "caseIds": [
+          "VIEW-03/code-lens",
+          "VIEW-03/code-lens-add",
+          "VIEW-03/code-lens-remove",
+          "FMT-01/range",
+          "FMT-01/string"
+        ],
+        "servers": [
+          "jvmd",
+          "jdtls"
+        ],
+        "blocks": 1,
+        "warmup": 1,
+        "samples": 2,
+        "timeout": 30000,
+        "profile": "pipe",
+        "serverOrder": "alternate per independent block",
+        "reset": "fresh fixture and server state per independent case",
+        "seed": 0
+      },
+      "sourceDrift": false,
+      "sourceManifestSha256": "6c44def1c724278a99d1c975951f1e8525db483a185149fb04072796c7abf663",
+      "originalChecksumInventorySha256": "898b4b0d4c39378f1d34c24d043aeda89996611d85aff82b93323bb3072effe6",
+      "outcomes": {
+        "pass": 4,
+        "incorrect": 0,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 1,
+        "harness_error": 0,
+        "unsupported": 5,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      },
+      "integrityIssues": [],
+      "correctnessClaimEligible": true,
+      "selectedFiles": 82
+    }
+  ],
+  "interpretation": [
+    "The initial lens pilot selected the b in public instead of the method identifier. Its baseline failures are harness defects, not JDTLS correctness failures.",
+    "The corrected replay passes JDTLS first/repeated lenses, added and removed reference lenses, and raw-string formatting. Narrow formatting passes semantic operations but exits with code 1 and remains protocol_error.",
+    "JVMD declares the five tested routes unsupported in initialize/command metadata.",
+    "JDTLS logs confirm shutdown and exit were handled. A Gradle background-job exception follows plugin shutdown in the failed narrow-format case. Causation of the nonzero process exit remains unproved.",
+    "Every source-drift flag is false. Single-block diagnostic profiles are not comparative performance evidence."
+  ],
+  "files": {
+    "harness-tests.txt": "fc9ed339771aa3e5faed2832ecc456a083686514fe0db251bea784e3b859691d"
+  }
+}

@@ -17,6 +17,7 @@ import {createFixture,sha,inventory} from "./harness/fixture.ts";
 import {ScenarioContext,CAPABILITIES,SETTINGS,type CaseDefinition} from "./harness/ScenarioContext.ts";
 import {launch,type LaunchOptions} from "./harness/launch.ts";
 import {CONTRACT} from "./harness/contracts.ts";
+import {sourceInventory} from "./harness/sourceInventory.ts";
 
 export const cases:CaseDefinition[]=[...coreCases,...structureCases,...generationCases,...projectCases,...protobufCases,...editingCases,...dependencyCases,...fileCases,...refactoringCases];
 const write=(p:string,v:any)=>writeFileSync(p,JSON.stringify(v,null,2)+"\n");
@@ -46,10 +47,8 @@ export async function main(args=process.argv.slice(2)){
   const profile=(a.profile??"product") as LaunchOptions["profile"];assert(["product","direct","pipe","custom"].includes(profile));
   assert(a.output,"--output is required (must not already exist)");const root=path.resolve(a.output);assert(!existsSync(root),"output already exists: "+root);mkdirSync(root,{recursive:true});
   const git=(...args:string[])=>{const x=spawnSync("git",args,{encoding:"utf8"});assert.equal(x.status,0,x.stderr);return x.stdout.trim();};
-  const sourceFiles=git("ls-files","--cached","--others","--exclude-standard").split("\n").filter(f=>existsSync(f));
-  const sourceInputs=()=>Object.fromEntries(sourceFiles.map(f=>[f,sha(readFileSync(f))]));
   const manifest:any={schemaVersion:1,contract:CONTRACT.schemaVersion,createdAt:new Date().toISOString(),revision:git("rev-parse","HEAD"),
-    sourceTree:git("rev-parse","HEAD^{tree}"),sourceInputs:sourceInputs(),registry:cases.map(({run,prepare,cleanup,...c})=>c),workingChanges:git("status","--porcelain"),
+    sourceTree:git("rev-parse","HEAD^{tree}"),sourceInputs:sourceInventory(),registry:cases.map(({run,prepare,cleanup,...c})=>c),workingChanges:git("status","--porcelain"),
     plan:{caseIds:selected.map(c=>c.id),servers,blocks,warmup,samples,timeout,profile,serverOrder:"alternate per independent block",reset:"fresh fixture and server state per independent case",seed:0},
     capabilities:CAPABILITIES,settings:SETTINGS,environment:{node:process.version,platform:process.platform,arch:process.arch,cpus:os.cpus().length,memoryBytes:os.totalmem()},
     claims:{publicComparativePerformance:false,reason:blocks<10?"fewer than ten independent blocks":"requires complete valid matched results, resource scope, and uncertainty analysis"}};
@@ -96,7 +95,7 @@ export async function main(args=process.argv.slice(2)){
       console.log(JSON.stringify({caseId:report.caseId,server,block:block+1,outcome:report.outcome,error:report.error}));
     }
   }
-  manifest.finalSourceInputs=sourceInputs();manifest.sourceDrift=JSON.stringify(manifest.sourceInputs)!==JSON.stringify(manifest.finalSourceInputs);write(path.join(root,"manifest.json"),manifest);
+  manifest.finalSourceInputs=sourceInventory();manifest.sourceDrift=JSON.stringify(manifest.sourceInputs)!==JSON.stringify(manifest.finalSourceInputs);write(path.join(root,"manifest.json"),manifest);
   jsonl(path.join(root,"cases.jsonl"),reports.map(({operations,...r})=>r));
   const seal=()=>writeFileSync(path.join(root,"checksums.sha256"),Object.entries(inventory(root)).filter(([p])=>p!=="checksums.sha256").map(([p,h])=>h+"  "+p).join("\n")+"\n");
   seal();const reduction=reduceBundle(root);writeReduction(root,reduction);seal();

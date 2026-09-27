@@ -55,7 +55,13 @@ export function reduceBundle(root:string,verifyHashes=true){
     const m=/^([a-f0-9]{64})  (.+)$/u.exec(row);assert(m,"invalid checksum row");const [_,hash,relative]=m,file=path.resolve(root,relative);
     assert(file.startsWith(path.resolve(root)+path.sep),"checksum path escapes bundle");assert(!covered.has(relative),"duplicate checksum path");covered.add(relative);
     if(!existsSync(file)||sha(readFileSync(file))!==hash)issues.push("artifact hash mismatch: "+relative);
-  }}
+  }
+    const visit=(directory:string)=>{for(const entry of readdirSync(directory,{withFileTypes:true})){
+      const file=path.join(directory,entry.name),relative=path.relative(root,file);
+      if(entry.isDirectory())visit(file);
+      else if(relative!=="checksums.sha256"&&!covered.has(relative))issues.push("artifact outside checksum inventory: "+relative);
+    }};visit(root);
+  }
   const reports:any[]=[],metrics:any[]=[];const apiEvents=new Map<string,any[]>();
   for(let block=1;block<=manifest.plan.blocks;block++)for(const caseId of manifest.plan.caseIds)for(const server of manifest.plan.servers){
     const name=`${String(block).padStart(2,"0")}-${server}-${caseId.replaceAll("/","-")}`,dir=path.join(root,name),file=path.join(dir,"report.json");

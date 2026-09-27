@@ -4,8 +4,8 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 148 case definitions, 143 passing TypeScript
-harness tests, and 107 required variants (75 implemented, 23 partial, 9 absent).
+Latest implementation inventory: 150 case definitions, 153 passing TypeScript
+harness tests, and 107 required variants (77 implemented, 23 partial, 7 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -977,3 +977,32 @@ UTF-16 boundaries; all 143 harness tests pass.
 This checkpoint adds the oracle, not executable diagnostic cases. Variant
 counts remain 75 implemented, 23 partial and 9 absent until observer journals,
 independent compiler witnesses and complete cases are wired and tested.
+
+## Current-version valid and provider-edit diagnostic cases
+
+`DIA-01/valid` and `DIA-01/provider-edit` now execute the diagnostic oracle.
+Both use an independent compiler witness prepared before server launch: the
+original provider and caller compile, while changing only the provider return
+type produces exactly the declared String-to-int caller error. The actual
+local JDK 25 compiler reproduced those two outcomes with release 17. Full JDK
+inputs, source hashes, compiler commands and results are recorded.
+
+The provider case first proves a valid current-version caller publication, then
+changes only the provider's open buffer. Caller bytes, version, incarnation and
+all disk sources stay fixed. Empty/warning-only caller publications remain
+pending; the exact new mismatch proves the provider generation. No readiness
+request is sent between the edit and admission. A wrong current-version error
+is terminal and remains incorrect even if a later publication is correct.
+
+Every considered publication has a raw-event identity and replayable disposition.
+The artifact reducer reconstructs buffers from didOpen/didChange, replays all
+admission decisions, checks the trigger/deadline and rejects omitted evidence.
+Timeout, missing version evidence, publication exhaustion and server exit produce
+explicit operations. Notification transitions are labelled separately from
+request measurements; no request latency or second publication is fabricated.
+The review packager preserves observer journals and compiler witness files.
+
+All 153 harness tests pass; catalogue validation remains 106 target APIs in
+28 families. There are now 150 cases and 77 implemented, 23 partial, 7 absent
+variants. These are source implementation counts. Real diagnostic pilots and
+the remaining acceptance gates are still required. See `diagnostic-cases.md`.

@@ -3554,9 +3554,25 @@
         {
           "id": "DIA-01/valid",
           "requirement": "Valid current-version source has no errors; publication freshness is proven.",
-          "implementation": "not_implemented",
-          "remaining": "No independent current-content/scope witness for this diagnostic variant.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "DIA-01/valid",
+              "operations": [
+                {
+                  "endpoint": "textDocument/publishDiagnostics",
+                  "states": [
+                    "valid"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent diagnostic compiler witnesses verified",
+                "valid source has current-version diagnostic evidence",
+                "independent javac validation"
+              ]
+            }
+          ]
         },
         {
           "id": "DIA-01/local-error",
@@ -3603,9 +3619,28 @@
         {
           "id": "DIA-01/provider-edit",
           "requirement": "Provider signature edit updates caller diagnostic at exact current range.",
-          "implementation": "not_implemented",
-          "remaining": "No independent current-content/scope witness for this diagnostic variant.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "DIA-01/provider-edit",
+              "operations": [
+                {
+                  "endpoint": "textDocument/publishDiagnostics",
+                  "states": [
+                    "baseline_valid",
+                    "provider_changed"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent diagnostic compiler witnesses verified",
+                "valid source has current-version diagnostic evidence",
+                "provider edit publishes exact new caller mismatch",
+                "provider-only edit preserves caller bytes versions and all disk sources",
+                "diagnostic observation sent no readiness requests or server edits"
+              ]
+            }
+          ]
         },
         {
           "id": "DIA-01/syntax-only",

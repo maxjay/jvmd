@@ -24,7 +24,7 @@ export const SETTINGS={java:{format:{enabled:true,onType:{enabled:true}},autobui
 export const transitionPolicy=(timeoutMs:number)=>({maxAttempts:100,retryDelayMs:20,deadlineMs:timeoutMs,perRequestTimeoutMs:timeoutMs,
   clock:"client monotonic",deadlineCheck:"after a failed attempt; in-flight requests retain their declared timeout",settledProbe:"one additional correct response after the first correct response",
   preparationFailure:"record preparation operations and a blocked target; never fabricate an unsent target request"});
-export type PreparationOptions={gradleHome?:string;protoc?:string;protobufJava?:string;alternateJavaHome?:string};
+export type PreparationOptions={gradleHome?:string;protoc?:string;protobufJava?:string;alternateJavaHome?:string;timeoutMs?:number};
 export type CaseDefinition={id:string;family:string;apis:string[];method?:string;capability?:string;variant:string;
   run:(c:ScenarioContext)=>Promise<void>;freshnessRequired?:boolean;correctnessOnly?:boolean;extension?:boolean;command?:string;fixture?:Record<string,string>;sourceDirectory?:string;
   prepare?:(fixture:Fixture,javaHome:string,options?:PreparationOptions)=>void;cleanup?:(fixture:Fixture,javaHome:string)=>void};
@@ -36,7 +36,7 @@ export class ScenarioContext {
   private workspaceSymbolOrigins=new Map<string,{method:string;state:string;requestId:number}>();
   capabilities:any={};operations:any[]=[];assertions:any[]=[];documents=new Map<string,{text:string;version:number;incarnation:number}>();
   versions=new Map<string,number>();incarnations=new Map<string,number>();
-  seriesExpectations:any[]=[];mutations:any[]=[];
+  seriesExpectations:any[]=[];mutations:any[]=[];diagnosticObservations:any[]=[];
   registrations:any[]=[];serverActions:any[]=[];initializedNs?:string;
   settings:Record<string,any>;
   constructor(client:ProtocolClient,fixture:Fixture,server:string,timeout:number,warmup:number,samples:number){

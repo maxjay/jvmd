@@ -13,6 +13,7 @@ import {protobufCases} from "./scenarios/protobuf.ts";
 import {generationCases} from "./scenarios/generation.ts";
 import {structureCases} from "./scenarios/structure.ts";
 import {coreCases} from "./scenarios/core.ts";
+import {diagnosticCases} from "./scenarios/diagnostics.ts";
 import {symbolCases,symbolFilterCases} from "./scenarios/symbols.ts";
 import {createFixture,sha,inventory} from "./harness/fixture.ts";
 import {ScenarioContext,CAPABILITIES,SETTINGS,transitionPolicy,type CaseDefinition} from "./harness/ScenarioContext.ts";
@@ -20,7 +21,7 @@ import {launch,type LaunchOptions} from "./harness/launch.ts";
 import {CONTRACT} from "./harness/contracts.ts";
 import {sourceInventory} from "./harness/sourceInventory.ts";
 
-export const cases:CaseDefinition[]=[...coreCases,...structureCases,...symbolCases,...symbolFilterCases,...generationCases,...projectCases,...protobufCases,...editingCases,...dependencyCases,...fileCases,...refactoringCases];
+export const cases:CaseDefinition[]=[...coreCases,...diagnosticCases,...structureCases,...symbolCases,...symbolFilterCases,...generationCases,...projectCases,...protobufCases,...editingCases,...dependencyCases,...fileCases,...refactoringCases];
 const write=(p:string,v:any)=>writeFileSync(p,JSON.stringify(v,null,2)+"\n");
 const jsonl=(p:string,rows:any[])=>writeFileSync(p,rows.map(r=>JSON.stringify(r)).join("\n")+(rows.length?"\n":""));
 function capability(c:any,key:string|undefined){return key===undefined?true:!!key.split(".").reduce((v,k)=>v?.[k],c);}
@@ -65,7 +66,7 @@ export async function main(args=process.argv.slice(2)){
     write(path.join(caseRoot,"report.json"),report);
     let running:Awaited<ReturnType<typeof launch>>|undefined,context:ScenarioContext|undefined;
     try{
-      def.prepare?.(fixture,path.resolve(a["java-home"]??process.env.JAVA_HOME??""),{gradleHome:a["gradle-home"],protoc:a.protoc,protobufJava:a["protobuf-java"],alternateJavaHome:a["alternate-java-home"]});
+      def.prepare?.(fixture,path.resolve(a["java-home"]??process.env.JAVA_HOME??""),{gradleHome:a["gradle-home"],protoc:a.protoc,protobufJava:a["protobuf-java"],alternateJavaHome:a["alternate-java-home"],timeoutMs:timeout});
       fixture.inputs=inventory(fixture.root);fixture.identity=sha(JSON.stringify(fixture.inputs));report.fixtureIdentity=fixture.identity;write(path.join(caseRoot,"fixture.json"),fixture);
       const customCommand=a["command-json"]?JSON.parse(readFileSync(a["command-json"],"utf8")):undefined;
       running=await launch({server,profile:server==="jdtls"&&profile!=="custom"?"direct":profile,root:fixture.root,state:path.join(caseRoot,"runtime"),
@@ -88,7 +89,7 @@ export async function main(args=process.argv.slice(2)){
         jsonl(path.join(caseRoot,"events.jsonl"),running.client.events);jsonl(path.join(caseRoot,"exchanges.jsonl"),running.client.exchanges);
         report.spawnNs=String(running.client.spawnNs);
       }
-      if(context){report.operations=context.operations;report.seriesExpectations=context.seriesExpectations;report.mutations=context.mutations;report.assertions=context.assertions;report.serverActions=context.serverActions;
+      if(context){report.operations=context.operations;report.seriesExpectations=context.seriesExpectations;report.mutations=context.mutations;report.assertions=context.assertions;report.serverActions=context.serverActions;report.diagnosticObservations=context.diagnosticObservations;
         report.initializedNs=context.initializedNs;report.settings=context.settings;jsonl(path.join(caseRoot,"operations.jsonl"),context.operations);}
       try{def.cleanup?.(fixture,path.resolve(a["java-home"]??process.env.JAVA_HOME??""));}catch(error){report.cleanupError=String(error);if(report.outcome==="pass")report.outcome="harness_error";}
       report.preparation=fixture.preparation;

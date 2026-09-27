@@ -7,6 +7,7 @@ import {CONTRACT} from "./harness/contracts.ts";
 import {reduceVariants} from "./variants.ts";
 import {isRenameRejection,isInvalidRenameRequest} from "./harness/rename.ts";
 import {validateTransitionAttempts} from "./harness/transitions.ts";
+import {validateDiagnosticObservations} from "./harness/diagnosticObserver.ts";
 import {workspaceSymbolArgument} from "./harness/symbols.ts";
 
 const read=(file:string)=>JSON.parse(readFileSync(file,"utf8"));
@@ -85,6 +86,8 @@ export function validateCase(report:any,events:any[],exchanges:any[],operations:
     check(!(report.protocolErrors?.length||report.shutdownError||report.cleanupError||report.error),"case pass conceals protocol/harness error");
   }
   if(report.outcome==="unsupported")check(!!report.supportEvidence?.source,"unsupported without evidence");
+  if(["DIA-01/valid","DIA-01/provider-edit"].includes(report.caseId))for(const op of operations)if(op.method==="textDocument/publishDiagnostics")check(!!op.diagnosticObservationId,"diagnostic case operation lacks observer identity");
+  issues.push(...validateDiagnosticObservations(report,events,operations));
   return issues;
 }
 export function reduceBundle(root:string,verifyHashes=true){
@@ -109,6 +112,7 @@ export function reduceBundle(root:string,verifyHashes=true){
     if(!existsSync(file)){reports.push({caseId,server,block,outcome:"not_run",reason:"planned case has no final report"});continue;}
     const report=read(file),events=lines(path.join(dir,"events.jsonl")),exchanges=lines(path.join(dir,"exchanges.jsonl")),operations=lines(path.join(dir,"operations.jsonl"));
     const caseIssues=validateCase(report,events,exchanges,operations);
+    if(report.diagnosticObservations?.length&&JSON.stringify(lines(path.join(dir,"diagnostic-observations.jsonl")))!==JSON.stringify(report.diagnosticObservations))caseIssues.push("diagnostic journal differs from report");
     const transitions=(report.seriesExpectations??[]).filter((s:any)=>s.kind==="transition"&&s.attempts);
     if(transitions.length){
       const journal=lines(path.join(dir,"transitions.jsonl"));
@@ -137,8 +141,8 @@ export function reduceBundle(root:string,verifyHashes=true){
     if(sealed&&verifyHashes)for(const n of ["report.json","events.jsonl","exchanges.jsonl","operations.jsonl","fixture.json"])if(!covered.has(name+"/"+n))caseIssues.push("artifact outside checksum inventory: "+n);
     issues.push(...caseIssues.map(s=>name+": "+s));
     reports.push({...report,operations,validationIssues:caseIssues,validatedOutcome:caseIssues.length&&report.outcome==="pass"?"harness_error":report.outcome});
-    const groups=new Map<string,any[]>();for(const op of operations){const key=JSON.stringify([op.endpoint??op.method,op.state]);if(!groups.has(key))groups.set(key,[]);groups.get(key)!.push(op);}
-    for(const [key,rows] of groups){const [endpoint,state]=JSON.parse(key);metrics.push({caseId,server,block,endpoint,state,...stats(rows),transitionMedianMs:quantile(rows.filter(o=>o.outcome==="pass"&&o.transitionMs!==undefined).map(o=>o.transitionMs),.5)});}
+    const groups=new Map<string,any[]>();for(const op of operations){const key=JSON.stringify([op.endpoint??op.method,op.state,op.measurementKind??(op.requestId===undefined?"notification_transition":"request")]);if(!groups.has(key))groups.set(key,[]);groups.get(key)!.push(op);}
+    for(const [key,rows] of groups){const [endpoint,state,measurementKind]=JSON.parse(key);metrics.push({caseId,server,block,endpoint,state,measurementKind,...stats(rows),transitionMedianMs:quantile(rows.filter(o=>o.outcome==="pass"&&o.transitionMs!==undefined).map(o=>o.transitionMs),.5)});}
     for(const api of catalogue.apis){const matching=events.filter(e=>e.message.method&&(api.kind==="C"?e.message.method==="workspace/executeCommand"&&e.message.params?.command===api.method:e.message.method===api.method));
       if(matching.length){if(!apiEvents.has(api.id))apiEvents.set(api.id,[]);apiEvents.get(api.id)!.push({caseId,server,block,eventIds:matching.map(e=>e.sequence),declaredTarget:report.apiIds.includes(api.id)});}}
   }

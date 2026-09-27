@@ -919,3 +919,39 @@ failure, the original revision and checksum inventory, plus explicit review
 classifications. The complete original inventory verifies; source inputs are
 stable. This capture predates both wire/package corrections and the two-project
 filter controls. Corrected full transitions still require real-server replay.
+
+
+## Resume checkpoint after execution-environment disconnect
+
+The last locally validated implementation is `742eb25`: 148 case definitions,
+135 passing harness tests, and 107 required variants (75 implemented, 23 partial,
+9 absent). Its initial symbol capture and the JDK-switch capture are published.
+The corrected symbol replay was running from that frozen revision when the
+execution service disconnected. Its completion and final inventory are
+unverified; no successful corrected-run claim is made.
+
+The last inspected finalized reports show JVMD passing standard outline
+first/repeat and added-declaration cases. JDTLS's corrected first/repeat outline
+passes semantic replies but retains a shutdown failure. Its added-declaration
+case had no failed semantic operation when last inspected, but was not finalized.
+
+Resume by recovering `symbols-corrected-replay` and its raw console output if
+the workspace is available. Preserve any incomplete capture. The selected plan
+contains standard outline, extended outline, symbol resolve and filter-control
+cases, each in first/repeat, new and renamed variants, plus the older
+NAV-03/search-filter case. Inspect final reports and package the original sealed
+evidence before changing the frozen replay checkout. If the capture is lost or
+incomplete, execute that selection again from a clean published revision.
+
+Next development work is the missing DIA-01 valid-source and provider-edit
+variants. Their proposed observer must require exact current document versions,
+retain rejected publications, and distinguish an empty unchanged-caller
+publication (which does not identify the provider generation) from a direct
+request's incorrect response. A unique new String-to-int mismatch at the
+responsible caller invocation should be backed by independent before/after
+compiler witnesses. No diagnostic implementation or test result is claimed:
+the attempted local patch failed when the environment went offline. Inspect for
+partial local files before resuming that edit.
+
+The remaining specification gates and public-comparison prohibition still
+apply. The draft is unfinished.

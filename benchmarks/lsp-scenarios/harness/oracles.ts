@@ -65,6 +65,28 @@ export function exactLocations(value:any,expected:{uri:string;range:Range}[]):vo
   const key=(r:any)=>JSON.stringify({uri:decodeURI(r.uri),range:r.range});
   assert.deepEqual(locations(value).map(key).sort(),expected.map(key).sort(),"location identities/ranges differ");
 }
+/** CallHierarchy may group or repeat rows for one caller/callee. Compare the
+ * semantic set and retain wire multiplicity separately. Item selections must
+ * be within the enclosing declaration; they need not select its name. */
+export function exactCallGraph(value:any,expected:{direction:string;uri:string;source:string;name:string;declaration:Range;callee:string;calls:Range[]}){
+  assert(Array.isArray(value),"call graph is not an array");
+  if(!expected.calls.length){assert.deepEqual(value,[]);return {rawRows:0,rawRanges:0,distinctCallSites:0};}
+  const observed:string[]=[];
+  const key=(r:Range)=>{const text=selected(expected.source,r);assert(text===expected.callee||text===expected.callee+"()","call range selects the wrong expression");
+    return JSON.stringify({start:r.start,end:{line:r.start.line,character:r.start.character+expected.callee.length}});};
+  for(const row of value){
+    const item=expected.direction==="incoming"?row.from:row.to;assert(item,"call item absent");
+    assert.equal(String(item.name).replace(/\(.*$/u,""),expected.name);assert.equal(item.kind,6);assert.equal(decodeURI(item.uri),decodeURI(expected.uri));
+    assert.deepEqual(item.range,expected.declaration,"call item encloses the wrong declaration");
+    const start=offset(expected.source,item.selectionRange.start),end=offset(expected.source,item.selectionRange.end);
+    assert(start>=offset(expected.source,item.range.start)&&end>=start&&end<=offset(expected.source,item.range.end),"call item selection escapes its declaration");
+    assert(Array.isArray(row.fromRanges)&&row.fromRanges.length>0,"call-site ranges absent");
+    observed.push(...row.fromRanges.map(key));
+  }
+  const unique=[...new Set(observed)].sort(),wanted=[...new Set(expected.calls.map(key))].sort();
+  assert.deepEqual(unique,wanted,"call-site set differs from fixture");
+  return {rawRows:value.length,rawRanges:observed.length,distinctCallSites:unique.length};
+}
 export function markup(value:any):string {
   if(typeof value==="string")return value;
   if(Array.isArray(value))return value.map(markup).join("\n");

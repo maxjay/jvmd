@@ -4,7 +4,7 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 113 case definitions, 52 passing TypeScript
+Latest implementation inventory: 113 case definitions, 54 passing TypeScript
 harness tests, and 107 required variants (48 implemented, 43 partial, 16 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
@@ -335,3 +335,22 @@ added incoming call and a removed outgoing call both fail while retaining their
 raw replies. All 52 TypeScript tests pass. The source ledger has 48 implemented,
 43 partial and 16 absent requirements; real-server call-graph validation is still
 pending and performance claims remain disabled.
+
+The signature/span pilot at `6a2949e` had no integrity issues or source drift.
+JVMD passed hover/signature repeats and both declaration-edit cases; the other
+four selected endpoints were explicitly unsupported. JDTLS retained stale replies
+for both provider edits and both parent-change probes before correct settled
+replies. Its unchanged hover/signature and shifted hint/selection replies passed
+their semantic checks but had nonzero shutdown exits. The raw review archive is
+in `benchmarks/evidence/signature-call-2026-09-27/`.
+
+The first call-graph pilot exposed an oracle assumption: JDTLS may repeat caller
+rows and use call-site selections inside the enclosing declaration. LSP's item
+selection is required to be contained by its enclosing range; it need not select
+the declaration name. The corrected oracle validates exact caller/callee name,
+kind, URI and enclosing declaration, bounded selections, and the exact distinct
+call-site set from the fixture. It records raw row/range counts separately. It
+does not drop unrelated callers, missing uses or stale ranges. Tests cover both
+grouped and repeated representations and reject those incorrect alternatives.
+All 54 harness tests pass. The original pilot is retained as development evidence,
+not a server-correctness claim; the corrected real-server replay is pending.

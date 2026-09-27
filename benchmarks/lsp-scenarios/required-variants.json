@@ -1138,7 +1138,9 @@
                   ]
                 }
               ],
-              "assertions": []
+              "assertions": [
+                "exact call graph with response multiplicity retained"
+              ]
             },
             {
               "caseId": "REL-01/outgoing",
@@ -1156,7 +1158,9 @@
                   ]
                 }
               ],
-              "assertions": []
+              "assertions": [
+                "exact call graph with response multiplicity retained"
+              ]
             }
           ]
         },
@@ -1185,7 +1189,9 @@
                   ]
                 }
               ],
-              "assertions": []
+              "assertions": [
+                "exact call graph with response multiplicity retained"
+              ]
             },
             {
               "caseId": "REL-01/outgoing",
@@ -1207,7 +1213,9 @@
                   ]
                 }
               ],
-              "assertions": []
+              "assertions": [
+                "exact call graph with response multiplicity retained"
+              ]
             }
           ]
         },
@@ -1235,7 +1243,8 @@
               ],
               "assertions": [
                 "one declared call graph mutation",
-                "independent javac validation"
+                "independent javac validation",
+                "exact call graph with response multiplicity retained"
               ]
             },
             {
@@ -1257,7 +1266,8 @@
               ],
               "assertions": [
                 "one declared call graph mutation",
-                "independent javac validation"
+                "independent javac validation",
+                "exact call graph with response multiplicity retained"
               ]
             }
           ]
@@ -1286,7 +1296,8 @@
               ],
               "assertions": [
                 "one declared call graph mutation",
-                "independent javac validation"
+                "independent javac validation",
+                "exact call graph with response multiplicity retained"
               ]
             },
             {
@@ -1308,7 +1319,8 @@
               ],
               "assertions": [
                 "one declared call graph mutation",
-                "independent javac validation"
+                "independent javac validation",
+                "exact call graph with response multiplicity retained"
               ]
             }
           ]

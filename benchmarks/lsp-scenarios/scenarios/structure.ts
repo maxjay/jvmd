@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {type CaseDefinition,type ScenarioContext} from "../harness/ScenarioContext.ts";
-import {position,range,selected,exactLocations,locations,offset,applyTextEdits,markup} from "../harness/oracles.ts";
+import {position,range,selected,exactLocations,exactCallGraph,locations,offset,applyTextEdits,markup} from "../harness/oracles.ts";
 
 const at=(c:ScenarioContext,file:string,token:string,shift=1)=>({textDocument:{uri:c.file(file).uri},position:position(c.text(file),c.text(file).indexOf(token)+shift)});
 const loc=(c:ScenarioContext,file:string,token:string,from=0)=>({uri:c.file(file).uri,range:range(c.text(file),token,from)});
@@ -55,9 +55,9 @@ export const structureCases:CaseDefinition[]=[
         const text=c.text("Calls.java"),token=direction==="incoming"?"b()":"c()",want=[];let start=text.indexOf("return ");
         if(direction==="outgoing")start=text.indexOf("return ",text.indexOf("int b()"));
         const end=text.indexOf(";",start);while((start=text.indexOf(token,start))>=0&&start<end){want.push({uri:c.file("Calls.java").uri,range:range(text,token,start)});start+=token.length;}
-        assert(Array.isArray(value));if(want.length===0){assert.deepEqual(value,[]);return;}
-        assert.equal(value.length,1);const row=value[0];symbolOracle(c,[direction==="incoming"?row.from:row.to],"Calls.java",direction==="incoming"?"a":"c");
-        exactLocations(row.fromRanges.map((r:any)=>({uri:c.file("Calls.java").uri,range:r})),want);
+        const name=direction==="incoming"?"a":"c",declarationStart=text.indexOf("public int "+name+"()"),declarationEnd=text.indexOf("}",declarationStart)+1;
+        const counts=exactCallGraph(value,{direction,uri:c.file("Calls.java").uri,source:text,name,declaration:{start:position(text,declarationStart),end:position(text,declarationEnd)},callee:direction==="incoming"?"b":"c",calls:want.map(w=>w.range)});
+        c.assert("exact call graph with response multiplicity retained",true,counts);
       };
       if(mutation==="first-repeat"){
         const items=await c.series("textDocument/prepareCallHierarchy",prepareParams(),prepareOracle);

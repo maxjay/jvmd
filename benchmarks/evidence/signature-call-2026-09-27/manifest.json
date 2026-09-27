@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "scope": "Raw protocol review subsets; not complete experiment bundles or comparative performance evidence",
+  "archive": {
+    "file": "protocol-reviews.tar.xz",
+    "sha256": "bdaa5db047bb701fc6b98b729858d41e09197f9c7b60ed4b0228862bec2dff0d",
+    "bytes": 197940,
+    "everySelectedFileHash": "verified"
+  },
+  "bundles": [
+    {
+      "bundle": "signature-span-pilot",
+      "revision": "6a2949e556b4780711d76669b8b0e976e2b4d511",
+      "plan": {
+        "caseIds": [
+          "CMP-02/hover",
+          "CMP-02/signature",
+          "CMP-02/hover-edit",
+          "CMP-02/signature-edit",
+          "REL-02/supertypes",
+          "REL-02/subtypes",
+          "VIEW-02/selection",
+          "VIEW-01/inlay-hints"
+        ],
+        "servers": [
+          "jvmd",
+          "jdtls"
+        ],
+        "blocks": 1,
+        "warmup": 1,
+        "samples": 2,
+        "timeout": 30000,
+        "profile": "pipe",
+        "serverOrder": "alternate per independent block",
+        "reset": "fresh fixture and server state per independent case",
+        "seed": 0
+      },
+      "sourceDrift": false,
+      "sourceManifestSha256": "86bebf1f0b8d00f9fde6e7a79bd20f48cd7d61eb9a911d0c7b07852734f35873",
+      "originalChecksumInventorySha256": "9e47d7e0fac2a174c6f8ba1bac01f0b693e23c79fad3e8136c5dd6dd17806bc1",
+      "outcomes": {
+        "pass": 4,
+        "incorrect": 4,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 4,
+        "harness_error": 0,
+        "unsupported": 4,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      },
+      "integrityIssues": [],
+      "correctnessClaimEligible": true,
+      "selectedFiles": 119
+    },
+    {
+      "bundle": "call-graph-pilot",
+      "revision": "54a8385fd87a782626ca643b28f5b0f266f2f5f9",
+      "plan": {
+        "caseIds": [
+          "REL-01/incoming",
+          "REL-01/incoming-add",
+          "REL-01/incoming-remove",
+          "REL-01/outgoing",
+          "REL-01/outgoing-add",
+          "REL-01/outgoing-remove"
+        ],
+        "servers": [
+          "jvmd",
+          "jdtls"
+        ],
+        "blocks": 1,
+        "warmup": 1,
+        "samples": 2,
+        "timeout": 30000,
+        "profile": "pipe",
+        "serverOrder": "alternate per independent block",
+        "reset": "fresh fixture and server state per independent case",
+        "seed": 0
+      },
+      "sourceDrift": false,
+      "sourceManifestSha256": "d4b7e005405088231a0e6c607ebe6f1e5bc46cf240c4588aed6145eac1de47b5",
+      "originalChecksumInventorySha256": "87d094acc62aceb48d03c6b55bf47076d7a68aff09fc8f0570d07ff20171c9cd",
+      "outcomes": {
+        "pass": 0,
+        "incorrect": 4,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 2,
+        "harness_error": 0,
+        "unsupported": 6,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      },
+      "integrityIssues": [
+        "01-jdtls-REL-01-incoming: series sample missing or reordered: callHierarchy/incomingCalls warmup 1",
+        "01-jdtls-REL-01-incoming: series sample missing or reordered: callHierarchy/incomingCalls steady 2",
+        "01-jdtls-REL-01-incoming: series sample missing or reordered: callHierarchy/incomingCalls steady 3",
+        "01-jdtls-REL-01-outgoing-add: settled probe missing"
+      ],
+      "correctnessClaimEligible": false,
+      "selectedFiles": 91
+    }
+  ],
+  "interpretation": [
+    "The call-graph development pilot assumed one response row per caller/callee and declaration-name selections. Its incoming/add failures are not independent evidence of server incorrectness.",
+    "Corrected call-graph validation compares exact enclosing declarations and distinct fixture call-site sets; raw response multiplicity remains recorded.",
+    "Signature and type-parent changes retain stale immediate/retry replies before correct settled replies.",
+    "Nonzero shutdown exits remain failures even with correct replies.",
+    "Single-block diagnostic profiles do not establish product timings, observer overhead or comparative performance."
+  ],
+  "files": {
+    "harness-tests.txt": "c6db4d96ed30c9f9f37e8cb3246ceb1f220a952ebe328eb3c54280f06b14d65b"
+  }
+}

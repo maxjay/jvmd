@@ -29,7 +29,7 @@ const framing=new Framing("headers",message=>{
   if(method==="textDocument/prepareCallHierarchy"||method.startsWith("callHierarchy/")){
     const uri=[...documents.keys()].find(uri=>uri.endsWith("/Calls.java"))!;
     const current=documents.get(uri)!,text=mode==="stale-call-graph"&&method!=="textDocument/prepareCallHierarchy"?originalDocuments.get(uri)!:current;
-    const item=(name:string)=>{const at=text.indexOf("int "+name+"()")+4;return {name,kind:6,uri,range:span(text,at,1),selectionRange:span(text,at,1)};};
+    const item=(name:string)=>{const at=text.indexOf("int "+name+"()")+4,start=text.indexOf("public int "+name+"()"),end=text.indexOf("}",start)+1;return {name,kind:6,uri,range:span(text,start,end-start),selectionRange:span(text,at,1)};};
     if(method==="textDocument/prepareCallHierarchy"){send({id,result:[item("b")]});return;}
     const incoming=method==="callHierarchy/incomingCalls",start=text.indexOf("return ",text.indexOf("int "+(incoming?"a":"b")+"()")),end=text.indexOf(";",start),token=incoming?"b()":"c()";
     const ranges=[];for(let at=text.indexOf(token,start);at>=0&&at<end;at=text.indexOf(token,at+token.length))ranges.push(span(text,at,token.length));

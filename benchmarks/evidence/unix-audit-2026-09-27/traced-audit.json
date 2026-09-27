@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "scope": "review subset",
+  "integrityValid": true,
+  "semanticComplete": false,
+  "caseOutcomes": {
+    "LIFE-01": "pass",
+    "LIFE-02": "pass",
+    "LIFE-03": "pass",
+    "LIFE-04": "pass",
+    "LIFE-05": "pass",
+    "LIFE-06": "pass",
+    "LIFE-07": "pass",
+    "LIFE-08": "incorrect",
+    "LIFE-09": "pass",
+    "LIFE-10": "pass",
+    "APACHE/document-open": "pass"
+  },
+  "epochs": [
+    "apache:596809414375",
+    "fresh:557710888367",
+    "restarted:562201423077"
+  ],
+  "checkedFiles": 99,
+  "complete": false,
+  "publicPerformanceClaims": false,
+  "issues": [],
+  "limitations": [
+    "Review subset: omitted workspace/cache/store bytes prevent complete-bundle validation",
+    "Historical summary claims resourceScopeComplete from sampled availability; this audit does not accept that claim",
+    "Structural audit preserves recorded semantic dispositions; it does not independently rerun all feature-specific oracles",
+    "Process sampling cannot establish complete lifetime resource totals",
+    "Observer overhead and independent comparison blocks are not established by integrity validation"
+  ]
+}

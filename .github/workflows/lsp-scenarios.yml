@@ -207,6 +207,14 @@ jobs:
           include-hidden-files: true
           path: ${{ runner.temp }}/protobuf-evidence
 
+      - name: Audit saved native bundles
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          audit_status=0
+          python3 benchmarks/workspaces/validate_native.py "$RUNNER_TEMP/native-lifecycle-clean" --output "$RUNNER_TEMP/native-clean-audit.json" || audit_status=$?
+          python3 benchmarks/workspaces/validate_native.py "$RUNNER_TEMP/native-lifecycle-traced" --output "$RUNNER_TEMP/native-traced-audit.json" || audit_status=$?
+          exit "$audit_status"
+
       - name: Upload phase reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -245,3 +253,5 @@ jobs:
           path: |
             ${{ runner.temp }}/native-clean-review.zip
             ${{ runner.temp }}/native-traced-review.zip
+            ${{ runner.temp }}/native-clean-audit.json
+            ${{ runner.temp }}/native-traced-audit.json

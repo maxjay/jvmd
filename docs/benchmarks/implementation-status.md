@@ -37,13 +37,13 @@ answers. Development pilots are not frozen, independent comparison blocks.
 | A04 | pass for tested gates | Runner/comparator reject injected wrong output; all three CI jobs passed on c5c10fd2. All three CI jobs also passed at 58bbd42b; those jobs did not yet execute the new native matrix. |
 | A05 | blocked | CMP-01 variants are implemented; full supported-server execution and oracle review remain |
 | A06 | partial | Live protocol journals, immediate/settled probes, source-drift detection and artifact-only checks are implemented; complete case histories still require full execution. |
-| A07 | blocked | Retained-state regression reproduced/fixed; normal detach/disposal/restart/machine matrix remains |
+| A07 | pass for bounded matrix; broader variants pending | Both clean/traced packaged Unix pilots at 1c29254 pass retained attach, normal detach, disposal and restart witnesses |
 | A08 | blocked | Existing semantic proof tests pass; full benchmark mutation/ownership matrix remains |
 | A09 | blocked | Request and transition intervals exist; final causal reconstruction remains |
 | A10 | blocked | Invalid zero-work claims removed; complete scoped native evidence still to collect |
-| A11 | blocked | Local process metrics inaccessible; pressure/reclamation/observer experiments remain |
+| A11 | partial | CI records sampled daemon/peer/helper costs; complete lifetime accounting and observer experiments remain |
 | A12 | blocked | Fixture hashes and pipe source checks exist; full experiment inventories remain |
-| A13 | blocked | Product/direct/pipe profiles separated; normal product AOT acceptance unavailable locally |
+| A13 | partial | Profiles separated; CI records actual AOT rejection and continued normal JVM execution, not accepted AOT |
 | A14 | blocked | No public comparative performance claim; independent blocks and uncertainty analysis remain |
 | A15 | partial | Artifact-only reducer reproduces tested summaries and rejects tampering/interruption/concealed failures; full native bundle reduction and final gate remain. |
 | A16 | pass for the reproduced diagnostic path | Session/context/processor spans explain the reproduced long open; no claim of identical causation for every historical run. See `long-open-diagnosis.md`. |
@@ -197,3 +197,30 @@ Failed peer initialization now closes the newly started peer and retains its
 failure journal. Review packages include the attribution file referenced by the
 profile manifest. The local recovery validation has 39 passing TypeScript tests
 and 34 passing Python tests with one explicit process-visibility skip.
+
+## Saved Unix evidence audit
+
+At 1c29254, both clean and traced packaged-daemon/shim runs passed LIFE-01–07,
+LIFE-09–10 and the Apache case. Source attachment replacement, same-coordinate
+binary replacement and removal remained stale through the bounded LIFE-08 probes.
+The first two irrelevant-artifact transitions passed. Both profiles reported AOT
+rejection; accepted AOT execution remains unproved.
+
+The downloaded 13.8-MB review artifact passed its published SHA-256, ZIP CRC, and
+all inner review-manifest hashes. Independent structural audit of both subsets
+retains the failed lifecycle case. The audit checks case/summary agreement,
+recording hashes, request identities, paired send/result records and clean daemon
+exit. Tests reject altered bytes, resealed concealed failures, unfinished request
+journals, unsealed extra files and paths escaping the bundle. Python now has 38
+passing tests and one process-visibility skip. Full CI bundles get the same audit.
+
+This is structural integrity evidence, not independent replay of every semantic
+oracle or the final performance gate. The old local 21,813-file full-bundle audit
+ran before the workspace reset; its raw bundle was not recovered, so this
+checkpoint does not present that prior result as fresh validation.
+
+The protobuf CI pilot at 4e2af56 independently reproduced successful real
+generation, unchanged output bytes, compilation, serialization/consumer checks
+and clean shutdown. Its immediate type lookup was empty and its retry/settled
+lookups passed. The incorrect first reply is retained. No comparison claim is
+enabled by either pilot.

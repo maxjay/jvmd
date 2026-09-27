@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "scope": "Structural audit reports for downloaded review subsets; not a complete raw bundle",
+  "ciRevision": "1c2925449bdde7ad96507d66516b4e6b3ba81298",
+  "ciRun": "https://github.com/maxjay/jvmd/actions/runs/36291226091",
+  "reviewArtifact": {
+    "id": 10922606116,
+    "sha256": "fc2424cf64655108a37bd0e5f6cbd8245a5730d6a96b71af7c492f9f616e536d",
+    "bytes": 13801314,
+    "outerAndInnerZipCrc": "pass",
+    "innerManifestHashes": "pass"
+  },
+  "fullArtifact": {
+    "id": 10921979247,
+    "sha256": "e2007ce13884e878a190540878ebb6df1d833c0ae5ef5f28c2f1f629ad901160",
+    "bytes": 1200031240,
+    "downloadedHere": false
+  },
+  "files": {
+    "clean-audit.json": "fb5b9ec9ea4d8012c3a96595f23bf8a491c3d223b8fe04beda66474279ceee56",
+    "python-tests.txt": "8dbc42d23cfbf6ec6170bab8a5f58df46e2d240e47dcbc00a9ddfee46b00c2b6",
+    "traced-audit.json": "c456ab3e6344f26ad6b55e542b5fa11574b08595ad3f9ed5c26461c7a7080f41"
+  }
+}

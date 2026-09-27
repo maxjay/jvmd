@@ -1,0 +1,1226 @@
+Compiled from "JobManager.java"
+public abstract class org.eclipse.jdt.internal.core.search.processing.JobManager {
+  private final java.util.List<org.eclipse.jdt.internal.core.search.processing.IJob> awaitingJobs;
+
+  private volatile boolean executing;
+
+  private java.lang.Thread processingThread;
+
+  private volatile org.eclipse.core.runtime.jobs.Job progressJob;
+
+  private int enableCount;
+
+  public static boolean VERBOSE;
+
+  private boolean activated;
+
+  private final java.util.concurrent.atomic.AtomicInteger awaitingClients;
+
+  private final java.lang.Object idleMonitor;
+
+  static {};
+    Code:
+         0: iconst_0
+         1: putstatic     #26                 // Field VERBOSE:Z
+         4: return
+
+  public org.eclipse.jdt.internal.core.search.processing.JobManager();
+    Code:
+         0: aload_0
+         1: invokespecial #31                 // Method java/lang/Object."<init>":()V
+         4: aload_0
+         5: new           #33                 // class java/util/LinkedList
+         8: dup
+         9: invokespecial #35                 // Method java/util/LinkedList."<init>":()V
+        12: putfield      #36                 // Field awaitingJobs:Ljava/util/List;
+        15: aload_0
+        16: iconst_1
+        17: putfield      #38                 // Field enableCount:I
+        20: aload_0
+        21: new           #40                 // class java/util/concurrent/atomic/AtomicInteger
+        24: dup
+        25: invokespecial #42                 // Method java/util/concurrent/atomic/AtomicInteger."<init>":()V
+        28: putfield      #43                 // Field awaitingClients:Ljava/util/concurrent/atomic/AtomicInteger;
+        31: aload_0
+        32: new           #3                  // class java/lang/Object
+        35: dup
+        36: invokespecial #31                 // Method java/lang/Object."<init>":()V
+        39: putfield      #45                 // Field idleMonitor:Ljava/lang/Object;
+        42: return
+
+  private synchronized java.lang.Thread getProcessingThread();
+    Code:
+         0: aload_0
+         1: getfield      #51                 // Field processingThread:Ljava/lang/Thread;
+         4: areturn
+
+  synchronized void activateProcessing();
+    Code:
+         0: aload_0
+         1: iconst_1
+         2: putfield      #54                 // Field activated:Z
+         5: aload_0
+         6: invokevirtual #56                 // Method java/lang/Object.notifyAll:()V
+         9: return
+
+  public synchronized int awaitingJobsCount();
+    Code:
+         0: aload_0
+         1: getfield      #54                 // Field activated:Z
+         4: ifeq          19
+         7: aload_0
+         8: getfield      #36                 // Field awaitingJobs:Ljava/util/List;
+        11: invokeinterface #61,  1           // InterfaceMethod java/util/List.size:()I
+        16: goto          20
+        19: iconst_1
+        20: ireturn
+
+  public synchronized org.eclipse.jdt.internal.core.search.processing.IJob currentJob();
+    Code:
+         0: aload_0
+         1: getfield      #38                 // Field enableCount:I
+         4: ifle          33
+         7: aload_0
+         8: getfield      #36                 // Field awaitingJobs:Ljava/util/List;
+        11: invokeinterface #69,  1           // InterfaceMethod java/util/List.isEmpty:()Z
+        16: ifne          33
+        19: aload_0
+        20: getfield      #36                 // Field awaitingJobs:Ljava/util/List;
+        23: iconst_0
+        24: invokeinterface #73,  2           // InterfaceMethod java/util/List.get:(I)Ljava/lang/Object;
+        29: checkcast     #77                 // class org/eclipse/jdt/internal/core/search/processing/IJob
+        32: areturn
+        33: aconst_null
+        34: areturn
+
+  public synchronized org.eclipse.jdt.internal.core.search.processing.IJob currentJobForced();
+    Code:
+         0: aload_0
+         1: getfield      #36                 // Field awaitingJobs:Ljava/util/List;
+         4: invokeinterface #69,  1           // InterfaceMethod java/util/List.isEmpty:()Z
+         9: ifne          26
+        12: aload_0
+        13: getfield      #36                 // Field awaitingJobs:Ljava/util/List;
+        16: iconst_0
+        17: invokeinterface #73,  2           // InterfaceMethod java/util/List.get:(I)Ljava/lang/Object;
+        22: checkcast     #77                 // class org/eclipse/jdt/internal/core/search/processing/IJob
+        25: areturn
+        26: aconst_null
+        27: areturn
+
+  public synchronized void disable();
+    Code:
+         0: aload_0
+         1: dup
+         2: getfield      #38                 // Field enableCount:I
+         5: iconst_1
+         6: isub
+         7: putfield      #38                 // Field enableCount:I
+        10: getstatic     #26                 // Field VERBOSE:Z
+        13: ifeq          21
+        16: ldc           #81                 // String DISABLING background indexing
+        18: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+        21: return
+
+  public synchronized boolean isEnabled();
+    Code:
+         0: aload_0
+         1: getfield      #38                 // Field enableCount:I
+         4: ifle          9
+         7: iconst_1
+         8: ireturn
+         9: iconst_0
+        10: ireturn
+
+  public void discardJobs(java.lang.String);
+    Code:
+         0: getstatic     #26                 // Field VERBOSE:Z
+         3: ifeq          15
+         6: aload_1
+         7: invokedynamic #91,  0             // InvokeDynamic #0:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+        12: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+        15: aload_0
+        16: dup
+        17: astore_3
+        18: monitorenter
+        19: aload_0
+        20: invokevirtual #95                 // Method currentJob:()Lorg/eclipse/jdt/internal/core/search/processing/IJob;
+        23: astore_2
+        24: aload_0
+        25: invokevirtual #97                 // Method disable:()V
+        28: aload_3
+        29: monitorexit
+        30: goto          36
+        33: aload_3
+        34: monitorexit
+        35: athrow
+        36: aload_2
+        37: ifnull        119
+        40: aload_1
+        41: ifnull        54
+        44: aload_2
+        45: aload_1
+        46: invokeinterface #99,  2           // InterfaceMethod org/eclipse/jdt/internal/core/search/processing/IJob.belongsTo:(Ljava/lang/String;)Z
+        51: ifeq          119
+        54: aload_2
+        55: invokeinterface #103,  1          // InterfaceMethod org/eclipse/jdt/internal/core/search/processing/IJob.cancel:()V
+        60: aload_0
+        61: dup
+        62: astore_3
+        63: monitorenter
+        64: goto          97
+        67: getstatic     #26                 // Field VERBOSE:Z
+        70: ifeq          85
+        73: aload_2
+        74: invokestatic  #106                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+        77: invokedynamic #112,  0            // InvokeDynamic #1:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+        82: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+        85: aload_0
+        86: ldc2_w        #113                // long 50l
+        89: invokevirtual #115                // Method java/lang/Object.wait:(J)V
+        92: goto          97
+        95: astore        4
+        97: aload_0
+        98: invokevirtual #119                // Method getProcessingThread:()Ljava/lang/Thread;
+       101: ifnull        111
+       104: aload_0
+       105: getfield      #121                // Field executing:Z
+       108: ifne          67
+       111: aload_3
+       112: monitorexit
+       113: goto          119
+       116: aload_3
+       117: monitorexit
+       118: athrow
+       119: aload_0
+       120: dup
+       121: astore_3
+       122: monitorenter
+       123: aload_0
+       124: getfield      #36                 // Field awaitingJobs:Ljava/util/List;
+       127: invokeinterface #123,  1          // InterfaceMethod java/util/List.iterator:()Ljava/util/Iterator;
+       132: astore        4
+       134: iconst_0
+       135: istore        5
+       137: goto          199
+       140: aload         4
+       142: invokeinterface #127,  1          // InterfaceMethod java/util/Iterator.next:()Ljava/lang/Object;
+       147: checkcast     #77                 // class org/eclipse/jdt/internal/core/search/processing/IJob
+       150: astore_2
+       151: aload_1
+       152: ifnull        165
+       155: aload_2
+       156: aload_1
+       157: invokeinterface #99,  2           // InterfaceMethod org/eclipse/jdt/internal/core/search/processing/IJob.belongsTo:(Ljava/lang/String;)Z
+       162: ifeq          199
+       165: getstatic     #26                 // Field VERBOSE:Z
+       168: ifeq          183
+       171: aload_2
+       172: invokestatic  #106                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+       175: invokedynamic #133,  0            // InvokeDynamic #2:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+       180: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+       183: aload_2
+       184: invokeinterface #103,  1          // InterfaceMethod org/eclipse/jdt/internal/core/search/processing/IJob.cancel:()V
+       189: aload         4
+       191: invokeinterface #134,  1          // InterfaceMethod java/util/Iterator.remove:()V
+       196: iconst_1
+       197: istore        5
+       199: aload         4
+       201: invokeinterface #137,  1          // InterfaceMethod java/util/Iterator.hasNext:()Z
+       206: ifne          140
+       209: iload         5
+       211: ifeq          218
+       214: aload_0
+       215: invokevirtual #56                 // Method java/lang/Object.notifyAll:()V
+       218: aload_3
+       219: monitorexit
+       220: goto          235
+       223: aload_3
+       224: monitorexit
+       225: athrow
+       226: astore        6
+       228: aload_0
+       229: invokevirtual #140                // Method enable:()V
+       232: aload         6
+       234: athrow
+       235: aload_0
+       236: invokevirtual #140                // Method enable:()V
+       239: getstatic     #26                 // Field VERBOSE:Z
+       242: ifeq          254
+       245: aload_1
+       246: invokedynamic #143,  0            // InvokeDynamic #3:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+       251: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+       254: return
+      Exception table:
+         from    to  target type
+            19    30    33   any
+            33    35    33   any
+            67    92    95   Class java/lang/InterruptedException
+            64   113   116   any
+           116   118   116   any
+           123   220   223   any
+           223   225   223   any
+            15   226   226   any
+
+  public synchronized void enable();
+    Code:
+         0: aload_0
+         1: dup
+         2: getfield      #38                 // Field enableCount:I
+         5: iconst_1
+         6: iadd
+         7: putfield      #38                 // Field enableCount:I
+        10: getstatic     #26                 // Field VERBOSE:Z
+        13: ifeq          21
+        16: ldc           #156                // String ENABLING  background indexing
+        18: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+        21: aload_0
+        22: invokevirtual #56                 // Method java/lang/Object.notifyAll:()V
+        25: return
+
+  protected synchronized boolean isJobWaiting(org.eclipse.jdt.internal.core.search.processing.IJob);
+    Code:
+         0: aload_0
+         1: getfield      #36                 // Field awaitingJobs:Ljava/util/List;
+         4: invokeinterface #61,  1           // InterfaceMethod java/util/List.size:()I
+         9: iconst_1
+        10: if_icmpgt     15
+        13: iconst_0
+        14: ireturn
+        15: aload_0
+        16: aload_1
+        17: dup
+        18: invokevirtual #160                // Method java/lang/Object.getClass:()Ljava/lang/Class;
+        21: pop
+        22: invokedynamic #164,  0            // InvokeDynamic #4:test:(Lorg/eclipse/jdt/internal/core/search/processing/IJob;)Ljava/util/function/Predicate;
+        27: invokevirtual #168                // Method hasPendingJobMatching:(Ljava/util/function/Predicate;)Z
+        30: ireturn
+
+  protected synchronized boolean hasPendingJobMatching(java.util.function.Predicate<org.eclipse.jdt.internal.core.search.processing.IJob>);
+    Code:
+         0: aload_0
+         1: invokevirtual #174                // Method awaitingJobsCount:()I
+         4: istore_2
+         5: iload_2
+         6: iconst_1
+         7: if_icmpgt     12
+        10: iconst_0
+        11: ireturn
+        12: aload_0
+        13: getfield      #36                 // Field awaitingJobs:Ljava/util/List;
+        16: iload_2
+        17: invokeinterface #176,  2          // InterfaceMethod java/util/List.listIterator:(I)Ljava/util/ListIterator;
+        22: astore_3
+        23: aload_0
+        24: getfield      #36                 // Field awaitingJobs:Ljava/util/List;
+        27: iconst_0
+        28: invokeinterface #73,  2           // InterfaceMethod java/util/List.get:(I)Ljava/lang/Object;
+        33: checkcast     #77                 // class org/eclipse/jdt/internal/core/search/processing/IJob
+        36: astore        4
+        38: goto          75
+        41: aload_3
+        42: invokeinterface #180,  1          // InterfaceMethod java/util/ListIterator.previous:()Ljava/lang/Object;
+        47: checkcast     #77                 // class org/eclipse/jdt/internal/core/search/processing/IJob
+        50: astore        5
+        52: aload         5
+        54: aload         4
+        56: if_acmpne     62
+        59: goto          84
+        62: aload_1
+        63: aload         5
+        65: invokeinterface #185,  2          // InterfaceMethod java/util/function/Predicate.test:(Ljava/lang/Object;)Z
+        70: ifeq          75
+        73: iconst_1
+        74: ireturn
+        75: aload_3
+        76: invokeinterface #190,  1          // InterfaceMethod java/util/ListIterator.hasPrevious:()Z
+        81: ifne          41
+        84: iconst_0
+        85: ireturn
+
+  protected synchronized void moveToNextJob();
+    Code:
+         0: aload_0
+         1: getfield      #36                 // Field awaitingJobs:Ljava/util/List;
+         4: invokeinterface #69,  1           // InterfaceMethod java/util/List.isEmpty:()Z
+         9: ifne          46
+        12: aload_0
+        13: getfield      #36                 // Field awaitingJobs:Ljava/util/List;
+        16: iconst_0
+        17: invokeinterface #200,  2          // InterfaceMethod java/util/List.remove:(I)Ljava/lang/Object;
+        22: pop
+        23: aload_0
+        24: invokevirtual #174                // Method awaitingJobsCount:()I
+        27: ifne          46
+        30: aload_0
+        31: dup
+        32: astore_1
+        33: monitorenter
+        34: aload_0
+        35: invokevirtual #56                 // Method java/lang/Object.notifyAll:()V
+        38: aload_1
+        39: monitorexit
+        40: goto          46
+        43: aload_1
+        44: monitorexit
+        45: athrow
+        46: return
+      Exception table:
+         from    to  target type
+            34    40    43   any
+            43    45    43   any
+
+  protected abstract void notifyIdle(long);
+
+  public boolean performConcurrentJob(org.eclipse.jdt.internal.core.search.processing.IJob, int, org.eclipse.core.runtime.IProgressMonitor);
+    Code:
+         0: getstatic     #26                 // Field VERBOSE:Z
+         3: ifeq          18
+         6: aload_1
+         7: invokestatic  #106                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+        10: invokedynamic #205,  0            // InvokeDynamic #5:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+        15: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+        18: aload_1
+        19: invokeinterface #206,  1          // InterfaceMethod org/eclipse/jdt/internal/core/search/processing/IJob.ensureReadyToRun:()V
+        24: iconst_0
+        25: istore        4
+        27: aload_3
+        28: invokestatic  #209                // Method org/eclipse/core/runtime/SubMonitor.convert:(Lorg/eclipse/core/runtime/IProgressMonitor;)Lorg/eclipse/core/runtime/SubMonitor;
+        31: astore        5
+        33: aload_0
+        34: invokevirtual #174                // Method awaitingJobsCount:()I
+        37: ifle          703
+        40: getstatic     #26                 // Field VERBOSE:Z
+        43: ifeq          62
+        46: aload_0
+        47: invokevirtual #174                // Method awaitingJobsCount:()I
+        50: aload_1
+        51: invokestatic  #106                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+        54: invokedynamic #215,  0            // InvokeDynamic #6:makeConcatWithConstants:(ILjava/lang/String;)Ljava/lang/String;
+        59: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+        62: iload_2
+        63: tableswitch   { // 1 to 3
+                       1: 88
+                       2: 183
+                       3: 221
+                 default: 703
+            }
+        88: getstatic     #26                 // Field VERBOSE:Z
+        91: ifeq          106
+        94: aload_1
+        95: invokestatic  #106                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+        98: invokedynamic #218,  0            // InvokeDynamic #7:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+       103: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+       106: aload_0
+       107: invokevirtual #97                 // Method disable:()V
+       110: aload_1
+       111: aload         5
+       113: invokeinterface #219,  2          // InterfaceMethod org/eclipse/jdt/internal/core/search/processing/IJob.execute:(Lorg/eclipse/core/runtime/IProgressMonitor;)Z
+       118: istore        4
+       120: goto          132
+       123: astore        6
+       125: aload_0
+       126: invokevirtual #140                // Method enable:()V
+       129: aload         6
+       131: athrow
+       132: aload_0
+       133: invokevirtual #140                // Method enable:()V
+       136: getstatic     #26                 // Field VERBOSE:Z
+       139: ifeq          154
+       142: aload_1
+       143: invokestatic  #106                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+       146: invokedynamic #223,  0            // InvokeDynamic #8:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+       151: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+       154: iload         4
+       156: istore        21
+       158: aload_3
+       159: invokestatic  #224                // Method org/eclipse/core/runtime/SubMonitor.done:(Lorg/eclipse/core/runtime/IProgressMonitor;)V
+       162: getstatic     #26                 // Field VERBOSE:Z
+       165: ifeq          180
+       168: aload_1
+       169: invokestatic  #106                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+       172: invokedynamic #228,  0            // InvokeDynamic #9:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+       177: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+       180: iload         21
+       182: ireturn
+       183: getstatic     #26                 // Field VERBOSE:Z
+       186: ifeq          213
+       189: aload_1
+       190: invokestatic  #106                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+       193: invokedynamic #229,  0            // InvokeDynamic #10:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+       198: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+       201: aload_1
+       202: invokestatic  #106                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+       205: invokedynamic #230,  0            // InvokeDynamic #11:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+       210: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+       213: new           #231                // class org/eclipse/core/runtime/OperationCanceledException
+       216: dup
+       217: invokespecial #233                // Method org/eclipse/core/runtime/OperationCanceledException."<init>":()V
+       220: athrow
+       221: sipush        1000
+       224: istore        6
+       226: aload         5
+       228: bipush        10
+       230: invokevirtual #234                // Method org/eclipse/core/runtime/SubMonitor.setWorkRemaining:(I)Lorg/eclipse/core/runtime/SubMonitor;
+       233: bipush        8
+       235: invokevirtual #238                // Method org/eclipse/core/runtime/SubMonitor.split:(I)Lorg/eclipse/core/runtime/SubMonitor;
+       238: iload         6
+       240: invokevirtual #234                // Method org/eclipse/core/runtime/SubMonitor.setWorkRemaining:(I)Lorg/eclipse/core/runtime/SubMonitor;
+       243: astore        7
+       245: aload_0
+       246: invokevirtual #119                // Method getProcessingThread:()Ljava/lang/Thread;
+       249: astore        8
+       251: aload         8
+       253: ifnonnull     260
+       256: iconst_m1
+       257: goto          265
+       260: aload         8
+       262: invokevirtual #241                // Method java/lang/Thread.getPriority:()I
+       265: istore        9
+       267: aload         8
+       269: ifnull        283
+       272: aload         8
+       274: invokestatic  #246                // Method java/lang/Thread.currentThread:()Ljava/lang/Thread;
+       277: invokevirtual #241                // Method java/lang/Thread.getPriority:()I
+       280: invokevirtual #249                // Method java/lang/Thread.setPriority:(I)V
+       283: aload_0
+       284: getfield      #43                 // Field awaitingClients:Ljava/util/concurrent/atomic/AtomicInteger;
+       287: invokevirtual #253                // Method java/util/concurrent/atomic/AtomicInteger.incrementAndGet:()I
+       290: pop
+       291: aconst_null
+       292: astore        10
+       294: iload         6
+       296: istore        12
+       298: fconst_0
+       299: fstore        13
+       301: fconst_0
+       302: fstore        14
+       304: goto          617
+       307: aload         7
+       309: invokevirtual #256                // Method org/eclipse/core/runtime/SubMonitor.isCanceled:()Z
+       312: ifne          322
+       315: aload_0
+       316: invokevirtual #119                // Method getProcessingThread:()Ljava/lang/Thread;
+       319: ifnonnull     330
+       322: new           #231                // class org/eclipse/core/runtime/OperationCanceledException
+       325: dup
+       326: invokespecial #233                // Method org/eclipse/core/runtime/OperationCanceledException."<init>":()V
+       329: athrow
+       330: iconst_0
+       331: istore        15
+       333: aload_0
+       334: invokevirtual #259                // Method currentJobForced:()Lorg/eclipse/jdt/internal/core/search/processing/IJob;
+       337: astore        16
+       339: aload         16
+       341: ifnull        407
+       344: aload_0
+       345: invokevirtual #261                // Method isEnabled:()Z
+       348: ifne          382
+       351: getstatic     #26                 // Field VERBOSE:Z
+       354: ifeq          375
+       357: aload_0
+       358: getfield      #38                 // Field enableCount:I
+       361: iload         11
+       363: aload_1
+       364: invokestatic  #106                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+       367: invokedynamic #263,  0            // InvokeDynamic #12:makeConcatWithConstants:(IILjava/lang/String;)Ljava/lang/String;
+       372: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+       375: aload_0
+       376: invokevirtual #140                // Method enable:()V
+       379: iconst_1
+       380: istore        15
+       382: aload_0
+       383: getfield      #45                 // Field idleMonitor:Ljava/lang/Object;
+       386: dup
+       387: astore        17
+       389: monitorenter
+       390: aload_0
+       391: getfield      #45                 // Field idleMonitor:Ljava/lang/Object;
+       394: invokevirtual #56                 // Method java/lang/Object.notifyAll:()V
+       397: aload         17
+       399: monitorexit
+       400: goto          407
+       403: aload         17
+       405: monitorexit
+       406: athrow
+       407: aload         16
+       409: ifnull        550
+       412: aload         16
+       414: aload         10
+       416: if_acmpeq     550
+       419: getstatic     #26                 // Field VERBOSE:Z
+       422: ifeq          439
+       425: iload         11
+       427: aload_1
+       428: invokestatic  #106                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+       431: invokedynamic #266,  0            // InvokeDynamic #13:makeConcatWithConstants:(ILjava/lang/String;)Ljava/lang/String;
+       436: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+       439: getstatic     #267                // Field org/eclipse/jdt/internal/core/util/Messages.jobmanager_filesToIndex:Ljava/lang/String;
+       442: aload         16
+       444: invokeinterface #272,  1          // InterfaceMethod org/eclipse/jdt/internal/core/search/processing/IJob.getJobFamily:()Ljava/lang/String;
+       449: iload         11
+       451: invokestatic  #276                // Method java/lang/Integer.toString:(I)Ljava/lang/String;
+       454: invokestatic  #282                // Method org/eclipse/jdt/internal/core/util/Messages.bind:(Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/String;
+       457: astore        17
+       459: aload         7
+       461: aload         17
+       463: invokevirtual #286                // Method org/eclipse/core/runtime/SubMonitor.subTask:(Ljava/lang/String;)V
+       466: iload         11
+       468: iload         6
+       470: if_icmpge     477
+       473: fconst_1
+       474: goto          484
+       477: iload         6
+       479: i2f
+       480: iload         11
+       482: i2f
+       483: fdiv
+       484: fstore        18
+       486: iload         12
+       488: iload         11
+       490: if_icmple     510
+       493: fload         14
+       495: iload         12
+       497: iload         11
+       499: isub
+       500: i2f
+       501: fload         18
+       503: fmul
+       504: fadd
+       505: fstore        14
+       507: goto          517
+       510: fload         14
+       512: fload         18
+       514: fadd
+       515: fstore        14
+       517: fload         14
+       519: fload         13
+       521: fsub
+       522: fconst_1
+       523: fcmpl
+       524: iflt          542
+       527: aload         7
+       529: fload         14
+       531: fload         13
+       533: fsub
+       534: f2i
+       535: invokevirtual #289                // Method org/eclipse/core/runtime/SubMonitor.worked:(I)V
+       538: fload         14
+       540: fstore        13
+       542: iload         11
+       544: istore        12
+       546: aload         16
+       548: astore        10
+       550: aload_0
+       551: dup
+       552: astore        17
+       554: monitorenter
+       555: aload_0
+       556: invokevirtual #174                // Method awaitingJobsCount:()I
+       559: ifle          574
+       562: aload_0
+       563: ldc2_w        #113                // long 50l
+       566: invokevirtual #115                // Method java/lang/Object.wait:(J)V
+       569: goto          574
+       572: astore        18
+       574: aload         17
+       576: monitorexit
+       577: goto          584
+       580: aload         17
+       582: monitorexit
+       583: athrow
+       584: iload         15
+       586: ifeq          617
+       589: getstatic     #26                 // Field VERBOSE:Z
+       592: ifeq          613
+       595: aload_0
+       596: getfield      #38                 // Field enableCount:I
+       599: iload         11
+       601: aload_1
+       602: invokestatic  #106                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+       605: invokedynamic #292,  0            // InvokeDynamic #14:makeConcatWithConstants:(IILjava/lang/String;)Ljava/lang/String;
+       610: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+       613: aload_0
+       614: invokevirtual #97                 // Method disable:()V
+       617: aload_0
+       618: invokevirtual #174                // Method awaitingJobsCount:()I
+       621: dup
+       622: istore        11
+       624: ifgt          307
+       627: goto          669
+       630: astore        19
+       632: aload_0
+       633: getfield      #43                 // Field awaitingClients:Ljava/util/concurrent/atomic/AtomicInteger;
+       636: invokevirtual #293                // Method java/util/concurrent/atomic/AtomicInteger.decrementAndGet:()I
+       639: pop
+       640: aload         8
+       642: ifnull        666
+       645: iload         9
+       647: iconst_m1
+       648: if_icmple     666
+       651: aload         8
+       653: invokevirtual #296                // Method java/lang/Thread.isAlive:()Z
+       656: ifeq          666
+       659: aload         8
+       661: iload         9
+       663: invokevirtual #249                // Method java/lang/Thread.setPriority:(I)V
+       666: aload         19
+       668: athrow
+       669: aload_0
+       670: getfield      #43                 // Field awaitingClients:Ljava/util/concurrent/atomic/AtomicInteger;
+       673: invokevirtual #293                // Method java/util/concurrent/atomic/AtomicInteger.decrementAndGet:()I
+       676: pop
+       677: aload         8
+       679: ifnull        703
+       682: iload         9
+       684: iconst_m1
+       685: if_icmple     703
+       688: aload         8
+       690: invokevirtual #296                // Method java/lang/Thread.isAlive:()Z
+       693: ifeq          703
+       696: aload         8
+       698: iload         9
+       700: invokevirtual #249                // Method java/lang/Thread.setPriority:(I)V
+       703: aload_1
+       704: aload         5
+       706: invokeinterface #219,  2          // InterfaceMethod org/eclipse/jdt/internal/core/search/processing/IJob.execute:(Lorg/eclipse/core/runtime/IProgressMonitor;)Z
+       711: istore        4
+       713: goto          743
+       716: astore        20
+       718: aload_3
+       719: invokestatic  #224                // Method org/eclipse/core/runtime/SubMonitor.done:(Lorg/eclipse/core/runtime/IProgressMonitor;)V
+       722: getstatic     #26                 // Field VERBOSE:Z
+       725: ifeq          740
+       728: aload_1
+       729: invokestatic  #106                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+       732: invokedynamic #299,  0            // InvokeDynamic #15:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+       737: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+       740: aload         20
+       742: athrow
+       743: aload_3
+       744: invokestatic  #224                // Method org/eclipse/core/runtime/SubMonitor.done:(Lorg/eclipse/core/runtime/IProgressMonitor;)V
+       747: getstatic     #26                 // Field VERBOSE:Z
+       750: ifeq          765
+       753: aload_1
+       754: invokestatic  #106                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+       757: invokedynamic #300,  0            // InvokeDynamic #16:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+       762: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+       765: iload         4
+       767: ireturn
+      Exception table:
+         from    to  target type
+           106   123   123   any
+           390   400   403   any
+           403   406   403   any
+           562   569   572   Class java/lang/InterruptedException
+           555   577   580   any
+           580   583   580   any
+           267   630   630   any
+            27   158   716   any
+           183   716   716   any
+
+  public abstract java.lang.String processName();
+
+  public synchronized void requestIfNotWaiting(org.eclipse.jdt.internal.core.search.processing.IJob);
+    Code:
+         0: aload_0
+         1: aload_1
+         2: invokevirtual #325                // Method isJobWaiting:(Lorg/eclipse/jdt/internal/core/search/processing/IJob;)Z
+         5: ifne          13
+         8: aload_0
+         9: aload_1
+        10: invokevirtual #327                // Method request:(Lorg/eclipse/jdt/internal/core/search/processing/IJob;)V
+        13: return
+
+  public synchronized void request(org.eclipse.jdt.internal.core.search.processing.IJob);
+    Code:
+         0: aload_1
+         1: invokeinterface #206,  1          // InterfaceMethod org/eclipse/jdt/internal/core/search/processing/IJob.ensureReadyToRun:()V
+         6: aload_0
+         7: getfield      #36                 // Field awaitingJobs:Ljava/util/List;
+        10: aload_1
+        11: invokeinterface #329,  2          // InterfaceMethod java/util/List.add:(Ljava/lang/Object;)Z
+        16: pop
+        17: getstatic     #26                 // Field VERBOSE:Z
+        20: ifeq          47
+        23: aload_1
+        24: invokestatic  #106                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+        27: invokedynamic #332,  0            // InvokeDynamic #17:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+        32: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+        35: aload_0
+        36: invokevirtual #174                // Method awaitingJobsCount:()I
+        39: invokedynamic #333,  0            // InvokeDynamic #18:makeConcatWithConstants:(I)Ljava/lang/String;
+        44: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+        47: aload_0
+        48: invokevirtual #56                 // Method java/lang/Object.notifyAll:()V
+        51: return
+
+  public void reset();
+    Code:
+         0: getstatic     #26                 // Field VERBOSE:Z
+         3: ifeq          12
+         6: ldc_w         #336                // String Reset
+         9: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+        12: aload_0
+        13: invokevirtual #119                // Method getProcessingThread:()Ljava/lang/Thread;
+        16: astore_1
+        17: aload_1
+        18: ifnull        29
+        21: aload_0
+        22: aconst_null
+        23: invokevirtual #338                // Method discardJobs:(Ljava/lang/String;)V
+        26: goto          89
+        29: aload_0
+        30: dup
+        31: astore_2
+        32: monitorenter
+        33: new           #242                // class java/lang/Thread
+        36: dup
+        37: aload_0
+        38: invokedynamic #340,  0            // InvokeDynamic #19:run:(Lorg/eclipse/jdt/internal/core/search/processing/JobManager;)Ljava/lang/Runnable;
+        43: aload_0
+        44: invokevirtual #344                // Method processName:()Ljava/lang/String;
+        47: invokespecial #346                // Method java/lang/Thread."<init>":(Ljava/lang/Runnable;Ljava/lang/String;)V
+        50: astore_3
+        51: aload_3
+        52: iconst_1
+        53: invokevirtual #349                // Method java/lang/Thread.setDaemon:(Z)V
+        56: aload_3
+        57: iconst_4
+        58: invokevirtual #249                // Method java/lang/Thread.setPriority:(I)V
+        61: aload_3
+        62: aload_0
+        63: invokevirtual #160                // Method java/lang/Object.getClass:()Ljava/lang/Class;
+        66: invokevirtual #353                // Method java/lang/Class.getClassLoader:()Ljava/lang/ClassLoader;
+        69: invokevirtual #359                // Method java/lang/Thread.setContextClassLoader:(Ljava/lang/ClassLoader;)V
+        72: aload_3
+        73: invokevirtual #363                // Method java/lang/Thread.start:()V
+        76: aload_0
+        77: aload_3
+        78: putfield      #51                 // Field processingThread:Ljava/lang/Thread;
+        81: aload_2
+        82: monitorexit
+        83: goto          89
+        86: aload_2
+        87: monitorexit
+        88: athrow
+        89: return
+      Exception table:
+         from    to  target type
+            33    83    86   any
+            86    88    86   any
+
+  void indexerLoop();
+    Code:
+         0: iconst_0
+         1: istore_1
+         2: aconst_null
+         3: astore_2
+         4: aload_0
+         5: invokevirtual #368                // Method activateProcessing:()V
+         8: aload_0
+         9: aconst_null
+        10: putfield      #370                // Field progressJob:Lorg/eclipse/core/runtime/jobs/Job;
+        13: goto          468
+        16: aload_0
+        17: dup
+        18: astore        4
+        20: monitorenter
+        21: aload_0
+        22: invokevirtual #119                // Method getProcessingThread:()Ljava/lang/Thread;
+        25: ifnonnull     34
+        28: aload         4
+        30: monitorexit
+        31: goto          468
+        34: aload_0
+        35: invokevirtual #95                 // Method currentJob:()Lorg/eclipse/jdt/internal/core/search/processing/IJob;
+        38: dup
+        39: astore_3
+        40: ifnonnull     83
+        43: aload_0
+        44: getfield      #370                // Field progressJob:Lorg/eclipse/core/runtime/jobs/Job;
+        47: astore        5
+        49: aload         5
+        51: ifnull        65
+        54: aload         5
+        56: invokevirtual #372                // Method org/eclipse/core/runtime/jobs/Job.cancel:()Z
+        59: pop
+        60: aload_0
+        61: aconst_null
+        62: putfield      #370                // Field progressJob:Lorg/eclipse/core/runtime/jobs/Job;
+        65: aload_2
+        66: ifnonnull     79
+        69: invokestatic  #376                // Method java/lang/System.nanoTime:()J
+        72: invokestatic  #382                // Method java/lang/Long.valueOf:(J)Ljava/lang/Long;
+        75: astore_2
+        76: goto          83
+        79: aload_0
+        80: invokevirtual #387                // Method java/lang/Object.wait:()V
+        83: aload         4
+        85: monitorexit
+        86: goto          93
+        89: aload         4
+        91: monitorexit
+        92: athrow
+        93: aload_3
+        94: ifnonnull     164
+        97: aload_0
+        98: invokestatic  #376                // Method java/lang/System.nanoTime:()J
+       101: aload_2
+       102: invokevirtual #389                // Method java/lang/Long.longValue:()J
+       105: lsub
+       106: ldc2_w        #392                // long 1000000l
+       109: ldiv
+       110: invokevirtual #394                // Method notifyIdle:(J)V
+       113: aload_0
+       114: invokevirtual #95                 // Method currentJob:()Lorg/eclipse/jdt/internal/core/search/processing/IJob;
+       117: ifnull        123
+       120: goto          468
+       123: iload_1
+       124: ifeq          136
+       127: invokestatic  #396                // Method org/eclipse/jdt/internal/core/JavaModelManager.getJavaModelManager:()Lorg/eclipse/jdt/internal/core/JavaModelManager;
+       130: aload_0
+       131: invokevirtual #400                // Method org/eclipse/jdt/internal/core/JavaModelManager.flushZipFiles:(Ljava/lang/Object;)V
+       134: iconst_0
+       135: istore_1
+       136: aload_0
+       137: getfield      #45                 // Field idleMonitor:Ljava/lang/Object;
+       140: dup
+       141: astore        4
+       143: monitorenter
+       144: aload_0
+       145: getfield      #45                 // Field idleMonitor:Ljava/lang/Object;
+       148: ldc2_w        #404                // long 500l
+       151: invokevirtual #115                // Method java/lang/Object.wait:(J)V
+       154: aload         4
+       156: monitorexit
+       157: goto          468
+       160: aload         4
+       162: monitorexit
+       163: athrow
+       164: aconst_null
+       165: astore_2
+       166: getstatic     #26                 // Field VERBOSE:Z
+       169: ifeq          196
+       172: aload_0
+       173: invokevirtual #174                // Method awaitingJobsCount:()I
+       176: invokedynamic #406,  0            // InvokeDynamic #20:makeConcatWithConstants:(I)Ljava/lang/String;
+       181: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+       184: aload_3
+       185: invokestatic  #106                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+       188: invokedynamic #407,  0            // InvokeDynamic #21:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+       193: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+       196: aload_0
+       197: iconst_1
+       198: putfield      #121                // Field executing:Z
+       201: aload_0
+       202: getfield      #370                // Field progressJob:Lorg/eclipse/core/runtime/jobs/Job;
+       205: ifnonnull     254
+       208: new           #408                // class org/eclipse/jdt/internal/core/search/processing/JobManager$1ProgressJob
+       211: dup
+       212: aload_0
+       213: getstatic     #410                // Field org/eclipse/jdt/internal/core/util/Messages.jobmanager_indexing:Ljava/lang/String;
+       216: ldc_w         #413                // String
+       219: ldc_w         #413                // String
+       222: invokestatic  #282                // Method org/eclipse/jdt/internal/core/util/Messages.bind:(Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/String;
+       225: invokespecial #415                // Method org/eclipse/jdt/internal/core/search/processing/JobManager$1ProgressJob."<init>":(Lorg/eclipse/jdt/internal/core/search/processing/JobManager;Ljava/lang/String;)V
+       228: astore        4
+       230: aload         4
+       232: bipush        30
+       234: invokevirtual #418                // Method org/eclipse/jdt/internal/core/search/processing/JobManager$1ProgressJob.setPriority:(I)V
+       237: aload         4
+       239: iconst_1
+       240: invokevirtual #419                // Method org/eclipse/jdt/internal/core/search/processing/JobManager$1ProgressJob.setSystem:(Z)V
+       243: aload         4
+       245: invokevirtual #422                // Method org/eclipse/jdt/internal/core/search/processing/JobManager$1ProgressJob.schedule:()V
+       248: aload_0
+       249: aload         4
+       251: putfield      #370                // Field progressJob:Lorg/eclipse/core/runtime/jobs/Job;
+       254: iload_1
+       255: ifne          267
+       258: invokestatic  #396                // Method org/eclipse/jdt/internal/core/JavaModelManager.getJavaModelManager:()Lorg/eclipse/jdt/internal/core/JavaModelManager;
+       261: aload_0
+       262: invokevirtual #425                // Method org/eclipse/jdt/internal/core/JavaModelManager.cacheZipFiles:(Ljava/lang/Object;)V
+       265: iconst_1
+       266: istore_1
+       267: aload_3
+       268: aconst_null
+       269: invokeinterface #219,  2          // InterfaceMethod org/eclipse/jdt/internal/core/search/processing/IJob.execute:(Lorg/eclipse/core/runtime/IProgressMonitor;)Z
+       274: pop
+       275: goto          375
+       278: astore        5
+       280: aload_0
+       281: iconst_0
+       282: putfield      #121                // Field executing:Z
+       285: getstatic     #26                 // Field VERBOSE:Z
+       288: ifeq          303
+       291: aload_3
+       292: invokestatic  #106                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+       295: invokedynamic #428,  0            // InvokeDynamic #22:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+       300: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+       303: aload_0
+       304: invokevirtual #429                // Method moveToNextJob:()V
+       307: aload_0
+       308: getfield      #43                 // Field awaitingClients:Ljava/util/concurrent/atomic/AtomicInteger;
+       311: invokevirtual #431                // Method java/util/concurrent/atomic/AtomicInteger.get:()I
+       314: ifne          372
+       317: aload_3
+       318: invokeinterface #433,  1          // InterfaceMethod org/eclipse/jdt/internal/core/search/processing/IJob.waitNeeded:()Z
+       323: ifeq          372
+       326: getstatic     #26                 // Field VERBOSE:Z
+       329: ifeq          344
+       332: aload_3
+       333: invokestatic  #106                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+       336: invokedynamic #436,  0            // InvokeDynamic #23:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+       341: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+       344: aload_0
+       345: getfield      #45                 // Field idleMonitor:Ljava/lang/Object;
+       348: dup
+       349: astore        6
+       351: monitorenter
+       352: aload_0
+       353: getfield      #45                 // Field idleMonitor:Ljava/lang/Object;
+       356: ldc2_w        #437                // long 5l
+       359: invokevirtual #115                // Method java/lang/Object.wait:(J)V
+       362: aload         6
+       364: monitorexit
+       365: goto          372
+       368: aload         6
+       370: monitorexit
+       371: athrow
+       372: aload         5
+       374: athrow
+       375: aload_0
+       376: iconst_0
+       377: putfield      #121                // Field executing:Z
+       380: getstatic     #26                 // Field VERBOSE:Z
+       383: ifeq          398
+       386: aload_3
+       387: invokestatic  #106                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+       390: invokedynamic #439,  0            // InvokeDynamic #24:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+       395: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+       398: aload_0
+       399: invokevirtual #429                // Method moveToNextJob:()V
+       402: aload_0
+       403: getfield      #43                 // Field awaitingClients:Ljava/util/concurrent/atomic/AtomicInteger;
+       406: invokevirtual #431                // Method java/util/concurrent/atomic/AtomicInteger.get:()I
+       409: ifne          468
+       412: aload_3
+       413: invokeinterface #433,  1          // InterfaceMethod org/eclipse/jdt/internal/core/search/processing/IJob.waitNeeded:()Z
+       418: ifeq          468
+       421: getstatic     #26                 // Field VERBOSE:Z
+       424: ifeq          439
+       427: aload_3
+       428: invokestatic  #106                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+       431: invokedynamic #440,  0            // InvokeDynamic #25:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+       436: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+       439: aload_0
+       440: getfield      #45                 // Field idleMonitor:Ljava/lang/Object;
+       443: dup
+       444: astore        6
+       446: monitorenter
+       447: aload_0
+       448: getfield      #45                 // Field idleMonitor:Ljava/lang/Object;
+       451: ldc2_w        #437                // long 5l
+       454: invokevirtual #115                // Method java/lang/Object.wait:(J)V
+       457: aload         6
+       459: monitorexit
+       460: goto          468
+       463: aload         6
+       465: monitorexit
+       466: athrow
+       467: astore_3
+       468: aload_0
+       469: invokevirtual #119                // Method getProcessingThread:()Ljava/lang/Thread;
+       472: ifnonnull     16
+       475: goto          542
+       478: astore_3
+       479: aload_0
+       480: invokevirtual #119                // Method getProcessingThread:()Ljava/lang/Thread;
+       483: ifnull        522
+       486: aload_3
+       487: ldc_w         #441                // String Background Indexer Crash Recovery
+       490: invokestatic  #443                // Method org/eclipse/jdt/internal/core/util/Util.log:(Ljava/lang/Throwable;Ljava/lang/String;)V
+       493: aload_0
+       494: aconst_null
+       495: invokevirtual #338                // Method discardJobs:(Ljava/lang/String;)V
+       498: aload_0
+       499: dup
+       500: astore        4
+       502: monitorenter
+       503: aload_0
+       504: aconst_null
+       505: putfield      #51                 // Field processingThread:Ljava/lang/Thread;
+       508: aload         4
+       510: monitorexit
+       511: goto          518
+       514: aload         4
+       516: monitorexit
+       517: athrow
+       518: aload_0
+       519: invokevirtual #449                // Method reset:()V
+       522: aload_3
+       523: athrow
+       524: astore        7
+       526: iload_1
+       527: ifeq          539
+       530: invokestatic  #396                // Method org/eclipse/jdt/internal/core/JavaModelManager.getJavaModelManager:()Lorg/eclipse/jdt/internal/core/JavaModelManager;
+       533: aload_0
+       534: invokevirtual #400                // Method org/eclipse/jdt/internal/core/JavaModelManager.flushZipFiles:(Ljava/lang/Object;)V
+       537: iconst_0
+       538: istore_1
+       539: aload         7
+       541: athrow
+       542: iload_1
+       543: ifeq          555
+       546: invokestatic  #396                // Method org/eclipse/jdt/internal/core/JavaModelManager.getJavaModelManager:()Lorg/eclipse/jdt/internal/core/JavaModelManager;
+       549: aload_0
+       550: invokevirtual #400                // Method org/eclipse/jdt/internal/core/JavaModelManager.flushZipFiles:(Ljava/lang/Object;)V
+       553: iconst_0
+       554: istore_1
+       555: return
+      Exception table:
+         from    to  target type
+            21    31    89   any
+            34    86    89   any
+            89    92    89   any
+           144   157   160   any
+           160   163   160   any
+           196   278   278   any
+           352   365   368   any
+           368   371   368   any
+           447   460   463   any
+           463   466   463   any
+            16    31   467   Class java/lang/InterruptedException
+            34   120   467   Class java/lang/InterruptedException
+           123   467   467   Class java/lang/InterruptedException
+             8   475   478   Class java/lang/RuntimeException
+             8   475   478   Class java/lang/Error
+           503   511   514   any
+           514   517   514   any
+             8   524   524   any
+
+  public void shutdown();
+    Code:
+         0: getstatic     #26                 // Field VERBOSE:Z
+         3: ifeq          12
+         6: ldc_w         #462                // String Shutdown
+         9: invokestatic  #83                 // Method org/eclipse/jdt/internal/core/JavaModelManager.trace:(Ljava/lang/String;)V
+        12: aload_0
+        13: invokevirtual #97                 // Method disable:()V
+        16: aload_0
+        17: aconst_null
+        18: invokevirtual #338                // Method discardJobs:(Ljava/lang/String;)V
+        21: aload_0
+        22: invokevirtual #119                // Method getProcessingThread:()Ljava/lang/Thread;
+        25: astore_1
+        26: aload_1
+        27: ifnull        77
+        30: aload_0
+        31: getfield      #45                 // Field idleMonitor:Ljava/lang/Object;
+        34: dup
+        35: astore_2
+        36: monitorenter
+        37: aload_0
+        38: getfield      #45                 // Field idleMonitor:Ljava/lang/Object;
+        41: invokevirtual #56                 // Method java/lang/Object.notifyAll:()V
+        44: aload_2
+        45: monitorexit
+        46: goto          52
+        49: aload_2
+        50: monitorexit
+        51: athrow
+        52: aload_0
+        53: dup
+        54: astore_2
+        55: monitorenter
+        56: aload_0
+        57: aconst_null
+        58: putfield      #51                 // Field processingThread:Ljava/lang/Thread;
+        61: aload_0
+        62: invokevirtual #56                 // Method java/lang/Object.notifyAll:()V
+        65: aload_2
+        66: monitorexit
+        67: goto          73
+        70: aload_2
+        71: monitorexit
+        72: athrow
+        73: aload_1
+        74: invokevirtual #464                // Method java/lang/Thread.join:()V
+        77: aload_0
+        78: getfield      #370                // Field progressJob:Lorg/eclipse/core/runtime/jobs/Job;
+        81: astore_2
+        82: aload_2
+        83: ifnull        99
+        86: aload_2
+        87: invokevirtual #372                // Method org/eclipse/core/runtime/jobs/Job.cancel:()Z
+        90: pop
+        91: aload_2
+        92: invokevirtual #467                // Method org/eclipse/core/runtime/jobs/Job.join:()V
+        95: goto          99
+        98: astore_2
+        99: return
+      Exception table:
+         from    to  target type
+            37    46    49   any
+            49    51    49   any
+            56    67    70   any
+            70    72    70   any
+            26    95    98   Class java/lang/InterruptedException
+
+  public synchronized java.lang.String toString();
+    Code:
+         0: new           #468                // class java/lang/StringBuilder
+         3: dup
+         4: bipush        10
+         6: invokespecial #470                // Method java/lang/StringBuilder."<init>":(I)V
+         9: astore_1
+        10: aload_1
+        11: ldc_w         #472                // String Enable count:
+        14: invokevirtual #474                // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+        17: aload_0
+        18: getfield      #38                 // Field enableCount:I
+        21: invokevirtual #478                // Method java/lang/StringBuilder.append:(I)Ljava/lang/StringBuilder;
+        24: bipush        10
+        26: invokevirtual #481                // Method java/lang/StringBuilder.append:(C)Ljava/lang/StringBuilder;
+        29: pop
+        30: aload_0
+        31: getfield      #36                 // Field awaitingJobs:Ljava/util/List;
+        34: invokeinterface #61,  1           // InterfaceMethod java/util/List.size:()I
+        39: istore_2
+        40: aload_1
+        41: ldc_w         #484                // String Jobs in queue:
+        44: invokevirtual #474                // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+        47: iload_2
+        48: invokevirtual #478                // Method java/lang/StringBuilder.append:(I)Ljava/lang/StringBuilder;
+        51: bipush        10
+        53: invokevirtual #481                // Method java/lang/StringBuilder.append:(C)Ljava/lang/StringBuilder;
+        56: pop
+        57: iconst_0
+        58: istore_3
+        59: goto          98
+        62: aload_1
+        63: iload_3
+        64: invokevirtual #478                // Method java/lang/StringBuilder.append:(I)Ljava/lang/StringBuilder;
+        67: iload_3
+        68: invokedynamic #486,  0            // InvokeDynamic #26:makeConcatWithConstants:(I)Ljava/lang/String;
+        73: invokevirtual #474                // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+        76: aload_0
+        77: getfield      #36                 // Field awaitingJobs:Ljava/util/List;
+        80: iload_3
+        81: invokeinterface #73,  2           // InterfaceMethod java/util/List.get:(I)Ljava/lang/Object;
+        86: invokevirtual #487                // Method java/lang/StringBuilder.append:(Ljava/lang/Object;)Ljava/lang/StringBuilder;
+        89: bipush        10
+        91: invokevirtual #481                // Method java/lang/StringBuilder.append:(C)Ljava/lang/StringBuilder;
+        94: pop
+        95: iinc          3, 1
+        98: iload_3
+        99: iload_2
+       100: if_icmpge     109
+       103: iload_3
+       104: bipush        15
+       106: if_icmplt     62
+       109: aload_1
+       110: invokevirtual #490                // Method java/lang/StringBuilder.toString:()Ljava/lang/String;
+       113: areturn
+}

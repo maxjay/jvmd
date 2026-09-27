@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "75be95ecb73bd49619b434a5fcb2e76c96458fab",
+  "sourceDrift": false,
+  "semanticStatus": "pass",
+  "shutdown": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}",
+  "signals": [
+    {
+      "timeNs": "3161842900833",
+      "exitNotified": true,
+      "alive": true,
+      "signal": "SIGQUIT",
+      "delivered": true
+    },
+    {
+      "timeNs": "3166844207507",
+      "exitNotified": true,
+      "alive": true,
+      "signal": "SIGQUIT",
+      "delivered": true
+    }
+  ],
+  "dumpCount": 2,
+  "shutdownAckMs": 2.859017,
+  "exitAfterNotificationMs": 60063.969756,
+  "harnessForcedKill": false,
+  "archive": {
+    "file": "shutdown-review.tar.xz",
+    "bytes": 61292,
+    "sha256": "8ad1d8d1813d98e000e58ceea2c9c5324dda590772aed262726e6343824479c5",
+    "originalCompleteInventory": "failed",
+    "unsealedFiles": {
+      "runtime/equinox-config/org.eclipse.core.runtime/.manager/.tmp74.instance": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "runtime/equinox-config/org.eclipse.equinox.app/.manager/.tmp75.instance": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "roundTrip": "verified"
+  },
+  "bytecode": {
+    "jar": "org.eclipse.jdt.core_3.47.0.v20260828-1141.jar",
+    "jarSha256": "723e30be1e841516c388ebb32017cb8b36662808f46be5265b78cc06bd4fe71c",
+    "command": "javap -classpath JDT_CORE_JAR -c -p org.eclipse.jdt.internal.core.search.processing.JobManager",
+    "outputSha256": "1c879f1f3a22231c1274be5bf7dc83c571729f1877807557e1c7675e9a9c69ca"
+  },
+  "sourceReferences": {
+    "jdtlsRef": "08eafe6",
+    "exitHandlerBlob": "cdd7828750c17bae6fe97dbfaf02250f8ac54c16",
+    "baseServerBlob": "b83b5595d90e663c133bfd5a92134153bdab4200",
+    "applicationBlob": "8a54a5d05843f74e5a54a600726a968c7e04d709",
+    "parentWatcherBlob": "926fae8a68b24f390cf0a1cb723387de3b3449c7"
+  },
+  "observed": "Framework stop waits in JobManager.shutdown -> Thread.join. First dump shows JRT indexing; second shows two Java indexing threads waiting on the same IndexManager while framework stop still joins.",
+  "inference": "Pinned JDTLS exit schedules System.exit(1) after one minute. Timing and status are consistent with this fallback. Worker restart during shutdown is a candidate mechanism, not a proven triggering interleaving.",
+  "limitations": [
+    "SIGQUIT instrumentation is separate from the clean benchmark; thread dumps can pollute stdout framing after exit.",
+    "Two snapshots do not prove a continuous 60-second state or establish why a second indexing thread was started.",
+    "The probe overlapped the independent build matrix; its timings are diagnostic, not comparative performance evidence."
+  ],
+  "claims": {
+    "publicComparativePerformance": false
+  }
+}

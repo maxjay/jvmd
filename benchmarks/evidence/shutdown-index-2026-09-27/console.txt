@@ -1,0 +1,1 @@
+{"semantic":"pass","shutdown":"Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}","signals":[{"timeNs":"3161842900833","exitNotified":true,"alive":true,"signal":"SIGQUIT","delivered":true},{"timeNs":"3166844207507","exitNotified":true,"alive":true,"signal":"SIGQUIT","delivered":true}],"sourceDrift":false}

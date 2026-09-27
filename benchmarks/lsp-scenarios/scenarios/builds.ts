@@ -16,13 +16,15 @@ export async function runBuildCase(c:ScenarioContext,scope:BuildScope,variant:Bu
   let trigger:bigint|undefined;
   if(variant==="changed")trigger=c.writeDisk("BuildProbe.java",BUILD_CHANGED);
   const targetState=variant+"_build";
-  await c.query(method,buildParams(scope,c.fixture.root,variant==="full"||variant==="error"),v=>{
+  const targetOracle=(v:any)=>{
     assert.equal(v,variant==="error"?2:1,"build status does not match independent source witness");
     if(variant!=="error")verify(variant==="changed"?13:7);
     else if(scope==="workspace")output(c,peer.root,"BuildPeer",73);
     if(scope==="projects")c.assert("project build preserves unselected output bytes",JSON.stringify(buildTree(peer.root))===JSON.stringify(beforePeer));
     if(variant==="unchanged")c.assert("unchanged build preserves output bytes without claiming zero work",JSON.stringify(buildTree(c.fixture.root))===JSON.stringify(beforePrimary));
-  },targetState,trigger,variant==="changed"?"server-built class executes changed value 13 instead of 7":undefined);
+  };
+  if(variant==="changed")await c.transition(method,()=>buildParams(scope,c.fixture.root,false),targetOracle,trigger!,"server-built class executes changed value 13 instead of 7");
+  else await c.query(method,buildParams(scope,c.fixture.root,variant==="full"||variant==="error"),targetOracle,targetState);
   const diagnostic=async(uri:string,source:string,token:string)=>{
     // The distinctive token is present from the initial fixture or the single
     // recorded scope edit. A positive exact-range error identifies that content;

@@ -105,3 +105,43 @@ one ordered clean/traced pair, so their difference is not a profiling-overhead
 bound or a speed comparison. Both profiles report AOT archive rejection and
 continue in normal execution. This replay establishes neither accepted AOT
 execution nor complete helper-process resource costs.
+
+## Separate JDTLS shutdown blocking path
+
+An instrumented two-project build reproduction at `75be95e` answers shutdown
+in 2.859 ms, then exits with code 1 about 60.064 seconds after the exit
+notification. No harness forced kill occurs. This is separate from the JVMD
+document-open investigation and from the uninstrumented build matrix.
+
+| Observation | First snapshot, about 2 seconds | Second snapshot, about 7 seconds |
+| --- | --- | --- |
+| Main thread | Waiting for Equinox framework stop | Still waiting |
+| Framework-stop thread | JobManager.shutdown → Thread.join | Same blocking path |
+| Original Java indexing thread | Traversing JRT classes through AddJrtToIndex | Waiting in indexerLoop |
+| Second Java indexing thread | Waiting in indexerLoop | Waiting on the same IndexManager |
+
+The selected and full thread dumps, process journal and runnable SIGQUIT probe
+are in `benchmarks/evidence/shutdown-index-2026-09-27/`. SIGQUIT is a documented
+[HotSpot thread-dump mechanism](https://docs.oracle.com/en/java/javase/25/troubleshoot/troubleshooting-guide.pdf).
+The probe deliberately collects raw stdout because these dumps can interfere
+with protocol framing after exit. Its timings are diagnostic observations, not
+a profiling-overhead bound or performance comparison. It ran alongside the
+independent build matrix.
+
+The pinned [JDTLanguageServer exit implementation](https://github.com/eclipse-jdtls/eclipse.jdt.ls/blob/08eafe6/org.eclipse.jdt.ls.core/src/org/eclipse/jdt/ls/core/internal/handlers/JDTLanguageServer.java)
+schedules a forced exit after one minute; the [base server](https://github.com/eclipse-jdtls/eclipse.jdt.ls/blob/08eafe6/org.eclipse.jdt.ls.core/src/org/eclipse/jdt/ls/core/internal/BaseJDTLanguageServer.java)
+defines that exit code as 1. The observed timing/status are consistent with this
+fallback. This is an inference from the recorded process events and pinned
+source, not direct interception of System.exit.
+
+The exact JDT Core binary's bytecode shows shutdown clearing its processing-thread
+field and joining the saved thread. Reset can create a new worker when that field
+is null; the loop tests whether the field is nonnull rather than whether it still
+names the current worker. Together with the two observed workers, that suggests
+a restart-during-shutdown race to investigate. The triggering reset call and its
+interleaving have not been captured, so a complete root-cause proof is still open.
+Do not assign all sixty seconds to useful indexing or to a request's latency.
+
+All originally sealed probe payload hashes verify. Two additional runtime files
+are preserved with failed-inventory status; the review subset is not a claim
+that the full original capture is sealed.

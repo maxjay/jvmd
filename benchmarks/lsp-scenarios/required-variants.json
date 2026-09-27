@@ -666,7 +666,8 @@
                 {
                   "endpoint": "java/buildWorkspace",
                   "states": [
-                    "changed_build"
+                    "changed_immediate",
+                    "changed_settled"
                   ]
                 },
                 {
@@ -697,7 +698,8 @@
                 {
                   "endpoint": "java/buildProjects",
                   "states": [
-                    "changed_build"
+                    "changed_immediate",
+                    "changed_settled"
                   ]
                 },
                 {

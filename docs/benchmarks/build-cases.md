@@ -46,3 +46,10 @@ Select `BLD-01/two-project-workspace-full` (and the corresponding unchanged,
 changed, error or projects selectors) from a frozen published checkout. These
 are correctness/diagnostic cases. They do not establish comparative performance,
 complete resource costs or accepted product AOT.
+
+Changed-source recovery is now observed with the suite's predeclared transition
+policy: immediate build, bounded retries after failed output, then one additional
+correct settled build. Every failed result remains in the case. These extra build
+requests can themselves advance compilation; the recovery interval is explicitly
+probe-driven and is not a passive background-readiness measurement. The initial
+`75be95e` capture stops after its wrong immediate result and remains unchanged.

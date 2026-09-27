@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "75be95ecb73bd49619b434a5fcb2e76c96458fab",
+  "sourceDrift": false,
+  "plan": {
+    "caseIds": [
+      "BLD-01/two-project-workspace-full",
+      "BLD-01/two-project-workspace-unchanged",
+      "BLD-01/two-project-workspace-changed",
+      "BLD-01/two-project-workspace-error",
+      "BLD-01/two-project-projects-full",
+      "BLD-01/two-project-projects-unchanged",
+      "BLD-01/two-project-projects-changed",
+      "BLD-01/two-project-projects-error"
+    ],
+    "servers": [
+      "jvmd",
+      "jdtls"
+    ],
+    "blocks": 1,
+    "warmup": 1,
+    "samples": 2,
+    "timeout": 30000,
+    "transitionPolicy": {
+      "maxAttempts": 100,
+      "retryDelayMs": 20,
+      "deadlineMs": 30000,
+      "perRequestTimeoutMs": 30000,
+      "clock": "client monotonic",
+      "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+      "settledProbe": "one additional correct response after the first correct response",
+      "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+    },
+    "profile": "pipe",
+    "serverOrder": "alternate per independent block",
+    "reset": "fresh fixture and server state per independent case",
+    "seed": 0
+  },
+  "outcomes": {
+    "pass": 0,
+    "incorrect": 2,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 6,
+    "harness_error": 0,
+    "unsupported": 8,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "originalReducerIntegrityIssues": [],
+  "package": {
+    "file": "builds-review.tar.xz",
+    "bytes": 182880,
+    "sha256": "3bee065478efc50d77dac241b54df3fc36c6d3277901be965c3ec2f44714ae2f",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "failed",
+    "unsealedFiles": {
+      "01-jdtls-BLD-01-two-project-projects-error/runtime/equinox-config/org.eclipse.core.runtime/.manager/.tmp74.instance": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "01-jdtls-BLD-01-two-project-projects-error/runtime/equinox-config/org.eclipse.equinox.app/.manager/.tmp75.instance": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "members": 162
+  },
+  "cases": [
+    {
+      "caseId": "BLD-01/two-project-projects-changed",
+      "server": "jdtls",
+      "outcome": "incorrect",
+      "operations": 2,
+      "failedOperations": [
+        {
+          "state": "changed_build",
+          "outcome": "incorrect",
+          "assertionError": "AssertionError [ERR_ASSERTION]: compiled behaviour is stale or from the wrong project\n\n'7\\n' !== '13\\n'\n"
+        }
+      ],
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}"
+    },
+    {
+      "caseId": "BLD-01/two-project-projects-error",
+      "server": "jdtls",
+      "outcome": "protocol_error",
+      "operations": 3,
+      "failedOperations": [],
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}"
+    },
+    {
+      "caseId": "BLD-01/two-project-projects-full",
+      "server": "jdtls",
+      "outcome": "protocol_error",
+      "operations": 3,
+      "failedOperations": [],
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}"
+    },
+    {
+      "caseId": "BLD-01/two-project-projects-unchanged",
+      "server": "jdtls",
+      "outcome": "protocol_error",
+      "operations": 4,
+      "failedOperations": [],
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}"
+    },
+    {
+      "caseId": "BLD-01/two-project-workspace-changed",
+      "server": "jdtls",
+      "outcome": "incorrect",
+      "operations": 2,
+      "failedOperations": [
+        {
+          "state": "changed_build",
+          "outcome": "incorrect",
+          "assertionError": "AssertionError [ERR_ASSERTION]: compiled behaviour is stale or from the wrong project\n\n'7\\n' !== '13\\n'\n"
+        }
+      ],
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}"
+    },
+    {
+      "caseId": "BLD-01/two-project-workspace-error",
+      "server": "jdtls",
+      "outcome": "protocol_error",
+      "operations": 3,
+      "failedOperations": [],
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}"
+    },
+    {
+      "caseId": "BLD-01/two-project-workspace-full",
+      "server": "jdtls",
+      "outcome": "protocol_error",
+      "operations": 3,
+      "failedOperations": [],
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}"
+    },
+    {
+      "caseId": "BLD-01/two-project-workspace-unchanged",
+      "server": "jdtls",
+      "outcome": "protocol_error",
+      "operations": 4,
+      "failedOperations": [],
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}"
+    },
+    {
+      "caseId": "BLD-01/two-project-projects-changed",
+      "server": "jvmd",
+      "outcome": "unsupported",
+      "operations": 0,
+      "failedOperations": [],
+      "shutdownError": null
+    },
+    {
+      "caseId": "BLD-01/two-project-projects-error",
+      "server": "jvmd",
+      "outcome": "unsupported",
+      "operations": 0,
+      "failedOperations": [],
+      "shutdownError": null
+    },
+    {
+      "caseId": "BLD-01/two-project-projects-full",
+      "server": "jvmd",
+      "outcome": "unsupported",
+      "operations": 0,
+      "failedOperations": [],
+      "shutdownError": null
+    },
+    {
+      "caseId": "BLD-01/two-project-projects-unchanged",
+      "server": "jvmd",
+      "outcome": "unsupported",
+      "operations": 0,
+      "failedOperations": [],
+      "shutdownError": null
+    },
+    {
+      "caseId": "BLD-01/two-project-workspace-changed",
+      "server": "jvmd",
+      "outcome": "unsupported",
+      "operations": 0,
+      "failedOperations": [],
+      "shutdownError": null
+    },
+    {
+      "caseId": "BLD-01/two-project-workspace-error",
+      "server": "jvmd",
+      "outcome": "unsupported",
+      "operations": 0,
+      "failedOperations": [],
+      "shutdownError": null
+    },
+    {
+      "caseId": "BLD-01/two-project-workspace-full",
+      "server": "jvmd",
+      "outcome": "unsupported",
+      "operations": 0,
+      "failedOperations": [],
+      "shutdownError": null
+    },
+    {
+      "caseId": "BLD-01/two-project-workspace-unchanged",
+      "server": "jvmd",
+      "outcome": "unsupported",
+      "operations": 0,
+      "failedOperations": [],
+      "shutdownError": null
+    }
+  ],
+  "review": {
+    "changedSource": "Both immediate changed-source routes return successful status but server-built class still prints 7, not the expected 13. Original failed replies and runtime outputs are retained.",
+    "otherCases": "Six JDTLS full/unchanged/error cases pass build status, executable output, exact diagnostics and positive scope checks, then fail shutdown.",
+    "unsupported": "JVMD does not implement these Java extension build routes.",
+    "followup": "New source adds bounded immediate/retry/settled recovery observations. It does not retroactively change the original capture."
+  },
+  "claims": {
+    "publicComparativePerformance": false
+  }
+}

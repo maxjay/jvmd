@@ -4,7 +4,7 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 158 case definitions, 167 passing TypeScript
+Latest implementation inventory: 158 case definitions, 169 passing TypeScript
 harness tests, and 107 required variants (81 implemented, 20 partial, 6 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
@@ -1087,3 +1087,40 @@ injections. Actual compiler preparation verifies the three runtime values and
 two unique failures. Source inventory is now 158 cases and 81 implemented, 20
 partial, 6 absent variants. These implementation counts await real build replay.
 The complete experiment and public-comparison acceptance gates remain open.
+
+## Build pilot and retained recovery attempts
+
+The sixteen-case frozen matrix at `75be95e` records two incorrect cases, six
+protocol errors and eight unsupported routes. Both JDTLS immediate changed-source
+builds return success while the actual class still executes 7 instead of 13.
+Full, unchanged and error cases pass semantic, diagnostic and scope checks, then
+retain shutdown failures. JVMD declares all eight extension routes unsupported.
+Raw evidence is in `benchmarks/evidence/builds-initial-2026-09-27/`. Original
+reduction has no integrity issues; additional runtime files discovered during
+packaging remain explicitly unsealed.
+
+Changed build cases now use the existing predeclared immediate/retry/settled
+policy. The wrong immediate build remains incorrect after successful recovery;
+two new tests enforce that for both routes. Repeated explicit builds can advance
+the server's work, so this is probe-driven recovery, not passive readiness. All
+169 harness tests pass. Real recovery replay remains a separate follow-up.
+
+## Shutdown blocking-path probe
+
+A separate instrumented reproduction at `75be95e` passes build semantics, answers
+shutdown in 2.859 ms and exits with code 1 about 60.064 seconds after exit is
+notified. The harness does not force-kill it. Two SIGQUIT snapshots at roughly
+two and seven seconds show Equinox's framework-stop thread waiting in
+`JobManager.shutdown` at `Thread.join`. The first has active JRT indexing; the
+second has two Java indexing threads waiting on the same IndexManager while
+framework shutdown still joins. This is not evidence that indexing occupies
+the entire minute.
+
+Pinned JDTLS schedules System.exit(1) one minute after exit, consistent with the
+observed terminal event. The observed blocking path is established for this
+probe. A worker restarting during shutdown is a candidate mechanism from the
+binary's reset/loop/shutdown code, not a proven triggering interleaving.
+`benchmarks/evidence/shutdown-index-2026-09-27/` retains raw stdout, full stacks,
+protocol/process records, exact bytecode and the runnable probe. Instrumentation
+can contaminate stdout framing after exit; it is separated from normal benchmark
+evidence. Two additional runtime files remain explicitly unsealed.

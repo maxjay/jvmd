@@ -1,0 +1,33 @@
+{"caseId":"BLD-01/two-project-workspace-full","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"BLD-01/two-project-workspace-full","server":"jdtls","block":1,"outcome":"protocol_error"}
+{"caseId":"BLD-01/two-project-workspace-unchanged","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"BLD-01/two-project-workspace-unchanged","server":"jdtls","block":1,"outcome":"protocol_error"}
+{"caseId":"BLD-01/two-project-workspace-changed","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"BLD-01/two-project-workspace-changed","server":"jdtls","block":1,"outcome":"incorrect","error":"AssertionError [ERR_ASSERTION]: java/buildWorkspace: AssertionError [ERR_ASSERTION]: compiled behaviour is stale or from the wrong project\n\n'7\\n' !== '13\\n'\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"}
+{"caseId":"BLD-01/two-project-workspace-error","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"BLD-01/two-project-workspace-error","server":"jdtls","block":1,"outcome":"protocol_error"}
+{"caseId":"BLD-01/two-project-projects-full","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"BLD-01/two-project-projects-full","server":"jdtls","block":1,"outcome":"protocol_error"}
+{"caseId":"BLD-01/two-project-projects-unchanged","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"BLD-01/two-project-projects-unchanged","server":"jdtls","block":1,"outcome":"protocol_error"}
+{"caseId":"BLD-01/two-project-projects-changed","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"BLD-01/two-project-projects-changed","server":"jdtls","block":1,"outcome":"incorrect","error":"AssertionError [ERR_ASSERTION]: java/buildProjects: AssertionError [ERR_ASSERTION]: compiled behaviour is stale or from the wrong project\n\n'7\\n' !== '13\\n'\n\n+ actual - expected\n\n+ 'incorrect'\n- 'pass'\n"}
+{"caseId":"BLD-01/two-project-projects-error","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"BLD-01/two-project-projects-error","server":"jdtls","block":1,"outcome":"protocol_error"}
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Selected benchmark cases failed; raw artifacts preserved in /workspace/scratch/c9ab7d11d4a9/builds-replay
+    at main (file:///workspace/scratch/c9ab7d11d4a9/jvmd-next/benchmarks/lsp-scenarios/suite.ts:106:3)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///workspace/scratch/c9ab7d11d4a9/jvmd-next/[eval1]:3:1 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

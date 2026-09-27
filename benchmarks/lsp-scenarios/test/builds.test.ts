@@ -23,7 +23,7 @@ function setup(variant:BuildVariant,mode="correct"){
       for(const root of roots){
         const project=root===fixture.root?fixture:peer,name=root===fixture.root?"BuildProbe":"BuildPeer",file=project.files[name+".java"],source=readFileSync(file.path,"utf8"),token=/missing\w+Value/u.exec(source)?.[0];
         if(token){error=true;const params={uri:file.uri,diagnostics:[{severity:1,message:token+" cannot be resolved",range:range(source,token)}]};const e=emit("receive",{method:"textDocument/publishDiagnostics",params});notifications.push({params,method:e.message.method,timeNs:e.timeNs,sequence:e.sequence});}
-        else{mkdirSync(path.join(root,"bin/bench"),{recursive:true});const value=Number(/return (\d+);/u.exec(source)![1]);writeFileSync(path.join(root,"bin/bench/"+name+".class"),String(mode==="stale-output"&&value===13?7:value));}
+        else{mkdirSync(path.join(root,"bin/bench"),{recursive:true});const value=Number(/return (\d+);/u.exec(source)![1]);writeFileSync(path.join(root,"bin/bench/"+name+".class"),String((mode==="stale-output"||mode==="stale-once"&&next===2)&&value===13?7:value));}
       }
       const result=mode==="wrong-status"?1:error?2:1,end=emit("receive",{id,result});return {id,startNs:start.timeNs,endNs:end.timeNs,result};
     },notification:async(method:string,predicate:any)=>{const n=notifications.find(n=>n.method===method&&predicate(n.params));assert(n,"expected build diagnostic absent");return n;}};
@@ -33,9 +33,9 @@ function setup(variant:BuildVariant,mode="correct"){
 for(const scope of ["workspace","projects"] as const)for(const variant of ["full","unchanged","changed","error"] as const)test(`independent ${scope} ${variant} build checks output and both scope controls`,async()=>{
   const s=setup(variant);try{
     await runBuildCase(s.c,scope,variant,s.output);assert(s.c.operations.every(o=>o.outcome==="pass"));assert(s.c.assertions.every(a=>a.passed));
-    const operations=s.c.operations,at=operations.findIndex(o=>o.state===variant+"_build");assert(at>=0);
+    const operations=s.c.operations,at=operations.findIndex(o=>o.state===(variant==="changed"?"changed_immediate":variant+"_build"));assert(at>=0);
     assert.equal(at,variant==="unchanged"||variant==="changed"?1:0);
-    assert.deepEqual(operations.slice(at+1).map(o=>o.state),["scope_control_excludes_error","scope_control_includes_error"]);
+    assert.deepEqual(operations.slice(at+(variant==="changed"?2:1)).map(o=>o.state),["scope_control_excludes_error","scope_control_includes_error"]);
     assert.equal(s.calls[at].method,scope==="workspace"?"java/buildWorkspace":"java/buildProjects");
     assert.deepEqual(s.calls[at].params,buildParams(scope,s.c.fixture.root,variant==="full"||variant==="error"));
     assert.equal(s.order[0],"build");assert(s.c.assertions.some(a=>a.name==="build status agrees with exact source diagnostic"));
@@ -55,4 +55,14 @@ test("build diagnostic requires the unique error in the selected file and exact 
   const uri="file:///BuildProbe.java",d={severity:1,message:"missingBuildValue cannot be resolved",range:range(BUILD_ERROR,"missingBuildValue")},good={uri,diagnostics:[d]};
   buildDiagnosticOracle(good,uri,BUILD_ERROR,"missingBuildValue");
   for(const wrong of [{...good,uri:"file:///Peer.java"},{uri,diagnostics:[]},{uri,diagnostics:[d,d]},{uri,diagnostics:[{...d,range:range(BUILD_ERROR,"value")}]},{uri,diagnostics:[{...d,message:"unrelated error"}]}])assert.throws(()=>buildDiagnosticOracle(wrong,uri,BUILD_ERROR,"missingBuildValue"));
+});
+
+for(const scope of ["workspace","projects"] as const)test(`changed ${scope} build retains stale immediate output after successful recovery`,async()=>{
+  const s=setup("changed","stale-once");try{
+    await runBuildCase(s.c,scope,"changed",s.output);
+    const first=s.c.operations.find(o=>o.state==="changed_immediate"),settled=s.c.operations.find(o=>o.state==="changed_settled");
+    assert.equal(first.outcome,"incorrect");assert.equal(settled.outcome,"pass");
+    assert(s.c.operations.find(o=>o.state==="scope_control_excludes_error"));
+    assert.equal(s.c.seriesExpectations[0].attemptCount,2);assert.equal(s.c.seriesExpectations[0].termination,"settled");
+  }finally{s.close();}
 });

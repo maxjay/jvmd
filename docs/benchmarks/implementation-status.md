@@ -840,3 +840,15 @@ responses remain incorrect after successful retries. All 128 harness tests pass.
 The four NAV-03 variants remain partial: project/source/limit filters still need
 negative controls that can actually expose an ignored filter. These fifteen
 new definitions also still need real-server replay.
+
+## Package-outline range correction
+
+The first real symbol replay exposed an overly narrow package oracle. JDTLS
+selects the complete `package bench;` declaration; the oracle had demanded only
+the identifier. Both exact ranges are valid package selections. The corrected
+oracle accepts those two fixture-owned spans and still checks the complete
+package range, package name/kind, containing level, and strict type/member spans.
+Regression vectors cover both valid forms and reject an unrelated selection.
+The twelve symbol tests pass. The original frozen replay continues with its
+original oracle so its failed raw results remain attributable to that revision;
+those package failures are harness mistakes, not evidence of a server defect.

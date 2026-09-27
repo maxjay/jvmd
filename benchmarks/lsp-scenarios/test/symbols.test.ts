@@ -27,6 +27,8 @@ test("extended outline proves inherited declaration in the parent's own source",
   const verify=(v:any)=>exactSearchOutline(v,source,uri,SYMBOL_SOURCES["SymbolParent.java"],parentUri,true);verify(outline);
   for(const children of [[local],[local,{...inherited,uri}],[local,{...inherited,kind:8}],[local,inherited,inherited]])assert.throws(()=>verify([{...outline[0],children},outline[1]]));
   assert.throws(()=>verify([outline[0],{...outline[1],children:[inherited]}]));
+  for(const selectionRange of [range(source,"bench"),range(source,"package bench;")])verify([{name:"bench",kind:4,uri,range:range(source,"package bench;"),selectionRange},...outline]);
+  assert.throws(()=>verify([{name:"bench",kind:4,uri,range:range(source,"package bench;"),selectionRange:range(source,"BenchmarkBefore")},...outline]));
 });
 for(const [route,mode,outcome] of [...["outline","extended","search","filtered-search","resolve"].map(route=>[route,"symbols-correct","pass"]),
   ["extended","symbols-missing-inherited","incorrect"],["extended","symbols-wrong-inherited-uri","incorrect"]])test(`actual ${route} symbol runner checks ${mode}`,()=>{

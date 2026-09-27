@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {isDeepStrictEqual} from "node:util";
 import {range} from "./oracles.ts";
 
 export const SYMBOL_SOURCES={
@@ -21,7 +22,14 @@ export function exactSearchOutline(value:any,source:string,uri:string,parentSour
     ...(inherited?[{name:"inherited",kind:6,uri:parentUri,selection:range(parentSource,"inherited"),range:range(parentSource,"int inherited();"),parent:owner.name}]:[])];
   const flatten=(rows:any[],parent:string|null=null):any[]=>rows.flatMap(row=>[{row,parent},...flatten(row.children??[],row.name)]);
   const all=flatten(value),packages=all.filter(({row})=>row.kind===4);assert(packages.length<=1,"duplicate package symbol");
-  for(const {row,parent} of packages){assert.equal(row.name,"bench");assert.equal(parent,null);assert.deepEqual(row.selectionRange??row.location?.range,range(source,"bench"));}
+  for(const {row,parent} of packages){
+    assert.equal(row.name,"bench");assert.equal(parent,null);
+    // A package symbol may select its identifier or its whole declaration.
+    // Both are exact fixture ranges; member/type selections stay stricter.
+    const selection=row.selectionRange??row.location?.range;
+    assert([range(source,"bench"),range(source,"package bench;")].some(r=>isDeepStrictEqual(selection,r)),"package selection is not its identifier or declaration");
+    if(row.range)assert.deepEqual(row.range,range(source,"package bench;"),"package declaration range differs");
+  }
   const actual=all.filter(({row})=>row.kind!==4),name=(row:any)=>String(row.name).replace(/\(.*$/u,"").replace(/\s*:.*$/u,"");
   assert.deepEqual(actual.map(({row})=>[name(row),row.kind]).sort(),expected.map(e=>[e.name,e.kind]).sort(),"outline declarations differ from fixture and inheritance");
   for(const {row,parent} of actual){const want=expected.find(e=>e.name===name(row))!;

@@ -1,0 +1,1525 @@
+{
+  "schemaVersion": 1,
+  "semantics": "All listed evidence witnesses are required per server and independent block. Implemented is a source-review disposition, never an execution pass. Partial and absent cases remain gaps even when another API in their family passes.",
+  "families": [
+    {
+      "id": "SES-01",
+      "sourceVariants": "Fresh server state; reopen with persisted state. Never reuse unsaved buffers across restart.",
+      "sourceCorrectness": "Advertised capabilities match usable features; symbol resolves; shutdown replies and process exits.",
+      "variants": [
+        {
+          "id": "SES-01/fresh",
+          "requirement": "Fresh process and state; negotiate usable capabilities, first correct symbol, and clean shutdown.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "SES-01/start-stop",
+              "operations": [
+                {
+                  "endpoint": "textDocument/hover",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
+        },
+        {
+          "id": "SES-01/persisted-reopen",
+          "requirement": "Reopen with persisted state; do not retain unsaved buffers across restart.",
+          "implementation": "not_implemented",
+          "remaining": "Native restart cases exist separately; this LSP family does not reopen the saved server state.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "SES-02",
+      "sourceVariants": "Outstanding request; request already completed.",
+      "sourceCorrectness": "Exactly one terminal response for the original request; completion may win the race. Subsequent query remains correct.",
+      "variants": [
+        {
+          "id": "SES-02/outstanding",
+          "requirement": "Cancel an outstanding request; accept the completion race and verify subsequent query.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "SES-02/cancel",
+              "operations": [
+                {
+                  "endpoint": "textDocument/references",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "cancel has exactly one valid terminal outcome"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "SES-02/completed",
+          "requirement": "Cancel a completed request; verify one terminal response and a subsequent correct query.",
+          "implementation": "partial",
+          "remaining": "Current case sends completed cancellation last, without a following correctness probe.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "DOC-01",
+      "sourceVariants": "First read; unchanged repeat; unsaved edit; save; discard. Use negotiated sync mode.",
+      "sourceCorrectness": "Hover follows buffer while open and saved disk after close. Latest version wins; no stale type.",
+      "variants": [
+        {
+          "id": "DOC-01/first",
+          "requirement": "First hover uses the open buffer.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "DOC-01/open",
+              "operations": [
+                {
+                  "endpoint": "textDocument/hover",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
+        },
+        {
+          "id": "DOC-01/repeat",
+          "requirement": "Unchanged repeated hover uses the same buffer.",
+          "implementation": "partial",
+          "remaining": "Open case measures only one read, not an unchanged series.",
+          "evidence": []
+        },
+        {
+          "id": "DOC-01/unsaved",
+          "requirement": "An unsaved type edit becomes visible.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "DOC-01/edit",
+              "operations": [
+                {
+                  "endpoint": "textDocument/hover",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
+        },
+        {
+          "id": "DOC-01/save",
+          "requirement": "Saved disk content remains correct after close and reopen.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "DOC-01/save",
+              "operations": [
+                {
+                  "endpoint": "textDocument/hover",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
+        },
+        {
+          "id": "DOC-01/discard",
+          "requirement": "Discarded buffer gives way to original disk content.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "DOC-01/discard",
+              "operations": [
+                {
+                  "endpoint": "textDocument/hover",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DOC-02",
+      "sourceVariants": "Create; modify; delete. Reset fixture before each case.",
+      "sourceCorrectness": "Created symbol appears; edited symbol replaces old data; deleted symbol disappears and affected reference becomes unresolved.",
+      "variants": [
+        {
+          "id": "DOC-02/create",
+          "requirement": "Independent fresh fixture: externally create a closed provider; its symbol appears.",
+          "implementation": "partial",
+          "remaining": "Current external lifecycle case chains create/modify/delete instead of resetting before this variant.",
+          "evidence": []
+        },
+        {
+          "id": "DOC-02/modify",
+          "requirement": "Independent fresh fixture with provider already present: external modification replaces old symbol data.",
+          "implementation": "partial",
+          "remaining": "Current external lifecycle case chains create/modify/delete instead of resetting before this variant.",
+          "evidence": []
+        },
+        {
+          "id": "DOC-02/delete",
+          "requirement": "Independent fresh fixture with provider already present: external deletion removes symbol and diagnoses caller.",
+          "implementation": "partial",
+          "remaining": "Current external lifecycle case chains create/modify/delete instead of resetting before this variant.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "PRJ-01",
+      "sourceVariants": "Initial import; add; remove. Workspace-folder and explicit-import routes are alternatives.",
+      "sourceCorrectness": "Project membership and test classification match fixture; changed membership is visible in follow-up queries.",
+      "variants": [
+        {
+          "id": "PRJ-01/initial",
+          "requirement": "Initial project inventory, main/test classification and root-specific symbol.",
+          "implementation": "partial",
+          "remaining": "Inventory cases lack complete main/test and root-specific semantic visibility witnesses.",
+          "evidence": []
+        },
+        {
+          "id": "PRJ-01/add",
+          "requirement": "Add a project; verify inventory and its root-specific symbol.",
+          "implementation": "partial",
+          "remaining": "Inventory cases lack complete main/test and root-specific semantic visibility witnesses.",
+          "evidence": []
+        },
+        {
+          "id": "PRJ-01/remove",
+          "requirement": "Remove a project; verify inventory and absence of its root-specific symbol.",
+          "implementation": "partial",
+          "remaining": "Inventory cases lack complete main/test and root-specific semantic visibility witnesses.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "PRJ-02",
+      "sourceVariants": "No change; compiler-setting change; JDK switch. Deprecated single-project refresh is alias coverage only.",
+      "sourceCorrectness": "Requested setting/JDK is reported; acceptance and diagnostics change with the selected compiler environment.",
+      "variants": [
+        {
+          "id": "PRJ-02/unchanged",
+          "requirement": "No-change settings/JDK and diagnostic baseline.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        },
+        {
+          "id": "PRJ-02/compiler-change",
+          "requirement": "Compiler setting change changes reported environment and acceptance/diagnostics.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        },
+        {
+          "id": "PRJ-02/jdk-switch",
+          "requirement": "Switch between two installed JDKs; reported environment and API acceptance follow the selected JDK.",
+          "implementation": "not_implemented",
+          "remaining": "Existing updateJdk chooses the same pinned home; two distinct JDK environments are not exercised.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "ENV-01",
+      "sourceVariants": "Main vs test scope; add/remove source root; JAR A \u2192 B. One change per case.",
+      "sourceCorrectness": "Paths, scope and method set match chosen inputs; removed roots/dependencies no longer contribute.",
+      "variants": [
+        {
+          "id": "ENV-01/main-test",
+          "requirement": "Separate main/test roots and classpath scopes have independently expected contents.",
+          "implementation": "partial",
+          "remaining": "Current fixture does not distinguish real main and test source/dependency sets.",
+          "evidence": []
+        },
+        {
+          "id": "ENV-01/add-root",
+          "requirement": "One-change independent case: add source root and observe its type.",
+          "implementation": "partial",
+          "remaining": "Current source-path case chains add/remove; removal lacks a semantic absence probe.",
+          "evidence": []
+        },
+        {
+          "id": "ENV-01/remove-root",
+          "requirement": "One-change independent case: remove source root and prove its type no longer contributes.",
+          "implementation": "partial",
+          "remaining": "Current source-path case chains add/remove; removal lacks a semantic absence probe.",
+          "evidence": []
+        },
+        {
+          "id": "ENV-01/jar-replacement",
+          "requirement": "One-change case: JAR A to B changes method set and excludes removed dependency.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "ENV-01/classpath-replacement",
+              "operations": [
+                {
+                  "endpoint": "textDocument/completion",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent javac validation"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ENV-02",
+      "sourceVariants": "No attachment; matching attachment; updated attachment. Do not compare decompiler text byte-for-byte.",
+      "sourceCorrectness": "Content represents the correct class; attached source contains the known comment; attachment metadata matches.",
+      "variants": [
+        {
+          "id": "ENV-02/unattached",
+          "requirement": "First/repeated unattached content routes identify correct class without byte-for-byte decompiler comparison.",
+          "implementation": "partial",
+          "remaining": "Only decompile has an unattached series; content routes need independent unattached cases.",
+          "evidence": []
+        },
+        {
+          "id": "ENV-02/attached",
+          "requirement": "First/repeated content and metadata requests identify matching attachment and known comment.",
+          "implementation": "partial",
+          "remaining": "Content series exist; attachment metadata is not independently repeated.",
+          "evidence": []
+        },
+        {
+          "id": "ENV-02/updated",
+          "requirement": "Updated attachment metadata and first/repeated content match new source without changing binary.",
+          "implementation": "partial",
+          "remaining": "Updated source is fetched once; updated metadata and repeated content witnesses remain missing.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "BLD-01",
+      "sourceVariants": "Full; unchanged incremental; changed source; compile error. Reset between independent cases.",
+      "sourceCorrectness": "Returned build status and diagnostics agree; selected-scope build affects intended projects.",
+      "variants": [
+        {
+          "id": "BLD-01/full",
+          "requirement": "Independent full build of selected scope; status, diagnostics and scope witness agree.",
+          "implementation": "partial",
+          "remaining": "Two-project independent scope and diagnostic witnesses are incomplete; changed-source case is absent.",
+          "evidence": []
+        },
+        {
+          "id": "BLD-01/unchanged",
+          "requirement": "Independent unchanged incremental build after established baseline; scope witness and diagnostics agree.",
+          "implementation": "partial",
+          "remaining": "Two-project independent scope and diagnostic witnesses are incomplete; changed-source case is absent.",
+          "evidence": []
+        },
+        {
+          "id": "BLD-01/changed",
+          "requirement": "Independent changed-source build; selected compiled output and diagnostics reflect change.",
+          "implementation": "not_implemented",
+          "remaining": "Two-project independent scope and diagnostic witnesses are incomplete; changed-source case is absent.",
+          "evidence": []
+        },
+        {
+          "id": "BLD-01/error",
+          "requirement": "Independent compile-error build; status and exact source diagnostic agree.",
+          "implementation": "partial",
+          "remaining": "Two-project independent scope and diagnostic witnesses are incomplete; changed-source case is absent.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "BLD-02",
+      "sourceVariants": "First generation; unchanged repeat. Only when protobuf capability is in scope.",
+      "sourceCorrectness": "Expected type is generated and usable; repeat does not duplicate declarations.",
+      "variants": [
+        {
+          "id": "BLD-02/first",
+          "requirement": "Real first protobuf generation; separate generated-type readiness; independent compile and behaviour.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "BLD-02/first-unchanged-repeat",
+              "operations": [
+                {
+                  "endpoint": "java.protobuf.generateSources",
+                  "states": [
+                    "first_generation"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/definition",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "both Gradle tasks generated exactly their declared Java outputs",
+                "independent javac validation",
+                "independent generated-code behaviour"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "BLD-02/repeat",
+          "requirement": "Unchanged generation preserves declaration set and bytes; readiness remains correct.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "BLD-02/first-unchanged-repeat",
+              "operations": [
+                {
+                  "endpoint": "java.protobuf.generateSources",
+                  "states": [
+                    "unchanged_repeat"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/definition",
+                  "states": [
+                    "unchanged_repeat_type_ready"
+                  ]
+                }
+              ],
+              "assertions": [
+                "unchanged generation preserves exact paths and bytes without duplicate declarations"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CMP-01",
+      "sourceVariants": "First; unchanged repeat; narrower prefix; receiver-method edit. Reset stale candidates after edits.",
+      "sourceCorrectness": "Expected methods are offered; replacement/import edits are valid; resolved docs belong to selected item.",
+      "variants": [
+        {
+          "id": "CMP-01/first",
+          "requirement": "First completion returns expected receiver methods.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "CMP-01/first-repeat",
+              "operations": [
+                {
+                  "endpoint": "textDocument/completion",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
+        },
+        {
+          "id": "CMP-01/repeat",
+          "requirement": "Unchanged completion repeats retain exact required candidates.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "CMP-01/first-repeat",
+              "operations": [
+                {
+                  "endpoint": "textDocument/completion",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
+        },
+        {
+          "id": "CMP-01/narrow",
+          "requirement": "Narrower prefix excludes now-inapplicable method.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "CMP-01/narrow",
+              "operations": [
+                {
+                  "endpoint": "textDocument/completion",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
+        },
+        {
+          "id": "CMP-01/api-edit",
+          "requirement": "Provider receiver-method edit is visible at unchanged caller.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "CMP-01/api-edit",
+              "operations": [
+                {
+                  "endpoint": "textDocument/completion",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
+        },
+        {
+          "id": "CMP-01/resolve",
+          "requirement": "Resolve original selected completion item; documentation belongs to that item.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "CMP-01/resolve",
+              "operations": [
+                {
+                  "endpoint": "completionItem/resolve",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
+        },
+        {
+          "id": "CMP-01/apply",
+          "requirement": "Apply returned replacement/import edits and independently compile.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "CMP-01/apply",
+              "operations": [
+                {
+                  "endpoint": "completionItem/resolve",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent javac validation"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "CMP-01/fresh-resolve",
+          "requirement": "After edit reacquire item and resolve changed documentation.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "CMP-01/edit-resolve",
+              "operations": [
+                {
+                  "endpoint": "completionItem/resolve",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
+        },
+        {
+          "id": "CMP-01/selection",
+          "requirement": "Exercise returned selection command only when offered.",
+          "implementation": "partial",
+          "remaining": "Returned selection command case needs an explicit not-offered disposition rather than an assumed required command.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "CMP-02",
+      "sourceVariants": "First; unchanged repeat; declaration/signature edit; cursor moves to next argument.",
+      "sourceCorrectness": "Hover has correct type/signature/docs; signature help identifies valid overload and active argument.",
+      "variants": [
+        {
+          "id": "CMP-02/first",
+          "requirement": "First hover and signature help identify expected type/docs/overload and active argument.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "CMP-02/hover",
+              "operations": [
+                {
+                  "endpoint": "textDocument/hover",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "CMP-02/signature",
+              "operations": [
+                {
+                  "endpoint": "textDocument/signatureHelp",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
+        },
+        {
+          "id": "CMP-02/repeat",
+          "requirement": "Unchanged repeats for hover and signature help.",
+          "implementation": "partial",
+          "remaining": "Signature help currently has no unchanged series.",
+          "evidence": []
+        },
+        {
+          "id": "CMP-02/declaration-edit",
+          "requirement": "Declaration/docs and signature mutation are visible at caller through their respective requests.",
+          "implementation": "not_implemented",
+          "remaining": "No independent declaration/signature mutation cases.",
+          "evidence": []
+        },
+        {
+          "id": "CMP-02/cursor",
+          "requirement": "Move cursor to next argument; active parameter changes.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "CMP-02/signature",
+              "operations": [
+                {
+                  "endpoint": "textDocument/signatureHelp",
+                  "states": [
+                    "first_use",
+                    "cursor_change"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "NAV-01",
+      "sourceVariants": "First; unchanged repeat; target declaration moved in source. Requests are alternative probes, not a pipeline.",
+      "sourceCorrectness": "Returned target identities and ranges match fixture markers; name is qualified; stack lookup returns correct URI.",
+      "variants": [
+        {
+          "id": "NAV-01/first",
+          "requirement": "First independent navigation routes return exact expected target identities/ranges.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        },
+        {
+          "id": "NAV-01/repeat",
+          "requirement": "Unchanged repeats of each applicable route remain correct.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        },
+        {
+          "id": "NAV-01/moved",
+          "requirement": "Moved target declaration changes exact target range for each relevant route.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "NAV-02",
+      "sourceVariants": "First; unchanged repeat; add/remove one use in an open buffer.",
+      "sourceCorrectness": "Reference location set is exact; declaration flag respected; highlights stay within document; homonym excluded.",
+      "variants": [
+        {
+          "id": "NAV-02/first",
+          "requirement": "First exact reference/highlight sets, both includeDeclaration flags, homonym excluded.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "NAV-02/references-false",
+              "operations": [
+                {
+                  "endpoint": "textDocument/references",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-02/references-true",
+              "operations": [
+                {
+                  "endpoint": "textDocument/references",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-02/highlights",
+              "operations": [
+                {
+                  "endpoint": "textDocument/documentHighlight",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
+        },
+        {
+          "id": "NAV-02/repeat",
+          "requirement": "Unchanged repeated reference/highlight sets remain exact.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "NAV-02/references-false",
+              "operations": [
+                {
+                  "endpoint": "textDocument/references",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-02/references-true",
+              "operations": [
+                {
+                  "endpoint": "textDocument/references",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-02/highlights",
+              "operations": [
+                {
+                  "endpoint": "textDocument/documentHighlight",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
+        },
+        {
+          "id": "NAV-02/add",
+          "requirement": "Independent added use updates references under both declaration flags and local highlights.",
+          "implementation": "partial",
+          "remaining": "Highlight addition exists, but references under both declaration flags lack the mutation.",
+          "evidence": []
+        },
+        {
+          "id": "NAV-02/remove",
+          "requirement": "Independent removed use updates references under both declaration flags and local highlights.",
+          "implementation": "not_implemented",
+          "remaining": "No independently reset removed-use cases.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "NAV-03",
+      "sourceVariants": "First; unchanged repeat; new/renamed declaration. Apply only relevant filters to each endpoint.",
+      "sourceCorrectness": "Names, kinds and ranges match fixture; project/source/limit filters respected; extended outline includes inherited members.",
+      "variants": [
+        {
+          "id": "NAV-03/first",
+          "requirement": "First search/outline/resolve routes check names, kinds, ranges and applicable filters; inherited outline members included.",
+          "implementation": "partial",
+          "remaining": "Extended outline does not validate inherited members; route/filter coverage still needs review.",
+          "evidence": []
+        },
+        {
+          "id": "NAV-03/repeat",
+          "requirement": "Repeat each search/outline/resolve route without changing state.",
+          "implementation": "partial",
+          "remaining": "Extended outline does not validate inherited members; route/filter coverage still needs review.",
+          "evidence": []
+        },
+        {
+          "id": "NAV-03/new",
+          "requirement": "New declaration appears with exact identity and applicable filters.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        },
+        {
+          "id": "NAV-03/renamed",
+          "requirement": "Renamed declaration replaces old name with exact current identity and filters.",
+          "implementation": "not_implemented",
+          "remaining": "No renamed-declaration cases.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "REL-01",
+      "sourceVariants": "First; unchanged repeat; add/remove one call. Prepare a fresh item after mutation.",
+      "sourceCorrectness": "Incoming A and outgoing C are correct; both A call-site ranges present; unrelated D excluded.",
+      "variants": [
+        {
+          "id": "REL-01/first",
+          "requirement": "Prepare and expand incoming/outgoing graphs; exact calls and both A call sites; unrelated D excluded.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        },
+        {
+          "id": "REL-01/repeat",
+          "requirement": "Unchanged repeats of prepare and expansions.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        },
+        {
+          "id": "REL-01/add",
+          "requirement": "Add one call; fresh prepared item gives exact new graph and call-site set.",
+          "implementation": "not_implemented",
+          "remaining": "Existing hierarchy transition only shifts a line; it does not change the call set.",
+          "evidence": []
+        },
+        {
+          "id": "REL-01/remove",
+          "requirement": "Remove one call; fresh prepared item gives exact reduced graph and call-site set.",
+          "implementation": "not_implemented",
+          "remaining": "Existing hierarchy transition only shifts a line; it does not change the call set.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "REL-02",
+      "sourceVariants": "First; unchanged repeat; change Child's parent. Re-prepare after edits.",
+      "sourceCorrectness": "Direct parent/child sets are correct; no unrelated types; legacy direction/depth respected.",
+      "variants": [
+        {
+          "id": "REL-02/first",
+          "requirement": "First prepare/parent/child routes yield exact direct types; legacy direction/depth respected.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        },
+        {
+          "id": "REL-02/repeat",
+          "requirement": "Unchanged prepare and expansion requests remain exact.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        },
+        {
+          "id": "REL-02/parent-change",
+          "requirement": "Child parent changes; fresh prepared items yield exact new supertype and subtype sets.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "REL-02/supertypes",
+              "operations": [
+                {
+                  "endpoint": "typeHierarchy/supertypes",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "REL-02/subtypes",
+              "operations": [
+                {
+                  "endpoint": "typeHierarchy/subtypes",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "VIEW-01",
+      "sourceVariants": "First; unchanged repeat; source edit shifting spans. Assert semantic categories, not editor colours.",
+      "sourceCorrectness": "Decoded tokens match negotiated legend and valid source spans; expected hints appear inside requested range.",
+      "variants": [
+        {
+          "id": "VIEW-01/first",
+          "requirement": "First semantic tokens and inlay hints match source and negotiated legend/range.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "VIEW-01/tokens",
+              "operations": [
+                {
+                  "endpoint": "textDocument/semanticTokens/full",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "VIEW-01/inlay-hints",
+              "operations": [
+                {
+                  "endpoint": "textDocument/inlayHint",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
+        },
+        {
+          "id": "VIEW-01/repeat",
+          "requirement": "Unchanged token and hint repeats remain correct.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "VIEW-01/tokens",
+              "operations": [
+                {
+                  "endpoint": "textDocument/semanticTokens/full",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "VIEW-01/inlay-hints",
+              "operations": [
+                {
+                  "endpoint": "textDocument/inlayHint",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
+        },
+        {
+          "id": "VIEW-01/shift",
+          "requirement": "Source edit shifts spans; tokens and hints match changed source and requested range.",
+          "implementation": "partial",
+          "remaining": "Token shift exists; inlay-hint shift case is missing.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "VIEW-02",
+      "sourceVariants": "First; unchanged repeat; edit that shifts line numbers.",
+      "sourceCorrectness": "Folds have valid boundaries; selection chain nests outward and contains the cursor.",
+      "variants": [
+        {
+          "id": "VIEW-02/first",
+          "requirement": "First folds and selection chains have correct boundaries and nesting.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "VIEW-02/folding",
+              "operations": [
+                {
+                  "endpoint": "textDocument/foldingRange",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "VIEW-02/selection",
+              "operations": [
+                {
+                  "endpoint": "textDocument/selectionRange",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
+        },
+        {
+          "id": "VIEW-02/repeat",
+          "requirement": "Unchanged folds and selection chains repeat correctly.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "VIEW-02/folding",
+              "operations": [
+                {
+                  "endpoint": "textDocument/foldingRange",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "VIEW-02/selection",
+              "operations": [
+                {
+                  "endpoint": "textDocument/selectionRange",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
+        },
+        {
+          "id": "VIEW-02/shift",
+          "requirement": "Line-shifting edit updates both folds and selection ranges.",
+          "implementation": "partial",
+          "remaining": "Fold shift exists; selection-range shift case is missing.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "VIEW-03",
+      "sourceVariants": "First; unchanged repeat; added/removed use. Resolve only current lens objects.",
+      "sourceCorrectness": "Lens points to correct declaration; resolved label/command agrees with actual reference locations.",
+      "variants": [
+        {
+          "id": "VIEW-03/first",
+          "requirement": "First lens acquisition and current-object resolve identify exact references.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        },
+        {
+          "id": "VIEW-03/repeat",
+          "requirement": "Unchanged repeated acquisition and resolution preserve exact reference set.",
+          "implementation": "not_implemented",
+          "remaining": "Lens case only acquires and resolves once without a use mutation.",
+          "evidence": []
+        },
+        {
+          "id": "VIEW-03/add",
+          "requirement": "Added use changes exact references and current resolved lens.",
+          "implementation": "not_implemented",
+          "remaining": "Lens case only acquires and resolves once without a use mutation.",
+          "evidence": []
+        },
+        {
+          "id": "VIEW-03/remove",
+          "requirement": "Removed use changes exact references and current resolved lens.",
+          "implementation": "not_implemented",
+          "remaining": "Lens case only acquires and resolves once without a use mutation.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "FMT-01",
+      "sourceVariants": "Whole file; selection; on-type; raw string. Reset fixture for each route.",
+      "sourceCorrectness": "Output matches chosen profile and preserves code; range edits respect scope; second formatting is stable.",
+      "variants": [
+        {
+          "id": "FMT-01/whole",
+          "requirement": "Independent whole-file formatting preserves code, compiles and is idempotent.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "FMT-01/whole",
+              "operations": [
+                {
+                  "endpoint": "textDocument/formatting",
+                  "states": [
+                    "first_use",
+                    "idempotence"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent javac validation"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "FMT-01/selection",
+          "requirement": "Independent non-whole-file selection formatting respects scope, preserves code and is idempotent.",
+          "implementation": "partial",
+          "remaining": "Current range is the whole file; no narrow selection scope witness.",
+          "evidence": []
+        },
+        {
+          "id": "FMT-01/on-type",
+          "requirement": "Independent on-type formatting preserves code, compiles and is idempotent.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "FMT-01/on-type",
+              "operations": [
+                {
+                  "endpoint": "textDocument/onTypeFormatting",
+                  "states": [
+                    "first_use",
+                    "idempotence"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent javac validation"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "FMT-01/string",
+          "requirement": "Independent raw-string formatting preserves code and is idempotent.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "FMT-02",
+      "sourceVariants": "Imports; manual cleanup; pre-save route. Folder/project organize-imports is a scope variant.",
+      "sourceCorrectness": "Expected import/cleanup change occurs; unrelated code untouched; resulting source valid; repeat has no further change.",
+      "variants": [
+        {
+          "id": "FMT-02/imports",
+          "requirement": "Organize imports; expected edits only, compile and unchanged repeat.",
+          "implementation": "partial",
+          "remaining": "Import/save route applies edits and compiles but has no unchanged-repeat check.",
+          "evidence": []
+        },
+        {
+          "id": "FMT-02/manual",
+          "requirement": "Manual cleanup; expected edits only, compile and unchanged repeat.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        },
+        {
+          "id": "FMT-02/pre-save",
+          "requirement": "Pre-save cleanup/import route; expected edits only, compile and unchanged repeat.",
+          "implementation": "partial",
+          "remaining": "Import/save route applies edits and compiles but has no unchanged-repeat check.",
+          "evidence": []
+        },
+        {
+          "id": "FMT-02/scope",
+          "requirement": "Folder/project organize-imports scope changes only intended files and is stable on repeat.",
+          "implementation": "not_implemented",
+          "remaining": "No independent folder/project organize-imports scope case.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "FMT-03",
+      "sourceVariants": "String paste; code paste needing import; file-path suggestion; semicolon placement. Feature settings fixed.",
+      "sourceCorrectness": "Paste text/additional edits preserve intended content; suggested file path matches type/package; semicolon location valid.",
+      "variants": [
+        {
+          "id": "FMT-03/string",
+          "requirement": "String paste preserves intended escaped content and compiles.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        },
+        {
+          "id": "FMT-03/code-import",
+          "requirement": "Code paste supplies required import/additional edits and compiles.",
+          "implementation": "not_implemented",
+          "remaining": "Only string paste is implemented; code paste needing an import is absent.",
+          "evidence": []
+        },
+        {
+          "id": "FMT-03/file-path",
+          "requirement": "Suggested file path matches type and package.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        },
+        {
+          "id": "FMT-03/semicolon",
+          "requirement": "Smart semicolon inserts at valid location and compiles.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "REF-01",
+      "sourceVariants": "Symbol name; file/folder move; invalid rename position. Reset before each variant.",
+      "sourceCorrectness": "All intended declarations/uses/file operations updated; unrelated names untouched; edited project remains valid.",
+      "variants": [
+        {
+          "id": "REF-01/symbol",
+          "requirement": "Independent symbol rename updates exact declarations/uses, preserves homonyms and compiles.",
+          "implementation": "partial",
+          "remaining": "Exact rename and homonym assertions exist, but independent compilation is missing.",
+          "evidence": []
+        },
+        {
+          "id": "REF-01/file",
+          "requirement": "Independent file move/rename updates public declaration and callers and compiles.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "REF-01/file-rename",
+              "operations": [
+                {
+                  "endpoint": "workspace/willRenameFiles",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent javac validation"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "REF-01/folder",
+          "requirement": "Independent folder move updates packages/callers, preserves unrelated code and compiles.",
+          "implementation": "not_implemented",
+          "remaining": "No independent case for this rename variant.",
+          "evidence": []
+        },
+        {
+          "id": "REF-01/invalid",
+          "requirement": "Independent invalid rename position refuses rename without edits.",
+          "implementation": "not_implemented",
+          "remaining": "No independent case for this rename variant.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "REF-02",
+      "sourceVariants": "Quick fix; simple refactor; no applicable action. Do not depend on display-title wording.",
+      "sourceCorrectness": "Applicable action offered; resolved operation fixes selected problem or preserves refactored behaviour; no unrelated edits.",
+      "variants": [
+        {
+          "id": "REF-02/quick-fix",
+          "requirement": "Discover action by effect, resolve original item if needed, apply exact fix and compile.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "REF-02/quickfix",
+              "operations": [
+                {
+                  "endpoint": "textDocument/codeAction",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent javac validation"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "REF-02/refactor",
+          "requirement": "Discover simple refactor by effect, apply and independently verify behaviour.",
+          "implementation": "not_implemented",
+          "remaining": "Direct extension refactors do not exercise discovery and resolution through code actions.",
+          "evidence": []
+        },
+        {
+          "id": "REF-02/none",
+          "requirement": "No applicable action returns none for clean selected context.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "REF-03",
+      "sourceVariants": "Extract selection; change signature; move; extract interface. Independent cases sharing one family.",
+      "sourceCorrectness": "Choices are valid; chosen names/parameters/destination reflected in edit; callers updated; resulting sources compile.",
+      "variants": [
+        {
+          "id": "REF-03/extract",
+          "requirement": "Independent extract selection; valid choices, edit and compilation.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        },
+        {
+          "id": "REF-03/signature",
+          "requirement": "Independent change signature; chosen name/parameters and callers updated; compilation.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        },
+        {
+          "id": "REF-03/move",
+          "requirement": "Independent move; chosen destination and callers reflected; compilation.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        },
+        {
+          "id": "REF-03/interface",
+          "requirement": "Independent extract interface; selected members and implementation reflected; compilation.",
+          "implementation": "partial",
+          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "GEN-01",
+      "sourceVariants": "Overrides; equals/hashCode; toString; accessors; constructors; delegates; module-info. One generator per case.",
+      "sourceCorrectness": "Only selected members generated; signatures/bodies valid; existing-member status accurate; module-info URI identifies created file.",
+      "variants": [
+        {
+          "id": "GEN-01/overrides",
+          "requirement": "Independent override generator; selected members, signatures/bodies and existing-member status.",
+          "implementation": "partial",
+          "remaining": "Generator code and behavioural checks exist; existing-member status after generation needs an explicit witness.",
+          "evidence": []
+        },
+        {
+          "id": "GEN-01/equals-hash",
+          "requirement": "Independent equals/hash generator; selected fields and behavioural checks; existing-member status.",
+          "implementation": "partial",
+          "remaining": "Generator code and behavioural checks exist; existing-member status after generation needs an explicit witness.",
+          "evidence": []
+        },
+        {
+          "id": "GEN-01/to-string",
+          "requirement": "Independent toString generator; selected fields and behaviour; existing-member status.",
+          "implementation": "partial",
+          "remaining": "Generator code and behavioural checks exist; existing-member status after generation needs an explicit witness.",
+          "evidence": []
+        },
+        {
+          "id": "GEN-01/accessors",
+          "requirement": "Independent accessor generator; selected members and behaviour; existing-member status.",
+          "implementation": "partial",
+          "remaining": "Generator code and behavioural checks exist; existing-member status after generation needs an explicit witness.",
+          "evidence": []
+        },
+        {
+          "id": "GEN-01/constructors",
+          "requirement": "Independent constructor generator; selected members and behaviour; existing-member status.",
+          "implementation": "partial",
+          "remaining": "Generator code and behavioural checks exist; existing-member status after generation needs an explicit witness.",
+          "evidence": []
+        },
+        {
+          "id": "GEN-01/delegates",
+          "requirement": "Independent delegate generator; selected members and behaviour; existing-member status.",
+          "implementation": "partial",
+          "remaining": "Generator code and behavioural checks exist; existing-member status after generation needs an explicit witness.",
+          "evidence": []
+        },
+        {
+          "id": "GEN-01/module",
+          "requirement": "Independent module-info creation; returned URI matches created file; valid exports and compilation.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "GEN-01/module-info",
+              "operations": [
+                {
+                  "endpoint": "java.project.createModuleInfo",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "module identity and export",
+                "independent javac validation"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DIA-01",
+      "sourceVariants": "Valid; local error; fix; provider-signature edit; syntax-only/full loose-file mode.",
+      "sourceCorrectness": "Problem belongs to correct file/range and current content; fix clears it; provider API edit updates caller; scope mode respected.",
+      "variants": [
+        {
+          "id": "DIA-01/valid",
+          "requirement": "Valid current-version source has no errors; publication freshness is proven.",
+          "implementation": "not_implemented",
+          "remaining": "No independent current-content/scope witness for this diagnostic variant.",
+          "evidence": []
+        },
+        {
+          "id": "DIA-01/local-error",
+          "requirement": "Local unique error publishes at exact current source range.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "DIA-01/error-fix",
+              "operations": [
+                {
+                  "endpoint": "textDocument/publishDiagnostics",
+                  "states": [
+                    "error"
+                  ]
+                }
+              ],
+              "assertions": [
+                "diagnostic marks exact missingValue source"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "DIA-01/fix",
+          "requirement": "Fix clears diagnostic with an exact current-version witness.",
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "DIA-01/error-fix",
+              "operations": [
+                {
+                  "endpoint": "textDocument/publishDiagnostics",
+                  "states": [
+                    "fixed"
+                  ]
+                }
+              ],
+              "assertions": [
+                "diagnostic clear carries the exact changed version"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "DIA-01/provider-edit",
+          "requirement": "Provider signature edit updates caller diagnostic at exact current range.",
+          "implementation": "not_implemented",
+          "remaining": "No independent current-content/scope witness for this diagnostic variant.",
+          "evidence": []
+        },
+        {
+          "id": "DIA-01/syntax-only",
+          "requirement": "Syntax-only loose-file mode diagnoses syntax without semantic errors.",
+          "implementation": "not_implemented",
+          "remaining": "No independent current-content/scope witness for this diagnostic variant.",
+          "evidence": []
+        },
+        {
+          "id": "DIA-01/full",
+          "requirement": "Full loose-file mode diagnoses semantic errors as well as syntax.",
+          "implementation": "not_implemented",
+          "remaining": "No independent current-content/scope witness for this diagnostic variant.",
+          "evidence": []
+        }
+      ]
+    }
+  ]
+}

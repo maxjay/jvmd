@@ -231,3 +231,25 @@ Request 4 records 33.646 seconds in 23 compiler invocations. Request 5 spends
 reproducible reduction are committed in `benchmarks/evidence/unix-open-2026-09-27/`.
 The native identities stay separate; no missing client identity is invented.
 See `long-open-diagnosis.md` for the queue/execution table and evidence limits.
+
+## Required variants are a separate acceptance gate
+
+Mapping all 106 target APIs did not establish the workbook's required variants.
+`required-variants.json` now decomposes all 28 original families into 107 explicit
+requirements while preserving the original variant and correctness instructions.
+The initial source review marks 32 implementations as complete, 55 as partial and
+20 as absent. These are implementation dispositions, not measured passes. The
+ledger names remaining work; a partial case cannot inherit a pass or unsupported
+status from another endpoint in its family.
+
+Every new bundle snapshots and seals that ledger. Artifact-only reduction emits
+`variants.json`, checks each required case and its operation states/assertions in
+every server/block, and requires variant coverage in addition to API coverage for
+`catalogueComplete`. Failed immediate probes remain failures after settled
+success. Older bundles without the ledger keep their selected-case results but
+cannot establish full variant coverage. This structural gate does not replace
+independent semantic replay or the remaining performance/resource gates.
+
+All 45 TypeScript tests pass, including missing operations/assertions, missing
+server/block evidence, partial implementation despite passing API cases,
+unsupported without evidence, and a successful block concealing a failed block.

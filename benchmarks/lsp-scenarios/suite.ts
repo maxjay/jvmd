@@ -55,6 +55,7 @@ export async function main(args=process.argv.slice(2)){
     claims:{publicComparativePerformance:false,reason:blocks<10?"fewer than ten independent blocks":"requires complete valid matched results, resource scope, and uncertainty analysis"}};
   write(path.join(root,"manifest.json"),manifest);
   write(path.join(root,"catalogue.json"),JSON.parse(readFileSync(new URL("./catalogue.json",import.meta.url),"utf8")));
+  write(path.join(root,"required-variants.json"),JSON.parse(readFileSync(new URL("./required-variants.json",import.meta.url),"utf8")));
   const reports:any[]=[];
   for(let block=0;block<blocks;block++)for(const def of selected)for(const server of block%2?[...servers].reverse():servers){
     const caseRoot=path.join(root,`${String(block+1).padStart(2,"0")}-${server}-${def.id.replaceAll("/","-")}`);mkdirSync(caseRoot);

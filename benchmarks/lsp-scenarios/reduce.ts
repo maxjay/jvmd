@@ -4,6 +4,7 @@ import path from "node:path";
 import {fileURLToPath} from "node:url";
 import {sha} from "./harness/fixture.ts";
 import {CONTRACT} from "./harness/contracts.ts";
+import {reduceVariants} from "./variants.ts";
 
 const read=(file:string)=>JSON.parse(readFileSync(file,"utf8"));
 const lines=(file:string)=>existsSync(file)?readFileSync(file,"utf8").split("\n").filter(Boolean).map(s=>JSON.parse(s)):[];
@@ -77,18 +78,23 @@ export function reduceBundle(root:string,verifyHashes=true){
   }));
   const gaps=coverage.filter((a:any)=>a.role==="Scenario target"&&(!a.caseIds.length||manifest.plan.servers.some((server:string)=>!a.dispositions.some((d:any)=>d.server===server&&(d.outcome==="unsupported"||d.outcome==="pass"&&a.observations.some((o:any)=>o.server===server&&o.declaredTarget)))))).map((a:any)=>a.apiId);
   const effective=reports.map(r=>({...r,outcome:r.validatedOutcome??r.outcome}));
+  const variantFile=path.join(root,"required-variants.json");
+  const variants=reduceVariants(existsSync(variantFile)?read(variantFile):null,catalogue,manifest.registry??[],manifest.plan,reports);
+  issues.push(...variants.issues);
+  if(existsSync(variantFile)&&sealed&&verifyHashes&&!covered.has("required-variants.json"))issues.push("variant contract outside checksum inventory");
   const complete=!issues.length&&effective.every(r=>!failures.has(r.outcome));
   const summary={schemaVersion:1,planned:manifest.plan.blocks*manifest.plan.caseIds.length*manifest.plan.servers.length,executed:reports.filter(r=>r.outcome!=="not_run").length,
-    outcomes:counts(effective),complete,scope:"selected cases",catalogueComplete:complete&&!gaps.length,uncoveredTargetApiIds:gaps,integrityIssues:issues,
-    claims:{publicComparativePerformance:false,reasons:[...(!complete?["selected cases or artifact integrity failed"]:[]),...(gaps.length?["catalogue coverage incomplete"]:[]),...(manifest.plan.blocks<10?["fewer than ten independent blocks"]:[]),"native lifecycle, resources, observer overhead and production AOT gates require independent evidence"]}};
+    outcomes:counts(effective),complete,scope:"selected cases",catalogueComplete:complete&&!gaps.length&&variants.complete,uncoveredTargetApiIds:gaps,uncoveredRequiredVariants:variants.gaps,integrityIssues:issues,
+    claims:{publicComparativePerformance:false,reasons:[...(!complete?["selected cases or artifact integrity failed"]:[]),...(gaps.length?["catalogue API coverage incomplete"]:[]),...(!variants.complete?["required variant coverage incomplete"]:[]),...(manifest.plan.blocks<10?["fewer than ten independent blocks"]:[]),"native lifecycle, resources, observer overhead and production AOT gates require independent evidence"]}};
   const report=["# LSP benchmark evidence","",`Selected cases: ${summary.executed}/${summary.planned}. Correctness and integrity: ${complete?"pass":"fail"}. Catalogue targets lacking valid evidence: ${gaps.length}.`,"",
+    `Required variants lacking valid evidence: ${variants.gaps.length}. See variants.json for each server/block and the operation witnesses. API declarations do not satisfy this gate.`,"",
     "Public comparative performance claims are disabled. Raw failed attempts remain in the denominator.","","| Case | Server | Block | Outcome | Integrity issues |","|---|---|---:|---|---:|",
     ...effective.map(r=>`| ${r.caseId} | ${r.server} | ${r.block} | ${r.outcome} | ${r.validationIssues?.length??0} |`),"",
     "Endpoint metrics separate first use, warmup, steady, immediate change, retries and settled probes. Percentiles use type 7 interpolation within one case; they are not independent-run confidence intervals.",""].join("\n");
-  return {summary,coverage,metrics,report};
+  return {summary,coverage,variants,metrics,report};
 }
 export function writeReduction(root:string,result:ReturnType<typeof reduceBundle>,prefix=""){
-  for(const name of ["summary","coverage","metrics"] as const)writeFileSync(path.join(root,prefix+name+".json"),JSON.stringify(result[name],null,2)+"\n");
+  for(const name of ["summary","coverage","variants","metrics"] as const)writeFileSync(path.join(root,prefix+name+".json"),JSON.stringify(result[name],null,2)+"\n");
   writeFileSync(path.join(root,prefix+"report.md"),result.report);
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){

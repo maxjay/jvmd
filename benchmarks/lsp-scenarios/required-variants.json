@@ -1933,9 +1933,26 @@
         {
           "id": "FMT-03/string",
           "requirement": "String paste preserves intended escaped content and compiles.",
-          "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "FMT-03/string-paste",
+              "operations": [
+                {
+                  "endpoint": "java.edit.handlePasteEvent",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent javac validation",
+                "independent generated-code behaviour",
+                "string paste preserves the exact escaped target",
+                "cleanup preserves every unrelated source"
+              ]
+            }
+          ]
         },
         {
           "id": "FMT-03/code-import",
@@ -1964,16 +1981,42 @@
         {
           "id": "FMT-03/file-path",
           "requirement": "Suggested file path matches type and package.",
-          "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "FMT-03/file-paste",
+              "operations": [
+                {
+                  "endpoint": "java.project.resolveText",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
         },
         {
           "id": "FMT-03/semicolon",
           "requirement": "Smart semicolon inserts at valid location and compiles.",
-          "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "FMT-03/semicolon",
+              "operations": [
+                {
+                  "endpoint": "java.edit.smartSemicolonDetection",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent javac validation"
+              ]
+            }
+          ]
         }
       ]
     },

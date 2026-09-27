@@ -19,6 +19,8 @@ export const CAPABILITIES={
     semanticTokens:{requests:{full:true},tokenTypes:["namespace","type","class","enum","interface","struct","typeParameter","parameter","variable","property","enumMember","event","function","method","macro","keyword","modifier","comment","string","number","regexp","operator","decorator"],tokenModifiers:["declaration","definition","readonly","static","deprecated","abstract","async","modification","documentation","defaultLibrary"],formats:["relative"]}},
 };
 export const SETTINGS={java:{format:{enabled:true,onType:{enabled:true}},autobuild:{enabled:true},import:{maven:{enabled:false},gradle:{enabled:false}},signatureHelp:{enabled:true},edit:{smartSemicolonDetection:{enabled:true}},cleanup:{actions:["addOverride"]},saveActions:{organizeImports:true,cleanup:true},inlayHints:{parameterNames:{enabled:"all"}},referencesCodeLens:{enabled:true},implementationsCodeLens:{enabled:true}}};
+export const transitionPolicy=(timeoutMs:number)=>({maxAttempts:100,retryDelayMs:20,deadlineMs:timeoutMs,perRequestTimeoutMs:timeoutMs,
+  clock:"client monotonic",deadlineCheck:"after a failed attempt; in-flight requests retain their declared timeout",settledProbe:"one additional correct response after the first correct response"});
 export type PreparationOptions={gradleHome?:string;protoc?:string;protobufJava?:string};
 export type CaseDefinition={id:string;family:string;apis:string[];method?:string;capability?:string;variant:string;
   run:(c:ScenarioContext)=>Promise<void>;freshnessRequired?:boolean;correctnessOnly?:boolean;extension?:boolean;command?:string;fixture?:Record<string,string>;sourceDirectory?:string;
@@ -119,17 +121,20 @@ export class ScenarioContext {
     for(let i=0;i<this.samples;i++)await this.query(method,params,oracle,"steady");return first;
   }
   async transition(method:string,params:()=>any|Promise<any>,oracle:(result:any)=>void,trigger:bigint,witness:string){
-    const deadline=Date.now()+this.timeout;let attempt=0;const transitionId="transition-"+(this.seriesExpectations.length+1);
-    const expectation={kind:"transition",transitionId,method,firstOperationIndex:this.operations.length,triggerNs:String(trigger),witness,settledOperationId:null as string|null};this.seriesExpectations.push(expectation);
+    const policy=transitionPolicy(this.timeout),deadline=now()+BigInt(policy.deadlineMs)*1000000n;let attempt=0;const transitionId="transition-"+(this.seriesExpectations.length+1);
+    const expectation={kind:"transition",transitionId,method,firstOperationIndex:this.operations.length,triggerNs:String(trigger),witness,probePolicy:policy,deadlineNs:String(deadline),attemptCount:0,termination:null as string|null,endedNs:null as string|null,settledOperationId:null as string|null};this.seriesExpectations.push(expectation);
     for(;;){
-      attempt++;
+      attempt++;expectation.attemptCount=attempt;
       try{
         await this.query(method,await params(),oracle,attempt===1?"changed_immediate":"changed_retry_"+attempt,trigger,witness);
         // A successful immediate response is retained separately from the settled probe.
         const result=await this.query(method,await params(),oracle,"changed_settled",trigger,witness);
-        expectation.settledOperationId=this.operations.at(-1).operationId;return result;
+        expectation.settledOperationId=this.operations.at(-1).operationId;expectation.termination="settled";expectation.endedNs=String(now());return result;
       }
-      catch(error){if(Date.now()>=deadline||attempt>=100)throw error;await new Promise(resolve=>setTimeout(resolve,20));}
+      catch(error){
+        if(now()>=deadline||attempt>=policy.maxAttempts){expectation.termination=now()>=deadline?"deadline":"attempt_limit";expectation.endedNs=String(now());throw error;}
+        await new Promise(resolve=>setTimeout(resolve,policy.retryDelayMs));
+      }
     }
   }
   async setupQuery(method:string,params:any){const r=await this.client.request(method,params,this.timeout);assert(!r.error,method+": "+JSON.stringify(r.error));return r.result;}

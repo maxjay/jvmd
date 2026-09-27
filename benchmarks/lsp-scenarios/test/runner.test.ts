@@ -28,6 +28,10 @@ for(const [mode,caseId] of [["wrong-warmup","CMP-01/first-repeat"],["stale-provi
       if(mode==="stale-lens"||mode==="stale-call-graph"){
         assert(rows.some(r=>r.state==="baseline"&&r.outcome==="pass"),"stale test never established a correct baseline");
         assert(rows.some(r=>r.state==="changed_immediate"&&r.outcome==="incorrect"),"stale test did not fail after mutation");
+        const report=JSON.parse(readFileSync(path.join(caseRoot,"report.json"),"utf8")),plan=JSON.parse(readFileSync(path.join(output,"manifest.json"),"utf8")).plan;
+        const transition=report.seriesExpectations.find((s:any)=>s.kind==="transition");
+        assert.deepEqual(transition.probePolicy,plan.transitionPolicy);assert(["deadline","attempt_limit"].includes(transition.termination));
+        assert(transition.attemptCount>0&&transition.attemptCount<=plan.transitionPolicy.maxAttempts);
       }
       if(mode.endsWith("paste-import"))assert.match(rows.at(-1).assertionError,/required import/u);
       assert(readFileSync(path.join(caseRoot,"events.jsonl"),"utf8").includes('"direction":"receive"'));

@@ -34,6 +34,15 @@ export function validateCase(report:any,events:any[],exchanges:any[],operations:
   }
   for(const s of report.seriesExpectations??[]){
     if(s.kind==="transition"){check(operations.slice(s.firstOperationIndex).find(o=>o.method===s.method&&o.state!=="item_acquisition")?.state==="changed_immediate","immediate probe missing");
+      if(s.probePolicy){
+        check(Number.isInteger(s.probePolicy.maxAttempts)&&s.probePolicy.maxAttempts>0,"invalid probe attempt limit");
+        check(Number.isInteger(s.attemptCount)&&s.attemptCount>0&&s.attemptCount<=s.probePolicy.maxAttempts,"probe attempt count outside policy");
+        check(["settled","deadline","attempt_limit"].includes(s.termination),"probe termination missing");
+        check(typeof s.endedNs==="string"&&BigInt(s.endedNs)>=BigInt(s.triggerNs),"probe end observation missing");
+        if(s.termination==="deadline")check(BigInt(s.endedNs)>=BigInt(s.deadlineNs),"probe stopped before declared deadline");
+        if(s.termination==="attempt_limit")check(s.attemptCount===s.probePolicy.maxAttempts,"probe stopped before declared attempt limit");
+        if(s.termination==="settled")check(!!s.settledOperationId,"settled probe identity absent");
+      }
       check(operations.some(o=>o.operationId===s.settledOperationId&&o.state==="changed_settled"&&o.outcome==="pass"),"settled probe missing");continue;}
     const expected=[...Array(s.firstUse).fill("first_use"),...Array(s.warmup).fill("warmup"),...Array(s.steady).fill("steady")];
     for(const [i,state] of expected.entries()){const o=operations[s.firstOperationIndex+i];check(o?.method===s.method&&o?.state===state,"series sample missing or reordered: "+s.method+" "+state+" "+i);}
@@ -68,6 +77,9 @@ export function reduceBundle(root:string,verifyHashes=true){
     if(!existsSync(file)){reports.push({caseId,server,block,outcome:"not_run",reason:"planned case has no final report"});continue;}
     const report=read(file),events=lines(path.join(dir,"events.jsonl")),exchanges=lines(path.join(dir,"exchanges.jsonl")),operations=lines(path.join(dir,"operations.jsonl"));
     const caseIssues=validateCase(report,events,exchanges,operations);
+    if(manifest.plan.transitionPolicy)for(const series of report.seriesExpectations??[]){
+      if(series.kind==="transition"&&JSON.stringify(series.probePolicy)!==JSON.stringify(manifest.plan.transitionPolicy))caseIssues.push("transition probe policy differs from predeclared plan");
+    }
     if(report.processLifecycle){
       const lifecycle=lines(path.join(dir,"process.jsonl"));
       if(JSON.stringify(lifecycle)!==JSON.stringify(report.processLifecycle))caseIssues.push("process journal differs from report");

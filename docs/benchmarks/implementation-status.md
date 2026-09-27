@@ -5,7 +5,7 @@ that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
 Latest implementation inventory: 116 case definitions, 67 passing TypeScript
-harness tests, and 107 required variants (58 implemented, 37 partial, 12 absent).
+harness tests, and 107 required variants (61 implemented, 34 partial, 12 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -512,3 +512,32 @@ integrity issues occurred. The code-paste case still needs supported-server repl
 
 The inventory is 116 cases and 107 variants: 58 implemented, 37 partial and 12
 absent. All 67 harness tests pass. Remaining acceptance gates are unchanged.
+
+## Predeclared probing policy and paste replay
+
+The manifest now declares the existing transition probe schedule before launch:
+at most 100 attempts, 20 ms between failed attempts, each request's timeout, and
+a deadline checked after failures. In-flight acquisition/query requests retain
+their individual timeout, so this is explicitly not a hard total-duration cap.
+A second correct response is required for the settled observation. Deadline
+tracking now uses the same monotonic client clock as protocol events.
+
+Each transition records its policy, deadline, attempt count, end observation and
+termination reason (`settled`, `deadline` or `attempt_limit`). The reducer checks
+those records against the predeclared plan. Failed early replies remain failures;
+reaching the attempt limit cannot be described as a full timeout-duration probe.
+Adversarial subprocess tests verify failed probes retain their declared limits
+and stopping reason.
+
+At `fb447f6`, JDTLS code paste passes exact import selection, unrelated-file
+preservation, independent compilation and runtime validation. File-path inference
+also passes. String paste and semicolon insertion pass semantic/compilation
+checks but retain nonzero shutdown exits; neither was killed by the harness.
+JVMD declares all four routes unsupported. The raw review subset is preserved
+in `benchmarks/evidence/paste-2026-09-27/`, with no source drift or integrity issues.
+
+The reviewed FMT-03 ledger now names witnesses for all four variants. The string
+case additionally checks exact final source, unrelated files and runtime string
+value; those new assertions require their own replay and are not claimed by the
+earlier archive. Inventory: 116 cases, 61 implemented variants, 34 partial and
+12 absent. All 67 harness tests pass.

@@ -57,9 +57,11 @@ export const editingCases:CaseDefinition[]=[
     await c.open("Format.java",formatted);c.compileOracle();
   }},
   {id:"FMT-03/string-paste",family:"FMT-03",apis:["API-084"],command:"java.edit.handlePasteEvent",variant:"escape a quoted string and compile applied paste",fixture:{"Paste.java":'package bench;\npublic class Paste { public String text = ""; }\n'},run:async c=>{
-    await c.open("Paste.java");const source=c.text("Paste.java"),at=source.indexOf('""')+1,r={start:position(source,at),end:position(source,at)};
+    await c.open("Paste.java");const before=texts(c),source=c.text("Paste.java"),at=source.indexOf('""')+1,r={start:position(source,at),end:position(source,at)};
     const edit=await c.execute("java.edit.handlePasteEvent",[JSON.stringify({location:{uri:c.file("Paste.java").uri,range:r},text:'say "hello"',copiedDocumentUri:null,formattingOptions:format})],v=>assert.equal(v?.insertText,'say \\"hello\\"'));
-    c.change("Paste.java",applyTextEdits(source,[{range:r,newText:edit.insertText}]));if(edit.additionalEdit)c.applyWorkspaceEdit(edit.additionalEdit);c.compileOracle();
+    const expected=applyTextEdits(source,[{range:r,newText:edit.insertText}]);c.change("Paste.java",expected);if(edit.additionalEdit)c.applyWorkspaceEdit(edit.additionalEdit);
+    onlyTargetChanged(c,before,"Paste.java");c.assert("string paste preserves the exact escaped target",c.text("Paste.java")===expected);
+    c.compileOracle(String.raw`package bench; public class HarnessOracle { public static void main(String[] args) { if (!new Paste().text.equals("say \"hello\"")) throw new AssertionError("pasted string changed"); } }`);
   }},
   {id:"FMT-03/code-paste",family:"FMT-03",apis:["API-084"],command:"java.edit.handlePasteEvent",variant:"paste copied List field with the exact java.util.List import",
     fixture:{"Paste.java":pasteTarget,"CopySource.java":"package bench;\nimport java.util.List;\npublic class CopySource {\n"+pastedField+"}\n"},

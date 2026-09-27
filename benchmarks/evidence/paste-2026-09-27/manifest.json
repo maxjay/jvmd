@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "scope": "Raw protocol review subset; not complete experiment bundle or comparative performance evidence",
+  "revision": "fb447f6e4daf47210ec66ee19df0dd4ceee2a2e5",
+  "archive": {
+    "file": "protocol-review.tar.xz",
+    "bytes": 115936,
+    "sha256": "608ecd98c3898c251fa06ad3fc8518412538d9b4900c81251da00cdbae50d298",
+    "everySelectedFileHash": "verified"
+  },
+  "plan": {
+    "caseIds": [
+      "FMT-03/string-paste",
+      "FMT-03/code-paste",
+      "FMT-03/file-paste",
+      "FMT-03/semicolon"
+    ],
+    "servers": [
+      "jvmd",
+      "jdtls"
+    ],
+    "blocks": 1,
+    "warmup": 1,
+    "samples": 2,
+    "timeout": 30000,
+    "profile": "pipe",
+    "serverOrder": "alternate per independent block",
+    "reset": "fresh fixture and server state per independent case",
+    "seed": 0
+  },
+  "sourceDrift": false,
+  "integrityIssues": [],
+  "sourceManifestSha256": "c5c4e63fd0898404446d228f1cb352a09267cf80bd7c9652ad161e9ba7b1b5c6",
+  "originalChecksumInventorySha256": "9fb869a86a7598743eeb1c65d9e2eb84fdf78365d2ab993a5973897d28264800",
+  "outcomes": {
+    "pass": 2,
+    "incorrect": 0,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 2,
+    "harness_error": 0,
+    "unsupported": 4,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "interpretation": [
+    "JDTLS code paste supplies the exact java.util.List import, preserves unrelated sources and passes independent compilation and runtime validation. File-path inference also passes.",
+    "String-paste and semicolon cases pass their semantic operations and compile, but retain shutdown exit code 1. Neither was killed by the harness.",
+    "JVMD declares all four routes unsupported.",
+    "A later string-paste definition adds exact post-edit exclusion and runtime string-value assertions. This archive cannot retroactively establish those additional assertions.",
+    "Single-block diagnostic profiles do not establish comparative performance."
+  ],
+  "files": {
+    "harness-tests.txt": "2872252e7d14b4a681006da767b540e7676de6a537295f16f4295f81d4677064"
+  }
+}

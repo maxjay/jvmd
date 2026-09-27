@@ -1335,16 +1335,518 @@
         {
           "id": "REL-02/first",
           "requirement": "First prepare/parent/child routes yield exact direct types; legacy direction/depth respected.",
-          "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "REL-02/supertypes",
+              "operations": [
+                {
+                  "endpoint": "textDocument/prepareTypeHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "typeHierarchy/supertypes",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact prepared type identity",
+                "exact direct hierarchy excludes unrelated types"
+              ]
+            },
+            {
+              "caseId": "REL-02/subtypes",
+              "operations": [
+                {
+                  "endpoint": "textDocument/prepareTypeHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "typeHierarchy/subtypes",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact prepared type identity",
+                "exact direct hierarchy excludes unrelated types"
+              ]
+            },
+            {
+              "caseId": "REL-02/legacy-children-depth-0",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "legacy open respects exact identity direction and depth",
+                "legacy resolve respects exact identity direction and depth",
+                "legacy hierarchy item belongs to this client and document state"
+              ]
+            },
+            {
+              "caseId": "REL-02/legacy-children-depth-1",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "legacy open respects exact identity direction and depth",
+                "legacy resolve respects exact identity direction and depth",
+                "legacy hierarchy item belongs to this client and document state"
+              ]
+            },
+            {
+              "caseId": "REL-02/legacy-children-depth-2",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "legacy open respects exact identity direction and depth",
+                "legacy resolve respects exact identity direction and depth",
+                "legacy hierarchy item belongs to this client and document state"
+              ]
+            },
+            {
+              "caseId": "REL-02/legacy-parents-depth-0",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "legacy open respects exact identity direction and depth",
+                "legacy resolve respects exact identity direction and depth",
+                "legacy hierarchy item belongs to this client and document state"
+              ]
+            },
+            {
+              "caseId": "REL-02/legacy-parents-depth-1",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "legacy open respects exact identity direction and depth",
+                "legacy resolve respects exact identity direction and depth",
+                "legacy hierarchy item belongs to this client and document state"
+              ]
+            },
+            {
+              "caseId": "REL-02/legacy-parents-depth-2",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "legacy open respects exact identity direction and depth",
+                "legacy resolve respects exact identity direction and depth",
+                "legacy hierarchy item belongs to this client and document state"
+              ]
+            },
+            {
+              "caseId": "REL-02/legacy-both-depth-0",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "legacy open respects exact identity direction and depth",
+                "legacy resolve respects exact identity direction and depth",
+                "legacy hierarchy item belongs to this client and document state"
+              ]
+            },
+            {
+              "caseId": "REL-02/legacy-hierarchy",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "legacy open respects exact identity direction and depth",
+                "legacy resolve respects exact identity direction and depth",
+                "legacy hierarchy item belongs to this client and document state"
+              ]
+            },
+            {
+              "caseId": "REL-02/legacy-both-depth-2",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "legacy open respects exact identity direction and depth",
+                "legacy resolve respects exact identity direction and depth",
+                "legacy hierarchy item belongs to this client and document state"
+              ]
+            }
+          ]
         },
         {
           "id": "REL-02/repeat",
           "requirement": "Unchanged prepare and expansion requests remain exact.",
-          "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "REL-02/supertypes",
+              "operations": [
+                {
+                  "endpoint": "textDocument/prepareTypeHierarchy",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                },
+                {
+                  "endpoint": "typeHierarchy/supertypes",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact prepared type identity",
+                "exact direct hierarchy excludes unrelated types"
+              ]
+            },
+            {
+              "caseId": "REL-02/subtypes",
+              "operations": [
+                {
+                  "endpoint": "textDocument/prepareTypeHierarchy",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                },
+                {
+                  "endpoint": "typeHierarchy/subtypes",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact prepared type identity",
+                "exact direct hierarchy excludes unrelated types"
+              ]
+            },
+            {
+              "caseId": "REL-02/legacy-children-depth-0",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "legacy open respects exact identity direction and depth",
+                "legacy resolve respects exact identity direction and depth",
+                "legacy hierarchy item belongs to this client and document state"
+              ]
+            },
+            {
+              "caseId": "REL-02/legacy-children-depth-1",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "legacy open respects exact identity direction and depth",
+                "legacy resolve respects exact identity direction and depth",
+                "legacy hierarchy item belongs to this client and document state"
+              ]
+            },
+            {
+              "caseId": "REL-02/legacy-children-depth-2",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "legacy open respects exact identity direction and depth",
+                "legacy resolve respects exact identity direction and depth",
+                "legacy hierarchy item belongs to this client and document state"
+              ]
+            },
+            {
+              "caseId": "REL-02/legacy-parents-depth-0",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "legacy open respects exact identity direction and depth",
+                "legacy resolve respects exact identity direction and depth",
+                "legacy hierarchy item belongs to this client and document state"
+              ]
+            },
+            {
+              "caseId": "REL-02/legacy-parents-depth-1",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "legacy open respects exact identity direction and depth",
+                "legacy resolve respects exact identity direction and depth",
+                "legacy hierarchy item belongs to this client and document state"
+              ]
+            },
+            {
+              "caseId": "REL-02/legacy-parents-depth-2",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "legacy open respects exact identity direction and depth",
+                "legacy resolve respects exact identity direction and depth",
+                "legacy hierarchy item belongs to this client and document state"
+              ]
+            },
+            {
+              "caseId": "REL-02/legacy-both-depth-0",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "legacy open respects exact identity direction and depth",
+                "legacy resolve respects exact identity direction and depth",
+                "legacy hierarchy item belongs to this client and document state"
+              ]
+            },
+            {
+              "caseId": "REL-02/legacy-hierarchy",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "legacy open respects exact identity direction and depth",
+                "legacy resolve respects exact identity direction and depth",
+                "legacy hierarchy item belongs to this client and document state"
+              ]
+            },
+            {
+              "caseId": "REL-02/legacy-both-depth-2",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "legacy open respects exact identity direction and depth",
+                "legacy resolve respects exact identity direction and depth",
+                "legacy hierarchy item belongs to this client and document state"
+              ]
+            }
+          ]
         },
         {
           "id": "REL-02/parent-change",

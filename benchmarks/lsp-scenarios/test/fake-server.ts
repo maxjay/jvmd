@@ -13,8 +13,30 @@ const framing=new Framing("headers",message=>{
   if(method==="textDocument/didChange")documents.set(params.textDocument.uri,params.contentChanges[0].text);
   if(method==="exit"){if(mode!=="shutdown-hang")process.exit(mode==="shutdown-nonzero"?1:0);return;}
   if(id===undefined)return;
-  if(method==="initialize"){send({id,result:{capabilities:{renameProvider:{prepareProvider:true},completionProvider:{resolveProvider:true},definitionProvider:true,callHierarchyProvider:true,codeLensProvider:{resolveProvider:true},executeCommandProvider:{commands:["java.edit.handlePasteEvent"]}}}});return;}
+  if(method==="initialize"){send({id,result:{capabilities:{typeHierarchyProvider:true,renameProvider:{prepareProvider:true},completionProvider:{resolveProvider:true},definitionProvider:true,callHierarchyProvider:true,codeLensProvider:{resolveProvider:true},executeCommandProvider:{commands:["java.edit.handlePasteEvent","java.navigate.openTypeHierarchy","java.navigate.resolveTypeHierarchy"]}}}});return;}
   if(method==="shutdown"){if(mode!=="shutdown-hang")send({id,result:null});return;}
+  if(method==="workspace/executeCommand"&&params.command.startsWith("java.navigate.")){
+    const uri=[...documents.keys()].find(uri=>uri.endsWith("/Hierarchy.java"))!,source=documents.get(uri)!;
+    const types=[...source.matchAll(/interface (\w+)(?: extends (\w+))? \{\}/gu)];
+    const direction=mode==="hierarchy-wrong-direction"?2:params.arguments[1],depth=params.arguments[2]+(mode==="hierarchy-wrong-depth"?1:0);
+    const item=(name:string,remaining:number):any=>{
+      const type=types.find(m=>m[1]===name)!;const result:any={name,kind:11,uri,range:span(source,type.index,type[0].length),selectionRange:span(source,type.index+10,name.length),data:{token:"issued-"+id}};
+      if(remaining>0){
+        if(direction!==0)result.parents=type[2]?[item(type[2],remaining-1)]:[];
+        if(direction!==1)result.children=types.filter(t=>t[2]===name).map(t=>item(t[1],remaining-1));
+      }
+      return result;
+    };
+    send({id,result:item("Base",depth)});return;
+  }
+  if(method==="textDocument/prepareTypeHierarchy"||method.startsWith("typeHierarchy/")){
+    const uri=[...documents.keys()].find(uri=>uri.endsWith("/Hierarchy.java"))!,current=documents.get(uri)!;
+    const source=mode==="stale-type-hierarchy"&&method!=="textDocument/prepareTypeHierarchy"?originalDocuments.get(uri)!:current;
+    const item=(name:string)=>{const start=source.indexOf("class "+name),end=source.indexOf("\n",start);return {name,kind:5,uri,range:span(source,start,end-start),selectionRange:span(source,start+6,name.length),data:{token:"issued-"+id}};};
+    if(method==="textDocument/prepareTypeHierarchy"){const line=current.split("\n")[params.position.line];send({id,result:[item(line.includes("class Child")?"Child":"Base")]});return;}
+    const parent=source.includes("Child extends Base")?"Base":"UnrelatedType";
+    send({id,result:method==="typeHierarchy/supertypes"?[item(parent)]:parent==="Base"?[item("Child")]:[]});return;
+  }
   if(method==="textDocument/prepareRename"||method==="textDocument/rename"){
     const invalid=params.textDocument.uri.endsWith("/Customer.java"),prepare=method==="textDocument/prepareRename";
     if(mode==="rename-reject-all"||invalid&&mode==="rename-rejection"){

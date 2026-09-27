@@ -36,6 +36,13 @@ export function validateCase(report:any,events:any[],exchanges:any[],operations:
       &&report.caseId===(op.method==="textDocument/prepareRename"?"REF-01/prepare-invalid":"REF-01/rename-invalid")
       &&operations.some(b=>b.method===op.method&&b.state==="baseline"&&b.outcome==="pass"&&!b.error&&BigInt(b.endNs)<=BigInt(op.startNs));
     if(op.expectedRejection!==undefined)check(expectedRejection,"invalid expected rejection disposition");
+    if(op.endpoint==="java.navigate.resolveTypeHierarchy"){
+      const original=operations.find(o=>o.requestId===op.originRequestId),source=byId.get(op.originRequestId),resolved=byId.get(op.requestId);
+      check(original?.endpoint==="java.navigate.openTypeHierarchy"&&original.outcome==="pass"&&!original.error
+        &&JSON.stringify(original.stateBefore)===JSON.stringify(op.stateBefore)&&BigInt(original.endNs)<=BigInt(op.startNs)
+        &&source?.params?.command==="java.navigate.openTypeHierarchy"&&resolved?.params?.command==="java.navigate.resolveTypeHierarchy"
+        &&resolved.params.arguments?.[0]===JSON.stringify(source.result),"legacy hierarchy item provenance mismatch");
+    }
     if(op.outcome==="pass"){check((!op.error||expectedRejection)&&!op.assertionError,"pass conceals error");check(["verified","not_applicable"].includes(op.freshness?.status),"pass without freshness disposition");}
   }
   for(const s of report.seriesExpectations??[]){

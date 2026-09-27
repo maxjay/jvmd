@@ -2,16 +2,24 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import {mkdirSync,writeFileSync} from "node:fs";
 import {pathToFileURL,fileURLToPath} from "node:url";
-import {type CaseDefinition} from "../harness/ScenarioContext.ts";
+import {type CaseDefinition,type ScenarioContext} from "../harness/ScenarioContext.ts";
 import {position,selected,exactLocations,range} from "../harness/oracles.ts";
+import {exactLegacyHierarchy,type TypeGraph} from "../harness/hierarchy.ts";
+const LEGACY_SOURCE="package bench;\ninterface Root {}\ninterface Base extends Root {}\ninterface Child extends Base {}\ninterface Grandchild extends Child {}\ninterface UnrelatedType {}\n";
+const LEGACY_GRAPH:TypeGraph={Root:{kind:11,parents:[],children:["Base"]},Base:{kind:11,parents:["Root"],children:["Child"]},
+  Child:{kind:11,parents:["Base"],children:["Grandchild"]},Grandchild:{kind:11,parents:["Child"],children:[]},UnrelatedType:{kind:11,parents:[],children:[]}};
 export const refactoringCases:CaseDefinition[]=[
-  {id:"REL-02/legacy-hierarchy",family:"REL-02",apis:["API-069","API-070"],command:"java.navigate.openTypeHierarchy",variant:"legacy hierarchy item provenance and exact parents/children",run:async c=>{
-    await c.open("Hierarchy.java");const text=c.text("Hierarchy.java"),params={textDocument:{uri:c.file("Hierarchy.java").uri},position:position(text,text.indexOf("class Base")+7)};
-    const check=(v:any)=>{assert.equal(v.name,"Base");assert.equal(v.uri,c.file("Hierarchy.java").uri);assert.equal(selected(text,v.selectionRange),"Base");};
-    const item=await c.execute("java.navigate.openTypeHierarchy",[JSON.stringify(params),2,0],check);
-    await c.series("workspace/executeCommand",{command:"java.navigate.resolveTypeHierarchy",arguments:[JSON.stringify(item),2,1]},v=>{check(v);assert.deepEqual(v.children.map((x:any)=>x.name),["Child"]);assert.deepEqual(v.parents.map((x:any)=>x.name).sort(),["Object","Root"]);
-      for(const child of v.children){assert.equal(child.uri,c.file("Hierarchy.java").uri);assert.equal(selected(text,child.selectionRange),"Child");}});
-  }},
+  ...[0,1,2].flatMap(direction=>[0,1,2].map(depth=>({id:direction===2&&depth===1?"REL-02/legacy-hierarchy":`REL-02/legacy-${["children","parents","both"][direction]}-depth-${depth}`,
+    family:"REL-02",apis:["API-069","API-070"],command:"java.navigate.openTypeHierarchy",fixture:{"Hierarchy.java":LEGACY_SOURCE},
+    variant:`independent legacy ${["children","parents","both"][direction]} traversal at depth ${depth}; first/repeat open and resolve`,run:async(c:ScenarioContext)=>{
+      await c.open("Hierarchy.java");const text=c.text("Hierarchy.java"),uri=c.file("Hierarchy.java").uri;
+      const params={textDocument:{uri},position:position(text,text.indexOf("interface Base")+11)};
+      const check=(v:any,d:number)=>exactLegacyHierarchy(v,text,uri,LEGACY_GRAPH,"Base",direction,d);
+      await c.series("workspace/executeCommand",{command:"java.navigate.openTypeHierarchy",arguments:[JSON.stringify(params),direction,depth]},(v:any)=>{check(v,depth);c.assert("legacy open respects exact identity direction and depth",true);});
+      // Resolve the exact raw depth-zero item, so eager open results cannot stand in for expansion.
+      const item=await c.execute("java.navigate.openTypeHierarchy",[JSON.stringify(params),direction,0],(v:any)=>check(v,0),"item_acquisition");
+      await c.series("workspace/executeCommand",{command:"java.navigate.resolveTypeHierarchy",arguments:[JSON.stringify(item),direction,depth]},(v:any)=>{check(v,depth);c.assert("legacy resolve respects exact identity direction and depth",true);});
+    }}))),
   {id:"ENV-01/source-path",family:"ENV-01",apis:["API-033","API-034","API-035"],command:"java.project.addToSourcePath",sourceDirectory:"src",variant:"add/remove independent source root; exact reported membership",run:async c=>{
     const directory=path.join(c.fixture.root,"extra");c.createDisk("Extra.java","extra/other/Extra.java","package other; public class Extra { public int uniqueValue(){return 51;} }\n");
     const uri=pathToFileURL(directory).href;

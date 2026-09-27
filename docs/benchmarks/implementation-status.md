@@ -4,8 +4,8 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 118 case definitions, 81 passing TypeScript
-harness tests, and 107 required variants (62 implemented, 34 partial, 11 absent).
+Latest implementation inventory: 126 case definitions, 90 passing TypeScript
+harness tests, and 107 required variants (64 implemented, 32 partial, 11 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -606,3 +606,32 @@ reproducibly: it verifies every full-bundle checksum and inventory membership,
 records omitted paths, hashes every selected member and checks the resulting
 archive byte-for-byte. A review subset is explicitly not a complete experiment
 bundle. This replay does not change the outstanding comparison gates.
+
+## Exact type hierarchies and legacy traversal limits
+
+Modern hierarchy preparation now has first, warmup and steady observations, in
+addition to expansion observations. Every item must have the exact fixture URI,
+kind, declaration range and name selection. The parent-change cases still obtain
+a fresh raw item for every retry and retain incorrect immediate responses.
+
+The legacy open/resolve route now has nine independently reset cases: children,
+parents and both directions, each at depths zero, one and two. A four-level
+interface fixture gives an exact graph, a meaningful grandchild and an unrelated
+type without depending on JDK Object subtype enumeration. Each open and resolve
+request is measured separately, including unchanged repeats. Resolution starts
+with a newly obtained, unexpanded raw item; it cannot reuse an already expanded
+answer as evidence that resolve worked. Exact recursive oracles check both
+requested edges, duplicate/extraneous types and the traversal boundary.
+
+The context checks the original serialized legacy item belongs to this client
+and unchanged document state before transmission. The saved reducer checks its
+origin request, response bytes, time order and state. Altered or stale items fail.
+Nine added tests cover wrong kinds/spans, wrong direction/depth, missing
+grandchildren, duplicate types, forged provenance and stale modern expansions.
+All 90 harness tests pass. These strengthened cases require real-server replay.
+
+The source ledger now has 64 implemented variants, 32 partial and 11 absent;
+there are 126 cases. Counts describe implementation, not accepted comparison
+evidence. Legacy argument order and traversal semantics were checked against
+JDTLS `08eafe6` JDTDelegateCommandHandler and TypeHierarchyCommand. No comparison
+claim is enabled.

@@ -1,0 +1,78 @@
+import {test} from "node:test";
+import assert from "node:assert/strict";
+import {mkdtempSync,readFileSync,writeFileSync,rmSync} from "node:fs";
+import {spawnSync} from "node:child_process";
+import os from "node:os";
+import path from "node:path";
+import {fileURLToPath} from "node:url";
+import {exactLegacyHierarchy,exactTypeItem} from "../harness/hierarchy.ts";
+import {range} from "../harness/oracles.ts";
+import {ScenarioContext} from "../harness/ScenarioContext.ts";
+import {createFixture} from "../harness/fixture.ts";
+import {validateCase} from "../reduce.ts";
+
+const source="interface R {}\ninterface B extends R {}\ninterface C extends B {}\ninterface D extends C {}\n",uri="file:///fixture/Hierarchy.java";
+const graph={R:{kind:11,parents:[],children:["B"]},B:{kind:11,parents:["R"],children:["C"]},C:{kind:11,parents:["B"],children:["D"]},D:{kind:11,parents:["C"],children:[]}};
+const item=(name:string)=>({name,kind:11,uri,range:range(source,source.split("\n").find(line=>line.startsWith("interface "+name))!),selectionRange:range(source,name)});
+const both={...item("B"),parents:[{...item("R"),parents:[],children:[item("B")]}],children:[{...item("C"),parents:[item("B")],children:[item("D")]}]};
+test("hierarchy oracle accepts exact bounded bidirectional trees including back edges",()=>{
+  exactLegacyHierarchy(both,source,uri,graph,"B",2,2);
+  exactLegacyHierarchy(item("B"),source,uri,graph,"B",2,0);
+  exactLegacyHierarchy({...item("B"),parents:[item("R")]},source,uri,graph,"B",1,1);
+  exactLegacyHierarchy({...item("B"),children:[item("C")]},source,uri,graph,"B",0,1);
+});
+test("hierarchy oracle rejects wrong direction, excess depth, missing grandchildren and duplicate types",()=>{
+  assert.throws(()=>exactLegacyHierarchy(both,source,uri,graph,"B",1,2));
+  assert.throws(()=>exactLegacyHierarchy(both,source,uri,graph,"B",2,1));
+  for(const children of [[],[item("C"),item("C")],[{...item("C"),parents:[item("B")],children:[]}]])
+    assert.throws(()=>exactLegacyHierarchy({...both,children},source,uri,graph,"B",2,2));
+});
+test("type identity oracle rejects homonyms, stale spans and wrong kinds",()=>{
+  const valid=item("B");exactTypeItem(valid,source,uri,"B",11);
+  for(const patch of [{uri:"file:///other/Hierarchy.java"},{kind:5},{range:item("C").range},{selectionRange:range(source,"B",source.indexOf("interface C"))}])
+    assert.throws(()=>exactTypeItem({...valid,...patch},source,uri,"B",11));
+});
+test("legacy resolve requires an issued unchanged item from the current client state",async()=>{
+  const tmp=mkdtempSync(path.join(os.tmpdir(),"jvmd-hierarchy-origin-"));
+  try{
+    let requests=0;
+    const client={events:[],journal:()=>{},notify:()=>process.hrtime.bigint(),request:async()=>({id:++requests,result:{...item("B"),data:{token:"opaque"}},startNs:"1",endNs:"2"})} as any;
+    const c=new ScenarioContext(client,createFixture(tmp),"jvmd",100,1,1);await c.open("Hierarchy.java");
+    const original=await c.execute("java.navigate.openTypeHierarchy",[],()=>{});
+    await c.execute("java.navigate.resolveTypeHierarchy",[JSON.stringify(original),2,1],()=>{});
+    assert.equal(c.operations.at(-1).originRequestId,1);
+    await assert.rejects(c.execute("java.navigate.resolveTypeHierarchy",[JSON.stringify({...original,data:{token:"forged"}}),2,1],()=>{}));
+    c.change("Hierarchy.java",c.text("Hierarchy.java")+"\n");
+    await assert.rejects(c.execute("java.navigate.resolveTypeHierarchy",[JSON.stringify(original),2,1],()=>{}));
+    assert.equal(requests,2,"invalid opaque items reached the server");
+  }finally{rmSync(tmp,{recursive:true,force:true});}
+});
+for(const [mode,caseId,outcome] of [
+  ["hierarchy-correct","REL-02/legacy-children-depth-2","pass"],
+  ["hierarchy-wrong-direction","REL-02/legacy-parents-depth-1","incorrect"],
+  ["hierarchy-wrong-depth","REL-02/legacy-both-depth-0","incorrect"],
+  ["stale-type-hierarchy","REL-02/supertypes","incorrect"],
+  ["stale-type-hierarchy","REL-02/subtypes","incorrect"],
+])test(`actual hierarchy runner ${mode}: ${caseId}`,()=>{
+  const tmp=mkdtempSync(path.join(os.tmpdir(),"jvmd-hierarchy-"));
+  try{
+    const output=path.join(tmp,"run"),command=path.join(tmp,"command.json");
+    writeFileSync(command,JSON.stringify([process.execPath,fileURLToPath(new URL("./fake-server.ts",import.meta.url)),mode]));
+    const run=spawnSync(process.execPath,[fileURLToPath(new URL("../run.ts",import.meta.url)),"--servers","jvmd","--profile","custom","--command-json",command,"--output",output,"--only",caseId,"--warmup","1","--samples","2"],{encoding:"utf8",timeout:15000});
+    assert.equal(run.error,undefined,run.stderr);assert.equal(run.status,outcome==="pass"?0:1,run.stdout+run.stderr);
+    const summary=JSON.parse(readFileSync(path.join(output,"summary.json"),"utf8"));assert.equal(summary.outcomes[outcome],1);
+    if(outcome==="pass")assert.deepEqual(summary.integrityIssues,[]);
+    else assert(summary.integrityIssues.every((issue:string)=>/series sample missing or reordered|settled probe missing/u.test(issue)),JSON.stringify(summary.integrityIssues));
+    const report=JSON.parse(readFileSync(path.join(output,"01-jvmd-"+caseId.replaceAll("/","-"),"report.json"),"utf8"));
+    if(mode==="hierarchy-correct"){
+      assert.equal(report.operations.filter((o:any)=>o.endpoint==="java.navigate.resolveTypeHierarchy"&&o.originRequestId).length,4);
+      const lines=(name:string)=>readFileSync(path.join(output,"01-jvmd-"+caseId.replaceAll("/","-"),name+".jsonl"),"utf8").trim().split("\n").map(l=>JSON.parse(l));
+      const tampered=structuredClone(report.operations);tampered.at(-1).originRequestId=999999;
+      assert(validateCase(report,lines("events"),lines("exchanges"),tampered).includes("legacy hierarchy item provenance mismatch"));
+    }
+    if(mode==="stale-type-hierarchy"){
+      for(const state of ["first_use","warmup","steady"])assert(report.operations.some((o:any)=>o.method==="textDocument/prepareTypeHierarchy"&&o.state===state&&o.outcome==="pass"));
+      assert(report.operations.some((o:any)=>o.state==="changed_immediate"&&o.outcome==="incorrect"));
+    }
+  }finally{rmSync(tmp,{recursive:true,force:true});}
+});

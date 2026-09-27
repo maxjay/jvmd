@@ -30,6 +30,7 @@ export class ScenarioContext {
   client:ProtocolClient;fixture:Fixture;server:string;timeout:number;warmup:number;samples:number;
   javaHome=process.env.JAVA_HOME??"";
   private origins=new WeakMap<object,{method:string;state:string;requestId:number}>();
+  private legacyHierarchyOrigins=new Map<string,{method:string;state:string;requestId:number}>();
   capabilities:any={};operations:any[]=[];assertions:any[]=[];documents=new Map<string,{text:string;version:number;incarnation:number}>();
   versions=new Map<string,number>();incarnations=new Map<string,number>();
   seriesExpectations:any[]=[];mutations:any[]=[];
@@ -91,20 +92,26 @@ export class ScenarioContext {
   deleteDisk(name:string){const f=this.file(name);assert(!this.documents.has(f.uri),"external deletion case requires closed provider");const before=sha(readFileSync(f.path));rmSync(f.path);delete this.fixture.files[name];const trigger=this.client.notify("workspace/didChangeWatchedFiles",{changes:[{uri:f.uri,type:3}]});this.mutations.push({kind:"external_delete",uri:f.uri,before,triggerNs:String(trigger)});return trigger;}
   async query(method:string,params:any,oracle:(result:any)=>void,state="first_use",trigger?:bigint,freshnessWitness?:string,responsePolicy?:"rename_rejection"){
     assert(responsePolicy===undefined||isInvalidRenameRequest(method,state),"rename rejection policy requires an invalid-position rename request");
-    const before=this.state();
+    const before=this.state(),endpoint=method==="workspace/executeCommand"?params.command:method;
     const originMethod:Record<string,string>={"completionItem/resolve":"textDocument/completion","codeLens/resolve":"textDocument/codeLens","codeAction/resolve":"textDocument/codeAction",
       "callHierarchy/incomingCalls":"textDocument/prepareCallHierarchy","callHierarchy/outgoingCalls":"textDocument/prepareCallHierarchy",
       "typeHierarchy/supertypes":"textDocument/prepareTypeHierarchy","typeHierarchy/subtypes":"textDocument/prepareTypeHierarchy"};
     let origin:any;
+    if(endpoint==="java.navigate.resolveTypeHierarchy"){
+      origin=this.legacyHierarchyOrigins.get(params.arguments?.[0]);
+      this.assert("legacy hierarchy item belongs to this client and document state",!!origin&&origin.state===JSON.stringify(before),{endpoint,origin});
+    }
     if(originMethod[method]){
       origin=this.origins.get(params.item??params);
       this.assert("opaque item belongs to this client, endpoint and document state",!!origin&&origin.method===originMethod[method]&&origin.state===JSON.stringify(before),{method,origin});
     }
     const row=await this.client.request(method,params,this.timeout);
+    if(!row.error&&endpoint==="java.navigate.openTypeHierarchy"&&row.result&&typeof row.result==="object")
+      this.legacyHierarchyOrigins.set(JSON.stringify(row.result),{method:endpoint,state:JSON.stringify(before),requestId:row.id});
     if(!row.error){const items=method==="textDocument/completion"?(Array.isArray(row.result)?row.result:row.result?.items):row.result;
       if(Array.isArray(items))for(const item of items)if(item&&typeof item==="object")this.origins.set(item,{method,state:JSON.stringify(before),requestId:row.id});
     }
-    const record:any={schemaVersion:1,clockDomain:"client",requestEventId:this.client.events.find(e=>e.direction==="send"&&e.message.id===row.id)?.sequence,responseEventId:this.client.events.find(e=>e.direction==="receive"&&e.message.id===row.id)?.sequence,operationId:"op-"+(this.operations.length+1),method,endpoint:method==="workspace/executeCommand"?params.command:method,state,requestId:row.id,startNs:row.startNs,endNs:row.endNs,
+    const record:any={schemaVersion:1,clockDomain:"client",requestEventId:this.client.events.find(e=>e.direction==="send"&&e.message.id===row.id)?.sequence,responseEventId:this.client.events.find(e=>e.direction==="receive"&&e.message.id===row.id)?.sequence,operationId:"op-"+(this.operations.length+1),method,endpoint,state,requestId:row.id,startNs:row.startNs,endNs:row.endNs,
       latencyMs:Number(BigInt(row.endNs)-BigInt(row.startNs))/1e6,stateBefore:before,
       originRequestId:origin?.requestId,rawResult:row.result,error:row.error,responsePolicy,outcome:row.error?(row.error.kind==="timeout"?"timeout":"protocol_error"):"pass",
       freshness:{status:freshnessWitness?"verified":"not_applicable",witness:freshnessWitness??"unchanged fixture; semantic oracle checked"}};

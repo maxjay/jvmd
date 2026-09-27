@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {isDeepStrictEqual} from "node:util";
 import {SETTINGS,type CaseDefinition,type ScenarioContext} from "../harness/ScenarioContext.ts";
 import {position,range,selected,exactLocations,exactCallGraph,exactReferenceLens,offset,applyTextEdits,applyScopedTextEdits} from "../harness/oracles.ts";
+import {exactTypeItem} from "../harness/hierarchy.ts";
 
 const at=(c:ScenarioContext,file:string,token:string,shift=1)=>({textDocument:{uri:c.file(file).uri},position:position(c.text(file),c.text(file).indexOf(token)+shift)});
 const loc=(c:ScenarioContext,file:string,token:string,from=0)=>({uri:c.file(file).uri,range:range(c.text(file),token,from)});
@@ -75,9 +76,12 @@ export const structureCases:CaseDefinition[]=[
   ...["supertypes","subtypes"].map(direction=>({id:"REL-02/"+direction,family:"REL-02",apis:["API-066",direction==="supertypes"?"API-067":"API-068"],capability:"typeHierarchyProvider",variant:"direct related type and parent change",
     run:async(c:ScenarioContext)=>{await c.open("Hierarchy.java");
       const focus=direction==="supertypes"?"Child":"Base";
-      const prepare=async()=>{const rows=await c.query("textDocument/prepareTypeHierarchy",at(c,"Hierarchy.java","class "+focus,7),v=>{assert.equal(v.length,1);symbolOracle(c,v,"Hierarchy.java",focus);},"item_acquisition");return rows[0];};
-      const parentOracle=(v:any)=>{const parent=c.text("Hierarchy.java").includes("Child extends Base")?"Base":"UnrelatedType";assert.equal(v.length,1);symbolOracle(c,v,"Hierarchy.java",parent);};
-      let item=await prepare();await c.series("typeHierarchy/"+direction,{item},v=>{if(direction==="supertypes")parentOracle(v);else{assert.equal(v.length,1);symbolOracle(c,v,"Hierarchy.java","Child");}});
+      const exact=(value:any,name:string)=>{assert.equal(value.length,1);exactTypeItem(value[0],c.text("Hierarchy.java"),c.file("Hierarchy.java").uri,name,5);};
+      const params=()=>at(c,"Hierarchy.java","class "+focus,7),preparedOracle=(v:any)=>{exact(v,focus);c.assert("exact prepared type identity",true);};
+      const prepare=async()=>{const rows=await c.query("textDocument/prepareTypeHierarchy",params(),preparedOracle,"item_acquisition");return rows[0];};
+      const parentOracle=(v:any)=>exact(v,c.text("Hierarchy.java").includes("Child extends Base")?"Base":"UnrelatedType");
+      const prepared=await c.series("textDocument/prepareTypeHierarchy",params(),preparedOracle);
+      await c.series("typeHierarchy/"+direction,{item:prepared[0]},v=>{if(direction==="supertypes")parentOracle(v);else exact(v,"Child");c.assert("exact direct hierarchy excludes unrelated types",true);});
       const trigger=c.change("Hierarchy.java",c.text("Hierarchy.java").replace("Child extends Base","Child extends UnrelatedType")).trigger;
       await c.transition("typeHierarchy/"+direction,async()=>({item:await prepare()}),v=>{if(direction==="subtypes")assert.deepEqual(v,[]);else parentOracle(v);},trigger,"Child has a different direct parent and no longer appears under Base; fresh item for every expansion");
     }})),

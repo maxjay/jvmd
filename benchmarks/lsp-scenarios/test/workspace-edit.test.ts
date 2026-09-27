@@ -12,7 +12,11 @@ test("versioned document edits take precedence over empty or populated fallback 
     assert.equal(next.get(uri)?.text,"class Renamed {}");assert.equal(initial[0].text,source);
   }
   // An empty preferred representation is not permission to apply the fallback.
-  assert.throws(()=>planWorkspaceEdit("/fixture",initial,{changes:{[uri]:[{range:range(source,"A"),newText:"WrongFallback"}]},documentChanges:[]}));
+  assert.equal(planWorkspaceEdit("/fixture",initial,{changes:{[uri]:[{range:range(source,"A"),newText:"WrongFallback"}]},documentChanges:[]}).get(uri)?.text,source);
+});
+test("empty workspace edits are valid unchanged transactions, not missing edits",()=>{
+  for(const edit of [{},{changes:{}},{documentChanges:[]}])assert.deepEqual([...planWorkspaceEdit("/fixture",initial,edit).values()],initial);
+  for(const edit of [null,undefined,[],"invalid"])assert.throws(()=>planWorkspaceEdit("/fixture",initial,edit));
 });
 test("ordered create, text edit, and rename operations preserve source identity",()=>{
   const next=planWorkspaceEdit("/fixture",initial,{documentChanges:[

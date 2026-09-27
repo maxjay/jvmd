@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import {readFileSync,writeFileSync,existsSync} from "node:fs";
 import {pathToFileURL,fileURLToPath} from "node:url";
-import {type CaseDefinition,type ScenarioContext} from "../harness/ScenarioContext.ts";
+import {SETTINGS,type CaseDefinition,type ScenarioContext} from "../harness/ScenarioContext.ts";
 import {range,position,offset,selected,applyTextEdits,chooseMethod,completionOracle,exactLocations} from "../harness/oracles.ts";
 import {planWorkspaceEdit} from "../harness/workspaceEdit.ts";
 
 const imports="package bench;\nimport java.util.Set;\nimport java.util.List;\npublic class Imports { public List<String> values; }\n";
 const clean="package bench;\npublic class Clean { public String toString() { return \"ok\"; } }\n";
+const pastedField='    public List<String> names = List.of("pasted");\n';
+const pasteTarget="package bench;\npublic class Paste {\n    // PASTE HERE\n}\n";
 const action=(c:ScenarioContext,file:string,token:string)=>c.actionParams(file,token);
 const format={tabSize:4,insertSpaces:true};
 const nonemptyEdit=(v:any)=>assert(v&&(v.changes||v.documentChanges),"workspace edit missing");
@@ -59,6 +61,31 @@ export const editingCases:CaseDefinition[]=[
     const edit=await c.execute("java.edit.handlePasteEvent",[JSON.stringify({location:{uri:c.file("Paste.java").uri,range:r},text:'say "hello"',copiedDocumentUri:null,formattingOptions:format})],v=>assert.equal(v?.insertText,'say \\"hello\\"'));
     c.change("Paste.java",applyTextEdits(source,[{range:r,newText:edit.insertText}]));if(edit.additionalEdit)c.applyWorkspaceEdit(edit.additionalEdit);c.compileOracle();
   }},
+  {id:"FMT-03/code-paste",family:"FMT-03",apis:["API-084"],command:"java.edit.handlePasteEvent",variant:"paste copied List field with the exact java.util.List import",
+    fixture:{"Paste.java":pasteTarget,"CopySource.java":"package bench;\nimport java.util.List;\npublic class CopySource {\n"+pastedField+"}\n"},
+    prepare:fixture=>{fixture.settings=structuredClone(SETTINGS);fixture.settings.java.updateImportsOnPaste={enabled:true};},
+    run:async c=>{
+      await c.open("CopySource.java");await c.open("Paste.java");const before=texts(c),source=c.text("Paste.java"),r=range(source,"    // PASTE HERE\n");
+      const expectedImports=source.replace("package bench;","package bench;\nimport java.util.List;");
+      const edit=await c.execute("java.edit.handlePasteEvent",[JSON.stringify({location:{uri:c.file("Paste.java").uri,range:r},text:pastedField,copiedDocumentUri:c.file("CopySource.java").uri,formattingOptions:format})],v=>{
+        assert.equal(v?.insertText,pastedField,"pasted field content changed");nonemptyEdit(v.additionalEdit);
+        const planned=preview(c,v.additionalEdit);assert.equal(planned.size,Object.keys(before).length,"paste edit changes file membership");
+        for(const [name,text] of Object.entries(before)){
+          const after=planned.get(c.file(name).uri)?.text;
+          if(name==="Paste.java")assert.equal(after?.replace(/\s/gu,""),expectedImports.replace(/\s/gu,""),"paste does not supply only the required import");
+          else assert.equal(after,text,"paste changes unrelated source: "+name);
+        }
+      });
+      // The validated additional edit only changes imports before the paste
+      // marker. Apply it at its supplied version, then rebase the insertion onto
+      // the still-present marker; never accept a stale versioned workspace edit.
+      c.applyWorkspaceEdit(edit.additionalEdit);const imported=c.text("Paste.java");
+      c.change("Paste.java",applyTextEdits(imported,[{range:range(imported,"    // PASTE HERE\n"),newText:edit.insertText}]));
+      onlyTargetChanged(c,before,"Paste.java");
+      const expected=expectedImports.replace("    // PASTE HERE\n",pastedField);
+      c.assert("code paste preserves content and supplies the exact import",c.text("Paste.java").replace(/\s/gu,"")===expected.replace(/\s/gu,""));
+      c.compileOracle('package bench; public class HarnessOracle { public static void main(String[] args) { if (!new Paste().names.equals(java.util.List.of("pasted"))) throw new AssertionError("pasted field changed"); } }');
+    }},
   {id:"FMT-03/file-paste",family:"FMT-03",apis:["API-020"],command:"java.project.resolveText",variant:"file path inferred from package and public type",run:async c=>{
     const source="package bench; public class Pasted {}";
     await c.execute("java.project.resolveText",[path.join(c.fixture.root,"bench"),source],v=>{

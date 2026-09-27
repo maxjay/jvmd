@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "scope": "Raw protocol review subset; not complete experiment bundle or comparative performance evidence",
+  "revision": "8491c0f838336aad5d6de94f72790fadd47db1ac",
+  "archive": {
+    "file": "protocol-review.tar.xz",
+    "bytes": 116140,
+    "sha256": "5015f12b007de309305d348cd5e45dff78f7e6e2ac0a16ab2a26487b0feb5380",
+    "everySelectedFileHash": "verified"
+  },
+  "plan": {
+    "caseIds": [
+      "FMT-02/imports-request",
+      "FMT-02/imports-command",
+      "FMT-02/imports-save",
+      "FMT-02/cleanup"
+    ],
+    "servers": [
+      "jvmd",
+      "jdtls"
+    ],
+    "blocks": 1,
+    "warmup": 1,
+    "samples": 2,
+    "timeout": 30000,
+    "profile": "pipe",
+    "serverOrder": "alternate per independent block",
+    "reset": "fresh fixture and server state per independent case",
+    "seed": 0
+  },
+  "sourceDrift": false,
+  "integrityIssues": [],
+  "sourceManifestSha256": "1970118d14909500b00b7be640c4a1e644445d45543f4ccea48f6156470cb13b",
+  "originalChecksumInventorySha256": "e7ded47664bf14e3fed1de5b1b0b535473047553e788b1919e9a75caca7f05cb",
+  "outcomes": {
+    "pass": 1,
+    "incorrect": 0,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 3,
+    "harness_error": 0,
+    "unsupported": 4,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "interpretation": [
+    "All four JDTLS routes pass their first operation, independent compilation, source-exclusion checks and unchanged repeat.",
+    "Only the organize-imports command case exits cleanly. The request, pre-save and manual-cleanup cases exit with code 1 and remain protocol_error. None was killed by the harness.",
+    "JVMD declares all four routes unsupported. One diagnostic block does not establish performance or complete variant coverage."
+  ],
+  "files": {
+    "harness-tests.txt": "f11faafd8283da312d95e63662dee7384b60b639dc38a3f41098e94819cbfd5e"
+  }
+}

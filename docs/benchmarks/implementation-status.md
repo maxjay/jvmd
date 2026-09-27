@@ -4,8 +4,8 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 115 case definitions, 64 passing TypeScript
-harness tests, and 107 required variants (57 implemented, 37 partial, 13 absent).
+Latest implementation inventory: 116 case definitions, 67 passing TypeScript
+harness tests, and 107 required variants (58 implemented, 37 partial, 12 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -484,3 +484,31 @@ source-supported explanation consistent with the timing.
 `benchmarks/evidence/shutdown-stages-2026-09-27/` preserves the hash-verified
 protocol/process journals, runtime logs and stage table. Source drift is false
 and artifact integrity checks pass. The JDTLS case remains `protocol_error`.
+
+## Code paste and cleanup replay
+
+FMT-03 now includes code copied from a separate source file whose `List` field
+requires `java.util.List` in the target. The import-on-paste setting is fixed
+before initialization. The command result must preserve the pasted text and
+supply only the expected import. The client validates and applies the additional
+edit at its supplied version, then rebases the insertion onto its unchanged
+marker. It never applies a stale versioned edit. Unrelated files must remain
+byte identical; independent compilation and execution verify the resulting field.
+Subprocess tests reject missing imports and the wrong `java.awt.List` import.
+
+Workspace-edit planning now accepts valid empty transactions. An empty preferred
+`documentChanges` list preserves the source even if a fallback `changes` object
+is nonempty, as required by the negotiated LSP representation. Missing/non-object
+edits still fail. This is necessary for valid unchanged-repeat results and does
+not excuse a missing requested transformation.
+
+At `8491c0f`, all four JDTLS cleanup routes pass their first effect, independent
+compilation, unrelated-source checks and unchanged repeat. The organize-imports
+command case exits cleanly. The request, pre-save and manual cleanup cases exit
+with code 1, without a harness kill, and remain `protocol_error`. JVMD explicitly
+declares all four routes unsupported. The raw review subset and process journals
+are preserved in `benchmarks/evidence/cleanup-2026-09-27/`; no source drift or
+integrity issues occurred. The code-paste case still needs supported-server replay.
+
+The inventory is 116 cases and 107 variants: 58 implemented, 37 partial and 12
+absent. All 67 harness tests pass. Remaining acceptance gates are unchanged.

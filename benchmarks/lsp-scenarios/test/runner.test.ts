@@ -11,7 +11,7 @@ import {createFixture} from "../harness/fixture.ts";
 
 const runner=fileURLToPath(new URL("../run.ts",import.meta.url));
 const fake=fileURLToPath(new URL("./fake-server.ts",import.meta.url));
-for(const [mode,caseId] of [["wrong-warmup","CMP-01/first-repeat"],["stale-provider","CMP-01/api-edit"],["wrong-range","NAV-01/definition"],["stale-call-graph","REL-01/incoming-add"],["stale-call-graph","REL-01/outgoing-remove"],["stale-lens","VIEW-03/code-lens-add"],["stale-lens","VIEW-03/code-lens-remove"],["duplicate-lens-reference","VIEW-03/code-lens"]]){
+for(const [mode,caseId] of [["wrong-warmup","CMP-01/first-repeat"],["stale-provider","CMP-01/api-edit"],["wrong-range","NAV-01/definition"],["stale-call-graph","REL-01/incoming-add"],["stale-call-graph","REL-01/outgoing-remove"],["stale-lens","VIEW-03/code-lens-add"],["stale-lens","VIEW-03/code-lens-remove"],["duplicate-lens-reference","VIEW-03/code-lens"],["missing-paste-import","FMT-03/code-paste"],["wrong-paste-import","FMT-03/code-paste"]]){
   test("actual runner rejects "+mode+" in "+caseId+" and retains raw evidence",()=>{
     const tmp=mkdtempSync(path.join(os.tmpdir(),"jvmd-gate-"));
     try{
@@ -29,6 +29,7 @@ for(const [mode,caseId] of [["wrong-warmup","CMP-01/first-repeat"],["stale-provi
         assert(rows.some(r=>r.state==="baseline"&&r.outcome==="pass"),"stale test never established a correct baseline");
         assert(rows.some(r=>r.state==="changed_immediate"&&r.outcome==="incorrect"),"stale test did not fail after mutation");
       }
+      if(mode.endsWith("paste-import"))assert.match(rows.at(-1).assertionError,/required import/u);
       assert(readFileSync(path.join(caseRoot,"events.jsonl"),"utf8").includes('"direction":"receive"'));
     }finally{rmSync(tmp,{recursive:true,force:true});}
   });

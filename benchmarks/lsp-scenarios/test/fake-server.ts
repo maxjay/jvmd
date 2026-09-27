@@ -13,7 +13,7 @@ const framing=new Framing("headers",message=>{
   if(method==="textDocument/didChange")documents.set(params.textDocument.uri,params.contentChanges[0].text);
   if(method==="exit"){if(mode!=="shutdown-hang")process.exit(mode==="shutdown-nonzero"?1:0);return;}
   if(id===undefined)return;
-  if(method==="initialize"){send({id,result:{capabilities:{completionProvider:{resolveProvider:true},definitionProvider:true,callHierarchyProvider:true,codeLensProvider:{resolveProvider:true}}}});return;}
+  if(method==="initialize"){send({id,result:{capabilities:{completionProvider:{resolveProvider:true},definitionProvider:true,callHierarchyProvider:true,codeLensProvider:{resolveProvider:true},executeCommandProvider:{commands:["java.edit.handlePasteEvent"]}}}});return;}
   if(method==="shutdown"){if(mode!=="shutdown-hang")send({id,result:null});return;}
   if(method==="textDocument/completion"){
     completionCount++;
@@ -26,6 +26,11 @@ const framing=new Framing("headers",message=>{
   if(method==="textDocument/definition"){
     const uri=[...documents.keys()].find(uri=>uri.endsWith("/Customer.java"));
     send({id,result:[{uri,range:{start:{line:0,character:0},end:{line:0,character:1}}}]});return;
+  }
+  if(method==="workspace/executeCommand"&&params.command==="java.edit.handlePasteEvent"){
+    const paste=JSON.parse(params.arguments[0]),uri=paste.location.uri;
+    const changes={[uri]:[{range:{start:{line:1,character:0},end:{line:1,character:0}},newText:mode==="missing-paste-import"?"":"import java.awt.List;\n"}]};
+    send({id,result:{insertText:paste.text,additionalEdit:{changes}}});return;
   }
   if(method==="textDocument/codeLens"||method==="codeLens/resolve"){
     const uri=[...documents.keys()].find(uri=>uri.endsWith("/Calls.java"))!,current=documents.get(uri)!;

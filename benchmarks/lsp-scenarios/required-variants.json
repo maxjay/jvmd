@@ -1940,9 +1940,26 @@
         {
           "id": "FMT-03/code-import",
           "requirement": "Code paste supplies required import/additional edits and compiles.",
-          "implementation": "not_implemented",
-          "remaining": "Only string paste is implemented; code paste needing an import is absent.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "FMT-03/code-paste",
+              "operations": [
+                {
+                  "endpoint": "java.edit.handlePasteEvent",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "code paste preserves content and supplies the exact import",
+                "cleanup preserves every unrelated source",
+                "independent javac validation",
+                "independent generated-code behaviour"
+              ]
+            }
+          ]
         },
         {
           "id": "FMT-03/file-path",

@@ -32,6 +32,7 @@ export class ScenarioContext {
   javaHome=process.env.JAVA_HOME??"";
   private origins=new WeakMap<object,{method:string;state:string;requestId:number}>();
   private legacyHierarchyOrigins=new Map<string,{method:string;state:string;requestId:number}>();
+  private workspaceSymbolOrigins=new Map<string,{method:string;state:string;requestId:number}>();
   capabilities:any={};operations:any[]=[];assertions:any[]=[];documents=new Map<string,{text:string;version:number;incarnation:number}>();
   versions=new Map<string,number>();incarnations=new Map<string,number>();
   seriesExpectations:any[]=[];mutations:any[]=[];
@@ -98,6 +99,10 @@ export class ScenarioContext {
       "callHierarchy/incomingCalls":"textDocument/prepareCallHierarchy","callHierarchy/outgoingCalls":"textDocument/prepareCallHierarchy",
       "typeHierarchy/supertypes":"textDocument/prepareTypeHierarchy","typeHierarchy/subtypes":"textDocument/prepareTypeHierarchy"};
     let origin:any;
+    if(endpoint==="java.project.resolveWorkspaceSymbol"){
+      origin=this.workspaceSymbolOrigins.get(params.arguments?.[0]);
+      this.assert("workspace symbol was issued to this client in the current document state",!!origin&&origin.state===JSON.stringify(before),{endpoint,origin});
+    }
     if(endpoint==="java.navigate.resolveTypeHierarchy"){
       origin=this.legacyHierarchyOrigins.get(params.arguments?.[0]);
       this.assert("legacy hierarchy item belongs to this client and document state",!!origin&&origin.state===JSON.stringify(before),{endpoint,origin});
@@ -107,6 +112,8 @@ export class ScenarioContext {
       this.assert("opaque item belongs to this client, endpoint and document state",!!origin&&origin.method===originMethod[method]&&origin.state===JSON.stringify(before),{method,origin});
     }
     const row=await this.client.request(method,params,this.timeout);
+    if(!row.error&&["workspace/symbol","java/searchSymbols"].includes(endpoint)&&Array.isArray(row.result))
+      for(const item of row.result)this.workspaceSymbolOrigins.set(JSON.stringify(item),{method:endpoint,state:JSON.stringify(before),requestId:row.id});
     if(!row.error&&endpoint==="java.navigate.openTypeHierarchy"&&row.result&&typeof row.result==="object")
       this.legacyHierarchyOrigins.set(JSON.stringify(row.result),{method:endpoint,state:JSON.stringify(before),requestId:row.id});
     if(!row.error){const items=method==="textDocument/completion"?(Array.isArray(row.result)?row.result:row.result?.items):row.result;

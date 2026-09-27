@@ -13,13 +13,14 @@ import {protobufCases} from "./scenarios/protobuf.ts";
 import {generationCases} from "./scenarios/generation.ts";
 import {structureCases} from "./scenarios/structure.ts";
 import {coreCases} from "./scenarios/core.ts";
+import {symbolCases} from "./scenarios/symbols.ts";
 import {createFixture,sha,inventory} from "./harness/fixture.ts";
 import {ScenarioContext,CAPABILITIES,SETTINGS,transitionPolicy,type CaseDefinition} from "./harness/ScenarioContext.ts";
 import {launch,type LaunchOptions} from "./harness/launch.ts";
 import {CONTRACT} from "./harness/contracts.ts";
 import {sourceInventory} from "./harness/sourceInventory.ts";
 
-export const cases:CaseDefinition[]=[...coreCases,...structureCases,...generationCases,...projectCases,...protobufCases,...editingCases,...dependencyCases,...fileCases,...refactoringCases];
+export const cases:CaseDefinition[]=[...coreCases,...structureCases,...symbolCases,...generationCases,...projectCases,...protobufCases,...editingCases,...dependencyCases,...fileCases,...refactoringCases];
 const write=(p:string,v:any)=>writeFileSync(p,JSON.stringify(v,null,2)+"\n");
 const jsonl=(p:string,rows:any[])=>writeFileSync(p,rows.map(r=>JSON.stringify(r)).join("\n")+(rows.length?"\n":""));
 function capability(c:any,key:string|undefined){return key===undefined?true:!!key.split(".").reduce((v,k)=>v?.[k],c);}

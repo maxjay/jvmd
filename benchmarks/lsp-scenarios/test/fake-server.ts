@@ -14,8 +14,23 @@ const framing=new Framing("headers",message=>{
   if(method==="textDocument/didChange")documents.set(params.textDocument.uri,params.contentChanges[0].text);
   if(method==="exit"){if(mode!=="shutdown-hang")process.exit(mode==="shutdown-nonzero"?1:0);return;}
   if(id===undefined)return;
-  if(method==="initialize"){send({id,result:{capabilities:{typeHierarchyProvider:true,renameProvider:{prepareProvider:true},completionProvider:{resolveProvider:true},definitionProvider:true,callHierarchyProvider:true,codeLensProvider:{resolveProvider:true},executeCommandProvider:{commands:["java.edit.handlePasteEvent","java.navigate.openTypeHierarchy","java.navigate.resolveTypeHierarchy"]}}}});return;}
+  if(method==="initialize"){send({id,result:{capabilities:{documentSymbolProvider:true,workspaceSymbolProvider:true,typeHierarchyProvider:true,renameProvider:{prepareProvider:true},completionProvider:{resolveProvider:true},definitionProvider:true,callHierarchyProvider:true,codeLensProvider:{resolveProvider:true},executeCommandProvider:{commands:["java.project.resolveWorkspaceSymbol","java.edit.handlePasteEvent","java.navigate.openTypeHierarchy","java.navigate.resolveTypeHierarchy"]}}}});return;}
   if(method==="shutdown"){if(mode!=="shutdown-hang")send({id,result:null});return;}
+  if(mode.startsWith("symbols-")&&["textDocument/documentSymbol","java/extendedDocumentSymbol","workspace/symbol","java/searchSymbols","workspace/executeCommand"].includes(method)){
+    const uri=[...documents.keys()].find(u=>u.endsWith("/SearchCase.java"))!,source=documents.get(uri)!;
+    const rows=[...source.matchAll(/(interface|class) (Benchmark\w+)[^\n]*/gu)].map(m=>({name:m[2],kind:m[1]==="interface"?11:5,location:{uri,range:span(source,m.index+m[1].length+1,m[2].length)}}));
+    if(method==="workspace/symbol"||method==="java/searchSymbols"){send({id,result:rows});return;}
+    if(method==="workspace/executeCommand"){const item=JSON.parse(params.arguments[0]);send({id,result:item});return;}
+    const types=[...source.matchAll(/(interface|class) (Benchmark\w+)[^\n]*/gu)].map(m=>{
+      const row:any={name:m[2],kind:m[1]==="interface"?11:5,range:span(source,m.index,m[0].length),selectionRange:span(source,m.index+m[1].length+1,m[2].length),uri,children:[]};
+      if(row.kind===11){const at=source.indexOf("int local();");row.children.push({name:"local()",kind:6,range:span(source,at,12),selectionRange:span(source,at+4,5),uri});
+        if(method==="java/extendedDocumentSymbol"&&mode!=="symbols-missing-inherited"){
+          const parent="package bench;\npublic interface SymbolParent { int inherited(); }\n",at=parent.indexOf("int inherited();");
+          row.children.push({name:"inherited()",kind:6,range:span(parent,at,16),selectionRange:span(parent,at+4,9),uri:mode==="symbols-wrong-inherited-uri"?uri:uri.replace("SearchCase.java","SymbolParent.java")});
+        }
+      }return row;
+    });send({id,result:types});return;
+  }
   if(method==="java/checkToStringStatus"){
     send({id,result:{type:"Generate",fields:[{name:"name",type:"String",bindingKey:"selected-name"}],exists:false}});return;
   }

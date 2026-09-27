@@ -1127,29 +1127,368 @@
           "id": "NAV-03/first",
           "requirement": "First search/outline/resolve routes check names, kinds, ranges and applicable filters; inherited outline members included.",
           "implementation": "partial",
-          "remaining": "Extended outline does not validate inherited members; route/filter coverage still needs review.",
-          "evidence": []
+          "remaining": "All five routes have independent first/repeat, added and renamed-declaration cases, with exact inherited outlines and original-item resolve. Nonvacuous project/source/limit filter controls remain to implement.",
+          "evidence": [
+            {
+              "caseId": "NAV-03/outline-first-repeat",
+              "operations": [
+                {
+                  "endpoint": "textDocument/documentSymbol",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact current symbol identities and declaring-source ranges"
+              ]
+            },
+            {
+              "caseId": "NAV-03/extended-first-repeat",
+              "operations": [
+                {
+                  "endpoint": "java/extendedDocumentSymbol",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact current symbol identities and declaring-source ranges"
+              ]
+            },
+            {
+              "caseId": "NAV-03/search-first-repeat",
+              "operations": [
+                {
+                  "endpoint": "workspace/symbol",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact current symbol identities and declaring-source ranges"
+              ]
+            },
+            {
+              "caseId": "NAV-03/filtered-search-first-repeat",
+              "operations": [
+                {
+                  "endpoint": "java/searchSymbols",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact current symbol identities and declaring-source ranges"
+              ]
+            },
+            {
+              "caseId": "NAV-03/resolve-first-repeat",
+              "operations": [
+                {
+                  "endpoint": "java.project.resolveWorkspaceSymbol",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact current symbol identities and declaring-source ranges"
+              ]
+            }
+          ]
         },
         {
           "id": "NAV-03/repeat",
           "requirement": "Repeat each search/outline/resolve route without changing state.",
           "implementation": "partial",
-          "remaining": "Extended outline does not validate inherited members; route/filter coverage still needs review.",
-          "evidence": []
+          "remaining": "All five routes have independent first/repeat, added and renamed-declaration cases, with exact inherited outlines and original-item resolve. Nonvacuous project/source/limit filter controls remain to implement.",
+          "evidence": [
+            {
+              "caseId": "NAV-03/outline-first-repeat",
+              "operations": [
+                {
+                  "endpoint": "textDocument/documentSymbol",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact current symbol identities and declaring-source ranges"
+              ]
+            },
+            {
+              "caseId": "NAV-03/extended-first-repeat",
+              "operations": [
+                {
+                  "endpoint": "java/extendedDocumentSymbol",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact current symbol identities and declaring-source ranges"
+              ]
+            },
+            {
+              "caseId": "NAV-03/search-first-repeat",
+              "operations": [
+                {
+                  "endpoint": "workspace/symbol",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact current symbol identities and declaring-source ranges"
+              ]
+            },
+            {
+              "caseId": "NAV-03/filtered-search-first-repeat",
+              "operations": [
+                {
+                  "endpoint": "java/searchSymbols",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact current symbol identities and declaring-source ranges"
+              ]
+            },
+            {
+              "caseId": "NAV-03/resolve-first-repeat",
+              "operations": [
+                {
+                  "endpoint": "java.project.resolveWorkspaceSymbol",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact current symbol identities and declaring-source ranges"
+              ]
+            }
+          ]
         },
         {
           "id": "NAV-03/new",
           "requirement": "New declaration appears with exact identity and applicable filters.",
           "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "remaining": "All five routes have independent first/repeat, added and renamed-declaration cases, with exact inherited outlines and original-item resolve. Nonvacuous project/source/limit filter controls remain to implement.",
+          "evidence": [
+            {
+              "caseId": "NAV-03/outline-new",
+              "operations": [
+                {
+                  "endpoint": "textDocument/documentSymbol",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact current symbol identities and declaring-source ranges",
+                "one declaration mutation preserves all unrelated source states",
+                "saved declaration matches the open buffer",
+                "independent javac validation"
+              ]
+            },
+            {
+              "caseId": "NAV-03/extended-new",
+              "operations": [
+                {
+                  "endpoint": "java/extendedDocumentSymbol",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact current symbol identities and declaring-source ranges",
+                "one declaration mutation preserves all unrelated source states",
+                "saved declaration matches the open buffer",
+                "independent javac validation"
+              ]
+            },
+            {
+              "caseId": "NAV-03/search-new",
+              "operations": [
+                {
+                  "endpoint": "workspace/symbol",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact current symbol identities and declaring-source ranges",
+                "one declaration mutation preserves all unrelated source states",
+                "saved declaration matches the open buffer",
+                "independent javac validation"
+              ]
+            },
+            {
+              "caseId": "NAV-03/filtered-search-new",
+              "operations": [
+                {
+                  "endpoint": "java/searchSymbols",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact current symbol identities and declaring-source ranges",
+                "one declaration mutation preserves all unrelated source states",
+                "saved declaration matches the open buffer",
+                "independent javac validation"
+              ]
+            },
+            {
+              "caseId": "NAV-03/resolve-new",
+              "operations": [
+                {
+                  "endpoint": "java.project.resolveWorkspaceSymbol",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact current symbol identities and declaring-source ranges",
+                "one declaration mutation preserves all unrelated source states",
+                "saved declaration matches the open buffer",
+                "independent javac validation"
+              ]
+            }
+          ]
         },
         {
           "id": "NAV-03/renamed",
           "requirement": "Renamed declaration replaces old name with exact current identity and filters.",
-          "implementation": "not_implemented",
-          "remaining": "No renamed-declaration cases.",
-          "evidence": []
+          "implementation": "partial",
+          "remaining": "All five routes have independent first/repeat, added and renamed-declaration cases, with exact inherited outlines and original-item resolve. Nonvacuous project/source/limit filter controls remain to implement.",
+          "evidence": [
+            {
+              "caseId": "NAV-03/outline-renamed",
+              "operations": [
+                {
+                  "endpoint": "textDocument/documentSymbol",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact current symbol identities and declaring-source ranges",
+                "one declaration mutation preserves all unrelated source states",
+                "saved declaration matches the open buffer",
+                "independent javac validation"
+              ]
+            },
+            {
+              "caseId": "NAV-03/extended-renamed",
+              "operations": [
+                {
+                  "endpoint": "java/extendedDocumentSymbol",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact current symbol identities and declaring-source ranges",
+                "one declaration mutation preserves all unrelated source states",
+                "saved declaration matches the open buffer",
+                "independent javac validation"
+              ]
+            },
+            {
+              "caseId": "NAV-03/search-renamed",
+              "operations": [
+                {
+                  "endpoint": "workspace/symbol",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact current symbol identities and declaring-source ranges",
+                "one declaration mutation preserves all unrelated source states",
+                "saved declaration matches the open buffer",
+                "independent javac validation"
+              ]
+            },
+            {
+              "caseId": "NAV-03/filtered-search-renamed",
+              "operations": [
+                {
+                  "endpoint": "java/searchSymbols",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact current symbol identities and declaring-source ranges",
+                "one declaration mutation preserves all unrelated source states",
+                "saved declaration matches the open buffer",
+                "independent javac validation"
+              ]
+            },
+            {
+              "caseId": "NAV-03/resolve-renamed",
+              "operations": [
+                {
+                  "endpoint": "java.project.resolveWorkspaceSymbol",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "exact current symbol identities and declaring-source ranges",
+                "one declaration mutation preserves all unrelated source states",
+                "saved declaration matches the open buffer",
+                "independent javac validation"
+              ]
+            }
+          ]
         }
       ]
     },

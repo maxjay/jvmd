@@ -4,8 +4,8 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 130 case definitions, 116 passing TypeScript
-harness tests, and 107 required variants (71 implemented, 26 partial, 10 absent).
+Latest implementation inventory: 145 case definitions, 128 passing TypeScript
+harness tests, and 107 required variants (71 implemented, 27 partial, 9 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -814,3 +814,29 @@ their metadata are preserved with explicit failed-inventory status; the original
 seal is unchanged and the cause is unproven. The original reducer recorded two
 passes and two unsupported cases, but this capture is not fully sealed and
 provides no comparative performance estimate.
+
+## Independent symbol routes and inherited declarations
+
+Fifteen independently reset cases now exercise standard outline, extended
+outline, workspace search, filtered search and workspace-symbol resolution.
+Each route has unchanged first/repeat, added-declaration and renamed-declaration
+cases. Oracles check complete expected name/kind sets, exact declaration ranges,
+source URIs and absence of the old renamed symbol. The extended outline must
+include an inherited member whose range belongs to a separate parent source;
+its containing child and declaring-source URI are checked independently.
+
+Saved changes send the new buffer and save before the immediate semantic probe.
+The trigger is the buffer-change notification; no compilation or readiness
+query precedes the first probe. A resolve transition acquires and validates a
+new original search item on every attempt. The client refuses forged or stale
+items, and artifact replay checks the original raw item, state and request ID.
+Changed cases preserve all unrelated source state and independently compile
+only after the semantic transition.
+
+Twelve new tests reject extra/stale declarations, homonym paths, wrong kinds,
+use-site ranges, absent or mislocated inherited members, and forged item
+provenance. Subprocess tests run all five first/repeat routes; stale mutation
+responses remain incorrect after successful retries. All 128 harness tests pass.
+The four NAV-03 variants remain partial: project/source/limit filters still need
+negative controls that can actually expose an ignored filter. These fifteen
+new definitions also still need real-server replay.

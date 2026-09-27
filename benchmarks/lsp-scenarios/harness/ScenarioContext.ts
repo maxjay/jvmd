@@ -45,7 +45,7 @@ export class ScenarioContext {
     client.onServerRequest=async(method,params)=>{
       this.serverActions.push({method,params,timeNs:String(now())});
       if(method==="workspace/configuration")return (params?.items??[]).map((item:any)=>String(item.section??"").split(".").filter(Boolean).reduce((v:any,key:string)=>v?.[key],this.settings));
-      if(method==="workspace/workspaceFolders")return [{uri:pathToFileURL(fixture.root).href,name:"benchmark"}];
+      if(method==="workspace/workspaceFolders")return this.workspaceFolders();
       if(method==="client/registerCapability"){this.registrations.push(...params.registrations);return null;}
       if(method==="client/unregisterCapability")return null;
       if(["window/workDoneProgress/create","workspace/inlayHint/refresh","workspace/codeLens/refresh"].includes(method))return null;
@@ -58,9 +58,10 @@ export class ScenarioContext {
     };
   }
   file(name:string){const f=this.fixture.files[name];assert(f,"unknown fixture file: "+name);return f;}
+  workspaceFolders(){return this.fixture.workspaceFolders??[{uri:pathToFileURL(this.fixture.root).href,name:"benchmark"}];}
   async initialize(){
     const row=await this.client.request("initialize",{processId:process.pid,rootUri:pathToFileURL(this.fixture.root).href,
-      workspaceFolders:[{uri:pathToFileURL(this.fixture.root).href,name:"benchmark"}],capabilities:CAPABILITIES,
+      workspaceFolders:this.workspaceFolders(),capabilities:CAPABILITIES,
       initializationOptions:{settings:this.settings,extendedClientCapabilities:{classFileContentsSupport:true,advancedOrganizeImportsSupport:true}}},this.timeout);
     assert(!row.error,"initialize failed: "+JSON.stringify(row.error));this.capabilities=row.result.capabilities;this.initializedNs=row.endNs;
     this.client.notify("initialized",{});this.client.notify("workspace/didChangeConfiguration",{settings:this.settings});

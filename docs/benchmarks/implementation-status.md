@@ -4,8 +4,8 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 145 case definitions, 128 passing TypeScript
-harness tests, and 107 required variants (71 implemented, 27 partial, 9 absent).
+Latest implementation inventory: 148 case definitions, 134 passing TypeScript
+harness tests, and 107 required variants (75 implemented, 23 partial, 9 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -852,3 +852,29 @@ Regression vectors cover both valid forms and reject an unrelated selection.
 The twelve symbol tests pass. The original frozen replay continues with its
 original oracle so its failed raw results remain attributable to that revision;
 those package failures are harness mistakes, not evidence of a server defect.
+
+## Symbol filters with present excluded candidates
+
+Three additional independent cases prepare two imported projects and a real
+class-only JAR. The main project contains two matching source declarations; the
+second has a distinct matching declaration; the JAR contributes a fourth type.
+Raw compiler/JAR commands, tool hashes, source bytes and archive/class hashes are
+recorded. Both workspace folders are supplied consistently at initialize and in
+server callbacks. The expected binary archive, package and class-file URI path come from these
+inputs; they are not learned from a server response.
+
+After the measured first/repeat or changed semantic probe, explicit controls
+check all candidates, each project's scope, source-only scope, the combined
+project/source filter and a one-result limit. Each control is repeated unchanged.
+The bounded reply may choose any one correct source declaration; it cannot be
+empty, oversized, duplicated or unrelated. Such an arbitrary subset is never
+used as a mutation-freshness witness. Only the preceding complete declaration
+set establishes new/renamed visibility. Both excluded candidates must appear in
+positive controls, and secondary sources and binary bytes must remain unchanged.
+
+Six new tests exercise ignored exclusions, misleading binary identities, limits,
+consistent workspace folders and control ordering for unchanged/new/renamed
+cases. All 134 harness tests pass. The real binary preparation also succeeds
+locally. The four NAV-03 variants are now implemented in source (75 total), while
+real-server replay remains required; execution failures are separate from that
+implementation disposition. There are 23 partial and 9 absent variants.

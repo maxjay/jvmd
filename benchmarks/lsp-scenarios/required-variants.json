@@ -1126,8 +1126,7 @@
         {
           "id": "NAV-03/first",
           "requirement": "First search/outline/resolve routes check names, kinds, ranges and applicable filters; inherited outline members included.",
-          "implementation": "partial",
-          "remaining": "All five routes have independent first/repeat, added and renamed-declaration cases, with exact inherited outlines and original-item resolve. Nonvacuous project/source/limit filter controls remain to implement.",
+          "implementation": "implemented",
           "evidence": [
             {
               "caseId": "NAV-03/outline-first-repeat",
@@ -1197,6 +1196,27 @@
               ],
               "assertions": [
                 "exact current symbol identities and declaring-source ranges"
+              ]
+            },
+            {
+              "caseId": "NAV-03/filter-controls-first-repeat",
+              "operations": [
+                {
+                  "endpoint": "java/searchSymbols",
+                  "states": [
+                    "first_use",
+                    "filter_control_all",
+                    "filter_control_project",
+                    "filter_control_source",
+                    "filter_control_project-source",
+                    "filter_control_secondary",
+                    "filter_control_limit"
+                  ]
+                }
+              ],
+              "assertions": [
+                "project source and limit filters have present excluded candidates",
+                "filter controls preserve secondary sources and binary bytes"
               ]
             }
           ]
@@ -1204,8 +1224,7 @@
         {
           "id": "NAV-03/repeat",
           "requirement": "Repeat each search/outline/resolve route without changing state.",
-          "implementation": "partial",
-          "remaining": "All five routes have independent first/repeat, added and renamed-declaration cases, with exact inherited outlines and original-item resolve. Nonvacuous project/source/limit filter controls remain to implement.",
+          "implementation": "implemented",
           "evidence": [
             {
               "caseId": "NAV-03/outline-first-repeat",
@@ -1281,14 +1300,35 @@
               "assertions": [
                 "exact current symbol identities and declaring-source ranges"
               ]
+            },
+            {
+              "caseId": "NAV-03/filter-controls-first-repeat",
+              "operations": [
+                {
+                  "endpoint": "java/searchSymbols",
+                  "states": [
+                    "warmup",
+                    "steady",
+                    "filter_control_all_repeat",
+                    "filter_control_project_repeat",
+                    "filter_control_source_repeat",
+                    "filter_control_project-source_repeat",
+                    "filter_control_secondary_repeat",
+                    "filter_control_limit_repeat"
+                  ]
+                }
+              ],
+              "assertions": [
+                "project source and limit filters have present excluded candidates",
+                "filter controls preserve secondary sources and binary bytes"
+              ]
             }
           ]
         },
         {
           "id": "NAV-03/new",
           "requirement": "New declaration appears with exact identity and applicable filters.",
-          "implementation": "partial",
-          "remaining": "All five routes have independent first/repeat, added and renamed-declaration cases, with exact inherited outlines and original-item resolve. Nonvacuous project/source/limit filter controls remain to implement.",
+          "implementation": "implemented",
           "evidence": [
             {
               "caseId": "NAV-03/outline-new",
@@ -1384,14 +1424,36 @@
                 "saved declaration matches the open buffer",
                 "independent javac validation"
               ]
+            },
+            {
+              "caseId": "NAV-03/filter-controls-new",
+              "operations": [
+                {
+                  "endpoint": "java/searchSymbols",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled",
+                    "filter_control_all",
+                    "filter_control_project",
+                    "filter_control_source",
+                    "filter_control_project-source",
+                    "filter_control_secondary",
+                    "filter_control_limit"
+                  ]
+                }
+              ],
+              "assertions": [
+                "project source and limit filters have present excluded candidates",
+                "filter controls preserve secondary sources and binary bytes"
+              ]
             }
           ]
         },
         {
           "id": "NAV-03/renamed",
           "requirement": "Renamed declaration replaces old name with exact current identity and filters.",
-          "implementation": "partial",
-          "remaining": "All five routes have independent first/repeat, added and renamed-declaration cases, with exact inherited outlines and original-item resolve. Nonvacuous project/source/limit filter controls remain to implement.",
+          "implementation": "implemented",
           "evidence": [
             {
               "caseId": "NAV-03/outline-renamed",
@@ -1486,6 +1548,29 @@
                 "one declaration mutation preserves all unrelated source states",
                 "saved declaration matches the open buffer",
                 "independent javac validation"
+              ]
+            },
+            {
+              "caseId": "NAV-03/filter-controls-renamed",
+              "operations": [
+                {
+                  "endpoint": "java/searchSymbols",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled",
+                    "filter_control_all",
+                    "filter_control_project",
+                    "filter_control_source",
+                    "filter_control_project-source",
+                    "filter_control_secondary",
+                    "filter_control_limit"
+                  ]
+                }
+              ],
+              "assertions": [
+                "project source and limit filters have present excluded candidates",
+                "filter controls preserve secondary sources and binary bytes"
               ]
             }
           ]

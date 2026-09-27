@@ -4,8 +4,8 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 113 case definitions, 54 passing TypeScript
-harness tests, and 107 required variants (48 implemented, 43 partial, 16 absent).
+Latest implementation inventory: 115 case definitions, 58 passing TypeScript
+harness tests, and 107 required variants (52 implemented, 42 partial, 13 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -371,3 +371,24 @@ requests, responses, source snapshots, operations, assertions, launch data and
 stderr; generated workspaces and caches are excluded and explicitly identified
 in its review manifest. The earlier development pilot remains separately marked
 as unsuitable for server-correctness claims because its grouping oracle was wrong.
+
+## Independent reference-lens variants
+
+VIEW-03 now covers first and unchanged repeated acquisition/resolution, plus
+independently reset added-use and removed-use cases. Each changed resolve
+receives a newly acquired lens, with the existing client/document-state ownership
+check. Acquisition and resolution remain separately timed requests.
+
+The reference-only fixture disables implementation lenses before initialization.
+The oracle requires the exact declaration, reference command, anchor, displayed
+count and independently enumerated location set. It rejects duplicates that
+preserve the count, wrong commands, wrong declarations, unrelated files and stale
+post-edit use sets. The command shape follows JDTLS CodeLensHandler's
+`java.show.references` contract; opaque lens data is forwarded without inspection.
+Mutated fixtures undergo independent compilation. Client capabilities explicitly
+advertise code-lens support and the refresh request handler already implemented.
+
+58 harness tests pass, including subprocess failures for stale added/removed
+references and a duplicated reference with the correct count. Source inventory is
+115 cases and 107 variants: 52 implemented, 42 partial and 13 absent. These are
+implementation dispositions; supported-server replay is still required.

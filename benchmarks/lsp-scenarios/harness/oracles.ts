@@ -65,6 +65,24 @@ export function exactLocations(value:any,expected:{uri:string;range:Range}[]):vo
   const key=(r:any)=>JSON.stringify({uri:decodeURI(r.uri),range:r.range});
   assert.deepEqual(locations(value).map(key).sort(),expected.map(key).sort(),"location identities/ranges differ");
 }
+/** The reference lens command must agree with independently enumerated uses,
+ * not just contain a plausible count or repeated copies of one location. */
+export function exactReferenceLens(value:any,expected:{uri:string;source:string;name:string;declaration:Range;calls:Range[]}){
+  assert.deepEqual(value?.range,expected.declaration,"resolved lens moved from its declaration");
+  const command=value.command;assert.equal(command?.command,"java.show.references","wrong lens command");
+  assert.equal(command.title,`${expected.calls.length} reference${expected.calls.length===1?"":"s"}`,"reference label disagrees with fixture");
+  assert(Array.isArray(command.arguments)&&command.arguments.length===3,"invalid reference command arguments");
+  const [uri,anchor,raw]=command.arguments;
+  assert.equal(decodeURI(uri),decodeURI(expected.uri));assert.deepEqual(anchor,expected.declaration.start,"command targets wrong declaration");
+  assert(Array.isArray(raw),"reference locations missing");
+  const normalized=locations(raw).map(row=>{
+    assert.equal(row.uri,decodeURI(expected.uri),"reference points outside fixture declaration uses");
+    const text=selected(expected.source,row.range);
+    assert(text===expected.name||text===expected.name+"()","reference selects wrong expression");
+    return {uri:row.uri,range:{start:row.range.start,end:{line:row.range.start.line,character:row.range.start.character+expected.name.length}}};
+  });
+  exactLocations(normalized,expected.calls.map(r=>({uri:expected.uri,range:{start:r.start,end:{line:r.start.line,character:r.start.character+expected.name.length}}})));
+}
 /** CallHierarchy may group or repeat rows for one caller/callee. Compare the
  * semantic set and retain wire multiplicity separately. Item selections must
  * be within the enclosing declaration; they need not select its name. */

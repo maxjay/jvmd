@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import {type CaseDefinition,type ScenarioContext} from "../harness/ScenarioContext.ts";
-import {position,range,selected,exactLocations,exactCallGraph,locations,offset,applyTextEdits,markup} from "../harness/oracles.ts";
+import {isDeepStrictEqual} from "node:util";
+import {SETTINGS,type CaseDefinition,type ScenarioContext} from "../harness/ScenarioContext.ts";
+import {position,range,selected,exactLocations,exactCallGraph,exactReferenceLens,offset,applyTextEdits} from "../harness/oracles.ts";
 
 const at=(c:ScenarioContext,file:string,token:string,shift=1)=>({textDocument:{uri:c.file(file).uri},position:position(c.text(file),c.text(file).indexOf(token)+shift)});
 const loc=(c:ScenarioContext,file:string,token:string,from=0)=>({uri:c.file(file).uri,range:range(c.text(file),token,from)});
@@ -108,14 +109,29 @@ export const structureCases:CaseDefinition[]=[
     const trigger=c.change("Use.java","\n\n\n"+c.text("Use.java")).trigger;
     await c.transition("textDocument/inlayHint",params,oracle,trigger,"both parameter hints lie inside the shifted call range");
   }},
-  {id:"VIEW-03/code-lens",family:"VIEW-03",apis:["API-075","API-076"],capability:"codeLensProvider",variant:"resolve reference lens from this response",run:async c=>{
-    await c.open("Calls.java");const all=await c.query("textDocument/codeLens",doc(c,"Calls.java"),v=>assert(Array.isArray(v)&&v.length>0));
-    const candidates=all.filter((l:any)=>{try{return selected(c.text("Calls.java"),l.range)==="b";}catch{return false;}});assert(candidates.length>0,"b lens missing");
-    let checked=false;for(const lens of candidates){const resolved=await c.query("codeLens/resolve",lens,v=>{assert(v.command?.command);assert(v.command.arguments);});
-      if(/2\s+references?/iu.test(resolved.command.title)){checked=true;const raw=resolved.command.arguments.find((x:any)=>Array.isArray(x)&&x.every((y:any)=>y.uri&&y.range));
-        assert(raw,"reference lens does not carry verifiable locations");assert.equal(raw.length,2);for(const l of locations(raw)){assert.equal(l.uri,c.file("Calls.java").uri);assert(["b","b()"].includes(selected(c.text("Calls.java"),l.range)));}}
-    }c.assert("resolved lens reports the two independent fixture call sites",checked);
-  }},
+  ...["first-repeat","add","remove"].map(mutation=>({id:"VIEW-03/code-lens"+(mutation==="first-repeat"?"":"-"+mutation),family:"VIEW-03",apis:["API-075","API-076",...(mutation==="first-repeat"?[]:["API-011"])],capability:"codeLensProvider",variant:`independent ${mutation} reference lens`,
+    prepare:fixture=>{fixture.settings=structuredClone(SETTINGS);fixture.settings.java.implementationsCodeLens.enabled="none";},
+    run:async(c:ScenarioContext)=>{
+      await c.open("Calls.java");
+      const declaration=()=>range(c.text("Calls.java"),"b",c.text("Calls.java").indexOf("public int b()"));
+      const select=(value:any)=>{assert(Array.isArray(value),"lens list missing");const candidates=value.filter(l=>isDeepStrictEqual(l.range,declaration()));assert.equal(candidates.length,1,"expected one reference lens at exact b declaration");return candidates[0];};
+      const acquire=async()=>select(await c.query("textDocument/codeLens",doc(c,"Calls.java"),select,"item_acquisition"));
+      const oracle=(value:any)=>{
+        const text=c.text("Calls.java"),start=text.indexOf("return "),end=text.indexOf(";",start),calls=[];
+        for(let i=text.indexOf("b()",start);i>=0&&i<end;i=text.indexOf("b()",i+3))calls.push(range(text,"b()",i));
+        exactReferenceLens(value,{uri:c.file("Calls.java").uri,source:text,name:"b",declaration:declaration(),calls});
+        c.assert("resolved reference lens agrees with exact fixture uses",true,{references:calls.length});
+      };
+      if(mutation==="first-repeat"){
+        const all=await c.series("textDocument/codeLens",doc(c,"Calls.java"),select);
+        await c.series("codeLens/resolve",select(all),oracle);return;
+      }
+      await c.query("codeLens/resolve",await acquire(),oracle,"baseline");
+      const before=c.text("Calls.java"),after=before.replace("return b() + b();",mutation==="add"?"return b() + b() + b();":"return b();");
+      c.assert("one independent reference-lens use mutation",after!==before,{mutation});
+      const trigger=c.change("Calls.java",after).trigger;
+      await c.transition("codeLens/resolve",acquire,oracle,trigger,`${mutation} one exact reference; newly acquired lens for every attempt`);c.compileOracle();
+    }})),
   ...[["whole","API-077","textDocument/formatting","documentFormattingProvider"],["range","API-078","textDocument/rangeFormatting","documentRangeFormattingProvider"],["on-type","API-079","textDocument/onTypeFormatting","documentOnTypeFormattingProvider"]].map(([variant,api,method,capability])=>({id:"FMT-01/"+variant,family:"FMT-01",apis:[api],capability,variant:"apply edits; preserve tokens; idempotent",
     run:async(c:ScenarioContext)=>{await c.open("Format.java");const params=()=>({...doc(c,"Format.java"),options:{tabSize:4,insertSpaces:true},
       ...(variant==="range"?{range:{start:{line:0,character:0},end:position(c.text("Format.java"),c.text("Format.java").length)}}:{}),

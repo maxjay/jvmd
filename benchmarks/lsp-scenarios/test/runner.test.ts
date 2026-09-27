@@ -11,7 +11,7 @@ import {createFixture} from "../harness/fixture.ts";
 
 const runner=fileURLToPath(new URL("../run.ts",import.meta.url));
 const fake=fileURLToPath(new URL("./fake-server.ts",import.meta.url));
-for(const [mode,caseId] of [["wrong-warmup","CMP-01/first-repeat"],["stale-provider","CMP-01/api-edit"],["wrong-range","NAV-01/definition"],["stale-call-graph","REL-01/incoming-add"],["stale-call-graph","REL-01/outgoing-remove"]]){
+for(const [mode,caseId] of [["wrong-warmup","CMP-01/first-repeat"],["stale-provider","CMP-01/api-edit"],["wrong-range","NAV-01/definition"],["stale-call-graph","REL-01/incoming-add"],["stale-call-graph","REL-01/outgoing-remove"],["stale-lens","VIEW-03/code-lens-add"],["stale-lens","VIEW-03/code-lens-remove"],["duplicate-lens-reference","VIEW-03/code-lens"]]){
   test("actual runner rejects "+mode+" in "+caseId+" and retains raw evidence",()=>{
     const tmp=mkdtempSync(path.join(os.tmpdir(),"jvmd-gate-"));
     try{

@@ -12,7 +12,7 @@ const framing=new Framing("headers",message=>{
   if(method==="textDocument/didChange")documents.set(params.textDocument.uri,params.contentChanges[0].text);
   if(method==="exit"){process.exit(0);return;}
   if(id===undefined)return;
-  if(method==="initialize"){send({id,result:{capabilities:{completionProvider:{resolveProvider:true},definitionProvider:true,callHierarchyProvider:true}}});return;}
+  if(method==="initialize"){send({id,result:{capabilities:{completionProvider:{resolveProvider:true},definitionProvider:true,callHierarchyProvider:true,codeLensProvider:{resolveProvider:true}}}});return;}
   if(method==="shutdown"){send({id,result:null});return;}
   if(method==="textDocument/completion"){
     completionCount++;
@@ -25,6 +25,16 @@ const framing=new Framing("headers",message=>{
   if(method==="textDocument/definition"){
     const uri=[...documents.keys()].find(uri=>uri.endsWith("/Customer.java"));
     send({id,result:[{uri,range:{start:{line:0,character:0},end:{line:0,character:1}}}]});return;
+  }
+  if(method==="textDocument/codeLens"||method==="codeLens/resolve"){
+    const uri=[...documents.keys()].find(uri=>uri.endsWith("/Calls.java"))!,current=documents.get(uri)!;
+    const text=mode==="stale-lens"&&method==="codeLens/resolve"?originalDocuments.get(uri)!:current;
+    const declaration=span(current,current.indexOf("int b()")+4,1);
+    if(method==="textDocument/codeLens"){send({id,result:[{range:declaration,data:{opaque:"current-lens"}}]});return;}
+    const start=text.indexOf("return "),end=text.indexOf(";",start),refs=[];
+    for(let at=text.indexOf("b()",start);at>=0&&at<end;at=text.indexOf("b()",at+3))refs.push({uri,range:span(text,at,3)});
+    if(mode==="duplicate-lens-reference"&&refs.length>1)refs[1]=refs[0];
+    send({id,result:{...params,command:{title:`${refs.length} reference${refs.length===1?"":"s"}`,command:"java.show.references",arguments:[uri,declaration.start,refs]}}});return;
   }
   if(method==="textDocument/prepareCallHierarchy"||method.startsWith("callHierarchy/")){
     const uri=[...documents.keys()].find(uri=>uri.endsWith("/Calls.java"))!;

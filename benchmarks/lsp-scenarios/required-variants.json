@@ -1601,30 +1601,124 @@
         {
           "id": "VIEW-03/first",
           "requirement": "First lens acquisition and current-object resolve identify exact references.",
-          "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "VIEW-03/code-lens",
+              "operations": [
+                {
+                  "endpoint": "textDocument/codeLens",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "codeLens/resolve",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "resolved reference lens agrees with exact fixture uses",
+                "opaque item belongs to this client, endpoint and document state"
+              ]
+            }
+          ]
         },
         {
           "id": "VIEW-03/repeat",
           "requirement": "Unchanged repeated acquisition and resolution preserve exact reference set.",
-          "implementation": "not_implemented",
-          "remaining": "Lens case only acquires and resolves once without a use mutation.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "VIEW-03/code-lens",
+              "operations": [
+                {
+                  "endpoint": "textDocument/codeLens",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                },
+                {
+                  "endpoint": "codeLens/resolve",
+                  "states": [
+                    "warmup",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "resolved reference lens agrees with exact fixture uses",
+                "opaque item belongs to this client, endpoint and document state"
+              ]
+            }
+          ]
         },
         {
           "id": "VIEW-03/add",
           "requirement": "Added use changes exact references and current resolved lens.",
-          "implementation": "not_implemented",
-          "remaining": "Lens case only acquires and resolves once without a use mutation.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "VIEW-03/code-lens-add",
+              "operations": [
+                {
+                  "endpoint": "textDocument/codeLens",
+                  "states": [
+                    "item_acquisition"
+                  ]
+                },
+                {
+                  "endpoint": "codeLens/resolve",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "resolved reference lens agrees with exact fixture uses",
+                "opaque item belongs to this client, endpoint and document state",
+                "one independent reference-lens use mutation",
+                "independent javac validation"
+              ]
+            }
+          ]
         },
         {
           "id": "VIEW-03/remove",
           "requirement": "Removed use changes exact references and current resolved lens.",
-          "implementation": "not_implemented",
-          "remaining": "Lens case only acquires and resolves once without a use mutation.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "VIEW-03/code-lens-remove",
+              "operations": [
+                {
+                  "endpoint": "textDocument/codeLens",
+                  "states": [
+                    "item_acquisition"
+                  ]
+                },
+                {
+                  "endpoint": "codeLens/resolve",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "resolved reference lens agrees with exact fixture uses",
+                "opaque item belongs to this client, endpoint and document state",
+                "one independent reference-lens use mutation",
+                "independent javac validation"
+              ]
+            }
+          ]
         }
       ]
     },

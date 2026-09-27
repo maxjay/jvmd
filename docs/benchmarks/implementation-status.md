@@ -4,8 +4,8 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 158 case definitions, 171 passing TypeScript
-harness tests, and 107 required variants (81 implemented, 20 partial, 6 absent).
+Latest implementation inventory: 160 case definitions, 179 passing TypeScript
+harness tests, and 107 required variants (82 implemented, 20 partial, 5 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -1164,3 +1164,13 @@ original seal and an unfinalized second report; no terminal event was recreated.
 These are single-block diagnostic observations. RPC completion and post-response
 class observation retain separate boundaries, and retry-driven recovery does not
 establish passive readiness or public comparative performance.
+
+## Folder and project import-cleanup scope
+
+Two independent cases now require positive presence of every included and excluded
+candidate, exact import-only edits, byte-preserved class bodies and outside-scope
+files, independent compilation/runtime validation and an exact repeat. The folder
+case includes nested packages plus prefix/substring lookalikes; the project case
+includes another imported project. `import-scope-cases.md` defines the boundaries,
+including client edit callbacks within the command round trip. All 179 harness
+tests pass; this source checkpoint still requires its real-server replay.

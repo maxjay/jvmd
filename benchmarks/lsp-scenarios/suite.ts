@@ -13,6 +13,7 @@ import {protobufCases} from "./scenarios/protobuf.ts";
 import {generationCases} from "./scenarios/generation.ts";
 import {structureCases} from "./scenarios/structure.ts";
 import {coreCases} from "./scenarios/core.ts";
+import {importScopeCases} from "./scenarios/importScope.ts";
 import {buildCases} from "./scenarios/builds.ts";
 import {diagnosticCases} from "./scenarios/diagnostics.ts";
 import {symbolCases,symbolFilterCases} from "./scenarios/symbols.ts";
@@ -22,7 +23,7 @@ import {launch,type LaunchOptions} from "./harness/launch.ts";
 import {CONTRACT} from "./harness/contracts.ts";
 import {sourceInventory} from "./harness/sourceInventory.ts";
 
-export const cases:CaseDefinition[]=[...coreCases,...buildCases,...diagnosticCases,...structureCases,...symbolCases,...symbolFilterCases,...generationCases,...projectCases,...protobufCases,...editingCases,...dependencyCases,...fileCases,...refactoringCases];
+export const cases:CaseDefinition[]=[...coreCases,...buildCases,...diagnosticCases,...structureCases,...symbolCases,...symbolFilterCases,...generationCases,...projectCases,...protobufCases,...editingCases,...importScopeCases,...dependencyCases,...fileCases,...refactoringCases];
 const write=(p:string,v:any)=>writeFileSync(p,JSON.stringify(v,null,2)+"\n");
 const jsonl=(p:string,rows:any[])=>writeFileSync(p,rows.map(r=>JSON.stringify(r)).join("\n")+(rows.length?"\n":""));
 function capability(c:any,key:string|undefined){return key===undefined?true:!!key.split(".").reduce((v,k)=>v?.[k],c);}

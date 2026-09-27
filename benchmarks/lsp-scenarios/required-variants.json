@@ -3217,9 +3217,63 @@
         {
           "id": "FMT-02/scope",
           "requirement": "Folder/project organize-imports scope changes only intended files and is stable on repeat.",
-          "implementation": "not_implemented",
-          "remaining": "No independent folder/project organize-imports scope case.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "FMT-02/imports-folder",
+              "operations": [
+                {
+                  "endpoint": "java/searchSymbols",
+                  "states": [
+                    "scope_presence"
+                  ]
+                },
+                {
+                  "endpoint": "java.edit.organizeImports",
+                  "states": [
+                    "first_use",
+                    "idempotence"
+                  ]
+                }
+              ],
+              "assertions": [
+                "scope candidates include nested sibling lookalike and foreign project sources",
+                "scope edit changes exactly selected files and preserves excluded sources",
+                "scope repeat preserves exact source state",
+                "open-buffer scope edits leave all on-disk sources unchanged",
+                "scope edit preserves unrelated document versions and membership",
+                "independent javac validation",
+                "independent generated-code behaviour"
+              ]
+            },
+            {
+              "caseId": "FMT-02/imports-project",
+              "operations": [
+                {
+                  "endpoint": "java/searchSymbols",
+                  "states": [
+                    "scope_presence"
+                  ]
+                },
+                {
+                  "endpoint": "java.edit.organizeImports",
+                  "states": [
+                    "first_use",
+                    "idempotence"
+                  ]
+                }
+              ],
+              "assertions": [
+                "scope candidates include nested sibling lookalike and foreign project sources",
+                "scope edit changes exactly selected files and preserves excluded sources",
+                "scope repeat preserves exact source state",
+                "open-buffer scope edits leave all on-disk sources unchanged",
+                "scope edit preserves unrelated document versions and membership",
+                "independent javac validation",
+                "independent generated-code behaviour"
+              ]
+            }
+          ]
         }
       ]
     },

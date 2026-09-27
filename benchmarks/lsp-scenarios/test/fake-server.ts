@@ -13,8 +13,24 @@ const framing=new Framing("headers",message=>{
   if(method==="textDocument/didChange")documents.set(params.textDocument.uri,params.contentChanges[0].text);
   if(method==="exit"){if(mode!=="shutdown-hang")process.exit(mode==="shutdown-nonzero"?1:0);return;}
   if(id===undefined)return;
-  if(method==="initialize"){send({id,result:{capabilities:{completionProvider:{resolveProvider:true},definitionProvider:true,callHierarchyProvider:true,codeLensProvider:{resolveProvider:true},executeCommandProvider:{commands:["java.edit.handlePasteEvent"]}}}});return;}
+  if(method==="initialize"){send({id,result:{capabilities:{renameProvider:{prepareProvider:true},completionProvider:{resolveProvider:true},definitionProvider:true,callHierarchyProvider:true,codeLensProvider:{resolveProvider:true},executeCommandProvider:{commands:["java.edit.handlePasteEvent"]}}}});return;}
   if(method==="shutdown"){if(mode!=="shutdown-hang")send({id,result:null});return;}
+  if(method==="textDocument/prepareRename"||method==="textDocument/rename"){
+    const invalid=params.textDocument.uri.endsWith("/Customer.java"),prepare=method==="textDocument/prepareRename";
+    if(mode==="rename-reject-all"||invalid&&mode==="rename-rejection"){
+      send({id,error:{code:-32600,message:"Renaming this element is not supported."}});return;
+    }
+    if(invalid&&mode==="rename-internal-error"){send({id,error:{code:-32603,message:"Internal rename failure"}});return;}
+    if(invalid&&mode==="rename-missing-method"){send({id,error:{code:-32601,message:"Rename not supported"}});return;}
+    if(invalid&&mode!=="rename-wrong-result"){send({id,result:mode==="rename-empty-edit"?{}:null});return;}
+    if(prepare){const source=documents.get(params.textDocument.uri)!;send({id,result:span(source,source.indexOf("number"),6)});return;}
+    const changes:Record<string,any[]>={};
+    for(const [uri,source] of documents)if(uri.endsWith("/Customer.java")||uri.endsWith("/Use.java")){
+      changes[uri]=[];
+      for(let at=source.indexOf("number()");at>=0;at=source.indexOf("number()",at+8))changes[uri].push({range:span(source,at,6),newText:params.newName});
+    }
+    send({id,result:{changes}});return;
+  }
   if(method==="textDocument/completion"){
     completionCount++;
     if(mode==="hang")return;

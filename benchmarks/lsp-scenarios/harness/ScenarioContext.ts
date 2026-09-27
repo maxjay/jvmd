@@ -7,6 +7,7 @@ import {ProtocolClient,now,type Exchange} from "./ProtocolClient.ts";
 import {type Fixture,sha} from "./fixture.ts";
 import {planWorkspaceEdit} from "./workspaceEdit.ts";
 import {applyTextEdits,offset,type Position} from "./oracles.ts";
+import {isRenameRejection,isInvalidRenameRequest} from "./rename.ts";
 
 export const CAPABILITIES={
   general:{positionEncodings:["utf-16"]},
@@ -14,7 +15,7 @@ export const CAPABILITIES={
     codeLens:{refreshSupport:true},
     symbol:{resolveSupport:{properties:["location.range"]}}},
   textDocument:{synchronization:{didSave:true,willSave:true,willSaveWaitUntil:true},publishDiagnostics:{versionSupport:true},completion:{completionItem:{snippetSupport:false,resolveSupport:{properties:["documentation","detail","additionalTextEdits"]}}},
-    signatureHelp:{signatureInformation:{activeParameterSupport:true,parameterInformation:{labelOffsetSupport:true},documentationFormat:["markdown","plaintext"]}},
+    rename:{prepareSupport:true},signatureHelp:{signatureInformation:{activeParameterSupport:true,parameterInformation:{labelOffsetSupport:true},documentationFormat:["markdown","plaintext"]}},
     codeLens:{dynamicRegistration:false},documentSymbol:{hierarchicalDocumentSymbolSupport:true},codeAction:{codeActionLiteralSupport:{codeActionKind:{valueSet:["quickfix","refactor","source"]}},resolveSupport:{properties:["edit"]}},
     semanticTokens:{requests:{full:true},tokenTypes:["namespace","type","class","enum","interface","struct","typeParameter","parameter","variable","property","enumMember","event","function","method","macro","keyword","modifier","comment","string","number","regexp","operator","decorator"],tokenModifiers:["declaration","definition","readonly","static","deprecated","abstract","async","modification","documentation","defaultLibrary"],formats:["relative"]}},
 };
@@ -88,7 +89,8 @@ export class ScenarioContext {
   registerFile(name:string,file:string){assert(path.resolve(file).startsWith(path.resolve(this.fixture.root)+path.sep),"registered source escapes fixture");const text=readFileSync(file,"utf8");this.fixture.files[name]={path:file,uri:pathToFileURL(file).href,text};return this.file(name);}
   createDisk(name:string,relative:string,text:string){const file=path.resolve(this.fixture.root,relative);assert(file.startsWith(path.resolve(this.fixture.root)+path.sep)&&!existsSync(file),"unsafe create");mkdirSync(path.dirname(file),{recursive:true});writeFileSync(file,text);const f=this.registerFile(name,file);const trigger=this.client.notify("workspace/didChangeWatchedFiles",{changes:[{uri:f.uri,type:1}]});this.mutations.push({kind:"external_create",uri:f.uri,after:sha(text),triggerNs:String(trigger)});return trigger;}
   deleteDisk(name:string){const f=this.file(name);assert(!this.documents.has(f.uri),"external deletion case requires closed provider");const before=sha(readFileSync(f.path));rmSync(f.path);delete this.fixture.files[name];const trigger=this.client.notify("workspace/didChangeWatchedFiles",{changes:[{uri:f.uri,type:3}]});this.mutations.push({kind:"external_delete",uri:f.uri,before,triggerNs:String(trigger)});return trigger;}
-  async query(method:string,params:any,oracle:(result:any)=>void,state="first_use",trigger?:bigint,freshnessWitness?:string){
+  async query(method:string,params:any,oracle:(result:any)=>void,state="first_use",trigger?:bigint,freshnessWitness?:string,responsePolicy?:"rename_rejection"){
+    assert(responsePolicy===undefined||isInvalidRenameRequest(method,state),"rename rejection policy requires an invalid-position rename request");
     const before=this.state();
     const originMethod:Record<string,string>={"completionItem/resolve":"textDocument/completion","codeLens/resolve":"textDocument/codeLens","codeAction/resolve":"textDocument/codeAction",
       "callHierarchy/incomingCalls":"textDocument/prepareCallHierarchy","callHierarchy/outgoingCalls":"textDocument/prepareCallHierarchy",
@@ -104,10 +106,11 @@ export class ScenarioContext {
     }
     const record:any={schemaVersion:1,clockDomain:"client",requestEventId:this.client.events.find(e=>e.direction==="send"&&e.message.id===row.id)?.sequence,responseEventId:this.client.events.find(e=>e.direction==="receive"&&e.message.id===row.id)?.sequence,operationId:"op-"+(this.operations.length+1),method,endpoint:method==="workspace/executeCommand"?params.command:method,state,requestId:row.id,startNs:row.startNs,endNs:row.endNs,
       latencyMs:Number(BigInt(row.endNs)-BigInt(row.startNs))/1e6,stateBefore:before,
-      originRequestId:origin?.requestId,rawResult:row.result,error:row.error,outcome:row.error?(row.error.kind==="timeout"?"timeout":"protocol_error"):"pass",
+      originRequestId:origin?.requestId,rawResult:row.result,error:row.error,responsePolicy,outcome:row.error?(row.error.kind==="timeout"?"timeout":"protocol_error"):"pass",
       freshness:{status:freshnessWitness?"verified":"not_applicable",witness:freshnessWitness??"unchanged fixture; semantic oracle checked"}};
     if(trigger!==undefined){record.triggerNs=String(trigger);record.transitionMs=Number(BigInt(row.endNs)-trigger)/1e6;}
     const validationStart=now();
+    if(responsePolicy==="rename_rejection"&&isRenameRejection(row.error)){record.outcome="pass";record.expectedRejection="rename_rejection";}
     if(!row.error)try{oracle(row.result);}catch(e){record.outcome="incorrect";record.assertionError=String(e);record.freshness={status:"contradicted",reason:String(e)};}
     record.validationMs=Number(now()-validationStart)/1e6;this.recordOperation(record);
     assert.equal(record.outcome,"pass",`${method}: ${record.assertionError??JSON.stringify(row.error)}`);

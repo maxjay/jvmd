@@ -2080,9 +2080,45 @@
         {
           "id": "REF-01/invalid",
           "requirement": "Independent invalid rename position refuses rename without edits.",
-          "implementation": "not_implemented",
-          "remaining": "No independent case for this rename variant.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "REF-01/prepare-invalid",
+              "operations": [
+                {
+                  "endpoint": "textDocument/prepareRename",
+                  "states": [
+                    "baseline",
+                    "invalid_position"
+                  ]
+                }
+              ],
+              "assertions": [
+                "valid rename baseline verified",
+                "invalid position is in-bounds whitespace",
+                "invalid rename rejected without edits",
+                "rename rejection preserves complete fixture state"
+              ]
+            },
+            {
+              "caseId": "REF-01/rename-invalid",
+              "operations": [
+                {
+                  "endpoint": "textDocument/rename",
+                  "states": [
+                    "baseline",
+                    "invalid_position"
+                  ]
+                }
+              ],
+              "assertions": [
+                "valid rename baseline verified",
+                "invalid position is in-bounds whitespace",
+                "invalid rename rejected without edits",
+                "rename rejection preserves complete fixture state"
+              ]
+            }
+          ]
         }
       ]
     },

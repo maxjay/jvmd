@@ -4,8 +4,8 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 116 case definitions, 67 passing TypeScript
-harness tests, and 107 required variants (61 implemented, 34 partial, 12 absent).
+Latest implementation inventory: 118 case definitions, 81 passing TypeScript
+harness tests, and 107 required variants (62 implemented, 34 partial, 11 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -561,3 +561,34 @@ own dispositions and must not inherit that result. The implementation remains
 a draft: 34 partial and 12 absent variants, full semantic replay, accepted AOT,
 complete lifetime resources, observer overhead and independent comparison blocks
 remain outstanding. No comparative-performance claim has been enabled.
+
+## Invalid rename positions and explicit rejection evidence
+
+REF-01 now has independently reset prepare-rename and rename cases at in-bounds
+whitespace. Each first proves a valid symbol works. The rename baseline checks
+the complete proposed workspace: exactly one declaration and three caller uses
+change, with every other byte preserved. It previews the transaction without
+applying it. Both cases then require rejection of the whitespace position and
+verify all source hashes, disk hashes, versions, file membership and mutation
+records remain unchanged; unsolicited server apply-edit requests fail the case.
+
+LSP 3.17 permits a null response or a semantic error for an invalid rename target.
+Rename may also return an empty/no-change workspace edit. The client now
+advertises prepare-rename support and gates that case on `prepareProvider`.
+Semantic errors retain their raw error and exchange records, with an explicit
+`rename_rejection` disposition. Only InvalidRequest, InvalidParams or RequestFailed
+with an informative rename/target message are accepted. Internal errors, missing
+methods, cancellation and timeouts remain failures. The reducer independently
+checks the method, state, case identity, error and earlier successful baseline;
+an arbitrary error cannot be relabelled as a successful negative test.
+
+Fourteen added tests run both cases through the actual subprocess runner with
+valid and deliberately broken peers, and try forged rejection dispositions.
+All 81 harness tests pass. Inventory: 118 cases, 62 implemented variants, 34
+partial and 11 absent. This is implementation/test evidence; the two new cases
+still require real-server replay. No comparative-performance claim is enabled.
+
+Protocol reference: [LSP 3.17 rename and prepareRename](https://github.com/microsoft/language-server-protocol/blob/gh-pages/_specifications/lsp/3.17/language/rename.md).
+The pinned JDTLS `08eafe6` PrepareRenameHandler returns InvalidRequest for a target
+that cannot be renamed; this is why treating every JSON-RPC error as a transport
+failure would mismeasure this negative scenario.

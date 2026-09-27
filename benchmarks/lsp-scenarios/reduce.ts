@@ -5,6 +5,7 @@ import {fileURLToPath} from "node:url";
 import {sha} from "./harness/fixture.ts";
 import {CONTRACT} from "./harness/contracts.ts";
 import {reduceVariants} from "./variants.ts";
+import {isRenameRejection,isInvalidRenameRequest} from "./harness/rename.ts";
 
 const read=(file:string)=>JSON.parse(readFileSync(file,"utf8"));
 const lines=(file:string)=>existsSync(file)?readFileSync(file,"utf8").split("\n").filter(Boolean).map(s=>JSON.parse(s)):[];
@@ -30,7 +31,12 @@ export function validateCase(report:any,events:any[],exchanges:any[],operations:
       if(op.outcome!=="timeout"&&received)check(received.direction==="receive"&&received.message.id===op.requestId&&!received.message.method,"response event mismatch");
       else if(op.outcome==="pass")check(false,"successful response event missing");
     }
-    if(op.outcome==="pass"){check(!op.error&&!op.assertionError,"pass conceals error");check(["verified","not_applicable"].includes(op.freshness?.status),"pass without freshness disposition");}
+    const expectedRejection=op.expectedRejection==="rename_rejection"&&op.responsePolicy==="rename_rejection"
+      &&isInvalidRenameRequest(op.method,op.state)&&isRenameRejection(op.error)
+      &&report.caseId===(op.method==="textDocument/prepareRename"?"REF-01/prepare-invalid":"REF-01/rename-invalid")
+      &&operations.some(b=>b.method===op.method&&b.state==="baseline"&&b.outcome==="pass"&&!b.error&&BigInt(b.endNs)<=BigInt(op.startNs));
+    if(op.expectedRejection!==undefined)check(expectedRejection,"invalid expected rejection disposition");
+    if(op.outcome==="pass"){check((!op.error||expectedRejection)&&!op.assertionError,"pass conceals error");check(["verified","not_applicable"].includes(op.freshness?.status),"pass without freshness disposition");}
   }
   for(const s of report.seriesExpectations??[]){
     if(s.kind==="transition"){check(operations.slice(s.firstOperationIndex).find(o=>o.method===s.method&&o.state!=="item_acquisition")?.state==="changed_immediate","immediate probe missing");

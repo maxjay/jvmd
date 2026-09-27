@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {writeFileSync} from "node:fs";
 import {type CaseDefinition,type ScenarioContext} from "../harness/ScenarioContext.ts";
 import {position,range,selected,exactLocations,hoverOracle,signatureOracle,completionOracle,chooseMethod,completionEffect,markup,decodeTokens,locations} from "../harness/oracles.ts";
+import {planWorkspaceEdit} from "../harness/workspaceEdit.ts";
 
 const p=(c:ScenarioContext,file:string,token:string,shift=1)=>({textDocument:{uri:c.file(file).uri},position:position(c.text(file),c.text(file).indexOf(token)+shift)});
 async function pair(c:ScenarioContext){await c.open("Customer.java");await c.open("Use.java");}
@@ -122,7 +123,37 @@ export const coreCases:CaseDefinition[]=[
       await c.series("textDocument/semanticTokens/full",{textDocument:{uri:c.file("Customer.java").uri}},oracle);
       const trigger=c.change("Customer.java","\n"+c.text("Customer.java")).trigger;
       await c.transition("textDocument/semanticTokens/full",()=>({textDocument:{uri:c.file("Customer.java").uri}}),oracle,trigger,"decoded tokens match shifted source positions");}},
-  {id:"REF-01/prepare",family:"REF-01",apis:["API-086"],method:"textDocument/prepareRename",capability:"renameProvider",variant:"valid symbol",
+  ...["prepare","rename"].map(kind=>({id:`REF-01/${kind}-invalid`,family:"REF-01",apis:[kind==="prepare"?"API-086":"API-087"],method:kind==="prepare"?"textDocument/prepareRename":"textDocument/rename",
+    capability:kind==="prepare"?"renameProvider.prepareProvider":"renameProvider",variant:"valid baseline then in-bounds whitespace rejection without edits",
+    run:async(c:ScenarioContext)=>{
+      await pair(c);await c.open("Unrelated.java");
+      const method=kind==="prepare"?"textDocument/prepareRename":"textDocument/rename";
+      const initial=Object.entries(c.fixture.files).map(([name,f])=>({uri:f.uri,text:c.text(name),version:c.documents.get(f.uri)?.version??null,open:c.documents.has(f.uri)}));
+      const before=c.state(),mutations=c.mutations.length,actions=c.serverActions.length;
+      await c.query(method,{...p(c,"Use.java","number()"),...(kind==="rename"?{newName:"benchmarkNumber"}:{})},v=>{
+        if(kind==="prepare")assert.deepEqual(v?.range??v,range(c.text("Use.java"),"number"));
+        else{
+          const planned=planWorkspaceEdit(c.fixture.root,initial,v);
+          const wanted=initial.map(f=>({...f,text:f.uri===c.file("Customer.java").uri?f.text.replace("int number()","int benchmarkNumber()"):
+            f.uri===c.file("Use.java").uri?f.text.replaceAll("customer.number()","customer.benchmarkNumber()"):f.text}));
+          assert.deepEqual([...planned.values()],wanted,"valid rename must change exactly the declaration and three uses, preserving all other bytes");
+        }
+      },"baseline");
+      c.assert("valid rename baseline verified",true);
+      const source=c.text("Customer.java"),at=source.indexOf("    public String label")+1;
+      c.assert("invalid position is in-bounds whitespace",at>0&&source.slice(at-1,at+2)==="   ");
+      await c.query(method,{textDocument:{uri:c.file("Customer.java").uri},position:position(source,at),...(kind==="rename"?{newName:"benchmarkNumber"}:{})},v=>{
+        if(kind==="prepare")assert.equal(v,null,"whitespace must not have a prepared rename target");
+        else if(v!==null){
+          assert(!(v?.documentChanges??[]).some((edit:any)=>edit.kind),"invalid rename must not perform resource operations");
+          assert.deepEqual([...planWorkspaceEdit(c.fixture.root,initial,v).values()],initial,"invalid rename must not change any source or file membership");
+        }
+      },"invalid_position",undefined,undefined,"rename_rejection");
+      c.assert("invalid rename rejected without edits",true);
+      c.assert("rename rejection preserves complete fixture state",JSON.stringify(c.state())===JSON.stringify(before)&&c.mutations.length===mutations
+        &&!c.serverActions.slice(actions).some(a=>a.method==="workspace/applyEdit"));
+    }})),
+  {id:"REF-01/prepare",family:"REF-01",apis:["API-086"],method:"textDocument/prepareRename",capability:"renameProvider.prepareProvider",variant:"valid symbol",
     run:async c=>{await pair(c);await c.series("textDocument/prepareRename",p(c,"Use.java","number()"),v=>assert.equal(selected(c.text("Use.java"),v.range??v),"number"));}},
   {id:"REF-01/rename",family:"REF-01",apis:["API-087"],method:"textDocument/rename",capability:"renameProvider",variant:"exact uses and homonym protection",
     run:async c=>{await pair(c);await c.open("Unrelated.java");const other=c.text("Unrelated.java");

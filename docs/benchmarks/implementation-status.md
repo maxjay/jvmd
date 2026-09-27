@@ -354,3 +354,20 @@ does not drop unrelated callers, missing uses or stale ranges. Tests cover both
 grouped and repeated representations and reject those incorrect alternatives.
 All 54 harness tests pass. The original pilot is retained as development evidence,
 not a server-correctness claim; the corrected real-server replay is pending.
+
+## Corrected call-graph replay
+
+The replay at `71c49fe` uses the corrected semantic-set oracle for all six
+JDTLS call-graph cases. Incoming first/repeat, addition and removal pass fully.
+Outgoing first/repeat, addition and removal return the exact expected call sites,
+but all three exit nonzero during shutdown and remain `protocol_error`. All 40
+recorded semantic operations pass; no integrity issues or source drift occurred.
+No failed operation or shutdown was dropped. This one-block diagnostic does not
+establish comparative performance.
+
+`benchmarks/evidence/call-graph-2026-09-27/` preserves the manifest, per-case
+dispositions and a hash-verified raw protocol review subset. The archive includes
+requests, responses, source snapshots, operations, assertions, launch data and
+stderr; generated workspaces and caches are excluded and explicitly identified
+in its review manifest. The earlier development pilot remains separately marked
+as unsuitable for server-correctness claims because its grouping oracle was wrong.

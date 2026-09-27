@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "scope": "Raw protocol review subset; not the complete experiment bundle or comparative performance evidence",
+  "archive": {
+    "file": "protocol-review.tar.xz",
+    "sha256": "7d63926fe83a29e8a3853ba536dc720429c12835b60741ba0b69539aa5348470",
+    "bytes": 80400,
+    "everySelectedFileHash": "verified"
+  },
+  "bundle": "call-graph-pilot-fixed",
+  "revision": "71c49fe61f7e22eb4f968d86a726c0e05cede532",
+  "plan": {
+    "caseIds": [
+      "REL-01/incoming",
+      "REL-01/incoming-add",
+      "REL-01/incoming-remove",
+      "REL-01/outgoing",
+      "REL-01/outgoing-add",
+      "REL-01/outgoing-remove"
+    ],
+    "servers": [
+      "jdtls"
+    ],
+    "blocks": 1,
+    "warmup": 1,
+    "samples": 2,
+    "timeout": 30000,
+    "profile": "direct",
+    "serverOrder": "alternate per independent block",
+    "reset": "fresh fixture and server state per independent case",
+    "seed": 0
+  },
+  "sourceDrift": false,
+  "sourceManifestSha256": "dd70802c7d43c4d2220a149bd560314695e9321a9169906ea31509f7c6d41d4f",
+  "originalChecksumInventorySha256": "ec3e6015f49348b9472a868be7d52f6fc87ee923d2333c8239881dfbfcd317ae",
+  "outcomes": {
+    "pass": 3,
+    "incorrect": 0,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 3,
+    "harness_error": 0,
+    "unsupported": 0,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "integrityIssues": [],
+  "cases": [
+    {
+      "caseId": "REL-01/incoming",
+      "outcome": "pass",
+      "operations": 8,
+      "allSemanticOperationsPassed": true,
+      "errors": {
+        "protocolErrors": []
+      }
+    },
+    {
+      "caseId": "REL-01/incoming-add",
+      "outcome": "pass",
+      "operations": 6,
+      "allSemanticOperationsPassed": true,
+      "errors": {
+        "protocolErrors": []
+      }
+    },
+    {
+      "caseId": "REL-01/incoming-remove",
+      "outcome": "pass",
+      "operations": 6,
+      "allSemanticOperationsPassed": true,
+      "errors": {
+        "protocolErrors": []
+      }
+    },
+    {
+      "caseId": "REL-01/outgoing",
+      "outcome": "protocol_error",
+      "operations": 8,
+      "allSemanticOperationsPassed": true,
+      "errors": {
+        "shutdownError": "Error: unclean shutdown: {\"code\":1}",
+        "protocolErrors": []
+      }
+    },
+    {
+      "caseId": "REL-01/outgoing-add",
+      "outcome": "protocol_error",
+      "operations": 6,
+      "allSemanticOperationsPassed": true,
+      "errors": {
+        "shutdownError": "Error: unclean shutdown: {\"code\":1}",
+        "protocolErrors": []
+      }
+    },
+    {
+      "caseId": "REL-01/outgoing-remove",
+      "outcome": "protocol_error",
+      "operations": 6,
+      "allSemanticOperationsPassed": true,
+      "errors": {
+        "shutdownError": "Error: unclean shutdown: {\"code\":1}",
+        "protocolErrors": []
+      }
+    }
+  ],
+  "interpretation": [
+    "Corrected oracle accepts equivalent call-graph grouping while preserving response multiplicity. All recorded semantic operations passed.",
+    "Three incoming cases passed fully. Three outgoing cases retain nonzero shutdown exits and remain protocol_error.",
+    "The earlier call-graph development pilot used an invalid grouping assumption; it is preserved separately and is not server-correctness evidence.",
+    "One JDTLS block does not establish comparative performance, product AOT or lifecycle/resource gates."
+  ]
+}

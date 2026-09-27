@@ -1,0 +1,215 @@
+{
+  "schemaVersion": 1,
+  "scope": "Raw protocol review subsets and original inventories; not complete experiment bundles or performance evidence",
+  "archive": {
+    "file": "protocol-reviews.tar.xz",
+    "bytes": 256276,
+    "sha256": "84651f9bb9bf30fe5bdf8e1a2ab48998842a47d6f3f4d962e1fdb1c619036c68",
+    "everySelectedFileHash": "verified"
+  },
+  "bundles": [
+    {
+      "bundle": "independent-variants-jdtls",
+      "revision": "08b6bdf7d3433ae27741c4ec431eb7131785368a",
+      "plan": {
+        "caseIds": [
+          "SES-02/completed",
+          "DOC-01/repeat",
+          "NAV-02/references-false",
+          "NAV-02/references-true",
+          "NAV-02/references-false-add",
+          "NAV-02/references-false-remove",
+          "NAV-02/references-true-add",
+          "NAV-02/references-true-remove",
+          "REF-01/rename",
+          "NAV-02/highlights",
+          "NAV-02/highlights-add",
+          "NAV-02/highlights-remove",
+          "DOC-02/external-create",
+          "DOC-02/external-modify",
+          "DOC-02/external-delete"
+        ],
+        "servers": [
+          "jdtls"
+        ],
+        "blocks": 1,
+        "warmup": 1,
+        "samples": 2,
+        "timeout": 30000,
+        "profile": "direct",
+        "serverOrder": "alternate per independent block",
+        "reset": "fresh fixture and server state per independent case",
+        "seed": 0
+      },
+      "sourceDrift": false,
+      "originalSourceManifestSha256": "8fa313a2390877be22f7ce5dfa3f48bf6389cd3e50942e7d6307c622db3b4f8d",
+      "originalChecksumInventorySha256": "32625ae1aa2245130c15d85e0acc1fe8846fdc813dd204bcf21ace901d1a78c3",
+      "selectedFiles": 112,
+      "outcomes": {
+        "pass": 7,
+        "incorrect": 4,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 4,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      },
+      "integrityIssues": [
+        "01-jdtls-DOC-02-external-create: settled probe missing"
+      ],
+      "correctnessClaimEligible": false
+    },
+    {
+      "bundle": "independent-variants-jdtls-fixed",
+      "revision": "08b6bdf7d3433ae27741c4ec431eb7131785368a",
+      "plan": {
+        "caseIds": [
+          "REF-01/rename",
+          "DOC-02/external-create",
+          "DOC-02/external-modify",
+          "DOC-02/external-delete"
+        ],
+        "servers": [
+          "jdtls"
+        ],
+        "blocks": 1,
+        "warmup": 1,
+        "samples": 2,
+        "timeout": 30000,
+        "profile": "direct",
+        "serverOrder": "alternate per independent block",
+        "reset": "fresh fixture and server state per independent case",
+        "seed": 0
+      },
+      "sourceDrift": false,
+      "originalSourceManifestSha256": "6e18f21dc7eb8b90fe7d089fe0ce3e59e3999fb478d753cdfd35e9b1e8b5e905",
+      "originalChecksumInventorySha256": "6bf27b9287356a6259fa9843a5e9d661e401e2aa8769be86517ed72e2966e99b",
+      "selectedFiles": 35,
+      "outcomes": {
+        "pass": 2,
+        "incorrect": 2,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 0,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      },
+      "integrityIssues": [],
+      "correctnessClaimEligible": true
+    },
+    {
+      "bundle": "independent-variants-jvmd",
+      "revision": "08b6bdf7d3433ae27741c4ec431eb7131785368a",
+      "plan": {
+        "caseIds": [
+          "SES-02/completed",
+          "DOC-01/repeat",
+          "NAV-02/references-false",
+          "NAV-02/references-true",
+          "NAV-02/references-false-add",
+          "NAV-02/references-false-remove",
+          "NAV-02/references-true-add",
+          "NAV-02/references-true-remove",
+          "REF-01/rename",
+          "NAV-02/highlights",
+          "NAV-02/highlights-add",
+          "NAV-02/highlights-remove",
+          "DOC-02/external-create",
+          "DOC-02/external-modify",
+          "DOC-02/external-delete"
+        ],
+        "servers": [
+          "jvmd"
+        ],
+        "blocks": 1,
+        "warmup": 1,
+        "samples": 2,
+        "timeout": 30000,
+        "profile": "pipe",
+        "serverOrder": "alternate per independent block",
+        "reset": "fresh fixture and server state per independent case",
+        "seed": 0
+      },
+      "sourceDrift": false,
+      "originalSourceManifestSha256": "bae8fa3afc0a9397fa77bbafe5fbf3932f6e1fb33c8050b659d72052cf9705c7",
+      "originalChecksumInventorySha256": "ab3e5b1a52bd54bb0354431565c1b9c72ae17203482958cf56fc1aa5dd6b53fc",
+      "selectedFiles": 112,
+      "outcomes": {
+        "pass": 9,
+        "incorrect": 0,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 3,
+        "harness_error": 0,
+        "unsupported": 3,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      },
+      "integrityIssues": [
+        "01-jvmd-DOC-02-external-create: settled probe missing"
+      ],
+      "correctnessClaimEligible": false
+    },
+    {
+      "bundle": "independent-variants-routes",
+      "revision": "deb0ae53f35018c12b19957d19aa2e6d5d51a6ac",
+      "plan": {
+        "caseIds": [
+          "DOC-02/external-create",
+          "DOC-02/search-create",
+          "DOC-02/external-modify",
+          "DOC-02/search-modify",
+          "DOC-02/external-delete",
+          "DOC-02/search-delete"
+        ],
+        "servers": [
+          "jvmd",
+          "jdtls"
+        ],
+        "blocks": 1,
+        "warmup": 1,
+        "samples": 2,
+        "timeout": 30000,
+        "profile": "pipe",
+        "serverOrder": "alternate per independent block",
+        "reset": "fresh fixture and server state per independent case",
+        "seed": 0
+      },
+      "sourceDrift": false,
+      "originalSourceManifestSha256": "a029e79b5f912dac517a7afea98df2d65c4a20568b9c6071ba46b5c7696f1f33",
+      "originalChecksumInventorySha256": "f25145fe35d90eeb103be1dd0a5a095febe998db519b6b9f4f21bc6fcc4a0ef9",
+      "selectedFiles": 91,
+      "outcomes": {
+        "pass": 5,
+        "incorrect": 1,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 3,
+        "harness_error": 0,
+        "unsupported": 3,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      },
+      "integrityIssues": [],
+      "correctnessClaimEligible": true
+    }
+  ],
+  "interpretation": [
+    "The first JDTLS pilot encountered harness edit-precedence and generic fixture-name errors. Those are not evidence of server incorrectness.",
+    "The initial JVMD composite case incorrectly required an unsupported workspace/symbol route. The final pilot separates search capability from caller visibility.",
+    "Incorrect immediate replies remain failed cases after correct retries/settled probes.",
+    "Nonzero process exits remain protocol failures even when all semantic replies pass.",
+    "All are single-block correctness pilots. JVMD uses diagnostic pipe transport; these are not product timing comparisons."
+  ],
+  "files": {
+    "harness-tests.txt": "03d14baeeb44b202ddbe357b1e1ee0794e9874dad04b554302b2919ddea77ab2"
+  }
+}

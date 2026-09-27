@@ -282,4 +282,19 @@ passed completed cancellation, repeated hover, both reference flags and their
 add/remove variants, and rename. Highlights were explicitly unsupported. Its
 external cases exposed the missing workspace-symbol capability check; the new
 separate search route addresses that harness gap without declaring file-change
-semantics unsupported. Final route-specific validation remains in progress.
+semantics unsupported. The route-specific results follow.
+
+The final DOC-02 pilot at `deb0ae5` used six independently reset routes per
+server. JVMD passed all three caller-visibility cases, including deletion's exact
+caller diagnostic, and declared all three workspace-search routes unsupported
+from initialize capabilities. JDTLS passed search-create and search-delete;
+search-modify retained a stale immediate range before settling. Its three
+caller-visibility cases had correct semantic replies but nonzero shutdown exits.
+No failure was changed to a pass. All four pilot bundles had unchanged source
+hashes during collection. Their raw protocol journals, original inventories and
+review hashes are committed in `benchmarks/evidence/independent-variants-2026-09-27/`.
+The archive contains review subsets, not complete performance evidence.
+
+Cancelled workflows now stop starting further native/protobuf experiments while
+still uploading their captured evidence. Ordinary correctness failures continue
+to allow the other diagnostic profiles to run.

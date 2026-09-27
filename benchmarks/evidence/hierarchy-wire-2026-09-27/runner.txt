@@ -1,0 +1,39 @@
+{"caseId":"REL-02/supertypes","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"REL-02/supertypes","server":"jdtls","block":1,"outcome":"incorrect"}
+{"caseId":"REL-02/subtypes","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"REL-02/subtypes","server":"jdtls","block":1,"outcome":"pass"}
+{"caseId":"REL-02/legacy-children-depth-0","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"REL-02/legacy-children-depth-0","server":"jdtls","block":1,"outcome":"protocol_error","error":"AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\",\"data\":{\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n"}
+{"caseId":"REL-02/legacy-children-depth-1","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"REL-02/legacy-children-depth-1","server":"jdtls","block":1,"outcome":"protocol_error","error":"AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\",\"data\":{\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n"}
+{"caseId":"REL-02/legacy-children-depth-2","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"REL-02/legacy-children-depth-2","server":"jdtls","block":1,"outcome":"protocol_error","error":"AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\",\"data\":{\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n"}
+{"caseId":"REL-02/legacy-parents-depth-0","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"REL-02/legacy-parents-depth-0","server":"jdtls","block":1,"outcome":"protocol_error","error":"AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\",\"data\":{\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n"}
+{"caseId":"REL-02/legacy-parents-depth-1","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"REL-02/legacy-parents-depth-1","server":"jdtls","block":1,"outcome":"protocol_error","error":"AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\",\"data\":{\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n"}
+{"caseId":"REL-02/legacy-parents-depth-2","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"REL-02/legacy-parents-depth-2","server":"jdtls","block":1,"outcome":"protocol_error","error":"AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\",\"data\":{\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n"}
+{"caseId":"REL-02/legacy-both-depth-0","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"REL-02/legacy-both-depth-0","server":"jdtls","block":1,"outcome":"protocol_error","error":"AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\",\"data\":{\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n"}
+{"caseId":"REL-02/legacy-hierarchy","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"REL-02/legacy-hierarchy","server":"jdtls","block":1,"outcome":"protocol_error","error":"AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\",\"data\":{\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n"}
+{"caseId":"REL-02/legacy-both-depth-2","server":"jvmd","block":1,"outcome":"unsupported"}
+{"caseId":"REL-02/legacy-both-depth-2","server":"jdtls","block":1,"outcome":"protocol_error","error":"AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\",\"data\":{\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n"}
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Selected benchmark cases failed; raw artifacts preserved in /workspace/scratch/c9ab7d11d4a9/hierarchy-replay
+    at main (file:///workspace/scratch/c9ab7d11d4a9/jvmd/benchmarks/lsp-scenarios/suite.ts:103:3)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///workspace/scratch/c9ab7d11d4a9/jvmd/benchmarks/lsp-scenarios/run.ts:6:3 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

@@ -4,7 +4,7 @@ import {mkdirSync,writeFileSync} from "node:fs";
 import {pathToFileURL,fileURLToPath} from "node:url";
 import {type CaseDefinition,type ScenarioContext} from "../harness/ScenarioContext.ts";
 import {position,selected,exactLocations,range} from "../harness/oracles.ts";
-import {exactLegacyHierarchy,type TypeGraph} from "../harness/hierarchy.ts";
+import {exactLegacyHierarchy,legacyHierarchyArguments,type TypeGraph} from "../harness/hierarchy.ts";
 const LEGACY_SOURCE="package bench;\ninterface Root {}\ninterface Base extends Root {}\ninterface Child extends Base {}\ninterface Grandchild extends Child {}\ninterface UnrelatedType {}\n";
 const LEGACY_GRAPH:TypeGraph={Root:{kind:11,parents:[],children:["Base"]},Base:{kind:11,parents:["Root"],children:["Child"]},
   Child:{kind:11,parents:["Base"],children:["Grandchild"]},Grandchild:{kind:11,parents:["Child"],children:[]},UnrelatedType:{kind:11,parents:[],children:[]}};
@@ -15,11 +15,26 @@ export const refactoringCases:CaseDefinition[]=[
       await c.open("Hierarchy.java");const text=c.text("Hierarchy.java"),uri=c.file("Hierarchy.java").uri;
       const params={textDocument:{uri},position:position(text,text.indexOf("interface Base")+11)};
       const check=(v:any,d:number)=>exactLegacyHierarchy(v,text,uri,LEGACY_GRAPH,"Base",direction,d);
-      await c.series("workspace/executeCommand",{command:"java.navigate.openTypeHierarchy",arguments:[JSON.stringify(params),direction,depth]},(v:any)=>{check(v,depth);c.assert("legacy open respects exact identity direction and depth",true);});
+      await c.series("workspace/executeCommand",{command:"java.navigate.openTypeHierarchy",arguments:legacyHierarchyArguments(params,direction,depth)},(v:any)=>{check(v,depth);c.assert("legacy open respects exact identity direction and depth",true);});
       // Resolve the exact raw depth-zero item, so eager open results cannot stand in for expansion.
-      const item=await c.execute("java.navigate.openTypeHierarchy",[JSON.stringify(params),direction,0],(v:any)=>check(v,0),"item_acquisition");
-      await c.series("workspace/executeCommand",{command:"java.navigate.resolveTypeHierarchy",arguments:[JSON.stringify(item),direction,depth]},(v:any)=>{check(v,depth);c.assert("legacy resolve respects exact identity direction and depth",true);});
+      const item=await c.execute("java.navigate.openTypeHierarchy",legacyHierarchyArguments(params,direction,0),(v:any)=>check(v,0),"item_acquisition");
+      await c.series("workspace/executeCommand",{command:"java.navigate.resolveTypeHierarchy",arguments:legacyHierarchyArguments(item,direction,depth)},(v:any)=>{check(v,depth);c.assert("legacy resolve respects exact identity direction and depth",true);});
     }}))),
+  ...[0,1,2].map(direction=>({id:`REL-02/legacy-${["children","parents","both"][direction]}-parent-change`,family:"REL-02",apis:["API-069","API-070","API-011"],
+    command:"java.navigate.openTypeHierarchy",fixture:{"Hierarchy.java":LEGACY_SOURCE},variant:"independent parent replacement; freshly prepared legacy item before every expansion",run:async(c:ScenarioContext)=>{
+      await c.open("Hierarchy.java");const uri=c.file("Hierarchy.java").uri,focus=direction===0?"Base":"Child";
+      const graph=structuredClone(LEGACY_GRAPH);
+      const check=(v:any,depth:number)=>exactLegacyHierarchy(v,c.text("Hierarchy.java"),uri,graph,focus,direction,depth);
+      const acquire=()=>c.execute("java.navigate.openTypeHierarchy",legacyHierarchyArguments({textDocument:{uri},position:position(c.text("Hierarchy.java"),c.text("Hierarchy.java").indexOf("interface "+focus)+11)},direction,0),v=>check(v,0),"item_acquisition");
+      const params=async()=>({command:"java.navigate.resolveTypeHierarchy",arguments:legacyHierarchyArguments(await acquire(),direction,2)});
+      await c.query("workspace/executeCommand",await params(),v=>check(v,2),"baseline");
+      const before=c.text("Hierarchy.java"),after=before.replace("Child extends Base","Child extends UnrelatedType");
+      c.assert("one independent legacy parent replacement",after!==before);
+      graph.Base.children=[];graph.Child.parents=["UnrelatedType"];graph.UnrelatedType.children=["Child"];
+      const trigger=c.change("Hierarchy.java",after).trigger;
+      await c.transition("workspace/executeCommand",params,v=>check(v,2),trigger,"Child now extends UnrelatedType and is absent below Base; fresh raw legacy item on every attempt");
+      c.assert("legacy parent replacement has exact current edges",true);c.compileOracle();
+    }})),
   {id:"ENV-01/source-path",family:"ENV-01",apis:["API-033","API-034","API-035"],command:"java.project.addToSourcePath",sourceDirectory:"src",variant:"add/remove independent source root; exact reported membership",run:async c=>{
     const directory=path.join(c.fixture.root,"extra");c.createDisk("Extra.java","extra/other/Extra.java","package other; public class Extra { public int uniqueValue(){return 51;} }\n");
     const uri=pathToFileURL(directory).href;

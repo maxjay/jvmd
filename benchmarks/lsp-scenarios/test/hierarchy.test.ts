@@ -5,7 +5,7 @@ import {spawnSync} from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
-import {exactLegacyHierarchy,exactTypeItem} from "../harness/hierarchy.ts";
+import {exactLegacyHierarchy,exactTypeItem,legacyHierarchyArguments} from "../harness/hierarchy.ts";
 import {range} from "../harness/oracles.ts";
 import {ScenarioContext} from "../harness/ScenarioContext.ts";
 import {createFixture} from "../harness/fixture.ts";
@@ -15,6 +15,12 @@ const source="interface R {}\ninterface B extends R {}\ninterface C extends B {}
 const graph={R:{kind:11,parents:[],children:["B"]},B:{kind:11,parents:["R"],children:["C"]},C:{kind:11,parents:["B"],children:["D"]},D:{kind:11,parents:["C"],children:[]}};
 const item=(name:string)=>({name,kind:11,uri,range:range(source,source.split("\n").find(line=>line.startsWith("interface "+name))!),selectionRange:range(source,name)});
 const both={...item("B"),parents:[{...item("R"),parents:[],children:[item("B")]}],children:[{...item("C"),parents:[item("B")],children:[item("D")]}]};
+test("legacy command encodes direction and depth as JSON strings like the Java editor client",()=>{
+  const raw={opaque:{token:"original"}};
+  assert.deepEqual(legacyHierarchyArguments(raw,2,1),['{"opaque":{"token":"original"}}',"2","1"]);
+  assert.deepEqual(legacyHierarchyArguments(raw,0,0).map(s=>JSON.parse(s)),[raw,0,0]);
+  assert.throws(()=>legacyHierarchyArguments(raw,3,1));assert.throws(()=>legacyHierarchyArguments(raw,1,-1));
+});
 test("hierarchy oracle accepts exact bounded bidirectional trees including back edges",()=>{
   exactLegacyHierarchy(both,source,uri,graph,"B",2,2);
   exactLegacyHierarchy(item("B"),source,uri,graph,"B",2,0);
@@ -53,6 +59,7 @@ for(const [mode,caseId,outcome] of [
   ["hierarchy-wrong-depth","REL-02/legacy-both-depth-0","incorrect"],
   ["stale-type-hierarchy","REL-02/supertypes","incorrect"],
   ["stale-type-hierarchy","REL-02/subtypes","incorrect"],
+  ...["children","parents","both"].map(direction=>["stale-legacy-hierarchy",`REL-02/legacy-${direction}-parent-change`,"incorrect"]),
 ])test(`actual hierarchy runner ${mode}: ${caseId}`,()=>{
   const tmp=mkdtempSync(path.join(os.tmpdir(),"jvmd-hierarchy-"));
   try{
@@ -69,10 +76,21 @@ for(const [mode,caseId,outcome] of [
       const lines=(name:string)=>readFileSync(path.join(output,"01-jvmd-"+caseId.replaceAll("/","-"),name+".jsonl"),"utf8").trim().split("\n").map(l=>JSON.parse(l));
       const tampered=structuredClone(report.operations);tampered.at(-1).originRequestId=999999;
       assert(validateCase(report,lines("events"),lines("exchanges"),tampered).includes("legacy hierarchy item provenance mismatch"));
+      const endpoint=structuredClone(report.operations);endpoint.at(-1).endpoint="java.navigate.openTypeHierarchy";
+      const endpointIssues=validateCase(report,lines("events"),lines("exchanges"),endpoint);
+      assert(endpointIssues.includes("exchange endpoint mismatch"));assert(endpointIssues.includes("series endpoint mismatch"));
+      const wire=lines("events");wire.find((e:any)=>e.sequence===report.operations.at(-1).responseEventId).message.result=null;
+      assert(validateCase(report,wire,lines("exchanges"),report.operations).includes("wire result differs from exchange"));
     }
     if(mode==="stale-type-hierarchy"){
       for(const state of ["first_use","warmup","steady"])assert(report.operations.some((o:any)=>o.method==="textDocument/prepareTypeHierarchy"&&o.state===state&&o.outcome==="pass"));
       assert(report.operations.some((o:any)=>o.state==="changed_immediate"&&o.outcome==="incorrect"));
+    }
+    if(mode==="stale-legacy-hierarchy"){
+      assert(report.operations.some((o:any)=>o.state==="baseline"&&o.outcome==="pass"));
+      const expansions=report.operations.filter((o:any)=>o.endpoint==="java.navigate.resolveTypeHierarchy");
+      assert(expansions.some((o:any)=>o.state==="changed_immediate"&&o.outcome==="incorrect"));
+      assert.equal(new Set(expansions.map((o:any)=>o.originRequestId)).size,expansions.length,"legacy retry reused an earlier opaque item");
     }
   }finally{rmSync(tmp,{recursive:true,force:true});}
 });

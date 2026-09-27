@@ -125,7 +125,7 @@ export class ScenarioContext {
   }
   recordOperation(record:any){this.operations.push(record);this.client.journal("operations",record);}
   async series(method:string,params:any,oracle:(result:any)=>void){
-    this.seriesExpectations.push({method,firstOperationIndex:this.operations.length,firstUse:1,warmup:this.warmup,steady:this.samples});
+    this.seriesExpectations.push({method,endpoint:method==="workspace/executeCommand"?params.command:method,firstOperationIndex:this.operations.length,firstUse:1,warmup:this.warmup,steady:this.samples});
     const first=await this.query(method,params,oracle,"first_use");
     for(let i=0;i<this.warmup;i++)await this.query(method,params,oracle,"warmup");
     for(let i=0;i<this.samples;i++)await this.query(method,params,oracle,"steady");return first;

@@ -4,7 +4,7 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 126 case definitions, 90 passing TypeScript
+Latest implementation inventory: 129 case definitions, 94 passing TypeScript
 harness tests, and 107 required variants (64 implemented, 32 partial, 11 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
@@ -635,3 +635,33 @@ there are 126 cases. Counts describe implementation, not accepted comparison
 evidence. Legacy argument order and traversal semantics were checked against
 JDTLS `08eafe6` JDTDelegateCommandHandler and TypeHierarchyCommand. No comparison
 claim is enabled.
+
+## Legacy hierarchy wire correction and independent parent changes
+
+The `a6496e2` real-server replay exposed a harness encoding mistake: the legacy
+command consumes direction and depth as JSON strings. The harness supplied
+numbers, which the pinned JDTLS command's JSONUtility conversion cannot convert
+to Integer. All nine legacy request failures in this pilot are development
+evidence about the harness, not evidence of server correctness or speed.
+`benchmarks/evidence/hierarchy-wire-2026-09-27/` retains the original requests,
+errors, logs and all case dispositions. The modern subtype case passes; the
+supertype case retains stale prepare ranges immediately after the parent edit,
+followed by current replies, plus a nonzero shutdown exit. JVMD declares all
+eleven routes unsupported. No source drift occurred.
+
+The corrected encoder follows the actual [VS Code Java client](https://github.com/redhat-developer/vscode-java/blob/777cc2c73d45e07d33ed37eb5eeb50b7e1800f21/src/typeHierarchy/typeHierarchyTree.ts).
+The fake peer now rejects numeric command arguments, so the regression cannot
+pass by relying on a more permissive substitute server. Semantic tree oracles
+are unchanged. Three additional independent cases replace Child's parent and
+verify children, parents and bidirectional legacy expansion. Every retry obtains
+a fresh raw depth-zero item, checks the complete changed graph to depth two,
+and the resulting source must compile independently. Stale-parent tests establish
+a correct baseline and prove every retry uses a new acquisition request.
+
+Saved reduction now also checks operation command identity against its exchange,
+first/repeat series against the declared endpoint, and raw response payloads
+against exchange payloads. Reassigning a command or rewriting just the processed
+result cannot silently alter the saved evidence. All 94 harness tests pass;
+129 cases are defined. The corrected legacy cases and new parent-change cases
+require another real-server replay. The variant count remains 64 implemented,
+32 partial and 11 absent, with all comparison gates still outstanding.

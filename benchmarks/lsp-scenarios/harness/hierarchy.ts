@@ -13,6 +13,12 @@ export function exactTypeItem(item:any,source:string,uri:string,name:string,kind
 }
 
 export type TypeGraph=Record<string,{kind:number;parents:string[];children:string[]}>;
+/** The legacy Java command consumes JSON strings, including its numeric arguments.
+ * This is the encoding used by vscode-java's typeHierarchyTree client. */
+export function legacyHierarchyArguments(item:any,direction:number,depth:number){
+  assert([0,1,2].includes(direction)&&Number.isInteger(depth)&&depth>=0,"invalid legacy traversal arguments");
+  return [JSON.stringify(item),JSON.stringify(direction),JSON.stringify(depth)];
+}
 /** A fixture-owned graph, never an expected graph learned from server output. */
 export function exactLegacyHierarchy(value:any,source:string,uri:string,graph:TypeGraph,focus:string,direction:number,depth:number){
   assert([0,1,2].includes(direction)&&Number.isInteger(depth)&&depth>=0,"invalid expected hierarchy traversal");

@@ -16,9 +16,13 @@ const framing=new Framing("headers",message=>{
   if(method==="initialize"){send({id,result:{capabilities:{typeHierarchyProvider:true,renameProvider:{prepareProvider:true},completionProvider:{resolveProvider:true},definitionProvider:true,callHierarchyProvider:true,codeLensProvider:{resolveProvider:true},executeCommandProvider:{commands:["java.edit.handlePasteEvent","java.navigate.openTypeHierarchy","java.navigate.resolveTypeHierarchy"]}}}});return;}
   if(method==="shutdown"){if(mode!=="shutdown-hang")send({id,result:null});return;}
   if(method==="workspace/executeCommand"&&params.command.startsWith("java.navigate.")){
-    const uri=[...documents.keys()].find(uri=>uri.endsWith("/Hierarchy.java"))!,source=documents.get(uri)!;
+    if(!params.arguments.every((argument:any)=>typeof argument==="string")){
+      send({id,error:{code:-32602,message:"legacy hierarchy arguments must be JSON strings"}});return;
+    }
+    const uri=[...documents.keys()].find(uri=>uri.endsWith("/Hierarchy.java"))!,current=documents.get(uri)!;
+    const source=mode==="stale-legacy-hierarchy"&&params.command==="java.navigate.resolveTypeHierarchy"?originalDocuments.get(uri)!:current;
     const types=[...source.matchAll(/interface (\w+)(?: extends (\w+))? \{\}/gu)];
-    const direction=mode==="hierarchy-wrong-direction"?2:params.arguments[1],depth=params.arguments[2]+(mode==="hierarchy-wrong-depth"?1:0);
+    const direction=mode==="hierarchy-wrong-direction"?2:JSON.parse(params.arguments[1]),depth=JSON.parse(params.arguments[2])+(mode==="hierarchy-wrong-depth"?1:0);
     const item=(name:string,remaining:number):any=>{
       const type=types.find(m=>m[1]===name)!;const result:any={name,kind:11,uri,range:span(source,type.index,type[0].length),selectionRange:span(source,type.index+10,name.length),data:{token:"issued-"+id}};
       if(remaining>0){
@@ -27,7 +31,8 @@ const framing=new Framing("headers",message=>{
       }
       return result;
     };
-    send({id,result:item("Base",depth)});return;
+    const request=JSON.parse(params.arguments[0]),focus=params.command==="java.navigate.openTypeHierarchy"?(current.split("\n")[request.position.line].includes("interface Child")?"Child":"Base"):request.name;
+    send({id,result:item(focus,depth)});return;
   }
   if(method==="textDocument/prepareTypeHierarchy"||method.startsWith("typeHierarchy/")){
     const uri=[...documents.keys()].find(uri=>uri.endsWith("/Hierarchy.java"))!,current=documents.get(uri)!;

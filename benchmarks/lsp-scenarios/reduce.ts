@@ -25,10 +25,12 @@ export function validateCase(report:any,events:any[],exchanges:any[],operations:
     if(op.triggerNs)check(BigInt(op.startNs)>=BigInt(op.triggerNs),"operation starts before its trigger");
     if(op.requestId!==undefined){const exchange=byId.get(op.requestId);check(!!exchange,"missing exchange "+op.requestId);
       if(exchange){check(exchange.method===op.method,"exchange method mismatch");check(exchange.startNs===op.startNs&&exchange.endNs===op.endNs,"exchange interval mismatch");
+        check((op.endpoint??op.method)===(exchange.method==="workspace/executeCommand"?exchange.params.command:exchange.method),"exchange endpoint mismatch");
         check(JSON.stringify(exchange.result)===JSON.stringify(op.rawResult),"raw result mismatch");check(JSON.stringify(exchange.error)===JSON.stringify(op.error),"raw error mismatch");}
       const sent=events.find(e=>e.sequence===op.requestEventId),received=events.find(e=>e.sequence===op.responseEventId);
       check(sent?.direction==="send"&&sent.message.id===op.requestId&&sent.message.method===op.method,"request event mismatch");
-      if(op.outcome!=="timeout"&&received)check(received.direction==="receive"&&received.message.id===op.requestId&&!received.message.method,"response event mismatch");
+      if(op.outcome!=="timeout"&&received){check(received.direction==="receive"&&received.message.id===op.requestId&&!received.message.method,"response event mismatch");
+        if(exchange){check(JSON.stringify(received.message.result)===JSON.stringify(exchange.result),"wire result differs from exchange");check(JSON.stringify(received.message.error)===JSON.stringify(exchange.error),"wire error differs from exchange");}}
       else if(op.outcome==="pass")check(false,"successful response event missing");
     }
     const expectedRejection=op.expectedRejection==="rename_rejection"&&op.responsePolicy==="rename_rejection"
@@ -58,7 +60,8 @@ export function validateCase(report:any,events:any[],exchanges:any[],operations:
       }
       check(operations.some(o=>o.operationId===s.settledOperationId&&o.state==="changed_settled"&&o.outcome==="pass"),"settled probe missing");continue;}
     const expected=[...Array(s.firstUse).fill("first_use"),...Array(s.warmup).fill("warmup"),...Array(s.steady).fill("steady")];
-    for(const [i,state] of expected.entries()){const o=operations[s.firstOperationIndex+i];check(o?.method===s.method&&o?.state===state,"series sample missing or reordered: "+s.method+" "+state+" "+i);}
+    for(const [i,state] of expected.entries()){const o=operations[s.firstOperationIndex+i];check(o?.method===s.method&&o?.state===state,"series sample missing or reordered: "+s.method+" "+state+" "+i);
+      if(s.endpoint&&o)check(o.endpoint===s.endpoint,"series endpoint mismatch");}
   }
   if(report.outcome==="pass"){
     check(operations.length>0||report.correctnessOnly,"pass without operations");check(operations.every(o=>o.outcome==="pass"),"case pass conceals failed operation");

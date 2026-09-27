@@ -1,0 +1,624 @@
+{
+  "schemaVersion": 1,
+  "scope": "Raw protocol review subset; legacy cases use invalid harness command argument encoding and cannot support server correctness/performance claims",
+  "revision": "a6496e2a631e584de0a0faa4cc32329c640b7631",
+  "archive": {
+    "file": "protocol-review.tar.xz",
+    "bytes": 162744,
+    "sha256": "1a09fc3b8d25c0ebf2a527550e3c2119e8538f3163d3aa69613b9ce455fde07d",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "verified",
+    "members": 195
+  },
+  "plan": {
+    "caseIds": [
+      "REL-02/supertypes",
+      "REL-02/subtypes",
+      "REL-02/legacy-children-depth-0",
+      "REL-02/legacy-children-depth-1",
+      "REL-02/legacy-children-depth-2",
+      "REL-02/legacy-parents-depth-0",
+      "REL-02/legacy-parents-depth-1",
+      "REL-02/legacy-parents-depth-2",
+      "REL-02/legacy-both-depth-0",
+      "REL-02/legacy-hierarchy",
+      "REL-02/legacy-both-depth-2"
+    ],
+    "servers": [
+      "jvmd",
+      "jdtls"
+    ],
+    "blocks": 1,
+    "warmup": 1,
+    "samples": 2,
+    "timeout": 30000,
+    "transitionPolicy": {
+      "maxAttempts": 100,
+      "retryDelayMs": 20,
+      "deadlineMs": 30000,
+      "perRequestTimeoutMs": 30000,
+      "clock": "client monotonic",
+      "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+      "settledProbe": "one additional correct response after the first correct response"
+    },
+    "profile": "pipe",
+    "serverOrder": "alternate per independent block",
+    "reset": "fresh fixture and server state per independent case",
+    "seed": 0
+  },
+  "sourceDrift": false,
+  "integrityIssues": [
+    "01-jdtls-REL-02-supertypes: immediate probe missing",
+    "01-jdtls-REL-02-legacy-children-depth-0: series sample missing or reordered: workspace/executeCommand warmup 1",
+    "01-jdtls-REL-02-legacy-children-depth-0: series sample missing or reordered: workspace/executeCommand steady 2",
+    "01-jdtls-REL-02-legacy-children-depth-0: series sample missing or reordered: workspace/executeCommand steady 3",
+    "01-jdtls-REL-02-legacy-children-depth-1: series sample missing or reordered: workspace/executeCommand warmup 1",
+    "01-jdtls-REL-02-legacy-children-depth-1: series sample missing or reordered: workspace/executeCommand steady 2",
+    "01-jdtls-REL-02-legacy-children-depth-1: series sample missing or reordered: workspace/executeCommand steady 3",
+    "01-jdtls-REL-02-legacy-children-depth-2: series sample missing or reordered: workspace/executeCommand warmup 1",
+    "01-jdtls-REL-02-legacy-children-depth-2: series sample missing or reordered: workspace/executeCommand steady 2",
+    "01-jdtls-REL-02-legacy-children-depth-2: series sample missing or reordered: workspace/executeCommand steady 3",
+    "01-jdtls-REL-02-legacy-parents-depth-0: series sample missing or reordered: workspace/executeCommand warmup 1",
+    "01-jdtls-REL-02-legacy-parents-depth-0: series sample missing or reordered: workspace/executeCommand steady 2",
+    "01-jdtls-REL-02-legacy-parents-depth-0: series sample missing or reordered: workspace/executeCommand steady 3",
+    "01-jdtls-REL-02-legacy-parents-depth-1: series sample missing or reordered: workspace/executeCommand warmup 1",
+    "01-jdtls-REL-02-legacy-parents-depth-1: series sample missing or reordered: workspace/executeCommand steady 2",
+    "01-jdtls-REL-02-legacy-parents-depth-1: series sample missing or reordered: workspace/executeCommand steady 3",
+    "01-jdtls-REL-02-legacy-parents-depth-2: series sample missing or reordered: workspace/executeCommand warmup 1",
+    "01-jdtls-REL-02-legacy-parents-depth-2: series sample missing or reordered: workspace/executeCommand steady 2",
+    "01-jdtls-REL-02-legacy-parents-depth-2: series sample missing or reordered: workspace/executeCommand steady 3",
+    "01-jdtls-REL-02-legacy-both-depth-0: series sample missing or reordered: workspace/executeCommand warmup 1",
+    "01-jdtls-REL-02-legacy-both-depth-0: series sample missing or reordered: workspace/executeCommand steady 2",
+    "01-jdtls-REL-02-legacy-both-depth-0: series sample missing or reordered: workspace/executeCommand steady 3",
+    "01-jdtls-REL-02-legacy-hierarchy: series sample missing or reordered: workspace/executeCommand warmup 1",
+    "01-jdtls-REL-02-legacy-hierarchy: series sample missing or reordered: workspace/executeCommand steady 2",
+    "01-jdtls-REL-02-legacy-hierarchy: series sample missing or reordered: workspace/executeCommand steady 3",
+    "01-jdtls-REL-02-legacy-both-depth-2: series sample missing or reordered: workspace/executeCommand warmup 1",
+    "01-jdtls-REL-02-legacy-both-depth-2: series sample missing or reordered: workspace/executeCommand steady 2",
+    "01-jdtls-REL-02-legacy-both-depth-2: series sample missing or reordered: workspace/executeCommand steady 3"
+  ],
+  "sourceManifestSha256": "abecdc64a510439abaaac59f03bb723f3ed525885a315f6f39091ee5ceeb5b72",
+  "originalChecksumInventorySha256": "94d66e975407298be23479341b3eb25b71a088326f98d28270603d77550d4030",
+  "outcomes": {
+    "pass": 1,
+    "incorrect": 1,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 9,
+    "harness_error": 0,
+    "unsupported": 11,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "cases": [
+    {
+      "server": "jdtls",
+      "caseId": "REL-02/legacy-both-depth-0",
+      "profile": "direct",
+      "outcome": "protocol_error",
+      "error": "AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\",\"data\":{\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n",
+      "shutdownError": null,
+      "operations": 1,
+      "failedOperations": [
+        {
+          "operationId": "op-1",
+          "endpoint": "java.navigate.openTypeHierarchy",
+          "method": "workspace/executeCommand",
+          "state": "first_use",
+          "outcome": "protocol_error",
+          "error": {
+            "code": -32001,
+            "message": "Cannot invoke \"java.lang.Integer.intValue()\" because the return value of \"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\" is null",
+            "data": {
+              "message": "Cannot invoke \"java.lang.Integer.intValue()\" because the return value of \"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\" is null"
+            }
+          },
+          "assertionError": null
+        }
+      ],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jdtls",
+      "caseId": "REL-02/legacy-both-depth-2",
+      "profile": "direct",
+      "outcome": "protocol_error",
+      "error": "AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\",\"data\":{\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n",
+      "shutdownError": null,
+      "operations": 1,
+      "failedOperations": [
+        {
+          "operationId": "op-1",
+          "endpoint": "java.navigate.openTypeHierarchy",
+          "method": "workspace/executeCommand",
+          "state": "first_use",
+          "outcome": "protocol_error",
+          "error": {
+            "code": -32001,
+            "message": "Cannot invoke \"java.lang.Integer.intValue()\" because the return value of \"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\" is null",
+            "data": {
+              "message": "Cannot invoke \"java.lang.Integer.intValue()\" because the return value of \"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\" is null"
+            }
+          },
+          "assertionError": null
+        }
+      ],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jdtls",
+      "caseId": "REL-02/legacy-children-depth-0",
+      "profile": "direct",
+      "outcome": "protocol_error",
+      "error": "AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\",\"data\":{\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n",
+      "shutdownError": null,
+      "operations": 1,
+      "failedOperations": [
+        {
+          "operationId": "op-1",
+          "endpoint": "java.navigate.openTypeHierarchy",
+          "method": "workspace/executeCommand",
+          "state": "first_use",
+          "outcome": "protocol_error",
+          "error": {
+            "code": -32001,
+            "message": "Cannot invoke \"java.lang.Integer.intValue()\" because the return value of \"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\" is null",
+            "data": {
+              "message": "Cannot invoke \"java.lang.Integer.intValue()\" because the return value of \"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\" is null"
+            }
+          },
+          "assertionError": null
+        }
+      ],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jdtls",
+      "caseId": "REL-02/legacy-children-depth-1",
+      "profile": "direct",
+      "outcome": "protocol_error",
+      "error": "AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\",\"data\":{\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n",
+      "shutdownError": null,
+      "operations": 1,
+      "failedOperations": [
+        {
+          "operationId": "op-1",
+          "endpoint": "java.navigate.openTypeHierarchy",
+          "method": "workspace/executeCommand",
+          "state": "first_use",
+          "outcome": "protocol_error",
+          "error": {
+            "code": -32001,
+            "message": "Cannot invoke \"java.lang.Integer.intValue()\" because the return value of \"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\" is null",
+            "data": {
+              "message": "Cannot invoke \"java.lang.Integer.intValue()\" because the return value of \"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\" is null"
+            }
+          },
+          "assertionError": null
+        }
+      ],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jdtls",
+      "caseId": "REL-02/legacy-children-depth-2",
+      "profile": "direct",
+      "outcome": "protocol_error",
+      "error": "AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\",\"data\":{\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n",
+      "shutdownError": null,
+      "operations": 1,
+      "failedOperations": [
+        {
+          "operationId": "op-1",
+          "endpoint": "java.navigate.openTypeHierarchy",
+          "method": "workspace/executeCommand",
+          "state": "first_use",
+          "outcome": "protocol_error",
+          "error": {
+            "code": -32001,
+            "message": "Cannot invoke \"java.lang.Integer.intValue()\" because the return value of \"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\" is null",
+            "data": {
+              "message": "Cannot invoke \"java.lang.Integer.intValue()\" because the return value of \"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\" is null"
+            }
+          },
+          "assertionError": null
+        }
+      ],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jdtls",
+      "caseId": "REL-02/legacy-hierarchy",
+      "profile": "direct",
+      "outcome": "protocol_error",
+      "error": "AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\",\"data\":{\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n",
+      "shutdownError": null,
+      "operations": 1,
+      "failedOperations": [
+        {
+          "operationId": "op-1",
+          "endpoint": "java.navigate.openTypeHierarchy",
+          "method": "workspace/executeCommand",
+          "state": "first_use",
+          "outcome": "protocol_error",
+          "error": {
+            "code": -32001,
+            "message": "Cannot invoke \"java.lang.Integer.intValue()\" because the return value of \"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\" is null",
+            "data": {
+              "message": "Cannot invoke \"java.lang.Integer.intValue()\" because the return value of \"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\" is null"
+            }
+          },
+          "assertionError": null
+        }
+      ],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jdtls",
+      "caseId": "REL-02/legacy-parents-depth-0",
+      "profile": "direct",
+      "outcome": "protocol_error",
+      "error": "AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\",\"data\":{\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n",
+      "shutdownError": null,
+      "operations": 1,
+      "failedOperations": [
+        {
+          "operationId": "op-1",
+          "endpoint": "java.navigate.openTypeHierarchy",
+          "method": "workspace/executeCommand",
+          "state": "first_use",
+          "outcome": "protocol_error",
+          "error": {
+            "code": -32001,
+            "message": "Cannot invoke \"java.lang.Integer.intValue()\" because the return value of \"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\" is null",
+            "data": {
+              "message": "Cannot invoke \"java.lang.Integer.intValue()\" because the return value of \"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\" is null"
+            }
+          },
+          "assertionError": null
+        }
+      ],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jdtls",
+      "caseId": "REL-02/legacy-parents-depth-1",
+      "profile": "direct",
+      "outcome": "protocol_error",
+      "error": "AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\",\"data\":{\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n",
+      "shutdownError": null,
+      "operations": 1,
+      "failedOperations": [
+        {
+          "operationId": "op-1",
+          "endpoint": "java.navigate.openTypeHierarchy",
+          "method": "workspace/executeCommand",
+          "state": "first_use",
+          "outcome": "protocol_error",
+          "error": {
+            "code": -32001,
+            "message": "Cannot invoke \"java.lang.Integer.intValue()\" because the return value of \"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\" is null",
+            "data": {
+              "message": "Cannot invoke \"java.lang.Integer.intValue()\" because the return value of \"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\" is null"
+            }
+          },
+          "assertionError": null
+        }
+      ],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jdtls",
+      "caseId": "REL-02/legacy-parents-depth-2",
+      "profile": "direct",
+      "outcome": "protocol_error",
+      "error": "AssertionError [ERR_ASSERTION]: workspace/executeCommand: {\"code\":-32001,\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\",\"data\":{\"message\":\"Cannot invoke \\\"java.lang.Integer.intValue()\\\" because the return value of \\\"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\\\" is null\"}}\n+ actual - expected\n\n+ 'protocol_error'\n- 'pass'\n",
+      "shutdownError": null,
+      "operations": 1,
+      "failedOperations": [
+        {
+          "operationId": "op-1",
+          "endpoint": "java.navigate.openTypeHierarchy",
+          "method": "workspace/executeCommand",
+          "state": "first_use",
+          "outcome": "protocol_error",
+          "error": {
+            "code": -32001,
+            "message": "Cannot invoke \"java.lang.Integer.intValue()\" because the return value of \"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\" is null",
+            "data": {
+              "message": "Cannot invoke \"java.lang.Integer.intValue()\" because the return value of \"org.eclipse.jdt.ls.core.internal.JSONUtility.toModel(Object, java.lang.Class)\" is null"
+            }
+          },
+          "assertionError": null
+        }
+      ],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jdtls",
+      "caseId": "REL-02/subtypes",
+      "profile": "direct",
+      "outcome": "pass",
+      "error": null,
+      "shutdownError": null,
+      "operations": 12,
+      "failedOperations": [],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jdtls",
+      "caseId": "REL-02/supertypes",
+      "profile": "direct",
+      "outcome": "incorrect",
+      "error": null,
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}",
+      "operations": 27,
+      "failedOperations": [
+        {
+          "operationId": "op-9",
+          "endpoint": "textDocument/prepareTypeHierarchy",
+          "method": "textDocument/prepareTypeHierarchy",
+          "state": "item_acquisition",
+          "outcome": "incorrect",
+          "error": null,
+          "assertionError": "AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n"
+        },
+        {
+          "operationId": "op-10",
+          "endpoint": "textDocument/prepareTypeHierarchy",
+          "method": "textDocument/prepareTypeHierarchy",
+          "state": "item_acquisition",
+          "outcome": "incorrect",
+          "error": null,
+          "assertionError": "AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n"
+        },
+        {
+          "operationId": "op-11",
+          "endpoint": "textDocument/prepareTypeHierarchy",
+          "method": "textDocument/prepareTypeHierarchy",
+          "state": "item_acquisition",
+          "outcome": "incorrect",
+          "error": null,
+          "assertionError": "AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n"
+        },
+        {
+          "operationId": "op-12",
+          "endpoint": "textDocument/prepareTypeHierarchy",
+          "method": "textDocument/prepareTypeHierarchy",
+          "state": "item_acquisition",
+          "outcome": "incorrect",
+          "error": null,
+          "assertionError": "AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n"
+        },
+        {
+          "operationId": "op-13",
+          "endpoint": "textDocument/prepareTypeHierarchy",
+          "method": "textDocument/prepareTypeHierarchy",
+          "state": "item_acquisition",
+          "outcome": "incorrect",
+          "error": null,
+          "assertionError": "AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n"
+        },
+        {
+          "operationId": "op-14",
+          "endpoint": "textDocument/prepareTypeHierarchy",
+          "method": "textDocument/prepareTypeHierarchy",
+          "state": "item_acquisition",
+          "outcome": "incorrect",
+          "error": null,
+          "assertionError": "AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n"
+        },
+        {
+          "operationId": "op-15",
+          "endpoint": "textDocument/prepareTypeHierarchy",
+          "method": "textDocument/prepareTypeHierarchy",
+          "state": "item_acquisition",
+          "outcome": "incorrect",
+          "error": null,
+          "assertionError": "AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n"
+        },
+        {
+          "operationId": "op-16",
+          "endpoint": "textDocument/prepareTypeHierarchy",
+          "method": "textDocument/prepareTypeHierarchy",
+          "state": "item_acquisition",
+          "outcome": "incorrect",
+          "error": null,
+          "assertionError": "AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n"
+        },
+        {
+          "operationId": "op-17",
+          "endpoint": "textDocument/prepareTypeHierarchy",
+          "method": "textDocument/prepareTypeHierarchy",
+          "state": "item_acquisition",
+          "outcome": "incorrect",
+          "error": null,
+          "assertionError": "AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n"
+        },
+        {
+          "operationId": "op-18",
+          "endpoint": "textDocument/prepareTypeHierarchy",
+          "method": "textDocument/prepareTypeHierarchy",
+          "state": "item_acquisition",
+          "outcome": "incorrect",
+          "error": null,
+          "assertionError": "AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n"
+        },
+        {
+          "operationId": "op-19",
+          "endpoint": "textDocument/prepareTypeHierarchy",
+          "method": "textDocument/prepareTypeHierarchy",
+          "state": "item_acquisition",
+          "outcome": "incorrect",
+          "error": null,
+          "assertionError": "AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n"
+        },
+        {
+          "operationId": "op-20",
+          "endpoint": "textDocument/prepareTypeHierarchy",
+          "method": "textDocument/prepareTypeHierarchy",
+          "state": "item_acquisition",
+          "outcome": "incorrect",
+          "error": null,
+          "assertionError": "AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n"
+        },
+        {
+          "operationId": "op-21",
+          "endpoint": "textDocument/prepareTypeHierarchy",
+          "method": "textDocument/prepareTypeHierarchy",
+          "state": "item_acquisition",
+          "outcome": "incorrect",
+          "error": null,
+          "assertionError": "AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n"
+        },
+        {
+          "operationId": "op-22",
+          "endpoint": "textDocument/prepareTypeHierarchy",
+          "method": "textDocument/prepareTypeHierarchy",
+          "state": "item_acquisition",
+          "outcome": "incorrect",
+          "error": null,
+          "assertionError": "AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n"
+        },
+        {
+          "operationId": "op-23",
+          "endpoint": "textDocument/prepareTypeHierarchy",
+          "method": "textDocument/prepareTypeHierarchy",
+          "state": "item_acquisition",
+          "outcome": "incorrect",
+          "error": null,
+          "assertionError": "AssertionError [ERR_ASSERTION]: hierarchy declaration range is wrong\n+ actual - expected\n\n  {\n    end: {\n+     character: 61,\n-     character: 70,\n      line: 3\n    },\n    start: {\n      character: 0,\n      line: 3\n"
+        }
+      ],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jvmd",
+      "caseId": "REL-02/legacy-both-depth-0",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "operations": 0,
+      "failedOperations": [],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jvmd",
+      "caseId": "REL-02/legacy-both-depth-2",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "operations": 0,
+      "failedOperations": [],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jvmd",
+      "caseId": "REL-02/legacy-children-depth-0",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "operations": 0,
+      "failedOperations": [],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jvmd",
+      "caseId": "REL-02/legacy-children-depth-1",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "operations": 0,
+      "failedOperations": [],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jvmd",
+      "caseId": "REL-02/legacy-children-depth-2",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "operations": 0,
+      "failedOperations": [],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jvmd",
+      "caseId": "REL-02/legacy-hierarchy",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "operations": 0,
+      "failedOperations": [],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jvmd",
+      "caseId": "REL-02/legacy-parents-depth-0",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "operations": 0,
+      "failedOperations": [],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jvmd",
+      "caseId": "REL-02/legacy-parents-depth-1",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "operations": 0,
+      "failedOperations": [],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jvmd",
+      "caseId": "REL-02/legacy-parents-depth-2",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "operations": 0,
+      "failedOperations": [],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jvmd",
+      "caseId": "REL-02/subtypes",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "operations": 0,
+      "failedOperations": [],
+      "allAssertionsPassed": true
+    },
+    {
+      "server": "jvmd",
+      "caseId": "REL-02/supertypes",
+      "profile": "pipe",
+      "outcome": "unsupported",
+      "error": null,
+      "shutdownError": null,
+      "operations": 0,
+      "failedOperations": [],
+      "allAssertionsPassed": true
+    }
+  ],
+  "interpretation": [
+    "Nine JDTLS legacy cases receive command conversion errors because the harness supplied numeric direction/depth instead of the editor client JSON-string encoding. These cases are development-only evidence, not server correctness failures.",
+    "The modern JDTLS subtype case passes. Its supertype case retains stale preparation ranges after the edit before successful retry/settled replies, and also a nonzero shutdown exit.",
+    "JVMD explicitly declares all eleven cases unsupported.",
+    "The reducer reports missing series samples after legacy early failures. This pilot is not a valid complete experiment and permits no comparative performance claim."
+  ]
+}

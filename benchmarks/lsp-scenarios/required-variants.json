@@ -1878,6 +1878,81 @@
                 }
               ],
               "assertions": []
+            },
+            {
+              "caseId": "REL-02/legacy-children-parent-change",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "item_acquisition"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "one independent legacy parent replacement",
+                "legacy parent replacement has exact current edges",
+                "legacy hierarchy item belongs to this client and document state",
+                "independent javac validation"
+              ]
+            },
+            {
+              "caseId": "REL-02/legacy-parents-parent-change",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "item_acquisition"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "one independent legacy parent replacement",
+                "legacy parent replacement has exact current edges",
+                "legacy hierarchy item belongs to this client and document state",
+                "independent javac validation"
+              ]
+            },
+            {
+              "caseId": "REL-02/legacy-both-parent-change",
+              "operations": [
+                {
+                  "endpoint": "java.navigate.openTypeHierarchy",
+                  "states": [
+                    "item_acquisition"
+                  ]
+                },
+                {
+                  "endpoint": "java.navigate.resolveTypeHierarchy",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "one independent legacy parent replacement",
+                "legacy parent replacement has exact current edges",
+                "legacy hierarchy item belongs to this client and document state",
+                "independent javac validation"
+              ]
             }
           ]
         }

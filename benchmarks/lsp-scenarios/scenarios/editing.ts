@@ -3,7 +3,9 @@ import path from "node:path";
 import {readFileSync,writeFileSync,existsSync} from "node:fs";
 import {pathToFileURL,fileURLToPath} from "node:url";
 import {SETTINGS,type CaseDefinition,type ScenarioContext} from "../harness/ScenarioContext.ts";
-import {range,position,offset,selected,applyTextEdits,chooseMethod,completionOracle,exactLocations} from "../harness/oracles.ts";
+import {range,position,offset,selected,hoverOracle,applyTextEdits,chooseMethod,completionOracle,exactLocations} from "../harness/oracles.ts";
+import {noApplicableAction} from "../harness/codeActions.ts";
+import {SELECTION_COMMAND} from "../harness/completionSelection.ts";
 import {planWorkspaceEdit} from "../harness/workspaceEdit.ts";
 
 const imports="package bench;\nimport java.util.Set;\nimport java.util.List;\npublic class Imports { public List<String> values; }\n";
@@ -99,12 +101,14 @@ export const editingCases:CaseDefinition[]=[
     const result=await c.execute("java.edit.smartSemicolonDetection",[JSON.stringify({uri:c.file("Semi.java").uri,position:position(text,end-1)})],v=>{assert.equal(v?.uri,c.file("Semi.java").uri);assert.deepEqual(v.position,position(text,end));});
     c.change("Semi.java",applyTextEdits(text,[{range:{start:result.position,end:result.position},newText:";"}]));c.compileOracle();
   }},
-  {id:"CMP-01/selection-command",family:"CMP-01",apis:["API-046"],command:"java.completion.onDidSelect",variant:"select the exact returned name member",run:async c=>{
+  {id:"CMP-01/selection-command",family:"CMP-01",apis:["API-046"],capability:"completionProvider",variant:"select the exact returned name member only when its optional command is offered",run:async c=>{
     await c.open("Customer.java");await c.open("Use.java");const text=c.text("Use.java");
     const list=await c.query("textDocument/completion",{textDocument:{uri:c.file("Use.java").uri},position:position(text,text.indexOf("name()")+1)},v=>completionOracle(v,["name"]));
-    const item=chooseMethod(list,"name");assert.equal(item.command?.command,"java.completion.onDidSelect");
-    await c.execute(item.command.command,item.command.arguments,v=>assert(v!==false));
+    const item=chooseMethod(list,"name"),completionOperationId=c.operations.at(-1).operationId;
+    if(item.command===undefined)c.notApplicableEvidence={kind:"completion_command_not_offered",endpoint:SELECTION_COMMAND,completionOperationId,selectedItem:item};
+    else{assert.equal(item.command?.command,SELECTION_COMMAND);await c.execute(item.command.command,item.command.arguments,v=>assert(v!==false));}
     await c.query("completionItem/resolve",item,v=>assert(JSON.stringify(v.documentation).includes("NAME_DOC_V1")),"after_selection");
+    c.assert("selection disposition follows the original returned item",true);
   }},
   {id:"REF-02/quickfix",family:"REF-02",apis:["API-088","API-089"],capability:"codeActionProvider",fixture:{"Quick.java":"package bench;\npublic class Quick { public List<String> values; }\n"},variant:"resolve actions by effect; apply missing List import",run:async c=>{
     const opened=await c.open("Quick.java");const publication=await c.client.notification("textDocument/publishDiagnostics",v=>v.uri===opened.uri&&v.diagnostics?.some((d:any)=>String(d.message).includes("List")),0,c.timeout);
@@ -120,8 +124,12 @@ export const editingCases:CaseDefinition[]=[
     c.applyWorkspaceEdit(chosen.edit);c.assert("field survives quick fix",c.text("Quick.java").includes("public List<String> values;"));c.compileOracle();
   }},
   {id:"REF-02/no-action",family:"REF-02",apis:["API-088"],capability:"codeActionProvider",variant:"no quick fix on clean package declaration",run:async c=>{
-    await c.open("Customer.java");const params=action(c,"Customer.java","package bench;");params.context={diagnostics:[],only:["quickfix"]} as any;
-    await c.series("textDocument/codeAction",params,v=>assert.deepEqual(v,[]));
+    await c.open("Customer.java");const before=c.state(),actions=c.serverActions.length;c.compileOracle();
+    await c.query("textDocument/hover",{textDocument:{uri:c.file("Customer.java").uri},position:position(c.text("Customer.java"),c.text("Customer.java").indexOf("number()")+1)},v=>hoverOracle(v,"number","int"),"valid_source_control");
+    const params=action(c,"Customer.java","package bench;");params.context={diagnostics:[],only:["quickfix"]} as any;
+    await c.series("textDocument/codeAction",params,noApplicableAction);
+    c.assert("clean-context actions preserve every source state",JSON.stringify(c.state())===JSON.stringify(before));
+    c.assert("no-action requests never apply an edit",!c.serverActions.slice(actions).some(a=>a.method==="workspace/applyEdit"));
   }},
   {id:"REF-03/change-signature",family:"REF-03",apis:["API-090","API-091"],extension:true,variant:"rename method through signature refactor and update callers",run:async c=>{
     await c.open("Customer.java");await c.open("Use.java");const context=action(c,"Customer.java","join");

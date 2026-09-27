@@ -79,21 +79,21 @@ export async function main(args=process.argv.slice(2)){
       if(!capability(context.capabilities,def.capability)||(def.extension&&server==="jvmd")||(def.command&&!context.capabilities.executeCommandProvider?.commands?.includes(def.command))){
         report.outcome="unsupported";report.supportEvidence={source:def.extension&&server==="jvmd"?"jvmd-lsp LspFacade dispatch table at tested revision; Java extensions not implemented":"initialize response",capability:def.capability,command:def.command,value:context.capabilities};
       }else{
-        await def.run(context);assert(context.operations.length>0||def.correctnessOnly,"case executed no measured operation");report.outcome=context.operations.find(o=>o.outcome!=="pass")?.outcome??"pass";
+        await def.run(context);assert(context.operations.length>0||def.correctnessOnly,"case executed no measured operation");report.outcome=context.operations.find(o=>o.outcome!=="pass")?.outcome??(context.notApplicableEvidence?"not_applicable":"pass");
       }
     }catch(error){
       report.error=String(error);report.outcome=context?.operations.find(o=>o.outcome!=="pass")?.outcome??(error instanceof assert.AssertionError&&context?.initializedNs?"incorrect":"harness_error");
     }finally{
-      if(running){try{if(context)for(const name of Object.keys(context.fixture.files))if(context.documents.has(context.file(name).uri))context.close(name);await running.stop();}catch(error){report.shutdownError=String(error);if(report.outcome==="pass")report.outcome="protocol_error";}
+      if(running){try{if(context)for(const name of Object.keys(context.fixture.files))if(context.documents.has(context.file(name).uri))context.close(name);await running.stop();}catch(error){report.shutdownError=String(error);if(["pass","not_applicable"].includes(report.outcome))report.outcome="protocol_error";}
         report.protocolErrors=running.client.protocolErrors;
         report.processLifecycle=running.client.processLifecycle;
-        if(report.protocolErrors.length&&report.outcome==="pass")report.outcome="protocol_error";
+        if(report.protocolErrors.length&&["pass","not_applicable"].includes(report.outcome))report.outcome="protocol_error";
         jsonl(path.join(caseRoot,"events.jsonl"),running.client.events);jsonl(path.join(caseRoot,"exchanges.jsonl"),running.client.exchanges);
         report.spawnNs=String(running.client.spawnNs);
       }
-      if(context){report.operations=context.operations;report.seriesExpectations=context.seriesExpectations;report.mutations=context.mutations;report.assertions=context.assertions;report.serverActions=context.serverActions;report.diagnosticObservations=context.diagnosticObservations;
+      if(context){report.notApplicableEvidence=context.notApplicableEvidence;report.operations=context.operations;report.seriesExpectations=context.seriesExpectations;report.mutations=context.mutations;report.assertions=context.assertions;report.serverActions=context.serverActions;report.diagnosticObservations=context.diagnosticObservations;
         report.initializedNs=context.initializedNs;report.settings=context.settings;jsonl(path.join(caseRoot,"operations.jsonl"),context.operations);}
-      try{def.cleanup?.(fixture,path.resolve(a["java-home"]??process.env.JAVA_HOME??""));}catch(error){report.cleanupError=String(error);if(report.outcome==="pass")report.outcome="harness_error";}
+      try{def.cleanup?.(fixture,path.resolve(a["java-home"]??process.env.JAVA_HOME??""));}catch(error){report.cleanupError=String(error);if(["pass","not_applicable"].includes(report.outcome))report.outcome="harness_error";}
       report.preparation=fixture.preparation;
       for(const file of ["events.jsonl","exchanges.jsonl","operations.jsonl"])if(!existsSync(path.join(caseRoot,file)))writeFileSync(path.join(caseRoot,file),"");
       report.finalized=true;report.artifactDirectory=path.relative(root,caseRoot);write(path.join(caseRoot,"report.json"),report);reports.push(report);

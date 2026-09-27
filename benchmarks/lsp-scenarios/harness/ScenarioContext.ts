@@ -37,6 +37,7 @@ export class ScenarioContext {
   capabilities:any={};operations:any[]=[];assertions:any[]=[];documents=new Map<string,{text:string;version:number;incarnation:number}>();
   versions=new Map<string,number>();incarnations=new Map<string,number>();
   seriesExpectations:any[]=[];mutations:any[]=[];diagnosticObservations:any[]=[];
+  notApplicableEvidence?:any;
   registrations:any[]=[];serverActions:any[]=[];initializedNs?:string;
   settings:Record<string,any>;
   constructor(client:ProtocolClient,fixture:Fixture,server:string,timeout:number,warmup:number,samples:number){

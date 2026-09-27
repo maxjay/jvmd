@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "a62ce1a5fe3a50da3ab4c2839711f3198d9aee62",
+  "sourceDrift": false,
+  "outcomes": {
+    "pass": 0,
+    "incorrect": 7,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 3,
+    "harness_error": 0,
+    "unsupported": 10,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "originalReducerIntegrityIssues": [
+    "01-jdtls-ENV-02-class-content: series sample missing or reordered: java/classFileContents warmup 1",
+    "01-jdtls-ENV-02-class-content: series sample missing or reordered: java/classFileContents steady 2",
+    "01-jdtls-ENV-02-class-content: series sample missing or reordered: java/classFileContents steady 3",
+    "01-jdtls-ENV-02-class-content-unattached: series sample missing or reordered: java/classFileContents warmup 1",
+    "01-jdtls-ENV-02-class-content-unattached: series sample missing or reordered: java/classFileContents steady 2",
+    "01-jdtls-ENV-02-class-content-unattached: series sample missing or reordered: java/classFileContents steady 3",
+    "01-jdtls-ENV-02-document-content: series sample missing or reordered: workspace/textDocumentContent warmup 1",
+    "01-jdtls-ENV-02-document-content: series sample missing or reordered: workspace/textDocumentContent steady 2",
+    "01-jdtls-ENV-02-document-content: series sample missing or reordered: workspace/textDocumentContent steady 3",
+    "01-jdtls-ENV-02-document-content-unattached: series sample missing or reordered: workspace/textDocumentContent warmup 1",
+    "01-jdtls-ENV-02-document-content-unattached: series sample missing or reordered: workspace/textDocumentContent steady 2",
+    "01-jdtls-ENV-02-document-content-unattached: series sample missing or reordered: workspace/textDocumentContent steady 3",
+    "01-jdtls-ENV-02-decompile: series sample missing or reordered: workspace/executeCommand warmup 1",
+    "01-jdtls-ENV-02-decompile: series sample missing or reordered: workspace/executeCommand steady 2",
+    "01-jdtls-ENV-02-decompile: series sample missing or reordered: workspace/executeCommand steady 3",
+    "01-jdtls-ENV-02-attachment-metadata: series sample missing or reordered: workspace/executeCommand warmup 1",
+    "01-jdtls-ENV-02-attachment-metadata: series sample missing or reordered: workspace/executeCommand steady 2",
+    "01-jdtls-ENV-02-attachment-metadata: series sample missing or reordered: workspace/executeCommand steady 3",
+    "01-jdtls-ENV-02-attachment-metadata-unattached: series sample missing or reordered: workspace/executeCommand warmup 1",
+    "01-jdtls-ENV-02-attachment-metadata-unattached: series sample missing or reordered: workspace/executeCommand steady 2",
+    "01-jdtls-ENV-02-attachment-metadata-unattached: series sample missing or reordered: workspace/executeCommand steady 3"
+  ],
+  "package": {
+    "file": "protocol-review.tar.xz",
+    "bytes": 186984,
+    "sha256": "98068a4ff4647a321dcf3ac2084554bd827ddbd1989b5f9b10d83f23259cc541",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "verified",
+    "unsealedFiles": {},
+    "members": 178
+  },
+  "explanation": "The binary URI acquisition passed, but a generic location helper decoded escaped characters inside the opaque handle before content/metadata requests. The resulting invalid handles caused null content and command errors. The corrected implementation returns the original URI byte-for-byte; regressions use the observed escaped form. These raw failures are not attributed to server correctness.",
+  "claims": {
+    "publicComparativePerformance": false
+  }
+}

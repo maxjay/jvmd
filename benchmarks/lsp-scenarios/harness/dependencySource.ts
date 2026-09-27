@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import path from "node:path";
-import {locations} from "./oracles.ts";
 export type AttachmentState="unattached"|"attached"|"updated";
 export const dependencySource=(version="A",updated=false)=>`package dep;\n/** LIBRARY_DOC_${updated?"ATTACHED_V2":version} */\npublic class Library {\n    /** MEMBER_DOC_${updated?"ATTACHED_V2":version} */ public String ${version==="A"?"original":"next"}() { return "${version}"; }\n}\n`;
 export function dependencyBinaryUri(value:any){
-  const rows=locations(value);assert.equal(rows.length,1,"dependency definition must identify one target");
-  const uri=new URL(rows[0].uri);assert.equal(uri.protocol,"jdt:");assert.equal(uri.host,"contents");
+  const rows=Array.isArray(value)?value:value?[value]:[];assert.equal(rows.length,1,"dependency definition must identify one target");
+  const original=rows[0].uri??rows[0].targetUri;assert.equal(typeof original,"string");
+  const uri=new URL(original);assert.equal(uri.protocol,"jdt:");assert.equal(uri.host,"contents");
   assert.equal(decodeURIComponent(uri.pathname),"/library-A.jar/dep/Library.class","definition identifies wrong binary class");
-  assert(uri.search.length>1,"binary URI lacks its server-issued handle");return rows[0].uri;
+  assert(uri.search.length>1,"binary URI lacks its server-issued handle");return original;
 }
 export function attachmentOracle(value:any,root:string,state:AttachmentState){
   assert(value&&typeof value==="object"&&!Array.isArray(value),"attachment metadata missing");assert(!value.errorMessage,"attachment command failed: "+value.errorMessage);

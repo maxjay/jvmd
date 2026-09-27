@@ -1,3 +1,4 @@
+import {validUnofferedSelection} from "./harness/completionSelection.ts";
 /** Required variants are independent of API coverage. Read the saved contract,
  * never the current checkout, when reducing an older experiment. */
 export function reduceVariants(contract:any,catalogue:any,registry:any[],plan:any,reports:any[]){
@@ -28,6 +29,7 @@ export function reduceVariants(contract:any,catalogue:any,registry:any[],plan:an
           if(!report)return {caseId:w.caseId,outcome:"not_run",missing:["required case not collected in this server/block"]};
           const outcome=report.validationIssues?.length?"harness_error":report.validatedOutcome??report.outcome;
           if(outcome==="unsupported")return {caseId:w.caseId,outcome:report.supportEvidence?.source?"unsupported":"missing_evidence",supportEvidence:report.supportEvidence};
+          if(outcome==="not_applicable")return {caseId:w.caseId,outcome:w.allowNotOffered===true&&validUnofferedSelection(report)?"not_applicable":"missing_evidence",notApplicableEvidence:report.notApplicableEvidence};
           if(outcome!=="pass")return {caseId:w.caseId,outcome};
           const missing:string[]=[],operationIds:string[]=[];
           for(const op of w.operations??[])for(const state of op.states){
@@ -37,12 +39,12 @@ export function reduceVariants(contract:any,catalogue:any,registry:any[],plan:an
           for(const name of w.assertions??[])if(!(report.assertions??[]).some((a:any)=>a.name===name&&a.passed===true))missing.push("assertion: "+name);
           return {caseId:w.caseId,outcome:missing.length?"missing_evidence":"pass",missing,operationIds};
         });
-        const failed=witnesses.find((w:any)=>!["pass","unsupported"].includes(w.outcome));
-        const outcome=variant.implementation!=="implemented"?variant.implementation:failed?.outcome??(witnesses.some((w:any)=>w.outcome==="unsupported")?"unsupported":"pass");
+        const failed=witnesses.find((w:any)=>!["pass","unsupported","not_applicable"].includes(w.outcome));
+        const outcome=variant.implementation!=="implemented"?variant.implementation:failed?.outcome??(witnesses.some((w:any)=>w.outcome==="unsupported")?"unsupported":witnesses.some((w:any)=>w.outcome==="not_applicable")?"not_applicable":"pass");
         rows.push({variantId:variant.id,family:family.id,requirement:variant.requirement,implementation:variant.implementation,remaining:variant.remaining,server,block,outcome,witnesses});
       }
     }
   }
-  const gaps=[...issues,...new Set(rows.filter(r=>!["pass","unsupported"].includes(r.outcome)).map(r=>r.variantId))];
+  const gaps=[...issues,...new Set(rows.filter(r=>!["pass","unsupported","not_applicable"].includes(r.outcome)).map(r=>r.variantId))];
   return {complete:gaps.length===0,issues,rows,gaps};
 }

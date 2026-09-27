@@ -4,8 +4,8 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 166 case definitions, 184 passing TypeScript
-harness tests, and 107 required variants (85 implemented, 17 partial, 5 absent).
+Latest implementation inventory: 166 case definitions, 190 passing TypeScript
+harness tests, and 107 required variants (87 implemented, 15 partial, 5 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -1201,3 +1201,26 @@ The corrected check names the exact JAR/class and preserves its server handle.
 The four failed setup attempts are retained in
 `benchmarks/evidence/dependency-baseline-2026-09-27/`; additional unsealed runtime
 files retain failed-inventory status. Corrected supported-server replay is pending.
+
+## Optional completion command and clean code-action context
+
+Selection now inspects the original semantic completion item. If its optional
+command is absent, the case records `not_applicable`, resolves the same item for
+its fixture documentation, and sends no fabricated selection request. Artifact
+validation checks the original command-free reply, selected item, unchanged
+document state and actual resolve arguments. The variant ledger accepts this
+disposition only for the explicitly optional selection witness. An offered command
+that fails remains a failure, including protocol and shutdown failures.
+
+The clean-context code-action case independently compiles its source, confirms a
+valid server hover, then accepts either protocol-defined empty form (`null` or
+`[]`). It preserves all source states and refuses edit callbacks. Full harness
+validation passes 190 tests, including actual runner cases for offered, unoffered
+and failing selection commands.
+
+The expanded dependency replay at `a62ce1a` exposed a second harness error: generic
+location normalization decoded JDTLS's opaque class-file handle. Content and
+metadata requests consequently used an altered URI. The fix preserves the
+original URI exactly, with a regression using its real escaped form. The original
+20-case capture remains in `benchmarks/evidence/dependency-handle-2026-09-27/`;
+its complete inventory verifies. It is not evidence of a server content defect.

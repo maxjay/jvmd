@@ -3,6 +3,7 @@ import {readFileSync,writeFileSync,existsSync,readdirSync} from "node:fs";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 import {sha} from "./harness/fixture.ts";
+import {validUnofferedSelection} from "./harness/completionSelection.ts";
 import {CONTRACT} from "./harness/contracts.ts";
 import {reduceVariants} from "./variants.ts";
 import {isRenameRejection,isInvalidRenameRequest} from "./harness/rename.ts";
@@ -89,10 +90,15 @@ export function validateCase(report:any,events:any[],exchanges:any[],operations:
     for(const [i,state] of expected.entries()){const o=operations[s.firstOperationIndex+i];check(o?.method===s.method&&o?.state===state,"series sample missing or reordered: "+s.method+" "+state+" "+i);
       if(s.endpoint&&o)check(o.endpoint===s.endpoint,"series endpoint mismatch");}
   }
-  if(report.outcome==="pass"){
+  if(["pass","not_applicable"].includes(report.outcome)){
     check(operations.length>0||report.correctnessOnly,"pass without operations");check(operations.every(o=>o.outcome==="pass"),"case pass conceals failed operation");
     check((report.assertions??[]).every((a:any)=>a.passed===true),"case pass conceals failed assertion");
     check(!(report.protocolErrors?.length||report.shutdownError||report.cleanupError||report.error),"case pass conceals protocol/harness error");
+  }
+  if(report.outcome==="not_applicable"){
+    check(validUnofferedSelection(report,operations),"not-applicable selection lacks original unoffered-command evidence");
+    const resolve=operations.find(o=>o.method==="completionItem/resolve"&&o.state==="after_selection");
+    check(!!resolve&&JSON.stringify(byId.get(resolve.requestId)?.params)===JSON.stringify(report.notApplicableEvidence?.selectedItem),"not-offered resolve did not send the original selected item");
   }
   if(report.outcome==="unsupported")check(!!report.supportEvidence?.source,"unsupported without evidence");
   if(["DIA-01/valid","DIA-01/provider-edit"].includes(report.caseId))for(const op of operations)if(op.method==="textDocument/publishDiagnostics")check(!!op.diagnosticObservationId,"diagnostic case operation lacks observer identity");
@@ -152,7 +158,7 @@ export function reduceBundle(root:string,verifyHashes=true){
         if(row.schemaVersion!==1||row.clockDomain!=="client"||row.sequence!==i+1||BigInt(row.timeNs)<time)caseIssues.push("invalid process lifecycle event");
         time=BigInt(row.timeNs);
       }
-      if(report.outcome==="pass"&&(!lifecycle.some(row=>row.event==="process_exit"&&row.code===0&&!row.signal)||lifecycle.at(-1)?.event!=="stdio_closed"||lifecycle.some(row=>["forced_kill","shutdown_deadline","process_error","process_exit_unobserved"].includes(row.event))))caseIssues.push("case pass without observed clean process exit");
+      if(["pass","not_applicable"].includes(report.outcome)&&(!lifecycle.some(row=>row.event==="process_exit"&&row.code===0&&!row.signal)||lifecycle.at(-1)?.event!=="stdio_closed"||lifecycle.some(row=>["forced_kill","shutdown_deadline","process_error","process_exit_unobserved"].includes(row.event))))caseIssues.push("case pass without observed clean process exit");
     }
     if(report.caseId!==caseId||report.server!==server||report.block!==block)caseIssues.push("planned case identity mismatch");
     if(report.finalized!==true)caseIssues.push("case interrupted before finalization");
@@ -166,9 +172,9 @@ export function reduceBundle(root:string,verifyHashes=true){
   }
   const coverage=catalogue.apis.map((api:any)=>({apiId:api.id,method:api.method,role:api.testUse,
     caseIds:(manifest.registry??[]).filter((c:any)=>c.apis.includes(api.id)).map((c:any)=>c.id),
-    observations:apiEvents.get(api.id)??[],dispositions:reports.filter(r=>r.apiIds?.includes(api.id)).map(r=>({caseId:r.caseId,server:r.server,block:r.block,outcome:r.validatedOutcome??r.outcome,supportEvidence:r.supportEvidence})),
+    observations:apiEvents.get(api.id)??[],dispositions:reports.filter(r=>r.apiIds?.includes(api.id)).map(r=>({caseId:r.caseId,server:r.server,block:r.block,outcome:r.validatedOutcome??r.outcome,supportEvidence:r.supportEvidence,notApplicableEvidence:r.notApplicableEvidence})),
   }));
-  const gaps=coverage.filter((a:any)=>a.role==="Scenario target"&&(!a.caseIds.length||manifest.plan.servers.some((server:string)=>!a.dispositions.some((d:any)=>d.server===server&&(d.outcome==="unsupported"||d.outcome==="pass"&&a.observations.some((o:any)=>o.server===server&&o.declaredTarget)))))).map((a:any)=>a.apiId);
+  const gaps=coverage.filter((a:any)=>a.role==="Scenario target"&&(!a.caseIds.length||manifest.plan.servers.some((server:string)=>!a.dispositions.some((d:any)=>d.server===server&&(d.outcome==="unsupported"||(d.outcome==="not_applicable"&&a.apiId==="API-046"&&d.notApplicableEvidence?.kind==="completion_command_not_offered")||d.outcome==="pass"&&a.observations.some((o:any)=>o.server===server&&o.declaredTarget)))))).map((a:any)=>a.apiId);
   const effective=reports.map(r=>({...r,outcome:r.validatedOutcome??r.outcome}));
   const variantFile=path.join(root,"required-variants.json");
   const variants=reduceVariants(existsSync(variantFile)?read(variantFile):null,catalogue,manifest.registry??[],manifest.plan,reports);

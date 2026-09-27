@@ -1192,9 +1192,36 @@
         {
           "id": "CMP-01/selection",
           "requirement": "Exercise returned selection command only when offered.",
-          "implementation": "partial",
-          "remaining": "Returned selection command case needs an explicit not-offered disposition rather than an assumed required command.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "CMP-01/selection-command",
+              "allowNotOffered": true,
+              "operations": [
+                {
+                  "endpoint": "textDocument/completion",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "java.completion.onDidSelect",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "completionItem/resolve",
+                  "states": [
+                    "after_selection"
+                  ]
+                }
+              ],
+              "assertions": [
+                "selection disposition follows the original returned item"
+              ]
+            }
+          ]
         }
       ]
     },
@@ -3689,9 +3716,32 @@
         {
           "id": "REF-02/none",
           "requirement": "No applicable action returns none for clean selected context.",
-          "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "REF-02/no-action",
+              "operations": [
+                {
+                  "endpoint": "textDocument/hover",
+                  "states": [
+                    "valid_source_control"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/codeAction",
+                  "states": [
+                    "first_use",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent javac validation",
+                "clean-context actions preserve every source state",
+                "no-action requests never apply an edit"
+              ]
+            }
+          ]
         }
       ]
     },

@@ -16,6 +16,15 @@ const framing=new Framing("headers",message=>{
   if(id===undefined)return;
   if(method==="initialize"){send({id,result:{capabilities:{documentSymbolProvider:true,workspaceSymbolProvider:true,typeHierarchyProvider:true,renameProvider:{prepareProvider:true},completionProvider:{resolveProvider:true},definitionProvider:true,callHierarchyProvider:true,codeLensProvider:{resolveProvider:true},executeCommandProvider:{commands:["java.project.resolveWorkspaceSymbol","java.edit.handlePasteEvent","java.navigate.openTypeHierarchy","java.navigate.resolveTypeHierarchy"]}}}});return;}
   if(method==="shutdown"){if(mode!=="shutdown-hang")send({id,result:null});return;}
+  if(mode.startsWith("selection-")){
+    if(method==="textDocument/completion"){send({id,result:{items:[{label:"name()",kind:2,data:{token:"original"},...(mode==="selection-missing"?{}:{command:{title:"selected",command:"java.completion.onDidSelect",arguments:["original"]}})}],isIncomplete:false}});return;}
+    if(method==="completionItem/resolve"){send({id,result:{...params,documentation:"NAME_DOC_V1"}});return;}
+    if(method==="workspace/executeCommand"){
+      if(mode==="selection-command-error")send({id,error:{code:-32603,message:"selection failed"}});
+      else if(params.command==="java.completion.onDidSelect"&&JSON.stringify(params.arguments)==='["original"]')send({id,result:null});
+      else send({id,error:{code:-32602,message:"wrong original selection arguments"}});return;
+    }
+  }
   if(mode.startsWith("symbols-")&&["textDocument/documentSymbol","java/extendedDocumentSymbol","workspace/symbol","java/searchSymbols","workspace/executeCommand"].includes(method)){
     const uri=[...documents.keys()].find(u=>u.endsWith("/SearchCase.java"))!,source=documents.get(uri)!;
     const rows=[...source.matchAll(/(interface|class) (Benchmark\w+)[^\n]*/gu)].map(m=>({name:m[2],kind:m[1]==="interface"?11:5,location:{uri,range:span(source,m.index+m[1].length+1,m[2].length)}}));

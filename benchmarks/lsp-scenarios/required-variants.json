@@ -1361,23 +1361,282 @@
         {
           "id": "NAV-01/first",
           "requirement": "First independent navigation routes return exact expected target identities/ranges.",
-          "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "NAV-01/definition",
+              "operations": [
+                {
+                  "endpoint": "textDocument/definition",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-01/declaration",
+              "operations": [
+                {
+                  "endpoint": "textDocument/declaration",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-01/type-definition",
+              "operations": [
+                {
+                  "endpoint": "textDocument/typeDefinition",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-01/implementation",
+              "operations": [
+                {
+                  "endpoint": "textDocument/implementation",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-01/qualified-name",
+              "operations": [
+                {
+                  "endpoint": "java.getFullyQualifiedName",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-01/stack-location",
+              "operations": [
+                {
+                  "endpoint": "java.project.resolveStackTraceLocation",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-01/super-link",
+              "operations": [
+                {
+                  "endpoint": "java/findLinks",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
         },
         {
           "id": "NAV-01/repeat",
           "requirement": "Unchanged repeats of each applicable route remain correct.",
-          "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "NAV-01/definition",
+              "operations": [
+                {
+                  "endpoint": "textDocument/definition",
+                  "states": [
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-01/declaration",
+              "operations": [
+                {
+                  "endpoint": "textDocument/declaration",
+                  "states": [
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-01/type-definition",
+              "operations": [
+                {
+                  "endpoint": "textDocument/typeDefinition",
+                  "states": [
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-01/implementation",
+              "operations": [
+                {
+                  "endpoint": "textDocument/implementation",
+                  "states": [
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-01/qualified-name",
+              "operations": [
+                {
+                  "endpoint": "java.getFullyQualifiedName",
+                  "states": [
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-01/stack-location",
+              "operations": [
+                {
+                  "endpoint": "java.project.resolveStackTraceLocation",
+                  "states": [
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-01/super-link",
+              "operations": [
+                {
+                  "endpoint": "java/findLinks",
+                  "states": [
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
         },
         {
           "id": "NAV-01/moved",
           "requirement": "Moved target declaration changes exact target range for each relevant route.",
-          "implementation": "partial",
-          "remaining": "Endpoint cases exist, but the entire required variant and its independent oracle are not yet covered by reviewed witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "NAV-01/definition",
+              "operations": [
+                {
+                  "endpoint": "textDocument/definition",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-01/declaration",
+              "operations": [
+                {
+                  "endpoint": "textDocument/declaration",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-01/type-definition",
+              "operations": [
+                {
+                  "endpoint": "textDocument/typeDefinition",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-01/implementation",
+              "operations": [
+                {
+                  "endpoint": "textDocument/implementation",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-01/qualified-name",
+              "operations": [
+                {
+                  "endpoint": "java.getFullyQualifiedName",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-01/stack-location",
+              "operations": [
+                {
+                  "endpoint": "java.project.resolveStackTraceLocation",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            },
+            {
+              "caseId": "NAV-01/super-link",
+              "operations": [
+                {
+                  "endpoint": "java/findLinks",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": []
+            }
+          ]
         }
       ]
     },
@@ -3631,9 +3890,33 @@
         {
           "id": "REF-01/folder",
           "requirement": "Independent folder move updates packages/callers, preserves unrelated code and compiles.",
-          "implementation": "not_implemented",
-          "remaining": "No independent case for this rename variant.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "REF-01/folder-rename",
+              "operations": [
+                {
+                  "endpoint": "workspace/willRenameFiles",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/definition",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "folder rename changes exactly selected package and callers",
+                "folder rename preserves sibling-prefix package and removes old directory",
+                "independent javac validation",
+                "independent generated-code behaviour"
+              ]
+            }
+          ]
         },
         {
           "id": "REF-01/invalid",

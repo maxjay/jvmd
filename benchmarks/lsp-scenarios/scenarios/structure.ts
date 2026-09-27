@@ -15,18 +15,21 @@ function symbolOracle(c:ScenarioContext,value:any,file:string,name:string){
   assert.equal(selected(c.text(file),row.selectionRange??row.location?.range),name);
 }
 export const structureCases:CaseDefinition[]=[
-  {id:"NAV-01/declaration",family:"NAV-01",apis:["API-049"],capability:"declarationProvider",variant:"exact declaration",run:async c=>{
-    await c.open("Customer.java");await c.open("Use.java");
-    await c.series("textDocument/declaration",at(c,"Use.java","number()"),v=>exactLocations(v,[loc(c,"Customer.java","number")]));
-  }},
-  {id:"NAV-01/type-definition",family:"NAV-01",apis:["API-051"],capability:"typeDefinitionProvider",variant:"exact receiver type",run:async c=>{
-    await c.open("Customer.java");await c.open("Use.java");
-    await c.series("textDocument/typeDefinition",at(c,"Use.java","customer.name"),v=>exactLocations(v,[loc(c,"Customer.java","Customer")]));
-  }},
-  {id:"NAV-01/implementation",family:"NAV-01",apis:["API-052"],capability:"implementationProvider",variant:"interface implementations exclude homonym",run:async c=>{
-    await c.open("Hierarchy.java");const text=c.text("Hierarchy.java"),base=text.indexOf("class Base"),child=text.indexOf("class Child");
-    await c.series("textDocument/implementation",at(c,"Hierarchy.java","value()"),v=>exactLocations(v,[loc(c,"Hierarchy.java","value",base),loc(c,"Hierarchy.java","value",child)]));
-  }},
+  ...[
+    ["declaration","API-049","declarationProvider"],
+    ["type-definition","API-051","typeDefinitionProvider"],
+    ["implementation","API-052","implementationProvider"],
+  ].map(([route,api,capability])=>({id:"NAV-01/"+route,family:"NAV-01",apis:[api,"API-011"],capability,variant:"independent first/repeat and moved exact navigation targets",run:async(c:ScenarioContext)=>{
+    const file=route==="implementation"?"Hierarchy.java":"Customer.java";
+    await c.open(file);if(route!=="implementation")await c.open("Use.java");
+    const method="textDocument/"+(route==="type-definition"?"typeDefinition":route);
+    const params=()=>route==="implementation"?at(c,"Hierarchy.java","value()"):at(c,"Use.java",route==="declaration"?"number()":"customer.name");
+    const oracle=(v:any)=>{const text=c.text(file);exactLocations(v,route==="implementation"?
+      [loc(c,file,"value",text.indexOf("class Base")),loc(c,file,"value",text.indexOf("class Child"))]:[loc(c,file,route==="declaration"?"number":"Customer")]);};
+    await c.series(method,params(),oracle);const trigger=c.change(file,"\n\n"+c.text(file)).trigger;
+    await c.transition(method,params,oracle,trigger,"every independently selected target range moves by two source lines");
+    c.assert("navigation preserves exact target identity after source movement",true);c.compileOracle();
+  }})),
   ...["first-repeat","add","remove"].map(mutation=>({id:"NAV-02/highlights"+(mutation==="first-repeat"?"":"-"+mutation),family:"NAV-02",apis:["API-054",...(mutation==="first-repeat"?[]:["API-011"])],capability:"documentHighlightProvider",variant:"independent exact local uses: "+mutation,run:async(c:ScenarioContext)=>{
     await c.open("Customer.java");await c.open("Use.java");
     const oracle=(v:any)=>{assert(Array.isArray(v));const want=[];let start=0,text=c.text("Use.java");while((start=text.indexOf("number",start))>=0){want.push(loc(c,"Use.java","number",start));start+=6;}

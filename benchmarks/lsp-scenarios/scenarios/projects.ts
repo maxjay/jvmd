@@ -98,16 +98,26 @@ export const projectCases:CaseDefinition[]=[
     await c.execute("java.project.resolveWorkspaceSymbol",[workspaceSymbolArgument(rows[0])],v=>{assert.equal(v.name,"Customer");assert.equal(normalize(v.location.uri),normalize(document(c)));assert.equal(selected(c.text("Customer.java"),v.location.range),"Customer");});
   }},
   {id:"NAV-01/qualified-name",family:"NAV-01",apis:["API-061"],command:"java.getFullyQualifiedName",variant:"exact declared type name",run:async c=>{
-    await c.open("Customer.java");await c.series("workspace/executeCommand",{command:"java.getFullyQualifiedName",arguments:[JSON.stringify(at(c,"Customer.java","Customer"))]},v=>assert.equal(v,"bench.Customer"));
+    await c.open("Customer.java");const params=()=>({command:"java.getFullyQualifiedName",arguments:[JSON.stringify(at(c,"Customer.java","Customer"))]});
+    await c.series("workspace/executeCommand",params(),v=>assert.equal(v,"bench.Customer"));
+    const trigger=c.change("Customer.java","\n\n"+c.text("Customer.java")).trigger;
+    await c.transition("workspace/executeCommand",params,v=>assert.equal(v,"bench.Customer"),trigger,"qualified identity survives moved declaration at its new cursor position");
+    c.assert("navigation preserves exact target identity after source movement",true);
   }},
   {id:"NAV-01/stack-location",family:"NAV-01",apis:["API-062"],command:"java.project.resolveStackTraceLocation",variant:"known frame source line",run:async c=>{
-    const line=range(c.text("Customer.java"),"public int number").start.line;
-    await c.series("workspace/executeCommand",{command:"java.project.resolveStackTraceLocation",arguments:["at bench.Customer.number(Customer.java:"+(line+1)+")",["benchmark"]]},v=>{
-      const rows=Array.isArray(v)?v:[v];assert.equal(rows.length,1);assert.equal(normalize(rows[0].uri),normalize(document(c)));assert.equal(rows[0].range.start.line,line);
-    });
+    const params=()=>({command:"java.project.resolveStackTraceLocation",arguments:["at bench.Customer.number(Customer.java:"+(range(c.text("Customer.java"),"public int number").start.line+1)+")",["benchmark"]]});
+    const oracle=(v:any)=>{const rows=Array.isArray(v)?v:[v];assert.equal(rows.length,1);assert.equal(normalize(rows[0].uri),normalize(document(c)));assert.equal(rows[0].range.start.line,range(c.text("Customer.java"),"public int number").start.line);};
+    await c.series("workspace/executeCommand",params(),oracle);
+    const trigger=c.writeDisk("Customer.java","\n\n"+c.text("Customer.java"));
+    await c.transition("workspace/executeCommand",params,oracle,trigger,"new stack frame line resolves the moved declaration in the same source URI");
+    c.assert("navigation preserves exact target identity after source movement",true);
   }},
   {id:"NAV-01/super-link",family:"NAV-01",apis:["API-059"],extension:true,variant:"overriding method links to the direct superclass declaration",run:async c=>{
-    await c.open("Hierarchy.java");const text=c.text("Hierarchy.java");
-    await c.series("java/findLinks",{type:"superImplementation",position:at(c,"Hierarchy.java","value",text.indexOf("class Child"))},v=>exactLocations(v,[{uri:c.file("Hierarchy.java").uri,range:range(text,"value",text.indexOf("class Base"))}]));
+    await c.open("Hierarchy.java");const params=()=>({type:"superImplementation",position:at(c,"Hierarchy.java","value",c.text("Hierarchy.java").indexOf("class Child"))});
+    const oracle=(v:any)=>exactLocations(v,[{uri:c.file("Hierarchy.java").uri,range:range(c.text("Hierarchy.java"),"value",c.text("Hierarchy.java").indexOf("class Base"))}]);
+    await c.series("java/findLinks",params(),oracle);
+    const trigger=c.change("Hierarchy.java","\n\n"+c.text("Hierarchy.java")).trigger;
+    await c.transition("java/findLinks",params,oracle,trigger,"direct superclass declaration has exact shifted range");
+    c.assert("navigation preserves exact target identity after source movement",true);
   }},
 ];

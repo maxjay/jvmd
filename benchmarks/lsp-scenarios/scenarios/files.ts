@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import path from "node:path";
-import {readFileSync,writeFileSync,existsSync} from "node:fs";
+import {readFileSync,writeFileSync,existsSync,mkdirSync,rmdirSync} from "node:fs";
 import {pathToFileURL,fileURLToPath} from "node:url";
 import {type CaseDefinition,type ScenarioContext} from "../harness/ScenarioContext.ts";
 import {exactLocations,range,position,hoverOracle,selected} from "../harness/oracles.ts";
 import {createFixture,inventory} from "../harness/fixture.ts";
+import {exactRefactor,sourceSnapshot} from "../harness/refactors.ts";
+import {folderRenameOperations,expandFolderEdit} from "../harness/folderRename.ts";
 const at=(c:ScenarioContext,file:string,token:string)=>({textDocument:{uri:c.file(file).uri},position:position(c.text(file),c.text(file).indexOf(token)+1)});
 const normalize=(uri:string)=>path.resolve(fileURLToPath(uri));
 const dynamic='package bench;\npublic class BenchmarkExternalProvider { public String value() { return "first"; } }\n';
@@ -44,6 +46,28 @@ export const fileCases:CaseDefinition[]=[
     c.assert("public declaration renamed",c.text(entry[0]).includes("public class Client"));c.assert("caller type updated",c.text("Use.java").includes("Client customer"));c.compileOracle();
     await c.transition("textDocument/definition",()=>at(c,"Use.java","number()"),v=>exactLocations(v,[{uri:after,range:range(c.text(entry[0]),"number")}]),trigger,"definition uses renamed URI");
   }},
+  {id:"REF-01/folder-rename",family:"REF-01",apis:["API-016","API-050"],capability:"workspace.fileOperations.willRename",sourceDirectory:"src",variant:"rename exact package folder; preserve sibling-prefix package, update callers and execute behaviour",
+    fixture:{"FolderUse.java":"package bench; import bench.sourcepkg.FolderProvider; import bench.sourcepkg.FolderSibling; public class FolderUse { public int read() { return new FolderProvider().value() + new FolderSibling().other(); } }\n"},
+    prepare:fixture=>{for(const [name,folder,text] of [
+      ["FolderProvider.java","sourcepkg","public class FolderProvider { public int value() { return 40; } }"],
+      ["FolderSibling.java","sourcepkg","public class FolderSibling { public int other() { return 2; } }"],
+      ["FolderControl.java","sourcepkgextra","public class FolderControl { public int value() { return 99; } }"],
+    ]){const file=path.join(fixture.root,"src/bench",folder,name),source="package bench."+folder+";\n"+text+"\n";mkdirSync(path.dirname(file),{recursive:true});writeFileSync(file,source);fixture.files[name]={path:file,uri:pathToFileURL(file).href,text:source};}},
+    run:async c=>{
+      await c.open("FolderProvider.java");await c.open("FolderUse.java");const before=sourceSnapshot(c),oldUri=pathToFileURL(path.join(c.fixture.root,"src/bench/sourcepkg")).href,newUri=pathToFileURL(path.join(c.fixture.root,"src/bench/destinationpkg")).href;
+      const operations=folderRenameOperations(c.fixture.root,Object.values(c.fixture.files).map(f=>f.uri),oldUri,newUri),files=[{oldUri,newUri}];
+      const edit=await c.query("workspace/willRenameFiles",{files},v=>assert(v?.documentChanges||v?.changes));
+      c.applyWorkspaceEdit(expandFolderEdit(edit,operations,oldUri,newUri));
+      const pending=operations.filter(op=>Object.values(c.fixture.files).some(f=>f.uri===op.oldUri));if(pending.length)c.applyWorkspaceEdit({documentChanges:pending});
+      rmdirSync(fileURLToPath(oldUri));const trigger=c.client.notify("workspace/didRenameFiles",{files});
+      const changes:Record<string,string|null>={"src/bench/FolderUse.java":before["src/bench/FolderUse.java"].text.replaceAll("bench.sourcepkg.","bench.destinationpkg.")};
+      for(const name of ["FolderProvider.java","FolderSibling.java"]){const old="src/bench/sourcepkg/"+name;changes[old]=null;changes["src/bench/destinationpkg/"+name]=before[old].text.replace("package bench.sourcepkg;","package bench.destinationpkg;");}
+      exactRefactor(before,sourceSnapshot(c),changes);c.assert("folder rename changes exactly selected package and callers",true);
+      c.compileOracle('package bench; public class HarnessOracle { public static void main(String[] args) { if(new FolderUse().read()!=42 || new bench.sourcepkgextra.FolderControl().value()!=99) throw new AssertionError("folder rename changed behaviour"); } }');
+      const entry=Object.entries(c.fixture.files).find(([,f])=>f.uri===operations.find(op=>op.oldUri.endsWith("/FolderProvider.java"))!.newUri)!;
+      await c.transition("textDocument/definition",()=>at(c,"FolderUse.java","value()"),v=>exactLocations(v,[{uri:entry[1].uri,range:range(c.text(entry[0]),"value")}]),trigger,"caller resolves moved provider URI and exact declaration range");
+      c.assert("folder rename preserves sibling-prefix package and removes old directory",!existsSync(fileURLToPath(oldUri)));
+    }},
   {id:"PRJ-01/workspace-folders",family:"PRJ-01",apis:["API-021","API-025"],command:"java.project.getAll",variant:"add and remove a second independent workspace; exact project set",run:async c=>{
     const other=createFixture(path.join(c.fixture.root,"..","second-workspace"));const project=path.join(other.root,".project");writeFileSync(project,readFileSync(project,"utf8").replace("<name>benchmark</name>","<name>benchmark_second</name>"));
     c.mutations.push({kind:"new_workspace",root:other.root,inputs:inventory(other.root)});

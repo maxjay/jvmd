@@ -4,8 +4,8 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 167 case definitions, 195 passing TypeScript
-harness tests, and 107 required variants (92 implemented, 11 partial, 4 absent).
+Latest implementation inventory: 168 case definitions, 197 passing TypeScript
+harness tests, and 107 required variants (96 implemented, 8 partial, 3 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -1253,3 +1253,28 @@ unrelated edits or incarnation changes, extra/missing sources, wrong extracted
 expressions and wrong return locals. All 195 harness tests pass. Source inventory:
 167 cases and 107 variants, 92 implemented, 11 partial, 4 absent. Real refactor
 replay remains required.
+
+
+## Navigation movement, package-folder rename, and real refactor results
+
+All seven NAV-01 routes now retain separate first/repeat request timings and
+immediate/settled checks after source movement. Declaration, definition, type,
+implementation, super-link, qualified-name and stack-frame routes each use
+independently computed expected identities/ranges. Stack lookup changes the saved
+source and frame line; it does not pretend an unsaved buffer is a stack artifact.
+
+Folder rename now exercises the actual willRenameFiles request for a package
+folder, applies edits and the requested resource operation, notifies didRenameFiles,
+and proves exact new package paths/callers and subsequent definition targets.
+An adjacent package with the same prefix remains unchanged. Every source is
+compiled and a separate runtime probe checks the moved and untouched behaviour.
+The client adapter expands only the requested folder operation into registered
+Java files, and rejects escapes, collisions and changed destinations.
+
+Real replay at `d7ad357` passed all five JDTLS refactor semantic/compile/runtime
+checks. Three cases exited cleanly; extract-selection and extract-interface
+exited 1 during shutdown without a forced kill, so both remain protocol errors.
+JVMD reported all five routes unsupported. All ten reports finalized with no
+reducer integrity issues and verified original inventories. The evidence is in
+`benchmarks/evidence/refactor-effects-2026-09-27/`. All 197 harness tests pass;
+168 cases cover 96 implemented, 8 partial and 3 absent required variants.

@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "d7ad357fceb97e03ca07b58c2de1ef72af713f4f",
+  "sourceDrift": false,
+  "outcomes": {
+    "pass": 3,
+    "incorrect": 0,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 2,
+    "harness_error": 0,
+    "unsupported": 5,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "originalReducerIntegrityIssues": [],
+  "package": {
+    "file": "protocol-review.tar.xz",
+    "bytes": 138596,
+    "sha256": "b4cece067034f47b0acf747b25fbaa1b112a6d685962964536f0762604842c6f",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "verified",
+    "unsealedFiles": {},
+    "members": 93
+  },
+  "explanation": "All five JDTLS refactor semantic/compile/runtime checks pass. Extract-selection and extract-interface shutdowns exit 1 without a forced kill, so those two case outcomes remain protocol_error. All five JVMD routes are unsupported.",
+  "claims": {
+    "publicComparativePerformance": false
+  }
+}

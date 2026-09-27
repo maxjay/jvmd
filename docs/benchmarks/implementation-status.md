@@ -4,8 +4,8 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 168 case definitions, 197 passing TypeScript
-harness tests, and 107 required variants (96 implemented, 8 partial, 3 absent).
+Latest implementation inventory: 170 case definitions, 199 passing TypeScript
+harness tests, and 107 required variants (102 implemented, 2 partial, 3 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -1278,3 +1278,30 @@ JVMD reported all five routes unsupported. All ten reports finalized with no
 reducer integrity issues and verified original inventories. The evidence is in
 `benchmarks/evidence/refactor-effects-2026-09-27/`. All 197 harness tests pass;
 168 cases cover 96 implemented, 8 partial and 3 absent required variants.
+
+
+## Project membership and source/dependency scope
+
+Initial project inventory now proves both main/test classification and exact
+symbols from distinct roots. Add/remove workspace cases start independently and
+verify both inventory and the unique second-project symbol, with byte controls.
+Source-root add/remove likewise have independent initial states, one mutation,
+exact source-path inventories, positive/negative symbol witnesses, and unchanged
+source/document-state controls.
+
+Main/test classpath cases now have separate source roots, output directories and
+actual main/test dependency JARs. Seven independent tool invocations compile both
+libraries, build reproducible archives, prove main dependency acceptance, reject
+the test-only dependency on the main classpath, and accept the combined test
+classpath. JDK identity, commands, source and binary hashes are retained. Exact
+scope oracles reject leaked test entries, missing outputs and duplicates. Local
+fixture preparation verified all seven commands; all 199 harness tests pass.
+
+Navigation replay at `bc94bad` passed JDTLS folder rename completely. It exposed
+two harness mistakes, now corrected: declaration navigation requires an inherited
+declaring method, and stack mapping returns a URI string (not a Location).
+Pinned server sources and original failures are preserved in
+`benchmarks/evidence/navigation-folder-2026-09-27/`. This capture also retains
+an incorrect immediate implementation target, empty post-movement super-links,
+and separate nonzero shutdowns. It does not stand in for the corrected replay.
+Source scope is now 170 cases, 102 implemented variants, 2 partial and 3 absent.

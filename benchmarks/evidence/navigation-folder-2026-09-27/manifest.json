@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "bc94badcfcb5e37438abeb2116aa880bf944a19e",
+  "sourceDrift": false,
+  "outcomes": {
+    "pass": 3,
+    "incorrect": 4,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 2,
+    "harness_error": 0,
+    "unsupported": 7,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "originalReducerIntegrityIssues": [
+    "01-jdtls-NAV-01-declaration: series sample missing or reordered: textDocument/declaration warmup 1",
+    "01-jdtls-NAV-01-declaration: series sample missing or reordered: textDocument/declaration steady 2",
+    "01-jdtls-NAV-01-declaration: series sample missing or reordered: textDocument/declaration steady 3",
+    "01-jdtls-NAV-01-stack-location: series sample missing or reordered: workspace/executeCommand warmup 1",
+    "01-jdtls-NAV-01-stack-location: series sample missing or reordered: workspace/executeCommand steady 2",
+    "01-jdtls-NAV-01-stack-location: series sample missing or reordered: workspace/executeCommand steady 3"
+  ],
+  "package": {
+    "file": "protocol-review.tar.xz",
+    "bytes": 162948,
+    "sha256": "26953780b8313135f7845cccad736b92a499bea1f281b2a890b4aefc0c315c2b",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "verified",
+    "unsealedFiles": {},
+    "members": 151
+  },
+  "harnessErrors": [
+    "Declaration fixture requested a method without an inherited declaring method; corrected to Root.value inherited by Base.value.",
+    "Stack mapping returns a URI string, as already stated in the catalogue; corrected the mistaken Location oracle."
+  ],
+  "observations": [
+    "JDTLS folder rename passes exact path, caller, compile, runtime and moved-definition checks.",
+    "JDTLS implementation first changed result selects type names, then later correct method targets; first failure retained.",
+    "JDTLS super-link returns empty throughout bounded changed-state observation; shutdown exits 1.",
+    "Definition and type-definition operations pass but their shutdowns exit 1."
+  ],
+  "claims": {
+    "publicComparativePerformance": false
+  }
+}

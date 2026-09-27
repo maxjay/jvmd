@@ -341,23 +341,105 @@
         {
           "id": "PRJ-01/initial",
           "requirement": "Initial project inventory, main/test classification and root-specific symbol.",
-          "implementation": "partial",
-          "remaining": "Inventory cases lack complete main/test and root-specific semantic visibility witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "PRJ-01/membership",
+              "operations": [
+                {
+                  "endpoint": "java.project.getAll",
+                  "states": [
+                    "first_use",
+                    "steady"
+                  ]
+                },
+                {
+                  "endpoint": "java.project.isTestFile",
+                  "states": [
+                    "main_classification",
+                    "test_classification"
+                  ]
+                },
+                {
+                  "endpoint": "workspace/symbol",
+                  "states": [
+                    "first_use",
+                    "steady"
+                  ]
+                }
+              ],
+              "assertions": [
+                "initial main and test roots have exact classification and symbols",
+                "independent javac validation"
+              ]
+            }
+          ]
         },
         {
           "id": "PRJ-01/add",
           "requirement": "Add a project; verify inventory and its root-specific symbol.",
-          "implementation": "partial",
-          "remaining": "Inventory cases lack complete main/test and root-specific semantic visibility witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "PRJ-01/workspace-add",
+              "operations": [
+                {
+                  "endpoint": "java.project.getAll",
+                  "states": [
+                    "baseline_inventory",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                },
+                {
+                  "endpoint": "workspace/symbol",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "workspace membership preserves all primary sources",
+                "workspace membership preserves second-project source bytes",
+                "one workspace mutation has exact inventory and semantic visibility"
+              ]
+            }
+          ]
         },
         {
           "id": "PRJ-01/remove",
           "requirement": "Remove a project; verify inventory and absence of its root-specific symbol.",
-          "implementation": "partial",
-          "remaining": "Inventory cases lack complete main/test and root-specific semantic visibility witnesses.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "PRJ-01/workspace-remove",
+              "operations": [
+                {
+                  "endpoint": "java.project.getAll",
+                  "states": [
+                    "baseline_inventory",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                },
+                {
+                  "endpoint": "workspace/symbol",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "workspace membership preserves all primary sources",
+                "workspace membership preserves second-project source bytes",
+                "one workspace mutation has exact inventory and semantic visibility"
+              ]
+            }
+          ]
         }
       ]
     },
@@ -438,23 +520,143 @@
         {
           "id": "ENV-01/main-test",
           "requirement": "Separate main/test roots and classpath scopes have independently expected contents.",
-          "implementation": "partial",
-          "remaining": "Current fixture does not distinguish real main and test source/dependency sets.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "ENV-01/classpath-runtime",
+              "operations": [
+                {
+                  "endpoint": "java.project.getClasspaths",
+                  "states": [
+                    "first_use",
+                    "steady"
+                  ]
+                },
+                {
+                  "endpoint": "java.project.isTestFile",
+                  "states": [
+                    "main_classification",
+                    "test_classification"
+                  ]
+                },
+                {
+                  "endpoint": "java.project.listSourcePaths",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent main/test compiler witnesses verified",
+                "classpath query preserves every source state",
+                "classpath contains exactly the requested main or test scope"
+              ]
+            },
+            {
+              "caseId": "ENV-01/classpath-test",
+              "operations": [
+                {
+                  "endpoint": "java.project.getClasspaths",
+                  "states": [
+                    "first_use",
+                    "steady"
+                  ]
+                },
+                {
+                  "endpoint": "java.project.isTestFile",
+                  "states": [
+                    "main_classification",
+                    "test_classification"
+                  ]
+                },
+                {
+                  "endpoint": "java.project.listSourcePaths",
+                  "states": [
+                    "first_use"
+                  ]
+                }
+              ],
+              "assertions": [
+                "independent main/test compiler witnesses verified",
+                "classpath query preserves every source state",
+                "classpath contains exactly the requested main or test scope"
+              ]
+            }
+          ]
         },
         {
           "id": "ENV-01/add-root",
           "requirement": "One-change independent case: add source root and observe its type.",
-          "implementation": "partial",
-          "remaining": "Current source-path case chains add/remove; removal lacks a semantic absence probe.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "ENV-01/source-path-add",
+              "operations": [
+                {
+                  "endpoint": "java.project.addToSourcePath",
+                  "states": [
+                    "root_change"
+                  ]
+                },
+                {
+                  "endpoint": "workspace/symbol",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                },
+                {
+                  "endpoint": "java.project.listSourcePaths",
+                  "states": [
+                    "baseline_paths",
+                    "changed_paths"
+                  ]
+                }
+              ],
+              "assertions": [
+                "source root mutation preserves all document and disk states",
+                "exactly one source-root change has semantic visibility evidence"
+              ]
+            }
+          ]
         },
         {
           "id": "ENV-01/remove-root",
           "requirement": "One-change independent case: remove source root and prove its type no longer contributes.",
-          "implementation": "partial",
-          "remaining": "Current source-path case chains add/remove; removal lacks a semantic absence probe.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "ENV-01/source-path-remove",
+              "operations": [
+                {
+                  "endpoint": "java.project.removeFromSourcePath",
+                  "states": [
+                    "root_change"
+                  ]
+                },
+                {
+                  "endpoint": "workspace/symbol",
+                  "states": [
+                    "baseline",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                },
+                {
+                  "endpoint": "java.project.listSourcePaths",
+                  "states": [
+                    "baseline_paths",
+                    "changed_paths"
+                  ]
+                }
+              ],
+              "assertions": [
+                "source root mutation preserves all document and disk states",
+                "exactly one source-root change has semantic visibility evidence"
+              ]
+            }
+          ]
         },
         {
           "id": "ENV-01/jar-replacement",

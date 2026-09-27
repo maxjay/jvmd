@@ -20,12 +20,13 @@ export const structureCases:CaseDefinition[]=[
     ["type-definition","API-051","typeDefinitionProvider"],
     ["implementation","API-052","implementationProvider"],
   ].map(([route,api,capability])=>({id:"NAV-01/"+route,family:"NAV-01",apis:[api,"API-011"],capability,variant:"independent first/repeat and moved exact navigation targets",run:async(c:ScenarioContext)=>{
-    const file=route==="implementation"?"Hierarchy.java":"Customer.java";
-    await c.open(file);if(route!=="implementation")await c.open("Use.java");
+    const file=route!=="type-definition"?"Hierarchy.java":"Customer.java";
+    await c.open(file);if(route==="type-definition")await c.open("Use.java");
     const method="textDocument/"+(route==="type-definition"?"typeDefinition":route);
-    const params=()=>route==="implementation"?at(c,"Hierarchy.java","value()"):at(c,"Use.java",route==="declaration"?"number()":"customer.name");
+    const params=()=>route==="implementation"?at(c,"Hierarchy.java","value()"):route==="declaration"?
+      {textDocument:{uri:c.file(file).uri},position:position(c.text(file),c.text(file).indexOf("value",c.text(file).indexOf("class Base"))+1)}:at(c,"Use.java","customer.name");
     const oracle=(v:any)=>{const text=c.text(file);exactLocations(v,route==="implementation"?
-      [loc(c,file,"value",text.indexOf("class Base")),loc(c,file,"value",text.indexOf("class Child"))]:[loc(c,file,route==="declaration"?"number":"Customer")]);};
+      [loc(c,file,"value",text.indexOf("class Base")),loc(c,file,"value",text.indexOf("class Child"))]:[loc(c,file,route==="declaration"?"value":"Customer")]);};
     await c.series(method,params(),oracle);const trigger=c.change(file,"\n\n"+c.text(file)).trigger;
     await c.transition(method,params,oracle,trigger,"every independently selected target range moves by two source lines");
     c.assert("navigation preserves exact target identity after source movement",true);c.compileOracle();

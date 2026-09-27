@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import path from "node:path";
-import {mkdirSync,writeFileSync} from "node:fs";
+import {mkdirSync,writeFileSync,readFileSync} from "node:fs";
 import {pathToFileURL,fileURLToPath} from "node:url";
 import {type CaseDefinition,type ScenarioContext} from "../harness/ScenarioContext.ts";
 import {position,selected,exactLocations,range} from "../harness/oracles.ts";
 import {exactLegacyHierarchy,legacyHierarchyArguments,type TypeGraph} from "../harness/hierarchy.ts";
 import {exactJava,exactRefactor,sourceSnapshot} from "../harness/refactors.ts";
+import {addSource,exactSourceSymbol} from "../harness/projectScope.ts";
 const LEGACY_SOURCE="package bench;\ninterface Root {}\ninterface Base extends Root {}\ninterface Child extends Base {}\ninterface Grandchild extends Child {}\ninterface UnrelatedType {}\n";
 const LEGACY_GRAPH:TypeGraph={Root:{kind:11,parents:[],children:["Base"]},Base:{kind:11,parents:["Root"],children:["Child"]},
   Child:{kind:11,parents:["Base"],children:["Grandchild"]},Grandchild:{kind:11,parents:["Child"],children:[]},UnrelatedType:{kind:11,parents:[],children:[]}};
@@ -36,16 +37,21 @@ export const refactoringCases:CaseDefinition[]=[
       await c.transition("workspace/executeCommand",params,v=>check(v,2),trigger,"Child now extends UnrelatedType and is absent below Base; fresh raw legacy item on every attempt");
       c.assert("legacy parent replacement has exact current edges",true);c.compileOracle();
     }})),
-  {id:"ENV-01/source-path",family:"ENV-01",apis:["API-033","API-034","API-035"],command:"java.project.addToSourcePath",sourceDirectory:"src",variant:"add/remove independent source root; exact reported membership",run:async c=>{
-    const directory=path.join(c.fixture.root,"extra");c.createDisk("Extra.java","extra/other/Extra.java","package other; public class Extra { public int uniqueValue(){return 51;} }\n");
-    const uri=pathToFileURL(directory).href;
-    await c.execute("java.project.addToSourcePath",[uri],v=>assert.equal(v.status,true));
-    const sourcePaths=(v:any)=>{assert.equal(v.status,true);return v.data.map((x:any)=>path.resolve(x.path));};
-    await c.execute("java.project.listSourcePaths",[],v=>assert(sourcePaths(v).includes(directory)),"after_add");
-    await c.open("Extra.java");await c.query("textDocument/documentSymbol",{textDocument:{uri:c.file("Extra.java").uri}},v=>assert(JSON.stringify(v).includes("uniqueValue")),"new_source_visibility");c.close("Extra.java");
-    await c.execute("java.project.removeFromSourcePath",[uri],v=>assert.equal(v.status,true));
-    await c.execute("java.project.listSourcePaths",[],v=>assert(!sourcePaths(v).includes(directory)),"after_remove");
-  }},
+  ...["add","remove"].map(mutation=>({id:"ENV-01/source-path-"+mutation,family:"ENV-01",apis:[mutation==="add"?"API-033":"API-034","API-035","API-057"],command:mutation==="add"?"java.project.addToSourcePath":"java.project.removeFromSourcePath",sourceDirectory:"src",variant:"one source-root change with exact semantic presence/absence and unchanged source controls",
+    prepare:fixture=>{addSource(fixture,"ExtraRootWitness.java","extra/other/ExtraRootWitness.java","package other; public class ExtraRootWitness { public int uniqueValue(){return 51;} }\n");
+      if(mutation==="remove"){const cp=path.join(fixture.root,".classpath");writeFileSync(cp,readFileSync(cp,"utf8").replace('</classpath>','<classpathentry kind="src" path="extra"/></classpath>'));}},
+    run:async(c:ScenarioContext)=>{
+      const before=c.state(),directory=path.join(c.fixture.root,"extra"),uri=pathToFileURL(directory).href;
+      const paths=(present:boolean)=>(v:any)=>{assert.equal(v.status,true);assert.deepEqual(v.data.map((r:any)=>path.resolve(r.path)).sort(),[path.join(c.fixture.root,"src"),...(present?[directory]:[])].sort());};
+      await c.execute("java.project.listSourcePaths",[],paths(mutation==="remove"),"baseline_paths");
+      await c.query("workspace/symbol",{query:"ExtraRootWitness"},v=>exactSourceSymbol(v,c.file("ExtraRootWitness.java"),"ExtraRootWitness",mutation==="remove"),"baseline");
+      await c.execute(mutation==="add"?"java.project.addToSourcePath":"java.project.removeFromSourcePath",[uri],v=>assert.equal(v.status,true),"root_change");
+      const op=c.operations.at(-1),trigger=BigInt(op.startNs);c.mutations.push({kind:"source_root",mutation,uri,operationId:op.operationId,triggerNs:op.startNs,acknowledgedNs:op.endNs});
+      await c.transition("workspace/symbol",()=>({query:"ExtraRootWitness"}),v=>exactSourceSymbol(v,c.file("ExtraRootWitness.java"),"ExtraRootWitness",mutation==="add"),trigger,"root-specific type follows the one declared classpath membership change");
+      await c.execute("java.project.listSourcePaths",[],paths(mutation==="add"),"changed_paths");
+      c.assert("source root mutation preserves all document and disk states",JSON.stringify(c.state())===JSON.stringify(before));
+      c.assert("exactly one source-root change has semantic visibility evidence",c.mutations.length===1);
+    }})),
   {id:"REF-03/move-resource",family:"REF-03",apis:["API-093","API-094"],extension:true,sourceDirectory:"src",variant:"move class to another package and apply exact reference updates",
     prepare:fixture=>{const file=path.join(fixture.root,"src/destination/Anchor.java");mkdirSync(path.dirname(file),{recursive:true});const text="package destination; public class Anchor {}\n";writeFileSync(file,text);fixture.files["Anchor.java"]={path:file,uri:pathToFileURL(file).href,text};},
     run:async c=>{await c.open("Customer.java");await c.open("Use.java");const before=sourceSnapshot(c),source=c.file("Customer.java").uri;

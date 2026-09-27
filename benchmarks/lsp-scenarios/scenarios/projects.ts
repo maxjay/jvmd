@@ -7,6 +7,7 @@ import {position,range,exactLocations,selected,completionOracle} from "../harnes
 import {JDK_PROBE,prepareJdkSwitch,jdkUpdateOracle,vmInventoryOracle,compilerWitnessOracle} from "../harness/jdkSwitch.ts";
 import {workspaceSymbolArgument} from "../harness/symbols.ts";
 
+import {prepareProjectRoots,prepareClasspathScopes,classpathScopeOracle,exactSourceSymbol} from "../harness/projectScope.ts";
 const normalize=(uri:string)=>path.resolve(fileURLToPath(uri));
 const document=(c:ScenarioContext)=>c.file("Customer.java").uri;
 const rootUri=(c:ScenarioContext)=>pathToFileURL(c.fixture.root).href;
@@ -20,9 +21,12 @@ const cpKey="org.eclipse.jdt.ls.core.classpathEntries";
 const vmKey="org.eclipse.jdt.ls.core.vm.location";
 
 export const projectCases:CaseDefinition[]=[
-  {id:"PRJ-01/membership",family:"PRJ-01",apis:["API-025","API-030"],command:"java.project.getAll",variant:"exact imported project and main-source classification",run:async c=>{
+  {id:"PRJ-01/membership",family:"PRJ-01",apis:["API-025","API-030","API-057"],command:"java.project.getAll",sourceDirectory:"src/main/java",prepare:prepareProjectRoots,variant:"initial exact inventory, main/test classification and root-specific symbols",run:async c=>{
     await c.open("Customer.java");await c.series("workspace/executeCommand",{command:"java.project.getAll",arguments:[]},projectList(c));
-    await c.execute("java.project.isTestFile",[document(c)],v=>assert.equal(v,false));
+    await c.execute("java.project.isTestFile",[document(c)],v=>assert.equal(v,false),"main_classification");
+    await c.execute("java.project.isTestFile",[c.file("TestRootWitness.java").uri],v=>assert.equal(v,true),"test_classification");
+    for(const name of ["Customer","TestRootWitness"])await c.series("workspace/symbol",{query:name},v=>exactSourceSymbol(v,c.file(name+".java"),name));
+    c.assert("initial main and test roots have exact classification and symbols",true);c.compileOracle();
   }},
   {id:"PRJ-01/reimport",family:"PRJ-01",apis:["API-026","API-025"],command:"java.project.import",variant:"explicit import preserves exact membership",run:async c=>{
     await c.execute("java.project.import",[],v=>assert.equal(v,null));await c.execute("java.project.getAll",[],projectList(c),"after_import");
@@ -71,12 +75,16 @@ export const projectCases:CaseDefinition[]=[
       c.assert("JDK switch preserves every source byte and open document version",JSON.stringify(c.state())===JSON.stringify(before));
       c.assert("no server workspace edit during JDK switch",!c.serverActions.some(a=>a.method==="workspace/applyEdit"));
     }},
-  ...["runtime","test"].map(scope=>({id:"ENV-01/classpath-"+scope,family:"ENV-01",apis:["API-031","API-035"],command:"java.project.getClasspaths",variant:"declared "+scope+" scope and source roots",
+  ...["runtime","test"].map(scope=>({id:"ENV-01/classpath-"+scope,family:"ENV-01",apis:["API-031","API-035","API-030"],command:"java.project.getClasspaths",sourceDirectory:"src/main/java",prepare:prepareClasspathScopes,variant:"independent "+scope+" classpath with separate source outputs and real main/test dependencies",
     run:async(c:ScenarioContext)=>{
-      await c.open("Customer.java");await c.series("workspace/executeCommand",{command:"java.project.getClasspaths",arguments:[document(c),JSON.stringify({scope})]},v=>{
-        assert.equal(normalize(v.projectRoot),path.resolve(c.fixture.root));assert(v.classpaths.some((p:string)=>path.resolve(p)===path.join(c.fixture.root,"bin")));assert(Array.isArray(v.modulepaths));
-      });
-      await c.execute("java.project.listSourcePaths",[],v=>{assert.equal(v.status,true);assert(JSON.stringify(v.data).includes(c.fixture.root));});
+      c.assert("independent main/test compiler witnesses verified",c.fixture.preparation?.status==="verified");
+      await c.open("Customer.java");const before=c.state();
+      await c.series("workspace/executeCommand",{command:"java.project.getClasspaths",arguments:[document(c),JSON.stringify({scope})]},v=>classpathScopeOracle(v,c.fixture.root,scope));
+      await c.execute("java.project.listSourcePaths",[],v=>{assert.equal(v.status,true);assert.deepEqual(v.data.map((r:any)=>path.resolve(r.path)).sort(),["src/main/java","src/test/java"].map(r=>path.join(c.fixture.root,r)).sort());});
+      await c.execute("java.project.isTestFile",[document(c)],v=>assert.equal(v,false),"main_classification");
+      await c.execute("java.project.isTestFile",[c.file("TestRootWitness.java").uri],v=>assert.equal(v,true),"test_classification");
+      c.assert("classpath query preserves every source state",JSON.stringify(c.state())===JSON.stringify(before));
+      c.assert("classpath contains exactly the requested main or test scope",true);
     }})),
   {id:"ENV-01/classpath-roundtrip",sourceDirectory:"src",family:"ENV-01",apis:["API-032","API-028"],command:"java.project.updateClassPaths",variant:"read current entries, update once, verify identical entries",run:async c=>{
     const current=await c.execute("java.project.getSettings",[document(c),[cpKey]],v=>assert(Array.isArray(v[cpKey])&&v[cpKey].length===1));
@@ -106,10 +114,10 @@ export const projectCases:CaseDefinition[]=[
   }},
   {id:"NAV-01/stack-location",family:"NAV-01",apis:["API-062"],command:"java.project.resolveStackTraceLocation",variant:"known frame source line",run:async c=>{
     const params=()=>({command:"java.project.resolveStackTraceLocation",arguments:["at bench.Customer.number(Customer.java:"+(range(c.text("Customer.java"),"public int number").start.line+1)+")",["benchmark"]]});
-    const oracle=(v:any)=>{const rows=Array.isArray(v)?v:[v];assert.equal(rows.length,1);assert.equal(normalize(rows[0].uri),normalize(document(c)));assert.equal(rows[0].range.start.line,range(c.text("Customer.java"),"public int number").start.line);};
+    const oracle=(v:any)=>{assert.equal(typeof v,"string","stack mapping returns a source URI, not an LSP Location");assert.equal(normalize(v),normalize(document(c)));};
     await c.series("workspace/executeCommand",params(),oracle);
     const trigger=c.writeDisk("Customer.java","\n\n"+c.text("Customer.java"));
-    await c.transition("workspace/executeCommand",params,oracle,trigger,"new stack frame line resolves the moved declaration in the same source URI");
+    await c.transition("workspace/executeCommand",params,oracle,trigger,"updated stack frame maps to the same exact source URI; this endpoint returns no range");
     c.assert("navigation preserves exact target identity after source movement",true);
   }},
   {id:"NAV-01/super-link",family:"NAV-01",apis:["API-059"],extension:true,variant:"overriding method links to the direct superclass declaration",run:async c=>{

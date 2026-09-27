@@ -6,6 +6,7 @@ import {type CaseDefinition,type ScenarioContext} from "../harness/ScenarioConte
 import {exactLocations,range,position,hoverOracle,selected} from "../harness/oracles.ts";
 import {createFixture,inventory} from "../harness/fixture.ts";
 import {exactRefactor,sourceSnapshot} from "../harness/refactors.ts";
+import {exactSourceSymbol} from "../harness/projectScope.ts";
 import {folderRenameOperations,expandFolderEdit} from "../harness/folderRename.ts";
 const at=(c:ScenarioContext,file:string,token:string)=>({textDocument:{uri:c.file(file).uri},position:position(c.text(file),c.text(file).indexOf(token)+1)});
 const normalize=(uri:string)=>path.resolve(fileURLToPath(uri));
@@ -68,15 +69,25 @@ export const fileCases:CaseDefinition[]=[
       await c.transition("textDocument/definition",()=>at(c,"FolderUse.java","value()"),v=>exactLocations(v,[{uri:entry[1].uri,range:range(c.text(entry[0]),"value")}]),trigger,"caller resolves moved provider URI and exact declaration range");
       c.assert("folder rename preserves sibling-prefix package and removes old directory",!existsSync(fileURLToPath(oldUri)));
     }},
-  {id:"PRJ-01/workspace-folders",family:"PRJ-01",apis:["API-021","API-025"],command:"java.project.getAll",variant:"add and remove a second independent workspace; exact project set",run:async c=>{
-    const other=createFixture(path.join(c.fixture.root,"..","second-workspace"));const project=path.join(other.root,".project");writeFileSync(project,readFileSync(project,"utf8").replace("<name>benchmark</name>","<name>benchmark_second</name>"));
-    c.mutations.push({kind:"new_workspace",root:other.root,inputs:inventory(other.root)});
-    const folder={uri:pathToFileURL(other.root).href,name:"benchmark_second"},expected=[c.fixture.root,other.root].sort();
-    const added=c.client.notify("workspace/didChangeWorkspaceFolders",{event:{added:[folder],removed:[]}});
-    await c.transition("workspace/executeCommand",()=>({command:"java.project.getAll",arguments:[]}),v=>assert.deepEqual(v.map(normalize).sort(),expected),added,"second imported project visible");
-    const removed=c.client.notify("workspace/didChangeWorkspaceFolders",{event:{added:[],removed:[folder]}});
-    await c.transition("workspace/executeCommand",()=>({command:"java.project.getAll",arguments:[]}),v=>assert.deepEqual(v.map(normalize),[c.fixture.root]),removed,"second project removed");
-  }},
+  ...["add","remove"].map(mutation=>({id:"PRJ-01/workspace-"+mutation,family:"PRJ-01",apis:["API-021","API-025","API-057"],command:"java.project.getAll",variant:"independent workspace "+mutation+"; exact inventory and unique source symbol",
+    prepare:fixture=>{
+      const text="package bench; public class SecondWorkspaceWitness { public int value() { return 83; } }\n";
+      const other=createFixture(path.join(fixture.root,"..","second-workspace"),{"SecondWorkspaceWitness.java":text});const project=path.join(other.root,".project");writeFileSync(project,readFileSync(project,"utf8").replace("<name>benchmark</name>","<name>benchmark_second</name>"));
+      fixture.preparation={kind:"independent-workspace-membership",second:{root:other.root,inputs:inventory(other.root),file:other.files["SecondWorkspaceWitness.java"]}};
+      if(mutation==="remove")fixture.workspaceFolders=[{uri:pathToFileURL(fixture.root).href,name:"benchmark"},{uri:pathToFileURL(other.root).href,name:"benchmark_second"}];
+    },run:async(c:ScenarioContext)=>{
+      const second=c.fixture.preparation!.second,before=c.state(),folder={uri:pathToFileURL(second.root).href,name:"benchmark_second"};
+      const projects=(present:boolean)=>(v:any)=>assert.deepEqual(v.map(normalize).sort(),[c.fixture.root,...(present?[second.root]:[])].sort());
+      await c.execute("java.project.getAll",[],projects(mutation==="remove"),"baseline_inventory");
+      await c.query("workspace/symbol",{query:"SecondWorkspaceWitness"},v=>exactSourceSymbol(v,second.file,"SecondWorkspaceWitness",mutation==="remove"),"baseline");
+      const trigger=c.client.notify("workspace/didChangeWorkspaceFolders",{event:{added:mutation==="add"?[folder]:[],removed:mutation==="remove"?[folder]:[]}});
+      c.mutations.push({kind:"workspace_membership",mutation,root:second.root,triggerNs:String(trigger)});
+      await c.transition("workspace/executeCommand",()=>({command:"java.project.getAll",arguments:[]}),projects(mutation==="add"),trigger,"project inventory follows single workspace membership change");
+      await c.transition("workspace/symbol",()=>({query:"SecondWorkspaceWitness"}),v=>exactSourceSymbol(v,second.file,"SecondWorkspaceWitness",mutation==="add"),trigger,"unique type is present only while its project belongs to this workspace");
+      c.assert("workspace membership preserves all primary sources",JSON.stringify(c.state())===JSON.stringify(before));
+      c.assert("workspace membership preserves second-project source bytes",readFileSync(second.file.path,"utf8")===second.file.text);
+      c.assert("one workspace mutation has exact inventory and semantic visibility",c.mutations.length===1);
+    }})),
   {id:"PRJ-01/import-membership",family:"PRJ-01",apis:["API-027","API-025"],command:"java.project.changeImportedProjects",variant:"explicit remove/reimport updates project membership",run:async c=>{
     const uri=pathToFileURL(c.fixture.root).href;await c.execute("java.project.changeImportedProjects",[[],[],[uri]],v=>assert.equal(v,null));
     await c.transition("workspace/executeCommand",()=>({command:"java.project.getAll",arguments:[]}),v=>assert(!v.map(normalize).includes(c.fixture.root)),BigInt(c.operations.at(-1).startNs),"removed project absent");

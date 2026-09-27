@@ -592,3 +592,17 @@ Protocol reference: [LSP 3.17 rename and prepareRename](https://github.com/micro
 The pinned JDTLS `08eafe6` PrepareRenameHandler returns InvalidRequest for a target
 that cannot be renamed; this is why treating every JSON-RPC error as a transport
 failure would mismeasure this negative scenario.
+
+The `e34513c` real-server replay passes all eight semantic operations and all
+fixture-preservation assertions. JVMD returns null for both invalid requests;
+JDTLS returns InvalidRequest for prepare-rename and an empty rename edit. Three
+cases pass completely. The JDTLS prepare case remains `protocol_error` because
+the process exits with code 1 during shutdown, without a harness kill.
+There is no source drift or integrity issue. The raw protocol/process review
+subset is in `benchmarks/evidence/rename-invalid-2026-09-27/`.
+
+`benchmarks/lsp-scenarios/package_evidence.py` now makes these review subsets
+reproducibly: it verifies every full-bundle checksum and inventory membership,
+records omitted paths, hashes every selected member and checks the resulting
+archive byte-for-byte. A review subset is explicitly not a complete experiment
+bundle. This replay does not change the outstanding comparison gates.

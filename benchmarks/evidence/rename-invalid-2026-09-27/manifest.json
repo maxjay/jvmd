@@ -1,0 +1,247 @@
+{
+  "schemaVersion": 1,
+  "scope": "Raw protocol review subset; not complete experiment bundle or comparative performance evidence",
+  "revision": "e34513c6f7dd944757bd6651d53aa1ff43b3ac51",
+  "archive": {
+    "file": "protocol-review.tar.xz",
+    "bytes": 108556,
+    "sha256": "2ecdb0b7ee988f22a8558758a4e750c0ba1c8769e981af836b3570448c49d330",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "verified",
+    "members": 42
+  },
+  "plan": {
+    "caseIds": [
+      "REF-01/prepare-invalid",
+      "REF-01/rename-invalid"
+    ],
+    "servers": [
+      "jvmd",
+      "jdtls"
+    ],
+    "blocks": 1,
+    "warmup": 1,
+    "samples": 2,
+    "timeout": 30000,
+    "transitionPolicy": {
+      "maxAttempts": 100,
+      "retryDelayMs": 20,
+      "deadlineMs": 30000,
+      "perRequestTimeoutMs": 30000,
+      "clock": "client monotonic",
+      "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+      "settledProbe": "one additional correct response after the first correct response"
+    },
+    "profile": "pipe",
+    "serverOrder": "alternate per independent block",
+    "reset": "fresh fixture and server state per independent case",
+    "seed": 0
+  },
+  "sourceDrift": false,
+  "integrityIssues": [],
+  "sourceManifestSha256": "bf065494f985601c10491a63e5ce7200538c00a3b56f47268dd37ea14593f141",
+  "originalChecksumInventorySha256": "471b8edbbbab5badb687b81a1d3e599351486680382c00b771a972720a10cd77",
+  "outcomes": {
+    "pass": 3,
+    "incorrect": 0,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 1,
+    "harness_error": 0,
+    "unsupported": 0,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "cases": [
+    {
+      "server": "jdtls",
+      "caseId": "REF-01/prepare-invalid",
+      "profile": "direct",
+      "outcome": "protocol_error",
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}",
+      "assertions": [
+        {
+          "name": "valid rename baseline verified",
+          "passed": true
+        },
+        {
+          "name": "invalid position is in-bounds whitespace",
+          "passed": true
+        },
+        {
+          "name": "invalid rename rejected without edits",
+          "passed": true
+        },
+        {
+          "name": "rename rejection preserves complete fixture state",
+          "passed": true
+        }
+      ],
+      "operations": [
+        {
+          "operationId": "op-1",
+          "method": "textDocument/prepareRename",
+          "state": "baseline",
+          "outcome": "pass",
+          "error": null,
+          "expectedRejection": null,
+          "responsePolicy": null
+        },
+        {
+          "operationId": "op-2",
+          "method": "textDocument/prepareRename",
+          "state": "invalid_position",
+          "outcome": "pass",
+          "error": {
+            "code": -32600,
+            "message": "Renaming this element is not supported."
+          },
+          "expectedRejection": "rename_rejection",
+          "responsePolicy": "rename_rejection"
+        }
+      ]
+    },
+    {
+      "server": "jdtls",
+      "caseId": "REF-01/rename-invalid",
+      "profile": "direct",
+      "outcome": "pass",
+      "shutdownError": null,
+      "assertions": [
+        {
+          "name": "valid rename baseline verified",
+          "passed": true
+        },
+        {
+          "name": "invalid position is in-bounds whitespace",
+          "passed": true
+        },
+        {
+          "name": "invalid rename rejected without edits",
+          "passed": true
+        },
+        {
+          "name": "rename rejection preserves complete fixture state",
+          "passed": true
+        }
+      ],
+      "operations": [
+        {
+          "operationId": "op-1",
+          "method": "textDocument/rename",
+          "state": "baseline",
+          "outcome": "pass",
+          "error": null,
+          "expectedRejection": null,
+          "responsePolicy": null
+        },
+        {
+          "operationId": "op-2",
+          "method": "textDocument/rename",
+          "state": "invalid_position",
+          "outcome": "pass",
+          "error": null,
+          "expectedRejection": null,
+          "responsePolicy": "rename_rejection"
+        }
+      ]
+    },
+    {
+      "server": "jvmd",
+      "caseId": "REF-01/prepare-invalid",
+      "profile": "pipe",
+      "outcome": "pass",
+      "shutdownError": null,
+      "assertions": [
+        {
+          "name": "valid rename baseline verified",
+          "passed": true
+        },
+        {
+          "name": "invalid position is in-bounds whitespace",
+          "passed": true
+        },
+        {
+          "name": "invalid rename rejected without edits",
+          "passed": true
+        },
+        {
+          "name": "rename rejection preserves complete fixture state",
+          "passed": true
+        }
+      ],
+      "operations": [
+        {
+          "operationId": "op-1",
+          "method": "textDocument/prepareRename",
+          "state": "baseline",
+          "outcome": "pass",
+          "error": null,
+          "expectedRejection": null,
+          "responsePolicy": null
+        },
+        {
+          "operationId": "op-2",
+          "method": "textDocument/prepareRename",
+          "state": "invalid_position",
+          "outcome": "pass",
+          "error": null,
+          "expectedRejection": null,
+          "responsePolicy": "rename_rejection"
+        }
+      ]
+    },
+    {
+      "server": "jvmd",
+      "caseId": "REF-01/rename-invalid",
+      "profile": "pipe",
+      "outcome": "pass",
+      "shutdownError": null,
+      "assertions": [
+        {
+          "name": "valid rename baseline verified",
+          "passed": true
+        },
+        {
+          "name": "invalid position is in-bounds whitespace",
+          "passed": true
+        },
+        {
+          "name": "invalid rename rejected without edits",
+          "passed": true
+        },
+        {
+          "name": "rename rejection preserves complete fixture state",
+          "passed": true
+        }
+      ],
+      "operations": [
+        {
+          "operationId": "op-1",
+          "method": "textDocument/rename",
+          "state": "baseline",
+          "outcome": "pass",
+          "error": null,
+          "expectedRejection": null,
+          "responsePolicy": null
+        },
+        {
+          "operationId": "op-2",
+          "method": "textDocument/rename",
+          "state": "invalid_position",
+          "outcome": "pass",
+          "error": null,
+          "expectedRejection": null,
+          "responsePolicy": "rename_rejection"
+        }
+      ]
+    }
+  ],
+  "interpretation": [
+    "Both servers pass valid-symbol baseline and invalid whitespace semantic checks for prepareRename and rename.",
+    "JVMD returns null for both invalid requests. JDTLS prepareRename returns InvalidRequest with the explicit rename rejection message; its rename returns an empty workspace edit.",
+    "JDTLS prepareRename case remains protocol_error because shutdown exits with code 1 without a harness kill. All other cases pass.",
+    "Single-block diagnostic profiles cannot establish comparative performance."
+  ]
+}

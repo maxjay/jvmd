@@ -1148,3 +1148,19 @@ Review archives include the copied class files. All 171 tests pass, including
 changing live output during validation and tampered observation timing/hashes.
 Source variant counts remain 81 implemented, 20 partial and 6 absent; real snapshot
 replay and the full experiment gates are still separate obligations.
+
+## Immutable build-output replay
+
+The replay at `1d01e5c` records immutable class snapshots for both changed-build
+routes. Each retains the wrong immediate value 7, then the correct retry and
+settled value 13; both retain nonzero shutdown exits. The complete original
+checksum inventory verifies, source drift is false and the reducer reports no
+integrity issues. An artifact-only audit of the extracted review also passes;
+changing one copied class makes the reducer reject its observed-byte witness.
+
+`benchmarks/evidence/build-snapshots-2026-09-27/` preserves the completed capture
+and the earlier interrupted capture separately. The interrupted capture has no
+original seal and an unfinalized second report; no terminal event was recreated.
+These are single-block diagnostic observations. RPC completion and post-response
+class observation retain separate boundaries, and retry-driven recovery does not
+establish passive readiness or public comparative performance.

@@ -1,0 +1,8 @@
+{
+  "scope": "Review subset semantic audit; full original inventory checked separately by packaging. Tampering performed only in an extracted copy.",
+  "before": [],
+  "after": [
+    "01-jdtls-BLD-01-two-project-workspace-changed: preserved compiled artifact differs from observed bytes"
+  ],
+  "tamperedFile": "01-jdtls-BLD-01-two-project-workspace-changed/build-output-oracle/1-3/bench/BuildProbe.class"
+}

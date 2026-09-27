@@ -1,0 +1,350 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "1d01e5c607985a711d5d304d31ec975aa7a4a170",
+  "sourceDrift": false,
+  "plan": {
+    "caseIds": [
+      "BLD-01/two-project-workspace-changed",
+      "BLD-01/two-project-projects-changed"
+    ],
+    "servers": [
+      "jdtls"
+    ],
+    "blocks": 1,
+    "warmup": 1,
+    "samples": 2,
+    "timeout": 30000,
+    "transitionPolicy": {
+      "maxAttempts": 100,
+      "retryDelayMs": 20,
+      "deadlineMs": 30000,
+      "perRequestTimeoutMs": 30000,
+      "clock": "client monotonic",
+      "deadlineCheck": "after a failed attempt; in-flight requests retain their declared timeout",
+      "settledProbe": "one additional correct response after the first correct response",
+      "preparationFailure": "record preparation operations and a blocked target; never fabricate an unsent target request"
+    },
+    "compiledArtifactPolicy": "two-project build success requires preserved post-response class snapshots; RPC and artifact observation intervals are separate",
+    "profile": "direct",
+    "serverOrder": "alternate per independent block",
+    "reset": "fresh fixture and server state per independent case",
+    "seed": 0
+  },
+  "outcomes": {
+    "pass": 0,
+    "incorrect": 2,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 0,
+    "harness_error": 0,
+    "unsupported": 0,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "originalReducerIntegrityIssues": [],
+  "package": {
+    "file": "build-snapshot-review.tar.xz",
+    "bytes": 95184,
+    "sha256": "8ac4b4e1d23577ef9ca7c1a4e8e14850da30d06ddaf4b6c8da602fc3f3f68123",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "verified",
+    "unsealedFiles": {},
+    "members": 43
+  },
+  "interruptedCapture": {
+    "file": "interrupted-review.tar.xz",
+    "bytes": 79156,
+    "sha256": "08363c6b6e76b846b46b8856456f339499d231a3a129cb2e70b32902a9315a7b",
+    "members": 40,
+    "status": "interrupted_unsealed",
+    "roundTrip": "verified"
+  },
+  "cases": [
+    {
+      "caseId": "BLD-01/two-project-projects-changed",
+      "outcome": "incorrect",
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}",
+      "operations": [
+        {
+          "state": "baseline_build",
+          "outcome": "pass",
+          "latencyMs": 1065.106196,
+          "transitionMs": null,
+          "measurementKind": "request_with_artifact_observation",
+          "artifactTransitionMs": null,
+          "artifactObservations": [
+            {
+              "source": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-projects-changed/fixture/bin/bench/BuildProbe.class",
+              "path": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-projects-changed/build-output-oracle/1-3/bench/BuildProbe.class",
+              "classpath": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-projects-changed/build-output-oracle/1-3",
+              "sha256": "d60f36ad35c53f6ab75d415af96f6f0b9439c39ec70f68628314e2ff1e1eb623",
+              "bytes": 581,
+              "readStartNs": "5063224681911",
+              "readEndNs": "5063224713009",
+              "boundary": "class bytes observed after build response; not proof of their state at response receipt",
+              "artifactPath": "build-output-oracle/1-3/bench/BuildProbe.class"
+            }
+          ]
+        },
+        {
+          "state": "changed_immediate",
+          "outcome": "incorrect",
+          "latencyMs": 8.5552,
+          "transitionMs": 9.215867,
+          "measurementKind": "request_with_artifact_observation",
+          "artifactTransitionMs": 9.555181,
+          "artifactObservations": [
+            {
+              "source": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-projects-changed/fixture/bin/bench/BuildProbe.class",
+              "path": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-projects-changed/build-output-oracle/2-4/bench/BuildProbe.class",
+              "classpath": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-projects-changed/build-output-oracle/2-4",
+              "sha256": "d60f36ad35c53f6ab75d415af96f6f0b9439c39ec70f68628314e2ff1e1eb623",
+              "bytes": 581,
+              "readStartNs": "5063284597759",
+              "readEndNs": "5063284629167",
+              "boundary": "class bytes observed after build response; not proof of their state at response receipt",
+              "artifactPath": "build-output-oracle/2-4/bench/BuildProbe.class"
+            }
+          ]
+        },
+        {
+          "state": "changed_retry_2",
+          "outcome": "pass",
+          "latencyMs": 26.197554,
+          "transitionMs": 105.284552,
+          "measurementKind": "request_with_artifact_observation",
+          "artifactTransitionMs": 105.541032,
+          "artifactObservations": [
+            {
+              "source": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-projects-changed/fixture/bin/bench/BuildProbe.class",
+              "path": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-projects-changed/build-output-oracle/3-5/bench/BuildProbe.class",
+              "classpath": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-projects-changed/build-output-oracle/3-5",
+              "sha256": "62afd9b132da10692d11fe32082d0606abee900e2e768ef8279cb1d795687e50",
+              "bytes": 581,
+              "readStartNs": "5063380582417",
+              "readEndNs": "5063380615018",
+              "boundary": "class bytes observed after build response; not proof of their state at response receipt",
+              "artifactPath": "build-output-oracle/3-5/bench/BuildProbe.class"
+            }
+          ]
+        },
+        {
+          "state": "changed_settled",
+          "outcome": "pass",
+          "latencyMs": 2.885729,
+          "transitionMs": 149.126956,
+          "measurementKind": "request_with_artifact_observation",
+          "artifactTransitionMs": 149.479346,
+          "artifactObservations": [
+            {
+              "source": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-projects-changed/fixture/bin/bench/BuildProbe.class",
+              "path": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-projects-changed/build-output-oracle/4-7/bench/BuildProbe.class",
+              "classpath": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-projects-changed/build-output-oracle/4-7",
+              "sha256": "62afd9b132da10692d11fe32082d0606abee900e2e768ef8279cb1d795687e50",
+              "bytes": 581,
+              "readStartNs": "5063424522193",
+              "readEndNs": "5063424553332",
+              "boundary": "class bytes observed after build response; not proof of their state at response receipt",
+              "artifactPath": "build-output-oracle/4-7/bench/BuildProbe.class"
+            }
+          ]
+        },
+        {
+          "state": "scope_control_excludes_error",
+          "outcome": "pass",
+          "latencyMs": 111.789869,
+          "transitionMs": null,
+          "measurementKind": "request_with_artifact_observation",
+          "artifactTransitionMs": null,
+          "artifactObservations": [
+            {
+              "source": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-projects-changed/fixture/bin/bench/BuildProbe.class",
+              "path": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-projects-changed/build-output-oracle/5-11/bench/BuildProbe.class",
+              "classpath": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-projects-changed/build-output-oracle/5-11",
+              "sha256": "62afd9b132da10692d11fe32082d0606abee900e2e768ef8279cb1d795687e50",
+              "bytes": 581,
+              "readStartNs": "5063584710767",
+              "readEndNs": "5063584748508",
+              "boundary": "class bytes observed after build response; not proof of their state at response receipt",
+              "artifactPath": "build-output-oracle/5-11/bench/BuildProbe.class"
+            }
+          ]
+        },
+        {
+          "state": "scope_control_includes_error",
+          "outcome": "pass",
+          "latencyMs": 142.956944,
+          "transitionMs": null,
+          "measurementKind": null,
+          "artifactTransitionMs": null,
+          "artifactObservations": null
+        }
+      ]
+    },
+    {
+      "caseId": "BLD-01/two-project-workspace-changed",
+      "outcome": "incorrect",
+      "shutdownError": "Error: unclean shutdown: {\"code\":1,\"forced\":false,\"exitObserved\":true}",
+      "operations": [
+        {
+          "state": "baseline_build",
+          "outcome": "pass",
+          "latencyMs": 859.337701,
+          "transitionMs": null,
+          "measurementKind": "request_with_artifact_observation",
+          "artifactTransitionMs": null,
+          "artifactObservations": [
+            {
+              "source": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/fixture/bin/bench/BuildProbe.class",
+              "path": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/build-output-oracle/1-3/bench/BuildProbe.class",
+              "classpath": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/build-output-oracle/1-3",
+              "sha256": "d60f36ad35c53f6ab75d415af96f6f0b9439c39ec70f68628314e2ff1e1eb623",
+              "bytes": 581,
+              "readStartNs": "4993507418987",
+              "readEndNs": "4993507457178",
+              "boundary": "class bytes observed after build response; not proof of their state at response receipt",
+              "artifactPath": "build-output-oracle/1-3/bench/BuildProbe.class"
+            },
+            {
+              "source": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/build-peer/bin/bench/BuildPeer.class",
+              "path": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/build-output-oracle/1-4/bench/BuildPeer.class",
+              "classpath": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/build-output-oracle/1-4",
+              "sha256": "6a1537111eb0ebf7b8e27920cd47c16c9c3a75d4a1b6e41ce9a0a9c72572452e",
+              "bytes": 578,
+              "readStartNs": "4993545473272",
+              "readEndNs": "4993545495845",
+              "boundary": "class bytes observed after build response; not proof of their state at response receipt",
+              "artifactPath": "build-output-oracle/1-4/bench/BuildPeer.class"
+            }
+          ]
+        },
+        {
+          "state": "changed_immediate",
+          "outcome": "incorrect",
+          "latencyMs": 4.725408,
+          "transitionMs": 11.237578,
+          "measurementKind": "request_with_artifact_observation",
+          "artifactTransitionMs": 11.525086,
+          "artifactObservations": [
+            {
+              "source": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/fixture/bin/bench/BuildProbe.class",
+              "path": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/build-output-oracle/2-5/bench/BuildProbe.class",
+              "classpath": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/build-output-oracle/2-5",
+              "sha256": "d60f36ad35c53f6ab75d415af96f6f0b9439c39ec70f68628314e2ff1e1eb623",
+              "bytes": 581,
+              "readStartNs": "4993593654098",
+              "readEndNs": "4993593676259",
+              "boundary": "class bytes observed after build response; not proof of their state at response receipt",
+              "artifactPath": "build-output-oracle/2-5/bench/BuildProbe.class"
+            }
+          ]
+        },
+        {
+          "state": "changed_retry_2",
+          "outcome": "pass",
+          "latencyMs": 28.614753,
+          "transitionMs": 115.307364,
+          "measurementKind": "request_with_artifact_observation",
+          "artifactTransitionMs": 159.709793,
+          "artifactObservations": [
+            {
+              "source": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/fixture/bin/bench/BuildProbe.class",
+              "path": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/build-output-oracle/3-6/bench/BuildProbe.class",
+              "classpath": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/build-output-oracle/3-6",
+              "sha256": "62afd9b132da10692d11fe32082d0606abee900e2e768ef8279cb1d795687e50",
+              "bytes": 581,
+              "readStartNs": "4993697675774",
+              "readEndNs": "4993697704598",
+              "boundary": "class bytes observed after build response; not proof of their state at response receipt",
+              "artifactPath": "build-output-oracle/3-6/bench/BuildProbe.class"
+            },
+            {
+              "source": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/build-peer/bin/bench/BuildPeer.class",
+              "path": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/build-output-oracle/3-7/bench/BuildPeer.class",
+              "classpath": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/build-output-oracle/3-7",
+              "sha256": "6a1537111eb0ebf7b8e27920cd47c16c9c3a75d4a1b6e41ce9a0a9c72572452e",
+              "bytes": 578,
+              "readStartNs": "4993741843584",
+              "readEndNs": "4993741860966",
+              "boundary": "class bytes observed after build response; not proof of their state at response receipt",
+              "artifactPath": "build-output-oracle/3-7/bench/BuildPeer.class"
+            }
+          ]
+        },
+        {
+          "state": "changed_settled",
+          "outcome": "pass",
+          "latencyMs": 2.953465,
+          "transitionMs": 196.713158,
+          "measurementKind": "request_with_artifact_observation",
+          "artifactTransitionMs": 232.701503,
+          "artifactObservations": [
+            {
+              "source": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/fixture/bin/bench/BuildProbe.class",
+              "path": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/build-output-oracle/4-8/bench/BuildProbe.class",
+              "classpath": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/build-output-oracle/4-8",
+              "sha256": "62afd9b132da10692d11fe32082d0606abee900e2e768ef8279cb1d795687e50",
+              "bytes": 581,
+              "readStartNs": "4993779131129",
+              "readEndNs": "4993779155595",
+              "boundary": "class bytes observed after build response; not proof of their state at response receipt",
+              "artifactPath": "build-output-oracle/4-8/bench/BuildProbe.class"
+            },
+            {
+              "source": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/build-peer/bin/bench/BuildPeer.class",
+              "path": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/build-output-oracle/4-9/bench/BuildPeer.class",
+              "classpath": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/build-output-oracle/4-9",
+              "sha256": "6a1537111eb0ebf7b8e27920cd47c16c9c3a75d4a1b6e41ce9a0a9c72572452e",
+              "bytes": 578,
+              "readStartNs": "4993814836757",
+              "readEndNs": "4993814852676",
+              "boundary": "class bytes observed after build response; not proof of their state at response receipt",
+              "artifactPath": "build-output-oracle/4-9/bench/BuildPeer.class"
+            }
+          ]
+        },
+        {
+          "state": "scope_control_excludes_error",
+          "outcome": "pass",
+          "latencyMs": 84.392304,
+          "transitionMs": null,
+          "measurementKind": "request_with_artifact_observation",
+          "artifactTransitionMs": null,
+          "artifactObservations": [
+            {
+              "source": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/fixture/bin/bench/BuildProbe.class",
+              "path": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/build-output-oracle/5-12/bench/BuildProbe.class",
+              "classpath": "/workspace/scratch/c9ab7d11d4a9/build-snapshot-local-replay/01-jdtls-BLD-01-two-project-workspace-changed/build-output-oracle/5-12",
+              "sha256": "62afd9b132da10692d11fe32082d0606abee900e2e768ef8279cb1d795687e50",
+              "bytes": 581,
+              "readStartNs": "4993947270819",
+              "readEndNs": "4993947315532",
+              "boundary": "class bytes observed after build response; not proof of their state at response receipt",
+              "artifactPath": "build-output-oracle/5-12/bench/BuildProbe.class"
+            }
+          ]
+        },
+        {
+          "state": "scope_control_includes_error",
+          "outcome": "pass",
+          "latencyMs": 85.592264,
+          "transitionMs": null,
+          "measurementKind": null,
+          "artifactTransitionMs": null,
+          "artifactObservations": null
+        }
+      ]
+    }
+  ],
+  "review": {
+    "result": "Both routes retain stale immutable class output on the immediate changed-build request, then correct retry and settled results. Both cases remain incorrect and retain nonzero shutdown exits.",
+    "boundary": "Class bytes are copied in a separately recorded post-response read interval and executed from that immutable copy. RPC reply time does not establish output freshness.",
+    "recovery": "Repeated build requests can advance compilation; this is probe-driven recovery.",
+    "interruption": "The earlier run has no original seal or final source-drift observation and its second report is unfinalized. Its raw subset is retained without reconstructing terminal events.",
+    "artifactAudit": "The extracted review has no semantic integrity issues; a changed copied class is rejected. The original complete inventory is independently verified during packaging."
+  },
+  "claims": {
+    "publicComparativePerformance": false
+  }
+}

@@ -62,8 +62,9 @@ def _sample(pid, extra_roots=()):
             cpu += int(stat[11]) + int(stat[12])
             threads += int(next(line.split()[1] for line in status if line.startswith('Threads:')))
             read_bytes += int(io.get('read_bytes', 0)); write_bytes += int(io.get('write_bytes', 0))
-            command=Path(f'/proc/{child}/cmdline').read_bytes().split(b'\0')
-            role='server' if command and Path(command[0].decode()).name=='java' else 'bridge'
+            # Role follows the declared lifetime owner, not executable spelling:
+            # javac is a helper, and a Java child is not the server root.
+            role='server' if child==pid else 'bridge' if child in extra_roots else 'helper'
             processes.append({'pid':child,'start_ticks':int(stat[19]),'role':role,
                               'rss_bytes':int(stat[21])*os.sysconf('SC_PAGE_SIZE'),
                               'cpu_ticks':int(stat[11])+int(stat[12]),
@@ -104,7 +105,7 @@ class ProcessMonitor:
                 key=(process['pid'],process['start_ticks'])
                 old=self.processes.setdefault(key,dict(process))
                 for field in ('cpu_ticks','read_bytes','write_bytes'):old[field]=max(old[field],process[field])
-            for role in ('server','bridge'):
+            for role in ('server','bridge','helper'):
                 values[role+'_rss_bytes']=sum(p['rss_bytes'] for p in processes if p['role']==role) if values['availability']=='measured' else None
             for key, value in values.items():
                 if isinstance(value, (int, float)): self.maximum[key] = max(self.maximum[key], value)
@@ -126,7 +127,7 @@ class ProcessMonitor:
                 role: {
                     'rss_bytes': sum(p['rss_bytes'] for p in processes if p['role'] == role) if values['availability']=='measured' else None
                 }
-                for role in ('server', 'bridge')
+                for role in ('server', 'bridge', 'helper')
             },
             'processes': values['processes'],
             'threads': values['threads'],
@@ -142,12 +143,13 @@ class ProcessMonitor:
                 'reason': None if available else 'no complete process-tree samples available',
                 'valid_samples': self.valid_samples, 'unavailable_samples': self.samples-self.valid_samples,
                 'rss_scope':'Sum of process RSS; shared pages can be counted multiple times; not PSS or unique physical memory',
+                'role_scope':'Server is the declared root; bridges are declared peer roots; every other descendant is a helper, regardless of executable name',
                 'samples': self.samples, 'peak_rss_bytes': values.get('rss_bytes'),
                 'cpu_seconds_observed': sum(p['cpu_ticks'] for p in self.processes.values())/ticks if available else None,
                 'cpu_scope':'Last observed cumulative CPU of each pid/start-time identity; very short-lived or final unsampled work can be missed',
                 'groups':{role:{'peak_rss_bytes':values.get(role+'_rss_bytes'),
                                 'cpu_seconds_observed':sum(p['cpu_ticks'] for p in self.processes.values() if p['role']==role)/ticks if available else None}
-                          for role in ('server','bridge')},
+                          for role in ('server','bridge','helper')},
                 'peak_processes': values.get('processes'), 'peak_threads': values.get('threads'),
                 'read_bytes_observed': sum(p['read_bytes'] for p in self.processes.values()) if available else None,
                 'write_bytes_observed': sum(p['write_bytes'] for p in self.processes.values()) if available else None}
@@ -156,7 +158,7 @@ class ProcessMonitor:
 def export_jfr(jfr_tool, recording, output, repo=None, settings="profile"):
     """Selected diagnostic events only. Chrome trace opens in Perfetto; no VM environment export."""
     allowed=['dev.jvmd.Stage','jdk.ExecutionSample','jdk.ObjectAllocationSample','jdk.GarbageCollection',
-             'jdk.GCHeapSummary','jdk.ThreadPark','jdk.JavaMonitorEnter','jdk.JavaMonitorWait']
+             'jdk.GCHeapSummary','jdk.ThreadPark','jdk.JavaMonitorEnter','jdk.JavaMonitorWait','jdk.DataLoss']
     command=[str(jfr_tool),'print','--json','--stack-depth','128','--events',','.join(allowed),str(recording)]
     events=json.loads(subprocess.check_output(command,text=True))['recording']['events']
     spans=[event['values'] for event in events if event['type']=='dev.jvmd.Stage']
@@ -175,6 +177,8 @@ def export_jfr(jfr_tool, recording, output, repo=None, settings="profile"):
     attribution=attribute_samples(events,spans,repo)
     (output/'attribution.json').write_text(json.dumps(attribution,indent=2)+'\n')
     result={'trace':'trace.json','events':'profile-events.json','attribution':'attribution.json','recording_sha256':hashlib.sha256(recording.read_bytes()).hexdigest(),
+            'recordingLossEvents':[event['values'] for event in events if event['type']=='jdk.DataLoss'],
+            'recordingCompleteness':'Unavailable: no reported DataLoss event is not proof of complete instrumentation or event capture',
             'clock':'Span start/duration are monotonic within one JVM; no cross-process subtraction',
             'scope':'Inclusive thread counters; do not sum nested spans. Virtual-thread/queue counters unavailable (-1). JFR CPU/allocation are samples, not retained heap.',
             'settings':f'JFR {settings}, stackdepth=128; JVMD stages opt in with -Djvmd.trace=true','command':command,'spans':len(spans)}

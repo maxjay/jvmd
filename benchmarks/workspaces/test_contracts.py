@@ -68,6 +68,10 @@ class ContractTest(unittest.TestCase):
             self.assertEqual(2, sample['processes'])
             self.assertEqual(10, sample['cpu_ticks'])
             self.assertEqual(20, sample['read_bytes'])
+            self.assertEqual({1:'server',2:'bridge'}, {p['pid']:p['role'] for p in sample['process_samples']})
+            with patch('resources._process_tree', return_value={1,2}):
+                sample = _sample(1)
+            self.assertEqual({1:'server',2:'helper'}, {p['pid']:p['role'] for p in sample['process_samples']})
             with patch('resources._process_tree', side_effect=lambda root: {1, 2} if root == 1 else set()):
                 sample = _sample(1, [3])
             self.assertEqual('unavailable', sample['availability'])

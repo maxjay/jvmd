@@ -22,6 +22,29 @@ class CausalTest(unittest.TestCase):
             'process': 1, 'span': 1, 'invocation': None, 'durationNanos': 4,
             'startNanos': 2, 'stage': 'background.index', 'counters': '{}'}}]
         result = reduce_native(events, [{'trace': {'invocation': 'request'}}], 'epoch')
-        self.assertEqual([''], result['unmatchedNativeInvocations'])
+        self.assertEqual([], result['unmatchedNativeInvocations'])
+        self.assertEqual(['["unattributed-span",1,1]'], result['unmatchedNativeGroups'])
         self.assertEqual(['request'], result['unmatchedClientInvocations'])
-        self.assertIsNone(result['invocations'][0]['clientRequest'])
+        self.assertIsNone(next(r for r in result['invocations'] if r['identityKind'] == 'unattributed-span')['clientRequest'])
+
+    def test_untagged_requests_remain_separate_and_have_no_fabricated_client_join(self):
+        def event(sid, request, parent=0):
+            return {'type':'dev.jvmd.Stage','values':{'process':7,'span':sid,'request':request,'parent':parent,
+                    'invocation':None,'durationNanos':10,'startNanos':sid,'stage':'rpc.execute' if not parent else 'worker','counters':'{}'}}
+        result = reduce_native([event(1,10),event(2,10,1),event(3,11),event(4,0)], [], 'epoch')
+        self.assertEqual(3, len(result['invocations']))
+        requests = [r for r in result['invocations'] if r['identityKind'] == 'native-request']
+        self.assertEqual([[10],[11]], [r['nativeRequestIds'] for r in requests])
+        self.assertTrue(all(r['clientRequest'] is None for r in requests))
+        self.assertEqual(10, int(requests[0]['nativeRequestIntervalUnionNs']))
+        with self.assertRaisesRegex(ValueError, 'different request'):
+            reduce_native([event(1,10),event(2,11,1)], [], 'epoch')
+        with self.assertRaisesRegex(ValueError, 'cycle'):
+            reduce_native([event(1,10,2),event(2,10,1)], [], 'epoch')
+        missing = reduce_native([event(2,10,1)], [], 'epoch')
+        self.assertEqual([{'span':2,'missingParent':1}], missing['invocations'][0]['parentIssues'])
+
+    def test_duplicate_client_identity_cannot_silently_overwrite_an_attempt(self):
+        call = {'trace':{'invocation':'same'}}
+        with self.assertRaisesRegex(ValueError, 'duplicate client'):
+            reduce_native([], [call,call], 'epoch')

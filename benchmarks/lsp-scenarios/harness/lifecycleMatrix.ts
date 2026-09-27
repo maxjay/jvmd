@@ -29,10 +29,14 @@ class Peer {
   }
   record(event:any){const row={schemaVersion:1,sequence:this.events.length+1,...event};this.events.push(row);appendFileSync(path.join(this.daemon.options.output,this.id,"events.jsonl"),JSON.stringify(row)+"\n");}
   static async attach(daemon:NativeDaemon,root:string){const peer=new Peer(daemon,root);const uri=pathToFileURL(root).href;
+    try{
     await peer.request("initialize",{processId:process.pid,rootUri:uri,workspaceFolders:[{uri,name:path.basename(root)}],capabilities:{workspace:{configuration:true},textDocument:{publishDiagnostics:{versionSupport:true}}}});await peer.notify("initialized");
     if(daemon.pipe)peer.session=unwrap(daemon.calls.filter(c=>c.method==="session.open"&&c.params.root===root).at(-1).result).session;
     else{const rows=unwrap(await daemon.call("daemon.status")).sessions.filter((s:any)=>path.resolve(s.root)===root);assert.equal(rows.length,1);peer.session=rows[0].session;}
-    assert(peer.session);return peer;}
+    assert(peer.session);return peer;
+    }catch(error){peer.record({event:"attach_failure",error:String(error),timeNs:String(now())});
+      try{await peer.close();}catch(cleanupError){peer.record({event:"attach_cleanup_failure",error:String(cleanupError),timeNs:String(now())});}
+      peer.persist(path.dirname(daemon.options.output));throw error;}}
   async request(method:string,params:any){
     if(this.protocol){const response=await this.protocol.request(method,params,180000);assert(!response.error,JSON.stringify(response.error));return response.result;}
     const id=++this.next,message={jsonrpc:"2.0",id,method,params};this.record({direction:"send",message,timeNs:String(now())});await this.bridge!.handle(message);const response=this.responses.get(id);assert(response,"missing shim response");this.responses.delete(id);assert(!response.error,JSON.stringify(response.error));return response.result;}
@@ -174,7 +178,7 @@ export async function lifecycleMatrix(args:string[]){
     for(const d of daemons)if(plan.trace&&existsSync(path.join(d.options.output,"server.jfr"))){const result=spawnSync("python3",["benchmarks/workspaces/causal.py","--directory",d.options.output,"--java-home",javaHome,"--repo",process.cwd()],{encoding:"utf8",timeout:60000,maxBuffer:8*1024*1024});write(path.join(d.options.output,"profile-export.json"),{schemaVersion:1,exitCode:result.status,error:String(result.error??""),stderr:result.stderr});}
     if(JSON.stringify(sourceInputs())!==JSON.stringify(initialSources))rows.push({id:"source-integrity",outcome:"harness_error",error:"repository source inputs changed during the experiment"});
     const resources=daemons.map(d=>{const file=path.join(d.options.output,"resources.json");return {epoch:d.epoch,...(existsSync(file)?JSON.parse(readFileSync(file,"utf8")):{availability:"unavailable",reason:"resource collector did not finish"})};});
-    const summary={schemaVersion:1,scope:"development lifecycle correctness subset",resourceScopeComplete:resources.length>0&&resources.every(r=>r.availability==="measured"&&r.valid_samples>0),cases:rows.map(({operations,...r})=>r),resources,semanticComplete:rows.length===plan.cases.length&&rows.every(r=>r.outcome==="pass"),complete:false,evidenceGaps:["observer overhead and complete scoped counter accounting require separate experiments",...(profile==="pipe"?["Unix daemon and packaged shim lifecycle not exercised"]:[])],claims:plan.claims};write(path.join(output,"summary.json"),summary);
+    const summary={schemaVersion:1,scope:"development lifecycle correctness subset",resourceSamplesAvailable:resources.length>0&&resources.every(r=>r.availability==="measured"&&r.valid_samples>0),resourceScopeComplete:false,resourceScopeReason:"Sampling can miss short-lived children and final CPU increments; available samples do not prove complete lifetime accounting",cases:rows.map(({operations,...r})=>r),resources,semanticComplete:rows.length===plan.cases.length&&rows.every(r=>r.outcome==="pass"),complete:false,evidenceGaps:["observer overhead and complete scoped counter accounting require separate experiments",...(profile==="pipe"?["Unix daemon and packaged shim lifecycle not exercised"]:[])],claims:plan.claims};write(path.join(output,"summary.json"),summary);
     writeFileSync(path.join(output,"checksums.sha256"),Object.entries(inventory(output)).filter(([p])=>p!=="checksums.sha256").map(([p,h])=>h+"  "+p).join("\n")+"\n");
   }
   assert(rows.length===plan.cases.length&&rows.every(r=>r.outcome==="pass"),"Lifecycle evidence gates remain open; all attempted states and failures preserved at "+output);

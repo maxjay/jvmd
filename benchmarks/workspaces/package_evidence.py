@@ -17,7 +17,7 @@ def package(root, destination):
         'resource-samples.jsonl', 'resource-root-events.jsonl',
         'native-events.jsonl', 'native-calls.jsonl', 'events.jsonl',
         'exchanges.jsonl', 'trace.json', 'causal.json', 'profiles.json',
-        'profile-export.json', 'stderr.log', 'server.jfr',
+        'profile-export.json', 'attribution.json', 'stderr.log', 'server.jfr',
     }
     for epoch in ('fresh', 'restarted', 'apache'):
         directory = root / epoch

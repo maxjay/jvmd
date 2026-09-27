@@ -178,3 +178,22 @@ gap. CI now collects the same case's complete raw bundle.
 All 39 TypeScript harness tests pass after this follow-up, including rejection of
 a successful no-op generation command and consistent per-fixture configuration.
 Selected raw pilot witnesses are in `benchmarks/evidence/protobuf-2026-09-27/`.
+
+## Native identity and resource reporting follow-up
+
+The schema-2 causal reducer preserves untagged packaged-shim requests by their
+JVM/native-request identity instead of pooling them under an empty invocation ID.
+It rejects duplicate client identities, parent cycles and cross-request parents;
+missing parents remain explicit. No client link or cross-clock join is inferred.
+
+Available resource samples no longer imply complete lifetime accounting. Server
+and peer roots are classified from declared ownership, with other descendants
+classified as helpers. An external javac process is not labelled a bridge merely
+because its executable name differs from java. Missing samples and unsampled
+short-lived helpers still block complete resource claims. JFR DataLoss events are
+retained when present; their absence is not a completeness proof.
+
+Failed peer initialization now closes the newly started peer and retains its
+failure journal. Review packages include the attribution file referenced by the
+profile manifest. The local recovery validation has 39 passing TypeScript tests
+and 34 passing Python tests with one explicit process-visibility skip.

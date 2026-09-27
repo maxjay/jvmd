@@ -9,12 +9,22 @@ const mode=process.argv[2];
 if(mode==="shutdown-hang")setInterval(()=>{},1000);
 const framing=new Framing("headers",message=>{
   const {id,method,params}=message;
+  if(method==="initialized"){send({method:"language/status",params:{type:"ServiceReady"}});return;}
   if(method==="textDocument/didOpen"){documents.set(params.textDocument.uri,params.textDocument.text);originalDocuments.set(params.textDocument.uri,params.textDocument.text);}
   if(method==="textDocument/didChange")documents.set(params.textDocument.uri,params.contentChanges[0].text);
   if(method==="exit"){if(mode!=="shutdown-hang")process.exit(mode==="shutdown-nonzero"?1:0);return;}
   if(id===undefined)return;
   if(method==="initialize"){send({id,result:{capabilities:{typeHierarchyProvider:true,renameProvider:{prepareProvider:true},completionProvider:{resolveProvider:true},definitionProvider:true,callHierarchyProvider:true,codeLensProvider:{resolveProvider:true},executeCommandProvider:{commands:["java.edit.handlePasteEvent","java.navigate.openTypeHierarchy","java.navigate.resolveTypeHierarchy"]}}}});return;}
   if(method==="shutdown"){if(mode!=="shutdown-hang")send({id,result:null});return;}
+  if(method==="java/checkToStringStatus"){
+    send({id,result:{type:"Generate",fields:[{name:"name",type:"String",bindingKey:"selected-name"}],exists:false}});return;
+  }
+  if(method==="java/generateToString"){
+    const uri=[...documents.keys()].find(uri=>uri.endsWith("/Generate.java"))!,source=documents.get(uri)!;
+    const at=source.lastIndexOf("}"),changes:any={[uri]:[{range:span(source,at,0),newText:"    public String toString() { return name; }\n"}]};
+    if(mode==="generation-foreign-edit")changes[uri.replace("/Generate.java","/Unrelated.java")]=[{range:span("",0,0),newText:"// unintended edit\n"}];
+    send({id,result:{changes}});return;
+  }
   if(method==="workspace/executeCommand"&&params.command.startsWith("java.navigate.")){
     if(!params.arguments.every((argument:any)=>typeof argument==="string")){
       send({id,error:{code:-32602,message:"legacy hierarchy arguments must be JSON strings"}});return;

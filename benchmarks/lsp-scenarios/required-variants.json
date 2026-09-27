@@ -2784,44 +2784,278 @@
         {
           "id": "GEN-01/overrides",
           "requirement": "Independent override generator; selected members, signatures/bodies and existing-member status.",
-          "implementation": "partial",
-          "remaining": "Generator code and behavioural checks exist; existing-member status after generation needs an explicit witness.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "GEN-01/overrides",
+              "operations": [
+                {
+                  "endpoint": "java/listOverridableMethods",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady",
+                    "after_apply_repeat",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                },
+                {
+                  "endpoint": "java/addOverridableMethods",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/documentSymbol",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "generator proposes edit without changing client state",
+                "generator changes selected document",
+                "generator preserves unrelated sources and fields",
+                "generation has one exact document-change trigger",
+                "existing-member status and exact live declarations verified",
+                "independent javac validation",
+                "independent generated-code behaviour",
+                "compiled member set matches only selected generation"
+              ]
+            }
+          ]
         },
         {
           "id": "GEN-01/equals-hash",
           "requirement": "Independent equals/hash generator; selected fields and behavioural checks; existing-member status.",
-          "implementation": "partial",
-          "remaining": "Generator code and behavioural checks exist; existing-member status after generation needs an explicit witness.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "GEN-01/equals-hashCode",
+              "operations": [
+                {
+                  "endpoint": "java/checkHashCodeEqualsStatus",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady",
+                    "after_apply_repeat",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                },
+                {
+                  "endpoint": "java/generateHashCodeEquals",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/documentSymbol",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "generator proposes edit without changing client state",
+                "generator changes selected document",
+                "generator preserves unrelated sources and fields",
+                "generation has one exact document-change trigger",
+                "existing-member status and exact live declarations verified",
+                "independent javac validation",
+                "independent generated-code behaviour",
+                "compiled member set matches only selected generation"
+              ]
+            }
+          ]
         },
         {
           "id": "GEN-01/to-string",
           "requirement": "Independent toString generator; selected fields and behaviour; existing-member status.",
-          "implementation": "partial",
-          "remaining": "Generator code and behavioural checks exist; existing-member status after generation needs an explicit witness.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "GEN-01/toString",
+              "operations": [
+                {
+                  "endpoint": "java/checkToStringStatus",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady",
+                    "after_apply_repeat",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                },
+                {
+                  "endpoint": "java/generateToString",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/documentSymbol",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "generator proposes edit without changing client state",
+                "generator changes selected document",
+                "generator preserves unrelated sources and fields",
+                "generation has one exact document-change trigger",
+                "existing-member status and exact live declarations verified",
+                "independent javac validation",
+                "independent generated-code behaviour",
+                "compiled member set matches only selected generation"
+              ]
+            }
+          ]
         },
         {
           "id": "GEN-01/accessors",
           "requirement": "Independent accessor generator; selected members and behaviour; existing-member status.",
-          "implementation": "partial",
-          "remaining": "Generator code and behavioural checks exist; existing-member status after generation needs an explicit witness.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "GEN-01/accessors",
+              "operations": [
+                {
+                  "endpoint": "java/resolveUnimplementedAccessors",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady",
+                    "after_apply_repeat",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                },
+                {
+                  "endpoint": "java/generateAccessors",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/documentSymbol",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "generator proposes edit without changing client state",
+                "generator changes selected document",
+                "generator preserves unrelated sources and fields",
+                "generation has one exact document-change trigger",
+                "existing-member status and exact live declarations verified",
+                "independent javac validation",
+                "independent generated-code behaviour",
+                "compiled member set matches only selected generation"
+              ]
+            }
+          ]
         },
         {
           "id": "GEN-01/constructors",
           "requirement": "Independent constructor generator; selected members and behaviour; existing-member status.",
-          "implementation": "partial",
-          "remaining": "Generator code and behavioural checks exist; existing-member status after generation needs an explicit witness.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "GEN-01/constructors",
+              "operations": [
+                {
+                  "endpoint": "java/checkConstructorsStatus",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady",
+                    "after_apply_repeat",
+                    "after_apply"
+                  ]
+                },
+                {
+                  "endpoint": "java/generateConstructors",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/documentSymbol",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "generator proposes edit without changing client state",
+                "generator changes selected document",
+                "generator preserves unrelated sources and fields",
+                "generation has one exact document-change trigger",
+                "existing-member status and exact live declarations verified",
+                "independent javac validation",
+                "independent generated-code behaviour",
+                "compiled member set matches only selected generation",
+                "constructor status lists superclass choices; existence requires outline and bytecode"
+              ]
+            }
+          ]
         },
         {
           "id": "GEN-01/delegates",
           "requirement": "Independent delegate generator; selected members and behaviour; existing-member status.",
-          "implementation": "partial",
-          "remaining": "Generator code and behavioural checks exist; existing-member status after generation needs an explicit witness.",
-          "evidence": []
+          "implementation": "implemented",
+          "evidence": [
+            {
+              "caseId": "GEN-01/delegates",
+              "operations": [
+                {
+                  "endpoint": "java/checkDelegateMethodsStatus",
+                  "states": [
+                    "first_use",
+                    "warmup",
+                    "steady",
+                    "after_apply_repeat",
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                },
+                {
+                  "endpoint": "java/generateDelegateMethods",
+                  "states": [
+                    "first_use"
+                  ]
+                },
+                {
+                  "endpoint": "textDocument/documentSymbol",
+                  "states": [
+                    "changed_immediate",
+                    "changed_settled"
+                  ]
+                }
+              ],
+              "assertions": [
+                "generator proposes edit without changing client state",
+                "generator changes selected document",
+                "generator preserves unrelated sources and fields",
+                "generation has one exact document-change trigger",
+                "existing-member status and exact live declarations verified",
+                "independent javac validation",
+                "independent generated-code behaviour",
+                "compiled member set matches only selected generation"
+              ]
+            }
+          ]
         },
         {
           "id": "GEN-01/module",

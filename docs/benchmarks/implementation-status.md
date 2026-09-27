@@ -4,8 +4,8 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 129 case definitions, 94 passing TypeScript
-harness tests, and 107 required variants (64 implemented, 32 partial, 11 absent).
+Latest implementation inventory: 129 case definitions, 106 passing TypeScript
+harness tests, and 107 required variants (70 implemented, 26 partial, 11 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -665,3 +665,49 @@ result cannot silently alter the saved evidence. All 94 harness tests pass;
 129 cases are defined. The corrected legacy cases and new parent-change cases
 require another real-server replay. The variant count remains 64 implemented,
 32 partial and 11 absent, with all comparison gates still outstanding.
+
+## Corrected hierarchy replay and generator membership/status checks
+
+At `f758c9b`, all nine legacy direction/depth cases pass on JDTLS, including
+unchanged repeats and original-item provenance. The modern subtype case passes.
+Modern supertype and all three legacy parent-change cases retain stale early
+preparation/expansion replies, followed by correct settled replies; the legacy
+edited fixtures compile independently. The modern supertype case also has a
+nonzero shutdown exit. JVMD declares all fourteen cases unsupported. The final
+counts are ten passes, four incorrect cases and fourteen unsupported cases.
+Source hashes remain stable. Three reducer issues identify missing immediate
+expansions when their preceding fresh-item acquisition failed; the failed
+acquisition operations themselves are present. Raw protocol/process evidence is
+preserved in `benchmarks/evidence/hierarchy-corrected-2026-09-27/`.
+Archive validation additionally discovered two zero-byte runtime files outside
+the original checksum inventory. All originally sealed files still match their
+hashes. The extras are archived explicitly with a failed-inventory disposition;
+the original checksums are preserved. The cause is unproven. The pilot is not
+fully sealed and cannot support an accepted comparison result.
+
+The six generator cases now check the full proposed transaction before applying
+it: only Generate.java may change, file membership and every other source are
+preserved, and existing field declarations stay intact. Status is requested
+immediately after the recorded document-change notification, before independent
+compilation can hide an early stale response. Current status and exact live
+declarations must agree; unchanged status is checked again afterward.
+
+The outline oracle checks the exact selected methods/constructor and preserved
+fields, their kinds, declaration selections and containing ranges. It supports
+hierarchical and flat symbols. Independent compiled reflection checks the exact
+method signatures, constructor signature and field types, alongside the existing
+behavioural probes. The previous "more than four symbols" check is removed.
+
+Constructor status is handled according to its actual schema: it lists eligible
+superclass constructors and fields, not an existing-constructor flag. Those
+choices must remain accurate after generation; the generated constructor's
+existence is proved by the exact outline and compiled reflection. Other status
+routes must recognize generated members while preserving unselected choices.
+
+Ten new tests reject stale status, disappeared choices, extra/missing or stale
+symbols and unrelated edits; subprocess tests establish that status probing
+precedes compilation. Two further tests prove packaging rejects unsealed extras
+by default, preserves them only as explicitly failed-inventory evidence, and
+never treats changed sealed payloads as valid. All 106 harness tests pass. The source ledger has 70
+implemented variants, 26 partial and 11 absent. These strengthened generator
+cases still require real-server replay, and no comparison claim is enabled.

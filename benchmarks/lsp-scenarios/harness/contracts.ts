@@ -4,6 +4,10 @@ import { readFileSync } from "node:fs";
 export const CONTRACT = JSON.parse(readFileSync(new URL("../../measurement-contract.json", import.meta.url), "utf8"));
 export type Evidence = {status:"measured"|"verified"|"unavailable"|"contradicted"|"not_applicable"; value?:number|null; reason?:string; unit?:string};
 export type DiagnosticVersionMode = "unknown"|"versioned"|"versionless";
+export class UnavailableEvidence extends Error {
+  evidence:any;
+  constructor(reason:string,evidence:any){super(reason);this.name="UnavailableEvidence";this.evidence=evidence;}
+}
 
 export function diagnosticDecision(mode:DiagnosticVersionMode, params:any, uri:string, version:number,
   incarnation=1, eventIncarnation?:number):{kind:"ignore"|"verified"|"unavailable";mode:DiagnosticVersionMode}{

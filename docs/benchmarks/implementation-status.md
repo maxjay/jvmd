@@ -4,7 +4,7 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 175 workbook case definitions plus 45 scaling cases, 217 passing TypeScript
+Latest implementation inventory: 175 workbook case definitions plus 45 scaling cases, 219 passing TypeScript
 harness tests, and 107 required variants (107 implemented, 0 partial, 0 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
@@ -1518,3 +1518,23 @@ checkouts. JVMD's corrected relevant-edit and unrelated-edit scaling controls pa
 JDTLS retains stale early hover results and an unclean shutdown in the first
 corrected relevant-edit case. These development captures do not authorize timing
 comparisons.
+
+## Complete versus incomplete enumeration
+
+The corrected Maven scaling pilot finished at `4c5c1f8`: all six selected JVMD
+hover controls pass. The 64-member case returned 50 items with `isIncomplete:true`.
+The original pilot retains its incorrect classification; the revised oracle
+records this legal truncation as unavailable full-enumeration evidence. Missing
+members in a declared complete list, duplicate members and forbidden members
+remain incorrect. The fixed 64-member size is unchanged. Neither incomplete nor
+incorrect output enters successful latency estimates. Raw replay independently
+reconstructs the missing set and rejects forged unavailability.
+
+The pilot's seven JDTLS reports retain stale early results and/or shutdown failures.
+These reports are diagnostic observations, not independent scaling estimates.
+The exact result inventory and a focused replay of the revised truncation oracle
+remain separate from the final experiment.
+
+A sampled process record with missing I/O fields now becomes unavailable rather
+than substituting zero. Validation: all 219 TypeScript tests pass; Python runs
+53 tests, with 51 passes and two explicit local capability skips.

@@ -9,6 +9,7 @@ import {planWorkspaceEdit} from "./workspaceEdit.ts";
 import {applyTextEdits,offset,type Position} from "./oracles.ts";
 import {isRenameRejection,isInvalidRenameRequest} from "./rename.ts";
 import {workspaceSymbolArgument} from "./symbols.ts";
+import {UnavailableEvidence} from "./contracts.ts";
 
 export const CAPABILITIES={
   general:{positionEncodings:["utf-16"]},
@@ -132,7 +133,11 @@ export class ScenarioContext {
     if(trigger!==undefined){record.triggerNs=String(trigger);record.transitionMs=Number(BigInt(row.endNs)-trigger)/1e6;}
     const validationStart=now();
     if(responsePolicy==="rename_rejection"&&isRenameRejection(row.error)){record.outcome="pass";record.expectedRejection="rename_rejection";}
-    if(!row.error)try{oracle(row.result);}catch(e){record.outcome="incorrect";record.assertionError=String(e);record.freshness={status:"contradicted",reason:String(e)};}
+    if(!row.error)try{oracle(row.result);}catch(e){
+      record.outcome=e instanceof UnavailableEvidence?"unavailable_evidence":"incorrect";record.assertionError=String(e);
+      record.freshness={status:e instanceof UnavailableEvidence?"unavailable":"contradicted",reason:String(e)};
+      if(e instanceof UnavailableEvidence)record.unavailableEvidence=e.evidence;
+    }
     const artifacts=this.assertions.filter(a=>a.detail?.operationId===record.operationId&&a.detail?.snapshot).map(a=>a.detail.snapshot);
     if(artifacts.length){
       record.artifactObservations=artifacts;record.measurementKind="request_with_artifact_observation";

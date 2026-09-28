@@ -12,6 +12,7 @@ import {validateTransitionAttempts} from "./harness/transitions.ts";
 import {validateDiagnosticObservations} from "./harness/diagnosticObserver.ts";
 import {workspaceSymbolArgument} from "./harness/symbols.ts";
 import {auditLifetimeResources} from "./harness/lifetimeResources.ts";
+import {validIncompleteEnumeration} from "./harness/enumeration.ts";
 
 const read=(file:string)=>JSON.parse(readFileSync(file,"utf8"));
 const lines=(file:string)=>existsSync(file)?readFileSync(file,"utf8").split("\n").filter(Boolean).map(s=>JSON.parse(s)):[];
@@ -26,6 +27,7 @@ export function validateCase(report:any,events:any[],exchanges:any[],operations:
   for(const [i,e] of events.entries()){check(e.schemaVersion===1,"event schema");check(e.sequence===i+1,"event sequence gap");check(e.clockDomain==="client","event clock domain");const t=BigInt(e.timeNs);check(t>=previous,"non-monotonic event time");previous=t;}
   const byId=new Map<number,any>();for(const e of exchanges){check(!byId.has(e.id),"duplicate exchange "+e.id);byId.set(e.id,e);}
   for(const op of operations){
+    if(op.unavailableEvidence)check(validIncompleteEnumeration(report.caseId,op),"invalid incomplete enumeration disposition");
     check(!ids.has(op.operationId),"duplicate operation "+op.operationId);ids.add(op.operationId);
     check(CONTRACT.outcomes.includes(op.outcome),"unknown outcome");check(BigInt(op.endNs)>=BigInt(op.startNs),"negative operation interval");
     if(op.triggerNs)check(BigInt(op.startNs)>=BigInt(op.triggerNs),"operation starts before its trigger");

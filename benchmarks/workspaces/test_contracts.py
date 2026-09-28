@@ -77,6 +77,14 @@ class ContractTest(unittest.TestCase):
             self.assertEqual('unavailable', sample['availability'])
             self.assertIsNone(sample['rss_bytes'])
 
+            original=File.read_text
+            def missing_io(file):
+                return 'write_bytes: 20' if file.name.endswith('/io') else original(file)
+            with patch.object(File,'read_text',missing_io), patch('resources._process_tree',return_value={1}):
+                sample=_sample(1)
+            self.assertEqual('unavailable',sample['availability'])
+            self.assertIsNone(sample['read_bytes'])
+
 
 if __name__ == "__main__":
     unittest.main()

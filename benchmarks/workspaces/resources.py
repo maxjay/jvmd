@@ -58,18 +58,20 @@ def _sample(pid, extra_roots=()):
             stat = Path(f'/proc/{child}/stat').read_text().rpartition(') ')[2].split()
             status = Path(f'/proc/{child}/status').read_text().splitlines()
             io = dict(line.split(':', 1) for line in Path(f'/proc/{child}/io').read_text().splitlines())
+            if not {'read_bytes','write_bytes'} <= io.keys():
+                raise ValueError('required process I/O counters missing')
             rss += int(stat[21]) * os.sysconf('SC_PAGE_SIZE')
             cpu += int(stat[11]) + int(stat[12])
             threads += int(next(line.split()[1] for line in status if line.startswith('Threads:')))
-            read_bytes += int(io.get('read_bytes', 0)); write_bytes += int(io.get('write_bytes', 0))
+            read_bytes += int(io['read_bytes']); write_bytes += int(io['write_bytes'])
             # Role follows the declared lifetime owner, not executable spelling:
             # javac is a helper, and a Java child is not the server root.
             role='server' if child==pid else 'bridge' if child in extra_roots else 'helper'
             processes.append({'pid':child,'start_ticks':int(stat[19]),'role':role,
                               'rss_bytes':int(stat[21])*os.sysconf('SC_PAGE_SIZE'),
                               'cpu_ticks':int(stat[11])+int(stat[12]),
-                              'read_bytes':int(io.get('read_bytes',0)), 'write_bytes':int(io.get('write_bytes',0))})
-        except (FileNotFoundError, ProcessLookupError, PermissionError, StopIteration, ValueError):
+                              'read_bytes':int(io['read_bytes']), 'write_bytes':int(io['write_bytes'])})
+        except (FileNotFoundError, ProcessLookupError, PermissionError, StopIteration, ValueError, IndexError):
             pass
     complete = roots_observed and bool(processes) and len(processes) == len(pids)
     return {'processes': len(pids) if complete else None, 'rss_bytes': rss if complete else None,

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import {type CaseDefinition} from "../harness/ScenarioContext.ts";
 import {scalingAxes,scalingBaseline,prepareScaling,type ScalingAxis} from "../harness/scaling.ts";
-import {position,hoverOracle,completionOracle} from "../harness/oracles.ts";
+import {position,hoverOracle} from "../harness/oracles.ts";
+import {enumerationOracle} from "../harness/enumeration.ts";
 
 export function scalingCases(axes:ScalingAxis[]=Object.keys(scalingAxes) as ScalingAxis[]):CaseDefinition[]{
   assert(new Set(axes).size===axes.length&&axes.every(a=>a in scalingAxes),"unknown or duplicate scaling axis");
@@ -17,10 +18,7 @@ export function scalingCases(axes:ScalingAxis[]=Object.keys(scalingAxes) as Scal
       const expected=Array.from({length:enumeration?size:1},(_,i)=>"scaleMember"+i);
       const oracle=(changed:boolean)=>(value:any)=>{
         if(!enumeration){hoverOracle(value,"marker",changed?"int":"String");return;}
-        const names=[...expected,...(changed?["scaleChanged"]:[])];completionOracle(value,names,changed?[]:["scaleChanged"]);
-        const items=Array.isArray(value)?value:value.items;
-        const actual=items.filter((i:any)=>/^scale(?:Member\d+|Changed)(?:\(|$)/u.test(i.label)).map((i:any)=>i.label.split("(")[0]).sort();
-        assert.deepEqual(actual,[...names].sort(),"enumeration has duplicated or unexpected members");
+        enumerationOracle(value,[...expected,...(changed?["scaleChanged"]:[])]);
       };
       await c.series(method,params(),oracle(false));
       const file=mutation==="unrelated-body"?unrelated:provider,original=c.text(file);

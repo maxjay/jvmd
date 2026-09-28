@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "captures": [
+    {
+      "name": "original-layout",
+      "file": "scaling-original-layout-review.tar.xz",
+      "bytes": 403912,
+      "sha256": "d8f1e03683a4491e0d1e93ed7fe145e264a45d7808f8a260577b833494028d57",
+      "everySelectedFileHash": "verified",
+      "originalCompleteInventory": "verified",
+      "unsealedFiles": {},
+      "members": 161,
+      "archive": "original-layout.tar.xz"
+    },
+    {
+      "name": "maven",
+      "file": "scaling-maven-review.tar.xz",
+      "bytes": 423216,
+      "sha256": "556e1a0f5e6942e114171925f76aedce2c488f3d915bc1cb51ea368de93b7bbf",
+      "everySelectedFileHash": "verified",
+      "originalCompleteInventory": "verified",
+      "unsealedFiles": {},
+      "members": 167,
+      "archive": "maven.tar.xz"
+    },
+    {
+      "name": "incomplete",
+      "file": "scaling-incomplete-failed-inventory-review.tar.xz",
+      "bytes": 183920,
+      "sha256": "1d020361ebd433e05e3aeec32da2a4c928d1dbf299c363731ead8f01af7cee7c",
+      "everySelectedFileHash": "verified",
+      "originalCompleteInventory": "failed",
+      "unsealedFiles": {
+        "01-jdtls-SCALE-members-64-relevant-api/runtime/equinox-config/org.eclipse.core.runtime/.manager/.tmp74.instance": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "01-jdtls-SCALE-members-64-relevant-api/runtime/equinox-config/org.eclipse.equinox.app/.manager/.tmp75.instance": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "members": 31,
+      "archive": "incomplete.tar.xz"
+    }
+  ]
+}

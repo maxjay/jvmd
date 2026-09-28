@@ -1,0 +1,313 @@
+{
+  "schemaVersion": 1,
+  "complete": true,
+  "scope": "complete declared experiment",
+  "selectedBlock": null,
+  "issues": [],
+  "runOutcomes": [
+    {
+      "block": 1,
+      "config": "off",
+      "servers": [
+        "jvmd"
+      ],
+      "directory": "01-off",
+      "outcome": "pass",
+      "audit": {
+        "schemaVersion": 1,
+        "scope": "sealed full bundle",
+        "integrityValid": true,
+        "semanticComplete": true,
+        "semanticReplayIssues": [],
+        "caseOutcomes": {
+          "LIFE-01": "pass",
+          "LIFE-09": "pass",
+          "LIFE-10": "pass"
+        },
+        "epochs": [
+          "fresh:10313616584543"
+        ],
+        "checkedFiles": 101,
+        "lifetimeResources": [
+          {
+            "epoch": "fresh:10313616584543",
+            "availability": "unavailable",
+            "reason": "no delegated cgroup parent supplied",
+            "scope_complete": false
+          }
+        ],
+        "lifetimeCountersComplete": false,
+        "complete": false,
+        "publicPerformanceClaims": false,
+        "issues": [],
+        "limitations": [
+          "Saved semantic witnesses are replayed against wire replies; positive state witnesses do not prove complete work accounting",
+          "Process sampling cannot establish complete lifetime resource totals",
+          "Observer overhead and independent comparison blocks are not established by integrity validation"
+        ]
+      }
+    },
+    {
+      "block": 1,
+      "config": "on",
+      "servers": [
+        "jvmd"
+      ],
+      "directory": "01-on",
+      "outcome": "pass",
+      "audit": {
+        "schemaVersion": 1,
+        "scope": "sealed full bundle",
+        "integrityValid": true,
+        "semanticComplete": true,
+        "semanticReplayIssues": [],
+        "caseOutcomes": {
+          "LIFE-01": "pass",
+          "LIFE-09": "pass",
+          "LIFE-10": "pass"
+        },
+        "epochs": [
+          "fresh:10328467320631"
+        ],
+        "checkedFiles": 101,
+        "lifetimeResources": [
+          {
+            "epoch": "fresh:10328467320631",
+            "availability": "unavailable",
+            "reason": "no delegated cgroup parent supplied",
+            "scope_complete": false
+          }
+        ],
+        "lifetimeCountersComplete": false,
+        "complete": false,
+        "publicPerformanceClaims": false,
+        "issues": [],
+        "limitations": [
+          "Saved semantic witnesses are replayed against wire replies; positive state witnesses do not prove complete work accounting",
+          "Process sampling cannot establish complete lifetime resource totals",
+          "Observer overhead and independent comparison blocks are not established by integrity validation"
+        ]
+      }
+    }
+  ],
+  "effects": [
+    {
+      "endpoint": [
+        "LIFE-01",
+        "caseElapsedMs"
+      ],
+      "labels": [
+        "off",
+        "on"
+      ],
+      "blocks": [
+        {
+          "block": 1,
+          "a": 3536.804696,
+          "b": 3632.484512,
+          "outcome": "pass"
+        }
+      ],
+      "schemaVersion": 1,
+      "plannedBlocks": 1,
+      "observedBlocks": 1,
+      "failedBlocks": [],
+      "method": "geometric mean B/A; paired percentile bootstrap of independent block log ratios",
+      "seed": 271828,
+      "resamples": 10000,
+      "confidence": 0.95,
+      "quantile": "Hyndman-Fan type 7",
+      "familyInference": "none; endpoint intervals are descriptive, without simultaneous coverage",
+      "ratio": null,
+      "interval": null,
+      "eligible": false,
+      "issues": [
+        "fewer than ten independent blocks"
+      ],
+      "overheadWithinTolerance": false
+    },
+    {
+      "endpoint": [
+        "LIFE-01",
+        "launchToFirstCorrectMs"
+      ],
+      "labels": [
+        "off",
+        "on"
+      ],
+      "blocks": [
+        {
+          "block": 1,
+          "a": 3532.139312,
+          "b": 3627.088277,
+          "outcome": "pass"
+        }
+      ],
+      "schemaVersion": 1,
+      "plannedBlocks": 1,
+      "observedBlocks": 1,
+      "failedBlocks": [],
+      "method": "geometric mean B/A; paired percentile bootstrap of independent block log ratios",
+      "seed": 271828,
+      "resamples": 10000,
+      "confidence": 0.95,
+      "quantile": "Hyndman-Fan type 7",
+      "familyInference": "none; endpoint intervals are descriptive, without simultaneous coverage",
+      "ratio": null,
+      "interval": null,
+      "eligible": false,
+      "issues": [
+        "fewer than ten independent blocks"
+      ],
+      "overheadWithinTolerance": false
+    },
+    {
+      "endpoint": [
+        "LIFE-09",
+        "caseElapsedMs"
+      ],
+      "labels": [
+        "off",
+        "on"
+      ],
+      "blocks": [
+        {
+          "block": 1,
+          "a": 2723.051296,
+          "b": 2664.168797,
+          "outcome": "pass"
+        }
+      ],
+      "schemaVersion": 1,
+      "plannedBlocks": 1,
+      "observedBlocks": 1,
+      "failedBlocks": [],
+      "method": "geometric mean B/A; paired percentile bootstrap of independent block log ratios",
+      "seed": 271828,
+      "resamples": 10000,
+      "confidence": 0.95,
+      "quantile": "Hyndman-Fan type 7",
+      "familyInference": "none; endpoint intervals are descriptive, without simultaneous coverage",
+      "ratio": null,
+      "interval": null,
+      "eligible": false,
+      "issues": [
+        "fewer than ten independent blocks"
+      ],
+      "overheadWithinTolerance": false
+    },
+    {
+      "endpoint": [
+        "LIFE-10",
+        "caseElapsedMs"
+      ],
+      "labels": [
+        "off",
+        "on"
+      ],
+      "blocks": [
+        {
+          "block": 1,
+          "a": 5301.721348,
+          "b": 5262.162116,
+          "outcome": "pass"
+        }
+      ],
+      "schemaVersion": 1,
+      "plannedBlocks": 1,
+      "observedBlocks": 1,
+      "failedBlocks": [],
+      "method": "geometric mean B/A; paired percentile bootstrap of independent block log ratios",
+      "seed": 271828,
+      "resamples": 10000,
+      "confidence": 0.95,
+      "quantile": "Hyndman-Fan type 7",
+      "familyInference": "none; endpoint intervals are descriptive, without simultaneous coverage",
+      "ratio": null,
+      "interval": null,
+      "eligible": false,
+      "issues": [
+        "fewer than ten independent blocks"
+      ],
+      "overheadWithinTolerance": false
+    },
+    {
+      "endpoint": [
+        "whole-lifetime",
+        "cpu_seconds"
+      ],
+      "labels": [
+        "off",
+        "on"
+      ],
+      "blocks": [
+        {
+          "block": 1,
+          "a": null,
+          "b": null,
+          "outcome": "unavailable_evidence"
+        }
+      ],
+      "schemaVersion": 1,
+      "plannedBlocks": 1,
+      "observedBlocks": 1,
+      "failedBlocks": [
+        1
+      ],
+      "method": "geometric mean B/A; paired percentile bootstrap of independent block log ratios",
+      "seed": 271828,
+      "resamples": 10000,
+      "confidence": 0.95,
+      "quantile": "Hyndman-Fan type 7",
+      "familyInference": "none; endpoint intervals are descriptive, without simultaneous coverage",
+      "ratio": null,
+      "interval": null,
+      "eligible": false,
+      "issues": [
+        "failed or unavailable paired block",
+        "fewer than ten independent blocks"
+      ],
+      "overheadWithinTolerance": false
+    },
+    {
+      "endpoint": [
+        "whole-lifetime",
+        "memory_peak_bytes"
+      ],
+      "labels": [
+        "off",
+        "on"
+      ],
+      "blocks": [
+        {
+          "block": 1,
+          "a": null,
+          "b": null,
+          "outcome": "unavailable_evidence"
+        }
+      ],
+      "schemaVersion": 1,
+      "plannedBlocks": 1,
+      "observedBlocks": 1,
+      "failedBlocks": [
+        1
+      ],
+      "method": "geometric mean B/A; paired percentile bootstrap of independent block log ratios",
+      "seed": 271828,
+      "resamples": 10000,
+      "confidence": 0.95,
+      "quantile": "Hyndman-Fan type 7",
+      "familyInference": "none; endpoint intervals are descriptive, without simultaneous coverage",
+      "ratio": null,
+      "interval": null,
+      "eligible": false,
+      "issues": [
+        "failed or unavailable paired block",
+        "fewer than ten independent blocks"
+      ],
+      "overheadWithinTolerance": false
+    }
+  ],
+  "publicComparativePerformance": false,
+  "reason": "Independent block effects do not by themselves close A01\u2013A18; correctness, resource, production and overhead gates remain mandatory"
+}

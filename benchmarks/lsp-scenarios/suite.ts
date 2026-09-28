@@ -23,6 +23,7 @@ import {launch,type LaunchOptions} from "./harness/launch.ts";
 import {persistedDirectory,persistedSnapshot,persistedStateOracle} from "./harness/persisted.ts";
 import {CONTRACT} from "./harness/contracts.ts";
 import {sourceInventory} from "./harness/sourceInventory.ts";
+import {invalidationCases} from "./scenarios/invalidation.ts";
 import {scalingCases} from "./scenarios/scaling.ts";
 import {type ScalingAxis} from "./harness/scaling.ts";
 
@@ -37,14 +38,16 @@ export function argumentsFor(args:string[]){
     if(key==="list"){result.list="true";continue;}
     assert(args[i+1]&&!args[i+1].startsWith("--"),"missing value for "+args[i]);result[key]=args[++i];
   }
-  const allowed=new Set(["list","servers","profile","output","java-home","alternate-java-home","image","jdtls-home","pipe-build","only","blocks","samples","warmup","timeout-ms","command-json","trace","gradle-home","protoc","protobuf-java","scaling-axes"]);
+  const allowed=new Set(["list","servers","profile","output","java-home","alternate-java-home","image","jdtls-home","pipe-build","only","blocks","samples","warmup","timeout-ms","command-json","trace","gradle-home","protoc","protobuf-java","scaling-axes","invalidation"]);
   for(const k of Object.keys(result))assert(allowed.has(k),"unknown option: "+k);
   return result;
 }
 export async function main(args=process.argv.slice(2)){
   const a=argumentsFor(args);
-  const workload=a["scaling-axes"]?scalingCases(a["scaling-axes"].split(",") as ScalingAxis[]):cases;
-  const registry=a["scaling-axes"]?[...cases,...workload]:cases;
+  assert(!a.invalidation||a.invalidation==="true","--invalidation requires true");
+  assert(!(a.invalidation&&a["scaling-axes"]),"select invalidation or scaling independently");
+  const workload=a.invalidation?invalidationCases:a["scaling-axes"]?scalingCases(a["scaling-axes"].split(",") as ScalingAxis[]):cases;
+  const registry=a.invalidation||a["scaling-axes"]?[...cases,...workload]:cases;
   if(a.list){console.log(workload.map(c=>c.id).join("\n"));return;}
   const wanted=a.only?.split(",");const selected=wanted?workload.filter(c=>wanted.includes(c.id)||wanted.includes(c.family)):workload;
   assert(selected.length,"no cases selected");

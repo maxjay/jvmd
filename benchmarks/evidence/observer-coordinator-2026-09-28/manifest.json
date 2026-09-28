@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "revision": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a",
+  "archive": "capture.tar.xz",
+  "sha256": "64369fb1d87d4cdb1b1f8b220cee7aa4caa0c77a2c7d5175d3ddf41bb032775c",
+  "bytes": 323544,
+  "scope": "one local diagnostic pipe block, both status-poll configurations; complete original raw inventory; no product/resource/overhead comparison claim"
+}

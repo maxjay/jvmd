@@ -4,7 +4,7 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 175 workbook case definitions plus 45 scaling cases, 219 passing TypeScript
+Latest implementation inventory: 175 workbook case definitions plus 45 scaling and seven invalidation cases, 222 TypeScript
 harness tests, and 107 required variants (107 implemented, 0 partial, 0 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
@@ -1583,3 +1583,21 @@ order, missing/duplicate block shards, a failed pair, changed JDK identity and
 actual child-process failures. The stable-checkout TypeScript rerun passes all
 219 tests. An earlier concurrent documentation edit was correctly rejected as
 source drift in two subprocess tests; that failed invocation is retained locally.
+
+## Independent invalidation controls and preserved pilots
+
+Seven additional diagnostic cases cover provider body edits, more-specific
+overload addition, namespace shadow insertion/removal, unrelated-name insertion,
+ordered duplicate-class dependencies and identical classpath metadata. Each starts
+from an independent fixture and preserves unchanged caller bytes. See
+`invalidation-cases.md` for questions, exact witnesses and evidence limits.
+Source-level tests reject a stale same-name overload and the wrong shadowed type.
+These controls close a source-coverage omission; supported-server replay follows.
+
+`benchmarks/evidence/scaling-pilots-2026-09-28/` retains the invalid original layout,
+corrected Maven pilot and explicit-truncation follow-up separately. The latter
+preserves two unsealed Equinox temporary files as an inventory failure. None of
+these captures is a performance experiment. The complete local observer
+coordinator capture and reproducible report are under
+`benchmarks/evidence/observer-coordinator-2026-09-28/`; both configurations pass
+semantic replay with unavailable local lifetime counters.

@@ -72,6 +72,7 @@ export async function lifecycleMatrix(args:string[]){
   if(plan.observerExperiment){assert(!a["apache-fixture"],"observer trace excludes Apache integration");plan.cases=["LIFE-01","LIFE-09","LIFE-10"];}
   if(a["apache-fixture"])plan.cases.push("APACHE/document-open");
   write(path.join(output,"manifest.json"),plan);
+  writeFileSync(path.join(output,"lifecycle-operations.jsonl"),"");
   const rows:any[]=[],peers:Peer[]=[],daemons:NativeDaemon[]=[];let daemon:NativeDaemon|undefined,A:Peer|undefined,B:Peer|undefined,D:Peer|undefined,E:Peer|undefined;
   const base={profile,javaHome,image,pipeBuild:a["pipe-build"],repository,state:path.join(output,"machine-state"),trace:plan.trace,heapMb:plan.heapMb};
   const launch=async(label:string)=>{const d=await NativeDaemon.start({...base,output:path.join(output,label)});daemons.push(d);daemon=d;return d;};

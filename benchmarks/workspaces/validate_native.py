@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import re
 from cgroup_resources import audit_directory
+from native_replay import Replies, replay_case
 
 
 def digest(file):
@@ -94,6 +95,8 @@ def audit(root):
         check(identity not in journal_ids, 'duplicate lifecycle operation identity')
         journal_ids.add(identity)
     case_outcomes = {}
+    replies = Replies(root)
+    replay_issues = []
     for case_id in plan['cases']:
         name = case_id.replace('/', '-') + '.json'
         covered(name)
@@ -115,11 +118,13 @@ def audit(root):
             check(all(op.get('outcome', 'pass') == 'pass' for op in operations), 'pass conceals failed operation: ' + case_id)
             for transition in row.get('transitions', []):
                 check(transition.get('firstCorrectNs') is not None and transition.get('settledNs') is not None, 'pass without settled mutation: ' + case_id)
+        replay_issues.extend(replay_case(row, plan, replies))
         case_outcomes[case_id] = row['outcome']
     for row in rows:
         if row['id'] not in plan['cases']:
             case_outcomes[row['id']] = row['outcome']
-    semantic_complete = set(case_outcomes) == set(plan['cases']) and all(v == 'pass' for v in case_outcomes.values())
+    issues.extend(replay_issues)
+    semantic_complete = not replay_issues and set(case_outcomes) == set(plan['cases']) and all(v == 'pass' for v in case_outcomes.values())
     check(summary.get('semanticComplete') == semantic_complete, 'summary conceals failed/missing lifecycle case')
     epochs, lifetime_resources, lifetime_summaries = [], [], []
     for launch_file in sorted(root.glob('*/launch.json')):
@@ -191,13 +196,13 @@ def audit(root):
     if summary.get('resourceScopeComplete'):
         limitations.append('Historical summary claims resourceScopeComplete from sampled availability; this audit does not accept that claim')
     limitations.extend([
-        'Structural audit preserves recorded semantic dispositions; it does not independently rerun all feature-specific oracles',
+        'Saved semantic witnesses are replayed against wire replies; positive state witnesses do not prove complete work accounting',
         'Process sampling cannot establish complete lifetime resource totals',
         'Observer overhead and independent comparison blocks are not established by integrity validation',
     ])
     return {'schemaVersion': 1, 'scope': 'review subset' if review else 'sealed full bundle',
             'integrityValid': not issues, 'semanticComplete': semantic_complete,
-            'caseOutcomes': case_outcomes, 'epochs': epochs, 'checkedFiles': len(files),
+            'semanticReplayIssues': replay_issues, 'caseOutcomes': case_outcomes, 'epochs': epochs, 'checkedFiles': len(files),
             'lifetimeResources': lifetime_resources, 'lifetimeCountersComplete': lifetime_complete,
             'complete': False, 'publicPerformanceClaims': False, 'issues': issues, 'limitations': limitations}
 

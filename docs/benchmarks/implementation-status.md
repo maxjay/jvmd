@@ -1538,3 +1538,20 @@ remain separate from the final experiment.
 A sampled process record with missing I/O fields now becomes unavailable rather
 than substituting zero. Validation: all 219 TypeScript tests pass; Python runs
 53 tests, with 51 passes and two explicit local capability skips.
+
+## Native artifact semantic replay
+
+The native validator now rechecks lifecycle witnesses against captured wire
+replies in their recorded client intervals. It recomputes hover/completion, live
+attachment retention, detach/disposal, dependency visibility, pressure/eviction,
+recovery, idle and Apache definition assertions. Pass flags and matching summary
+files alone cannot satisfy those checks. Resealed wrong-type replies and detached
+witnesses are rejected. Both saved native captures at `d585cad` pass this stronger
+audit while retaining LIFE-08's product freshness failures. No complete native
+work/reuse claim follows from these positive semantic witnesses.
+
+Observer-only captures now create the empty lifecycle journal explicitly; their
+selected legacy operations are stored in per-case files even when none use the
+transition journal. This closes a missing-artifact error in the collector path.
+Validation: 219 TypeScript tests and 53 available Python tests pass; two Python
+capability checks remain explicitly skipped locally.

@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from validate_native import audit, digest
 from cgroup_resources import prepare, finish
+from native_replay import DISK_SHA
 
 
 class NativeAuditTest(unittest.TestCase):
@@ -13,7 +14,9 @@ class NativeAuditTest(unittest.TestCase):
             file.parent.mkdir(parents=True, exist_ok=True)
             file.write_text(json.dumps(value)+'\n')
         row = {'schemaVersion':1,'id':'LIFE-01','outcome':'pass','profile':'pipe',
-               'startNs':'1','endNs':'10','operations':[],'assertions':[]}
+               'startNs':'1','endNs':'10','operations':[],'assertions':[],
+               'witness':{'result':{'contents':'String marker'},'state':{'session':'s1'},'diskSha256':DISK_SHA},
+               'initialStore':'absent before launch','machine':{'aot_cache':'disabled'},'aot':'disabled'}
         write('manifest.json', {'schemaVersion':1,'sourceInputs':{'file':'abc'},'cases':['LIFE-01'],'profile':'pipe','trace':False})
         write('summary.json', {'cases':[{k:v for k,v in row.items() if k!='operations'}], 'semanticComplete':True,'complete':False})
         write('LIFE-01.json', row)
@@ -24,6 +27,13 @@ class NativeAuditTest(unittest.TestCase):
         write('fresh/resources.json', {'availability':'unavailable'})
         for name in ('resource-samples.jsonl','native-events.jsonl','native-calls.jsonl'):
             (root/'fresh'/name).write_text('')
+        write('fresh/peer-1/events.jsonl', {'direction':'receive','timeNs':'3','message':{'result':row['witness']['result']}})
+        calls=[]
+        for i,value in enumerate([row['witness']['state'],row['machine']]):
+            call=dict(id=i,method='session.status',params={},startNs='2',endNs='4',epoch='fresh:1',trace={'invocation':str(i)},outcome='pass',result={'result':value})
+            calls.append(call)
+        (root/'fresh/native-calls.jsonl').write_text(''.join(json.dumps(c)+'\n' for c in calls))
+        (root/'fresh/native-events.jsonl').write_text(''.join(json.dumps({k:v for k,v in c.items() if k not in ('result','endNs','outcome')})+'\n' for c in calls))
         self.seal(root)
         return write
 
@@ -48,6 +58,29 @@ class NativeAuditTest(unittest.TestCase):
             self.assertFalse(result['integrityValid'])
             self.assertFalse(result['semanticComplete'])
             self.assertIn('summary conceals failed/missing lifecycle case',result['issues'])
+
+    def test_resealed_pass_flags_cannot_hide_a_wrong_semantic_reply(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);write=self.fixture(root)
+            row=json.loads((root/'LIFE-01.json').read_text())
+            row['witness']['result']={'contents':'int marker'}
+            write('LIFE-01.json',row)
+            write('summary.json',{'cases':[{k:v for k,v in row.items() if k!='operations'}],'semanticComplete':True,'complete':False})
+            write('fresh/peer-1/events.jsonl',{'direction':'receive','timeNs':'3','message':{'result':row['witness']['result']}})
+            self.seal(root)
+            result=audit(root)
+            self.assertFalse(result['semanticComplete'])
+            self.assertIn('LIFE-01: semantic replay: hover type wrong',result['semanticReplayIssues'])
+
+    def test_correct_witness_requires_an_actual_reply_inside_the_case_interval(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);write=self.fixture(root)
+            for message in ({'contents':'String marker'},{'contents':'int marker'}):
+                write('fresh/peer-1/events.jsonl',{'direction':'receive','timeNs':'11','message':{'result':message}})
+                self.seal(root)
+                result=audit(root)
+                self.assertFalse(result['semanticComplete'])
+                self.assertTrue(any('absent from wire replies' in s for s in result['semanticReplayIssues']))
 
     def test_resealed_interrupted_request_cannot_pass(self):
         with tempfile.TemporaryDirectory() as tmp:

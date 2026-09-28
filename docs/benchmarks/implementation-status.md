@@ -49,7 +49,7 @@ failed captures and corrected captures are preserved separately.
 | A11 | qualified | Product lifetime totals and pressure/recovery are witnessed; all 40 observer runs validate. Tracing and extra status polling exceed the declared tolerance; common sampler overhead remains unmeasured |
 | A12 | blocked | Pinned inputs, drift rejection and immutable distribution sharing implemented; final experiment inventories still collecting |
 | A13 | pass | Product/direct/pipe and JDTLS workspace states separated; complete product DOC-01 artifact replay verifies requested AOT was rejected because the archive was absent |
-| A14 | qualified | All 160 matched and 900 scaling case runs collected. Independent matched audit has no integrity issues; 0/42 endpoints qualify for an effect. Final scaling raw audit remains pending |
+| A14 | qualified | All 160 matched and 900 scaling case runs independently reproduced from full raw shards. No extra shard/source/inventory issues; 0/42 matched and 0/251 scaling endpoints qualify for an effect |
 | A15 | blocked | Native semantic wire replay and portable independent-block reduction pass tests; final full-bundle reductions remain |
 | A16 | pass | Reproduced Apache open linked to compiler/context/processor activity and separate queue delay; `long-open-diagnosis.md` states the causal limits |
 | A17 | pass | CI permissions are read-only; benchmark source/evidence published through the GitHub connector |

@@ -378,5 +378,33 @@
     }
   ],
   "rawAuditLocallyPerformed": false,
-  "publicComparativePerformance": false
+  "publicComparativePerformance": false,
+  "independentRawAudit": {
+    "runId": 36365632505,
+    "jobId": 108762567597,
+    "artifact": {
+      "id": 10948927581,
+      "name": "final-scaling-product",
+      "size_in_bytes": 43077,
+      "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10948927581",
+      "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10948927581/zip",
+      "expired": false,
+      "created_at": "2026-09-28T02:28:29Z",
+      "expires_at": "2026-10-05T02:28:28Z",
+      "updated_at": "2026-09-28T02:28:29Z",
+      "digest": "sha256:2b98e503efc6fd0d425f656f1dc88da2e70cce386c13cac2b88037266187fc43",
+      "workflow_run": {
+        "id": 36365632505,
+        "repository_id": 1369090491,
+        "head_repository_id": 1369090491,
+        "head_branch": "benchmark-evidence-contract",
+        "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+      }
+    },
+    "zipSha256Verified": "2b98e503efc6fd0d425f656f1dc88da2e70cce386c13cac2b88037266187fc43",
+    "issues": [],
+    "endpointCount": 251,
+    "eligibleEffects": 0,
+    "location": "CI independent audit runner; full raw shards not downloaded locally"
+  }
 }

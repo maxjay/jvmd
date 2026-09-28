@@ -29,6 +29,10 @@ failures also remain in the denominator.
 The full raw artifacts are separate `raw-scaling-product-N` artifacts, roughly
 580 MB each, exceeding the local download tool's 32 MiB limit. These small reports
 are a review subset and do not by themselves constitute a local full-raw audit.
-The independent final CI reducer reads all original raw shards. Its final result
-is recorded separately when complete. No scaling effect or public comparative
-performance claim is inferred from these collection reports.
+The completed independent final CI reducer read all ten original raw shards.
+`final-scaling-product.zip` is its exact report artifact, with GitHub SHA-256 and
+ZIP CRC verified locally. It reproduces all 900 case outcomes and every missing
+sample issue; it finds no additional shard identity, source or archive-inventory
+issues. **None of 251 endpoint/state combinations qualifies for a paired effect.**
+All ratios and intervals remain unavailable, and the mandatory gate fails.
+No scaling effect or public comparative performance claim follows from this run.

@@ -4,7 +4,8 @@ import {pathToFileURL,fileURLToPath} from "node:url";
 import {readFileSync,writeFileSync,mkdirSync,existsSync} from "node:fs";
 import {type CaseDefinition,type ScenarioContext} from "../harness/ScenarioContext.ts";
 import {position,range,exactLocations,selected,completionOracle} from "../harness/oracles.ts";
-import {JDK_PROBE,prepareJdkSwitch,jdkUpdateOracle,vmInventoryOracle,compilerWitnessOracle} from "../harness/jdkSwitch.ts";
+import {JDK_PROBE,prepareJdkSwitch,jdkUpdateOracle,vmInventoryOracle,compilerWitnessOracle,canonicalJdkHome} from "../harness/jdkSwitch.ts";
+import {classpathUpdateEntries} from "../harness/classpathUpdate.ts";
 import {workspaceSymbolArgument} from "../harness/symbols.ts";
 
 import {prepareProjectRoots,prepareClasspathScopes,classpathScopeOracle,exactSourceSymbol} from "../harness/projectScope.ts";
@@ -49,7 +50,7 @@ export const projectCases:CaseDefinition[]=[
   {id:"PRJ-02/jdk",family:"PRJ-02",apis:["API-038","API-039","API-028"],command:"java.project.updateJdk",variant:"select the pinned runtime and verify actual project VM",run:async c=>{
     await c.execute("java.vm.getAllInstalls",[],v=>vmInventoryOracle(v,[c.javaHome]));
     await c.execute("java.project.updateJdk",[rootUri(c),c.javaHome],v=>jdkUpdateOracle(v,c.javaHome));
-    await c.execute("java.project.getSettings",[document(c),[vmKey]],v=>assert.equal(path.resolve(v[vmKey]),path.resolve(c.javaHome)),"after_jdk_selection");
+    await c.execute("java.project.getSettings",[document(c),[vmKey]],v=>assert.equal(canonicalJdkHome(v[vmKey]),canonicalJdkHome(c.javaHome)),"after_jdk_selection");
   }},
   {id:"PRJ-02/jdk-switch",family:"PRJ-02",apis:["API-038","API-039","API-028"],command:"java.project.updateJdk",freshnessRequired:true,
     variant:"switch JDK 17 to the newer server JDK; unchanged source exposes List.getFirst only on the new platform",fixture:{"JdkProbe.java":JDK_PROBE},prepare:prepareJdkSwitch,run:async c=>{
@@ -57,7 +58,7 @@ export const projectCases:CaseDefinition[]=[
       c.assert("independent JDK compilers disagree only on the selected new API",true,preparation.witness);
       const old=preparation.jdks.old.home,next=preparation.jdks.new.home,uri=c.file("JdkProbe.java").uri;
       const keys=[vmKey,compliance,sourceVersion,targetVersion,"org.eclipse.jdt.core.compiler.release"];
-      const environment=(home:string)=>(v:any)=>{assert.equal(path.resolve(v[vmKey]),home);for(const key of keys.slice(1,4))assert.equal(v[key],"17");assert.equal(v[keys[4]],"disabled");};
+      const environment=(home:string)=>(v:any)=>{assert.equal(canonicalJdkHome(v[vmKey]),canonicalJdkHome(home));for(const key of keys.slice(1,4))assert.equal(v[key],"17");assert.equal(v[keys[4]],"disabled");};
       await c.execute("java.vm.getAllInstalls",[],v=>vmInventoryOracle(v,[old,next]),"baseline_inventory");
       // Baseline setup is explicit and outside the measured old-to-new transition.
       await c.execute("java.project.updateJdk",[rootUri(c),old],v=>jdkUpdateOracle(v,old),"baseline_setup");
@@ -88,7 +89,7 @@ export const projectCases:CaseDefinition[]=[
     }})),
   {id:"ENV-01/classpath-roundtrip",sourceDirectory:"src",family:"ENV-01",apis:["API-032","API-028"],command:"java.project.updateClassPaths",variant:"read current entries, update once, verify identical entries",run:async c=>{
     const current=await c.execute("java.project.getSettings",[document(c),[cpKey]],v=>assert(Array.isArray(v[cpKey])&&v[cpKey].length===1));
-    await c.execute("java.project.updateClassPaths",[rootUri(c),JSON.stringify({classpathEntries:current[cpKey]})],v=>assert.equal(v,null));
+    await c.execute("java.project.updateClassPaths",[rootUri(c),JSON.stringify({classpathEntries:classpathUpdateEntries(current[cpKey],c.fixture.root)})],v=>assert.equal(v,null));
     await c.execute("java.project.getSettings",[document(c),[cpKey]],v=>assert.deepEqual(v[cpKey],current[cpKey]),"after_update");
   }},
   ...["workspace","projects"].flatMap(scope=>["full","incremental","error"].map(variant=>({id:"BLD-01/"+scope+"-"+variant,family:"BLD-01",apis:[scope==="workspace"?"API-040":"API-041"],extension:true,variant:scope+" "+variant,

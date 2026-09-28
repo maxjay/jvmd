@@ -4,7 +4,7 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 175 workbook case definitions plus 45 scaling and seven invalidation cases, 227 TypeScript
+Latest implementation inventory: 175 workbook case definitions plus 45 scaling and seven invalidation cases, 229 TypeScript
 harness tests passing, and 107 required variants (107 implemented, 0 partial, 0 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
@@ -78,6 +78,22 @@ captures are retained, including their unfinished cases; continuation invocation
 collect the remaining cases in separate fresh directories. The runner now seals
 each completed case before starting another. This does not retroactively seal old
 captures or let an interrupted suite pass its final integrity gate.
+
+Review of the interrupted catalogue found two harness mistakes requiring separate
+corrected replays. PRJ-02/jdk compared a selected symlink with the JVM's real home
+literally. VM inventory, acknowledgement and project-setting checks now resolve
+existing aliases while still rejecting another installation. ENV-01/classpath-
+roundtrip fed absolute getter paths into a setter whose source/output entries go
+through `IProject.getFolder`; the pinned JDTLS `ProjectCommand.updateClasspaths`
+bytecode confirms those inputs must be project-relative. The setter encoding is
+now explicit while preserving the original getter response and exact final oracle.
+The original two failed reports remain harness mistakes, not product defects.
+
+The `tools/jdk-25` alias currently resolves to the earlier toolchain location;
+the separate pinned distribution also exists in this workspace. Consequently the
+replacement replay must not be described as launched from a workspace-local home.
+New targeted replays use the explicit local distribution path. No active capture
+is changed in place and no performance comparison is inferred across these runs.
 
 The ten matched product blocks completed all 160 case runs. Their exact small
 report artifacts and verified ZIP hashes are preserved in

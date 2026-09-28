@@ -1,6 +1,6 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {mkdtempSync,rmSync} from "node:fs";
+import {mkdtempSync,rmSync,mkdirSync,symlinkSync} from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import {createFixture} from "../harness/fixture.ts";
@@ -19,6 +19,16 @@ test("JDK update rejects successful-looking failure objects and wrong homes",()=
 test("VM inventory requires actual versioned path entries, not a matching substring",()=>{
   vmInventoryOracle([{path:"/jdk/old",version:"17"},{path:"/jdk/new",version:"25"}],["/jdk/old","/jdk/new"]);
   for(const value of [{path:"/jdk/new",version:"25"},[{path:"/jdk/newer",version:"25"}],[{name:"/jdk/new",path:"/other",version:"25"}],[{path:"/jdk/new"}]])assert.throws(()=>vmInventoryOracle(value,["/jdk/new"]));
+});
+test("JDK identity accepts a symlink to the selected installation but rejects another directory",()=>{
+  const root=mkdtempSync(path.join(os.tmpdir(),"jdk-alias-"));
+  try{
+    const actual=path.join(root,"actual"),alias=path.join(root,"alias"),other=path.join(root,"other");
+    mkdirSync(actual);mkdirSync(other);symlinkSync(actual,alias,"dir");
+    vmInventoryOracle([{path:actual,version:"25"}],[alias]);jdkUpdateOracle({success:true,message:actual},alias);
+    assert.throws(()=>vmInventoryOracle([{path:other,version:"25"}],[alias]),/absent/u);
+    assert.throws(()=>jdkUpdateOracle({success:true,message:other},alias),/another home/u);
+  }finally{rmSync(root,{recursive:true,force:true});}
 });
 test("compiler witness rejects arbitrary old failure, extra errors, new failure and wrong behaviour",()=>{
   compilerWitnessOracle(witness);

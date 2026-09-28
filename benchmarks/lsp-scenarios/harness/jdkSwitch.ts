@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import {spawnSync} from "node:child_process";
-import {mkdirSync,readFileSync,writeFileSync,realpathSync} from "node:fs";
+import {mkdirSync,readFileSync,writeFileSync,realpathSync,existsSync} from "node:fs";
 import {type Fixture,inventory,sha} from "./fixture.ts";
 import {SETTINGS,type PreparationOptions} from "./ScenarioContext.ts";
 
@@ -16,13 +16,14 @@ public class JdkProbe {
 }
 `;
 export const VM_LOCATION="org.eclipse.jdt.ls.core.vm.location";
+export const canonicalJdkHome=(home:string)=>existsSync(home)?realpathSync(home):path.resolve(home);
 export function jdkUpdateOracle(value:any,home:string){
   assert.equal(value?.success,true,"project rejected selected JDK");
-  assert.equal(path.resolve(value.message),path.resolve(home),"JDK acknowledgement names another home");
+  assert.equal(canonicalJdkHome(value.message),canonicalJdkHome(home),"JDK acknowledgement names another home");
 }
 export function vmInventoryOracle(value:any,homes:string[]){
   assert(Array.isArray(value),"VM inventory must be an array");
-  for(const home of homes)assert(value.some(v=>typeof v.path==="string"&&path.resolve(v.path)===path.resolve(home)&&typeof v.version==="string"&&v.version.length),"selected VM absent from installed VM inventory: "+home);
+  for(const home of homes)assert(value.some(v=>typeof v.path==="string"&&canonicalJdkHome(v.path)===canonicalJdkHome(home)&&typeof v.version==="string"&&v.version.length),"selected VM absent from installed VM inventory: "+home);
 }
 export function compilerWitnessOracle(witness:any){
   assert.equal(witness.old.status,1,"JDK 17 must reject the new platform API");

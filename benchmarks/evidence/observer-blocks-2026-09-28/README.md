@@ -44,3 +44,15 @@ repository root to verify the saved subset and independently reproduce all twelv
 statistical estimates from their preserved block observations. This verifies the
 statistical reduction only; replaying the original raw server transcripts requires
 the full `observer-experiments` artifact and `experiment.py reduce`.
+
+## Subsequent validation collection
+
+Run 36366608337 at PR head `896b688` repeated the same two committed plans during
+later product validation. Its exact small `observer-reports-896b.zip` is retained
+separately; the ZIP digest and CRC were verified and all twelve estimates were
+independently recomputed. All 40 runs validate. Tracing launch-to-first was 1.078
+(1.052–1.096), tracing CPU 1.380 (1.344–1.416), and extra-polling editing elapsed
+1.139 (1.106–1.176). The tolerance conclusion is unchanged. These are two distinct
+collections; no blocks were selected between them, replaced, pooled or averaged.
+The manifest records both artifact identities. The first collection's results
+above remain intact and the second collection's full raw ZIP remains in its run.

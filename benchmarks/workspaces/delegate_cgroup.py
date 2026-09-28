@@ -51,9 +51,33 @@ def cleanup(output):
     cgroup_mount(directory)
     if directory.stat().st_ino != record['epoch']:
         raise ValueError('delegated parent epoch changed')
-    for observer in directory.glob('observer-*'):
-        observer.rmdir()
-    directory.rmdir()
+    def state(group):
+        row = dict(name=group.name, epoch=group.stat().st_ino)
+        for name in ('cgroup.events', 'cgroup.procs', 'cgroup.stat', 'cgroup.subtree_control'):
+            try:
+                row[name] = (group / name).read_text()
+            except OSError as error:
+                row[name] = dict(unavailable=str(error))
+        return row
+    evidence = dict(schemaVersion=1, parent=state(directory),
+                    children=[state(p) for p in sorted(directory.iterdir()) if p.is_dir()],
+                    removedObservers=[], parentRemoved=False)
+    try:
+        for observer in directory.glob('observer-*'):
+            observer.rmdir()
+            evidence['removedObservers'].append(observer.name)
+        directory.rmdir()
+        evidence['parentRemoved'] = True
+    except OSError as error:
+        evidence['error'] = str(error)
+        evidence['remainingParent'] = state(directory)
+        evidence['remainingChildren'] = [state(p) for p in sorted(directory.iterdir()) if p.is_dir()]
+        raise
+    finally:
+        # Keep the failure and its owned-directory state even after earlier raw
+        # artifact uploads. This does not kill, migrate or discard remaining work.
+        output.with_suffix('.cleanup.json').write_text(json.dumps(evidence, indent=2) + '\n')
+        print(json.dumps(dict(delegatedCleanup=evidence)), flush=True)
 
 
 def run(output, command):

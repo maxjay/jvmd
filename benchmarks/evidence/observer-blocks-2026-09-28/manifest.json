@@ -31,5 +31,16 @@
     "status-report.json": "4120afaf2b47473d19b4aa4d02f5260b6a10791da82d966f72d3d46f63651355",
     "trace-report.json": "ebef192c66d45eb83447f7b0ef3bd406fc226603e90bd31198fe0f86a98afa4c",
     "rejected-first-capture-reports.json": "4165219d079a27a24a301584d5cc37999e0d4b5eec0fcf384f93df1a1dc678d9"
-  }
+  },
+  "additionalCollections": [
+    {
+      "runId": 36366608337,
+      "headRevision": "896b68827597b2f81de5bba4ba163ad2cdaead2a",
+      "artifactId": 10948090929,
+      "file": "observer-reports-896b.zip",
+      "zipSha256Verified": "d38291814141a4a4180f94fd593dda7fea4035d1fbf6c3fe2944e26e0aea895e",
+      "scope": "Exact small report artifact; second full raw capture retained separately; twelve effects independently reproduced",
+      "pooledWithFirstCollection": false
+    }
+  ]
 }

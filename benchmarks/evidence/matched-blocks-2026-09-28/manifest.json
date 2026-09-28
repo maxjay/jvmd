@@ -1,0 +1,372 @@
+{
+  "schemaVersion": 1,
+  "revision": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a",
+  "runId": 36365632505,
+  "scope": "All ten small collection reports; full raw shards retained separately in GitHub Actions",
+  "rawAuditLocallyPerformed": false,
+  "publicComparativePerformance": false,
+  "outcomes": {
+    "pass": 104,
+    "incorrect": 19,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 37,
+    "harness_error": 0,
+    "unsupported": 0,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "blocks": [
+    {
+      "block": 1,
+      "artifact": {
+        "id": 10947631790,
+        "name": "report-matched-product-1",
+        "size_in_bytes": 3880,
+        "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10947631790",
+        "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10947631790/zip",
+        "expired": false,
+        "created_at": "2026-09-28T01:27:25Z",
+        "expires_at": "2026-10-05T01:27:25Z",
+        "updated_at": "2026-09-28T01:27:25Z",
+        "digest": "sha256:8c039498b52a3121e4923d03053c3175f2d2e4eb1917f9b957454dcf26932423",
+        "workflow_run": {
+          "id": 36365632505,
+          "repository_id": 1369090491,
+          "head_repository_id": 1369090491,
+          "head_branch": "benchmark-evidence-contract",
+          "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+        }
+      },
+      "zipSha256Verified": "8c039498b52a3121e4923d03053c3175f2d2e4eb1917f9b957454dcf26932423",
+      "outcomes": {
+        "pass": 13,
+        "incorrect": 2,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 1,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      }
+    },
+    {
+      "block": 2,
+      "artifact": {
+        "id": 10947830407,
+        "name": "report-matched-product-2",
+        "size_in_bytes": 3970,
+        "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10947830407",
+        "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10947830407/zip",
+        "expired": false,
+        "created_at": "2026-09-28T01:27:24Z",
+        "expires_at": "2026-10-05T01:27:24Z",
+        "updated_at": "2026-09-28T01:27:24Z",
+        "digest": "sha256:153c589067ce8ea9a704ec711f1e06b299f8e6fef0af25d5a1156dc3292572de",
+        "workflow_run": {
+          "id": 36365632505,
+          "repository_id": 1369090491,
+          "head_repository_id": 1369090491,
+          "head_branch": "benchmark-evidence-contract",
+          "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+        }
+      },
+      "zipSha256Verified": "153c589067ce8ea9a704ec711f1e06b299f8e6fef0af25d5a1156dc3292572de",
+      "outcomes": {
+        "pass": 13,
+        "incorrect": 2,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 1,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      }
+    },
+    {
+      "block": 3,
+      "artifact": {
+        "id": 10946808467,
+        "name": "report-matched-product-3",
+        "size_in_bytes": 3904,
+        "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10946808467",
+        "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10946808467/zip",
+        "expired": false,
+        "created_at": "2026-09-28T01:30:17Z",
+        "expires_at": "2026-10-05T01:30:17Z",
+        "updated_at": "2026-09-28T01:30:17Z",
+        "digest": "sha256:628ae08549b9e7de2cbdce5fc23f4514da4c84bed5c0daff39daa2a9813281b0",
+        "workflow_run": {
+          "id": 36365632505,
+          "repository_id": 1369090491,
+          "head_repository_id": 1369090491,
+          "head_branch": "benchmark-evidence-contract",
+          "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+        }
+      },
+      "zipSha256Verified": "628ae08549b9e7de2cbdce5fc23f4514da4c84bed5c0daff39daa2a9813281b0",
+      "outcomes": {
+        "pass": 9,
+        "incorrect": 2,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 5,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      }
+    },
+    {
+      "block": 4,
+      "artifact": {
+        "id": 10947517340,
+        "name": "report-matched-product-4",
+        "size_in_bytes": 4061,
+        "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10947517340",
+        "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10947517340/zip",
+        "expired": false,
+        "created_at": "2026-09-28T01:28:05Z",
+        "expires_at": "2026-10-05T01:28:04Z",
+        "updated_at": "2026-09-28T01:28:05Z",
+        "digest": "sha256:a72673962eb8730f7853a4b9cfc4b70240875f5a4ac580c1bd80fcee4b65772f",
+        "workflow_run": {
+          "id": 36365632505,
+          "repository_id": 1369090491,
+          "head_repository_id": 1369090491,
+          "head_branch": "benchmark-evidence-contract",
+          "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+        }
+      },
+      "zipSha256Verified": "a72673962eb8730f7853a4b9cfc4b70240875f5a4ac580c1bd80fcee4b65772f",
+      "outcomes": {
+        "pass": 11,
+        "incorrect": 2,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 3,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      }
+    },
+    {
+      "block": 5,
+      "artifact": {
+        "id": 10947493118,
+        "name": "report-matched-product-5",
+        "size_in_bytes": 3887,
+        "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10947493118",
+        "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10947493118/zip",
+        "expired": false,
+        "created_at": "2026-09-28T01:32:31Z",
+        "expires_at": "2026-10-05T01:32:30Z",
+        "updated_at": "2026-09-28T01:32:31Z",
+        "digest": "sha256:47850f667faabcbcd0ccce94a2c26f8d0ec9feb6c57f3acfa45fcbdee22027dd",
+        "workflow_run": {
+          "id": 36365632505,
+          "repository_id": 1369090491,
+          "head_repository_id": 1369090491,
+          "head_branch": "benchmark-evidence-contract",
+          "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+        }
+      },
+      "zipSha256Verified": "47850f667faabcbcd0ccce94a2c26f8d0ec9feb6c57f3acfa45fcbdee22027dd",
+      "outcomes": {
+        "pass": 8,
+        "incorrect": 1,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 7,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      }
+    },
+    {
+      "block": 6,
+      "artifact": {
+        "id": 10947292219,
+        "name": "report-matched-product-6",
+        "size_in_bytes": 3981,
+        "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10947292219",
+        "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10947292219/zip",
+        "expired": false,
+        "created_at": "2026-09-28T01:30:04Z",
+        "expires_at": "2026-10-05T01:30:04Z",
+        "updated_at": "2026-09-28T01:30:04Z",
+        "digest": "sha256:5cf07acafb4d4d0035cd8df3b1ab8dd80971165ff468b8d2fd3d245189ae4731",
+        "workflow_run": {
+          "id": 36365632505,
+          "repository_id": 1369090491,
+          "head_repository_id": 1369090491,
+          "head_branch": "benchmark-evidence-contract",
+          "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+        }
+      },
+      "zipSha256Verified": "5cf07acafb4d4d0035cd8df3b1ab8dd80971165ff468b8d2fd3d245189ae4731",
+      "outcomes": {
+        "pass": 10,
+        "incorrect": 2,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 4,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      }
+    },
+    {
+      "block": 7,
+      "artifact": {
+        "id": 10946913440,
+        "name": "report-matched-product-7",
+        "size_in_bytes": 3935,
+        "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10946913440",
+        "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10946913440/zip",
+        "expired": false,
+        "created_at": "2026-09-28T01:31:17Z",
+        "expires_at": "2026-10-05T01:31:16Z",
+        "updated_at": "2026-09-28T01:31:17Z",
+        "digest": "sha256:c069e58f042c6aacbee6713937d6641d57974afeee8f2d979a725df4f31016be",
+        "workflow_run": {
+          "id": 36365632505,
+          "repository_id": 1369090491,
+          "head_repository_id": 1369090491,
+          "head_branch": "benchmark-evidence-contract",
+          "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+        }
+      },
+      "zipSha256Verified": "c069e58f042c6aacbee6713937d6641d57974afeee8f2d979a725df4f31016be",
+      "outcomes": {
+        "pass": 9,
+        "incorrect": 2,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 5,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      }
+    },
+    {
+      "block": 8,
+      "artifact": {
+        "id": 10946888442,
+        "name": "report-matched-product-8",
+        "size_in_bytes": 3929,
+        "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10946888442",
+        "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10946888442/zip",
+        "expired": false,
+        "created_at": "2026-09-28T01:31:29Z",
+        "expires_at": "2026-10-05T01:31:28Z",
+        "updated_at": "2026-09-28T01:31:29Z",
+        "digest": "sha256:85dee41fbcb803a8804e415a4a1d3f740ea9719442b721c0e10e4b7b73532b6f",
+        "workflow_run": {
+          "id": 36365632505,
+          "repository_id": 1369090491,
+          "head_repository_id": 1369090491,
+          "head_branch": "benchmark-evidence-contract",
+          "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+        }
+      },
+      "zipSha256Verified": "85dee41fbcb803a8804e415a4a1d3f740ea9719442b721c0e10e4b7b73532b6f",
+      "outcomes": {
+        "pass": 9,
+        "incorrect": 2,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 5,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      }
+    },
+    {
+      "block": 9,
+      "artifact": {
+        "id": 10947338270,
+        "name": "report-matched-product-9",
+        "size_in_bytes": 3986,
+        "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10947338270",
+        "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10947338270/zip",
+        "expired": false,
+        "created_at": "2026-09-28T01:29:26Z",
+        "expires_at": "2026-10-05T01:29:25Z",
+        "updated_at": "2026-09-28T01:29:26Z",
+        "digest": "sha256:ab9268b49729d7718e6387d11dd842649626c63b68261536c5e03d8145a7a584",
+        "workflow_run": {
+          "id": 36365632505,
+          "repository_id": 1369090491,
+          "head_repository_id": 1369090491,
+          "head_branch": "benchmark-evidence-contract",
+          "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+        }
+      },
+      "zipSha256Verified": "ab9268b49729d7718e6387d11dd842649626c63b68261536c5e03d8145a7a584",
+      "outcomes": {
+        "pass": 10,
+        "incorrect": 2,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 4,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      }
+    },
+    {
+      "block": 10,
+      "artifact": {
+        "id": 10947751039,
+        "name": "report-matched-product-10",
+        "size_in_bytes": 4056,
+        "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10947751039",
+        "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10947751039/zip",
+        "expired": false,
+        "created_at": "2026-09-28T01:28:09Z",
+        "expires_at": "2026-10-05T01:28:08Z",
+        "updated_at": "2026-09-28T01:28:09Z",
+        "digest": "sha256:d58eaee9737d656ebbc214b5200ef4fc75b5e3f6ff8925718d8416a99493541a",
+        "workflow_run": {
+          "id": 36365632505,
+          "repository_id": 1369090491,
+          "head_repository_id": 1369090491,
+          "head_branch": "benchmark-evidence-contract",
+          "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+        }
+      },
+      "zipSha256Verified": "d58eaee9737d656ebbc214b5200ef4fc75b5e3f6ff8925718d8416a99493541a",
+      "outcomes": {
+        "pass": 12,
+        "incorrect": 2,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 2,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      }
+    }
+  ]
+}

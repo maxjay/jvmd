@@ -5,7 +5,7 @@ that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
 Latest implementation inventory: 175 workbook case definitions plus 45 scaling and seven invalidation cases, 225 TypeScript
-harness tests, and 107 required variants (107 implemented, 0 partial, 0 absent).
+harness tests passing, and 107 required variants (107 implemented, 0 partial, 0 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
 
@@ -46,10 +46,10 @@ failed captures and corrected captures are preserved separately.
 | A08 | blocked | LIFE-07/08 shared ownership runs plus seven new independent overload/namespace/classpath controls; full supported-server replay in progress |
 | A09 | pass | Client action/request intervals and native queue/execution spans retained separately; overlap reducer rejects invalid sums and cross-clock residuals |
 | A10 | pass | Complete-scope claim gate rejects unknown/reset/duplicate counter scopes; complete reuse/zero-work claims remain unavailable, never zero |
-| A11 | blocked | Six product daemon epochs have verified lifetime totals; pressure/recovery is witnessed; corrected observer experiments and final qualification remain |
+| A11 | qualified | Product lifetime totals and pressure/recovery are witnessed; all 40 observer runs validate. Tracing and extra status polling exceed the declared tolerance; common sampler overhead remains unmeasured |
 | A12 | blocked | Pinned inputs, drift rejection and immutable distribution sharing implemented; final experiment inventories still collecting |
-| A13 | blocked | Product/direct/pipe and JDTLS workspace states separated; native AOT rejection recorded; ordinary per-case product AOT log capture being completed |
-| A14 | blocked | Ten declared matched/scaling blocks are collecting in CI run `36365632505`; uncertainty and success denominators await all original blocks |
+| A13 | blocked | Product/direct/pipe and JDTLS workspace states separated; native AOT rejection recorded; ordinary per-case launcher-log capture implemented and awaiting product validation |
+| A14 | blocked | Ten matched blocks completed: 104 pass, 19 incorrect, 37 protocol failures. Scaling collection and independent full-raw cross-block audits remain in run `36365632505` |
 | A15 | blocked | Native semantic wire replay and portable independent-block reduction pass tests; final full-bundle reductions remain |
 | A16 | pass | Reproduced Apache open linked to compiler/context/processor activity and separate queue delay; `long-open-diagnosis.md` states the causal limits |
 | A17 | pass | CI permissions are read-only; benchmark source/evidence published through the GitHub connector |
@@ -63,6 +63,28 @@ mandatory product correctness condition has failed in collected evidence.
 
 The full specification remains the acceptance contract. This file must be updated
 with final evidence and dispositions; an intermediate draft is not task completion.
+
+## Independent block results: 2026-09-28
+
+The ten matched product blocks completed all 160 case runs. Their exact small
+report artifacts and verified ZIP hashes are preserved in
+`benchmarks/evidence/matched-blocks-2026-09-28/`. The denominator is 104 pass,
+19 incorrect and 37 protocol failures. All ten collection reports have empty
+integrity-issue lists. Full raw shard replay and scaling blocks remain pending;
+no public performance claim follows from these collection reports.
+
+Both corrected observer experiments completed all ten balanced pairs, with 40/40
+semantic and lifetime-resource audits passing. Tracing raises launch-to-first
+latency by a ratio of 1.168 (95% paired interval 1.154–1.180) and lifetime CPU by
+1.460 (1.425–1.492). Added status polling raises LIFE-09 editing elapsed by
+1.128 (1.113–1.143). These exceed the predeclared 5% tolerance, so instrumented
+measurements are causal diagnostics; speed comparisons require the clean profile.
+The common sampler/cgroup collector's overhead was not toggled in these experiments.
+The complete six-endpoint table, original block observations, independently
+reproducible statistical reduction, and earlier rejected reports are in
+`benchmarks/evidence/observer-blocks-2026-09-28/`. That report subset does not
+replace full raw transcript replay, and the workflow's unrelated product failures
+and EBUSY cleanup failure remain visible.
 
 ## Checkpoint: 2026-09-27
 

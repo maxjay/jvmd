@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {pathToFileURL,fileURLToPath} from "node:url";
-import {readFileSync,writeFileSync,mkdirSync,rmSync,existsSync} from "node:fs";
+import {readFileSync,writeFileSync,mkdirSync,mkdtempSync,rmSync,existsSync} from "node:fs";
 import path from "node:path";
 import {spawnSync} from "node:child_process";
 import {ProtocolClient,now,type Exchange} from "./ProtocolClient.ts";
@@ -207,11 +207,17 @@ export class ScenarioContext {
     this.mutations.push({kind:"workspace_edit",edit,before,after:this.state(),timeNs:String(now())});
   }
   compileOracle(probe?:string){
-    const root=path.join(this.fixture.root,"..","oracle");mkdirSync(root,{recursive:true});
-    const sources=Object.keys(this.fixture.files).map(name=>{const file=path.join(root,path.basename(name));writeFileSync(file,this.text(name));return file;});
+    const root=mkdtempSync(path.join(this.fixture.root,"..","oracle-"));
+    const names=new Set<string>(),inputs:Record<string,string>={};
+    const sources=Object.entries(this.fixture.files).filter(([,f])=>f.path.endsWith(".java")).map(([name,f])=>{
+      const relative=path.relative(this.fixture.root,f.path),file=path.resolve(root,"sources",relative);
+      assert(relative&&!relative.startsWith(".."+path.sep)&&!path.isAbsolute(relative),"compiler source escapes fixture");
+      assert(!names.has(relative),"duplicate compiler source path");names.add(relative);
+      mkdirSync(path.dirname(file),{recursive:true});const text=this.text(name);writeFileSync(file,text);inputs[relative]=sha(text);return file;
+    });
     if(probe){const file=path.join(root,"HarnessOracle.java");writeFileSync(file,probe);sources.push(file);}
     const started=now();const result=spawnSync(path.join(this.javaHome,"bin/javac"),["-proc:none","--release","17",...(this.fixture.classpath?.length?["-classpath",this.fixture.classpath.join(path.delimiter)]:[]),"-d",path.join(root,"classes"),...sources],{encoding:"utf8",timeout:30000});
-    this.assertions.push({name:"independent javac validation",passed:result.status===0,elapsedMs:Number(now()-started)/1e6,stdout:result.stdout,stderr:result.stderr,error:String(result.error??"")});
+    this.assertions.push({name:"independent javac validation",passed:result.status===0,sourceInputs:inputs,oracleDirectory:path.relative(path.dirname(this.fixture.root),root),elapsedMs:Number(now()-started)/1e6,stdout:result.stdout,stderr:result.stderr,error:String(result.error??"")});
     assert.equal(result.status,0,"edited fixture does not compile: "+result.stderr);
     if(probe){const run=spawnSync(path.join(this.javaHome,"bin/java"),["-cp",[path.join(root,"classes"),...(this.fixture.classpath??[])].join(path.delimiter),"bench.HarnessOracle"],{encoding:"utf8",timeout:10000});this.assertions.push({name:"independent generated-code behaviour",passed:run.status===0,stdout:run.stdout,stderr:run.stderr});assert.equal(run.status,0,"generated code behaviour failed: "+run.stderr);}
   }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import path from "node:path";
-import {mkdirSync,writeFileSync,readFileSync} from "node:fs";
+import {mkdirSync,writeFileSync,readFileSync,copyFileSync} from "node:fs";
 import {pathToFileURL} from "node:url";
 import {type Fixture,inventory,sha} from "../harness/fixture.ts";
 import {type CaseDefinition,type ScenarioContext} from "../harness/ScenarioContext.ts";
@@ -15,7 +15,7 @@ const local='package bench;\npublic class Shadow { public static int marker = 42
 const namespaceUse='package bench;\nimport external.*;\npublic class NamespaceUse { public Object call() { return Shadow.marker; } }\n';
 export function classpathMetadata(order:string[]){
   const entries=order.map(v=>`<classpathentry kind="lib" path="lib/library-${v}.jar"/>`).join("");
-  const dependencies=order.map(v=>`<dependency><groupId>bench</groupId><artifactId>library-${v.toLowerCase()}</artifactId><version>1</version><scope>system</scope><systemPath>\${project.basedir}/lib/library-${v}.jar</systemPath></dependency>`).join("");
+  const dependencies=order.map(v=>`<dependency><groupId>bench</groupId><artifactId>library-${v.toLowerCase()}</artifactId><version>1</version></dependency>`).join("");
   return {".classpath":`<classpath><classpathentry kind="src" path=""/><classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/><classpathentry kind="output" path="bin"/>${entries}</classpath>`,
     "pom.xml":`<project><modelVersion>4.0.0</modelVersion><groupId>bench</groupId><artifactId>ordered-classpath</artifactId><version>1</version><properties><maven.compiler.release>17</maven.compiler.release></properties><build><sourceDirectory>.</sourceDirectory></build><dependencies>${dependencies}</dependencies></project>`};
 }
@@ -50,7 +50,12 @@ export const invalidationCases:CaseDefinition[]=[
     variant:"ordered duplicate binary namespace; "+mutation+" metadata with fixed archive bytes",
     prepare:(f:Fixture,java:string)=>{dependencyFixture(false)(f,java);for(const [name,text] of Object.entries(classpathMetadata(["A","B"])))writeFileSync(path.join(f.root,name),text);
       f.classpath=[path.join(f.root,"lib/library-A.jar"),path.join(f.root,"lib/library-B.jar")];
-      f.preparation={...f.preparation,orderedClasspath:["library-A.jar","library-B.jar"],mutation};},
+      const repository=path.join(f.root,"..","repository");
+      for(const version of ["A","B"]){const artifact="library-"+version.toLowerCase(),directory=path.join(repository,"bench",artifact,"1");mkdirSync(directory,{recursive:true});
+        copyFileSync(path.join(f.root,"lib/library-"+version+".jar"),path.join(directory,artifact+"-1.jar"));
+        writeFileSync(path.join(directory,artifact+"-1.pom"),`<project><modelVersion>4.0.0</modelVersion><groupId>bench</groupId><artifactId>${artifact}</artifactId><version>1</version></project>`);
+      }
+      f.preparation={...f.preparation,orderedClasspath:["library-A.jar","library-B.jar"],repositoryInputs:inventory(repository),mutation};},
     run:async(c:ScenarioContext)=>{
       await c.open("ClasspathUse.java");const params=()=>({textDocument:{uri:c.file("ClasspathUse.java").uri},position:position(c.text("ClasspathUse.java"),c.text("ClasspathUse.java").indexOf("toString"))});
       await c.series("textDocument/completion",params(),v=>completionOracle(v,["original"],["next"]));

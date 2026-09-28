@@ -40,9 +40,10 @@ test("namespace cases keep independent initial states and require the distinguis
 test("ordered Maven and Eclipse declarations select the same two fixed archive identities",()=>{
   const a=classpathMetadata(["A","B"]),b=classpathMetadata(["B","A"]);
   for(const name of [".classpath","pom.xml"]){
-    assert(a[name].indexOf("library-A.jar")<a[name].indexOf("library-B.jar"));
-    assert(b[name].indexOf("library-B.jar")<b[name].indexOf("library-A.jar"));
-    assert.equal(a[name].split("library-A.jar").length,2);assert.equal(b[name].split("library-B.jar").length,2);
+    const left=name==="pom.xml"?"library-a":"library-A.jar",right=name==="pom.xml"?"library-b":"library-B.jar";
+    assert(a[name].indexOf(left)<a[name].indexOf(right));
+    assert(b[name].indexOf(right)<b[name].indexOf(left));
+    assert.equal(a[name].split(left).length,2);assert.equal(b[name].split(right).length,2);
   }
   assert.equal(invalidationCases.length,7);assert.equal(new Set(invalidationCases.map(c=>c.id)).size,7);
 });

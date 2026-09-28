@@ -4,7 +4,7 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 175 workbook case definitions plus 45 scaling and seven invalidation cases, 224 passing TypeScript
+Latest implementation inventory: 175 workbook case definitions plus 45 scaling and seven invalidation cases, 225 TypeScript
 harness tests, and 107 required variants (107 implemented, 0 partial, 0 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
@@ -1619,3 +1619,19 @@ with the evidence actually present in each bundle.
 AOT validation: all 224 TypeScript tests pass. A short product LSP CI capture
 records the shipped launcher log and validates it alongside ordinary request
 results; it does not run a new independent performance collection.
+
+## Compiler snapshot layout correction
+
+The first invalidation pilot exposed a harness defect: the general compiler oracle
+flattened source paths, so aliases for two valid `Shadow.java` files became invalid
+filenames. The oracle now preserves fixture-relative paths and uses a fresh output
+directory for every validation, retaining source hashes for each snapshot. A real
+`javac` and runtime regression verifies local shadowing, then imported fallback
+after deletion, and proves old compiled classes are not reused.
+
+The original namespace pilot responses reached the required semantic types but
+then failed that compiler-copy check. Those are harness findings, not server
+namespace failures. Its classpath setup also lacked seeded local Maven artifacts;
+the corrected fixture seeds the exact compiled archive bytes and POMs in its
+isolated repository before launch. Original captures are not rewritten. A fresh
+corrected supported-server replay is required.

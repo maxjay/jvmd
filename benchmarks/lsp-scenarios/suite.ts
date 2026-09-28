@@ -23,6 +23,8 @@ import {launch,type LaunchOptions} from "./harness/launch.ts";
 import {persistedDirectory,persistedSnapshot,persistedStateOracle} from "./harness/persisted.ts";
 import {CONTRACT} from "./harness/contracts.ts";
 import {sourceInventory} from "./harness/sourceInventory.ts";
+import {scalingCases} from "./scenarios/scaling.ts";
+import {type ScalingAxis} from "./harness/scaling.ts";
 
 export const cases:CaseDefinition[]=[...coreCases,...buildCases,...diagnosticCases,...structureCases,...symbolCases,...symbolFilterCases,...generationCases,...projectCases,...protobufCases,...editingCases,...importScopeCases,...dependencyCases,...fileCases,...refactoringCases];
 const write=(p:string,v:any)=>writeFileSync(p,JSON.stringify(v,null,2)+"\n");
@@ -35,14 +37,16 @@ export function argumentsFor(args:string[]){
     if(key==="list"){result.list="true";continue;}
     assert(args[i+1]&&!args[i+1].startsWith("--"),"missing value for "+args[i]);result[key]=args[++i];
   }
-  const allowed=new Set(["list","servers","profile","output","java-home","alternate-java-home","image","jdtls-home","pipe-build","only","blocks","samples","warmup","timeout-ms","command-json","trace","gradle-home","protoc","protobuf-java"]);
+  const allowed=new Set(["list","servers","profile","output","java-home","alternate-java-home","image","jdtls-home","pipe-build","only","blocks","samples","warmup","timeout-ms","command-json","trace","gradle-home","protoc","protobuf-java","scaling-axes"]);
   for(const k of Object.keys(result))assert(allowed.has(k),"unknown option: "+k);
   return result;
 }
 export async function main(args=process.argv.slice(2)){
   const a=argumentsFor(args);
-  if(a.list){console.log(cases.map(c=>c.id).join("\n"));return;}
-  const wanted=a.only?.split(",");const selected=wanted?cases.filter(c=>wanted.includes(c.id)||wanted.includes(c.family)):cases;
+  const workload=a["scaling-axes"]?scalingCases(a["scaling-axes"].split(",") as ScalingAxis[]):cases;
+  const registry=a["scaling-axes"]?[...cases,...workload]:cases;
+  if(a.list){console.log(workload.map(c=>c.id).join("\n"));return;}
+  const wanted=a.only?.split(",");const selected=wanted?workload.filter(c=>wanted.includes(c.id)||wanted.includes(c.family)):workload;
   assert(selected.length,"no cases selected");
   if(wanted)for(const w of wanted)assert(selected.some(c=>c.id===w||c.family===w),"unknown case selector: "+w);
   const servers=(a.servers??"jvmd,jdtls").split(",") as ("jvmd"|"jdtls")[];
@@ -53,7 +57,7 @@ export async function main(args=process.argv.slice(2)){
   assert(a.output,"--output is required (must not already exist)");const root=path.resolve(a.output);assert(!existsSync(root),"output already exists: "+root);mkdirSync(root,{recursive:true});
   const git=(...args:string[])=>{const x=spawnSync("git",args,{encoding:"utf8"});assert.equal(x.status,0,x.stderr);return x.stdout.trim();};
   const manifest:any={schemaVersion:1,contract:CONTRACT.schemaVersion,createdAt:new Date().toISOString(),revision:git("rev-parse","HEAD"),
-    sourceTree:git("rev-parse","HEAD^{tree}"),sourceInputs:sourceInventory(),registry:cases.map(({run,prepare,cleanup,...c})=>c),workingChanges:git("status","--porcelain"),
+    sourceTree:git("rev-parse","HEAD^{tree}"),sourceInputs:sourceInventory(),registry:registry.map(({run,prepare,cleanup,...c})=>c),workingChanges:git("status","--porcelain"),
     plan:{caseIds:selected.map(c=>c.id),servers,blocks,warmup,samples,timeout,transitionPolicy:transitionPolicy(timeout),compiledArtifactPolicy:"two-project build success requires preserved post-response class snapshots; RPC and artifact observation intervals are separate",profile,serverOrder:"alternate per independent block",reset:"fresh fixture and initial server state per case; declared persisted-reopen case alone restarts the verified saved state",seed:0},
     capabilities:CAPABILITIES,settings:SETTINGS,environment:{node:process.version,platform:process.platform,arch:process.arch,cpus:os.cpus().length,memoryBytes:os.totalmem()},
     resourcePolicy:"Optional delegated cgroup-v2 lifetime counters per process lifetime; raw membership audit mandatory for launched cases; unavailable remains null",

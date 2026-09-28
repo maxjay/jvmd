@@ -4,7 +4,7 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 175 case definitions, 214 passing TypeScript
+Latest implementation inventory: 175 workbook case definitions plus 45 scaling cases, 217 passing TypeScript
 harness tests, and 107 required variants (107 implemented, 0 partial, 0 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
@@ -1435,3 +1435,30 @@ same-coordinate binary replacement and dependency-removal freshness failures.
 The new-path and unrelated-artifact controls settle correctly. Retained attach,
 normal detach, disposal/reopen, restart, pressure/recovery and Apache open pass in
 both profiles. These finite cases do not prove complete work accounting or reuse.
+
+## Controlled scaling fixtures
+
+The suite now accepts `--scaling-axes sources,modules,artifacts,members,reach`.
+These are 45 diagnostic cases alongside the unchanged 175 workbook cases, not
+additional workbook coverage. Each axis has three predeclared sizes and three
+independent mutation controls: identical payload, unrelated body, relevant API.
+Source volume preserves the caller graph. Module count redistributes the same
+padding sources. Reach varies how many of 64 fixed callers depend on the changed
+provider. Member count changes enumeration size explicitly. Local artifact count
+uses distinct deterministic archives with pinned timestamps. Generated source
+bytes, edges, structural counts, JDK identity and archive hashes are retained.
+
+Preparation compiles isolated source copies and dependency classes before timing.
+A local generated fixture with four projects, eight artifacts, sixteen queried
+members and sixteen affected callers compiled successfully. Invariance tests
+check that changing one control preserves the other semantic inputs. Validation:
+217 TypeScript tests pass, with 45 Python passes and two capability skips. These
+checks do not establish a scaling curve or any asymptotic claim.
+
+CI run `36362120963` exposed a delegation-boundary bug: wrapper processes started
+outside the new subtree, so cgroup migration could not cross the common ancestor.
+The corrected validation launcher places only its new observer process inside
+the delegated parent, then drops privileges before executing the harness. Server
+wrappers can then move between that observer leaf and their measured leaves.
+The host root's permissions/controllers remain unchanged. Runtime validation of
+this correction is pending; the failed run is not counted as resource evidence.

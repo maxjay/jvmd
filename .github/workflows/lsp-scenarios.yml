@@ -101,8 +101,8 @@ jobs:
       - name: Harness contract tests
         run: |
           python3 benchmarks/lsp-scenarios/catalogue.py
-          node --test benchmarks/lsp-scenarios/test/*.test.ts
-          python3 -m unittest discover -s benchmarks/workspaces -p 'test_*.py'
+          sudo -E python3 benchmarks/workspaces/delegate_cgroup.py run --output "$RUNNER_TEMP/cgroup-delegation.json" -- node --test benchmarks/lsp-scenarios/test/*.test.ts
+          sudo -E python3 benchmarks/workspaces/delegate_cgroup.py run --output "$RUNNER_TEMP/cgroup-delegation.json" -- python3 -m unittest discover -s benchmarks/workspaces -p 'test_*.py'
 
       - name: Restore prepared Apache Maven fixture
         id: fixture
@@ -186,7 +186,7 @@ jobs:
       - name: Native lifecycle with packaged daemon and shim
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
-          node benchmarks/lsp-scenarios/jvmd-machine-lifecycle.ts --matrix \
+          sudo -E python3 benchmarks/workspaces/delegate_cgroup.py run --output "$RUNNER_TEMP/cgroup-delegation.json" -- node benchmarks/lsp-scenarios/jvmd-machine-lifecycle.ts --matrix \
             --profile product --java-home "$JAVA_HOME" \
             --output "$RUNNER_TEMP/native-lifecycle-clean" --edits 128 --trace false \
             --apache-fixture "$RUNNER_TEMP/apache-maven-fixture" \
@@ -195,7 +195,7 @@ jobs:
       - name: Separate lifecycle attribution profile
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
-          node benchmarks/lsp-scenarios/jvmd-machine-lifecycle.ts --matrix \
+          sudo -E python3 benchmarks/workspaces/delegate_cgroup.py run --output "$RUNNER_TEMP/cgroup-delegation.json" -- node benchmarks/lsp-scenarios/jvmd-machine-lifecycle.ts --matrix \
             --profile product --java-home "$JAVA_HOME" \
             --output "$RUNNER_TEMP/native-lifecycle-traced" --edits 128 --trace true \
             --apache-fixture "$RUNNER_TEMP/apache-maven-fixture" \
@@ -204,7 +204,7 @@ jobs:
       - name: Protobuf generation and generated-type readiness
         if: ${{ !cancelled() && steps.jdtls.outcome == 'success' && steps.protobuf-tools.outcome == 'success' }}
         run: |
-          node benchmarks/lsp-scenarios/run.ts --servers jdtls --profile direct \
+          sudo -E python3 benchmarks/workspaces/delegate_cgroup.py run --output "$RUNNER_TEMP/cgroup-delegation.json" -- node benchmarks/lsp-scenarios/run.ts --servers jdtls --profile direct \
             --java-home "$JAVA_HOME" --jdtls-home "$RUNNER_TEMP/jdtls" \
             --gradle-home "$RUNNER_TEMP/protobuf-tools/gradle-9.1.0" \
             --protoc "$RUNNER_TEMP/protobuf-tools/protoc" \

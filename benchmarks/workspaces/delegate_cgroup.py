@@ -10,12 +10,13 @@ import json
 import os
 from pathlib import Path
 import uuid
+import pwd
 from cgroup_resources import cgroup_mount
 
 
 def setup(output, uid, gid):
     directory = None
-    record = dict(schemaVersion=1, availability='unavailable', parent=None)
+    record = dict(schemaVersion=1, availability='unavailable', parent=None, uid=uid, gid=gid)
     try:
         root = Path('/sys/fs/cgroup')
         mount = cgroup_mount(root)
@@ -50,18 +51,49 @@ def cleanup(output):
     cgroup_mount(directory)
     if directory.stat().st_ino != record['epoch']:
         raise ValueError('delegated parent epoch changed')
+    for observer in directory.glob('observer-*'):
+        observer.rmdir()
     directory.rmdir()
+
+
+def run(output, command):
+    """Enter only this new wrapper, then drop privileges before running a command.
+
+    The unprivileged harness and future children start inside the delegation.
+    Migration between its observer leaf and measured leaves then has a writable
+    common ancestor, as required by the cgroup-v2 containment contract.
+    """
+    record = json.loads(output.read_text())
+    if not command or record['uid'] <= 0 or record['gid'] <= 0:
+        raise ValueError('runner identity or command missing')
+    if record['availability'] == 'ready':
+        parent = Path(record['parent'])
+        cgroup_mount(parent)
+        if parent.parent != Path('/sys/fs/cgroup') or not parent.name.startswith('jvmd-validation-') or parent.stat().st_ino != record['epoch']:
+            raise ValueError('delegated parent identity changed')
+        observer = parent / ('observer-' + uuid.uuid4().hex)
+        observer.mkdir()
+        (observer / 'cgroup.procs').write_text(str(os.getpid()))
+    os.setgroups([])
+    os.setgid(record['gid'])
+    os.setuid(record['uid'])
+    # Preserve the original runner identity for tools that consult user.home.
+    account = pwd.getpwuid(record['uid'])
+    os.environ.update(HOME=account.pw_dir, USER=account.pw_name, LOGNAME=account.pw_name)
+    os.execvp(command[0], command)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['setup', 'cleanup'])
+    parser.add_argument('action', choices=['setup', 'cleanup', 'run'])
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--uid', type=int)
     parser.add_argument('--gid', type=int)
-    args = parser.parse_args()
+    args, command = parser.parse_known_args()
     if args.action == 'cleanup':
         cleanup(args.output)
+    elif args.action == 'run':
+        run(args.output, command[1:] if command[:1] == ['--'] else command)
     else:
         if args.uid is None or args.gid is None or args.uid <= 0 or args.gid <= 0:
             parser.error('setup requires the non-root runner uid and gid')

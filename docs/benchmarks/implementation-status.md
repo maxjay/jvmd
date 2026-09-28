@@ -1414,3 +1414,24 @@ CI at `61926e2`: Tests and Benchmarks passed. LSP scenario contract tests, image
 build, legacy phase checks and artifact audit passed; native clean/traced lifecycle
 and protobuf semantic steps failed and uploaded their evidence. Those failures
 remain open; a passing structural audit does not turn them into semantic passes.
+
+The same lifetime collector now covers ordinary LSP cases, including separate
+seed/reopened process lifetimes. JVMD product runs register both daemon and shim;
+JDTLS registers its server root. The report retains original/wrapped commands and
+actual daemon termination events. Artifact-only reduction checks raw roots and
+counters for both persisted phases, including failures. A subprocess regression
+proves forged resource totals cannot pass reduction. All 214 TypeScript tests and
+45 available Python tests pass; the same two environment capability tests skip.
+
+Read-only CI now provisions a dedicated empty cgroup parent on its disposable
+Ubuntu runner and validates accounting of a CPU-consuming descendant after exit.
+It changes only its new parent's controllers/ownership, never root controllers,
+limits or unrelated processes. Capability acquisition failure is saved and fails
+a final gate after other diagnostics; it cannot become zero measured work.
+
+Inspection of native CI run `36360839683` identifies the LIFE-08 failures more
+precisely: both product profiles retain changed source-attachment documentation,
+same-coordinate binary replacement and dependency-removal freshness failures.
+The new-path and unrelated-artifact controls settle correctly. Retained attach,
+normal detach, disposal/reopen, restart, pressure/recovery and Apache open pass in
+both profiles. These finite cases do not prove complete work accounting or reuse.

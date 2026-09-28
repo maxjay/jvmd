@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 import {persistedStateOracle,persistedSessionOracle} from "../harness/persisted.ts";
+import {reduceBundle} from "../reduce.ts";
 const runner=fileURLToPath(new URL("../run.ts",import.meta.url)),fake=fileURLToPath(new URL("./fake-server.ts",import.meta.url));
 test("persisted state rejects empty, replaced and temporally inverted snapshots",()=>{
   const snapshot={directory:"/state",files:{"index.bin":"a".repeat(64)},bytes:3,startNs:"10",endNs:"20"};
@@ -26,6 +27,14 @@ for(const [mode,outcome] of [["persisted-correct","pass"],["persisted-leak","inc
       const summary=JSON.parse(readFileSync(path.join(out,"summary.json"),"utf8"));assert.deepEqual(summary.integrityIssues,[]);
       persistedSessionOracle(report,seed,lines("seed-session/events.jsonl"),lines("events.jsonl"));
       assert.equal(report.launch.machineState,"persisted");assert.equal(report.operations.length,1);
+      const seedResources=read("seed-session/resources/lifetime-resources.json"),reopenedResources=read("resources/lifetime-resources.json");
+      assert.notDeepEqual(seedResources.expected_pids,reopenedResources.expected_pids,"restart reused the process root");
+      assert.deepEqual(report.launch.lifetimeResources.result,reopenedResources);
+      const file=path.join(root,"resources/lifetime-resources.json");
+      const original=readFileSync(file,"utf8"),forged=JSON.parse(original);forged.cpu_seconds=forged.cpu_seconds===null?0:forged.cpu_seconds+1;
+      writeFileSync(file,JSON.stringify(forged));
+      assert(reduceBundle(out,false).summary.integrityIssues.some((x:string)=>x.includes("invalid lifetime resource evidence")),"forged resource totals passed artifact audit");
+      writeFileSync(file,original);
       for(const mutate of [(r:any)=>r.launch.stateDirectory="/other",(r:any)=>r.operations[0].rawResult.contents.value="int label",(r:any)=>r.persistedEvidence.beforeReopen.files={}]){
         const forged=structuredClone(report);mutate(forged);assert.throws(()=>persistedSessionOracle(forged,seed,lines("seed-session/events.jsonl"),lines("events.jsonl")));
       }

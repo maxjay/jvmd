@@ -43,6 +43,8 @@ def package(root, output, allow_unsealed_files=False):
                      if (root / case / name).is_file())
         names.update(p.relative_to(root).as_posix() for p in (root / case / 'build-output-oracle').rglob('*.class') if p.is_file())
         names.update(p.relative_to(root).as_posix() for p in (root / case / 'seed-session').glob('*.json*') if p.is_file())
+        for resource_dir in (root / case / 'resources', root / case / 'seed-session/resources'):
+            names.update(p.relative_to(root).as_posix() for p in resource_dir.rglob('*.json') if p.is_file())
     payloads = {name: (root / name).read_bytes() for name in sorted(names)}
     for name, data in payloads.items():
         if name != 'checksums.sha256' and name not in extra and digest(data) != sealed.get(name):

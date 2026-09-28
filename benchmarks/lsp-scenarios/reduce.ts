@@ -11,6 +11,7 @@ import {isRenameRejection,isInvalidRenameRequest} from "./harness/rename.ts";
 import {validateTransitionAttempts} from "./harness/transitions.ts";
 import {validateDiagnosticObservations} from "./harness/diagnosticObserver.ts";
 import {workspaceSymbolArgument} from "./harness/symbols.ts";
+import {auditLifetimeResources} from "./harness/lifetimeResources.ts";
 
 const read=(file:string)=>JSON.parse(readFileSync(file,"utf8"));
 const lines=(file:string)=>existsSync(file)?readFileSync(file,"utf8").split("\n").filter(Boolean).map(s=>JSON.parse(s)):[];
@@ -128,6 +129,12 @@ export function reduceBundle(root:string,verifyHashes=true){
     if(!existsSync(file)){reports.push({caseId,server,block,outcome:"not_run",reason:"planned case has no final report"});continue;}
     const report=read(file),events=lines(path.join(dir,"events.jsonl")),exchanges=lines(path.join(dir,"exchanges.jsonl")),operations=lines(path.join(dir,"operations.jsonl"));
     const caseIssues=validateCase(report,events,exchanges,operations);
+    const auditResources=(directory:string,phase:any)=>{
+      if(manifest.resourcePolicy&&phase.launch&&!phase.launch.lifetimeResources)caseIssues.push("declared lifetime resource evidence missing");
+      if(phase.launch?.lifetimeResources)try{auditLifetimeResources(directory,phase.launch,phase.processLifecycle??[]);}
+      catch(error){caseIssues.push("invalid lifetime resource evidence: "+String(error));}
+    };
+    auditResources(caseId==="SES-01/persisted-reopen"&&report.launch?.machineState==="empty"?path.join(dir,"seed-session"):dir,report);
     if(manifest.plan.compiledArtifactPolicy&&report.caseId.startsWith("BLD-01/two-project-"))for(const op of operations){
       const needsOutput=op.rawResult===1||(op.method==="java/buildWorkspace"&&op.state==="error_build");
       if(op.outcome==="pass"&&needsOutput&&!op.artifactObservations?.length)caseIssues.push("build pass lacks declared compiled artifact snapshots");
@@ -165,6 +172,7 @@ export function reduceBundle(root:string,verifyHashes=true){
       const seedDir=path.join(dir,"seed-session"),seedFile=path.join(seedDir,"report.json");
       if(existsSync(seedFile)){
         const seed=read(seedFile),seedEvents=lines(path.join(seedDir,"events.jsonl")),seedOps=lines(path.join(seedDir,"operations.jsonl"));
+        auditResources(seedDir,seed);
         caseIssues.push(...validateCase(seed,seedEvents,lines(path.join(seedDir,"exchanges.jsonl")),seedOps).map(issue=>"persisted seed: "+issue));
         if(JSON.stringify(seed.processLifecycle)!==JSON.stringify(lines(path.join(seedDir,"process.jsonl"))))caseIssues.push("persisted seed process journal differs from report");
         if(report.outcome==="pass")try{

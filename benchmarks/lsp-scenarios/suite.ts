@@ -56,6 +56,7 @@ export async function main(args=process.argv.slice(2)){
     sourceTree:git("rev-parse","HEAD^{tree}"),sourceInputs:sourceInventory(),registry:cases.map(({run,prepare,cleanup,...c})=>c),workingChanges:git("status","--porcelain"),
     plan:{caseIds:selected.map(c=>c.id),servers,blocks,warmup,samples,timeout,transitionPolicy:transitionPolicy(timeout),compiledArtifactPolicy:"two-project build success requires preserved post-response class snapshots; RPC and artifact observation intervals are separate",profile,serverOrder:"alternate per independent block",reset:"fresh fixture and initial server state per case; declared persisted-reopen case alone restarts the verified saved state",seed:0},
     capabilities:CAPABILITIES,settings:SETTINGS,environment:{node:process.version,platform:process.platform,arch:process.arch,cpus:os.cpus().length,memoryBytes:os.totalmem()},
+    resourcePolicy:"Optional delegated cgroup-v2 lifetime counters per process lifetime; raw membership audit mandatory for launched cases; unavailable remains null",
     claims:{publicComparativePerformance:false,reason:blocks<10?"fewer than ten independent blocks":"requires complete valid matched results, resource scope, and uncertainty analysis"}};
   write(path.join(root,"manifest.json"),manifest);
   write(path.join(root,"catalogue.json"),JSON.parse(readFileSync(new URL("./catalogue.json",import.meta.url),"utf8")));

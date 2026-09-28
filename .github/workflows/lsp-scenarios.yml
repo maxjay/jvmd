@@ -85,6 +85,19 @@ jobs:
       - name: Install harness dependency
         run: npm install --prefix benchmarks/lsp-scenarios --ignore-scripts
 
+      - name: Delegate lifetime resource accounting on this runner
+        id: resources
+        continue-on-error: true
+        run: |
+          sudo python3 benchmarks/workspaces/delegate_cgroup.py setup \
+            --output "$RUNNER_TEMP/cgroup-delegation.json" --uid "$(id -u)" --gid "$(id -g)"
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json, os
+          from pathlib import Path
+          record = json.loads((Path(os.environ['RUNNER_TEMP']) / 'cgroup-delegation.json').read_text())
+          print('JVMD_BENCH_CGROUP_ROOT=' + record['parent'])
+          PY
+
       - name: Harness contract tests
         run: |
           python3 benchmarks/lsp-scenarios/catalogue.py
@@ -256,3 +269,14 @@ jobs:
             ${{ runner.temp }}/native-traced-review.zip
             ${{ runner.temp }}/native-clean-audit.json
             ${{ runner.temp }}/native-traced-audit.json
+            ${{ runner.temp }}/cgroup-delegation.json
+
+      - name: Remove the empty delegated accounting parent
+        if: always() && steps.resources.outcome == 'success'
+        run: sudo python3 benchmarks/workspaces/delegate_cgroup.py cleanup --output "$RUNNER_TEMP/cgroup-delegation.json"
+
+      - name: Require delegated accounting capability after preserving diagnostics
+        if: ${{ !cancelled() && steps.resources.outcome != 'success' }}
+        run: |
+          cat "$RUNNER_TEMP/cgroup-delegation.json"
+          exit 1

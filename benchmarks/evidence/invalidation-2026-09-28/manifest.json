@@ -1,0 +1,275 @@
+{
+  "original": {
+    "file": "original.tar.xz",
+    "bytes": 182364,
+    "sha256": "e0f8fbcf18f9437c5768541907f4eae788442dce4cb06570747d0d791e9d15ea",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "verified",
+    "unsealedFiles": {},
+    "members": 167
+  },
+  "interrupted": {
+    "file": "interrupted.tar.xz",
+    "bytes": 106832,
+    "sha256": "cd9b58f9e0ef90d84e284e1eb1c329a0d60d7031616ee66867fd82f6de79130c",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "unavailable: interrupted before sealing",
+    "unsealedFiles": {
+      "01-jdtls-INV-body-only/events.jsonl": {
+        "bytes": 18271,
+        "sha256": "bc6a3edeac0d548eab78f8d697c1ce072042dc6f0439bf7839af8e37f2587d67"
+      },
+      "01-jdtls-INV-body-only/exchanges.jsonl": {
+        "bytes": 9020,
+        "sha256": "f4d5819ce19aaf452786c11a2ecef8a61a252f135f0fd789c7daf39e2070c032"
+      },
+      "01-jdtls-INV-body-only/fixture.json": {
+        "bytes": 5927,
+        "sha256": "0233ebe8ed431c0dd44b1d6c3fc1b6d44c5770ad487dce2c3abd8eb8352e3475"
+      },
+      "01-jdtls-INV-body-only/operations.jsonl": {
+        "bytes": 21946,
+        "sha256": "5f5a5a11cf6673f6318040230e73567a7171b657166423b1a27f9d710957bce8"
+      },
+      "01-jdtls-INV-body-only/process.jsonl": {
+        "bytes": 1686,
+        "sha256": "f3d57c3d3b412d21b95b488f21399937de59a649d009f9b2bea84356dd82bbde"
+      },
+      "01-jdtls-INV-body-only/report.json": {
+        "bytes": 44093,
+        "sha256": "53941b21c87dd17730c2b494ca137817de722371f6a2006920816763d169602b"
+      },
+      "01-jdtls-INV-body-only/resources/lifetime-resources.json": {
+        "bytes": 276,
+        "sha256": "b48b766367c8e2123f7a43ab42da19d74e6c25815653e845d2d6162129481146"
+      },
+      "01-jdtls-INV-body-only/resources/lifetime-start.json": {
+        "bytes": 174,
+        "sha256": "a2066d64a05fb737216b9e91114631b719794001d70b449fa6043ec7b211a006"
+      },
+      "01-jdtls-INV-body-only/runtime/launch.json": {
+        "bytes": 3249,
+        "sha256": "3791bea9d6923f170684f356c4f9c7b8adf10680fe213fc5e0d054498dc4ac34"
+      },
+      "01-jdtls-INV-body-only/runtime/stderr.log": {
+        "bytes": 867,
+        "sha256": "3051c2efdaff3d400ec4b3ab6faed941a8c4749c8410a1e6dd69da1a3c885f7b"
+      },
+      "01-jdtls-INV-body-only/runtime/workspace/.metadata/.log": {
+        "bytes": 4145,
+        "sha256": "2166e9d1d0ac0b1fa829263db93dccaa7dd19932085cdff7a1209c074cf645e9"
+      },
+      "01-jdtls-INV-body-only/transitions.jsonl": {
+        "bytes": 464,
+        "sha256": "8320058a6d1fa3caee889fd35766f41eee6aa019e1d2daa5b489b981e245e6e1"
+      },
+      "01-jdtls-INV-overload-add/events.jsonl": {
+        "bytes": 19079,
+        "sha256": "fbac9e60820f1b60db2bb5c556086f47e6eb07a46a6f69bec758e94501a2408d"
+      },
+      "01-jdtls-INV-overload-add/exchanges.jsonl": {
+        "bytes": 9069,
+        "sha256": "634cd2ad1b561b8450e1c0f25b9233769633252a37f5612ebf57e217889ca179"
+      },
+      "01-jdtls-INV-overload-add/fixture.json": {
+        "bytes": 5984,
+        "sha256": "1881f39512306cf00a28684509134e4411e8c0e14e6714a2b7d0d39e719cb971"
+      },
+      "01-jdtls-INV-overload-add/operations.jsonl": {
+        "bytes": 22107,
+        "sha256": "391ce8dc74d0c510db7e7dc67c1de903d1a4ff725af11b6d598c003586ca5450"
+      },
+      "01-jdtls-INV-overload-add/process.jsonl": {
+        "bytes": 1692,
+        "sha256": "cce5bff0ab78c92a41fdc35c1aab5b2496c2fd8eb8e08873933b03a90f69f8b9"
+      },
+      "01-jdtls-INV-overload-add/report.json": {
+        "bytes": 44282,
+        "sha256": "4ab2f593d39053d43380ab1e2ca19f6642b13eeba97c3bd9df9885e43f5fed81"
+      },
+      "01-jdtls-INV-overload-add/resources/lifetime-resources.json": {
+        "bytes": 276,
+        "sha256": "9f81f66d31f2dbe8625eaf151db626fdc5762d4cf03141fc99f5997e4f1706a6"
+      },
+      "01-jdtls-INV-overload-add/resources/lifetime-start.json": {
+        "bytes": 174,
+        "sha256": "a2066d64a05fb737216b9e91114631b719794001d70b449fa6043ec7b211a006"
+      },
+      "01-jdtls-INV-overload-add/runtime/launch.json": {
+        "bytes": 3273,
+        "sha256": "3719de81e76ce67530e547b08549c4d285d54320591411c328abc30fdf1aea3d"
+      },
+      "01-jdtls-INV-overload-add/runtime/stderr.log": {
+        "bytes": 870,
+        "sha256": "7f1d788c5566f0e4393d918a78a0090b3cec25a8ac3bd814bb270ac17bb43420"
+      },
+      "01-jdtls-INV-overload-add/runtime/workspace/.metadata/.log": {
+        "bytes": 4684,
+        "sha256": "7fb42bbd65e05b82b4ad61bf1f5fa7ce59346c52114a318d987bafbb240e8bd4"
+      },
+      "01-jdtls-INV-overload-add/transitions.jsonl": {
+        "bytes": 464,
+        "sha256": "7fbf7fcf2af5901a928d6513cda2e15b12da87e88744fb2c2c115f89af393894"
+      },
+      "01-jvmd-INV-body-only/events.jsonl": {
+        "bytes": 12686,
+        "sha256": "8789c867d93d3f3d3a3985fd8d9565c392ea5870cfb666013a1bebd5f840c3ae"
+      },
+      "01-jvmd-INV-body-only/exchanges.jsonl": {
+        "bytes": 6539,
+        "sha256": "3314391d0e6cd3d70860532d21b48973c9ef76e24e1323988d7da16cfcd96b6b"
+      },
+      "01-jvmd-INV-body-only/fixture.json": {
+        "bytes": 5908,
+        "sha256": "2d6021775bb5a689fdc0d1087a7fb30fb76d07784c017e998becb893fc76e63a"
+      },
+      "01-jvmd-INV-body-only/operations.jsonl": {
+        "bytes": 21867,
+        "sha256": "f7bed708cb8b980dc1a81b8b464fbbb9b208e855067bef0637026f29d50cb954"
+      },
+      "01-jvmd-INV-body-only/process.jsonl": {
+        "bytes": 1227,
+        "sha256": "dadec5aa4a7801609afc7bbd48cb5e7c275915ec068247f7b811baff8f370cf7"
+      },
+      "01-jvmd-INV-body-only/report.json": {
+        "bytes": 142267,
+        "sha256": "4de2c4702b71a5dce51d3055522600a8235368efecbdc12d3aded8a1fc77e920"
+      },
+      "01-jvmd-INV-body-only/resources/lifetime-resources.json": {
+        "bytes": 275,
+        "sha256": "c6cd6265dcea0b76ae139cba6dc3bc71b3162c239ca9af17be9321521b14d509"
+      },
+      "01-jvmd-INV-body-only/resources/lifetime-start.json": {
+        "bytes": 174,
+        "sha256": "a2066d64a05fb737216b9e91114631b719794001d70b449fa6043ec7b211a006"
+      },
+      "01-jvmd-INV-body-only/runtime/launch.json": {
+        "bytes": 104417,
+        "sha256": "1c96f5675d63bd600867a5d81d85dd879cd10d0ff265b2bf3340af703423215a"
+      },
+      "01-jvmd-INV-body-only/runtime/stderr.log": {
+        "bytes": 1766,
+        "sha256": "ffb45229333d444f87875fc07f9d1909a7d237196f71fe8c12d0997ed6afaf91"
+      },
+      "01-jvmd-INV-body-only/transitions.jsonl": {
+        "bytes": 464,
+        "sha256": "44b04d989428eb2b3b2b3bdf34f1a080233c8db2d64a801257988cd210784ae3"
+      },
+      "01-jvmd-INV-namespace-add/events.jsonl": {
+        "bytes": 9307,
+        "sha256": "cbee73674dc4ba4f11ceb04526663993196f2c19e7cd7ee7c1dcbe67c8f9db6f"
+      },
+      "01-jvmd-INV-namespace-add/exchanges.jsonl": {
+        "bytes": 6162,
+        "sha256": "00fe6cd02ce337ef08b6610ab6ca85c948d5a094fb546f15b19086f8645bb9ac"
+      },
+      "01-jvmd-INV-namespace-add/fixture.json": {
+        "bytes": 5944,
+        "sha256": "398bb39bc875a3a8703bd6947f7be9097cda62e3bce551335e1751d3cd8bd920"
+      },
+      "01-jvmd-INV-namespace-add/operations.jsonl": {
+        "bytes": 22376,
+        "sha256": "b2ee29f9dd5a1ed6708e39ab10745ecbca5a473964ffe05150ff633ed1971862"
+      },
+      "01-jvmd-INV-namespace-add/process.jsonl": {
+        "bytes": 495,
+        "sha256": "954fcc383945385bbf9cedd63658ce4122e1b86794064a094b09b35e32c1d48a"
+      },
+      "01-jvmd-INV-namespace-add/report.json": {
+        "bytes": 476,
+        "sha256": "2ea478314d7404ee914ff7acc25aceef30885c595c8a0dce737a06fc6601a54c"
+      },
+      "01-jvmd-INV-namespace-add/resources/lifetime-start.json": {
+        "bytes": 174,
+        "sha256": "a2066d64a05fb737216b9e91114631b719794001d70b449fa6043ec7b211a006"
+      },
+      "01-jvmd-INV-namespace-add/runtime/launch.json": {
+        "bytes": 104099,
+        "sha256": "46daaced92816742f914b7517631a123b1d5b3fb33a796cb1cb0e99bd9634a3b"
+      },
+      "01-jvmd-INV-namespace-add/runtime/stderr.log": {
+        "bytes": 1041,
+        "sha256": "466c2cfaf6958081a5024302f8f864bf0439d9929297566c577861f1455e0507"
+      },
+      "01-jvmd-INV-namespace-add/transitions.jsonl": {
+        "bytes": 464,
+        "sha256": "5f62e3eb89e72bba04db1fa2ab1a7929cdd99eda8a26d7c94ece1fe787eb2adc"
+      },
+      "01-jvmd-INV-overload-add/events.jsonl": {
+        "bytes": 12813,
+        "sha256": "7ec2706df9b14c4d488fae504867851df05e3b8a7a946114b121af66f65be422"
+      },
+      "01-jvmd-INV-overload-add/exchanges.jsonl": {
+        "bytes": 6585,
+        "sha256": "6eeb63641bd0011532da3c2bc4851e70670fed46e8caa90130ef7a09e4094186"
+      },
+      "01-jvmd-INV-overload-add/fixture.json": {
+        "bytes": 5965,
+        "sha256": "9e71905a0b5c19a664dfdf40e9c7e2185c9655e00d3bc6721f16c6645af570b9"
+      },
+      "01-jvmd-INV-overload-add/operations.jsonl": {
+        "bytes": 22032,
+        "sha256": "446b5844acccc3ee2113642128902a2dc1e4e1d73b69b5abd18b744c6967a752"
+      },
+      "01-jvmd-INV-overload-add/process.jsonl": {
+        "bytes": 1232,
+        "sha256": "495beb860fc43a5ee6a73e40d81c55c16d4261885dc1cd68ded36a25595f1d27"
+      },
+      "01-jvmd-INV-overload-add/report.json": {
+        "bytes": 142454,
+        "sha256": "1c27b8b3e8b69c19f22169ffd5fbd682c65e9044f2cc4e182284acb49e43e2d9"
+      },
+      "01-jvmd-INV-overload-add/resources/lifetime-resources.json": {
+        "bytes": 276,
+        "sha256": "43c687613864199f40554fea2f3526757cd0087086c55c8e76f034d57e4d1ee1"
+      },
+      "01-jvmd-INV-overload-add/resources/lifetime-start.json": {
+        "bytes": 174,
+        "sha256": "a2066d64a05fb737216b9e91114631b719794001d70b449fa6043ec7b211a006"
+      },
+      "01-jvmd-INV-overload-add/runtime/launch.json": {
+        "bytes": 104436,
+        "sha256": "067fc63c09bd39e495e709b1341abd018141067939ae16cc2778b2112c4ac23d"
+      },
+      "01-jvmd-INV-overload-add/runtime/stderr.log": {
+        "bytes": 1767,
+        "sha256": "1c5ee5957e012f2573853a412e9e9b3b4d9ae9f748638874754cbd68d0f1f7e3"
+      },
+      "01-jvmd-INV-overload-add/transitions.jsonl": {
+        "bytes": 464,
+        "sha256": "87242c4a32d9197c717d25ea8679c22f95f873942025ddc3b6e9a448e6f70cc5"
+      },
+      "catalogue.json": {
+        "bytes": 99092,
+        "sha256": "a09bf1f410e68f7f4b282168ed547029220beb6101be4e3e93571caca2558210"
+      },
+      "manifest.json": {
+        "bytes": 170757,
+        "sha256": "963de106757d5c6e71cde1bb0885d97de65b75ffb0a62d50ab46d4e714f13172"
+      },
+      "required-variants.json": {
+        "bytes": 165675,
+        "sha256": "463b8612a831c57be27cfb61ec2cd48fde67a37950c93bc2a17b29e36be6a273"
+      }
+    },
+    "members": 60
+  },
+  "continuation": {
+    "file": "continuation.tar.xz",
+    "bytes": 168940,
+    "sha256": "ba858b6b413b82143ef3d222ae6b7795c93b28e47638003e79f32cb8df845e2e",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "failed",
+    "unsealedFiles": {
+      "01-jdtls-INV-classpath-identical/runtime/equinox-config/org.eclipse.core.runtime/.manager/.tmp74.instance": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "01-jdtls-INV-classpath-identical/runtime/equinox-config/org.eclipse.equinox.app/.manager/.tmp75.instance": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "members": 125
+  }
+}

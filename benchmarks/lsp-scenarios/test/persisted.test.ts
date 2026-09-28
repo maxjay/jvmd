@@ -38,7 +38,11 @@ for(const [mode,outcome] of [["persisted-correct","pass"],["persisted-leak","inc
       for(const mutate of [(r:any)=>r.launch.stateDirectory="/other",(r:any)=>r.operations[0].rawResult.contents.value="int label",(r:any)=>r.persistedEvidence.beforeReopen.files={}]){
         const forged=structuredClone(report);mutate(forged);assert.throws(()=>persistedSessionOracle(forged,seed,lines("seed-session/events.jsonl"),lines("events.jsonl")));
       }
-    }else if(mode==="persisted-seed-shutdown"){assert.equal(seed.outcome,"protocol_error");assert.match(seed.shutdownError,/unclean shutdown/u);assert.equal(report.persistedEvidence.seedStopped,false);}
+    }else if(mode==="persisted-seed-shutdown"){
+      assert.equal(seed.outcome,"protocol_error");assert.match(seed.shutdownError,/unclean shutdown/u);assert.equal(report.persistedEvidence.seedStopped,false);
+      assert.equal(report.reopenStatus,"not_started");assert.equal(report.launch,undefined);assert.deepEqual(report.operations,[]);
+      assert.deepEqual(reduceBundle(out).summary.integrityIssues,[],"failed seed must remain auditable without inventing a reopened process");
+    }
     else if(mode==="persisted-seed-stale"){assert.equal(seed.outcome,"incorrect");assert(seed.operations.some(o=>o.state==="changed_immediate"&&o.outcome==="incorrect"));assert(report.operations.some(o=>o.state==="after_reopen"&&o.outcome==="pass"));}
     else if(mode==="persisted-leak")assert(report.operations.some(o=>o.state==="after_reopen"&&o.outcome==="incorrect"));
   }finally{rmSync(tmp,{recursive:true,force:true});}

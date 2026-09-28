@@ -4,7 +4,7 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 175 workbook case definitions plus 45 scaling and seven invalidation cases, 229 TypeScript
+Latest implementation inventory: 175 workbook case definitions plus 45 scaling and seven invalidation cases, 230 TypeScript
 harness tests passing, and 107 required variants (107 implemented, 0 partial, 0 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
@@ -88,6 +88,11 @@ through `IProject.getFolder`; the pinned JDTLS `ProjectCommand.updateClasspaths`
 bytecode confirms those inputs must be project-relative. The setter encoding is
 now explicit while preserving the original getter response and exact final oracle.
 The original two failed reports remain harness mistakes, not product defects.
+Both corrected cases now pass independent replay with intact case and bundle
+inventories; see `benchmarks/evidence/project-paths-2026-09-28/`. A preceding
+checkpoint-drift capture is preserved separately. Failed persisted seeds now keep
+their journals/resources in the seed phase and mark the reopen as not started;
+the actual subprocess regression verifies the failure without integrity errors.
 
 The `tools/jdk-25` alias currently resolves to the earlier toolchain location;
 the separate pinned distribution also exists in this workspace. Consequently the
@@ -1462,9 +1467,11 @@ lifetime counter scope is measured.
 The full 350-report replay at `61926e2` finalized with 333 harness errors, 11 passes,
 2 incorrect results and 4 protocol errors. Its borrowed JDK path became unavailable
 during collection. These results cannot establish supported-server coverage. The
-original sealed capture remains intact. A new replay uses the SHA-256-verified JDK
-archive extracted into this workspace and a fresh production compilation from the
-same frozen revision. No result from the failed capture is overwritten.
+original sealed capture remains intact. A new replay was intended to use the
+SHA-256-verified archive extracted into this workspace, but its `jdk-25` alias
+still resolved to the earlier toolchain location; the later path audit corrects
+that launch description. It uses a fresh compilation from the same frozen source
+revision. No result from the failed capture is overwritten.
 
 CI at `61926e2`: Tests and Benchmarks passed. LSP scenario contract tests, image
 build, legacy phase checks and artifact audit passed; native clean/traced lifecycle

@@ -1,0 +1,49 @@
+{
+  "checkpoint-drift": {
+    "file": "checkpoint-drift.tar.xz",
+    "bytes": 87640,
+    "sha256": "824ea0492ef6d3b780f7d809ea846105f8328b5906fce90ba8da68e887cd2ab6",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "failed",
+    "unsealedFiles": {
+      "01-jdtls-ENV-01-classpath-roundtrip/runtime/equinox-config/org.eclipse.core.runtime/.manager/.tmp74.instance": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "01-jdtls-ENV-01-classpath-roundtrip/runtime/equinox-config/org.eclipse.equinox.app/.manager/.tmp75.instance": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "01-jdtls-ENV-01-classpath-roundtrip/runtime/workspace/.metadata/.plugins/org.eclipse.core.resources/.projects/benchmark/.markers.snap": {
+        "bytes": 216,
+        "sha256": "ab007b13989db4ac23d96bd4634dfc0cb17e8dfb27314e96023a61b3535e6ba5"
+      },
+      "01-jdtls-ENV-01-classpath-roundtrip/runtime/workspace/.metadata/.plugins/org.eclipse.core.resources/.projects/benchmark/.syncinfo.snap": {
+        "bytes": 16,
+        "sha256": "e42ae93474e9c14b9a33ea021d885fbcb5280a5acbb7ef238df5952d2963e770"
+      },
+      "01-jdtls-ENV-01-classpath-roundtrip/runtime/workspace/.metadata/.plugins/org.eclipse.core.resources/.root/.markers.snap": {
+        "bytes": 16,
+        "sha256": "e42ae93474e9c14b9a33ea021d885fbcb5280a5acbb7ef238df5952d2963e770"
+      },
+      "01-jdtls-ENV-01-classpath-roundtrip/runtime/workspace/.metadata/.plugins/org.eclipse.core.resources/0.snap": {
+        "bytes": 741,
+        "sha256": "3d549bb82ac10ee9e5f2e86170b40fc4b198c3436fc40944a01653d4493d813c"
+      },
+      "01-jdtls-ENV-01-classpath-roundtrip/runtime/workspace/.metadata/.plugins/org.eclipse.jdt.core/30848212.index": {
+        "bytes": 25,
+        "sha256": "d72a031d4521672b6cf8dd21eddcfa6cb16e711f0810ee6d71f4f5737e60b600"
+      }
+    },
+    "members": 39
+  },
+  "verified": {
+    "file": "verified.tar.xz",
+    "bytes": 85504,
+    "sha256": "378838d064e76c8949ff7f17c16cee865915c88561a4368e39538f8700d4580c",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "verified",
+    "unsealedFiles": {},
+    "members": 32
+  }
+}

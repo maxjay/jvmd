@@ -99,13 +99,16 @@ export async function main(args=process.argv.slice(2)){
         finally{
           running=undefined;Object.assign(seedReport,capture(seed,previous));seedReport.finalized=true;write(path.join(caseRoot,"seed-session/report.json"),seedReport);
           jsonl(path.join(caseRoot,"seed-session/operations.jsonl"),seed.operations);report.persistedSeed={artifactDirectory:"seed-session",outcome:seedReport.outcome};
+          // The closed seed owns these operations, transitions and resource
+          // records. A blocked reopen must not copy them into a fictitious phase.
+          context=undefined;delete report.launch;report.reopenStatus="not_started";
         }
         assert(seed.assertions.every(a=>a.passed),"persisted seed has failed assertion evidence");
         const state=persistedDirectory(launchOptions.state,server,profile);
         report.persistedEvidence.afterSeed=persistedSnapshot(state);
         report.persistedEvidence.beforeReopen=persistedSnapshot(state);report.persistedEvidence.reopenStartedNs=String(process.hrtime.bigint());persistedStateOracle(report.persistedEvidence);
         write(path.join(caseRoot,"persisted-state.json"),report.persistedEvidence);
-        running=await launch({...launchOptions,reuseState:true,journalDirectory:caseRoot});report.launch=running.metadata;
+        running=await launch({...launchOptions,reuseState:true,journalDirectory:caseRoot});report.launch=running.metadata;report.reopenStatus="started";
         context=new ScenarioContext(running.client,fixture,server,timeout,warmup,samples);context.javaHome=seed.javaHome;
         assert.equal(context.documents.size,0,"new client inherited live buffers");await context.initialize();report.capabilities=context.capabilities;return context;
       };
@@ -116,7 +119,7 @@ export async function main(args=process.argv.slice(2)){
         await def.run(context);assert(context.operations.length>0||def.correctnessOnly,"case executed no measured operation");report.outcome=(report.persistedSeed?.outcome!=="pass"?report.persistedSeed?.outcome:undefined)??context.operations.find(o=>o.outcome!=="pass")?.outcome??(context.notApplicableEvidence?"not_applicable":"pass");
       }
     }catch(error){
-      report.error=String(error);report.outcome=context?.operations.find(o=>o.outcome!=="pass")?.outcome??(report.persistedEvidence?.seedStopped===false?"protocol_error":error instanceof assert.AssertionError&&context?.initializedNs?"incorrect":"harness_error");
+      report.error=String(error);report.outcome=context?.operations.find(o=>o.outcome!=="pass")?.outcome??(report.persistedEvidence?.seedStopped===false?"protocol_error":error instanceof assert.AssertionError&&(context?.initializedNs||report.persistedSeed)?"incorrect":"harness_error");
     }finally{
       if(running){try{if(context)for(const name of Object.keys(context.fixture.files))if(context.documents.has(context.file(name).uri))context.close(name);await running.stop();}catch(error){report.shutdownError=String(error);if(["pass","not_applicable"].includes(report.outcome))report.outcome="protocol_error";}
         report.protocolErrors=running.client.protocolErrors;

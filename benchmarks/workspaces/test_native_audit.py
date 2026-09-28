@@ -71,12 +71,16 @@ class NativeAuditTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);write=self.fixture(root)
             start=prepare(root/'fresh')
-            finish(root/'fresh',[123])
+            lifetime=finish(root/'fresh',[123])
             write('fresh/launch.json',{'epoch':'fresh:1','profile':'pipe','lifetimeResources':start})
             summary=json.loads((root/'summary.json').read_text())
+            summary['lifetimeResources']=[dict(daemonEpoch='fresh:1',**lifetime)]
             summary['lifetimeCountersComplete']=False;write('summary.json',summary)
             self.seal(root)
             self.assertTrue(audit(root)['integrityValid'])
+            summary['lifetimeResources'][0]['cpu_seconds']=0;write('summary.json',summary);self.seal(root)
+            self.assertIn('lifetime summary rows differ from raw epoch files',audit(root)['issues'])
+            summary['lifetimeResources'][0]['cpu_seconds']=None
             summary['lifetimeCountersComplete']=True;write('summary.json',summary);self.seal(root)
             self.assertIn('lifetime counter summary disagrees with raw evidence',audit(root)['issues'])
             write('fresh/peer-1/launch.json',{'pid':456});self.seal(root)

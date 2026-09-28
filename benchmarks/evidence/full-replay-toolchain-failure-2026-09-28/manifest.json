@@ -1,0 +1,19 @@
+{
+  "file": "review.tar.xz",
+  "bytes": 540076,
+  "sha256": "293fb5019256fc67ad1fb45d3ae9e2d79af1bae066b8e3f20a0c426bd7e00b67",
+  "everySelectedFileHash": "verified",
+  "originalCompleteInventory": "verified",
+  "unsealedFiles": {},
+  "members": 2670,
+  "sourceRevision": "61926e258cb09b475c65a4b837934248c69837f7",
+  "scope": "Failed full replay; no supported-server coverage claim",
+  "planned": 350,
+  "finalized": 350,
+  "outcomes": {
+    "pass": 11,
+    "incorrect": 2,
+    "protocol_error": 4,
+    "harness_error": 333
+  }
+}

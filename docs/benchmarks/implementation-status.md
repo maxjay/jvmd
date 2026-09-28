@@ -1493,3 +1493,28 @@ matching Eclipse source projects, identical dependency archives and a seeded loc
 repository. The fixed aggregator is counted separately from variable source
 projects. A four-project/eight-artifact fixture compiles independently. The original
 pilot remains preserved; corrected supported-server replay is still required.
+
+## Verified native lifetime counters
+
+At `d585cad`, both clean and traced product CI captures have measured lifetime
+counters for fresh, restarted and Apache epochs. All six groups contain the
+launched daemon/bridge roots, are empty at final read, and are removed cleanly.
+Local replay of the raw resource records and both native review audits succeeds.
+`benchmarks/evidence/native-lifetime-2026-09-28/` preserves a resource-only subset
+and exact source-artifact identity; its omissions are explicit. These totals
+include unsuccessful freshness attempts and are not an overhead comparison.
+
+Native summaries now retain daemon identity separately from the kernel group
+epoch, and artifact audits compare every summary row with its raw epoch file.
+Experiment collection also retains the committed plan's exact bytes; reduction
+checks actual invocation order/arguments as well as the declared schedule.
+CI preserves active independent-block experiments across subsequent pushes.
+
+The failed full replay is now packaged separately under
+`benchmarks/evidence/full-replay-toolchain-failure-2026-09-28/`. Its complete
+original inventory verified; its 333 harness failures are not server findings.
+The restored full replay and corrected Maven scaling replay continue from frozen
+checkouts. JVMD's corrected relevant-edit and unrelated-edit scaling controls pass;
+JDTLS retains stale early hover results and an unclean shutdown in the first
+corrected relevant-edit case. These development captures do not authorize timing
+comparisons.

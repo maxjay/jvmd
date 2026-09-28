@@ -131,7 +131,7 @@ def collect(args):
                   javaInputs={name:sha(java/name) for name in ('release','bin/java','lib/modules')},distributionInputs=distributions,
                   filesystemCache='uncontrolled; fresh isolated fixture/server/repository per child invocation',
                   claims=dict(publicComparativePerformance=False,reason='artifact reduction and all acceptance gates still required'))
-    write(output/'manifest.json',manifest);write(output/'plan.json',plan);runs=[]
+    write(output/'manifest.json',manifest);(output/'plan.json').write_bytes(plan_file.read_bytes());runs=[]
     try:
         for row in rows:
             command=command_for(plan,row,tools,output/row['directory'])
@@ -163,6 +163,7 @@ def reduce_experiment(root):
     root=root.resolve();manifest=read(root/'manifest.json');plan=manifest['plan'];planned=schedule(plan)
     issues=verify_inventory(root);runs=read(root/'runs.json');run_map={r['directory']:r for r in runs}
     if len(run_map)!=len(runs):issues.append('duplicate run record')
+    if [r['directory'] for r in runs]!=[r['directory'] for r in planned[:len(runs)]]:issues.append('actual run order differs from plan')
     if manifest['schedule']!=planned:issues.append('saved order differs from predeclared schedule')
     if sha(root/'plan.json')!=manifest['planSha256']:issues.append('plan bytes differ from frozen manifest')
     if manifest.get('sourceDrift') or manifest['sourceInputs']!=manifest.get('finalSourceInputs'):issues.append('source drift during experiment')
@@ -170,6 +171,8 @@ def reduce_experiment(root):
     groups={};outcomes=[]
     for row in planned:
         record=run_map.get(row['directory']);bundle=root/row['directory']
+        if record and (any(record.get(k)!=v for k,v in row.items()) or record['command']!=command_for(plan,row,manifest['tools'],bundle)):
+            issues.append('recorded invocation differs from plan: '+row['directory'])
         valid=bool(record and record['status']==0 and not record.get('error') and not record.get('forcedTermination'))
         if not (bundle/'summary.json').is_file():outcomes.append({**row,'outcome':'not_run'});continue
         child_plan=read(bundle/'manifest.json')

@@ -43,7 +43,9 @@ permissions:
 
 concurrency:
   group: lsp-scenarios-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Preserve the predeclared block set when another reviewed commit is pushed.
+  # A newer validation may wait; it must not erase an active experiment.
+  cancel-in-progress: false
 
 jobs:
   scenarios:

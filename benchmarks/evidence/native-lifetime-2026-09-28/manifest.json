@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "scope": "Resource-only review subset; not a complete lifecycle experiment",
+  "sourceRun": "https://github.com/maxjay/jvmd/actions/runs/36362558881",
+  "revision": "d585cad873cfd4caa65e74b6d0928878890cbc4a",
+  "sourceArtifactId": 10946263246,
+  "sourceArtifactSha256": "b525a31bc34274bfa86a8eb5abd4841247b462d0cc82762fc82e4fcc8361b416",
+  "omissions": "Protocol/semantic journals, workspaces, caches, JFR and sampled-resource files. Full native raw and review artifacts remain attached to the source run. Included source-checksums describe the original full bundles.",
+  "archive": "resource-review.tar.xz",
+  "bytes": 977448,
+  "sha256": "227aa01ce8224c47e0f45ae81abc049b6f76a83776fec64bf47614c933f43850"
+}

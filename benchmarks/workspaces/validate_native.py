@@ -121,7 +121,7 @@ def audit(root):
             case_outcomes[row['id']] = row['outcome']
     semantic_complete = set(case_outcomes) == set(plan['cases']) and all(v == 'pass' for v in case_outcomes.values())
     check(summary.get('semanticComplete') == semantic_complete, 'summary conceals failed/missing lifecycle case')
-    epochs, lifetime_resources = [], []
+    epochs, lifetime_resources, lifetime_summaries = [], [], []
     for launch_file in sorted(root.glob('*/launch.json')):
         prefix = launch_file.parent.name
         launch = read(prefix + '/launch.json')
@@ -142,6 +142,7 @@ def audit(root):
             try:
                 # Membership has chronological order; peer folder names are lexical.
                 saved = read(prefix + '/lifetime-resources.json')
+                lifetime_summaries.append(dict(daemonEpoch=launch['epoch'], **saved))
                 check(sorted(saved['expected_pids']) == sorted(roots), 'lifetime roots differ from launched processes: ' + prefix)
                 result = audit_directory(launch_file.parent, saved['expected_pids'])
                 lifetime_resources.append(dict(epoch=launch['epoch'], **result))
@@ -180,6 +181,13 @@ def audit(root):
     lifetime_complete = bool(epochs) and len(lifetime_resources) == len(epochs) and all(r['scope_complete'] for r in lifetime_resources)
     if 'lifetimeCountersComplete' in summary:
         check(summary['lifetimeCountersComplete'] == lifetime_complete, 'lifetime counter summary disagrees with raw evidence')
+    if 'lifetimeResources' in summary:
+        expected=lifetime_summaries
+        if summary['lifetimeResources'] and 'daemonEpoch' not in summary['lifetimeResources'][0]:
+            expected=[{k:v for k,v in r.items() if k!='daemonEpoch'} for r in expected]
+        # Compare by the unique kernel group owner; capture order is chronological.
+        by_owner=lambda rows:sorted(rows,key=lambda r:r.get('owner') or '')
+        check(by_owner(summary['lifetimeResources']) == by_owner(expected), 'lifetime summary rows differ from raw epoch files')
     if summary.get('resourceScopeComplete'):
         limitations.append('Historical summary claims resourceScopeComplete from sampled availability; this audit does not accept that claim')
     limitations.extend([

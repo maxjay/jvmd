@@ -36,6 +36,7 @@ class ExperimentTests(unittest.TestCase):
             with patch.object(experiment,'REPO',repo):
                 output=experiment.collect(args)
                 self.assertEqual(experiment.verify_inventory(output),[])
+                self.assertEqual((output/'plan.json').read_bytes(),plan.read_bytes())
                 runs=experiment.read(output/'runs.json')
                 self.assertEqual([r['status'] for r in runs],[7,7])
                 self.assertEqual([r['block'] for r in runs],[1,2])

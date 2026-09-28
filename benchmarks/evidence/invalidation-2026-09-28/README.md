@@ -24,7 +24,28 @@ probes. JVMD's namespace controls passed. JDTLS namespace addition was initially
 stale then converged; remove/unrelated controls were semantically correct but had
 unclean shutdowns. None of those later correct replies erases an early failure.
 
-These are original diagnostic review subsets, with omissions and byte hashes in
-their embedded manifests. Additional sealed body/overload and isolated-directory
-namespace/classpath validation is recorded separately; no failed original capture
-is replaced, and this directory makes no timing or complete-catalogue claim.
+The completed validation at `75317ab` is preserved separately in
+`body-overload.tar.xz` and `verified-controls.tar.xz`. All fourteen case runs have
+intact original bundle inventories; the control capture also passed a separate
+raw-artifact reduction after copying from its temporary collection directory.
+
+| Declared case | JVMD | JDTLS |
+|---|---|---|
+| Provider body-only edit | pass | semantic pass; shutdown failure |
+| Add more-specific overload | pass | semantic pass; shutdown failure |
+| Add same-package shadow | pass | initially stale; then settled |
+| Remove same-package shadow | pass | initially stale; then settled |
+| Add unrelated namespace | pass | semantic pass; shutdown failure |
+| Reverse ordered duplicate classpath | initially stale; then settled | initially stale; then settled |
+| Identical classpath metadata | pass | semantic pass; shutdown failure |
+
+The resulting mandatory outcomes are **6 pass, 4 incorrect, 4 protocol errors**.
+The earlier control capture's namespace-removal response was immediate-correct;
+both observations remain visible. Do not select the more favourable run or erase
+the incorrect first reply because a later retry converged. These outcomes apply
+to the benchmark's declared current-result requirement, not a claim that every
+asynchronous delay violates the LSP specification.
+
+Every archive here is a diagnostic review subset, with omissions and byte hashes
+in its embedded manifest. No failed original capture is replaced, and this
+directory makes no timing or complete-catalogue claim.

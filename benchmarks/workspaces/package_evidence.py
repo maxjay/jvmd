@@ -18,10 +18,12 @@ def package(root, destination):
         'native-events.jsonl', 'native-calls.jsonl', 'events.jsonl',
         'exchanges.jsonl', 'trace.json', 'causal.json', 'profiles.json',
         'profile-export.json', 'attribution.json', 'stderr.log', 'server.jfr',
+        'lifetime-start.json', 'lifetime-resources.json',
     }
     for epoch in ('fresh', 'restarted', 'apache'):
         directory = root / epoch
         selected.update(directory / name for name in epoch_files if (directory / name).is_file())
+        selected.update((directory / 'resource-memberships').glob('*.json'))
         for peer in directory.glob('peer-*'):
             selected.update(file for file in peer.iterdir() if file.is_file())
     files = sorted(file for file in selected if file.is_file())

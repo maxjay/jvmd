@@ -3,6 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from validate_native import audit, digest
+from cgroup_resources import prepare, finish
 
 
 class NativeAuditTest(unittest.TestCase):
@@ -65,6 +66,21 @@ class NativeAuditTest(unittest.TestCase):
             with (root/'checksums.sha256').open('a') as out:
                 out.write('0'*64+'  ../outside.json\n')
             self.assertIn('unsafe artifact path: ../outside.json',audit(root)['issues'])
+
+    def test_lifetime_claim_requires_raw_membership_and_launched_roots(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);write=self.fixture(root)
+            start=prepare(root/'fresh')
+            finish(root/'fresh',[123])
+            write('fresh/launch.json',{'epoch':'fresh:1','profile':'pipe','lifetimeResources':start})
+            summary=json.loads((root/'summary.json').read_text())
+            summary['lifetimeCountersComplete']=False;write('summary.json',summary)
+            self.seal(root)
+            self.assertTrue(audit(root)['integrityValid'])
+            summary['lifetimeCountersComplete']=True;write('summary.json',summary);self.seal(root)
+            self.assertIn('lifetime counter summary disagrees with raw evidence',audit(root)['issues'])
+            write('fresh/peer-1/launch.json',{'pid':456});self.seal(root)
+            self.assertIn('lifetime roots differ from launched processes: fresh',audit(root)['issues'])
 
 
 if __name__ == '__main__':

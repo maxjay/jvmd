@@ -9,6 +9,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+from cgroup_resources import audit_directory
 
 
 def digest(file):
@@ -120,13 +121,32 @@ def audit(root):
             case_outcomes[row['id']] = row['outcome']
     semantic_complete = set(case_outcomes) == set(plan['cases']) and all(v == 'pass' for v in case_outcomes.values())
     check(summary.get('semanticComplete') == semantic_complete, 'summary conceals failed/missing lifecycle case')
-    epochs = []
+    epochs, lifetime_resources = [], []
     for launch_file in sorted(root.glob('*/launch.json')):
         prefix = launch_file.parent.name
         launch = read(prefix + '/launch.json')
         if 'epoch' not in launch:
             continue
         epochs.append(launch['epoch'])
+        if 'lifetimeResources' in launch:
+            for name in ('lifetime-start.json', 'lifetime-resources.json'):
+                covered(prefix + '/' + name)
+            for member in launch_file.parent.glob('resource-memberships/*.json'):
+                covered(member.relative_to(root).as_posix())
+            process = read(prefix + '/process.json')
+            roots = [process['pid']] if process and process.get('pid') else []
+            for peer_launch in sorted(launch_file.parent.glob('peer-*/launch.json')):
+                peer = read(peer_launch.relative_to(root).as_posix())
+                if peer and peer.get('pid'):
+                    roots.append(peer['pid'])
+            try:
+                # Membership has chronological order; peer folder names are lexical.
+                saved = read(prefix + '/lifetime-resources.json')
+                check(sorted(saved['expected_pids']) == sorted(roots), 'lifetime roots differ from launched processes: ' + prefix)
+                result = audit_directory(launch_file.parent, saved['expected_pids'])
+                lifetime_resources.append(dict(epoch=launch['epoch'], **result))
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                issues.append('invalid lifetime resource evidence: ' + prefix + ': ' + str(error))
         for name in ('launch.json','process.json','exit.json','native-events.jsonl','native-calls.jsonl','resources.json','resource-samples.jsonl'):
             covered(prefix + '/' + name)
         exit_ = read(prefix + '/exit.json')
@@ -157,6 +177,9 @@ def audit(root):
             recording = root / prefix / 'server.jfr'
             check(profiles and recording.is_file() and profiles.get('recording_sha256') == digest(recording), 'JFR/export recording mismatch: ' + prefix)
     check(bool(epochs) and len(set(epochs)) == len(epochs), 'missing or duplicate daemon epoch')
+    lifetime_complete = bool(epochs) and len(lifetime_resources) == len(epochs) and all(r['scope_complete'] for r in lifetime_resources)
+    if 'lifetimeCountersComplete' in summary:
+        check(summary['lifetimeCountersComplete'] == lifetime_complete, 'lifetime counter summary disagrees with raw evidence')
     if summary.get('resourceScopeComplete'):
         limitations.append('Historical summary claims resourceScopeComplete from sampled availability; this audit does not accept that claim')
     limitations.extend([
@@ -167,6 +190,7 @@ def audit(root):
     return {'schemaVersion': 1, 'scope': 'review subset' if review else 'sealed full bundle',
             'integrityValid': not issues, 'semanticComplete': semantic_complete,
             'caseOutcomes': case_outcomes, 'epochs': epochs, 'checkedFiles': len(files),
+            'lifetimeResources': lifetime_resources, 'lifetimeCountersComplete': lifetime_complete,
             'complete': False, 'publicPerformanceClaims': False, 'issues': issues, 'limitations': limitations}
 
 

@@ -1383,3 +1383,34 @@ actual-runner test proves that successful reopen cannot hide a failed immediate
 seed result. All 214 TypeScript tests pass. The full process resource sampler
 still returns unavailable locally despite readable child status: partial `/proc`
 visibility does not establish complete CPU/RSS/I/O scope.
+
+## Lifetime resource accounting and full replay recovery
+
+An optional delegated cgroup-v2 collector now wraps every native daemon and
+packaged bridge before exec. Descendants inherit its dedicated group. Final CPU,
+block-device I/O and kernel memory-charge counters are read only after the whole
+group is empty; raw files, group epoch, launch roots and entry records are retained.
+The artifact audit recomputes totals and rejects missing roots, changed epochs,
+active descendants, counter resets and summaries that disagree with raw evidence.
+Kernel memory charges are explicitly not RSS/PSS or retained Java heap. These
+counters do not establish per-role allocation or instrumentation overhead.
+Without delegated controllers the result is unavailable with null totals.
+
+Local validation: 214 TypeScript tests pass; Python runs 47 tests with 45 passes
+and two explicit capability skips (process I/O visibility and delegated cgroup).
+The new integration test measures an exited CPU-consuming descendant when an
+actual delegated group is supplied; ordinary directories cannot imitate cgroups.
+Native summaries retain the broad resource gate as incomplete even if the narrower
+lifetime counter scope is measured.
+
+The full 350-report replay at `61926e2` finalized with 333 harness errors, 11 passes,
+2 incorrect results and 4 protocol errors. Its borrowed JDK path became unavailable
+during collection. These results cannot establish supported-server coverage. The
+original sealed capture remains intact. A new replay uses the SHA-256-verified JDK
+archive extracted into this workspace and a fresh production compilation from the
+same frozen revision. No result from the failed capture is overwritten.
+
+CI at `61926e2`: Tests and Benchmarks passed. LSP scenario contract tests, image
+build, legacy phase checks and artifact audit passed; native clean/traced lifecycle
+and protobuf semantic steps failed and uploaded their evidence. Those failures
+remain open; a passing structural audit does not turn them into semantic passes.

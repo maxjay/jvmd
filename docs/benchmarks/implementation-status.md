@@ -66,6 +66,19 @@ with final evidence and dispositions; an intermediate draft is not task completi
 
 ## Independent block results: 2026-09-28
 
+Complete product catalogue validation is now predeclared in
+`benchmarks/experiments/catalogue-validation.json`: all 175 case definitions,
+both servers, one correctness block with one warmup and two repeated requests,
+partitioned exactly once across ten bounded CI jobs. The workflow uses the already
+built, immutable `4f318bb` distribution only after verifying identical production
+source. Every shard replays its saved bytes and preserves full raw artifacts plus
+a bounded review subset. It cannot commit code or baselines. Routine later pushes
+do not restart this collection. This is an additional product correctness capture,
+not a replacement for earlier local failures or an independent speed comparison.
+The partition regression and all 59 Python tests pass except the two explicit
+local capability skips (57 pass); workflow shell syntax and read-only permissions
+were checked locally before publication.
+
 The shipped product launcher passed DOC-01/repeat while rejecting AOT because its
 requested archive was absent. The full 205,806-byte artifact, raw launcher log,
 verified lifetime totals and separate local replay are preserved in

@@ -1,0 +1,134 @@
+name: Complete catalogue validation
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/catalogue-validation.yml'
+      - 'benchmarks/experiments/catalogue-validation.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: catalogue-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  selection:
+    runs-on: ubuntu-24.04
+    outputs:
+      collect: ${{ steps.select.outputs.collect }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+      - id: select
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          python3 - <<'PY'
+          import os, subprocess
+          changed = subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD','--',
+            '.github/workflows/catalogue-validation.yml','benchmarks/experiments/catalogue-validation.json'], text=True)
+          with open(os.environ['GITHUB_OUTPUT'],'a') as out:
+            out.write('collect=' + str(os.environ['EVENT_NAME']=='workflow_dispatch' or bool(changed.strip())).lower() + '\n')
+          PY
+
+  catalogue:
+    needs: selection
+    if: needs.selection.outputs.collect == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+      - name: Verify reused image has identical production source
+        run: |
+          git diff --exit-code 4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a HEAD -- 'jvmd-*' shim pom.xml
+          npm ci --prefix benchmarks/lsp-scenarios --ignore-scripts
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: experiment-tools
+          run-id: 36365632505
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}
+      - name: Restore pinned distribution and remaining fixture tools
+        run: |
+          sha256sum -c "$RUNNER_TEMP/experiment-tools.sha256"
+          tar -xzf "$RUNNER_TEMP/experiment-tools.tar.gz" -C "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/catalogue-tools"
+          cd "$RUNNER_TEMP/catalogue-tools"
+          curl -fsSL --retry 3 'https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz' -o jdk17.tar.gz
+          curl -fsSL --retry 3 https://downloads.gradle.org/distributions/gradle-9.1.0-bin.zip -o gradle.zip
+          curl -fsSL --retry 3 https://repo.maven.apache.org/maven2/com/google/protobuf/protoc/3.21.4/protoc-3.21.4-linux-x86_64.exe -o protoc
+          curl -fsSL --retry 3 https://repo.maven.apache.org/maven2/com/google/protobuf/protobuf-java/3.21.4/protobuf-java-3.21.4.jar -o protobuf-java.jar
+          printf '%s\n' \
+            '3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e  jdk17.tar.gz' \
+            'a17ddd85a26b6a7f5ddb71ff8b05fc5104c0202c6e64782429790c933686c806  gradle.zip' \
+            'ae5ddc97b85d0a3a39db70c0eabe93e3f83a5d4617d354b932dc88f307e6e2ec  protoc' \
+            '85d0a5b8b7e14395cd4489533433cb18eae6b197b9b5030ac0e67e679beafa8e  protobuf-java.jar' | sha256sum -c -
+          tar -xzf jdk17.tar.gz
+          unzip -q gradle.zip
+          chmod +x protoc gradle-9.1.0/bin/gradle
+      - name: Delegate accounting
+        id: resources
+        run: |
+          sudo python3 benchmarks/workspaces/delegate_cgroup.py setup --output "$RUNNER_TEMP/delegation.json" --uid "$(id -u)" --gid "$(id -g)"
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json, os
+          from pathlib import Path
+          print('JVMD_BENCH_CGROUP_ROOT=' + json.loads((Path(os.environ['RUNNER_TEMP'])/'delegation.json').read_text())['parent'])
+          PY
+      - name: Collect every declared case in this shard
+        run: |
+          SELECTED_CASES=$(python3 benchmarks/workspaces/catalogue_partition.py --shard '${{ matrix.shard }}')
+          sudo -E python3 benchmarks/workspaces/delegate_cgroup.py run --output "$RUNNER_TEMP/delegation.json" -- \
+            node benchmarks/lsp-scenarios/run.ts --servers jvmd,jdtls --profile product \
+            --java-home "$RUNNER_TEMP/experiment-tools/jdk-25.0.4.1+1" \
+            --image "$RUNNER_TEMP/experiment-tools/image" --jdtls-home "$RUNNER_TEMP/experiment-tools/jdtls" \
+            --alternate-java-home "$RUNNER_TEMP/catalogue-tools/jdk-17.0.20.1+1" \
+            --gradle-home "$RUNNER_TEMP/catalogue-tools/gradle-9.1.0" \
+            --protoc "$RUNNER_TEMP/catalogue-tools/protoc" --protobuf-java "$RUNNER_TEMP/catalogue-tools/protobuf-java.jar" \
+            --only "$SELECTED_CASES" --blocks 1 --warmup 1 --samples 2 --timeout-ms 30000 --output "$RUNNER_TEMP/capture"
+      - name: Independently audit saved bytes
+        if: ${{ !cancelled() && steps.resources.outcome == 'success' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/replayed"
+          node benchmarks/lsp-scenarios/reduce.ts "$RUNNER_TEMP/capture" "$RUNNER_TEMP/replayed"
+      - name: Package explicit review subset
+        if: always()
+        run: python3 benchmarks/lsp-scenarios/package_evidence.py "$RUNNER_TEMP/capture" "$RUNNER_TEMP/catalogue-review.tar.xz" --allow-unsealed-files --allow-interrupted-bundle > "$RUNNER_TEMP/review-manifest.json"
+      - name: Preserve full raw evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: catalogue-raw-${{ matrix.shard }}
+          retention-days: 7
+          include-hidden-files: true
+          path: ${{ runner.temp }}/capture
+      - name: Preserve audit and review subset
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: catalogue-review-${{ matrix.shard }}
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/catalogue-review.tar.xz
+            ${{ runner.temp }}/review-manifest.json
+            ${{ runner.temp }}/replayed
+      - name: Remove empty delegation
+        if: always() && steps.resources.outcome == 'success'
+        run: sudo python3 benchmarks/workspaces/delegate_cgroup.py cleanup --output "$RUNNER_TEMP/delegation.json"

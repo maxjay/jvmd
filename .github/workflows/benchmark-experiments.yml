@@ -32,11 +32,16 @@ jobs:
         run: |
           # PR path filters inspect the whole PR, so additionally inspect this
           # committed checkpoint. A routine source push must not restart 900 runs.
-          if [[ "$EVENT_NAME" == workflow_dispatch ]] || git diff --name-only HEAD^ HEAD -- .github/workflows/benchmark-experiments.yml benchmarks/experiments/matched-product.json benchmarks/experiments/scaling-product.json | rg -q .; then
-            echo 'collect=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'collect=false' >> "$GITHUB_OUTPUT"
-          fi
+          python3 - <<'PY_GATE'
+          import os, subprocess
+          changed = subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD','--',
+            '.github/workflows/benchmark-experiments.yml',
+            'benchmarks/experiments/matched-product.json',
+            'benchmarks/experiments/scaling-product.json'], text=True)
+          collect = os.environ['EVENT_NAME'] == 'workflow_dispatch' or bool(changed.strip())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write('collect=' + str(collect).lower() + '\n')
+          PY_GATE
 
   distribution:
     needs: selection

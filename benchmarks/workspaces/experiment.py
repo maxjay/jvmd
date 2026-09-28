@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import platform
 import signal
+import shutil
 import statistics
 import subprocess
 import sys
@@ -61,6 +62,7 @@ def schedule(plan):
             raise ValueError('invalid collection bound: ' + key)
     if plan['profile'] not in ('product','direct','pipe'):
         raise ValueError('unknown launch profile')
+    if not plan.get('caseIds') or len(set(plan['caseIds']))!=len(plan['caseIds']):raise ValueError('explicit unique case IDs required')
     rows=[]
     for block in range(1,plan['blocks']+1):
         if plan['mode'].startswith('observer-'):
@@ -94,7 +96,9 @@ def command_for(plan,row,tools,output):
 def execute(command,log,deadline):
     row=dict(command=command,startNs=str(time.monotonic_ns()),status=None,error=None,forcedTermination=False)
     with log.open('w') as stream:
-        child=subprocess.Popen(command,cwd=REPO,stdout=stream,stderr=subprocess.STDOUT,start_new_session=True)
+        try:child=subprocess.Popen(command,cwd=REPO,stdout=stream,stderr=subprocess.STDOUT,start_new_session=True)
+        except OSError as error:
+            row.update(error=str(error),endNs=str(time.monotonic_ns()));return row
         try:row['status']=child.wait(timeout=deadline)
         except (subprocess.TimeoutExpired,KeyboardInterrupt) as error:
             row.update(error=type(error).__name__,forcedTermination=True)
@@ -103,13 +107,15 @@ def execute(command,log,deadline):
             except subprocess.TimeoutExpired:
                 os.killpg(child.pid,signal.SIGKILL);child.wait()
             row['status']=child.returncode
-            if isinstance(error,KeyboardInterrupt):raise
         finally:row['endNs']=str(time.monotonic_ns())
     return row
 
 
 def collect(args):
-    plan_file=args.plan.resolve();plan=read(plan_file);rows=schedule(plan)
+    plan_file=args.plan.resolve();plan=read(plan_file);full_schedule=schedule(plan)
+    selected_block=getattr(args,'block',None)
+    if selected_block is not None and selected_block not in range(1,plan['blocks']+1):raise ValueError('block outside committed plan')
+    rows=[r for r in full_schedule if selected_block is None or r['block']==selected_block]
     relative=plan_file.relative_to(REPO).as_posix()
     committed=subprocess.check_output(['git','show','HEAD:'+relative],cwd=REPO)
     if committed!=plan_file.read_bytes() or git('status','--porcelain'):
@@ -125,9 +131,10 @@ def collect(args):
     if not plan['mode'].startswith('observer-'):distributions['jdtls']=tree_inputs(Path(tools['jdtlsHome']))
     if not all(distributions.values()):raise ValueError('server distribution inventory is empty')
     manifest=dict(schemaVersion=1,plan=plan,planSha256=sha(plan_file),revision=git('rev-parse','HEAD'),
-                  sourceInputs=sources(),schedule=rows,tools=tools,createdAt=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),
+                  sourceInputs=sources(),schedule=full_schedule,selectedBlock=selected_block,captureRoot=str(output),tools=tools,createdAt=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),
                   environment=dict(kernel=platform.release(),system=platform.system(),architecture=platform.machine(),cpus=os.cpu_count(),
-                                   memoryInfo=Path('/proc/meminfo').read_text(),python=platform.python_version()),
+                                   memoryInfo=Path('/proc/meminfo').read_text(),cpuInfo=Path('/proc/cpuinfo').read_text(),python=platform.python_version(),
+                                   githubRunner=dict(name=os.environ.get('RUNNER_NAME'),image=os.environ.get('ImageOS'),imageVersion=os.environ.get('ImageVersion'))),
                   javaInputs={name:sha(java/name) for name in ('release','bin/java','lib/modules')},distributionInputs=distributions,
                   filesystemCache='uncontrolled; fresh isolated fixture/server/repository per child invocation',
                   claims=dict(publicComparativePerformance=False,reason='artifact reduction and all acceptance gates still required'))
@@ -137,6 +144,7 @@ def collect(args):
             command=command_for(plan,row,tools,output/row['directory'])
             record={**row,**execute(command,output/(row['directory']+'.log'),plan['runDeadlineSeconds'])}
             runs.append(record);write(output/'runs.json',runs)
+            if record['error']=='KeyboardInterrupt':raise KeyboardInterrupt
             print(json.dumps({k:record[k] for k in ('block','config','directory','status')}),flush=True)
     finally:
         manifest['finalSourceInputs']=sources();manifest['sourceDrift']=manifest['sourceInputs']!=manifest['finalSourceInputs']
@@ -160,18 +168,26 @@ def verify_inventory(root):
 
 
 def reduce_experiment(root):
-    root=root.resolve();manifest=read(root/'manifest.json');plan=manifest['plan'];planned=schedule(plan)
+    root=root.resolve();manifest=read(root/'manifest.json');plan=manifest['plan'];full_schedule=schedule(plan)
+    selected_block=manifest.get('selectedBlock')
+    if selected_block is not None and selected_block not in range(1,plan['blocks']+1):raise ValueError('invalid selected block')
+    planned=[r for r in full_schedule if selected_block is None or r['block']==selected_block]
     issues=verify_inventory(root);runs=read(root/'runs.json');run_map={r['directory']:r for r in runs}
     if len(run_map)!=len(runs):issues.append('duplicate run record')
     if [r['directory'] for r in runs]!=[r['directory'] for r in planned[:len(runs)]]:issues.append('actual run order differs from plan')
-    if manifest['schedule']!=planned:issues.append('saved order differs from predeclared schedule')
+    if manifest['schedule']!=full_schedule:issues.append('saved order differs from predeclared schedule')
     if sha(root/'plan.json')!=manifest['planSha256']:issues.append('plan bytes differ from frozen manifest')
+    if read(root/'plan.json')!=plan:issues.append('manifest plan differs from committed plan bytes')
     if manifest.get('sourceDrift') or manifest['sourceInputs']!=manifest.get('finalSourceInputs'):issues.append('source drift during experiment')
     if manifest['javaInputs']!=manifest.get('finalJavaInputs') or manifest['distributionInputs']!=manifest.get('finalDistributionInputs'):issues.append('toolchain or server distribution drift')
     groups={};outcomes=[]
+    capture_root=Path(manifest.get('captureRoot') or str(root))
+    # Older sealed captures kept the absolute output only in the actual argv.
+    if 'captureRoot' not in manifest and runs:
+        command=runs[0]['command'];capture_root=Path(command[command.index('--output')+1]).parent
     for row in planned:
         record=run_map.get(row['directory']);bundle=root/row['directory']
-        if record and (any(record.get(k)!=v for k,v in row.items()) or record['command']!=command_for(plan,row,manifest['tools'],bundle)):
+        if record and (any(record.get(k)!=v for k,v in row.items()) or record['command']!=command_for(plan,row,manifest['tools'],capture_root/row['directory'])):
             issues.append('recorded invocation differs from plan: '+row['directory'])
         valid=bool(record and record['status']==0 and not record.get('error') and not record.get('forcedTermination'))
         if not (bundle/'summary.json').is_file():outcomes.append({**row,'outcome':'not_run'});continue
@@ -181,6 +197,7 @@ def reduce_experiment(root):
         if plan['mode'].startswith('observer-'):
             if (child_plan['cases']!=plan['caseIds'] or child_plan['profile']!=plan['profile'] or child_plan['edits']!=plan['edits']
                     or child_plan['trace']!=(plan['mode']=='observer-trace' and row['config']=='on')
+                    or child_plan.get('heapMb')!=plan['resourceEnvelope']['nativeObserverHeapMb']
                     or child_plan.get('statusPollEvery')!=(1 if plan['mode']=='observer-status' and row['config']=='on' else 0)):
                 issues.append('observer trace differs from plan: '+row['directory'])
             audit=audit_native(bundle);summary=read(bundle/'summary.json')
@@ -201,18 +218,18 @@ def reduce_experiment(root):
                     or any(child_settings[k]!=plan[k] for k in ('warmup','samples')) or child_settings['timeout']!=plan['timeoutMs'] or child_settings['blocks']!=1):
                 issues.append('child workload differs from plan: '+row['directory'])
             with tempfile.TemporaryDirectory() as tmp:
-                audit=subprocess.run([manifest['tools']['node'],'benchmarks/lsp-scenarios/reduce.ts',str(bundle),tmp],cwd=REPO,capture_output=True,text=True)
+                audit=subprocess.run([shutil.which('node') or 'node','benchmarks/lsp-scenarios/reduce.ts',str(bundle),tmp],cwd=REPO,capture_output=True,text=True)
                 if not (Path(tmp)/'summary.json').exists():
                     issues.append('child reducer did not finalize: '+row['directory']);outcomes.append({**row,'outcome':'harness_error','stderr':audit.stderr});continue
                 summary=read(Path(tmp)/'summary.json');metrics=read(Path(tmp)/'metrics.json')
             outcomes.append({**row,'outcome':'pass' if valid and summary['complete'] else 'failed','summary':summary})
-            reports=[json.loads(line) for line in (bundle/'cases.jsonl').read_text().splitlines()]
+            reports=[read(file) for file in sorted(bundle.glob('*/report.json'))]
             case_map={(r['caseId'],r['server']):r for r in reports}
             for metric in metrics:
                 case=case_map[(metric['caseId'],metric['server'])]
                 counterpart=case_map.get((metric['caseId'],'jvmd' if metric['server']=='jdtls' else 'jdtls'))
                 key=(metric['caseId'],metric['endpoint'],metric['state'],metric['measurementKind'])
-                good=not summary['integrityIssues'] and case['outcome']=='pass' and metric['attempted']==metric['successful'] and counterpart and case['fixtureIdentity']==counterpart['fixtureIdentity']
+                good=record and not record.get('forcedTermination') and not record.get('error') and not summary['integrityIssues'] and case['outcome']=='pass' and metric['attempted']==metric['successful'] and counterpart and case['fixtureIdentity']==counterpart['fixtureIdentity']
                 groups.setdefault(key,{}).setdefault(row['block'],{})[metric['server']]=(metric['medianMs'],bool(good))
     effects=[]
     labels=('off','on') if plan['mode'].startswith('observer-') else ('jvmd','jdtls')
@@ -223,20 +240,54 @@ def reduce_experiment(root):
             pairs.append(dict(block=block,a=a[0],b=b[0],outcome='pass' if a[1] and b[1] and not issues else 'unavailable_evidence'))
         effects.append(dict(endpoint=key,labels=labels,blocks=pairs,**paired_effect(pairs,plan['blocks'],plan['analysis']['seed'],plan['analysis']['resamples'],plan.get('overheadTolerance'))))
     complete=not issues and len(outcomes)==len(planned) and all(r['outcome']=='pass' for r in outcomes)
-    return dict(schemaVersion=1,complete=complete,issues=issues,runOutcomes=outcomes,effects=effects,
+    return dict(schemaVersion=1,complete=complete,scope='single declared block' if selected_block else 'complete declared experiment',selectedBlock=selected_block,
+                issues=issues,runOutcomes=outcomes,effects=effects,
                 publicComparativePerformance=False,reason='Independent block effects do not by themselves close A01–A18; correctness, resource, production and overhead gates remain mandatory')
 
 
+def reduce_shards(roots):
+    """Reproduce all declared blocks from immutable, separately collected shards."""
+    roots=[Path(p).resolve() for p in roots]
+    if not roots:raise ValueError('no experiment shards')
+    manifests=[read(p/'manifest.json') for p in roots];reference=manifests[0];plan=reference['plan']
+    reports=[reduce_experiment(p) for p in roots];issues=[];selected=[m.get('selectedBlock') for m in manifests]
+    if len(set(selected))!=len(selected):issues.append('duplicate independent block shard')
+    if set(selected)!=set(range(1,plan['blocks']+1)):issues.append('missing or unexpected independent block shard')
+    for root,manifest,report in zip(roots,manifests,reports):
+        for name in ('plan','planSha256','revision','sourceInputs','javaInputs','distributionInputs'):
+            if manifest[name]!=reference[name]:issues.append(root.name+': mismatched '+name)
+        issues.extend(root.name+': '+issue for issue in report['issues'])
+    groups={};outcomes=[]
+    for manifest,report in zip(manifests,reports):
+        block=manifest.get('selectedBlock');outcomes.extend(report['runOutcomes'])
+        for effect in report['effects']:
+            key=tuple(effect['endpoint']);pair=next((p for p in effect['blocks'] if p['block']==block),None)
+            if pair:groups.setdefault(key,[]).append(pair)
+    effects=[];labels=('off','on') if plan['mode'].startswith('observer-') else ('jvmd','jdtls')
+    for key,observed in sorted(groups.items()):
+        pairs=observed+[dict(block=b,a=None,b=None,outcome='unavailable_evidence') for b in range(1,plan['blocks']+1) if b not in {p['block'] for p in observed}]
+        if issues:pairs=[dict(p,outcome='unavailable_evidence') for p in pairs]
+        pairs.sort(key=lambda p:p['block'])
+        effects.append(dict(endpoint=key,labels=labels,blocks=pairs,**paired_effect(pairs,plan['blocks'],plan['analysis']['seed'],plan['analysis']['resamples'],plan.get('overheadTolerance'))))
+    return dict(schemaVersion=1,scope='complete declared experiment from independent shards',
+                complete=not issues and all(r['complete'] for r in reports),issues=issues,
+                shards=[dict(block=m.get('selectedBlock'),directory=str(p),inventorySha256=sha(p/'checksums.sha256')) for p,m in zip(roots,manifests)],
+                runOutcomes=outcomes,effects=effects,publicComparativePerformance=False,
+                reason='A01–A18, product correctness and qualified resource/observer gates still apply')
+
+
 if __name__=='__main__':
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('action',choices=['collect','reduce'])
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('action',choices=['collect','reduce','merge'])
     parser.add_argument('--plan',type=Path);parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--java-home',type=Path);parser.add_argument('--image',type=Path,default=REPO/'jvmd-dist/target/image')
     parser.add_argument('--jdtls-home',type=Path);parser.add_argument('--pipe-build',type=Path);parser.add_argument('--node',default='node')
     parser.add_argument('--report',type=Path)
+    parser.add_argument('--block',type=int,help='collect exactly this predeclared independent block, retaining original plan and order')
+    parser.add_argument('--shards',type=Path,nargs='+',help='immutable shard directories for artifact-only merge')
     args=parser.parse_args()
     root=collect(args) if args.action=='collect' else args.output
-    result=reduce_experiment(root)
+    result=reduce_shards(args.shards or []) if args.action=='merge' else reduce_experiment(root)
     if args.report:
-        if args.report.resolve().is_relative_to(root.resolve()):raise ValueError('report must be outside immutable bundle')
+        if args.report.resolve().is_relative_to(root.resolve()) or any(args.report.resolve().is_relative_to(p.resolve()) for p in args.shards or []):raise ValueError('report must be outside immutable bundle')
         write(args.report,result)
     print(json.dumps(result,indent=2));raise SystemExit(0 if result['complete'] else 1)

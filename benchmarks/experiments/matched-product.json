@@ -18,7 +18,7 @@
     "javaHeapMb": 1024,
     "nativeObserverHeapMb": 256,
     "osCache": "uncontrolled",
-    "runner": "dedicated Linux runner with Unix sockets and delegated cgroup v2"
+    "runner": "GitHub hosted ubuntu-24.04 job VM; one restored independent block per VM; hardware recorded; paired servers run sequentially"
   },
   "analysis": {
     "seed": 271828,
@@ -47,5 +47,6 @@
     "CMP-01/apply",
     "CMP-01/edit-resolve",
     "NAV-01/definition"
-  ]
+  ],
+  "execution": "Ten predetermined block shards, all attempted; one JVMD image and pinned JDK/JDTLS distributions shared by content identity; no replacement of failed blocks"
 }

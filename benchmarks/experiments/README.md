@@ -57,3 +57,22 @@ records. It refuses source/toolchain drift and mismatched paired fixture identit
 The result never automatically authorizes public performance claims: the A01–A18
 acceptance ledger remains mandatory. Running this alongside development is a
 diagnostic pilot, even if every numerical check happens to pass.
+
+The matched and scaling plans also support `collect --block N`. This selects the
+original numbered block and its original server order, preserving the full
+committed plan. It does not reduce the declared sample count or authorize a
+single-block comparison. `experiment.py merge --output /unused --shards /a /b ...
+--report /outside/report.json` independently audits all ten immutable captures,
+requires matching source, plan, JDK and distribution identities, and reconstructs
+the original paired analysis. Missing or duplicate blocks disable inference.
+Relocated downloaded artifacts retain their original invocation identity.
+
+`Benchmark experiment blocks` builds one distribution, then restores those exact
+bytes on separate Ubuntu job VMs for the ten declared blocks of each plan. Every
+block attempts both servers sequentially. Job failures do not cancel later blocks
+or suppress raw uploads. This workflow has read-only repository permissions. It
+runs on changes to its workflow or either collection plan; routine source pushes
+do not restart a full 900-lifetime scaling collection. Small reports and original
+raw captures are separate artifacts, and a final job reduces all original shards.
+Hardware and runner image details accompany each block; OS cache remains
+uncontrolled. These changes to the declared runner layout start a new collection.

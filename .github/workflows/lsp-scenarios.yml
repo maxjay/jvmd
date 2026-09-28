@@ -239,6 +239,16 @@ jobs:
             --plan benchmarks/experiments/observer-status.json --java-home "$JAVA_HOME" \
             --output "$RUNNER_TEMP/observer-status" --report "$RUNNER_TEMP/observer-status-report.json"
 
+      - name: Upload observer validation reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: observer-reports
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/observer-trace-report.json
+            ${{ runner.temp }}/observer-status-report.json
+
       - name: Upload independent observer blocks
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

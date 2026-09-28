@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from validate_native import audit, digest
 from cgroup_resources import prepare, finish
-from native_replay import DISK_SHA
+from native_replay import DISK_SHA, Replies, replay_case
 
 
 class NativeAuditTest(unittest.TestCase):
@@ -81,6 +81,16 @@ class NativeAuditTest(unittest.TestCase):
                 result=audit(root)
                 self.assertFalse(result['semanticComplete'])
                 self.assertTrue(any('absent from wire replies' in s for s in result['semanticReplayIssues']))
+
+    def test_idle_allows_background_diagnostics_but_not_explicit_observer_work(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);write=self.fixture(root)
+            row=dict(id='LIFE-10',outcome='pass',startNs='1',endNs='2000010',idleStartNs='1',idleEndNs='1000001',operations=[],after={'sessions':[]})
+            write('fresh/native-calls.jsonl',dict(id=1,method='lsp.diagnostics',startNs='10',endNs='2000000',outcome='pass',result={'result':row['after']}))
+            plan=dict(idleMs=1,activeQueries=0)
+            self.assertEqual(replay_case(row,plan,Replies(root)),[])
+            raw=json.loads((root/'fresh/native-calls.jsonl').read_text());raw['method']='daemon.status';write('fresh/native-calls.jsonl',raw)
+            self.assertIn('LIFE-10: semantic replay: idle interval contains an explicit native call',replay_case(row,plan,Replies(root)))
 
     def test_resealed_interrupted_request_cannot_pass(self):
         with tempfile.TemporaryDirectory() as tmp:

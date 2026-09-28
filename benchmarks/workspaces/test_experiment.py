@@ -41,6 +41,11 @@ class ExperimentTests(unittest.TestCase):
                 self.assertEqual([r['status'] for r in runs],[7,7])
                 self.assertEqual([r['block'] for r in runs],[1,2])
                 self.assertEqual(experiment.reduce_experiment(output)['complete'],False)
+                args.block=2;args.output=base/'second-block'
+                shard=experiment.collect(args)
+                self.assertEqual([r['block'] for r in experiment.read(shard/'runs.json')],[2])
+                self.assertEqual(experiment.read(shard/'manifest.json')['plan']['blocks'],2)
+                self.assertEqual(experiment.reduce_experiment(shard)['issues'],[])
                 (output/'01-matched.log').write_text('rewritten')
                 self.assertIn('hash mismatch: 01-matched.log',experiment.verify_inventory(output))
                 plan.write_text(json.dumps({**self.plan(),'samples':1}))

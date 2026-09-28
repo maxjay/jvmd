@@ -1555,3 +1555,31 @@ selected legacy operations are stored in per-case files even when none use the
 transition journal. This closes a missing-artifact error in the collector path.
 Validation: 219 TypeScript tests and 53 available Python tests pass; two Python
 capability checks remain explicitly skipped locally.
+
+## Independent blocks and portable reduction
+
+The first ten-block trace and status experiments both finished all 20 planned
+configuration runs at `4c5c1f8`. All 40 lifetime scopes measured successfully, but
+every child artifact audit rejected the missing empty lifecycle journal. Those
+experiments remain failed captures, not overhead evidence. The exact reports are
+in CI run `36363483278`, artifact `10946589156`; its SHA-256 is
+`b381fb0682dc7c7d1d0e852f9d409776cf86a754589cde6c08fd6ee8c8cb9987`.
+The corrected observer-only local pipe capture finishes LIFE-01/09/10 and passes
+artifact semantic replay; product resource/overhead verification remains separate.
+Idle means no new client target requests or explicit polling; scheduled background
+diagnostics remain measured and are permitted. It does not mean server quiescence.
+
+Matched/scaling plans now declare ten separately restored job VMs, with one shared
+built distribution. The collector preserves the original numbered order when
+running a single declared block; the merger independently reduces all ten sealed
+captures. Missing/duplicate blocks, drift and failed pairs disable estimates.
+Downloaded artifacts validate against the original recorded output paths. The
+read-only workflow retains every attempted block and separate review reports.
+It never writes source or pushes commits. No comparative claim is enabled.
+
+Validation for distributed collection: 58 Python tests run, 56 pass and the same
+two local capability tests skip. Tests cover relocated captures, original server
+order, missing/duplicate block shards, a failed pair, changed JDK identity and
+actual child-process failures. The stable-checkout TypeScript rerun passes all
+219 tests. An earlier concurrent documentation edit was correctly rejected as
+source drift in two subprocess tests; that failed invocation is retained locally.

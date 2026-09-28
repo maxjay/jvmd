@@ -1,0 +1,190 @@
+name: Benchmark experiment blocks
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/benchmark-experiments.yml'
+      - 'benchmarks/experiments/matched-product.json'
+      - 'benchmarks/experiments/scaling-product.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A source update never cancels an already attempted independent block set.
+concurrency:
+  group: benchmark-experiments-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  selection:
+    runs-on: ubuntu-24.04
+    outputs:
+      collect: ${{ steps.changed.outputs.collect }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+      - id: changed
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          # PR path filters inspect the whole PR, so additionally inspect this
+          # committed checkpoint. A routine source push must not restart 900 runs.
+          if [[ "$EVENT_NAME" == workflow_dispatch ]] || git diff --name-only HEAD^ HEAD -- .github/workflows/benchmark-experiments.yml benchmarks/experiments/matched-product.json benchmarks/experiments/scaling-product.json | rg -q .; then
+            echo 'collect=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'collect=false' >> "$GITHUB_OUTPUT"
+          fi
+
+  distribution:
+    needs: selection
+    if: needs.selection.outputs.collect == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.m2/repository
+            !~/.m2/repository/dev/jvmd
+          key: experiment-maven-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: maven-${{ runner.os }}-${{ runner.arch }}-
+      - name: Install pinned Java and JDTLS distributions
+        run: |
+          mkdir -p "$RUNNER_TEMP/experiment-tools/jdtls"
+          curl -fsSL --retry 3 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz' -o "$RUNNER_TEMP/java.tar.gz"
+          curl -fsSL --retry 3 'https://download.eclipse.org/jdtls/milestones/1.61.0/jdt-language-server-1.61.0-202609031315.tar.gz' -o "$RUNNER_TEMP/jdtls.tar.gz"
+          printf '%s  %s\n' dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e "$RUNNER_TEMP/java.tar.gz" | sha256sum -c -
+          printf '%s  %s\n' 338e7e73d61836651ba2453919a0d34fa763eb4e7c03342092309bffb8934c64 "$RUNNER_TEMP/jdtls.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/java.tar.gz" -C "$RUNNER_TEMP/experiment-tools"
+          tar -xzf "$RUNNER_TEMP/jdtls.tar.gz" -C "$RUNNER_TEMP/experiment-tools/jdtls"
+          echo "JAVA_HOME=$RUNNER_TEMP/experiment-tools/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/experiment-tools/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
+      - name: Validate committed harness
+        run: |
+          npm ci --prefix benchmarks/lsp-scenarios --ignore-scripts
+          python3 benchmarks/lsp-scenarios/catalogue.py
+          node --test benchmarks/lsp-scenarios/test/*.test.ts
+          python3 -m unittest discover -s benchmarks/workspaces -p 'test_*.py'
+      - name: Build one distribution for every block
+        run: |
+          mvn -B -DskipTests install
+          bash jvmd-dist/assemble.sh
+          cp -a jvmd-dist/target/image "$RUNNER_TEMP/experiment-tools/image"
+          tar -czf "$RUNNER_TEMP/experiment-tools.tar.gz" -C "$RUNNER_TEMP" experiment-tools
+          sha256sum "$RUNNER_TEMP/experiment-tools.tar.gz" > "$RUNNER_TEMP/experiment-tools.sha256"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: experiment-tools
+          retention-days: 7
+          compression-level: 0
+          path: |
+            ${{ runner.temp }}/experiment-tools.tar.gz
+            ${{ runner.temp }}/experiment-tools.sha256
+
+  block:
+    needs: distribution
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        experiment: [matched-product, scaling-product]
+        block: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: experiment-tools
+          path: ${{ runner.temp }}
+      - name: Restore identical binaries
+        run: |
+          sha256sum -c "$RUNNER_TEMP/experiment-tools.sha256"
+          tar -xzf "$RUNNER_TEMP/experiment-tools.tar.gz" -C "$RUNNER_TEMP"
+          npm ci --prefix benchmarks/lsp-scenarios --ignore-scripts
+      - name: Delegate lifetime resource accounting
+        id: resources
+        run: |
+          sudo python3 benchmarks/workspaces/delegate_cgroup.py setup --output "$RUNNER_TEMP/delegation.json" --uid "$(id -u)" --gid "$(id -g)"
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json, os
+          from pathlib import Path
+          record = json.loads((Path(os.environ['RUNNER_TEMP']) / 'delegation.json').read_text())
+          print('JVMD_BENCH_CGROUP_ROOT=' + record['parent'])
+          PY
+      - name: Collect the predeclared independent block
+        run: |
+          sudo -E python3 benchmarks/workspaces/delegate_cgroup.py run --output "$RUNNER_TEMP/delegation.json" -- \
+            python3 benchmarks/workspaces/experiment.py collect \
+            --plan "benchmarks/experiments/${{ matrix.experiment }}.json" --block "${{ matrix.block }}" \
+            --java-home "$RUNNER_TEMP/experiment-tools/jdk-25.0.4.1+1" \
+            --image "$RUNNER_TEMP/experiment-tools/image" --jdtls-home "$RUNNER_TEMP/experiment-tools/jdtls" \
+            --output "$RUNNER_TEMP/capture" --report "$RUNNER_TEMP/block-report.json"
+      - name: Retain raw attempts, including failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: raw-${{ matrix.experiment }}-${{ matrix.block }}
+          retention-days: 7
+          include-hidden-files: true
+          path: ${{ runner.temp }}/capture
+      - name: Retain small review report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: report-${{ matrix.experiment }}-${{ matrix.block }}
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/block-report.json
+            ${{ runner.temp }}/delegation.json
+      - name: Remove empty accounting groups
+        if: always() && steps.resources.outcome == 'success'
+        run: sudo python3 benchmarks/workspaces/delegate_cgroup.py cleanup --output "$RUNNER_TEMP/delegation.json"
+
+  reduce:
+    needs: [selection, block]
+    if: always() && !cancelled() && needs.selection.outputs.collect == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        experiment: [matched-product, scaling-product]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+      - run: npm ci --prefix benchmarks/lsp-scenarios --ignore-scripts
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: raw-${{ matrix.experiment }}-*
+          path: ${{ runner.temp }}/shards
+      - name: Independently reduce every attempted block
+        run: |
+          python3 benchmarks/workspaces/experiment.py merge --output "$RUNNER_TEMP/unused" \
+            --shards "$RUNNER_TEMP"/shards/raw-${{ matrix.experiment }}-* \
+            --report "$RUNNER_TEMP/${{ matrix.experiment }}-report.json"
+      - name: Preserve final denominators and uncertainty
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: final-${{ matrix.experiment }}
+          retention-days: 7
+          path: ${{ runner.temp }}/${{ matrix.experiment }}-report.json

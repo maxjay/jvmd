@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {sealCase} from "./harness/caseSeal.ts";
 import {mkdirSync,readFileSync,writeFileSync,readdirSync,existsSync} from "node:fs";
 import {spawnSync} from "node:child_process";
 import path from "node:path";
@@ -64,6 +65,7 @@ export async function main(args=process.argv.slice(2)){
     plan:{caseIds:selected.map(c=>c.id),servers,blocks,warmup,samples,timeout,transitionPolicy:transitionPolicy(timeout),compiledArtifactPolicy:"two-project build success requires preserved post-response class snapshots; RPC and artifact observation intervals are separate",profile,serverOrder:"alternate per independent block",reset:"fresh fixture and initial server state per case; declared persisted-reopen case alone restarts the verified saved state",seed:0},
     capabilities:CAPABILITIES,settings:SETTINGS,environment:{node:process.version,platform:process.platform,arch:process.arch,cpus:os.cpus().length,memoryBytes:os.totalmem()},
     resourcePolicy:"Optional delegated cgroup-v2 lifetime counters per process lifetime; raw membership audit mandatory for launched cases; unavailable remains null",
+    caseSealPolicy:"sha256-finalized-case-v1; completed case bytes sealed before starting the next case; final suite seal still required",
     claims:{publicComparativePerformance:false,reason:blocks<10?"fewer than ten independent blocks":"requires complete valid matched results, resource scope, and uncertainty analysis"}};
   write(path.join(root,"manifest.json"),manifest);
   write(path.join(root,"catalogue.json"),JSON.parse(readFileSync(new URL("./catalogue.json",import.meta.url),"utf8")));
@@ -129,6 +131,7 @@ export async function main(args=process.argv.slice(2)){
       report.preparation=fixture.preparation;
       for(const file of ["events.jsonl","exchanges.jsonl","operations.jsonl"])if(!existsSync(path.join(caseRoot,file)))writeFileSync(path.join(caseRoot,file),"");
       report.finalized=true;report.artifactDirectory=path.relative(root,caseRoot);write(path.join(caseRoot,"report.json"),report);reports.push(report);
+      sealCase(caseRoot,manifest,report);
       console.log(JSON.stringify({caseId:report.caseId,server,block:block+1,outcome:report.outcome,error:report.error}));
     }
   }

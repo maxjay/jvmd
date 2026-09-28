@@ -13,6 +13,7 @@ import {validateDiagnosticObservations} from "./harness/diagnosticObserver.ts";
 import {workspaceSymbolArgument} from "./harness/symbols.ts";
 import {auditLifetimeResources} from "./harness/lifetimeResources.ts";
 import {auditAot} from "./harness/aotEvidence.ts";
+import {auditCaseSeal} from "./harness/caseSeal.ts";
 import {validIncompleteEnumeration} from "./harness/enumeration.ts";
 
 const read=(file:string)=>JSON.parse(readFileSync(file,"utf8"));
@@ -132,6 +133,8 @@ export function reduceBundle(root:string,verifyHashes=true){
     if(!existsSync(file)){reports.push({caseId,server,block,outcome:"not_run",reason:"planned case has no final report"});continue;}
     const report=read(file),events=lines(path.join(dir,"events.jsonl")),exchanges=lines(path.join(dir,"exchanges.jsonl")),operations=lines(path.join(dir,"operations.jsonl"));
     const caseIssues=validateCase(report,events,exchanges,operations);
+    if(manifest.caseSealPolicy)try{auditCaseSeal(dir,manifest,report);}
+    catch(error){caseIssues.push("invalid case finalization checkpoint: "+String(error));}
     const auditResources=(directory:string,phase:any)=>{
       if(phase.launch)try{auditAot(directory,phase.launch);}catch(error){caseIssues.push("invalid AOT evidence: "+String(error));}
       if(manifest.resourcePolicy&&phase.launch&&!phase.launch.lifetimeResources)caseIssues.push("declared lifetime resource evidence missing");

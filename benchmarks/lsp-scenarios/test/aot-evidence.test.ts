@@ -10,6 +10,10 @@ test("runtime rejection takes precedence over an earlier archive-open message",(
   assert.equal(aotFromLog('[info][aot] Mapped static archive').status,"accepted");
   assert.equal(aotFromLog('cache exists').status,"unavailable");
 });
+test("removing the raw log reference cannot preserve a claimed AOT disposition",()=>{
+  for(const status of ["accepted","rejected"])assert.throws(()=>auditAot("/unused",{profile:"product",aot:{status}}),/requires preserved launcher log/u);
+  auditAot("/unused",{profile:"product",aot:{status:"unavailable",reason:"launcher log absent"}});
+});
 test("cache presence cannot prove acceptance and copied raw logs reject forged dispositions",()=>{
   const root=mkdtempSync(path.join(os.tmpdir(),"aot-evidence-"));
   try{

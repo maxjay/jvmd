@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 import {reduceBundle,validateCase,quantile} from "../reduce.ts";
+import {auditCaseSeal} from "../harness/caseSeal.ts";
 const runner=fileURLToPath(new URL("../run.ts",import.meta.url)),fake=fileURLToPath(new URL("./fake-server.ts",import.meta.url));
 function setup(mode:string,caseId="CMP-01/first-repeat"){
   const tmp=mkdtempSync(path.join(os.tmpdir(),"jvmd-reduce-")),output=path.join(tmp,"run"),command=path.join(tmp,"command.json");writeFileSync(command,JSON.stringify([process.execPath,fake,mode]));
@@ -56,4 +57,22 @@ test("interruption retains live protocol evidence and cannot pass reduction",asy
 test("reducer refuses a pass that conceals a failed assertion",()=>{
   const issues=validateCase({outcome:"pass",correctnessOnly:true,assertions:[{passed:false}]},[],[],[]);assert(issues.includes("case pass conceals failed assertion"));
   assert(Math.abs(quantile([0,10,20,30],.95)!-28.5)<1e-12);assert.equal(quantile([],.95),null);
+});
+test("completed case checkpoint survives a later interrupted case without passing the suite",async()=>{
+  const {tmp,output,args}=setup("hang","SES-01/start-stop,CMP-01/first-repeat");
+  const run=spawn(process.execPath,args,{stdio:"ignore"});const done=new Promise(resolve=>run.once("exit",resolve));
+  try{
+    const first=path.join(output,"01-jvmd-SES-01-start-stop"),events=path.join(output,"01-jvmd-CMP-01-first-repeat/events.jsonl"),deadline=Date.now()+5000;
+    while(!existsSync(events)||!readFileSync(events,"utf8").includes('"method":"textDocument/completion"')){
+      assert(Date.now()<deadline,"second case did not start");await new Promise(resolve=>setTimeout(resolve,20));
+    }
+    run.kill("SIGTERM");await done;
+    const manifest=JSON.parse(readFileSync(path.join(output,"manifest.json"),"utf8")),report=JSON.parse(readFileSync(path.join(first,"report.json"),"utf8"));
+    assert.equal(report.finalized,true);auditCaseSeal(first,manifest,report);
+    const reduced=reduceBundle(output);assert.equal(reduced.summary.complete,false);
+    assert(reduced.summary.integrityIssues.some(s=>s.includes("unsealed or interrupted")));
+    assert(!reduced.summary.integrityIssues.some(s=>s.includes("SES-01-start-stop: invalid case finalization")));
+    writeFileSync(path.join(first,"report.json"),JSON.stringify({...report,outcome:"pass"}));
+    assert.throws(()=>auditCaseSeal(first,manifest,report),/case bytes differ/u);
+  }finally{run.kill("SIGKILL");rmSync(tmp,{recursive:true,force:true});}
 });

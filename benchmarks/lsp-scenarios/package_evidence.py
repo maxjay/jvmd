@@ -37,7 +37,7 @@ def package(root, output, allow_unsealed_files=False):
     reports = sorted(root.glob('*/report.json'))
     for report in reports:
         case = report.parent.relative_to(root).as_posix()
-        names.update(case + '/' + name for name in ['report.json', 'fixture.json',
+        names.update(case + '/' + name for name in ['report.json', 'fixture.json', 'case-seal.json',
                      'operations.jsonl', 'process.jsonl', 'transitions.jsonl', 'diagnostic-observations.jsonl', 'diagnostic-compiler.json', 'build-compiler.json', 'events.jsonl', 'exchanges.jsonl',
                      'persisted-state.json', 'runtime/launch.json', 'runtime/reopen-launch.json', 'runtime/stderr.log', 'runtime/workspace/.metadata/.log']
                      if (root / case / name).is_file())

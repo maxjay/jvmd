@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "runId": 36366608337,
+  "artifactId": 10947931499,
+  "headRevision": "896b68827597b2f81de5bba4ba163ad2cdaead2a",
+  "capturedRevision": "6741f73fcbf7ee347e1ede8f36cd8843237e54a9",
+  "scope": "Complete ordinary product LSP artifact; ZIP CRC and all full-bundle hashes verified locally",
+  "zipSha256": "e0208d0c67c15d9605c36a8bbd8a272333ba98018f357bd9a370965190ba2c46",
+  "aot": {
+    "requested": true,
+    "requestedCache": "/home/runner/work/jvmd/jvmd/jvmd-dist/target/image/lib/jvmd/jvmd.aot",
+    "cachePresent": false,
+    "observation": "launcher log copied after measured requests and daemon termination; no warming status call",
+    "status": "rejected",
+    "reason": "[0.005s][error][aot] Loading static archive failed.",
+    "logFile": "resources/aot.log",
+    "logSha256": "ef27ef22ad3adb3fcee3b208ec854b389c8af669389b3ad22794d529223799dc"
+  },
+  "lifetime": {
+    "availability": "measured",
+    "scope_complete": true,
+    "cpu_seconds": 2.869935,
+    "memory_peak_bytes": 180047872,
+    "group_removed": true
+  },
+  "publicComparativePerformance": false
+}

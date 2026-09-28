@@ -20,7 +20,10 @@ export function captureAot(runtime:string,resourceDirectory:string,image:string)
   return {...common,...aotFromLog(bytes.toString("utf8")),logFile:"resources/aot.log",logSha256:sha(bytes)};
 }
 export function auditAot(directory:string,metadata:any){
-  if(!metadata.aot?.logFile)return;
+  if(!metadata.aot?.logFile){
+    assert(!["accepted","rejected"].includes(metadata.aot?.status),"actual AOT disposition requires preserved launcher log");
+    return;
+  }
   assert.equal(metadata.profile,"product","runtime AOT evidence requires shipped product launcher");
   assert.equal(metadata.aot.logFile,"resources/aot.log","unexpected AOT log path");
   const bytes=readFileSync(path.join(directory,metadata.aot.logFile));

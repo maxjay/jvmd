@@ -4,7 +4,7 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 175 workbook case definitions plus 45 scaling and seven invalidation cases, 225 TypeScript
+Latest implementation inventory: 175 workbook case definitions plus 45 scaling and seven invalidation cases, 227 TypeScript
 harness tests passing, and 107 required variants (107 implemented, 0 partial, 0 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
@@ -48,7 +48,7 @@ failed captures and corrected captures are preserved separately.
 | A10 | pass | Complete-scope claim gate rejects unknown/reset/duplicate counter scopes; complete reuse/zero-work claims remain unavailable, never zero |
 | A11 | qualified | Product lifetime totals and pressure/recovery are witnessed; all 40 observer runs validate. Tracing and extra status polling exceed the declared tolerance; common sampler overhead remains unmeasured |
 | A12 | blocked | Pinned inputs, drift rejection and immutable distribution sharing implemented; final experiment inventories still collecting |
-| A13 | blocked | Product/direct/pipe and JDTLS workspace states separated; native AOT rejection recorded; ordinary per-case launcher-log capture implemented and awaiting product validation |
+| A13 | pass | Product/direct/pipe and JDTLS workspace states separated; complete product DOC-01 artifact replay verifies requested AOT was rejected because the archive was absent |
 | A14 | blocked | Ten matched blocks completed: 104 pass, 19 incorrect, 37 protocol failures. Scaling collection and independent full-raw cross-block audits remain in run `36365632505` |
 | A15 | blocked | Native semantic wire replay and portable independent-block reduction pass tests; final full-bundle reductions remain |
 | A16 | pass | Reproduced Apache open linked to compiler/context/processor activity and separate queue delay; `long-open-diagnosis.md` states the causal limits |
@@ -65,6 +65,19 @@ The full specification remains the acceptance contract. This file must be update
 with final evidence and dispositions; an intermediate draft is not task completion.
 
 ## Independent block results: 2026-09-28
+
+The shipped product launcher passed DOC-01/repeat while rejecting AOT because its
+requested archive was absent. The full 205,806-byte artifact, raw launcher log,
+verified lifetime totals and separate local replay are preserved in
+`benchmarks/evidence/product-aot-2026-09-28/`. It is a correctness/AOT validation
+case, not a comparative timing estimate.
+
+The execution service interrupted the replacement local catalogue at 235 finalized
+cases and the corrected invalidation capture at four. Both original unsealed
+captures are retained, including their unfinished cases; continuation invocations
+collect the remaining cases in separate fresh directories. The runner now seals
+each completed case before starting another. This does not retroactively seal old
+captures or let an interrupted suite pass its final integrity gate.
 
 The ten matched product blocks completed all 160 case runs. Their exact small
 report artifacts and verified ZIP hashes are preserved in

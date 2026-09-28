@@ -1,0 +1,382 @@
+{
+  "schemaVersion": 1,
+  "revision": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a",
+  "runId": 36365632505,
+  "scope": "All ten original collection-report ZIPs; full raw shards retained separately",
+  "outcomes": {
+    "pass": 512,
+    "incorrect": 115,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 213,
+    "harness_error": 0,
+    "unsupported": 0,
+    "not_applicable": 0,
+    "unavailable_evidence": 60,
+    "not_run": 0
+  },
+  "blocks": [
+    {
+      "block": 1,
+      "artifact": {
+        "id": 10948032334,
+        "name": "report-scaling-product-1",
+        "size_in_bytes": 10977,
+        "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10948032334",
+        "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10948032334/zip",
+        "expired": false,
+        "created_at": "2026-09-28T02:14:44Z",
+        "expires_at": "2026-10-05T02:14:44Z",
+        "updated_at": "2026-09-28T02:14:44Z",
+        "digest": "sha256:5f98c0c6fa2591acb52236418eb9a598a3cd17ceeb1f2e8e0a24300389ecda7e",
+        "workflow_run": {
+          "id": 36365632505,
+          "repository_id": 1369090491,
+          "head_repository_id": 1369090491,
+          "head_branch": "benchmark-evidence-contract",
+          "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+        }
+      },
+      "zipSha256Verified": "5f98c0c6fa2591acb52236418eb9a598a3cd17ceeb1f2e8e0a24300389ecda7e",
+      "outcomes": {
+        "pass": 50,
+        "incorrect": 13,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 21,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 6,
+        "not_run": 0
+      },
+      "auditIssueCount": 132
+    },
+    {
+      "block": 2,
+      "artifact": {
+        "id": 10948676246,
+        "name": "report-scaling-product-2",
+        "size_in_bytes": 11466,
+        "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10948676246",
+        "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10948676246/zip",
+        "expired": false,
+        "created_at": "2026-09-28T02:14:25Z",
+        "expires_at": "2026-10-05T02:14:24Z",
+        "updated_at": "2026-09-28T02:14:25Z",
+        "digest": "sha256:b076966dc05ab5f7a851262aea1302a0192f9e30204313e5fc3fd60adaa6aaf8",
+        "workflow_run": {
+          "id": 36365632505,
+          "repository_id": 1369090491,
+          "head_repository_id": 1369090491,
+          "head_branch": "benchmark-evidence-contract",
+          "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+        }
+      },
+      "zipSha256Verified": "b076966dc05ab5f7a851262aea1302a0192f9e30204313e5fc3fd60adaa6aaf8",
+      "outcomes": {
+        "pass": 48,
+        "incorrect": 11,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 25,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 6,
+        "not_run": 0
+      },
+      "auditIssueCount": 132
+    },
+    {
+      "block": 3,
+      "artifact": {
+        "id": 10947873744,
+        "name": "report-scaling-product-3",
+        "size_in_bytes": 11739,
+        "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10947873744",
+        "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10947873744/zip",
+        "expired": false,
+        "created_at": "2026-09-28T02:05:42Z",
+        "expires_at": "2026-10-05T02:05:41Z",
+        "updated_at": "2026-09-28T02:05:42Z",
+        "digest": "sha256:508b5ee0950f125036a90cf4d4873417dfd3982424c1e29e754325e2b1bacd09",
+        "workflow_run": {
+          "id": 36365632505,
+          "repository_id": 1369090491,
+          "head_repository_id": 1369090491,
+          "head_branch": "benchmark-evidence-contract",
+          "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+        }
+      },
+      "zipSha256Verified": "508b5ee0950f125036a90cf4d4873417dfd3982424c1e29e754325e2b1bacd09",
+      "outcomes": {
+        "pass": 54,
+        "incorrect": 13,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 17,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 6,
+        "not_run": 0
+      },
+      "auditIssueCount": 132
+    },
+    {
+      "block": 4,
+      "artifact": {
+        "id": 10948865303,
+        "name": "report-scaling-product-4",
+        "size_in_bytes": 11294,
+        "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10948865303",
+        "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10948865303/zip",
+        "expired": false,
+        "created_at": "2026-09-28T02:08:57Z",
+        "expires_at": "2026-10-05T02:08:56Z",
+        "updated_at": "2026-09-28T02:08:57Z",
+        "digest": "sha256:bf864a445e9b7c29eed02d39f35f82223878ea79fd25883bb4a440756fa12544",
+        "workflow_run": {
+          "id": 36365632505,
+          "repository_id": 1369090491,
+          "head_repository_id": 1369090491,
+          "head_branch": "benchmark-evidence-contract",
+          "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+        }
+      },
+      "zipSha256Verified": "bf864a445e9b7c29eed02d39f35f82223878ea79fd25883bb4a440756fa12544",
+      "outcomes": {
+        "pass": 54,
+        "incorrect": 6,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 24,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 6,
+        "not_run": 0
+      },
+      "auditIssueCount": 132
+    },
+    {
+      "block": 5,
+      "artifact": {
+        "id": 10948766063,
+        "name": "report-scaling-product-5",
+        "size_in_bytes": 11405,
+        "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10948766063",
+        "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10948766063/zip",
+        "expired": false,
+        "created_at": "2026-09-28T02:07:56Z",
+        "expires_at": "2026-10-05T02:07:55Z",
+        "updated_at": "2026-09-28T02:07:56Z",
+        "digest": "sha256:cbfb3a32b37740723175a4306a3f22eb5d605ce0804696c29364d33d2a94c998",
+        "workflow_run": {
+          "id": 36365632505,
+          "repository_id": 1369090491,
+          "head_repository_id": 1369090491,
+          "head_branch": "benchmark-evidence-contract",
+          "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+        }
+      },
+      "zipSha256Verified": "cbfb3a32b37740723175a4306a3f22eb5d605ce0804696c29364d33d2a94c998",
+      "outcomes": {
+        "pass": 53,
+        "incorrect": 11,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 20,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 6,
+        "not_run": 0
+      },
+      "auditIssueCount": 132
+    },
+    {
+      "block": 6,
+      "artifact": {
+        "id": 10948473079,
+        "name": "report-scaling-product-6",
+        "size_in_bytes": 11617,
+        "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10948473079",
+        "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10948473079/zip",
+        "expired": false,
+        "created_at": "2026-09-28T02:19:09Z",
+        "expires_at": "2026-10-05T02:19:09Z",
+        "updated_at": "2026-09-28T02:19:09Z",
+        "digest": "sha256:37082205bd72295b630748169ab5b2da62b5e90acdcf63932720550f7a963bed",
+        "workflow_run": {
+          "id": 36365632505,
+          "repository_id": 1369090491,
+          "head_repository_id": 1369090491,
+          "head_branch": "benchmark-evidence-contract",
+          "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+        }
+      },
+      "zipSha256Verified": "37082205bd72295b630748169ab5b2da62b5e90acdcf63932720550f7a963bed",
+      "outcomes": {
+        "pass": 49,
+        "incorrect": 12,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 23,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 6,
+        "not_run": 0
+      },
+      "auditIssueCount": 132
+    },
+    {
+      "block": 7,
+      "artifact": {
+        "id": 10948831609,
+        "name": "report-scaling-product-7",
+        "size_in_bytes": 11293,
+        "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10948831609",
+        "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10948831609/zip",
+        "expired": false,
+        "created_at": "2026-09-28T02:15:15Z",
+        "expires_at": "2026-10-05T02:15:15Z",
+        "updated_at": "2026-09-28T02:15:15Z",
+        "digest": "sha256:c26584aa9d12eb4eaa2781089f4cb4db4ecd31ef9e20804e69ba7c313c315020",
+        "workflow_run": {
+          "id": 36365632505,
+          "repository_id": 1369090491,
+          "head_repository_id": 1369090491,
+          "head_branch": "benchmark-evidence-contract",
+          "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+        }
+      },
+      "zipSha256Verified": "c26584aa9d12eb4eaa2781089f4cb4db4ecd31ef9e20804e69ba7c313c315020",
+      "outcomes": {
+        "pass": 49,
+        "incorrect": 10,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 25,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 6,
+        "not_run": 0
+      },
+      "auditIssueCount": 132
+    },
+    {
+      "block": 8,
+      "artifact": {
+        "id": 10948611908,
+        "name": "report-scaling-product-8",
+        "size_in_bytes": 11646,
+        "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10948611908",
+        "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10948611908/zip",
+        "expired": false,
+        "created_at": "2026-09-28T02:12:17Z",
+        "expires_at": "2026-10-05T02:12:17Z",
+        "updated_at": "2026-09-28T02:12:17Z",
+        "digest": "sha256:9148ee46719f916cb9a93714990355d97ef9cda26d336e5ea793d07049ba6f80",
+        "workflow_run": {
+          "id": 36365632505,
+          "repository_id": 1369090491,
+          "head_repository_id": 1369090491,
+          "head_branch": "benchmark-evidence-contract",
+          "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+        }
+      },
+      "zipSha256Verified": "9148ee46719f916cb9a93714990355d97ef9cda26d336e5ea793d07049ba6f80",
+      "outcomes": {
+        "pass": 55,
+        "incorrect": 12,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 17,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 6,
+        "not_run": 0
+      },
+      "auditIssueCount": 132
+    },
+    {
+      "block": 9,
+      "artifact": {
+        "id": 10948282224,
+        "name": "report-scaling-product-9",
+        "size_in_bytes": 11490,
+        "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10948282224",
+        "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10948282224/zip",
+        "expired": false,
+        "created_at": "2026-09-28T02:19:57Z",
+        "expires_at": "2026-10-05T02:19:56Z",
+        "updated_at": "2026-09-28T02:19:57Z",
+        "digest": "sha256:d83aaada2a809d5913db9aead986971d3637679db2363e37d30b09ac60250e6f",
+        "workflow_run": {
+          "id": 36365632505,
+          "repository_id": 1369090491,
+          "head_repository_id": 1369090491,
+          "head_branch": "benchmark-evidence-contract",
+          "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+        }
+      },
+      "zipSha256Verified": "d83aaada2a809d5913db9aead986971d3637679db2363e37d30b09ac60250e6f",
+      "outcomes": {
+        "pass": 49,
+        "incorrect": 14,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 21,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 6,
+        "not_run": 0
+      },
+      "auditIssueCount": 132
+    },
+    {
+      "block": 10,
+      "artifact": {
+        "id": 10948387319,
+        "name": "report-scaling-product-10",
+        "size_in_bytes": 11540,
+        "url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10948387319",
+        "archive_download_url": "https://api.github.com/repos/maxjay/jvmd/actions/artifacts/10948387319/zip",
+        "expired": false,
+        "created_at": "2026-09-28T02:21:03Z",
+        "expires_at": "2026-10-05T02:21:03Z",
+        "updated_at": "2026-09-28T02:21:03Z",
+        "digest": "sha256:800b9a2e9c87ee0cde5ded89ae1aa2cddb27d5125f75ffed5db9bf4fb6d15664",
+        "workflow_run": {
+          "id": 36365632505,
+          "repository_id": 1369090491,
+          "head_repository_id": 1369090491,
+          "head_branch": "benchmark-evidence-contract",
+          "head_sha": "4f318bb13d3df99e8a8b93bf8bbb805a5c209a3a"
+        }
+      },
+      "zipSha256Verified": "800b9a2e9c87ee0cde5ded89ae1aa2cddb27d5125f75ffed5db9bf4fb6d15664",
+      "outcomes": {
+        "pass": 51,
+        "incorrect": 13,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 20,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 6,
+        "not_run": 0
+      },
+      "auditIssueCount": 132
+    }
+  ],
+  "rawAuditLocallyPerformed": false,
+  "publicComparativePerformance": false
+}

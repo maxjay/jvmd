@@ -20,9 +20,14 @@ from admissible paired performance effects.
 
 The full raw shards are separate `raw-matched-product-N` artifacts in that run.
 They have not been downloaded and audited locally: each exceeds the local
-download tool's 32 MiB limit. The workflow's final `merge` job independently reads
-all original raw shards. These small reports alone do not close that final audit
-gate or establish public comparative performance claims.
+download tool's 32 MiB limit. The completed final `merge` job independently read
+all ten original raw shards on a separate CI runner. Its exact artifact is
+`final-matched-product.zip`; its GitHub digest and ZIP CRC were verified locally.
+There are **no independent-audit integrity issues**, and the same 160 case outcomes
+remain. None of the **42 endpoint/state combinations** has ten admissible pairs;
+all effect estimates and uncertainty intervals are unavailable. No failed paired
+block was dropped. The workflow correctly fails the mandatory correctness gate.
+This closes the matched raw-reduction check without establishing a speedup.
 
 To reproduce the counts, verify each ZIP against `blocks[].zipSha256Verified`,
 read `block-report.json`, and sum `runOutcomes[0].summary.outcomes` across all ten.

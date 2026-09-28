@@ -49,7 +49,7 @@ failed captures and corrected captures are preserved separately.
 | A11 | qualified | Product lifetime totals and pressure/recovery are witnessed; all 40 observer runs validate. Tracing and extra status polling exceed the declared tolerance; common sampler overhead remains unmeasured |
 | A12 | blocked | Pinned inputs, drift rejection and immutable distribution sharing implemented; final experiment inventories still collecting |
 | A13 | pass | Product/direct/pipe and JDTLS workspace states separated; complete product DOC-01 artifact replay verifies requested AOT was rejected because the archive was absent |
-| A14 | blocked | Ten matched blocks completed: 104 pass, 19 incorrect, 37 protocol failures. Scaling collection and independent full-raw cross-block audits remain in run `36365632505` |
+| A14 | qualified | All 160 matched and 900 scaling case runs collected. Independent matched audit has no integrity issues; 0/42 endpoints qualify for an effect. Final scaling raw audit remains pending |
 | A15 | blocked | Native semantic wire replay and portable independent-block reduction pass tests; final full-bundle reductions remain |
 | A16 | pass | Reproduced Apache open linked to compiler/context/processor activity and separate queue delay; `long-open-diagnosis.md` states the causal limits |
 | A17 | pass | CI permissions are read-only; benchmark source/evidence published through the GitHub connector |
@@ -65,6 +65,23 @@ The full specification remains the acceptance contract. This file must be update
 with final evidence and dispositions; an intermediate draft is not task completion.
 
 ## Independent block results: 2026-09-28
+
+All ten scaling blocks completed 900 case runs: 512 pass, 115 incorrect, 213
+protocol failures and 60 explicitly incomplete enumerations. Every report ZIP is
+hash-verified in `benchmarks/evidence/scaling-blocks-2026-09-28/`. The six truncated
+completion cases in each block also retain all 132 missing planned samples as
+audit gaps. Independent matched raw reduction completed on a separate CI runner
+with no integrity issues, retaining its 104/19/37 outcomes. None of 42 matched
+endpoints has all ten admissible pairs, so no paired effect or confidence interval
+is available. The final report artifact is preserved with the original block reports.
+
+Artifact reduction also emits `resources.json`: one separately audited lifetime
+observation per process phase, including failed cases, explicit unavailable values,
+kernel CPU/I/O/memory scope, owner/reset epoch and actual AOT disposition. These
+are descriptive lifetime costs, not post-hoc comparative resource effects or
+request CPU/RSS. Forged counters become unavailable observations and invalidate
+the audit. The preserved product DOC-01 capture independently reproduces its
+2.869935 CPU seconds and 180,047,872-byte kernel memory-charge peak in this view.
 
 Complete product catalogue validation is now predeclared in
 `benchmarks/experiments/catalogue-validation.json`: all 175 case definitions,

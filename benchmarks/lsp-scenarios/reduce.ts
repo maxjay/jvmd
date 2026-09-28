@@ -127,7 +127,7 @@ export function reduceBundle(root:string,verifyHashes=true){
       else if(relative!=="checksums.sha256"&&!covered.has(relative))issues.push("artifact outside checksum inventory: "+relative);
     }};visit(root);
   }
-  const reports:any[]=[],metrics:any[]=[];const apiEvents=new Map<string,any[]>();
+  const reports:any[]=[],metrics:any[]=[],resources:any[]=[];const apiEvents=new Map<string,any[]>();
   for(let block=1;block<=manifest.plan.blocks;block++)for(const caseId of manifest.plan.caseIds)for(const server of manifest.plan.servers){
     const name=`${String(block).padStart(2,"0")}-${server}-${caseId.replaceAll("/","-")}`,dir=path.join(root,name),file=path.join(dir,"report.json");
     if(!existsSync(file)){reports.push({caseId,server,block,outcome:"not_run",reason:"planned case has no final report"});continue;}
@@ -136,10 +136,21 @@ export function reduceBundle(root:string,verifyHashes=true){
     if(manifest.caseSealPolicy)try{auditCaseSeal(dir,manifest,report);}
     catch(error){caseIssues.push("invalid case finalization checkpoint: "+String(error));}
     const auditResources=(directory:string,phase:any)=>{
-      if(phase.launch)try{auditAot(directory,phase.launch);}catch(error){caseIssues.push("invalid AOT evidence: "+String(error));}
+      if(!phase.launch)return;
+      const observation:any={caseId,server,block,phase:directory===dir?"case":"seed",profile:phase.launch.profile,
+        recordedCaseOutcome:phase.outcome,scope:"whole process lifetime including launch and shutdown; failed attempts retained; not request CPU or RSS",
+        aot:phase.launch.aot??{status:"unavailable"},aotAudit:"valid",counterAudit:"unavailable",availability:"unavailable",
+        cpuSeconds:null,kernelMemoryPeakBytes:null,blockDeviceIoBytes:null,publicComparativePerformance:false};
+      resources.push(observation);
+      try{auditAot(directory,phase.launch);}catch(error){caseIssues.push("invalid AOT evidence: "+String(error));observation.aotAudit="invalid";observation.aot={status:"unavailable",reason:String(error)};}
       if(manifest.resourcePolicy&&phase.launch&&!phase.launch.lifetimeResources)caseIssues.push("declared lifetime resource evidence missing");
-      if(phase.launch?.lifetimeResources)try{auditLifetimeResources(directory,phase.launch,phase.processLifecycle??[]);}
-      catch(error){caseIssues.push("invalid lifetime resource evidence: "+String(error));}
+      if(phase.launch.lifetimeResources)try{
+        const value=auditLifetimeResources(directory,phase.launch,phase.processLifecycle??[]);
+        observation.counterAudit="valid";observation.availability=value.availability;observation.reason=value.reason??null;
+        observation.owner=phase.launch.lifetimeResources.start.owner;observation.epoch=phase.launch.lifetimeResources.start.epoch;
+        observation.registeredRoots=phase.launch.lifetimeResources.result.expected_pids;
+        if(value.availability==="measured"&&value.scope_complete){observation.cpuSeconds=value.cpu_seconds;observation.kernelMemoryPeakBytes=value.memory_peak_bytes;observation.blockDeviceIoBytes=value.io_bytes;}
+      }catch(error){caseIssues.push("invalid lifetime resource evidence: "+String(error));observation.counterAudit="invalid";observation.reason=String(error);}
     };
     auditResources(caseId==="SES-01/persisted-reopen"&&report.launch?.machineState==="empty"?path.join(dir,"seed-session"):dir,report);
     if(manifest.plan.compiledArtifactPolicy&&report.caseId.startsWith("BLD-01/two-project-"))for(const op of operations){
@@ -218,10 +229,11 @@ export function reduceBundle(root:string,verifyHashes=true){
     "Public comparative performance claims are disabled. Raw failed attempts remain in the denominator.","","| Case | Server | Block | Outcome | Integrity issues |","|---|---|---:|---|---:|",
     ...effective.map(r=>`| ${r.caseId} | ${r.server} | ${r.block} | ${r.outcome} | ${r.validationIssues?.length??0} |`),"",
     "Endpoint metrics separate first use, warmup, steady, immediate change, retries and settled probes. Percentiles use type 7 interpolation within one case; they are not independent-run confidence intervals.",""].join("\n");
-  return {summary,coverage,variants,metrics,report};
+  for(const row of resources){row.bundleIntegrityValid=verifyHashes&&sealed&&!issues.length;row.observationKind="diagnostic lifetime cost; no paired inference";}
+  return {summary,coverage,variants,metrics,resources,report:report+"\nLifetime resource observations, including failed cases and unavailable scopes, are in resources.json. Kernel memory charge is not RSS; whole-lifetime CPU is not request CPU. These observations do not add a comparative effect estimate.\n"};
 }
 export function writeReduction(root:string,result:ReturnType<typeof reduceBundle>,prefix=""){
-  for(const name of ["summary","coverage","variants","metrics"] as const)writeFileSync(path.join(root,prefix+name+".json"),JSON.stringify(result[name],null,2)+"\n");
+  for(const name of ["summary","coverage","variants","metrics","resources"] as const)writeFileSync(path.join(root,prefix+name+".json"),JSON.stringify(result[name],null,2)+"\n");
   writeFileSync(path.join(root,prefix+"report.md"),result.report);
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){

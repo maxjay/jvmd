@@ -33,7 +33,10 @@ for(const [mode,outcome] of [["persisted-correct","pass"],["persisted-leak","inc
       const file=path.join(root,"resources/lifetime-resources.json");
       const original=readFileSync(file,"utf8"),forged=JSON.parse(original);forged.cpu_seconds=forged.cpu_seconds===null?0:forged.cpu_seconds+1;
       writeFileSync(file,JSON.stringify(forged));
-      assert(reduceBundle(out,false).summary.integrityIssues.some((x:string)=>x.includes("invalid lifetime resource evidence")),"forged resource totals passed artifact audit");
+      const invalid=reduceBundle(out,false);
+      assert(invalid.summary.integrityIssues.some((x:string)=>x.includes("invalid lifetime resource evidence")),"forged resource totals passed artifact audit");
+      const observation=invalid.resources.find((r:any)=>r.phase==="case");
+      assert.equal(observation.counterAudit,"invalid");assert.equal(observation.cpuSeconds,null);assert.equal(observation.kernelMemoryPeakBytes,null);
       writeFileSync(file,original);
       for(const mutate of [(r:any)=>r.launch.stateDirectory="/other",(r:any)=>r.operations[0].rawResult.contents.value="int label",(r:any)=>r.persistedEvidence.beforeReopen.files={}]){
         const forged=structuredClone(report);mutate(forged);assert.throws(()=>persistedSessionOracle(forged,seed,lines("seed-session/events.jsonl"),lines("events.jsonl")));

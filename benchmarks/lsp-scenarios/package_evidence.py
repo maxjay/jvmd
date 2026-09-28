@@ -36,7 +36,7 @@ def package(root, output, allow_unsealed_files=False, allow_interrupted_bundle=F
     if any((root / name).is_symlink() for name in extra):
         raise ValueError('unsealed symlinks cannot be archived as regular files')
     names = {name for name in ('manifest.json', 'catalogue.json', 'required-variants.json', 'checksums.sha256',
-             'summary.json', 'variants.json', 'cases.jsonl') if (root / name).is_file()}
+             'summary.json', 'variants.json', 'resources.json', 'cases.jsonl') if (root / name).is_file()}
     if not interrupted:
         names.update(extra)
     reports = sorted(root.glob('*/report.json'))

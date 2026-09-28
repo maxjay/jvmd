@@ -1,0 +1,44 @@
+[
+  {
+    "caseId": "DOC-01/repeat",
+    "server": "jvmd",
+    "block": 1,
+    "phase": "case",
+    "profile": "product",
+    "recordedCaseOutcome": "pass",
+    "scope": "whole process lifetime including launch and shutdown; failed attempts retained; not request CPU or RSS",
+    "aot": {
+      "requested": true,
+      "requestedCache": "/home/runner/work/jvmd/jvmd/jvmd-dist/target/image/lib/jvmd/jvmd.aot",
+      "cachePresent": false,
+      "observation": "launcher log copied after measured requests and daemon termination; no warming status call",
+      "status": "rejected",
+      "reason": "[0.005s][error][aot] Loading static archive failed.",
+      "logFile": "resources/aot.log",
+      "logSha256": "ef27ef22ad3adb3fcee3b208ec854b389c8af669389b3ad22794d529223799dc"
+    },
+    "aotAudit": "valid",
+    "counterAudit": "valid",
+    "availability": "measured",
+    "cpuSeconds": 2.869935,
+    "kernelMemoryPeakBytes": 180047872,
+    "blockDeviceIoBytes": {
+      "259:0": {
+        "rbytes": 0,
+        "wbytes": 184320,
+        "rios": 0,
+        "wios": 33
+      }
+    },
+    "publicComparativePerformance": false,
+    "reason": null,
+    "owner": "/sys/fs/cgroup/jvmd-validation-daa33dde8a7d42f4bcddfc73f7514bd6/jvmd-benchmark-41a0e13b7a1e455882656bf7dab15d86",
+    "epoch": 10588,
+    "registeredRoots": [
+      11629,
+      11671
+    ],
+    "bundleIntegrityValid": true,
+    "observationKind": "diagnostic lifetime cost; no paired inference"
+  }
+]

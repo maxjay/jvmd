@@ -37,13 +37,13 @@ failed captures and corrected captures are preserved separately.
 | Gate | Current disposition | Evidence or remaining gate |
 |---|---|---|
 | A01 | pass | Workbook round-trip SHA-256/ZIP CRC and every exported cell; `benchmarks/evidence/workbook-roundtrip.json` |
-| A02 | blocked | 107/107 required variants implemented across 175 workbook cases; full 350-report replay still collecting |
+| A02 | qualified | All 350 distinct local server/case pairs have finalized reports across interrupted and continuation captures; complete product validation is collecting in run `36369332041` |
 | A03 | pass | Shared admission vectors, versionless and cross-file stale-result regression tests |
 | A04 | pass | Actual runner/comparator subprocess tests reject wrong warmup, stale output and concealed failures after saving artifacts |
 | A05 | fail | CMP-01 methods and independent timers execute; early stale product answers and shutdown failures remain mandatory failures in matched blocks |
-| A06 | blocked | First/warmup/repeat/mutation journals are retained; full catalogue histories still require final collection and review |
+| A06 | qualified | Full local histories are retained, including missing settled probes and the interrupted case; complete product shard audit remains pending |
 | A07 | pass | Clean/traced product LIFE-01–07 distinguish fresh, restarted, retained, detached and disposed states using semantic witnesses |
-| A08 | blocked | LIFE-07/08 shared ownership runs plus seven new independent overload/namespace/classpath controls; full supported-server replay in progress |
+| A08 | pass | LIFE-07/08 ownership and seven independent controls executed; all 14 corrected control reports sealed/audited: 6 pass, 4 incorrect, 4 shutdown failures |
 | A09 | pass | Client action/request intervals and native queue/execution spans retained separately; overlap reducer rejects invalid sums and cross-clock residuals |
 | A10 | pass | Complete-scope claim gate rejects unknown/reset/duplicate counter scopes; complete reuse/zero-work claims remain unavailable, never zero |
 | A11 | qualified | Product lifetime totals and pressure/recovery are witnessed; all 40 observer runs validate. Tracing and extra status polling exceed the declared tolerance; common sampler overhead remains unmeasured |

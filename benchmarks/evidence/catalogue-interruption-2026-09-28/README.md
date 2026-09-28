@@ -29,3 +29,17 @@ fresh-directory command. It includes the interrupted selector again and therefor
 one already-completed JVMD unsupported case as well. It does not rerun or replace
 the other finalized cases. Both captures remain separate diagnostic histories;
 neither their latencies nor their denominators may be pooled as independent runs.
+
+The continuation finalized all **116** planned reports: 39 pass, 10 incorrect,
+12 protocol errors, 54 unsupported and one not applicable. Its original full
+inventory verifies and is preserved in `continuation-review.tar.xz`; its separate
+artifact reduction is `continuation-replayed-summary.json`. Two failed semantic
+transitions never reached a settled probe (classpath replacement and import
+membership), so their missing settled witnesses remain audit failures. There are
+no harness-error outcomes in this continuation.
+
+Across the interrupted capture and continuation, all 350 distinct planned
+server/case pairs now have a finalized report. This is execution coverage, not
+350 valid passes or a repair of the original unsealed bundle. Complete product
+validation is a separate, predeclared ten-shard collection at source `6cd97fa`,
+[run 36369332041](https://github.com/maxjay/jvmd/actions/runs/36369332041).

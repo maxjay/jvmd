@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "purpose": "comparison-evidence",
+  "profile": "product",
+  "blocks": 10,
+  "warmup": 2,
+  "samples": 20,
+  "timeoutMs": 30000,
+  "runDeadlineSeconds": 10800,
+  "servers": [
+    "jvmd",
+    "jdtls"
+  ],
+  "oracleVersion": "semantic-state-contract-v1",
+  "order": "alternate paired configuration order by independent block",
+  "reset": "fresh fixture, process, workspace state and isolated local repository for every run",
+  "resourceEnvelope": {
+    "javaHeapMb": 1024,
+    "nativeObserverHeapMb": 256,
+    "osCache": "uncontrolled",
+    "runner": "dedicated Linux runner with Unix sockets and delegated cgroup v2"
+  },
+  "analysis": {
+    "seed": 271828,
+    "resamples": 10000,
+    "unit": "independent restored paired block",
+    "interval": "95% paired percentile bootstrap of block log ratios",
+    "endpointStatistic": "median within each run and endpoint/state",
+    "multipleComparisons": "no family-wide inference"
+  },
+  "claimCriteria": [
+    "all selected endpoint attempts correct and current",
+    "all declared blocks retained",
+    "matching fixture and toolchain identities",
+    "complete named resource scope",
+    "production lifecycle and AOT disposition",
+    "observer overhead bounded for attribution use",
+    "A01-A18 acceptance matrix reviewed"
+  ],
+  "mode": "scaling",
+  "axes": [
+    "sources",
+    "modules",
+    "artifacts",
+    "members",
+    "reach"
+  ],
+  "sizes": {
+    "sources": [
+      16,
+      64,
+      256
+    ],
+    "modules": [
+      1,
+      4,
+      16
+    ],
+    "artifacts": [
+      1,
+      8,
+      32
+    ],
+    "members": [
+      1,
+      16,
+      64
+    ],
+    "reach": [
+      1,
+      16,
+      64
+    ]
+  },
+  "caseIds": [
+    "SCALE/sources-16-zero-change",
+    "SCALE/sources-16-unrelated-body",
+    "SCALE/sources-16-relevant-api",
+    "SCALE/sources-64-zero-change",
+    "SCALE/sources-64-unrelated-body",
+    "SCALE/sources-64-relevant-api",
+    "SCALE/sources-256-zero-change",
+    "SCALE/sources-256-unrelated-body",
+    "SCALE/sources-256-relevant-api",
+    "SCALE/modules-1-zero-change",
+    "SCALE/modules-1-unrelated-body",
+    "SCALE/modules-1-relevant-api",
+    "SCALE/modules-4-zero-change",
+    "SCALE/modules-4-unrelated-body",
+    "SCALE/modules-4-relevant-api",
+    "SCALE/modules-16-zero-change",
+    "SCALE/modules-16-unrelated-body",
+    "SCALE/modules-16-relevant-api",
+    "SCALE/artifacts-1-zero-change",
+    "SCALE/artifacts-1-unrelated-body",
+    "SCALE/artifacts-1-relevant-api",
+    "SCALE/artifacts-8-zero-change",
+    "SCALE/artifacts-8-unrelated-body",
+    "SCALE/artifacts-8-relevant-api",
+    "SCALE/artifacts-32-zero-change",
+    "SCALE/artifacts-32-unrelated-body",
+    "SCALE/artifacts-32-relevant-api",
+    "SCALE/members-1-zero-change",
+    "SCALE/members-1-unrelated-body",
+    "SCALE/members-1-relevant-api",
+    "SCALE/members-16-zero-change",
+    "SCALE/members-16-unrelated-body",
+    "SCALE/members-16-relevant-api",
+    "SCALE/members-64-zero-change",
+    "SCALE/members-64-unrelated-body",
+    "SCALE/members-64-relevant-api",
+    "SCALE/reach-1-zero-change",
+    "SCALE/reach-1-unrelated-body",
+    "SCALE/reach-1-relevant-api",
+    "SCALE/reach-16-zero-change",
+    "SCALE/reach-16-unrelated-body",
+    "SCALE/reach-16-relevant-api",
+    "SCALE/reach-64-zero-change",
+    "SCALE/reach-64-unrelated-body",
+    "SCALE/reach-64-relevant-api"
+  ]
+}

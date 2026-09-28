@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "purpose": "observer-evidence",
+  "profile": "product",
+  "blocks": 10,
+  "warmup": 2,
+  "samples": 20,
+  "timeoutMs": 30000,
+  "runDeadlineSeconds": 300,
+  "servers": [
+    "jvmd",
+    "jdtls"
+  ],
+  "oracleVersion": "semantic-state-contract-v1",
+  "order": "alternate paired configuration order by independent block",
+  "reset": "fresh fixture, process, workspace state and isolated local repository for every run",
+  "resourceEnvelope": {
+    "javaHeapMb": 1024,
+    "nativeObserverHeapMb": 256,
+    "osCache": "uncontrolled",
+    "runner": "dedicated Linux runner with Unix sockets and delegated cgroup v2"
+  },
+  "analysis": {
+    "seed": 271828,
+    "resamples": 10000,
+    "unit": "independent restored paired block",
+    "interval": "95% paired percentile bootstrap of block log ratios",
+    "endpointStatistic": "median within each run and endpoint/state",
+    "multipleComparisons": "no family-wide inference"
+  },
+  "claimCriteria": [
+    "all selected endpoint attempts correct and current",
+    "all declared blocks retained",
+    "matching fixture and toolchain identities",
+    "complete named resource scope",
+    "production lifecycle and AOT disposition",
+    "observer overhead bounded for attribution use",
+    "A01-A18 acceptance matrix reviewed"
+  ],
+  "mode": "observer-trace",
+  "edits": 128,
+  "overheadTolerance": 0.05,
+  "caseIds": [
+    "LIFE-01",
+    "LIFE-09",
+    "LIFE-10"
+  ]
+}

@@ -48,7 +48,7 @@ concurrency:
 jobs:
   scenarios:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 90
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -220,6 +220,35 @@ jobs:
           retention-days: 7
           include-hidden-files: true
           path: ${{ runner.temp }}/protobuf-evidence
+
+      - name: Balanced instrumentation overhead experiment
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.resources.outcome == 'success' }}
+        run: |
+          sudo -E python3 benchmarks/workspaces/delegate_cgroup.py run --output "$RUNNER_TEMP/cgroup-delegation.json" -- \
+            python3 benchmarks/workspaces/experiment.py collect \
+            --plan benchmarks/experiments/observer-trace.json --java-home "$JAVA_HOME" \
+            --output "$RUNNER_TEMP/observer-trace" --report "$RUNNER_TEMP/observer-trace-report.json"
+
+      - name: Balanced status polling overhead experiment
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.resources.outcome == 'success' }}
+        run: |
+          sudo -E python3 benchmarks/workspaces/delegate_cgroup.py run --output "$RUNNER_TEMP/cgroup-delegation.json" -- \
+            python3 benchmarks/workspaces/experiment.py collect \
+            --plan benchmarks/experiments/observer-status.json --java-home "$JAVA_HOME" \
+            --output "$RUNNER_TEMP/observer-status" --report "$RUNNER_TEMP/observer-status-report.json"
+
+      - name: Upload independent observer blocks
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: observer-experiments
+          retention-days: 7
+          include-hidden-files: true
+          path: |
+            ${{ runner.temp }}/observer-trace
+            ${{ runner.temp }}/observer-status
+            ${{ runner.temp }}/observer-trace-report.json
+            ${{ runner.temp }}/observer-status-report.json
 
       - name: Audit saved native bundles
         if: always() && steps.build.outcome == 'success'

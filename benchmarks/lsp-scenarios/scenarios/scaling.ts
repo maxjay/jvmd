@@ -10,7 +10,7 @@ export function scalingCases(axes:ScalingAxis[]=Object.keys(scalingAxes) as Scal
     capability:axis==="members"?"completionProvider":"hoverProvider",variant:`${axis}=${size}; independent ${mutation} control`,
     prepare:(fixture,javaHome)=>prepareScaling(fixture,javaHome,{...scalingBaseline,[axis]:size}),
     run:async c=>{
-      const provider="src/bench/Provider.java",probe="src/bench/Probe.java",unrelated="src/bench/UnrelatedBody.java";
+      const provider="modules/module_0/src/bench/Provider.java",probe="modules/module_0/src/bench/Probe.java",unrelated="modules/module_0/src/bench/UnrelatedBody.java";
       await c.open(provider);await c.open(probe);await c.open(unrelated);
       const enumeration=axis==="members",method=enumeration?"textDocument/completion":"textDocument/hover";
       const params=()=>({textDocument:{uri:c.file(probe).uri},position:position(c.text(probe),c.text(probe).indexOf(enumeration?"scaleMember0":"marker")+(enumeration?0:1))});

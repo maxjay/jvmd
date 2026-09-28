@@ -1462,3 +1462,34 @@ the delegated parent, then drops privileges before executing the harness. Server
 wrappers can then move between that observer leaf and their measured leaves.
 The host root's permissions/controllers remain unchanged. Runtime validation of
 this correction is pending; the failed run is not counted as resource evidence.
+
+## Frozen independent-block experiments
+
+`benchmarks/experiments/` now contains committed matched-product, scaling-product,
+trace-overhead and status-polling plans. The coordinator invokes the existing
+harnesses, alternates pair order, restores each case, retains failed blocks,
+seals every attempt, and reduces immutable captures independently. It refuses a
+dirty checkout or edited plan and checks source/toolchain/distribution identities
+before and after collection. A real child-process regression proves a failed
+first block does not erase or skip the next planned block.
+
+The analysis uses one endpoint/state median per run and paired bootstrap intervals
+across ten restored blocks. Missing, duplicated, failed or unavailable pairs cannot
+produce an effect. Within-run requests cannot inflate the independent sample
+count. Observer plans predeclare a 5% tolerance and separately measure trace/JFR
+instrumentation and additional status polling over LIFE-01/09/10. Essential state
+checks remain on both sides. CI collects these plans read-only; it does not edit
+source, push code or manufacture baselines. Full acceptance remains separate.
+
+Validation: 217 TypeScript tests pass; Python runs 53 tests, with 51 passes and the
+two explicit local capability skips. CI at `d585cad` passes the real delegated
+cgroup descendant-accounting test and all harness contract tests, confirming the
+corrected containment boundary. Native semantic failures still remain visible.
+
+The first scaling pilot exposed a fixture setup error: Eclipse metadata alone
+cannot declare JVMD's Maven source roots or dependencies. Its null JVMD answers
+are not scaling evidence. The corrected generator emits a real Maven reactor,
+matching Eclipse source projects, identical dependency archives and a seeded local
+repository. The fixed aggregator is counted separately from variable source
+projects. A four-project/eight-artifact fixture compiles independently. The original
+pilot remains preserved; corrected supported-server replay is still required.

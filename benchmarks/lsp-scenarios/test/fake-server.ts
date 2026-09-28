@@ -3,7 +3,7 @@ import {mkdirSync,writeFileSync,existsSync,readFileSync} from "node:fs";
 import path from "node:path";
 import {Framing,encode} from "../../../shim/src/transport.ts";
 const send=(v:any)=>process.stdout.write(encode({jsonrpc:"2.0",...v}));
-const documents=new Map<string,string>();let completionCount=0,delayedTypePreparation=false;
+const documents=new Map<string,string>();let completionCount=0,delayedTypePreparation=false,persistedIntQueries=0;
 const originalDocuments=new Map<string,string>();
 const pos=(text:string,at:number)=>{const prefix=text.slice(0,at);return {line:prefix.split("\n").length-1,character:at-prefix.lastIndexOf("\n")-1};};
 const span=(text:string,at:number,length:number)=>({start:pos(text,at),end:pos(text,at+length)});
@@ -25,6 +25,7 @@ const framing=new Framing("headers",message=>{
   if(method==="shutdown"){if(mode!=="shutdown-hang")send({id,result:null});return;}
   if(mode.startsWith("persisted-")&&method==="textDocument/hover"){
     const source=documents.get(params.textDocument.uri)??"",type=reopened&&mode==="persisted-leak"?"int":source.includes("public int label")?"int":"String";
+    if(type==="int"&&mode==="persisted-seed-stale"&&++persistedIntQueries===1){send({id,result:{contents:""}});return;}
     send({id,result:{contents:{kind:"markdown",value:type+" label"}}});return;
   }
   if(mode.startsWith("selection-")){

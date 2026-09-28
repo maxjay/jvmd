@@ -81,7 +81,8 @@ export async function main(args=process.argv.slice(2)){
       context=new ScenarioContext(running.client,fixture,server,timeout,warmup,samples);context.javaHome=path.resolve(a["java-home"]??process.env.JAVA_HOME??"");await context.initialize();report.capabilities=context.capabilities;
       if(def.persistedReopen)context.reopenPersisted=async()=>{
         assert(!report.persistedEvidence,"persisted reopen can occur only once");const seed=context!,previous=running!;
-        const seedReport:any={...report,...capture(seed,previous),caseId:def.id+"/seed",artifactDirectory:"seed-session",outcome:"pass",finalized:false};
+        const seedReport:any={...report,...capture(seed,previous),caseId:def.id+"/seed",artifactDirectory:"seed-session",outcome:seed.operations.find(o=>o.outcome!=="pass")?.outcome??"pass",finalized:false};
+        assert(seed.operations.some(o=>o.state==="changed_settled"&&o.outcome==="pass"),"persisted seed never reached the declared unsaved state");
         report.persistedEvidence={seedStopped:false};
         try{for(const name of Object.keys(fixture.files))if(seed.documents.has(seed.file(name).uri))seed.close(name);await previous.stop();report.persistedEvidence.seedStopped=true;}
         catch(error){seedReport.shutdownError=String(error);seedReport.outcome="protocol_error";throw error;}
@@ -89,7 +90,7 @@ export async function main(args=process.argv.slice(2)){
           running=undefined;Object.assign(seedReport,capture(seed,previous));seedReport.finalized=true;write(path.join(caseRoot,"seed-session/report.json"),seedReport);
           jsonl(path.join(caseRoot,"seed-session/operations.jsonl"),seed.operations);report.persistedSeed={artifactDirectory:"seed-session",outcome:seedReport.outcome};
         }
-        assert(seed.operations.every(o=>o.outcome==="pass")&&seed.assertions.every(a=>a.passed),"persisted seed has failed evidence");
+        assert(seed.assertions.every(a=>a.passed),"persisted seed has failed assertion evidence");
         const state=persistedDirectory(launchOptions.state,server,profile);
         report.persistedEvidence.afterSeed=persistedSnapshot(state);
         report.persistedEvidence.beforeReopen=persistedSnapshot(state);report.persistedEvidence.reopenStartedNs=String(process.hrtime.bigint());persistedStateOracle(report.persistedEvidence);
@@ -102,7 +103,7 @@ export async function main(args=process.argv.slice(2)){
       if(!capability(context.capabilities,def.capability)||(def.extension&&server==="jvmd")||(def.command&&!context.capabilities.executeCommandProvider?.commands?.includes(def.command))){
         report.outcome="unsupported";report.supportEvidence={source:def.extension&&server==="jvmd"?"jvmd-lsp LspFacade dispatch table at tested revision; Java extensions not implemented":"initialize response",capability:def.capability,command:def.command,value:context.capabilities};
       }else{
-        await def.run(context);assert(context.operations.length>0||def.correctnessOnly,"case executed no measured operation");report.outcome=context.operations.find(o=>o.outcome!=="pass")?.outcome??(context.notApplicableEvidence?"not_applicable":"pass");
+        await def.run(context);assert(context.operations.length>0||def.correctnessOnly,"case executed no measured operation");report.outcome=(report.persistedSeed?.outcome!=="pass"?report.persistedSeed?.outcome:undefined)??context.operations.find(o=>o.outcome!=="pass")?.outcome??(context.notApplicableEvidence?"not_applicable":"pass");
       }
     }catch(error){
       report.error=String(error);report.outcome=context?.operations.find(o=>o.outcome!=="pass")?.outcome??(report.persistedEvidence?.seedStopped===false?"protocol_error":error instanceof assert.AssertionError&&context?.initializedNs?"incorrect":"harness_error");

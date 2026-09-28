@@ -13,7 +13,7 @@ test("persisted state rejects empty, replaced and temporally inverted snapshots"
   persistedStateOracle(evidence);
   for(const mutate of [(e:any)=>e.seedStopped=false,(e:any)=>e.beforeReopen.files={"index.bin":"changed"},(e:any)=>e.beforeReopen.directory="/other",(e:any)=>e.afterSeed.bytes=0,(e:any)=>e.reopenStartedNs="29"]){const e=structuredClone(evidence);mutate(e);assert.throws(()=>persistedStateOracle(e));}
 });
-for(const [mode,outcome] of [["persisted-correct","pass"],["persisted-leak","incorrect"],["persisted-empty","incorrect"],["persisted-seed-shutdown","protocol_error"]])test("actual persisted runner retains both phases: "+mode,()=>{
+for(const [mode,outcome] of [["persisted-correct","pass"],["persisted-leak","incorrect"],["persisted-seed-stale","incorrect"],["persisted-empty","incorrect"],["persisted-seed-shutdown","protocol_error"]])test("actual persisted runner retains both phases: "+mode,()=>{
   const tmp=mkdtempSync(path.join(os.tmpdir(),"persisted-runner-"));
   try{
     const command=path.join(tmp,"command.json"),out=path.join(tmp,"run");writeFileSync(command,JSON.stringify([process.execPath,fake,mode]));
@@ -30,6 +30,7 @@ for(const [mode,outcome] of [["persisted-correct","pass"],["persisted-leak","inc
         const forged=structuredClone(report);mutate(forged);assert.throws(()=>persistedSessionOracle(forged,seed,lines("seed-session/events.jsonl"),lines("events.jsonl")));
       }
     }else if(mode==="persisted-seed-shutdown"){assert.equal(seed.outcome,"protocol_error");assert.match(seed.shutdownError,/unclean shutdown/u);assert.equal(report.persistedEvidence.seedStopped,false);}
+    else if(mode==="persisted-seed-stale"){assert.equal(seed.outcome,"incorrect");assert(seed.operations.some(o=>o.state==="changed_immediate"&&o.outcome==="incorrect"));assert(report.operations.some(o=>o.state==="after_reopen"&&o.outcome==="pass"));}
     else if(mode==="persisted-leak")assert(report.operations.some(o=>o.state==="after_reopen"&&o.outcome==="incorrect"));
   }finally{rmSync(tmp,{recursive:true,force:true});}
 });

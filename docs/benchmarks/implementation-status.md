@@ -4,7 +4,7 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 175 case definitions, 213 passing TypeScript
+Latest implementation inventory: 175 case definitions, 214 passing TypeScript
 harness tests, and 107 required variants (107 implemented, 0 partial, 0 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
@@ -1365,3 +1365,21 @@ admission because publications are versionless; later declared stages are still
 collected. All four JVMD command routes are unsupported. Legal versionless
 notifications are not labelled protocol errors. Raw histories are preserved in
 `benchmarks/evidence/diagnostic-modes-2026-09-27/`.
+
+
+## Persisted-state execution and retained first-transition failures
+
+The first real reopen pilot at `fb4cdfe` passes fully on JVMD's diagnostic pipe
+profile, including both clean process exits, exact retained-state snapshots and
+discarded unsaved overlay. JDTLS passes the saved-source baseline but returns empty
+hover content immediately after the edit and exits 1 during shutdown. It never
+reaches restart; no JDTLS persistence outcome is inferred. Both finalized reports
+and verified inventories are in `benchmarks/evidence/persisted-reopen-2026-09-28/`.
+
+The seed edit now uses the existing declared immediate/settled transition policy.
+A later settled result permits collection of the independent restart stage, but
+an earlier failed seed operation still determines the final case failure. A new
+actual-runner test proves that successful reopen cannot hide a failed immediate
+seed result. All 214 TypeScript tests pass. The full process resource sampler
+still returns unavailable locally despite readable child status: partial `/proc`
+visibility does not establish complete CPU/RSS/I/O scope.

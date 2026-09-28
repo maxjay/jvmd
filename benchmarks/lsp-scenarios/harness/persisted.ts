@@ -41,7 +41,7 @@ export function persistedSessionOracle(report:any,seed:any,seedEvents:any[],even
   assert.equal(sent(seedEvents,"textDocument/didSave").length,0);assert.equal(sent(events,"textDocument/didChange").length,0);
   assert.equal(sent(seedEvents,"textDocument/didClose").length,1);
   const initialize=sent(events,"initialize");assert.equal(initialize.length,1);assert(BigInt(initialize[0].timeNs)>BigInt(stopped.timeNs));
-  for(const [rows,state,type] of [[seed.operations,"saved_baseline","String"],[seed.operations,"unsaved_overlay","int"],[report.operations,"after_reopen","String"]] as const){
+  for(const [rows,state,type] of [[seed.operations,"saved_baseline","String"],[seed.operations,"changed_settled","int"],[report.operations,"after_reopen","String"]] as const){
     const ops=rows.filter((o:any)=>o.method==="textDocument/hover"&&o.state===state);assert.equal(ops.length,1);assert.equal(ops[0].outcome,"pass");hoverOracle(ops[0].rawResult,"label",type);
   }
 }

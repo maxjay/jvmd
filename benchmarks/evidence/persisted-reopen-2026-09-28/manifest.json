@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "fb4cdfe1ce2e209f04f997397aee52433594c523",
+  "sourceDrift": false,
+  "outcomes": {
+    "pass": 1,
+    "incorrect": 1,
+    "stale": 0,
+    "timeout": 0,
+    "protocol_error": 0,
+    "harness_error": 0,
+    "unsupported": 0,
+    "not_applicable": 0,
+    "unavailable_evidence": 0,
+    "not_run": 0
+  },
+  "originalReducerIntegrityIssues": [],
+  "package": {
+    "file": "protocol-review.tar.xz",
+    "bytes": 112192,
+    "sha256": "5f0eb8ca2387b8946f0598fd20bf33c48c2115181115fab5c9e99b4432348700",
+    "everySelectedFileHash": "verified",
+    "originalCompleteInventory": "verified",
+    "unsealedFiles": {},
+    "members": 36
+  },
+  "explanation": "JVMD passes both processes, unchanged persisted snapshots and restored saved String field after the int overlay. JDTLS passes saved baseline, returns empty hover for the unsaved edit, then exits 1 during shutdown. It does not reach restart; no JDTLS persistence outcome is inferred.",
+  "claims": {
+    "publicComparativePerformance": false
+  }
+}

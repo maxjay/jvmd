@@ -34,7 +34,7 @@ export const coreCases:CaseDefinition[]=[
     await c.query("textDocument/hover",p(c,"Customer.java","label"),v=>hoverOracle(v,"label","String"),"saved_baseline");
     const overlay=saved.replace('public String label = "Ada";','public int label = 7;').replace('return label;','return String.valueOf(label);');
     const changed=c.change("Customer.java",overlay);c.mutations.push({kind:"unsaved_overlay",uri:file.uri,version:changed.version,triggerNs:String(changed.trigger)});
-    await c.query("textDocument/hover",p(c,"Customer.java","label"),v=>hoverOracle(v,"label","int"),"unsaved_overlay");
+    await c.transition("textDocument/hover",()=>p(c,"Customer.java","label"),v=>hoverOracle(v,"label","int"),changed.trigger,"unsaved overlay changes label from String to int before the independent restart");
     c.assert("persisted seed leaves saved source unchanged",readFileSync(file.path,"utf8")===saved);
     assert(c.reopenPersisted,"runner did not supply persisted restart lifecycle");const reopened=await c.reopenPersisted();
     reopened.assert("fresh client has no inherited unsaved buffers",reopened.documents.size===0);

@@ -7,6 +7,7 @@ import net from "node:net";
 import {now} from "./ProtocolClient.ts";
 import {ProtocolClient} from "./ProtocolClient.ts";
 import {sha} from "./fixture.ts";
+import {captureAot} from "./aotEvidence.ts";
 import {LifetimeResources} from "./lifetimeResources.ts";
 
 export type LaunchOptions={server:"jvmd"|"jdtls";profile:"product"|"direct"|"pipe"|"custom";root:string;state:string;
@@ -38,7 +39,7 @@ export async function launch(o:LaunchOptions):Promise<Launch> {
     // Final accounting requires observed exit; a remaining descendant invalidates it.
     let finalTimer:any;await Promise.race([daemonExit,new Promise<void>(resolve=>{finalTimer=setTimeout(resolve,1000);})]);clearTimeout(finalTimer);
   };
-  const finishResources=()=>{try{metadata.lifetimeResources.result=lifetime.finish();saveMetadata();}finally{rmSync(socketDirectory,{recursive:true,force:true});closeSync(stderr);}};
+  const finishResources=()=>{try{metadata.lifetimeResources.result=lifetime.finish();if(o.server==="jvmd"&&o.profile==="product")metadata.aot=captureAot(o.state,lifetime.output,o.image);saveMetadata();}finally{rmSync(socketDirectory,{recursive:true,force:true});closeSync(stderr);}};
   try{
   if(o.customCommand){
     assert.equal(o.profile,"custom","explicit command requires custom diagnostic profile");command=o.customCommand;

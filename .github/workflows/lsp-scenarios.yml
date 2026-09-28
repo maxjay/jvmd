@@ -223,6 +223,23 @@ jobs:
           include-hidden-files: true
           path: ${{ runner.temp }}/protobuf-evidence
 
+      - name: Ordinary product LSP and AOT evidence
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          sudo -E python3 benchmarks/workspaces/delegate_cgroup.py run --output "$RUNNER_TEMP/cgroup-delegation.json" -- \
+            node benchmarks/lsp-scenarios/run.ts --servers jvmd --profile product --java-home "$JAVA_HOME" \
+            --only DOC-01/repeat --blocks 1 --warmup 2 --samples 20 --timeout-ms 30000 \
+            --output "$RUNNER_TEMP/product-lsp-evidence"
+
+      - name: Preserve product LSP and launcher AOT log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: product-lsp-evidence
+          retention-days: 7
+          include-hidden-files: true
+          path: ${{ runner.temp }}/product-lsp-evidence
+
       - name: Balanced instrumentation overhead experiment
         if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.resources.outcome == 'success' }}
         run: |

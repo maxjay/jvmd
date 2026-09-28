@@ -4,7 +4,7 @@ This branch executes the worker specification. It is a draft, not a declaration
 that the full catalogue, lifecycle experiment, or performance comparison passed.
 The starting revision is `d7dbc57bfbe15ee97eecc9b94d185922fd1cff07`.
 
-Latest implementation inventory: 175 workbook case definitions plus 45 scaling and seven invalidation cases, 222 TypeScript
+Latest implementation inventory: 175 workbook case definitions plus 45 scaling and seven invalidation cases, 224 passing TypeScript
 harness tests, and 107 required variants (107 implemented, 0 partial, 0 absent).
 Implementation is not execution evidence. The checkpoint notes below retain
 historical counts; the current variant ledger is authoritative for source scope.
@@ -28,33 +28,38 @@ its admission and resource semantics are being brought under the same contract.
 
 ## Current limits and gates
 
-The local environment still refuses Unix socket creation. Child-process `/proc`
-status is now readable, but the cgroup hierarchy is not writable or delegated;
-complete process-family accounting remains unproven. Pipe runs are explicitly diagnostic. They do not establish normal
-daemon attachment, scheduler behaviour, process-tree resource costs or AOT use.
-JDTLS can run here, and its failures are retained rather than treated as expected
-answers. Development pilots are not frozen, independent comparison blocks.
+The local environment refuses Unix socket creation and has no delegated writable
+cgroup hierarchy. Local pipe captures remain diagnostic. Product CI now verifies
+raw lifetime CPU, block I/O and kernel memory-charge accounting, including exited
+descendants; sampled RSS remains a distinct lower-bound observation. The original
+failed captures and corrected captures are preserved separately.
 
-| Gate | Current disposition | Remaining evidence |
+| Gate | Current disposition | Evidence or remaining gate |
 |---|---|---|
-| A01 | pass | Connector-decoded repository bytes match the intact workbook SHA-256 and ZIP CRC; see `benchmarks/evidence/workbook-roundtrip.json` |
-| A02 | fail | Complete executable coverage for supported targets; no unimplemented target may be classified unsupported |
-| A03 | pass for shared admission contract; broader cases pending | Shared vectors and cross-file stale-result subprocess test |
-| A04 | pass for tested gates | Runner/comparator reject injected wrong output; all three CI jobs passed on c5c10fd2. All three CI jobs also passed at 58bbd42b; those jobs did not yet execute the new native matrix. |
-| A05 | blocked | CMP-01 variants are implemented; full supported-server execution and oracle review remain |
-| A06 | partial | Live protocol journals, immediate/settled probes, source-drift detection and artifact-only checks are implemented; complete case histories still require full execution. |
-| A07 | pass for bounded matrix; broader variants pending | Both clean/traced packaged Unix pilots at 1c29254 pass retained attach, normal detach, disposal and restart witnesses |
-| A08 | blocked | Existing semantic proof tests pass; full benchmark mutation/ownership matrix remains |
-| A09 | blocked | Request and transition intervals exist; final causal reconstruction remains |
-| A10 | blocked | Invalid zero-work claims removed; complete scoped native evidence still to collect |
-| A11 | partial | CI records sampled daemon/peer/helper costs; complete lifetime accounting and observer experiments remain |
-| A12 | blocked | Fixture hashes and pipe source checks exist; full experiment inventories remain |
-| A13 | partial | Profiles separated; CI records actual AOT rejection and continued normal JVM execution, not accepted AOT |
-| A14 | blocked | No public comparative performance claim; independent blocks and uncertainty analysis remain |
-| A15 | partial | Artifact-only reducer reproduces tested summaries and rejects tampering/interruption/concealed failures; full native bundle reduction and final gate remain. |
-| A16 | pass for the reproduced diagnostic path | Session/context/processor spans explain the reproduced long open; no claim of identical causation for every historical run. See `long-open-diagnosis.md`. |
-| A17 | pass for workflow/publication method | CI push removed; branch changes are published through the GitHub connector |
-| A18 | pass for isolated retention fix | Before/after reproducer logs and 32 passing targeted production tests; later changes require fresh validation |
+| A01 | pass | Workbook round-trip SHA-256/ZIP CRC and every exported cell; `benchmarks/evidence/workbook-roundtrip.json` |
+| A02 | blocked | 107/107 required variants implemented across 175 workbook cases; full 350-report replay still collecting |
+| A03 | pass | Shared admission vectors, versionless and cross-file stale-result regression tests |
+| A04 | pass | Actual runner/comparator subprocess tests reject wrong warmup, stale output and concealed failures after saving artifacts |
+| A05 | fail | CMP-01 methods and independent timers execute; early stale product answers and shutdown failures remain mandatory failures in matched blocks |
+| A06 | blocked | First/warmup/repeat/mutation journals are retained; full catalogue histories still require final collection and review |
+| A07 | pass | Clean/traced product LIFE-01–07 distinguish fresh, restarted, retained, detached and disposed states using semantic witnesses |
+| A08 | blocked | LIFE-07/08 shared ownership runs plus seven new independent overload/namespace/classpath controls; full supported-server replay in progress |
+| A09 | pass | Client action/request intervals and native queue/execution spans retained separately; overlap reducer rejects invalid sums and cross-clock residuals |
+| A10 | pass | Complete-scope claim gate rejects unknown/reset/duplicate counter scopes; complete reuse/zero-work claims remain unavailable, never zero |
+| A11 | blocked | Six product daemon epochs have verified lifetime totals; pressure/recovery is witnessed; corrected observer experiments and final qualification remain |
+| A12 | blocked | Pinned inputs, drift rejection and immutable distribution sharing implemented; final experiment inventories still collecting |
+| A13 | blocked | Product/direct/pipe and JDTLS workspace states separated; native AOT rejection recorded; ordinary per-case product AOT log capture being completed |
+| A14 | blocked | Ten declared matched/scaling blocks are collecting in CI run `36365632505`; uncertainty and success denominators await all original blocks |
+| A15 | blocked | Native semantic wire replay and portable independent-block reduction pass tests; final full-bundle reductions remain |
+| A16 | pass | Reproduced Apache open linked to compiler/context/processor activity and separate queue delay; `long-open-diagnosis.md` states the causal limits |
+| A17 | pass | CI permissions are read-only; benchmark source/evidence published through the GitHub connector |
+| A18 | pass | Isolated retention/allocation fixes retain original semantic contracts; 32 targeted production tests and subsequent production CI pass |
+
+A pass in this table applies to the named measurement requirement. It does not
+turn a failed product answer into a passing benchmark. A10 specifically records
+that unsupported reuse and zero-work claims are prohibited, not that complete
+native work counters have been obtained. A05's implementation exists, but its
+mandatory product correctness condition has failed in collected evidence.
 
 The full specification remains the acceptance contract. This file must be updated
 with final evidence and dispositions; an intermediate draft is not task completion.
@@ -1601,3 +1606,16 @@ these captures is a performance experiment. The complete local observer
 coordinator capture and reproducible report are under
 `benchmarks/evidence/observer-coordinator-2026-09-28/`; both configurations pass
 semantic replay with unavailable local lifetime counters.
+
+## Ordinary product AOT evidence
+
+The LSP launcher now copies the shipped launcher's AOT log after measured work
+and daemon termination. Its disposition is replayed from those bytes. A rejection
+takes precedence over an earlier archive-open message, and cache-file presence
+never establishes acceptance. This adds no pre-query status call. Native product
+captures already retain runtime AOT state; older ordinary captures remain labeled
+with the evidence actually present in each bundle.
+
+AOT validation: all 224 TypeScript tests pass. A short product LSP CI capture
+records the shipped launcher log and validates it alongside ordinary request
+results; it does not run a new independent performance collection.

@@ -25,7 +25,7 @@ import {writeReport} from "./report.ts";
 export const cases:CaseDefinition[]=[...coreCases,...buildCases,...diagnosticCases,...structureCases,...symbolCases,...symbolFilterCases,
   ...generationCases,...projectCases,...protobufCases,...editingCases,...importScopeCases,...dependencyCases,...fileCases,...refactoringCases];
 const OPTIONS=["servers","only","runs","warmup","samples","timeout-ms","output","java-home","jdtls-home","image",
-  "alternate-java-home","gradle-home","protoc","protobuf-java","command-json"];
+  "alternate-java-home","gradle-home","protoc","protobuf-java","command-json","baseline"];
 
 export async function main(argv=process.argv.slice(2)){
   const a:Record<string,string>={};
@@ -50,9 +50,12 @@ export async function main(argv=process.argv.slice(2)){
     results.push({...result,run});console.log(JSON.stringify({run,server,caseId:def.id,outcome:result.outcome,error:result.error}));
   }
   writeFileSync(path.join(root,"results.json"),JSON.stringify({meta,results},null,1)+"\n");
-  const failures=writeReport(root,meta,results,selected);
-  // Exit nonzero when JVMD gets something it claims to support wrong; "not implemented" is roadmap, not failure.
-  if(failures)process.exitCode=1;
+  // Results are reported, never gated: the exit code only says whether the suite itself ran.
+  const baseline=a.baseline&&existsSync(a.baseline)?JSON.parse(readFileSync(a.baseline,"utf8")).results:undefined;
+  const regressions=writeReport(root,meta,results,selected,baseline);
+  if(process.env.GITHUB_ACTIONS==="true")for(const r of regressions)
+    console.log(`::warning title=Roadmap regression::${r.caseId} passed on main, now ${r.outcome.replaceAll("_"," ")}`);
+  console.log(`report: ${path.join(root,"report.md")}`);
 }
 
 async function runCase(def:CaseDefinition,server:"jvmd"|"jdtls",dir:string,o:any){

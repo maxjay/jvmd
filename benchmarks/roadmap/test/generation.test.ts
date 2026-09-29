@@ -33,7 +33,7 @@ test("generated outline rejects absent, extra, wrong-kind and use-site members",
 for(const mode of ["generation-stale-status","generation-foreign-edit"])test("actual generation runner rejects "+mode,()=>{
   const r=runFake(mode,"GEN-01/toString",{server:"jdtls"});
   try{
-    assert.equal(r.status,1,r.log);const report=r.case();assert.equal(report.outcome,"incorrect");
+    assert.equal(r.status,0,r.log);const report=r.case();assert.equal(report.outcome,"incorrect");
     const generation=report.operations.find((o:any)=>o.method==="java/generateToString");assert(generation);
     if(mode==="generation-foreign-edit"){
       assert.equal(generation.outcome,"incorrect");assert.match(generation.assertionError,/unrelated source/u);assert.equal(report.mutations.length,0);

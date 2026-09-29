@@ -22,6 +22,8 @@ on:
 
 permissions:
   contents: read
+  actions: read         # download main's last results for comparison
+  pull-requests: write  # keep one up-to-date report comment on the PR
 
 concurrency:
   group: roadmap-${{ github.event.pull_request.number || github.ref }}
@@ -78,25 +80,49 @@ jobs:
           mvn -B -DskipTests install
           bash jvmd-dist/assemble.sh
 
-      # Fails when something JVMD implements gives a wrong, stale or failed answer.
-      # Endpoints JVMD has not implemented yet are listed in the report, not failures.
+      - name: Fetch main's last results
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id=$(gh run list -R "$GITHUB_REPOSITORY" --workflow roadmap.yml --branch main --event push --status success -L 1 --json databaseId -q '.[0].databaseId')
+          [ -n "$id" ] && gh run download "$id" -R "$GITHUB_REPOSITORY" -n roadmap -D "$RUNNER_TEMP/baseline"
+
+      # Informational: results are reported, never gated. The step fails only if the suite itself can't run.
       - name: Run roadmap against JVMD and JDTLS
         run: |
           T="$RUNNER_TEMP/tools"
           node benchmarks/roadmap/run.ts --output "$RUNNER_TEMP/roadmap" --runs "${{ inputs.runs || '1' }}" \
+            --baseline "$RUNNER_TEMP/baseline/results.json" \
             --java-home "$JAVA_HOME" --jdtls-home "$T/jdtls" --alternate-java-home "$T/jdk-17.0.20.1+1" \
             --gradle-home "$T/gradle-9.1.0" --protoc "$T/protoc" --protobuf-java "$T/protobuf-java.jar"
-
-      - name: Publish report
-        if: always()
-        run: '[ -f "$RUNNER_TEMP/roadmap/report.md" ] && cat "$RUNNER_TEMP/roadmap/report.md" >> "$GITHUB_STEP_SUMMARY" || true'
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: roadmap
-          retention-days: 14
+          retention-days: 30
           path: |
             ${{ runner.temp }}/roadmap/report.md
             ${{ runner.temp }}/roadmap/results.json
             ${{ runner.temp }}/roadmap/cases/*/result.json
+
+      - name: Publish report
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          report="$RUNNER_TEMP/roadmap/report.md"
+          [ -f "$report" ] || exit 0
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          # Fork PRs get a read-only token; their report stays in the job summary.
+          [ -n "$PR" ] && [ "$SAME_REPO" = true ] || exit 0
+          marker='<!-- jvmd-roadmap -->'
+          body="$marker"$'\n'"$(cat "$report")"$'\n\n'"<sub>[Run and raw results]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)</sub>"
+          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+            -q ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -1)
+          if [ -n "$id" ]; then gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -f body="$body" >/dev/null
+          else gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -f body="$body" >/dev/null; fi

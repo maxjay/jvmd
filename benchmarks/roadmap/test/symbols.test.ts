@@ -38,7 +38,7 @@ for(const [route,mode,outcome] of [...["outline","extended","search","filtered-s
   ["extended","symbols-missing-inherited","incorrect"],["extended","symbols-wrong-inherited-uri","incorrect"]])test(`actual ${route} symbol runner checks ${mode}`,()=>{
   const caseId=`NAV-03/${route}-first-repeat`,r=runFake(mode,caseId,{server:"jdtls"});
   try{
-    assert.equal(r.status,outcome==="pass"?0:1,r.log);const result=r.case();assert.equal(result.outcome,outcome);
+    assert.equal(r.status,0,r.log);const result=r.case();assert.equal(result.outcome,outcome);
     if(route==="resolve")assert(result.operations.filter((o:any)=>o.endpoint==="java.project.resolveWorkspaceSymbol").every((o:any)=>o.originRequestId===result.operations[0].requestId));
   }finally{r.cleanup();}
 });

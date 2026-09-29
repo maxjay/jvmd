@@ -18,7 +18,7 @@ for(const kind of ["prepare","rename"])for(const [mode,outcome] of [
 ])test(`actual runner ${kind} invalid position: ${mode} is ${outcome}`,()=>{
   const caseId=`REF-01/${kind}-invalid`,r=runFake(mode,caseId);
   try{
-    assert.equal(r.status,outcome==="pass"?0:1,r.log);const report=r.case(),operations=report.operations,op=operations.at(-1);
+    assert.equal(r.status,0,r.log);const report=r.case(),operations=report.operations,op=operations.at(-1);
     assert.equal(report.outcome,outcome);assert.equal(operations[0].state,"baseline");
     if(mode==="rename-reject-all"){assert.equal(operations.length,1);assert.equal(op.outcome,"protocol_error");}
     else{assert.equal(operations[0].outcome,"pass");assert.equal(op.state,"invalid_position");assert.equal(op.outcome,outcome);}

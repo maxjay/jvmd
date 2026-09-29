@@ -61,7 +61,7 @@ for(const [mode,caseId,outcome] of [
 ])test(`actual hierarchy runner ${mode}: ${caseId}`,()=>{
   const r=runFake(mode,caseId);
   try{
-    assert.equal(r.status,outcome==="pass"?0:1,r.log);const report=r.case();assert.equal(report.outcome,outcome);
+    assert.equal(r.status,0,r.log);const report=r.case();assert.equal(report.outcome,outcome);
     if(mode==="hierarchy-correct")assert.equal(report.operations.filter((o:any)=>o.endpoint==="java.navigate.resolveTypeHierarchy"&&o.originRequestId).length,4);
     if(mode==="stale-type-hierarchy"){
       for(const state of ["first_use","warmup","steady"])assert(report.operations.some((o:any)=>o.method==="textDocument/prepareTypeHierarchy"&&o.state===state&&o.outcome==="pass"));

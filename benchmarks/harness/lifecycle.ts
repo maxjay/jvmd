@@ -30,9 +30,9 @@ function projectFixture(project:string,repository:string):Fixture{
 }
 const at=(c:ScenarioContext,name:string,token:string,from=0,shift=1)=>{const text=c.text(name),offset=text.indexOf(token,from);assert(offset>=0,token+" missing from "+name);
   return {textDocument:{uri:c.file(name).uri},position:position(text,offset+shift)};};
-const PROBE="    private void benchmarkCompletion(MavenProject project) {\n        project.\n    }\n";
-const withProbe=(text:string)=>{const end=text.lastIndexOf("}");return text.slice(0,end)+PROBE+text.slice(end);};
-
+/** Editors complete a typed prefix; servers cap long member lists, so a bare "project." proves little. */
+const probe=(text:string,prefix:string)=>{const end=text.lastIndexOf("}");
+  return text.slice(0,end)+`    private void benchmarkCompletion(MavenProject project) {\n        project.${prefix}\n    }\n`+text.slice(end);};
 /** A wrong answer is recorded on its operation; it must not abort the remaining measurements. */
 const step=async(f:()=>Promise<unknown>)=>{try{await f();}catch(error){if(!(error instanceof assert.AssertionError))throw error;}};
 /** The measured editor requests, each with an oracle derived from the source text. */
@@ -42,8 +42,9 @@ async function queries(c:ScenarioContext){
   const target={uri:c.file(PROJECT).uri,range:range(project,"addAttachedArtifact",declaration)};
   await step(()=>c.series("textDocument/definition",at(c,HELPER,"addAttachedArtifact(",call),v=>exactLocations(v,[target])));
   await step(()=>c.series("textDocument/references",{...at(c,PROJECT,"addAttachedArtifact(",declaration),context:{includeDeclaration:true}},v=>{
-    const rows=(v??[]).map((r:any)=>r.uri+"#"+JSON.stringify(r.range));
-    for(const wanted of [target,{uri:c.file(HELPER).uri,range:range(helper,"addAttachedArtifact",call)}])assert(rows.includes(wanted.uri+"#"+JSON.stringify(wanted.range)),"reference missing: "+wanted.uri);
+    // Servers differ on how much of a call a reference spans (name only, or up to the closing parenthesis): match where it starts.
+    const rows=(v??[]).map((r:any)=>r.uri+"#"+JSON.stringify(r.range.start));
+    for(const wanted of [target,{uri:c.file(HELPER).uri,range:range(helper,"addAttachedArtifact",call)}])assert(rows.includes(wanted.uri+"#"+JSON.stringify(wanted.range.start)),"reference missing: "+wanted.uri);
   }));
   await step(()=>c.series("textDocument/signatureHelp",at(c,HELPER,"addAttachedArtifact(",call,"addAttachedArtifact(".length),v=>assert.match(v?.signatures?.[v.activeSignature??0]?.label??"",/addAttachedArtifact/u)));
   await step(()=>c.series("textDocument/documentSymbol",{textDocument:{uri:c.file(PROJECT).uri}},v=>{
@@ -51,15 +52,16 @@ async function queries(c:ScenarioContext){
     assert((type.children??[]).some((s:any)=>/^getArtifactId/u.test(s.name)),"getArtifactId missing from outline");
   }));
   await step(()=>c.series("textDocument/semanticTokens/full",{textDocument:{uri:c.file(HELPER).uri}},v=>{assert(v?.data?.length>0&&v.data.length%5===0,"semantic tokens missing");}));
-  const probe=withProbe(helper),cursor=probe.indexOf("        project.\n")+"        project.".length;c.change(HELPER,probe);
-  const complete=()=>({textDocument:{uri:c.file(HELPER).uri},position:position(probe,cursor)});
-  await step(()=>c.series("textDocument/completion",complete(),v=>completionOracle(v,["getGroupId","getArtifactId","addAttachedArtifact"])));
-  // After an edit: a new member on MavenProject must be offered at the unchanged probe.
-  const edited=project.replace("public String getGroupId() {","public void benchmarkAdded() {}\n\n    public String getGroupId() {");
-  const trigger=c.change(PROJECT,edited).trigger;
-  await step(()=>c.transition("textDocument/completion",complete,v=>completionOracle(v,["benchmarkAdded","getGroupId"]),trigger,"new MavenProject member offered after the edit"));
+  const complete=()=>{const text=c.text(HELPER),line=text.lastIndexOf("        project.");
+    return {textDocument:{uri:c.file(HELPER).uri},position:position(text,text.indexOf("\n",line))};};
+  c.change(HELPER,probe(helper,"getGr"));
+  await step(()=>c.series("textDocument/completion",complete(),v=>completionOracle(v,["getGroupId"])));
+  // After an edit: a member added to MavenProject must be offered at the unchanged caller.
+  c.change(HELPER,probe(helper,"benchmark"));
+  const trigger=c.change(PROJECT,project.replace("public String getGroupId() {","public void benchmarkAdded() {}\n\n    public String getGroupId() {")).trigger;
+  await step(()=>c.transition("textDocument/completion",complete,v=>completionOracle(v,["benchmarkAdded"]),trigger,"new MavenProject member offered after the edit"));
   // After an error: the versioned diagnostic that marks it.
-  const since=c.client.notifications.length,broken=probe.replace("        project.\n","        project.benchmarkMissing();\n"),changed=c.change(HELPER,broken);
+  const since=c.client.notifications.length,changed=c.change(HELPER,probe(helper,"benchmarkMissing();"));
   await step(()=>observeDiagnostics(c,c.file(HELPER).uri,changed.trigger,errorAt("benchmarkMissing"),since,"changed_diagnostic"));
 }
 
@@ -106,6 +108,7 @@ export async function runLifecycle(o:LifecycleOptions){
     if(daemon)await daemon.stop().catch(()=>undefined);
   }
   const failed=operations.filter(op=>op.outcome!=="pass");
-  return {server:o.server,project:"apache/maven",phases,operations:operations.map(({rawResult,...op}:any)=>op),
+  // Raw answers are kept only where a check failed, so a failure can be read without a rerun.
+  return {server:o.server,project:"apache/maven",phases,operations:operations.map(({rawResult,...op}:any)=>op.outcome==="pass"?op:{...op,rawResult}),
     outcome:errors.length?"harness_error":failed.length?failed[0].outcome:"pass",error:errors[0]??failed[0]?.assertionError};
 }

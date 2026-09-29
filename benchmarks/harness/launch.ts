@@ -12,6 +12,8 @@ export type Launch={client:ProtocolClient;allocation:AllocationProbe;startedMs:n
 
 // Both servers run on the same JDK with the same heap ceiling and the allocation agent.
 const HEAP="-Xmx1024m";
+/** Real projects have non-ASCII paths; without a UTF-8 locale a JVM cannot even stat them. */
+const UTF8={LANG:"C.UTF-8",LC_ALL:"C.UTF-8"};
 const JVMD_EXPORTS=["api","util","code","main","platform"].map(p=>"--add-exports=jdk.compiler/com.sun.tools.javac."+p+"=ALL-UNNAMED");
 
 /**
@@ -33,7 +35,7 @@ export class JvmdDaemon {
     const stderr=openSync(path.join(o.state,"daemon.log"),"a"),started=performance.now();
     const child=spawn(path.join(o.javaHome,"bin/java"),[HEAP,"-javaagent:"+agentJar(o.javaHome)+"="+probe,...JVMD_EXPORTS,"--enable-native-access=ALL-UNNAMED",
       "-Djvmd.config="+config,"-Djvmd.socket="+socket,"-Djvmd.state="+path.join(o.state,"store"),"-Djvmd.resolvers="+path.join(o.image,"lib/jvmd/resolvers"),
-      "-Djvmd.index.scan.initial_delay_seconds=0","-cp",path.join(o.image,"lib/jvmd/*"),"dev.jvmd.dist.Application"],{stdio:["ignore","pipe",stderr]});
+      "-Djvmd.index.scan.initial_delay_seconds=0","-cp",path.join(o.image,"lib/jvmd/*"),"dev.jvmd.dist.Application"],{stdio:["ignore","pipe",stderr],env:{...process.env,...UTF8}});
     await new Promise<void>((resolve,reject)=>{
       let out="";const timer=setTimeout(()=>reject(new Error("JVMD daemon was not READY within 10 minutes")),600000);
       child.stdout!.on("data",chunk=>{out+=chunk;if(/^READY /mu.test(out)){clearTimeout(timer);resolve();}});
@@ -66,7 +68,7 @@ export type LaunchOptions={server:"jvmd"|"jdtls";root:string;state:string;javaHo
 
 export async function launch(o:LaunchOptions):Promise<Launch>{
   const started=performance.now();mkdirSync(o.state,{recursive:true});
-  const stderr=openSync(path.join(o.state,"stderr.log"),"a"),env={...process.env,...o.environment};
+  const stderr=openSync(path.join(o.state,"stderr.log"),"a"),env={...process.env,...UTF8,...o.environment};
   let command:string[],allocation:AllocationProbe,probeDir:string|undefined;
   if(o.customCommand){command=o.customCommand;allocation=new AllocationProbe();} // Test seam: a scripted peer, no allocation.
   else if(o.server==="jvmd"){

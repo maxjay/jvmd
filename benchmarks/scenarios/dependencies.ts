@@ -21,6 +21,7 @@ export const dependencyCases:CaseDefinition[]=[
     extension:method.startsWith("java/"),capability:method.startsWith("workspace/")?"workspace.textDocumentContent":undefined,
     variant:(attached?"with":"without")+" a -sources.jar; content of the class the definition named",
     run:async(c:ScenarioContext)=>{
+      if(method.startsWith("java/"))await c.requireMethod(method,{uri:"file:///probe.class"});
       const uri=await binaryUri(c,attached),content=(v:any)=>{const text=method.startsWith("workspace/")?v?.text:v;attached?attachedContentOracle(text):unattachedContentOracle(text);};
       await c.series(method,{uri},content);
     }}))),

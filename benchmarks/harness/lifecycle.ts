@@ -68,7 +68,7 @@ async function queries(c:ScenarioContext){
 export async function runLifecycle(o:LifecycleOptions){
   settingsXml(o.repository,path.join(o.repository,"settings.xml"));
   rmSync(o.state,{recursive:true,force:true});
-  const fixture=projectFixture(o.project,o.repository),phases:Record<string,number|null>={},operations:any[]=[],errors:string[]=[];
+  const fixture=projectFixture(o.project,o.repository),phases:Record<string,any>={},operations:any[]=[],errors:string[]=[];
   let daemon:JvmdDaemon|undefined,running:Launch|undefined;
   // "Open" is launch to the first correct answer on the project. A server may report itself ready
   // (JDTLS's ServiceReady) before its project import finishes; that is not a usable workspace yet.
@@ -77,10 +77,12 @@ export async function runLifecycle(o:LifecycleOptions){
     running=await launch({server:o.server,root:o.project,state:path.join(o.state,"server"),javaHome:o.javaHome,image:o.image,jdtlsHome:o.jdtlsHome,daemon,reuseState});
     const c=new ScenarioContext(running.client,fixture,o.server,o.openTimeout,o.warmup,o.samples);c.javaHome=o.javaHome;c.allocation=running.allocation;
     await c.initialize();phases[label+"_initialize_ms"]=performance.now()-started;
+    // Readiness is a correct go-to-definition across files: the most basic navigation, and cheap on both servers.
     await c.open(HELPER);const params=at(c,HELPER,"addAttachedArtifact(",c.text(HELPER).indexOf("project.addAttachedArtifact("));
+    const project=readFileSync(c.file(PROJECT).path,"utf8"),target=[{uri:c.file(PROJECT).uri,range:range(project,"addAttachedArtifact",project.indexOf("public void addAttachedArtifact(")+"public void ".length)}];
     for(const deadline=performance.now()+o.openTimeout;;){
-      const r=await c.client.request("textDocument/hover",params,o.openTimeout);
-      try{hoverOracle(r.result,"addAttachedArtifact","void");break;}catch(error){if(performance.now()>deadline)throw new Error("workspace never answered correctly: "+String(error).split("\n")[0]);}
+      const r=await c.client.request("textDocument/definition",params,o.openTimeout);
+      try{exactLocations(r.result,target);break;}catch(error){if(performance.now()>deadline)throw new Error("workspace never answered correctly: "+String(error).split("\n")[0]);}
       await new Promise(resolve=>setTimeout(resolve,250));
     }
     c.close(HELPER);c.operations=operations;c.timeout=o.timeout;return {c,ms:performance.now()-started};
@@ -102,7 +104,11 @@ export async function runLifecycle(o:LifecycleOptions){
       phases.restart_index_ms=daemon.readyMs;
     }
     ({c,ms}=await open(true,"restart"));phases.restart_open_ms=ms;
-  }catch(error){errors.push(String(error).split("\n")[0]);}
+  }catch(error){
+    errors.push(String(error).split("\n")[0]);
+    // A JVMD that stopped answering leaves its thread dump in the run output, so the hang can be read without a rerun.
+    if(daemon?.alive())try{phases.thread_dump=daemon.threadDump(o.javaHome,path.join(o.state,"jvmd-threads.txt"));}catch{/* best effort */}
+  }
   finally{
     if(running)await running.stop().catch(()=>undefined);
     if(daemon)await daemon.stop().catch(()=>undefined);

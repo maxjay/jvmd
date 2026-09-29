@@ -94,7 +94,7 @@ export async function main(argv=process.argv.slice(2)){
     for(const server of lifecycleServers){
       const started=Date.now();
       const row=await runLifecycle({server,project:path.resolve(a.project),repository:path.resolve(a["project-repository"]),state:path.join(root,"lifecycle",server),
-        javaHome,image,jdtlsHome,openTimeout:Math.max(timeout,900000),timeout,warmup,samples});
+        javaHome,image,jdtlsHome,openTimeout:Math.max(timeout,600000),timeout,warmup,samples});
       lifecycle.push(row);
       console.log(`[lifecycle] ${row.outcome==="pass"?"ok  ":"FAIL"} ${server.padEnd(5)} apache/maven ${((Date.now()-started)/1000).toFixed(1).padStart(6)}s${row.error?"  "+String(row.error).slice(0,100):""}`);
     }

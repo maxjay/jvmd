@@ -2415,20 +2415,20 @@
    "outcome": "unavailable_evidence",
    "error": "diagnostics were published without a document version",
    "phases": {
-    "open_initialize_ms": 25893.378564000002,
-    "open_ms": 27678.818408000003,
-    "rss_bytes": 1402609664,
-    "restart_initialize_ms": 4173.642973000009,
-    "restart_open_ms": 6865.406553000008
+    "open_initialize_ms": 25629.11074,
+    "open_ms": 26683.793732,
+    "rss_bytes": 1396539392,
+    "restart_initialize_ms": 4602.591772,
+    "restart_open_ms": 6674.029106999995
    },
    "first": {
-    "textDocument/hover": 177.448679,
-    "textDocument/definition": 31.925566,
-    "textDocument/references": 13033.580627,
-    "textDocument/signatureHelp": 240.049229,
-    "textDocument/documentSymbol": 33.344469,
-    "textDocument/semanticTokens/full": 14.73866,
-    "textDocument/completion": 58.99336
+    "textDocument/hover": 952.522507,
+    "textDocument/definition": 37.79698,
+    "textDocument/references": 13674.181208,
+    "textDocument/signatureHelp": 330.44268,
+    "textDocument/documentSymbol": 53.561238,
+    "textDocument/semanticTokens/full": 15.325539,
+    "textDocument/completion": 49.668497
    }
   }
  }

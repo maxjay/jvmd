@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {spawn,type ChildProcess} from "node:child_process";
+import {spawn,spawnSync,type ChildProcess} from "node:child_process";
 import {copyFileSync,mkdirSync,mkdtempSync,openSync,closeSync,readdirSync,rmSync,writeFileSync} from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -48,14 +48,23 @@ export class JvmdDaemon {
     return new JvmdDaemon({process:child,socket,config,allocation,control,readyMs,dir,stderr});
   }
   alive(){return this.process.exitCode===null&&this.process.signalCode===null;}
+  /** Control calls are short: a hung daemon is reported and killed, never waited on. */
+  private async call(method:string,params:any={}){
+    const r=await this.control.raw(method,params,15000);if(r.error)throw new Error(method+": "+r.error.message);return r.result;
+  }
   /** Disposes one workspace session so cases never share state; the machine index stays warm. */
   async closeSession(root:string){
-    const status=await this.control.call("daemon.status");
-    for(const s of status.result?.sessions??[])if(path.resolve(s.root)===path.resolve(root))await this.control.call("session.close",{session:s.session});
+    const status=await this.call("daemon.status");
+    for(const s of status.result?.sessions??[])if(path.resolve(s.root)===path.resolve(root))await this.call("session.close",{session:s.session});
   }
-  async status(){return (await this.control.call("daemon.status")).result;}
+  async status(){return (await this.call("daemon.status")).result;}
+  /** Evidence for a hang: every thread's stack, written next to the daemon's log. */
+  threadDump(javaHome:string,file:string){
+    const r=spawnSync(path.join(javaHome,"bin/jcmd"),[String(this.process.pid),"Thread.print"],{encoding:"utf8",timeout:30000});
+    writeFileSync(file,r.stdout||String(r.stderr||r.error));return file;
+  }
   async stop(){
-    try{await this.control.call("daemon.shutdown");}catch{/* exiting */}
+    try{await this.call("daemon.shutdown");}catch{/* exiting or hung */}
     this.control.close();this.allocation.close();
     await Promise.race([new Promise(r=>this.process.once("exit",r)),new Promise(r=>setTimeout(r,10000))]);
     if(this.alive())this.process.kill("SIGKILL");

@@ -170,6 +170,13 @@ export class ScenarioContext {
       }
     }
   }
+  /** For java/... requests, which no capability advertises: a "method not found" reply before any setup means
+   * the server doesn't implement it, so the case reports not implemented instead of failing its setup. */
+  async requireMethod(method:string,params:any){
+    const r=await this.client.request(method,params,this.timeout);
+    if(r.error?.code===-32601){this.recordOperation({operationId:"op-"+(this.operations.length+1),method,endpoint:method,state:"support_probe",error:r.error,outcome:"protocol_error"});
+      throw new Error(method+" is not implemented");}
+  }
   async setupQuery(method:string,params:any){const r=await this.client.request(method,params,this.timeout);assert(!r.error,method+": "+JSON.stringify(r.error));return r.result;}
   applyWorkspaceEdit(edit:any){
     const initial=Object.entries(this.fixture.files).map(([name,f])=>({uri:f.uri,text:this.text(name),diskText:readFileSync(f.path,"utf8"),version:this.documents.get(f.uri)?.version??null,open:this.documents.has(f.uri)}));

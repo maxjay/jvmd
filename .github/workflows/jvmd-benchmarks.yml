@@ -149,6 +149,8 @@ jobs:
             ${{ runner.temp }}/benchmarks/report.md
             ${{ runner.temp }}/benchmarks/results.json
             ${{ runner.temp }}/benchmarks/statuses.json
+            ${{ runner.temp }}/benchmarks/lifecycle/*/jvmd-threads.txt
+            ${{ runner.temp }}/benchmarks/lifecycle/*/jvmd/daemon.log
 
       # e.g. "jvmd / scenarios — Contract 38/41 · Roadmap 12/108 (+2) vs main". Always success: they inform, never gate.
       - name: Post metrics to the checks list

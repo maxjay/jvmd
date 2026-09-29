@@ -99,12 +99,33 @@ const LIFECYCLE:[string,string,string?][]=[
   ["Daemon restart (persisted index)","restart_index_ms"],["Open after restart","restart_open_ms"],["First hover after restart","restart_first_ms"],["Resident memory after queries","rss_bytes","bytes"],
 ];
 
-export function renderMarkdown(s:Summary,change?:ReturnType<typeof compare>){
-  const out:string[]=[],j=totals(s,"jvmd","supported"),r=totals(s,"jvmd","roadmap"),lj=s.lifecycle.jvmd?.phases??{},ld=s.lifecycle.jdtls?.phases??{};
+/** The numbers a PR shows at a glance, with their change against main. */
+export function headline(s:Summary,base?:Summary){
+  const count=(x:Summary|undefined,scope:string)=>x?totals(x,"jvmd",scope):undefined;
+  const delta=(now:number,was?:number)=>was===undefined||now===was?"":` (${now>was?"+":"−"}${Math.abs(now-was)})`;
+  const [c,r,bc,br]=[count(s,"supported")!,count(s,"roadmap")!,count(base,"supported"),count(base,"roadmap")];
+  const lj=s.lifecycle.jvmd?.phases??{},bl=base?.lifecycle?.jvmd?.phases,ld=s.lifecycle.jdtls?.phases??{};
+  const cold=lj.machine_index_ms!=null&&lj.open_ms!=null?lj.machine_index_ms+lj.open_ms:undefined;
+  const was=bl?.machine_index_ms!=null&&bl?.open_ms!=null?bl.machine_index_ms+bl.open_ms:undefined;
+  const move=cold!==undefined&&was?Math.round((cold-was)/was*100):0;
+  return {
+    contract:`${c.pass}/${c.total}${delta(c.pass,bc?.pass)}`,roadmap:`${r.pass}/${r.total}${delta(r.pass,br?.pass)}`,
+    cold:cold===undefined?undefined:`index ${ms(lj.machine_index_ms)} · open ${ms(lj.open_ms)}${Math.abs(move)>=10?` (${move>0?"+":"−"}${Math.abs(move)}%)`:""}`+(ld.open_ms!=null?` · JDTLS import ${ms(ld.open_ms)}`:""),
+  };
+}
+/** One-line commit statuses for the PR checks list: always success, since they inform rather than gate. */
+export function statuses(s:Summary,base?:Summary){
+  const h=headline(s,base),changed=/\([+−]/u.test(h.contract+h.roadmap);
+  const rows=[{context:"jvmd / scenarios",description:`Contract ${h.contract} · Roadmap ${h.roadmap}${changed?" vs main":""}`}];
+  if(h.cold)rows.push({context:"jvmd / cold start",description:"Apache Maven: "+h.cold});
+  return rows.map(r=>({...r,description:r.description.slice(0,140)}));
+}
+export function renderMarkdown(s:Summary,change?:ReturnType<typeof compare>,base?:Summary){
+  const out:string[]=[];
   const reference=s.meta.reference?` · JDTLS from main ${String(s.meta.reference.revision).slice(0,8)}`:"";
+  const h=headline(s,base);
   out.push("## JVMD benchmarks","",
-    `**Contract** ${j.pass}/${j.total} correct · **Roadmap** ${r.pass}/${r.total} scenarios`+
-    (lj.machine_index_ms!=null?` · **Cold start** ${ms(lj.machine_index_ms)} index + ${ms(lj.open_ms)} open`+(ld.open_ms!=null?` (JDTLS import ${ms(ld.open_ms)})`:""):""),"",
+    `**Contract** ${h.contract} correct · **Roadmap** ${h.roadmap} scenarios`+(h.cold?` · **Cold start** ${h.cold}`:""),"",
     `<sub>${String(s.meta.revision).slice(0,8)}${s.meta.dirty?"+dirty":""} · ${s.meta.jdk.replace(/^.*version\s+"?([^"\s]+)"?.*$/u,"JDK $1")} · ${s.meta.cpus} CPUs${reference}</sub>`);
   if(change){
     out.push("");
@@ -195,7 +216,8 @@ export function renderText(s:Summary,change?:ReturnType<typeof compare>){
 export function writeReport(root:string,summary:Summary,baseline?:Summary){
   const change=compare(summary,baseline);
   writeFileSync(path.join(root,"summary.json"),JSON.stringify(summary,null,1)+"\n");
-  writeFileSync(path.join(root,"report.md"),renderMarkdown(summary,change));
+  writeFileSync(path.join(root,"report.md"),renderMarkdown(summary,change,baseline));
+  writeFileSync(path.join(root,"statuses.json"),JSON.stringify(statuses(summary,baseline),null,1)+"\n");
   const text=renderText(summary,change);writeFileSync(path.join(root,"report.txt"),text);
   return {text,regressions:change?.regressed??[]};
 }

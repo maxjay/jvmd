@@ -28,6 +28,7 @@ permissions:
   contents: read
   actions: read         # download main's last summary for comparison
   pull-requests: write  # keep one up-to-date report comment on the PR
+  statuses: write       # the one-line metrics in the PR checks list
 
 concurrency:
   group: benchmarks-${{ github.event.pull_request.number || github.ref }}
@@ -153,6 +154,22 @@ jobs:
             ${{ runner.temp }}/benchmarks/summary.json
             ${{ runner.temp }}/benchmarks/report.md
             ${{ runner.temp }}/benchmarks/results.json
+            ${{ runner.temp }}/benchmarks/statuses.json
+
+      # e.g. "jvmd / scenarios — Contract 38/41 · Roadmap 12/108 (+2) vs main". Always success: they inform, never gate.
+      - name: Post metrics to the checks list
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          statuses="$RUNNER_TEMP/benchmarks/statuses.json"
+          [ -f "$statuses" ] || exit 0
+          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          jq -c '.[]' "$statuses" | while read -r row; do
+            gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=success -f target_url="$url" \
+              -f context="$(jq -r .context <<<"$row")" -f description="$(jq -r .description <<<"$row")" >/dev/null
+          done
 
       - name: Publish report
         if: always()

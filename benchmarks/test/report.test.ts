@@ -1,6 +1,6 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {withReference,compare,renderMarkdown,type Summary} from "../report.ts";
+import {withReference,compare,renderMarkdown,statuses,type Summary} from "../report.ts";
 
 const summary=(servers:string[],rows:[string,string,string][],perf:any[]=[]):Summary=>({schema:1,meta:{revision:"abc12345",dirty:false,date:"",jdk:'openjdk version "25.0.4.1"',cpus:4,runs:1,servers,reference:undefined},
   families:[{id:"CMP-01",name:"Complete"}],outOfScope:[],cases:rows.map(([id,server,outcome])=>({id,family:"CMP-01",server,scope:"supported",outcome})) as any,performance:perf,lifecycle:{}});
@@ -21,4 +21,12 @@ test("since main lists regressions, fixes and large allocation moves, or says no
   assert.deepEqual([change.regressed.map(c=>c.id),change.fixed.map(c=>c.id),change.moves.map(m=>m.endpoint)],[["CMP-01/a"],["CMP-01/b"],["textDocument/hover"]]);
   assert.match(renderMarkdown(now,change),/\| ❌ \| `CMP-01\/a` \| pass \| wrong answer \|[\s\S]*\| ✅ \| `CMP-01\/b` \| wrong answer \| pass \|/u);
   assert.match(renderMarkdown(main,compare(main,main)),/^No change since main \(abc12345\)\.$/mu);
+});
+test("the PR checks line shows each count and its change since main",()=>{
+  const main=summary(["jvmd"],[["CMP-01/a","jvmd","pass"],["CMP-01/b","jvmd","unsupported"]]);
+  const now=summary(["jvmd"],[["CMP-01/a","jvmd","pass"],["CMP-01/b","jvmd","pass"]]);
+  now.cases[1].scope="roadmap";main.cases[1].scope="roadmap";
+  assert.deepEqual(statuses(now,main),[{context:"jvmd / scenarios",description:"Contract 1/1 · Roadmap 1/1 (+1) vs main"}]);
+  assert.deepEqual(statuses(now),[{context:"jvmd / scenarios",description:"Contract 1/1 · Roadmap 1/1"}]);
+  assert.match(renderMarkdown(now,compare(now,main),main),/^\*\*Contract\*\* 1\/1 correct · \*\*Roadmap\*\* 1\/1 \(\+1\) scenarios$/mu);
 });

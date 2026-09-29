@@ -55,6 +55,9 @@ The output directory holds `report.md` (the PR comment), `report.txt` (the termi
 
 - **PRs** run JVMD only and compare with main's last `summary.json`, which also supplies the
   JDTLS columns. A PR that changes the suite runs JDTLS too.
+- Two lines in the PR's checks list carry the headline numbers and their change since main,
+  like `jvmd / scenarios — Contract 38/41 · Roadmap 12/108 (+2) vs main` and
+  `jvmd / cold start — Apache Maven: index 24 s · open 3.1 s`. They are always green.
 - One PR comment is kept up to date: a headline, what changed since main (with a reproduce
   command for anything broken), then the lifecycle, latency, roadmap and family tables folded
   underneath. Regressions are also raised as warnings on the run.

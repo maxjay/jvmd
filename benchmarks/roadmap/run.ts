@@ -43,19 +43,24 @@ export async function main(argv=process.argv.slice(2)){
     javaHome,jdk:spawnSync(path.join(javaHome,"bin/java"),["-version"],{encoding:"utf8"}).stderr.split("\n").find(l=>/version/u.test(l))??"unknown JDK",cpus:os.cpus().length,platform:process.platform+"/"+process.arch};
   mkdirSync(root,{recursive:true});
   const results:any[]=[];
+  const total=runs*selected.length*servers.length,width=String(total).length;
   for(let run=1;run<=runs;run++)for(const def of selected)for(const server of run%2?servers:[...servers].reverse()){
+    const started=Date.now();
     const result=await runCase(def,server,path.join(root,"cases",`${run}-${server}-${def.id.replaceAll("/","-")}`),
       {javaHome,image:path.resolve(a.image??"jvmd-dist/target/image"),jdtlsHome:a["jdtls-home"]??process.env.JDTLS_HOME,customCommand,warmup,samples,timeout,
         preparation:{gradleHome:a["gradle-home"],protoc:a.protoc,protobufJava:a["protobuf-java"],alternateJavaHome:a["alternate-java-home"],timeoutMs:timeout}});
-    results.push({...result,run});console.log(JSON.stringify({run,server,caseId:def.id,outcome:result.outcome,error:result.error}));
+    results.push({...result,run});
+    const mark=result.outcome==="pass"||result.outcome==="not_applicable"?"ok  ":result.outcome==="unsupported"?"--  ":"FAIL";
+    console.log(`[${String(results.length).padStart(width)}/${total}] ${mark} ${server.padEnd(5)} ${def.id.padEnd(44)} ${((Date.now()-started)/1000).toFixed(1).padStart(5)}s`+
+      (mark==="FAIL"?`  ${result.outcome}${result.error?": "+String(result.error).slice(0,80):""}`:result.missing?`  ${result.missing}`:""));
   }
   writeFileSync(path.join(root,"results.json"),JSON.stringify({meta,results},null,1)+"\n");
   // Results are reported, never gated: the exit code only says whether the suite itself ran.
   const baseline=a.baseline&&existsSync(a.baseline)?JSON.parse(readFileSync(a.baseline,"utf8")).results:undefined;
-  const regressions=writeReport(root,meta,results,selected,baseline);
+  const {regressions,summary}=writeReport(root,meta,results,selected,baseline);
+  console.log("\n"+summary+"\nfull report: "+path.join(root,"report.txt"));
   if(process.env.GITHUB_ACTIONS==="true")for(const r of regressions)
     console.log(`::warning title=Roadmap regression::${r.caseId} passed on main, now ${r.outcome.replaceAll("_"," ")}`);
-  console.log(`report: ${path.join(root,"report.md")}`);
 }
 
 async function runCase(def:CaseDefinition,server:"jvmd"|"jdtls",dir:string,o:any){

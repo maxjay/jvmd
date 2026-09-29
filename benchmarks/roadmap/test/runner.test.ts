@@ -15,7 +15,7 @@ for(const [mode,caseId] of [["wrong-warmup","CMP-01/first-repeat"],["stale-provi
       assert.equal(r.status,0,r.log);const result=r.case();assert.equal(result.outcome,"incorrect");
       if(mode==="wrong-warmup"){assert.equal(result.operations[0].outcome,"pass");assert.equal(result.operations[1].state,"warmup");}
       if(mode.startsWith("stale-")&&mode!=="stale-provider")assert(result.operations.some((o:any)=>o.state==="baseline"&&o.outcome==="pass"),"no correct baseline before the change");
-      assert.match(r.report(),new RegExp("### Needs attention[\\s\\S]*\\| `"+caseId.replace("/","\\/")+"` \\| wrong answer"));
+      assert.match(r.report(),new RegExp("^attention\\n[\\s\\S]*  "+caseId.replace("/","\\/")+" +wrong ","mu"));
     }finally{r.cleanup();}
   });
 test("an answer that is only correct after retries is stale, and the time to correct is recorded",()=>{
@@ -30,7 +30,7 @@ test("a java/ request answered with MethodNotFound is not implemented, and the r
   const r=runFake("correct","NAV-03/extended-first-repeat");
   try{
     assert.equal(r.status,0,r.log);const result=r.case();assert.equal(result.outcome,"unsupported");assert.equal(result.missing,"java/extendedDocumentSymbol");
-    assert.match(r.report(),/<b>Not implemented<\/b>: 1 endpoint,[\s\S]*\| `java\/extendedDocumentSymbol` \| 1 \| NAV-03 \|/u);
+    assert.match(r.report(),/^not implemented · 1 endpoint blocks 1 scenario\n[\s\S]*  java\/extendedDocumentSymbol +1 +▪+ +NAV-03$/mu);
   }finally{r.cleanup();}
 });
 test("passing requests reach the latency table; allocation is blank when the peer has no probe",()=>{
@@ -38,9 +38,10 @@ test("passing requests reach the latency table; allocation is blank when the pee
   try{
     assert.equal(r.status,0,r.log);const ops=r.case().operations;
     assert.deepEqual(ops.map((o:any)=>o.state),["first_use","warmup","steady","steady"]);assert(ops.every((o:any)=>o.allocatedBytes===null&&o.latencyMs>=0));
-    assert.match(r.report(),/\| `textDocument\/completion` \| repeat \| [\d.]+ \/ [\d.]+ \| – \|/u);
-    assert.match(r.report(),/\| CMP-01 \| Complete and resolve a candidate \| ✅ 1\/1 \|/u);
-    assert.match(r.report(),/\*\*JVMD passes 1 of 1 editor scenarios \(100%\)\.\*\*/u);
+    assert.match(r.report(),/^  completion +first +[\d.]+ms +-$\n^ +repeat +[\d.]+ms +-$/mu);
+    assert.match(r.report(),/^  CMP-01 +complete and resolve a candidate +█{10} +1\/1$/mu);
+    assert.match(r.report(),/^  jvmd +█{30} +1\/1 +100% +0 missing · 0 attention$/mu);
+    assert.match(r.markdown(),/^```text\njvmd roadmap\n[\s\S]*```\n\n<details><summary><code>families · 1\/1 complete<\/code><\/summary>/u);
   }finally{r.cleanup();}
 });
 test("against a baseline, fixes and regressions are highlighted and annotated but the run still succeeds",()=>{
@@ -48,7 +49,7 @@ test("against a baseline, fixes and regressions are highlighted and annotated bu
   const r=runFake("wrong-warmup","CMP-01/first-repeat",{args:["--baseline",path.join(base.output,"results.json")],env:{GITHUB_ACTIONS:"true"}});
   try{
     assert.equal(r.status,0,r.log);
-    assert.match(r.report(),/### Since main[\s\S]*Regressed \(1\)[\s\S]*\| `CMP-01\/first-repeat` \| pass \| wrong answer \|/u);
+    assert.match(r.report(),/^since main\n[\s\S]*^  - +CMP-01\/first-repeat +pass +wrong$/mu);
     assert.match(r.log,/::warning title=Roadmap regression::CMP-01\/first-repeat passed on main, now incorrect/u);
   }finally{base.cleanup();r.cleanup();}
 });

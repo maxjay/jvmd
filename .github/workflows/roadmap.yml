@@ -105,6 +105,7 @@ jobs:
           retention-days: 30
           path: |
             ${{ runner.temp }}/roadmap/report.md
+            ${{ runner.temp }}/roadmap/report.txt
             ${{ runner.temp }}/roadmap/results.json
             ${{ runner.temp }}/roadmap/cases/*/result.json
 

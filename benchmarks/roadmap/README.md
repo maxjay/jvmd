@@ -10,19 +10,31 @@ whether it reflects the latest edit, and records latency and allocation per requ
 
 It is a progress report, not a gate. CI never fails on its results.
 
-## In CI
+## Output
 
-Every PR that touches JVMD gets one comment, updated in place, with:
+The runner prints a progress line per scenario, then a readout:
 
-- **Headline**: scenarios passing, not implemented, and needing attention.
-- **Since main**: scenarios that started passing, scenarios that regressed, and latency
-  or allocation moves over 25%. Regressions are also raised as warnings on the run.
-- **Needs attention**: scenarios JVMD implements but gets wrong, answers late (stale
-  after an edit), or that couldn't run.
-- Folded underneath: progress per scenario family, the endpoints JVMD doesn't implement
-  yet, latency and allocation next to JDTLS, and where JDTLS itself falls short.
+```text
+jvmd roadmap
+573205d2 · jdk 25.0.4.1 · 4 cpu · 1 run
 
-The same report is in the job summary; raw results are in the `roadmap` artifact.
+  jvmd   ███████▒░░░░░░░░░░░░░░░░░░░░░░   42/175   24%   128 missing · 5 attention
+  jdtls  █████████████████████████▒▒▒▒▒  147/175   84%
+
+attention
+  case                             result   detail
+  DIA-01/provider-edit             timeout  no correct textDocument/publishDiagnostics after provider changed
+  ENV-02/class-content             wrong    textDocument/definition: dependency definition must identify one target
+```
+
+`report.txt` adds per-family progress, the endpoints JVMD doesn't implement yet (ranked
+by how many scenarios each unblocks), latency and allocation next to JDTLS, and where
+JDTLS itself falls short. `report.md` is the same text for GitHub, with the long
+sections folded. `results.json` has every request.
+
+In CI the readout goes to the job summary and to one PR comment kept up to date. PRs
+also get a `since main` section: scenarios fixed (`+`), regressed (`-`, also raised as
+a warning on the run), and latency or allocation moves over 25% (`▲` worse, `▼` better).
 
 ## Locally
 

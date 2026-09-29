@@ -14,6 +14,7 @@ export function runFake(mode:string,only:string,{server="jvmd",args=[] as string
   const file=path.join(output,"results.json"),results=existsSync(file)?JSON.parse(readFileSync(file,"utf8")).results:[];
   return {status:run.status,log:run.stdout+run.stderr,results,output,
     case:(id=only,run=1)=>JSON.parse(readFileSync(path.join(output,"cases",`${run}-${server}-${id.replaceAll("/","-")}`,"result.json"),"utf8")),
-    report:()=>readFileSync(path.join(output,"report.md"),"utf8"),
+    report:()=>readFileSync(path.join(output,"report.txt"),"utf8"),
+    markdown:()=>readFileSync(path.join(output,"report.md"),"utf8"),
     cleanup:()=>rmSync(tmp,{recursive:true,force:true})};
 }

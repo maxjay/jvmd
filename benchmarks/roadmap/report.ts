@@ -6,15 +6,33 @@ const CATALOGUE=JSON.parse(readFileSync(new URL("./catalogue.json",import.meta.u
 
 /** Collapses a case outcome into what it means for the roadmap. */
 export const bucket=(o:string)=>o==="pass"||o==="not_applicable"?"pass":o==="unsupported"?"missing":o==="stale"?"stale":o==="unavailable_evidence"?"unchecked":o==="harness_error"?"harness":"failing";
-const WORDS:Record<string,string>={incorrect:"wrong answer",timeout:"timed out",protocol_error:"protocol error",stale:"stale after edit",unavailable_evidence:"can't be checked",harness_error:"harness error"};
+const WORDS:Record<string,string>={pass:"pass",incorrect:"wrong",timeout:"timeout",protocol_error:"protocol",stale:"stale",unavailable_evidence:"unchecked",harness_error:"harness",unsupported:"missing"};
 const SEVERITY=["failing","stale","harness","unchecked","missing","pass"];
 
-const median=(xs:number[])=>quantile(xs,.5),p95=(xs:number[])=>quantile(xs,.95);
+const median=(xs:number[])=>quantile(xs,.5);
 function quantile(xs:number[],q:number){if(!xs.length)return null;const s=[...xs].sort((a,b)=>a-b),h=(s.length-1)*q,i=Math.floor(h);return s[i]+(h-i)*(s[Math.min(i+1,s.length-1)]-s[i]);}
-const ms=(v:number|null)=>v===null?"–":v<10?v.toFixed(1):v.toFixed(0);
-const bytes=(v:number|null)=>v===null?"–":v<1024*1024?(v/1024).toFixed(0)+" KB":(v/1024/1024).toFixed(1)+" MB";
+const dur=(v:number|null)=>v===null?"-":v<10?v.toFixed(1)+"ms":v<1000?v.toFixed(0)+"ms":(v/1000).toFixed(2)+"s";
+const size=(v:number|null)=>v===null?"-":v<1<<20?(v/1024).toFixed(0)+"K":v<1<<30?(v/(1<<20)).toFixed(1)+"M":(v/(1<<30)).toFixed(2)+"G";
 const pct=(a:number,b:number)=>`${a>b?"+":""}${Math.round((a-b)/b*100)}%`;
-const cell=(s:string)=>s.replaceAll("|","\\|").replace(/\s+/gu," ").trim();
+/** How the lead compares with the reference: ratio of reference to lead, worded for the lead. */
+const versus=(a:number|null,b:number|null,better:string,worse:string)=>{
+  if(a===null||b===null||a<=0||b<=0)return "";const r=b/a;
+  return r>=1.1?`${r<10?r.toFixed(1):r.toFixed(0)}x ${better}`:r<=1/1.1?`${1/r<10?(1/r).toFixed(1):(1/r).toFixed(0)}x ${worse}`:"same";
+};
+const short=(endpoint:string)=>endpoint.replace(/^textDocument\//u,"");
+/** Pads a table: columns joined by two spaces, right-aligned where the header starts with ">". */
+function table(rows:string[][],indent="  "){
+  if(!rows.length)return [];
+  const right=rows[0].map(h=>h.startsWith(">")),head=rows[0].map(h=>h.replace(/^>/u,""));
+  const all=[head,...rows.slice(1)],width=head.map((_,i)=>Math.max(...all.map(r=>(r[i]??"").length)));
+  return all.map(r=>indent+r.map((c,i)=>right[i]?(c??"").padStart(width[i]):(c??"").padEnd(width[i])).join("  ").trimEnd());
+}
+/** █ pass, ▒ implemented but not passing, ░ not implemented. */
+function bar(pass:number,bad:number,total:number,width=30){
+  if(!total)return "".padEnd(width);
+  const p=Math.round(pass/total*width),b=bad?Math.max(1,Math.round(bad/total*width)):0;
+  return "█".repeat(p)+"▒".repeat(Math.min(b,width-p))+"░".repeat(Math.max(0,width-p-b));
+}
 
 /** One row per server and case; with several runs, the worst run decides. */
 export function caseStatus(results:any[]){
@@ -29,120 +47,121 @@ export function performance(results:any[]){
   const out=new Map<string,Record<string,{latency:number[];alloc:number[]}>>();
   for(const r of results)for(const op of r.operations){
     if(op.outcome!=="pass")continue;
-    const phase=op.state==="first_use"?"first":op.state==="steady"?"repeat":op.transitionMs!==undefined&&/^changed/u.test(op.state)?"after change":undefined;
+    const phase=op.state==="first_use"?"first":op.state==="steady"?"repeat":op.transitionMs!==undefined&&/^changed/u.test(op.state)?"edit":undefined;
     if(!phase)continue;
     const key=`${op.endpoint??op.method}\u0000${phase}`,row=out.get(key)??{};out.set(key,row);
     const c=row[r.server]??={latency:[],alloc:[]};
-    c.latency.push(phase==="after change"?op.transitionMs:op.latencyMs);
+    c.latency.push(phase==="edit"?op.transitionMs:op.latencyMs);
     if(typeof op.allocatedBytes==="number")c.alloc.push(op.allocatedBytes);
   }
   return out;
 }
+const PHASES=["first","repeat","edit"];
+const byEndpoint=(a:string,b:string)=>{const [ea,pa]=a.split("\u0000"),[eb,pb]=b.split("\u0000");return ea.localeCompare(eb)||PHASES.indexOf(pa)-PHASES.indexOf(pb);};
 
-function detail(r:any){
+function detail(r:any,width=90){
   const op=r.operations.find((o:any)=>o.outcome!=="pass");
-  if(r.outcome==="timeout"&&op)return `no correct \`${op.endpoint??op.method}\` answer in time (${op.state.replaceAll("_"," ")})`;
-  return cell((r.error??op?.assertionError??"").split("\n")[0].replace(/(Assertion)?Error( \[ERR_ASSERTION\])?: /gu,"")).slice(0,140);
+  const text=r.outcome==="timeout"&&op?`no correct ${op.endpoint??op.method} after ${op.state.replaceAll("_"," ")}`
+    :(r.error??op?.assertionError??"").split("\n")[0].replace(/(Assertion)?Error( \[ERR_ASSERTION\])?: /gu,"");
+  const flat=text.replace(/\s+/gu," ").trim();
+  return flat.length>width?flat.slice(0,width-1)+"…":flat;
 }
 
+type Section={title:string;lines:string[];fold?:boolean};
+
 /**
- * Writes report.md: a short headline, what changed against a baseline run (usually main), what needs
- * attention, and the full roadmap, API gaps and performance tables folded underneath. Returns the
- * regressions against the baseline so the caller can annotate them. Nothing here decides pass/fail.
+ * Renders the run as a terminal-style readout. report.txt is the plain text; report.md wraps the same
+ * text in code blocks, folding the long sections, for job summaries and PR comments. Returns the
+ * summary text (what the runner prints) and regressions against the baseline. Nothing here gates.
  */
 export function writeReport(root:string,meta:any,results:any[],selected:CaseDefinition[],baseline?:any[]){
-  const servers:string[]=meta.servers,lines:string[]=[],status=caseStatus(results);
+  const servers:string[]=meta.servers,status=caseStatus(results),sections:Section[]=[];
   const rows=(server:string)=>[...status.values()].filter(r=>r.server===server);
-  const count=(server:string,b:string)=>rows(server).filter(r=>bucket(r.outcome)===b).length;
-  const lead=servers.includes("jvmd")?"jvmd":servers[0],total=rows(lead).length,passing=count(lead,"pass");
+  const count=(rs:any[],...b:string[])=>rs.filter(r=>b.includes(bucket(r.outcome))).length;
+  const lead=servers.includes("jvmd")?"jvmd":servers[0],others=servers.filter(s=>s!==lead);
   const attention=rows(lead).filter(r=>!["pass","missing"].includes(bucket(r.outcome)));
+  const name=Math.max(...servers.map(s=>s.length));
 
-  lines.push("## JVMD roadmap","",
-    `**${lead==="jvmd"?"JVMD":lead} passes ${passing} of ${total} editor scenarios (${Math.round(passing/Math.max(total,1)*100)}%).** `+
-    [...count(lead,"missing")?[`${count(lead,"missing")} not implemented yet`]:[],...attention.length?[`${attention.length} need${attention.length===1?"s":""} attention`]:[],
-      ...servers.filter(s=>s!==lead).map(s=>`${s.toUpperCase()} passes ${count(s,"pass")}`)].join(" · ")+".","",
-    `<sub>${meta.revision.slice(0,10)}${meta.dirty?" (dirty)":""} · ${meta.jdk.replace(/^.*version\s+/u,"JDK ").replaceAll('"',"")} · ${meta.cpus} CPUs · ${meta.runs} run${meta.runs===1?"":"s"}</sub>`);
+  const jdk=meta.jdk.match(/version "([^"]+)"/u)?.[1]??meta.jdk;
+  const head=[`${meta.revision.slice(0,8)}${meta.dirty?"+dirty":""} · jdk ${jdk} · ${meta.cpus} cpu · ${meta.runs} run${meta.runs===1?"":"s"}`,""];
+  for(const s of servers){const rs=rows(s),pass=count(rs,"pass"),bad=rs.length-pass-count(rs,"missing");
+    head.push(`  ${s.padEnd(name)}  ${bar(pass,bad,rs.length)}  ${String(pass).padStart(3)}/${rs.length}  ${String(Math.round(pass/Math.max(rs.length,1)*100)).padStart(3)}%`+
+      (s===lead?`   ${count(rs,"missing")} missing · ${bad} attention`:""));}
+  head.push("",`  █ pass  ▒ implemented, not passing  ░ not implemented`);
+  sections.push({title:"jvmd roadmap",lines:head});
 
   const regressions:any[]=[];
   if(baseline){
-    const before=caseStatus(baseline),fixed:string[]=[];
+    const before=caseStatus(baseline),lines:string[]=[],changed:string[][]=[[" ","case","was","now"]];
     for(const r of rows(lead)){const b=before.get(r.server+"\u0000"+r.caseId);if(!b)continue;
       const was=bucket(b.outcome),now=bucket(r.outcome);
-      if(was!=="pass"&&now==="pass")fixed.push(r.caseId);
-      else if(was==="pass"&&now!=="pass")regressions.push({...r,was:b.outcome});}
+      if(was!=="pass"&&now==="pass")changed.push(["+",r.caseId,WORDS[b.outcome]??b.outcome,"pass"]);
+      else if(was==="pass"&&now!=="pass"){regressions.push({...r,was:b.outcome});changed.push(["-",r.caseId,"pass",WORDS[r.outcome]??r.outcome]);}}
+    if(changed.length>1)lines.push(...table(changed));
     const perf=performanceChanges(performance(results.filter(r=>r.server===lead)),performance(baseline.filter(r=>r.server===lead)),lead);
-    lines.push("","### Since main","");
-    if(!fixed.length&&!regressions.length&&!perf.length)lines.push("No change in results or performance.");
-    if(fixed.length)lines.push(`✅ **Now passing (${fixed.length}):** ${fixed.map(id=>`\`${id}\``).join(", ")}`,"");
-    if(regressions.length){lines.push(`❌ **Regressed (${regressions.length}):**`,"","| Case | Was | Now | Detail |","|---|---|---|---|");
-      for(const r of regressions)lines.push(`| \`${r.caseId}\` | ${WORDS[r.was]??r.was} | ${WORDS[r.outcome]??r.outcome} | ${detail(r)} |`);lines.push("");}
-    if(perf.length){lines.push("Performance moves over 25% (single CI runner, so treat as a hint):","","| Endpoint | When | Latency | Allocation |","|---|---|---:|---:|",...perf);}
+    if(perf.length>1){if(lines.length)lines.push("");lines.push(...table(perf));}
+    sections.push({title:"since main",lines:lines.length?lines:["  no change"]});
   }
 
-  if(attention.length){
-    lines.push("","### Needs attention","","Scenarios JVMD implements but gets wrong, answers late, or couldn't be run.","","| Case | Result | Detail |","|---|---|---|");
-    for(const r of attention)lines.push(`| \`${r.caseId}\` | ${WORDS[r.outcome]??r.outcome} | ${detail(r)} |`);
-  }
+  if(attention.length)sections.push({title:"attention",
+    lines:table([["case","result","detail"],...attention.map(r=>[r.caseId,WORDS[r.outcome]??r.outcome,detail(r)])])});
 
+  const families=CATALOGUE.scenarios.filter((f:any)=>selected.some(c=>c.family===f.id));
   const mark=(rs:any[])=>{
     if(!rs.length)return "";
-    const n=(b:string)=>rs.filter(r=>bucket(r.outcome)===b).length,pass=n("pass");
-    const icon=n("failing")||n("harness")?"❌":n("stale")?"🕒":pass===rs.length?"✅":n("unchecked")?"⚠️":pass?"🟡":"⬜";
-    return `${icon} ${pass}/${rs.length}`;
+    const pass=count(rs,"pass"),flag=count(rs,"failing","harness")?"!":count(rs,"stale")?"~":count(rs,"unchecked")?"?":"";
+    return `${bar(pass,rs.length-pass-count(rs,"missing"),rs.length,10)} ${String(pass).padStart(2)}/${String(rs.length).padEnd(2)} ${flag}`.trimEnd();
   };
-  const families=CATALOGUE.scenarios.filter((f:any)=>selected.some(c=>c.family===f.id));
   const done=families.filter((f:any)=>{const rs=rows(lead).filter(r=>r.family===f.id);return rs.length&&rs.every(r=>bucket(r.outcome)==="pass");}).length;
-  lines.push("",`<details><summary><b>Scenario families</b>: ${done} of ${families.length} complete</summary>`,"",
-    `| | Scenario | ${servers.map(s=>s.toUpperCase()).join(" | ")} |`,`|---|---|${servers.map(()=>":--").join("|")}|`);
-  for(const f of families)lines.push(`| ${f.id} | ${f.family} | ${servers.map(s=>mark(rows(s).filter(r=>r.family===f.id))).join(" | ")} |`);
-  lines.push("","✅ all pass · 🟡 partly implemented · ⬜ not implemented · ❌ something implemented is wrong · 🕒 first answer after an edit is stale · ⚠️ answer can't be checked","","</details>");
+  sections.push({title:`families · ${done}/${families.length} complete`,fold:true,lines:[
+    ...table([["id","scenario",...servers],...families.map((f:any)=>[f.id,f.family.toLowerCase(),...servers.map(s=>mark(rows(s).filter(r=>r.family===f.id)))])]),
+    "","  ! wrong/failed  ~ stale after edit  ? can't be checked"]});
 
   const missing=new Map<string,any[]>();
   for(const r of rows(lead))if(r.outcome==="unsupported"){const k=r.missing??"?";missing.set(k,[...missing.get(k)??[],r]);}
   if(missing.size){
-    lines.push("",`<details><summary><b>Not implemented</b>: ${missing.size} endpoint${missing.size===1?"":"s"}, ${count(lead,"missing")} scenario${count(lead,"missing")===1?"":"s"} waiting</summary>`,"",
-      "Decided by JVMD itself: a capability or command it doesn't advertise, or a \"method not found\" reply. Implementing one turns its scenarios on automatically.","",
-      "| Endpoint | Scenarios | Families |","|---|--:|---|");
-    for(const [k,rs] of [...missing].sort((a,b)=>b[1].length-a[1].length||a[0].localeCompare(b[0])))lines.push(`| \`${k}\` | ${rs.length} | ${[...new Set(rs.map(r=>r.family))].join(", ")} |`);
-    lines.push("","</details>");
+    const sorted=[...missing].sort((a,b)=>b[1].length-a[1].length||a[0].localeCompare(b[0])),max=sorted[0][1].length;
+    sections.push({title:`not implemented · ${missing.size} endpoint${missing.size===1?"":"s"} block${missing.size===1?"s":""} ${count(rows(lead),"missing")} scenario${count(rows(lead),"missing")===1?"":"s"}`,fold:true,lines:
+      table([["endpoint",">n","","families"],...sorted.map(([k,rs])=>[k,String(rs.length),"▪".repeat(Math.ceil(rs.length/max*12)),[...new Set(rs.map(r=>r.family))].join(" ")])])});
   }
 
-  // Head-to-head only: endpoints the lead server answers. Everything else is in results.json.
-  const perf=new Map([...performance(results)].filter(([,row])=>row[lead]));
-  if(perf.size){
-    const endpoints=new Set([...perf.keys()].map(k=>k.split("\u0000")[0])).size;
-    lines.push("",`<details><summary><b>Latency and allocation</b>: the ${endpoints} endpoints ${lead.toUpperCase()} answers correctly</summary>`,"",
-      "Latency is median / p95 in ms; *after change* is the edit to the first correct answer. Allocation is the median bytes the server JVM allocated during the request (JVMD: the daemon, not child processes). Other endpoints are in `results.json`.","",
-      `| Endpoint | When | ${servers.map(s=>`${s.toUpperCase()} ms | ${s.toUpperCase()} alloc`).join(" | ")} |`,`|---|---|${servers.map(()=>"--:|--:").join("|")}|`);
-    const order=(k:string)=>k.replace(/\u0000(first|repeat|after change)$/u,(_,p)=>"\u0000"+["first","repeat","after change"].indexOf(p));
-    for(const [key,row] of [...perf].sort((a,b)=>order(a[0]).localeCompare(order(b[0])))){const [endpoint,phase]=key.split("\u0000");
-      lines.push(`| \`${endpoint}\` | ${phase} | ${servers.map(s=>{const c=row[s];return c?`${ms(median(c.latency))} / ${ms(p95(c.latency))} | ${bytes(median(c.alloc))}`:"– | –";}).join(" | ")} |`);}
-    lines.push("","</details>");
+  // Head to head: endpoints the lead server answers correctly. Everything else is in results.json.
+  const perf=[...performance(results)].filter(([,row])=>row[lead]).sort((a,b)=>byEndpoint(a[0],b[0]));
+  if(perf.length){
+    const vs=others[0],header=["endpoint","",`>${lead}`,">alloc",...vs?[`>${vs}`,">alloc",">speed",">alloc"]:[]];
+    let last="";
+    const body=perf.map(([key,row])=>{const [endpoint,phase]=key.split("\u0000"),a=row[lead],b=vs?row[vs]:undefined;
+      const la=median(a.latency),lb=b?median(b.latency):null,xa=median(a.alloc),xb=b?median(b.alloc):null;
+      const label=endpoint===last?"":short(endpoint);last=endpoint;
+      return [label,phase,dur(la),size(xa),...vs?[dur(lb),size(xb),versus(la,lb,"faster","slower"),versus(xa,xb,"less","more")]:[]];});
+    sections.push({title:`latency · alloc · ${new Set(perf.map(([k])=>k.split("\u0000")[0])).size} endpoints`,fold:true,lines:[...table([header,...body]),"",
+      `  median per request · speed/alloc: ${lead} relative to ${vs??lead} · edit = edit to first correct answer · alloc = server JVM bytes (jvmd: daemon only)`]});
   }
 
-  const others=servers.filter(s=>s!==lead).flatMap(s=>rows(s).filter(r=>!["pass","missing"].includes(bucket(r.outcome))));
-  if(others.length){
-    lines.push("",`<details><summary><b>Reference server notes</b>: ${others.length} scenarios where ${servers.filter(s=>s!==lead).map(s=>s.toUpperCase()).join(", ")} fell short</summary>`,"",
-      "Useful context: these are behaviours the reference server doesn't get right either.","","| Server | Case | Result | Detail |","|---|---|---|---|");
-    for(const r of others)lines.push(`| ${r.server.toUpperCase()} | \`${r.caseId}\` | ${WORDS[r.outcome]??r.outcome} | ${detail(r)} |`);
-    lines.push("","</details>");
-  }
+  const reference=others.flatMap(s=>rows(s).filter(r=>!["pass","missing"].includes(bucket(r.outcome))));
+  if(reference.length)sections.push({title:`${others.join(", ")} falls short · ${reference.length}`,fold:true,
+    lines:table([["server","case","result","detail"],...reference.sort((a,b)=>a.caseId.localeCompare(b.caseId)).map(r=>[r.server,r.caseId,WORDS[r.outcome]??r.outcome,detail(r,70)])])});
   const unclean=results.filter(r=>r.shutdown);
-  if(unclean.length)lines.push("",`<sub>Unclean exits (answers still count): ${servers.map(s=>`${s.toUpperCase()} ${unclean.filter(r=>r.server===s).length}`).join(", ")}.</sub>`);
+  if(unclean.length)sections.at(-1)!.lines.push("",`  unclean exits (answers still count): ${servers.map(s=>`${s} ${unclean.filter(r=>r.server===s).length}`).join(", ")}`);
 
-  writeFileSync(path.join(root,"report.md"),lines.join("\n")+"\n");
-  return regressions;
+  const text=(ss:Section[])=>ss.map(s=>[s.title,...s.lines].join("\n")).join("\n\n")+"\n";
+  const block=(s:Section)=>"```text\n"+[s.title,...s.lines].join("\n")+"\n```";
+  const md=[block({title:sections[0].title,lines:[...sections[0].lines,...sections.slice(1).filter(s=>!s.fold).flatMap(s=>["",s.title,...s.lines])]}),
+    ...sections.filter(s=>s.fold).map(s=>`<details><summary><code>${s.title}</code></summary>\n\n${"```text\n"+s.lines.join("\n")+"\n```"}\n\n</details>`)].join("\n\n")+"\n";
+  writeFileSync(path.join(root,"report.txt"),text(sections));
+  writeFileSync(path.join(root,"report.md"),md);
+  return {regressions,summary:text(sections.filter(s=>!s.fold))};
 }
 
 function performanceChanges(now:ReturnType<typeof performance>,before:ReturnType<typeof performance>,server:string){
-  const out:string[]=[];
-  for(const [key,row] of [...now].sort()){
+  const out:string[][]=[[" ","endpoint","","latency","","alloc",""]];
+  for(const [key,row] of [...now].sort((a,b)=>byEndpoint(a[0],b[0]))){
     const a=row[server],b=before.get(key)?.[server];if(!a||!b)continue;
     const [la,lb,xa,xb]=[median(a.latency),median(b.latency),median(a.alloc),median(b.alloc)];
     const latency=la!==null&&lb&&Math.abs(la-lb)>=5&&Math.abs(la-lb)/lb>=.25,alloc=xa!==null&&xb&&Math.abs(xa-xb)>=1<<20&&Math.abs(xa-xb)/xb>=.25;
     if(!latency&&!alloc)continue;
-    const [endpoint,phase]=key.split("\u0000");
-    out.push(`| \`${endpoint}\` | ${phase} | ${latency?`${ms(lb)} → ${ms(la)} ms (${pct(la!,lb!)})`:"–"} | ${alloc?`${bytes(xb)} → ${bytes(xa)} (${pct(xa!,xb!)})`:"–"} |`);
+    const [endpoint,phase]=key.split("\u0000"),worse=(latency&&la!>lb!)||(alloc&&xa!>xb!);
+    out.push([worse?"▲":"▼",short(endpoint),phase,latency?`${dur(lb)} → ${dur(la)}`:"",latency?pct(la!,lb!):"",alloc?`${size(xb)} → ${size(xa)}`:"",alloc?pct(xa!,xb!):""]);
   }
   return out;
 }

@@ -1,0 +1,277 @@
+{
+  "schemaVersion": 1,
+  "workflowRun": 36369332041,
+  "scope": "Verified downloaded review subsets and their supplied canonical shard reports; not a local full-raw replay",
+  "sourceRevision": "6cd97fac3f1fa47c5d9e2e8143aea46c10234760",
+  "reviewSubsetHashesVerified": true,
+  "fullRawReplayedLocally": false,
+  "planned": 350,
+  "recorded": 350,
+  "distinctCaseDefinitions": 175,
+  "duplicateCaseKeys": [],
+  "outcomes": {
+    "pass": 150,
+    "protocol_error": 41,
+    "incorrect": 17,
+    "unavailable_evidence": 7,
+    "unsupported": 133,
+    "timeout": 1,
+    "not_applicable": 1
+  },
+  "byServer": {
+    "jvmd": {
+      "pass": 40,
+      "unsupported": 133,
+      "timeout": 1,
+      "not_applicable": 1
+    },
+    "jdtls": {
+      "protocol_error": 41,
+      "pass": 110,
+      "incorrect": 17,
+      "unavailable_evidence": 7
+    }
+  },
+  "artifactExpiry": "2026-10-05; original full raw and review artifacts have seven-day retention",
+  "publicComparativePerformance": false,
+  "shards": [
+    {
+      "shard": 1,
+      "artifactId": 10949131402,
+      "zipBytes": 279240,
+      "zipSha256": "0101040b4dbf41aaa201c86065719e4b6cebdd4c504a7b3067aa14de552894c1",
+      "reviewTarSha256": "9d5e044e25d1bbb7c156c9a45bfb077bb9577a620d20fe53b28d940b217d5937",
+      "selectedFilesVerified": 496,
+      "revision": "6cd97fac3f1fa47c5d9e2e8143aea46c10234760",
+      "node": "v22.23.2",
+      "outcomes": {
+        "pass": 22,
+        "incorrect": 3,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 9,
+        "harness_error": 0,
+        "unsupported": 0,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      },
+      "suppliedCanonicalIntegrityIssues": []
+    },
+    {
+      "shard": 2,
+      "artifactId": 10948866887,
+      "zipBytes": 313292,
+      "zipSha256": "603ac70ad3302e2466cd5e7a79e3422b0fb3988c75783c3c8e9deb6e285264bf",
+      "reviewTarSha256": "5bcc799e24101a680293fada4e93dac09d3f0afb230b6702ee2f3350e811aa4c",
+      "selectedFilesVerified": 521,
+      "revision": "6cd97fac3f1fa47c5d9e2e8143aea46c10234760",
+      "node": "v22.23.2",
+      "outcomes": {
+        "pass": 29,
+        "incorrect": 0,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 4,
+        "harness_error": 0,
+        "unsupported": 2,
+        "not_applicable": 0,
+        "unavailable_evidence": 1,
+        "not_run": 0
+      },
+      "suppliedCanonicalIntegrityIssues": []
+    },
+    {
+      "shard": 3,
+      "artifactId": 10949275509,
+      "zipBytes": 316931,
+      "zipSha256": "b07a60247c969caf92586fbab18dff9f82eceead8c775443b2ebe929fcd931c1",
+      "reviewTarSha256": "7323f0ac1c11dee9b853494d46d2a9e5a550e9117437e1c3eaff76e96af9b0b7",
+      "selectedFilesVerified": 517,
+      "revision": "6cd97fac3f1fa47c5d9e2e8143aea46c10234760",
+      "node": "v22.23.2",
+      "outcomes": {
+        "pass": 3,
+        "incorrect": 3,
+        "stale": 0,
+        "timeout": 1,
+        "protocol_error": 6,
+        "harness_error": 0,
+        "unsupported": 15,
+        "not_applicable": 0,
+        "unavailable_evidence": 6,
+        "not_run": 0
+      },
+      "suppliedCanonicalIntegrityIssues": []
+    },
+    {
+      "shard": 4,
+      "artifactId": 10948667208,
+      "zipBytes": 278322,
+      "zipSha256": "8407f5ac5679596980999a970c6c0c3006d8b13a3bdf43d52e584a19003367bf",
+      "reviewTarSha256": "614db6474b1faea77e1ff5112a3edb79c373152d3c9278fb16ec2d670b60c37b",
+      "selectedFilesVerified": 506,
+      "revision": "6cd97fac3f1fa47c5d9e2e8143aea46c10234760",
+      "node": "v22.23.2",
+      "outcomes": {
+        "pass": 14,
+        "incorrect": 1,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 3,
+        "harness_error": 0,
+        "unsupported": 18,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      },
+      "suppliedCanonicalIntegrityIssues": []
+    },
+    {
+      "shard": 5,
+      "artifactId": 10949116171,
+      "zipBytes": 267686,
+      "zipSha256": "c17e07204e4bf1544ccb31d36f897f03ee3ec9f878eb159d91040106a66d1c81",
+      "reviewTarSha256": "3776a2ed1c2ed95681f0f86c8c07ccb06d84bda68094121a88c45d9c28a63b14",
+      "selectedFilesVerified": 478,
+      "revision": "6cd97fac3f1fa47c5d9e2e8143aea46c10234760",
+      "node": "v22.23.2",
+      "outcomes": {
+        "pass": 13,
+        "incorrect": 0,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 7,
+        "harness_error": 0,
+        "unsupported": 14,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      },
+      "suppliedCanonicalIntegrityIssues": []
+    },
+    {
+      "shard": 6,
+      "artifactId": 10948179502,
+      "zipBytes": 330184,
+      "zipSha256": "aeb1447f4d249e4eb09aeca8f5b666993784ee74bdc82c014a1270974accbc17",
+      "reviewTarSha256": "cc282a8e060fa7f8b1162b18c6ac1741323421f66edb56290f762c9ce99f6485",
+      "selectedFilesVerified": 504,
+      "revision": "6cd97fac3f1fa47c5d9e2e8143aea46c10234760",
+      "node": "v22.23.2",
+      "outcomes": {
+        "pass": 16,
+        "incorrect": 0,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 2,
+        "harness_error": 0,
+        "unsupported": 18,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      },
+      "suppliedCanonicalIntegrityIssues": []
+    },
+    {
+      "shard": 7,
+      "artifactId": 10948384315,
+      "zipBytes": 281955,
+      "zipSha256": "35102fc83580fbf20e9dd5f6d5cde2f018a9765ab46bde83862db63c9ea29aff",
+      "reviewTarSha256": "ffc1bd231a3b4a75c3929f73add946a75d8813af18b3e3048b9e5ab6be9c4196",
+      "selectedFilesVerified": 470,
+      "revision": "6cd97fac3f1fa47c5d9e2e8143aea46c10234760",
+      "node": "v22.23.2",
+      "outcomes": {
+        "pass": 11,
+        "incorrect": 2,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 4,
+        "harness_error": 0,
+        "unsupported": 17,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      },
+      "suppliedCanonicalIntegrityIssues": []
+    },
+    {
+      "shard": 8,
+      "artifactId": 10948468926,
+      "zipBytes": 310786,
+      "zipSha256": "c1e0c892e48431e5025a8368d6883e4a937b2fb1872e72a593a87149d16e89c6",
+      "reviewTarSha256": "af7668e05fa69d51d6408733aa82eadef38aeb7a39bb3c83db69fb62e1ccb6e6",
+      "selectedFilesVerified": 495,
+      "revision": "6cd97fac3f1fa47c5d9e2e8143aea46c10234760",
+      "node": "v22.23.2",
+      "outcomes": {
+        "pass": 15,
+        "incorrect": 1,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 2,
+        "harness_error": 0,
+        "unsupported": 17,
+        "not_applicable": 1,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      },
+      "suppliedCanonicalIntegrityIssues": []
+    },
+    {
+      "shard": 9,
+      "artifactId": 10948802896,
+      "zipBytes": 329626,
+      "zipSha256": "e4d0cd689ec3c97d4a820c471fa98e68ebd7b69d904c48a4cf43ae5fdac198b4",
+      "reviewTarSha256": "909931d40dcaa9b3ee239a0380ccab79f80046824dbdf94ed40fc6c74c5350a9",
+      "selectedFilesVerified": 482,
+      "revision": "6cd97fac3f1fa47c5d9e2e8143aea46c10234760",
+      "node": "v22.23.2",
+      "outcomes": {
+        "pass": 12,
+        "incorrect": 6,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 2,
+        "harness_error": 0,
+        "unsupported": 14,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      },
+      "suppliedCanonicalIntegrityIssues": [
+        "01-jdtls-ENV-01-classpath-replacement: settled probe missing",
+        "01-jdtls-PRJ-01-import-membership: settled probe missing"
+      ]
+    },
+    {
+      "shard": 10,
+      "artifactId": 10949051086,
+      "zipBytes": 277481,
+      "zipSha256": "de4ab6d98bba50dbdf7588f4a075e70d00986ca1c9f698a283cee2e3a45fae2b",
+      "reviewTarSha256": "862d69ab86f3c4f881960a24c8cd96b71e6243ef8cdc463b7c62faae029c7d26",
+      "selectedFilesVerified": 498,
+      "revision": "6cd97fac3f1fa47c5d9e2e8143aea46c10234760",
+      "node": "v22.23.2",
+      "outcomes": {
+        "pass": 15,
+        "incorrect": 1,
+        "stale": 0,
+        "timeout": 0,
+        "protocol_error": 2,
+        "harness_error": 0,
+        "unsupported": 18,
+        "not_applicable": 0,
+        "unavailable_evidence": 0,
+        "not_run": 0
+      },
+      "suppliedCanonicalIntegrityIssues": []
+    }
+  ],
+  "limitations": [
+    "All ten manifests record Node v22.23.2, not the workflow-selected v24.21.0. Corrected collections are separate.",
+    "Shard 9 preserves two canonical missing-settled-probe findings. Neither failure is erased.",
+    "The review subsets omit caches, fixture workspaces and compiled oracle output; their valid hashes cannot establish full-bundle validity."
+  ]
+}

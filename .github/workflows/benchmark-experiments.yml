@@ -124,13 +124,19 @@ jobs:
       - name: Delegate lifetime resource accounting
         id: resources
         run: |
-          sudo python3 benchmarks/workspaces/delegate_cgroup.py setup --output "$RUNNER_TEMP/delegation.json" --uid "$(id -u)" --gid "$(id -g)"
+          sudo python3 benchmarks/workspaces/delegate_cgroup.py setup --output "$RUNNER_TEMP/delegation.json" --uid "$(id -u)" --gid "$(id -g)" --runner-path "$PATH"
           python3 - <<'PY' >> "$GITHUB_ENV"
           import json, os
           from pathlib import Path
           record = json.loads((Path(os.environ['RUNNER_TEMP']) / 'delegation.json').read_text())
           print('JVMD_BENCH_CGROUP_ROOT=' + record['parent'])
           PY
+      - name: Verify delegated runtime and child PATH
+        run: |
+          sudo -E python3 benchmarks/workspaces/delegate_cgroup.py run --output "$RUNNER_TEMP/delegation.json" -- \
+            node benchmarks/workspaces/verify_delegate_runtime.cjs "$(command -v node)" v24.21.0 \
+            > "$RUNNER_TEMP/delegation-runtime.json"
+
       - name: Collect the predeclared independent block
         run: |
           sudo -E python3 benchmarks/workspaces/delegate_cgroup.py run --output "$RUNNER_TEMP/delegation.json" -- \
@@ -159,6 +165,18 @@ jobs:
       - name: Remove empty accounting groups
         if: always() && steps.resources.outcome == 'success'
         run: sudo python3 benchmarks/workspaces/delegate_cgroup.py cleanup --output "$RUNNER_TEMP/delegation.json"
+
+      - name: Preserve delegation runtime and cleanup evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: delegation-${{ matrix.experiment }}-${{ matrix.block }}
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/delegation.json
+            ${{ runner.temp }}/delegation.launches.jsonl
+            ${{ runner.temp }}/delegation.cleanup.json
+            ${{ runner.temp }}/delegation-runtime.json
 
   reduce:
     needs: [selection, block]

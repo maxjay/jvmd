@@ -13,16 +13,27 @@ from pathlib import Path
 import uuid
 import pwd
 import re
+import shutil
 from cgroup_resources import cgroup_mount, keyed
 
 
 CGROUP_ROOT = Path('/sys/fs/cgroup')
 
 
-def setup(output, uid, gid):
+def runner_path(value):
+    # Capture this in the ordinary shell, before sudo applies secure_path. Never
+    # look up a user-selected executable while the wrapper is still privileged.
+    if (not isinstance(value, str) or not value
+            or any(not part or not Path(part).is_absolute() for part in value.split(os.pathsep))):
+        raise ValueError('original runner PATH missing or relative; setup requires --runner-path')
+    return value
+
+
+def setup(output, uid, gid, path=None):
     directory = None
-    record = dict(schemaVersion=1, availability='unavailable', parent=None, uid=uid, gid=gid)
+    record = dict(schemaVersion=1, availability='unavailable', parent=None, uid=uid, gid=gid, runnerPath=path)
     try:
+        runner_path(path)
         root = CGROUP_ROOT
         mount = cgroup_mount(root)
         directory = root / ('jvmd-validation-' + uuid.uuid4().hex)
@@ -123,6 +134,7 @@ def run(output, command):
     record = json.loads(output.read_text())
     if not command or record['uid'] <= 0 or record['gid'] <= 0:
         raise ValueError('runner identity or command missing')
+    path = runner_path(record.get('runnerPath'))
     if record['availability'] == 'ready':
         parent = Path(record['parent'])
         cgroup_mount(parent)
@@ -136,8 +148,18 @@ def run(output, command):
     os.setuid(record['uid'])
     # Preserve the original runner identity for tools that consult user.home.
     account = pwd.getpwuid(record['uid'])
-    os.environ.update(HOME=account.pw_dir, USER=account.pw_name, LOGNAME=account.pw_name)
-    os.execvp(command[0], command)
+    os.environ.update(HOME=account.pw_dir, USER=account.pw_name, LOGNAME=account.pw_name, PATH=path)
+    executable = shutil.which(command[0], path=path)
+    if executable is None:
+        raise FileNotFoundError('command absent from the recorded runner PATH: ' + command[0])
+    # Keep wrapper provenance outside sealed measurement bundles. This record
+    # precedes execution and cannot itself establish a successful command.
+    launch = dict(schemaVersion=1, pid=os.getpid(), uid=os.getuid(), gid=os.getgid(),
+                  command=command, executable=str(Path(executable).resolve()), runnerPath=path,
+                  delegation=record.get('parent'), delegationEpoch=record.get('epoch'))
+    with output.with_suffix('.launches.jsonl').open('a') as journal:
+        journal.write(json.dumps(launch) + '\n')
+    os.execve(executable, command, os.environ)
 
 
 if __name__ == '__main__':
@@ -146,6 +168,7 @@ if __name__ == '__main__':
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--uid', type=int)
     parser.add_argument('--gid', type=int)
+    parser.add_argument('--runner-path')
     args, command = parser.parse_known_args()
     if args.action == 'cleanup':
         cleanup(args.output)
@@ -154,6 +177,6 @@ if __name__ == '__main__':
     else:
         if args.uid is None or args.gid is None or args.uid <= 0 or args.gid <= 0:
             parser.error('setup requires the non-root runner uid and gid')
-        result = setup(args.output, args.uid, args.gid)
+        result = setup(args.output, args.uid, args.gid, args.runner_path)
         print(json.dumps(result))
         raise SystemExit(0 if result['availability'] == 'ready' else 1)

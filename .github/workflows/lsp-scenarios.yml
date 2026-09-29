@@ -54,6 +54,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
@@ -85,20 +88,26 @@ jobs:
           echo "$RUNNER_TEMP/tools/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
 
       - name: Install harness dependency
-        run: npm install --prefix benchmarks/lsp-scenarios --ignore-scripts
+        run: npm ci --prefix benchmarks/lsp-scenarios --ignore-scripts
 
       - name: Delegate lifetime resource accounting on this runner
         id: resources
         continue-on-error: true
         run: |
           sudo python3 benchmarks/workspaces/delegate_cgroup.py setup \
-            --output "$RUNNER_TEMP/cgroup-delegation.json" --uid "$(id -u)" --gid "$(id -g)"
+            --output "$RUNNER_TEMP/cgroup-delegation.json" --uid "$(id -u)" --gid "$(id -g)" --runner-path "$PATH"
           python3 - <<'PY' >> "$GITHUB_ENV"
           import json, os
           from pathlib import Path
           record = json.loads((Path(os.environ['RUNNER_TEMP']) / 'cgroup-delegation.json').read_text())
           print('JVMD_BENCH_CGROUP_ROOT=' + record['parent'])
           PY
+
+      - name: Verify delegated runtime and child PATH
+        run: |
+          sudo -E python3 benchmarks/workspaces/delegate_cgroup.py run --output "$RUNNER_TEMP/cgroup-delegation.json" -- \
+            node benchmarks/workspaces/verify_delegate_runtime.cjs "$(command -v node)" v24.21.0 \
+            > "$RUNNER_TEMP/delegation-runtime.json"
 
       - name: Harness contract tests
         run: |
@@ -332,6 +341,18 @@ jobs:
       - name: Remove the empty delegated accounting parent
         if: always() && steps.resources.outcome == 'success'
         run: sudo python3 benchmarks/workspaces/delegate_cgroup.py cleanup --output "$RUNNER_TEMP/cgroup-delegation.json"
+
+      - name: Preserve delegation runtime and cleanup evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: delegation-lifecycle
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/cgroup-delegation.json
+            ${{ runner.temp }}/cgroup-delegation.launches.jsonl
+            ${{ runner.temp }}/cgroup-delegation.cleanup.json
+            ${{ runner.temp }}/delegation-runtime.json
 
       - name: Require delegated accounting capability after preserving diagnostics
         if: ${{ !cancelled() && steps.resources.outcome != 'success' }}

@@ -1,0 +1,80 @@
+name: Saved catalogue replay
+
+on:
+  pull_request:
+    paths:
+      - 'benchmarks/lsp-scenarios/reduce.ts'
+      - 'benchmarks/lsp-scenarios/reduce-catalogue.ts'
+      - 'benchmarks/lsp-scenarios/harness/transitions.ts'
+      - 'benchmarks/lsp-scenarios/harness/catalogueReduction.ts'
+      - '.github/workflows/catalogue-replay.yml'
+  workflow_dispatch:
+    inputs:
+      source_run:
+        description: 'Completed catalogue collection whose original full raw artifacts will be replayed'
+        type: string
+        default: '36579868225'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: catalogue-replay-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+      - name: Install locked reducer dependencies
+        id: dependencies
+        run: npm ci --prefix benchmarks/lsp-scenarios --ignore-scripts
+      - name: Record the immutable collection being replayed
+        env:
+          SOURCE_RUN: ${{ inputs.source_run || '36579868225' }}
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          source = os.environ['SOURCE_RUN']
+          if not source.isdecimal():
+              raise ValueError('source run must be a numeric Actions run ID')
+          record = dict(schemaVersion=1, sourceRun=source,
+              reducerRevision=subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip(),
+              scope='Artifact-only replay of a completed collection; no servers or new measurements')
+          (Path(os.environ['RUNNER_TEMP'])/'catalogue-replay-source.json').write_text(json.dumps(record, indent=2)+'\n')
+          PY
+      - name: Download original full raw shards
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: catalogue-raw-*
+          run-id: ${{ inputs.source_run || '36579868225' }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/catalogue-shards
+      - name: Replay the existing evidence without rewriting it
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: |
+          shopt -s nullglob
+          shards=("$RUNNER_TEMP"/catalogue-shards/catalogue-raw-*)
+          node benchmarks/lsp-scenarios/reduce-catalogue.ts \
+            benchmarks/experiments/catalogue-validation.json \
+            "$RUNNER_TEMP/catalogue-replayed" "${shards[@]}"
+      - name: Preserve replay and failing product dispositions
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: catalogue-replayed
+          retention-days: 7
+          include-hidden-files: true
+          path: |
+            ${{ runner.temp }}/catalogue-replayed
+            ${{ runner.temp }}/catalogue-replay-source.json

@@ -8,7 +8,7 @@ import {validUnofferedSelection} from "./harness/completionSelection.ts";
 import {CONTRACT} from "./harness/contracts.ts";
 import {reduceVariants} from "./variants.ts";
 import {isRenameRejection,isInvalidRenameRequest} from "./harness/rename.ts";
-import {validateTransitionAttempts} from "./harness/transitions.ts";
+import {validateTransitionAttempts,validateTransitionTermination} from "./harness/transitions.ts";
 import {validateDiagnosticObservations} from "./harness/diagnosticObserver.ts";
 import {workspaceSymbolArgument} from "./harness/symbols.ts";
 import {auditLifetimeResources} from "./harness/lifetimeResources.ts";
@@ -82,16 +82,7 @@ export function validateCase(report:any,events:any[],exchanges:any[],operations:
         &&s.attempts[0].stage==="prepare_immediate"&&s.attempts[0].outcome==="failed"
         &&s.attempts[0].immediate.preparationOperationIds.some((id:string)=>operations.some(o=>o.operationId===id&&o.outcome!=="pass"));
       check(blocked||operations.slice(s.firstOperationIndex).find(o=>o.method===s.method&&o.state!=="item_acquisition")?.state==="changed_immediate","immediate probe missing");
-      if(s.probePolicy){
-        check(Number.isInteger(s.probePolicy.maxAttempts)&&s.probePolicy.maxAttempts>0,"invalid probe attempt limit");
-        check(Number.isInteger(s.attemptCount)&&s.attemptCount>0&&s.attemptCount<=s.probePolicy.maxAttempts,"probe attempt count outside policy");
-        check(["settled","deadline","attempt_limit"].includes(s.termination),"probe termination missing");
-        check(typeof s.endedNs==="string"&&BigInt(s.endedNs)>=BigInt(s.triggerNs),"probe end observation missing");
-        if(s.termination==="deadline")check(BigInt(s.endedNs)>=BigInt(s.deadlineNs),"probe stopped before declared deadline");
-        if(s.termination==="attempt_limit")check(s.attemptCount===s.probePolicy.maxAttempts,"probe stopped before declared attempt limit");
-        if(s.termination==="settled")check(!!s.settledOperationId,"settled probe identity absent");
-      }
-      check(operations.some(o=>o.operationId===s.settledOperationId&&o.state==="changed_settled"&&o.outcome==="pass"),"settled probe missing");continue;}
+      issues.push(...validateTransitionTermination(s,operations,report.outcome));continue;}
     const expected=[...Array(s.firstUse).fill("first_use"),...Array(s.warmup).fill("warmup"),...Array(s.steady).fill("steady")];
     for(const [i,state] of expected.entries()){const o=operations[s.firstOperationIndex+i];check(o?.method===s.method&&o?.state===state,"series sample missing or reordered: "+s.method+" "+state+" "+i);
       if(s.endpoint&&o)check(o.endpoint===s.endpoint,"series endpoint mismatch");}

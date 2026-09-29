@@ -110,9 +110,10 @@ export function compare(now:Summary,base?:Summary){
   return {base:base.meta,fixed,regressed,moves};
 }
 
+/** "Open" is launch to the first correct answer on the project, not the server's own readiness signal. */
 const LIFECYCLE:[string,string,string?][]=[
-  ["Machine index (cold)","machine_index_ms"],["Open workspace (cold)","open_ms"],["Reconnect to warm daemon","reconnect_open_ms"],["First hover after reconnect","reconnect_first_ms"],
-  ["Daemon restart (persisted index)","restart_index_ms"],["Open after restart","restart_open_ms"],["First hover after restart","restart_first_ms"],["Resident memory after queries","rss_bytes","bytes"],
+  ["Machine index (cold)","machine_index_ms"],["Open workspace (cold)","open_ms"],["Reconnect to warm daemon","reconnect_open_ms"],
+  ["Daemon restart (persisted index)","restart_index_ms"],["Open after restart","restart_open_ms"],["Resident memory after queries","rss_bytes","bytes"],
 ];
 
 /** The numbers a PR shows at a glance, with their change against main. */

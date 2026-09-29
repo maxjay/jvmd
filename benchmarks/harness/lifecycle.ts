@@ -68,17 +68,20 @@ export async function runLifecycle(o:LifecycleOptions){
   rmSync(o.state,{recursive:true,force:true});
   const fixture=projectFixture(o.project,o.repository),phases:Record<string,number|null>={},operations:any[]=[],errors:string[]=[];
   let daemon:JvmdDaemon|undefined,running:Launch|undefined;
-  // Open the workspace and wait for it to be ready: JVMD's initialize resolves the project, JDTLS reports ServiceReady.
-  const open=async(reuseState:boolean)=>{
+  // "Open" is launch to the first correct answer on the project. A server may report itself ready
+  // (JDTLS's ServiceReady) before its project import finishes; that is not a usable workspace yet.
+  const open=async(reuseState:boolean,label:string)=>{
     const started=performance.now();
     running=await launch({server:o.server,root:o.project,state:path.join(o.state,"server"),javaHome:o.javaHome,image:o.image,jdtlsHome:o.jdtlsHome,daemon,reuseState});
-    const c=new ScenarioContext(running.client,fixture,o.server,o.openTimeout,o.warmup,o.samples);c.javaHome=o.javaHome;c.allocation=running.allocation;c.operations=operations;
-    await c.initialize();const ms=performance.now()-started;c.timeout=o.timeout;return {c,ms};
-  };
-  const first=async(c:ScenarioContext,state:string)=>{
-    await c.open(HELPER);const call=c.text(HELPER).indexOf("project.addAttachedArtifact(");
-    await step(()=>c.query("textDocument/hover",at(c,HELPER,"addAttachedArtifact(",call),v=>hoverOracle(v,"addAttachedArtifact","void"),state));
-    return operations.at(-1).latencyMs;
+    const c=new ScenarioContext(running.client,fixture,o.server,o.openTimeout,o.warmup,o.samples);c.javaHome=o.javaHome;c.allocation=running.allocation;
+    await c.initialize();phases[label+"_initialize_ms"]=performance.now()-started;
+    await c.open(HELPER);const params=at(c,HELPER,"addAttachedArtifact(",c.text(HELPER).indexOf("project.addAttachedArtifact("));
+    for(const deadline=performance.now()+o.openTimeout;;){
+      const r=await c.client.request("textDocument/hover",params,o.openTimeout);
+      try{hoverOracle(r.result,"addAttachedArtifact","void");break;}catch(error){if(performance.now()>deadline)throw new Error("workspace never answered correctly: "+String(error).split("\n")[0]);}
+      await new Promise(resolve=>setTimeout(resolve,250));
+    }
+    c.close(HELPER);c.operations=operations;c.timeout=o.timeout;return {c,ms:performance.now()-started};
   };
   const pid=()=>o.server==="jvmd"?daemon?.process.pid:running?.client.child.pid;
   try{
@@ -86,17 +89,17 @@ export async function runLifecycle(o:LifecycleOptions){
       daemon=await JvmdDaemon.start({javaHome:o.javaHome,image:o.image,state:path.join(o.state,"jvmd"),repository:o.repository});
       phases.machine_index_ms=daemon.readyMs;phases.indexed_artifacts=(await daemon.status()).index?.total??null;
     }
-    let {c,ms}=await open(false);phases.open_ms=ms;
+    let {c,ms}=await open(false,"open");phases.open_ms=ms;
     await c.open(PROJECT);await c.open(HELPER);await queries(c);phases.rss_bytes=rssBytes(pid());
     await running!.stop({closeSession:false});running=undefined;
     if(o.server==="jvmd"){
       // Reconnect, as when an editor window reopens: the daemon and its session are still warm.
-      ({c,ms}=await open(true));phases.reconnect_open_ms=ms;phases.reconnect_first_ms=await first(c,"reconnect_first");
+      ({c,ms}=await open(true,"reconnect"));phases.reconnect_open_ms=ms;
       await running!.stop();running=undefined;
       await daemon!.stop();daemon=await JvmdDaemon.start({javaHome:o.javaHome,image:o.image,state:path.join(o.state,"jvmd"),repository:o.repository});
       phases.restart_index_ms=daemon.readyMs;
     }
-    ({c,ms}=await open(true));phases.restart_open_ms=ms;phases.restart_first_ms=await first(c,"restart_first");
+    ({c,ms}=await open(true,"restart"));phases.restart_open_ms=ms;
   }catch(error){errors.push(String(error).split("\n")[0]);}
   finally{
     if(running)await running.stop().catch(()=>undefined);

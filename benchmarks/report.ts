@@ -62,14 +62,20 @@ export function jdtlsReference(s:Summary,existing?:any){
     performance:keep(existing?.performance,jdtls(s.performance),p=>p.endpoint+"\u0000"+p.phase),
     lifecycle:s.lifecycle.jdtls?{jdtls:s.lifecycle.jdtls}:existing?.lifecycle??{}};
 }
-/** A run without JDTLS takes JDTLS's rows from the checked-in reference, marked as such. */
+/**
+ * Fills JDTLS's columns from the reference. JDTLS rows measured in this run (new scenarios) are kept;
+ * everything else comes from the reference, which is steadier than a handful of fresh samples.
+ */
 export function withReference(summary:Summary,reference:any){
   if(!reference||summary.meta.servers.includes("jdtls"))return summary;
-  const pick=(rows:any[])=>rows.filter((r:any)=>r.server==="jdtls");
-  return {...summary,meta:{...summary.meta,servers:[...summary.meta.servers,"jdtls"],reference:{revision:reference.meta.revision,date:reference.meta.date}},
-    cases:[...summary.cases,...pick(reference.cases).filter((r:any)=>summary.cases.some(c=>c.id===r.id))],
-    performance:[...summary.performance,...pick(reference.performance)],
-    lifecycle:{...summary.lifecycle,...(reference.lifecycle?.jdtls?{jdtls:reference.lifecycle.jdtls}:{})}};
+  const jdtls=(rows:any[])=>rows.filter((r:any)=>r.server==="jdtls");
+  const measured=new Set(jdtls(summary.cases).map(c=>c.id));
+  const cases=jdtls(reference.cases).filter((r:any)=>!measured.has(r.id)&&summary.cases.some(c=>c.id===r.id));
+  const fromReference=jdtls(reference.performance),covered=new Set(fromReference.map((p:any)=>p.endpoint+"\u0000"+p.phase));
+  const performance=[...summary.performance.filter(p=>p.server!=="jdtls"||!covered.has(p.endpoint+"\u0000"+p.phase)),...fromReference];
+  return {...summary,meta:{...summary.meta,servers:[...summary.meta.servers,"jdtls"],reference:{revision:reference.meta?.revision,date:reference.meta?.date}},
+    cases:[...summary.cases,...cases],performance,
+    lifecycle:{...(reference.lifecycle?.jdtls?{jdtls:reference.lifecycle.jdtls}:{}),...summary.lifecycle}};
 }
 
 // ---------- rendering ----------

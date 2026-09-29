@@ -36,3 +36,9 @@ test("measuring a new case adds its JDTLS row without touching the rest of the r
   assert.deepEqual(merged.cases.map((c:any)=>c.id+"="+c.outcome),["CMP-01/a=pass","CMP-01/b=stale","CMP-01/new=pass"]);
   assert.deepEqual(merged.meta,old.meta);
 });
+test("JDTLS rows measured this run for new scenarios are kept; the rest come from the reference",()=>{
+  const reference=jdtlsReference(summary(["jdtls"],[["CMP-01/a","jdtls","stale"]]));
+  const run=summary(["jvmd"],[["CMP-01/a","jvmd","pass"],["CMP-01/new","jvmd","pass"],["CMP-01/new","jdtls","pass"]]);
+  assert.deepEqual(withReference(run,reference).cases.map(c=>c.id+"/"+c.server+"="+c.outcome).sort(),
+    ["CMP-01/a/jdtls=stale","CMP-01/a/jvmd=pass","CMP-01/new/jdtls=pass","CMP-01/new/jvmd=pass"]);
+});

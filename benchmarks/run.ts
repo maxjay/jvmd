@@ -56,10 +56,17 @@ export async function main(argv=process.argv.slice(2)){
     daemon=await JvmdDaemon.start({javaHome,image,state:path.join(root,"jvmd"),repository});
     daemonStarts.push({readyMs:daemon.readyMs,index:(await daemon.status()).index});return daemon;
   };
+  // JDTLS 1.61.0 is a fixed reference: every scenario is measured on it once. The reference is the checked-in
+  // file, updated by main's last run (--baseline); a scenario it lacks is measured on JDTLS in this run.
+  const load=(file?:string)=>file&&existsSync(file)?JSON.parse(readFileSync(file,"utf8")):undefined;
+  const baseline=load(a.baseline),stored=load(a.reference??REFERENCE);
+  const reference=baseline?jdtlsReference(baseline,stored):stored;
+  const jdtlsHome=a["jdtls-home"]??process.env.JDTLS_HOME,autoJdtls=!servers.includes("jdtls")&&!!jdtlsHome&&!customCommand;
+  const serversFor=(def:CaseDefinition)=>autoJdtls&&!reference?.cases?.some((r:any)=>r.id===def.id&&r.server==="jdtls")?[...servers,"jdtls" as const]:servers;
   // Every fixture and artifact exists before any server starts: a developer's repository is already
   // populated. Cases about artifacts arriving later install them themselves.
   const plan:{run:number;def:CaseDefinition;server:"jvmd"|"jdtls";dir:string;fixture?:Fixture;error?:string}[]=[];
-  for(let run=1;run<=runs;run++)for(const def of selected)for(const server of run%2?servers:[...servers].reverse()){
+  for(let run=1;run<=runs;run++)for(const def of selected)for(const server of run%2?serversFor(def):[...serversFor(def)].reverse()){
     const dir=path.join(root,"cases",`${run}-${server}-${def.id.replaceAll("/","-")}`);mkdirSync(dir,{recursive:true});
     try{const fixture=createFixture(path.join(dir,"fixture"),repository,def.fixture);def.prepare?.(fixture,javaHome);plan.push({run,def,server,dir,fixture});}
     catch(error){plan.push({run,def,server,dir,error:"fixture preparation failed: "+String(error).split("\n")[0]});}
@@ -70,7 +77,7 @@ export async function main(argv=process.argv.slice(2)){
     for(const {run,def,server,dir,fixture,error} of plan){
       const started=Date.now();
       const result=fixture?await runCase(def,server,dir,fixture,
-        {javaHome,image,jdtlsHome:a["jdtls-home"]??process.env.JDTLS_HOME,customCommand,warmup,samples,timeout,daemon:server==="jvmd"?await ensureDaemon():undefined})
+        {javaHome,image,jdtlsHome,customCommand,warmup,samples,timeout,daemon:server==="jvmd"?await ensureDaemon():undefined})
         :{caseId:def.id,family:def.family,apis:def.apis,variant:def.variant,server,outcome:"harness_error",error,operations:[]};
       results.push({...result,...scope(def),run});
       const mark=result.outcome==="pass"||result.outcome==="not_applicable"?"ok  ":result.outcome==="unsupported"?"--  ":"FAIL";
@@ -83,20 +90,18 @@ export async function main(argv=process.argv.slice(2)){
   const lifecycle:any[]=[];
   if(a.project){
     assert(a["project-repository"],"--project needs --project-repository");
-    for(const server of servers){
+    const lifecycleServers=autoJdtls&&!reference?.lifecycle?.jdtls?[...servers,"jdtls" as const]:servers;
+    for(const server of lifecycleServers){
       const started=Date.now();
       const row=await runLifecycle({server,project:path.resolve(a.project),repository:path.resolve(a["project-repository"]),state:path.join(root,"lifecycle",server),
-        javaHome,image,jdtlsHome:a["jdtls-home"]??process.env.JDTLS_HOME,openTimeout:Math.max(timeout,900000),timeout,warmup,samples});
+        javaHome,image,jdtlsHome,openTimeout:Math.max(timeout,900000),timeout,warmup,samples});
       lifecycle.push(row);
       console.log(`[lifecycle] ${row.outcome==="pass"?"ok  ":"FAIL"} ${server.padEnd(5)} apache/maven ${((Date.now()-started)/1000).toFixed(1).padStart(6)}s${row.error?"  "+String(row.error).slice(0,100):""}`);
     }
   }
   writeFileSync(path.join(root,"results.json"),JSON.stringify({meta,results,lifecycle},null,1)+"\n");
   // Results are reported, never gated: the exit code only says whether the suite itself ran.
-  // --baseline (main's summary.json) is what changes are measured against. JDTLS 1.61.0 is a fixed reference,
-  // measured once and checked in (reference/jdtls.json); runs without JDTLS take its columns from there.
-  const load=(file?:string)=>file&&existsSync(file)?JSON.parse(readFileSync(file,"utf8")):undefined;
-  const baseline=load(a.baseline),reference=load(a.reference??REFERENCE);
+  // --baseline (main's summary.json) is also what changes are measured against.
   const measured=summarize(meta,results,lifecycle,selected),summary=withReference(measured,reference);
   // Merges by case: measuring a newly added scenario adds its JDTLS row and leaves the rest untouched.
   if(a["write-reference"])writeFileSync(a["write-reference"],JSON.stringify(jdtlsReference(measured,load(a["write-reference"])),null,1)+"\n");

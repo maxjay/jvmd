@@ -55,10 +55,10 @@ The output directory holds `report.md` (the PR comment), `report.txt` (the termi
 
 `jvmd-benchmarks.yml` runs on PRs that touch JVMD or the suite, on `main`, and nightly.
 
-- **JDTLS 1.61.0 is a fixed reference.** It was measured once and checked in as
-  `reference/jdtls.json`; CI only ever runs JVMD. A newly added scenario is measured on JDTLS once
-  (`--servers jdtls --only <case> --write-reference benchmarks/reference/jdtls.json`), which adds
-  its row and leaves the rest alone. Until then it shows "not measured" for JDTLS.
+- **JDTLS 1.61.0 is a fixed reference, measured once per scenario, automatically.** Its results
+  live in `reference/jdtls.json` and in main's last `summary.json`, which each run carries forward.
+  A run measures on JDTLS only the scenarios neither has: a newly added case is measured in its PR
+  and again once on main, then never. Nothing needs running by hand.
 - **PRs** compare with main's last `summary.json`.
 - Two lines in the PR's checks list carry the headline numbers and their change since main,
   like `jvmd / scenarios — Contract 38/41 · Roadmap 12/108 (+2) vs main` and

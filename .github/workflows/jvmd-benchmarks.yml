@@ -125,7 +125,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          id=$(gh run list -R "$GITHUB_REPOSITORY" --workflow benchmarks.yml --branch main --status success -L 1 --json databaseId -q '.[0].databaseId' || true)
+          id=$(gh run list -R "$GITHUB_REPOSITORY" --workflow jvmd-benchmarks.yml --branch main --status success -L 1 --json databaseId -q '.[0].databaseId' || true)
           [ -n "$id" ] && gh run download "$id" -R "$GITHUB_REPOSITORY" -n benchmarks -D "$RUNNER_TEMP/main" || echo "No main summary yet"
 
       # JDTLS 1.61.0 is a fixed reference, measured once and checked in (benchmarks/reference/jdtls.json).

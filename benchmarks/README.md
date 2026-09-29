@@ -53,7 +53,7 @@ The output directory holds `report.md` (the PR comment), `report.txt` (the termi
 
 ## In CI
 
-`benchmarks.yml` runs on PRs that touch JVMD or the suite, on `main`, and nightly.
+`jvmd-benchmarks.yml` runs on PRs that touch JVMD or the suite, on `main`, and nightly.
 
 - **JDTLS 1.61.0 is a fixed reference.** It was measured once and checked in as
   `reference/jdtls.json`; CI only ever runs JVMD. A newly added scenario is measured on JDTLS once

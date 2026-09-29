@@ -10,7 +10,7 @@ test("a JVMD-only run takes JDTLS rows from main's summary and says so",()=>{
   const pr=withReference(summary(["jvmd"],[["CMP-01/a","jvmd","pass"]]),main);
   assert.deepEqual(pr.meta.servers,["jvmd","jdtls"]);assert.equal(pr.meta.reference.revision,"abc12345");
   assert.deepEqual(pr.cases.map(c=>c.id+"/"+c.server),["CMP-01/a/jvmd","CMP-01/a/jdtls"],"JDTLS rows only for cases this run has");
-  assert.equal(pr.performance.length,1);assert.match(renderMarkdown(pr),/JDTLS reused from abc12345/u);
+  assert.equal(pr.performance.length,1);assert.match(renderMarkdown(pr),/JDTLS 1.61.0 measured once at abc12345/u);
   assert.equal(withReference(main,summary(["jvmd"],[])),main,"a full run keeps its own JDTLS numbers");
 });
 test("since main lists regressions, fixes and large allocation moves, or says nothing changed",()=>{

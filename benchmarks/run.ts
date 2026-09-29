@@ -22,11 +22,12 @@ import {scope} from "./harness/contract.ts";
 import {ScenarioContext,type CaseDefinition} from "./harness/ScenarioContext.ts";
 import {runLifecycle} from "./harness/lifecycle.ts";
 import {launch,JvmdDaemon,type Launch,type LaunchOptions} from "./harness/launch.ts";
-import {summarize,withReference,writeReport} from "./report.ts";
+import {summarize,withReference,jdtlsReference,writeReport} from "./report.ts";
 
 export const cases:CaseDefinition[]=[...coreCases,...diagnosticCases,...structureCases,...symbolCases,...symbolFilterCases,...generationCases,
   ...projectCases,...editingCases,...importScopeCases,...dependencyCases,...mavenCases,...fileCases,...refactoringCases];
-const OPTIONS=["servers","only","runs","warmup","samples","timeout-ms","output","java-home","jdtls-home","image","repository","mvn","project","project-repository","command-json","baseline","reference"];
+const REFERENCE=fileURLToPath(new URL("./reference/jdtls.json",import.meta.url));
+const OPTIONS=["servers","only","runs","warmup","samples","timeout-ms","output","java-home","jdtls-home","image","repository","mvn","project","project-repository","command-json","baseline","reference","write-reference"];
 
 export async function main(argv=process.argv.slice(2)){
   const a:Record<string,string>={};
@@ -92,11 +93,12 @@ export async function main(argv=process.argv.slice(2)){
   }
   writeFileSync(path.join(root,"results.json"),JSON.stringify({meta,results,lifecycle},null,1)+"\n");
   // Results are reported, never gated: the exit code only says whether the suite itself ran.
-  // --baseline (main's summary.json) is what changes are measured against. --reference supplies JDTLS numbers
-  // from an earlier run when JDTLS was not run: JDTLS is pinned, so its results only change with the suite.
+  // --baseline (main's summary.json) is what changes are measured against. JDTLS is pinned, so it is measured
+  // once and checked in (reference/jdtls.json); runs without JDTLS take its columns from there.
   const load=(file?:string)=>file&&existsSync(file)?JSON.parse(readFileSync(file,"utf8")):undefined;
-  const baseline=load(a.baseline),reference=load(a.reference)??baseline;
-  const summary=withReference(summarize(meta,results,lifecycle,selected),reference);
+  const baseline=load(a.baseline),reference=load(a.reference??REFERENCE);
+  const measured=summarize(meta,results,lifecycle,selected),summary=withReference(measured,reference);
+  if(a["write-reference"])writeFileSync(a["write-reference"],JSON.stringify(jdtlsReference(measured),null,1)+"\n");
   const {text,regressions}=writeReport(root,summary,baseline);
   console.log("\n"+text+"\nreport: "+path.join(root,"report.md"));
   if(process.env.GITHUB_ACTIONS==="true")for(const r of regressions)

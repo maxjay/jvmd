@@ -52,7 +52,13 @@ export function summarize(meta:any,results:any[],lifecycle:any[],selected:CaseDe
 }
 export type Summary=ReturnType<typeof summarize>;
 
-/** A run that skipped JDTLS takes its rows from a stored reference run, marked as such. */
+/** JDTLS's rows from a run, kept as the checked-in reference: JDTLS is pinned, so it is measured once. */
+export function jdtlsReference(s:Summary){
+  const jdtls=(rows:any[])=>rows.filter((r:any)=>r.server==="jdtls");
+  return {schema:s.schema,meta:{revision:s.meta.revision,date:s.meta.date,jdk:s.meta.jdk,cpus:s.meta.cpus,jdtls:"1.61.0"},
+    cases:jdtls(s.cases),performance:jdtls(s.performance),lifecycle:s.lifecycle.jdtls?{jdtls:s.lifecycle.jdtls}:{}};
+}
+/** A run without JDTLS takes JDTLS's rows from the checked-in reference, marked as such. */
 export function withReference(summary:Summary,reference:any){
   if(!reference||summary.meta.servers.includes("jdtls"))return summary;
   const pick=(rows:any[])=>rows.filter((r:any)=>r.server==="jdtls");
@@ -122,7 +128,7 @@ export function statuses(s:Summary,base?:Summary){
 }
 export function renderMarkdown(s:Summary,change?:ReturnType<typeof compare>,base?:Summary){
   const out:string[]=[];
-  const reference=s.meta.reference?` · JDTLS reused from ${String(s.meta.reference.revision).slice(0,8)}`:"";
+  const reference=s.meta.reference?` · JDTLS 1.61.0 measured once at ${String(s.meta.reference.revision).slice(0,8)}`:"";
   const h=headline(s,base);
   out.push("## JVMD benchmarks","",
     `**Contract** ${h.contract} correct · **Roadmap** ${h.roadmap} scenarios`+(h.cold?` · **Cold start** ${h.cold}`:""),"",
@@ -177,7 +183,7 @@ export function renderMarkdown(s:Summary,change?:ReturnType<typeof compare>,base
   const servers=[...new Set(s.cases.map(c=>c.server))];
   out.push("",`<details><summary><b>Scenario families</b></summary>`,"",`| | Family | ${servers.map(x=>x.toUpperCase()).join(" | ")} |`,`|---|---|${servers.map(()=>"--:").join("|")}|`);
   for(const f of s.families){
-    const mark=(x:string)=>{const rs=s.cases.filter(c=>c.family===f.id&&c.server===x);if(!rs.length)return "";const pass=rs.filter(c=>bucket(c.outcome)==="pass").length;
+    const mark=(x:string)=>{const rs=s.cases.filter(c=>c.family===f.id&&c.server===x);if(!rs.length)return "not measured";const pass=rs.filter(c=>bucket(c.outcome)==="pass").length;
       const icon=rs.some(c=>["wrong","harness"].includes(bucket(c.outcome)))?"❌":rs.some(c=>bucket(c.outcome)==="stale")?"🕒":pass===rs.length?"✅":rs.some(c=>bucket(c.outcome)==="unchecked")?"⚠️":pass?"🟡":"⬜";
       return `${icon} ${pass}/${rs.length}`;};
     out.push(`| ${f.id} | ${f.name} | ${servers.map(mark).join(" | ")} |`);

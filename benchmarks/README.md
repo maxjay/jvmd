@@ -41,7 +41,8 @@ and `mvn` once. After that everything is offline.
 | `--only ENV-02,CMP-01/first-repeat` | Families or single cases. `--list` prints them. |
 | `--project DIR --project-repository DIR` | Add the lifecycle on a real Maven checkout, built into that repository. |
 | `--baseline summary.json` | Compare with an earlier run (main). |
-| `--reference summary.json` | On a JVMD-only run, take the JDTLS columns from this earlier run. |
+| `--reference FILE` | Where JDTLS columns come from when JDTLS isn't run (default `reference/jdtls.json`). |
+| `--write-reference FILE` | Write this run's JDTLS results as a new reference. |
 | `--runs 3` | Repeat for steadier numbers. |
 | `--repository DIR` | Reuse a fixture repository between runs. |
 
@@ -54,9 +55,10 @@ The output directory holds `report.md` (the PR comment), `report.txt` (the termi
 
 `benchmarks.yml` runs on PRs that touch JVMD or the suite, on `main`, and nightly.
 
-- **JVMD runs every time. JDTLS runs once per suite version.** JDTLS is pinned, so its results
-  only change when the harness, the scenarios or the JDTLS version do. They are cached under that
-  key and reused by every later run; the report says which run they came from.
+- **JDTLS is measured once.** It is pinned, so its results don't change: they are checked in as
+  `reference/jdtls.json` and every run reads its JDTLS columns from there. After a JDTLS upgrade or
+  a change to what a case checks, run the workflow manually with *refresh-jdtls* and commit the
+  `jdtls-reference` artifact it uploads. Cases added since show "not measured" for JDTLS until then.
 - **PRs** compare with main's last `summary.json`.
 - Two lines in the PR's checks list carry the headline numbers and their change since main,
   like `jvmd / scenarios — Contract 38/41 · Roadmap 12/108 (+2) vs main` and

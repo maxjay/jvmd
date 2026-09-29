@@ -10,6 +10,7 @@ import { pathToFileURL } from "node:url";
 import { LspBridge } from "../../shim/src/lsp.ts";
 import { RpcClient, RpcPool, type Message, type RpcCaller } from "../../shim/src/transport.ts";
 import { latencyStats, PHASE_MODEL } from "./harness/phases.ts";
+import { markdown, parseLegacyRssKb } from "./harness/lifecycleReport.ts";
 import {
   diagnosticAdmissionDecision,
   type DiagnosticVersionMode,
@@ -41,7 +42,7 @@ function rssKb(pid?:number){
   if(!pid)return null;
   try{
     const status=readFileSync("/proc/"+pid+"/status","utf8");
-    return Number(status.match(/^VmRSS:\s+(\d+)\s+kB/m)?.[1]??NaN);
+    return parseLegacyRssKb(status);
   }catch{return null;}
 }
 function daemonResult(envelope:any){return envelope?.result??{};}
@@ -602,103 +603,5 @@ async function main(){
   if(process.env.GITHUB_STEP_SUMMARY)writeFileSync(process.env.GITHUB_STEP_SUMMARY,summary+"\n",{flag:"a"});
 }
 
-function fmt(value:any){return value===null||value===undefined?"-":Number(value).toFixed(2);}
-function mib(value:any){return value==null?null:value/1024;}
-function markdown(report:any){
-  const m=report.machine;
-  const sessions=m.residentDaemon.sessions;
-  const cold=m.machineCold,restart=m.daemonRestart,incremental=m.incrementalReconcile;
-  const lines=[
-    "## JVMD daemon lifecycle",
-    "",
-    "### Machine-global index",
-    "",
-    "| Metric | machine cold | daemon restart | incremental reconcile | resident daemon |",
-    "| --- | ---: | ---: | ---: | ---: |",
-    "| Process → machine index ready | "+fmt(cold.processToMachineIndexReadyMs)+" | "+fmt(restart.processToMachineIndexReadyMs)+" | already running | already paid |",
-    "| Index reconciliation | "+fmt(cold.machineIndexReconcileMs)+" | "+fmt(restart.machineIndexReconcileMs)+" | "+fmt(incremental.machineIndexReconcileMs)+" | unavailable |",
-    "| Artifacts discovered / current | "+cold.index.artifactsDiscovered+" | "+restart.index.artifactsDiscovered+" | "+incremental.indexAfter.artifactsDiscovered+" | "+m.residentDaemon.repositoryAfterSessions.jarArtifacts+" |",
-    "| Artifacts reused during reconcile | "+cold.index.artifactsReused+" | "+restart.index.artifactsReused+" | "+incremental.indexDelta.reused+" | - |",
-    "| Artifacts hashed during reconcile | "+cold.index.artifactsHashed+" | "+restart.index.artifactsHashed+" | "+incremental.indexDelta.hashed+" | - |",
-    "| Indexed publications during reconcile | "+cold.index.indexedPublications+" | "+restart.index.indexedPublications+" | "+incremental.indexDelta.indexedPublications+" | - |",
-    "| Discovery ms | "+fmt(cold.index.timings.discoveryMs)+" | "+fmt(restart.index.timings.discoveryMs)+" | "+fmt(incremental.indexDelta.discoveryMs)+" | - |",
-    "| Hash ms | "+fmt(cold.index.timings.hashMs)+" | "+fmt(restart.index.timings.hashMs)+" | "+fmt(incremental.indexDelta.hashMs)+" | - |",
-    "| Parse ms | "+fmt(cold.index.timings.parseMs)+" | "+fmt(restart.index.timings.parseMs)+" | "+fmt(incremental.indexDelta.parseMs)+" | - |",
-    "| Storage worker-time ms | "+fmt(cold.index.timings.storageMs)+" | "+fmt(restart.index.timings.storageMs)+" | "+fmt(incremental.indexDelta.storageMs)+" | - |",
-    "| Docs/source phase ms | "+fmt(cold.index.timings.docsMs)+" | "+fmt(restart.index.timings.docsMs)+" | "+fmt(incremental.indexDelta.docsMs)+" | unavailable |",
-    "| Link ms | "+fmt(cold.index.timings.linkMs)+" | "+fmt(restart.index.timings.linkMs)+" | "+fmt(incremental.indexDelta.linkMs)+" | - |",
-    "| Source/doc artifacts updated | unavailable | unavailable | unavailable | n/a |",
-    "| Artifact added → next reconciliation observed (scanner cadence included) | - | - | "+fmt(incremental.artifactAddedToReadyMs)+" | - |",
-    "",
-    "The incremental wall time includes waiting for the daemon's periodic repository scanner; the separate Index reconciliation row is the scan work itself. A separate source-JAR update count is unavailable from current daemon status; aggregate reuse/hash counters and docs/source phase time are retained instead. Parse/storage timings are accumulated worker phase time and may exceed wall-clock scan time; do not sum phase rows into elapsed time.",
-    "",
-    "### Resident daemon workspace sessions",
-    "",
-    "| Metric | first workspace open | workspace reopen |",
-    "| --- | ---: | ---: |",
-    "| Session open | "+fmt(sessions[0].sessionOpenMs)+" | "+fmt(sessions[1].sessionOpenMs)+" |",
-    "| Workspace resolution evidence | "+sessions[0].workspaceResolution.status+" | "+sessions[1].workspaceResolution.status+" |",
-    "| Resolver cold timing | "+fmt(sessions[0].workspaceResolution.reportedColdTimingMs)+" | "+fmt(sessions[1].workspaceResolution.reportedColdTimingMs)+" |",
-    "| Project-model fast hits | "+sessions[0].workspaceResolution.projectModelFastHits+" | "+sessions[1].workspaceResolution.projectModelFastHits+" |",
-    "| Workspace-index membership load | "+fmt(sessions[0].workspaceIndex.loadMs)+" | "+fmt(sessions[1].workspaceIndex.loadMs)+" |",
-    "| Workspace-index ready | unavailable | unavailable |",
-    "| Dependency-artifact hashes during session open | "+sessions[0].workspaceIndex.indexServiceWorkDuringSessionOpen.hashed+" | "+sessions[1].workspaceIndex.indexServiceWorkDuringSessionOpen.hashed+" |",
-    "| Dependency-artifact reuses during session open | "+sessions[0].workspaceIndex.indexServiceWorkDuringSessionOpen.reused+" | "+sessions[1].workspaceIndex.indexServiceWorkDuringSessionOpen.reused+" |",
-    "| IndexService publications during session open (dependency/local split unavailable) | "+sessions[0].workspaceIndex.indexServiceWorkDuringSessionOpen.indexedPublications+" | "+sessions[1].workspaceIndex.indexServiceWorkDuringSessionOpen.indexedPublications+" |",
-    "| IndexService parse worker-time during session open ms (dependency/local split unavailable) | "+fmt(sessions[0].workspaceIndex.indexServiceWorkDuringSessionOpen.parseMs)+" | "+fmt(sessions[1].workspaceIndex.indexServiceWorkDuringSessionOpen.parseMs)+" |",
-    "| IndexService storage worker-time during session open ms (dependency/local split unavailable) | "+fmt(sessions[0].workspaceIndex.indexServiceWorkDuringSessionOpen.storageMs)+" | "+fmt(sessions[1].workspaceIndex.indexServiceWorkDuringSessionOpen.storageMs)+" |",
-    "| Document mutation admission | "+fmt(sessions[0].admission.wallMs)+" | "+fmt(sessions[1].admission.wallMs)+" |",
-    "| Session open → first correct definition | "+fmt(sessions[0].sessionOpenToFirstCorrectResultMs)+" | "+fmt(sessions[1].sessionOpenToFirstCorrectResultMs)+" |",
-    "| Definition first use | "+fmt(sessions[0].definition.firstUse.latencyMs)+" | "+fmt(sessions[1].definition.firstUse.latencyMs)+" |",
-    "| Definition steady p50 | "+fmt(sessions[0].definition.steadyStats.p50Ms)+" | "+fmt(sessions[1].definition.steadyStats.p50Ms)+" |",
-    "| Definition steady p95 | "+fmt(sessions[0].definition.steadyStats.p95Ms)+" | "+fmt(sessions[1].definition.steadyStats.p95Ms)+" |",
-    "",
-    "Workspace-local index completion remains unavailable because local refresh is asynchronous. Shared IndexService publication counters are retained as evidence but are not relabelled as machine-global when dependency/local attribution is unavailable.",
-    "",
-    "### Document admission attribution",
-    "",
-    "| Evidence | first workspace open | workspace reopen |",
-    "| --- | ---: | ---: |",
-    "| MavenProject.java open mutation ms | "+fmt(sessions[0].admission.documents[0].durationMs)+" | "+fmt(sessions[1].admission.documents[0].durationMs)+" |",
-    "| MavenProject.java diagnostic admission | "+sessions[0].admission.documents[0].diagnostic.status+" | "+sessions[1].admission.documents[0].diagnostic.status+" |",
-    "| DefaultMavenProjectHelper.java open mutation ms | "+fmt(sessions[0].admission.documents[1].durationMs)+" | "+fmt(sessions[1].admission.documents[1].durationMs)+" |",
-    "| DefaultMavenProjectHelper.java open diagnostic admission | "+sessions[0].admission.documents[1].diagnostic.status+" | "+sessions[1].admission.documents[1].diagnostic.status+" |",
-    "| DefaultMavenProjectHelper.java change mutation ms | "+fmt(sessions[0].admission.documents[2].durationMs)+" | "+fmt(sessions[1].admission.documents[2].durationMs)+" |",
-    "| DefaultMavenProjectHelper.java change diagnostic admission | "+sessions[0].admission.documents[2].diagnostic.status+" | "+sessions[1].admission.documents[2].diagnostic.status+" |",
-    "| Mutation RPC ms | "+fmt(sessions[0].admission.topLevelDaemon.documentMutationRpcMs)+" | "+fmt(sessions[1].admission.topLevelDaemon.documentMutationRpcMs)+" |",
-    "| Diagnostics RPC ms | "+fmt(sessions[0].admission.topLevelDaemon.diagnosticsRpcMs)+" | "+fmt(sessions[1].admission.topLevelDaemon.diagnosticsRpcMs)+" |",
-    "| Adapter/other remainder ms | "+fmt(sessions[0].admission.topLevelDaemon.otherOrAdapterMs)+" | "+fmt(sessions[1].admission.topLevelDaemon.otherOrAdapterMs)+" |",
-    "| Resolver cold calls | "+sessions[0].admission.resolverDelta.resolveCalls+" | "+sessions[1].admission.resolverDelta.resolveCalls+" |",
-    "| Resolver fast hits | "+sessions[0].admission.resolverDelta.projectModelFastHits+" | "+sessions[1].admission.resolverDelta.projectModelFastHits+" |",
-    "| Workspace-index load delta ms | "+fmt(sessions[0].admission.workspaceIndexDelta.workspaceIndexLoadMs)+" | "+fmt(sessions[1].admission.workspaceIndexDelta.workspaceIndexLoadMs)+" |",
-    "| Source bytes hashed delta | "+fmt(sessions[0].admission.sourceObservation.bytes_hashed)+" | "+fmt(sessions[1].admission.sourceObservation.bytes_hashed)+" |",
-    "| Compiler query ms delta | "+fmt(sessions[0].admission.compilerAndSemanticEvidence.query_ms)+" | "+fmt(sessions[1].admission.compilerAndSemanticEvidence.query_ms)+" |",
-    "| Compiler configure ms delta | "+fmt(sessions[0].admission.compilerAndSemanticEvidence.configure_ms)+" | "+fmt(sessions[1].admission.compilerAndSemanticEvidence.configure_ms)+" |",
-    "| Semantic fact mutations | "+fmt(sessions[0].admission.compilerAndSemanticEvidence.semantic_fact_mutations)+" | "+fmt(sessions[1].admission.compilerAndSemanticEvidence.semantic_fact_mutations)+" |",
-    "| javac parse / enter / attribute split | unavailable | unavailable |",
-    "",
-    "Compiler/semantic rows are nested evidence inside the diagnostics wall time and are not added to the top-level RPC totals.",
-    "",
-    "### Resident memory",
-    "",
-    "| State | first workspace open | workspace reopen |",
-    "| --- | ---: | ---: |",
-    "| Machine-ready daemon baseline MB | "+fmt(mib(sessions[0].memory.daemonMachineReadyKb))+" | "+fmt(mib(sessions[1].memory.daemonMachineReadyKb))+" |",
-    "| Daemon immediately before session MB | "+fmt(mib(sessions[0].memory.daemonBaselineBeforeSessionKb))+" | "+fmt(mib(sessions[1].memory.daemonBaselineBeforeSessionKb))+" |",
-    "| After session open MB | "+fmt(mib(sessions[0].memory.sessionOpenedKb))+" | "+fmt(mib(sessions[1].memory.sessionOpenedKb))+" |",
-    "| Session-open RSS increment MB | "+fmt(mib(sessions[0].memory.sessionOpenIncrementKb))+" | "+fmt(mib(sessions[1].memory.sessionOpenIncrementKb))+" |",
-    "| After steady MB | "+fmt(mib(sessions[0].memory.afterSteadyKb))+" | "+fmt(mib(sessions[1].memory.afterSteadyKb))+" |",
-    "| After session close MB | "+fmt(mib(sessions[0].memory.afterSessionCloseKb))+" | "+fmt(mib(sessions[1].memory.afterSessionCloseKb))+" |",
-    "",
-    "Repository artifacts before resident sessions: **"+m.residentDaemon.repositoryBeforeSessions.jarArtifacts+"**; after sessions/background reconciliation: **"+m.residentDaemon.repositoryAfterSessions.jarArtifacts+"**.",
-    "",
-    "Workspace-local source publisher after resident sessions: **"+String(m.residentDaemon.localIndexPublisherAfterSessions?.failures??"unavailable")+" failure(s)**"
-      +(m.residentDaemon.localIndexPublisherAfterSessions?.last_failure?" — "+m.residentDaemon.localIndexPublisherAfterSessions.last_failure:"")+".",
-    "",
-    "Local-change global dependency reindex observed in its measurement window: **"+String(sessions[1].localChange?.globalDependencyReindexObserved)+"**.",
-    "",
-  ];
-  return lines.join("\n");
-}
 
 if(process.argv[2]==="--matrix"){const {lifecycleMatrix}=await import("./harness/lifecycleMatrix.ts");await lifecycleMatrix(process.argv.slice(3));}else await main();

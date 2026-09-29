@@ -17,6 +17,7 @@ CI-generated source/baseline commit. It does not modify production Java or shim 
 | Delegated cleanup removed observer directories but left empty benchmark leaves; parent removal failed with EBUSY. | Save late CPU/I/O/memory state, then remove only recognised, unchanged, empty leaves. Refuse live, unknown or non-leaf groups. Do not rewrite earlier failed lifetime reports. | `ae7b6fb`; ten cleanup regressions, including the reproduced old-helper failure. |
 | `sudo -E` changed the selected Node search path: the workflow selected 24.21.0 while delegated processes used 22.23.2. | Capture the original runner PATH at setup, restore it only after privilege drop, and record the resolved executable. Verify both parent and child Node identity in all three workflows. | `676f74a`; runtime smoke and harness tests passed in run `36575959661`. |
 | Cleanup evidence was produced after the last relevant upload. | Always upload delegation, launches and cleanup evidence after cleanup, including failure paths. | Workflow regression and shell/YAML checks. |
+| The legacy lifecycle renderer coerced structured evidence objects to numbers and printed eight NaN cells in a saved CI report. | Render measured values explicitly; preserve unavailable/contradicted reasons, signed RSS changes and actual zero observations. Missing RSS stays null before JSON serialization. | `lifecycle-report.test.ts`: eight local regressions and saved-report replay; no raw outcome or counter was changed. |
 | The catalogue workflow produced ten selected-case reports but no combined gate. | Replay all full raw shards through the existing reducer, enforce the declared partition and source/configuration identities, then recompute required variants using the existing variant reducer. | `catalogue-reduction.test.ts`: 14 local tests, including an actual CLI failure that preserves its report. Full raw CI replay remains required. |
 
 The new catalogue entry point is an artifact reducer, not a third benchmark. It never
@@ -58,6 +59,25 @@ on **5 October 2026**; the compact review ledger does not replace those raw arti
 Acquisition IDs, ZIP hashes, nested inventory hashes, per-shard outcomes and limits:
 `benchmarks/evidence/catalogue-review-2026-09-29/summary.json`.
 
+## Additional closeout validation
+
+The original legacy report was downloaded from run `36370373584`, artifact
+`10950086072` (`lsp-phase-reports`). Its ZIP SHA-256 is
+`c2346625ade1c68ea55cb6a32d913f09af91397592a8f656968a6fee2e613e7b`.
+The original renderer reproduced **eight NaN cells** from its structured evidence.
+The new pure renderer returns measured shared snapshot values where present and
+explicit unavailable reasons for the compiler/fact records. No raw report field,
+outcome, timer or scoped counter was changed. This validates rendering, not the
+historical measurement's missing causality or resource scope.
+
+The Node 24 parent/child check and real delegated cleanup also passed in completed
+catalogue shard 4 on `16f74f4`, run `36579868225`. The downloaded delegation artifact
+`11039503828` has SHA-256
+`59a2f25558c814cce73f4d0c4acab226b94ae19696196d0215dda5dc458615f2`.
+Its runtime record identifies Node **24.21.0** for parent and child; its cleanup
+record confirms parent removal. Collection and audit failures remain separate and
+were not suppressed by those successful infrastructure checks.
+
 ## Requirement-to-evidence matrix
 
 The statuses below distinguish existing verified harness behaviour from still-open
@@ -76,7 +96,7 @@ this table supersedes its provisional gate labels for this review.
 | A07 | pass | Existing clean/traced LIFE-01–07 evidence distinguishes fresh, restart, retained attach, detach and explicit disposal; see `implementation-status.md` and run `36370373584`. This does not prove zero reconstruction. |
 | A08 | blocked | Existing seven independent invalidation controls and LIFE-08 captures retain failures. Final review against corrected-runtime full bundles remains open. |
 | A09 | pass | Existing monotonic-clock, overlap and delayed-log regressions passed in `36575959661`; the new catalogue assembly never joins clocks across shards. |
-| A10 | fail | Complete-scope claims remain disabled, but legacy lifecycle output in `36370373584` still printed NaN for unavailable source/compiler/fact metrics. The legacy rendering path still needs repair and a regression; no zero-work claim is established. |
+| A10 | pass | Legacy NaN rendering and RSS parsing are repaired with eight regressions and replay of the original saved report. Unavailable scoped compiler evidence stays unavailable even when an observed difference is zero; measured shared snapshots are explicitly not causal work. Complete native reuse/zero-work claims remain disabled. |
 | A11 | blocked | Existing lifetime, pressure/recovery and trace/status overhead captures exist; common sampler/cgroup collector overhead remains unmeasured. |
 | A12 | blocked | Runtime mismatch is repaired and the Node 24 parent/child CI smoke passed. Corrected final collection and inventory audit must finish; old Node 22 captures cannot substitute for it. |
 | A13 | pass | Product/direct launch profiles and persisted JDTLS state remain distinct. Existing product DOC-01 capture records actual AOT rejection because the requested archive is absent, not acceptance inferred from file presence. |
@@ -99,10 +119,10 @@ Local targeted checks:
 
 ```sh
 python3 -m unittest discover -s benchmarks/workspaces -p 'test_deleg*.py' -v
-node --experimental-strip-types --test benchmarks/lsp-scenarios/test/catalogue-reduction.test.ts
+node --experimental-strip-types --test benchmarks/lsp-scenarios/test/catalogue-reduction.test.ts benchmarks/lsp-scenarios/test/lifecycle-report.test.ts
 ```
 
-Result: **15 Python and 14 TypeScript tests pass**, without skips. The three modified
+Result: **15 Python and 22 TypeScript targeted tests pass**, without skips. The three modified
 workflow files also passed YAML parsing and `bash -n` for each run block. These counts
 are targeted repair tests, not a claim that the full production suite ran locally.
 
@@ -130,8 +150,8 @@ sudo python3 benchmarks/workspaces/delegate_cgroup.py setup \
   --uid "$(id -u)" --gid "$(id -g)" --runner-path "$PATH"
 ```
 
-Before calling this PR complete, repair the remaining legacy unavailable-number
-rendering, finish corrected-runtime raw collection/replay, measure the remaining
+Before calling this PR complete, finish corrected-runtime raw collection/replay,
+measure the remaining
 collector overhead or keep the corresponding gate explicitly blocked, and reconcile
 all final gate dispositions with the exact reviewed head. Do not weaken a product
 oracle, remove a failed sample, merge the PR or enable comparative claims to make the

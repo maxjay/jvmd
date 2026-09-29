@@ -3,7 +3,8 @@
 
 Run setup as root with the runner's uid/gid. This never changes the root cgroup's
 controllers, moves existing processes, changes limits, or kills processes.
-Cleanup only removes the recorded directory when the kernel considers it empty.
+Cleanup preserves final state before removing owned empty leaves and their parent.
+It never repairs or reclassifies an earlier failed lifetime measurement.
 """
 import argparse
 import json
@@ -11,14 +12,18 @@ import os
 from pathlib import Path
 import uuid
 import pwd
-from cgroup_resources import cgroup_mount
+import re
+from cgroup_resources import cgroup_mount, keyed
+
+
+CGROUP_ROOT = Path('/sys/fs/cgroup')
 
 
 def setup(output, uid, gid):
     directory = None
     record = dict(schemaVersion=1, availability='unavailable', parent=None, uid=uid, gid=gid)
     try:
-        root = Path('/sys/fs/cgroup')
+        root = CGROUP_ROOT
         mount = cgroup_mount(root)
         directory = root / ('jvmd-validation-' + uuid.uuid4().hex)
         directory.mkdir()
@@ -41,42 +46,70 @@ def setup(output, uid, gid):
     return record
 
 
+def group_state(group):
+    row = dict(name=group.name, epoch=group.stat().st_ino)
+    for name in ('cgroup.events', 'cgroup.procs', 'cgroup.stat', 'cgroup.subtree_control',
+                 'cpu.stat', 'io.stat', 'memory.current', 'memory.peak', 'memory.events'):
+        try:
+            row[name] = (group / name).read_text()
+        except OSError as error:
+            row[name] = dict(unavailable=str(error))
+    return row
+
+
 def cleanup(output):
     record = json.loads(output.read_text())
     if record['availability'] != 'ready':
         return
     directory = Path(record['parent'])
-    if directory.parent != Path('/sys/fs/cgroup') or not directory.name.startswith('jvmd-validation-'):
+    if (directory.parent != CGROUP_ROOT or directory.is_symlink()
+            or re.fullmatch(r'jvmd-validation-[0-9a-f]{32}', directory.name) is None):
         raise ValueError('unexpected delegated parent')
     cgroup_mount(directory)
     if directory.stat().st_ino != record['epoch']:
         raise ValueError('delegated parent epoch changed')
-    def state(group):
-        row = dict(name=group.name, epoch=group.stat().st_ino)
-        for name in ('cgroup.events', 'cgroup.procs', 'cgroup.stat', 'cgroup.subtree_control'):
-            try:
-                row[name] = (group / name).read_text()
-            except OSError as error:
-                row[name] = dict(unavailable=str(error))
-        return row
-    evidence = dict(schemaVersion=1, parent=state(directory),
-                    children=[state(p) for p in sorted(directory.iterdir()) if p.is_dir()],
-                    removedObservers=[], parentRemoved=False)
+    evidence = dict(schemaVersion=1, parent=group_state(directory),
+                    children=[group_state(p) for p in sorted(directory.iterdir()) if p.is_dir()],
+                    removalSnapshots=[], removedObservers=[], removedBenchmarks=[], parentRemoved=False,
+                    scope='Late cleanup only; earlier lifetime outcomes and counters are unchanged.')
+
+    def preserve():
+        output.with_suffix('.cleanup.json').write_text(json.dumps(evidence, indent=2) + '\n')
+
     try:
-        for observer in directory.glob('observer-*'):
-            observer.rmdir()
-            evidence['removedObservers'].append(observer.name)
+        preserve()
+        for recorded in evidence['children']:
+            group = directory / recorded['name']
+            if (group.is_symlink()
+                    or re.fullmatch(r'(observer|jvmd-benchmark)-[0-9a-f]{32}', group.name) is None):
+                raise ValueError('unrecognised accounting child: ' + group.name)
+            current = group_state(group)
+            if current['epoch'] != recorded['epoch']:
+                raise ValueError('accounting child epoch changed: ' + group.name)
+            events, procs = current['cgroup.events'], current['cgroup.procs']
+            if not isinstance(events, str) or not isinstance(procs, str):
+                raise ValueError('accounting child emptiness unavailable: ' + group.name)
+            if keyed(events).get('populated') != 0 or procs.strip():
+                raise ValueError('live processes remain in accounting child: ' + group.name)
+            if any(p.is_dir() for p in group.iterdir()):
+                raise ValueError('accounting child is not a leaf: ' + group.name)
+            # A previous finish may have found a still-live descendant and left
+            # this leaf behind. Save its late counters BEFORE removing it, but
+            # never substitute them into the original failed lifetime report.
+            evidence['removalSnapshots'].append(current)
+            preserve()
+            group.rmdir()  # The kernel also refuses a leaf repopulated meanwhile.
+            key = 'removedObservers' if group.name.startswith('observer-') else 'removedBenchmarks'
+            evidence[key].append(group.name)
         directory.rmdir()
         evidence['parentRemoved'] = True
-    except OSError as error:
+    except (OSError, ValueError) as error:
         evidence['error'] = str(error)
-        evidence['remainingParent'] = state(directory)
-        evidence['remainingChildren'] = [state(p) for p in sorted(directory.iterdir()) if p.is_dir()]
+        evidence['remainingParent'] = group_state(directory)
+        evidence['remainingChildren'] = [group_state(p) for p in sorted(directory.iterdir()) if p.is_dir()]
         raise
     finally:
-        # Keep the failure and its owned-directory state even after earlier raw
-        # artifact uploads. This does not kill, migrate or discard remaining work.
-        output.with_suffix('.cleanup.json').write_text(json.dumps(evidence, indent=2) + '\n')
+        preserve()
         print(json.dumps(dict(delegatedCleanup=evidence)), flush=True)
 
 
@@ -93,7 +126,7 @@ def run(output, command):
     if record['availability'] == 'ready':
         parent = Path(record['parent'])
         cgroup_mount(parent)
-        if parent.parent != Path('/sys/fs/cgroup') or not parent.name.startswith('jvmd-validation-') or parent.stat().st_ino != record['epoch']:
+        if parent.parent != CGROUP_ROOT or not parent.name.startswith('jvmd-validation-') or parent.stat().st_ino != record['epoch']:
             raise ValueError('delegated parent identity changed')
         observer = parent / ('observer-' + uuid.uuid4().hex)
         observer.mkdir()

@@ -80,11 +80,7 @@ export function withReference(summary:Summary,reference:any){
 
 // ---------- rendering ----------
 const ms=(v:number|null|undefined)=>v==null?"–":v<10?v.toFixed(1)+" ms":v<1000?v.toFixed(0)+" ms":(v/1000).toFixed(1)+" s";
-const bytes=(v:number|null|undefined)=>v==null?"–":v<1<<20?(v/1024).toFixed(0)+" KB":v<1<<30?(v/(1<<20)).toFixed(1)+" MB":(v/(1<<30)).toFixed(2)+" GB";
 const pct=(a:number,b:number)=>`${a>b?"+":""}${Math.round((a-b)/b*100)}%`;
-const cell=(s:unknown)=>String(s??"").replaceAll("|","\\|");
-const ratio=(a:number|null|undefined,b:number|null|undefined)=>{if(!a||!b)return "";const r=b/a;return r>=1.1?`${r<10?r.toFixed(1):r.toFixed(0)}× less`:r<=1/1.1?`${(1/r)<10?(1/r).toFixed(1):(1/r).toFixed(0)}× more`:"≈";};
-const reproduce=(id:string)=>`node benchmarks/run.ts --servers jvmd --only ${id} --output /tmp/jvmd-bench`;
 
 function totals(s:Summary,server:string,scope?:string){
   const rows=s.cases.filter(c=>c.server===server&&(!scope||c.scope===scope)),n=(b:string)=>rows.filter(r=>bucket(r.outcome)===b).length;
@@ -137,97 +133,114 @@ export function statuses(s:Summary,base?:Summary){
   if(h.cold)rows.push({context:"jvmd / cold start",description:"Apache Maven: "+h.cold});
   return rows.map(r=>({...r,description:r.description.slice(0,140)}));
 }
-export function renderMarkdown(s:Summary,change?:ReturnType<typeof compare>,base?:Summary){
-  const out:string[]=[];
-  const reference=s.meta.reference?` · JDTLS 1.61.0 fixed reference`:"";
-  const h=headline(s,base);
-  out.push("## JVMD benchmarks","",
-    `**Contract** ${h.contract} correct · **Roadmap** ${h.roadmap} scenarios`+(h.cold?` · **Cold start** ${h.cold}`:""),"",
-    `<sub>${String(s.meta.revision).slice(0,8)}${s.meta.dirty?"+dirty":""} · ${s.meta.jdk.replace(/^.*version\s+"?([^"\s]+)"?.*$/u,"JDK $1")} · ${s.meta.cpus} CPUs${reference}</sub>`);
+// ---------- readout ----------
+/** A readout line: "+" good (green on GitHub), "-" needs attention (red), " " neutral. */
+type Tone="+"|"-"|" ";type Line=[Tone,string];
+type Section={title:string;lines:Line[];fold?:boolean};
+const short=(e:string)=>e.replace(/^textDocument\//u,"");
+const dur=(v:number|null|undefined)=>v==null?"-":v<10?v.toFixed(1)+"ms":v<1000?v.toFixed(0)+"ms":(v/1000).toFixed(1)+"s";
+const size=(v:number|null|undefined)=>v==null?"-":v<1<<20?(v/1024).toFixed(0)+"K":v<1<<30?(v/(1<<20)).toFixed(1)+"M":(v/(1<<30)).toFixed(2)+"G";
+/** █ pass, ▒ implemented but not passing, ░ not implemented. */
+function bar(pass:number,bad:number,total:number,width=30){
+  if(!total)return " ".repeat(width);
+  const p=Math.round(pass/total*width),b=bad?Math.max(1,Math.round(bad/total*width)):0;
+  return "█".repeat(p)+"▒".repeat(Math.min(b,width-p))+"░".repeat(Math.max(0,width-p-b));
+}
+/** Aligned columns; a header starting with ">" is right-aligned. Rows carry their tone. */
+function table(head:string[],rows:[Tone,string[]][]):Line[]{
+  const right=head.map(h=>h.startsWith(">")),h=head.map(x=>x.replace(/^>/u,""));
+  const all=[h,...rows.map(r=>r[1])],w=h.map((_,i)=>Math.max(...all.map(r=>(r[i]??"").length)));
+  const fmt=(r:string[])=>r.map((c,i)=>right[i]?(c??"").padStart(w[i]):(c??"").padEnd(w[i])).join("  ").trimEnd();
+  return [[" ",fmt(h)],...rows.map(([t,r]):Line=>[t,fmt(r)])];
+}
+const versus=(a:number|null|undefined,b:number|null|undefined,better:string,worse:string):[Tone,string]=>{
+  if(!a||!b)return [" ",""];const r=b/a,f=(x:number)=>x<10?x.toFixed(1):x.toFixed(0);
+  return r>=1.1?["+",`${f(r)}x ${better}`]:r<=1/1.1?["-",`${f(1/r)}x ${worse}`]:[" ","same"];
+};
+
+export function readout(s:Summary,change?:ReturnType<typeof compare>,base?:Summary):Section[]{
+  const out:Section[]=[],servers=[...new Set(s.cases.map(c=>c.server))],h=headline(s,base);
+  const jdk=s.meta.jdk.match(/version "([^"]+)"/u)?.[1]??s.meta.jdk;
+  const head:Line[]=[];
+  for(const x of servers){const rows=s.cases.filter(c=>c.server===x),pass=rows.filter(c=>bucket(c.outcome)==="pass").length,
+    bad=rows.filter(c=>!["pass","missing"].includes(bucket(c.outcome))).length;
+    head.push([" ",`${x.padEnd(5)}  ${bar(pass,bad,rows.length)}  ${String(pass).padStart(3)}/${rows.length}`+
+      (x==="jvmd"?`   contract ${h.contract} · roadmap ${h.roadmap}`:s.meta.reference?"   fixed reference 1.61.0":"")]);}
+  head.push([" ",""],[" ","█ pass  ▒ implemented, not passing  ░ not implemented"]);
+  if(h.cold)head.push([" ",""],[" ","apache/maven cold start: "+h.cold]);
+  out.push({title:`jvmd benchmarks · ${String(s.meta.revision).slice(0,8)}${s.meta.dirty?"+dirty":""} · jdk ${jdk} · ${s.meta.cpus} cpu`,lines:head});
   if(change){
-    out.push("");
-    if(!change.fixed.length&&!change.regressed.length&&!change.moves.length)out.push(`No change since main (${String(change.base.revision).slice(0,8)}).`);
-    else{
-      out.push(`### Since main`,"");
-      if(change.fixed.length||change.regressed.length){out.push("| | Case | Was | Now |","|---|---|---|---|");
-        for(const c of change.regressed)out.push(`| ❌ | \`${c.id}\` | ${WORDS[c.was]??c.was} | ${WORDS[c.outcome]??c.outcome} |`);
-        for(const c of change.fixed)out.push(`| ✅ | \`${c.id}\` | ${WORDS[c.was]??c.was} | pass |`);out.push("");}
-      if(change.moves.length){out.push("| Endpoint | When | Allocation | Latency (hint) |","|---|---|--:|--:|");
-        for(const m of change.moves)out.push(`| \`${m.endpoint}\` | ${m.phase} | ${m.alloc?`${bytes(m.alloc[0])} → ${bytes(m.alloc[1])} (${pct(m.alloc[1],m.alloc[0])})`:""} | ${m.latency?`${ms(m.latency[0])} → ${ms(m.latency[1])}`:""} |`);}
-    }
+    const lines:Line[]=[];
+    for(const c of change.regressed)lines.push(["-",`${c.id.padEnd(40)} ${WORDS[c.was]??c.was} → ${WORDS[c.outcome]??c.outcome}`]);
+    for(const c of change.fixed)lines.push(["+",`${c.id.padEnd(40)} ${WORDS[c.was]??c.was} → pass`]);
+    for(const m of change.moves){const worse=(m.alloc&&m.alloc[1]>m.alloc[0])||(m.latency&&m.latency[1]>m.latency[0]);
+      lines.push([worse?"-":"+",`${(short(m.endpoint)+" "+m.phase).padEnd(40)} ${m.alloc?`alloc ${size(m.alloc[0])} → ${size(m.alloc[1])} (${pct(m.alloc[1],m.alloc[0])})`:""}${m.latency?`  latency ${dur(m.latency[0])} → ${dur(m.latency[1])}`:""}`]);}
+    out.push({title:`since main · ${String(change.base.revision).slice(0,8)}`,lines:lines.length?lines:[[" ","no change"]]});
   }
   const bad=attention(s);
-  if(bad.length){
-    out.push("","### Needs attention","","Supported by JVMD, but wrong, late, or not run.","","| Case | Result | Detail |","|---|---|---|");
-    for(const c of bad)out.push(`| \`${c.id}\` | ${WORDS[c.outcome]??c.outcome} | ${cell(c.detail)} |`);
-    out.push("","<details><summary>Reproduce</summary>","","```sh",...bad.map(c=>reproduce(c.id)),"```","","</details>");
+  if(bad.length)out.push({title:"needs attention · supported by JVMD, but wrong, late or not run",lines:[
+    ...table(["case","result","detail"],bad.map(c=>["-",[c.id,WORDS[c.outcome]??c.outcome,String(c.detail??"").slice(0,90)]])),
+    [" ",""],[" ","reproduce: node benchmarks/run.ts --servers jvmd --only "+bad.map(c=>c.id).join(",")+" --output /tmp/jvmd-bench"]]});
+
+  const mark=(x:string,family:string)=>{const rs=s.cases.filter(c=>c.family===family&&c.server===x);if(!rs.length)return "not measured";
+    const pass=rs.filter(c=>bucket(c.outcome)==="pass").length,flag=rs.some(c=>["wrong","harness"].includes(bucket(c.outcome)))?"!":rs.some(c=>bucket(c.outcome)==="stale")?"~":rs.some(c=>bucket(c.outcome)==="unchecked")?"?":"";
+    return `${bar(pass,rs.length-pass-rs.filter(c=>bucket(c.outcome)==="missing").length,rs.length,10)} ${String(pass).padStart(2)}/${String(rs.length).padEnd(2)} ${flag}`.trimEnd();};
+  const done=s.families.filter(f=>{const rs=s.cases.filter(c=>c.family===f.id&&c.server==="jvmd");return rs.length&&rs.every(c=>bucket(c.outcome)==="pass");}).length;
+  out.push({title:`families · ${done}/${s.families.length} complete`,fold:true,lines:[
+    ...table(["id","scenario",...servers],s.families.map(f=>{const rs=s.cases.filter(c=>c.family===f.id&&c.server==="jvmd");
+      const tone:Tone=rs.some(c=>!["pass","missing"].includes(bucket(c.outcome)))?"-":rs.length&&rs.every(c=>bucket(c.outcome)==="pass")?"+":" ";
+      return [tone,[f.id,f.name.toLowerCase(),...servers.map(x=>mark(x,f.id))]];})),
+    ...s.outOfScope.map((o):Line=>[" ",`${o.id.padEnd(Math.max(2,...s.families.map(f=>f.id.length)))}  out of scope: ${o.reason}`]),
+    [" ",""],[" ","! wrong or failed  ~ stale after an edit  ? can't be checked"]]});
+
+  const life=Object.keys(s.lifecycle);
+  if(life.length){
+    const rows:[Tone,string[]][]=[];
+    for(const [label,key,kind] of LIFECYCLE){const vals=life.map(x=>s.lifecycle[x]?.phases?.[key]);if(vals.every(v=>v==null))continue;
+      rows.push([" ",[label.toLowerCase(),...vals.map(v=>kind==="bytes"?size(v):dur(v))]]);}
+    for(const e of [...new Set(life.flatMap(x=>Object.keys(s.lifecycle[x]?.first??{})))].sort())
+      rows.push([" ",["first "+short(e),...life.map(x=>dur(s.lifecycle[x]?.first?.[e]))]]);
+    const lines=table(["",...life.map(x=>">"+x)],rows);
+    for(const x of life)if(s.lifecycle[x]?.error)lines.push(["-",`${x}: ${String(s.lifecycle[x].error).slice(0,110)}`]);
+    lines.push([" ",""],[" ","open = launch to the first correct answer · jvmd keeps one daemon and its index per machine"]);
+    out.push({title:"lifecycle · apache/maven",fold:true,lines});
   }
-  if(Object.keys(s.lifecycle).length){
-    const servers=Object.keys(s.lifecycle);
-    out.push("","<details><summary><b>Lifecycle</b> on apache/maven</summary>","",`| | ${servers.map(x=>x.toUpperCase()).join(" | ")} |`,`|---|${servers.map(()=>"--:").join("|")}|`);
-    for(const [label,key,kind] of LIFECYCLE){const vals=servers.map(x=>s.lifecycle[x]?.phases?.[key]);if(vals.every(v=>v==null))continue;
-      out.push(`| ${label} | ${vals.map(v=>kind==="bytes"?bytes(v):ms(v)).join(" | ")} |`);}
-    const endpoints=[...new Set(servers.flatMap(x=>Object.keys(s.lifecycle[x]?.first??{})))].sort();
-    for(const e of endpoints)out.push(`| First \`${e.replace(/^textDocument\//u,"")}\` | ${servers.map(x=>ms(s.lifecycle[x]?.first?.[e])).join(" | ")} |`);
-    for(const x of servers)if(s.lifecycle[x]?.error)out.push("",`${x.toUpperCase()}: ${cell(s.lifecycle[x].error)}`);
-    out.push("","JVMD keeps one daemon per machine: its dependency index is built once, then reused by every workspace and restart.","","</details>");
-  }
-  const perf=s.performance.filter(p=>p.server==="jvmd"),vs=s.performance.filter(p=>p.server==="jdtls");
-  if(perf.length){
-    const byKey=new Map(vs.map(p=>[p.endpoint+"\u0000"+p.phase,p]));
-    out.push("","<details><summary><b>Latency and allocation</b> per request</summary>","","| Endpoint | When | JVMD | JDTLS | JVMD alloc | JDTLS alloc | Alloc |","|---|---|--:|--:|--:|--:|--:|");
-    for(const p of [...perf].sort((a,b)=>a.endpoint.localeCompare(b.endpoint)||PHASES.indexOf(a.phase)-PHASES.indexOf(b.phase))){
-      const o=byKey.get(p.endpoint+"\u0000"+p.phase);
-      out.push(`| \`${p.endpoint.replace(/^textDocument\//u,"")}\` | ${p.phase} | ${ms(p.medianMs)} | ${ms(o?.medianMs)} | ${bytes(p.medianAllocBytes)} | ${bytes(o?.medianAllocBytes)} | ${ratio(p.medianAllocBytes,o?.medianAllocBytes)} |`);}
-    out.push("","Medians over passing requests on small fixtures. *edit* is the time from an edit to the first correct answer. Allocation is what the server JVM allocated during the request.","","</details>");
-  }
+
   const missing=new Map<string,any[]>();
   for(const c of s.cases)if(c.server==="jvmd"&&c.outcome==="unsupported"){const k=c.missing??"?";missing.set(k,[...missing.get(k)??[],c]);}
   if(missing.size){
-    const native=[...missing.values()].filter(rs=>rs[0].native).length;
-    out.push("",`<details><summary><b>Roadmap</b>: ${missing.size} endpoints not implemented over LSP (${native} already in JVMD's own API)</summary>`,"",
-      "| Endpoint | Scenarios | JVMD API today |","|---|--:|---|");
-    for(const [k,rs] of [...missing].sort((a,b)=>Number(!!b[1][0].native)-Number(!!a[1][0].native)||b[1].length-a[1].length||a[0].localeCompare(b[0])))
-      out.push(`| \`${k}\` | ${rs.length} | ${rs[0].native?"`"+rs[0].native+"`":""} |`);
-    out.push("","</details>");
+    const sorted=[...missing].sort((a,b)=>Number(!!b[1][0].native)-Number(!!a[1][0].native)||b[1].length-a[1].length||a[0].localeCompare(b[0])),max=Math.max(...sorted.map(r=>r[1].length));
+    const native=sorted.filter(r=>r[1][0].native).length;
+    out.push({title:`not implemented · ${missing.size} endpoints · ${native} already in JVMD's own API`,fold:true,lines:[
+      ...table(["endpoint",">n","","families","jvmd api today"],sorted.map(([k,rs])=>[rs[0].native?"+":" ",[k,String(rs.length),"▪".repeat(Math.ceil(rs.length/max*10)),[...new Set(rs.map(r=>r.family))].join(" "),rs[0].native??""]])),
+      [" ",""],[" ","+ already answered by JVMD's own API: exposing it over LSP is the work"]]});
   }
-  const servers=[...new Set(s.cases.map(c=>c.server))];
-  out.push("",`<details><summary><b>Scenario families</b></summary>`,"",`| | Family | ${servers.map(x=>x.toUpperCase()).join(" | ")} |`,`|---|---|${servers.map(()=>"--:").join("|")}|`);
-  for(const f of s.families){
-    const mark=(x:string)=>{const rs=s.cases.filter(c=>c.family===f.id&&c.server===x);if(!rs.length)return "not measured";const pass=rs.filter(c=>bucket(c.outcome)==="pass").length;
-      const icon=rs.some(c=>["wrong","harness"].includes(bucket(c.outcome)))?"❌":rs.some(c=>bucket(c.outcome)==="stale")?"🕒":pass===rs.length?"✅":rs.some(c=>bucket(c.outcome)==="unchecked")?"⚠️":pass?"🟡":"⬜";
-      return `${icon} ${pass}/${rs.length}`;};
-    out.push(`| ${f.id} | ${f.name} | ${servers.map(mark).join(" | ")} |`);
+
+  const perf=s.performance.filter(p=>p.server==="jvmd").sort((a,b)=>a.endpoint.localeCompare(b.endpoint)||PHASES.indexOf(a.phase)-PHASES.indexOf(b.phase));
+  if(perf.length){
+    const vs=new Map(s.performance.filter(p=>p.server==="jdtls").map(p=>[p.endpoint+"\u0000"+p.phase,p]));let last="";
+    const rows=perf.map(p=>{const o=vs.get(p.endpoint+"\u0000"+p.phase),[t,speed]=versus(p.medianMs,o?.medianMs,"faster","slower"),[,alloc]=versus(p.medianAllocBytes,o?.medianAllocBytes,"less","more");
+      const label=p.endpoint===last?"":short(p.endpoint);last=p.endpoint;
+      return [t,[label,p.phase,dur(p.medianMs),size(p.medianAllocBytes),dur(o?.medianMs),size(o?.medianAllocBytes),speed,alloc]] as [Tone,string[]];});
+    out.push({title:`latency · alloc · ${new Set(perf.map(p=>p.endpoint)).size} endpoints`,fold:true,lines:[
+      ...table(["endpoint","",">jvmd",">alloc",">jdtls",">alloc",">speed",">alloc"],rows),
+      [" ",""],[" ","median per request · edit = edit to first correct answer · alloc = server JVM bytes (jvmd: daemon only)"]]});
   }
-  for(const o of s.outOfScope)out.push(`| ${o.id} | *out of scope: ${o.reason}* | ${servers.map(()=>"").join(" | ")} |`);
-  out.push("","✅ all pass · 🟡 partly implemented · ⬜ not implemented · ❌ something implemented is wrong · 🕒 stale after an edit · ⚠️ can't be checked","","</details>");
-  const short=s.cases.filter(c=>c.server==="jdtls"&&!["pass","missing"].includes(bucket(c.outcome)));
-  if(short.length){
-    out.push("",`<details><summary><b>Where JDTLS falls short</b>: ${short.length} scenarios</summary>`,"","| Case | Result | Detail |","|---|---|---|");
-    for(const c of short)out.push(`| \`${c.id}\` | ${WORDS[c.outcome]??c.outcome} | ${cell(c.detail)} |`);
-    out.push("","</details>");
-  }
-  return out.join("\n")+"\n";
+  const shortfalls=s.cases.filter(c=>c.server==="jdtls"&&!["pass","missing"].includes(bucket(c.outcome)));
+  if(shortfalls.length)out.push({title:`jdtls falls short · ${shortfalls.length}`,fold:true,
+    lines:table(["case","result","detail"],shortfalls.map(c=>[" ",[c.id,WORDS[c.outcome]??c.outcome,String(c.detail??"").slice(0,70)]]))});
+  return out;
 }
 
-export function renderText(s:Summary,change?:ReturnType<typeof compare>){
-  const out:string[]=[],servers=[...new Set(s.cases.map(c=>c.server))];
-  const pad=(v:unknown,n:number)=>String(v).padEnd(n),rpad=(v:unknown,n:number)=>String(v).padStart(n);
-  out.push(`jvmd benchmarks · ${String(s.meta.revision).slice(0,8)}${s.meta.dirty?"+dirty":""}`,"");
-  for(const x of servers){const sup=totals(s,x,"supported"),road=totals(s,x,"roadmap");
-    out.push(`  ${pad(x,5)}  contract ${rpad(sup.pass,3)}/${pad(sup.total,3)}  roadmap ${rpad(road.pass,3)}/${pad(road.total,3)}  not implemented ${rpad(sup.missing+road.missing,3)}`);}
-  if(change){out.push("","since main");
-    if(!change.fixed.length&&!change.regressed.length&&!change.moves.length)out.push("  no change");
-    for(const c of change.regressed)out.push(`  - ${pad(c.id,40)} ${WORDS[c.was]??c.was} → ${WORDS[c.outcome]??c.outcome}`);
-    for(const c of change.fixed)out.push(`  + ${pad(c.id,40)} now passes`);
-    for(const m of change.moves)out.push(`  ~ ${pad(m.endpoint+" "+m.phase,40)} ${m.alloc?`${bytes(m.alloc[0])} → ${bytes(m.alloc[1])}`:""} ${m.latency?`${ms(m.latency[0])} → ${ms(m.latency[1])}`:""}`);}
-  const bad=attention(s);
-  if(bad.length){out.push("","needs attention");for(const c of bad)out.push(`  ${pad(c.id,40)} ${pad(WORDS[c.outcome]??c.outcome,16)} ${c.detail}`);}
-  const life=Object.keys(s.lifecycle);
-  if(life.length){out.push("","lifecycle (apache/maven)"+" ".repeat(18)+life.map(x=>rpad(x,10)).join(""));
-    for(const [label,key,kind] of LIFECYCLE){const vals=life.map(x=>s.lifecycle[x]?.phases?.[key]);if(vals.every(v=>v==null))continue;
-      out.push(`  ${pad(label,40)}${vals.map(v=>rpad(kind==="bytes"?bytes(v):ms(v),10)).join("")}`);}}
-  return out.join("\n")+"\n";
+/** GitHub colours diff blocks: "+" lines green, "-" red, "@@" headers blue. */
+export function renderMarkdown(s:Summary,change?:ReturnType<typeof compare>,base?:Summary){
+  const sections=readout(s,change,base),block=(ss:Section[])=>"```diff\n"+ss.map(x=>[`@@ ${x.title} @@`,...x.lines.map(([t,l])=>(t+" "+l).trimEnd())].join("\n")).join("\n\n")+"\n```";
+  return [block(sections.filter(x=>!x.fold)),...sections.filter(x=>x.fold).map(x=>`<details><summary><code>${x.title}</code></summary>\n\n${block([{...x,title:x.title.split(" · ")[0]}])}\n\n</details>`)].join("\n\n")+"\n";
+}
+/** The same readout for a terminal: plain, or with ANSI colours. */
+export function renderText(s:Summary,change?:ReturnType<typeof compare>,color=false,folded=true){
+  const paint=(t:Tone,l:string)=>!color||t===" "?l:`\x1b[${t==="+"?32:31}m${l}\x1b[0m`;
+  return readout(s,change).filter(x=>folded||!x.fold).map(x=>[color?`\x1b[36m${x.title}\x1b[0m`:x.title,...x.lines.map(([t,l])=>paint(t,("  "+l).trimEnd()))].join("\n")).join("\n\n")+"\n";
 }
 
 export function writeReport(root:string,summary:Summary,baseline?:Summary){
@@ -235,6 +248,7 @@ export function writeReport(root:string,summary:Summary,baseline?:Summary){
   writeFileSync(path.join(root,"summary.json"),JSON.stringify(summary,null,1)+"\n");
   writeFileSync(path.join(root,"report.md"),renderMarkdown(summary,change,baseline));
   writeFileSync(path.join(root,"statuses.json"),JSON.stringify(statuses(summary,baseline),null,1)+"\n");
-  const text=renderText(summary,change);writeFileSync(path.join(root,"report.txt"),text);
-  return {text,regressions:change?.regressed??[]};
+  writeFileSync(path.join(root,"report.txt"),renderText(summary,change));
+  // The terminal gets the unfolded sections, in colour when it is one.
+  return {text:renderText(summary,change,!!process.stdout.isTTY,false),regressions:change?.regressed??[]};
 }

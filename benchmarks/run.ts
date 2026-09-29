@@ -93,12 +93,13 @@ export async function main(argv=process.argv.slice(2)){
   }
   writeFileSync(path.join(root,"results.json"),JSON.stringify({meta,results,lifecycle},null,1)+"\n");
   // Results are reported, never gated: the exit code only says whether the suite itself ran.
-  // --baseline (main's summary.json) is what changes are measured against. JDTLS is pinned, so it is measured
-  // once and checked in (reference/jdtls.json); runs without JDTLS take its columns from there.
+  // --baseline (main's summary.json) is what changes are measured against. JDTLS 1.61.0 is a fixed reference,
+  // measured once and checked in (reference/jdtls.json); runs without JDTLS take its columns from there.
   const load=(file?:string)=>file&&existsSync(file)?JSON.parse(readFileSync(file,"utf8")):undefined;
   const baseline=load(a.baseline),reference=load(a.reference??REFERENCE);
   const measured=summarize(meta,results,lifecycle,selected),summary=withReference(measured,reference);
-  if(a["write-reference"])writeFileSync(a["write-reference"],JSON.stringify(jdtlsReference(measured),null,1)+"\n");
+  // Merges by case: measuring a newly added scenario adds its JDTLS row and leaves the rest untouched.
+  if(a["write-reference"])writeFileSync(a["write-reference"],JSON.stringify(jdtlsReference(measured,load(a["write-reference"])),null,1)+"\n");
   const {text,regressions}=writeReport(root,summary,baseline);
   console.log("\n"+text+"\nreport: "+path.join(root,"report.md"));
   if(process.env.GITHUB_ACTIONS==="true")for(const r of regressions)

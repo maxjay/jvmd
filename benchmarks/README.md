@@ -42,7 +42,7 @@ and `mvn` once. After that everything is offline.
 | `--project DIR --project-repository DIR` | Add the lifecycle on a real Maven checkout, built into that repository. |
 | `--baseline summary.json` | Compare with an earlier run (main). |
 | `--reference FILE` | Where JDTLS columns come from when JDTLS isn't run (default `reference/jdtls.json`). |
-| `--write-reference FILE` | Write this run's JDTLS results as a new reference. |
+| `--write-reference FILE` | Add this run's JDTLS results to the reference, by case. |
 | `--runs 3` | Repeat for steadier numbers. |
 | `--repository DIR` | Reuse a fixture repository between runs. |
 
@@ -55,10 +55,10 @@ The output directory holds `report.md` (the PR comment), `report.txt` (the termi
 
 `benchmarks.yml` runs on PRs that touch JVMD or the suite, on `main`, and nightly.
 
-- **JDTLS is measured once.** It is pinned, so its results don't change: they are checked in as
-  `reference/jdtls.json` and every run reads its JDTLS columns from there. After a JDTLS upgrade or
-  a change to what a case checks, run the workflow manually with *refresh-jdtls* and commit the
-  `jdtls-reference` artifact it uploads. Cases added since show "not measured" for JDTLS until then.
+- **JDTLS 1.61.0 is a fixed reference.** It was measured once and checked in as
+  `reference/jdtls.json`; CI only ever runs JVMD. A newly added scenario is measured on JDTLS once
+  (`--servers jdtls --only <case> --write-reference benchmarks/reference/jdtls.json`), which adds
+  its row and leaves the rest alone. Until then it shows "not measured" for JDTLS.
 - **PRs** compare with main's last `summary.json`.
 - Two lines in the PR's checks list carry the headline numbers and their change since main,
   like `jvmd / scenarios — Contract 38/41 · Roadmap 12/108 (+2) vs main` and

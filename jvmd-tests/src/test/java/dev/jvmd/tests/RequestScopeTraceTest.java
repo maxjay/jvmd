@@ -36,6 +36,13 @@ class RequestScopeTraceTest {
         assertThat(actor.getLong("request")).isEqualTo(rpc.getLong("request"));
         assertThat(actor.getThread().getJavaThreadId()).isNotEqualTo(rpc.getThread().getJavaThreadId());
         assertThat(actor.getString("counters")).contains("\"operations\":3");
+        var worker=events.stream().filter(e->e.getString("stage").equals("session.execute")&&e.getString("counters").contains("actor_work")).findFirst().orElseThrow();
+        assertThat(worker.getLong("parent")).isEqualTo(rpc.getLong("span"));
+        assertThat(worker.getThread().getJavaThreadId()).isNotEqualTo(rpc.getThread().getJavaThreadId());
+        var workerChild=events.stream().filter(e->e.getString("stage").equals("test.actor.automatic")).findFirst().orElseThrow();
+        assertThat(workerChild.getLong("parent")).isEqualTo(worker.getLong("span"));
+        assertThat(workerChild.getLong("request")).isEqualTo(rpc.getLong("request"));
+        assertThat(workerChild.getThread().getJavaThreadId()).isEqualTo(worker.getThread().getJavaThreadId());
         var queued=events.stream().filter(e->e.getString("stage").equals("session.queue")).findFirst().orElseThrow();
         assertThat(queued.getBoolean("queued")).isTrue();
         assertThat(queued.getLong("threadCpuNanos")).isEqualTo(-1);
@@ -93,6 +100,11 @@ class RequestScopeTraceTest {
                         try(var span=RequestScope.stage("test.actor")){span.count("operations",3);}
                         return null;
                     }));
+                    session.execute(()->{
+                        RequestScope.count("actor_work",1);
+                        try(var span=RequestScope.stage("test.actor.automatic")){span.count("operations",1);}
+                        return null;
+                    });
                     try(var workers=Executors.newVirtualThreadPerTaskExecutor()){
                         workers.submit(()->RequestScope.with(context,()->{
                             try(var span=RequestScope.stage("test.virtual")){return null;}

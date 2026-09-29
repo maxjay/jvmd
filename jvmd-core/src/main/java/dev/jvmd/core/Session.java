@@ -46,7 +46,10 @@ public final class Session implements AutoCloseable {
         long enqueued=RequestScope.TRACING?System.nanoTime():0;
         var job=new Job<T>(()->RequestScope.isolated(()->RequestScope.with(inherited,()->{
             RequestScope.queued("session.queue",enqueued);
-            return work.call();
+            try(var span=RequestScope.stage("session.execute")){
+                try{return work.call();}
+                catch(Exception|Error error){span.outcome("failed");throw error;}
+            }
         })),priority,sequence.incrementAndGet());executor.execute(job);
         try { return job.get(); }
         catch (ExecutionException e) {

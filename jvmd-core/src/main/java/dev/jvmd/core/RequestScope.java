@@ -165,10 +165,16 @@ public final class RequestScope {
     /** Initialized only for enabled attribution; never changes VM counter settings. */
     private static final class Counters {
         private static final java.lang.management.ThreadMXBean bean=java.lang.management.ManagementFactory.getThreadMXBean();
+        private static volatile boolean allocationUnavailable;
         static long cpu(){return bean.isCurrentThreadCpuTimeSupported()&&bean.isThreadCpuTimeEnabled()?bean.getCurrentThreadCpuTime():-1;}
         static long allocated(){
-            return bean instanceof com.sun.management.ThreadMXBean extended&&extended.isThreadAllocatedMemorySupported()&&extended.isThreadAllocatedMemoryEnabled()
-                    ?extended.getThreadAllocatedBytes(Thread.currentThread().threadId()):-1;
+            // jdk.management is optional in the packaged jlink image. Tracing must
+            // preserve request behaviour when its extended allocation counter is absent.
+            if(allocationUnavailable)return -1;
+            try{
+                return bean instanceof com.sun.management.ThreadMXBean extended&&extended.isThreadAllocatedMemorySupported()&&extended.isThreadAllocatedMemoryEnabled()
+                        ?extended.getThreadAllocatedBytes(Thread.currentThread().threadId()):-1;
+            }catch(NoClassDefFoundError unavailable){allocationUnavailable=true;return -1;}
         }
     }
 }

@@ -52,7 +52,7 @@ export function summarize(meta:any,results:any[],lifecycle:any[],selected:CaseDe
 }
 export type Summary=ReturnType<typeof summarize>;
 
-/** A PR run measures JVMD only; JDTLS rows come from main's last full run, marked as reference. */
+/** A run that skipped JDTLS takes its rows from a stored reference run, marked as such. */
 export function withReference(summary:Summary,reference:any){
   if(!reference||summary.meta.servers.includes("jdtls"))return summary;
   const pick=(rows:any[])=>rows.filter((r:any)=>r.server==="jdtls");
@@ -122,7 +122,7 @@ export function statuses(s:Summary,base?:Summary){
 }
 export function renderMarkdown(s:Summary,change?:ReturnType<typeof compare>,base?:Summary){
   const out:string[]=[];
-  const reference=s.meta.reference?` · JDTLS from main ${String(s.meta.reference.revision).slice(0,8)}`:"";
+  const reference=s.meta.reference?` · JDTLS reused from ${String(s.meta.reference.revision).slice(0,8)}`:"";
   const h=headline(s,base);
   out.push("## JVMD benchmarks","",
     `**Contract** ${h.contract} correct · **Roadmap** ${h.roadmap} scenarios`+(h.cold?` · **Cold start** ${h.cold}`:""),"",

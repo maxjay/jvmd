@@ -1,4 +1,4 @@
-name: Benchmarks
+name: JVMD benchmarks
 
 # JVMD against JDTLS: editor scenarios on Maven fixtures, plus the lifecycle of a real Maven project.
 # Informational: results are reported on the PR and in the job summary, never used to fail the build.
@@ -122,28 +122,43 @@ jobs:
           path: ${{ runner.temp }}/bench-repository
           key: bench-repository-${{ hashFiles('benchmarks/harness/maven.ts') }}
 
-      # PRs measure JVMD and compare with main; JDTLS numbers come from main's run unless this PR changes the suite.
+      # JDTLS is pinned, so its results only change when the suite or the JDTLS version does.
+      # They are stored under that key and reused; JDTLS runs only when the key is new.
+      - name: Restore JDTLS reference
+        id: reference
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/jdtls-reference
+          key: jdtls-reference-1.61.0-${{ hashFiles('benchmarks/run.ts', 'benchmarks/harness/**', 'benchmarks/scenarios/**') }}
+
       - name: Choose servers and fetch main's summary
         id: plan
         env:
           GH_TOKEN: ${{ github.token }}
-          BASE: ${{ github.event.pull_request.base.sha }}
         run: |
-          servers=jvmd,jdtls
+          echo "servers=${{ steps.reference.outputs.cache-hit == 'true' && 'jvmd' || 'jvmd,jdtls' }}" >> "$GITHUB_OUTPUT"
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
-            git fetch -q --depth=1 origin "$BASE"
-            git diff --quiet "$BASE" HEAD -- benchmarks/ && servers=jvmd
             id=$(gh run list -R "$GITHUB_REPOSITORY" --workflow benchmarks.yml --branch main --status success -L 1 --json databaseId -q '.[0].databaseId' || true)
             [ -n "$id" ] && gh run download "$id" -R "$GITHUB_REPOSITORY" -n benchmarks -D "$RUNNER_TEMP/main" || echo "No main summary yet"
           fi
-          echo "servers=$servers" >> "$GITHUB_OUTPUT"
 
       - name: Run benchmarks
         run: |
           node benchmarks/run.ts --output "$RUNNER_TEMP/benchmarks" --servers "${{ steps.plan.outputs.servers }}" --runs "${{ inputs.runs || '1' }}" \
             --jdtls-home "$RUNNER_TEMP/tools/jdtls" --repository "$RUNNER_TEMP/bench-repository" \
             --project "$RUNNER_TEMP/apache-maven" --project-repository "$RUNNER_TEMP/apache-maven-repository" \
-            --baseline "$RUNNER_TEMP/main/summary.json"
+            --baseline "$RUNNER_TEMP/main/summary.json" --reference "$RUNNER_TEMP/jdtls-reference/summary.json"
+
+      - name: Store JDTLS reference
+        if: steps.reference.outputs.cache-hit != 'true'
+        run: mkdir -p "$RUNNER_TEMP/jdtls-reference" && cp "$RUNNER_TEMP/benchmarks/summary.json" "$RUNNER_TEMP/jdtls-reference/"
+
+      - name: Save JDTLS reference
+        if: steps.reference.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/jdtls-reference
+          key: ${{ steps.reference.outputs.cache-primary-key }}
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()

@@ -40,7 +40,8 @@ and `mvn` once. After that everything is offline.
 | `--servers jvmd` | JVMD only. |
 | `--only ENV-02,CMP-01/first-repeat` | Families or single cases. `--list` prints them. |
 | `--project DIR --project-repository DIR` | Add the lifecycle on a real Maven checkout, built into that repository. |
-| `--baseline summary.json` | Compare with an earlier run. On a JVMD-only run its JDTLS numbers fill the JDTLS columns. |
+| `--baseline summary.json` | Compare with an earlier run (main). |
+| `--reference summary.json` | On a JVMD-only run, take the JDTLS columns from this earlier run. |
 | `--runs 3` | Repeat for steadier numbers. |
 | `--repository DIR` | Reuse a fixture repository between runs. |
 
@@ -53,8 +54,10 @@ The output directory holds `report.md` (the PR comment), `report.txt` (the termi
 
 `benchmarks.yml` runs on PRs that touch JVMD or the suite, on `main`, and nightly.
 
-- **PRs** run JVMD only and compare with main's last `summary.json`, which also supplies the
-  JDTLS columns. A PR that changes the suite runs JDTLS too.
+- **JVMD runs every time. JDTLS runs once per suite version.** JDTLS is pinned, so its results
+  only change when the harness, the scenarios or the JDTLS version do. They are cached under that
+  key and reused by every later run; the report says which run they came from.
+- **PRs** compare with main's last `summary.json`.
 - Two lines in the PR's checks list carry the headline numbers and their change since main,
   like `jvmd / scenarios — Contract 38/41 · Roadmap 12/108 (+2) vs main` and
   `jvmd / cold start — Apache Maven: index 24 s · open 3.1 s`. They are always green.

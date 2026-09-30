@@ -400,7 +400,7 @@ async function workload(){
       v=>assert.match(v?.signatures?.[v.activeSignature??0]?.label??"",/addAttachedArtifact/u),"first_use");
   });
   await mark("M14x","documentSymbol, semanticTokens, signatureHelp first use");
-  if(stalled){log_("daemon stalled: session phases skipped; going to shutdown and restart");spawnSync("git",["-C",PROJECT!,"checkout","--",POM]);return;}
+  if(stalled){log_("daemon stalled: session phases skipped; going to shutdown and restart");await running.stop({closeSession:false}).catch(()=>undefined);spawnSync("git",["-C",PROJECT!,"checkout","--",POM]);return;}
   // ---------- mutations
   // Body-only: a statement inside MavenProject.getGroupId(); the API is unchanged.
   let changed=c.change(PROJECT_FILE,project.replace("String groupId = getModel().getGroupId();","String groupId = getModel().getGroupId();\n        int benchmarkBodyOnly = groupId == null ? 0 : 1;"));

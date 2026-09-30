@@ -59,7 +59,7 @@ const env={mode:MODE,date:new Date().toISOString(),jvmdCommit:sh("git",["rev-par
   memoryBytes:os.totalmem(),filesystem:sh("findmnt",["-n","-o","FSTYPE","-T",OUT]),xmxMb:HEAP,iterations:N,
   thp:existsSync("/sys/kernel/mm/transparent_hugepage/enabled")?readFileSync("/sys/kernel/mm/transparent_hugepage/enabled","utf8").trim():null,
   repository:{path:REPOSITORY,...dirStats(REPOSITORY)},fixtureCommit:PROJECT?sh("git",["-C",PROJECT,"rev-parse","HEAD"]):null,
-  node:process.version,asyncProfiler:AP&&existsSync(AP)?sh(path.join(AP,"bin/asprof"),["--version"]):null,allocInterval:ALLOC_INTERVAL,skipReferences:a["skip-references"]==="true",nativeBudgetMb:NATIVE_BUDGET_MB?Number(NATIVE_BUDGET_MB):"default (64)",nativeInterval:NATIVE_INTERVAL};
+  node:process.version,asyncProfiler:AP&&existsSync(AP)?sh(path.join(AP,"bin/asprof"),["--version"]):null,allocInterval:ALLOC_INTERVAL,reuseState:a["reuse-state"]??null,skipReferences:a["skip-references"]==="true",nativeBudgetMb:NATIVE_BUDGET_MB?Number(NATIVE_BUDGET_MB):"default (64)",nativeInterval:NATIVE_INTERVAL};
 writeFileSync(path.join(OUT,"environment.json"),JSON.stringify(env,null,1));
 
 // ---------------------------------------------------------------- mode-specific JVM flags
@@ -494,6 +494,8 @@ async function restartWorkload(){
 const started=performance.now();
 try{
   if(PROJECT){settingsXml(REPOSITORY,path.join(REPOSITORY,"settings.xml"));spawnSync("git",["-C",PROJECT,"checkout","--",POM]);}
+  // --reuse-state: start from a copy of a persisted daemon state, so the first incarnation is itself a restart.
+  if(a["reuse-state"]){mkdirSync(STATE,{recursive:true});spawnSync("cp",["-a",path.resolve(a["reuse-state"]),path.join(STATE,"jvmd")]);}
   await startDaemon(REPOSITORY);
   if(SEED_ONLY){
     // Forced full GC + histogram: the retained heap of the machine index alone.

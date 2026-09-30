@@ -39,6 +39,7 @@ const AP=path.resolve(a["async-profiler"]??process.env.ASYNC_PROFILER_HOME??"");
 const SEED_ONLY=a["seed-only"]==="true";
 const PROJECT=SEED_ONLY?undefined:path.resolve(a.project??assert.fail("--project"));
 const REPOSITORY=path.resolve(a["project-repository"]??a.repository??assert.fail("--project-repository"));
+const NATIVE_BUDGET_MB=a["native-budget-mb"];
 const ALLOC_INTERVAL=a["alloc-interval"]??"262144",NATIVE_INTERVAL=a["native-interval"]??"65536";
 assert(["control","exact","alloc","live","retention","nmt","native","rss"].includes(MODE),"unknown mode "+MODE);
 assert(!existsSync(OUT),"--output must be a new directory");
@@ -58,12 +59,14 @@ const env={mode:MODE,date:new Date().toISOString(),jvmdCommit:sh("git",["rev-par
   memoryBytes:os.totalmem(),filesystem:sh("findmnt",["-n","-o","FSTYPE","-T",OUT]),xmxMb:HEAP,iterations:N,
   thp:existsSync("/sys/kernel/mm/transparent_hugepage/enabled")?readFileSync("/sys/kernel/mm/transparent_hugepage/enabled","utf8").trim():null,
   repository:{path:REPOSITORY,...dirStats(REPOSITORY)},fixtureCommit:PROJECT?sh("git",["-C",PROJECT,"rev-parse","HEAD"]):null,
-  node:process.version,asyncProfiler:AP&&existsSync(AP)?sh(path.join(AP,"bin/asprof"),["--version"]):null,allocInterval:ALLOC_INTERVAL,nativeInterval:NATIVE_INTERVAL};
+  node:process.version,asyncProfiler:AP&&existsSync(AP)?sh(path.join(AP,"bin/asprof"),["--version"]):null,allocInterval:ALLOC_INTERVAL,nativeBudgetMb:NATIVE_BUDGET_MB?Number(NATIVE_BUDGET_MB):"default (64)",nativeInterval:NATIVE_INTERVAL};
 writeFileSync(path.join(OUT,"environment.json"),JSON.stringify(env,null,1));
 
 // ---------------------------------------------------------------- mode-specific JVM flags
 function jvmArgs(incarnation:number){
   const args=["-Djvmd.profile.bootstrap_status=true"];
+  // Supplementary configuration only: an existing runtime property; the primary baseline never sets it.
+  if(NATIVE_BUDGET_MB)args.push("-Djvmd.index.native_budget_mb="+NATIVE_BUDGET_MB);
   const tag=`i${incarnation}`;
   if(MODE==="exact")args.push("-Djvmd.trace=true",`-XX:StartFlightRecording=filename=${OUT}/exact-${tag}.jfr,settings=default,dumponexit=true,name=memory`,
     `-Xlog:gc*=info,gc+heap=debug,gc+humongous=debug,gc+age=trace:file=${OUT}/gc-${tag}.log:uptimemillis,tid,tags`);
@@ -290,7 +293,7 @@ async function detectStall(label:string){
   if(gdb.stdout)writeFileSync(path.join(dir,"gdb.txt"),gdb.stdout);
   const wals:Record<string,number>={};
   const gens=path.join(STATE,"jvmd","store","index-v2","generations");
-  if(existsSync(gens))for(const g of readdirSync(gens))for(const db of readdirSync(path.join(gens,g)))for(const f of readdirSync(path.join(gens,g,db)))if(f.endsWith(".log"))wals[db+"/"+f]=statSync(path.join(gens,g,db,f)).size;
+  if(existsSync(gens))for(const g of readdirSync(gens))for(const db of readdirSync(path.join(gens,g)))if(statSync(path.join(gens,g,db)).isDirectory())for(const f of readdirSync(path.join(gens,g,db)))if(f.endsWith(".log"))wals[db+"/"+f]=statSync(path.join(gens,g,db,f)).size;
   stalled={label,t:Date.now(),threads:stuck,writeBufferManagerStall:/WriteBufferManagerStallWrites/u.test(gdb.stdout??""),walBytes:wals,cpuTicksIn5s:c2-c1,
     proc:procMemory(daemon.pid),smaps:smapsCategories(daemon.pid),snapshot:await daemon.allocation.snapshot(false)};
   writeFileSync(path.join(dir,"stall.json"),JSON.stringify(stalled,null,1));
@@ -508,6 +511,9 @@ try{
 }catch(error){failures.push("driver: "+String((error as Error).stack??error));log_("DRIVER ERROR",String(error));try{if(daemon?.alive())await daemon.stop();}catch{/* */}}
 finally{
   sampler?.stop();
+  // An adapter whose daemon disappears auto-launches a production daemon: adapters go first, then any daemon on this run's config.
+  spawnSync("pkill",["-f","shim/src/main.ts --lsp --root "+(PROJECT??"/nonexistent")]);
+  spawnSync("pkill",["-9","-f","-Djvmd.config="+path.join(STATE,"jvmd","config.json")]);
   if(PROJECT){spawnSync("git",["-C",PROJECT,"checkout","--",POM]);spawnSync("rm",["-f",path.join(PROJECT,ADDED_PATH)]);}
 }
 const ops=operations.map(({rawResult,...op}:any)=>op.outcome==="pass"?op:{...op,rawResult:JSON.stringify(rawResult)?.slice(0,2000)});

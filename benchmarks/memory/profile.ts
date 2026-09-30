@@ -113,7 +113,7 @@ async function mark(id:string,label:string,o:{histogram?:boolean;smaps?:boolean}
   const snap=daemon.alive()?await daemon.allocation.snapshot(false):null;
   const proc=procMemory(daemon.pid);
   let status:any=null;const statusStarted=performance.now();
-  if(daemon.alive()&&daemon.control)try{status=await daemon.status();}catch(error){status={error:String(error)};}
+  if(daemon.alive()&&daemon.control&&!stalled)try{status=await daemon.status();}catch(error){status={error:String(error)};}
   const statusMs=performance.now()-statusStarted;
   const afterStatus=daemon.alive()?await daemon.allocation.snapshot(false):null;
   const row:any={seq:sequence++,id,label,incarnation,t,mono,sinceSpawnMs:mono-daemon.spawnedMs,snapshot:snap,proc,status:summarizeStatus(status),statusMs,
@@ -190,7 +190,7 @@ async function settle(label:string,maxMs=90000){
 
 // ---------------------------------------------------------------- daemon incarnations
 async function startDaemon(repository:string){
-  incarnation++;phaseFile=`i${incarnation}-000-start.jfr`;
+  incarnation++;stalled=null;phaseFile=`i${incarnation}-000-start.jfr`;
   const seedFile=path.join(OUT,`seed-progress-i${incarnation}.jsonl`);
   daemon=await ProfiledDaemon.spawn({javaHome:JAVA_HOME,image:IMAGE,state:path.join(STATE,"jvmd"),repository,heapMb:HEAP,jvmArgs:jvmArgs(incarnation),
     env:{JAVA_TOOL_OPTIONS:"",JDK_JAVA_OPTIONS:""}});
@@ -264,8 +264,37 @@ const probeAt=(c:ScenarioContext,needle:string)=>{const text=c.text(HELPER),line
 const anyDiagnostics:DiagnosticCheck=()=>"pass";
 const noErrorsLenient:DiagnosticCheck=errors=>{if(errors.length)throw new assert.AssertionError({message:"unexpected errors: "+errors.map((e:any)=>e.message).slice(0,3).join(" | ")});return "pass";};
 
+let stalled:any=null;
 async function attempt(label:string,f:()=>Promise<unknown>){
-  try{await f();}catch(error){failures.push(label+": "+String(error).split("\n")[0]);log_("FAILED "+label+": "+String(error).split("\n")[0]);}
+  if(stalled){failures.push(label+": skipped (daemon stalled)");return;}
+  try{await f();}catch(error){failures.push(label+": "+String(error).split("\n")[0]);log_("FAILED "+label+": "+String(error).split("\n")[0]);await detectStall(label);}
+}
+/**
+ * RocksDB write stall watchdog. A thread parked in RocksDB.put/write for two dumps 5 s apart while the process
+ * burns no CPU is the WriteBufferManager stall (docs/jvmd-memory-allocation-profile.md); the evidence is kept and
+ * the rest of the session is skipped, since every later request queues behind it.
+ */
+function cpuTicks(pid:number){try{const f=readFileSync(`/proc/${pid}/stat`,"utf8").split(") ")[1].split(" ");return Number(f[11])+Number(f[12]);}catch{return 0;}}
+async function detectStall(label:string){
+  if(!daemon.alive())return;
+  const rocksWriters=(dump:string)=>dump.split("\n\n").filter(t=>/org\.rocksdb\.RocksDB\.(put|write|delete)/u.test(t)).map(t=>t.split("\n")[0]);
+  const d1=jcmd(JAVA_HOME,daemon.pid,["Thread.print"]).stdout,c1=cpuTicks(daemon.pid);
+  if(!rocksWriters(d1).length)return;
+  await new Promise(r=>setTimeout(r,5000));
+  const d2=jcmd(JAVA_HOME,daemon.pid,["Thread.print"]).stdout,c2=cpuTicks(daemon.pid);
+  const stuck=rocksWriters(d2);
+  if(!stuck.length||c2-c1>50)return; // >0.5 s CPU in 5 s: still working
+  const dir=path.join(OUT,"stall");mkdirSync(dir,{recursive:true});
+  writeFileSync(path.join(dir,"threads-1.txt"),d1);writeFileSync(path.join(dir,"threads-2.txt"),d2);
+  const gdb=spawnSync("gdb",["-p",String(daemon.pid),"-batch","-ex","thread apply all bt 25"],{encoding:"utf8",timeout:120000});
+  if(gdb.stdout)writeFileSync(path.join(dir,"gdb.txt"),gdb.stdout);
+  const wals:Record<string,number>={};
+  const gens=path.join(STATE,"jvmd","store","index-v2","generations");
+  if(existsSync(gens))for(const g of readdirSync(gens))for(const db of readdirSync(path.join(gens,g)))for(const f of readdirSync(path.join(gens,g,db)))if(f.endsWith(".log"))wals[db+"/"+f]=statSync(path.join(gens,g,db,f)).size;
+  stalled={label,t:Date.now(),threads:stuck,writeBufferManagerStall:/WriteBufferManagerStallWrites/u.test(gdb.stdout??""),walBytes:wals,cpuTicksIn5s:c2-c1,
+    proc:procMemory(daemon.pid),smaps:smapsCategories(daemon.pid),snapshot:await daemon.allocation.snapshot(false)};
+  writeFileSync(path.join(dir,"stall.json"),JSON.stringify(stalled,null,1));
+  log_(`STALL detected after "${label}": ${stuck.length} thread(s) parked in RocksDB writes; WBM stall=${stalled.writeBufferManagerStall}; WAL ${JSON.stringify(wals)}`);
 }
 async function warm(c:ScenarioContext,method:string,params:()=>any,oracle:(v:any)=>void,count=N){
   for(let i=0;i<2;i++)await c.query(method,params(),oracle,"warmup");
@@ -482,7 +511,7 @@ finally{
   if(PROJECT){spawnSync("git",["-C",PROJECT,"checkout","--",POM]);spawnSync("rm",["-f",path.join(PROJECT,ADDED_PATH)]);}
 }
 const ops=operations.map(({rawResult,...op}:any)=>op.outcome==="pass"?op:{...op,rawResult:JSON.stringify(rawResult)?.slice(0,2000)});
-writeFileSync(path.join(OUT,"results.json"),JSON.stringify({environment:env,wallMs:performance.now()-started,failures,marks,operations:ops},null,1));
+writeFileSync(path.join(OUT,"results.json"),JSON.stringify({environment:env,wallMs:performance.now()-started,failures,marks,operations:ops,stall:stalled},null,1));
 log_(`done in ${((performance.now()-started)/1000).toFixed(0)} s; ${failures.length} failures; ${ops.filter(o=>o.outcome&&o.outcome!=="pass"&&o.outcome!=="not_ready"&&o.outcome!=="stale").length} incorrect operations`);
 for(const f of failures)log_("  failure: "+f);
 process.exit(0);

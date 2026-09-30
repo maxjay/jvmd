@@ -32,7 +32,7 @@ import {ProfiledDaemon,Sampler,procMemory,smapsCategories,jcmd,asprof,compactSna
  */
 
 const a:Record<string,string>={};
-for(let i=2;i<process.argv.length;i++){const k=process.argv[i].replace(/^--/u,"");if(k==="seed-only"||k==="no-restart"||k==="seed-restart"){a[k]="true";continue;}a[k]=process.argv[++i];}
+for(let i=2;i<process.argv.length;i++){const k=process.argv[i].replace(/^--/u,"");if(k==="seed-only"||k==="no-restart"||k==="seed-restart"||k==="skip-references"){a[k]="true";continue;}a[k]=process.argv[++i];}
 const MODE=a.mode??"control",OUT=path.resolve(a.output??assert.fail("--output")),HEAP=Number(a.heap??1024),N=Number(a.iterations??100);
 const JAVA_HOME=path.resolve(a["java-home"]??process.env.JAVA_HOME??""),IMAGE=path.resolve(a.image??"jvmd-dist/target/image");
 const AP=path.resolve(a["async-profiler"]??process.env.ASYNC_PROFILER_HOME??"");
@@ -59,7 +59,7 @@ const env={mode:MODE,date:new Date().toISOString(),jvmdCommit:sh("git",["rev-par
   memoryBytes:os.totalmem(),filesystem:sh("findmnt",["-n","-o","FSTYPE","-T",OUT]),xmxMb:HEAP,iterations:N,
   thp:existsSync("/sys/kernel/mm/transparent_hugepage/enabled")?readFileSync("/sys/kernel/mm/transparent_hugepage/enabled","utf8").trim():null,
   repository:{path:REPOSITORY,...dirStats(REPOSITORY)},fixtureCommit:PROJECT?sh("git",["-C",PROJECT,"rev-parse","HEAD"]):null,
-  node:process.version,asyncProfiler:AP&&existsSync(AP)?sh(path.join(AP,"bin/asprof"),["--version"]):null,allocInterval:ALLOC_INTERVAL,nativeBudgetMb:NATIVE_BUDGET_MB?Number(NATIVE_BUDGET_MB):"default (64)",nativeInterval:NATIVE_INTERVAL};
+  node:process.version,asyncProfiler:AP&&existsSync(AP)?sh(path.join(AP,"bin/asprof"),["--version"]):null,allocInterval:ALLOC_INTERVAL,skipReferences:a["skip-references"]==="true",nativeBudgetMb:NATIVE_BUDGET_MB?Number(NATIVE_BUDGET_MB):"default (64)",nativeInterval:NATIVE_INTERVAL};
 writeFileSync(path.join(OUT,"environment.json"),JSON.stringify(env,null,1));
 
 // ---------------------------------------------------------------- mode-specific JVM flags
@@ -384,6 +384,7 @@ async function workload(){
   const refOracle=(v:any)=>{const rows=(v??[]).map((r:any)=>r.uri+"#"+JSON.stringify(r.range.start));
     for(const wanted of [target,{uri:c.file(HELPER).uri,range:range(c.text(HELPER),"addAttachedArtifact",c.text(HELPER).indexOf("project.addAttachedArtifact("))}])
       assert(rows.includes(wanted.uri+"#"+JSON.stringify(wanted.range.start)),"reference missing: "+wanted.uri);};
+  if(a["skip-references"]==="true")log_("references skipped (--skip-references)");else{
   // First-use references scans the workspace (minutes at a 1 GiB heap): measured to completion, not cut at 60 s.
   c.timeout=1800000;
   await attempt("references first",()=>c.query("textDocument/references",refParams(),refOracle,"first_use"));
@@ -391,6 +392,7 @@ async function workload(){
   await attempt("references warm",()=>warm(c,"textDocument/references",refParams,refOracle,Math.min(N,10)));
   c.timeout=180000;
   await mark("M14w","references warm loop");
+  }
   await attempt("other queries",async()=>{
     await c.query("textDocument/documentSymbol",{textDocument:{uri:c.file(PROJECT_FILE).uri}},v=>assert((v??[]).some((s:any)=>s.name==="MavenProject")),"first_use");
     await c.query("textDocument/semanticTokens/full",{textDocument:{uri:c.file(HELPER).uri}},v=>assert(v?.data?.length>0),"first_use");

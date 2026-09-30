@@ -133,7 +133,8 @@ export class ProfiledDaemon {
     const kill=()=>{if(d.process.exitCode===null)d.process.kill("SIGKILL");};process.once("exit",kill);d.process.once("exit",()=>process.removeListener("exit",kill));
     d.process.stdout!.setEncoding("utf8");
     let pending="";
-    d.process.stdout!.on("data",(chunk:string)=>{d.stdout+=chunk;pending+=chunk;let i;while((i=pending.indexOf("\n"))>=0){const line=pending.slice(0,i);pending=pending.slice(i+1);o.onStdout?.(line);}});
+    const stdoutLog=path.join(o.state,"daemon.stdout.log");
+    d.process.stdout!.on("data",(chunk:string)=>{d.stdout+=chunk;appendFileSync(stdoutLog,chunk);pending+=chunk;let i;while((i=pending.indexOf("\n"))>=0){const line=pending.slice(0,i);pending=pending.slice(i+1);o.onStdout?.(line);}});
     d.allocation=await AllocationProbe.connect(probe,60000);
     return d;
   }

@@ -211,7 +211,7 @@ async function startDaemon(repository:string){
   const thresholds=[0,0.10,0.25,0.50,0.75,1.0];let next=0,readyDone=false;
   const readyPromise=daemon.ready().finally(()=>{readyDone=true;});readyPromise.catch(()=>undefined);
   while(!readyDone){
-    await Promise.race([readyPromise,new Promise(r=>setTimeout(r,MODE==="control"?2000:500))]);
+    await Promise.race([readyPromise.catch(()=>undefined),new Promise(r=>setTimeout(r,MODE==="control"?2000:500))]);
     if(readyDone)break;
     let s:any;try{s=summarizeStatus(await daemon.status());}catch{continue;}
     appendFileSync(seedFile,JSON.stringify({t:Date.now(),mono:performance.now(),index:s,jvm:MODE==="control"?undefined:compactSnapshot(await daemon.allocation.snapshot(false))})+"\n");

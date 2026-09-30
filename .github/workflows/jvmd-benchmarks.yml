@@ -1,0 +1,187 @@
+name: JVMD benchmarks
+
+# JVMD against JDTLS: editor scenarios on Maven fixtures, plus the lifecycle of a real Maven project.
+# Informational: results are reported on the PR and in the job summary, never used to fail the build.
+on:
+  pull_request:
+    paths:
+      - 'benchmarks/**'
+      - 'jvmd-*/src/main/**'
+      - 'shim/src/**'
+      - '.github/workflows/benchmarks.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'benchmarks/**'
+      - 'jvmd-*/src/main/**'
+      - 'shim/src/**'
+      - '.github/workflows/benchmarks.yml'
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Repeat the suite this many times for steadier numbers
+        default: '1'
+
+permissions:
+  contents: read
+  actions: read         # download main's last summary for comparison
+  pull-requests: write  # keep one up-to-date report comment on the PR
+  statuses: write       # the one-line metrics in the PR checks list
+
+concurrency:
+  group: benchmarks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  APACHE_MAVEN: 5cd1b60264101080c712accd605180a4bd9222e0
+
+jobs:
+  benchmarks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+
+      - name: Cache third-party Maven dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.m2/repository
+            !~/.m2/repository/dev/jvmd
+          key: maven-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: maven-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Cache pinned tools
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/downloads
+          key: bench-tools-dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e-338e7e73d61836651ba2453919a0d34fa763eb4e7c03342092309bffb8934c64
+
+      - name: Install pinned JDK 25 and JDTLS 1.61.0
+        run: |
+          d="$RUNNER_TEMP/downloads"; mkdir -p "$d" "$RUNNER_TEMP/tools/jdtls"
+          [ -f "$d/jdtls.tar.gz" ] || curl -fsSL --retry 3 https://download.eclipse.org/jdtls/milestones/1.61.0/jdt-language-server-1.61.0-202609031315.tar.gz -o "$d/jdtls.tar.gz"
+          [ -f "$d/jdk25.tar.gz" ] || curl -fsSL --retry 3 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz' -o "$d/jdk25.tar.gz"
+          printf '%s\n' \
+            "dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e  $d/jdk25.tar.gz" \
+            "338e7e73d61836651ba2453919a0d34fa763eb4e7c03342092309bffb8934c64  $d/jdtls.tar.gz" | sha256sum -c -
+          tar -xzf "$d/jdk25.tar.gz" -C "$RUNNER_TEMP/tools" && tar -xzf "$d/jdtls.tar.gz" -C "$RUNNER_TEMP/tools/jdtls"
+          echo "JAVA_HOME=$RUNNER_TEMP/tools/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/tools/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
+
+      - name: Use the pinned release Maven
+        run: |
+          python3 - <<'PYCODE'
+          import importlib.util, os
+          from pathlib import Path
+          spec=importlib.util.spec_from_file_location('release_tools','jvmd-dist/release/build.py')
+          module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+          maven=module.toolchain(module.PINS['maven'],Path(os.environ['RUNNER_TEMP'])/'tools/maven')
+          with open(os.environ['GITHUB_PATH'],'a') as out:out.write(str(maven/'bin')+'\n')
+          PYCODE
+
+      - name: Harness tests
+        run: |
+          python3 benchmarks/catalogue.py
+          node --test benchmarks/test/*.test.ts
+
+      - name: Build JVMD
+        run: |
+          mvn -B -DskipTests install
+          bash jvmd-dist/assemble.sh
+
+      # The real project for the lifecycle, built once into its own repository: ~460 dependency JARs to index.
+      - name: Cache apache/maven fixture
+        id: project
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ${{ runner.temp }}/apache-maven
+            ${{ runner.temp }}/apache-maven-repository
+          key: apache-maven-${{ env.APACHE_MAVEN }}-v1
+
+      - name: Prepare apache/maven fixture
+        if: steps.project.outputs.cache-hit != 'true'
+        run: |
+          git clone -q https://github.com/apache/maven.git "$RUNNER_TEMP/apache-maven"
+          git -C "$RUNNER_TEMP/apache-maven" checkout -q "$APACHE_MAVEN"
+          cd "$RUNNER_TEMP/apache-maven"
+          mvn -B -q -DskipTests -Dmaven.repo.local="$RUNNER_TEMP/apache-maven-repository" -Drat.skip -Dspotless.skip -Dcheckstyle.skip -Denforcer.skip install
+
+      - name: Cache fixture repository
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/bench-repository
+          key: bench-repository-${{ hashFiles('benchmarks/harness/maven.ts') }}
+
+      - name: Fetch main's summary
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id=$(gh run list -R "$GITHUB_REPOSITORY" --workflow jvmd-benchmarks.yml --branch main --status success -L 1 --json databaseId -q '.[0].databaseId' || true)
+          [ -n "$id" ] && gh run download "$id" -R "$GITHUB_REPOSITORY" -n benchmarks -D "$RUNNER_TEMP/main" || echo "No main summary yet"
+
+      # JDTLS 1.61.0 is a fixed reference: every scenario is measured on it once. Its results come from
+      # benchmarks/reference/jdtls.json and main's last summary; only scenarios missing there run on JDTLS.
+      - name: Run benchmarks
+        run: |
+          node benchmarks/run.ts --output "$RUNNER_TEMP/benchmarks" --servers jvmd --runs "${{ inputs.runs || '1' }}" \
+            --jdtls-home "$RUNNER_TEMP/tools/jdtls" --repository "$RUNNER_TEMP/bench-repository" \
+            --project "$RUNNER_TEMP/apache-maven" --project-repository "$RUNNER_TEMP/apache-maven-repository" \
+            --baseline "$RUNNER_TEMP/main/summary.json"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: benchmarks
+          retention-days: 30
+          path: |
+            ${{ runner.temp }}/benchmarks/summary.json
+            ${{ runner.temp }}/benchmarks/report.md
+            ${{ runner.temp }}/benchmarks/results.json
+            ${{ runner.temp }}/benchmarks/statuses.json
+            ${{ runner.temp }}/benchmarks/lifecycle/*/jvmd-threads.txt
+            ${{ runner.temp }}/benchmarks/lifecycle/*/jvmd/daemon.log
+
+      # e.g. "jvmd / scenarios — Contract 38/41 · Roadmap 12/108 (+2) vs main". Always success: they inform, never gate.
+      - name: Post metrics to the checks list
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          statuses="$RUNNER_TEMP/benchmarks/statuses.json"
+          [ -f "$statuses" ] || exit 0
+          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          jq -c '.[]' "$statuses" | while read -r row; do
+            gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=success -f target_url="$url" \
+              -f context="$(jq -r .context <<<"$row")" -f description="$(jq -r .description <<<"$row")" >/dev/null
+          done
+
+      - name: Publish report
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          report="$RUNNER_TEMP/benchmarks/report.md"
+          [ -f "$report" ] || exit 0
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          # Fork PRs get a read-only token; their report stays in the job summary.
+          [ -n "$PR" ] && [ "$SAME_REPO" = true ] || exit 0
+          marker='<!-- jvmd-benchmarks -->'
+          body="$marker"$'\n'"$(cat "$report")"$'\n\n'"<sub>[Run, raw results and reproduction]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)</sub>"
+          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+            -q ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -1)
+          if [ -n "$id" ]; then gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -f body="$body" >/dev/null
+          else gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -f body="$body" >/dev/null; fi

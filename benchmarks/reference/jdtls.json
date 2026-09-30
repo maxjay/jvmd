@@ -1,0 +1,2435 @@
+{
+ "schema": 1,
+ "meta": {
+  "revision": "623e612a2fc5e30e2f7332383651b59a4de8ba83",
+  "date": "2026-09-29T22:00:38.653Z",
+  "jdk": "openjdk version \"25.0.4.1\" 2026-08-18 LTS",
+  "cpus": 4,
+  "jdtls": "1.61.0"
+ },
+ "cases": [
+  {
+   "id": "SES-01/start-stop",
+   "family": "SES-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "SES-01/persisted-reopen",
+   "family": "SES-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "stale",
+   "detail": "hover symbol missing"
+  },
+  {
+   "id": "SES-02/cancel",
+   "family": "SES-02",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "SES-02/completed",
+   "family": "SES-02",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "DOC-01/open",
+   "family": "DOC-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "DOC-01/repeat",
+   "family": "DOC-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "DOC-01/edit",
+   "family": "DOC-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "stale",
+   "detail": "hover symbol missing"
+  },
+  {
+   "id": "DOC-01/save",
+   "family": "DOC-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "DOC-01/discard",
+   "family": "DOC-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "CMP-01/first-repeat",
+   "family": "CMP-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "CMP-01/narrow",
+   "family": "CMP-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "CMP-01/api-edit",
+   "family": "CMP-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "stale",
+   "detail": "required completion missing: next"
+  },
+  {
+   "id": "CMP-01/resolve",
+   "family": "CMP-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "CMP-01/apply",
+   "family": "CMP-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "CMP-01/edit-resolve",
+   "family": "CMP-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "stale",
+   "detail": "The expression evaluated to a falsy value:"
+  },
+  {
+   "id": "CMP-02/hover",
+   "family": "CMP-02",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "CMP-02/signature",
+   "family": "CMP-02",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "CMP-02/hover-edit",
+   "family": "CMP-02",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "stale",
+   "detail": "hover type wrong"
+  },
+  {
+   "id": "CMP-02/signature-edit",
+   "family": "CMP-02",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "stale",
+   "detail": "wrong parameter count"
+  },
+  {
+   "id": "NAV-01/definition",
+   "family": "NAV-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-02/references-false",
+   "family": "NAV-02",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-02/references-true",
+   "family": "NAV-02",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-02/references-false-add",
+   "family": "NAV-02",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-02/references-false-remove",
+   "family": "NAV-02",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-02/references-true-add",
+   "family": "NAV-02",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-02/references-true-remove",
+   "family": "NAV-02",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-03/document-symbol",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "VIEW-01/tokens",
+   "family": "VIEW-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "REF-01/prepare-invalid",
+   "family": "REF-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "REF-01/rename-invalid",
+   "family": "REF-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "REF-01/prepare",
+   "family": "REF-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "REF-01/rename",
+   "family": "REF-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "DIA-01/error-fix",
+   "family": "DIA-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "unavailable_evidence",
+   "detail": "diagnostic clear carries the exact changed version"
+  },
+  {
+   "id": "DIA-01/valid",
+   "family": "DIA-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "unavailable_evidence",
+   "detail": "textDocument/publishDiagnostics: diagnostics were published without a document version"
+  },
+  {
+   "id": "DIA-01/provider-edit",
+   "family": "DIA-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "unavailable_evidence",
+   "detail": "textDocument/publishDiagnostics: diagnostics were published without a document version"
+  },
+  {
+   "id": "NAV-01/declaration",
+   "family": "NAV-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-01/type-definition",
+   "family": "NAV-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-01/implementation",
+   "family": "NAV-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "hierarchy down",
+   "outcome": "stale",
+   "detail": "location identities/ranges differ"
+  },
+  {
+   "id": "NAV-02/highlights",
+   "family": "NAV-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "symbol.occurrences",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-02/highlights-add",
+   "family": "NAV-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "symbol.occurrences",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-02/highlights-remove",
+   "family": "NAV-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "symbol.occurrences",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-03/workspace-symbol",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "find",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-03/extended-outline",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "REL-01/incoming",
+   "family": "REL-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "references in/out",
+   "outcome": "pass"
+  },
+  {
+   "id": "REL-01/incoming-add",
+   "family": "REL-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "references in/out",
+   "outcome": "pass"
+  },
+  {
+   "id": "REL-01/incoming-remove",
+   "family": "REL-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "references in/out",
+   "outcome": "pass"
+  },
+  {
+   "id": "REL-01/outgoing",
+   "family": "REL-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "references in/out",
+   "outcome": "pass"
+  },
+  {
+   "id": "REL-01/outgoing-add",
+   "family": "REL-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "references in/out",
+   "outcome": "pass"
+  },
+  {
+   "id": "REL-01/outgoing-remove",
+   "family": "REL-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "references in/out",
+   "outcome": "pass"
+  },
+  {
+   "id": "REL-02/supertypes",
+   "family": "REL-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "hierarchy up/down",
+   "outcome": "incorrect",
+   "detail": "hierarchy declaration range is wrong"
+  },
+  {
+   "id": "REL-02/subtypes",
+   "family": "REL-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "hierarchy up/down",
+   "outcome": "stale",
+   "detail": "Expected values to be strictly deep-equal:"
+  },
+  {
+   "id": "VIEW-02/folding",
+   "family": "VIEW-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "VIEW-02/selection",
+   "family": "VIEW-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "VIEW-01/inlay-hints",
+   "family": "VIEW-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "VIEW-03/code-lens",
+   "family": "VIEW-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "VIEW-03/code-lens-add",
+   "family": "VIEW-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "VIEW-03/code-lens-remove",
+   "family": "VIEW-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "FMT-01/whole",
+   "family": "FMT-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "FMT-01/range",
+   "family": "FMT-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "FMT-01/on-type",
+   "family": "FMT-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-03/outline-first-repeat",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-03/outline-new",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-03/outline-renamed",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-03/extended-first-repeat",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "overview",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-03/extended-new",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "overview",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-03/extended-renamed",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "overview",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-03/search-first-repeat",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "find",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-03/search-new",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "find",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-03/search-renamed",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "find",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-03/filtered-search-first-repeat",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "find",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-03/filtered-search-new",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "find",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-03/filtered-search-renamed",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "find",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-03/resolve-first-repeat",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "find",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-03/resolve-new",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "find",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-03/resolve-renamed",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "find",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-03/filter-controls-first-repeat",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "find",
+   "outcome": "incorrect",
+   "detail": "java/searchSymbols: Expected values to be strictly equal:"
+  },
+  {
+   "id": "NAV-03/filter-controls-new",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "find",
+   "outcome": "incorrect",
+   "detail": "java/searchSymbols: Expected values to be strictly equal:"
+  },
+  {
+   "id": "NAV-03/filter-controls-renamed",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "find",
+   "outcome": "incorrect",
+   "detail": "java/searchSymbols: Expected values to be strictly equal:"
+  },
+  {
+   "id": "GEN-01/overrides",
+   "family": "GEN-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "GEN-01/equals-hashCode",
+   "family": "GEN-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "GEN-01/toString",
+   "family": "GEN-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "stale",
+   "detail": "generated toString not recognized"
+  },
+  {
+   "id": "GEN-01/accessors",
+   "family": "GEN-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "stale",
+   "detail": "implemented accessors still offered or unselected field missing"
+  },
+  {
+   "id": "GEN-01/constructors",
+   "family": "GEN-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "GEN-01/delegates",
+   "family": "GEN-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "PRJ-01/membership",
+   "family": "PRJ-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "status",
+   "outcome": "pass"
+  },
+  {
+   "id": "ENV-01/classpath-runtime",
+   "family": "ENV-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "deps",
+   "outcome": "incorrect",
+   "detail": "workspace/executeCommand: Expected values to be strictly deep-equal:"
+  },
+  {
+   "id": "ENV-01/classpath-test",
+   "family": "ENV-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "deps",
+   "outcome": "incorrect",
+   "detail": "workspace/executeCommand: Expected values to be strictly deep-equal:"
+  },
+  {
+   "id": "BLD-01/workspace-full",
+   "family": "BLD-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "BLD-01/workspace-incremental",
+   "family": "BLD-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "BLD-01/workspace-error",
+   "family": "BLD-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "BLD-01/projects-full",
+   "family": "BLD-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "BLD-01/projects-incremental",
+   "family": "BLD-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "BLD-01/projects-error",
+   "family": "BLD-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-03/search-filter",
+   "family": "NAV-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-01/qualified-name",
+   "family": "NAV-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "symbol.atPosition",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-01/stack-location",
+   "family": "NAV-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "NAV-01/super-link",
+   "family": "NAV-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "FMT-02/imports-request",
+   "family": "FMT-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "FMT-02/imports-command",
+   "family": "FMT-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "FMT-02/imports-save",
+   "family": "FMT-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "FMT-02/cleanup",
+   "family": "FMT-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "FMT-01/string",
+   "family": "FMT-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "FMT-03/string-paste",
+   "family": "FMT-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "FMT-03/code-paste",
+   "family": "FMT-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "FMT-03/file-paste",
+   "family": "FMT-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "FMT-03/semicolon",
+   "family": "FMT-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "CMP-01/selection-command",
+   "family": "CMP-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "REF-02/quickfix",
+   "family": "REF-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "REF-02/no-action",
+   "family": "REF-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "REF-02/refactor",
+   "family": "REF-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "REF-03/change-signature",
+   "family": "REF-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "REF-03/extract-selection",
+   "family": "REF-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "FMT-02/imports-folder",
+   "family": "FMT-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "incorrect",
+   "detail": "workspace/executeCommand: organize imports did not keep exactly the used import"
+  },
+  {
+   "id": "FMT-02/imports-project",
+   "family": "FMT-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "ENV-02/dependency-definition",
+   "family": "ENV-02",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "ENV-02/class-content",
+   "family": "ENV-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "ENV-02/class-content-unattached",
+   "family": "ENV-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "ENV-02/document-content",
+   "family": "ENV-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "ENV-02/document-content-unattached",
+   "family": "ENV-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "ENV-02/decompile",
+   "family": "ENV-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "ENV-02/attachment-metadata",
+   "family": "ENV-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "ENV-02/attachment-metadata-unattached",
+   "family": "ENV-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "ENV-01/dependency-add",
+   "family": "ENV-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "stale",
+   "detail": "dependency definition must identify one target"
+  },
+  {
+   "id": "ENV-01/dependency-swap",
+   "family": "ENV-01",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "stale",
+   "detail": "required completion missing: next"
+  },
+  {
+   "id": "PRJ-02/release-change",
+   "family": "PRJ-02",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "incorrect",
+   "detail": "textDocument/completion: forbidden completion: getFirst"
+  },
+  {
+   "id": "DOC-02/external-create",
+   "family": "DOC-02",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "DOC-02/search-create",
+   "family": "DOC-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "find",
+   "outcome": "pass"
+  },
+  {
+   "id": "DOC-02/external-modify",
+   "family": "DOC-02",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "pass"
+  },
+  {
+   "id": "DOC-02/search-modify",
+   "family": "DOC-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "find",
+   "outcome": "stale",
+   "detail": "location identities/ranges differ"
+  },
+  {
+   "id": "DOC-02/external-delete",
+   "family": "DOC-02",
+   "server": "jdtls",
+   "scope": "supported",
+   "outcome": "unavailable_evidence",
+   "detail": "textDocument/publishDiagnostics: diagnostics were published without a document version"
+  },
+  {
+   "id": "DOC-02/search-delete",
+   "family": "DOC-02",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "find",
+   "outcome": "stale",
+   "detail": "Expected values to be strictly deep-equal:"
+  },
+  {
+   "id": "REF-01/file-rename",
+   "family": "REF-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "REF-01/folder-rename",
+   "family": "REF-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "PRJ-01/workspace-add",
+   "family": "PRJ-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "status",
+   "outcome": "stale",
+   "detail": "Expected values to be strictly deep-equal:"
+  },
+  {
+   "id": "PRJ-01/workspace-remove",
+   "family": "PRJ-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "status",
+   "outcome": "stale",
+   "detail": "Expected values to be strictly deep-equal:"
+  },
+  {
+   "id": "GEN-01/module-info",
+   "family": "GEN-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "DIA-01/explicit-refresh",
+   "family": "DIA-01",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "native": "diagnostics",
+   "outcome": "unavailable_evidence",
+   "detail": "textDocument/publishDiagnostics: diagnostics were published without a document version"
+  },
+  {
+   "id": "REF-03/move-resource",
+   "family": "REF-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  },
+  {
+   "id": "REF-03/extract-interface",
+   "family": "REF-03",
+   "server": "jdtls",
+   "scope": "roadmap",
+   "outcome": "pass"
+  }
+ ],
+ "performance": [
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/hover",
+   "phase": "first",
+   "medianMs": 489.540474,
+   "p95Ms": 734.8294545,
+   "medianAllocBytes": 68558612,
+   "samples": 4
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/hover",
+   "phase": "edit",
+   "medianMs": 514.98941,
+   "p95Ms": 851.1161575999998,
+   "medianAllocBytes": 22785704,
+   "samples": 7
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/references",
+   "phase": "first",
+   "medianMs": 4548.614829,
+   "p95Ms": 4790.0255469,
+   "medianAllocBytes": 1416720136,
+   "samples": 3
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/hover",
+   "phase": "repeat",
+   "medianMs": 13.51168,
+   "p95Ms": 26.09839535,
+   "medianAllocBytes": 3554268,
+   "samples": 20
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/completion",
+   "phase": "first",
+   "medianMs": 378.70707949999996,
+   "p95Ms": 522.0700009999999,
+   "medianAllocBytes": 44969588,
+   "samples": 6
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/completion",
+   "phase": "repeat",
+   "medianMs": 24.3821935,
+   "p95Ms": 32.50333515,
+   "medianAllocBytes": 10733356,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/completion",
+   "phase": "edit",
+   "medianMs": 463.303189,
+   "p95Ms": 866.5349572,
+   "medianAllocBytes": 5654504,
+   "samples": 3
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "completionItem/resolve",
+   "phase": "first",
+   "medianMs": 230.932438,
+   "p95Ms": 244.9591153,
+   "medianAllocBytes": 49602984,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "completionItem/resolve",
+   "phase": "repeat",
+   "medianMs": 8.0272995,
+   "p95Ms": 11.76922955,
+   "medianAllocBytes": 3251476,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "completionItem/resolve",
+   "phase": "edit",
+   "medianMs": 776.722887,
+   "p95Ms": 776.722887,
+   "medianAllocBytes": 22338848,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/signatureHelp",
+   "phase": "first",
+   "medianMs": 488.177571,
+   "p95Ms": 488.177571,
+   "medianAllocBytes": 62878768,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/signatureHelp",
+   "phase": "repeat",
+   "medianMs": 26.0708865,
+   "p95Ms": 42.938621649999995,
+   "medianAllocBytes": 8410496,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/signatureHelp",
+   "phase": "edit",
+   "medianMs": 600.442194,
+   "p95Ms": 600.442194,
+   "medianAllocBytes": 23533224,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/definition",
+   "phase": "first",
+   "medianMs": 714.7970235,
+   "p95Ms": 752.37662475,
+   "medianAllocBytes": 148652420,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/definition",
+   "phase": "repeat",
+   "medianMs": 10.455364,
+   "p95Ms": 22.631684800000006,
+   "medianAllocBytes": 4102332,
+   "samples": 20
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/definition",
+   "phase": "edit",
+   "medianMs": 462.729734,
+   "p95Ms": 824.1120817,
+   "medianAllocBytes": 18119344,
+   "samples": 7
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/references",
+   "phase": "repeat",
+   "medianMs": 19.974333,
+   "p95Ms": 33.937987700000015,
+   "medianAllocBytes": 4489796,
+   "samples": 20
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/references",
+   "phase": "edit",
+   "medianMs": 42.8599875,
+   "p95Ms": 63.5063585,
+   "medianAllocBytes": 5100420,
+   "samples": 4
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/documentSymbol",
+   "phase": "first",
+   "medianMs": 635.08295,
+   "p95Ms": 657.8806034,
+   "medianAllocBytes": 95593748,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/documentSymbol",
+   "phase": "repeat",
+   "medianMs": 4.7640425,
+   "p95Ms": 19.70443525,
+   "medianAllocBytes": 2446232,
+   "samples": 20
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/semanticTokens/full",
+   "phase": "first",
+   "medianMs": 858.354496,
+   "p95Ms": 858.354496,
+   "medianAllocBytes": 147751352,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/semanticTokens/full",
+   "phase": "repeat",
+   "medianMs": 3.2553735,
+   "p95Ms": 5.9511032499999965,
+   "medianAllocBytes": 1362216,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/semanticTokens/full",
+   "phase": "edit",
+   "medianMs": 90.347027,
+   "p95Ms": 90.347027,
+   "medianAllocBytes": 29837296,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/prepareRename",
+   "phase": "first",
+   "medianMs": 878.655297,
+   "p95Ms": 878.655297,
+   "medianAllocBytes": 172853416,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/prepareRename",
+   "phase": "repeat",
+   "medianMs": 15.872605,
+   "p95Ms": 23.22446954999999,
+   "medianAllocBytes": 3364864,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/rename",
+   "phase": "first",
+   "medianMs": 4909.765212,
+   "p95Ms": 4909.765212,
+   "medianAllocBytes": 1456728752,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/declaration",
+   "phase": "first",
+   "medianMs": 860.975908,
+   "p95Ms": 860.975908,
+   "medianAllocBytes": 239448896,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/declaration",
+   "phase": "repeat",
+   "medianMs": 7.3310975,
+   "p95Ms": 8.5963719,
+   "medianAllocBytes": 3659352,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/declaration",
+   "phase": "edit",
+   "medianMs": 45.044549,
+   "p95Ms": 45.044549,
+   "medianAllocBytes": 14042200,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/typeDefinition",
+   "phase": "first",
+   "medianMs": 829.613482,
+   "p95Ms": 829.613482,
+   "medianAllocBytes": 123140592,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/typeDefinition",
+   "phase": "repeat",
+   "medianMs": 1.5959225,
+   "p95Ms": 4.580614649999996,
+   "medianAllocBytes": 471320,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/typeDefinition",
+   "phase": "edit",
+   "medianMs": 94.002957,
+   "p95Ms": 94.002957,
+   "medianAllocBytes": 34105920,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/implementation",
+   "phase": "first",
+   "medianMs": 5377.611232,
+   "p95Ms": 5377.611232,
+   "medianAllocBytes": 1435622504,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/implementation",
+   "phase": "repeat",
+   "medianMs": 60.0415035,
+   "p95Ms": 86.7756204,
+   "medianAllocBytes": 19959700,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/implementation",
+   "phase": "edit",
+   "medianMs": 162.822916,
+   "p95Ms": 162.822916,
+   "medianAllocBytes": 21628096,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/documentHighlight",
+   "phase": "first",
+   "medianMs": 387.229902,
+   "p95Ms": 387.229902,
+   "medianAllocBytes": 50776600,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/documentHighlight",
+   "phase": "repeat",
+   "medianMs": 2.064185,
+   "p95Ms": 4.446335249999998,
+   "medianAllocBytes": 341084,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/documentHighlight",
+   "phase": "edit",
+   "medianMs": 57.69926099999999,
+   "p95Ms": 68.0822379,
+   "medianAllocBytes": 6539948,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "workspace/symbol",
+   "phase": "first",
+   "medianMs": 2477.8807275,
+   "p95Ms": 5176.449892299999,
+   "medianAllocBytes": 725856880,
+   "samples": 4
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "workspace/symbol",
+   "phase": "repeat",
+   "medianMs": 33.893895,
+   "p95Ms": 54.347853399999984,
+   "medianAllocBytes": 24663264,
+   "samples": 40
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "workspace/symbol",
+   "phase": "edit",
+   "medianMs": 120.084638,
+   "p95Ms": 3323.5958355999974,
+   "medianAllocBytes": 26615400,
+   "samples": 8
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/extendedDocumentSymbol",
+   "phase": "first",
+   "medianMs": 653.1310185,
+   "p95Ms": 674.65005855,
+   "medianAllocBytes": 90419956,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/extendedDocumentSymbol",
+   "phase": "repeat",
+   "medianMs": 16.783624500000002,
+   "p95Ms": 34.60731545,
+   "medianAllocBytes": 5210812,
+   "samples": 20
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/prepareCallHierarchy",
+   "phase": "first",
+   "medianMs": 238.550097,
+   "p95Ms": 257.1973914,
+   "medianAllocBytes": 33229372,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/prepareCallHierarchy",
+   "phase": "repeat",
+   "medianMs": 4.263656,
+   "p95Ms": 10.564200950000004,
+   "medianAllocBytes": 672240,
+   "samples": 20
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "callHierarchy/incomingCalls",
+   "phase": "first",
+   "medianMs": 4468.494794,
+   "p95Ms": 4468.494794,
+   "medianAllocBytes": 1382681688,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "callHierarchy/incomingCalls",
+   "phase": "repeat",
+   "medianMs": 32.4299395,
+   "p95Ms": 50.479347199999985,
+   "medianAllocBytes": 9767500,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "callHierarchy/incomingCalls",
+   "phase": "edit",
+   "medianMs": 86.20200299999999,
+   "p95Ms": 92.9800533,
+   "medianAllocBytes": 10484988,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "callHierarchy/outgoingCalls",
+   "phase": "first",
+   "medianMs": 224.482871,
+   "p95Ms": 224.482871,
+   "medianAllocBytes": 22147912,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "callHierarchy/outgoingCalls",
+   "phase": "repeat",
+   "medianMs": 17.0792195,
+   "p95Ms": 37.19097514999999,
+   "medianAllocBytes": 6662848,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "callHierarchy/outgoingCalls",
+   "phase": "edit",
+   "medianMs": 63.910036000000005,
+   "p95Ms": 74.645839,
+   "medianAllocBytes": 2788956,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/prepareTypeHierarchy",
+   "phase": "first",
+   "medianMs": 226.189216,
+   "p95Ms": 233.03511099999997,
+   "medianAllocBytes": 26992716,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/prepareTypeHierarchy",
+   "phase": "repeat",
+   "medianMs": 4.638107,
+   "p95Ms": 6.552044800000005,
+   "medianAllocBytes": 763596,
+   "samples": 20
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "typeHierarchy/supertypes",
+   "phase": "first",
+   "medianMs": 40.229987,
+   "p95Ms": 40.229987,
+   "medianAllocBytes": 2969496,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "typeHierarchy/supertypes",
+   "phase": "repeat",
+   "medianMs": 8.721720000000001,
+   "p95Ms": 60.66213374999997,
+   "medianAllocBytes": 1496224,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "typeHierarchy/supertypes",
+   "phase": "edit",
+   "medianMs": 724.224744,
+   "p95Ms": 724.224744,
+   "medianAllocBytes": 6158392,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "typeHierarchy/subtypes",
+   "phase": "first",
+   "medianMs": 4228.718864,
+   "p95Ms": 4228.718864,
+   "medianAllocBytes": 1379478664,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "typeHierarchy/subtypes",
+   "phase": "repeat",
+   "medianMs": 20.6643735,
+   "p95Ms": 27.939837299999994,
+   "medianAllocBytes": 7795576,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "typeHierarchy/subtypes",
+   "phase": "edit",
+   "medianMs": 104.307885,
+   "p95Ms": 104.307885,
+   "medianAllocBytes": 7887928,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/foldingRange",
+   "phase": "first",
+   "medianMs": 701.31065,
+   "p95Ms": 701.31065,
+   "medianAllocBytes": 85390944,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/foldingRange",
+   "phase": "repeat",
+   "medianMs": 4.3032305,
+   "p95Ms": 6.225511049999998,
+   "medianAllocBytes": 1456440,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/foldingRange",
+   "phase": "edit",
+   "medianMs": 73.989568,
+   "p95Ms": 73.989568,
+   "medianAllocBytes": 12981096,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/selectionRange",
+   "phase": "first",
+   "medianMs": 764.465074,
+   "p95Ms": 764.465074,
+   "medianAllocBytes": 181894936,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/selectionRange",
+   "phase": "repeat",
+   "medianMs": 4.108429,
+   "p95Ms": 14.192735699999986,
+   "medianAllocBytes": 1342576,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/selectionRange",
+   "phase": "edit",
+   "medianMs": 50.482545,
+   "p95Ms": 50.482545,
+   "medianAllocBytes": 12311224,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/inlayHint",
+   "phase": "first",
+   "medianMs": 790.067292,
+   "p95Ms": 790.067292,
+   "medianAllocBytes": 173612968,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/inlayHint",
+   "phase": "repeat",
+   "medianMs": 3.5194609999999997,
+   "p95Ms": 15.28480214999998,
+   "medianAllocBytes": 2065048,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/inlayHint",
+   "phase": "edit",
+   "medianMs": 109.82346,
+   "p95Ms": 109.82346,
+   "medianAllocBytes": 41701552,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/codeLens",
+   "phase": "first",
+   "medianMs": 699.876931,
+   "p95Ms": 699.876931,
+   "medianAllocBytes": 195862968,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/codeLens",
+   "phase": "repeat",
+   "medianMs": 3.4238204999999997,
+   "p95Ms": 5.447681449999998,
+   "medianAllocBytes": 795560,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "codeLens/resolve",
+   "phase": "first",
+   "medianMs": 3678.286556,
+   "p95Ms": 3678.286556,
+   "medianAllocBytes": 1200500928,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "codeLens/resolve",
+   "phase": "repeat",
+   "medianMs": 14.415182999999999,
+   "p95Ms": 20.140815999999994,
+   "medianAllocBytes": 3652936,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "codeLens/resolve",
+   "phase": "edit",
+   "medianMs": 114.561261,
+   "p95Ms": 134.0451171,
+   "medianAllocBytes": 4354112,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/formatting",
+   "phase": "first",
+   "medianMs": 320.20342,
+   "p95Ms": 320.20342,
+   "medianAllocBytes": 45599824,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/rangeFormatting",
+   "phase": "first",
+   "medianMs": 319.262054,
+   "p95Ms": 319.262054,
+   "medianAllocBytes": 42391264,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/onTypeFormatting",
+   "phase": "first",
+   "medianMs": 479.219634,
+   "p95Ms": 479.219634,
+   "medianAllocBytes": 52785736,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/documentSymbol",
+   "phase": "edit",
+   "medianMs": 97.55391599999999,
+   "p95Ms": 655.0007060999999,
+   "medianAllocBytes": 12482796,
+   "samples": 8
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/extendedDocumentSymbol",
+   "phase": "edit",
+   "medianMs": 96.967724,
+   "p95Ms": 101.754131,
+   "medianAllocBytes": 27173404,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/searchSymbols",
+   "phase": "first",
+   "medianMs": 4565.74139,
+   "p95Ms": 4613.0537392999995,
+   "medianAllocBytes": 1403746752,
+   "samples": 3
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/searchSymbols",
+   "phase": "repeat",
+   "medianMs": 1.8786239999999998,
+   "p95Ms": 3.522065999999996,
+   "medianAllocBytes": 61768,
+   "samples": 30
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/searchSymbols",
+   "phase": "edit",
+   "medianMs": 38.7138765,
+   "p95Ms": 44.97358735,
+   "medianAllocBytes": 2620420,
+   "samples": 4
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.project.resolveWorkspaceSymbol",
+   "phase": "first",
+   "medianMs": 9.675815499999999,
+   "p95Ms": 10.61440795,
+   "medianAllocBytes": 428656,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.project.resolveWorkspaceSymbol",
+   "phase": "repeat",
+   "medianMs": 2.375709,
+   "p95Ms": 3.455447849999999,
+   "medianAllocBytes": 90368,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.project.resolveWorkspaceSymbol",
+   "phase": "edit",
+   "medianMs": 99.35916549999999,
+   "p95Ms": 120.09701815,
+   "medianAllocBytes": 89736,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/listOverridableMethods",
+   "phase": "first",
+   "medianMs": 395.199965,
+   "p95Ms": 395.199965,
+   "medianAllocBytes": 51356016,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/listOverridableMethods",
+   "phase": "repeat",
+   "medianMs": 1.665939,
+   "p95Ms": 4.2721246499999985,
+   "medianAllocBytes": 328000,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/addOverridableMethods",
+   "phase": "first",
+   "medianMs": 166.190698,
+   "p95Ms": 166.190698,
+   "medianAllocBytes": 46544832,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/listOverridableMethods",
+   "phase": "edit",
+   "medianMs": 26.955161,
+   "p95Ms": 26.955161,
+   "medianAllocBytes": 11865000,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/checkHashCodeEqualsStatus",
+   "phase": "first",
+   "medianMs": 348.718309,
+   "p95Ms": 348.718309,
+   "medianAllocBytes": 48375928,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/checkHashCodeEqualsStatus",
+   "phase": "repeat",
+   "medianMs": 2.5913085000000002,
+   "p95Ms": 4.5253257,
+   "medianAllocBytes": 159928,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/generateHashCodeEquals",
+   "phase": "first",
+   "medianMs": 187.588285,
+   "p95Ms": 187.588285,
+   "medianAllocBytes": 29460256,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/checkHashCodeEqualsStatus",
+   "phase": "edit",
+   "medianMs": 71.240843,
+   "p95Ms": 71.240843,
+   "medianAllocBytes": 14560888,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/checkToStringStatus",
+   "phase": "first",
+   "medianMs": 428.617643,
+   "p95Ms": 428.617643,
+   "medianAllocBytes": 53699520,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/checkToStringStatus",
+   "phase": "repeat",
+   "medianMs": 3.7667205,
+   "p95Ms": 6.703734299999999,
+   "medianAllocBytes": 1007692,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/generateToString",
+   "phase": "first",
+   "medianMs": 185.69315,
+   "p95Ms": 185.69315,
+   "medianAllocBytes": 61763664,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/checkToStringStatus",
+   "phase": "edit",
+   "medianMs": 95.850781,
+   "p95Ms": 95.850781,
+   "medianAllocBytes": 3573696,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/resolveUnimplementedAccessors",
+   "phase": "first",
+   "medianMs": 456.197283,
+   "p95Ms": 456.197283,
+   "medianAllocBytes": 50147904,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/resolveUnimplementedAccessors",
+   "phase": "repeat",
+   "medianMs": 2.232699,
+   "p95Ms": 5.430070999999996,
+   "medianAllocBytes": 394612,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/generateAccessors",
+   "phase": "first",
+   "medianMs": 102.741133,
+   "p95Ms": 102.741133,
+   "medianAllocBytes": 25585152,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/resolveUnimplementedAccessors",
+   "phase": "edit",
+   "medianMs": 702.888594,
+   "p95Ms": 702.888594,
+   "medianAllocBytes": 1210152,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/checkConstructorsStatus",
+   "phase": "first",
+   "medianMs": 478.743697,
+   "p95Ms": 478.743697,
+   "medianAllocBytes": 53802160,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/checkConstructorsStatus",
+   "phase": "repeat",
+   "medianMs": 2.796685,
+   "p95Ms": 8.492542749999998,
+   "medianAllocBytes": 340236,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/generateConstructors",
+   "phase": "first",
+   "medianMs": 220.825197,
+   "p95Ms": 220.825197,
+   "medianAllocBytes": 74992968,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/checkDelegateMethodsStatus",
+   "phase": "first",
+   "medianMs": 417.519671,
+   "p95Ms": 417.519671,
+   "medianAllocBytes": 53829088,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/checkDelegateMethodsStatus",
+   "phase": "repeat",
+   "medianMs": 3.8617429999999997,
+   "p95Ms": 6.8686150999999995,
+   "medianAllocBytes": 291840,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/generateDelegateMethods",
+   "phase": "first",
+   "medianMs": 132.282942,
+   "p95Ms": 132.282942,
+   "medianAllocBytes": 28544256,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/checkDelegateMethodsStatus",
+   "phase": "edit",
+   "medianMs": 75.736926,
+   "p95Ms": 75.736926,
+   "medianAllocBytes": 30235704,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.project.getAll",
+   "phase": "first",
+   "medianMs": 195.038386,
+   "p95Ms": 195.038386,
+   "medianAllocBytes": 24258616,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.project.getAll",
+   "phase": "repeat",
+   "medianMs": 0.5614085,
+   "p95Ms": 3.287483099999999,
+   "medianAllocBytes": 184704,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.project.getClasspaths",
+   "phase": "first",
+   "medianMs": 4672.43088,
+   "p95Ms": 4721.238528000001,
+   "medianAllocBytes": 1408881664,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.project.getClasspaths",
+   "phase": "repeat",
+   "medianMs": 6.0735975,
+   "p95Ms": 7.531485850000004,
+   "medianAllocBytes": 712396,
+   "samples": 20
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/buildWorkspace",
+   "phase": "first",
+   "medianMs": 422.2833,
+   "p95Ms": 429.3520575,
+   "medianAllocBytes": 35668336,
+   "samples": 3
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/buildProjects",
+   "phase": "first",
+   "medianMs": 441.42,
+   "p95Ms": 449.3071824,
+   "medianAllocBytes": 37080112,
+   "samples": 3
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.getFullyQualifiedName",
+   "phase": "first",
+   "medianMs": 4463.602428,
+   "p95Ms": 4463.602428,
+   "medianAllocBytes": 1406978816,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.getFullyQualifiedName",
+   "phase": "repeat",
+   "medianMs": 2.833409,
+   "p95Ms": 3.4135169,
+   "medianAllocBytes": 463704,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.getFullyQualifiedName",
+   "phase": "edit",
+   "medianMs": 16.618029,
+   "p95Ms": 16.618029,
+   "medianAllocBytes": 750008,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.project.resolveStackTraceLocation",
+   "phase": "first",
+   "medianMs": 4345.792779,
+   "p95Ms": 4345.792779,
+   "medianAllocBytes": 1400999112,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.project.resolveStackTraceLocation",
+   "phase": "repeat",
+   "medianMs": 2.8733075,
+   "p95Ms": 7.5771079499999985,
+   "medianAllocBytes": 654332,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.project.resolveStackTraceLocation",
+   "phase": "edit",
+   "medianMs": 5.415869,
+   "p95Ms": 5.415869,
+   "medianAllocBytes": 796776,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/findLinks",
+   "phase": "first",
+   "medianMs": 416.719819,
+   "p95Ms": 416.719819,
+   "medianAllocBytes": 108552896,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/findLinks",
+   "phase": "repeat",
+   "medianMs": 18.9578085,
+   "p95Ms": 55.42331384999994,
+   "medianAllocBytes": 4894584,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/findLinks",
+   "phase": "edit",
+   "medianMs": 32.675625,
+   "p95Ms": 32.675625,
+   "medianAllocBytes": 9905736,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/organizeImports",
+   "phase": "first",
+   "medianMs": 611.558917,
+   "p95Ms": 611.558917,
+   "medianAllocBytes": 104913480,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.edit.organizeImports",
+   "phase": "first",
+   "medianMs": 2503.3667005,
+   "p95Ms": 4407.21893305,
+   "medianAllocBytes": 733556184,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/willSaveWaitUntil",
+   "phase": "first",
+   "medianMs": 700.519599,
+   "p95Ms": 700.519599,
+   "medianAllocBytes": 133915640,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/cleanup",
+   "phase": "first",
+   "medianMs": 457.303578,
+   "p95Ms": 457.303578,
+   "medianAllocBytes": 61845024,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.edit.stringFormatting",
+   "phase": "first",
+   "medianMs": 4559.802899,
+   "p95Ms": 4559.802899,
+   "medianAllocBytes": 1410360328,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.edit.handlePasteEvent",
+   "phase": "first",
+   "medianMs": 2533.020835,
+   "p95Ms": 4582.6634677,
+   "medianAllocBytes": 730360800,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.project.resolveText",
+   "phase": "first",
+   "medianMs": 4883.172951,
+   "p95Ms": 4883.172951,
+   "medianAllocBytes": 1404553976,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.edit.smartSemicolonDetection",
+   "phase": "first",
+   "medianMs": 453.709621,
+   "p95Ms": 453.709621,
+   "medianAllocBytes": 47204360,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.completion.onDidSelect",
+   "phase": "first",
+   "medianMs": 4322.463777,
+   "p95Ms": 4322.463777,
+   "medianAllocBytes": 1365625968,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/codeAction",
+   "phase": "first",
+   "medianMs": 3115.519423,
+   "p95Ms": 5001.8244181,
+   "medianAllocBytes": 959954104,
+   "samples": 3
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "textDocument/codeAction",
+   "phase": "repeat",
+   "medianMs": 2.719585,
+   "p95Ms": 5.233206549999999,
+   "medianAllocBytes": 1181944,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/getChangeSignatureInfo",
+   "phase": "first",
+   "medianMs": 4706.563329,
+   "p95Ms": 4706.563329,
+   "medianAllocBytes": 1429171752,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/getRefactorEdit",
+   "phase": "first",
+   "medianMs": 394.949637,
+   "p95Ms": 486.0880893,
+   "medianAllocBytes": 64141728,
+   "samples": 3
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/inferSelection",
+   "phase": "first",
+   "medianMs": 455.880909,
+   "p95Ms": 455.880909,
+   "medianAllocBytes": 49536320,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/classFileContents",
+   "phase": "first",
+   "medianMs": 8.0650195,
+   "p95Ms": 11.37493285,
+   "medianAllocBytes": 6651968,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/classFileContents",
+   "phase": "repeat",
+   "medianMs": 1.0193585,
+   "p95Ms": 2.623088300000002,
+   "medianAllocBytes": 592708,
+   "samples": 20
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "workspace/textDocumentContent",
+   "phase": "first",
+   "medianMs": 13.566242500000001,
+   "p95Ms": 14.86615525,
+   "medianAllocBytes": 6427904,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "workspace/textDocumentContent",
+   "phase": "repeat",
+   "medianMs": 1.4344485,
+   "p95Ms": 4.442411800000008,
+   "medianAllocBytes": 608512,
+   "samples": 20
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.decompile",
+   "phase": "first",
+   "medianMs": 3402.797952,
+   "p95Ms": 3402.797952,
+   "medianAllocBytes": 1016616800,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.decompile",
+   "phase": "repeat",
+   "medianMs": 0.9316260000000001,
+   "p95Ms": 1.7222381999999996,
+   "medianAllocBytes": 48972,
+   "samples": 10
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.project.resolveSourceAttachment",
+   "phase": "first",
+   "medianMs": 3601.307852,
+   "p95Ms": 3886.9054433,
+   "medianAllocBytes": 1147430936,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.project.resolveSourceAttachment",
+   "phase": "repeat",
+   "medianMs": 1.0856595,
+   "p95Ms": 4.59376535,
+   "medianAllocBytes": 41360,
+   "samples": 20
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "workspace/willRenameFiles",
+   "phase": "first",
+   "medianMs": 5149.4291809999995,
+   "p95Ms": 5173.2675727999995,
+   "medianAllocBytes": 1432454024,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.project.getAll",
+   "phase": "edit",
+   "medianMs": 51.95732650000001,
+   "p95Ms": 74.67294535,
+   "medianAllocBytes": 407636,
+   "samples": 2
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.project.createModuleInfo",
+   "phase": "first",
+   "medianMs": 4836.317561,
+   "p95Ms": 4836.317561,
+   "medianAllocBytes": 1414349272,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java.project.refreshDiagnostics",
+   "phase": "first",
+   "medianMs": 5178.867444,
+   "p95Ms": 5178.867444,
+   "medianAllocBytes": 1416844112,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/getMoveDestinations",
+   "phase": "first",
+   "medianMs": 207.519243,
+   "p95Ms": 207.519243,
+   "medianAllocBytes": 25263040,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/move",
+   "phase": "first",
+   "medianMs": 5072.861843,
+   "p95Ms": 5072.861843,
+   "medianAllocBytes": 1411171104,
+   "samples": 1
+  },
+  {
+   "server": "jdtls",
+   "endpoint": "java/checkExtractInterfaceStatus",
+   "phase": "first",
+   "medianMs": 267.308736,
+   "p95Ms": 267.308736,
+   "medianAllocBytes": 37133832,
+   "samples": 1
+  }
+ ],
+ "lifecycle": {
+  "jdtls": {
+   "outcome": "unavailable_evidence",
+   "error": "diagnostics were published without a document version",
+   "phases": {
+    "open_initialize_ms": 25629.11074,
+    "open_ms": 26683.793732,
+    "rss_bytes": 1396539392,
+    "restart_initialize_ms": 4602.591772,
+    "restart_open_ms": 6674.029106999995
+   },
+   "first": {
+    "textDocument/hover": 952.522507,
+    "textDocument/definition": 37.79698,
+    "textDocument/references": 13674.181208,
+    "textDocument/signatureHelp": 330.44268,
+    "textDocument/documentSymbol": 53.561238,
+    "textDocument/semanticTokens/full": 15.325539,
+    "textDocument/completion": 49.668497
+   }
+  }
+ }
+}

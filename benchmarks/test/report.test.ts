@@ -1,0 +1,44 @@
+import {test} from "node:test";
+import assert from "node:assert/strict";
+import {withReference,jdtlsReference,compare,renderMarkdown,statuses,type Summary} from "../report.ts";
+
+const summary=(servers:string[],rows:[string,string,string][],perf:any[]=[]):Summary=>({schema:1,meta:{revision:"abc12345",dirty:false,date:"",jdk:'openjdk version "25.0.4.1"',cpus:4,runs:1,servers,reference:undefined},
+  families:[{id:"CMP-01",name:"Complete"}],outOfScope:[],cases:rows.map(([id,server,outcome])=>({id,family:"CMP-01",server,scope:"supported",outcome})) as any,performance:perf,lifecycle:{}});
+
+test("a JVMD-only run takes JDTLS rows from main's summary and says so",()=>{
+  const main=summary(["jvmd","jdtls"],[["CMP-01/a","jvmd","pass"],["CMP-01/a","jdtls","stale"],["CMP-01/gone","jdtls","pass"]],[{server:"jdtls",endpoint:"textDocument/completion",phase:"first",medianMs:20,p95Ms:20,medianAllocBytes:1,samples:1}]);
+  const pr=withReference(summary(["jvmd"],[["CMP-01/a","jvmd","pass"]]),main);
+  assert.deepEqual(pr.meta.servers,["jvmd","jdtls"]);assert.equal(pr.meta.reference.revision,"abc12345");
+  assert.deepEqual(pr.cases.map(c=>c.id+"/"+c.server),["CMP-01/a/jvmd","CMP-01/a/jdtls"],"JDTLS rows only for cases this run has");
+  assert.equal(pr.performance.length,1);assert.match(renderMarkdown(pr),/jdtls.*fixed reference/u);
+  assert.equal(withReference(main,summary(["jvmd"],[])),main,"a full run keeps its own JDTLS numbers");
+});
+test("since main lists regressions, fixes and large allocation moves, or says nothing changed",()=>{
+  const perf=(alloc:number)=>[{server:"jvmd",endpoint:"textDocument/hover",phase:"repeat",medianMs:5,p95Ms:5,medianAllocBytes:alloc,samples:10}];
+  const main=summary(["jvmd"],[["CMP-01/a","jvmd","pass"],["CMP-01/b","jvmd","incorrect"]],perf(4<<20));
+  const now=summary(["jvmd"],[["CMP-01/a","jvmd","incorrect"],["CMP-01/b","jvmd","pass"]],perf(8<<20));
+  const change=compare(now,main)!;
+  assert.deepEqual([change.regressed.map(c=>c.id),change.fixed.map(c=>c.id),change.moves.map(m=>m.endpoint)],[["CMP-01/a"],["CMP-01/b"],["textDocument/hover"]]);
+  assert.match(renderMarkdown(now,change),/@@ since main · abc12345 @@\n- CMP-01\/a +pass → wrong answer\n\+ CMP-01\/b +wrong answer → pass\n- hover repeat +alloc 4\.0M → 8\.0M \(\+100%\)/u);
+  assert.match(renderMarkdown(main,compare(main,main)),/@@ since main · abc12345 @@\n  no change\n/u);
+});
+test("the PR checks line shows each count and its change since main",()=>{
+  const main=summary(["jvmd"],[["CMP-01/a","jvmd","pass"],["CMP-01/b","jvmd","unsupported"]]);
+  const now=summary(["jvmd"],[["CMP-01/a","jvmd","pass"],["CMP-01/b","jvmd","pass"]]);
+  now.cases[1].scope="roadmap";main.cases[1].scope="roadmap";
+  assert.deepEqual(statuses(now,main),[{context:"jvmd / scenarios",description:"Contract 1/1 · Roadmap 1/1 (+1) vs main"}]);
+  assert.deepEqual(statuses(now),[{context:"jvmd / scenarios",description:"Contract 1/1 · Roadmap 1/1"}]);
+  assert.match(renderMarkdown(now,compare(now,main),main),/contract 1\/1 · roadmap 1\/1 \(\+1\)$/mu);
+});
+test("measuring a new case adds its JDTLS row without touching the rest of the reference",()=>{
+  const old=jdtlsReference(summary(["jdtls"],[["CMP-01/a","jdtls","pass"],["CMP-01/b","jdtls","stale"]]));
+  const merged=jdtlsReference(summary(["jdtls"],[["CMP-01/new","jdtls","pass"]]),old);
+  assert.deepEqual(merged.cases.map((c:any)=>c.id+"="+c.outcome),["CMP-01/a=pass","CMP-01/b=stale","CMP-01/new=pass"]);
+  assert.deepEqual(merged.meta,old.meta);
+});
+test("JDTLS rows measured this run for new scenarios are kept; the rest come from the reference",()=>{
+  const reference=jdtlsReference(summary(["jdtls"],[["CMP-01/a","jdtls","stale"]]));
+  const run=summary(["jvmd"],[["CMP-01/a","jvmd","pass"],["CMP-01/new","jvmd","pass"],["CMP-01/new","jdtls","pass"]]);
+  assert.deepEqual(withReference(run,reference).cases.map(c=>c.id+"/"+c.server+"="+c.outcome).sort(),
+    ["CMP-01/a/jdtls=stale","CMP-01/a/jvmd=pass","CMP-01/new/jdtls=pass","CMP-01/new/jvmd=pass"]);
+});

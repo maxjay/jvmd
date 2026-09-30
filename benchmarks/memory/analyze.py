@@ -326,10 +326,114 @@ def sampler_peaks(run, marks):
     return out
 
 
+def jfr_events(java_home, jfr, events, cache):
+    """Streams `jfr print --json` for the given events (cached as JSON lines)."""
+    out = cache / (jfr.stem + "." + events.replace(",", "+") + ".jsonl")
+    if not out.exists():
+        r = subprocess.run([str(Path(java_home) / "bin/jfr"), "print", "--json", "--events", events, str(jfr)],
+                           capture_output=True, text=True, env={**os.environ, "JAVA_TOOL_OPTIONS": ""})
+        data = json.loads(r.stdout or '{"recording":{"events":[]}}')
+        with open(out, "w") as fh:
+            for e in data["recording"]["events"]:
+                fh.write(json.dumps(e) + "\n")
+    return [json.loads(l) for l in open(out)]
+
+
+def iso_ms(t):
+    from datetime import datetime
+    return datetime.fromisoformat(t.replace("Z", "+00:00")).timestamp() * 1000
+
+
+def phase_of(marks, t):
+    prev = None
+    for m in marks:
+        if m.get("t") and m["t"] >= t:
+            return (prev["id"] if prev else "start") + ".." + m["id"]
+        prev = m
+    return (prev["id"] if prev else "start") + "..end"
+
+
+def exact_jfr(run, marks, java_home, cache):
+    stages, samples, gcs = [], collections.defaultdict(collections.Counter), []
+    agg = collections.defaultdict(lambda: {"count": 0, "durationMs": 0.0, "allocatedBytes": 0, "allocationKnown": 0, "virtual": 0, "queued": 0, "cpuMs": 0.0})
+    for jfr in sorted(run.glob("exact-i*.jfr")):
+        inc = int(re.search(r"i(\d+)", jfr.stem).group(1))
+        ms = [m for m in marks if m["incarnation"] == inc]
+        for e in jfr_events(java_home, jfr, "dev.jvmd.Stage", cache):
+            v = e["values"]
+            ph = phase_of(ms, iso_ms(v["startTime"]))
+            a = agg[(ph, v.get("stage"))]
+            a["count"] += 1; a["durationMs"] += (v.get("durationNanos") or 0) / 1e6
+            if v.get("threadAllocatedBytes", -1) >= 0:
+                a["allocatedBytes"] += v["threadAllocatedBytes"]; a["allocationKnown"] += 1
+            if v.get("threadCpuNanos", -1) >= 0:
+                a["cpuMs"] += v["threadCpuNanos"] / 1e6
+            a["virtual"] += bool(v.get("virtualThread")); a["queued"] += bool(v.get("queued"))
+        for e in jfr_events(java_home, jfr, "jdk.ObjectAllocationSample", cache):
+            v = e["values"]
+            ph = phase_of(ms, iso_ms(v["startTime"]))
+            cls = (v.get("objectClass") or {}).get("name", "?")
+            samples[ph][cls] += v.get("weight", 0)
+        for e in jfr_events(java_home, jfr, "jdk.GarbageCollection", cache):
+            v = e["values"]
+            gcs.append({"incarnation": inc, "phase": phase_of(ms, iso_ms(v["startTime"])), "name": v.get("name"), "cause": v.get("cause"),
+                        "sumOfPausesMs": _dur_ms(v.get("sumOfPauses")), "longestPauseMs": _dur_ms(v.get("longestPause"))})
+    rows = [{"phase": k[0], "stage": k[1], **v} for k, v in agg.items()]
+    return {"stages": rows, "jfr_allocation_samples": {ph: top(c, 25) for ph, c in samples.items()}, "gc_events": gcs}
+
+
+def _dur_ms(d):
+    if d is None:
+        return None
+    if isinstance(d, (int, float)):
+        return d / 1e6
+    m = re.match(r"PT(?:(\d+)M)?([\d.]+)S", str(d))
+    return (int(m.group(1) or 0) * 60 + float(m.group(2))) * 1000 if m else None
+
+
+GC_LINE = re.compile(r"\[(\d+)ms\].*?GC\(\d+\) (Pause [^\d]+?) (\d+)M->(\d+)M\((\d+)M\) ([\d.]+)ms")
+HUMONGOUS = re.compile(r"\[(\d+)ms\].*?GC\(\d+\) Humongous regions: (\d+)->(\d+)")
+
+
+def gc_log(run, marks):
+    out = collections.defaultdict(lambda: {"pauses": 0, "pauseMs": 0.0, "young": 0, "mixed": 0, "full": 0, "remark_cleanup": 0,
+                                           "heapBeforeMaxM": 0, "heapAfterMaxM": 0, "humongousRegionsMax": 0, "concurrentCycles": 0})
+    for f in sorted(run.glob("gc-i*.log")):
+        inc = int(re.search(r"i(\d+)", f.name).group(1))
+        ms = [m for m in marks if m["incarnation"] == inc and m.get("sinceSpawnMs") is not None]
+        def ph(uptime):
+            prev = None
+            for m in ms:
+                if m["sinceSpawnMs"] >= uptime:
+                    return (prev["id"] if prev else "start") + ".." + m["id"]
+                prev = m
+            return (prev["id"] if prev else "start") + "..end"
+        for line in open(f, errors="replace"):
+            m = GC_LINE.search(line)
+            if m:
+                o = out[(inc, ph(int(m.group(1))))]
+                kind = m.group(2)
+                o["pauses"] += 1; o["pauseMs"] += float(m.group(6))
+                o["young"] += "Young" in kind and "Mixed" not in kind; o["mixed"] += "Mixed" in kind; o["full"] += "Full" in kind
+                o["remark_cleanup"] += ("Remark" in kind or "Cleanup" in kind)
+                o["heapBeforeMaxM"] = max(o["heapBeforeMaxM"], int(m.group(3))); o["heapAfterMaxM"] = max(o["heapAfterMaxM"], int(m.group(4)))
+                continue
+            m = HUMONGOUS.search(line)
+            if m:
+                o = out[(inc, ph(int(m.group(1))))]
+                o["humongousRegionsMax"] = max(o["humongousRegionsMax"], int(m.group(2)), int(m.group(3)))
+            elif "Concurrent Mark Cycle" in line and "ms" in line and "[gc " in line.replace("[gc,", "[gc "):
+                mm = re.search(r"\[(\d+)ms\]", line)
+                if mm:
+                    out[(inc, ph(int(mm.group(1))))]["concurrentCycles"] += 1
+    return [{"incarnation": k[0], "phase": k[1], **v} for k, v in out.items()]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("runs", nargs="+"); ap.add_argument("--out", required=True)
     ap.add_argument("--async-profiler", default=os.environ.get("ASYNC_PROFILER_HOME", ""))
+    ap.add_argument("--java-home", default=os.environ.get("JAVA_HOME", ""))
     a = ap.parse_args()
     for run in map(Path, a.runs):
         env = json.load(open(run / "environment.json"))
@@ -343,6 +447,10 @@ def main():
         mode = env["mode"]
         if mode == "exact" or mode == "rss":
             json.dump(sampler_peaks(run, marks), open(dst / "samples.json", "w"), indent=1)
+        if mode == "exact":
+            json.dump(gc_log(run, marks), open(dst / "gc.json", "w"), indent=1)
+            if a.java_home:
+                json.dump(exact_jfr(run, marks, a.java_home, cache), open(dst / "jfr.json", "w"), indent=1)
         if mode in ("alloc", "live", "native"):
             phases = []
             raw = [json.loads(l) for l in open(run / "marks.jsonl")]

@@ -38,7 +38,12 @@ public final class AllocationAgent {
                     request.flip();
                     while (request.hasRemaining()) {
                         byte command = request.get();
-                        String line = command == 's' || command == 'p' ? snapshot(command == 'p') : Long.toString(allocated());
+                        String line;
+                        try {
+                            line = command == 's' || command == 'p' ? snapshot(command == 'p') : Long.toString(allocated());
+                        } catch (OutOfMemoryError exhausted) {
+                            line = command == 's' || command == 'p' ? "null" : "-1"; // Keep the connection: later requests may succeed.
+                        }
                         channel.write(ByteBuffer.wrap((line + "\n").getBytes(StandardCharsets.US_ASCII)));
                     }
                     request.clear();

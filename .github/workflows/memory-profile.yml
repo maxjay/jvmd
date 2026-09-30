@@ -5,10 +5,10 @@ name: JVMD memory profile
 # as workflow artifacts; nothing large is committed. Informational only, never a gate.
 on:
   workflow_dispatch:
-    inputs:
-      modes:
-        description: Comma-separated profiling modes
-        default: 'control,exact,alloc,live,retention,nmt,native,rss,pressure,scale'
+  # Temporary: runs once from the investigation branch to produce the retained evidence; removed afterwards.
+  push:
+    branches: [ccr-d4329637-lywgzk]
+    paths: [.github/workflows/memory-profile.yml]
 
 permissions:
   contents: read
@@ -25,21 +25,39 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [control, exact, alloc, live, retention, nmt, native, rss, pressure, scale]
+        profile:
+          # Primary: default configuration, one profiling mode per job.
+          - {name: control, args: --mode control}
+          - {name: exact, args: --mode exact}
+          - {name: alloc, args: --mode alloc}
+          - {name: live, args: --mode live}
+          - {name: retention, args: --mode retention}
+          - {name: nmt, args: --mode nmt}
+          - {name: native, args: --mode native}
+          - {name: rss, args: --mode rss}
+          # Supplementary: RocksDB native budget 256 MiB, references skipped, so every later phase is reached.
+          - {name: b256-control, args: --mode control --native-budget-mb 256 --skip-references}
+          - {name: b256-exact, args: --mode exact --native-budget-mb 256 --skip-references}
+          - {name: b256-alloc, args: --mode alloc --native-budget-mb 256 --skip-references}
+          - {name: b256-live, args: --mode live --native-budget-mb 256 --skip-references}
+          - {name: b256-retention, args: --mode retention --native-budget-mb 256 --skip-references}
+          - {name: b256-nmt, args: --mode nmt --native-budget-mb 256 --skip-references}
+          - {name: b256-native, args: --mode native --native-budget-mb 256 --skip-references}
+          - {name: b256-rss, args: --mode rss --native-budget-mb 256 --skip-references}
+          - {name: b256-pressure-512, args: --mode exact --heap 512 --native-budget-mb 256 --skip-references}
+          # First-use references to completion (OOM at 1 GiB): allocation sites and the retained graph at OOM.
+          - {name: b256-refs-alloc, args: --mode alloc --native-budget-mb 256}
+          - {name: b256-refs-retention, args: --mode retention --native-budget-mb 256}
+          - {name: scale, args: scale}
+          - {name: restartfail, args: restartfail}
     steps:
-      - name: Select mode
-        id: select
-        run: echo "run=${{ contains(format(',{0},', inputs.modes || 'control,exact,alloc,live,retention,nmt,native,rss,pressure,scale'), format(',{0},', matrix.mode)) }}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        if: steps.select.outputs.run == 'true'
         with:
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
-        if: steps.select.outputs.run == 'true'
         with:
           node-version: 24.21.0
       - name: Cache third-party Maven dependencies
-        if: steps.select.outputs.run == 'true'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
@@ -48,7 +66,6 @@ jobs:
           key: maven-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/pom.xml') }}
           restore-keys: maven-${{ runner.os }}-${{ runner.arch }}-
       - name: Install pinned JDK 25, async-profiler and Eclipse MAT
-        if: steps.select.outputs.run == 'true'
         run: |
           d="$RUNNER_TEMP/downloads"; mkdir -p "$d" "$RUNNER_TEMP/tools"
           curl -fsSL --retry 3 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz' -o "$d/jdk25.tar.gz"
@@ -62,10 +79,8 @@ jobs:
           echo "ASYNC_PROFILER_HOME=$RUNNER_TEMP/tools/async-profiler-4.1-linux-x64" >> "$GITHUB_ENV"
           echo "MAT_HOME=$RUNNER_TEMP/tools/mat/mat" >> "$GITHUB_ENV"
       - name: Build JVMD
-        if: steps.select.outputs.run == 'true'
         run: mvn -B -q -DskipTests install && bash jvmd-dist/assemble.sh
       - name: Cache apache/maven fixture
-        if: steps.select.outputs.run == 'true'
         id: project
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
@@ -74,36 +89,46 @@ jobs:
             ${{ runner.temp }}/apache-maven-repository
           key: apache-maven-${{ env.APACHE_MAVEN }}-v1
       - name: Prepare apache/maven fixture
-        if: steps.select.outputs.run == 'true' && steps.project.outputs.cache-hit != 'true'
+        if: steps.project.outputs.cache-hit != 'true'
         run: |
           git clone -q https://github.com/apache/maven.git "$RUNNER_TEMP/apache-maven"
           git -C "$RUNNER_TEMP/apache-maven" checkout -q "$APACHE_MAVEN"
           cd "$RUNNER_TEMP/apache-maven"
           mvn -B -q -DskipTests -Dmaven.repo.local="$RUNNER_TEMP/apache-maven-repository" -Drat.skip -Dspotless.skip -Dcheckstyle.skip -Denforcer.skip install
       - name: Profile
-        if: steps.select.outputs.run == 'true'
+        env:
+          ARGS: ${{ matrix.profile.args }}
+          NAME: ${{ matrix.profile.name }}
         run: |
           out="$RUNNER_TEMP/memory"; mkdir -p "$out"
-          common=(--project "$RUNNER_TEMP/apache-maven" --project-repository "$RUNNER_TEMP/apache-maven-repository")
-          case "${{ matrix.mode }}" in
-            pressure) node benchmarks/memory/profile.ts --mode exact --heap 512 --output "$out/pressure" "${common[@]}" ;;
+          project=(--project "$RUNNER_TEMP/apache-maven" --project-repository "$RUNNER_TEMP/apache-maven-repository")
+          profile() { node benchmarks/memory/profile.ts --output "$out/$1" "${@:2}"; }
+          case "$ARGS" in
             scale)
               for n in 0 100 250 350; do
                 python3 benchmarks/memory/subset_repository.py "$RUNNER_TEMP/apache-maven-repository" "$RUNNER_TEMP/repos/n$n" --count "$n"
-                node benchmarks/memory/profile.ts --mode exact --seed-only --seed-restart --output "$out/scale-n$n" --repository "$RUNNER_TEMP/repos/n$n"
+                profile "scale-n$n" --mode exact --seed-only --seed-restart --repository "$RUNNER_TEMP/repos/n$n"
               done
-              node benchmarks/memory/profile.ts --mode exact --seed-only --seed-restart --output "$out/scale-full" --repository "$RUNNER_TEMP/apache-maven-repository"
+              profile scale-full --mode exact --seed-only --seed-restart --repository "$RUNNER_TEMP/apache-maven-repository"
               for j in javax.inject-1.jar commons-lang3-3.20.0.jar guava-33.4.8-jre.jar groovy-4.0.15.jar; do
                 python3 benchmarks/memory/subset_repository.py "$RUNNER_TEMP/apache-maven-repository" "$RUNNER_TEMP/repos/one-${j%.jar}" --jars "$j"
-                node benchmarks/memory/profile.ts --mode exact --seed-only --output "$out/jar-${j%.jar}" --repository "$RUNNER_TEMP/repos/one-${j%.jar}"
+                profile "jar-${j%.jar}" --mode exact --seed-only --repository "$RUNNER_TEMP/repos/one-${j%.jar}"
+              done
+              profile scale-full-nmt --mode nmt --seed-only --seed-restart --repository "$RUNNER_TEMP/apache-maven-repository"
+              profile scale-full-native --mode native --seed-only --seed-restart --repository "$RUNNER_TEMP/apache-maven-repository" ;;
+            restartfail)
+              # A default-configuration lifecycle leaves the state whose reopen fails; that reopen is then profiled directly.
+              profile lifecycle --mode control --no-restart "${project[@]}"
+              for m in exact nmt native alloc; do
+                profile "restartfail-$m" --mode "$m" --seed-only --reuse-state "$out/lifecycle/state/jvmd" --repository "$RUNNER_TEMP/apache-maven-repository"
               done ;;
-            *) node benchmarks/memory/profile.ts --mode "${{ matrix.mode }}" --output "$out/${{ matrix.mode }}" "${common[@]}" ;;
+            *) profile "$NAME" $ARGS "${project[@]}" ;;
           esac
       - name: Reduce
-        if: always() && steps.select.outputs.run == 'true'
+        if: always()
         run: |
           out="$RUNNER_TEMP/memory"
-          python3 benchmarks/memory/analyze.py "$out"/*/ --out "$out/summary"
+          python3 benchmarks/memory/analyze.py $(ls -d "$out"/*/ | grep -v /summary/) --out "$out/summary"
           for dump in "$out"/*/dumps/*.hprof; do
             [ -f "$dump" ] || continue
             bash benchmarks/memory/mat.sh "$dump" "$out/summary/mat/$(basename "${dump%.hprof}")"
@@ -111,8 +136,8 @@ jobs:
           done
           rm -rf "$out"/*/state "$out"/*/dumps/*.index "$out"/*/dumps/*.threads
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: always() && steps.select.outputs.run == 'true'
+        if: always()
         with:
-          name: memory-${{ matrix.mode }}
+          name: memory-${{ matrix.profile.name }}
           retention-days: 90
           path: ${{ runner.temp }}/memory

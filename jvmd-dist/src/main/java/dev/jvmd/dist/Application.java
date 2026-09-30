@@ -34,7 +34,15 @@ public final class Application implements AutoCloseable {
         this.config = config;
         if (config.indexOnStart()) initializeIndex(true);
         dispatcher.status("index", () -> {
-            try { return index == null ? java.util.Map.of("phase", "disabled") : index.isDone() ? index.join().status() : java.util.Map.of("phase", "starting"); }
+            try {
+                if (index != null && !index.isDone() && bootstrappingIndex != null && Boolean.getBoolean("jvmd.profile.bootstrap_status")) {
+                    // Profiling-only, off by default: memory investigations sample the first scan's progress.
+                    var progress = new java.util.LinkedHashMap<String, Object>(bootstrappingIndex.status());
+                    progress.put("bootstrap", true);
+                    return progress;
+                }
+                return index == null ? java.util.Map.of("phase", "disabled") : index.isDone() ? index.join().status() : java.util.Map.of("phase", "starting");
+            }
             catch (Exception e) { return java.util.Map.of("phase", "failed", "reason", e.toString()); }
         });
         dispatcher.status("aot_cache", () -> AotStatus.runtime(Path.of(System.getProperty("jvmd.aot.log", config.stateDir().resolve("aot.log").toString()))));

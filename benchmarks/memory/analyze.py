@@ -91,7 +91,7 @@ OPERATIONS = [
     ("diagnostic snapshot writer", r"DiagnosticSnapshots"),
     ("project resolution (Maven)", r"Application\.refresh|MavenResolver|dev/jvmd/resolver/|Application\.maintainedResolution|^org/apache/maven/|^org/eclipse/aether/"),
     ("annotation processing preparation", r"AnnotationProcessing|Application\.prepareProcessing"),
-    ("references: workspace bindings (Application.occurrences/WorkspaceBindings)", r"Application\\.occurrences|WorkspaceBindings|[Rr]eferences|CodePass|dev/jvmd/analyzer/Bindings"),
+    ("references: workspace bindings (Application.occurrences/WorkspaceBindings)", r"Application\.occurrences|WorkspaceBindings|[Rr]eferences|CodePass|dev/jvmd/analyzer/Bindings"),
     ("completion", r"[Cc]omplet"),
     ("hover / documentation", r"[Hh]over|Documentation"),
     ("definition", r"[Dd]efinition"),

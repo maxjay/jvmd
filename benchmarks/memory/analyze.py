@@ -43,41 +43,88 @@ MODULES = [(n, re.compile(p)) for n, p in MODULES]
 JVMD_OWNERS = {"jvmd-index-rocks", "jvmd-index", "jvmd-analyzer", "jvmd-resolver", "jvmd-lsp", "jvmd-dist", "jvmd-mcp", "jvmd-runtime", "jvmd-core"}
 LIBRARY_OWNERS = JVMD_OWNERS | {"javac / jdk.compiler", "Jackson", "RocksDB JNI wrapper", "Maven resolver libraries", "JDK classfile API", "JDK ZIP/JAR"}
 
-# Semantic components: the first rule (in list order) matching ANY frame of the stack wins, so
-# more specific operations are listed before the broad owners that contain them.
-COMPONENTS = [
-    ("profiling observer (allocation agent / status)", r"^AllocationAgent\.|Dispatcher\.status|IndexService\.status"),
-    ("artifact hashing", r"dev/jvmd/core/Hashing\.|IndexService\.(sha1|hash|verifySha)|FileStateRegistry\.(hash|digest)|java/security/MessageDigest"),
-    ("artifact discovery (repository walk)", r"IndexService\.(discover|jars)|java/nio/file/FileTreeWalker|java/nio/file/Files\.walk"),
-    ("JAR parsing (ZIP/class bytes)", r"dev/jvmd/index/BinaryReader\.(read|entries|bytes)|dev/jvmd/index/BinaryReader\.lambda"),
-    ("binary semantic extraction (classfile -> symbols/edges)", r"dev/jvmd/index/(BinaryReader|CodeReader|Signatures|Descriptors|BinarySymbols)"),
-    ("artifact encoding (ArtifactIndexFormat)", r"dev/jvmd/index/ArtifactIndexFormat\."),
-    ("Rocks SST construction (sort/grams/SST)", r"RocksArtifactRepository\.(publish|writeSst|lambda\$publish|verifyStagedSst)|SstSorter|GramPostings|org/rocksdb/SstFileWriter"),
-    ("Rocks artifact metadata (StoredArtifact/inventory)", r"RocksIndexStore\.publish|RocksArtifactInventory|RocksIndexStore\.(record|write|put)"),
-    ("source-JAR documentation indexing", r"IndexService\.indexSources|SourceDocs|DocumentationIndex|SourceIndexer"),
-    ("index restart / reopen (manifest, metadata load)", r"RocksMigrationManager|RocksIndexStore\.<init>|RocksIndexStore\.(load|open|restore)|RocksIndexStorage\.<init>|RocksArtifactRepository\.<init>|RocksArtifactInventory\.<init>"),
-    ("semantic fact publication (source facts)", r"SourceIndexPublisher|KeyedFacts\.publish|FactCodec\.encode"),
-    ("repository lookup (index queries)", r"KeyedFacts\.(query|lookup|lambda)|FactCodec\.decode|SourceOverlay|RocksIndexStore\.(query|lookup|search|find|symbol|selected|classpath|semantic)|RocksArtifactRepository\.(query|read|get|lookup|owner|scan|symbol)|IndexService\.(query|lookup|search)"),
-    ("workspace/project resolution (Maven model)", r"dev/jvmd/resolver/|Application\.refresh|org/apache/maven/|org/eclipse/aether/"),
-    ("classpath construction", r"Classpath|CompilerInputs"),
-    ("workspace/index binding", r"Application\.(bindIndex|prepareIndex)|WorkspaceBindings|BindingFacts"),
-    ("proof construction / validation", r"Proof|Witness"),
-    ("javac parse", r"com/sun/tools/javac/parser/|CompilerPool\.parse"),
-    ("javac enter/attribute/flow", r"com/sun/tools/javac/(comp|code|jvm|tree|util|model|main|api|file)/"),
-    ("diagnostics (module actors, stores)", r"ModuleAnalyzerRegistry|WorkspaceAnalysisCoordinator|DiagnosticStore|DiagnosticSnapshots|Analyzer\.diagnos"),
-    ("completion", r"Analyzer\.[a-zA-Z$]*[Cc]omplet|Completion|TypeCompletionCache"),
-    ("hover / documentation enrichment", r"[Hh]over|Documentation|Javadoc"),
-    ("definition", r"[Dd]efinition"),
-    ("references", r"[Rr]eferences|CodePass"),
-    ("semantic state (resident/document snapshots)", r"ResidentSemanticState|SemanticUnitState|DocumentSemantic|SemanticUpdatePolicy|RocksIndexSemanticState|RocksSemanticInvalidation"),
-    ("documents / live source state", r"dev/jvmd/core/Documents|LiveSourceState|WorkspaceOverlay"),
-    ("LSP facade / JSON-RPC encoding", r"dev/jvmd/lsp/|Dispatcher\.|UnixServer|com/fasterxml/jackson/"),
-    ("index scan (other)", r"dev/jvmd/index/IndexService"),
-    ("RocksDB JNI (other)", r"^org/rocksdb/"),
-    ("JVMD (other)", r"^dev/jvmd/"),
-    ("JDK/JVM internal (no JVMD frame)", r"."),
+# Two attribution dimensions over the same stacks (async-profiler reports virtual threads under their
+# ForkJoinPool carrier, so "which work" is read from frames, not thread names):
+#   mechanism: the innermost frame matching a rule (what code allocated: SST postings, digests, javac...)
+#   operation: the outermost frame matching a rule (which pipeline it served: seed, completion, diagnostics...)
+MECHANISMS = [
+    ("RocksDB JNI wrapper", r"^org/rocksdb/"),
+    ("SST gram postings (GramPostings)", r"GramPostings|RocksArtifactRepository\.addGram"),
+    ("SST sort/spill/merge (SstSorter)", r"SstSorter"),
+    ("SST keys (relativeKey/hex8/scip suffix)", r"RocksArtifactRepository\.(relativeKey|hex8|scipSuffix|key)|ArtifactContext\.scip"),
+    ("SST writing (other RocksArtifactRepository)", r"RocksArtifactRepository\."),
+    ("symbol/resolution encoding (ArtifactIndexFormat.encode/write)", r"ArtifactIndexFormat\.(encode|write)"),
+    ("source-fact decoding (FactCodec read)", r"FactCodec\.(read|decode|lambda\$read)"),
+    ("source-fact encoding/overlay (FactCodec/KeyedFacts/SourceOverlay)", r"FactCodec|KeyedFacts|SourceOverlay"),
+    ("canonical digests (CanonicalDigestWriter/LiveStateTree/Hash256/SHA)", r"CanonicalDigestWriter|LiveStateTree|dev/jvmd/core/Hash256|dev/jvmd/core/Hashing|java/security/MessageDigest|sun/security/provider"),
+    ("algebraic accumulators (AlgebraicAccumulator, BigInteger)", r"AlgebraicAccumulator"),
+    ("fact construction (ArtifactIndexFormat.from/ResolutionFact/SemanticType)", r"ArtifactIndexFormat|ResolutionFact|SemanticType|dev/jvmd/index/SemanticFact"),
+    ("ZIP/JAR entry I/O", r"^java/util/zip/|^java/util/jar/|^jdk/nio/zipfs/|^jdk/internal/util/zip"),
+    ("classfile reading (BinaryReader/CodeReader/classfile API)", r"BinaryReader|CodeReader|dev/jvmd/index/Signatures|dev/jvmd/core/JavaTypes|^java/lang/classfile/|^jdk/internal/classfile/"),
+    ("local source join (LocalArtifacts/SourceJoin)", r"LocalArtifacts|SourceJoin"),
+    ("reference bindings scan (analyzer.Bindings)", r"dev/jvmd/analyzer/Bindings"),
+    ("semantic declaration extraction (SemanticDeclaration/SymbolIdentity)", r"SemanticDeclaration|SymbolIdentity"),
+    ("resident semantic state / proofs", r"ResidentSemanticState|SemanticUnitState|DocumentSemantic|Proof|Witness|SemanticUpdatePolicy"),
+    ("completion materialization", r"[Cc]omplet"),
+    ("javac (jdk.compiler)", r"^com/sun/tools/javac/|^com/sun/source/|^jdk/internal/javac"),
+    ("Jackson / JSON", r"^com/fasterxml/jackson/|dev/jvmd/core/Json"),
+    ("Maven model / resolver", r"^org/apache/maven/|^org/eclipse/aether/|^org/codehaus/plexus/|^dev/jvmd/resolver/|^org/eclipse/sisu/|^com/google/inject/"),
+    ("diagnostic stores/snapshots", r"Diagnostic"),
+    ("documents / live source state", r"dev/jvmd/core/Documents|LiveSourceState|WorkspaceOverlay|SourceText"),
+    ("workspace bindings (WorkspaceBindings/BindingFacts)", r"WorkspaceBindings|BindingFacts"),
+    ("profiling observer (allocation agent)", r"^AllocationAgent"),
+    ("jvmd-analyzer (other)", r"^dev/jvmd/analyzer/"),
+    ("jvmd-index-rocks (other)", r"^dev/jvmd/index/rocks/"),
+    ("jvmd-index (other)", r"^dev/jvmd/index/"),
+    ("jvmd-dist (other)", r"^dev/jvmd/dist/"),
+    ("jvmd-core (other)", r"^dev/jvmd/core/"),
+    ("jvmd-lsp / mcp / runtime (other)", r"^dev/jvmd/"),
 ]
-COMPONENTS = [(n, re.compile(p)) for n, p in COMPONENTS]
+MECHANISMS = [(n, re.compile(p)) for n, p in MECHANISMS]
+OPERATIONS = [
+    ("profiling observer (allocation agent / status)", r"^AllocationAgent|Dispatcher\.status|IndexService\.status"),
+    ("machine index scan (seed / rescan)", r"IndexService\.(scan|lambda\$scan|indexJar|indexSources|lambda\$start)"),
+    ("persisted index open (RocksIndexStorage/RocksIndexStore init)", r"RocksIndexStorage\.<init>|RocksIndexStore\.<init>|RocksMigrationManager|IndexStorage\.open"),
+    ("local workspace artifacts (IndexService.registerLocal)", r"IndexService\.(registerLocal|lambda\$registerLocal)|LocalArtifacts"),
+    ("background source-fact publication (SourceIndexPublisher)", r"SourceIndexPublisher\.run"),
+    ("diagnostics: module actors", r"ModuleAnalyzerRegistry\$Actor|WorkspaceAnalysisCoordinator"),
+    ("diagnostic snapshot writer", r"DiagnosticSnapshots"),
+    ("project resolution (Maven)", r"Application\.refresh|MavenResolver|dev/jvmd/resolver/|Application\.maintainedResolution|^org/apache/maven/|^org/eclipse/aether/"),
+    ("annotation processing preparation", r"AnnotationProcessing|Application\.prepareProcessing"),
+    ("references: workspace bindings (Application.occurrences/WorkspaceBindings)", r"Application\\.occurrences|WorkspaceBindings|[Rr]eferences|CodePass|dev/jvmd/analyzer/Bindings"),
+    ("completion", r"[Cc]omplet"),
+    ("hover / documentation", r"[Hh]over|Documentation"),
+    ("definition", r"[Dd]efinition"),
+    ("session work (other)", r"dev/jvmd/core/Session"),
+    ("RPC / LSP transport", r"Dispatcher|UnixServer|dev/jvmd/lsp/"),
+    ("JVMD (other)", r"^dev/jvmd/"),
+]
+OPERATIONS = [(n, re.compile(p)) for n, p in OPERATIONS]
+
+
+def classify_stack(frames):
+    """frames: root..leaf method frames (allocated class removed). Returns (innermost owner, library owner, mechanism, operation)."""
+    names = [frame_name(f) for f in frames]
+    inner = next((m for m in (module_of(f) for f in reversed(names)) if m), "other")
+    owner = next((m for m in (module_of(f) for f in reversed(names)) if m in LIBRARY_OWNERS), "JDK/other (no library frame)")
+    mechanism = "JDK/JVM only (no attributable frame)"
+    for f in reversed(names):
+        hit = next((n for n, rx in MECHANISMS if rx.search(f)), None)
+        if hit:
+            mechanism = hit
+            break
+    # Operations: the outermost frame that names a pipeline; session-queued work is refined by inner frames.
+    operation = "JDK/JVM only (no attributable frame)"
+    hits = [next((n for n, rx in OPERATIONS if rx.search(f)), None) for f in names]
+    hits = [h for h in hits if h]
+    if hits:
+        operation = hits[0]
+        if operation in ("session work (other)", "RPC / LSP transport", "JVMD (other)"):
+            specific = [h for h in hits if h not in ("session work (other)", "RPC / LSP transport", "JVMD (other)")]
+            if specific:
+                operation = specific[0]
+    return inner, owner, mechanism, operation
+
 
 THREAD_GROUPS = [
     ("index workers (jvmd-index-*)", r"jvmd-index"),
@@ -86,8 +133,8 @@ THREAD_GROUPS = [
     ("diagnostic dispatch (jvmd-module-dispatch-*)", r"jvmd-module-dispatch"),
     ("source publisher / snapshots", r"jvmd-source-publisher|jvmd-diagnostic-snapshots"),
     ("watchers (source-state, overlay, project-model)", r"jvmd-source-state|overlay-watch|project-model-watch"),
-    ("RPC connections (virtual, unnamed)", r"^\s*tid=|^$|ForkJoinPool-1-worker|^\[?\s*tid"),
-    ("ForkJoin/common pools", r"ForkJoinPool|commonPool"),
+    ("virtual threads (ForkJoinPool-1 carriers: index readers, publisher, RPC)", r"ForkJoinPool-1-worker"),
+    ("other ForkJoin/common pools", r"ForkJoinPool|commonPool"),
     ("Rocks/native background", r"rocksdb|rocks:"),
     ("allocation probe (profiling agent)", r"allocation-probe"),
     ("JVM service threads", r"C1 Compiler|C2 Compiler|Signal Dispatcher|Finalizer|Reference Handler|Common-Cleaner|Notification Thread|Attach Listener|JFR|Service Thread|GC"),
@@ -105,19 +152,6 @@ def module_of(frame):
         if rx.search(frame):
             return name
     return None
-
-
-def classify_stack(frames):
-    """frames: root..leaf method frames (allocated class removed)."""
-    names = [frame_name(f) for f in frames]
-    inner = next((m for m in (module_of(f) for f in reversed(names)) if m), "other")
-    owner = next((m for m in (module_of(f) for f in reversed(names)) if m in LIBRARY_OWNERS), "JDK/other (no library frame)")
-    component = "JDK/JVM internal (no JVMD frame)"
-    for cname, rx in COMPONENTS:
-        if any(rx.search(f) for f in names):
-            component = cname
-            break
-    return inner, owner, component
 
 
 def thread_group(t):
@@ -152,7 +186,7 @@ def alloc_phase(ap, jfr, cache, live=False):
     count_file = jfrconv(ap, [kind, "-t"], jfr, cache / (jfr.stem + ".samples.collapsed"))
     out = {"bytes": 0, "samples": 0}
     classes_b, classes_n, stacks_b = collections.Counter(), collections.Counter(), collections.Counter()
-    inner_b, owner_b, comp_b, thread_b, comp_class = (collections.Counter() for _ in range(5))
+    inner_b, owner_b, comp_b, op_b, thread_b, comp_class = (collections.Counter() for _ in range(6))
     outside_b, outside_classes = collections.Counter(), collections.Counter()
     comp_top_site = collections.defaultdict(collections.Counter)
     for frames, v in read_collapsed(bytes_file):
@@ -163,8 +197,8 @@ def alloc_phase(ap, jfr, cache, live=False):
         classes_b[cname] += v
         key = ";".join(frame_name(f) for f in methods[-12:]) + " => " + cname
         stacks_b[key] += v
-        inner, owner, comp = classify_stack(methods)
-        inner_b[inner] += v; owner_b[owner] += v; comp_b[comp] += v
+        inner, owner, comp, op = classify_stack(methods)
+        inner_b[inner] += v; owner_b[owner] += v; comp_b[comp] += v; op_b[op] += v
         comp_class[comp + " :: " + cname] += v
         site = next((frame_name(f) for f in reversed(methods) if frame_name(f).startswith("dev/jvmd/")), frame_name(methods[-1]) if methods else "?")
         comp_top_site[comp][site + " => " + cname] += v
@@ -177,9 +211,9 @@ def alloc_phase(ap, jfr, cache, live=False):
     out.update({
         "top_classes_by_bytes": top(classes_b, 50), "top_classes_by_samples": top(classes_n, 50),
         "top_stacks_by_bytes": top(stacks_b, 50),
-        "innermost_owner": top(inner_b, 40), "library_owner": top(owner_b, 40), "component": top(comp_b, 40),
-        "component_top_site": {k: top(v, 3) for k, v in comp_top_site.items()},
-        "component_class": top(comp_class, 60), "threads": top(thread_b, 20),
+        "innermost_owner": top(inner_b, 40), "library_owner": top(owner_b, 40), "mechanism": top(comp_b, 45), "operation": top(op_b, 30),
+        "mechanism_top_site": {k: top(v, 3) for k, v in comp_top_site.items()},
+        "mechanism_class": top(comp_class, 60), "threads": top(thread_b, 20),
         "outside_tlab_stacks": top(outside_b, 30), "outside_tlab_classes": top(outside_classes, 20),
     })
     return out

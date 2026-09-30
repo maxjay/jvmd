@@ -463,6 +463,53 @@ def gc_log(run, marks):
     return [{"incarnation": k[0], "phase": k[1], **v} for k, v in out.items()]
 
 
+def smaps_split(text, xmx_bytes):
+    """Anonymous RSS split: Java heap (zero-based compressed-oops reservation just below 4 GiB), glibc malloc
+    arenas (64 MiB-aligned anonymous reservations) and brk heap, JIT code (rwx), thread stacks (rw mapping right
+    after a small guard mapping), other anonymous; plus file-backed. Heuristic by address/shape, stated as such."""
+    heap_lo, heap_hi = (1 << 32) - xmx_bytes, 1 << 32
+    maps = []
+    cur = None
+    for line in text.split("\n"):
+        m = re.match(r"^([0-9a-f]+)-([0-9a-f]+) (\S+) \S+ \S+ (\d+)\s*(.*)$", line)
+        if m:
+            cur = {"s": int(m[1], 16), "e": int(m[2], 16), "perm": m[3], "inode": int(m[4]), "name": m[5].strip(), "Rss": 0, "Pss": 0, "Private_Dirty": 0}
+            maps.append(cur); continue
+        m = re.match(r"^(Rss|Pss|Private_Dirty):\s+(\d+) kB", line)
+        if m and cur:
+            cur[m[1]] += int(m[2]) * 1024
+    out = collections.defaultdict(lambda: {"Rss": 0, "Pss": 0, "Private_Dirty": 0, "Size": 0, "mappings": 0})
+    arena_bases = set()
+    for i, mp in enumerate(maps):
+        if mp["name"] == "" and mp["s"] % (64 << 20) == 0 and mp["s"] > (1 << 40):
+            arena_bases.add(mp["s"])
+    for i, mp in enumerate(maps):
+        name = mp["name"]
+        if name and not name.startswith("["):
+            cat = "file-backed"
+        elif name == "[heap]":
+            cat = "glibc malloc (brk heap + arenas)"
+        elif name.startswith("[stack"):
+            cat = "thread stacks (approx.)"
+        elif name.startswith("["):
+            cat = "kernel/vdso"
+        elif heap_lo <= mp["s"] < heap_hi:
+            cat = "Java heap"
+        elif "x" in mp["perm"]:
+            cat = "JIT code / executable anonymous"
+        elif any(b <= mp["s"] < b + (64 << 20) for b in arena_bases):
+            cat = "glibc malloc (brk heap + arenas)"
+        elif i > 0 and maps[i - 1]["perm"].startswith("---") and maps[i - 1]["e"] == mp["s"] and (maps[i - 1]["e"] - maps[i - 1]["s"]) <= (64 << 10) and (mp["e"] - mp["s"]) <= (16 << 20):
+            cat = "thread stacks (approx.)"
+        else:
+            cat = "other anonymous (metaspace, GC data, NMT, JNI, ...)"
+        o = out[cat]
+        o["mappings"] += 1; o["Size"] += mp["e"] - mp["s"]
+        for k in ("Rss", "Pss", "Private_Dirty"):
+            o[k] += mp[k]
+    return dict(out)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("runs", nargs="+"); ap.add_argument("--out", required=True)
@@ -479,6 +526,11 @@ def main():
         json.dump({"environment": env, "failures": results.get("failures"), "marks": marks,
                    "operations": results.get("operations")}, open(dst / "lifecycle.json", "w"), indent=1)
         mode = env["mode"]
+        splits = {}
+        for f in sorted((run / "smaps").glob("*.smaps.gz")):
+            splits[f.name.replace(".smaps.gz", "")] = smaps_split(gzip.open(f, "rt").read(), env["xmxMb"] << 20)
+        if splits:
+            json.dump(splits, open(dst / "smaps_split.json", "w"), indent=1)
         if mode == "exact" or mode == "rss":
             json.dump(sampler_peaks(run, marks), open(dst / "samples.json", "w"), indent=1)
         if mode == "exact":

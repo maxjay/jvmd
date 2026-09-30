@@ -141,7 +141,9 @@ async function mark(id:string,label:string,o:{histogram?:boolean;smaps?:boolean}
         const diff=jcmd(JAVA_HOME,daemon.pid,["VM.native_memory","summary.diff","scale=KB"]);writeFileSync(path.join(OUT,"nmt",prefix+"-summary.diff.txt"),diff.stdout);
         const detail=jcmd(JAVA_HOME,daemon.pid,["VM.native_memory","detail.diff","scale=KB"]);writeFileSync(path.join(OUT,"nmt",prefix+"-detail.diff.txt.gz"),gzipSync(detail.stdout));
       }
-      row.hooks.nmt={ms:summary.ms};
+      // glibc malloc_info (read-only): bytes glibc holds from the OS vs bytes free inside its arenas.
+      const heapInfo=jcmd(JAVA_HOME,daemon.pid,["System.native_heap_info"]);writeFileSync(path.join(OUT,"nmt",prefix+"-malloc_info.xml"),heapInfo.stdout);
+      row.hooks.nmt={ms:summary.ms+heapInfo.ms};
     }
     if(MODE==="rss"||o.smaps){
       const raw=path.join(OUT,"smaps",prefix+".smaps");const cats=smapsCategories(daemon.pid,raw);

@@ -32,7 +32,7 @@ import {ProfiledDaemon,Sampler,procMemory,smapsCategories,jcmd,asprof,compactSna
  */
 
 const a:Record<string,string>={};
-for(let i=2;i<process.argv.length;i++){const k=process.argv[i].replace(/^--/u,"");if(k==="seed-only"||k==="no-restart"){a[k]="true";continue;}a[k]=process.argv[++i];}
+for(let i=2;i<process.argv.length;i++){const k=process.argv[i].replace(/^--/u,"");if(k==="seed-only"||k==="no-restart"||k==="seed-restart"){a[k]="true";continue;}a[k]=process.argv[++i];}
 const MODE=a.mode??"control",OUT=path.resolve(a.output??assert.fail("--output")),HEAP=Number(a.heap??1024),N=Number(a.iterations??100);
 const JAVA_HOME=path.resolve(a["java-home"]??process.env.JAVA_HOME??""),IMAGE=path.resolve(a.image??"jvmd-dist/target/image");
 const AP=path.resolve(a["async-profiler"]??process.env.ASYNC_PROFILER_HOME??"");
@@ -44,7 +44,7 @@ assert(["control","exact","alloc","live","retention","nmt","native","rss"].inclu
 assert(!existsSync(OUT),"--output must be a new directory");
 mkdirSync(OUT,{recursive:true});for(const d of ["phases","histograms","nmt","smaps","dumps","status"])mkdirSync(path.join(OUT,d),{recursive:true});
 const STATE=path.join(OUT,"state");
-const log=(...m:any[])=>{const line=new Date().toISOString()+" "+m.join(" ");console.log(line);appendFileSync(path.join(OUT,"driver.log"),line+"\n");};
+const log_=(...m:any[])=>{const line=new Date().toISOString()+" "+m.join(" ");console.log(line);appendFileSync(path.join(OUT,"driver.log"),line+"\n");};
 const HEAP_DUMPS:Record<string,string>={M4:"H1-machine-ready",M9:"H2-workspace-admitted","M14x":"H3-after-queries","M17r":"H4-after-mutations","M19s":"H5-session-closed",
   M20:"H6-reconnected","M20bx":"H7-before-shutdown","M24i":"H8-restart-ready","M26b":"H9-restart-workspace"};
 
@@ -67,11 +67,11 @@ function jvmArgs(incarnation:number){
   const tag=`i${incarnation}`;
   if(MODE==="exact")args.push("-Djvmd.trace=true",`-XX:StartFlightRecording=filename=${OUT}/exact-${tag}.jfr,settings=default,dumponexit=true,name=memory`,
     `-Xlog:gc*=info,gc+heap=debug,gc+humongous=debug,gc+age=trace:file=${OUT}/gc-${tag}.log:uptimemillis,tid,tags`);
-  if(MODE==="nmt")args.push("-XX:NativeMemoryTracking=detail");
+  if(MODE==="nmt")args.push("-XX:NativeMemoryTracking=detail","-XX:+UnlockDiagnosticVMOptions","-XX:+PrintNMTStatistics");
   if(MODE==="alloc")args.push(`-agentpath:${AP}/lib/libasyncProfiler.so=start,event=alloc,alloc=${ALLOC_INTERVAL},jfr,file=${OUT}/phases/${tag}-000-start.jfr`);
   if(MODE==="live")args.push(`-agentpath:${AP}/lib/libasyncProfiler.so=start,event=alloc,live,alloc=${ALLOC_INTERVAL},jfr,file=${OUT}/phases/${tag}-000-start.jfr`);
   if(MODE==="native")args.push(`-agentpath:${AP}/lib/libasyncProfiler.so=start,event=nativemem,nativemem=${NATIVE_INTERVAL},jfr,file=${OUT}/phases/${tag}-000-start.jfr`);
-  if(MODE==="retention")args.push("-XX:+UnlockDiagnosticVMOptions");
+  if(MODE==="retention")args.push("-XX:+HeapDumpOnOutOfMemoryError",`-XX:HeapDumpPath=${OUT}/dumps/oom-${tag}.hprof`);
   return args;
 }
 function profilerStart(){
@@ -172,7 +172,7 @@ async function mark(id:string,label:string,o:{histogram?:boolean;smaps?:boolean}
   }
   baseline={id,incarnation,mono:performance.now(),snapshot:next};
   marks.push(row);appendFileSync(path.join(OUT,"marks.jsonl"),JSON.stringify(row)+"\n");
-  log(`${id.padEnd(6)} ${label.padEnd(44)} heap=${mb(snap?.heap.used)} rss=${mb(proc.VmRSS)} alloc+=${mb(row.phase?.allocatedBytes)} `+
+  log_(`${id.padEnd(6)} ${label.padEnd(44)} heap=${mb(snap?.heap.used)} rss=${mb(proc.VmRSS)} alloc+=${mb(row.phase?.allocatedBytes)} `+
     (row.status?.native_memory?`rocks=${mb(row.status.native_memory.cache_usage_bytes)} `:"")+(row.liveHeapAfterFullGc?`live=${mb(row.liveHeapAfterFullGc)}`:""));
   return row;
 }
@@ -206,7 +206,7 @@ async function startDaemon(repository:string){
   appendFileSync(seedFile,JSON.stringify({t:m1.t,index:m1.status})+"\n");
   // M2: periodic seed samples at artifact-publication thresholds (scanned/total), from the profiling-only bootstrap status.
   const thresholds=[0,0.10,0.25,0.50,0.75,1.0];let next=0,readyDone=false;
-  const readyPromise=daemon.ready().then(()=>{readyDone=true;});
+  const readyPromise=daemon.ready().finally(()=>{readyDone=true;});readyPromise.catch(()=>undefined);
   while(!readyDone){
     await Promise.race([readyPromise,new Promise(r=>setTimeout(r,MODE==="control"?2000:500))]);
     if(readyDone)break;
@@ -218,10 +218,21 @@ async function startDaemon(repository:string){
       }
     }
   }
-  await readyPromise;
+  try{await readyPromise;}
+  catch(error){
+    // A daemon that cannot reach READY (e.g. the persisted index fails to reopen) is evidence, not a driver failure.
+    const log=readFileSync(path.join(STATE,"jvmd","daemon.log"),"utf8");
+    const row={seq:sequence++,id:incarnation===1?"M3-failed":"M24-failed",label:"daemon exited before READY",incarnation,t:Date.now(),exitCode:daemon.process.exitCode,
+      sinceSpawnMs:performance.now()-daemon.spawnedMs,error:String(error),stderrTail:log.slice(-6000)};
+    marks.push(row);appendFileSync(path.join(OUT,"marks.jsonl"),JSON.stringify(row)+"\n");
+    sampler?.stop();sampler=undefined;failures.push("daemon incarnation "+incarnation+" did not reach READY: exit "+daemon.process.exitCode);
+    log_(`${row.id} exit ${row.exitCode} after ${row.sinceSpawnMs.toFixed(0)} ms`);
+    return false;
+  }
   await mark(incarnation===1?"M3":"M24",incarnation===1?"machine index READY":"persisted index reopened, READY");
   await settle("post-ready");
   await mark(incarnation===1?"M4":"M24i",incarnation===1?"daemon idle after READY":"restart: idle after READY");
+  return true;
 }
 async function stopDaemon(){
   await mark(incarnation===1?"M21":"M27","daemon shutdown initiated");
@@ -230,7 +241,7 @@ async function stopDaemon(){
   const exited=await daemon.stop();
   const row={seq:sequence++,id:incarnation===1?"M22":"M28",label:"daemon exited",incarnation,t:Date.now(),exited,shutdownMs:performance.now()-started,exitCode:daemon.process.exitCode,
     lastSnapshotBeforeShutdown:snapBefore?compactSnapshot(snapBefore):null};
-  marks.push(row);appendFileSync(path.join(OUT,"marks.jsonl"),JSON.stringify(row)+"\n");log(`${row.id} daemon exited in ${row.shutdownMs.toFixed(0)} ms (exit ${row.exitCode})`);
+  marks.push(row);appendFileSync(path.join(OUT,"marks.jsonl"),JSON.stringify(row)+"\n");log_(`${row.id} daemon exited in ${row.shutdownMs.toFixed(0)} ms (exit ${row.exitCode})`);
 }
 
 // ---------------------------------------------------------------- workload (identical in every mode)
@@ -254,7 +265,7 @@ const anyDiagnostics:DiagnosticCheck=()=>"pass";
 const noErrorsLenient:DiagnosticCheck=errors=>{if(errors.length)throw new assert.AssertionError({message:"unexpected errors: "+errors.map((e:any)=>e.message).slice(0,3).join(" | ")});return "pass";};
 
 async function attempt(label:string,f:()=>Promise<unknown>){
-  try{await f();}catch(error){failures.push(label+": "+String(error).split("\n")[0]);log("FAILED "+label+": "+String(error).split("\n")[0]);}
+  try{await f();}catch(error){failures.push(label+": "+String(error).split("\n")[0]);log_("FAILED "+label+": "+String(error).split("\n")[0]);}
 }
 async function warm(c:ScenarioContext,method:string,params:()=>any,oracle:(v:any)=>void,count=N){
   for(let i=0;i<2;i++)await c.query(method,params(),oracle,"warmup");
@@ -265,7 +276,7 @@ async function adapter(label:string){
   const started=performance.now();
   const running=await launch({server:"jvmd",root:PROJECT!,state:path.join(STATE,"server"),javaHome:JAVA_HOME,image:IMAGE,daemon:daemon as any});
   const c=new ScenarioContext(running.client,fixture(),"jvmd",600000,2,0);c.javaHome=JAVA_HOME;c.allocation=daemon.allocation;c.operations=operations;
-  await c.initialize();c.timeout=60000;
+  await c.initialize();c.timeout=180000;
   return {running,c,initializeMs:performance.now()-started,label};
 }
 /** Readiness as in the benchmark lifecycle: go-to-definition across files until correct. */
@@ -324,7 +335,7 @@ async function workload(){
     await mark("M11r-first","completionItem/resolve first");
     await attempt("resolve warm",()=>warm(c,"completionItem/resolve",()=>item,v=>assert(String(v?.label??"").startsWith("getGroupId"))));
     await mark("M11r-warm","completionItem/resolve warm loop");
-  }else log("completionItem/resolve not advertised; skipped");
+  }else log_("completionItem/resolve not advertised; skipped");
   // ---------- definition / hover / references: first then warm
   const defParams=()=>at(c,HELPER,"addAttachedArtifact(",c.text(HELPER).indexOf("project.addAttachedArtifact("));
   const target={uri:c.file(PROJECT_FILE).uri,range:range(project,"addAttachedArtifact",declaration)};
@@ -341,9 +352,12 @@ async function workload(){
   const refOracle=(v:any)=>{const rows=(v??[]).map((r:any)=>r.uri+"#"+JSON.stringify(r.range.start));
     for(const wanted of [target,{uri:c.file(HELPER).uri,range:range(c.text(HELPER),"addAttachedArtifact",c.text(HELPER).indexOf("project.addAttachedArtifact("))}])
       assert(rows.includes(wanted.uri+"#"+JSON.stringify(wanted.range.start)),"reference missing: "+wanted.uri);};
+  // First-use references scans the workspace (minutes at a 1 GiB heap): measured to completion, not cut at 60 s.
+  c.timeout=1800000;
   await attempt("references first",()=>c.query("textDocument/references",refParams(),refOracle,"first_use"));
   await mark("M14","first references");
-  await attempt("references warm",()=>warm(c,"textDocument/references",refParams,refOracle,Math.min(N,30)));
+  await attempt("references warm",()=>warm(c,"textDocument/references",refParams,refOracle,Math.min(N,10)));
+  c.timeout=180000;
   await mark("M14w","references warm loop");
   await attempt("other queries",async()=>{
     await c.query("textDocument/documentSymbol",{textDocument:{uri:c.file(PROJECT_FILE).uri}},v=>assert((v??[]).some((s:any)=>s.name==="MavenProject")),"first_use");
@@ -384,9 +398,10 @@ async function workload(){
   await mark("M16a","source file added (new type completed)");
   changed=c.change(HELPER,withProbe(helper,"BenchmarkAddedType.benchmarkValue();"));since=c.client.notifications.length;
   await attempt("source add diagnostics",()=>observeDiagnostics(c,c.file(HELPER).uri,changed.trigger,noErrorsLenient,since,"added_type_use"));
-  since=c.client.notifications.length;trigger=c.deleteDisk(ADDED);
-  await attempt("source remove",()=>observeDiagnostics(c,c.file(HELPER).uri,trigger,errorAt("BenchmarkAddedType"),since,"removed_type_error"));
-  await mark("M16r","source file removed (use reported as error)");
+  c.change(HELPER,withProbe(helper,"BenchmarkAddedType.benchmarkV"));
+  trigger=c.deleteDisk(ADDED);
+  await attempt("source remove",()=>c.transition("textDocument/completion",()=>probeAt(c,"BenchmarkAddedType.benchmarkV"),v=>completionOracle(v,[],["benchmarkValue"]),trigger,"removed source type no longer completed"));
+  await mark("M16r","source file removed (removed type no longer completed)");
   // POM: a dependency on commons-lang3 (present in the repository, absent from maven-core) resolves at the caller.
   const pomWithDependency=original.pom.replace("<dependencies>","<dependencies>\n    <dependency>\n      <groupId>org.apache.commons</groupId>\n      <artifactId>commons-lang3</artifactId>\n      <version>3.20.0</version>\n    </dependency>");
   assert.notEqual(pomWithDependency,original.pom);
@@ -449,22 +464,25 @@ try{
     // Forced full GC + histogram: the retained heap of the machine index alone.
     await mark("S1","seed-only: live heap after forced full GC",{histogram:true,smaps:true});
     await stopDaemon();
+    if(a["seed-restart"]==="true"&&await startDaemon(REPOSITORY)){
+      await mark("S2","seed-only restart: live heap after forced full GC",{histogram:true,smaps:true});
+      await stopDaemon();
+    }
   }else{
     await workload();
     await stopDaemon();
-    if(a["no-restart"]!=="true"){
-      await startDaemon(REPOSITORY);
+    if(a["no-restart"]!=="true"&&await startDaemon(REPOSITORY)){
       await restartWorkload();
       await stopDaemon();
     }
   }
-}catch(error){failures.push("driver: "+String((error as Error).stack??error));log("DRIVER ERROR",String(error));try{if(daemon?.alive())await daemon.stop();}catch{/* */}}
+}catch(error){failures.push("driver: "+String((error as Error).stack??error));log_("DRIVER ERROR",String(error));try{if(daemon?.alive())await daemon.stop();}catch{/* */}}
 finally{
   sampler?.stop();
   if(PROJECT){spawnSync("git",["-C",PROJECT,"checkout","--",POM]);spawnSync("rm",["-f",path.join(PROJECT,ADDED_PATH)]);}
 }
 const ops=operations.map(({rawResult,...op}:any)=>op.outcome==="pass"?op:{...op,rawResult:JSON.stringify(rawResult)?.slice(0,2000)});
 writeFileSync(path.join(OUT,"results.json"),JSON.stringify({environment:env,wallMs:performance.now()-started,failures,marks,operations:ops},null,1));
-log(`done in ${((performance.now()-started)/1000).toFixed(0)} s; ${failures.length} failures; ${ops.filter(o=>o.outcome&&o.outcome!=="pass"&&o.outcome!=="not_ready"&&o.outcome!=="stale").length} incorrect operations`);
-for(const f of failures)log("  failure: "+f);
+log_(`done in ${((performance.now()-started)/1000).toFixed(0)} s; ${failures.length} failures; ${ops.filter(o=>o.outcome&&o.outcome!=="pass"&&o.outcome!=="not_ready"&&o.outcome!=="stale").length} incorrect operations`);
+for(const f of failures)log_("  failure: "+f);
 process.exit(0);

@@ -1,0 +1,118 @@
+name: JVMD memory profile
+
+# Reproduces docs/jvmd-memory-allocation-profile.md: one job per profiling mode over the pinned apache/maven
+# lifecycle, plus the seed-scaling experiment. Raw evidence (JFR, HPROF, NMT, smaps, histograms) is uploaded
+# as workflow artifacts; nothing large is committed. Informational only, never a gate.
+on:
+  workflow_dispatch:
+    inputs:
+      modes:
+        description: Comma-separated profiling modes
+        default: 'control,exact,alloc,live,retention,nmt,native,rss,pressure,scale'
+
+permissions:
+  contents: read
+
+env:
+  APACHE_MAVEN: 5cd1b60264101080c712accd605180a4bd9222e0
+  ASYNC_PROFILER: https://github.com/async-profiler/async-profiler/releases/download/v4.1/async-profiler-4.1-linux-x64.tar.gz
+  MAT: https://download.eclipse.org/mat/1.16.1/rcp/MemoryAnalyzer-1.16.1.20250109-linux.gtk.x86_64.zip
+
+jobs:
+  profile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [control, exact, alloc, live, retention, nmt, native, rss, pressure, scale]
+    steps:
+      - name: Select mode
+        id: select
+        run: echo "run=${{ contains(format(',{0},', inputs.modes || 'control,exact,alloc,live,retention,nmt,native,rss,pressure,scale'), format(',{0},', matrix.mode)) }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        if: steps.select.outputs.run == 'true'
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        if: steps.select.outputs.run == 'true'
+        with:
+          node-version: 24.21.0
+      - name: Cache third-party Maven dependencies
+        if: steps.select.outputs.run == 'true'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.m2/repository
+            !~/.m2/repository/dev/jvmd
+          key: maven-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: maven-${{ runner.os }}-${{ runner.arch }}-
+      - name: Install pinned JDK 25, async-profiler and Eclipse MAT
+        if: steps.select.outputs.run == 'true'
+        run: |
+          d="$RUNNER_TEMP/downloads"; mkdir -p "$d" "$RUNNER_TEMP/tools"
+          curl -fsSL --retry 3 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz' -o "$d/jdk25.tar.gz"
+          echo "dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e  $d/jdk25.tar.gz" | sha256sum -c -
+          tar -xzf "$d/jdk25.tar.gz" -C "$RUNNER_TEMP/tools"
+          curl -fsSL --retry 3 "$ASYNC_PROFILER" | tar -xz -C "$RUNNER_TEMP/tools"
+          curl -fsSL --retry 3 "$MAT" -o "$d/mat.zip" && unzip -q "$d/mat.zip" -d "$RUNNER_TEMP/tools/mat"
+          sed -i 's/^-Xmx.*/-Xmx6g/' "$RUNNER_TEMP/tools/mat/mat/MemoryAnalyzer.ini"
+          echo "JAVA_HOME=$RUNNER_TEMP/tools/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/tools/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
+          echo "ASYNC_PROFILER_HOME=$RUNNER_TEMP/tools/async-profiler-4.1-linux-x64" >> "$GITHUB_ENV"
+          echo "MAT_HOME=$RUNNER_TEMP/tools/mat/mat" >> "$GITHUB_ENV"
+      - name: Build JVMD
+        if: steps.select.outputs.run == 'true'
+        run: mvn -B -q -DskipTests install && bash jvmd-dist/assemble.sh
+      - name: Cache apache/maven fixture
+        if: steps.select.outputs.run == 'true'
+        id: project
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ${{ runner.temp }}/apache-maven
+            ${{ runner.temp }}/apache-maven-repository
+          key: apache-maven-${{ env.APACHE_MAVEN }}-v1
+      - name: Prepare apache/maven fixture
+        if: steps.select.outputs.run == 'true' && steps.project.outputs.cache-hit != 'true'
+        run: |
+          git clone -q https://github.com/apache/maven.git "$RUNNER_TEMP/apache-maven"
+          git -C "$RUNNER_TEMP/apache-maven" checkout -q "$APACHE_MAVEN"
+          cd "$RUNNER_TEMP/apache-maven"
+          mvn -B -q -DskipTests -Dmaven.repo.local="$RUNNER_TEMP/apache-maven-repository" -Drat.skip -Dspotless.skip -Dcheckstyle.skip -Denforcer.skip install
+      - name: Profile
+        if: steps.select.outputs.run == 'true'
+        run: |
+          out="$RUNNER_TEMP/memory"; mkdir -p "$out"
+          common=(--project "$RUNNER_TEMP/apache-maven" --project-repository "$RUNNER_TEMP/apache-maven-repository")
+          case "${{ matrix.mode }}" in
+            pressure) node benchmarks/memory/profile.ts --mode exact --heap 512 --output "$out/pressure" "${common[@]}" ;;
+            scale)
+              for n in 0 100 250 350; do
+                python3 benchmarks/memory/subset_repository.py "$RUNNER_TEMP/apache-maven-repository" "$RUNNER_TEMP/repos/n$n" --count "$n"
+                node benchmarks/memory/profile.ts --mode exact --seed-only --seed-restart --output "$out/scale-n$n" --repository "$RUNNER_TEMP/repos/n$n"
+              done
+              node benchmarks/memory/profile.ts --mode exact --seed-only --seed-restart --output "$out/scale-full" --repository "$RUNNER_TEMP/apache-maven-repository"
+              for j in javax.inject-1.jar commons-lang3-3.20.0.jar guava-33.4.8-jre.jar groovy-4.0.15.jar; do
+                python3 benchmarks/memory/subset_repository.py "$RUNNER_TEMP/apache-maven-repository" "$RUNNER_TEMP/repos/one-${j%.jar}" --jars "$j"
+                node benchmarks/memory/profile.ts --mode exact --seed-only --output "$out/jar-${j%.jar}" --repository "$RUNNER_TEMP/repos/one-${j%.jar}"
+              done ;;
+            *) node benchmarks/memory/profile.ts --mode "${{ matrix.mode }}" --output "$out/${{ matrix.mode }}" "${common[@]}" ;;
+          esac
+      - name: Reduce
+        if: always() && steps.select.outputs.run == 'true'
+        run: |
+          out="$RUNNER_TEMP/memory"
+          python3 benchmarks/memory/analyze.py "$out"/*/ --out "$out/summary"
+          for dump in "$out"/*/dumps/*.hprof; do
+            [ -f "$dump" ] || continue
+            bash benchmarks/memory/mat.sh "$dump" "$out/summary/mat/$(basename "${dump%.hprof}")"
+            gzip -1 "$dump"
+          done
+          rm -rf "$out"/*/state "$out"/*/dumps/*.index "$out"/*/dumps/*.threads
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always() && steps.select.outputs.run == 'true'
+        with:
+          name: memory-${{ matrix.mode }}
+          retention-days: 90
+          path: ${{ runner.temp }}/memory

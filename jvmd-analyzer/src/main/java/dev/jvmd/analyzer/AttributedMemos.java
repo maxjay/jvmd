@@ -37,7 +37,7 @@ final class AttributedMemos implements AutoCloseable {
     private String lastAttributedMemoMiss="";
 
     /** Bump when the attributed result, its canonical encoding or its certificate rules change (§81). */
-    static final SemanticMemoStore.Function ATTRIBUTED=new SemanticMemoStore.Function("attributed-diagnostics",4);
+    static final SemanticMemoStore.Function ATTRIBUTED=new SemanticMemoStore.Function("attributed-diagnostics",5);
 
     private <T> Optional<T> refuseAttributed(String reason){
         attributedMemoRefusals++;attributedMemoRefusalReasons.merge(reason,1L,Long::sum);return Optional.empty();
@@ -343,7 +343,34 @@ final class AttributedMemos implements AutoCloseable {
      * the package entries (own package and star imports, already bound) must stay absent, as must a
      * top-level package of that name.
      */
-    private Optional<TreeMap<QueryProof.Key,Hash256>> negatives(String text,Bindings.Snapshot attributed,List<?> problems,Set<String> packages,LogicalSources logical){
+    private static final java.util.regex.Pattern STATIC_IMPORTED=java.util.regex.Pattern.compile("\\bimport\\s+static\\s+([\\w$.]+?)\\s*\\.\\s*(?:\\*|[\\w$]+)\\s*;");
+    /**
+     * Bindings that make a negative resolution precise despite static imports: a name could newly
+     * resolve to a static member or member type of a statically imported class, so each such class
+     * must be bound. A source unit of these roots is bound by its P_diag entry (it must be a recorded
+     * dependency); a class of another module's class directory by its {@code reactor-class:} entry;
+     * any other class comes from an archive or the platform (static key), and an absence entry binds
+     * a source or class-directory copy appearing later. Every dotted prefix is checked, because a
+     * nested class's top-level unit is not known from the text. Empty when a class is not bound.
+     */
+    private Optional<TreeMap<QueryProof.Key,Hash256>> staticImportBindings(String text,Set<Path> dependencies,Bindings.Snapshot attributed,LogicalSources logical){
+        var result=new TreeMap<QueryProof.Key,Hash256>();var matcher=STATIC_IMPORTED.matcher(text);
+        var roots=context().sources().stream().map(root->root.toAbsolutePath().normalize()).toList();var directories=perClassDirectories();
+        while(matcher.find()){
+            var parts=matcher.group(1).split("\\.");
+            for(int length=2;length<=parts.length;length++){
+                String binary=String.join(".",Arrays.copyOf(parts,length)),relative=binary.replace('.','/');
+                var source=roots.stream().map(root->root.resolve(relative+".java")).filter(Files::isRegularFile).findFirst();
+                if(source.isPresent()){if(!dependencies.contains(source.get()))return Optional.empty();continue;}
+                if(directories.stream().anyMatch(directory->Files.isRegularFile(directory.resolve(relative+".class")))){
+                    if(!attributed.classDirectoryTypes().containsKey(binary))return Optional.empty();continue;
+                }
+                result.put(new QueryProof.Key(QueryProof.Domain.NEGATIVE_RESOLUTION,parts[length-1]+"@"+binary),absenceIdentity(binary,logical));
+            }
+        }
+        return Optional.of(result);
+    }
+    private Optional<TreeMap<QueryProof.Key,Hash256>> negatives(String text,Bindings.Snapshot attributed,List<?> problems,Set<String> packages,LogicalSources logical,Set<Path> dependencies){
         var simple=new TreeSet<String>(attributed.unresolvedTypeNames());var qualified=new TreeSet<String>();
         for(var problem:problems){
             var value=(CompilerPool.Problem)problem;
@@ -362,7 +389,12 @@ final class AttributedMemos implements AutoCloseable {
         for(String name:simple){
             if(!javax.lang.model.SourceVersion.isIdentifier(name))return refuseAttributed("negative-unproven:non-simple-name");
             var plan=NamespaceResolutionProofs.plan(text,name,null);
-            if(!plan.precise())return refuseAttributed("negative-unproven:static-import");
+            // With no resolved winner, a plan is imprecise only because of static imports.
+            if(!plan.precise()){
+                var bound=staticImportBindings(text,dependencies,attributed,logical);
+                if(bound.isEmpty())return refuseAttributed("negative-unproven:static-import");
+                result.putAll(bound.get());
+            }
             var domains=new TreeSet<String>(plan.domains());domains.add(name);
             for(String binary:domains){
                 int split=binary.lastIndexOf('.');String pkg=split<0?"":binary.substring(0,split);
@@ -419,7 +451,12 @@ final class AttributedMemos implements AutoCloseable {
         // Context warnings (processor fidelity notes) belong to the context and are part of the static
         // key; only warnings about this query (faults, superseded inputs, originating modules) block a record.
         var queryWarnings=new ArrayList<>(envelope.warnings());queryWarnings.removeAll(context().warnings());
-        if(!queryWarnings.isEmpty())return;
+        // "originates: <gav>" names the module an error's symbol comes from: a function of the
+        // diagnostics and the bound inputs, so it is part of the result. Any other query warning
+        // (a fault, superseded inputs) means the result is not a complete answer.
+        var resultWarnings=queryWarnings.stream().filter(warning->warning.startsWith("originates: ")).distinct().sorted().toList();
+        queryWarnings.removeAll(resultWarnings);
+        if(!queryWarnings.isEmpty()){refuseAttributed("query-warning:"+queryWarnings.get(0).replaceAll("[:\\s].*$",""));return;}
         if(context().warnings().stream().anyMatch(warning->warning.startsWith("unsaved_processor_inputs"))){refuseAttributed("unsaved-processor-inputs");return;}
         var projection=projection(file);if(projection.isEmpty()){refuseAttributed("projection-unavailable");return;}
         try{
@@ -447,7 +484,7 @@ final class AttributedMemos implements AutoCloseable {
                 packages.put(pkg,files.get());
             }
             var diagnostics=(List<?>)((Map<?,?>)envelope.result()).get("diagnostics");
-            var negatives=negatives(text,attributed,diagnostics,packageNames,logical);if(negatives.isEmpty())return;
+            var negatives=negatives(text,attributed,diagnostics,packageNames,logical,dependencies.keySet());if(negatives.isEmpty())return;
             var resources=processorResources(file,logical);if(resources.isEmpty())return;negatives.get().putAll(resources.get());
             var reactor=reactorClasses(attributed,packageNames,observed);if(reactor.isEmpty())return;negatives.get().putAll(reactor.get());
             var problems=new ArrayList<Map<String,Object>>();
@@ -463,7 +500,7 @@ final class AttributedMemos implements AutoCloseable {
                 problems.add(row);
             }
             var result=new LinkedHashMap<String,Object>();
-            result.put("tier",envelope.tier());result.put("diagnostics",problems);
+            result.put("tier",envelope.tier());result.put("diagnostics",problems);result.put("warnings",resultWarnings);
             result.put("api",contribution.apiFingerprint());
             result.put("p_diag",projection.get().hex());
             result.put("exported",contribution.exportedNames().stream().sorted().toList());
@@ -678,7 +715,8 @@ final class AttributedMemos implements AutoCloseable {
             var unresolved=new LinkedHashSet<String>();data.path("unresolved").forEach(value->unresolved.add(value.asText()));
             var contribution=new FileSemanticContribution(path,hash,data.path("api").asText(),dependencies,exported,unresolved);
             projections.put(path,new Projection(hash,Hash256.fromHex(data.path("p_diag").asText())));
-            var envelope=new Envelope(data.path("tier").asInt(),"live",false,null,contextWarnings(),Map.of("diagnostics",List.copyOf(problems)));
+            var warnings=new ArrayList<>(contextWarnings());data.path("warnings").forEach(value->warnings.add(value.asText()));
+            var envelope=new Envelope(data.path("tier").asInt(),"live",false,null,List.copyOf(warnings),Map.of("diagnostics",List.copyOf(problems)));
             analyzer.dependencyGraph().recordFocused(path,dependencies);analyzer.resolveContribution(contribution);knownDependencies.put(path,Set.copyOf(dependencies));
             String broad=Analyzer.broadDiagnosticStamp(observed);
             analyzer.diagnosticStore().put(path,hash,context().generation(),broad,envelope,contribution.apiFingerprint(),dependencies,contribution);

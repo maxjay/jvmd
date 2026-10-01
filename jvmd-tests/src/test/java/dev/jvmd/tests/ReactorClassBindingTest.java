@@ -26,6 +26,7 @@ class ReactorClassBindingTest {
     private static final String APP="g:app:1",LIB="g:lib:1";
     private Path library,librarySources,sources;
     private SemanticMemoStore memos;
+    private List<String> units=List.of("p/A.java","p/B.java","q/C.java","q/D.java");
 
     @BeforeEach void reactor()throws Exception{
         librarySources=Files.createDirectories(root.resolve("lib/src/main/java"));library=Files.createDirectories(root.resolve("lib/target/classes"));
@@ -69,9 +70,9 @@ class ReactorClassBindingTest {
     private Round diagnose()throws Exception{
         var compiled=new TreeSet<String>();var diagnostics=new TreeMap<String,String>();
         try(var analyzer=analyzer()){
-            for(String unit:List.of("p/A.java","p/B.java","q/C.java","q/D.java")){
+            for(String unit:units){
                 long before=queries(analyzer);Path file=sources.resolve(unit);
-                diagnostics.put(unit,analyzer.diagnostics(file,Files.readString(file)).result().toString());
+                var envelope=analyzer.diagnostics(file,Files.readString(file));diagnostics.put(unit,envelope.result()+" warnings="+envelope.warnings());
                 if(queries(analyzer)>before)compiled.add(unit);
             }
             analyzer.awaitMemoWrites();
@@ -79,6 +80,31 @@ class ReactorClassBindingTest {
             assertThat((Map<?,?>)memo.get("refusal_reasons")).as(memo.toString()).isEmpty();
         }
         return new Round(compiled,diagnostics);
+    }
+
+    /**
+     * A name left unresolved under static imports is bound through the statically imported classes:
+     * a member added to a source class of this module or to a library class recompiles the unit.
+     */
+    @Test void unresolvedNamesUnderStaticImportsAreBound()throws Exception{
+        write(sources,"q/Consts.java","package q; public class Consts { public static final int ONE=1; }");
+        write(sources,"q/E.java","package q; import static q.Consts.*; class E { int m(){ return MORE; } }");
+        write(sources,"q/F.java","package q; import static lib.Lib.*; class F { int k(){ return EXTRA; } }");
+        units=List.of("q/Consts.java","q/E.java","q/F.java","q/D.java");
+        var cold=diagnose();
+        assertThat(cold.diagnostics().get("q/E.java")).contains("cant.resolve");assertThat(cold.diagnostics().get("q/F.java")).contains("cant.resolve");
+        assertThat(diagnose().compiled()).as("both records were written: no-change restart").isEmpty();
+
+        write(sources,"q/Consts.java","package q; public class Consts { public static final int ONE=1; public static final int MORE=2; }");
+        var source=diagnose();
+        assertThat(source.compiled()).as("a static member added to a statically imported source class").contains("q/E.java").doesNotContain("q/F.java","q/D.java");
+        assertThat(source.diagnostics().get("q/E.java")).doesNotContain("cant.resolve");
+
+        write(librarySources,"lib/Lib.java","package lib; public class Lib extends Base { public static int value(){ return 2; } public static final int EXTRA=3; }");
+        buildLibrary();
+        var library=diagnose();
+        assertThat(library.compiled()).as("a static member added to a statically imported library class").contains("q/F.java").doesNotContain("q/D.java");
+        assertThat(library.diagnostics().get("q/F.java")).doesNotContain("cant.resolve");
     }
 
     @Test void libraryClassesAreBoundClassByClass()throws Exception{
@@ -95,6 +121,9 @@ class ReactorClassBindingTest {
         var signature=diagnose();
         assertThat(signature.compiled()).as("a supertype's signature change recompiles its users only").containsExactly("p/A.java");
         assertThat(signature.diagnostics().get("p/A.java")).contains("possible lossy conversion");
+        var unchanged=diagnose();
+        assertThat(unchanged.compiled()).as("no-change restart after the signature change").isEmpty();
+        assertThat(unchanged.diagnostics()).as("restored diagnostics and warnings equal the computed ones").isEqualTo(signature.diagnostics());
 
         write(librarySources,"lib/Missing.java","package lib; public class Missing { }");
         buildLibrary();

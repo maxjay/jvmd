@@ -24,6 +24,26 @@ class SemanticMemoStoreTest {
     private static CurrentIdentities current(Map<QueryProof.Key,Hash256> values){return key->Optional.ofNullable(values.get(key));}
     private static byte[] bytes(String value){return value.getBytes(StandardCharsets.UTF_8);}
 
+    /**
+     * Resolving a certificate dependency can restore or attribute another unit, and other threads
+     * (the background writer) must still publish meanwhile: a lookup never holds the store while it
+     * asks for current identities.
+     */
+    @Test void dependencyResolutionDoesNotHoldTheStore()throws Exception{
+        var store=new SemanticMemoStore(root);
+        var key=StaticKey.of(F,"content-1");var other=StaticKey.of(F,"content-2");
+        store.put(new MemoRecord(key,certificate("a1","b1"),Coverage.PRECISE,SemanticCompleteness.COMPLETE,Result.present(bytes("R1"))));
+        try(var executor=java.util.concurrent.Executors.newSingleThreadExecutor()){
+            var hit=store.lookup(key,dependency->{
+                executor.submit(()->{store.put(new MemoRecord(other,Certificate.empty(),Coverage.PRECISE,SemanticCompleteness.COMPLETE,Result.present(bytes("R2"))));return null;})
+                        .get(10,java.util.concurrent.TimeUnit.SECONDS);
+                return Optional.of(dependency.equals(exact(A))?hash("a1"):hash("b1"));
+            });
+            assertThat(hit).isInstanceOf(Lookup.Hit.class);
+        }
+        assertThat(store.lookup(other,ignored->Optional.empty())).isInstanceOf(Lookup.Hit.class);
+    }
+
     @Test void reusableOnlyWhenStaticKeyAndEveryDependencyAreEstablishedEqual()throws Exception{
         var store=new SemanticMemoStore(root);
         var key=StaticKey.of(F,"content-1","platform-1","classpath-context-1");

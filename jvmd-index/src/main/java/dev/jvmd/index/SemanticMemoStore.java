@@ -120,33 +120,46 @@ public final class SemanticMemoStore {
     /**
      * Find a record whose static key matches and whose every certificate dependency is currently
      * established equal. Completeness is returned exactly as persisted.
+     *
+     * The store's monitor guards only file access and counters, never {@code current}: resolving a
+     * dependency may take other locks or do real work (restoring or attributing a dependency), and
+     * a writer on another thread must be able to publish meanwhile.
      */
-    public synchronized Lookup lookup(StaticKey key,CurrentIdentities current)throws Exception{
+    public Lookup lookup(StaticKey key,CurrentIdentities current)throws Exception{
         Objects.requireNonNull(key);Objects.requireNonNull(current);
         Path directory=directory(key);
         List<Path> variants;
-        try(var stream=Files.list(directory)){variants=stream.filter(path->path.getFileName().toString().endsWith(".memo")).sorted().toList();}
-        catch(NoSuchFileException|NotDirectoryException missing){misses++;return new Lookup.Miss("no-record");}
+        synchronized(this){
+            try(var stream=Files.list(directory)){variants=stream.filter(path->path.getFileName().toString().endsWith(".memo")).sorted().toList();}
+            catch(NoSuchFileException|NotDirectoryException missing){misses++;return new Lookup.Miss("no-record");}
+        }
         String reason="no-valid-variant";
         variant:
         for(Path path:variants){
             MemoRecord record;
-            try{
-                byte[] bytes=Files.readAllBytes(path);bytesRead+=bytes.length;
-                record=decode(bytes);
-            }catch(IOException|RuntimeException invalid){
-                corrupt++;reason="corrupt";deleteQuietly(path);continue;
+            synchronized(this){
+                try{
+                    byte[] bytes=Files.readAllBytes(path);bytesRead+=bytes.length;
+                    record=decode(bytes);
+                }catch(NoSuchFileException evicted){continue;}
+                catch(IOException|RuntimeException invalid){
+                    corrupt++;reason="corrupt";deleteQuietly(path);continue;
+                }
+                if(!record.key().equals(key)){corrupt++;reason="foreign-key";deleteQuietly(path);continue;}
             }
-            if(!record.key().equals(key)){corrupt++;reason="foreign-key";deleteQuietly(path);continue;}
             for(var dependency:record.certificate().dependencies().dependencies()){
                 var now=current.current(dependency.key());
-                if(now==null||now.isEmpty()){unknownDependencies++;reason="unknown-dependency:"+dependency.key().domain();continue variant;}
-                if(!now.get().equals(dependency.identity())){staleCertificates++;reason="stale-dependency:"+dependency.key().domain();continue variant;}
+                if(now==null||now.isEmpty()){synchronized(this){unknownDependencies++;}reason="unknown-dependency:"+dependency.key().domain();continue variant;}
+                if(!now.get().equals(dependency.identity())){synchronized(this){staleCertificates++;}reason="stale-dependency:"+dependency.key().domain();continue variant;}
             }
-            try{Files.setLastModifiedTime(path,FileTime.fromMillis(System.currentTimeMillis()));}catch(IOException ignored){}
-            hits++;return new Lookup.Hit(record);
+            synchronized(this){
+                try{Files.setLastModifiedTime(path,FileTime.fromMillis(System.currentTimeMillis()));}catch(IOException ignored){}
+                hits++;
+            }
+            return new Lookup.Hit(record);
         }
-        misses++;return new Lookup.Miss(reason);
+        synchronized(this){misses++;}
+        return new Lookup.Miss(reason);
     }
 
     /** Publish one record atomically. Loss or failure only causes a later miss (§80). */

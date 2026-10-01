@@ -53,6 +53,52 @@ class CompletedDependencyCaptureTest {
         assertThat(missing).as("source units javac completed but capture omitted").isEmpty();
     }
 
+    /**
+     * The same soundness check for class directories (another reactor module's output): each fixture
+     * unit compiled alone against the fixture's class output; every class javac completed from that
+     * directory must be in the captured class-directory types.
+     */
+    @Test void capturedClassDirectoryTypesCoverJavacsCompletedClassFiles()throws Exception{
+        var units=DiagnosticProjectionSufficiencyTest.baseline();
+        Path library=root.resolve("library-src"),classes=Files.createDirectories(root.resolve("library-classes"));
+        // The fixture's lib/ units are the library module; its consumers (some with intended errors) are the app.
+        for(var entry:units.entrySet())if(entry.getKey().startsWith("lib/")){var file=library.resolve(entry.getKey());Files.createDirectories(file.getParent());Files.writeString(file,entry.getValue());}
+        var compiler=ToolProvider.getSystemJavaCompiler();
+        try(var manager=compiler.getStandardFileManager(null,Locale.ROOT,null)){
+            List<Path> files;try(var walk=Files.walk(library)){files=walk.filter(path->path.toString().endsWith(".java")).toList();}
+            var out=new java.io.StringWriter();
+            assertThat(compiler.getTask(out,manager,null,List.of("--release","25","-d",classes.toString()),null,manager.getJavaFileObjectsFromPaths(files)).call()).as(out.toString()).isTrue();
+        }
+        var missing=new TreeMap<String,Set<String>>();int checked=0;long completions=0;
+        for(var unit:units.keySet()){
+            if(unit.startsWith("lib/"))continue;
+            Path sources=root.resolve("alone/"+checked++),file=sources.resolve(unit);
+            Files.createDirectories(file.getParent());Files.writeString(file,units.get(unit));
+            Set<String> captured;
+            try(var analyzer=new Analyzer(new FileStateRegistry())){
+                analyzer.configure(new Analyzer.Context("fixture:app:1","25",List.of(classes),List.of(sources),"capture-"+checked,
+                        Map.of(classes.toString(),"fixture:library:1",sources.toString(),"fixture:app:1")),null,256L*1024*1024);
+                analyzer.documents(new Documents(new FileStateRegistry()));
+                captured=analyzer.bindings(file,Files.readString(file),null).result().classDirectoryTypes().keySet();
+            }
+            var completed=new TreeSet<>(javacClassFiles(file,sources,classes));completions+=completed.size();completed.removeAll(captured);
+            if(!completed.isEmpty())missing.put(unit,completed);
+        }
+        assertThat(checked).isGreaterThan(10);assertThat(completions).as("javac read library classes").isGreaterThan(checked);
+        assertThat(missing).as("classes javac completed from the class directory but capture omitted").isEmpty();
+    }
+    /** Top-level binary names of every class javac completed from {@code classes} while attributing {@code file} alone. */
+    private Set<String> javacClassFiles(Path file,Path sources,Path classes)throws Exception{
+        var compiler=ToolProvider.getSystemJavaCompiler();
+        try(var manager=compiler.getStandardFileManager(null,Locale.ROOT,null)){
+            var task=(JavacTask)compiler.getTask(new java.io.StringWriter(),manager,d->{},
+                    List.of("-proc:none","--release","25","-sourcepath",sources.toString(),"-classpath",classes.toString(),"-implicit:none"),null,manager.getJavaFileObjects(file));
+            var entered=task.getClass().getMethod("enter",Iterable.class).invoke(task,task.parse());
+            task.getClass().getMethod("analyze",Iterable.class).invoke(task,entered);
+            return Bindings.completedClassFiles(task,classes);
+        }
+    }
+
     private Set<Path> javacCompletion(Path file)throws Exception{
         var compiler=ToolProvider.getSystemJavaCompiler();
         try(var manager=compiler.getStandardFileManager(null,Locale.ROOT,null)){

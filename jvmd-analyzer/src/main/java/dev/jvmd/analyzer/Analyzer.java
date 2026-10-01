@@ -1329,7 +1329,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 while(focused.size()>32)focused.remove(focused.keySet().iterator().next());
                 diagnosticStore.put(file,hash,context.generation(),diagnosticStamp(file,observed),envelope,
                         apiFingerprint(file),snapshot.dependencies(),contribution(file));
-                attributedMemos.memoize(file,hash,envelope,contribution(file),snapshot);
+                attributedMemos.memoize(file,hash,envelope,contribution(file),snapshot,observed);
                 publishSource(file,hash,stamp,semanticPublisherContextFingerprint(observed,stamp),snapshot,result.tier());
             }
         }
@@ -1372,7 +1372,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(outcome.warnings().isEmpty())diagnosticStore.put(path,sourceHash,generation,diagnosticStamp(path,observed),envelope,
                 apiFingerprint(path),outcome.result()==null?Set.of():outcome.result().dependencies(),
                 outcome.tier()==2?contribution(path):null);
-        if(outcome.warnings().isEmpty()&&outcome.tier()==2)attributedMemos.memoize(path,sourceHash,envelope,contribution(path),outcome.result());
+        if(outcome.warnings().isEmpty()&&outcome.tier()==2)attributedMemos.memoize(path,sourceHash,envelope,contribution(path),outcome.result(),observed);
         return envelope;
     }
     private String residentContextKey(Path file,String patched,int start,CompilerInputs.Snapshot inputs,boolean qualified){

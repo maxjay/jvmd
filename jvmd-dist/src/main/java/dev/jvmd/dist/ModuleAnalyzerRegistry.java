@@ -98,6 +98,7 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
                 for(String key:List.of("failures","pending_scc","pending_writes"))if(memo.get(key) instanceof Number number)purposes.merge("memo_"+key,number.longValue(),Long::sum);
                 if(memo.get("last_failure") instanceof String failure&&!failure.isEmpty())lastFailure=failure;
                 if(memo.get("last_miss") instanceof String miss&&miss.startsWith("stale"))purposes.put("last_stale:"+miss,1L);
+                if(memo.get("scc_unknown_sample") instanceof String unknown&&!unknown.isEmpty())purposes.put("scc_unknown:"+unknown,1L);
                 if(memo.get("miss_reasons") instanceof Map<?,?> missed)missed.forEach((reason,count)->{if(count instanceof Number number)purposes.merge("miss:"+reason,number.longValue(),Long::sum);});
                 if(memo.get("refusal_reasons") instanceof Map<?,?> refusals)
                     refusals.forEach((reason,count)->{if(count instanceof Number number)reasons.merge(String.valueOf(reason),number.longValue(),Long::sum);});

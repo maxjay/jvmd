@@ -99,6 +99,7 @@ class SemanticMemoStoreTest {
                 new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"source-roots-content:g:a:1|main"),
                 new QueryProof.Key(QueryProof.Domain.NAMESPACE,"source-roots:g:a:1|main"),
                 new QueryProof.Key(QueryProof.Domain.NAMESPACE,"package:/home/me/repo|p"),
+                new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"reactor-class:/home/me/repo/target/classes/p/A.class"),
                 new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"logical-unit:/home/me/repo/src/main/java|p/A.java"),
                 new QueryProof.Key(QueryProof.Domain.EXACT_SYMBOL,"local 0123456789ab_10_x")))
             assertThatThrownBy(()->new Certificate(new QueryProof(List.of(new QueryProof.Dependency(key,hash("x"))))))
@@ -112,6 +113,9 @@ class SemanticMemoStoreTest {
                 new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"logical-binary:g:a:1|src/main/java|p/A.java"),
                 new QueryProof.Key(QueryProof.Domain.NAMESPACE,"package:g:a:1|main|p.q"),
                 new QueryProof.Key(QueryProof.Domain.NAMESPACE,"package:g:a:1|main|"),
+                new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"reactor-class:p.A"),
+                new QueryProof.Key(QueryProof.Domain.NAMESPACE,"class-package:p.q"),
+                new QueryProof.Key(QueryProof.Domain.NAMESPACE,"class-package:"),
                 new QueryProof.Key(QueryProof.Domain.CLASSPATH_SEARCH,"binary:p.A")))
             assertThat(PersistableProofKeys.persistable(key)).as(key.toString()).isTrue();
     }

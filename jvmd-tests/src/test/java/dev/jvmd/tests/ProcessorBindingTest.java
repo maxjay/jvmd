@@ -100,9 +100,16 @@ class ProcessorBindingTest {
         try(var relocated=analyzer(moved,memos,lombokProcessing())){
             assertThat(diagnose(relocated,moved)).as("reactor:<gav>|classes and processor slots are location-free").isEmpty();
         }
-        Files.writeString(moved.library().resolve("lib/Extra.class"),"not really a class");
+        // Another module's class output is bound class by class: an unrelated class leaves every record valid...
+        Path librarySource=root.resolve("elsewhere/worktree/library-src");
+        compile(List.of(write(librarySource,"lib/Extra.java","package lib; public class Extra { }")),moved.library(),List.of());
+        try(var unrelated=analyzer(moved,memos,lombokProcessing())){
+            assertThat(diagnose(unrelated,moved)).as("a class no unit completed or star-imports").isEmpty();
+        }
+        // ...and a signature change of a class a unit completed recompiles that unit.
+        compile(List.of(write(librarySource,"lib/Lib.java","package lib; public class Lib { public static long value(){ return 2L; } }")),moved.library(),List.of());
         try(var changed=analyzer(moved,memos,lombokProcessing())){
-            assertThat(diagnose(changed,moved)).as("a changed reactor class output is a changed static input").isNotEmpty();
+            assertThat(diagnose(changed,moved)).as("a changed reactor class P_diag").containsExactly("p/X.java");
         }
     }
 

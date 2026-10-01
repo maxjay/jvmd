@@ -34,7 +34,7 @@ class RealProjectBenchmark {
      * (Lombok modules publish the external run's diagnostics). {@code processorHits} counts external
      * results reused from the persisted processor cache.
      */
-    record Run(String label,long javac,long externalRuns,long processorHits,long restores,long writes,Map<String,Long> refusals,int units,
+    record Run(String label,long javac,long externalRuns,long processorHits,long restores,long writes,Map<String,Long> refusals,Map<String,Long> misses,int units,
                double firstCompletionMs,double diagnoseMs) { }
 
     private List<Path> units(Path checkout)throws Exception{
@@ -90,10 +90,13 @@ class RealProjectBenchmark {
             Files.writeString(dumps.resolve("real-project-status-"+label.replaceAll("[^A-Za-z0-9]+","-")+".json"),status.toPrettyString());
             var memo=status.path("attributed_memo");var refusals=new TreeMap<String,Long>();
             memo.path("refusal_reasons").fields().forEachRemaining(entry->refusals.put(entry.getKey(),entry.getValue().asLong()));
+            // Units refused at shutdown (an SCC still unproven) are counted by the next run as no-record misses.
+            var misses=new TreeMap<String,Long>();
+            memo.path("by_purpose").fields().forEachRemaining(entry->{if(entry.getKey().startsWith("miss:"))misses.put(entry.getKey().substring(5),entry.getValue().asLong());});
             long javac=memo.path("queries").asLong(),restores=memo.path("restores").asLong(),writes=memo.path("writes").asLong();
             var processing=status.path("annotation_processing");
             long external=processing.path("runs").asLong(),hits=processing.path("persisted_hits").asLong();
-            return new Run(label,javac+external,external,hits,restores,writes,refusals,units.size(),first,diagnoseMs);
+            return new Run(label,javac+external,external,hits,restores,writes,refusals,misses,units.size(),first,diagnoseMs);
         }
     }
 
@@ -135,9 +138,9 @@ class RealProjectBenchmark {
         Files.writeString(config,Files.readString(config)+"# benchmark edit\n");
         runs.add(session("A10 lombok.config edited (reactor root)",b,state));
 
-        var out=new StringBuilder("## W9 real project: ruoyi-vue-pro @ 1697112f\n\n| Run | units | javac (all) | external processor runs | persisted processor hits | memo restores | memo writes | first correct completion | diagnose all | refusals |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|---|\n");
-        for(var run:runs)out.append(String.format(Locale.ROOT,"| %s | %d | %d | %d | %d | %d | %d | %.0f ms | %.0f ms | %s |%n",run.label(),run.units(),run.javac(),
-                run.externalRuns(),run.processorHits(),run.restores(),run.writes(),run.firstCompletionMs(),run.diagnoseMs(),run.refusals()));
+        var out=new StringBuilder("## W9 real project: ruoyi-vue-pro @ 1697112f\n\n| Run | units | javac (all) | external processor runs | persisted processor hits | memo restores | memo writes | first correct completion | diagnose all | refusals | misses |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|\n");
+        for(var run:runs)out.append(String.format(Locale.ROOT,"| %s | %d | %d | %d | %d | %d | %d | %.0f ms | %.0f ms | %s | %s |%n",run.label(),run.units(),run.javac(),
+                run.externalRuns(),run.processorHits(),run.restores(),run.writes(),run.firstCompletionMs(),run.diagnoseMs(),run.refusals(),run.misses()));
         out.append('\n');notes.forEach(note->out.append("- ").append(note).append('\n'));
         System.out.println(out);
         Path target=Path.of("target/benchmarks");Files.createDirectories(target);Files.writeString(target.resolve("real-project.md"),out);

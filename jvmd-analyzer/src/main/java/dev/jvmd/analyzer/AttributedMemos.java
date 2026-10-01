@@ -37,7 +37,7 @@ final class AttributedMemos implements AutoCloseable {
     private String lastAttributedMemoMiss="";
 
     /** Bump when the attributed result, its canonical encoding or its certificate rules change (§81). */
-    static final SemanticMemoStore.Function ATTRIBUTED=new SemanticMemoStore.Function("attributed-diagnostics",3);
+    static final SemanticMemoStore.Function ATTRIBUTED=new SemanticMemoStore.Function("attributed-diagnostics",4);
 
     private <T> Optional<T> refuseAttributed(String reason){
         attributedMemoRefusals++;attributedMemoRefusalReasons.merge(reason,1L,Long::sum);return Optional.empty();
@@ -78,7 +78,7 @@ final class AttributedMemos implements AutoCloseable {
      * above the reactor root (such a file has no logical identity).
      */
     private StaticInputs.Binding staticInputs(LogicalSources logical)throws Exception{
-        var inputs=new StaticInputs(analyzer.inputFiles(),context().coordinates());
+        var inputs=new StaticInputs(analyzer.inputFiles(),context().coordinates(),context().gav());
         var options=inputs.options(context().compilerOptions());if(options.refused())return options;
         var processors=inputs.processors(context().processing(),context().compilerOptions());if(processors.refused())return processors;
         var classpath=inputs.slots(context().classpath().stream().filter(entry->!ownProcessorOutput(entry)).toList());
@@ -148,23 +148,74 @@ final class AttributedMemos implements AutoCloseable {
         return relative.substring(0,relative.length()-".java".length()).replace('/','.');
     }
     /**
-     * Binary P_diag of a unit javac reads from processor class output, from one classpath-only task
-     * per context. Capture and restore use this same reader. The dependant's own (pooled) task does
-     * not give a stable element model for class-file types: a reused javac context can drop a nested
-     * member class. Each processor run publishes a fresh output directory that nothing rewrites, and
-     * hidden units resolve there first, so within a context this reader sees the bytes the
-     * dependant's task read.
+     * Binary P_diag of a class as javac resolves it on the classpath, from one classpath-only task
+     * per context and classpath environment: units Lombok hides from the source path, and classes
+     * read from other reactor modules' class directories. Capture and restore use this same reader.
+     * The dependant's own (pooled) task does not give a stable element model for class-file types: a
+     * reused javac context can drop a nested member class. The environment identity covers every
+     * class file under the classpath directories, so a rebuilt directory gets a fresh reader, and a
+     * record is only captured when its task's environment is still current.
      */
-    private Optional<Hash256> binaryProjection(Path file,LogicalSources logical)throws Exception{
-        var id=logical.logical(file);if(id.isEmpty()||!id.get().endsWith(".java"))return Optional.empty();
-        var key=List.of(context().classpath(),context().compilerOptions());
+    private Optional<Hash256> binaryProjection(String binary,CompilerInputs.Snapshot observed)throws Exception{
+        var key=List.of(context().classpath(),context().compilerOptions(),observed.environment());
         synchronized(this){
             if(!key.equals(binaryProjectionsKey)){
                 if(binaryProjections!=null)binaryProjections.close();
                 binaryProjections=new BinaryProjections(context().classpath(),context().compilerOptions());binaryProjectionsKey=key;
             }
-            return binaryProjections.projection(binaryName(id.get()));
+            return binaryProjections.projection(binary);
         }
+    }
+    private Optional<Hash256> binaryProjection(Path file,LogicalSources logical,CompilerInputs.Snapshot observed)throws Exception{
+        var id=logical.logical(file);if(id.isEmpty()||!id.get().endsWith(".java"))return Optional.empty();
+        return binaryProjection(binaryName(id.get()),observed);
+    }
+    /** Other reactor modules' class directories on this context's classpath, in classpath order. */
+    private List<Path> perClassDirectories(){
+        return context().classpath().stream().map(entry->entry.toAbsolutePath().normalize())
+                .filter(entry->StaticInputs.perClass(entry,context().coordinates(),context().gav())).toList();
+    }
+    /** Location-free name of a class directory slot. */
+    private String slotName(Path directory){
+        String role=context().coordinates().get("role:"+directory);
+        return (role!=null?role:"reactor")+":"+context().coordinates().get(directory.toString())+(role!=null?"":"|"+directory.getFileName());
+    }
+    /**
+     * Top-level class names of one package in other reactor modules' class directories: what a star
+     * import or the unit's own package can newly resolve to. Nested and anonymous class files
+     * ({@code $}) are covered by their top-level class's P_diag.
+     */
+    private Hash256 classPackageIdentity(String pkg)throws Exception{
+        var parts=new ArrayList<Object>();
+        for(Path directory:perClassDirectories()){
+            Path folder=pkg.isEmpty()?directory:directory.resolve(pkg.replace('.','/'));
+            if(!Files.isDirectory(folder))continue;
+            var names=new TreeSet<String>();
+            try(var listing=Files.list(folder)){
+                listing.map(path->path.getFileName().toString()).filter(name->name.endsWith(".class")&&!name.contains("$")).forEach(names::add);
+            }
+            parts.add(List.of(slotName(directory),List.copyOf(names)));
+        }
+        return CanonicalDigestWriter.digest("reactor-class-package-v1",pkg,parts);
+    }
+    /**
+     * Certificate entries for classes the unit completed from other reactor modules' class
+     * directories, and for its consulted packages there. Empty when a completed class cannot be bound.
+     */
+    private Optional<TreeMap<QueryProof.Key,Hash256>> reactorClasses(Bindings.Snapshot attributed,Set<String> packages,CompilerInputs.Snapshot observed)throws Exception{
+        var result=new TreeMap<QueryProof.Key,Hash256>();var directories=perClassDirectories();
+        if(directories.isEmpty())return Optional.of(result);
+        var classpath=context().classpath().stream().map(entry->entry.toAbsolutePath().normalize()).toList();
+        for(var entry:attributed.classDirectoryTypes().entrySet()){
+            var directory=classpath.stream().filter(entry.getValue()::startsWith).findFirst();
+            if(directory.isEmpty()){refuseAttributed("class-directory-unbound");return Optional.empty();}
+            if(!directories.contains(directory.get()))continue;
+            var projection=binaryProjection(entry.getKey(),observed);
+            if(projection.isEmpty()){refuseAttributed("reactor-class-unreadable");return Optional.empty();}
+            result.put(new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"reactor-class:"+entry.getKey()),projectionIdentity(projection.get()));
+        }
+        for(String pkg:packages)result.put(new QueryProof.Key(QueryProof.Domain.NAMESPACE,"class-package:"+pkg),classPackageIdentity(pkg));
+        return Optional.of(result);
     }
     private BinaryProjections binaryProjections;private Object binaryProjectionsKey;
     /**
@@ -268,7 +319,12 @@ final class AttributedMemos implements AutoCloseable {
                 if(member.startsWith(directory)){present.add("package:"+logical.logical(directory).orElse("<non-logical>"));break;}
             }
         }
-        return CanonicalDigestWriter.digest("source-absence-v2",binary,present);
+        // Other reactor modules' class directories are bound per class, so a class or package appearing there is an input too.
+        for(Path directory:perClassDirectories()){
+            if(Files.isRegularFile(directory.resolve(relative+".class")))present.add("class:"+slotName(directory));
+            if(Files.isDirectory(directory.resolve(relative)))present.add("class-package:"+slotName(directory));
+        }
+        return CanonicalDigestWriter.digest("source-absence-v3",binary,present);
     }
     private static final java.util.regex.Pattern PACKAGE=java.util.regex.Pattern.compile("\\bpackage\\s+([\\w.$]+)\\s*;");
     private static final java.util.regex.Pattern STAR_IMPORT=java.util.regex.Pattern.compile("\\bimport\\s+(?!static\\b)([\\w.$]+)\\s*\\.\\s*\\*\\s*;");
@@ -279,6 +335,7 @@ final class AttributedMemos implements AutoCloseable {
         return result;
     }
     private static final java.util.regex.Pattern MISSING_SYMBOL=java.util.regex.Pattern.compile("symbol:\\s+(?:class|interface|variable|package)\\s+([\\w$.]+)");
+    private static final java.util.regex.Pattern PACKAGE_LOCATION=java.util.regex.Pattern.compile("location:\\s+package\\s+([\\w$.]+)");
     private static final java.util.regex.Pattern MISSING_PACKAGE=java.util.regex.Pattern.compile("package\\s+([\\w$.]+)\\s+does not exist");
     /**
      * NEGATIVE_RESOLUTION entries for every name X failed to resolve: unresolved type names and the
@@ -292,7 +349,12 @@ final class AttributedMemos implements AutoCloseable {
             var value=(CompilerPool.Problem)problem;
             if(!value.kind().equals("ERROR")||value.message()==null)continue;
             var names=new ArrayList<String>();
-            if(value.code().contains("cant.resolve")){var matcher=MISSING_SYMBOL.matcher(value.message());while(matcher.find())names.add(matcher.group(1));}
+            if(value.code().contains("cant.resolve")){
+                var matcher=MISSING_SYMBOL.matcher(value.message());while(matcher.find())names.add(matcher.group(1));
+                // A qualified name (p.Missing) is reported as the simple name with "location: package p".
+                var location=PACKAGE_LOCATION.matcher(value.message());
+                if(location.find())for(String name:List.copyOf(names))if(name.indexOf('.')<0)names.add(location.group(1)+"."+name);
+            }
             if(value.code().contains("doesnt.exist")){var matcher=MISSING_PACKAGE.matcher(value.message());while(matcher.find())names.add(matcher.group(1));}
             for(String name:names)(name.indexOf('.')<0?simple:qualified).add(name);
         }
@@ -341,11 +403,11 @@ final class AttributedMemos implements AutoCloseable {
      * {@code logical-source:} content for SCC peers, {@code package:} S0 type sets for the own and
      * star-imported packages, and negative resolutions. The record is written once the SCC is known.
      */
-    void memoize(Path file,String sourceHash,Envelope envelope,FileSemanticContribution contribution,Bindings.Snapshot attributed){
+    void memoize(Path file,String sourceHash,Envelope envelope,FileSemanticContribution contribution,Bindings.Snapshot attributed,CompilerInputs.Snapshot observed){
         var saved=epoch;epoch=null;
-        try{capture(file.toAbsolutePath().normalize(),sourceHash,envelope,contribution,attributed);}finally{epoch=saved;}
+        try{capture(file.toAbsolutePath().normalize(),sourceHash,envelope,contribution,attributed,observed);}finally{epoch=saved;}
     }
-    private void capture(Path file,String sourceHash,Envelope envelope,FileSemanticContribution contribution,Bindings.Snapshot attributed){
+    private void capture(Path file,String sourceHash,Envelope envelope,FileSemanticContribution contribution,Bindings.Snapshot attributed,CompilerInputs.Snapshot observed){
         observe(file,sourceHash,attributed);
         // Known even when this unit's own record is refused or its contribution was already
         // invalidated: other units' SCCs may pass through it.
@@ -375,7 +437,7 @@ final class AttributedMemos implements AutoCloseable {
                 if(roots.stream().noneMatch(normalized::startsWith))continue;
                 var id=logical.logical(normalized);if(id.isEmpty()){refuseAttributed("non-logical-dependency");return;}
                 boolean binary=attributed.binaryDependencies().contains(normalized);
-                var dependencyProjection=binary?binaryProjection(normalized,logical).orElse(null):attributed.dependencyProjections().get(normalized);
+                var dependencyProjection=binary?binaryProjection(normalized,logical,observed).orElse(null):attributed.dependencyProjections().get(normalized);
                 if(dependencyProjection==null){refuseAttributed("dependency-unproven");return;}
                 dependencies.put(normalized,new Dependency(id.get(),logicalContentIdentity(analyzer.documentsState().sourceHash(normalized)),dependencyProjection,binary));
             }
@@ -387,6 +449,7 @@ final class AttributedMemos implements AutoCloseable {
             var diagnostics=(List<?>)((Map<?,?>)envelope.result()).get("diagnostics");
             var negatives=negatives(text,attributed,diagnostics,packageNames,logical);if(negatives.isEmpty())return;
             var resources=processorResources(file,logical);if(resources.isEmpty())return;negatives.get().putAll(resources.get());
+            var reactor=reactorClasses(attributed,packageNames,observed);if(reactor.isEmpty())return;negatives.get().putAll(reactor.get());
             var problems=new ArrayList<Map<String,Object>>();
             for(var problem:diagnostics){
                 var value=(CompilerPool.Problem)problem;
@@ -558,7 +621,11 @@ final class AttributedMemos implements AutoCloseable {
                         }
                         if(value.startsWith("logical-binary:")){
                             var file=logical.physical(value.substring("logical-binary:".length()));
-                            return file.isEmpty()?Optional.empty():shared("binary:"+file.get(),()->binaryProjection(file.get(),logical)).map(AttributedMemos::projectionIdentity);
+                            return file.isEmpty()?Optional.empty():shared("binary:"+file.get(),()->binaryProjection(file.get(),logical,observed)).map(AttributedMemos::projectionIdentity);
+                        }
+                        if(value.startsWith("reactor-class:")){
+                            String binary=value.substring("reactor-class:".length());
+                            return shared("reactor-class:"+binary,()->binaryProjection(binary,observed)).map(AttributedMemos::projectionIdentity);
                         }
                         if(value.startsWith("logical-unit:")){
                             var file=logical.physical(value.substring("logical-unit:".length()));
@@ -572,6 +639,10 @@ final class AttributedMemos implements AutoCloseable {
                                 var files=packageFiles(pkg,logical);
                                 return files.isEmpty()?Optional.<Hash256>empty():packageIdentity(pkg,files.get(),mode);
                             });
+                        }
+                        if(value.startsWith("class-package:")){
+                            String pkg=value.substring("class-package:".length());
+                            return Optional.of(shared("class-package:"+pkg,()->classPackageIdentity(pkg)));
                         }
                     }
                     case NEGATIVE_RESOLUTION -> {

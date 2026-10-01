@@ -31,9 +31,24 @@ final class StaticInputs {
 
     private final FileStateRegistry files;
     private final Map<String,String> coordinates;
-    StaticInputs(FileStateRegistry files,Map<String,String> coordinates){this.files=files;this.coordinates=coordinates;}
+    private final String ownGav;
+    StaticInputs(FileStateRegistry files,Map<String,String> coordinates,String ownGav){this.files=files;this.coordinates=coordinates;this.ownGav=ownGav;}
 
-    /** Ordered logical slots of one path list; a directory is a reactor or processor output identified by its class files. */
+    /**
+     * A class directory of another reactor module (its {@code target/classes} or its processor
+     * output). Its classes are bound one by one in each unit's certificate ({@code reactor-class:},
+     * {@code class-package:}, negative resolutions), so the static key holds only its logical slot.
+     */
+    static boolean perClass(Path entry,Map<String,String> coordinates,String ownGav){
+        Path normalized=entry.toAbsolutePath().normalize();String gav=coordinates.get(normalized.toString());
+        return gav!=null&&!gav.equals(ownGav)&&Files.isDirectory(normalized);
+    }
+
+    /**
+     * Ordered logical slots of one path list. An archive is identified by its content, a class
+     * directory of this module by its class files, and another module's class directory by its slot
+     * alone (see {@link #perClass}).
+     */
     Binding slots(List<Path> entries)throws Exception{
         var keys=new ArrayList<String>();var identities=new ArrayList<Hash256>();
         for(Path entry:entries){
@@ -44,7 +59,7 @@ final class StaticInputs {
             String role=coordinates.get("role:"+normalized);
             if(Files.isDirectory(normalized)){
                 keys.add(role!=null?role+":"+gav:"reactor:"+gav+"|"+normalized.getFileName());
-                identities.add(directoryIdentity(normalized));
+                identities.add(perClass(normalized,coordinates,ownGav)?CanonicalDigestWriter.digest("reactor-classes-per-class-v1",gav):directoryIdentity(normalized));
             }else{
                 keys.add(ClasspathSlots.logicalKey(gav,"artifact",normalized.toString()));
                 String hash=files.hash(normalized);

@@ -37,7 +37,7 @@ final class AttributedMemos implements AutoCloseable {
     private String lastAttributedMemoMiss="";
 
     /** Bump when the attributed result, its canonical encoding or its certificate rules change (§81). */
-    static final SemanticMemoStore.Function ATTRIBUTED=new SemanticMemoStore.Function("attributed-diagnostics",5);
+    static final SemanticMemoStore.Function ATTRIBUTED=new SemanticMemoStore.Function("attributed-diagnostics",6);
 
     private <T> Optional<T> refuseAttributed(String reason){
         attributedMemoRefusals++;attributedMemoRefusalReasons.merge(reason,1L,Long::sum);return Optional.empty();
@@ -138,6 +138,7 @@ final class AttributedMemos implements AutoCloseable {
     }
     private Hash256 configIdentity(Path config)throws Exception{
         return shared("config:"+config,()->{
+            ObservationFaults.check(config);
             String hash=analyzer.inputFiles().hash(config);
             return CanonicalDigestWriter.digest("processor-resource-v1","missing".equals(hash)?"<absent>":hash);
         });
@@ -186,10 +187,11 @@ final class AttributedMemos implements AutoCloseable {
      * ({@code $}) are covered by their top-level class's P_diag.
      */
     private Hash256 classPackageIdentity(String pkg)throws Exception{
+        // A listing failure propagates (UNKNOWN); only an absent folder is an empty slot.
         var parts=new ArrayList<String>();
         for(Path directory:perClassDirectories()){
             Path folder=pkg.isEmpty()?directory:directory.resolve(pkg.replace('.','/'));
-            if(!Files.isDirectory(folder))continue;
+            if(!ObservationFaults.directory(folder))continue;
             var names=new TreeSet<String>();
             try(var listing=Files.list(folder)){
                 listing.map(path->path.getFileName().toString()).filter(name->name.endsWith(".class")&&!name.contains("$")).forEach(names::add);
@@ -223,14 +225,19 @@ final class AttributedMemos implements AutoCloseable {
     /**
      * Shared snapshot of one observation epoch (W5): every unit validated while the compiler inputs
      * snapshot is unchanged shares one roots inventory, one hash per file, one identity per package
-     * and one set of static inputs. Captures for new records (memoize) never use it.
+     * and one set of static inputs. Captures (memoize) use the epoch of their own compiler transaction and end with its fence.
      */
     private static final class Epoch {
-        final Object key;final Map<Path,NavigableSet<Path>> members=new HashMap<>();final Map<Path,Optional<String>> hashes=new HashMap<>();
+        final Object key;final Object context;final Map<Path,NavigableSet<Path>> members=new HashMap<>();final Map<Path,Optional<String>> hashes=new HashMap<>();
         final Map<String,Object> values=new HashMap<>();
-        Epoch(Object key){this.key=key;}
+        Epoch(Object key,Object context){this.key=key;this.context=context;}
     }
     private Epoch epoch,lastEpoch;
+    /** The epoch of one observed input snapshot under one configured context (a reconfiguration may reuse the snapshot object). */
+    private Epoch epochOf(CompilerInputs.Snapshot observed){
+        if(lastEpoch==null||lastEpoch.key!=observed||lastEpoch.context!=context())lastEpoch=new Epoch(observed,context());
+        return lastEpoch;
+    }
     @FunctionalInterface private interface Computation<T> { T compute()throws Exception; }
     @SuppressWarnings("unchecked")
     private <T> T shared(String key,Computation<T> computation)throws Exception{
@@ -246,9 +253,13 @@ final class AttributedMemos implements AutoCloseable {
     private NavigableSet<Path> members(Path root)throws Exception{
         if(epoch!=null){var cached=epoch.members.get(root);if(cached!=null)return cached;}
         var result=new TreeSet<Path>();
-        if(epoch!=null&&epoch.key instanceof CompilerInputs.Snapshot observed&&observed.live()!=null){
+        ObservationFaults.check(root);
+        // Live membership only while the live state is trusted (no overflow or unreconciled change);
+        // otherwise the directories are observed directly. A failed listing is UNKNOWN and propagates.
+        if(epoch!=null&&epoch.key instanceof CompilerInputs.Snapshot observed&&observed.live()!=null&&observed.trusted()){
             for(Path file:observed.live().paths())if(file.startsWith(root)&&file.toString().endsWith(".java"))result.add(file);
-        }else result.addAll(analyzer.inputFiles().inventory(root,".java",true));
+        }else try{result.addAll(analyzer.inputFiles().inventory(root,".java",true));}
+        catch(java.io.IOException failure){throw new ObservationFaults.Unavailable("source root unreadable: "+root,failure);}
         for(Path open:analyzer.documentsState().paths())if(open.startsWith(root)&&open.toString().endsWith(".java"))result.add(open);
         var value=Collections.unmodifiableNavigableSet(result);
         if(epoch!=null)epoch.members.put(root,value);
@@ -314,13 +325,13 @@ final class AttributedMemos implements AutoCloseable {
      * exists lives is bound by the dependency entries of the units that use it, so locations and
      * classpath order are not part of this identity.
      */
-    private Hash256 absenceIdentity(String binary,LogicalSources logical){
-        boolean type=false,pkg=false,unreadable=false;
+    private Hash256 absenceIdentity(String binary,LogicalSources logical)throws Exception{
+        boolean type=false,pkg=false;
         String relative=binary.replace('.','/');
         for(Path root:context().sources()){
             Path normalized=root.toAbsolutePath().normalize(),file=normalized.resolve(relative+".java"),directory=normalized.resolve(relative);
-            NavigableSet<Path> members;
-            try{members=members(normalized);}catch(Exception failure){unreadable=true;continue;}
+            // A root whose members cannot be listed is UNKNOWN (C3): the failure propagates, never an identity.
+            NavigableSet<Path> members=members(normalized);
             if(members.contains(file))type=true;
             // A package exists for javac's source path when its directory holds sources.
             for(Path member:members.tailSet(directory,false)){
@@ -329,29 +340,17 @@ final class AttributedMemos implements AutoCloseable {
             }
         }
         for(Path directory:perClassDirectories()){
-            if(Files.isRegularFile(directory.resolve(relative+".class")))type=true;
-            if(Files.isDirectory(directory.resolve(relative)))pkg=true;
+            if(ObservationFaults.regularFile(directory.resolve(relative+".class")))type=true;
+            if(ObservationFaults.directory(directory.resolve(relative)))pkg=true;
         }
-        return CanonicalDigestWriter.digest("source-absence-v4",binary,type,pkg,unreadable);
+        return CanonicalDigestWriter.digest("source-absence-v5",binary,type,pkg);
     }
-    private static final java.util.regex.Pattern PACKAGE=java.util.regex.Pattern.compile("\\bpackage\\s+([\\w.$]+)\\s*;");
-    private static final java.util.regex.Pattern STAR_IMPORT=java.util.regex.Pattern.compile("\\bimport\\s+(?!static\\b)([\\w.$]+)\\s*\\.\\s*\\*\\s*;");
-    /** X's own package and every non-static star-imported package. */
-    private static TreeSet<String> consultedPackages(String text){
-        var result=new TreeSet<String>();var own=PACKAGE.matcher(text);result.add(own.find()?own.group(1):"");
-        var star=STAR_IMPORT.matcher(text);while(star.find())result.add(star.group(1));
-        return result;
-    }
-    private static final java.util.regex.Pattern MISSING_SYMBOL=java.util.regex.Pattern.compile("symbol:\\s+(?:class|interface|variable|package)\\s+([\\w$.]+)");
-    private static final java.util.regex.Pattern PACKAGE_LOCATION=java.util.regex.Pattern.compile("location:\\s+package\\s+([\\w$.]+)");
-    private static final java.util.regex.Pattern MISSING_PACKAGE=java.util.regex.Pattern.compile("package\\s+([\\w$.]+)\\s+does not exist");
     /**
      * NEGATIVE_RESOLUTION entries for every name X failed to resolve: unresolved type names and the
      * class, variable and package names in name-resolution diagnostics. Each searched domain outside
      * the package entries (own package and star imports, already bound) must stay absent, as must a
      * top-level package of that name.
      */
-    private static final java.util.regex.Pattern STATIC_IMPORTED=java.util.regex.Pattern.compile("\\bimport\\s+static\\s+([\\w$.]+?)\\s*\\.\\s*(?:\\*|[\\w$]+)\\s*;");
     /**
      * Bindings that make a negative resolution precise despite static imports: a name could newly
      * resolve to a static member or member type of a statically imported class, so each such class
@@ -361,16 +360,19 @@ final class AttributedMemos implements AutoCloseable {
      * a source or class-directory copy appearing later. Every dotted prefix is checked, because a
      * nested class's top-level unit is not known from the text. Empty when a class is not bound.
      */
-    private Optional<TreeMap<QueryProof.Key,Hash256>> staticImportBindings(String text,Set<Path> dependencies,Bindings.Snapshot attributed,LogicalSources logical){
-        var result=new TreeMap<QueryProof.Key,Hash256>();var matcher=STATIC_IMPORTED.matcher(text);
+    private Optional<TreeMap<QueryProof.Key,Hash256>> staticImportBindings(NamespaceResolutionProofs.Header header,Set<Path> dependencies,Bindings.Snapshot attributed,LogicalSources logical)throws Exception{
+        var result=new TreeMap<QueryProof.Key,Hash256>();
         var roots=context().sources().stream().map(root->root.toAbsolutePath().normalize()).toList();var directories=perClassDirectories();
-        while(matcher.find()){
-            var parts=matcher.group(1).split("\\.");
+        for(String type:header.staticImportTypes()){
+            var parts=type.split("\\.");
             for(int length=2;length<=parts.length;length++){
                 String binary=String.join(".",Arrays.copyOf(parts,length)),relative=binary.replace('.','/');
-                var source=roots.stream().map(root->root.resolve(relative+".java")).filter(Files::isRegularFile).findFirst();
-                if(source.isPresent()){if(!dependencies.contains(source.get()))return Optional.empty();continue;}
-                if(directories.stream().anyMatch(directory->Files.isRegularFile(directory.resolve(relative+".class")))){
+                Path source=null;
+                for(Path root:roots)if(ObservationFaults.regularFile(root.resolve(relative+".java"))){source=root.resolve(relative+".java");break;}
+                if(source!=null){if(!dependencies.contains(source))return Optional.empty();continue;}
+                boolean classFile=false;
+                for(Path directory:directories)if(ObservationFaults.regularFile(directory.resolve(relative+".class"))){classFile=true;break;}
+                if(classFile){
                     if(!attributed.classDirectoryTypes().containsKey(binary))return Optional.empty();continue;
                 }
                 result.put(new QueryProof.Key(QueryProof.Domain.NEGATIVE_RESOLUTION,parts[length-1]+"@"+binary),absenceIdentity(binary,logical));
@@ -378,28 +380,28 @@ final class AttributedMemos implements AutoCloseable {
         }
         return Optional.of(result);
     }
-    private Optional<TreeMap<QueryProof.Key,Hash256>> negatives(String text,Bindings.Snapshot attributed,List<?> problems,Set<String> packages,LogicalSources logical,Set<Path> dependencies){
+    private Optional<TreeMap<QueryProof.Key,Hash256>> negatives(NamespaceResolutionProofs.Header header,Bindings.Snapshot attributed,List<?> problems,Set<String> packages,LogicalSources logical,Set<Path> dependencies)throws Exception{
         var simple=new TreeSet<String>(attributed.unresolvedTypeNames());var qualified=new TreeSet<String>();
         for(var problem:problems){
             var value=(CompilerPool.Problem)problem;
-            if(!value.kind().equals("ERROR")||value.message()==null)continue;
-            var names=new ArrayList<String>();
-            if(value.code().contains("cant.resolve")){
-                var matcher=MISSING_SYMBOL.matcher(value.message());while(matcher.find())names.add(matcher.group(1));
-                // A qualified name (p.Missing) is reported as the simple name with "location: package p".
-                var location=PACKAGE_LOCATION.matcher(value.message());
-                if(location.find())for(String name:List.copyOf(names))if(name.indexOf('.')<0)names.add(location.group(1)+"."+name);
+            if(!value.kind().equals("ERROR")||value.code()==null)continue;
+            if(!value.code().contains("cant.resolve")&&!value.code().contains("doesnt.exist"))continue;
+            // Names come from javac's structured diagnostic arguments, never from its rendered message.
+            // A cant.resolve for a method or constructor names no type or package, so it adds nothing;
+            // a doesnt.exist without its package argument cannot be bound.
+            if(value.names().isEmpty()){
+                if(value.code().contains("doesnt.exist"))return refuseAttributed("negative-unproven:unstructured-diagnostic");
+                continue;
             }
-            if(value.code().contains("doesnt.exist")){var matcher=MISSING_PACKAGE.matcher(value.message());while(matcher.find())names.add(matcher.group(1));}
-            for(String name:names)(name.indexOf('.')<0?simple:qualified).add(name);
+            for(String name:value.names())(name.indexOf('.')<0?simple:qualified).add(name);
         }
         var result=new TreeMap<QueryProof.Key,Hash256>();
         for(String name:simple){
             if(!javax.lang.model.SourceVersion.isIdentifier(name))return refuseAttributed("negative-unproven:non-simple-name");
-            var plan=NamespaceResolutionProofs.plan(text,name,null);
+            var plan=NamespaceResolutionProofs.plan(header,name,null);
             // With no resolved winner, a plan is imprecise only because of static imports.
             if(!plan.precise()){
-                var bound=staticImportBindings(text,dependencies,attributed,logical);
+                var bound=staticImportBindings(header,dependencies,attributed,logical);
                 if(bound.isEmpty())return refuseAttributed("negative-unproven:static-import");
                 result.putAll(bound.get());
             }
@@ -444,8 +446,11 @@ final class AttributedMemos implements AutoCloseable {
      * star-imported packages, and negative resolutions. The record is written once the SCC is known.
      */
     void memoize(Path file,String sourceHash,Envelope envelope,FileSemanticContribution contribution,Bindings.Snapshot attributed,CompilerInputs.Snapshot observed){
-        var saved=epoch;epoch=null;
-        try{capture(file.toAbsolutePath().normalize(),sourceHash,envelope,contribution,attributed,observed);}finally{epoch=saved;}
+        // C4: a capture observes the same input frontier the compiler transaction was validated
+        // against (its live snapshot), never later disk or editor state, and ends with a strict fence.
+        var saved=epoch;
+        if(observed!=null){epoch=epochOf(observed);}else epoch=null;
+        try{ObservationFaults.beforeCapture(file);capture(file.toAbsolutePath().normalize(),sourceHash,envelope,contribution,attributed,observed);}finally{epoch=saved;}
     }
     private void capture(Path file,String sourceHash,Envelope envelope,FileSemanticContribution contribution,Bindings.Snapshot attributed,CompilerInputs.Snapshot observed){
         observe(file,sourceHash,attributed);
@@ -484,15 +489,20 @@ final class AttributedMemos implements AutoCloseable {
                 boolean binary=attributed.binaryDependencies().contains(normalized);
                 var dependencyProjection=binary?binaryProjection(normalized,logical,observed).orElse(null):attributed.dependencyProjections().get(normalized);
                 if(dependencyProjection==null){refuseAttributed("dependency-unproven");return;}
-                dependencies.put(normalized,new Dependency(id.get(),logicalContentIdentity(analyzer.documentsState().sourceHash(normalized)),dependencyProjection,binary));
+                var content=currentHash(normalized);if(content.isEmpty()){refuseAttributed("dependency-unproven");return;}
+                dependencies.put(normalized,new Dependency(id.get(),logicalContentIdentity(content.get()),dependencyProjection,binary));
             }
-            var packageNames=consultedPackages(text);var packages=new TreeMap<String,List<PackageFile>>();
+            // The package and imports javac used for this result, from its own syntax tree (never the raw text).
+            var header=attributed.header();
+            if(header==null){refuseAttributed("header-unavailable");return;}
+            if(!header.complete()){refuseAttributed("header-unsupported");return;}
+            var packageNames=new TreeSet<String>(header.consultedPackages());var packages=new TreeMap<String,List<PackageFile>>();
             for(String pkg:packageNames){
                 var files=packageFiles(pkg,logical);if(files.isEmpty()){refuseAttributed("package-unproven");return;}
                 packages.put(pkg,files.get());
             }
             var diagnostics=(List<?>)((Map<?,?>)envelope.result()).get("diagnostics");
-            var negatives=negatives(text,attributed,diagnostics,packageNames,logical,dependencies.keySet());if(negatives.isEmpty())return;
+            var negatives=negatives(header,attributed,diagnostics,packageNames,logical,dependencies.keySet());if(negatives.isEmpty())return;
             var resources=processorResources(file,logical);if(resources.isEmpty())return;negatives.get().putAll(resources.get());
             var reactor=reactorClasses(attributed,packageNames,observed);if(reactor.isEmpty())return;negatives.get().putAll(reactor.get());
             var problems=new ArrayList<Map<String,Object>>();
@@ -514,10 +524,15 @@ final class AttributedMemos implements AutoCloseable {
             result.put("exported",contribution.exportedNames().stream().sorted().toList());
             result.put("unresolved",contribution.unresolvedTargets().stream().sorted().toList());
             result.put("dependencies",dependencies.values().stream().map(Dependency::logical).sorted().toList());
+            // Every value above was read from the transaction's live state. If that state moved on (an
+            // edit, a membership change, or A -> B -> A, which the input epoch also detects), the
+            // evidence may not be what javac read: no record.
+            if(observed==null||!observed.transactionCurrent()){refuseAttributed("inputs-superseded");return;}
             pending.put(file,new Pending(key.get(),Json.MAPPER.writeValueAsBytes(result),dependencies,packages,negatives.get(),
                     SourceNamespaces.LanguageMode.of(context().compilerOptions())));
             if(pending.size()>=PENDING_BATCH||System.nanoTime()-lastDrain>DRAIN_INTERVAL_NANOS){lastDrain=System.nanoTime();drain(false);}
-        }catch(Exception failure){attributedMemoFailures.incrementAndGet();lastFailure=failure.toString();}
+        }catch(ObservationFaults.Unavailable unknown){refuseAttributed("observation-unavailable");lastFailure=unknown.toString();}
+        catch(Exception failure){attributedMemoFailures.incrementAndGet();lastFailure=failure.toString();}
     }
     private volatile String lastFailure="",unknownSample="";
     private boolean foreignModule(Path unit,LogicalSources logical){
@@ -601,7 +616,8 @@ final class AttributedMemos implements AutoCloseable {
             var logical=LogicalSources.of(context());
             for(Path peer:component){
                 if(peer.equals(file)||captured.dependencies().containsKey(peer))continue;
-                var id=logical.logical(peer);var hash=currentHash(peer);
+                var id=logical.logical(peer);Optional<String> hash;
+                try{hash=currentHash(peer);}catch(ObservationFaults.Unavailable unknown){refuseAttributed("observation-unavailable");return;}
                 if(id.isEmpty()||hash.isEmpty()){refuseAttributed("scc-unproven");return;}
                 dependencies.put(new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"logical-source:"+id.get()),logicalContentIdentity(hash.get()));
             }
@@ -639,8 +655,7 @@ final class AttributedMemos implements AutoCloseable {
         path=path.toAbsolutePath().normalize();
         if(attributedMemos==null||!resolving.add(path))return null;
         var saved=epoch;
-        if(lastEpoch==null||lastEpoch.key!=observed)lastEpoch=new Epoch(observed);
-        epoch=lastEpoch;
+        epoch=epochOf(observed);
         try{return resolve(path,hash,observed);}finally{resolving.remove(path);epoch=saved;}
     }
     /** Units whose restore or early-cutoff attribution is in progress on the owner thread; guards cycles. */
@@ -730,10 +745,14 @@ final class AttributedMemos implements AutoCloseable {
             analyzer.diagnosticStore().put(path,hash,context().generation(),broad,envelope,contribution.apiFingerprint(),dependencies,contribution);
             attributedMemoRestores++;
             return envelope;
+        }catch(ObservationFaults.Unavailable unknown){
+            attributedMemoMisses++;lastAttributedMemoMiss="observation-unavailable";missReasons.merge("observation-unavailable",1L,Long::sum);lastFailure="restore: "+unknown;return null;
         }catch(Exception failure){attributedMemoFailures.incrementAndGet();lastFailure="restore: "+failure;return null;}
     }
-    private Optional<String> currentHash(Path file){
+    /** Current content hash; empty only for an established absence. An unreadable file is UNKNOWN and throws. */
+    private Optional<String> currentHash(Path file)throws ObservationFaults.Unavailable{
         if(epoch!=null){var cached=epoch.hashes.get(file);if(cached!=null)return cached;}
+        ObservationFaults.check(file);
         Optional<String> value;
         String live=epoch!=null&&epoch.key instanceof CompilerInputs.Snapshot observed&&observed.live()!=null&&observed.live().accepts(file)
                 ?observed.live().contentHash(file):null;
@@ -741,7 +760,7 @@ final class AttributedMemos implements AutoCloseable {
         try{
             String hash=analyzer.documentsState().sourceHash(file);
             value="missing".equals(hash)?Optional.empty():Optional.of(hash);
-        }catch(Exception unreadable){value=Optional.empty();}
+        }catch(Exception unreadable){throw new ObservationFaults.Unavailable("source unreadable: "+file,unreadable);}
         if(epoch!=null)epoch.hashes.put(file,value);
         return value;
     }
@@ -752,7 +771,8 @@ final class AttributedMemos implements AutoCloseable {
      */
     private Optional<Hash256> currentProjection(Path file,CompilerInputs.Snapshot observed){
         file=file.toAbsolutePath().normalize();
-        var hash=currentHash(file);if(hash.isEmpty())return Optional.empty();
+        Optional<String> hash;try{hash=currentHash(file);}catch(ObservationFaults.Unavailable unknown){return Optional.empty();}
+        if(hash.isEmpty())return Optional.empty();
         var known=projections.get(file);
         if(known==null||!known.hash().equals(hash.get())){
             if(restore(file,hash.get(),observed)==null&&resolving.add(file)){

@@ -46,10 +46,10 @@ public final class Bindings {
     public record Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies,
                            Map<String,SemanticFact> semanticFacts,List<ReferenceProof> referenceProofs,Set<String> unresolvedTypeNames,
                            dev.jvmd.core.Hash256 diagnosticProjection,Map<Path,dev.jvmd.core.Hash256> dependencyProjections,Set<Path> binaryDependencies,
-                           Map<String,Path> classDirectoryTypes) {
+                           Map<String,Path> classDirectoryTypes,NamespaceResolutionProofs.Header header) {
         public Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies,
                         Map<String,SemanticFact> semanticFacts,List<ReferenceProof> referenceProofs,Set<String> unresolvedTypeNames){
-            this(symbols,occurrences,edges,dependencies,semanticFacts,referenceProofs,unresolvedTypeNames,null,Map.of(),Set.of(),Map.of());
+            this(symbols,occurrences,edges,dependencies,semanticFacts,referenceProofs,unresolvedTypeNames,null,Map.of(),Set.of(),Map.of(),null);
         }
         public Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies){
             this(symbols,occurrences,edges,dependencies,Map.of(),List.of(),Set.of());
@@ -334,11 +334,11 @@ public final class Bindings {
                 }
             }
         }.scan(unit,null);
-        dev.jvmd.core.Hash256 projection=null;var dependencyProjections=new HashMap<Path,dev.jvmd.core.Hash256>();var binaryDependencies=new HashSet<Path>();
+        dev.jvmd.core.Hash256 projection=null;NamespaceResolutionProofs.Header header=null;var dependencyProjections=new HashMap<Path,dev.jvmd.core.Hash256>();var binaryDependencies=new HashSet<Path>();
         if(focus==null){
             Path self=requested.toAbsolutePath().normalize();
             for(var unit:units)try{
-                if(Path.of(unit.getSourceFile().toUri()).toAbsolutePath().normalize().equals(self)){projection=DiagnosticProjection.of(task,unit);break;}
+                if(Path.of(unit.getSourceFile().toUri()).toAbsolutePath().normalize().equals(self)){projection=DiagnosticProjection.of(task,unit);header=NamespaceResolutionProofs.Header.of(unit);break;}
             }catch(IllegalArgumentException|java.nio.file.FileSystemNotFoundException ignored){}
             // P_diag of every completed dependency, from the Element model this task completed.
             for(var entry:capture.unitTypes.entrySet()){
@@ -351,6 +351,6 @@ public final class Bindings {
             }
         }
         return new Snapshot(symbols,List.copyOf(occurrences.values()),List.copyOf(edges),Set.copyOf(dependencies),semanticFacts,
-                List.copyOf(referenceProofs),Set.copyOf(unresolvedTypeNames),projection,dependencyProjections,binaryDependencies,capture.classDirectoryTypes);
+                List.copyOf(referenceProofs),Set.copyOf(unresolvedTypeNames),projection,dependencyProjections,binaryDependencies,capture.classDirectoryTypes,header);
     }
 }

@@ -531,13 +531,14 @@ const ops=operations.map(({rawResult,...op}:any)=>({...op,...resultShape(rawResu
 writeFileSync(path.join(OUT,"results.json"),JSON.stringify({environment:env,wallMs:performance.now()-started,failures,marks,operations:ops,stall:stalled},null,1));
 log_(`done in ${((performance.now()-started)/1000).toFixed(0)} s; ${failures.length} failures; ${ops.filter(o=>o.outcome&&o.outcome!=="pass"&&o.outcome!=="not_ready"&&o.outcome!=="stale").length} incorrect operations`);
 for(const f of failures)log_("  failure: "+f);
+console.log(`\n=== failures (${failures.length})`);for(const f of failures)console.log("failure: "+f.slice(0,400));
 // The CI container that reads these runs cannot download artifacts: the control's summary goes to the job log.
 const mbd=(b:any)=>b==null?"—":(b/1e6).toFixed(1);
 console.log("\n=== checkpoints (id | s since spawn | allocated MB since previous | heap used MB | RSS MB | label)");
 let previous:number|undefined;
 for(const m of marks){const alloc=m.snapshot?.allocated;console.log(`checkpoint: ${m.id} | i${m.incarnation} | ${(m.sinceSpawnMs/1000).toFixed(1)} | ${previous!==undefined&&alloc!=null?mbd(alloc-previous):"—"} | ${mbd(m.snapshot?.heap?.used)} | ${mbd(m.proc?.VmRSS)} | ${m.label}`);if(alloc!=null)previous=alloc;}
 console.log("\n=== first-use operations (method | state | outcome | latency ms | allocated MB)");
-for(const o of ops)if(!/warm/u.test(String(o.state)))console.log(`operation: ${o.method} | ${o.state} | ${o.outcome} | ${o.latencyMs?.toFixed?.(0)} | ${mbd(o.allocatedBytes)}`);
+for(const o of ops)if(o.state!=="steady"&&!/warm/u.test(String(o.state)))console.log(`operation: ${o.method} | ${o.state} | ${o.outcome} | ${o.latencyMs?.toFixed?.(0)} | ${mbd(o.allocatedBytes)}`);
 const refs=ops.find(o=>o.method==="textDocument/references"&&o.state==="first_use");
 // Frozen M1 deadline (brief §11 M1, E9): the 60 s client deadline under which main answered 0 of 17 attempts.
 console.log(`\nM1 references first use: ${refs?`${refs.outcome}, ${(refs.latencyMs/1000).toFixed(1)} s, timely=${refs.outcome==="pass"&&refs.latencyMs<=60000}`:"not reached"}`);

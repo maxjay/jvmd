@@ -264,6 +264,19 @@ class DiagnosticProjectionSufficiencyTest {
         result.add(new Mutation("enum","lib/Color.java","constant removed",text->text.replace("RED, GREEN, BLUE;","RED, GREEN;"),false));
         result.add(new Mutation("enum","lib/Color.java","constants reordered",text->text.replace("RED, GREEN, BLUE;","BLUE, GREEN, RED;"),false));
         // New top-level types in the same package or a star-imported one.
+        // Corrective pass C5: overload candidates, inherited members, nestmate access and default methods.
+        result.add(new Mutation("overload","lib/Service.java","overload added (long)",text->text.replace("    public int compute(double x) { return 1; }\n","    public int compute(double x) { return 1; }\n    public int compute(long x) { return 2; }\n"),false));
+        result.add(new Mutation("overload","lib/Util.java","boxed overload added",text->text.replace("    public static long sum(long a, long b)","    public static int sum(Integer a, Integer b) { return 0; }\n    public static long sum(long a, long b)"),false));
+        result.add(new Mutation("overload","lib/Util.java","varargs overload added",text->text.replace("    public static String joined(String... parts)","    public static String joined(String a, String b) { return a; }\n    public static String joined(String... parts)"),false));
+        result.add(new Mutation("inherited","lib/Service.java","overridden method made final",text->text.replace("public int compute(int x)","public final int compute(int x)"),false));
+        result.add(new Mutation("inherited","lib/Base.java","abstract member added",text->text.replace("public abstract String describe();","public abstract String describe();\n    public abstract int extra"+n+"();"),false));
+        result.add(new Mutation("inherited","lib/Base.java","inherited method removed",text->text.replace("    public int value() { return 1; }\n",""),false));
+        result.add(new Mutation("inherited","lib/Service.java","field hiding the inherited count",text->text.replace("public class Service extends Base {","public class Service extends Base {\n    private int count;"),false));
+        result.add(new Mutation("nestmate","lib/Holder.java","nested constructor made private",text->text.replace("public static class Inner { public int x; }","public static class Inner { private Inner() { } public int x; }"),false));
+        result.add(new Mutation("nestmate","lib/Box.java","nested field made private",text->text.replace("public static class Entry { public int key; }","public static class Entry { private int key; }"),false));
+        result.add(new Mutation("default","lib/Mapper.java","default method removed",text->text.replace("    default Mapper<A, B> self() { return this; }\n",""),false));
+        result.add(new Mutation("default","lib/Mapper.java","default method made abstract",text->text.replace("    default Mapper<A, B> self() { return this; }","    Mapper<A, B> self();"),false));
+        result.add(new Mutation("static","lib/Holder.java","static method made instance",text->text.replace("public static int counter()","public int counter()"),false));
         result.add(new Mutation("top-level","lib/Config.java","colliding top-level type in star-imported package",text->text+"\nclass Widget { }\n",false));
         result.add(new Mutation("top-level","lib/Config.java","colliding public-name top-level type",text->text+"\nclass Gadget { }\n",false));
         result.add(new Mutation("top-level","lib/extra/Gadget.java","unrelated top-level type",text->text+"\nclass Helper"+n+" { }\n",false));
@@ -346,7 +359,7 @@ class DiagnosticProjectionSufficiencyTest {
         kinds.forEach((kind,counts)->report.append(kind).append('=').append(counts[0]).append('/').append(counts[1]).append(' '));
         System.out.println(report);
         assertThat(kinds.keySet()).contains("body","neutral","deprecation","private-added","private-removed","private-renamed","constant","signature",
-                "annotation","visibility","nested","sealed","record","enum","top-level");
+                "annotation","visibility","nested","sealed","record","enum","top-level","overload","inherited","nestmate","default","static");
         assertThat(failures).as("sufficiency mismatches").isEmpty();
     }
 

@@ -326,6 +326,120 @@ subject is reported as incorrect or timeout, never as a latency.
 - Evidence: the B0/B1 references/restart control runs were dispatched after this commit; their results are added
   here when they finish.
 - Still failing: every gate above.
+- Control results:
+
+  | Run | Subject | Budget | First-use references (60 s deadline) | Restart after workspace use |
+  |---|---|---|---|---|
+  | [36895099318](https://github.com/maxjay/jvmd/actions/runs/36895099318) | B0 | equivalent (1 GiB / 64 MiB) | `protocol_error` after 360 s: not timely | Fails at store open: `RocksDBException: Insert failed due to LRU cache being full` |
+
+  | [36895104366](https://github.com/maxjay/jvmd/actions/runs/36895104366) | B1 | equivalent | `protocol_error` after 174.2 s: not timely | Reached: READY, then a correct first definition (2.2 s) |
+
+  B0 reproduces E9 and E10. At B1 the restart succeeds (strict capacity off) but references still fail
+  (M1 open). The shipping-default runs are recorded when they finish.
+
+### Checkpoint 1: certificate safety (stream A)
+
+- Start: `22b904f`. End: this commit.
+
+**What changed, and who now owns the information**
+
+- **Package and imports (A1, C1).** `NamespaceResolutionProofs.Header` is read from javac's syntax tree:
+  - the package;
+  - single-type, on-demand and static imports;
+  - `complete=false` for an erroneous name or a module import.
+
+  The attributed task records the header of the unit it attributed (`Bindings.Snapshot.header`). The memo
+  certificate's package entries, its static-import bindings and its negative-resolution plans all come from that
+  header, and the three raw-text regexes are deleted.
+
+  The live proof paths had the same defect since before this PR: the completion plans and the
+  `document-namespace-proof` identity. They now use `NamespaceResolutionProofs.header(text)`, a javac parse
+  cached by content (256 entries).
+
+  A unit whose header is incomplete gets no record (`header-unsupported`).
+
+  Names that failed to resolve now come from javac's structured diagnostic arguments
+  (`CompilerPool.Problem.names`, from `JCDiagnostic.getArgs()` and the nested `compiler.misc.location`), not
+  from the rendered message. A `doesnt.exist` without its package argument refuses the record
+  (`negative-unproven:unstructured-diagnostic`). `names` is evidence only: it is not serialised and not part of
+  `Problem` equality.
+- **Function version (C2).** `attributed-diagnostics` is now v6. The version is part of the static key's
+  identity, so a v5 record can never be looked up. Other functions are unaffected: S0 namespace records are
+  still reused.
+- **UNKNOWN (A2, C3).** `ObservationFaults` separates an established absence (`NoSuchFile`, or a path through
+  a regular file) from a failed observation, which throws `Unavailable`. Changes:
+  - `absenceIdentity` no longer hashes `unreadable` (`source-absence-v5`).
+  - Class-directory presence checks no longer treat an I/O error as "absent" (`Files.isRegularFile` and
+    `isDirectory` did).
+  - A member whose hash cannot be read no longer drops silently out of a package.
+  - Live membership is used only while the live state is trusted; otherwise the directories are read
+    directly.
+
+  At capture a failed observation refuses the record (`observation-unavailable`); at restore it is a miss
+  with that reason.
+- **Capture frontier (A3, C4).** Before, a capture used `epoch=null` and read disk and editor state after
+  attribution. Now it reads through the epoch of its own compiler transaction, the live snapshot that javac's
+  reads were validated against. Dependency content comes from that snapshot too, not from a later disk hash.
+  The capture ends with the strict transaction fence (`CompilerInputs.Snapshot.transactionCurrent`, which
+  checks the input epoch and so also catches A→B→A). If the fence fails, there is no record
+  (`inputs-superseded`).
+
+  The epoch is keyed on both the observed snapshot and the configured context, because a reconfiguration can
+  reuse the snapshot object.
+- **Projection sufficiency (A4, C5).** `DiagnosticProjectionSufficiencyTest` gains these mutation kinds:
+  - overload added (`long`, boxed, fixed arity next to varargs);
+  - inherited members (overridden method made final, abstract member added, inherited method removed, field
+    hiding);
+  - nestmate access (nested constructor or field made private);
+  - default methods (removed, made abstract);
+  - a static method made instance.
+
+**Breaking tests**
+
+- `PackageDeclarationCertificateTest`:
+  - comment, string, text-block and Unicode-escape headers;
+  - explicit, on-demand and static imports;
+  - nested and multiple top-level types;
+  - incomplete source and module imports;
+  - the comment-shadowing regression, now enabled: after restart it returns `cant.resolve`;
+  - v5 records miss while S0 records are reused.
+
+  The two tests that pinned the defect at B1 were replaced; their history is in the checkpoint 0 register (E1).
+- `UnknownObservationCertificateTest`, using injected failures:
+  - an unreadable root at capture gives no record, two failures never hit, and the unit is reused once readable;
+  - an unreadable root at restart misses, then hits once readable;
+  - an unreadable dependency misses;
+  - a corrupt record misses and is rewritten;
+  - only an established absence counts as negative.
+- `DiagnosticProjectionSufficiencyTest`, 2,000 seeded mutations: 0 mismatches. Every new kind changed P_diag in
+  every case, and body or neutral edits never did.
+- `CaptureFrontierRaceTest`: the capture is held at a barrier while another thread edits a dependency (A→B),
+  edits and reverts it (A→B→A), or opens a new buffer in the unit's package (a membership change). Each must
+  refuse, and a run with no edit must write. With the fence removed, the three race tests fail and the no-edit
+  run still passes.
+
+**Still open in stream A**
+
+- Processor-resource race. `lombok.config` and the JPA XML files are not part of the transaction's live state, so
+  an edit to them between javac's read and the capture is not fenced.
+- Processor-dependent sufficiency cases are not in the differential corpus.
+- Relocation with processors that observe physical paths is not re-audited.
+
+### Checkpoint 2: ownership table (stream B; written before the code changes)
+
+Each row says who owns an expensive quantity at B1 and who will own it. "Frontier" is the input state the value
+is valid for.
+
+| Quantity | Owner at B1 | Key | Producer | Invalidated by | Completeness | Frontier | Persisted | Consumers | Change |
+|---|---|---|---|---|---|---|---|---|---|
+| Reactor root, logical source mapper, normalised roots, root roles, per-class directories | None: `reactorRoot()` walks every coordinate on each call; `LogicalSources.of(context)` is rebuilt on each capture and restore | Configured `Analyzer.Context` (immutable) | Derivation from coordinates and source roots | `configure()` replacing the context | Total for a context | Context identity | No (logical slots are in the static key) | Static key, `processorResources`, `config:`, `logical-*:` and `reactor-class:` resolution, `perClassDirectories` | Derive once per context instance; keep a derivation counter |
+| Processor binding, configuration resource identities | `StaticInputs` once per epoch (`static-inputs`); `configIdentity` through `FileStateRegistry.hash` (stat-validated leaf) | Context + epoch; file stamp | `StaticInputs`, `FileStateRegistry` | Context change; resource file stamp | Absent or unreadable distinguished (C3) | Epoch, file stamp | Stamps in the inventory journal | Static key, `config:` entries | Binding per context; resources stay file-stamp leaves |
+| Source membership | `LiveSourceState` (live tree). `AttributedMemos.members()` built a root-wide `TreeSet` per call (capture) or per epoch (restore) | Root + live snapshot | Live tree, or a directory inventory when untrusted | Live transitions | Trusted flag | Live input epoch | Inventory journal | Package lists, absence identities | Read the live owner's package index; no root-wide set per memo |
+| Per-file S0 namespace | `SourceNamespaces` (LOCAL memo on content and mode) plus `AttributedMemos.namespaceCache` (file → hash, value), filled on the writer thread | Content hash + language mode | javac parse (`--source`) | Content or mode change | PARTIAL on syntax errors | Content | Yes (`s0-namespace` v1) | Package aggregate | One cache keyed by content and mode; parse at most once per pair |
+| Package namespace | None: `packageFiles()` lists the members and `packageIdentity()` hashes every member's S0 on each write and each restore | Scope + package | Per-call listing and hash | Any member's addition, removal or S0 change | Unknown when a member is unreadable (C3) | Epoch | No | `package:` entries of every record | Maintained direct-package aggregate with an S0 identity per member, updated per changed file |
+| Per-unit `P_diag` | `AttributedMemos.projections` (path → content hash, P_diag) from attribution or restore. Each dependant also recomputes every dependency's P_diag in its own task | Content consumed + projection version | `DiagnosticProjection.of` | Content change | Total for attributed units | Transaction | Inside the record | `logical-unit:` entries, early cutoff | Reuse the established leaf for the same content |
+| Source SCCs / condensation | `drain()`: Tarjan over the whole reachable graph per batch (256 captures or 2 s); `knownDependencies` | Pending set + dependency sets | Tarjan | New captures; dependency changes | A component is final when nothing it reaches is unknown | Process | No | Record writes (SCC peers bind content) | Settled components are kept and not revisited; visit counters |
+| Ordered classpath and search identities | `StaticInputs.slots` per epoch; `ClasspathSequence` in the analyzer | Context classpath + content identities | `StaticInputs` | Classpath or artifact change | Total | Environment epoch | Logical slots in the static key | Static key | Per context and environment |
 
 ## Known limits
 

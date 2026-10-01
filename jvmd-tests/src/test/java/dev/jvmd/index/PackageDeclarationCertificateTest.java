@@ -1,22 +1,23 @@
 package dev.jvmd.index;
 
 import dev.jvmd.analyzer.Analyzer;
+import dev.jvmd.analyzer.NamespaceResolutionProofs;
 import dev.jvmd.analyzer.Processing;
 import dev.jvmd.core.Documents;
 import dev.jvmd.core.FileStateRegistry;
 import java.nio.file.*;
 import java.util.*;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * Which package a unit's attributed memo binds as "its own package" when a comment containing
- * {@code package com.old;} comes before the real declaration. {@code AttributedMemos.consultedPackages}
- * takes the first regex match over the raw text, so the certificate binds the comment's package.
- * Reported, not fixed yet: the first test pins today's binding, the second states the consequence.
+ * C1/C2 (corrective pass): an attributed memo binds the package and imports javac actually used, read
+ * from the attributed unit's syntax tree, never from the raw text. Until B1 the own package came from
+ * the first regex match over the text, so a comment mentioning {@code package com.old;} became the
+ * bound package and adding a type to the real package restored a stale clean result (history in
+ * docs/persistence-architecture-status.md, corrective pass, checkpoint 1).
  */
 class PackageDeclarationCertificateTest {
     @TempDir Path root;
@@ -67,18 +68,16 @@ class PackageDeclarationCertificateTest {
                 +"import other.*;\n\nclass A { int f(){ return new Thing().size(); } }\n");
     }
 
-    @Test void theCertificateBindsThePackageNamedInTheCommentNotTheDeclaredOne()throws Exception{
+    @Test void theCertificateBindsTheDeclaredPackageNotTheOneNamedInAComment()throws Exception{
         project();
         var cold=diagnose("p/A.java");
         assertThat(cold.diagnostics()).doesNotContain("ERROR");
         var keys=namespaceKeys();
-        System.out.println("NAMESPACE keys of A's record: "+keys);
-        assertThat(keys).as("today's binding (the defect): the comment's package").anyMatch(key->key.endsWith("|com.old"));
-        assertThat(keys).as("today's binding (the defect): the declared package is not bound").noneMatch(key->key.endsWith("|p"));
+        assertThat(keys).as("the declared package is bound").anyMatch(key->key.endsWith("|p"));
         assertThat(keys).as("the star-imported package is bound").anyMatch(key->key.endsWith("|other"));
+        assertThat(keys).as("a package named only in a comment is not").noneMatch(key->key.endsWith("|com.old"));
     }
 
-    @Disabled("Known defect, reported and not fixed yet: consultedPackages reads the package from a comment")
     @Test void aTypeAddedToTheDeclaredPackageInvalidatesTheRecord()throws Exception{
         project();diagnose("p/A.java");
         // p.Thing now shadows the star-imported other.Thing, and has no size().
@@ -88,13 +87,80 @@ class PackageDeclarationCertificateTest {
         assertThat(restart.diagnostics()).contains("cant.resolve");
     }
 
-    /** What the disabled test would see today: the stale record is restored. */
-    @Test void todayATypeAddedToTheDeclaredPackageRestoresTheStaleResult()throws Exception{
+    /**
+     * C2: a record of the previous function version (v5, whose certificates may name the wrong
+     * package) is never consulted, even with a valid checksum. The function version is part of the
+     * static key identity, so the v6 lookup cannot reach a v5 record. Unaffected functions stay usable:
+     * the S0 namespace records written before are restored, not reparsed.
+     */
+    @Test void previousVersionRecordsMissAndOtherFunctionsStayUsable()throws Exception{
         project();diagnose("p/A.java");
-        write(sources(),"p/Thing.java","package p; public class Thing { }");
-        var restart=diagnose("p/A.java");
-        System.out.println("after adding p/Thing.java: compiled="+restart.compiled()+" diagnostics="+restart.diagnostics());
-        assertThat(restart.compiled()).as("today (the defect): restored without javac").isFalse();
-        assertThat(restart.diagnostics()).as("today (the defect): the restored result misses the new error").doesNotContain("cant.resolve");
+        var store=new SemanticMemoStore(root.resolve("memo"));int rewritten=0;
+        try(var walk=Files.walk(root.resolve("memo"))){
+            for(Path file:walk.filter(path->path.toString().endsWith(".memo")).toList()){
+                var record=SemanticMemoStore.decode(Files.readAllBytes(file));
+                if(!record.key().function().name().equals("attributed-diagnostics"))continue;
+                assertThat(record.key().function().version()).isEqualTo(6);
+                var old=new SemanticMemoStore.StaticKey(new SemanticMemoStore.Function("attributed-diagnostics",5),record.key().staticInputs());
+                store.put(new SemanticMemoStore.MemoRecord(old,record.certificate(),record.coverage(),record.completeness(),record.result()));
+                Files.delete(file);rewritten++;
+            }
+        }
+        assertThat(rewritten).as("A's and Thing's records").isGreaterThanOrEqualTo(2);
+        try(var analyzer=analyzer()){
+            for(String unit:List.of("other/Thing.java","p/A.java")){
+                Path file=sources().resolve(unit);
+                long before=queries(analyzer);analyzer.diagnostics(file,Files.readString(file));
+                assertThat(queries(analyzer)).as("a v5 record with a valid checksum is not restored: "+unit).isGreaterThan(before);
+            }
+            analyzer.awaitMemoWrites();
+            var namespaces=(Map<?,?>)((Map<?,?>)analyzer.status().get("attributed_memo")).get("source_namespaces");
+            assertThat(((Number)namespaces.get("memo_hits")).longValue()).as("S0 namespace records are still reused").isPositive();
+        }
+    }
+
+    private static NamespaceResolutionProofs.Header header(String source){return NamespaceResolutionProofs.header(source);}
+
+    @Test void theHeaderIsWhatJavacParsesNotWhatTheTextMentions(){
+        var block=header("/* package com.old; import x.*; */ package p; import other.*; class A {}");
+        assertThat(block.packageName()).isEqualTo("p");assertThat(block.onDemandImports()).containsExactly("other");
+        var line=header("// package com.old;\npackage p;\nclass A {}");
+        assertThat(line.packageName()).isEqualTo("p");
+        var javadoc=header("/** package com.old; */\npackage p;\nclass A {}");
+        assertThat(javadoc.packageName()).isEqualTo("p");
+        var string=header("package p; class A { String s=\"package com.old; import q.*;\"; }");
+        assertThat(string.packageName()).isEqualTo("p");assertThat(string.onDemandImports()).isEmpty();
+        var textBlock=header("package p; class A { String s=\"\"\"\n    import static z.Z.*;\n    \"\"\"; }");
+        assertThat(textBlock.staticImports()).isEmpty();
+        // Unicode escapes are translated before lexing: this is "package p;" and "import q.*;".
+        var escaped=header("\\u0070ackage p;\nimport q.\\u002a;\nclass A {}");
+        assertThat(escaped.packageName()).isEqualTo("p");assertThat(escaped.onDemandImports()).containsExactly("q");
+        assertThat(header("class A {}").packageName()).isEmpty();
+    }
+
+    @Test void explicitStarAndStaticImportsAreSeparated(){
+        var value=header("package p;\nimport a.One;\nimport b.*;\nimport static c.Outer.Inner.member;\nimport static d.Util.*;\n"
+                +"class A {}\nclass B { class Nested {} }\n");
+        assertThat(value.singleImports()).containsExactly("a.One");
+        assertThat(value.onDemandImports()).containsExactly("b");
+        assertThat(value.staticImports()).containsExactly("c.Outer.Inner.member","d.Util.*");
+        assertThat(value.staticImportTypes()).containsExactly("c.Outer.Inner","d.Util");
+        assertThat(value.consultedPackages()).containsExactly("b","p");
+        assertThat(value.complete()).isTrue();
+    }
+
+    @Test void incompleteSourceKeepsAWellFormedHeaderAndAnErroneousHeaderIsIncomplete(){
+        var body=header("package p;\nimport q.*;\nclass A { int f( { return }\n");
+        assertThat(body.packageName()).isEqualTo("p");assertThat(body.onDemandImports()).containsExactly("q");assertThat(body.complete()).isTrue();
+        assertThat(header("package p;\nimport q.;\nclass A {}").complete()).isFalse();
+        assertThat(header("package p;\nimport module java.base;\nclass A {}").complete()).as("module imports are not modelled").isFalse();
+    }
+
+    @Test void plansFromIncompleteHeadersOrStaticImportsAreNeverPrecise(){
+        assertThat(NamespaceResolutionProofs.plan("package p; import q.*; class A {}","Thing",null).precise()).isTrue();
+        assertThat(NamespaceResolutionProofs.plan("package p; import static q.U.*; class A {}","Thing",null).precise()).isFalse();
+        assertThat(NamespaceResolutionProofs.plan("package p; import module java.base; class A {}","Thing",null).precise()).isFalse();
+        var commented=NamespaceResolutionProofs.plan("/* package com.old; */ package p; import other.*; class A {}","Thing",null);
+        assertThat(commented.domains()).containsExactly("p.Thing","java.lang.Thing","other.Thing");
     }
 }

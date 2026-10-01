@@ -1481,13 +1481,10 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
 
     private Hash256 namespaceProofIdentity(String text,CompilerInputs.Snapshot observed){
-        var imports=new TreeSet<String>();
-        var matcher=java.util.regex.Pattern.compile("(?m)^\\s*import\\s+(static\\s+)?([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$*][\\w$*]*)*)\\s*;").matcher(text);
-        while(matcher.find())imports.add((matcher.group(1)==null?"":"static ")+matcher.group(2));
-        var packageMatcher=java.util.regex.Pattern.compile("(?m)^\\s*package\\s+([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)\\s*;").matcher(text);
-        String pkg=packageMatcher.find()?packageMatcher.group(1):"";
-        return CanonicalDigestWriter.digest("document-namespace-proof-v1",pkg,List.copyOf(imports),
-                observed.live().snapshot().state().namespace().fingerprint().value());
+        // The package and imports as javac parses them (comments and strings cannot declare either).
+        var header=NamespaceResolutionProofs.header(text);
+        return CanonicalDigestWriter.digest("document-namespace-proof-v2",header.packageName(),header.singleImports(),header.onDemandImports(),
+                header.staticImports(),header.complete(),observed.live().snapshot().state().namespace().fingerprint().value());
     }
 
     private static String simpleTypeName(String binary){

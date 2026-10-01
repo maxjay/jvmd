@@ -88,15 +88,19 @@ than persisted with a path it cannot restore.
 
 **Restart to first correct completion.** The benchmark lifecycle (`benchmarks/harness/lifecycle.ts`, run by
 `jvmd-benchmarks.yml`) restarts the daemon on its persisted state and polls completion until `getGroupId` is offered.
-The CI lifecycle on the pinned `apache/maven` fixture has not produced the number yet:
+**Measured in CI: 12.0 s** from starting the new daemon (after the old one stopped) to the first correct completion
+([run 24](https://github.com/maxjay/jvmd/actions/runs/36850495307), `1eb5d87`, `apache/maven`, 4 CPUs): daemon restart
+on the persisted index 1.2 s, editor open after restart 9.6 s (cold open: 76.7 s), reconnect to the warm daemon 9.1 s.
 
-- Run 17 (`c710b4d`): the restarted daemon exited with 1 during startup. The harness killed the old daemon and
-  started the new one before the old process had exited. Fixed in `4f87c3f`.
+Getting there took three fixes, each found from the lifecycle's own evidence:
+
+- Run 17 (`c710b4d`): the restarted daemon exited with 1 during startup. The harness started the new daemon before
+  the killed one had exited and released its store (fixed in `4f87c3f`).
 - Runs 19–21: the editor's `initialize` failed, first by timing out, then with a faulted `session.open`. The
-  harness's new failure evidence (daemon log and busy thread stacks in the job log) showed two RocksDB
-  configuration bugs: a strict block-cache limit that failed reads under cache pressure (fixed in `1745f2e`), and
-  writers stalled indefinitely on the shared write-buffer budget while holding a lock that `initialize` needs
-  (fixed in `1eb5d87`). Both have breaking tests in `RocksMemoryTest`.
+  harness's failure evidence (daemon log and busy thread stacks in the job log) showed two RocksDB configuration
+  bugs: a strict block-cache limit that failed reads under cache pressure (fixed in `1745f2e`), and writers stalled
+  indefinitely on the shared write-buffer budget while holding a lock that `initialize` needs (fixed in `1eb5d87`).
+  Both have breaking tests in `RocksMemoryTest`.
 
 The in-process equivalent on the real project is in the table above (first correct completion after a no-change
 restart: 3.0 s, cold 110.5 s).
@@ -117,7 +121,7 @@ restart: 3.0 s, cold 110.5 s).
 | [x] W7 `DiagnosticSnapshots` persistence deleted; production lines −156 / +28 | `3c7a36c` | `DiagnosticSnapshotCleanupTest.startDeletesTheObsoleteDiagnosticsDirectory`, `PersistentDiagnosticsTest` |
 | [x] W8 compression added; 490-jar comparison run; decision applied per the fixed rule (keep RocksDB); the native POC removed from production | `3b9d16f`, `513639c` | `MachineSegmentTest` (compression), `MachineDecisionBenchmark` |
 | [x] W9 real project pinned; 5,000-unit fixtures | `9457133`, `2659b28` | `RealProjectBenchmark`, `RestartScenarioTest` |
-| [ ] W9 restart to first completion measured in CI (open: the CI lifecycle's restart does not answer `initialize` yet; see above) | `9457133`, `4f87c3f` | `benchmarks/harness/lifecycle.ts` |
+| [x] W9 restart to first correct completion measured in CI: 12.0 s ([run 24](https://github.com/maxjay/jvmd/actions/runs/36850495307)) | `9457133`, `4f87c3f`, `1745f2e`, `1eb5d87` | `benchmarks/harness/lifecycle.ts` (`phases.restart_first_completion_ms`), `RocksMemoryTest` |
 | [x] W9 status doc with a breaking test per item and refusal rates per reason | this commit | — |
 
 ## The problems that started this task (strict task §1)
@@ -212,8 +216,6 @@ Rerun: `mvn -pl jvmd-tests test -Dtest=MachineDecisionBenchmark -DexcludedGroups
 
 ## Known limits
 
-- Open: restart to first correct completion in the CI lifecycle (see *Real project*). The restarted daemon does not
-  yet produced the number on the `apache/maven` fixture; the two RocksDB fixes above remove the failures seen so far.
 - A unit whose javac diagnostics name another file (`foreign-diagnostic-file`) is refused.
 - When a dependency module's sources are newer than its class output (a branch switch without a rebuild), dependants
   compile against its sources. That changes their context and static key, so those units are recompiled once.

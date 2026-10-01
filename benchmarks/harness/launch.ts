@@ -66,8 +66,11 @@ export class JvmdDaemon {
   async stop(){
     try{await this.call("daemon.shutdown");}catch{/* exiting or hung */}
     this.control.close();this.allocation.close();
-    await Promise.race([new Promise(r=>this.process.once("exit",r)),new Promise(r=>setTimeout(r,10000))]);
-    if(this.alive())this.process.kill("SIGKILL");
+    const exited=new Promise(r=>{if(!this.alive())r(undefined);else this.process.once("exit",r);});
+    await Promise.race([exited,new Promise(r=>setTimeout(r,10000))]);
+    // A killed daemon still holds its store until the process is gone: the next daemon on the same
+    // state (a restart) must not start before then.
+    if(this.alive()){this.process.kill("SIGKILL");await exited;}
     closeSync(this.stderr);rmSync(this.dir,{recursive:true,force:true});
   }
 }

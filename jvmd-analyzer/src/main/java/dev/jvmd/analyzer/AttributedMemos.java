@@ -186,7 +186,7 @@ final class AttributedMemos implements AutoCloseable {
      * ({@code $}) are covered by their top-level class's P_diag.
      */
     private Hash256 classPackageIdentity(String pkg)throws Exception{
-        var parts=new ArrayList<Object>();
+        var parts=new ArrayList<String>();
         for(Path directory:perClassDirectories()){
             Path folder=pkg.isEmpty()?directory:directory.resolve(pkg.replace('.','/'));
             if(!Files.isDirectory(folder))continue;
@@ -194,9 +194,11 @@ final class AttributedMemos implements AutoCloseable {
             try(var listing=Files.list(folder)){
                 listing.map(path->path.getFileName().toString()).filter(name->name.endsWith(".class")&&!name.contains("$")).forEach(names::add);
             }
-            parts.add(List.of(slotName(directory),List.copyOf(names)));
+            parts.add(slotName(directory)+"="+String.join(",",names));
         }
-        return CanonicalDigestWriter.digest("reactor-class-package-v1",pkg,parts);
+        // Which top-level names a package holds, per slot; classpath order is not part of it (shadowing
+        // between directories is decided by the reactor-class entries of the classes actually used).
+        return CanonicalDigestWriter.digest("reactor-class-package-v2",pkg,List.copyOf(new TreeSet<>(parts)));
     }
     /**
      * Certificate entries for classes the unit completed from other reactor modules' class
@@ -305,26 +307,32 @@ final class AttributedMemos implements AutoCloseable {
      * Established presence or absence, in the source roots, of a top-level source unit or a package
      * directory named {@code binary}: either would change how javac resolves that name.
      */
+    /**
+     * Whether a type or a package named {@code binary} exists anywhere javac looks: the compiler
+     * source roots and other reactor modules' class directories (archives and the platform are in the
+     * static key). Only existence can turn an unresolved name into a resolved one; where a type that
+     * exists lives is bound by the dependency entries of the units that use it, so locations and
+     * classpath order are not part of this identity.
+     */
     private Hash256 absenceIdentity(String binary,LogicalSources logical){
-        var present=new ArrayList<String>();
+        boolean type=false,pkg=false,unreadable=false;
         String relative=binary.replace('.','/');
         for(Path root:context().sources()){
             Path normalized=root.toAbsolutePath().normalize(),file=normalized.resolve(relative+".java"),directory=normalized.resolve(relative);
             NavigableSet<Path> members;
-            try{members=members(normalized);}catch(Exception unreadable){present.add("unreadable:"+logical.logical(directory).orElse("<non-logical>"));continue;}
-            if(members.contains(file))present.add("unit:"+logical.logical(file).orElse("<non-logical>"));
+            try{members=members(normalized);}catch(Exception failure){unreadable=true;continue;}
+            if(members.contains(file))type=true;
             // A package exists for javac's source path when its directory holds sources.
             for(Path member:members.tailSet(directory,false)){
                 if(!member.toString().startsWith(directory.toString()))break;
-                if(member.startsWith(directory)){present.add("package:"+logical.logical(directory).orElse("<non-logical>"));break;}
+                if(member.startsWith(directory)){pkg=true;break;}
             }
         }
-        // Other reactor modules' class directories are bound per class, so a class or package appearing there is an input too.
         for(Path directory:perClassDirectories()){
-            if(Files.isRegularFile(directory.resolve(relative+".class")))present.add("class:"+slotName(directory));
-            if(Files.isDirectory(directory.resolve(relative)))present.add("class-package:"+slotName(directory));
+            if(Files.isRegularFile(directory.resolve(relative+".class")))type=true;
+            if(Files.isDirectory(directory.resolve(relative)))pkg=true;
         }
-        return CanonicalDigestWriter.digest("source-absence-v3",binary,present);
+        return CanonicalDigestWriter.digest("source-absence-v4",binary,type,pkg,unreadable);
     }
     private static final java.util.regex.Pattern PACKAGE=java.util.regex.Pattern.compile("\\bpackage\\s+([\\w.$]+)\\s*;");
     private static final java.util.regex.Pattern STAR_IMPORT=java.util.regex.Pattern.compile("\\bimport\\s+(?!static\\b)([\\w.$]+)\\s*\\.\\s*\\*\\s*;");

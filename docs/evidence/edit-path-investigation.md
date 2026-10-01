@@ -49,7 +49,7 @@ reports READY before the repository scan finishes. None of the four memo hypothe
 | R33 | PR | per-thread + JFR | 0.64 | 1.35 | 26.23 |
 | R34 | main | per-thread + JFR | 0.62 | 1.31 | 12.51 |
 | R31 | PR | none, full suite | 0.63 | 1.33 | 12.50 |
-| R32 | main | none, full suite | R32_MIN | R32_MED | R32_MAX |
+| R32 | main | none, full suite | 0.62 | 1.29 | 12.40 |
 | R29 | main (own harness) | none, full suite | pooled median only, in the run's job summary | | |
 
 In the full suite (R31) the hover cases run long after the ingest, so only SES-01 run 1 overlaps (5.68 MB).

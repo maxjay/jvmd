@@ -2,8 +2,8 @@ package dev.jvmd.index;
 
 import dev.jvmd.core.IdentityEncoder;
 import dev.jvmd.core.Id128;
-import java.math.BigInteger;
 import java.util.*;
+import java.util.function.ToLongFunction;
 
 /**
  * Persistent ordered classpath identity.
@@ -48,7 +48,7 @@ public final class ClasspathSequence {
         public boolean equal(){return intervals.isEmpty();}
     }
 
-    private record Item(Entry entry,BigInteger priority) { }
+    private record Item(Entry entry,long priority) { }
     private record Split(Node left,Node right) { }
     private static final class Counter { int value; }
     private static final class Node {
@@ -68,22 +68,28 @@ public final class ClasspathSequence {
         }
     }
 
+    private static final ToLongFunction<String> PRIORITY=key->IdentityEncoder.of("classpath-sequence-priority-v2",key).lo();
     private final Node root;
+    private final ToLongFunction<String> priority;
 
-    private ClasspathSequence(Node root){this.root=root;}
+    private ClasspathSequence(Node root,ToLongFunction<String> priority){this.root=root;this.priority=priority;}
+    private ClasspathSequence with(Node next){return new ClasspathSequence(next,priority);}
 
-    public static ClasspathSequence empty(){return new ClasspathSequence(null);}
+    public static ClasspathSequence empty(){return new ClasspathSequence(null,PRIORITY);}
 
-    public static ClasspathSequence of(Collection<Entry> entries){
-        Objects.requireNonNull(entries);
+    public static ClasspathSequence of(Collection<Entry> entries){return of(entries,PRIORITY);}
+
+    /** Test seam: a forced priority function exercises the key tie-break. */
+    static ClasspathSequence of(Collection<Entry> entries,ToLongFunction<String> priority){
+        Objects.requireNonNull(entries);Objects.requireNonNull(priority);
         var values=new ArrayList<Item>(entries.size());
         var keys=new HashSet<String>();
         for(var entry:entries){
             Objects.requireNonNull(entry);
             if(!keys.add(entry.key()))throw new IllegalArgumentException("Duplicate classpath entry key: "+entry.key());
-            values.add(item(entry));
+            values.add(new Item(entry,priority.applyAsLong(entry.key())));
         }
-        return new ClasspathSequence(bulkBuild(values));
+        return new ClasspathSequence(bulkBuild(values),priority);
     }
 
     public int size(){return size(root);}
@@ -109,20 +115,20 @@ public final class ClasspathSequence {
         Objects.requireNonNull(entry);checkIndex(index,size());
         Entry previous=get(index);
         if(previous.equals(entry))return this;
-        if(previous.key().equals(entry.key()))return new ClasspathSequence(replaceSameKey(root,index,item(entry)));
+        if(previous.key().equals(entry.key()))return with(replaceSameKey(root,index,item(entry)));
         if(containsKey(root,entry.key()))throw new IllegalArgumentException("Duplicate classpath entry key: "+entry.key());
-        return new ClasspathSequence(insertNode(removeNode(root,index),index,item(entry)));
+        return with(insertNode(removeNode(root,index),index,item(entry)));
     }
 
     public ClasspathSequence insert(int index,Entry entry){
         Objects.requireNonNull(entry);checkPosition(index,size());
         if(containsKey(root,entry.key()))throw new IllegalArgumentException("Duplicate classpath entry key: "+entry.key());
-        return new ClasspathSequence(insertNode(root,index,item(entry)));
+        return with(insertNode(root,index,item(entry)));
     }
 
     public ClasspathSequence remove(int index){
         checkIndex(index,size());
-        return new ClasspathSequence(removeNode(root,index));
+        return with(removeNode(root,index));
     }
 
     /** Move an entry to its final index in the resulting sequence. */
@@ -131,7 +137,7 @@ public final class ClasspathSequence {
         if(from==to)return this;
         Entry value=get(from);
         Node without=removeNode(root,from);
-        return new ClasspathSequence(insertNode(without,to,item(value)));
+        return with(insertNode(without,to,item(value)));
     }
 
     /**
@@ -283,12 +289,10 @@ public final class ClasspathSequence {
                 freezeBulk(ordered,left,right,right[index]));
     }
 
-    private static Item item(Entry entry){
-        return new Item(entry,new BigInteger(1,IdentityEncoder.of("classpath-sequence-priority-v1",entry.key()).bytes()));
-    }
+    private Item item(Entry entry){return new Item(entry,priority.applyAsLong(entry.key()));}
 
     private static int comparePriority(Item first,Item second){
-        int compared=first.priority().compareTo(second.priority());
+        int compared=Long.compareUnsigned(first.priority(),second.priority());
         return compared!=0?compared:first.entry().key().compareTo(second.entry().key());
     }
 

@@ -4,9 +4,8 @@ import dev.jvmd.core.AlgebraicAccumulator;
 import dev.jvmd.core.IdentityEncoder;
 import dev.jvmd.core.Id128;
 import dev.jvmd.core.Hashing;
-import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.function.ToLongFunction;
 
 /**
  * Resident ordered semantic state.
@@ -16,7 +15,6 @@ import java.util.*;
  * aggregates are maintained once outside the tree, and exact symbols share the same canonical facts.
  */
 public final class ResidentSemanticState {
-    private static final BigInteger FIELD=new BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F",16);
     private static final String EMPTY=Hashing.sha256(new byte[0]);
     private static final Id128 EMPTY_HASH=IdentityEncoder.of("resident-node-empty-v1");
 
@@ -36,7 +34,7 @@ public final class ResidentSemanticState {
 
     public record Identity(long epoch,String merkleRoot,String membership,String api,String namespace,String documentation) { }
 
-    private record Entry(String key,SemanticFact fact,Id128 valueIdentity,Aggregate contribution,BigInteger priority) { }
+    private record Entry(String key,SemanticFact fact,Id128 valueIdentity,Aggregate contribution,long priority) { }
     private static final class Node {
         final Entry entry;final Node left,right;final Id128 merkle;
         final AlgebraicAccumulator.Value resolutionRange;
@@ -52,6 +50,7 @@ public final class ResidentSemanticState {
         }
     }
 
+    private final ToLongFunction<String> priority;
     private Node root;
     private final Map<String,SemanticFact> symbols=new HashMap<>();
     private final Map<String,String> typesByFqn=new HashMap<>();
@@ -65,6 +64,10 @@ public final class ResidentSemanticState {
     private AlgebraicAccumulator staleAggregate=new AlgebraicAccumulator("semantic-stale-v2");
     private long uncertaintyGeneration;
     private long epoch,rangeEntriesRead,factMutations;
+
+    public ResidentSemanticState(){this(key->IdentityEncoder.of("priority-v2",key).lo());}
+    /** Test seam: a forced priority function exercises the key tie-break. */
+    ResidentSemanticState(ToLongFunction<String> priority){this.priority=Objects.requireNonNull(priority);}
 
     public synchronized SemanticDelta diff(SemanticSnapshot next){
         return SemanticDelta.between(units.get(next.unit()),next,symbols::get);
@@ -431,8 +434,14 @@ public final class ResidentSemanticState {
         });
     }
 
-    private static Entry entry(SemanticFact fact,Aggregate contribution){
-        String key=fact.orderedKey();return new Entry(key,fact,fact.factIdentity(),contribution,point("priority",key));
+    private Entry entry(SemanticFact fact,Aggregate contribution){
+        String key=fact.orderedKey();return new Entry(key,fact,fact.factIdentity(),contribution,priority.applyAsLong(key));
+    }
+
+    /** Unsigned priority order, ties broken by key, so the treap shape is unique for a key set. */
+    private static int comparePriority(Entry first,Entry second){
+        int compared=Long.compareUnsigned(first.priority(),second.priority());
+        return compared!=0?compared:first.key().compareTo(second.key());
     }
 
     private static Aggregate contribution(SemanticFact fact){
@@ -441,10 +450,6 @@ public final class ResidentSemanticState {
                 AlgebraicAccumulator.contribution("api",fact.id(),fact.apiIdentity().isBlank()?fact.structuralSignature():fact.apiIdentity()),
                 AlgebraicAccumulator.contribution("namespace",fact.id(),fact.namespaceIdentity().isBlank()?fact.packageName()+"\0"+fact.name()+"\0"+fact.kind():fact.namespaceIdentity()),
                 AlgebraicAccumulator.contribution("documentation",fact.id(),fact.documentationIdentity()));
-    }
-
-    private static BigInteger point(String domain,String value){
-        return new BigInteger(Hashing.sha256((domain+"\0"+Objects.requireNonNullElse(value,"")).getBytes(StandardCharsets.UTF_8)),16).mod(FIELD);
     }
 
     private static AlgebraicAccumulator.Value resolutionRange(Node node,String lower,String upper){
@@ -471,7 +476,7 @@ public final class ResidentSemanticState {
         Arrays.fill(left,-1);Arrays.fill(right,-1);int top=-1;
         for(int i=0;i<size;i++){
             int previous=-1;
-            while(top>=0&&ordered.get(stack[top]).priority().compareTo(ordered.get(i).priority())<0)previous=stack[top--];
+            while(top>=0&&comparePriority(ordered.get(stack[top]),ordered.get(i))<0)previous=stack[top--];
             left[i]=previous;if(top>=0)right[stack[top]]=i;stack[++top]=i;
         }
         return freezeBulk(ordered,left,right,stack[0]);
@@ -490,10 +495,10 @@ public final class ResidentSemanticState {
         if(compare==0)return newNode(entry,node.left,node.right);
         if(compare<0){
             var next=newNode(node.entry,put(node.left,entry),node.right);
-            return next.left.entry.priority().compareTo(next.entry.priority())>0?rotateRight(next):next;
+            return comparePriority(next.left.entry,next.entry)>0?rotateRight(next):next;
         }
         var next=newNode(node.entry,node.left,put(node.right,entry));
-        return next.right.entry.priority().compareTo(next.entry.priority())>0?rotateLeft(next):next;
+        return comparePriority(next.right.entry,next.entry)>0?rotateLeft(next):next;
     }
 
     private Node remove(Node node,String key){
@@ -504,7 +509,7 @@ public final class ResidentSemanticState {
 
     private Node merge(Node left,Node right){
         if(left==null)return right;if(right==null)return left;
-        if(left.entry.priority().compareTo(right.entry.priority())>0)return newNode(left.entry,left.left,merge(left.right,right));
+        if(comparePriority(left.entry,right.entry)>0)return newNode(left.entry,left.left,merge(left.right,right));
         return newNode(right.entry,merge(left,right.left),right.right);
     }
 

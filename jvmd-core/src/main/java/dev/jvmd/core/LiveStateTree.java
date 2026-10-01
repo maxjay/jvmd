@@ -1,8 +1,8 @@
 package dev.jvmd.core;
 
-import java.math.BigInteger;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.function.ToLongFunction;
 
 /**
  * Canonical live source-state identity. Mutations update compact semantic aggregates and a
@@ -61,15 +61,19 @@ public final class LiveStateTree {
     }
 
     private final List<Path> roots;
-    private final Node workspace=new Node("workspace",null,null,true);
+    private final ToLongFunction<String> priority;
+    private final Node workspace;
     private final Map<Path,Leaf> leaves=new HashMap<>();
     private long epoch;
 
-    public LiveStateTree(Collection<Path> sourceRoots) {
+    public LiveStateTree(Collection<Path> sourceRoots){this(sourceRoots,LiveStateTree::priority);}
+    /** Test seam: a forced priority function exercises the key tie-break. */
+    LiveStateTree(Collection<Path> sourceRoots,ToLongFunction<String> priority) {
+        this.priority=Objects.requireNonNull(priority);workspace=new Node("workspace",null,null,true,priority);
         var normalized=sourceRoots.stream().map(LiveStateTree::normalize).distinct().sorted(Comparator.comparing(Path::toString)).toList();
         roots=List.copyOf(normalized);
         for(Path root:roots){
-            String key=rootKey(root);var child=new Node(root.toString(),root,key,true);
+            String key=rootKey(root);var child=new Node(root.toString(),root,key,true,priority);
             workspace.directories.put(key,child);workspace.children.put(key,child.merkle);
         }
         workspace.recompute();
@@ -144,7 +148,7 @@ public final class LiveStateTree {
         if(parentDirectory!=null&&!parentDirectory.equals(root))for(Path part:root.relativize(parentDirectory)){
             cursor=cursor.resolve(part);String key=directoryKey(part.toString());
             Node next=current.directories.get(key);
-            if(next==null){next=new Node(cursor.toString(),cursor,key,false);current.directories.put(key,next);}
+            if(next==null){next=new Node(cursor.toString(),cursor,key,false,priority);current.directories.put(key,next);}
             current=next;chain.add(current);
         }
         return chain;
@@ -205,11 +209,11 @@ public final class LiveStateTree {
     private static final class Node {
         final String id;final Path directory;final String keyInParent;final boolean sourceRoot;
         final Map<String,Node> directories=new HashMap<>();
-        final MerkleMap children=new MerkleMap();
+        final MerkleMap children;
         final Aggregate membership=new Aggregate("membership"),content=new Aggregate("content"),api=new Aggregate("api"),namespace=new Aggregate("namespace");
         Fingerprint merkle;long epoch;int files,pendingSemanticFiles;
-        Node(String id,Path directory,String keyInParent,boolean sourceRoot){
-            this.id=id;this.directory=directory;this.keyInParent=keyInParent;this.sourceRoot=sourceRoot;recompute();
+        Node(String id,Path directory,String keyInParent,boolean sourceRoot,ToLongFunction<String> priority){
+            this.id=id;this.directory=directory;this.keyInParent=keyInParent;this.sourceRoot=sourceRoot;children=new MerkleMap(priority);recompute();
         }
         void recompute(){merkle=fingerprint("state-node-v1",id,children.rootHash().value());}
         State state(){return new State(merkle,membership.identity(),content.identity(),api.identity(),namespace.identity(),epoch,files,pendingSemanticFiles);}
@@ -226,11 +230,13 @@ public final class LiveStateTree {
 
     /** Deterministic treap: priorities are derived from the key, so shape does not depend on mutation history. */
     private static final class MerkleMap {
+        final ToLongFunction<String> priority;
         Entry root;
+        MerkleMap(ToLongFunction<String> priority){this.priority=priority;}
         Fingerprint rootHash(){return root==null?EMPTY_MERKLE_MAP:root.hash;}
-        void put(String key,Fingerprint value){root=put(root,key,value,priority(key));}
+        void put(String key,Fingerprint value){root=put(root,key,value,priority.applyAsLong(key));}
         void remove(String key){root=remove(root,key);}
-        private static Entry put(Entry node,String key,Fingerprint value,BigInteger priority){
+        private static Entry put(Entry node,String key,Fingerprint value,long priority){
             if(node==null)return new Entry(key,value,priority);
             int order=key.compareTo(node.key);
             if(order==0){node.value=value;node.update();return node;}
@@ -251,17 +257,17 @@ public final class LiveStateTree {
             right.left=merge(left,right.left);right.update();return right;
         }
         private static boolean higher(Entry a,Entry b){
-            int compared=a.priority.compareTo(b.priority);return compared>0||compared==0&&a.key.compareTo(b.key)>0;
+            int compared=Long.compareUnsigned(a.priority,b.priority);return compared>0||compared==0&&a.key.compareTo(b.key)>0;
         }
         private static Entry rotateRight(Entry node){Entry next=node.left;node.left=next.right;next.right=node;node.update();next.update();return next;}
         private static Entry rotateLeft(Entry node){Entry next=node.right;node.right=next.left;next.left=node;node.update();next.update();return next;}
         private static final class Entry {
-            final String key;final BigInteger priority;Fingerprint value,hash;Entry left,right;
-            Entry(String key,Fingerprint value,BigInteger priority){this.key=key;this.value=value;this.priority=priority;update();}
+            final String key;final long priority;Fingerprint value,hash;Entry left,right;
+            Entry(String key,Fingerprint value,long priority){this.key=key;this.value=value;this.priority=priority;update();}
             void update(){hash=fingerprint("merkle-map-node-v1",left==null?EMPTY_MERKLE_MAP.value():left.hash.value(),key,value.value(),right==null?EMPTY_MERKLE_MAP.value():right.hash.value());}
         }
     }
 
-    private static BigInteger priority(String key){return new BigInteger(1,IdentityEncoder.of("merkle-priority-v1",key).bytes());}
+    private static long priority(String key){return IdentityEncoder.of("merkle-priority-v2",key).lo();}
     private static Fingerprint fingerprint(String domain,Object... parts){return new Fingerprint(IdentityEncoder.of(domain,parts).hex());}
 }

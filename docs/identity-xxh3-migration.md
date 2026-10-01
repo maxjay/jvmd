@@ -175,11 +175,11 @@ Tick each box when it is done and green. Each phase is **one commit** and builds
 - [x] Delete `CanonicalDigestWriter.java` and `Hash256.java`.
 
 ### P3: Accumulators and priorities without BigInteger
-- [ ] Rewrite `AlgebraicAccumulator` per §2.5. Keep the public method names (`contribution`, `plus`, `minus`, `identity`, `ZERO`) so callers do not change.
-- [ ] Treap priorities to `long` with the unsigned compare and key tie-break (§2.6) in LiveStateTree, ClasspathSequence and ResidentSemanticState. `ResidentSemanticState.point()` is deleted, and the priority goes through `IdentityEncoder`.
-- [ ] Property tests for each treap: insert/remove sequences in random orders converge to the **same root identity** as a bulk build of the final set (history independence). Include a forced-tie test using a test-only priority function.
-- [ ] Accumulator algebra tests: commutativity, `x.plus(c).minus(c) == x`, `identity` changes on count change even when the lanes are equal, and range-sum equals fold.
-- [ ] Remove every `import java.math.BigInteger` from production.
+- [x] Rewrite `AlgebraicAccumulator` per §2.5. Keep the public method names (`contribution`, `plus`, `minus`, `identity`, `ZERO`) so callers do not change.
+- [x] Treap priorities to `long` with the unsigned compare and key tie-break (§2.6) in LiveStateTree, ClasspathSequence and ResidentSemanticState. `ResidentSemanticState.point()` is deleted, and the priority goes through `IdentityEncoder`.
+- [x] Property tests for each treap: insert/remove sequences in random orders converge to the **same root identity** as a bulk build of the final set (history independence). Include a forced-tie test using a test-only priority function.
+- [x] Accumulator algebra tests: commutativity, `x.plus(c).minus(c) == x`, `identity` changes on count change even when the lanes are equal, and range-sum equals fold.
+- [x] Remove every `import java.math.BigInteger` from production.
 
 ### P4: Typed identities instead of hex strings
 - [ ] `LiveStateTree.Fingerprint` → `Id128`. Delete the record. Its `.value()` callers (~10) take `Id128`. `RocksWorkspaceState` persists `hex()`.
@@ -288,8 +288,8 @@ The lengths cover every branch boundary: 0, 1–3, 4–8, 9–16, 17–128, 129�
 |---|---|---|---|
 | P0 | d85e7ba | 2026-10-01 | In-repo harness (211 jars + resident + live tree); oracle over 3 legacy encoders, 10k samples each. |
 | P1 | 4c563f0 | 2026-10-01 | All 28 vectors + 2101 random lengths vs Python xxhash agree; 64-byte hash allocates only the result. |
-| P2 | see git log | 2026-10-01 | Oracle green; LocalArtifacts' compose was an on-disk artifact name, moved back to SHA-256 (see commit). |
-| P3 | | | |
+| P2 | 57c2b18 | 2026-10-01 | Oracle green; LocalArtifacts' compose was an on-disk artifact name, moved back to SHA-256 (see commit). |
+| P3 | see git log | 2026-10-01 | No BigInteger left; ResidentSemanticState gained the key tie-break it lacked; all-ties mutation caught. |
 | P4 | | | |
 | P5 | | | |
 | P6 | | | |

@@ -1202,7 +1202,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 var contribution=SemanticContributions.from(path,hash,outcome.result(),outcome.diagnostics());
                 var admission=admitSemanticMutation(semantic[0],contribution);
                 resolveContribution(contribution,admission);
-                attributedMemos.observe(path,outcome.result());
+                attributedMemos.observe(path,hash,outcome.result());
                 if(admission!=null)registerSourceProof(path,text,outcome.result(),contribution);
                 else{dependencies.semantic().proofs().remove(sourceProofConsumer(path));dependencies.semantic().proofCoverage(path,false);}
                 publishSource(path,hash,stamp,semanticPublisherContextFingerprint(observed,stamp),outcome.result(),outcome.tier());

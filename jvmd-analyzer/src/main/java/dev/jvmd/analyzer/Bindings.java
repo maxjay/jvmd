@@ -38,10 +38,10 @@ public final class Bindings {
      */
     public record Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies,
                            Map<String,SemanticFact> semanticFacts,List<ReferenceProof> referenceProofs,Set<String> unresolvedTypeNames,
-                           dev.jvmd.core.Hash256 diagnosticProjection) {
+                           dev.jvmd.core.Hash256 diagnosticProjection,Map<Path,dev.jvmd.core.Hash256> dependencyProjections) {
         public Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies,
                         Map<String,SemanticFact> semanticFacts,List<ReferenceProof> referenceProofs,Set<String> unresolvedTypeNames){
-            this(symbols,occurrences,edges,dependencies,semanticFacts,referenceProofs,unresolvedTypeNames,null);
+            this(symbols,occurrences,edges,dependencies,semanticFacts,referenceProofs,unresolvedTypeNames,null,Map.of());
         }
         public Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies){
             this(symbols,occurrences,edges,dependencies,Map.of(),List.of(),Set.of());
@@ -53,7 +53,7 @@ public final class Bindings {
         public Snapshot {
             symbols=Map.copyOf(symbols);occurrences=List.copyOf(occurrences);edges=List.copyOf(edges);
             dependencies=Set.copyOf(dependencies);semanticFacts=Map.copyOf(semanticFacts);referenceProofs=List.copyOf(referenceProofs);
-            unresolvedTypeNames=Set.copyOf(unresolvedTypeNames);
+            unresolvedTypeNames=Set.copyOf(unresolvedTypeNames);dependencyProjections=Map.copyOf(dependencyProjections);
         }
         public Map<String,Object> at(int offset){
             var occurrence=occurrences.stream().filter(o->o.start()<=offset&&offset<o.end()).min(Comparator.comparingInt(o->o.end()-o.start())).orElse(null);if(occurrence==null)return null;
@@ -180,7 +180,7 @@ public final class Bindings {
                 else if(type instanceof WildcardType wildcard){dependencyType(wildcard.getExtendsBound());dependencyType(wildcard.getSuperBound());}
                 else if(type instanceof IntersectionType intersection)for(var bound:intersection.getBounds())dependencyType(bound);
             }
-            final Set<Element> completedTypes=new HashSet<>();
+            final Set<Element> completedTypes=new HashSet<>();final Map<Path,TypeElement> unitTypes=new HashMap<>();
             /**
              * Models javac completing a source type: its file is entered, its header (supertypes,
              * bounds, annotations) and every member signature are attributed, and each type named
@@ -188,7 +188,7 @@ public final class Bindings {
              */
             void completion(Element element){
                 if(!(element instanceof TypeElement type)||!completedTypes.add(type))return;
-                String file=identity.sourceFile(type);if(file==null)return;dependencies.add(Path.of(file));
+                String file=identity.sourceFile(type);if(file==null)return;dependencies.add(Path.of(file));unitTypes.putIfAbsent(Path.of(file).toAbsolutePath().normalize(),type);
                 if(type.getEnclosingElement() instanceof TypeElement outer)completion(outer);
                 dependencyType(type.getSuperclass());for(var parent:type.getInterfaces())dependencyType(parent);
                 for(var permitted:type.getPermittedSubclasses())dependencyType(permitted);
@@ -300,13 +300,20 @@ public final class Bindings {
                 }
             }
         }.scan(unit,null);
-        dev.jvmd.core.Hash256 projection=null;
-        if(focus==null)for(var unit:units)try{
-            if(Path.of(unit.getSourceFile().toUri()).toAbsolutePath().normalize().equals(requested.toAbsolutePath().normalize())){
-                projection=DiagnosticProjection.of(task,unit);break;
+        dev.jvmd.core.Hash256 projection=null;var dependencyProjections=new HashMap<Path,dev.jvmd.core.Hash256>();
+        if(focus==null){
+            Path self=requested.toAbsolutePath().normalize();
+            for(var unit:units)try{
+                if(Path.of(unit.getSourceFile().toUri()).toAbsolutePath().normalize().equals(self)){projection=DiagnosticProjection.of(task,unit);break;}
+            }catch(IllegalArgumentException|java.nio.file.FileSystemNotFoundException ignored){}
+            // P_diag of every completed dependency, from the Element model this task completed.
+            for(var entry:capture.unitTypes.entrySet()){
+                if(entry.getKey().equals(self))continue;
+                var path=trees.getPath(entry.getValue());
+                if(path!=null)dependencyProjections.put(entry.getKey(),DiagnosticProjection.of(task,path.getCompilationUnit()));
             }
-        }catch(IllegalArgumentException|java.nio.file.FileSystemNotFoundException ignored){}
+        }
         return new Snapshot(symbols,List.copyOf(occurrences.values()),List.copyOf(edges),Set.copyOf(dependencies),semanticFacts,
-                List.copyOf(referenceProofs),Set.copyOf(unresolvedTypeNames),projection);
+                List.copyOf(referenceProofs),Set.copyOf(unresolvedTypeNames),projection,dependencyProjections);
     }
 }

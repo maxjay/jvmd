@@ -63,7 +63,8 @@ class AttributedMemoIntegrationTest {
         try(var restarted=analyzer(original,new SemanticMemoStore(root.resolve("state/local-memo-v1")))){
             assertThat(shape(diagnostics(restarted,original.b()))).isEqualTo(expected);
             assertThat(queries(restarted)).as("restored without javac").isZero();
-            assertThat(memo(restarted,"restores")).isEqualTo(1);
+            // B's certificate holds A's P_diag: the request restores its dependency cone, A then B.
+            assertThat(memo(restarted,"restores")).isEqualTo(2);
             assertThat(restarted.contribution(original.b()).dependencies()).contains(original.a());
         }
 
@@ -93,7 +94,7 @@ class AttributedMemoIntegrationTest {
         Files.writeString(project.a(),A);
         try(var reverted=analyzer(project,memos)){
             diagnostics(reverted,project.b());
-            assertThat(memo(reverted,"restores")).as("branch switch back reuses the original variant").isEqualTo(1);
+            assertThat(memo(reverted,"restores")).as("branch switch back reuses the original variants of A and B").isEqualTo(2);
             assertThat(queries(reverted)).isZero();
         }
 

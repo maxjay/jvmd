@@ -54,10 +54,8 @@ public final class SemanticMemoStore {
 
     /** How the certificate covers what the computation read (§73–75). */
     public enum Coverage {
-        /** Every dynamic input is a precise dependency in the certificate. */
-        PRECISE,
-        /** A proven-sufficient coarser dependency was captured instead (Option B of §75). */
-        COARSE
+        /** Every dynamic input is a precise dependency in the certificate. Coarse certificates are not representable. */
+        PRECISE
     }
 
     /**

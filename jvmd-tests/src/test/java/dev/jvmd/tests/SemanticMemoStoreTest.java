@@ -59,11 +59,11 @@ class SemanticMemoStoreTest {
     @Test void completenessIsRestoredExactlyAndUnknownIsNeverMemoised()throws Exception{
         var store=new SemanticMemoStore(root);
         var key=StaticKey.of(F,"partial");
-        store.put(new MemoRecord(key,Certificate.empty(),Coverage.COARSE,SemanticCompleteness.PARTIAL,Result.present(bytes("gap"))));
+        store.put(new MemoRecord(key,Certificate.empty(),Coverage.PRECISE,SemanticCompleteness.PARTIAL,Result.present(bytes("gap"))));
         var restarted=new SemanticMemoStore(root);
         var hit=(Lookup.Hit)restarted.lookup(key,current(Map.of()));
         assertThat(hit.record().completeness()).isEqualTo(SemanticCompleteness.PARTIAL);
-        assertThat(hit.record().coverage()).isEqualTo(Coverage.COARSE);
+        assertThat(hit.record().coverage()).isEqualTo(Coverage.PRECISE);
         assertThatThrownBy(()->new MemoRecord(key,Certificate.empty(),Coverage.PRECISE,SemanticCompleteness.UNKNOWN,Result.absent()))
                 .isInstanceOf(IllegalArgumentException.class);
     }
@@ -75,6 +75,11 @@ class SemanticMemoStoreTest {
                 new QueryProof.Key(QueryProof.Domain.CLASSPATH_SEARCH,"workspace:session-7"),
                 new QueryProof.Key(QueryProof.Domain.DOCUMENT_SCOPE,"/home/me/repo/A.java#12"),
                 new QueryProof.Key(QueryProof.Domain.NAMESPACE,"visible"),
+                // W3: the whole-roots content fallback and the global namespace leaf are not persistable.
+                new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"source-roots-content:g:a:1|main"),
+                new QueryProof.Key(QueryProof.Domain.NAMESPACE,"source-roots:g:a:1|main"),
+                new QueryProof.Key(QueryProof.Domain.NAMESPACE,"package:/home/me/repo|p"),
+                new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"logical-unit:/home/me/repo/src/main/java|p/A.java"),
                 new QueryProof.Key(QueryProof.Domain.EXACT_SYMBOL,"local 0123456789ab_10_x")))
             assertThatThrownBy(()->new Certificate(new QueryProof(List.of(new QueryProof.Dependency(key,hash("x"))))))
                     .as(key.toString()).isInstanceOf(IllegalArgumentException.class);
@@ -82,6 +87,10 @@ class SemanticMemoStoreTest {
                 new QueryProof.Key(QueryProof.Domain.HIERARCHY,A),new QueryProof.Key(QueryProof.Domain.NAMESPACE,"type:p.A"),
                 new QueryProof.Key(QueryProof.Domain.NEGATIVE_RESOLUTION,"List@p.List"),
                 new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"type:p.A"),
+                new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"logical-unit:g:a:1|src/main/java|p/A.java"),
+                new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"logical-source:g:a:1|src/main/java|p/A.java"),
+                new QueryProof.Key(QueryProof.Domain.NAMESPACE,"package:g:a:1|main|p.q"),
+                new QueryProof.Key(QueryProof.Domain.NAMESPACE,"package:g:a:1|main|"),
                 new QueryProof.Key(QueryProof.Domain.CLASSPATH_SEARCH,"binary:p.A")))
             assertThat(PersistableProofKeys.persistable(key)).as(key.toString()).isTrue();
     }

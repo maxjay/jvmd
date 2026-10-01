@@ -215,6 +215,118 @@ Rerun: `mvn -pl jvmd-tests test -Dtest=MachineDecisionBenchmark -DexcludedGroups
 | 2026-10-01 | W9 | this commit | A10 on the pinned project edits the reactor-root `lombok.config`. Every unit holds it, so all 977 recompile, which is the required result. Per-unit exactness is shown by `ProcessorBindingTest.lombokConfigEditRecompilesExactlyTheUnitsHoldingIt` (a package-level config). |
 | 2026-10-01 | §95 | this commit | READY was reported over an empty index. Phase 9 made READY independent of the repository scan, which is right only when a complete index is already persisted. On a first start (and after an interrupted first scan, or a new index format) the daemon printed READY after ~1.5 s with the index still `discovering`: dependency answers were incomplete and the ~7 s, ~1.75 GB first ingest competed with the first requests (it was the CI hover-after-edit allocation rise; [edit-path-investigation.md](evidence/edit-path-investigation.md)). READY now waits for the first scan unless the store's active generation is this format's generation, i.e. a completed, validated, activated scan is on disk (`IndexStorage.scanCompleted`, `readiness.persisted_index_complete`). Breaking tests: `ReadinessGatingTest` (first start, warm restart, interrupted first scan). |
 
+## Corrective pass (PR #55 review)
+
+The review of B1 found a persistence soundness bug and repeated identity work. This section is the one
+progress record for the corrective pass. Each checkpoint appends: start/end SHA, what changed and which owner
+holds the information, the correctness argument and breaking tests, before/after work, allocation and latency,
+failed approaches, and what still fails.
+
+**Mandate.** Work out semantic information when it is needed. Keep useful results and enough evidence to
+trust them. Maintain only what changes. Restore and query without working the same information out again.
+Complete the supported lifecycle within bounded resources. Speed or hit-rate results count only once the
+certificate fixes (checkpoint 1) pass. Certificates, oracles, tests, lifecycle operations and memory limits are
+not weakened to get there.
+
+**Subjects.**
+
+| Label | SHA | What |
+|---|---|---|
+| B0 | `c8fcb9f9a2430be2d8588839c5d9c8acc808973b` | PR base (`main`) |
+| B1 | `a66843185c407409b1ab9d1deffe108042ff00b0` | Reviewed head; start of this pass |
+| F | (final) | End of this pass |
+
+B1 → F attributes this pass; B0 → F shows the PR's total effect. An incorrect answer or timeout at any
+subject is reported as incorrect or timeout, never as a latency.
+
+**Effective configuration at B1.**
+
+- Benchmark daemon: `-Xmx1024m`, `heap_ceiling_mb` 1024.
+- Shipping launcher: no `-Xmx` (JVM default), `heap_ceiling_mb` 1024.
+- RocksDB native budget: `jvmd.index.native_budget_mb`, default 64 MiB. It is held in one `RocksMemory` per
+  `RocksIndexStorage`, and every database and generation of that storage shares it.
+- RocksDB cache:
+  - B0: `LRUCache(budget, -1, strict=true)` and `WriteBufferManager(budget/4, cache, allowStall=true)`.
+  - B1: strict capacity and stalls are both off. The budget is a soft target there; nothing enforces it as a
+    hard limit yet (gate M3).
+- Index generation budget: `jvmd.index.generation_budget_mb`, default min(128 MiB, heap/8).
+
+**Evidence register at B1.** Brief §1; status as found at B1.
+
+| # | Status at B1 | Where |
+|---|---|---|
+| E1 | Still present | `PackageDeclarationCertificateTest`: 2 tests pin the defect (a comment's `com.old` bound as the package; stale clean restore). `aTypeAddedToTheDeclaredPackageInvalidatesTheRecord` is `@Disabled`. Run at B1: 3 tests, 0 failures, 1 skipped. |
+| E2 | Still present | `AttributedMemos.consultedPackages` and `staticImportBindings` run regexes over raw text. `absenceIdentity` hashes `unreadable` (`AttributedMemos.java:318-335`). |
+| E3 | Still present (not reprofiled) | `reactorRoot()` is called from `staticInputs`, `processorResources` and the `config:` resolve callback, with no shared value ([edit-path-investigation.md](evidence/edit-path-investigation.md)). |
+| E4 | Still present (not reprofiled) | `drain()` runs Tarjan over the whole reachable graph every 256 captures or 2 s. Its edges call `foreignModule` (`relativize`) and build the `unknownSample` string for every node. |
+| E5 | Still present | `memoize` sets `epoch=null`; `members(root)` builds a root-wide `TreeSet` per call. |
+| E6 | Still present | `ATTRIBUTED = ("attributed-diagnostics", 5)`. The payload holds diagnostics, warnings, contribution and `p_diag`. A restore fills diagnostics, projections and dependencies; it restores no occurrence graph or query state. |
+| E7 | Still present | `Analyzer.java:406` returns `deferred("requires-attribution")` for every consumer except `completion-range:`. |
+| E8 | Still present | `RocksMemory.java:17,21`: `strictCapacityLimit=false`, `allowStall=false`. |
+| E9 | Not yet re-run | Control: memory lifecycle on B0 and B1 (below). |
+| E10 | Not yet re-run | Same control: restart after workspace use (M23–M26). |
+| E11 | Unchanged | [machine-decision.md](evidence/machine-decision.md) has RocksDB and native-plus-accelerators columns. The minimal-native column is missing (gate E2). |
+
+**Frozen harness (v1, this commit).**
+
+- Restart, real-project and synthetic suites: `benchmarks/persistence.ts`, `benchmarks/compare.ts` and the
+  `jvmd-before-after.yml` matrix as at B1.
+- References/restart control: the original memory report's driver, `benchmarks/memory/profile.ts` and
+  `probes.ts`, ported unchanged from `ccr-d4329637-lywgzk` (report `8f778fd`), with three additions:
+  - `--heap 0` launches without `-Xmx`, for shipping defaults;
+  - a summary printed to the job log;
+  - the agent's `s`/`p` snapshot commands, merged into the current agent.
+- Fixture: apache/maven `5cd1b60264101080c712accd605180a4bd9222e0`, built into its own repository.
+- Run with: dispatch `jvmd-benchmarks.yml` with `revision=<subject>` and `memory_control=equivalent` or
+  `shipping`.
+  - `equivalent` is the original budget: 1 GiB heap, 64 MiB native.
+  - `shipping` is the shipping defaults.
+- M1 deadline, set before any F result: first-use references on `MavenProject.addAttachedArtifact` must return
+  the oracle's two reference sites within **60 s**. That is the client deadline under which B0 answered 0 of 17
+  attempts (E9). The driver measures the request to completion (up to 30 min), so a late answer is reported as
+  late, not as missing.
+- M2: after workspace use, the restarted daemon reaches READY and gives the first correct definition (M26) at
+  both configurations.
+
+**Controls.**
+
+- Soundness (C1): `PackageDeclarationCertificateTest` at B1 reproduces the stale restore (E1).
+- References/restart (M1/M2): the lifecycle above on B0 and B1, at both configurations. Runs are listed in the
+  checkpoint 0 entry below once they finish.
+
+**Gate checklist** (brief §11). Each gate is ticked only with the evidence the brief names.
+
+- [ ] C1 Package certificate
+- [ ] C2 Old memo rejection
+- [ ] C3 UNKNOWN
+- [ ] C4 Capture frontier
+- [ ] C5 Projection sufficiency
+- [ ] P1 Configuration work
+- [ ] P2 Namespace work
+- [ ] P3 Graph work
+- [ ] P4 Result cutoff
+- [ ] P5 Warm reads
+- [ ] R1 Constructive restore
+- [ ] R2 Readiness
+- [ ] M1 References
+- [ ] M2 Reopen
+- [ ] M3 Bounded resources
+- [ ] M4 Lifetime
+- [ ] E1 Regression visibility
+- [ ] E2 Storage honesty
+- [ ] E3 Final integration
+
+### Checkpoint 0: starting state and controls
+
+- Start: `a668431` (B1). End: this commit.
+- Changes:
+  - The status record, the frozen control harness and the `memory_control` dispatch mode.
+  - No production code changed.
+- Correctness: the soundness control reproduces at B1 (above).
+- Evidence: the B0/B1 references/restart control runs were dispatched after this commit; their results are added
+  here when they finish.
+- Still failing: every gate above.
+
 ## Known limits
 
 - A unit whose javac diagnostics name another file (`foreign-diagnostic-file`) is refused.

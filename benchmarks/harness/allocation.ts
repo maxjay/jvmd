@@ -68,5 +68,10 @@ export class AllocationProbe {
     if(!this.socket)return Promise.resolve(null);
     return new Promise(resolve=>{this.waiting.push(resolve);this.socket!.write("T");});
   }
+  /** Memory investigations only: heap, pools (with peaks since the last reset), buffer pools and GC counters. */
+  snapshot(resetPeaks=false):Promise<any|null>{
+    if(!this.socket)return Promise.resolve(null);
+    return new Promise(resolve=>{this.waiting.push(resolve);this.socket!.write(resetPeaks?"p":"s");});
+  }
   close(){this.socket?.destroy();}
 }

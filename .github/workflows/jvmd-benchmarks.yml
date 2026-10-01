@@ -37,6 +37,11 @@ on:
         description: 'Record the daemon with JFR and print the top allocation stacks of after-edit hovers'
         type: boolean
         default: false
+      memory_control:
+        description: 'Instead of the suite, the frozen apache/maven memory lifecycle with first-use references (benchmarks/memory/profile.ts --mode control): equivalent = 1 GiB heap, 64 MiB native budget; shipping = no -Xmx, default native budget'
+        type: choice
+        options: ['', equivalent, shipping]
+        default: ''
 
 permissions:
   contents: read
@@ -158,6 +163,7 @@ jobs:
       # JDTLS 1.61.0 is a fixed reference: every scenario is measured on it once. Its results come from
       # benchmarks/reference/jdtls.json and main's last summary; only scenarios missing there run on JDTLS.
       - name: Run benchmarks
+        if: inputs.memory_control == ''
         run: |
           extra=()
           [ -n "${{ inputs.only }}" ] && extra+=(--only "${{ inputs.only }}")
@@ -168,6 +174,19 @@ jobs:
             --jdtls-home "$RUNNER_TEMP/tools/jdtls" --repository "$RUNNER_TEMP/bench-repository" \
             $( [ -z "${{ inputs.only }}" ] && echo --project "$RUNNER_TEMP/apache-maven" --project-repository "$RUNNER_TEMP/apache-maven-repository" ) \
             --baseline "$RUNNER_TEMP/main/summary.json"
+
+      # The corrective pass's references/restart control (M1, M2): the original memory report's lifecycle, unchanged
+      # oracles and checkpoints. Its summary is printed to the log (checkpoint:, operation:, M1, M2 lines).
+      - name: Memory lifecycle control
+        if: inputs.memory_control != ''
+        timeout-minutes: 100
+        run: |
+          heap=1024; [ "${{ inputs.memory_control }}" = shipping ] && heap=0
+          node benchmarks/memory/profile.ts --mode control --heap "$heap" --output "$RUNNER_TEMP/memory/control" \
+            --image "${MEASURED_IMAGE:-jvmd-dist/target/image}" \
+            --project "$RUNNER_TEMP/apache-maven" --project-repository "$RUNNER_TEMP/apache-maven-repository"
+          echo "measured: ${MEASURED_REVISION:-$(git rev-parse HEAD)} config: ${{ inputs.memory_control }} heap: $heap"
+          tail -n 40 "$RUNNER_TEMP/memory/control/state/jvmd/daemon.log" 2>/dev/null || true
 
       # Every hover-after-edit sample (and, with jfr, its allocation stacks) in the log: artifacts are not always reachable.
       - name: After-edit hover allocation
@@ -190,10 +209,12 @@ jobs:
             ${{ runner.temp }}/benchmarks/edit-allocation.md
             ${{ runner.temp }}/benchmarks/lifecycle/*/jvmd-threads.txt
             ${{ runner.temp }}/benchmarks/lifecycle/*/jvmd/daemon.log
+            ${{ runner.temp }}/memory/control/results.json
+            ${{ runner.temp }}/memory/control/driver.log
 
       # e.g. "jvmd / scenarios — Contract 38/41 · Roadmap 12/108 (+2) vs main". Always success: they inform, never gate.
       - name: Post metrics to the checks list
-        if: always() && inputs.revision == '' && inputs.only == '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        if: always() && inputs.revision == '' && inputs.only == '' && inputs.memory_control == '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}

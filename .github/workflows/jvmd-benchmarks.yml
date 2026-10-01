@@ -23,6 +23,20 @@ on:
       runs:
         description: Repeat the suite this many times for steadier numbers
         default: '1'
+      revision:
+        description: 'Measure the JVMD built from this revision (default: the dispatched ref) with this ref''s harness'
+        default: ''
+      only:
+        description: 'Only these case ids or families (run.ts --only); empty runs everything'
+        default: ''
+      thread_allocation:
+        description: 'Per-thread allocation of every edit window (run.ts --thread-allocation)'
+        type: boolean
+        default: false
+      jfr:
+        description: 'Record the daemon with JFR and print the top allocation stacks of after-edit hovers'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -31,7 +45,8 @@ permissions:
   statuses: write       # the one-line metrics in the PR checks list
 
 concurrency:
-  group: benchmarks-${{ github.event.pull_request.number || github.ref }}
+  # Dispatched runs are independent measurements: never cancel one for another.
+  group: benchmarks-${{ github.event.pull_request.number || (github.event_name == 'workflow_dispatch' && github.run_id) || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -98,6 +113,16 @@ jobs:
           mvn -B -DskipTests install
           bash jvmd-dist/assemble.sh
 
+      # A dispatched revision is built on its own; this ref's harness measures its image.
+      - name: Build the dispatched revision
+        if: inputs.revision != ''
+        run: |
+          git fetch -q origin "${{ inputs.revision }}"
+          git worktree add -q --detach "$RUNNER_TEMP/revision" FETCH_HEAD
+          (cd "$RUNNER_TEMP/revision" && mvn -B -q -DskipTests package && bash jvmd-dist/assemble.sh >/dev/null)
+          echo "MEASURED_IMAGE=$RUNNER_TEMP/revision/jvmd-dist/target/image" >> "$GITHUB_ENV"
+          echo "MEASURED_REVISION=$(git -C "$RUNNER_TEMP/revision" rev-parse HEAD)" >> "$GITHUB_ENV"
+
       # The real project for the lifecycle, built once into its own repository: ~460 dependency JARs to index.
       - name: Cache apache/maven fixture
         id: project
@@ -134,10 +159,23 @@ jobs:
       # benchmarks/reference/jdtls.json and main's last summary; only scenarios missing there run on JDTLS.
       - name: Run benchmarks
         run: |
+          extra=()
+          [ -n "${{ inputs.only }}" ] && extra+=(--only "${{ inputs.only }}")
+          [ "${{ inputs.thread_allocation }}" = true ] && extra+=(--thread-allocation true)
+          [ "${{ inputs.jfr }}" = true ] && extra+=(--jfr true)
           node benchmarks/run.ts --output "$RUNNER_TEMP/benchmarks" --servers jvmd --runs "${{ inputs.runs || '1' }}" \
+            --image "${MEASURED_IMAGE:-jvmd-dist/target/image}" "${extra[@]}" \
             --jdtls-home "$RUNNER_TEMP/tools/jdtls" --repository "$RUNNER_TEMP/bench-repository" \
-            --project "$RUNNER_TEMP/apache-maven" --project-repository "$RUNNER_TEMP/apache-maven-repository" \
+            $( [ -z "${{ inputs.only }}" ] && echo --project "$RUNNER_TEMP/apache-maven" --project-repository "$RUNNER_TEMP/apache-maven-repository" ) \
             --baseline "$RUNNER_TEMP/main/summary.json"
+
+      # Every hover-after-edit sample (and, with jfr, its allocation stacks) in the log: artifacts are not always reachable.
+      - name: After-edit hover allocation
+        if: always()
+        run: |
+          [ -f "$RUNNER_TEMP/benchmarks/results.json" ] || exit 0
+          node benchmarks/edit-allocation.ts --input "$RUNNER_TEMP/benchmarks" --top 10 --output "$RUNNER_TEMP/benchmarks/edit-allocation.md" \
+            --label "${MEASURED_REVISION:-$(git rev-parse HEAD)}" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
@@ -149,12 +187,13 @@ jobs:
             ${{ runner.temp }}/benchmarks/report.md
             ${{ runner.temp }}/benchmarks/results.json
             ${{ runner.temp }}/benchmarks/statuses.json
+            ${{ runner.temp }}/benchmarks/edit-allocation.md
             ${{ runner.temp }}/benchmarks/lifecycle/*/jvmd-threads.txt
             ${{ runner.temp }}/benchmarks/lifecycle/*/jvmd/daemon.log
 
       # e.g. "jvmd / scenarios — Contract 38/41 · Roadmap 12/108 (+2) vs main". Always success: they inform, never gate.
       - name: Post metrics to the checks list
-        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        if: always() && inputs.revision == '' && inputs.only == '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}

@@ -4,6 +4,7 @@ import {readFileSync,writeFileSync,mkdirSync,mkdtempSync,rmSync,existsSync} from
 import path from "node:path";
 import {spawnSync} from "node:child_process";
 import {ProtocolClient,now} from "./ProtocolClient.ts";
+import {threadDelta,type ThreadAllocation} from "./allocation.ts";
 import {type Fixture,sha,classpath} from "./fixture.ts";
 import {planWorkspaceEdit} from "./workspaceEdit.ts";
 import {isRenameRejection,isInvalidRenameRequest} from "./rename.ts";
@@ -35,7 +36,9 @@ export class ScenarioContext {
   capabilities:any={};operations:any[]=[];assertions:any[]=[];documents=new Map<string,{text:string;version:number;incarnation:number}>();
   versions=new Map<string,number>();incarnations=new Map<string,number>();
   mutations:any[]=[];diagnosticObservations:any[]=[];
-  allocation:{read:()=>Promise<number|null>}={read:async()=>null};
+  allocation:{read:()=>Promise<number|null>;threads?:()=>Promise<ThreadAllocation|null>}={read:async()=>null};
+  /** --thread-allocation: per-thread allocation of every edit window and of the requests inside it. */
+  threadAllocation=false;
   notApplicableEvidence?:any;
   reopenPersisted?:()=>Promise<ScenarioContext>;
   registrations:any[]=[];serverActions:any[]=[];initializedNs?:string;
@@ -121,9 +124,13 @@ export class ScenarioContext {
       origin=this.origins.get(params.item??params);
       this.assert("opaque item belongs to this client, endpoint and document state",!!origin&&origin.method===originMethod[method]&&origin.state===JSON.stringify(before),{method,origin});
     }
-    const allocatedBefore=await this.allocation.read();
+    // Per-thread snapshots bracket the totals, so their own cost stays outside the measured window.
+    const perThread=trigger!==undefined&&this.threadAllocation&&this.allocation.threads?()=>this.allocation.threads!():undefined;
+    const threadsBefore=perThread?await perThread():null;
+    const allocatedBefore=await this.allocation.read(),startEpochMs=Date.now();
     const row=await this.client.request(method,params,this.timeout);
-    const allocatedAfter=await this.allocation.read();
+    const endEpochMs=Date.now(),allocatedAfter=await this.allocation.read();
+    const threadsAfter=perThread?await perThread():null;
     if(!row.error){const items=method==="textDocument/completion"?(Array.isArray(row.result)?row.result:row.result?.items):row.result;
       if(Array.isArray(items))for(const item of items)if(item&&typeof item==="object")this.origins.set(item,{method,state:JSON.stringify(before),requestId:row.id});
     }
@@ -134,6 +141,7 @@ export class ScenarioContext {
     // allocatedBytes covers the whole server JVM during the request, including any background work.
     const record:any={operationId:"op-"+(this.operations.length+1),method,endpoint,state,requestId:row.id,startNs:row.startNs,endNs:row.endNs,
       latencyMs:Number(BigInt(row.endNs)-BigInt(row.startNs))/1e6,allocatedBytes:allocatedBefore===null||allocatedAfter===null?null:allocatedAfter-allocatedBefore,
+      startEpochMs,endEpochMs,...(perThread?{requestThreads:threadDelta(threadsBefore,threadsAfter)}:{}),
       originRequestId:origin?.requestId,rawResult:row.result,error:row.error,responsePolicy,outcome:row.error?(row.error.kind==="timeout"?"timeout":"protocol_error"):"pass",
       freshness:{status:freshnessWitness?"verified":"not_applicable",witness:freshnessWitness}};
     if(trigger!==undefined){record.triggerNs=String(trigger);record.transitionMs=Number(BigInt(row.endNs)-trigger)/1e6;}
@@ -158,11 +166,15 @@ export class ScenarioContext {
    * does and mark the early answers stale; transitionMs is change to correct answer. */
   async transition(method:string,params:()=>any|Promise<any>,oracle:(result:any)=>void,trigger:bigint,witness:string){
     const deadline=now()+BigInt(this.timeout)*1000000n,first=this.operations.length;
+    // The edit window: from (just after) the change to the first correct answer.
+    const windowStart=this.threadAllocation&&this.allocation.threads?await this.allocation.threads():null,windowStartEpochMs=Date.now();
     for(let attempt=1;;attempt++){
       try{
         const result=await this.query(method,await params(),oracle,attempt===1?"changed_immediate":"changed_retry",trigger,witness);
         const early=this.operations.slice(first).filter(o=>o.method===method&&o.outcome==="incorrect");
         for(const o of early)o.outcome="stale"; // The case continues; its outcome becomes stale.
+        if(windowStart){const answered=this.operations[this.operations.length-1],windowEnd=await this.allocation.threads!();
+          answered.editWindow={startEpochMs:windowStartEpochMs,endEpochMs:answered.endEpochMs,attempts:attempt,...threadDelta(windowStart,windowEnd)};}
         return result;
       }catch(error){
         if(now()>=deadline)throw error;

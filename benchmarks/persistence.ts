@@ -17,7 +17,7 @@ import {settingsXml} from "./harness/maven.ts";
  *   node benchmarks/persistence.ts --suite real --project <ruoyi-vue-pro checkout> --repository <its repository> --image <jvmd image> --output DIR
  *   node benchmarks/persistence.ts --suite synthetic --units 5000 --repository <repository> --image <jvmd image> --output DIR
  */
-const OPTIONS=["suite","project","repository","image","java-home","output","units","label"];
+const OPTIONS=["suite","project","repository","image","java-home","output","units","label","heap"];
 const REAL=JSON.parse(readFileSync(new URL("./real-project.json",import.meta.url),"utf8"));
 /** Modules of ruoyi-vue-pro that its reactor leaves out. */
 const INACTIVE=new Set(["member","bpm","report","mp","pay","mall","crm","erp","iot","mes","wms","hrm","fms","pms","oa","im","ai"]);
@@ -38,14 +38,14 @@ function javaFiles(dir:string,out:string[]=[]){
 }
 
 class Bench {
-  rows:Row[]=[];o:{image:string;javaHome:string;repository:string;output:string;label:string};
-  constructor(o:{image:string;javaHome:string;repository:string;output:string;label:string}){this.o=o;}
+  rows:Row[]=[];o:{image:string;javaHome:string;repository:string;output:string;label:string;heap?:string};
+  constructor(o:{image:string;javaHome:string;repository:string;output:string;label:string;heap?:string}){this.o=o;}
   /** One daemon lifetime over `state`: open `root`, wait for the first correct answer, diagnose everything. */
   async session(scenario:string,label:string,root:string,state:string,answer:Answer){
     const started=performance.now(),row:any={scenario,label,units:0,firstAnswerMs:null,javac:0,processorRuns:null,persistence:null,diagnostics:0,digest:"",files:{}};
     let daemon:JvmdDaemon|undefined;
     try{
-      daemon=await JvmdDaemon.start({javaHome:this.o.javaHome,image:this.o.image,state,repository:this.o.repository});row.readyMs=daemon.readyMs;
+      daemon=await JvmdDaemon.start({javaHome:this.o.javaHome,image:this.o.image,state,repository:this.o.repository,heap:this.o.heap});row.readyMs=daemon.readyMs;
       const allocated=await daemon.allocation.read();
       const call=async(method:string,params:any)=>{const r=await daemon!.control.raw(method,params,TIMEOUT);if(r.error)throw new Error(method+": "+JSON.stringify(r.error).slice(0,300));return r.result;};
       const opening=performance.now(),session=(await call("session.open",{root})).result.session;row.openMs=performance.now()-opening;
@@ -170,7 +170,7 @@ export async function main(argv=process.argv.slice(2)){
   const output=path.resolve(a.output),javaHome=path.resolve(a["java-home"]??process.env.JAVA_HOME??"");mkdirSync(output,{recursive:true});
   const repository=path.resolve(a.repository??path.join(output,"repository"));mkdirSync(repository,{recursive:true});
   if(!existsSync(path.join(repository,"settings.xml")))settingsXml(repository,path.join(repository,"settings.xml"));
-  const bench=new Bench({image:path.resolve(a.image??"jvmd-dist/target/image"),javaHome,repository,output,label:a.label??"jvmd"});
+  const bench=new Bench({image:path.resolve(a.image??"jvmd-dist/target/image"),javaHome,repository,output,label:a.label??"jvmd",heap:a.heap});
   if(a.suite==="real"){assert(a.project&&statSync(a.project).isDirectory(),"--suite real needs --project (ruoyi-vue-pro @ "+REAL.commit+")");await real(bench,path.resolve(a.project),javaHome);}
   else await synthetic(bench,Number(a.units??5000));
 }

@@ -472,22 +472,21 @@ public final class Application implements AutoCloseable {
         Resolution currentGraph=graph;
         WorkspaceBindings.InputSource inputSource=()->workspaceModuleInputs(session,currentGraph);
         if(!load)return cache.peek(inputSource);
-        return cache.getBatch(inputSource,documents(session),(long)config.heapCeilingMb()*1024*1024/Math.max(1,sessions.list().size())/4,files->{
-
+        // E3: outcomes are handed to the cache batch by batch and released; a whole-workspace build never
+        // holds every file's compiler outcome at once.
+        return cache.getStreaming(inputSource,documents(session),(long)config.heapCeilingMb()*1024*1024/Math.max(1,sessions.list().size())/4,(files,sink)->{
             var groups=new LinkedHashMap<String,LinkedHashMap<Path,String>>();
             for(var entry:files.entrySet())groups.computeIfAbsent(WorkspaceContextManager.key(entry.getKey(),currentGraph),_->new LinkedHashMap<>()).put(entry.getKey(),entry.getValue());
-            var results=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();
             for(var group:groups.values()){
                 var batch=new LinkedHashMap<Path,String>();long characters=0;
                 for(var entry:group.entrySet()){
                     if(!batch.isEmpty()&&(batch.size()>=32||characters+entry.getValue().length()>1024*1024)){
-                        var worker=analyzer(session,batch.keySet().iterator().next());results.putAll(worker.bindingsBatch(batch));batch.clear();characters=0;
+                        var worker=analyzer(session,batch.keySet().iterator().next());for(var result:worker.bindingsBatch(batch).entrySet())sink.accept(result.getKey(),result.getValue());batch.clear();characters=0;
                     }
                     batch.put(entry.getKey(),entry.getValue());characters+=entry.getValue().length();
                 }
-                if(!batch.isEmpty()){var worker=analyzer(session,batch.keySet().iterator().next());results.putAll(worker.bindingsBatch(batch));}
+                if(!batch.isEmpty()){var worker=analyzer(session,batch.keySet().iterator().next());for(var result:worker.bindingsBatch(batch).entrySet())sink.accept(result.getKey(),result.getValue());}
             }
-            return results;
         });
     }
     @SuppressWarnings("unchecked")

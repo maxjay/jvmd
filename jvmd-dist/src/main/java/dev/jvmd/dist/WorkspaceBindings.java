@@ -11,6 +11,16 @@ public final class WorkspaceBindings implements AutoCloseable {
     /** Implements 4.2: attribution remains on the caller's session executor. */
     @FunctionalInterface public interface Loader { CompilerPool.Outcome<Bindings.Snapshot> load(Path file,String text)throws Exception; }
     @FunctionalInterface public interface BatchLoader { Map<Path,CompilerPool.Outcome<Bindings.Snapshot>> load(Map<Path,String> sources)throws Exception; }
+    /** Receives each file's outcome as soon as it is computed; the outcome is not retained after this call. */
+    @FunctionalInterface public interface Sink { void accept(Path file,CompilerPool.Outcome<Bindings.Snapshot> outcome)throws Exception; }
+    /**
+     * E3 (corrective pass): a loader that hands over outcomes as it computes them, so a whole-workspace
+     * build never holds every file's compiler outcome at once.
+     */
+    @FunctionalInterface public interface StreamingLoader { void load(Map<Path,String> sources,Sink sink)throws Exception; }
+    /** Encoded facts are committed per slice of this many bytes (default 8 MiB); a build never holds the whole workspace's facts in one write batch. */
+    private static long sliceBytes(){return Math.max(1,Long.getLong("jvmd.bindings.slice_bytes",8L*1024*1024));}
+    private boolean slicesCommitted;private long slices,maxBatchBytes;
     /** Implements 4.2: re-enumerate sources to detect namespace changes during attribution. */
     @FunctionalInterface public interface SourceFiles { List<Path> files()throws Exception; }
     /** A caller-owned lease on a pinned fact revision. Closing it never closes another caller's view. */
@@ -167,17 +177,21 @@ public final class WorkspaceBindings implements AutoCloseable {
             return results;
         });
     }
-    private Map<Path,Fragment> load(Set<Path> files,Inputs current,Documents documents,BatchLoader loader,org.rocksdb.WriteBatch batch)throws Exception{
+    private Map<Path,Fragment> load(Set<Path> files,Inputs current,Documents documents,StreamingLoader loader,org.rocksdb.WriteBatch batch)throws Exception{
         if(files.isEmpty())return Map.of();
         var texts=new LinkedHashMap<Path,String>();
         for(Path file:current.sources().keySet())if(files.contains(file))texts.put(file,current.text(file,documents));
-        var loaded=loader.load(Collections.unmodifiableMap(texts));
         var result=new LinkedHashMap<Path,Fragment>();
-        for(Path file:texts.keySet()){
-            var outcome=Objects.requireNonNull(loaded.get(file),"Missing file in binding batch: "+file);
+        loader.load(Collections.unmodifiableMap(texts),(file,outcome)->{
+            if(!texts.containsKey(file)||result.containsKey(file))throw new IllegalStateException("Unexpected file in binding batch: "+file);
             facts().replace(batch,file,outcome);
             result.put(file,new Fragment(outcome.result()==null?1:outcome.tier(),outcome.diagnostics(),outcome.warnings(),outcome.tier()==2&&outcome.result()!=null&&outcome.warnings().isEmpty()?SemanticContributions.from(file,current.sources().get(file),outcome.result(),outcome.diagnostics()):null));
-        }
+            // Bounded write batch: commit a slice once it holds sliceBytes(). No reader observes it before
+            // this build publishes (requests of a session are serialised); a failed build discards the store.
+            long size=batch.getDataSize();maxBatchBytes=Math.max(maxBatchBytes,size);
+            if(size>=sliceBytes()){facts().commit(batch);batch.clear();slicesCommitted=true;slices++;}
+        });
+        for(Path file:texts.keySet())if(!result.containsKey(file))throw new IllegalStateException("Missing file in binding batch: "+file);
         return result;
     }
     private Revision readView(Inputs current,Map<Path,Fragment> values,boolean consistent)throws Exception{
@@ -189,11 +203,17 @@ public final class WorkspaceBindings implements AutoCloseable {
         if(!consistent){warnings.add("workspace_changed_during_query: retry for a consistent graph");tier=Math.min(tier,1);}
         return new Revision(List.copyOf(diagnostics),tier,List.copyOf(warnings),new Object());
     }
+    public Snapshot getStreaming(SourceFiles sources,CompilerInputs.Configuration configuration,Documents documents,long byteBudget,StreamingLoader loader)throws Exception {
+        return getStreaming(configuredInputs(sources,configuration,documents),documents,byteBudget,loader);
+    }
     public Snapshot getBatch(SourceFiles sources,CompilerInputs.Configuration configuration,Documents documents,long byteBudget,BatchLoader loader)throws Exception {
         return getBatch(configuredInputs(sources,configuration,documents),documents,byteBudget,loader);
     }
     public Snapshot getBatch(InputSource source,Documents documents,long byteBudget,BatchLoader loader)throws Exception {
-        facts().budget(byteBudget);
+        return getStreaming(source,documents,byteBudget,(sources,sink)->{for(var entry:loader.load(sources).entrySet())sink.accept(entry.getKey(),entry.getValue());});
+    }
+    public Snapshot getStreaming(InputSource source,Documents documents,long byteBudget,StreamingLoader loader)throws Exception {
+        facts().budget(byteBudget);slicesCommitted=false;
         var current=capture(source);
         if(snapshot!=null&&current.sameInputs(inputs)){
             hits++;fastValidationHits++;lastReanalysedFiles=0;filesReused+=current.sources().size();return acquire(snapshot);
@@ -234,6 +254,11 @@ public final class WorkspaceBindings implements AutoCloseable {
         var after=capture(source);boolean consistent=current.equals(after);
         if(!consistent)throw new CompilerInputs.Superseded("workspace_changed_during_query: retry for a consistent graph");
         if(working.values().stream().anyMatch(f->f.contribution()==null)){
+            if(slicesCommitted){
+                // Part of this build is already stored: store the rest too, so the store matches the
+                // fragments it is read with; inputs stay unvalidated, so the next request validates again.
+                facts().commit(batch);fragments.clear();fragments.putAll(working);inputs=null;snapshot=null;
+            }
             semantic.clear();for(var fragment:fragments.values())if(fragment.contribution()!=null)semantic.resolve(fragment.contribution());
             return acquire(readView(current,working,false));
         }
@@ -247,6 +272,12 @@ public final class WorkspaceBindings implements AutoCloseable {
         }else{inputs=null;snapshot=null;semantic.clear();}
         return acquire(result);
         }catch(Exception failure){
+            if(slicesCommitted){
+                // Slices of an unfinished build are in the store: discard it and rebuild from scratch next time.
+                fragments.clear();inputs=null;snapshot=null;semantic.clear();
+                if(facts!=null){try{facts.close();}catch(Exception close){failure.addSuppressed(close);}facts=null;}
+                throw failure;
+            }
             semantic.clear();for(var fragment:fragments.values())if(fragment.contribution()!=null)semantic.resolve(fragment.contribution());
             throw failure;
         }
@@ -259,6 +290,7 @@ public final class WorkspaceBindings implements AutoCloseable {
         result.put("full_builds",fullBuilds);result.put("incremental_builds",incrementalBuilds);
         result.put("files_reanalysed",filesReanalysed);result.put("files_reused",filesReused);
         result.put("last_reanalysed_files",lastReanalysedFiles);result.put("api_invalidations",apiInvalidations);
+        result.put("committed_slices",slices);result.put("max_write_batch_bytes",maxBatchBytes);
         result.put("fast_validation_hits",fastValidationHits);result.put("full_validations",fullValidations);result.put("fast_validation_ready",inputs!=null);result.put("input_validation",observations.status());
         return Collections.unmodifiableMap(result);
     }

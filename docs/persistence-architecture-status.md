@@ -574,6 +574,27 @@ The restart benchmarks time the first editor operations after a restore: the mem
 (READY, first correct definition and completion after restart) and the real-project restart suite. Their F
 results are recorded at checkpoint 5.
 
+### Checkpoint 4: references construction (stream E)
+
+**E3, bounded workspace bindings build.**
+
+- At B1 a whole-workspace bindings build (first-use references, call graph) compiled in batches of 32 files but
+  collected every file's `Bindings.Snapshot` in one map before encoding any of them. It then encoded every
+  file's facts into a single RocksDB `WriteBatch`. All compiler outcomes for the workspace and all their encoded
+  facts were therefore alive at once.
+- Now:
+  - The loader streams. Each batch's outcomes are handed to the cache (`WorkspaceBindings.StreamingLoader`),
+    encoded and released before the next batch compiles.
+  - Encoded facts are committed in slices of `jvmd.bindings.slice_bytes` (default 8 MiB).
+  - A session's requests run on one thread, so no reader sees a slice before the build publishes.
+  - A build that fails after committing slices discards the store, and the next request rebuilds it.
+  - A build that stores slices but ends without complete contributions stores the rest, so the store matches
+    the fragments it is read with.
+- Status: `workspace_bindings.committed_slices`, `max_write_batch_bytes`.
+- Tests: `BoundedBindingsBuildTest`. With 1-byte slices, references across 6 callers are complete and an edit
+  rebuilds consistently; a build that fails after a committed slice publishes nothing, and the next build is
+  complete.
+
 ## Known limits
 
 - A unit whose javac diagnostics name another file (`foreign-diagnostic-file`) is refused.

@@ -698,6 +698,10 @@ document are cumulative traffic over an interval.
   every unit completed it and all 5,000 must recompile (`RestartScenarioTest.a3…` expects exactly that set; 0
   restored is the specified result, not a reuse failure).
 - Restart and edit scenarios restore and are 3–7× faster than base, with identical diagnostics.
+- **Spread across runners.** On `0af7308` (before/after [36936567797](https://github.com/maxjay/jvmd/actions/runs/36936567797), synthetic leg complete, base about 10 s per "diagnose all") the
+  same scenarios measured cold 2.5× (hub, layered) and 3.0× (dag) base, and A3 3.4× base; restarts 3.7–5.9× faster.
+  The ratio grows when base is faster, which fits a fixed per-unit capture cost. Reported range: cold 1.4–3.0×,
+  A3 1.75–3.4×.
 
 ### Reset checkpoint 2: restart and reopen (M2, R1)
 

@@ -68,7 +68,9 @@ function jvmArgs(incarnation:number){
   // Supplementary configuration only: an existing runtime property; the primary baseline never sets it.
   if(NATIVE_BUDGET_MB)args.push("-Djvmd.index.native_budget_mb="+NATIVE_BUDGET_MB);
   const tag=`i${incarnation}`;
-  if(MODE==="exact")args.push("-Djvmd.trace=true",`-XX:StartFlightRecording=filename=${OUT}/exact-${tag}.jfr,settings=default,dumponexit=true,name=memory`,
+  // --jfr-events adds JFR event settings to the exact mode's recording, e.g. jdk.ObjectAllocationOutsideTLAB#enabled=true.
+  const jfrExtra=a["jfr-events"]?","+a["jfr-events"]:"";
+  if(MODE==="exact")args.push("-Djvmd.trace=true",`-XX:StartFlightRecording=filename=${OUT}/exact-${tag}.jfr,settings=default,dumponexit=true,name=memory${jfrExtra}`,
     `-Xlog:gc*=info,gc+heap=debug,gc+humongous=debug,gc+age=trace:file=${OUT}/gc-${tag}.log:uptimemillis,tid,tags`);
   if(MODE==="nmt")args.push("-XX:NativeMemoryTracking=detail","-XX:+UnlockDiagnosticVMOptions","-XX:+PrintNMTStatistics");
   if(MODE==="alloc")args.push(`-agentpath:${AP}/lib/libasyncProfiler.so=start,event=alloc,alloc=${ALLOC_INTERVAL},jfr,file=${OUT}/phases/${tag}-000-start.jfr`);

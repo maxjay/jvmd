@@ -19,7 +19,7 @@ query() { # query LABEL COMMAND
 query dominators_by_class "dominator_tree -groupby BY_CLASS"
 query dominators_top "dominator_tree"
 query dominators_by_package "dominator_tree -groupby BY_PACKAGE"
-query duplicate_strings "group_by_value java.lang.String -mininstances 20"
+query duplicate_strings "group_by_value java.lang.String"
 # Retained size per instance of each JVMD owner class (instances of the class and subclasses).
 owners=(dev.jvmd.index.rocks.RocksIndexStore dev.jvmd.index.rocks.RocksIndexStorage dev.jvmd.index.rocks.RocksArtifactRepository
   dev.jvmd.index.rocks.SourceOverlay dev.jvmd.index.rocks.RocksMemory dev.jvmd.index.IndexService dev.jvmd.index.SourceIndexPublisher

@@ -246,7 +246,7 @@ ROCKS_CATEGORIES = [
     ("table readers / index & filter (open)", r"BlockBasedTable::Open|TableCache::(FindTable|GetTableReader)|PartitionIndexReader|PartitionedFilterBlockReader|BlockBasedTable::PrefetchIndexAndFilterBlocks|TableReader"),
     ("memtables / write buffers", r"MemTable|Arena::AllocateNewBlock|ConcurrentArena|InlineSkipList|WriteBufferManager|WriteBatch"),
     ("SST writing / ingestion", r"SstFileWriter|BlockBasedTableBuilder|IngestExternalFile|ExternalSstFileIngestionJob|BlockBuilder|FilterBlockBuilder|IndexBuilder|CompressBlock"),
-    ("iterators / reads", r"Iterator|NewIterator|DBIter|MergingIterator|Get\b|DBImpl::Get|MultiGet|PinnableSlice"),
+    ("iterators / reads", r"rocksdb::.*(Iterator|DBIter|DBImpl::Get|MultiGet|PinnableSlice)"),
     ("compaction / flush", r"Compaction|FlushJob|BuildTable"),
     ("DB open / recovery / manifest / WAL", r"DBImpl::Open|DB::Open|Recover|VersionSet|VersionEdit|log::Reader|WalManager|ManifestWriter|ColumnFamilySet|DBImpl::DBImpl"),
     ("JNI wrappers / options", r"Java_org_rocksdb|rocksdb::Options|ColumnFamilyOptions|DBOptions|JniUtil|portal"),
@@ -272,8 +272,9 @@ def native_phase(ap, jfr, cache):
         for frames, v in read_collapsed(f):
             thread, body = frames[0], frames[1:]
             total += v
-            owners[native_owner(body)] += v
-            rc = rocks_category(body)
+            owner = native_owner(body)
+            owners[owner] += v
+            rc = rocks_category(body) if owner.startswith("RocksDB") else None
             if rc:
                 rocks[rc] += v
             stacks[";".join(frame_name(x) for x in body[-10:])] += v

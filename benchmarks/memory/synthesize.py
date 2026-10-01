@@ -252,7 +252,7 @@ def fit(xs, ys):
     return {"slope": slope, "intercept": icpt, "r2": 1 - ss_res / ss_tot if ss_tot else None}
 
 
-def alloc_phase_rollups(summary, run, groups):
+def alloc_phase_rollups(summary, run, groups, top50=False):
     ph = load(summary, run, "phases.json")
     if not ph:
         return None
@@ -264,13 +264,17 @@ def alloc_phase_rollups(summary, run, groups):
         tot = sum(p["bytes"] for p in sel)
         exact = sum((p.get("exactAllocatedBytes") or 0) for p in sel)
         agg = {}
-        for key in ("mechanism", "operation", "library_owner", "innermost_owner", "threads", "top_classes_by_bytes", "top_classes_by_samples",
-                    "top_stacks_by_bytes", "outside_tlab_classes", "outside_tlab_stacks", "mechanism_class"):
+        keys = ("top_classes_by_bytes", "top_classes_by_samples", "top_stacks_by_bytes") if top50 else (
+            "mechanism", "operation", "library_owner", "innermost_owner", "threads", "top_classes_by_bytes", "top_classes_by_samples",
+            "top_stacks_by_bytes", "outside_tlab_classes", "outside_tlab_stacks", "mechanism_class")
+        for key in keys:
             c = collections.Counter()
             for p in sel:
                 for r in p.get(key, []):
                     c[r["key"]] += r["value"]
-            agg[key] = [{"key": k, "value": v, "share": v / tot if tot and "samples" not in key else None} for k, v in c.most_common(50)]
+            n = 50 if top50 else 12
+            agg[key] = [{"key": k if len(k) < 360 else "…" + k[-359:], "value": v, "share": round(v / tot, 4) if tot and "samples" not in key else None}
+                        for k, v in c.most_common(n)]
         site = collections.defaultdict(collections.Counter)
         for p in sel:
             for k, rows in (p.get("mechanism_top_site") or {}).items():
@@ -316,7 +320,7 @@ def native_rollups(summary, run, groups):
                 for p in sel:
                     for r in p[kind].get(key, []):
                         c[r["key"]] += r["value"]
-                agg[key] = [{"key": k, "value": v} for k, v in c.most_common(12)]
+                agg[key] = [{"key": k, "value": v} for k, v in c.most_common(8)]
             res[kind] = agg
         out[label] = res
     return out
@@ -374,7 +378,7 @@ def mat_reports(mat_dir):
         rep = {}
         for f in sorted(d.glob("*.csv")):
             rows = list(csv.reader(open(f, encoding="utf-8", errors="replace")))
-            rep[f.stem] = rows[:40]
+            rep[f.stem] = rows[:25]
         out[d.name] = rep
     return out
 
@@ -413,8 +417,9 @@ def stages(summary, run):
         k = r["stage"]
         for f in ("count", "durationMs", "allocatedBytes", "allocationKnown", "virtual", "queued", "cpuMs"):
             by[k][f] += r[f]
+    jfr = d.get("jfr_allocation_samples") or {}
     return {"by_stage": {k: dict(v) for k, v in sorted(by.items(), key=lambda kv: -kv[1]["allocatedBytes"])},
-            "by_phase_stage": d["stages"], "jfr_allocation_samples": d.get("jfr_allocation_samples")}
+            "jfr_allocation_samples_top10": {ph: v[:10] for ph, v in jfr.items()}}
 
 
 def main():
@@ -443,8 +448,12 @@ def main():
         "rocksCache~artifacts": fit([r["artifacts"] for r in full], [r["rocksCache"] for r in full]),
         "seedSeconds~symbols": fit([r["symbols"] for r in full], [r["seedSeconds"] for r in full]),
     }
-    res["alloc"] = {r: alloc_phase_rollups(S, r, ALLOC_GROUPS) for r in ["alloc-1", "b256-alloc", "b256-refs-alloc", "restartfail-alloc"]}
-    res["live"] = {r: alloc_phase_rollups(S, r, ALLOC_GROUPS) for r in ["live-1", "b256-live"]}
+    res["alloc"] = {r: alloc_phase_rollups(S, r, ALLOC_GROUPS) for r in ["b256-alloc", "b256-refs-alloc"]}
+    live = {r: alloc_phase_rollups(S, r, ALLOC_GROUPS) for r in ["live-1", "b256-live"]}
+    res["live"] = {r: {g: {"sampledBytes": v["sampledBytes"], "exactAllocatedBytes": v["exactAllocatedBytes"], "mechanism": v["mechanism"][:6],
+                           "top_classes_by_bytes": v["top_classes_by_bytes"][:6]} for g, v in (x or {}).items()} for r, x in live.items()}
+    top50 = {r: alloc_phase_rollups(S, r, ALLOC_GROUPS, top50=True) for r in ["b256-alloc", "b256-refs-alloc"]}
+    top50["b256-refs-alloc"] = {k: v for k, v in top50["b256-refs-alloc"].items() if k == "first-use references"}
     res["native"] = {r: native_rollups(S, r, {**ALLOC_GROUPS, "seed-only restart": ["S2"], "restart attempt (failed)": ["M3-failed", "M24-failed"]})
                      for r in ["native-1", "b256-native", "scale-full-native", "restartfail-native"]}
     res["nmt"] = {r: nmt_table(S, r) for r in ["nmt-1", "nmt-2", "b256-nmt", "scale-full-nmt", "restartfail-nmt"]}
@@ -457,9 +466,26 @@ def main():
     res["stages"] = {r: stages(S, r) for r in ["b256-exact", "exact-1"]}
     res["gc"] = {r: load(S, r, "gc.json") for r in ["b256-exact", "exact-1", "b256-pressure-512", "scale-full"]}
     res["mat"] = mat_reports(Path(S) / "mat")
+    drill = {}
+    for dd in sorted((Path(S) / "mat-drill").glob("*")):
+        entry = {}
+        for f in sorted(dd.glob("*.csv")):
+            rows = list(csv.reader(open(f, encoding="utf-8", errors="replace")))
+            if f.stem.startswith("retained_"):
+                entry[f.stem] = {"retainedBytes": sum(int(r[2]) for r in rows[1:] if len(r) > 2 and r[2].isdigit()),
+                                 "top": rows[1:8]}
+            else:
+                entry[f.stem] = rows[:15]
+        drill[dd.name] = entry
+    res["mat_drill"] = drill
+    for extra in ("prefix_sizes.json", "seed_sites.json", "scale_rows.json"):
+        p = Path(a.runs).parent / extra
+        if p.exists():
+            res[extra.replace(".json", "")] = json.load(open(p))
     res["failures"] = {r: (load(S, r) or {}).get("failures") for r in sorted(os.listdir(S)) if r != "mat"}
     Path(a.out).mkdir(parents=True, exist_ok=True)
-    json.dump(res, open(Path(a.out) / "summary.json", "w"), indent=1, default=str)
+    json.dump(res, open(Path(a.out) / "summary.json", "w"), separators=(",", ":"), default=str)
+    json.dump(top50, open(Path(a.out) / "allocation-top50.json", "w"), separators=(",", ":"))
     print("wrote", Path(a.out) / "summary.json", os.path.getsize(Path(a.out) / "summary.json") // 1024, "KiB")
 
 

@@ -5,10 +5,6 @@ name: JVMD memory profile
 # as workflow artifacts; nothing large is committed. Informational only, never a gate.
 on:
   workflow_dispatch:
-  # Temporary: runs once from the investigation branch to produce the retained evidence; removed afterwards.
-  push:
-    branches: [ccr-d4329637-lywgzk]
-    paths: [.github/workflows/memory-profile.yml]
 
 permissions:
   contents: read

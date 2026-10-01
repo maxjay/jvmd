@@ -14,7 +14,9 @@ committed harness; the command to rerun it is next to it, and the raw output is 
 - Restore is a pull-based dependency cone with early cutoff. A body-only edit recompiles the edited unit, compares its
   `P_diag`, and restores every dependant.
 - On a real Lombok + MapStruct + Spring Boot multi-module project (ruoyi-vue-pro, 977 units in 18 modules), a
-  no-change restart and a relocated checkout restore **977/977 units with zero compiler runs**. A 20-file body-only
+  no-change restart and a relocated checkout restore **977/977 units with zero compiler runs** in the in-process
+  harness (`RealProjectBenchmark`). **Through the daemon this does not hold**: a no-change restart restores
+  1,399–1,495 units and still makes 466–484 compiler runs (reset checkpoint 4). A 20-file body-only
   branch switch recompiles 22 units. No unit is refused on a no-change restart.
 - **MACHINE storage: keep RocksDB.** On the 490-jar corpus the native backend fails three of the five pre-registered
   criteria (peak RSS 0.92×, heap allocation 1.08×, exact p95 3.39×), so the native POC left production code.
@@ -32,9 +34,9 @@ Synthetic fixtures are generated with a fixed seed by `SyntheticProjects` (rando
 | A4 | Public method added mid-layer | 1 + direct dependants; cutoff per layer | exact, counted per layer | `RestartScenarioTest.a4PublicMethodInAMidLayerStopsAtDependantsWhoseProjectionIsUnchanged` |
 | A5 | New top-level type in `p` | only units holding `package:…\|p` or a matching negative | exact | `RestartScenarioTest.a5NewTopLevelTypeRecompilesOnlyUnitsThatConsultedItsPackage` |
 | A6 | Body edit inside a 3-cycle | javac 3 | javac 3 | `RestartScenarioTest.a6BodyEditInsideAThreeCycleRecompilesTheCycleOnly`, `PreciseCertificateTest.bodyEditInsideAThreeCycleInvalidatesTheCycleAndBodyEditOutsideInvalidatesNone` |
-| A7 | Relocated checkout, real project | javac 0, ≥ 98 % restored | javac 0, 977/977 (100 %) | `RealProjectBenchmark` (below) |
+| A7 | Relocated checkout, real project | javac 0, ≥ 98 % restored | javac 0, 977/977 (100 %) in-process; daemon: 157–180 compiler runs (reset checkpoint 4) | `RealProjectBenchmark` (below) |
 | A8 | Branch switch, K = 20 body-only, real project | javac K, all others restored | 22 units recompiled, 955 restored | `RealProjectBenchmark`; see the progress log for the 2 extra units |
-| A9 | Lombok/MapStruct no-change restart, real project | 0 % processor refusals, ≥ 95 % restored | 0 refusals, 977/977 | `RealProjectBenchmark`, `ProcessorBindingTest.allowlistedLombokContextIsMemoisedAndRestoredThroughBinaryProjections` |
+| A9 | Lombok/MapStruct no-change restart, real project | 0 % processor refusals, ≥ 95 % restored | 0 refusals, 977/977 in-process; daemon: 466–484 compiler runs, 446 `no-record` misses (reset checkpoint 4) | `RealProjectBenchmark`, `ProcessorBindingTest.allowlistedLombokContextIsMemoisedAndRestoredThroughBinaryProjections` |
 | A10 | `lombok.config` edited | exactly the units holding it | root config: all 977 hold it, all 977 recompiled; package config: exactly its units | `RealProjectBenchmark`, `ProcessorBindingTest.lombokConfigEditRecompilesExactlyTheUnitsHoldingIt` |
 | A11 | 1,000 vs 5,000 units | wall ratio ≤ 6, stats ≤ 2 × files + dirs | ratio 4.92; stats 2,032 / 10,032 = bound | `WarmRestartScalingBenchmark` ([log](evidence/warm-restart-scaling.md)) |
 | A12 | Corrupt memo record, journal, directory inventory | miss then rebuild, never an error | miss then rebuild | `WarmRestartGateTest.a12CorruptMemoJournalAndInventoryMissThenRebuild`, `SemanticMemoStoreTest.entriesAreIndependentlyValidAndCorruptionIsOnlyAMiss`, `FileStatePersistenceTest.torn_or_corruptJournalLosesOnlyItsInvalidSuffix` |
@@ -635,7 +637,7 @@ document are cumulative traffic over an interval.
 | P1–P3 configuration, namespace and graph work | Kept as architecture and work-count tests | COMPLETED WITH EVIDENCE: `ConfigurationWorkCountTest`, `NamespaceWorkCountTest`, `SccWorkCountTest` |
 | P4 result cutoff | REQUIRED NOW | COMPLETED WITH EVIDENCE: `OwnerCutoffTest`, live and restored, with a deferred continuation |
 | P5 warm reads | REQUIRED NOW | To check in the restart/editor scenario (below) |
-| R1 constructive restore | REQUIRED NOW | Function table written (checkpoint 3); fresh-process editor evidence still needed |
+| R1 constructive restore | REQUIRED NOW | Function table (checkpoint 3) and fresh-process real-project restart (reset checkpoint 4): restores shown, full restore not shown (446 `no-record`, 123 stale-dependency misses) |
 | R2 readiness | REQUIRED NOW | COMPLETED WITH EVIDENCE: `ReadinessGatingTest` (faulted scan, offline addition) |
 | M1 first-use references within 60 s at 1 GiB | WITHDRAWN as a #55 gate | PRE-EXISTING FAILURE (B0 also fails); tracked under cold construction below |
 | M2 reopen workspace-used state | REQUIRED NOW | COMPLETED WITH EVIDENCE: equivalent and shipping, without the references phase (reset checkpoint 2) |
@@ -778,6 +780,38 @@ remaining failure is a stale oracle in the harness, not a regression:
 Harness fix: the lifecycle closes the edited documents before disconnecting, as the memory control does (M18),
 and the failure message now names the location answered as well as the one expected. The inherited
 first-use-references timeout still fails base and head runs that do not finish it in time.
+
+### Reset checkpoint 4: real-project restart through the daemon (R1)
+
+ruoyi-vue-pro, fresh daemon process per row, before/after runs
+[36908945746](https://github.com/maxjay/jvmd/actions/runs/36908945746) (head `994c933`) and the run on `44a319f`.
+"Diagnose all" asks the daemon for every unit's diagnostics. Base compiles in batches of up to 128 units (95 runs on
+every row), so its compiler-run count is not comparable with the head's per-miss runs.
+
+| Session | First correct completion: base / head | Diagnose all: base / head | Head compiler runs | Head restored | External processor runs | Diagnostics vs base |
+|---|---:|---:|---:|---:|---:|---|
+| cold | 108.3 s / 108.3 s | 63.4 s / 94.8 s | 95 | 0 | 56 | identical |
+| A9 no-change restart | 49.0 s / 10.8 s | 59.3 s / 59.8 s | 466 (484 on `44a319f`) | 1,495 (1,399) | 0 (28 persisted hits) | identical |
+| A7 relocated checkout | 54.0 s / 12.8 s | 63.3 s / 33.3 s | 157 (180) | 1,651 (1,627) | 0 | identical |
+| A8 branch switch, K = 20 | base failed / 37.6 s | — / 32.8 s | 127 | 1,731 | — | base produced nothing |
+| A10 `lombok.config` edited | base failed / 52.8 s | — / 118.3 s | 95 | 0 | — | base produced nothing |
+
+- **Reuse shown.** A restarted daemon answers the first completion 4.2–4.5× sooner than base. The external
+  processor results are restored, not rerun (28 persisted hits, 0 runs), and over 1,400 units' diagnostics are
+  restored with identical results.
+- **Not shown: a full restore.** The local reproduction (same fixture, head image) gives A9's miss reasons:
+  `no-record` 446 and `stale-dependency:RESOLUTION_PATH:logical-unit` 123, with 61 `foreign-diagnostic-file`
+  refusals. After the cold session's "diagnose all", 530 captured results were still waiting for their component to
+  become final; the sample unknown unit (`DataPermissionRuleFactoryImpl`) had no in-process result, so its
+  dependants were refused at close (`scc-unproven`) and miss on restart. Why that unit had no in-process result, and
+  why 123 source-dependency projections differ between capture and restore (e.g. a Lombok DTO,
+  `SocialUserBindReqDTO`), is not established. Both fail safe: they cost compiler runs, never a wrong answer.
+- The in-process harness's 977/977 (first rows of this page) remains its own measurement; the daemon figure above
+  is the one an editor sees.
+- **Base restarts failed** in every scenario after the first on `44a319f`, and in A8/A10 on `994c933`: base cannot
+  reopen its RocksDB store (`Insert failed due to LRU cache being full`). The head reopens it. Rows where base
+  produced nothing are not a diagnostics comparison.
+- Cold "diagnose all" is 1.5–1.7× base here as well (the cold admission regression, checkpoint 1).
 
 ### Cold construction and first-use references (deferred follow-up)
 

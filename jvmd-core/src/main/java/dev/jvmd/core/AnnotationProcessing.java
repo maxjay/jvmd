@@ -24,23 +24,38 @@ public final class AnnotationProcessing implements AutoCloseable {
     private final Map<String,CachedOutput> cache=new LinkedHashMap<>();
     private record Hashed(Map<String,Object> stamp,String hash) { }
     private final Map<Path,Hashed> hashes=new HashMap<>();
-    private long runs,hits,bytesHashed;
+    private long runs,hits,persistedHits,persistFailures,bytesHashed;
     private volatile Process active;
     public AnnotationProcessing(Config config){this.config=config;}
     public synchronized Output prepare(Request request,Duration timeout)throws Exception {
         var inputs=javaFiles(request.sourceRoots());
-        var fingerprint=new StringBuilder(Json.MAPPER.writeValueAsString(request));
-        for(Path input:inputs)fingerprint.append(input).append(contentHash(input));
+        // Logical input fingerprint: paths relative to the module directory and jars by content, so a
+        // moved checkout or another worktree of the same sources reuses the persisted result.
+        Path module=request.directory().toAbsolutePath().normalize();
+        var fingerprint=new StringBuilder("processor-input-v2|").append(request.key()).append('|').append(request.lombok())
+                .append('|').append(request.processors()).append('|').append(request.compilerOptions());
+        for(Path root:request.sourceRoots())fingerprint.append("|root:").append(relative(module,root));
+        for(Path input:inputs)fingerprint.append('|').append(relative(module,input)).append(contentHash(input));
         var binaries=new LinkedHashSet<Path>(request.classpath());binaries.addAll(request.processorPath());
         for(Path path:binaries) {
-            if(Files.isRegularFile(path))fingerprint.append(path).append(contentHash(path));
-            else if(Files.isDirectory(path))try(var entries=Files.walk(path)){for(Path file:entries.filter(Files::isRegularFile).sorted().toList())fingerprint.append(file).append(contentHash(file));}
+            if(Files.isRegularFile(path))fingerprint.append("|file:").append(path.getFileName()).append(contentHash(path));
+            else if(Files.isDirectory(path))try(var entries=Files.walk(path)){
+                fingerprint.append("|directory:").append(relative(module,path));
+                for(Path file:entries.filter(Files::isRegularFile).sorted().toList())fingerprint.append('|').append(relative(path,file)).append(contentHash(file));
+            }
         }
         // Lombok's own configuration can change generated signatures without a source edit.
-        for(Path path=request.directory();path!=null;path=path.getParent()){Path file=path.resolve("lombok.config");if(Files.isRegularFile(file))fingerprint.append(file).append(contentHash(file));}
+        for(Path path=request.directory();path!=null;path=path.getParent()){Path file=path.resolve("lombok.config");if(Files.isRegularFile(file))fingerprint.append("|config:").append(relative(module,file)).append(contentHash(file));}
         String hash=Hashing.sha256(fingerprint.toString().getBytes(StandardCharsets.UTF_8));
         var priorEntry=cache.get(request.key());var prior=priorEntry==null?null:priorEntry.output();
         if(priorEntry!=null&&priorEntry.inputFingerprint().equals(hash)&&available(prior)){hits++;return prior;}
+        if(priorEntry==null){
+            var persisted=load(request);
+            if(persisted!=null&&persisted.inputFingerprint().equals(hash)&&available(persisted.output())){
+                cache.put(request.key(),persisted);hits++;persistedHits++;return persisted.output();
+            }
+            if(persisted!=null&&available(persisted.output()))prior=persisted.output();
+        }
         long started=System.nanoTime();var warnings=new ArrayList<String>();
         if(request.lombok())warnings.add("lombok_reduced_fidelity: generated member bodies and positions are unavailable; diagnostics use external javac when available");
         Path workspace=config.stateDir().resolve("apt").resolve(Hashing.sha256(request.key().getBytes(StandardCharsets.UTF_8)));
@@ -74,7 +89,7 @@ public final class AnnotationProcessing implements AutoCloseable {
                 result=new Output(semantic,prior.sourceRoots(),prior.classpath(),Set.copyOf(binarySources),
                         diagnostics,fidelity,List.copyOf(warnings),exit,timedOut,TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started),output);
             }else if(prior!=null)for(Path source:prior.sourceRoots())deleteTree(source.getParent());
-            cache.put(request.key(),new CachedOutput(hash,result));
+            cache.put(request.key(),new CachedOutput(hash,result));persist(request,new CachedOutput(hash,result));
             return result;
         }catch(Exception e){deleteTree(work);throw e;}
     }
@@ -111,6 +126,57 @@ public final class AnnotationProcessing implements AutoCloseable {
             diagnostics.add(new Problem(code,kind,file.toUri().toString(),Long.parseLong(match.group(2)),Math.max(0,Long.parseLong(match.group(3))-1),message));
         }
         return new ParsedDiagnostics(diagnostics,complete);
+    }
+    private static String relative(Path base,Path path){return base.relativize(path.toAbsolutePath().normalize()).toString().replace(File.separatorChar,'/');}
+    private Path workspace(Request request){return config.stateDir().resolve("apt").resolve(Hashing.sha256(request.key().getBytes(StandardCharsets.UTF_8)));}
+    /**
+     * Persist the latest result of one request next to its output: output paths relative to the
+     * processor workspace, input-side paths relative to the module directory. Best effort; a
+     * missing, corrupt or stale index is only a rerun.
+     */
+    private void persist(Request request,CachedOutput entry){
+        try{
+            Path workspace=workspace(request),module=request.directory().toAbsolutePath().normalize();var output=entry.output();
+            var value=new LinkedHashMap<String,Object>();
+            value.put("format",1);value.put("input",entry.inputFingerprint());value.put("output",output.fingerprint());
+            value.put("sources",output.sourceRoots().stream().map(path->relative(workspace,path)).toList());
+            value.put("classpath",output.classpath().stream().map(path->relative(workspace,path)).toList());
+            value.put("binary_sources",output.binarySources().stream().map(path->relative(module,path)).sorted().toList());
+            var problems=new ArrayList<Map<String,Object>>();
+            for(var problem:output.diagnostics()){
+                String file=problem.file();
+                try{Path path=Path.of(java.net.URI.create(file));if(path.startsWith(module))file="module:"+relative(module,path);}catch(RuntimeException notAFileUri){}
+                problems.add(Map.of("code",problem.code(),"kind",problem.kind(),"file",file,"line",problem.line(),"character",problem.character(),"message",problem.message()));
+            }
+            value.put("diagnostics",problems);value.put("fidelity",output.diagnosticFidelity());value.put("warnings",output.warnings());
+            value.put("exit",output.exitCode());value.put("timed_out",output.timedOut());value.put("elapsed_ms",output.elapsedMillis());
+            Path target=workspace.resolve("index.json"),temporary=workspace.resolve("index.json.tmp-"+ProcessHandle.current().pid());
+            Files.write(temporary,Json.MAPPER.writeValueAsBytes(value));
+            Files.move(temporary,target,StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE);
+        }catch(Exception failure){persistFailures++;}
+    }
+    private CachedOutput load(Request request){
+        try{
+            Path workspace=workspace(request),module=request.directory().toAbsolutePath().normalize(),index=workspace.resolve("index.json");
+            if(!Files.isRegularFile(index))return null;
+            var value=Json.MAPPER.readTree(Files.readAllBytes(index));
+            if(value.path("format").asInt()!=1)return null;
+            var sources=new ArrayList<Path>();value.path("sources").forEach(path->sources.add(workspace.resolve(path.asText()).normalize()));
+            var classpath=new ArrayList<Path>();value.path("classpath").forEach(path->classpath.add(workspace.resolve(path.asText()).normalize()));
+            var binarySources=new LinkedHashSet<Path>();value.path("binary_sources").forEach(path->binarySources.add(module.resolve(path.asText()).normalize()));
+            var problems=new ArrayList<Problem>();
+            for(var problem:value.path("diagnostics")){
+                String file=problem.path("file").asText();
+                if(file.startsWith("module:"))file=module.resolve(file.substring("module:".length())).normalize().toUri().toString();
+                problems.add(new Problem(problem.path("code").asText(),problem.path("kind").asText(),file,problem.path("line").asLong(),
+                        problem.path("character").asLong(),problem.path("message").asText()));
+            }
+            var warnings=new ArrayList<String>();value.path("warnings").forEach(warning->warnings.add(warning.asText()));
+            var output=new Output(value.path("output").asText(),List.copyOf(sources),List.copyOf(classpath),Set.copyOf(binarySources),List.copyOf(problems),
+                    value.path("fidelity").asText(),List.copyOf(warnings),value.path("exit").asInt(),value.path("timed_out").asBoolean(),
+                    value.path("elapsed_ms").asLong(),"");
+            return new CachedOutput(value.path("input").asText(),output);
+        }catch(Exception corrupt){return null;}
     }
     private static boolean available(Output output){
         return output!=null&&output.sourceRoots().stream().allMatch(Files::isDirectory)&&output.classpath().stream().allMatch(Files::isDirectory);
@@ -173,8 +239,12 @@ public final class AnnotationProcessing implements AutoCloseable {
     private static boolean lombokSource(String source){return source.contains("lombok.")&&source.contains("@");}
     private static void kill(Process process){var children=process.descendants().toList();children.reversed().forEach(ProcessHandle::destroyForcibly);process.destroyForcibly();}
     private static void deleteTree(Path root)throws IOException{if(Files.exists(root))try(var paths=Files.walk(root)){for(Path path:paths.sorted(Comparator.reverseOrder()).toList())Files.deleteIfExists(path);}}
+    /** Run and cache counters only (the full status lists every module). */
+    public synchronized Map<String,Object> counters(){
+        return Map.of("runs",runs,"cache_hits",hits,"persisted_hits",persistedHits,"persist_failures",persistFailures,"bytes_hashed",bytesHashed,"modules",cache.size());
+    }
     public synchronized Map<String,Object> status(){
-        return Map.of("runs",runs,"cache_hits",hits,"bytes_hashed",bytesHashed,"modules",cache.entrySet().stream().map(e->Map.of("module",e.getKey(),"exit_code",e.getValue().output().exitCode(),"timed_out",e.getValue().output().timedOut(),"elapsed_ms",e.getValue().output().elapsedMillis(),"diagnostic_fidelity",e.getValue().output().diagnosticFidelity(),"diagnostics",e.getValue().output().diagnostics().size(),"warnings",e.getValue().output().warnings())).toList());
+        return Map.of("runs",runs,"cache_hits",hits,"persisted_hits",persistedHits,"persist_failures",persistFailures,"bytes_hashed",bytesHashed,"modules",cache.entrySet().stream().map(e->Map.of("module",e.getKey(),"exit_code",e.getValue().output().exitCode(),"timed_out",e.getValue().output().timedOut(),"elapsed_ms",e.getValue().output().elapsedMillis(),"diagnostic_fidelity",e.getValue().output().diagnosticFidelity(),"diagnostics",e.getValue().output().diagnostics().size(),"warnings",e.getValue().output().warnings())).toList());
     }
     @Override public void close(){var process=active;if(process!=null)kill(process);}
 }

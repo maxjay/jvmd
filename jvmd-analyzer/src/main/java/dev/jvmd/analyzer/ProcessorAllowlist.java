@@ -51,6 +51,9 @@ public final class ProcessorAllowlist {
         // Hibernate JPA static metamodel (hibernate-jpamodelgen 6.x, hibernate-processor 7.x): generates
         // Entity_ sources from @Entity types; reads -A options and the JPA XML mappings.
         add("org.hibernate.processor.HibernateProcessor","Hibernate JPA metamodel",ExtraInput.JPA_XML);
+        // Spring Boot configuration metadata: writes META-INF/spring-configuration-metadata.json from
+        // @ConfigurationProperties types; reads the element model and -A options, generates no source.
+        add("org.springframework.boot.configurationprocessor.ConfigurationMetadataAnnotationProcessor","Spring Boot configuration metadata",ExtraInput.NONE);
     }
     private ProcessorAllowlist(){}
 

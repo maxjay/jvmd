@@ -82,4 +82,10 @@ class SourceNamespaceMemoTest {
                 .isNotEqualTo(SourceNamespaces.key(MAIN_A,new LanguageMode("21",true)).identity());
         assertThat(LanguageMode.of(List.of("--release","21","--enable-preview"))).isEqualTo(new LanguageMode("21",true));
     }
+
+    @Test void legacySourceVersionSpellingParses()throws Exception{
+        var mode=LanguageMode.of(List.of("-source","1.8","-target","1.8"));
+        assertThat(mode.release()).isEqualTo("8");
+        assertThat(new SourceNamespaces(null).namespace("package p; public class A {}",mode).topLevelTypes()).containsExactly("p.A");
+    }
 }

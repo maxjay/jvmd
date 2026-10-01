@@ -150,7 +150,7 @@ public final class SemanticMemoStore {
             for(var dependency:record.certificate().dependencies().dependencies()){
                 var now=current.current(dependency.key());
                 if(now==null||now.isEmpty()){synchronized(this){unknownDependencies++;}reason="unknown-dependency:"+dependency.key().domain();continue variant;}
-                if(!now.get().equals(dependency.identity())){synchronized(this){staleCertificates++;}reason="stale-dependency:"+dependency.key().domain();continue variant;}
+                if(!now.get().equals(dependency.identity())){synchronized(this){staleCertificates++;}reason="stale-dependency:"+dependency.key().domain()+":"+dependency.key().value();continue variant;}
             }
             synchronized(this){
                 try{Files.setLastModifiedTime(path,FileTime.fromMillis(System.currentTimeMillis()));}catch(IOException ignored){}

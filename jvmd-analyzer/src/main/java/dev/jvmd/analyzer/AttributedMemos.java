@@ -33,7 +33,7 @@ final class AttributedMemos implements AutoCloseable {
     private long attributedMemoRestores,attributedMemoMisses,attributedMemoRefusals;
     private final java.util.concurrent.atomic.AtomicLong attributedMemoWrites=new java.util.concurrent.atomic.AtomicLong(),
             attributedMemoFailures=new java.util.concurrent.atomic.AtomicLong();
-    private final Map<String,Long> attributedMemoRefusalReasons=new TreeMap<>();
+    private final Map<String,Long> attributedMemoRefusalReasons=new TreeMap<>(),missReasons=new TreeMap<>();
     private String lastAttributedMemoMiss="";
 
     /** Bump when the attributed result, its canonical encoding or its certificate rules change (§81). */
@@ -62,8 +62,9 @@ final class AttributedMemos implements AutoCloseable {
         var classpathContext=Analyzer.classpathContext(context());
         var roots=logical.roots().stream().map(LogicalSources.Root::logical).sorted().toList();
         return Optional.of(SemanticMemoStore.StaticKey.of(ATTRIBUTED,source.get(),sourceHash,context().gav(),classpathContext.scope(),
-                context().release(),statics.value(),platformIdentity(),roots));
+                context().release(),statics.value(),platformIdentity(),roots,contextWarnings()));
     }
+    private List<String> contextWarnings(){return List.copyOf(new LinkedHashSet<>(context().warnings()));}
     /** The analyzer's own processor class output: its units are bound one by one through their binary P_diag. */
     private boolean ownProcessorOutput(Path entry){
         String normalized=entry.toAbsolutePath().normalize().toString();
@@ -146,12 +147,26 @@ final class AttributedMemos implements AutoCloseable {
         String relative=logical.substring(logical.lastIndexOf('|')+1);
         return relative.substring(0,relative.length()-".java".length()).replace('/','.');
     }
-    /** Current binary P_diag of a unit javac reads from processor class output (one classpath-only task per epoch). */
+    /**
+     * Binary P_diag of a unit javac reads from processor class output, from one classpath-only task
+     * per context. Capture and restore use this same reader. The dependant's own (pooled) task does
+     * not give a stable element model for class-file types: a reused javac context can drop a nested
+     * member class. Each processor run publishes a fresh output directory that nothing rewrites, and
+     * hidden units resolve there first, so within a context this reader sees the bytes the
+     * dependant's task read.
+     */
     private Optional<Hash256> binaryProjection(Path file,LogicalSources logical)throws Exception{
         var id=logical.logical(file);if(id.isEmpty()||!id.get().endsWith(".java"))return Optional.empty();
-        BinaryProjections projections=shared("binary-projections",()->new BinaryProjections(context().classpath(),context().compilerOptions()));
-        return projections.projection(binaryName(id.get()));
+        var key=List.of(context().classpath(),context().compilerOptions());
+        synchronized(this){
+            if(!key.equals(binaryProjectionsKey)){
+                if(binaryProjections!=null)binaryProjections.close();
+                binaryProjections=new BinaryProjections(context().classpath(),context().compilerOptions());binaryProjectionsKey=key;
+            }
+            return binaryProjections.projection(binaryName(id.get()));
+        }
     }
+    private BinaryProjections binaryProjections;private Object binaryProjectionsKey;
     /**
      * Shared snapshot of one observation epoch (W5): every unit validated while the compiler inputs
      * snapshot is unchanged shares one roots inventory, one hash per file, one identity per package
@@ -312,11 +327,14 @@ final class AttributedMemos implements AutoCloseable {
         while(pendingMemoWrites.get()>0&&System.nanoTime()<deadline)Thread.sleep(2);
     }
     /** One completed dependency of a captured result: its logical id, content and P_diag as javac saw them. */
-    private record Dependency(String logical,Hash256 content,Hash256 projection) { }
+    /** {@code binary}: javac completed the unit from a class file, so its entry is the binary view. */
+    private record Dependency(String logical,Hash256 content,Hash256 projection,boolean binary) { }
     /** A result captured on the owner thread whose SCC is not yet known (W3). */
     private record Pending(SemanticMemoStore.StaticKey key,byte[] result,Map<Path,Dependency> dependencies,
                            Map<String,List<PackageFile>> packages,TreeMap<QueryProof.Key,Hash256> negatives,SourceNamespaces.LanguageMode mode) { }
     private final Map<Path,Pending> pending=new LinkedHashMap<>();
+    /** Dependency sets of units captured or restored this session, for SCC computation after their contribution is invalidated. */
+    private final Map<Path,Set<Path>> knownDependencies=new HashMap<>();
     /**
      * Capture one complete attributed result. The certificate is precise or there is no record:
      * {@code logical-unit:} P_diag for every completed dependency outside the unit's SCC,
@@ -329,23 +347,37 @@ final class AttributedMemos implements AutoCloseable {
     }
     private void capture(Path file,String sourceHash,Envelope envelope,FileSemanticContribution contribution,Bindings.Snapshot attributed){
         observe(file,sourceHash,attributed);
-        if(attributedMemos==null||contribution==null||!envelope.warnings().isEmpty())return;
+        // Known even when this unit's own record is refused or its contribution was already
+        // invalidated: other units' SCCs may pass through it.
+        if(attributed!=null){
+            var known=new HashSet<Path>();for(Path dependency:attributed.dependencies())known.add(dependency.toAbsolutePath().normalize());
+            knownDependencies.put(file,Set.copyOf(known));
+        }
+        if(attributedMemos==null||contribution==null){if(attributedMemos!=null)refuseAttributed("contribution-unavailable");return;}
+        // Context warnings (processor fidelity notes) belong to the context and are part of the static
+        // key; only warnings about this query (faults, superseded inputs, originating modules) block a record.
+        var queryWarnings=new ArrayList<>(envelope.warnings());queryWarnings.removeAll(context().warnings());
+        if(!queryWarnings.isEmpty())return;
+        if(context().warnings().stream().anyMatch(warning->warning.startsWith("unsaved_processor_inputs"))){refuseAttributed("unsaved-processor-inputs");return;}
         var projection=projection(file);if(projection.isEmpty()){refuseAttributed("projection-unavailable");return;}
         try{
             var logical=LogicalSources.of(context());
             var key=attributedStaticKey(file,sourceHash,logical);if(key.isEmpty())return;
-            if(!contribution.sourceHash().equals(sourceHash))return;
+            if(!contribution.sourceHash().equals(sourceHash)){refuseAttributed("contribution-superseded");return;}
             String text=analyzer.documentsState().text(file);
-            if(!Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)).equals(sourceHash))return;
+            if(!Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)).equals(sourceHash)){refuseAttributed("source-superseded");return;}
             var roots=context().sources().stream().map(root->root.toAbsolutePath().normalize()).toList();
             var dependencies=new TreeMap<Path,Dependency>();
             for(Path dependency:contribution.dependencies()){
                 Path normalized=dependency.toAbsolutePath().normalize();if(normalized.equals(file))continue;
-                if(roots.stream().noneMatch(normalized::startsWith)){refuseAttributed("non-logical-dependency");return;}
+                // javac's source path is the compiler source roots: a unit outside them was read from the
+                // classpath (another module's class output), which the static key binds as a slot.
+                if(roots.stream().noneMatch(normalized::startsWith))continue;
                 var id=logical.logical(normalized);if(id.isEmpty()){refuseAttributed("non-logical-dependency");return;}
-                var dependencyProjection=attributed.dependencyProjections().get(normalized);
+                boolean binary=attributed.binaryDependencies().contains(normalized);
+                var dependencyProjection=binary?binaryProjection(normalized,logical).orElse(null):attributed.dependencyProjections().get(normalized);
                 if(dependencyProjection==null){refuseAttributed("dependency-unproven");return;}
-                dependencies.put(normalized,new Dependency(id.get(),logicalContentIdentity(analyzer.documentsState().sourceHash(normalized)),dependencyProjection));
+                dependencies.put(normalized,new Dependency(id.get(),logicalContentIdentity(analyzer.documentsState().sourceHash(normalized)),dependencyProjection,binary));
             }
             var packageNames=consultedPackages(text);var packages=new TreeMap<String,List<PackageFile>>();
             for(String pkg:packageNames){
@@ -377,7 +409,12 @@ final class AttributedMemos implements AutoCloseable {
             pending.put(file,new Pending(key.get(),Json.MAPPER.writeValueAsBytes(result),dependencies,packages,negatives.get(),
                     SourceNamespaces.LanguageMode.of(context().compilerOptions())));
             if(pending.size()>=PENDING_BATCH||System.nanoTime()-lastDrain>DRAIN_INTERVAL_NANOS){lastDrain=System.nanoTime();drain(false);}
-        }catch(Exception failure){attributedMemoFailures.incrementAndGet();}
+        }catch(Exception failure){attributedMemoFailures.incrementAndGet();lastFailure=failure.toString();}
+    }
+    private volatile String lastFailure="",unknownSample="";
+    private boolean foreignModule(Path unit,LogicalSources logical){
+        if(logical==null)return false;var id=logical.logical(unit);
+        return id.isPresent()&&!id.get().startsWith(context().gav()+"|");
     }
     private static final int PENDING_BATCH=256;
     private static final long DRAIN_INTERVAL_NANOS=2_000_000_000L;
@@ -391,11 +428,16 @@ final class AttributedMemos implements AutoCloseable {
     void drain(boolean closing){
         if(pending.isEmpty())return;
         var roots=context()==null?List.<Path>of():context().sources().stream().map(root->root.toAbsolutePath().normalize()).toList();
+        var logical=context()==null?null:LogicalSources.of(context());
         var graph=new HashMap<Path,Set<Path>>();
         java.util.function.Function<Path,Set<Path>> edges=unit->graph.computeIfAbsent(unit,current->{
             var captured=pending.get(current);if(captured!=null)return captured.dependencies().keySet();
             if(roots.stream().noneMatch(current::startsWith))return Set.of();
-            var contribution=analyzer.contribution(current);if(contribution==null)return null;
+            // Maven reactor modules form a DAG: a unit of another module's source root cannot reach back
+            // into this module, so it is a sink for this module's SCCs.
+            if(foreignModule(current,logical))return Set.of();
+            var contribution=analyzer.contribution(current);
+            if(contribution==null){var known=knownDependencies.get(current);if(known!=null)return known;unknownSample=context().gav()+" -> "+current+" logical="+(logical==null?"?":logical.logical(current).orElse("none"))+" own="+knownDependencies.size();return null;}
             var result=new HashSet<Path>();for(Path dependency:contribution.dependencies())result.add(dependency.toAbsolutePath().normalize());
             return result;
         });
@@ -439,7 +481,7 @@ final class AttributedMemos implements AutoCloseable {
                 if(closing){iterator.remove();refuseAttributed("scc-unproven");}
                 continue;
             }
-            iterator.remove();write(entry.getKey(),entry.getValue(),members);
+            iterator.remove();knownDependencies.put(entry.getKey(),Set.copyOf(entry.getValue().dependencies().keySet()));write(entry.getKey(),entry.getValue(),members);
         }
     }
     private void write(Path file,Pending captured,Set<Path> component){
@@ -459,7 +501,7 @@ final class AttributedMemos implements AutoCloseable {
         for(var entry:captured.dependencies().entrySet()){
             var dependency=entry.getValue();
             if(component.contains(entry.getKey()))dependencies.put(new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"logical-source:"+dependency.logical()),dependency.content());
-            else dependencies.put(new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"logical-unit:"+dependency.logical()),projectionIdentity(dependency.projection()));
+            else dependencies.put(new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,(dependency.binary()?"logical-binary:":"logical-unit:")+dependency.logical()),projectionIdentity(dependency.projection()));
         }
         var store=attributedMemos;String scope=scope();
         pendingMemoWrites.incrementAndGet();
@@ -467,7 +509,7 @@ final class AttributedMemos implements AutoCloseable {
             try{
                 for(var entry:captured.packages().entrySet()){
                     var identity=packageIdentity(entry.getKey(),entry.getValue(),captured.mode());
-                    if(identity.isEmpty()){attributedMemoFailures.incrementAndGet();return;}
+                    if(identity.isEmpty()){attributedMemoFailures.incrementAndGet();lastFailure="write: package identity unavailable for "+entry.getKey();return;}
                     dependencies.put(new QueryProof.Key(QueryProof.Domain.NAMESPACE,"package:"+scope+"|"+entry.getKey()),identity.get());
                 }
                 var certificate=new SemanticMemoStore.Certificate(new QueryProof(dependencies.entrySet().stream()
@@ -475,7 +517,7 @@ final class AttributedMemos implements AutoCloseable {
                 store.put(new SemanticMemoStore.MemoRecord(captured.key(),certificate,SemanticMemoStore.Coverage.PRECISE,
                         SemanticCompleteness.COMPLETE,SemanticMemoStore.Result.present(captured.result())));
                 attributedMemoWrites.incrementAndGet();
-            }catch(Exception failure){attributedMemoFailures.incrementAndGet();}
+            }catch(Exception failure){attributedMemoFailures.incrementAndGet();lastFailure="write: "+failure;}
             finally{pendingMemoWrites.decrementAndGet();}
         });
     }
@@ -514,6 +556,10 @@ final class AttributedMemos implements AutoCloseable {
                             if(prefix==null||!value.startsWith(prefix)||value.contains(".."))return Optional.empty();
                             return Optional.of(configIdentity(top.resolve(value.substring(prefix.length()))));
                         }
+                        if(value.startsWith("logical-binary:")){
+                            var file=logical.physical(value.substring("logical-binary:".length()));
+                            return file.isEmpty()?Optional.empty():shared("binary:"+file.get(),()->binaryProjection(file.get(),logical)).map(AttributedMemos::projectionIdentity);
+                        }
                         if(value.startsWith("logical-unit:")){
                             var file=logical.physical(value.substring("logical-unit:".length()));
                             return file.isEmpty()?Optional.empty():currentProjection(file.get(),observed).map(AttributedMemos::projectionIdentity);
@@ -537,7 +583,10 @@ final class AttributedMemos implements AutoCloseable {
                 return Optional.empty();
             });
             if(!(lookup instanceof SemanticMemoStore.Lookup.Hit hit)){
-                attributedMemoMisses++;lastAttributedMemoMiss=((SemanticMemoStore.Lookup.Miss)lookup).reason();return null;
+                attributedMemoMisses++;lastAttributedMemoMiss=((SemanticMemoStore.Lookup.Miss)lookup).reason();
+                // Group by reason and key kind (the key's own value is in last_miss).
+                String reason=lastAttributedMemoMiss.replaceAll("^((?:stale|unknown)-dependency:[A-Z_]+:[a-z-]+):.*$","$1");
+                missReasons.merge(reason,1L,Long::sum);return null;
             }
             if(hit.record().completeness()!=SemanticCompleteness.COMPLETE
                     ||!(hit.record().result() instanceof SemanticMemoStore.Result.Present present))return null;
@@ -558,13 +607,13 @@ final class AttributedMemos implements AutoCloseable {
             var unresolved=new LinkedHashSet<String>();data.path("unresolved").forEach(value->unresolved.add(value.asText()));
             var contribution=new FileSemanticContribution(path,hash,data.path("api").asText(),dependencies,exported,unresolved);
             projections.put(path,new Projection(hash,Hash256.fromHex(data.path("p_diag").asText())));
-            var envelope=new Envelope(data.path("tier").asInt(),"live",false,null,List.of(),Map.of("diagnostics",List.copyOf(problems)));
-            analyzer.dependencyGraph().recordFocused(path,dependencies);analyzer.resolveContribution(contribution);
+            var envelope=new Envelope(data.path("tier").asInt(),"live",false,null,contextWarnings(),Map.of("diagnostics",List.copyOf(problems)));
+            analyzer.dependencyGraph().recordFocused(path,dependencies);analyzer.resolveContribution(contribution);knownDependencies.put(path,Set.copyOf(dependencies));
             String broad=Analyzer.broadDiagnosticStamp(observed);
             analyzer.diagnosticStore().put(path,hash,context().generation(),broad,envelope,contribution.apiFingerprint(),dependencies,contribution);
             attributedMemoRestores++;
             return envelope;
-        }catch(Exception failure){attributedMemoFailures.incrementAndGet();return null;}
+        }catch(Exception failure){attributedMemoFailures.incrementAndGet();lastFailure="restore: "+failure;return null;}
     }
     private Optional<String> currentHash(Path file){
         if(epoch!=null){var cached=epoch.hashes.get(file);if(cached!=null)return cached;}
@@ -586,8 +635,6 @@ final class AttributedMemos implements AutoCloseable {
      */
     private Optional<Hash256> currentProjection(Path file,CompilerInputs.Snapshot observed){
         file=file.toAbsolutePath().normalize();
-        // A unit hidden from the source path is completed from processor class output by every dependant.
-        if(context().binarySources().contains(file))try{return binaryProjection(file,LogicalSources.of(context()));}catch(Exception unreadable){return Optional.empty();}
         var hash=currentHash(file);if(hash.isEmpty())return Optional.empty();
         var known=projections.get(file);
         if(known==null||!known.hash().equals(hash.get())){
@@ -606,13 +653,13 @@ final class AttributedMemos implements AutoCloseable {
         result.put("enabled",attributedMemos!=null);result.put("writes",attributedMemoWrites.get());result.put("restores",attributedMemoRestores);
         result.put("misses",attributedMemoMisses);result.put("last_miss",lastAttributedMemoMiss);result.put("refusals",attributedMemoRefusals);
         result.put("refusal_reasons",Map.copyOf(attributedMemoRefusalReasons));result.put("failures",attributedMemoFailures.get());
-        result.put("pending_scc",pending.size());result.put("early_cutoff_attributions",earlyCutoffAttributions);result.put("pending_writes",pendingMemoWrites.get());
+        result.put("pending_scc",pending.size());result.put("last_failure",lastFailure);result.put("scc_unknown_sample",unknownSample);result.put("miss_reasons",Map.copyOf(missReasons));result.put("early_cutoff_attributions",earlyCutoffAttributions);result.put("pending_writes",pendingMemoWrites.get());
         result.put("source_namespaces",sourceNamespaces.status());
         if(attributedMemos!=null)result.put("store",attributedMemos.status());
         return Collections.unmodifiableMap(result);
     }
 
     @Override public void close()throws InterruptedException{
-        if(context()!=null)drain(true);awaitWrites();synchronized(this){if(memoWriter!=null){memoWriter.shutdown();memoWriter=null;}}
+        if(context()!=null)drain(true);awaitWrites();synchronized(this){if(memoWriter!=null){memoWriter.shutdown();memoWriter=null;}if(binaryProjections!=null){binaryProjections.close();binaryProjections=null;binaryProjectionsKey=null;}}
     }
 }

@@ -1,0 +1,9 @@
+{
+  "description": "Strict task W9 real project: an open-source Maven multi-module project using Lombok and MapStruct.",
+  "repository": "https://github.com/YunaiV/ruoyi-vue-pro.git",
+  "commit": "1697112f1164b206aeb031493980f5cb3a6e2cd5",
+  "reactor": ["yudao-dependencies", "yudao-framework (16 modules)", "yudao-server", "yudao-module-system", "yudao-module-infra"],
+  "main_sources": 977,
+  "processors": ["lombok 1.18.x", "lombok-mapstruct-binding 0.2.0", "mapstruct-processor", "spring-boot-configuration-processor 2.7.18"],
+  "notes": "The pom also lists huaweicloud and aliyun mirrors; every artifact is on Maven Central, so a mirrorOf=* Central settings file resolves it. File names contain non-ASCII characters: run with a UTF-8 locale (LANG=C.UTF-8)."
+}

@@ -36,7 +36,11 @@ class ProcessorAllowlistTest {
                         "package p; @com.google.auto.value.AutoValue public abstract class Point { public abstract int x();"
                                 +" public static Point of(int x){ return new AutoValue_Point(x); } }","p/Point.java","p/AutoValue_Point.java"),
                 new Product("Hibernate JPA metamodel",List.of("org.hibernate.orm:hibernate-jpamodelgen:6.6.0.Final","jakarta.persistence:jakarta.persistence-api:3.1.0"),
-                        "package p; @jakarta.persistence.Entity public class Person { @jakarta.persistence.Id Long id; String name; }","p/Person.java","p/Person_.java"));
+                        "package p; @jakarta.persistence.Entity public class Person { @jakarta.persistence.Id Long id; String name; }","p/Person.java","p/Person_.java"),
+                new Product("Spring Boot configuration metadata",List.of("org.springframework.boot:spring-boot-configuration-processor:2.7.18","org.springframework.boot:spring-boot:2.7.18"),
+                        "package p; @org.springframework.boot.context.properties.ConfigurationProperties(prefix=\"demo\") public class DemoProperties {"
+                                +" private String name; public String getName(){ return name; } public void setName(String name){ this.name=name; } }",
+                        "p/DemoProperties.java","output:META-INF/spring-configuration-metadata.json"));
     }
 
     static Path repository(){return Path.of(System.getProperty("maven.repo.local",System.getProperty("user.home")+"/.m2/repository"));}
@@ -91,7 +95,9 @@ class ProcessorAllowlistTest {
                 List.of("--release","25","-proc:full","-processorpath",path,"-classpath",path,"-s",generated.toString(),"-d",classes.toString()),
                 null,ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,null,null).getJavaFileObjects(file)).call();
         assertThat(ok).as(output.toString()).isTrue();
-        if(product.expected().contains(":")){
+        if(product.expected().startsWith("output:"))
+            assertThat(classes.resolve(product.expected().substring("output:".length()))).as("processor output").isRegularFile();
+        else if(product.expected().contains(":")){
             String[] expected=product.expected().split(":");
             Path type=classes.resolve("p").resolve(expected[0]);assertThat(type).isRegularFile();
             assertThat(new String(Files.readAllBytes(type),java.nio.charset.StandardCharsets.ISO_8859_1)).as("generated member").contains(expected[1]);

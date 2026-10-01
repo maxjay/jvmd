@@ -109,6 +109,7 @@ class SemanticMemoStoreTest {
                 new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"type:p.A"),
                 new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"logical-unit:g:a:1|src/main/java|p/A.java"),
                 new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"logical-source:g:a:1|src/main/java|p/A.java"),
+                new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"logical-binary:g:a:1|src/main/java|p/A.java"),
                 new QueryProof.Key(QueryProof.Domain.NAMESPACE,"package:g:a:1|main|p.q"),
                 new QueryProof.Key(QueryProof.Domain.NAMESPACE,"package:g:a:1|main|"),
                 new QueryProof.Key(QueryProof.Domain.CLASSPATH_SEARCH,"binary:p.A")))

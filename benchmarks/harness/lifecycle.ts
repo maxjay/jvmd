@@ -69,7 +69,7 @@ export async function runLifecycle(o:LifecycleOptions){
   settingsXml(o.repository,path.join(o.repository,"settings.xml"));
   rmSync(o.state,{recursive:true,force:true});
   const fixture=projectFixture(o.project,o.repository),phases:Record<string,any>={},operations:any[]=[],errors:string[]=[];
-  let daemon:JvmdDaemon|undefined,running:Launch|undefined;
+  let daemon:JvmdDaemon|undefined,running:Launch|undefined,restartStarted:number|undefined;
   // "Open" is launch to the first correct answer on the project. A server may report itself ready
   // (JDTLS's ServiceReady) before its project import finishes; that is not a usable workspace yet.
   const open=async(reuseState:boolean,label:string)=>{
@@ -100,10 +100,22 @@ export async function runLifecycle(o:LifecycleOptions){
       // Reconnect, as when an editor window reopens: the daemon and its session are still warm.
       ({c,ms}=await open(true,"reconnect"));phases.reconnect_open_ms=ms;
       await running!.stop();running=undefined;
-      await daemon!.stop();daemon=await JvmdDaemon.start({javaHome:o.javaHome,image:o.image,state:path.join(o.state,"jvmd"),repository:o.repository});
+      await daemon!.stop();restartStarted=performance.now();daemon=await JvmdDaemon.start({javaHome:o.javaHome,image:o.image,state:path.join(o.state,"jvmd"),repository:o.repository});
       phases.restart_index_ms=daemon.readyMs;
     }
+    restartStarted??=performance.now();
     ({c,ms}=await open(true,"restart"));phases.restart_open_ms=ms;
+    // Restart to the first correct completion: daemon start (or server launch) until a member
+    // completion on the reopened project answers with the expected candidate.
+    await c.open(HELPER);c.change(HELPER,probe(c.text(HELPER),"getGr"));
+    const completionParams=()=>{const text=c.text(HELPER),line=text.lastIndexOf("        project.");
+      return {textDocument:{uri:c.file(HELPER).uri},position:position(text,text.indexOf("\n",line))};};
+    for(const deadline=performance.now()+o.openTimeout;;){
+      const r=await c.client.request("textDocument/completion",completionParams(),o.timeout);
+      try{completionOracle(r.result,["getGroupId"]);break;}catch(error){if(performance.now()>deadline)throw new Error("restart never completed correctly: "+String(error).split("\n")[0]);}
+      await new Promise(resolve=>setTimeout(resolve,100));
+    }
+    phases.restart_first_completion_ms=performance.now()-restartStarted;
   }catch(error){
     errors.push(String(error).split("\n")[0]);
     // A JVMD that stopped answering leaves its thread dump in the run output, so the hang can be read without a rerun.

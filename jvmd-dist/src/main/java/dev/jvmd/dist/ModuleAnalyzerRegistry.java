@@ -79,6 +79,33 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
         return Map.of("initialized",true,"parallelism",parallelism,"actor_count",actors.size(),
                 "cpu_ms",Math.round(cpu/1000.0)/1000.0,"known_api_contributions",contributions.size(),"actors",detail);
     }
+    /**
+     * Attributed LOCAL memo totals across module actors: javac queries, restores, writes, misses and
+     * refusals per reason code (strict task W6: every reason code is in status output).
+     */
+    public synchronized Map<String,Object> persistenceStatus()throws Exception{
+        long queries=0,restores=0,writes=0,misses=0,earlyCutoff=0;var reasons=new TreeMap<String,Long>();var purposes=new TreeMap<String,Long>();String lastFailure="";
+        for(var actor:actors.values()){
+            var state=actor.status();
+            if(state.get("queries") instanceof Number number)queries+=number.longValue();
+            for(String key:List.of("diagnostic_files_analysed","diagnostic_files_reused","binding_computations","batch_queries","completion_requests"))
+                if(state.get(key) instanceof Number number)purposes.merge(key,number.longValue(),Long::sum);
+            if(state.get("attributed_memo") instanceof Map<?,?> memo){
+                if(memo.get("restores") instanceof Number number)restores+=number.longValue();
+                if(memo.get("writes") instanceof Number number)writes+=number.longValue();
+                if(memo.get("misses") instanceof Number number)misses+=number.longValue();
+                if(memo.get("early_cutoff_attributions") instanceof Number number)earlyCutoff+=number.longValue();
+                for(String key:List.of("failures","pending_scc","pending_writes"))if(memo.get(key) instanceof Number number)purposes.merge("memo_"+key,number.longValue(),Long::sum);
+                if(memo.get("last_failure") instanceof String failure&&!failure.isEmpty())lastFailure=failure;
+                if(memo.get("last_miss") instanceof String miss&&miss.startsWith("stale"))purposes.put("last_stale:"+miss,1L);
+                if(memo.get("miss_reasons") instanceof Map<?,?> missed)missed.forEach((reason,count)->{if(count instanceof Number number)purposes.merge("miss:"+reason,number.longValue(),Long::sum);});
+                if(memo.get("refusal_reasons") instanceof Map<?,?> refusals)
+                    refusals.forEach((reason,count)->{if(count instanceof Number number)reasons.merge(String.valueOf(reason),number.longValue(),Long::sum);});
+            }
+        }
+        return Map.of("actors",actors.size(),"queries",queries,"restores",restores,"writes",writes,"misses",misses,
+                "early_cutoff_attributions",earlyCutoff,"refusal_reasons",reasons,"by_purpose",purposes,"last_failure",lastFailure);
+    }
     /** Compact proof surface: cumulative javac query count for each instantiated module actor. */
     public synchronized Map<String,Long> queryCounts()throws Exception{
         var result=new LinkedHashMap<String,Long>();

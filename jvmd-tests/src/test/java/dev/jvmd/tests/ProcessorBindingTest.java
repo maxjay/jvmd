@@ -21,6 +21,8 @@ import static org.assertj.core.api.Assertions.*;
 class ProcessorBindingTest {
     @TempDir Path root;
     private static final String GAV="g:processing:1",LIBRARY="g:library:1";
+    /** The context warning Application attaches to every Lombok context; it is context state, not a query failure. */
+    private static final String FIDELITY="lombok_reduced_fidelity: generated member bodies and positions are unavailable";
 
     record Checkout(Path module,Path sources,Path classes,Path library) { }
 
@@ -55,7 +57,7 @@ class ProcessorBindingTest {
         coordinates.put(checkout.library().toString(),LIBRARY);coordinates.put(lombok().toString(),"org.projectlombok:lombok:"+AnnotationFixtures.LOMBOK);
         var analyzer=new Analyzer(new FileStateRegistry());
         analyzer.configure(new Analyzer.Context(GAV,"25",List.of(checkout.classes(),checkout.library(),lombok()),List.of(checkout.sources()),
-                "processing:"+GAV+":main",coordinates,List.of("--release","25"),Set.of(checkout.sources().resolve("p/T.java")),List.of(),
+                "processing:"+GAV+":main",coordinates,List.of("--release","25"),Set.of(checkout.sources().resolve("p/T.java")),List.of(FIDELITY),
                 List.of(checkout.sources()),true,"",processing),null,256L*1024*1024);
         analyzer.documents(new Documents(new FileStateRegistry()));analyzer.memos(memos);
         return analyzer;
@@ -71,6 +73,7 @@ class ProcessorBindingTest {
             long before=queries(analyzer);Path file=checkout.sources().resolve(unit);
             var envelope=analyzer.diagnostics(file,Files.readString(file));
             if(unit.equals("p/X.java"))assertThat(envelope.result().toString()).as("Lombok members are visible through the class output").doesNotContain("cant.resolve");
+            assertThat(envelope.warnings()).as("restored or computed, the context warning is reported").contains(FIDELITY);
             if(queries(analyzer)>before)compiled.add(unit);
         }
         return compiled;

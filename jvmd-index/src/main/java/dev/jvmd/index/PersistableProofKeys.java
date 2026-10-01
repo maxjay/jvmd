@@ -19,6 +19,7 @@ import java.util.*;
  *   <tr><td>NEGATIVE_RESOLUTION</td><td>{@code simple@binary}</td><td>—</td></tr>
  *   <tr><td>RESOLUTION_PATH</td><td>{@code type:<binary>}, {@code logical-source:<gav|root role|relative path>} (content),
  *       {@code logical-unit:<gav|root role|relative path>} (identity is the unit's P_diag),
+ *       {@code logical-binary:<gav|root role|relative path>} (P_diag of the unit as completed from a class file),
  *       {@code config:<reactor gav>|<path from the reactor root>} (processor resource content or absence)</td><td>{@code source:<absolute path>}</td></tr>
  *   <tr><td>CLASSPATH_SEARCH</td><td>{@code binary:<name>} (winner is a logical slot, §61)</td><td>{@code workspace:<session>}, {@code compiler}</td></tr>
  *   <tr><td>DOCUMENT_SCOPE, RECEIVER, ACCESSIBILITY, WORKSPACE</td><td>none</td><td>all (document/session addressed)</td></tr>
@@ -52,6 +53,7 @@ public final class PersistableProofKeys {
             case RESOLUTION_PATH -> value.startsWith("type:")&&binary(value.substring(5))
                     ||value.startsWith("logical-source:")&&logicalSource(value.substring("logical-source:".length()))
                     ||value.startsWith("logical-unit:")&&logicalSource(value.substring("logical-unit:".length()))
+                    ||value.startsWith("logical-binary:")&&logicalSource(value.substring("logical-binary:".length()))
                     ||value.startsWith("config:")&&logicalSource(value.substring("config:".length()))
                     ?Optional.empty():Optional.of("source-path-resolution");
             case CLASSPATH_SEARCH -> value.startsWith("binary:")&&binary(value.substring(7))?Optional.empty():Optional.of("session-classpath-root");

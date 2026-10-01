@@ -32,7 +32,7 @@ import javax.lang.model.util.Elements;
  */
 public final class DiagnosticProjection {
     /** Bump whenever the encoding or the set of included properties changes. */
-    public static final String DOMAIN="diagnostic-projection-v1";
+    public static final String DOMAIN="diagnostic-projection-v3";
     private DiagnosticProjection(){}
 
     /** Projection of one compilation unit in an attributed (or at least entered) task. */
@@ -101,8 +101,11 @@ public final class DiagnosticProjection {
             case TypeElement nested -> type(nested);
             case ExecutableElement method -> List.of(method.getKind().name(),method.getSimpleName().toString(),modifiers(method),
                     annotations(method),typeParameters(method.getTypeParameters()),mirror(method.getReturnType()),
-                    method.getParameters().stream().map(parameter->List.of(parameter.getSimpleName().toString(),
-                            mirror(parameter.asType()),modifiers(parameter),annotations(parameter))).toList(),
+                    // Parameter names and modifiers ({@code final}) cannot change another unit's diagnostics
+                    // (Java has no named arguments) and javac only reads them from a class file's
+                    // MethodParameters attribute under -parameters: they are not projected.
+                    method.getParameters().stream().map(parameter->List.of(
+                            mirror(parameter.asType()),annotations(parameter))).toList(),
                     method.isVarArgs(),method.getThrownTypes().stream().map(Encoder::mirror).toList(),
                     method.isDefault(),method.getDefaultValue()==null?"<none>":"default="+method.getDefaultValue());
             case VariableElement variable -> List.of(variable.getKind().name(),variable.getSimpleName().toString(),modifiers(variable),

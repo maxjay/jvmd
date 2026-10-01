@@ -39,6 +39,8 @@ public final class SourceNamespaces {
                 else if(option.startsWith("--release="))release=option.substring("--release=".length());
                 else if(option.equals("--enable-preview"))preview=true;
             }
+            // -source accepts the legacy "1.8" spelling; --release, which the S0 parser uses, accepts only "8".
+            if(release.startsWith("1.")&&release.length()>2)release=release.substring(2);
             return new LanguageMode(release,preview);
         }
     }

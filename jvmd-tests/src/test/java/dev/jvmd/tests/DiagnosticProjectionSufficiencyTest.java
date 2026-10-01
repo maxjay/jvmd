@@ -209,6 +209,10 @@ class DiagnosticProjectionSufficiencyTest {
         result.add(new Mutation("neutral","lib/Service.java","unused import",text->text.replace("package lib;\n","package lib;\nimport java.util.concurrent.TimeUnit;\n"),true));
         result.add(new Mutation("neutral","lib/Util.java","non-constant initializer",text->text.replace("java.util.List.of(\"a\");","java.util.List.of(\"b"+n+"\");"),true));
         result.add(new Mutation("neutral","lib/Holder.java","local class in body",text->text.replace("public static int counter() { return 0; }","public static int counter() { class Local"+n+" { } return new Local"+n+"().hashCode() * 0; }"),true));
+        result.add(new Mutation("neutral","lib/Util.java","parameter renamed",text->text.replace("public static int sum(int a, int b) { return a + b; }",
+                "public static int sum(int p"+n+", int b) { return p"+n+" + b; }"),true));
+        result.add(new Mutation("neutral","lib/Util.java","parameter made final",text->text.replace("public static int sum(int a, int b)",
+                "public static int sum(final int a, int b)"),true));
         result.add(new Mutation("deprecation","lib/Util.java","javadoc @deprecated tag",text->text.replace("    public static int sum(int a, int b)","    /** @deprecated use something else */\n    public static int sum(int a, int b)"),false));
         // Private members.
         for(String unit:List.of("lib/Base.java","lib/Service.java","lib/Box.java","lib/Util.java"))

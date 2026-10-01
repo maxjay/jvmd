@@ -142,6 +142,10 @@ public final class Application implements AutoCloseable {
                     :interactiveAnalyzer==null?Map.of("initialized",false):interactiveAnalyzer.status();
             if(statusSection.equals("analyzer"))
                 return new Envelope(0,"live",false,null,s.warnings(),Map.of("session",s.id(),"root",s.root().toString(),"analyzer",analyzerStatus));
+            if(statusSection.equals("persistence"))
+                return new Envelope(0,"live",false,null,s.warnings(),Map.of("session",s.id(),"root",s.root().toString(),
+                        "attributed_memo",actorRegistry==null?Map.of():actorRegistry.persistenceStatus(),
+                        "annotation_processing",s.state("processors") instanceof AnnotationProcessing processors?processors.counters():Map.of()));
             if(statusSection.equals("module_actors"))
                 return new Envelope(0,"live",false,null,s.warnings(),Map.of(
                         "session",s.id(),"root",s.root().toString(),
@@ -948,6 +952,8 @@ public final class Application implements AutoCloseable {
                     navigationSources.add(Path.of(source));coordinates.putIfAbsent(source,m.gav());coordinates.putIfAbsent(Path.of(source).toUri().toString(),m.gav());
                 }
                 coordinates.put(m.directory(),m.gav());coordinates.put(Path.of(m.directory()).toUri().toString(),m.gav());
+                // Reactor class outputs (including the module's own, first on its classpath) are logical reactor slots (W6).
+                if(m.classes()!=null)coordinates.putIfAbsent(m.classes(),m.gav());if(m.testClasses()!=null)coordinates.putIfAbsent(m.testClasses(),m.gav());
             }
             // Shared build-helper roots take the identity of the module whose compiler context owns this query.
             for(String source:java.util.stream.Stream.concat(module.sources().stream(),module.testSources().stream()).toList()){

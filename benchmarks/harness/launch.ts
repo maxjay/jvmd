@@ -29,13 +29,13 @@ export class JvmdDaemon {
   private constructor(fields:Record<string,any>){Object.assign(this,fields);}
   /** jfr: a JFR recording of the whole daemon (allocation samples at 20,000/s), dumped to this file on stop. */
   jfr?:string;javaHome?:string;
-  static async start(o:{javaHome:string;image:string;state:string;repository:string;jfr?:string;heap?:string}){
+  static async start(o:{javaHome:string;image:string;state:string;repository:string;jfr?:string;jfrThrottle?:string;heap?:string}){
     mkdirSync(o.state,{recursive:true});
     const dir=mkdtempSync(path.join(os.tmpdir(),"jvmd-bench-")),socket=path.join(dir,"daemon.sock"),probe=path.join(dir,"alloc.sock");
     const config=path.join(o.state,"config.json");
     writeFileSync(config,JSON.stringify({jdk_home:o.javaHome,m2_repo:o.repository,index_on_start:true,heap_ceiling_mb:1024}));
     const stderr=openSync(path.join(o.state,"daemon.log"),"a"),started=performance.now();
-    const recording=o.jfr?["-XX:StartFlightRecording:name=bench,settings=profile,maxsize=4g,jdk.ObjectAllocationSample#throttle=20000/s"]:[];
+    const recording=o.jfr?["-XX:StartFlightRecording:name=bench,settings=profile,maxsize=4g,jdk.ObjectAllocationSample#throttle="+(o.jfrThrottle??"20000/s")]:[];
     const child=spawn(path.join(o.javaHome,"bin/java"),[o.heap?"-Xmx"+o.heap:HEAP,...recording,"-javaagent:"+agentJar(o.javaHome)+"="+probe,...JVMD_EXPORTS,"--enable-native-access=ALL-UNNAMED",
       "-Djvmd.config="+config,"-Djvmd.socket="+socket,"-Djvmd.state="+path.join(o.state,"store"),"-Djvmd.resolvers="+path.join(o.image,"lib/jvmd/resolvers"),
       "-Djvmd.index.scan.initial_delay_seconds=0","-cp",path.join(o.image,"lib/jvmd/*"),"dev.jvmd.dist.Application"],{stdio:["ignore","pipe",stderr],env:{...process.env,...UTF8}});

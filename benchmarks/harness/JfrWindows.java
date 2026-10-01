@@ -11,22 +11,44 @@ import jdk.jfr.consumer.*;
  * sampled bytes, as Markdown. Samples are statistical: weights estimate bytes, they do not count them.
  */
 public class JfrWindows {
-    record Window(String label,long start,long end,Map<String,Long> threads,Map<String,Long> stacks,long[] total,Map<String,Long> causes) { }
+    record Window(String label,long start,long end,Map<String,Long> threads,Map<String,Long> stacks,long[] total,Map<String,Long> causes,Map<String,Long> cpu) { }
+    private static boolean matches(List<Pattern> patterns,List<String> methods){
+        for(var pattern:patterns)if(methods.stream().noneMatch(m->pattern.matcher(m).find()))return false;
+        return true;
+    }
     /** Inclusive attribution: a sample counts for every cause whose frame is anywhere on its stack. */
-    static final Map<String,Pattern> CAUSES=new LinkedHashMap<>();
+    static final Map<String,List<Pattern>> CAUSES=new LinkedHashMap<>();
+    /** A cause matches when every one of its patterns (separated by " && ") matches some frame of the stack. */
+    private static void cause(String name,String patterns){CAUSES.put(name,Arrays.stream(patterns.split(" && ")).map(Pattern::compile).toList());}
     static{
-        CAUSES.put("memo capture (AttributedMemos.memoize/capture)",Pattern.compile("AttributedMemos\\.(memoize|capture)$"));
-        CAUSES.put("memo drain (AttributedMemos.drain, SCC)",Pattern.compile("AttributedMemos\\.drain$"));
-        CAUSES.put("memo write (AttributedMemos.write, writer task)",Pattern.compile("AttributedMemos\\.(write|lambda\\$write\\$\\d+)$"));
-        CAUSES.put("S0 package parse (packageIdentity, SourceNamespaces)",Pattern.compile("AttributedMemos\\.packageIdentity$|SourceNamespaces\\."));
-        CAUSES.put("memo store put (SemanticMemoStore.put)",Pattern.compile("SemanticMemoStore\\.put$"));
-        CAUSES.put("memo restore (AttributedMemos.restore)",Pattern.compile("AttributedMemos\\.(restore|resolve)$"));
-        CAUSES.put("P_diag (DiagnosticProjection.of)",Pattern.compile("DiagnosticProjection\\."));
-        CAUSES.put("binary P_diag (BinaryProjections)",Pattern.compile("BinaryProjections\\."));
-        CAUSES.put("machine index publish (IndexStore/RocksIndexStore.publish*)",Pattern.compile("IndexStore\\.publish"));
-        CAUSES.put("javac task creation (JavacTool.getTask)",Pattern.compile("JavacTool\\.getTask$"));
-        CAUSES.put("javac attribution (comp.Attr)",Pattern.compile("javac\\.comp\\.Attr\\."));
-        CAUSES.put("Bindings.capture",Pattern.compile("Bindings\\.capture$"));
+        cause("memo capture (AttributedMemos.memoize/capture)","AttributedMemos\\.(memoize|capture)$");
+        cause("memo drain (AttributedMemos.drain, SCC)","AttributedMemos\\.drain$");
+        cause("memo write (AttributedMemos.write, writer task)","AttributedMemos\\.(write|lambda\\$write\\$\\d+)$");
+        cause("S0 package parse (packageIdentity, SourceNamespaces)","AttributedMemos\\.packageIdentity$|SourceNamespaces\\.");
+        cause("memo store put (SemanticMemoStore.put)","SemanticMemoStore\\.put$");
+        cause("memo restore (AttributedMemos.restore)","AttributedMemos\\.(restore|resolve)$");
+        cause("P_diag (DiagnosticProjection.of)","DiagnosticProjection\\.");
+        cause("binary P_diag (BinaryProjections)","BinaryProjections\\.");
+        cause("machine index publish (IndexStore/RocksIndexStore.publish*)","IndexStore\\.publish");
+        cause("javac task creation (JavacTool.getTask)","JavacTool\\.getTask$");
+        cause("javac attribution (comp.Attr)","javac\\.comp\\.Attr\\.");
+        cause("Bindings.capture","Bindings\\.capture$");
+        // Identities of AttributedMemos (inventory): where each is computed.
+        cause("id: static key (attributedStaticKey, StaticInputs)","AttributedMemos\\.(attributedStaticKey|staticInputs)$|StaticInputs\\.");
+        cause("id: content hash in capture (Hashing.sha256 under capture)","Hashing\\.sha256$ && AttributedMemos\\.capture$");
+        cause("id: package files (packageFiles, members)","AttributedMemos\\.(packageFiles|members)$");
+        cause("id: consulted packages regex","AttributedMemos\\.consultedPackages$");
+        cause("id: negatives (negatives, NamespaceResolutionProofs)","AttributedMemos\\.negatives$|NamespaceResolutionProofs\\.");
+        cause("id: absence identity","AttributedMemos\\.absenceIdentity$");
+        cause("id: static-import bindings","AttributedMemos\\.staticImportBindings$");
+        cause("id: reactor classes, class-package","AttributedMemos\\.(reactorClasses|classPackageIdentity|perClassDirectories)$");
+        cause("id: processor resources, config","AttributedMemos\\.(processorResources|configIdentity)$");
+        cause("id: current hash (restore)","AttributedMemos\\.currentHash$");
+        cause("id: current P_diag / early cutoff (currentProjection)","AttributedMemos\\.currentProjection$");
+        cause("id: result JSON (capture)","ObjectMapper\\.writeValueAsBytes$ && AttributedMemos\\.capture$");
+        cause("id: SCC Tarjan (drain minus write)","AttributedMemos\\.drain$");
+        cause("id: memo lookup + decode","SemanticMemoStore\\.(lookup|decode)$");
+        cause("id: certificate encode (writer)","SemanticMemoStore\\.encode$");
     }
 
     public static void main(String[] args)throws Exception{
@@ -35,13 +57,25 @@ public class JfrWindows {
         var byLabel=new LinkedHashMap<String,Window>();var intervals=new ArrayList<Object[]>();
         for(String line:Files.readAllLines(Path.of(args[0]))){
             if(line.isBlank())continue;var parts=line.split("\t");
-            var window=byLabel.computeIfAbsent(parts[0],label->new Window(label,Long.parseLong(parts[1]),Long.parseLong(parts[2]),new HashMap<>(),new HashMap<>(),new long[3],new LinkedHashMap<>()));
+            var window=byLabel.computeIfAbsent(parts[0],label->new Window(label,Long.parseLong(parts[1]),Long.parseLong(parts[2]),new HashMap<>(),new HashMap<>(),new long[4],new LinkedHashMap<>(),new LinkedHashMap<>()));
             window.total()[2]+=Long.parseLong(parts[2])-Long.parseLong(parts[1]);intervals.add(new Object[]{window,Long.parseLong(parts[1]),Long.parseLong(parts[2])});
         }
         windows.addAll(byLabel.values());
         for(int i=2;i<args.length;i++)try(var file=new RecordingFile(Path.of(args[i]))){
             while(file.hasMoreEvents()){
-                var event=file.readEvent();if(!event.getEventType().getName().equals("jdk.ObjectAllocationSample"))continue;
+                var event=file.readEvent();
+                if(event.getEventType().getName().equals("jdk.ExecutionSample")){
+                    long when=event.getStartTime().toEpochMilli();
+                    var methods=new ArrayList<String>();
+                    if(event.getStackTrace()!=null)for(var frame:event.getStackTrace().getFrames())methods.add(frame.getMethod().getType().getName()+"."+frame.getMethod().getName());
+                    for(var interval:intervals)if(when>=(long)interval[1]&&when<=(long)interval[2]){
+                        var window=(Window)interval[0];window.total()[3]++;
+                        for(var cause:CAUSES.entrySet())if(matches(cause.getValue(),methods))window.cpu().merge(cause.getKey(),1L,Long::sum);
+                        break;
+                    }
+                    continue;
+                }
+                if(!event.getEventType().getName().equals("jdk.ObjectAllocationSample"))continue;
                 long at=event.getStartTime().toEpochMilli();
                 var hit=new LinkedHashSet<Window>();
                 for(var interval:intervals)if(at>=(long)interval[1]&&at<=(long)interval[2])hit.add((Window)interval[0]);
@@ -53,7 +87,7 @@ public class JfrWindows {
                     window.total()[0]+=weight;window.total()[1]++;
                     var methods=new ArrayList<String>();
                     if(event.getStackTrace()!=null)for(var frame:event.getStackTrace().getFrames())methods.add(frame.getMethod().getType().getName()+"."+frame.getMethod().getName());
-                    for(var cause:CAUSES.entrySet())if(methods.stream().anyMatch(m->cause.getValue().matcher(m).find()))window.causes().merge(cause.getKey(),weight,Long::sum);
+                    for(var cause:CAUSES.entrySet())if(matches(cause.getValue(),methods))window.causes().merge(cause.getKey(),weight,Long::sum);
                 }
             }
         }
@@ -72,8 +106,8 @@ public class JfrWindows {
             System.out.println("| thread | sampled MB | share |\n|---|---:|---:|");
             window.threads().entrySet().stream().sorted(Map.Entry.<String,Long>comparingByValue().reversed()).limit(12)
                     .forEach(e->System.out.printf(Locale.ROOT,"| %s | %.2f | %.0f%% |%n",e.getKey(),e.getValue()/1048576.0,100.0*e.getValue()/Math.max(1,window.total()[0])));
-            System.out.println("\n| cause (inclusive: a sample counts for every cause on its stack) | sampled MB | share |\n|---|---:|---:|");
-            for(String cause:CAUSES.keySet())System.out.printf(Locale.ROOT,"| %s | %.2f | %.0f%% |%n",cause,window.causes().getOrDefault(cause,0L)/1048576.0,100.0*window.causes().getOrDefault(cause,0L)/Math.max(1,window.total()[0]));
+            System.out.printf(Locale.ROOT,"%n| cause (inclusive: a sample counts for every cause on its stack) | sampled MB | share | CPU samples (%d in window) |%n|---|---:|---:|---:|%n",window.total()[3]);
+            for(String cause:CAUSES.keySet())System.out.printf(Locale.ROOT,"| %s | %.2f | %.0f%% | %d |%n",cause,window.causes().getOrDefault(cause,0L)/1048576.0,100.0*window.causes().getOrDefault(cause,0L)/Math.max(1,window.total()[0]),window.cpu().getOrDefault(cause,0L));
             System.out.println("\n| # | sampled MB | share | stack (allocated type; innermost first, JVMD and javac frames) |\n|---:|---:|---:|---|");
             int[] rank={0};
             window.stacks().entrySet().stream().sorted(Map.Entry.<String,Long>comparingByValue().reversed()).limit(top)

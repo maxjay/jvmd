@@ -233,15 +233,23 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         return false;
     }
+    /**
+     * Effective classpath context of one module/scope/release/compiler context (§57). Locations are
+     * runtime addressing; the store maps them to logical slot identities.
+     */
+    static IndexStore.ClasspathContext classpathContext(Context context){
+        String scope=context.generation().contains(":"+context.gav()+":test")?"test":"main";
+        return new IndexStore.ClasspathContext(context.gav(),scope,context.release(),
+                CanonicalDigestWriter.digest("classpath-compiler-context-v1",context.compilerOptions()),
+                context.classpath().stream().map(path->path.toAbsolutePath().normalize().toString()).toList());
+    }
     private Optional<ClasspathSequence> preciseClasspathSequence(Context context,IndexService index)throws Exception{
         if(index==null||context.workspace().isBlank()||hasUnprovenPathOptions(context)){return Optional.empty();}
-        Optional<ClasspathSequence> sequence;
-        sequence=index.store().semanticClasspathSequence(context.workspace());
-        if(sequence.isEmpty()){return Optional.empty();}
-        var expected=context.classpath().stream().map(path->path.toAbsolutePath().normalize().toString()).toList();
-        List<String> actual;
-        actual=sequence.get().entries().stream().map(ClasspathSequence.Entry::key).toList();
-
+        var sequence=index.store().semanticClasspathSequence(classpathContext(context));
+        if(sequence.isEmpty())return Optional.empty();
+        // The sequence must describe exactly this compiler classpath, entry by entry.
+        var expected=classpathContext(context).locations();
+        var actual=sequence.get().entries().stream().map(ClasspathSequence.Entry::location).toList();
         return expected.equals(actual)?sequence:Optional.empty();
     }
     private ModuleCaches moduleCaches(Context next,String owner){
@@ -541,17 +549,19 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         String unit=caches.semantic.unitForFact(proof.winnerScip());
         if(unit!=null&&!unit.startsWith("source:"))caches.semantic.removeUnit(unit);
     }
-    private boolean reconcileClasspath(ModuleCaches caches,ClasspathSequence current,IndexService index,String workspace)throws Exception{
+    private boolean reconcileClasspath(ModuleCaches caches,ClasspathSequence current,IndexService index,IndexStore.ClasspathContext classpath)throws Exception{
         if(caches.classpathSequence==null){
             caches.classpathSequence=current;caches.classpathPrecise=true;return true;
         }
         var previous=caches.classpathSequence;
         if(previous.identity().equals(current.identity())){
+            // Equal logical sequence (possibly relocated): retained proofs stay valid; re-admit them.
+            admitClasspathSearches(caches,index,classpath,Set.of());
             caches.classpathSequence=current;caches.classpathPrecise=true;return true;
         }
         var refreshed=new HashMap<String,IndexStore.ClasspathSearchProof>();
         var update=ClasspathSearchProofs.update(previous,current,caches.classpathSearchProofs.values(),binary->{
-            var proof=index.store().semanticClasspathSearch(workspace,binary);
+            var proof=index.store().semanticClasspathSearch(classpath,binary);
             proof.ifPresent(value->refreshed.put(binary,value));return proof;
         });
         caches.classpathProofEvidence.record(update);
@@ -573,7 +583,20 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             invalidateDocumentProofConsumers(caches,invalid);
         }
         caches.classpathSearchProofs.putAll(refreshed);
+        admitClasspathSearches(caches,index,classpath,refreshed.keySet());
         caches.classpathSequence=current;caches.classpathPrecise=true;return true;
+    }
+    /**
+     * A classpath transition is a state change: admit every retained search under the new context
+     * now, so later reads consume maintained observations instead of searching. Unaffected proofs
+     * reproduce the same winner by the first-winner argument; their search is bounded by their
+     * searched prefix.
+     */
+    private static void admitClasspathSearches(ModuleCaches caches,IndexService index,IndexStore.ClasspathContext classpath,
+                                               Set<String> alreadyAdmitted)throws Exception{
+        for(String binary:List.copyOf(caches.classpathSearchProofs.keySet()))
+            if(!alreadyAdmitted.contains(binary))index.store().semanticClasspathSearch(classpath,binary)
+                    .ifPresent(proof->caches.classpathSearchProofs.put(binary,proof));
     }
     private void initializeClasspath(ModuleCaches caches,Optional<ClasspathSequence> sequence){
         caches.classpathSequence=sequence.orElse(null);caches.classpathPrecise=sequence.isPresent();
@@ -600,7 +623,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }else if(!hadState){
             initializeClasspath(caches,currentClasspath);precise=currentClasspath.isPresent();
         }else if(caches.classpathPrecise&&currentClasspath.isPresent()){
-            precise=reconcileClasspath(caches,currentClasspath.get(),index,context.workspace());
+            precise=reconcileClasspath(caches,currentClasspath.get(),index,classpathContext(context));
         }
 
         if(hadState&&!ownerChanged&&!precise){
@@ -782,7 +805,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 var currentClasspath=preciseClasspathSequence(context,index);
                 if(currentClasspath.isPresent()){
                     caches.classpathProofEvidence.validatedInputReconciliations++;
-                    precise=reconcileClasspath(caches,currentClasspath.get(),index,context.workspace());
+                    precise=reconcileClasspath(caches,currentClasspath.get(),index,classpathContext(context));
                 }
             }
             if(!precise){
@@ -1527,7 +1550,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                                                          boolean qualified,CompilerInputs.Snapshot observed)throws Exception{
         if(qualified&&query.receiverType() instanceof SemanticType.Declared declared
                 &&index!=null&&!context.workspace().isBlank()){
-            var proof=index.store().semanticClasspathSearch(context.workspace(),declared.name());
+            var proof=index.store().semanticClasspathSearch(classpathContext(context),declared.name());
             if(proof.isPresent()){
                 var caches=modules.get(context.generation());
                 if(caches!=null&&caches.classpathPrecise)caches.classpathSearchProofs.put(declared.name(),proof.get());
@@ -1543,12 +1566,12 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(key.domain()!=QueryProof.Domain.CLASSPATH_SEARCH)throw new IllegalArgumentException("Not a classpath proof key");
         if(key.value().startsWith("binary:")&&index!=null&&!context.workspace().isBlank()){
             String binary=key.value().substring("binary:".length());
-            var proof=admit?index.store().semanticClasspathSearch(context.workspace(),binary)
-                    :Optional.of(index.store().observedClasspathSearch(context.workspace(),binary));
+            var proof=admit?index.store().semanticClasspathSearch(classpathContext(context),binary)
+                    :Optional.of(index.store().observedClasspathSearch(classpathContext(context),binary));
             if(proof.isPresent())return proof.get().identity();
         }
         if(index!=null&&!context.workspace().isBlank()){
-            var identity=index.store().semanticClasspathIdentity(context.workspace());
+            var identity=index.store().semanticClasspathSequence(classpathContext(context)).map(ClasspathSequence::identity);
             if(identity.isPresent())return identity.get();
         }
         return CanonicalDigestWriter.digest("document-classpath-search-fallback-v1",

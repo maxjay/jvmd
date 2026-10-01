@@ -36,12 +36,16 @@ public final class RocksIndexStore implements IndexStore {
     private final LinkedHashMap<String,Hash256> semanticProofIdentities=new LinkedHashMap<>(128,.75f,true);
     private record SemanticLookup(String workspace,SemanticLayer layer,String value,boolean type) {}
     private record ClasspathLookup(String workspace,String binary) {}
+    private record ContextLookup(ClasspathContext context,String binary) {}
     // Subscribed detached observations. Their owner refreshes them under the publication monitor,
     // so proof validation consumes identities without repeating an index search. Eviction merely
     // requires a new admission; it never certifies an absent or stale observation as equal.
     private final LinkedHashMap<SemanticLookup,Optional<IndexedSemanticSymbol>> semanticLookups=new LinkedHashMap<>(64,.75f,true);
     private final LinkedHashMap<ClasspathLookup,ClasspathSearchProof> classpathLookups=new LinkedHashMap<>(32,.75f,true);
     private final Map<String,ClasspathSequence> classpathSequences=new HashMap<>();
+    // Per-ClasspathContext observations. Optional.empty records an UNKNOWN (unindexed entry) answer.
+    private final LinkedHashMap<ClasspathContext,Optional<ClasspathSequence>> contextSequences=new LinkedHashMap<>(16,.75f,true);
+    private final LinkedHashMap<ContextLookup,Optional<ClasspathSearchProof>> contextLookups=new LinkedHashMap<>(64,.75f,true);
     private long semanticLookupBuilds,classpathSearchBuilds,classpathSequenceBuilds;
     private long nextArtifact=1,nextSource=0x80000000L;
     private long metadataWrites,sourceWrites;
@@ -101,10 +105,16 @@ public final class RocksIndexStore implements IndexStore {
                 ?Objects.equals(key.workspace(),workspace):changed.stream().anyMatch(artifact->selects(key.workspace(),SemanticLayer.MACHINE,artifact))).toList();
         var sequences=classpathSequences.keySet().stream().filter(key->changed.isEmpty()
                 ?Objects.equals(key,workspace):changed.stream().anyMatch(artifact->selects(key,SemanticLayer.MACHINE,artifact))).toList();
+        var changedPaths=changed.stream().map(artifact->artifact.input().context().path()).collect(java.util.stream.Collectors.toSet());
+        var contexts=contextSequences.keySet().stream().filter(key->changed.isEmpty()||key.locations().stream().anyMatch(changedPaths::contains)).toList();
+        var contextSearches=contextLookups.keySet().stream().filter(key->changed.isEmpty()||key.context().locations().stream().anyMatch(changedPaths::contains)).toList();
         // Remove before reconstruction. If storage fails after durable publication, no old answer
         // survives as current, including across old/new layers or a batch of removed artifacts.
         exact.forEach(semanticLookups::remove);searches.forEach(classpathLookups::remove);
         sequences.forEach(classpathSequences::remove);
+        contexts.forEach(contextSequences::remove);contextSearches.forEach(contextLookups::remove);
+        for(var key:contexts)contextSequences.put(key,buildContextSequence(key));
+        for(var key:contextSearches)contextLookups.put(key,buildContextSearch(key.context(),key.binary()));
         for(String key:sequences)classpathSequences.put(key,buildClasspathSequence(key));
         for(var key:exact)semanticLookups.put(key,Optional.ofNullable(buildSemanticLookup(key)));
         for(var key:searches)classpathLookups.put(key,buildClasspathSearch(key.workspace(),key.binary()));
@@ -130,6 +140,10 @@ public final class RocksIndexStore implements IndexStore {
     @Override public synchronized ClasspathSearchProof observedClasspathSearch(String workspace,String binary)throws Exception{
         var value=classpathLookups.get(new ClasspathLookup(workspace,binary));
         if(value==null)throw new UnobservedSemanticQuery();return value;
+    }
+    @Override public synchronized ClasspathSearchProof observedClasspathSearch(ClasspathContext context,String binary)throws Exception{
+        var value=contextLookups.get(new ContextLookup(context,binary));
+        if(value==null||value.isEmpty())throw new UnobservedSemanticQuery();return value.get();
     }
     private IndexedSemanticSymbol semanticLookup(SemanticLookup key)throws Exception{
         var captured=semanticLookups.get(key);if(captured!=null)return captured.orElse(null);
@@ -301,14 +315,63 @@ public final class RocksIndexStore implements IndexStore {
     }
     private ClasspathSequence buildClasspathSequence(String workspace){
         classpathSequenceBuilds++;
-        var entries=new ArrayList<ClasspathSequence.Entry>();
-        for(var artifact:selected(workspace,false,SemanticLayer.MACHINE)){
-            if(artifact.input().context().kind().equals("sources"))continue;
-            entries.add(new ClasspathSequence.Entry(
-                    artifact.input().context().path(),
-                    Hash256.fromHex(artifact.resolutionIdentity())));
+        var artifacts=new ArrayList<StoredArtifact>();
+        for(var artifact:selected(workspace,false,SemanticLayer.MACHINE))
+            if(!artifact.input().context().kind().equals("sources"))artifacts.add(artifact);
+        return sequence(artifacts);
+    }
+    /** Logical slot keys in order; the physical path is carried only as location metadata. */
+    private static ClasspathSequence sequence(List<StoredArtifact> artifacts){
+        var keys=ClasspathSlots.unique(artifacts.stream().map(artifact->ClasspathSlots.logicalKey(artifact.input().context())).toList());
+        var entries=new ArrayList<ClasspathSequence.Entry>(artifacts.size());
+        for(int i=0;i<artifacts.size();i++){
+            var artifact=artifacts.get(i);
+            entries.add(new ClasspathSequence.Entry(keys.get(i),Hash256.fromHex(artifact.resolutionIdentity()),artifact.input().context().path()));
         }
         return ClasspathSequence.of(entries);
+    }
+    /** Artifacts for a context in classpath order, or empty when any entry is not indexed (UNKNOWN). */
+    private Optional<List<StoredArtifact>> contextArtifacts(ClasspathContext context){
+        var result=new ArrayList<StoredArtifact>(context.locations().size());
+        for(String location:context.locations()){
+            Long id=paths.get(location);var artifact=id==null?null:artifacts.get(id);
+            if(artifact==null||artifact.input().context().kind().equals("sources"))return Optional.empty();
+            result.add(artifact);
+        }
+        return Optional.of(List.copyOf(result));
+    }
+    private Optional<ClasspathSequence> buildContextSequence(ClasspathContext context){
+        classpathSequenceBuilds++;
+        return contextArtifacts(context).map(RocksIndexStore::sequence);
+    }
+    @Override public synchronized Optional<ClasspathSequence> semanticClasspathSequence(ClasspathContext context){
+        var captured=contextSequences.get(context);if(captured!=null)return captured;
+        var value=buildContextSequence(context);contextSequences.put(context,value);
+        while(contextSequences.size()>64)contextSequences.pollFirstEntry();
+        return value;
+    }
+    @Override public synchronized Optional<ClasspathSearchProof> semanticClasspathSearch(ClasspathContext context,String binaryName)throws Exception{
+        Objects.requireNonNull(binaryName);var key=new ContextLookup(context,binaryName);
+        var captured=contextLookups.get(key);if(captured!=null)return captured;
+        var value=buildContextSearch(context,binaryName);contextLookups.put(key,value);
+        boundObservations(contextLookups);return value;
+    }
+    private Optional<ClasspathSearchProof> buildContextSearch(ClasspathContext context,String binaryName)throws Exception{
+        classpathSearchBuilds++;
+        var selected=contextArtifacts(context);if(selected.isEmpty())return Optional.empty();
+        return Optional.of(search(selected.get(),binaryName));
+    }
+    /** First-winner (left-biased) search; the winner is recorded by logical slot identity. */
+    private ClasspathSearchProof search(List<StoredArtifact> ordered,String binaryName)throws Exception{
+        var keys=ClasspathSlots.unique(ordered.stream().map(artifact->ClasspathSlots.logicalKey(artifact.input().context())).toList());
+        int searched=0;
+        for(int i=0;i<ordered.size();i++){
+            var artifact=ordered.get(i);searched++;
+            var symbol=semanticType(artifact,binaryName,SemanticLayer.MACHINE);
+            if(symbol!=null)return new ClasspathSearchProof(binaryName,searched,keys.get(i),symbol.id(),
+                    symbol.resolution().identity(),artifact.input().context().path());
+        }
+        return new ClasspathSearchProof(binaryName,searched,null,null,null);
     }
     @Override public synchronized Optional<ClasspathSearchProof> semanticClasspathSearch(String workspace,String binaryName)throws Exception{
         Objects.requireNonNull(binaryName);var key=new ClasspathLookup(workspace,binaryName);
@@ -318,15 +381,10 @@ public final class RocksIndexStore implements IndexStore {
     }
     private ClasspathSearchProof buildClasspathSearch(String workspace,String binaryName)throws Exception{
         classpathSearchBuilds++;
-        int searched=0;
-        for(var artifact:selected(workspace,false,SemanticLayer.MACHINE)){
-            if(artifact.input().context().kind().equals("sources"))continue;
-            searched++;
-            var symbol=semanticType(artifact,binaryName,SemanticLayer.MACHINE);
-            if(symbol!=null)return new ClasspathSearchProof(
-                    binaryName,searched,artifact.input().context().path(),symbol.id(),symbol.resolution().identity());
-        }
-        return new ClasspathSearchProof(binaryName,searched,null,null,null);
+        var ordered=new ArrayList<StoredArtifact>();
+        for(var artifact:selected(workspace,false,SemanticLayer.MACHINE))
+            if(!artifact.input().context().kind().equals("sources"))ordered.add(artifact);
+        return search(ordered,binaryName);
     }
 
     private String semanticProofCacheKey(String ownerScip,String value,String workspace,SemanticLayer layer,String domain)throws Exception{

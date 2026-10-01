@@ -80,7 +80,7 @@ class MaintainedSemanticObservationTest {
             assertThat(store.semanticWork()).as("unchanged workspace selection is not a mutation").isEqualTo(initial);
             load(index,b,a);var published=store.semanticWork();
             assertThat(store.semanticType("p.Target","w",layer).id()).isNotEqualTo(first.id());
-            assertThat(store.semanticClasspathSearch("w","p.Target").orElseThrow().winnerArtifactKey()).isEqualTo(b.toString());
+            assertThat(store.semanticClasspathSearch("w","p.Target").orElseThrow().winnerLocation()).isEqualTo(b.toString());
             store.semanticClasspathSequence("w");
             assertThat(store.semanticWork()).as("reorder refresh belongs to publication, not the following read").isEqualTo(published);
 

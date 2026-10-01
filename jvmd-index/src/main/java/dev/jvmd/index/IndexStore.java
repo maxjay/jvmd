@@ -37,6 +37,28 @@ public interface IndexStore extends AutoCloseable {
     default ClasspathSearchProof observedClasspathSearch(String workspace,String binary)throws Exception{
         throw new UnobservedSemanticQuery();
     }
+    /** Maintained observation for one effective classpath context; unobserved is UNKNOWN. */
+    default ClasspathSearchProof observedClasspathSearch(ClasspathContext context,String binary)throws Exception{
+        throw new UnobservedSemanticQuery();
+    }
+
+    /**
+     * Effective classpath context (architecture §57): one per module, scope/source set, release and
+     * compiler context. There is no single workspace classpath. {@code locations} are the ordered
+     * physical entries used to locate artifacts; they are runtime addressing, while the semantic
+     * slot identities come from {@link ClasspathSlots#logicalKey}.
+     */
+    record ClasspathContext(String module,String scope,String release,Hash256 compilerContext,List<String> locations) {
+        public ClasspathContext {
+            module=Objects.requireNonNullElse(module,"");scope=Objects.requireNonNullElse(scope,"");
+            release=Objects.requireNonNullElse(release,"");Objects.requireNonNull(compilerContext);
+            locations=List.copyOf(locations);
+        }
+        /** Process-local addressing identity, including physical locations. Never persisted. */
+        public Hash256 addressIdentity(){
+            return CanonicalDigestWriter.digest("classpath-context-address-v1",module,scope,release,compilerContext,locations);
+        }
+    }
 
 
     /**
@@ -63,8 +85,13 @@ public interface IndexStore extends AutoCloseable {
      * semantic identity deliberately records only the winning declaration (or exact negative result),
      * so a changed/inserted slot that is rechecked and remains irrelevant reaches a fixed point.
      */
+    /*
+     * winnerArtifactKey is the winner's logical classpath slot identity (§61): the same key the
+     * ClasspathSequence uses, stable across checkout movement and worktrees. winnerLocation is the
+     * winner's current physical path; it is location metadata and never part of the identity.
+     */
     record ClasspathSearchProof(String binaryName,int searchedEntries,String winnerArtifactKey,
-                                String winnerScip,Hash256 winnerResolutionIdentity) {
+                                String winnerScip,Hash256 winnerResolutionIdentity,String winnerLocation) {
         public ClasspathSearchProof {
             Objects.requireNonNull(binaryName);
             if(binaryName.isBlank())throw new IllegalArgumentException("Classpath search binary name must not be blank");
@@ -72,6 +99,11 @@ public interface IndexStore extends AutoCloseable {
             boolean winner=winnerScip!=null||winnerArtifactKey!=null||winnerResolutionIdentity!=null;
             if(winner&&(winnerScip==null||winnerArtifactKey==null||winnerResolutionIdentity==null))
                 throw new IllegalArgumentException("Incomplete classpath winner evidence");
+            if(!winner&&winnerLocation!=null)throw new IllegalArgumentException("Location without a winner");
+        }
+        public ClasspathSearchProof(String binaryName,int searchedEntries,String winnerArtifactKey,
+                                    String winnerScip,Hash256 winnerResolutionIdentity){
+            this(binaryName,searchedEntries,winnerArtifactKey,winnerScip,winnerResolutionIdentity,null);
         }
         public boolean resolved(){return winnerScip!=null;}
         public QueryProof.Key key(){return new QueryProof.Key(QueryProof.Domain.CLASSPATH_SEARCH,"binary:"+binaryName);}
@@ -146,6 +178,15 @@ public interface IndexStore extends AutoCloseable {
      * selected artifact that declares the requested type.
      */
     default Optional<ClasspathSearchProof> semanticClasspathSearch(String workspace,String binaryName)throws Exception{
+        return Optional.empty();
+    }
+    /**
+     * Ordered resolution sequence for one classpath context, keyed by logical slot identities.
+     * Empty when any entry is not indexed: the sequence is then UNKNOWN, never a shorter classpath.
+     */
+    default Optional<ClasspathSequence> semanticClasspathSequence(ClasspathContext context)throws Exception{return Optional.empty();}
+    /** Exact first-winner search over one classpath context; empty when an unindexed entry precedes the winner. */
+    default Optional<ClasspathSearchProof> semanticClasspathSearch(ClasspathContext context,String binaryName)throws Exception{
         return Optional.empty();
     }
     List<Map<String,Object>> find(String query,String workspace,boolean substring,int limit,long after,Set<String> kinds)throws Exception;

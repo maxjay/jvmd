@@ -18,6 +18,21 @@ final class SourceProofEvidence {
         if(failures.isEmpty())coverageFailuresByFile.remove(lastCoverageFile);
         else coverageFailuresByFile.put(lastCoverageFile,lastCoverageFailures);
     }
+    /**
+     * Source files whose API a receiver-lookup proof binds: the receiver and every ancestor reached
+     * through its hierarchy. A dependency javac completed only to walk that hierarchy is covered by
+     * the proof and must not count as uncovered.
+     */
+    static void coverHierarchy(SemanticReadView view,String type,Set<Path> covered)throws Exception{
+        var queue=new ArrayDeque<String>();queue.add(type);var seen=new HashSet<String>();
+        while(!queue.isEmpty()){
+            var symbol=view.symbol(queue.removeFirst());if(symbol==null||!seen.add(symbol.id()))continue;
+            if(symbol.sourceFile()!=null)try{covered.add(Path.of(symbol.sourceFile()).toAbsolutePath().normalize());}catch(RuntimeException ignored){}
+            for(var parent:symbol.directSupertypes())if(parent instanceof SemanticType.Declared declared){
+                var resolved=view.type(declared.name().replace((char)36,'.'));if(resolved!=null)queue.add(resolved.id());
+            }
+        }
+    }
     void beginMutation(int dependantInvalidations){
         lastPreProofDependantInvalidations=dependantInvalidations;
         preProofDependantInvalidations+=dependantInvalidations;

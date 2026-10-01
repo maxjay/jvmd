@@ -222,7 +222,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     private boolean addReceiverLookupProof(Map<QueryProof.Key,Hash256> values,SemanticReadView view,
                                            String receiverType,String selectedOwner,String memberName,boolean call,
-                                           Collection<String> failures)throws Exception{
+                                           Collection<String> failures,Set<Path> covered)throws Exception{
         // If javac selected a declaration on an ancestor, the conclusion is an effective hierarchy
         // lookup. Bind it to the receiver hierarchy so any ancestor API mutation reconsiders this
         // direct consumer. A direct declaration (receiver == owner) remains name/range selective.
@@ -231,12 +231,12 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             if(hierarchy.isEmpty()){
                 failures.add("receiver-hierarchy-missing:"+receiverType);return false;
             }
-            addProofDependency(values,new QueryProof.Dependency(QueryProof.Domain.HIERARCHY,receiverType,hierarchy.get()));
+            addProofDependency(values,new QueryProof.Dependency(QueryProof.Domain.HIERARCHY,receiverType,hierarchy.get()));SourceProofEvidence.coverHierarchy(view,receiverType,covered);
             return true;
         }
         var queue=new ArrayDeque<String>();queue.add(receiverType);var seen=new HashSet<String>();
         while(!queue.isEmpty()){
-            String owner=queue.removeFirst();if(!seen.add(owner))continue;
+            String owner=queue.removeFirst();if(!seen.add(owner))continue;SourceProofEvidence.coverHierarchy(view,owner,covered);
             var symbol=view.symbol(owner);
             if(symbol==null){failures.add("receiver-owner-missing:"+owner);return false;}
             var typeIdentity=view.identity(QueryProof.Domain.EXACT_SYMBOL,owner);
@@ -307,7 +307,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                     for(var reference:references){
                         if(reference.receiverType()==null){
                             precise=false;coverageFailures.add("missing-receiver:"+fact.id());
-                        }else if(!addReceiverLookupProof(values,view,reference.receiverType(),fact.ownerId(),fact.name(),edge.kind().equals("calls"),coverageFailures)){
+                        }else if(!addReceiverLookupProof(values,view,reference.receiverType(),fact.ownerId(),fact.name(),edge.kind().equals("calls"),coverageFailures,coveredFiles)){
                             precise=false;coverageFailures.add("incomplete-receiver-lookup:"+reference.receiverType()+"#"+fact.name());
                         }
                     }
@@ -1202,6 +1202,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 var contribution=SemanticContributions.from(path,hash,outcome.result(),outcome.diagnostics());
                 var admission=admitSemanticMutation(semantic[0],contribution);
                 resolveContribution(contribution,admission);
+                attributedMemos.observe(path,outcome.result());
                 if(admission!=null)registerSourceProof(path,text,outcome.result(),contribution);
                 else{dependencies.semantic().proofs().remove(sourceProofConsumer(path));dependencies.semantic().proofCoverage(path,false);}
                 publishSource(path,hash,stamp,semanticPublisherContextFingerprint(observed,stamp),outcome.result(),outcome.tier());
@@ -1333,7 +1334,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 while(focused.size()>32)focused.remove(focused.keySet().iterator().next());
                 diagnosticStore.put(file,hash,context.generation(),diagnosticStamp(file,observed),envelope,
                         apiFingerprint(file),snapshot.dependencies(),contribution(file),broadDiagnosticStamp(observed));
-                attributedMemos.memoize(file,hash,envelope,contribution(file));
+                attributedMemos.memoize(file,hash,envelope,contribution(file),snapshot);
                 publishSource(file,hash,stamp,semanticPublisherContextFingerprint(observed,stamp),snapshot,result.tier());
             }
         }
@@ -1376,7 +1377,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(outcome.warnings().isEmpty())diagnosticStore.put(path,sourceHash,generation,diagnosticStamp(path,observed),envelope,
                 apiFingerprint(path),outcome.result()==null?Set.of():outcome.result().dependencies(),
                 outcome.tier()==2?contribution(path):null,broadDiagnosticStamp(observed));
-        if(outcome.warnings().isEmpty()&&outcome.tier()==2)attributedMemos.memoize(path,sourceHash,envelope,contribution(path));
+        if(outcome.warnings().isEmpty()&&outcome.tier()==2)attributedMemos.memoize(path,sourceHash,envelope,contribution(path),outcome.result());
         return envelope;
     }
     private String residentContextKey(Path file,String patched,int start,CompilerInputs.Snapshot inputs,boolean qualified){

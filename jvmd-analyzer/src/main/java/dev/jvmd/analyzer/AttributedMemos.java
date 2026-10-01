@@ -14,6 +14,13 @@ final class AttributedMemos implements AutoCloseable {
     private final Analyzer analyzer;
     AttributedMemos(Analyzer analyzer){this.analyzer=analyzer;}
     private Analyzer.Context context(){return analyzer.currentContext();}
+    /** Current {@link DiagnosticProjection P_diag} per unit, from attribution or a validated restore. */
+    private final Map<Path,Hash256> projections=new java.util.concurrent.ConcurrentHashMap<>();
+    Optional<Hash256> projection(Path file){return Optional.ofNullable(projections.get(file.toAbsolutePath().normalize()));}
+    /** Record the projection of a fully attributed unit (also for units attributed only as dependencies). */
+    void observe(Path file,Bindings.Snapshot snapshot){
+        if(snapshot!=null&&snapshot.diagnosticProjection()!=null)projections.put(file.toAbsolutePath().normalize(),snapshot.diagnosticProjection());
+    }
 
     void attach(SemanticMemoStore store){
         attributedMemos=store;sourceNamespaces=new SourceNamespaces(store);namespaceCache.clear();
@@ -165,8 +172,10 @@ final class AttributedMemos implements AutoCloseable {
      * the owner thread; the S0 namespace leaf and the write happen off the request path (§80).
      * Best effort: failure is a later miss, never an error.
      */
-    void memoize(Path file,String sourceHash,Envelope envelope,FileSemanticContribution contribution){
+    void memoize(Path file,String sourceHash,Envelope envelope,FileSemanticContribution contribution,Bindings.Snapshot attributed){
+        observe(file,attributed);
         if(attributedMemos==null||contribution==null||!envelope.warnings().isEmpty())return;
+        var projection=projection(file);if(projection.isEmpty()){refuseAttributed("projection-unavailable");return;}
         try{
             var logical=LogicalSources.of(context());
             var key=attributedStaticKey(file,sourceHash,logical);if(key.isEmpty())return;
@@ -193,6 +202,7 @@ final class AttributedMemos implements AutoCloseable {
             var result=new LinkedHashMap<String,Object>();
             result.put("tier",envelope.tier());result.put("diagnostics",problems);
             result.put("api",contribution.apiFingerprint());
+            result.put("p_diag",projection.get().hex());
             result.put("exported",contribution.exportedNames().stream().sorted().toList());
             result.put("unresolved",contribution.unresolvedTargets().stream().sorted().toList());
             result.put("dependencies",dependencies);
@@ -260,6 +270,8 @@ final class AttributedMemos implements AutoCloseable {
             var exported=new LinkedHashSet<String>();data.path("exported").forEach(value->exported.add(value.asText()));
             var unresolved=new LinkedHashSet<String>();data.path("unresolved").forEach(value->unresolved.add(value.asText()));
             var contribution=new FileSemanticContribution(path,hash,data.path("api").asText(),dependencies,exported,unresolved);
+            if(!data.hasNonNull("p_diag"))return null;
+            projections.put(path.toAbsolutePath().normalize(),Hash256.fromHex(data.path("p_diag").asText()));
             var envelope=new Envelope(data.path("tier").asInt(),"live",false,null,List.of(),Map.of("diagnostics",List.copyOf(problems)));
             analyzer.dependencyGraph().recordFocused(path,dependencies);analyzer.resolveContribution(contribution);
             String broad=Analyzer.broadDiagnosticStamp(observed);

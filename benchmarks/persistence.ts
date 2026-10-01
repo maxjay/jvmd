@@ -62,7 +62,9 @@ class Bench {
       }
       // Every source unit at once, as an editor's or agent's "problems" view asks; paged answers come from the same result.
       const diagnosing=performance.now(),all:any[]=[];let cursor:string|undefined;
-      do{const page=await call("diag.get",{session,limit:1000,...cursor?{cursor}:{}});if(!cursor)row.diagnoseMs=performance.now()-diagnosing;
+      // Pages of 50 stay under the daemon's 64 KiB response budget, which would otherwise split a page into fragments.
+      do{const page=await call("diag.get",{session,limit:50,...cursor?{cursor}:{}});if(!cursor)row.diagnoseMs=performance.now()-diagnosing;
+        assert(Array.isArray(page.result?.diagnostics),"diag.get page without diagnostics: "+JSON.stringify(page).slice(0,200));
         all.push(...page.result.diagnostics);cursor=page.truncated?page.cursor:undefined;}while(cursor);
       const perFile=new Map<string,string[]>();
       for(const d of all){const file=String(d.file??""),f=path.relative(root,file.startsWith("file:")?fileURLToPath(file):file);perFile.set(f,[...perFile.get(f)??[],[d.kind,d.code,d.line,d.character,String(d.message).replaceAll(root,"<root>")].join("|")]);}

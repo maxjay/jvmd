@@ -194,7 +194,8 @@ jobs:
         if: matrix.suite == 'real'
         run: |
           for side in base head; do
-            node benchmarks/persistence.ts --suite real --project "$RUNNER_TEMP/ruoyi" --repository "$RUNNER_TEMP/ruoyi-repository" \
+            # 977 units with Lombok and MapStruct need more than the harness's default 1 GB heap (both builds get the same).
+            node benchmarks/persistence.ts --suite real --heap 4g --project "$RUNNER_TEMP/ruoyi" --repository "$RUNNER_TEMP/ruoyi-repository" \
               --image "$RUNNER_TEMP/images/$side" --label "$side" --output "$OUT/$side-real" || echo "::warning::$side real-project run failed"
           done
 

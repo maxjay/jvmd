@@ -27,16 +27,13 @@ export class JvmdDaemon {
   readyMs:number;
   private dir:string;private stderr:number;
   private constructor(fields:Record<string,any>){Object.assign(this,fields);}
-  /** jfr: a JFR recording of the whole daemon (allocation samples at 20,000/s), dumped to this file on stop. */
-  jfr?:string;javaHome?:string;
-  static async start(o:{javaHome:string;image:string;state:string;repository:string;jfr?:string;jfrThrottle?:string;heap?:string}){
+  static async start(o:{javaHome:string;image:string;state:string;repository:string;heap?:string}){
     mkdirSync(o.state,{recursive:true});
     const dir=mkdtempSync(path.join(os.tmpdir(),"jvmd-bench-")),socket=path.join(dir,"daemon.sock"),probe=path.join(dir,"alloc.sock");
     const config=path.join(o.state,"config.json");
     writeFileSync(config,JSON.stringify({jdk_home:o.javaHome,m2_repo:o.repository,index_on_start:true,heap_ceiling_mb:1024}));
     const stderr=openSync(path.join(o.state,"daemon.log"),"a"),started=performance.now();
-    const recording=o.jfr?["-XX:StartFlightRecording:name=bench,settings=profile,maxsize=4g,jdk.ObjectAllocationSample#throttle="+(o.jfrThrottle??"20000/s")]:[];
-    const child=spawn(path.join(o.javaHome,"bin/java"),[o.heap?"-Xmx"+o.heap:HEAP,...recording,"-javaagent:"+agentJar(o.javaHome)+"="+probe,...JVMD_EXPORTS,"--enable-native-access=ALL-UNNAMED",
+    const child=spawn(path.join(o.javaHome,"bin/java"),[o.heap?"-Xmx"+o.heap:HEAP,"-javaagent:"+agentJar(o.javaHome)+"="+probe,...JVMD_EXPORTS,"--enable-native-access=ALL-UNNAMED",
       "-Djvmd.config="+config,"-Djvmd.socket="+socket,"-Djvmd.state="+path.join(o.state,"store"),"-Djvmd.resolvers="+path.join(o.image,"lib/jvmd/resolvers"),
       "-Djvmd.index.scan.initial_delay_seconds=0","-cp",path.join(o.image,"lib/jvmd/*"),"dev.jvmd.dist.Application"],{stdio:["ignore","pipe",stderr],env:{...process.env,...UTF8}});
     await new Promise<void>((resolve,reject)=>{
@@ -48,7 +45,7 @@ export class JvmdDaemon {
     const kill=()=>{if(child.exitCode===null)child.kill("SIGKILL");};process.once("exit",kill);child.once("exit",()=>process.removeListener("exit",kill));
     const readyMs=performance.now()-started;
     const control=new RpcClient(await connect(socket)),allocation=await AllocationProbe.connect(probe);
-    return new JvmdDaemon({process:child,socket,config,allocation,control,readyMs,dir,stderr,jfr:o.jfr,javaHome:o.javaHome});
+    return new JvmdDaemon({process:child,socket,config,allocation,control,readyMs,dir,stderr});
   }
   alive(){return this.process.exitCode===null&&this.process.signalCode===null;}
   /** Control calls are short: a hung daemon is reported and killed, never waited on. */
@@ -67,10 +64,6 @@ export class JvmdDaemon {
     writeFileSync(file,r.stdout||String(r.stderr||r.error));return file;
   }
   async stop(){
-    if(this.jfr&&this.alive()){
-      const r=spawnSync(path.join(this.javaHome!,"bin/jcmd"),[String(this.process.pid),"JFR.dump","name=bench","filename="+this.jfr],{encoding:"utf8",timeout:120000});
-      if(r.status!==0)console.error("JFR.dump failed: "+(r.stderr||r.stdout));
-    }
     try{await this.call("daemon.shutdown");}catch{/* exiting or hung */}
     this.control.close();this.allocation.close();
     const exited=new Promise(r=>{if(!this.alive())r(undefined);else this.process.once("exit",r);});

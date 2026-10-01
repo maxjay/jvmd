@@ -29,14 +29,6 @@ on:
       only:
         description: 'Only these case ids or families (run.ts --only); empty runs everything'
         default: ''
-      thread_allocation:
-        description: 'Per-thread allocation of every edit window (run.ts --thread-allocation)'
-        type: boolean
-        default: false
-      jfr:
-        description: 'Record the daemon with JFR and print the top allocation stacks of after-edit hovers'
-        type: boolean
-        default: false
       memory_control:
         description: 'Instead of the suite, the frozen apache/maven memory lifecycle with first-use references (benchmarks/memory/profile.ts --mode control): equivalent = 1 GiB heap, 64 MiB native budget; shipping = no -Xmx, default native budget'
         type: choice
@@ -167,16 +159,14 @@ jobs:
         run: |
           extra=()
           [ -n "${{ inputs.only }}" ] && extra+=(--only "${{ inputs.only }}")
-          [ "${{ inputs.thread_allocation }}" = true ] && extra+=(--thread-allocation true)
-          [ "${{ inputs.jfr }}" = true ] && extra+=(--jfr true)
           node benchmarks/run.ts --output "$RUNNER_TEMP/benchmarks" --servers jvmd --runs "${{ inputs.runs || '1' }}" \
             --image "${MEASURED_IMAGE:-jvmd-dist/target/image}" "${extra[@]}" \
             --jdtls-home "$RUNNER_TEMP/tools/jdtls" --repository "$RUNNER_TEMP/bench-repository" \
             $( [ -z "${{ inputs.only }}" ] && echo --project "$RUNNER_TEMP/apache-maven" --project-repository "$RUNNER_TEMP/apache-maven-repository" ) \
             --baseline "$RUNNER_TEMP/main/summary.json"
 
-      # The corrective pass's references/restart control (M1, M2): the original memory report's lifecycle, unchanged
-      # oracles and checkpoints. Its summary is printed to the log (checkpoint:, operation:, M1, M2 lines).
+      # The apache/maven memory lifecycle (benchmarks/memory): unchanged oracles and checkpoints, with or without the
+      # first-use references phase. Its summary is printed to the log (checkpoint:, operation:, M1, M2 lines).
       - name: Memory lifecycle control
         if: inputs.memory_control != ''
         timeout-minutes: 100
@@ -189,14 +179,6 @@ jobs:
           echo "measured: ${MEASURED_REVISION:-$(git rev-parse HEAD)} config: ${{ inputs.memory_control }} heap: $heap"
           tail -n 40 "$RUNNER_TEMP/memory/control/state/jvmd/daemon.log" 2>/dev/null || true
 
-      # Every hover-after-edit sample (and, with jfr, its allocation stacks) in the log: artifacts are not always reachable.
-      - name: After-edit hover allocation
-        if: always()
-        run: |
-          [ -f "$RUNNER_TEMP/benchmarks/results.json" ] || exit 0
-          node benchmarks/edit-allocation.ts --input "$RUNNER_TEMP/benchmarks" --top 10 --output "$RUNNER_TEMP/benchmarks/edit-allocation.md" \
-            --label "${MEASURED_REVISION:-$(git rev-parse HEAD)}" | tee -a "$GITHUB_STEP_SUMMARY"
-
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -207,7 +189,6 @@ jobs:
             ${{ runner.temp }}/benchmarks/report.md
             ${{ runner.temp }}/benchmarks/results.json
             ${{ runner.temp }}/benchmarks/statuses.json
-            ${{ runner.temp }}/benchmarks/edit-allocation.md
             ${{ runner.temp }}/benchmarks/lifecycle/*/jvmd-threads.txt
             ${{ runner.temp }}/benchmarks/lifecycle/*/jvmd/daemon.log
             ${{ runner.temp }}/memory/control/results.json

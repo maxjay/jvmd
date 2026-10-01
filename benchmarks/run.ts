@@ -27,7 +27,7 @@ import {summarize,withReference,jdtlsReference,writeReport} from "./report.ts";
 export const cases:CaseDefinition[]=[...coreCases,...diagnosticCases,...structureCases,...symbolCases,...symbolFilterCases,...generationCases,
   ...projectCases,...editingCases,...importScopeCases,...dependencyCases,...mavenCases,...fileCases,...refactoringCases];
 const REFERENCE=fileURLToPath(new URL("./reference/jdtls.json",import.meta.url));
-const OPTIONS=["servers","only","runs","warmup","samples","timeout-ms","output","java-home","jdtls-home","image","repository","mvn","project","project-repository","command-json","baseline","reference","write-reference","thread-allocation","jfr","heap"];
+const OPTIONS=["servers","only","runs","warmup","samples","timeout-ms","output","java-home","jdtls-home","image","repository","mvn","project","project-repository","command-json","baseline","reference","write-reference","heap"];
 
 export async function main(argv=process.argv.slice(2)){
   const a:Record<string,string>={};
@@ -53,9 +53,7 @@ export async function main(argv=process.argv.slice(2)){
   const ensureDaemon=async()=>{
     if(customCommand||daemon?.alive())return daemon;
     if(daemon)daemonStarts.push({event:"restart after crash",exitCode:daemon.process.exitCode});
-    // --jfr true: one recording per daemon process, numbered by restart.
-    daemon=await JvmdDaemon.start({javaHome,image,state:path.join(root,"jvmd"),repository,heap:a.heap,
-      jfr:a.jfr==="true"?path.join(root,"jvmd",`daemon-${daemonStarts.length+1}.jfr`):undefined});
+    daemon=await JvmdDaemon.start({javaHome,image,state:path.join(root,"jvmd"),repository,heap:a.heap});
     daemonStarts.push({readyMs:daemon.readyMs,index:(await daemon.status()).index});return daemon;
   };
   // JDTLS 1.61.0 is a fixed reference: every scenario is measured on it once. The reference is the checked-in
@@ -79,7 +77,7 @@ export async function main(argv=process.argv.slice(2)){
     for(const {run,def,server,dir,fixture,error} of plan){
       const started=Date.now();
       const result=fixture?await runCase(def,server,dir,fixture,
-        {javaHome,image,jdtlsHome,customCommand,warmup,samples,timeout,threadAllocation:a["thread-allocation"]==="true",daemon:server==="jvmd"?await ensureDaemon():undefined})
+        {javaHome,image,jdtlsHome,customCommand,warmup,samples,timeout,daemon:server==="jvmd"?await ensureDaemon():undefined})
         :{caseId:def.id,family:def.family,apis:def.apis,variant:def.variant,server,outcome:"harness_error",error,operations:[]};
       results.push({...result,...scope(def),run});
       const mark=result.outcome==="pass"||result.outcome==="not_applicable"?"ok  ":result.outcome==="unsupported"?"--  ":"FAIL";
@@ -120,7 +118,7 @@ async function runCase(def:CaseDefinition,server:"jvmd"|"jdtls",dir:string,fixtu
   let running:Launch|undefined,context:ScenarioContext|undefined;
   const start=async(reuseState=false)=>{
     running=await launch({...options,reuseState});
-    const c=new ScenarioContext(running.client,fixture,server,o.timeout,o.warmup,o.samples);c.javaHome=o.javaHome;c.allocation=running.allocation;c.threadAllocation=!!o.threadAllocation;
+    const c=new ScenarioContext(running.client,fixture,server,o.timeout,o.warmup,o.samples);c.javaHome=o.javaHome;c.allocation=running.allocation;
     if(context)c.operations=context.operations; // A reopen keeps one operation list across both connections.
     context=c;await c.initialize();result.startupMs??=performance.now()-running.startedMs;return c;
   };

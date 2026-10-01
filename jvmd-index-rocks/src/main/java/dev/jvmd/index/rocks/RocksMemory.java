@@ -11,7 +11,10 @@ final class RocksMemory implements AutoCloseable {
     RocksMemory(long budget){
         RocksDB.loadLibrary();
         if(budget<8L*1024*1024)throw new IllegalArgumentException("Rocks native cache budget must be at least 8 MiB");
-        this.budget=budget;cache=new LRUCache(budget,-1,true);
+        // The budget is the cache's capacity target, not a read-failure threshold: with a strict limit a
+        // read fails ("LRU cache being full") whenever blocks pinned by concurrent readers, pinned index
+        // and filter blocks and charged memtables momentarily reach it. Unpinned blocks are evicted back.
+        this.budget=budget;cache=new LRUCache(budget,-1,false);
         // Memtables are charged to the same cache. Allow stalls rather than growing without bound.
         buffers=new WriteBufferManager(budget/4,cache,true);
     }

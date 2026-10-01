@@ -119,7 +119,8 @@ export async function runLifecycle(o:LifecycleOptions){
     // the disconnect cannot overtake the close.
     for(const name of [PROJECT,HELPER]){
       const since=c.client.notifications.length,uri=c.file(name).uri;c.close(name);
-      await c.client.notification("textDocument/publishDiagnostics",p=>decodeURI(p.uri)===decodeURI(uri)&&p.diagnostics.length===0,since,30000);
+      try{await c.client.notification("textDocument/publishDiagnostics",p=>decodeURI(p.uri)===decodeURI(uri)&&p.diagnostics.length===0,since,o.timeout);}
+      catch{throw new Error(`close of ${name} not applied within ${Math.round(o.timeout/1000)} s: the session is still busy with earlier requests`);}
     }
     await running!.stop({closeSession:false});running=undefined;
     if(o.server==="jvmd"){

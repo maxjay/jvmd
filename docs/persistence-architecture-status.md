@@ -780,11 +780,24 @@ remaining failure was first read as a stale oracle in the harness (see the corre
 Harness change (`44a319f`): the lifecycle closes the edited documents before disconnecting, as the memory control
 does (M18), and the failure names the location answered as well as the one expected.
 
-**Correction.** That did not make the reconnect pass: the benchmarks run on `44a319f` (36923835955) fails the same
-way after 945 s (the first open succeeded in 32.6 s, so it is the reconnect). The retained-buffer explanation is
-therefore not established, and the cause of the reconnect's different location is OPEN. The runner truncates the
-error line, so the lifecycle now also prints the full first line of its error (answered and expected locations)
-to the job log. Main never reaches this step, so whether it is inherited cannot be read from main's runs.
+**Correction and diagnosis.** Closing the documents did not make the reconnect pass (benchmarks run 36923835955 on
+`44a319f`), so the lifecycle was made to print its full error and then to wait for each close to be applied:
+
+- On `f8eb654` (run 36933674298) the reconnect answered `MavenProject.java` line 1092 where the oracle expected
+  1090 (0-based): exactly the two lines the harness's unsaved `benchmarkAdded` edit inserts. The answer reflects
+  the edited buffer.
+- On `0af7308` (run 36936567990) the lifecycle waited for the adapter's acknowledgement of each close (the adapter
+  clears a closed document's diagnostics after `document.close` returns). It did not arrive within the 30 s query
+  budget: the close was queued behind the first-use references build still occupying the session.
+- A local reproduction without the references phase (head image, apache/maven) answers line 1090 (correct) after
+  the close and after the reconnect, whether or not the harness waits; with a references request first, that
+  request times out at 360 s even at a 4 GiB heap, and the session's later requests queue behind it.
+
+The evidence is consistent with the edited buffer still being open because its close had not been applied, a
+consequence of the inherited first-use references cost (see the deferred cold-construction section), and not with
+a staleness defect: every run where the close was applied answered correctly. No CI run has yet passed the
+reconnect, so this is a classification, not a pass. The lifecycle now reports this case as such (`close of … not applied within 30 s: the session is still
+busy`). Main never reaches this step because its own references request times out first.
 
 ### Reset checkpoint 4: real-project restart through the daemon (R1)
 

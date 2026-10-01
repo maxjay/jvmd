@@ -115,4 +115,23 @@ class SccWorkCountTest {
         }
         return keys;
     }
+
+    /**
+     * Cold admission in reverse dependency order: every capture waits on a unit not yet attributed, so no
+     * drain can write until the last one. Before the back-off, once 256 units were pending every further
+     * capture drained the whole unsettled region again (quadratic in V; 43% of a cold 5,000-unit session's
+     * allocation). Draining is now amortised: cumulative vertex visits stay within a small multiple of V,
+     * and every record is still written.
+     */
+    @Test void drainsBackOffWhileNothingCanBeWritten()throws Exception{
+        int units=600;var files=new ArrayList<Path>();
+        for(int i=0;i<units;i++)files.add(unit(i,i==0?List.of():List.of(i-1)));
+        try(var analyzer=analyzer()){
+            for(int i=units-1;i>=0;i--){Path file=files.get(i);analyzer.diagnostics(file,Files.readString(file));}
+            long visits=scc(analyzer,"vertex_visits");
+            analyzer.awaitMemoWrites();
+            assertThat(((Number)memo(analyzer).get("writes")).longValue()).as("every unit written once its chain is known").isEqualTo(units);
+            assertThat(visits).as("cumulative vertex visits before the final drain, V="+units).isLessThanOrEqualTo(4L*units);
+        }
+    }
 }

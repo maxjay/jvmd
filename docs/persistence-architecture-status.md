@@ -659,6 +659,25 @@ document are cumulative traffic over an interval.
 5. The PR body still describes superseded stages; it needs reconciling.
 6. Cold-construction follow-up (one section below), recording the inherited references failure.
 
+### Reset checkpoint 1: the cold admission regression
+
+- **Attribution.** One local JFR run of the synthetic suite (5,000 units, `dag` cold session, head `eec4853`).
+  "Diagnose all" took 54 s (base in CI: about 12 s).
+  - Inclusive shares of sampled allocation: memo capture 57% and SCC drain 43%; javac attribution was 19%.
+  - CPU: 2,070 of 4,553 samples in `AttributedMemos.drain`.
+  - Cause: during cold admission most pending units still reach units not yet attributed, so their components
+    are not final and cannot be settled (P3 settles only final ones). Once 256 units were pending, every further
+    capture drained the whole unsettled region again and wrote nothing. That is repeated work this PR introduced.
+- **Repair.** Drains triggered by captures now back off while they are unproductive:
+  - the next drain waits until the pending set doubles, or the 2 s interval doubles (up to 60 s);
+  - a productive drain resets both;
+  - close and `awaitWrites` still drain everything, so what is written is unchanged; only when.
+  - Status: `scc.unproductive_drains`.
+- **Breaking test.** `SccWorkCountTest.drainsBackOffWhileNothingCanBeWritten`: a 600-unit chain admitted in
+  reverse order keeps cumulative vertex visits at most 4·V, and all 600 records are written. It fails without the
+  back-off.
+- The CI before/after comparison is recorded once it runs on this head.
+
 ### Cold construction and first-use references (deferred follow-up)
 
 - First-use references on apache/maven at a 1 GiB heap times out at the 360 s daemon request deadline on B0,

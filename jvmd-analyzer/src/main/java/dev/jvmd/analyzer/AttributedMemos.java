@@ -637,7 +637,7 @@ final class AttributedMemos implements AutoCloseable {
             if(observed==null||!observed.transactionCurrent()){refuseAttributed("inputs-superseded");return;}
             pending.put(file,new Pending(key.get(),Json.MAPPER.writeValueAsBytes(result),dependencies,packages,negatives.get(),
                     SourceNamespaces.LanguageMode.of(context().compilerOptions())));
-            if(pending.size()>=PENDING_BATCH||System.nanoTime()-lastDrain>DRAIN_INTERVAL_NANOS){lastDrain=System.nanoTime();drain(false);}
+            if(pending.size()>=drainAt||System.nanoTime()-lastDrain>drainInterval){lastDrain=System.nanoTime();scheduledDrain();}
         }catch(ObservationFaults.Unavailable unknown){refuseAttributed("observation-unavailable");lastFailure=unknown.toString();}
         catch(Exception failure){attributedMemoFailures.incrementAndGet();lastFailure=failure.toString();}
     }
@@ -648,8 +648,21 @@ final class AttributedMemos implements AutoCloseable {
         return configured().foreign().computeIfAbsent(unit,current->{var id=logical.logical(current);return id.isPresent()&&!id.get().startsWith(context().gav()+"|");});
     }
     private static final int PENDING_BATCH=256;
-    private static final long DRAIN_INTERVAL_NANOS=2_000_000_000L;
-    private long lastDrain=System.nanoTime();
+    private static final long DRAIN_INTERVAL_NANOS=2_000_000_000L,MAX_DRAIN_INTERVAL_NANOS=60_000_000_000L;
+    private long lastDrain=System.nanoTime(),drainInterval=DRAIN_INTERVAL_NANOS;private int drainAt=PENDING_BATCH;private long unproductiveDrains;
+    /**
+     * Drains triggered by captures back off while they write nothing. During cold admission many pending
+     * units still reach units not yet attributed, so their components cannot be final; draining them again
+     * every 256 captures or 2 s re-traversed the whole unsettled region for no result (43% of a cold 5,000-unit
+     * session's allocation). After an unproductive drain the next one waits until the pending set doubles or
+     * the interval doubles (at most 60 s); a productive drain resets both. Close and awaitWrites still drain
+     * everything, so what is written is unchanged; only when.
+     */
+    private void scheduledDrain(){
+        int before=pending.size();drain(false);
+        if(pending.size()<before){drainAt=PENDING_BATCH;drainInterval=DRAIN_INTERVAL_NANOS;}
+        else{unproductiveDrains++;drainAt=Math.max(PENDING_BATCH,2*pending.size());drainInterval=Math.min(MAX_DRAIN_INTERVAL_NANOS,2*drainInterval);}
+    }
     /**
      * P3 (corrective pass): components already found final are settled. A later drain does not traverse
      * a settled region again; it takes the recorded component as final. A component is settled only when
@@ -959,7 +972,7 @@ final class AttributedMemos implements AutoCloseable {
         result.put("misses",attributedMemoMisses);result.put("last_miss",lastAttributedMemoMiss);result.put("refusals",attributedMemoRefusals);
         result.put("refusal_reasons",Map.copyOf(attributedMemoRefusalReasons));result.put("failures",attributedMemoFailures.get());
         result.put("pending_scc",pending.size());result.put("last_failure",lastFailure);result.put("scc_unknown_sample",unknownSample==null?"":unknownSample.toString());
-        result.put("scc",Map.of("drains",sccDrains,"vertex_visits",sccVertexVisits,"edge_visits",sccEdgeVisits,"settled_reuses",sccSettledReuses,"invalidations",sccInvalidations,"settled",settled.size()));result.put("miss_reasons",Map.copyOf(missReasons));result.put("early_cutoff_attributions",earlyCutoffAttributions);result.put("pending_writes",pendingMemoWrites.get());
+        result.put("scc",Map.of("unproductive_drains",unproductiveDrains,"drains",sccDrains,"vertex_visits",sccVertexVisits,"edge_visits",sccEdgeVisits,"settled_reuses",sccSettledReuses,"invalidations",sccInvalidations,"settled",settled.size()));result.put("miss_reasons",Map.copyOf(missReasons));result.put("early_cutoff_attributions",earlyCutoffAttributions);result.put("pending_writes",pendingMemoWrites.get());
         result.put("config_derivations",configDerivations.get());
         result.put("package_identity_builds",packageIdentityBuilds.get());result.put("membership_enumerations",membershipEnumerations);result.put("membership_updates",membershipUpdates);
         result.put("source_namespaces",sourceNamespaces.status());

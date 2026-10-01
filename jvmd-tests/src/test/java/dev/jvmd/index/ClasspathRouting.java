@@ -14,6 +14,9 @@ import java.util.*;
  *
  * The flat fold is the baseline routing implementation (§63): rebuild the winner map in O(T) on a
  * classpath change. Hierarchical routing is not built without evidence of reusable subtrees (§64).
+ *
+ * <p>Benchmark code, not production: the strict task's W8 rule kept RocksDB as the MACHINE backend
+ * ({@code docs/evidence/machine-decision.md}), so this proof of concept lives with its harness.
  */
 public final class ClasspathRouting {
     private ClasspathRouting(){}

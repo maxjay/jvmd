@@ -25,6 +25,9 @@ import java.util.zip.CRC32C;
  *   <li>reverse CSR for incoming relationships;</li>
  *   <li>sparse member checkpoints for large owners only.</li>
  * </ul>
+ *
+ * <p>Benchmark code, not production: the strict task's W8 rule kept RocksDB as the MACHINE backend
+ * ({@code docs/evidence/machine-decision.md}), so this proof of concept lives with its harness.
  */
 public final class MachineAccelerators implements AutoCloseable {
     static final long MAGIC=0x31434341444d564aL; // "JVMDACC1"

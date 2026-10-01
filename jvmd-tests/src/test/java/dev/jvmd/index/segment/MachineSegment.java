@@ -45,6 +45,9 @@ import java.util.zip.CRC32C;
  * </pre>
  * Everything workspace-effective (winning artifact, inherited members, accessibility) is absent:
  * it belongs above the immutable artifact (§46).
+ *
+ * <p>Benchmark code, not production: the strict task's W8 rule kept RocksDB as the MACHINE backend
+ * ({@code docs/evidence/machine-decision.md}), so this proof of concept lives with its harness.
  */
 public final class MachineSegment implements AutoCloseable {
     static final long MAGIC=0x31474553444d564aL;   // "JVMDSEG1"

@@ -69,6 +69,22 @@ The output directory holds `report.md` (the PR comment), `report.txt` (the termi
   lifecycle, not-implemented endpoints and latency are folded underneath. Regressions are also
   raised as warnings on the run.
 
+`jvmd-before-after.yml` measures a PR against its base on the same runners and keeps a second
+comment (`<!-- jvmd-before-after -->`). It builds both revisions; the PR's `benchmarks/` drives
+both, so the only difference is the build under test. Each matrix job measures base and PR on one
+runner:
+
+- `lsp-1`…`lsp-5`: the scenario suite, one base and one PR run per shard, order alternating;
+- `lifecycle`: interleaved base/PR pairs of the apache/maven lifecycle;
+- `real`: restart scenarios on ruoyi-vue-pro (`real-project.json`) from `persistence.ts`;
+- `synthetic`: the A1–A6 restart scenarios on 5,000-unit projects from `persistence.ts`;
+- `w8`: the MACHINE storage decision benchmark (PR only).
+
+`persistence.ts` runs every session as a fresh daemon on the same state, and records READY, open,
+first correct answer, diagnose-all time, javac runs, peak RSS, allocation and a digest of every
+file's diagnostics (so the report says whether both builds gave the same answers).
+`compare.ts --input DIR` renders the report from the jobs' artifacts.
+
 ## Scope
 
 A case is `supported` when its endpoint is in JVMD's documented contract (`harness/contract.ts`),

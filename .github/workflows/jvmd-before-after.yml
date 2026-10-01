@@ -1,0 +1,274 @@
+name: JVMD before/after
+
+# Measures the PR's base and the PR's head on the same runner with the same harness (the head's
+# benchmarks/), and keeps one before/after report comment on the PR. Informational: never gates.
+#   lsp-N      the LSP scenario suite, one base run and one PR run per shard (order alternates)
+#   lifecycle  the apache/maven lifecycle, interleaved base/PR pairs
+#   real       restart scenarios on ruoyi-vue-pro (benchmarks/real-project.json)
+#   synthetic  restart scenarios on 5,000-unit synthetic projects
+#   w8         the MACHINE storage decision benchmark (the PR only)
+on:
+  pull_request:
+    paths:
+      - 'benchmarks/**'
+      - 'jvmd-*/src/main/**'
+      - 'shim/src/**'
+      - '.github/workflows/jvmd-before-after.yml'
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Base revision (default: the merge base with main)
+        default: ''
+      lifecycle_pairs:
+        description: Interleaved base/PR lifecycle pairs
+        default: '3'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: before-after-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  APACHE_MAVEN: 5cd1b60264101080c712accd605180a4bd9222e0
+  RUOYI: 1697112f1164b206aeb031493980f5cb3a6e2cd5
+
+jobs:
+  measure:
+    name: measure (${{ matrix.suite }}${{ matrix.shard && format(' {0}', matrix.shard) || '' }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {suite: lsp, shard: 1}
+          - {suite: lsp, shard: 2}
+          - {suite: lsp, shard: 3}
+          - {suite: lsp, shard: 4}
+          - {suite: lsp, shard: 5}
+          - {suite: lifecycle}
+          - {suite: real}
+          - {suite: synthetic}
+          - {suite: w8}
+    env:
+      OUT: ${{ github.workspace }}/../before-after
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve base and head
+        run: |
+          base="${{ inputs.base }}"
+          if [ -z "$base" ]; then base=$(git merge-base "${{ github.event.pull_request.base.sha || 'origin/main' }}" HEAD); fi
+          base=$(git rev-parse "$base")
+          echo "BASE=$base" >> "$GITHUB_ENV"; echo "HEAD_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "base $base, head $(git rev-parse HEAD)"
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+
+      - name: Cache third-party Maven dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.m2/repository
+            !~/.m2/repository/dev/jvmd
+          key: maven-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: maven-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Cache pinned tools
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/downloads
+          key: bench-tools-dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e-338e7e73d61836651ba2453919a0d34fa763eb4e7c03342092309bffb8934c64
+
+      - name: Install pinned JDK 25
+        run: |
+          d="$RUNNER_TEMP/downloads"; mkdir -p "$d" "$RUNNER_TEMP/tools"
+          [ -f "$d/jdk25.tar.gz" ] || curl -fsSL --retry 3 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz' -o "$d/jdk25.tar.gz"
+          echo "dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e  $d/jdk25.tar.gz" | sha256sum -c -
+          tar -xzf "$d/jdk25.tar.gz" -C "$RUNNER_TEMP/tools"
+          echo "JAVA_HOME=$RUNNER_TEMP/tools/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/tools/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
+
+      - name: Use the pinned release Maven
+        run: |
+          python3 - <<'PYCODE'
+          import importlib.util, os
+          from pathlib import Path
+          spec=importlib.util.spec_from_file_location('release_tools','jvmd-dist/release/build.py')
+          module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+          maven=module.toolchain(module.PINS['maven'],Path(os.environ['RUNNER_TEMP'])/'tools/maven')
+          with open(os.environ['GITHUB_PATH'],'a') as out:out.write(str(maven/'bin')+'\n')
+          PYCODE
+
+      # Base first, then the PR, so the PR's modules are the ones left installed (the W8 benchmark uses them).
+      - name: Build base and PR images
+        if: matrix.suite != 'w8'
+        run: |
+          mkdir -p "$RUNNER_TEMP/images"
+          git worktree add -q "$RUNNER_TEMP/base-src" "$BASE"
+          (cd "$RUNNER_TEMP/base-src" && mvn -B -q -DskipTests install && bash jvmd-dist/assemble.sh >/dev/null)
+          cp -a "$RUNNER_TEMP/base-src/jvmd-dist/target/image" "$RUNNER_TEMP/images/base"
+          mvn -B -q -DskipTests install && bash jvmd-dist/assemble.sh >/dev/null
+          cp -a jvmd-dist/target/image "$RUNNER_TEMP/images/head"
+
+      - name: Build PR
+        if: matrix.suite == 'w8'
+        run: mvn -B -q -DskipTests install
+
+      - name: Cache fixture repository
+        if: matrix.suite == 'lsp' || matrix.suite == 'lifecycle'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/bench-repository
+          key: bench-repository-${{ hashFiles('benchmarks/harness/maven.ts') }}
+
+      - name: Cache apache/maven fixture
+        id: apache
+        if: matrix.suite == 'lifecycle' || matrix.suite == 'w8'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ${{ runner.temp }}/apache-maven
+            ${{ runner.temp }}/apache-maven-repository
+          key: apache-maven-${{ env.APACHE_MAVEN }}-v1
+
+      - name: Prepare apache/maven fixture
+        if: (matrix.suite == 'lifecycle' || matrix.suite == 'w8') && steps.apache.outputs.cache-hit != 'true'
+        run: |
+          git clone -q https://github.com/apache/maven.git "$RUNNER_TEMP/apache-maven"
+          git -C "$RUNNER_TEMP/apache-maven" checkout -q "$APACHE_MAVEN"
+          cd "$RUNNER_TEMP/apache-maven"
+          mvn -B -q -DskipTests -Dmaven.repo.local="$RUNNER_TEMP/apache-maven-repository" -Drat.skip -Dspotless.skip -Dcheckstyle.skip -Denforcer.skip install
+
+      - name: Cache ruoyi-vue-pro fixture
+        id: ruoyi
+        if: matrix.suite == 'real'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ${{ runner.temp }}/ruoyi
+            ${{ runner.temp }}/ruoyi-repository
+          key: ruoyi-${{ env.RUOYI }}-v1
+
+      # Built once (classes in place, dependencies in its own repository): a checkout a developer has built.
+      - name: Prepare ruoyi-vue-pro fixture
+        if: matrix.suite == 'real' && steps.ruoyi.outputs.cache-hit != 'true'
+        env:
+          LANG: C.UTF-8
+          LC_ALL: C.UTF-8
+        run: |
+          git init -q "$RUNNER_TEMP/ruoyi" && cd "$RUNNER_TEMP/ruoyi"
+          git fetch -q --depth 1 https://github.com/YunaiV/ruoyi-vue-pro.git "$RUOYI" && git checkout -q FETCH_HEAD
+          # The pom also lists mirrors in China; every artifact is on Maven Central.
+          printf '<settings><mirrors><mirror><id>central</id><mirrorOf>*</mirrorOf><url>https://repo.maven.apache.org/maven2</url></mirror></mirrors></settings>\n' > "$RUNNER_TEMP/ruoyi-settings.xml"
+          for attempt in 1 2 3; do
+            mvn -B -q -s "$RUNNER_TEMP/ruoyi-settings.xml" -DskipTests -Dmaven.repo.local="$RUNNER_TEMP/ruoyi-repository" compile && break
+            [ "$attempt" = 3 ] && exit 1; sleep 10
+          done
+
+      - name: LSP suite (one base run, one PR run)
+        if: matrix.suite == 'lsp'
+        run: |
+          run() { node benchmarks/run.ts --servers jvmd --image "$RUNNER_TEMP/images/$1" --repository "$RUNNER_TEMP/bench-repository" --output "$OUT/$1-lsp-${{ matrix.shard }}"; }
+          if [ $(( ${{ matrix.shard }} % 2 )) = 1 ]; then run base; run head; else run head; run base; fi
+
+      - name: apache/maven lifecycle (interleaved pairs)
+        if: matrix.suite == 'lifecycle'
+        run: |
+          for i in $(seq 1 "${{ inputs.lifecycle_pairs || '3' }}"); do
+            for side in $( [ $((i % 2)) = 1 ] && echo "base head" || echo "head base" ); do
+              node benchmarks/run.ts --only lifecycle --servers jvmd --image "$RUNNER_TEMP/images/$side" --repository "$RUNNER_TEMP/bench-repository" \
+                --project "$RUNNER_TEMP/apache-maven" --project-repository "$RUNNER_TEMP/apache-maven-repository" --output "$OUT/$side-lifecycle-$i"
+            done
+          done
+
+      - name: Real project restart scenarios
+        if: matrix.suite == 'real'
+        run: |
+          for side in base head; do
+            node benchmarks/persistence.ts --suite real --project "$RUNNER_TEMP/ruoyi" --repository "$RUNNER_TEMP/ruoyi-repository" \
+              --image "$RUNNER_TEMP/images/$side" --label "$side" --output "$OUT/$side-real" || echo "::warning::$side real-project run failed"
+          done
+
+      - name: Synthetic restart scenarios
+        if: matrix.suite == 'synthetic'
+        run: |
+          for side in base head; do
+            node benchmarks/persistence.ts --suite synthetic --units 5000 --repository "$RUNNER_TEMP/synthetic-repository" \
+              --image "$RUNNER_TEMP/images/$side" --label "$side" --output "$OUT/$side-synthetic" || echo "::warning::$side synthetic run failed"
+          done
+
+      - name: W8 MACHINE storage decision
+        if: matrix.suite == 'w8'
+        run: |
+          mvn -B -pl jvmd-tests test -Dtest=MachineDecisionBenchmark -DexcludedGroups= -Dsurefire.failIfNoSpecifiedTests=false \
+            -Djvmd.w8.corpus="$RUNNER_TEMP/apache-maven-repository" || echo "::warning::the W8 benchmark failed"
+          mkdir -p "$OUT/head-w8" && cp jvmd-tests/target/benchmarks/machine-decision.md "$OUT/head-w8/" || true
+
+      - name: Collect results
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/collected"
+          cd "$OUT" 2>/dev/null || exit 0
+          for d in */; do d=${d%/}; mkdir -p "$RUNNER_TEMP/collected/$d"
+            for f in results.json persistence.json machine-decision.md report.md; do [ -f "$d/$f" ] && cp "$d/$f" "$RUNNER_TEMP/collected/$d/"; done
+            find "$d" -name daemon.log -size -20M | head -20 | while read -r log; do mkdir -p "$RUNNER_TEMP/collected/logs/$(dirname "$log")"; cp "$log" "$RUNNER_TEMP/collected/logs/$log"; done
+          done
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: before-after-${{ matrix.suite }}${{ matrix.shard && format('-{0}', matrix.shard) || '' }}
+          retention-days: 30
+          path: ${{ runner.temp }}/collected
+
+  report:
+    needs: measure
+    if: always()
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: before-after-*
+          path: ${{ runner.temp }}/results
+
+      - name: Render and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          base="${{ inputs.base }}"
+          if [ -z "$base" ]; then base=$(git merge-base "${{ github.event.pull_request.base.sha || 'origin/main' }}" HEAD); fi
+          report="$RUNNER_TEMP/before-after.md"
+          node benchmarks/compare.ts --input "$RUNNER_TEMP/results" --base "$(git rev-parse "$base")" --head "$(git rev-parse HEAD)" --output "$report" \
+            --runner "ubuntu-24.04 · $(nproc) cpu per runner · each suite measured base and PR on one runner · run $GITHUB_RUN_ID"
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          [ -n "$PR" ] && [ "$SAME_REPO" = true ] || exit 0
+          marker='<!-- jvmd-before-after -->'
+          body="$marker"$'\n'"$(cat "$report")"$'\n\n'"<sub>[Run, raw results and logs]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)</sub>"
+          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+            -q ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -1)
+          if [ -n "$id" ]; then gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -f body="$body" >/dev/null
+          else gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -f body="$body" >/dev/null; fi

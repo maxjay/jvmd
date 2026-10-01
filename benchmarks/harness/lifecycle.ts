@@ -65,14 +65,20 @@ async function queries(c:ScenarioContext){
   await step(()=>observeDiagnostics(c,c.file(HELPER).uri,changed.trigger,errorAt("benchmarkMissing"),since,"changed_diagnostic"));
 }
 
-/** The daemon log's tail and every thread stack that runs JVMD code: enough to read a hang or a failed start. */
+/**
+ * The daemon log's tail, a count of threads by name, and every JVMD thread stack that is doing or
+ * waiting on work (idle file watchers excluded): enough to read a hang or a failed start from the job log.
+ */
 export function failureEvidence(log:string,dump?:string,adapter?:string){
   const out:string[]=[];
-  if(existsSync(log))out.push("--- daemon.log (tail) ---",...readFileSync(log,"utf8").split("\n").slice(-80));
-  if(adapter&&existsSync(adapter))out.push("--- adapter stderr (tail) ---",...readFileSync(adapter,"utf8").split("\n").slice(-30));
+  if(existsSync(log))out.push("--- daemon.log (tail) ---",...readFileSync(log,"utf8").split("\n").slice(-60));
+  if(adapter&&existsSync(adapter))out.push("--- adapter stderr (tail) ---",...readFileSync(adapter,"utf8").split("\n").slice(-20));
   if(dump&&existsSync(dump)){
-    out.push("--- JVMD threads ---");
-    for(const stack of readFileSync(dump,"utf8").split(/\n\s*\n/u))if(stack.includes("dev.jvmd."))out.push(...stack.split("\n").slice(0,40),"");
+    const stacks=readFileSync(dump,"utf8").split(/\n\s*\n/u),counts=new Map<string,number>();
+    for(const stack of stacks){const name=/^"([^"]+)"/u.exec(stack.trim())?.[1];if(name){const key=name.replace(/[-#]?[0-9a-f]{6,}$|[-#]\d+$/u,"");counts.set(key,(counts.get(key)??0)+1);}}
+    out.push("--- threads by name ---",...[...counts].sort((a,b)=>b[1]-a[1]).map(([name,n])=>`${String(n).padStart(4)} ${name}`));
+    out.push("--- JVMD threads at work ---");
+    for(const stack of stacks)if(stack.includes("dev.jvmd.")&&!stack.includes("LiveSourceState.watchLoop"))out.push(...stack.split("\n").slice(0,45),"");
   }
   return out.join("\n");
 }

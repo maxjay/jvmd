@@ -40,7 +40,7 @@ on:
       memory_control:
         description: 'Instead of the suite, the frozen apache/maven memory lifecycle with first-use references (benchmarks/memory/profile.ts --mode control): equivalent = 1 GiB heap, 64 MiB native budget; shipping = no -Xmx, default native budget'
         type: choice
-        options: ['', equivalent, shipping]
+        options: ['', equivalent, shipping, equivalent-no-references, shipping-no-references]
         default: ''
 
 permissions:
@@ -181,8 +181,9 @@ jobs:
         if: inputs.memory_control != ''
         timeout-minutes: 100
         run: |
-          heap=1024; [ "${{ inputs.memory_control }}" = shipping ] && heap=0
-          node benchmarks/memory/profile.ts --mode control --heap "$heap" --output "$RUNNER_TEMP/memory/control" \
+          heap=1024; case "${{ inputs.memory_control }}" in shipping*) heap=0;; esac
+          extra=(); case "${{ inputs.memory_control }}" in *no-references) extra=(--skip-references);; esac
+          node benchmarks/memory/profile.ts --mode control --heap "$heap" "${extra[@]}" --output "$RUNNER_TEMP/memory/control" \
             --image "${MEASURED_IMAGE:-jvmd-dist/target/image}" \
             --project "$RUNNER_TEMP/apache-maven" --project-repository "$RUNNER_TEMP/apache-maven-repository"
           echo "measured: ${MEASURED_REVISION:-$(git rev-parse HEAD)} config: ${{ inputs.memory_control }} heap: $heap"

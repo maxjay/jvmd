@@ -65,8 +65,11 @@ class Bench {
       // Counters now, before the digest requests below can add work of their own.
       const actors=(await call("session.status",{session,section:"module_actors"})).result.actor_queries??{};
       row.javac=Object.values(actors).reduce((a:number,b:any)=>a+Number(b),0);
-      try{const p=(await call("session.status",{session,section:"persistence"})).result.attributed_memo;
-        if(p&&Object.keys(p).length)row.persistence={restores:p.restores,writes:p.writes,refusals:p.refusal_reasons,early_cutoff:p.early_cutoff};}catch{/* this build has no persisted results */}
+      let processors:any=null;
+      try{const status=(await call("session.status",{session,section:"persistence"})).result,p=status.attributed_memo;processors=status.annotation_processing??null;
+        if(p&&Object.keys(p).length)row.persistence={restores:p.restores,writes:p.writes,refusals:p.refusal_reasons,early_cutoff:p.early_cutoff,
+          s0:p.by_purpose?{hits:p.by_purpose.s0_memo_hits??0,parses:p.by_purpose.s0_parses??0}:undefined,
+          processor_persisted_hits:processors?.persisted_hits};}catch{/* this build has no persisted results */}
       // Then every file's diagnostics from the now-warm result, in path chunks: one whole-workspace page also
       // carries every file's warnings and can exceed the daemon's 64 KiB response budget, which splits it into
       // fragments. A chunk that is still split is halved; a single file that is is recorded as such.
@@ -86,8 +89,10 @@ class Bench {
       for(const f of budget)perFile.set(f,["<response over budget>"]);
       row.files=Object.fromEntries([...perFile].sort().map(([f,ds])=>[f,sha(ds.sort().join("\n"))]));
       row.diagnostics=all.length;row.digest=sha(JSON.stringify(row.files));
-      const full=(await call("session.status",{session})).result;
-      row.processorRuns=full.annotation_processing?.runs??null;
+      // Processor runs from the small persistence section; a build without it answers the full status, which on a
+      // large project exceeds the response budget, so it is read only as a fallback and recorded as unavailable.
+      if(processors?.runs!=null)row.processorRuns=processors.runs;
+      else try{row.processorRuns=(await call("session.status",{session})).result.annotation_processing?.runs??null;}catch{row.processorRuns=null;}
       row.peakRssBytes=hwm(daemon.process.pid);
       const after=await daemon.allocation.read();row.allocatedBytes=allocated!=null&&after!=null?after-allocated:null;
     }catch(error){

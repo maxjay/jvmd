@@ -425,7 +425,7 @@ def _dur_ms(d):
     return (int(m.group(1) or 0) * 60 + float(m.group(2))) * 1000 if m else None
 
 
-GC_LINE = re.compile(r"\[(\d+)ms\].*?GC\(\d+\) (Pause [^\d]+?) (\d+)M->(\d+)M\((\d+)M\) ([\d.]+)ms")
+GC_LINE = re.compile(r"\[(\d+)ms\].*?GC\(\d+\) (Pause .+?) (\d+)M->(\d+)M\((\d+)M\) ([\d.]+)ms\s*$")
 HUMONGOUS = re.compile(r"\[(\d+)ms\].*?GC\(\d+\) Humongous regions: (\d+)->(\d+)")
 
 

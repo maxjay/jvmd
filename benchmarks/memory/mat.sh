@@ -6,7 +6,7 @@
 # shortest GC-root paths).
 set -euo pipefail
 : "${MAT_HOME:?MAT_HOME must point at the MemoryAnalyzer directory}"
-dump=$(readlink -f "$1"); out=$(readlink -f "$2"); mkdir -p "$out"
+mkdir -p "$2"; dump=$(readlink -f "$1"); out=$(readlink -f "$2")
 base="${dump%.hprof}"; name=$(basename "$base")
 unset JAVA_TOOL_OPTIONS
 query() { # query LABEL COMMAND

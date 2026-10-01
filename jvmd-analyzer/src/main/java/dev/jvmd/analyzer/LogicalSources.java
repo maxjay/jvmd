@@ -31,6 +31,9 @@ final class LogicalSources {
         for(Path root:candidates){
             String gav=context.coordinates().get(root.toString());
             if(gav==null||gav.isBlank())continue;
+            // Processor output roots live outside the module; the context names their logical role (W6).
+            String declared=context.coordinates().get("role:"+root);
+            if(declared!=null&&!declared.isBlank()&&!declared.contains("|")){roots.add(new Root(root,gav,declared));continue;}
             Path module=null;
             for(var entry:context.coordinates().entrySet()){
                 if(!gav.equals(entry.getValue())||entry.getKey().contains("://"))continue;

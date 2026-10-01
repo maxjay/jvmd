@@ -913,6 +913,7 @@ public final class Application implements AutoCloseable {
     private Analyzer.Context createAnalyzerContext(Session session,Path path,Resolution graph)throws Exception{
         String gav="local:workspace:0",release="25",generation="plain";
         List<String> options=List.of("--release","25");
+        var processingBinding=dev.jvmd.analyzer.Processing.NONE;
         var classpath=new java.util.ArrayList<Path>();var sources=new java.util.ArrayList<Path>();var coordinates=new java.util.LinkedHashMap<String,String>();var binarySources=new LinkedHashSet<Path>();var processorWarnings=new LinkedHashSet<String>();var navigationSources=new LinkedHashSet<Path>();
         if(graph!=null){
             var module=WorkspaceContextManager.owner(path,graph);
@@ -929,11 +930,13 @@ public final class Application implements AutoCloseable {
                 // A built dependency uses its API; source changes (including preserved mtimes) switch to SOURCE_PATH.
                 coordinates.put(dependency.classes(),dependency.gav());
                 var generated=prepareProcessing(session,dependency,false,graph);
-                if(generated!=null){classpath.addAll(0,generated.classpath());sources.addAll(generated.sourceRoots());binarySources.addAll(generated.binarySources());processorWarnings.addAll(generated.warnings());generation+=":"+generated.fingerprint();}
+                if(generated!=null){classpath.addAll(0,generated.classpath());sources.addAll(generated.sourceRoots());binarySources.addAll(generated.binarySources());processorWarnings.addAll(generated.warnings());generation+=":"+generated.fingerprint();processorRoles(coordinates,generated,dependency.gav(),"main");}
             }
             var processing=prepareProcessing(session,module,false,graph);
-            if(processing!=null){classpath.addAll(0,processing.classpath());sources.addAll(0,processing.sourceRoots());binarySources.addAll(processing.binarySources());processorWarnings.addAll(processing.warnings());generation+=":"+processing.fingerprint();coordinates.put(processing.sourceRoots().getFirst().toString(),gav);}
-            if(test){var testOutput=prepareProcessing(session,module,true,graph);if(testOutput!=null){classpath.addAll(0,testOutput.classpath());sources.addAll(0,testOutput.sourceRoots());binarySources.addAll(testOutput.binarySources());processorWarnings.addAll(testOutput.warnings());generation+=":"+testOutput.fingerprint();coordinates.put(testOutput.sourceRoots().getFirst().toString(),gav);}}
+            if(processing!=null){classpath.addAll(0,processing.classpath());sources.addAll(0,processing.sourceRoots());binarySources.addAll(processing.binarySources());processorWarnings.addAll(processing.warnings());generation+=":"+processing.fingerprint();coordinates.put(processing.sourceRoots().getFirst().toString(),gav);processorRoles(coordinates,processing,gav,"main");}
+            if(test){var testOutput=prepareProcessing(session,module,true,graph);if(testOutput!=null){classpath.addAll(0,testOutput.classpath());sources.addAll(0,testOutput.sourceRoots());binarySources.addAll(testOutput.binarySources());processorWarnings.addAll(testOutput.warnings());generation+=":"+testOutput.fingerprint();coordinates.put(testOutput.sourceRoots().getFirst().toString(),gav);processorRoles(coordinates,testOutput,gav,"test");}}
+            var settings=test?module.testProcessing():module.processing();
+            processingBinding=new dev.jvmd.analyzer.Processing(settings.enabled(),settings.path().stream().map(Path::of).toList(),settings.names(),settings.lombok()?"full":"only");
             for(var m:graph.modules()){
                 for(String source:java.util.stream.Stream.concat(m.sources().stream(),m.testSources().stream()).toList()){
                     navigationSources.add(Path.of(source));coordinates.putIfAbsent(source,m.gav());coordinates.putIfAbsent(Path.of(source).toUri().toString(),m.gav());
@@ -948,7 +951,19 @@ public final class Application implements AutoCloseable {
         }else{sources.addAll(workspace(session).roots());for(Path root:workspace(session).roots()){coordinates.put(root.toString(),gav);coordinates.put(root.toUri().toString(),gav);}}
         if(dirty(session)&&graph!=null&&graph.modules().stream().anyMatch(m->m.processing().enabled()||m.testProcessing().enabled()))processorWarnings.add("unsaved_processor_inputs: generated APIs reflect the last saved processor inputs");
         navigationSources.addAll(sources);
-        return new Analyzer.Context(gav,release,List.copyOf(classpath),List.copyOf(sources),generation,Map.copyOf(coordinates),options,Set.copyOf(binarySources),List.copyOf(processorWarnings),List.copyOf(navigationSources),graph!=null,session.id());
+        return new Analyzer.Context(gav,release,List.copyOf(classpath),List.copyOf(sources),generation,Map.copyOf(coordinates),options,Set.copyOf(binarySources),List.copyOf(processorWarnings),List.copyOf(navigationSources),graph!=null,session.id(),processingBinding);
+    }
+    /**
+     * Processor outputs live under the state directory, outside every module. Give each a logical
+     * role (W6) so generated units and processor class outputs have restart-stable identities.
+     */
+    private static void processorRoles(Map<String,String> coordinates,AnnotationProcessing.Output output,String gav,String scope){
+        for(Path root:output.sourceRoots()){
+            coordinates.put(root.toAbsolutePath().normalize().toString(),gav);coordinates.put("role:"+root.toAbsolutePath().normalize(),"generated-sources-"+scope);
+        }
+        for(Path classes:output.classpath()){
+            coordinates.put(classes.toAbsolutePath().normalize().toString(),gav);coordinates.put("role:"+classes.toAbsolutePath().normalize(),"processor-classes-"+scope);
+        }
     }
 
     private AnnotationProcessing.Output prepareProcessing(Session session,Resolution.Module module,boolean test,Resolution graph)throws Exception{

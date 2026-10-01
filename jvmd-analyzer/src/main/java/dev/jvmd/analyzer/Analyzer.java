@@ -11,10 +11,9 @@ import javax.lang.model.element.*;
 /** Implements 4.2: session-owned semantic state and detached declaration snapshots. */
 public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     /** Implements 4.2 and 4.3: effective module classpath and source roots. */
-    public record Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates,List<String> compilerOptions,Set<Path> binarySources,List<String> warnings,List<Path> navigationSources,boolean preciseSourceRoots,String workspace) {
-        public Context {
-            workspace=Objects.requireNonNullElse(workspace,"");
-        }
+    public record Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates,List<String> compilerOptions,Set<Path> binarySources,List<String> warnings,List<Path> navigationSources,boolean preciseSourceRoots,String workspace,Processing processing) {
+        public Context {workspace=Objects.requireNonNullElse(workspace,"");processing=Objects.requireNonNullElse(processing,Processing.NONE);}
+        public Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates,List<String> compilerOptions,Set<Path> binarySources,List<String> warnings,List<Path> navigationSources,boolean preciseSourceRoots,String workspace){this(gav,release,classpath,sources,generation,coordinates,compilerOptions,binarySources,warnings,navigationSources,preciseSourceRoots,workspace,Processing.NONE);}
         public Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates,List<String> compilerOptions,Set<Path> binarySources,List<String> warnings,List<Path> navigationSources,boolean preciseSourceRoots){this(gav,release,classpath,sources,generation,coordinates,compilerOptions,binarySources,warnings,navigationSources,preciseSourceRoots,"");}
         public Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates,List<String> compilerOptions,Set<Path> binarySources,List<String> warnings,List<Path> navigationSources){this(gav,release,classpath,sources,generation,coordinates,compilerOptions,binarySources,warnings,navigationSources,true,"");}
         public Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates,List<String> compilerOptions,Set<Path> binarySources,List<String> warnings){this(gav,release,classpath,sources,generation,coordinates,compilerOptions,binarySources,warnings,sources,true,"");}

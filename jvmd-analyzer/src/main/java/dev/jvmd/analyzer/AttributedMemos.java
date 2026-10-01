@@ -42,15 +42,6 @@ final class AttributedMemos implements AutoCloseable {
     private <T> Optional<T> refuseAttributed(String reason){
         attributedMemoRefusals++;attributedMemoRefusalReasons.merge(reason,1L,Long::sum);return Optional.empty();
     }
-    private static boolean processorsConfigured(Analyzer.Context context){
-        if(!context.binarySources().isEmpty())return true;
-        for(String option:context.compilerOptions()){
-            if(option.equals("-processor")||option.startsWith("-processorpath")||option.startsWith("--processor-path")
-                    ||option.startsWith("--processor-module-path")||option.equals("-proc:full")||option.equals("-proc:only")
-                    ||option.startsWith("-A"))return true;
-        }
-        return context.warnings().stream().anyMatch(warning->warning.contains("processor")||warning.contains("lombok"));
-    }
     /** Platform identity from content only: the JDK location is not part of semantic meaning (§103). */
     private Object platformIdentity()throws Exception{
         String configured=analyzer.platformIdentity();
@@ -64,21 +55,102 @@ final class AttributedMemos implements AutoCloseable {
     private Optional<SemanticMemoStore.StaticKey> attributedStaticKey(Path file,String sourceHash,LogicalSources logical)throws Exception{
         if(attributedMemos==null||context()==null)return Optional.empty();
         if(!context().preciseSourceRoots())return refuseAttributed("imprecise-source-roots");
-        if(Analyzer.hasUnprovenPathOptions(context()))return refuseAttributed("path-options");
-        if(processorsConfigured(context()))return refuseAttributed("annotation-processors");
         var source=logical.logical(file);if(source.isEmpty())return refuseAttributed("non-logical-source");
         for(Path root:context().sources())if(logical.logical(root.resolve("x.java")).isEmpty())return refuseAttributed("non-logical-source-root");
-        Hash256 classpath;
-        if(context().classpath().isEmpty())classpath=ClasspathSequence.empty().identity();
-        else{
-            var sequence=shared("classpath",analyzer::preciseClasspathSequence);
-            if(sequence.isEmpty())return refuseAttributed("classpath-unproven");
-            classpath=sequence.get().identity();
-        }
+        StaticInputs.Binding statics=shared("static-inputs",()->staticInputs(logical));
+        if(statics.refused())return refuseAttributed(statics.refusal());
         var classpathContext=Analyzer.classpathContext(context());
         var roots=logical.roots().stream().map(LogicalSources.Root::logical).sorted().toList();
         return Optional.of(SemanticMemoStore.StaticKey.of(ATTRIBUTED,source.get(),sourceHash,context().gav(),classpathContext.scope(),
-                context().release(),context().compilerOptions(),platformIdentity(),classpath,roots));
+                context().release(),statics.value(),platformIdentity(),roots));
+    }
+    /** The analyzer's own processor class output: its units are bound one by one through their binary P_diag. */
+    private boolean ownProcessorOutput(Path entry){
+        String normalized=entry.toAbsolutePath().normalize().toString();
+        String role=context().coordinates().get("role:"+normalized);
+        return role!=null&&role.startsWith("processor-classes")&&context().gav().equals(context().coordinates().get(normalized));
+    }
+    /**
+     * W6 static inputs: compiler options with path options as logical slots, the annotation processing
+     * binding, the classpath as logical slots with content identities, the units hidden from the
+     * source path in favour of processor class output, and whether a {@code lombok.config} exists
+     * above the reactor root (such a file has no logical identity).
+     */
+    private StaticInputs.Binding staticInputs(LogicalSources logical)throws Exception{
+        var inputs=new StaticInputs(analyzer.inputFiles(),context().coordinates());
+        var options=inputs.options(context().compilerOptions());if(options.refused())return options;
+        var processors=inputs.processors(context().processing(),context().compilerOptions());if(processors.refused())return processors;
+        var classpath=inputs.slots(context().classpath().stream().filter(entry->!ownProcessorOutput(entry)).toList());
+        if(classpath.refused())return classpath;
+        var hidden=new TreeSet<String>();
+        for(Path unit:context().binarySources()){
+            var id=logical.logical(unit);if(id.isEmpty())return StaticInputs.Binding.refuse("non-logical-binary-source");hidden.add(id.get());
+        }
+        boolean outsideConfig=false;
+        if(lombok()){var top=reactorRoot();if(top==null)return StaticInputs.Binding.refuse("lombok-config-unbound");
+            for(Path current=top.getParent();current!=null;current=current.getParent())if(Files.exists(current.resolve("lombok.config")))outsideConfig=true;
+            if(outsideConfig)return StaticInputs.Binding.refuse("lombok-config-outside-reactor");}
+        return StaticInputs.Binding.of(List.of(options.value(),processors.value(),classpath.value(),List.copyOf(hidden)));
+    }
+    private boolean lombok(){
+        var processing=context().processing();
+        return processing.enabled()&&processing.mode().equals("full");
+    }
+    private boolean jpaXml()throws Exception{
+        var processing=context().processing();if(!processing.enabled())return false;
+        for(String processor:StaticInputs.processorClasses(processing.path(),processing.names()))
+            if(ProcessorAllowlist.entry(processor).map(entry->entry.input()==ProcessorAllowlist.ExtraInput.JPA_XML).orElse(false))return true;
+        return false;
+    }
+    /** The outermost module directory of the reactor: the shortest coordinates directory that contains a source root. */
+    private Path reactorRoot(){
+        Path best=null;
+        for(var entry:context().coordinates().entrySet()){
+            if(entry.getKey().contains("://")||entry.getKey().startsWith("role:"))continue;
+            Path candidate;try{candidate=Path.of(entry.getKey()).toAbsolutePath().normalize();}catch(Exception invalid){continue;}
+            boolean contains=false;for(Path root:context().sources())if(root.toAbsolutePath().normalize().startsWith(candidate)&&!root.toAbsolutePath().normalize().equals(candidate))contains=true;
+            if(contains&&(best==null||candidate.getNameCount()<best.getNameCount()))best=candidate;
+        }
+        return best;
+    }
+    /**
+     * Declared processor resources of one unit as {@code config:<gav>|<path from the reactor root>}:
+     * {@code lombok.config} in every directory from the unit's up to the reactor root (content, or
+     * established absence), and the module's JPA XML mappings for the Hibernate metamodel.
+     */
+    private Optional<TreeMap<QueryProof.Key,Hash256>> processorResources(Path file,LogicalSources logical)throws Exception{
+        var result=new TreeMap<QueryProof.Key,Hash256>();
+        if(!lombok()&&!jpaXml())return Optional.of(result);
+        Path top=reactorRoot();if(top==null)return refuseAttributed("processor-resources-unbound");
+        String topGav=context().coordinates().get(top.toString());if(topGav==null)return refuseAttributed("processor-resources-unbound");
+        var files=new ArrayList<Path>();
+        if(lombok())for(Path current=file.getParent();current!=null&&current.startsWith(top);current=current.getParent())files.add(current.resolve("lombok.config"));
+        if(jpaXml()){
+            var root=logical.roots().stream().filter(candidate->file.startsWith(candidate.path())).findFirst().orElse(null);
+            if(root==null)return refuseAttributed("processor-resources-unbound");
+            Path module=root.path();for(int i=0;i<Path.of(root.role()).getNameCount()&&module!=null;i++)module=module.getParent();
+            if(module==null)return refuseAttributed("processor-resources-unbound");
+            files.add(module.resolve("src/main/resources/META-INF/persistence.xml"));files.add(module.resolve("src/main/resources/META-INF/orm.xml"));
+        }
+        for(Path config:files)result.put(new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"config:"+topGav+"|"+top.relativize(config).toString().replace(java.io.File.separatorChar,'/')),configIdentity(config));
+        return Optional.of(result);
+    }
+    private Hash256 configIdentity(Path config)throws Exception{
+        return shared("config:"+config,()->{
+            String hash=analyzer.inputFiles().hash(config);
+            return CanonicalDigestWriter.digest("processor-resource-v1","missing".equals(hash)?"<absent>":hash);
+        });
+    }
+    /** Binary name of a unit from its source-root-relative path. */
+    private static String binaryName(String logical){
+        String relative=logical.substring(logical.lastIndexOf('|')+1);
+        return relative.substring(0,relative.length()-".java".length()).replace('/','.');
+    }
+    /** Current binary P_diag of a unit javac reads from processor class output (one classpath-only task per epoch). */
+    private Optional<Hash256> binaryProjection(Path file,LogicalSources logical)throws Exception{
+        var id=logical.logical(file);if(id.isEmpty()||!id.get().endsWith(".java"))return Optional.empty();
+        BinaryProjections projections=shared("binary-projections",()->new BinaryProjections(context().classpath(),context().compilerOptions()));
+        return projections.projection(binaryName(id.get()));
     }
     /**
      * Shared snapshot of one observation epoch (W5): every unit validated while the compiler inputs
@@ -282,6 +354,7 @@ final class AttributedMemos implements AutoCloseable {
             }
             var diagnostics=(List<?>)((Map<?,?>)envelope.result()).get("diagnostics");
             var negatives=negatives(text,attributed,diagnostics,packageNames,logical);if(negatives.isEmpty())return;
+            var resources=processorResources(file,logical);if(resources.isEmpty())return;negatives.get().putAll(resources.get());
             var problems=new ArrayList<Map<String,Object>>();
             for(var problem:diagnostics){
                 var value=(CompilerPool.Problem)problem;
@@ -436,6 +509,11 @@ final class AttributedMemos implements AutoCloseable {
                             var file=logical.physical(value.substring("logical-source:".length()));
                             return file.isEmpty()?Optional.empty():currentHash(file.get()).map(AttributedMemos::logicalContentIdentity);
                         }
+                        if(value.startsWith("config:")){
+                            Path top=reactorRoot();String prefix=top==null?null:"config:"+context().coordinates().get(top.toString())+"|";
+                            if(prefix==null||!value.startsWith(prefix)||value.contains(".."))return Optional.empty();
+                            return Optional.of(configIdentity(top.resolve(value.substring(prefix.length()))));
+                        }
                         if(value.startsWith("logical-unit:")){
                             var file=logical.physical(value.substring("logical-unit:".length()));
                             return file.isEmpty()?Optional.empty():currentProjection(file.get(),observed).map(AttributedMemos::projectionIdentity);
@@ -508,6 +586,8 @@ final class AttributedMemos implements AutoCloseable {
      */
     private Optional<Hash256> currentProjection(Path file,CompilerInputs.Snapshot observed){
         file=file.toAbsolutePath().normalize();
+        // A unit hidden from the source path is completed from processor class output by every dependant.
+        if(context().binarySources().contains(file))try{return binaryProjection(file,LogicalSources.of(context()));}catch(Exception unreadable){return Optional.empty();}
         var hash=currentHash(file);if(hash.isEmpty())return Optional.empty();
         var known=projections.get(file);
         if(known==null||!known.hash().equals(hash.get())){

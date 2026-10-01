@@ -40,6 +40,20 @@ public final class DiagnosticProjection {
         return new DiagnosticProjection.Encoder(Trees.instance(task),task.getElements()).unit(unit);
     }
 
+    /**
+     * Projection of a unit javac read from class files rather than source: Lombok-processed units are
+     * hidden from the source path and completed from the external processor's class output. The
+     * same function runs in a dependant's task and in a classpath-only task at restore, so both sides
+     * compare the binary view. Package annotations and other top-level types of the source file are
+     * not in a class file; the binary view is the top-level type and its members.
+     */
+    public static Hash256 ofBinary(Elements elements,TypeElement topLevel){
+        var encoder=new DiagnosticProjection.Encoder(null,elements);var parts=new ArrayList<Object>();
+        parts.add(List.of("package",elements.getPackageOf(topLevel).getQualifiedName().toString()));
+        parts.add(encoder.type(topLevel));
+        return CanonicalDigestWriter.digest(DOMAIN+":binary",parts);
+    }
+
     private record Encoder(Trees trees,Elements elements) {
     Hash256 unit(CompilationUnitTree unit){
         var parts=new ArrayList<Object>();

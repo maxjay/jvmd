@@ -107,15 +107,25 @@ class AttributedMemoIntegrationTest {
         }
     }
 
-    @Test void ambientCompilerContextThatCannotBeBoundIsNeverMemoised()throws Exception{
+    @Test void ambientCompilerContextIsBoundIntoTheStaticKeyOrRefusedWithItsReason()throws Exception{
         var memos=new SemanticMemoStore(root.resolve("memo"));
         var project=project("processors");
+        // W6: -A options are bound into the static key, so a different value never reuses a record.
         try(var analyzer=analyzer(project,memos,List.of("--release","25","-Aflag=1"))){
-            diagnostics(analyzer,project.a());diagnostics(analyzer,project.b());
+            diagnostics(analyzer,project.a());diagnostics(analyzer,project.b());analyzer.awaitMemoWrites();
+            assertThat(memo(analyzer,"writes")).isEqualTo(2);
+        }
+        try(var other=analyzer(project,memos,List.of("--release","25","-Aflag=2"))){
+            diagnostics(other,project.b());
+            assertThat(memo(other,"restores")).isZero();
+        }
+        // An option whose input has no logical identity stays refused, with its own reason code.
+        try(var analyzer=analyzer(project,memos,List.of("--release","25","--patch-module","java.base=/tmp/patch"))){
+            diagnostics(analyzer,project.a());analyzer.awaitMemoWrites();
             assertThat(memo(analyzer,"writes")).isZero();
             @SuppressWarnings("unchecked")
             var reasons=(Map<String,Long>)memo(analyzer).get("refusal_reasons");
-            assertThat(reasons).containsKey("annotation-processors");
+            assertThat(reasons).containsKey("path-option:--patch-module");
         }
         // Compiler options are part of the static key: a different release never reuses a record.
         try(var first=analyzer(project,memos)){diagnostics(first,project.a());diagnostics(first,project.b());}

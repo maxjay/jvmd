@@ -311,6 +311,11 @@ public final class Bindings {
                 if(entry.getKey().equals(self))continue;
                 var path=trees.getPath(entry.getValue());
                 if(path!=null)dependencyProjections.put(entry.getKey(),DiagnosticProjection.of(task,path.getCompilationUnit()));
+                else{
+                    // Completed from a class file (a Lombok-processed unit hidden from the source path).
+                    Element top=entry.getValue();while(top.getEnclosingElement() instanceof TypeElement outer)top=outer;
+                    dependencyProjections.put(entry.getKey(),DiagnosticProjection.ofBinary(task.getElements(),(TypeElement)top));
+                }
             }
         }
         return new Snapshot(symbols,List.copyOf(occurrences.values()),List.copyOf(edges),Set.copyOf(dependencies),semanticFacts,

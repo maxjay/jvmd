@@ -122,6 +122,28 @@ class ProcessorBindingTest {
         }
     }
 
+    /**
+     * C4 (corrective pass): {@code lombok.config} is read by the processor inside javac's transaction but
+     * is not in its live input state. An edit after the processor read it and before the capture must not
+     * be bound to the result computed with the old configuration.
+     */
+    @Test void aLombokConfigEditedDuringCaptureIsNotBoundToTheEarlierResult()throws Exception{
+        var checkout=checkout("checkout");var memos=new SemanticMemoStore(root.resolve("memo"));
+        Path x=checkout.sources().resolve("p/X.java").toAbsolutePath().normalize();
+        dev.jvmd.analyzer.ObservationFaults.captureBarrier(file->{
+            if(!file.toAbsolutePath().normalize().equals(x))return;
+            try{Files.writeString(checkout.sources().resolve("p/lombok.config"),"config.stopBubbling = true\n");}
+            catch(java.io.IOException failure){throw new java.io.UncheckedIOException(failure);}
+        });
+        try(var analyzer=analyzer(checkout,memos,lombokProcessing())){
+            diagnose(analyzer,checkout);analyzer.awaitMemoWrites();
+            assertThat(((Map<?,?>)memo(analyzer).get("refusal_reasons")).get("processor-resource-superseded")).as(memo(analyzer).toString()).isEqualTo(1L);
+        }finally{dev.jvmd.analyzer.ObservationFaults.clear();}
+        try(var restarted=analyzer(checkout,memos,lombokProcessing())){
+            assertThat(diagnose(restarted,checkout)).as("X had no record; T's and Y's records hold").contains("p/X.java").doesNotContain("q/Y.java");
+        }
+    }
+
     @Test void processorOutsideTheAllowlistIsRefusedWithItsClassName()throws Exception{
         var checkout=checkout("checkout");var memos=new SemanticMemoStore(root.resolve("memo"));
         var custom=new Processing(true,List.of(lombok()),List.of("com.example.CustomProcessor"),"only");

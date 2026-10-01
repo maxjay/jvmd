@@ -115,25 +115,65 @@ final class AttributedMemos implements AutoCloseable {
         return best;
     }
     /**
-     * Declared processor resources of one unit as {@code config:<gav>|<path from the reactor root>}:
-     * {@code lombok.config} in every directory from the unit's up to the reactor root (content, or
-     * established absence), and the module's JPA XML mappings for the Hibernate metamodel.
+     * The declared processor resource files of one unit: {@code lombok.config} in every directory from
+     * the unit's up to the reactor root, and the module's JPA XML mappings. Empty when unbound.
      */
-    private Optional<TreeMap<QueryProof.Key,Hash256>> processorResources(Path file,LogicalSources logical)throws Exception{
-        var result=new TreeMap<QueryProof.Key,Hash256>();
-        if(!lombok()&&!jpaXml())return Optional.of(result);
-        Path top=reactorRoot();if(top==null)return refuseAttributed("processor-resources-unbound");
-        String topGav=context().coordinates().get(top.toString());if(topGav==null)return refuseAttributed("processor-resources-unbound");
+    private Optional<List<Path>> resourceFiles(Path file,LogicalSources logical,Path top)throws Exception{
         var files=new ArrayList<Path>();
         if(lombok())for(Path current=file.getParent();current!=null&&current.startsWith(top);current=current.getParent())files.add(current.resolve("lombok.config"));
         if(jpaXml()){
             var root=logical.roots().stream().filter(candidate->file.startsWith(candidate.path())).findFirst().orElse(null);
-            if(root==null)return refuseAttributed("processor-resources-unbound");
+            if(root==null)return Optional.empty();
             Path module=root.path();for(int i=0;i<Path.of(root.role()).getNameCount()&&module!=null;i++)module=module.getParent();
-            if(module==null)return refuseAttributed("processor-resources-unbound");
+            if(module==null)return Optional.empty();
             files.add(module.resolve("src/main/resources/META-INF/persistence.xml"));files.add(module.resolve("src/main/resources/META-INF/orm.xml"));
         }
-        for(Path config:files)result.put(new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"config:"+topGav+"|"+top.relativize(config).toString().replace(java.io.File.separatorChar,'/')),configIdentity(config));
+        return Optional.of(files);
+    }
+    /** File stamp: absent, or kind, size, modification and change time and file key. Unreadable throws. */
+    private static String stamp(Path path)throws ObservationFaults.Unavailable{
+        var value=ObservationFaults.attributes(path);if(value==null)return "absent";
+        Object ctime;try{ctime=Files.getAttribute(path,"unix:ctime");}catch(Exception unsupported){ctime="";}
+        return value.isRegularFile()+"|"+value.size()+"|"+value.lastModifiedTime().to(java.util.concurrent.TimeUnit.NANOSECONDS)+"|"+ctime+"|"+value.fileKey();
+    }
+    /**
+     * C4: called on the owner thread immediately before a compiler transaction for {@code file}. The
+     * processor reads its resource files inside the transaction, but they are not part of the live input
+     * state the transaction fence checks, so their stamps are recorded here. A capture binds a resource
+     * only if its stamp is unchanged since then: the processor read exactly the bytes being bound.
+     */
+    void beforeTransaction(Path file,CompilerInputs.Snapshot observed){
+        if(attributedMemos==null||observed==null||context()==null||!(lombok()||jpaXmlQuietly()))return;
+        file=file.toAbsolutePath().normalize();
+        var stamps=new HashMap<Path,String>();
+        try{
+            Path top=reactorRoot();if(top==null)return;
+            var files=resourceFiles(file,LogicalSources.of(context()),top);if(files.isEmpty())return;
+            for(Path config:files.get())stamps.put(config,stamp(config));
+        }catch(Exception unobservable){return;}
+        resourceStamps.put(file,new ResourceStamps(observed,Map.copyOf(stamps)));
+    }
+    private boolean jpaXmlQuietly(){try{return jpaXml();}catch(Exception unknown){return true;}}
+    private record ResourceStamps(CompilerInputs.Snapshot observed,Map<Path,String> stamps) { }
+    private final Map<Path,ResourceStamps> resourceStamps=new HashMap<>();
+    /**
+     * Declared processor resources of one unit as {@code config:<gav>|<path from the reactor root>}:
+     * {@code lombok.config} in every directory from the unit's up to the reactor root (content, or
+     * established absence), and the module's JPA XML mappings for the Hibernate metamodel.
+     */
+    private Optional<TreeMap<QueryProof.Key,Hash256>> processorResources(Path file,LogicalSources logical,CompilerInputs.Snapshot observed)throws Exception{
+        var result=new TreeMap<QueryProof.Key,Hash256>();
+        if(!lombok()&&!jpaXml())return Optional.of(result);
+        Path top=reactorRoot();if(top==null)return refuseAttributed("processor-resources-unbound");
+        String topGav=context().coordinates().get(top.toString());if(topGav==null)return refuseAttributed("processor-resources-unbound");
+        var files=resourceFiles(file,logical,top);if(files.isEmpty())return refuseAttributed("processor-resources-unbound");
+        var before=resourceStamps.remove(file);
+        if(before==null||before.observed()!=observed)return refuseAttributed("processor-resource-unproven");
+        for(Path config:files.get()){
+            String recorded=before.stamps().get(config);
+            if(recorded==null||!recorded.equals(stamp(config)))return refuseAttributed("processor-resource-superseded");
+            result.put(new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"config:"+topGav+"|"+top.relativize(config).toString().replace(java.io.File.separatorChar,'/')),configIdentity(config));
+        }
         return Optional.of(result);
     }
     private Hash256 configIdentity(Path config)throws Exception{
@@ -503,7 +543,7 @@ final class AttributedMemos implements AutoCloseable {
             }
             var diagnostics=(List<?>)((Map<?,?>)envelope.result()).get("diagnostics");
             var negatives=negatives(header,attributed,diagnostics,packageNames,logical,dependencies.keySet());if(negatives.isEmpty())return;
-            var resources=processorResources(file,logical);if(resources.isEmpty())return;negatives.get().putAll(resources.get());
+            var resources=processorResources(file,logical,observed);if(resources.isEmpty())return;negatives.get().putAll(resources.get());
             var reactor=reactorClasses(attributed,packageNames,observed);if(reactor.isEmpty())return;negatives.get().putAll(reactor.get());
             var problems=new ArrayList<Map<String,Object>>();
             for(var problem:diagnostics){

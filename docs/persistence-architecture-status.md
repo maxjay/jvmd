@@ -386,6 +386,12 @@ subject is reported as incorrect or timeout, never as a latency.
 
   The epoch is keyed on both the observed snapshot and the configured context, because a reconfiguration can
   reuse the snapshot object.
+
+  Processor resources (`lombok.config`, JPA XML) are read inside the transaction but are not in its live state,
+  so the fence cannot see them. Their file stamps (size, mtime, ctime, file key, or absence) are recorded on the
+  owner thread just before the compiler transaction (`AttributedMemos.beforeTransaction`). A capture binds a
+  resource only if its stamp is unchanged; otherwise there is no record (`processor-resource-superseded`, or
+  `processor-resource-unproven` when no stamp was recorded).
 - **Projection sufficiency (A4, C5).** `DiagnosticProjectionSufficiencyTest` gains these mutation kinds:
   - overload added (`long`, boxed, fixed arity next to varargs);
   - inherited members (overridden method made final, abstract member added, inherited method removed, field
@@ -417,11 +423,11 @@ subject is reported as incorrect or timeout, never as a latency.
   edits and reverts it (A→B→A), or opens a new buffer in the unit's package (a membership change). Each must
   refuse, and a run with no edit must write. With the fence removed, the three race tests fail and the no-edit
   run still passes.
+- `ProcessorBindingTest.aLombokConfigEditedDuringCaptureIsNotBoundToTheEarlierResult`: `lombok.config` is written
+  at the capture barrier, so the unit has no record and the other units' records hold.
 
 **Still open in stream A**
 
-- Processor-resource race. `lombok.config` and the JPA XML files are not part of the transaction's live state, so
-  an edit to them between javac's read and the capture is not fenced.
 - Processor-dependent sufficiency cases are not in the differential corpus.
 - Relocation with processors that observe physical paths is not re-audited.
 

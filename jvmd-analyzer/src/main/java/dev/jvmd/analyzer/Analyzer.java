@@ -1294,7 +1294,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         compiler.observeSources(relevant);
         var inputs=new ArrayList<CompilerPool.SourceInput>();
         for(var entry:sources.entrySet()){reconcileSemanticRevision(entry.getKey());touch(entry.getKey(),entry.getValue());inputs.add(new CompilerPool.SourceInput(entry.getKey(),entry.getValue()));}
-        var observed=validatedInputs();String stamp=observed.environment().value()+":"+observed.membership().value();
+        var observed=validatedInputs();String stamp=observed.environment().value()+":"+observed.membership().value();for(var input:inputs)attributedMemos.beforeTransaction(input.file(),observed);
         var semanticSnapshots=new LinkedHashMap<Path,SemanticSnapshot>();
         var result=compiler.batchQuery(inputs,2,observed,(task,units,tier)->{
             var snapshots=new LinkedHashMap<Path,Bindings.Snapshot>();var identity=new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources());
@@ -1355,7 +1355,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var cached=restoreDiagnostics(path,sourceHash,observed);
         if(cached!=null){diagnosticFilesReused++;return cached;}
         long computations=bindingComputations;
-        var outcome=bindings(path,text,null,observed);
+        attributedMemos.beforeTransaction(path,observed);var outcome=bindings(path,text,null,observed);
         if(bindingComputations>computations)diagnosticFilesAnalysed++;else diagnosticFilesReused++;
         var warnings=new LinkedHashSet<String>(warnings(outcome.warnings()));
         if(outcome.result()!=null)for(var problem:outcome.diagnostics())if(problem.kind().equals("ERROR")){

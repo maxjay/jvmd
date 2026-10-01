@@ -276,6 +276,7 @@ All workspace methods require `params.session`. Paths are absolute filesystem pa
 | `symbol.semanticTokens` | `path`; optional `limit`, `cursor` | Token data and result ID |
 | `lsp.request` | LSP `method`, LSP `params`, optional client capabilities in `client` | `value`: standard LSP result |
 | `lsp.diagnostics` | File `uri` | `value`: publishDiagnostics parameters |
+| `semantic.impact` | `path`, proposed full `text` | Hypothetical delta, changed proof leaves, affected consumers, files to reconsider; nothing is applied |
 
 Other native methods are mapped in the tool catalog. Most arguments are the tool arguments plus workspace `session`. The exception is native `debug.op`: use workspace `session` and application `run_session`, while the `debug` tool takes application `session`.
 

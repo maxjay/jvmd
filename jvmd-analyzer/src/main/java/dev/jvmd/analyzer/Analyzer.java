@@ -93,7 +93,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         Path home=Path.of(System.getProperty("java.home")).toAbsolutePath().normalize();
         var values=new ArrayList<Object>();
         for(Path path:List.of(home.resolve("release"),home.resolve("lib/modules"),home.resolve("lib/ct.sym")))
-            values.add(List.of(path.toString(),inputFiles.hash(path)));
+            values.add(List.of(home.relativize(path).toString(),inputFiles.hash(path)));
 
         return CompilerInputs.compose("semantic-platform-v1",values);
     }
@@ -1107,7 +1107,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     // Package-private owner state for AttributedMemos (called on the owner thread).
     Context currentContext(){return context;}
     FileStateRegistry inputFiles(){return inputFiles;}
-    Documents documentsState(){return documents;}
+    Documents documentsState(){return documents;}String platformIdentity(){var caches=modules.get(context.generation());return caches==null?null:caches.platformFingerprint;}// location-free JDK content seen at configure
     Dependencies dependencyGraph(){return dependencies;}
     DiagnosticStore diagnosticStore(){return diagnosticStore;}
     Optional<ClasspathSequence> preciseClasspathSequence(){

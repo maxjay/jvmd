@@ -27,6 +27,9 @@ public final class FileStateRegistry {
     private final Map<String,FileObservationJournal.Record> durable=new HashMap<>();
     private long racyWindowNanos=DEFAULT_RACY_WINDOW_NANOS;
     private long restoredRecords,restartReuse,restoreStampMismatches,restoreRacyRejections,journalFailures,lastFlushNanos=System.nanoTime();
+    private DirectoryInventoryJournal directoryJournal;
+    private final Map<String,DirectoryInventoryJournal.Record> restoredDirectories=new HashMap<>(),durableDirectories=new HashMap<>();
+    private long directoryRestartReuse,directoryStampMismatches,directoryRacyRejections;
 
     /**
      * Attach a durable observation journal and restore its valid records as unvalidated candidates.
@@ -41,11 +44,16 @@ public final class FileStateRegistry {
             try{restored.put(Path.of(record.path()),record);durable.put(record.path(),record);}catch(InvalidPathException ignored){}
         }
         restoredRecords=restored.size();
+        directoryJournal=new DirectoryInventoryJournal(journalFile.resolveSibling(journalFile.getFileName()+".dirs"));
+        restoredDirectories.clear();durableDirectories.clear();
+        restoredDirectories.putAll(directoryJournal.load());durableDirectories.putAll(restoredDirectories);
     }
     /** Testing/diagnostic hook: the effective granularity window for restored observations. */
     public synchronized void racyWindowNanos(long value){if(value<0)throw new IllegalArgumentException("window");racyWindowNanos=value;}
     /** Best-effort durable publication of observations made since the last flush. */
     public synchronized void flushObservations(){
+        if(directoryJournal!=null&&directoryJournal.pending()>0)
+            try{directoryJournal.flush(durableDirectories);}catch(IOException|RuntimeException failure){journalFailures++;}
         if(journal==null||journal.pending()==0)return;
         try{journal.flush(durable);}catch(IOException|RuntimeException failure){journalFailures++;}
         lastFlushNanos=System.nanoTime();
@@ -210,6 +218,7 @@ public final class FileStateRegistry {
         catch(UnsupportedOperationException|IllegalArgumentException unsupported){before=null;}
         if(before!=null&&!Boolean.TRUE.equals(before.get("isDirectory"))){state.missing();state.stamp=before;return state.members;}
         boolean changed=before==null||!before.equals(state.stamp);
+        if(changed&&state.stamp==null&&before!=null&&restoreDirectory(root,followLinks,before,state))changed=false;
         if(changed){
             enumerations++;RequestScope.count("inventories",1);
             try(var stream=Files.list(root)){state.children=stream.sorted().toList();}
@@ -235,6 +244,7 @@ public final class FileStateRegistry {
                 if(Files.isDirectory(child,options))state.directories.computeIfAbsent(child,ignored->new Directory());
                 else state.directories.remove(child);
             }
+            persistDirectory(root,followLinks,before,state);
         }
         List<Path> values=null;
         int offset=0;
@@ -258,6 +268,43 @@ public final class FileStateRegistry {
         else if(offset!=state.members.size())state.members=List.copyOf(state.members.subList(0,offset));
         return state.members;
     }
+    private static String directoryKey(Path root,boolean followLinks){return (followLinks?"L:":"N:")+root;}
+    /**
+     * Reuse a journaled entry list instead of enumerating when the directory's stamp equals the
+     * recorded one and the observation was outside the racy window (§94).
+     */
+    private boolean restoreDirectory(Path root,boolean followLinks,Map<String,Object> stamp,Directory state){
+        var record=restoredDirectories.remove(directoryKey(root,followLinks));if(record==null)return false;
+        if(!(stamp.get("size") instanceof Number size)||number(size)!=record.size()||nanos(stamp.get("lastModifiedTime"))!=record.modifiedNanos()
+                ||nanos(stamp.get("ctime"))!=record.changedNanos()||!(stamp.get("ino") instanceof Number inode)||number(inode)!=record.inode()){
+            directoryStampMismatches++;RequestScope.count("restored_directory_mismatches",1);return false;
+        }
+        if(record.observedAtNanos()-Math.max(record.modifiedNanos(),record.changedNanos())<=racyWindowNanos){directoryRacyRejections++;return false;}
+        var children=new ArrayList<Path>();state.directories.clear();state.links.clear();
+        for(var entry:record.entries()){
+            Path child=root.resolve(entry.name());children.add(child);
+            switch(entry.kind()){
+                case DIRECTORY -> state.directories.put(child,new Directory());
+                case LINK -> state.links.add(child);
+                case FILE -> { }
+            }
+        }
+        state.children=List.copyOf(children);state.stamp=stamp;directoryRestartReuse++;RequestScope.count("restart_directory_reuse",1);
+        return true;
+    }
+    private void persistDirectory(Path root,boolean followLinks,Map<String,Object> stamp,Directory state){
+        if(directoryJournal==null||stamp==null||!(stamp.get("size") instanceof Number)||!(stamp.get("ino") instanceof Number)
+                ||!(stamp.get("ctime") instanceof java.nio.file.attribute.FileTime))return;
+        var entries=new ArrayList<DirectoryInventoryJournal.Entry>();
+        for(Path child:state.children)entries.add(new DirectoryInventoryJournal.Entry(child.getFileName().toString(),
+                state.links.contains(child)?DirectoryInventoryJournal.Kind.LINK:state.directories.containsKey(child)?DirectoryInventoryJournal.Kind.DIRECTORY:DirectoryInventoryJournal.Kind.FILE));
+        var now=java.time.Instant.now();
+        var record=new DirectoryInventoryJournal.Record(directoryKey(root,followLinks),number(stamp.get("size")),nanos(stamp.get("lastModifiedTime")),
+                nanos(stamp.get("ctime")),number(stamp.get("ino")),Math.multiplyExact(now.getEpochSecond(),1_000_000_000L)+now.getNano(),entries);
+        durableDirectories.put(record.path(),record);while(durableDirectories.size()>65536)durableDirectories.remove(durableDirectories.keySet().iterator().next());
+        directoryJournal.append(record);
+        if(directoryJournal.pending()>=512||System.nanoTime()-lastFlushNanos>1_000_000_000L)flushObservations();
+    }
     /** Startup/configuration uncertainty or overflow discards observations, never accepted semantic state. */
     public synchronized void reconcile(){files.clear();inventories.clear();restored.clear();}
 
@@ -270,6 +317,8 @@ public final class FileStateRegistry {
         result.put("restored_observations", restoredRecords);result.put("restored_pending", restored.size());
         result.put("restart_hash_reuse", restartReuse);result.put("restored_stamp_mismatches", restoreStampMismatches);
         result.put("restored_racy_rejections", restoreRacyRejections);result.put("journal_failures", journalFailures);
+        result.put("restart_directory_reuse", directoryRestartReuse);result.put("restored_directory_mismatches", directoryStampMismatches);
+        result.put("restored_directory_racy_rejections", directoryRacyRejections);
         if(journal!=null)result.put("journal", journal.status());
         return Collections.unmodifiableMap(result);
     }

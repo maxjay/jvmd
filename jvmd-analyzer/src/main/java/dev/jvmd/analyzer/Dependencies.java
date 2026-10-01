@@ -29,8 +29,9 @@ public final class Dependencies {
     }
 
     public Set<Path> check(Path file)throws Exception{
-        var changed=new LinkedHashSet<Path>();var visit=new ArrayDeque<Path>();var seen=new HashSet<Path>();visit.add(file.toAbsolutePath().normalize());
-        while(!visit.isEmpty()){Path path=visit.removeFirst();if(!seen.add(path))continue;changed.addAll(observe(path,hash(path)));visit.addAll(semantic.dependencies(path));}
+        // The requested file's hash was just recorded from the request's own text; check its dependencies.
+        Path self=file.toAbsolutePath().normalize();var changed=new LinkedHashSet<Path>();var visit=new ArrayDeque<Path>();var seen=new HashSet<Path>();visit.add(self);
+        while(!visit.isEmpty()){Path path=visit.removeFirst();if(!seen.add(path))continue;if(!path.equals(self))changed.addAll(observe(path,hash(path)));visit.addAll(semantic.dependencies(path));}
         return changed;
     }
     public Set<Path> changed(Path path){

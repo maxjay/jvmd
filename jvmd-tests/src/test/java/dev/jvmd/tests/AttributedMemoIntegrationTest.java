@@ -73,7 +73,7 @@ class AttributedMemoIntegrationTest {
         try(var moved=analyzer(relocated,memos)){
             var problems=diagnostics(moved,relocated.b());
             assertThat(shape(problems)).isEqualTo(expected);
-            assertThat(problems).allMatch(problem->problem.file()==null||problem.file().equals(relocated.b().toString()));
+            assertThat(problems).allMatch(problem->problem.file()==null||problem.file().equals(relocated.b().toUri().toString()));
             assertThat(queries(moved)).isZero();
         }
     }

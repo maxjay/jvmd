@@ -23,6 +23,8 @@ public final class Application implements AutoCloseable {
     private final Dispatcher dispatcher = new Dispatcher(sessions, new Metrics());
     private final Config config;
     private final FileStateRegistry classpathFiles=FileStateRegistry.shared();
+    private final dev.jvmd.index.SemanticMemoStore localMemos;
+    private final dev.jvmd.analyzer.SourceNamespaces sourceNamespaces;
     private volatile MavenResolver resolver;
     private volatile dev.jvmd.runtime.JavaRuntime.Selection debuggeeRuntime;
     private volatile java.util.concurrent.CompletableFuture<IndexService> index;
@@ -35,6 +37,9 @@ public final class Application implements AutoCloseable {
         // Restart reuse of unchanged content hashes (§90). Restored observations are validated
         // against current file stamps before use; the journal is never semantic authority.
         classpathFiles.persistence(config.stateDir().resolve("file-observations-v1.bin"));
+        // LOCAL semantic memo store (§68): independently validated records; loss is only a miss.
+        localMemos=new dev.jvmd.index.SemanticMemoStore(config.stateDir().resolve("local-memo-v1"));
+        sourceNamespaces=new dev.jvmd.analyzer.SourceNamespaces(localMemos);
         if (config.indexOnStart()) initializeIndex(true);
         dispatcher.status("index", () -> {
             try { return index == null ? java.util.Map.of("phase", "disabled") : index.isDone() ? index.join().status() : java.util.Map.of("phase", "starting"); }
@@ -43,6 +48,7 @@ public final class Application implements AutoCloseable {
         dispatcher.status("aot_cache", () -> AotStatus.runtime(Path.of(System.getProperty("jvmd.aot.log", config.stateDir().resolve("aot.log").toString()))));
         dispatcher.status("resolver", () -> resolver == null ? java.util.Map.of("maven_major", config.mavenMajor(), "initialized", false) : resolver.status());
         dispatcher.status("classpath_files",classpathFiles::status);
+        dispatcher.status("source_namespaces",sourceNamespaces::status);
         dispatcher.register("session.open", (_, p) -> {
             awaitReady();
             var session = sessions.open(Path.of(Dispatcher.required(p, "root")));
@@ -461,8 +467,12 @@ public final class Application implements AutoCloseable {
         String wanted=byPath?"":Dispatcher.required(params,"package");
         if(!byPath){var parsed=NamePath.parse(wanted);if(parsed.identity()||parsed.parameters()!=null||wanted.contains("/"))throw RpcException.invalid("Invalid package");}
         var symbols=new ArrayList<Map<String,Object>>();var warnings=new LinkedHashSet<String>();int tier=1;
+        var mode=dev.jvmd.analyzer.SourceNamespaces.LanguageMode.of(List.of());
         for(Path file:sourceFiles(session)){
             if(path!=null&&!file.startsWith(path))continue;int page=0;
+            // S0 is a syntactic projection sufficient to exclude a unit from a package: a COMPLETE
+            // parse whose package differs declares nothing there, so it needs no attribution.
+            if(!byPath&&sourceNamespaces.namespace(documents(session).text(file),mode).provablyOutside(wanted))continue;
             do{
                 var outline=analyzer(session,file).overview(file,documents(session).text(file),depth,1000,page);tier=Math.min(tier,outline.tier());warnings.addAll(outline.warnings());
                 for(var symbol:(List<Map<String,Object>>)((Map<?,?>)outline.result()).get("symbols")){

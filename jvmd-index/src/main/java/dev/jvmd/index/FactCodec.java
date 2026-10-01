@@ -10,9 +10,38 @@ import java.util.*;
 public final class FactCodec {
     private FactCodec() {}
     public static byte[] encode(Object value)throws IOException {
+        var bytes=new ByteArrayOutputStream(256);
+        try(var out=new DataOutputStream(bytes)){out.writeInt(0x4a564601);writeValue(out,value,new HashMap<>());}
+        return bytes.toByteArray();
+    }
+    /** The pre-corrective-pass encoder (every value through a Jackson tree); kept to prove {@link #encode} byte-identical. */
+    static byte[] encodeThroughTree(Object value)throws IOException {
         var bytes=new ByteArrayOutputStream();
         try(var out=new DataOutputStream(bytes)){out.writeInt(0x4a564601);write(out,Json.MAPPER.valueToTree(value),new HashMap<>());}
         return bytes.toByteArray();
+    }
+    /**
+     * Writes maps, lists, strings, numbers and booleans directly, exactly as their Jackson tree would be
+     * written; any other value (records, paths, enums) goes through its tree as before. This avoids
+     * building a tree for every fact of a workspace bindings build (corrective pass, E3).
+     */
+    private static void writeValue(DataOutputStream out,Object value,Map<String,Integer> strings)throws IOException {
+        switch(value){
+            case null -> out.writeByte(0);
+            case String text -> {out.writeByte(1);string(out,text,strings);}
+            case Boolean bool -> out.writeByte(bool?2:3);
+            case Integer number -> {out.writeByte(4);out.writeLong(number);}
+            case Long number -> {out.writeByte(4);out.writeLong(number);}
+            case Short number -> {out.writeByte(4);out.writeLong(number);}
+            case Byte number -> {out.writeByte(4);out.writeLong(number);}
+            case Double number -> {out.writeByte(5);out.writeDouble(number);}
+            case Map<?,?> map when map.keySet().stream().allMatch(key->key instanceof String) -> {
+                out.writeByte(7);out.writeInt(map.size());
+                for(var entry:map.entrySet()){string(out,(String)entry.getKey(),strings);writeValue(out,entry.getValue(),strings);}
+            }
+            case List<?> list -> {out.writeByte(6);out.writeInt(list.size());for(var child:list)writeValue(out,child,strings);}
+            default -> write(out,Json.MAPPER.valueToTree(value),strings);
+        }
     }
     public static <T> T decode(byte[] bytes,Class<T> type)throws IOException {
         try(var in=new DataInputStream(new ByteArrayInputStream(bytes))){

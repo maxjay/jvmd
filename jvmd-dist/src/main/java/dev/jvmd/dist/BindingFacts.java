@@ -37,6 +37,7 @@ final class BindingFacts implements AutoCloseable {
             String owner=Hashing.sha256(file.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
             var declarations=new HashSet<String>();
             for(var o:graph.occurrences())if(o.role().equals("declaration")&&Path.of(o.file()).toAbsolutePath().normalize().equals(file))declarations.add(o.scip());
+            var declaredHere=declarations;
             int index=0;
             for(var entry:graph.symbols().entrySet()){
                 var symbol=entry.getValue();boolean declaration=declarations.contains(entry.getKey())&&!LOCALS.contains(symbol.get("kind"));
@@ -45,10 +46,15 @@ final class BindingFacts implements AutoCloseable {
                 for(String field:List.of("name_path","qualified_name_path","name","fqn")){
                     String value=Objects.toString(symbol.get(field),"");if(!value.isBlank())postings.add("name/"+KeyedFacts.part(value));
                 }
-                postings.add("leaf/"+KeyedFacts.part(Objects.toString(symbol.get("name"),"")));
-                for(String field:List.of("name","name_path")){
-                    String value=Objects.toString(symbol.get(field),"").toLowerCase(Locale.ROOT);
-                    for(int width=1;width<=Math.min(3,value.length());width++)for(int offset=0;offset+width<=value.length();offset++)postings.add("gram/"+KeyedFacts.part(value.substring(offset,offset+width)));
+                // Search postings (leaf, substring grams) only for symbols this file declares: find returns
+                // a symbol's declaring row, so rows of symbols merely referenced here can never match
+                // (corrective pass, E3: they were most of a workspace build's posting keys).
+                if(declaredHere.contains(entry.getKey())){
+                    postings.add("leaf/"+KeyedFacts.part(Objects.toString(symbol.get("name"),"")));
+                    for(String field:List.of("name","name_path")){
+                        String value=Objects.toString(symbol.get(field),"").toLowerCase(Locale.ROOT);
+                        for(int width=1;width<=Math.min(3,value.length());width++)for(int offset=0;offset+width<=value.length();offset++)postings.add("gram/"+KeyedFacts.part(value.substring(offset,offset+width)));
+                    }
                 }
                 rows.add(new KeyedFacts.Fact(owner+"/s/"+String.format(Locale.ROOT,"%08x",index++),FactCodec.encode(symbol),postings));
             }

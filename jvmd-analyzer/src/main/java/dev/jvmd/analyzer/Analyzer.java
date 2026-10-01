@@ -68,7 +68,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         final List<String> warnings;
         CompletionAdvanceFailure(List<String> warnings){super(String.join("; ",warnings));this.warnings=List.copyOf(warnings);}
     }
-    private LinkedHashMap<String,Cached> focused=new LinkedHashMap<>(32,.75f,true);
+    private LinkedHashMap<String,Cached> focused=new LinkedHashMap<>(32,.75f,true);private final ArrayDeque<String> batchFocused=new ArrayDeque<>();private static final int BATCH_RETAINED=8;
     private final Dependencies dependencies=new Dependencies();
     private final Set<Path> settlingPrerequisites=new HashSet<>();
     private final SourceProofEvidence sourceProofEvidence=new SourceProofEvidence();
@@ -1325,8 +1325,9 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             var snapshot=result.result()==null?null:result.result().get(file);
             var outcome=new CompilerPool.Outcome<>(result.tier(),snapshot,problems,result.warnings());values.put(file,outcome);
             if(snapshot!=null&&result.tier()==2&&result.warnings().isEmpty()){
-                focused.put(file+":"+hash+":"+stamp+":full",new Cached(file,hash,stamp,0,input.text().length(),List.of(),outcome));
-                while(focused.size()>32)focused.remove(focused.keySet().iterator().next());
+                // E3: a workspace build retains only its last BATCH_RETAINED full outcomes per cache (the rest live as detached facts).
+                String key=file+":"+hash+":"+stamp+":full";focused.put(key,new Cached(file,hash,stamp,0,input.text().length(),List.of(),outcome));batchFocused.addLast(key);
+                while(batchFocused.size()>BATCH_RETAINED)focused.remove(batchFocused.removeFirst());while(focused.size()>32)focused.remove(focused.keySet().iterator().next());
                 diagnosticStore.put(file,hash,context.generation(),diagnosticStamp(file,observed),envelope,
                         apiFingerprint(file),snapshot.dependencies(),contribution(file));
                 attributedMemos.memoize(file,hash,envelope,contribution(file),snapshot,observed);

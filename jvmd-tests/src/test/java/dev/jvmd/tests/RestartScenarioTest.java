@@ -61,10 +61,12 @@ class RestartScenarioTest {
 
     @Test void a1NoChangeRestartRestoresEveryUnitWithoutJavac()throws Exception{
         var files=new ArrayList<Path>();
-        for(var topology:SyntheticProjects.Topology.values())
-            for(var unit:SyntheticProjects.generate(topology,UNITS/3,SyntheticProjects.SEED))files.add(SyntheticProjects.write(sources(),List.of(unit)).values().iterator().next());
+        var topologies=SyntheticProjects.Topology.values();
+        // The three topologies together hold exactly UNITS units.
+        for(int i=0;i<topologies.length;i++)
+            for(var unit:SyntheticProjects.generate(topologies[i],UNITS/topologies.length+(i<UNITS%topologies.length?1:0),SyntheticProjects.SEED))files.add(SyntheticProjects.write(sources(),List.of(unit)).values().iterator().next());
         var seed=session(files);
-        assertThat(seed.javac()).isEqualTo(files.size());
+        assertThat(files).hasSize(UNITS);assertThat(seed.javac()).isEqualTo(files.size());
         var restart=session(files);
         assertThat(restart.javac()).as("A1 javac").isZero();
         assertThat(restart.restores()).as("A1 restores").isEqualTo(files.size());

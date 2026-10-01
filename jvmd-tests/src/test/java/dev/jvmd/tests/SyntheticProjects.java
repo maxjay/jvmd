@@ -45,10 +45,11 @@ final class SyntheticProjects {
                 }
             }
             case LAYERED -> {
-                int perLayer=Math.max(1,units/10);
-                for(int layer=0;layer<10;layer++)for(int i=0;i<perLayer;i++){
+                // Exactly units units: the remainder goes one each to the first layers.
+                var size=new int[10];for(int layer=0;layer<10;layer++)size[layer]=units/10+(layer<units%10?1:0);
+                for(int layer=0;layer<10;layer++)for(int i=0;i<size[layer];i++){
                     var calls=new TreeSet<String>();
-                    if(layer>0)for(int k=0;k<2;k++)calls.add("l"+(layer-1)+".L"+(layer-1)+"_"+random.nextInt(perLayer));
+                    if(layer>0&&size[layer-1]>0)for(int k=0;k<2;k++)calls.add("l"+(layer-1)+".L"+(layer-1)+"_"+random.nextInt(size[layer-1]));
                     result.add(new Unit("l"+layer,"L"+layer+"_"+i,List.copyOf(calls)));
                 }
             }

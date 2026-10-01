@@ -1,5 +1,9 @@
 ## Restart attribution (Phase 10)
 
+> Not headline evidence: this is the first pass's 160-unit linear chain, the topology the strict task rules out as
+> headline evidence. See [restart-scenarios.md](restart-scenarios.md), [warm-restart-scaling.md](warm-restart-scaling.md)
+> and [real-project.md](real-project.md).
+
 | Metric | cold (empty state) | warm (racy window) | warm restart | relocated checkout |
 |---|---:|---:|---:|---:|
 | persisted observation load | 1.3 ms | 2.1 ms | 2.0 ms | 1.3 ms |

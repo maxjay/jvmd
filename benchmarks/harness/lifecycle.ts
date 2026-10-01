@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {readFileSync,rmSync} from "node:fs";
+import {existsSync,readFileSync,rmSync} from "node:fs";
 import path from "node:path";
 import {pathToFileURL} from "node:url";
 import {ScenarioContext} from "./ScenarioContext.ts";
@@ -65,6 +65,18 @@ async function queries(c:ScenarioContext){
   await step(()=>observeDiagnostics(c,c.file(HELPER).uri,changed.trigger,errorAt("benchmarkMissing"),since,"changed_diagnostic"));
 }
 
+/** The daemon log's tail and every thread stack that runs JVMD code: enough to read a hang or a failed start. */
+export function failureEvidence(log:string,dump?:string,adapter?:string){
+  const out:string[]=[];
+  if(existsSync(log))out.push("--- daemon.log (tail) ---",...readFileSync(log,"utf8").split("\n").slice(-80));
+  if(adapter&&existsSync(adapter))out.push("--- adapter stderr (tail) ---",...readFileSync(adapter,"utf8").split("\n").slice(-30));
+  if(dump&&existsSync(dump)){
+    out.push("--- JVMD threads ---");
+    for(const stack of readFileSync(dump,"utf8").split(/\n\s*\n/u))if(stack.includes("dev.jvmd."))out.push(...stack.split("\n").slice(0,40),"");
+  }
+  return out.join("\n");
+}
+
 export async function runLifecycle(o:LifecycleOptions){
   settingsXml(o.repository,path.join(o.repository,"settings.xml"));
   rmSync(o.state,{recursive:true,force:true});
@@ -120,6 +132,8 @@ export async function runLifecycle(o:LifecycleOptions){
     errors.push(String(error).split("\n")[0]);
     // A JVMD that stopped answering leaves its thread dump in the run output, so the hang can be read without a rerun.
     if(daemon?.alive())try{phases.thread_dump=daemon.threadDump(o.javaHome,path.join(o.state,"jvmd-threads.txt"));}catch{/* best effort */}
+    // Artifacts are not always reachable from where a failure is read: put the evidence in the job log too.
+    try{console.error(failureEvidence(path.join(o.state,"jvmd","daemon.log"),phases.thread_dump,path.join(o.state,"server","stderr.log")));}catch{/* best effort */}
   }
   finally{
     if(running)await running.stop().catch(()=>undefined);

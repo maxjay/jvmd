@@ -156,13 +156,13 @@ Tick each box when it is done and green. Each phase is **one commit** and builds
   There is one intentional divergence, and the test excludes it: an identity object passed to the `LiveStateTree`/`CompilerInputs` encoders used to be hashed as its hex text. It is now tag `0x04`, so it no longer equals its own hex string.
 
 ### P1: Primitive (`Xxh3`, `Id128`), nothing else
-- [ ] `jvmd-core/.../Xxh3.java`: `static Id128 hash128(byte[] b, int off, int len)`. Port it from the reference `xxhash.h` (`XXH3_128bits`, scalar path) covering all four length classes: 0–16, 17–128, 129–240, and >240 (stripes/accumulate/scramble/merge). Use the default 192-byte secret.
+- [x] `jvmd-core/.../Xxh3.java`: `static Id128 hash128(byte[] b, int off, int len)`. Port it from the reference `xxhash.h` (`XXH3_128bits`, scalar path) covering all four length classes: 0–16, 17–128, 129–240, and >240 (stripes/accumulate/scramble/merge). Use the default 192-byte secret.
   - Read input with little-endian `VarHandle`s.
   - Use `Math.unsignedMultiplyHigh` for the 64×64→128 multiply.
   - No allocation besides the returned `Id128`. The >240 path uses an 8-`long` accumulator on the stack: declare 8 locals or a `long[8]` (one allocation is acceptable for >240 only).
-- [ ] `jvmd-core/.../Id128.java` as specified in §2.2.
-- [ ] `Xxh3VectorsTest`: all vectors in §6, plus the requirement that `Id128.fromHex(x.hex()).equals(x)` and that `fromHex` rejects 64-char input.
-- [ ] Microbenchmark sanity (JMH not required; a loop in a test tagged `perf` is enough): hashing 64 bytes must not allocate beyond the result. Check with `ThreadMXBean.getThreadAllocatedBytes` over 1M iterations; the budget is under 40 bytes/op.
+- [x] `jvmd-core/.../Id128.java` as specified in §2.2.
+- [x] `Xxh3VectorsTest`: all vectors in §6, plus the requirement that `Id128.fromHex(x.hex()).equals(x)` and that `fromHex` rejects 64-char input.
+- [x] Microbenchmark sanity (JMH not required; a loop in a test tagged `perf` is enough): hashing 64 bytes must not allocate beyond the result. Check with `ThreadMXBean.getThreadAllocatedBytes` over 1M iterations; the budget is under 40 bytes/op.
 
 ### P2: One encoder; `Hash256` → `Id128`
 - [ ] `IdentityEncoder` per §2.3–2.4, with both front doors. Add a test that both produce identical results on the oracle corpus.
@@ -286,8 +286,8 @@ The lengths cover every branch boundary: 0, 1–3, 4–8, 9–16, 17–128, 129�
 
 | Phase | Commit | Date | Notes (one line) |
 |---|---|---|---|
-| P0 | see git log | 2026-10-01 | In-repo harness (211 jars + resident + live tree); oracle over 3 legacy encoders, 10k samples each. |
-| P1 | | | |
+| P0 | d85e7ba | 2026-10-01 | In-repo harness (211 jars + resident + live tree); oracle over 3 legacy encoders, 10k samples each. |
+| P1 | see git log | 2026-10-01 | All 28 vectors + 2101 random lengths vs Python xxhash agree; 64-byte hash allocates only the result. |
 | P2 | | | |
 | P3 | | | |
 | P4 | | | |

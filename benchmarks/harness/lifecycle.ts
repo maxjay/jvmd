@@ -6,7 +6,7 @@ import {ScenarioContext} from "./ScenarioContext.ts";
 import {launch,JvmdDaemon,type Launch} from "./launch.ts";
 import {settingsXml,type Pom} from "./maven.ts";
 import {type Fixture} from "./fixture.ts";
-import {position,range,exactLocations,hoverOracle,completionOracle} from "./oracles.ts";
+import {position,range,exactLocations,locations,hoverOracle,completionOracle} from "./oracles.ts";
 import {observeDiagnostics,errorAt} from "./diagnostics.ts";
 
 /**
@@ -100,7 +100,7 @@ export async function runLifecycle(o:LifecycleOptions){
     const project=readFileSync(c.file(PROJECT).path,"utf8"),target=[{uri:c.file(PROJECT).uri,range:range(project,"addAttachedArtifact",project.indexOf("public void addAttachedArtifact(")+"public void ".length)}];
     for(const deadline=performance.now()+o.openTimeout;;){
       const r=await c.client.request("textDocument/definition",params,o.openTimeout);
-      try{exactLocations(r.result,target);break;}catch(error){if(performance.now()>deadline)throw new Error("workspace never answered correctly: "+String(error).split("\n")[0]);}
+      try{exactLocations(r.result,target);break;}catch(error){if(performance.now()>deadline)throw new Error("workspace never answered correctly: "+String(error).split("\n")[0]+"; answered "+JSON.stringify(locations(r.result))+", expected "+JSON.stringify(target));}
       await new Promise(resolve=>setTimeout(resolve,250));
     }
     c.close(HELPER);c.operations=operations;c.timeout=o.timeout;return {c,ms:performance.now()-started};
@@ -113,6 +113,9 @@ export async function runLifecycle(o:LifecycleOptions){
     }
     let {c,ms}=await open(false,"open");phases.open_ms=ms;
     await c.open(PROJECT);await c.open(HELPER);await queries(c);phases.rss_bytes=rssBytes(pid());
+    // The retained session keeps unsaved buffers across a reconnect, so close the edited documents (as an editor
+    // closing its tabs without saving) before disconnecting: the reconnect's oracle reads the files on disk.
+    for(const name of [PROJECT,HELPER])c.close(name);
     await running!.stop({closeSession:false});running=undefined;
     if(o.server==="jvmd"){
       // Reconnect, as when an editor window reopens: the daemon and its session are still warm.

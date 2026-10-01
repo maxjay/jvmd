@@ -754,6 +754,31 @@ persisted state are different quantities and are not added.
 Observed in that run: restart READY at 1.1 s, workspace reopened at 9.5 s, correct definition at 11.4 s
 (request 1.8 s), completion at 12.0 s. All oracles passed except `documentSymbol` (64 KiB, inherited).
 
+### Reset checkpoint 3: the apache/maven lifecycle harness
+
+The before/after lifecycle leg on `994c933` (job 110527233060) failed in all six runs, on base and head:
+
+| Run | Outcome |
+|---|---|
+| base 1 | reconnect `initialize` timed out (`session.open` queued behind first-use references) |
+| base 2, base 3 | daemon exited during startup |
+| head 1, head 2 | reconnect definition answered in 12 ms but at a different location, until the 600 s open deadline |
+| head 3 | reconnect `initialize` timed out, as base 1 |
+
+`main`'s own benchmarks run (36857728584) fails the same lifecycle the same way as base 1, and a local head run
+fails as head 3. When first-use references finishes in time, head gets one step further than base ever does. The
+remaining failure is a stale oracle in the harness, not a regression:
+
+- `queries()` inserts two lines into `MavenProject.java` (`benchmarkAdded`) and leaves the document open.
+- The adapter then disconnects with the session retained. Since #48 on `main` (`RetainedSessionAttachTest`), a
+  retained session keeps unsaved buffers across a reconnect.
+- The reconnect's oracle reads the target (`addAttachedArtifact`, line 1091) from disk; the retained buffer has
+  it at line 1093.
+
+Harness fix: the lifecycle closes the edited documents before disconnecting, as the memory control does (M18),
+and the failure message now names the location answered as well as the one expected. The inherited
+first-use-references timeout still fails base and head runs that do not finish it in time.
+
 ### Cold construction and first-use references (deferred follow-up)
 
 - First-use references on apache/maven at a 1 GiB heap times out at the 360 s daemon request deadline on B0,

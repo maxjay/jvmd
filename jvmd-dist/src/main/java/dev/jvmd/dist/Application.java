@@ -1096,7 +1096,9 @@ public final class Application implements AutoCloseable {
                 if(closed.get())throw new java.util.concurrent.CancellationException("Application closed during index bootstrap");
                 if(scan){
                     repositoryScanRequested=true;persistedIndexComplete=storage.scanCompleted();
-                    var reconciliation=service.start().whenComplete((_,_)->repositoryReconciledNanos=System.nanoTime());
+                    var started=service;
+                    // Only a complete reconciliation is reconciled; a scan with faults or one that failed is reported as such (R2).
+                    var reconciliation=service.start().whenComplete((_,failure)->{if(failure==null&&started.repositoryReconciled())repositoryReconciledNanos=System.nanoTime();});
                     if(awaitRepositoryScan||!persistedIndexComplete)reconciliation.join();
                 }
                 sessionCapableNanos=System.nanoTime();
@@ -1118,7 +1120,9 @@ public final class Application implements AutoCloseable {
         result.put("session_capable",capable);result.put("await_repository_scan",awaitRepositoryScan);
         result.put("repository_scan_requested",repositoryScanRequested);
         result.put("persisted_index_complete",persistedIndexComplete);
-        result.put("repository_reconciled",repositoryReconciledNanos>=0);
+        var service=index==null||!index.isDone()||index.isCompletedExceptionally()?null:index.join();
+        result.put("repository_reconciled",service!=null&&service.repositoryReconciled());
+        result.put("repository_reconciliation",service==null?(index!=null&&index.isCompletedExceptionally()?"failed":"pending"):service.reconciliationState());
         if(sessionCapableNanos>=0)result.put("session_capable_ms",(sessionCapableNanos-constructedNanos)/1_000_000.0);
         if(repositoryReconciledNanos>=0)result.put("repository_reconciled_ms",(repositoryReconciledNanos-constructedNanos)/1_000_000.0);
         return result;

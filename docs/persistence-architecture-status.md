@@ -541,6 +541,27 @@ how the existing path behaves, with tests.
   - Document contexts other than completion ranges are not re-evaluated during propagation; they wait for the
     next read.
 
+### Checkpoint 3: readiness (R2)
+
+- Defect found: when an artifact or source jar failed during a scan, the scan skipped completing the inventory
+  and reconciling removed paths, but readiness still completed normally. `repositoryReconciled()` therefore
+  returned true and the `index_reconciling` warning was dropped, so an incomplete index answered as complete.
+  Application also recorded a reconciliation time on failure.
+- Fix:
+  - `IndexService.repositoryReconciled()` requires the last scan to be complete.
+  - `reconciliationState()` reports `pending`, `complete`, `incomplete:<faulted artifacts>` or `failed:<reason>`.
+  - Readiness separates: `session_capable` (storage open, persisted inventory restored),
+    `persisted_index_complete` (an earlier complete scan is on disk), `repository_reconciled` (this process's
+    scan completed with no faults) and `repository_reconciliation` (the state above). Index status has the
+    same `reconciliation` field.
+- Breaking tests in `ReadinessGatingTest`:
+  - Existing: first start, warm restart, interrupted first scan.
+  - A corrupt jar reports `incomplete:1`, not reconciled.
+  - An artifact added while stopped: the warm restart is session-capable from the persisted inventory with
+    `pending` and not reconciled; after its scan the reconciliation is `complete` and the addition is indexed.
+- Not yet covered: per-workspace readiness (a workspace's own inputs current while unrelated repository work
+  continues). Today only the machine-wide reconciliation is reported.
+
 ## Known limits
 
 - A unit whose javac diagnostics name another file (`foreign-diagnostic-file`) is refused.

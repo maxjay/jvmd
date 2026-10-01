@@ -8,7 +8,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * Strict task A11 / W5 scaling gate: going from 1,000 to 5,000 units multiplies the no-change warm
+ * Scaling (scenario A11): going from 1,000 to 5,000 units multiplies the no-change warm
  * restart wall time by at most 6, and both sizes stay within {@code 2 x files + directories} stats
  * with zero directory enumerations and zero bytes hashed.
  *

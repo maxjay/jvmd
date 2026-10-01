@@ -48,7 +48,7 @@ final class BindingFacts implements AutoCloseable {
                 }
                 // Search postings (leaf, substring grams) only for symbols this file declares: find returns
                 // a symbol's declaring row, so rows of symbols merely referenced here can never match
-                // (corrective pass, E3: they were most of a workspace build's posting keys).
+                // (they were most of a workspace build's posting keys).
                 if(declaredHere.contains(entry.getKey())){
                     postings.add("leaf/"+KeyedFacts.part(Objects.toString(symbol.get("name"),"")));
                     for(String field:List.of("name","name_path")){

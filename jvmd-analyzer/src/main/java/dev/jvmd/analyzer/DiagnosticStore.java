@@ -7,7 +7,7 @@ import java.util.*;
 
 /**
  * In-memory detached diagnostic snapshots keyed by source and compiler-context identity. Persisted
- * diagnostics are the attributed LOCAL memos only (strict task W7).
+ * diagnostics are the attributed LOCAL memos only.
  */
 public final class DiagnosticStore {
     public record Key(Path file,String sourceHash,String contextFingerprint,String classpathFingerprint) {

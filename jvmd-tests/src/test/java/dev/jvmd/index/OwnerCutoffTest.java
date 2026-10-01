@@ -12,7 +12,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * P4 (corrective pass): the production owner path for diagnostics. A relevant mutation reaches the
+ * The production owner path for diagnostics. A relevant mutation reaches the
  * consumers whose answer can change; an unchanged result stops propagation; restored consumers take part
  * exactly like freshly attributed ones. "Recompiled" is observed as javac work for that read, and every
  * answer is checked against the diagnostics a fresh analyzer computes for the same sources.

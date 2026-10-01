@@ -9,7 +9,7 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
-/** Persisted diagnostics are the attributed LOCAL memos only (strict task W7). */
+/** Persisted diagnostics are the attributed LOCAL memos only. */
 @Tag("phase-4")
 class PersistentDiagnosticsTest {
     @TempDir Path root;

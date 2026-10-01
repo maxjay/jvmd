@@ -12,10 +12,10 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * Strict task section 6, scenarios A1–A6, with exact javac counts. A restart is a new analyzer over
+ * Restart scenarios A1–A6 with exact javac counts. A restart is a new analyzer over
  * the same LOCAL memo directory, then diagnostics for every unit in dependency order, so each javac
  * run is attributed to the unit that needed it. {@code -Djvmd.scenario.units} scales the fixtures
- * (5,000 for the published evidence).
+ * (5,000 for a full-size run).
  */
 class RestartScenarioTest {
     static final int UNITS=Integer.getInteger("jvmd.scenario.units",200);

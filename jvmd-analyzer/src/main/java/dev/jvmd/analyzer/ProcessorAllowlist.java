@@ -4,7 +4,7 @@ import java.util.*;
 
 /**
  * Annotation processors whose effect on a unit's diagnostics is fully bound by the attributed
- * memo's static key plus the per-processor inputs listed here (strict task W6). Every processor a
+ * memo's static key plus the per-processor inputs listed here. Every processor a
  * compile context runs must be listed, otherwise the context is refused with
  * {@code processor-not-allowlisted:<class>}.
  *

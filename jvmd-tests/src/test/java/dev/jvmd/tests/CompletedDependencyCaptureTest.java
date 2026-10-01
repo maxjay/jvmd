@@ -14,7 +14,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * Strict task W2: a unit's recorded dependency set must contain every source unit javac completed
+ * A unit's recorded dependency set must contain every source unit javac completed
  * while attributing it, including declaring classes and supertypes reached only through
  * inheritance, which the unit never names.
  */

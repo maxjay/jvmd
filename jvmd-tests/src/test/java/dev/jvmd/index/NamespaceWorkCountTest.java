@@ -12,9 +12,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * P2 (corrective pass), permanent work-count bounds for namespace work. Until B1 every memo capture
- * rebuilt the root's member set, and every record write recomputed its packages' S0 identities over
- * every member on the writer thread. Now: the root is enumerated once per live owner and updated from
+ * Permanent work-count bounds for namespace work: the root is enumerated once per live owner and updated from
  * the change journal; a package identity is built once per package per input snapshot; an S0 result is
  * parsed once per content and language mode.
  */

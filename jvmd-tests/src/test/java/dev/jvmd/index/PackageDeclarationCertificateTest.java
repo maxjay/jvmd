@@ -13,11 +13,10 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * C1/C2 (corrective pass): an attributed memo binds the package and imports javac actually used, read
- * from the attributed unit's syntax tree, never from the raw text. Until B1 the own package came from
- * the first regex match over the text, so a comment mentioning {@code package com.old;} became the
- * bound package and adding a type to the real package restored a stale clean result (history in
- * docs/persistence-architecture-status.md, corrective pass, checkpoint 1).
+ * An attributed memo binds the package and imports javac actually used, read from the attributed unit's
+ * syntax tree, never from the raw text: a comment mentioning {@code package com.old;} must not become the
+ * bound package (a regex over the text once did, so adding a type to the real package restored a stale
+ * clean result).
  */
 class PackageDeclarationCertificateTest {
     @TempDir Path root;
@@ -88,7 +87,7 @@ class PackageDeclarationCertificateTest {
     }
 
     /**
-     * C2: a record of the previous function version (v5, whose certificates may name the wrong
+     * A record of the previous function version (v5, whose certificates may name the wrong
      * package) is never consulted, even with a valid checksum. The function version is part of the
      * static key identity, so the v6 lookup cannot reach a v5 record. Unaffected functions stay usable:
      * the S0 namespace records written before are restored, not reparsed.

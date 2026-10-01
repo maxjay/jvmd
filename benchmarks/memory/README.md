@@ -22,12 +22,13 @@ Two observational hooks support it:
 - **The daemon** exposes the first scan's progress in `daemon.status` when started with
   `-Djvmd.profile.bootstrap_status=true`. This is off by default.
 
-The full matrix runs in CI from **Actions → JVMD memory profile**, which uploads the raw evidence as
-artifacts. Commands for each profile are in the report's *Reproduction* section.
+The full matrix is run locally (one mode per run); commands for each profile are in the report's *Reproduction*
+section.
 
-## Corrective-pass control (PR #55)
+## Lifecycle control from CI
 
-`profile.ts --mode control` is also the corrective pass's frozen references/restart control. It is run from
-`jvmd-benchmarks.yml` (dispatch with `memory_control=equivalent|shipping` and `revision=<sha>`). `--heap 0`
-launches without `-Xmx` (shipping defaults). The run prints `checkpoint:`, `operation:`, `M1` and `M2` lines
-to the job log. See `docs/persistence-architecture-status.md`, *Corrective pass*.
+`profile.ts --mode control` runs the lifecycle with the benchmark's oracles and no profiler. It is dispatched from
+`jvmd-benchmarks.yml` (`memory_control=equivalent|shipping`, optionally `-no-references`, and `revision=<sha>` to
+measure another build with this harness). `equivalent` uses a 1 GiB heap and a 64 MiB native budget; `shipping`
+(`--heap 0`) launches without `-Xmx` and with the default native budget. The run prints `checkpoint:`,
+`operation:`, `M1` and `M2` lines to the job log.

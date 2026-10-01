@@ -4,7 +4,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 /**
- * Annotation processing the external processor process ran for a compile context (strict task W6).
+ * Annotation processing the external processor process ran for a compile context.
  * Processors never run in-process; this binds what ran into the attributed memo static key.
  *
  * @param enabled whether processing runs for the context

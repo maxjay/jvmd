@@ -905,7 +905,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return leaves;
     }
 
-    // ---- Phase 15: semantic impact (architecture §109) ----
+    // ---- Semantic impact (architecture §109) ----
 
     /**
      * Speculative impact of replacing {@code path}'s text with {@code proposedText}.
@@ -1325,7 +1325,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             var snapshot=result.result()==null?null:result.result().get(file);
             var outcome=new CompilerPool.Outcome<>(result.tier(),snapshot,problems,result.warnings());values.put(file,outcome);
             if(snapshot!=null&&result.tier()==2&&result.warnings().isEmpty()){
-                // E3: a workspace build retains only its last BATCH_RETAINED full outcomes per cache (the rest live as detached facts).
+                // A workspace build retains only its last BATCH_RETAINED full outcomes per cache (the rest live as detached facts).
                 String key=file+":"+hash+":"+stamp+":full";focused.put(key,new Cached(file,hash,stamp,0,input.text().length(),List.of(),outcome));batchFocused.addLast(key);
                 while(batchFocused.size()>BATCH_RETAINED)focused.remove(batchFocused.removeFirst());while(focused.size()>32)focused.remove(focused.keySet().iterator().next());
                 diagnosticStore.put(file,hash,context.generation(),diagnosticStamp(file,observed),envelope,

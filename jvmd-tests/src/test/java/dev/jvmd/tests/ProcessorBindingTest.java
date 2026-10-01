@@ -14,7 +14,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * Strict task W6: refusals replaced by bindings. Annotation processing, reactor class outputs and
+ * Annotation processing, reactor class outputs and
  * path options enter the static key as logical, restart-stable values; units Lombok rewrites are
  * bound through their binary P_diag; {@code lombok.config} files are per-unit certificate entries.
  */
@@ -123,7 +123,7 @@ class ProcessorBindingTest {
     }
 
     /**
-     * C4 (corrective pass): {@code lombok.config} is read by the processor inside javac's transaction but
+     * {@code lombok.config} is read by the processor inside javac's transaction but
      * is not in its live input state. An edit after the processor read it and before the capture must not
      * be bound to the result computed with the old configuration.
      */

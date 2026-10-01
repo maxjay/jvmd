@@ -9,7 +9,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static org.assertj.core.api.Assertions.*;
 
-/** Architecture §109 and Phase 15: speculative impact through hypothetical leaves and the reverse ProofDag. */
+/** Architecture §109: speculative impact through hypothetical leaves and the reverse ProofDag. */
 class SemanticImpactTest {
     @TempDir Path root;
 

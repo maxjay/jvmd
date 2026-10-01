@@ -72,7 +72,7 @@ final class AttributedMemos implements AutoCloseable {
         return role!=null&&role.startsWith("processor-classes")&&context().gav().equals(context().coordinates().get(normalized));
     }
     /**
-     * W6 static inputs: compiler options with path options as logical slots, the annotation processing
+     * Static inputs: compiler options with path options as logical slots, the annotation processing
      * binding, the classpath as logical slots with content identities, the units hidden from the
      * source path in favour of processor class output, and whether a {@code lombok.config} exists
      * above the reactor root (such a file has no logical identity).
@@ -104,7 +104,7 @@ final class AttributedMemos implements AutoCloseable {
         return false;
     }
     /**
-     * P1 (corrective pass): everything derived from the configured context alone, derived once per
+     * Everything derived from the configured context alone, derived once per
      * context instance. {@code Analyzer.configure} replaces the context on any configuration change
      * (module selection, generated roots, processor settings), which is the only invalidator. Before,
      * the coordinate table was walked for every memo, dependency entry and {@code config:} lookup.
@@ -159,7 +159,7 @@ final class AttributedMemos implements AutoCloseable {
         return value.isRegularFile()+"|"+value.size()+"|"+value.lastModifiedTime().to(java.util.concurrent.TimeUnit.NANOSECONDS)+"|"+ctime+"|"+value.fileKey();
     }
     /**
-     * C4: called on the owner thread immediately before a compiler transaction for {@code file}. The
+     * Called on the owner thread immediately before a compiler transaction for {@code file}. The
      * processor reads its resource files inside the transaction, but they are not part of the live input
      * state the transaction fence checks, so their stamps are recorded here. A capture binds a resource
      * only if its stamp is unchanged since then: the processor read exactly the bytes being bound.
@@ -282,7 +282,7 @@ final class AttributedMemos implements AutoCloseable {
     }
     private BinaryProjections binaryProjections;private Object binaryProjectionsKey;
     /**
-     * Shared snapshot of one observation epoch (W5): every unit validated while the compiler inputs
+     * Shared snapshot of one observation epoch: every unit validated while the compiler inputs
      * snapshot is unchanged shares one roots inventory, one hash per file, one identity per package
      * and one set of static inputs. Captures (memoize) use the epoch of their own compiler transaction and end with its fence.
      */
@@ -436,7 +436,7 @@ final class AttributedMemos implements AutoCloseable {
         String relative=binary.replace('.','/');
         for(Path normalized:configured().roots()){
             Path file=normalized.resolve(relative+".java"),directory=normalized.resolve(relative);
-            // A root whose members cannot be listed is UNKNOWN (C3): the failure propagates, never an identity.
+            // A root whose members cannot be listed is UNKNOWN: the failure propagates, never an identity.
             NavigableSet<Path> members=members(normalized);
             if(members.contains(file))type=true;
             // A package exists for javac's source path when its directory holds sources.
@@ -539,7 +539,7 @@ final class AttributedMemos implements AutoCloseable {
     /** One completed dependency of a captured result: its logical id, content and P_diag as javac saw them. */
     /** {@code binary}: javac completed the unit from a class file, so its entry is the binary view. */
     private record Dependency(String logical,Hash256 content,Hash256 projection,boolean binary) { }
-    /** A result captured on the owner thread whose SCC is not yet known (W3). */
+    /** A result captured on the owner thread whose SCC is not yet known. */
     private record Pending(SemanticMemoStore.StaticKey key,byte[] result,Map<Path,Dependency> dependencies,
                            Map<String,Hash256> packages,TreeMap<QueryProof.Key,Hash256> negatives,SourceNamespaces.LanguageMode mode) { }
     private final Map<Path,Pending> pending=new LinkedHashMap<>();
@@ -552,7 +552,7 @@ final class AttributedMemos implements AutoCloseable {
      * star-imported packages, and negative resolutions. The record is written once the SCC is known.
      */
     void memoize(Path file,String sourceHash,Envelope envelope,FileSemanticContribution contribution,Bindings.Snapshot attributed,CompilerInputs.Snapshot observed){
-        // C4: a capture observes the same input frontier the compiler transaction was validated
+        // A capture observes the same input frontier the compiler transaction was validated
         // against (its live snapshot), never later disk or editor state, and ends with a strict fence.
         var saved=epoch;
         if(observed!=null){epoch=epochOf(observed);}else epoch=null;
@@ -664,7 +664,7 @@ final class AttributedMemos implements AutoCloseable {
         else{unproductiveDrains++;drainAt=Math.max(PENDING_BATCH,2*pending.size());drainInterval=Math.min(MAX_DRAIN_INTERVAL_NANOS,2*drainInterval);}
     }
     /**
-     * P3 (corrective pass): components already found final are settled. A later drain does not traverse
+     * Components already found final are settled. A later drain does not traverse
      * a settled region again; it takes the recorded component as final. A component is settled only when
      * every successor outside it is settled or a fixed sink (outside the compiler roots, or another
      * module), so everything a settled node reaches is settled or a sink. Any change of a node's
@@ -712,7 +712,7 @@ final class AttributedMemos implements AutoCloseable {
      * Write every pending result whose strongly connected component is final: every unit reachable
      * from it has a known dependency set. Iterative Tarjan from the pending units; components complete
      * in reverse topological order, so a component is final when no member and no successor reaches an
-     * unknown unit. Settled regions are not entered (P3). When {@code closing}, the rest are refused as
+     * unknown unit. Settled regions are not entered. When {@code closing}, the rest are refused as
      * {@code scc-unproven}.
      */
     void drain(boolean closing){
@@ -817,7 +817,7 @@ final class AttributedMemos implements AutoCloseable {
         memoWriter().submit(()->{
             try{
                 // Package identities were established on the owner thread at capture, from the transaction's
-                // own snapshot; the writer only encodes and stores (A3).
+                // own snapshot; the writer only encodes and stores.
                 for(var entry:captured.packages().entrySet())
                     dependencies.put(new QueryProof.Key(QueryProof.Domain.NAMESPACE,"package:"+scope+"|"+entry.getKey()),entry.getValue());
                 var certificate=new SemanticMemoStore.Certificate(new QueryProof(dependencies.entrySet().stream()
@@ -946,7 +946,7 @@ final class AttributedMemos implements AutoCloseable {
         return value;
     }
     /**
-     * Current P_diag of a dependency (W4 early cutoff): known for its current content, established by
+     * Current P_diag of a dependency (early cutoff): known for its current content, established by
      * restoring it first, or else by attributing it once with javac. A dependant then compares its
      * entry against that current value, so a body edit recompiles only the edited unit.
      */

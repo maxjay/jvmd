@@ -3,7 +3,7 @@ package dev.jvmd.index;
 import java.util.*;
 
 /**
- * Restart-stable proof-key audit (architecture §33–36, §76, Phase 6).
+ * Restart-stable proof-key audit (architecture §33–36, §76).
  *
  * Runtime proofs may use process-local addressing (absolute paths, session ids, document offsets)
  * and runtime fences. Persisted memo certificates may not. This class is the single executable

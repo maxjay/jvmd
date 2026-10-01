@@ -11,7 +11,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static org.assertj.core.api.Assertions.*;
 
-/** Architecture §85–86 and Phase 5: content-keyed S0 namespace memo. */
+/** Architecture §85–86: content-keyed S0 namespace memo. */
 class SourceNamespaceMemoTest {
     @TempDir Path state;
     private static final LanguageMode MODE=new LanguageMode("",false);

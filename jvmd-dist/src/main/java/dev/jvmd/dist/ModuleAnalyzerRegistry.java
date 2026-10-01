@@ -81,7 +81,7 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
     }
     /**
      * Attributed LOCAL memo totals across module actors: javac queries, restores, writes, misses and
-     * refusals per reason code (strict task W6: every reason code is in status output).
+     * refusals per reason code (every reason code is in status output).
      */
     public synchronized Map<String,Object> persistenceStatus()throws Exception{
         long queries=0,restores=0,writes=0,misses=0,earlyCutoff=0;var reasons=new TreeMap<String,Long>();var purposes=new TreeMap<String,Long>();String lastFailure="";

@@ -12,7 +12,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * Strict task W5 / A1: a no-change warm restart validates linearly from one shared snapshot. Every
+ * Scenario A1: a no-change warm restart validates linearly from one shared snapshot. Every
  * stat, hash and directory enumeration of the restarted process goes through one journaled
  * {@link FileStateRegistry}, so its counters are the whole cost.
  */
@@ -106,12 +106,12 @@ class WarmRestartGateTest {
     @Test void noChangeWarmRestartIsLinearAndEnumeratesNothing()throws Exception{
         var units=SyntheticProjects.generate(SyntheticProjects.Topology.RANDOM_DAG,UNITS,SyntheticProjects.SEED);
         var restart=measure(units);
-        System.out.println("W5 warm restart "+restart);
+        System.out.println("warm restart "+restart);
         assertThat(restart.javac()).as("A1 javac").isZero();
         assertThat(restart.restores()).as("A1 restores").isEqualTo(units.size());
         assertThat(restart.bytesHashed()).as("A1 bytes hashed").isZero();
         assertThat(restart.enumerations()).as("A1 directory enumerations").isZero();
         assertThat(restart.files()).as("validated files are the units plus the JDK platform files").isEqualTo(restart.units()+3);
-        assertThat(restart.stats()).as("W5 stats <= 2 x files + directories").isLessThanOrEqualTo(2L*restart.files()+restart.directories());
+        assertThat(restart.stats()).as("stats <= 2 x files + directories").isLessThanOrEqualTo(2L*restart.files()+restart.directories());
     }
 }

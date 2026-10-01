@@ -1,6 +1,10 @@
 package dev.jvmd.index;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import dev.jvmd.analyzer.Analyzer;
+import dev.jvmd.core.Json;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
 import org.junit.jupiter.api.Test;
@@ -9,9 +13,10 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * E3 (corrective pass): {@link FactCodec#encode} writes maps, lists and scalars directly instead of
- * through a Jackson tree. The stored bytes must be identical to the earlier encoder's, for every kind of
- * fact a bindings build stores, so existing stores stay readable and fact identities do not change.
+ * {@link FactCodec#encode} writes maps, lists and scalars directly instead of through a Jackson tree. The
+ * stored bytes must be identical to the tree encoding ({@link #encodeThroughTree}, the original encoder kept
+ * here as the oracle) for every kind of fact a bindings build stores, so existing stores stay readable and
+ * fact identities do not change.
  */
 class FactCodecEquivalenceTest {
     @TempDir Path root;
@@ -39,10 +44,33 @@ class FactCodecEquivalenceTest {
             values.add(new ArrayList<>(List.of("a","b","a")));values.add(Map.of());values.add(List.of());
             var withNull=new LinkedHashMap<String,Object>();withNull.put("k",null);withNull.put("n",3);withNull.put("f",2.5f);withNull.put("path",root);values.add(withNull);
             for(Object value:values){
-                assertThat(FactCodec.encode(value)).as(String.valueOf(value)).isEqualTo(FactCodec.encodeThroughTree(value));
+                byte[] direct=FactCodec.encode(value);
+                assertThat(direct).as(String.valueOf(value)).isEqualTo(encodeThroughTree(value));
+                assertThatCode(()->FactCodec.decode(direct,Object.class)).as("decodes: "+value).doesNotThrowAnyException();
                 compared++;
             }
         }
         assertThat(compared).isGreaterThan(30);
+    }
+
+    /** The original encoder: every value through its Jackson tree, with a record-local string table. */
+    static byte[] encodeThroughTree(Object value)throws IOException {
+        var bytes=new ByteArrayOutputStream();
+        try(var out=new DataOutputStream(bytes)){out.writeInt(0x4a564601);write(out,Json.MAPPER.valueToTree(value),new HashMap<>());}
+        return bytes.toByteArray();
+    }
+    private static void write(DataOutputStream out,JsonNode value,Map<String,Integer> strings)throws IOException {
+        if(value.isNull()){out.writeByte(0);return;}
+        if(value.isTextual()){out.writeByte(1);string(out,value.textValue(),strings);return;}
+        if(value.isBoolean()){out.writeByte(value.booleanValue()?2:3);return;}
+        if(value.isIntegralNumber()){out.writeByte(4);out.writeLong(value.longValue());return;}
+        if(value.isFloatingPointNumber()){out.writeByte(5);out.writeDouble(value.doubleValue());return;}
+        out.writeByte(value.isArray()?6:7);out.writeInt(value.size());
+        if(value.isArray())for(var child:value)write(out,child,strings);
+        else for(var entry:value.properties()){string(out,entry.getKey(),strings);write(out,entry.getValue(),strings);}
+    }
+    private static void string(DataOutputStream out,String value,Map<String,Integer> strings)throws IOException {
+        Integer id=strings.get(value);if(id!=null){out.writeInt(id);return;}
+        strings.put(value,strings.size());byte[] bytes=value.getBytes(StandardCharsets.UTF_8);out.writeInt(-bytes.length-1);out.write(bytes);
     }
 }

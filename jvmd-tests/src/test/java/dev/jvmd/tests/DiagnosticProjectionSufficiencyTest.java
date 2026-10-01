@@ -264,7 +264,7 @@ class DiagnosticProjectionSufficiencyTest {
         result.add(new Mutation("enum","lib/Color.java","constant removed",text->text.replace("RED, GREEN, BLUE;","RED, GREEN;"),false));
         result.add(new Mutation("enum","lib/Color.java","constants reordered",text->text.replace("RED, GREEN, BLUE;","BLUE, GREEN, RED;"),false));
         // New top-level types in the same package or a star-imported one.
-        // Corrective pass C5: overload candidates, inherited members, nestmate access and default methods.
+        // Overload candidates, inherited members, nestmate access and default methods.
         result.add(new Mutation("overload","lib/Service.java","overload added (long)",text->text.replace("    public int compute(double x) { return 1; }\n","    public int compute(double x) { return 1; }\n    public int compute(long x) { return 2; }\n"),false));
         result.add(new Mutation("overload","lib/Util.java","boxed overload added",text->text.replace("    public static long sum(long a, long b)","    public static int sum(Integer a, Integer b) { return 0; }\n    public static long sum(long a, long b)"),false));
         result.add(new Mutation("overload","lib/Util.java","varargs overload added",text->text.replace("    public static String joined(String... parts)","    public static String joined(String a, String b) { return a; }\n    public static String joined(String... parts)"),false));

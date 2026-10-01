@@ -43,7 +43,7 @@ class IndexedFileManagerTest {
   }
  }
 
- /** Strict task W9: a class in two class directories resolves from the first, as on javac's own classpath (processor output shadows target/classes). */
+ /** A class in two class directories resolves from the first, as on javac's own classpath (processor output shadows target/classes). */
  @Test void firstClassDirectoryWinsInListingsAndLookups()throws Exception{
   var compiler=ToolProvider.getSystemJavaCompiler();var outputs=new ArrayList<Path>();
   for(String method:List.of("first","second")){

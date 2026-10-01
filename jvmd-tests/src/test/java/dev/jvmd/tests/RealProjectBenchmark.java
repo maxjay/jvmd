@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Strict task W9 / A7–A10 on the pinned real project ({@code benchmarks/real-project.json}): the
+ * Restart scenarios A7–A10 in process, on the pinned real project ({@code benchmarks/real-project.json}): the
  * daemon opens the project, diagnoses every main source unit, and is restarted over the same state.
  * Counts come from every module actor's attributed memo status; results go to
  * {@code target/benchmarks/real-project.md}.
@@ -138,7 +138,7 @@ class RealProjectBenchmark {
         Files.writeString(config,Files.readString(config)+"# benchmark edit\n");
         runs.add(session("A10 lombok.config edited (reactor root)",b,state));
 
-        var out=new StringBuilder("## W9 real project: ruoyi-vue-pro @ 1697112f\n\n| Run | units | javac (all) | external processor runs | persisted processor hits | memo restores | memo writes | first correct completion | diagnose all | refusals | misses |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|\n");
+        var out=new StringBuilder("## Real project: ruoyi-vue-pro @ 1697112f\n\n| Run | units | javac (all) | external processor runs | persisted processor hits | memo restores | memo writes | first correct completion | diagnose all | refusals | misses |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|\n");
         for(var run:runs)out.append(String.format(Locale.ROOT,"| %s | %d | %d | %d | %d | %d | %d | %.0f ms | %.0f ms | %s | %s |%n",run.label(),run.units(),run.javac(),
                 run.externalRuns(),run.processorHits(),run.restores(),run.writes(),run.firstCompletionMs(),run.diagnoseMs(),run.refusals(),run.misses()));
         out.append('\n');notes.forEach(note->out.append("- ").append(note).append('\n'));

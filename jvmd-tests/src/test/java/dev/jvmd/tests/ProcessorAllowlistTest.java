@@ -12,7 +12,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * Strict task W6: every allowlisted product has a test that runs its processor. Each case compiles a
+ * Every allowlisted product has a test that runs its processor. Each case compiles a
  * small fixture with the real processor jar (pinned version, from the Maven repository), checks the
  * processor's observable output, and checks that every processor class the jar registers for
  * discovery is on the allowlist under that product.

@@ -51,7 +51,7 @@ public final class IndexService implements AutoCloseable {
     /**
      * Whether the repository has been reconciled completely: a scan finished with every artifact read
      * and the inventory completed. A scan that ran but had artifact or source faults left the inventory
-     * incomplete (stale paths are not reconciled), so it does not count (R2).
+     * incomplete (stale paths are not reconciled), so it does not count.
      */
     public boolean repositoryReconciled(){return readiness.isDone()&&!readiness.isCompletedExceptionally()&&lastScanComplete;}
     /** {@code pending}, {@code complete}, {@code incomplete:<faulted artifacts>} or {@code failed:<reason>}. */

@@ -69,21 +69,23 @@ The output directory holds `report.md` (the PR comment), `report.txt` (the termi
   lifecycle, not-implemented endpoints and latency are folded underneath. Regressions are also
   raised as warnings on the run.
 
-`jvmd-before-after.yml` measures a PR against its base on the same runners and keeps a second
-comment (`<!-- jvmd-before-after -->`). It builds both revisions; the PR's `benchmarks/` drives
-both, so the only difference is the build under test. Each matrix job measures base and PR on one
-runner:
+### Restart and persistence runs (manual)
 
-- `lsp-1`…`lsp-5`: the scenario suite, one base and one PR run per shard, order alternating;
-- `lifecycle`: interleaved base/PR pairs of the apache/maven lifecycle;
-- `real`: restart scenarios on ruoyi-vue-pro (`real-project.json`) from `persistence.ts`;
-- `synthetic`: the A1–A6 restart scenarios on 5,000-unit projects from `persistence.ts`;
-- `w8`: the MACHINE storage decision benchmark (PR only).
+`persistence.ts` runs each session as a fresh daemon on the same state, then records READY, open, first correct
+answer (process start to the answer), diagnose-all time (one `diag.get` for every unit), compiler runs, the
+persisted-result counters, peak RSS, allocation and a digest of every file's diagnostics.
 
-`persistence.ts` runs every session as a fresh daemon on the same state, and records READY, open,
-first correct answer, diagnose-all time, javac runs, peak RSS, allocation and a digest of every
-file's diagnostics (so the report says whether both builds gave the same answers).
-`compare.ts --input DIR` renders the report from the jobs' artifacts.
+```sh
+# A1–A6 on generated hub, layered and DAG projects (deterministic seed)
+node benchmarks/persistence.ts --suite synthetic --units 5000 --image <image> --repository <repo> --output <dir>
+# A9, A7, A8, A10 on ruoyi-vue-pro at the commit pinned in real-project.json (Lombok + MapStruct)
+node benchmarks/persistence.ts --suite real --heap 4g --project <checkout> --repository <its repo> --image <image> --output <dir>
+```
+
+To compare two builds, build an image for each revision (`mvn -DskipTests install && bash jvmd-dist/assemble.sh`)
+and run the same command, from the same harness checkout, once per image on the same machine. Compare the
+per-session lines and the diagnostics digests; a compiler-run count is only comparable between builds that
+compile the same way.
 
 ## Scope
 

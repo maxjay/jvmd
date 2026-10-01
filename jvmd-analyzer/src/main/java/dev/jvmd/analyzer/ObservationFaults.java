@@ -7,14 +7,14 @@ import java.util.Objects;
 import java.util.function.Predicate;
 
 /**
- * Observations behind persisted certificates (corrective pass, C3). A failed observation is UNKNOWN:
+ * Observations behind persisted certificates. A failed observation is UNKNOWN:
  * it throws {@link Unavailable} and never becomes an identity, so two successive failures can never
  * compare equal and reuse a record. Only an established absence ({@code NoSuchFile}, or a path through a
  * regular file) is a negative observation.
  *
  * {@link #inject} and {@link #captureBarrier} are test seams, never set in production: tests make
  * chosen paths fail without relying on filesystem permissions (privileged CI ignores them), and pause a
- * capture between attribution and its evidence reads to race mutations against it (C4).
+ * capture between attribution and its evidence reads to race mutations against it.
  */
 public final class ObservationFaults {
     /** UNKNOWN: the input could not be observed. */

@@ -4,7 +4,7 @@ import java.nio.file.*;
 import java.util.*;
 
 /**
- * Strict task W9 synthetic scale fixtures, generated from a fixed seed: random DAG, hub and layered
+ * Synthetic scale fixtures, generated from a fixed seed: random DAG, hub and layered
  * (10 layers). Every unit is a top-level class with a static {@code f()} whose body calls {@code f()}
  * of the units it depends on by qualified name, and a private body-only method.
  */

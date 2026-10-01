@@ -12,7 +12,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static org.assertj.core.api.Assertions.*;
 
-/** Architecture §72–75, §84, §87 and Phase 8: attributed LOCAL memos validated by certificates. */
+/** Architecture §72–75, §84, §87: attributed LOCAL memos validated by certificates. */
 class AttributedMemoIntegrationTest {
     @TempDir Path root;
     private static final String GAV="g:app:1";
@@ -110,7 +110,7 @@ class AttributedMemoIntegrationTest {
     @Test void ambientCompilerContextIsBoundIntoTheStaticKeyOrRefusedWithItsReason()throws Exception{
         var memos=new SemanticMemoStore(root.resolve("memo"));
         var project=project("processors");
-        // W6: -A options are bound into the static key, so a different value never reuses a record.
+        // -A options are bound into the static key, so a different value never reuses a record.
         try(var analyzer=analyzer(project,memos,List.of("--release","25","-Aflag=1"))){
             diagnostics(analyzer,project.a());diagnostics(analyzer,project.b());analyzer.awaitMemoWrites();
             assertThat(memo(analyzer,"writes")).isEqualTo(2);

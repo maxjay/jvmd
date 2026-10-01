@@ -15,7 +15,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * C4 (corrective pass): a record pairs a result only with the evidence of the inputs javac read. The
+ * A record pairs a result only with the evidence of the inputs javac read. The
  * capture is paused after attribution ({@link ObservationFaults#captureBarrier}); another thread then
  * mutates the inputs. The outcome must be a refusal ({@code inputs-superseded}), never A's result with
  * B's evidence. A -> B -> A is included: equal content afterwards does not prove javac read it.

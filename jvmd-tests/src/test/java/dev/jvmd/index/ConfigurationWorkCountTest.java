@@ -12,11 +12,10 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * P1 (corrective pass), a permanent work-count bound: the reactor root, the logical source mapper and the
- * per-class directories are derived once per configured context, independent of how many units are
- * captured or restored and how many dependency entries they hold. Until B1 they were rederived from the
- * coordinate table for every memo, entry and {@code config:} lookup (about 50 GB of sampled allocation
- * on the real project's no-change restart, docs/evidence/edit-path-investigation.md).
+ * A permanent work-count bound: the reactor root, the logical source mapper and the per-class
+ * directories are derived once per configured context, independent of how many units are captured or
+ * restored and how many dependency entries they hold, never again for every memo, entry or
+ * {@code config:} lookup.
  */
 class ConfigurationWorkCountTest {
     @TempDir Path root;

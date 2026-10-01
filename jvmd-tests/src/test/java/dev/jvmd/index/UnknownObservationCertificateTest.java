@@ -15,11 +15,11 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * C3 (corrective pass): a failed or unavailable observation is UNKNOWN. It never becomes an identity,
+ * A failed or unavailable observation is UNKNOWN. It never becomes an identity,
  * so it can neither be written into a certificate nor compare equal to an earlier failure. Failures are
  * injected ({@link ObservationFaults#inject}) rather than made with file permissions, which privileged
- * CI ignores. Until B1, {@code absenceIdentity} hashed an {@code unreadable} flag: a negative entry
- * captured while a source root was unreadable matched again on the next unreadable restart.
+ * CI ignores. A negative entry captured while a source root was unreadable must not match again on the
+ * next unreadable restart.
  */
 class UnknownObservationCertificateTest {
     @TempDir Path root;

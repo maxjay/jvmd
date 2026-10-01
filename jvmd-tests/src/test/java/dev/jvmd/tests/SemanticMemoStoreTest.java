@@ -95,7 +95,7 @@ class SemanticMemoStoreTest {
                 new QueryProof.Key(QueryProof.Domain.CLASSPATH_SEARCH,"workspace:session-7"),
                 new QueryProof.Key(QueryProof.Domain.DOCUMENT_SCOPE,"/home/me/repo/A.java#12"),
                 new QueryProof.Key(QueryProof.Domain.NAMESPACE,"visible"),
-                // W3: the whole-roots content fallback and the global namespace leaf are not persistable.
+                // The whole-roots content fallback and the global namespace leaf are not persistable.
                 new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"source-roots-content:g:a:1|main"),
                 new QueryProof.Key(QueryProof.Domain.NAMESPACE,"source-roots:g:a:1|main"),
                 new QueryProof.Key(QueryProof.Domain.NAMESPACE,"package:/home/me/repo|p"),

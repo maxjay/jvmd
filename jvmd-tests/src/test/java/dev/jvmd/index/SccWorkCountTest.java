@@ -13,9 +13,8 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * P3 (corrective pass), permanent work-count bounds for SCC finality. Until B1 every drain ran Tarjan over
- * the whole reachable graph again, so draining after each capture visited O(V^2) vertices; settled
- * components are now not re-entered. Counts are cumulative over the whole run, not per drain. Correctness
+ * Permanent work-count bounds for SCC finality: settled components are not re-entered, so draining after
+ * each capture does not revisit the whole reachable graph (O(V^2) vertices). Counts are cumulative over the whole run, not per drain. Correctness
  * of finality after changes (merge into a cycle) is checked through the record a merge must produce.
  */
 class SccWorkCountTest {

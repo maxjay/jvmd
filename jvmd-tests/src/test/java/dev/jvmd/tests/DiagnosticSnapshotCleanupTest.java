@@ -8,7 +8,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static org.assertj.core.api.Assertions.*;
 
-/** Strict task W7: old persisted diagnostic snapshots are deleted on start, never migrated or read. */
+/** Old persisted diagnostic snapshots are deleted on start, never migrated or read. */
 class DiagnosticSnapshotCleanupTest {
     @TempDir Path root;
 

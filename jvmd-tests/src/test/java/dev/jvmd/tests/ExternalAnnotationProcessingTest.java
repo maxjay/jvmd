@@ -46,7 +46,7 @@ class ExternalAnnotationProcessingTest {
         }
     }
     /**
-     * W9: the external processor result is a persisted, location-independent record, so a restart,
+     * The external processor result is a persisted, location-independent record, so a restart,
      * a moved checkout or another worktree reuses it without running javac; a corrupt index reruns.
      */
     @Test void processorResultSurvivesRestartAndRelocationAndCorruptionReruns()throws Exception{

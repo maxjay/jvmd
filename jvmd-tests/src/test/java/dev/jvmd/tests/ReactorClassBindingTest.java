@@ -15,7 +15,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * Strict task A8 on a reactor: another module's class directory is bound class by class
+ * A branch switch on a reactor (scenario A8): another module's class directory is bound class by class
  * ({@code reactor-class:} P_diag, {@code class-package:} sets, negative resolutions), not by the
  * directory's content. A body-only rebuild of the library restores every dependant; a signature
  * change reached only through a supertype, a class appearing where a name was unresolved, and a

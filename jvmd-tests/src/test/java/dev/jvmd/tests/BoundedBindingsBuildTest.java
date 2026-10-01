@@ -14,7 +14,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * E3 / M3 (corrective pass): a whole-workspace bindings build streams compiler outcomes and commits its
+ * A whole-workspace bindings build streams compiler outcomes and commits its
  * encoded facts in bounded slices, instead of holding every outcome and every fact in one write batch.
  * A build that fails after some slices were committed discards the store, so no half-built revision is
  * ever read.

@@ -51,7 +51,7 @@ public final class Application implements AutoCloseable {
         // Restart reuse of unchanged content hashes (§90). Restored observations are validated
         // against current file stamps before use; the journal is never semantic authority.
         classpathFiles.persistence(config.stateDir().resolve("file-observations-v1.bin"));
-        // W7: attributed LOCAL memos are the only persisted diagnostics; old snapshot state is deleted, never migrated.
+        // Attributed LOCAL memos are the only persisted diagnostics; old snapshot state is deleted, never migrated.
         deleteQuietly(config.stateDir().resolve("diagnostics-v2"));
         // LOCAL semantic memo store (§68): independently validated records; loss is only a miss.
         localMemos=new dev.jvmd.index.SemanticMemoStore(config.stateDir().resolve("local-memo-v1"));
@@ -472,7 +472,7 @@ public final class Application implements AutoCloseable {
         Resolution currentGraph=graph;
         WorkspaceBindings.InputSource inputSource=()->workspaceModuleInputs(session,currentGraph);
         if(!load)return cache.peek(inputSource);
-        // E3: outcomes are handed to the cache batch by batch and released; a whole-workspace build never
+        // Outcomes are handed to the cache batch by batch and released; a whole-workspace build never
         // holds every file's compiler outcome at once.
         return cache.getStreaming(inputSource,documents(session),(long)config.heapCeilingMb()*1024*1024/Math.max(1,sessions.list().size())/4,(files,sink)->{
             var groups=new LinkedHashMap<String,LinkedHashMap<Path,String>>();
@@ -954,7 +954,7 @@ public final class Application implements AutoCloseable {
                     navigationSources.add(Path.of(source));coordinates.putIfAbsent(source,m.gav());coordinates.putIfAbsent(Path.of(source).toUri().toString(),m.gav());
                 }
                 coordinates.put(m.directory(),m.gav());coordinates.put(Path.of(m.directory()).toUri().toString(),m.gav());
-                // Reactor class outputs (including the module's own, first on its classpath) are logical reactor slots (W6).
+                // Reactor class outputs (including the module's own, first on its classpath) are logical reactor slots.
                 if(m.classes()!=null)coordinates.putIfAbsent(m.classes(),m.gav());if(m.testClasses()!=null)coordinates.putIfAbsent(m.testClasses(),m.gav());
             }
             // Shared build-helper roots take the identity of the module whose compiler context owns this query.
@@ -969,7 +969,7 @@ public final class Application implements AutoCloseable {
     }
     /**
      * Processor outputs live under the state directory, outside every module. Give each a logical
-     * role (W6) so generated units and processor class outputs have restart-stable identities.
+     * role so generated units and processor class outputs have restart-stable identities.
      */
     private static void processorRoles(Map<String,String> coordinates,AnnotationProcessing.Output output,String gav,String scope){
         for(Path root:output.sourceRoots()){
@@ -1096,7 +1096,7 @@ public final class Application implements AutoCloseable {
                 if(scan){
                     repositoryScanRequested=true;persistedIndexComplete=storage.scanCompleted();
                     var started=service;
-                    // Only a complete reconciliation is reconciled; a scan with faults or one that failed is reported as such (R2).
+                    // Only a complete reconciliation is reconciled; a scan with faults or one that failed is reported as such.
                     var reconciliation=service.start().whenComplete((_,failure)->{if(failure==null&&started.repositoryReconciled())repositoryReconciledNanos=System.nanoTime();});
                     if(awaitRepositoryScan||!persistedIndexComplete)reconciliation.join();
                 }

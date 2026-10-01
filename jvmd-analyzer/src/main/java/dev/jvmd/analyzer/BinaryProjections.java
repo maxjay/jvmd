@@ -7,7 +7,7 @@ import java.util.*;
 import javax.tools.ToolProvider;
 
 /**
- * Current binary P_diag of units javac reads from class files (Lombok-processed units, W6), for
+ * Current binary P_diag of units javac reads from class files (Lombok-processed units), for
  * restore. One classpath-only javac task per observation epoch answers every lookup; nothing is
  * parsed or attributed, classes are completed on demand from the compile classpath.
  */

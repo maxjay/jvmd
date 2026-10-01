@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * Phase 14 stratification research (architecture §85, §88): differential check of the S0
+ * Stratification (architecture §85, §88): differential check of the S0
  * syntactic namespace against javac's enter (header) phase over this repository's own sources.
  *
  * S0 must agree with javac on the declared type namespace (package, top-level and member type
@@ -51,7 +51,7 @@ class StratificationDifferentialTest {
             if(syntactic.equals(entered))agreed++;
             else mismatches.add(repository.relativize(file)+": s0="+syntactic+" javac="+entered);
         }
-        var report=new StringBuilder("## Stratification differential (Phase 14)\n\n")
+        var report=new StringBuilder("## Stratification differential\n\n")
                 .append("| Metric | Value |\n|---|---:|\n")
                 .append("| units | ").append(files.size()).append(" |\n")
                 .append("| S0 namespace equal to javac enter | ").append(agreed).append(" |\n")

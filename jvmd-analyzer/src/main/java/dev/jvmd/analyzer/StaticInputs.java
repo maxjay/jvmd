@@ -10,7 +10,7 @@ import java.util.jar.JarFile;
 
 /**
  * Logical, restart-stable binding of a compile context's ambient inputs for the attributed memo
- * static key (strict task W6): classpath and path-option entries become logical slots with content
+ * static key: classpath and path-option entries become logical slots with content
  * identities, and annotation processing is bound by processor path slots, processor classes,
  * {@code -A} options and mode. Anything that cannot be bound yields one specific refusal code.
  */

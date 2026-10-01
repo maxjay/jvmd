@@ -14,7 +14,7 @@ public final class WorkspaceBindings implements AutoCloseable {
     /** Receives each file's outcome as soon as it is computed; the outcome is not retained after this call. */
     @FunctionalInterface public interface Sink { void accept(Path file,CompilerPool.Outcome<Bindings.Snapshot> outcome)throws Exception; }
     /**
-     * E3 (corrective pass): a loader that hands over outcomes as it computes them, so a whole-workspace
+     * A loader that hands over outcomes as it computes them, so a whole-workspace
      * build never holds every file's compiler outcome at once.
      */
     @FunctionalInterface public interface StreamingLoader { void load(Map<Path,String> sources,Sink sink)throws Exception; }

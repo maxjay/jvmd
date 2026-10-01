@@ -368,7 +368,7 @@ def jfr_events(java_home, jfr, events, cache):
     """Streams `jfr print --json` for the given events (cached as JSON lines)."""
     out = cache / (jfr.stem + "." + events.replace(",", "+") + ".jsonl")
     if not out.exists():
-        r = subprocess.run([str(Path(java_home) / "bin/jfr"), "print", "--json", "--events", events, str(jfr)],
+        r = subprocess.run([str(Path(java_home) / "bin/jfr"), "print", "--json", "--stack-depth", "64", "--events", events, str(jfr)],
                            capture_output=True, text=True, env={**os.environ, "JAVA_TOOL_OPTIONS": ""})
         data = json.loads(r.stdout or '{"recording":{"events":[]}}')
         with open(out, "w") as fh:
@@ -421,22 +421,19 @@ def exact_jfr(run, marks, java_home, cache):
 
 
 def humongous(run, marks, java_home, cache, threshold=512 * 1024):
-    """Allocations of at least half a G1 region (1 MiB regions at a 1 GiB heap) from JFR ObjectAllocationOutsideTLAB."""
+    """Allocations of at least half a G1 region (1 MiB regions at a 1 GiB heap), streamed from JFR
+    jdk.ObjectAllocationOutsideTLAB events by Humongous.java (full stack depth)."""
     out = collections.defaultdict(lambda: {"count": 0, "bytes": 0, "max": 0})
+    tool = Path(__file__).with_name("Humongous.java")
     for jfr in sorted(run.glob("exact-i*.jfr")):
         inc = int(re.search(r"i(\d+)", jfr.stem).group(1))
         ms = [m for m in marks if m["incarnation"] == inc]
-        for e in jfr_events(java_home, jfr, "jdk.ObjectAllocationOutsideTLAB", cache):
-            v = e["values"]
-            size = v.get("allocationSize") or 0
-            if size < threshold:
-                continue
-            frames = [f"{(f.get('method') or {}).get('type', {}).get('name', '?')}.{(f.get('method') or {}).get('name', '?')}"
-                      for f in ((v.get("stackTrace") or {}).get("frames") or [])]
-            site = next((f for f in frames if f.startswith("dev.jvmd.")), frames[0] if frames else "?")
-            caller = " < ".join(frames[:4])
-            key = (phase_of(ms, iso_ms(v["startTime"])), (v.get("objectClass") or {}).get("name", "?"), site, caller)
-            o = out[key]; o["count"] += 1; o["bytes"] += size; o["max"] = max(o["max"], size)
+        r = subprocess.run([str(Path(java_home) / "bin/java"), str(tool), str(jfr), str(threshold)], capture_output=True, text=True,
+                           env={**os.environ, "JAVA_TOOL_OPTIONS": ""})
+        for line in r.stdout.splitlines():
+            v = json.loads(line)
+            key = (phase_of(ms, v["t"]), v["class"], v["site"], v["stack"])
+            o = out[key]; o["count"] += 1; o["bytes"] += v["size"]; o["max"] = max(o["max"], v["size"])
     rows = [{"phase": k[0], "class": k[1], "site": k[2], "stack": k[3], **v} for k, v in out.items()]
     return sorted(rows, key=lambda r: -r["bytes"])
 

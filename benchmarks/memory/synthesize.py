@@ -10,7 +10,7 @@ first-use references skipped. Each table names the runs it draws from.
 import argparse, collections, csv, glob, gzip, json, os, re, statistics
 from pathlib import Path
 
-MB = 1 << 20
+MB = 1_000_000  # decimal megabytes throughout the report
 PRIMARY_CONTROL = ["control-2", "control-3"]
 SUPP_CONTROL = ["b256-control", "b256-control-2"]
 
@@ -83,20 +83,25 @@ PHASES = [  # (label, from-mark, to-mark) of the lifecycle allocation table
 
 
 def phase_window(lc, a, b):
-    """Exact whole-JVM allocation and wall time between two marks of the same incarnation (observer cost excluded:
-    each mark's snapshot precedes its status call and hooks, and the next baseline follows them)."""
+    """Exact whole-JVM allocation and wall time between two marks of the same incarnation. Wall time excludes
+    checkpoint hooks (histograms, dumps, profiler restarts); allocation is the raw counter difference."""
     ms = lc["marks"]
     ia = next((i for i, m in enumerate(ms) if m["id"] == a), None)
     ib = next((i for i, m in enumerate(ms) if m["id"] == b), None)
     if ia is None or ib is None or ib <= ia or ms[ia]["incarnation"] != ms[ib]["incarnation"]:
         return None
-    alloc, secs, peak = 0, 0.0, 0
+    secs, peak = 0.0, 0
     for m in ms[ia + 1: ib + 1]:
         ph = m.get("phase")
         if not ph:
             return None
-        alloc += ph["allocatedBytes"]; secs += ph["seconds"]; peak = max(peak, ph.get("peakHeapUsed") or 0)
-    return {"allocated": alloc, "seconds": secs, "peakHeapUsed": peak}
+        secs += ph["seconds"]; peak = max(peak, ph.get("peakHeapUsed") or 0)
+    # Allocation is the raw counter difference between the two checkpoint snapshots. It includes the work
+    # other threads did while intermediate checkpoints were observed (during seed a status call can block for
+    # up to ~0.8 s while publication continues) and each intermediate observation's own ~0.9 MB.
+    if ms[ia].get("allocated") is None or ms[ib].get("allocated") is None:
+        return None
+    return {"allocated": ms[ib]["allocated"] - ms[ia]["allocated"], "seconds": secs, "peakHeapUsed": peak}
 
 
 def lifecycle_table(summary):
@@ -336,7 +341,8 @@ def nmt_table(summary, run):
             continue
         mid = re.sub(r"^i\d+-\d+-", "", name.replace("-summary.txt", ""))
         inc = int(re.match(r"i(\d+)", name).group(1))
-        out[f"i{inc}:{mid}"] = {k: v.get("committed_kb") for k, v in cats.items() if isinstance(v, dict) and "committed_kb" in v}
+        # NMT reports KiB; converted to decimal kB so every report table uses decimal units.
+        out[f"i{inc}:{mid}"] = {k: v.get("committed_kb") * 1.024 for k, v in cats.items() if isinstance(v, dict) and "committed_kb" in v}
         if "_malloc_mmap" in cats:
             out[f"i{inc}:{mid}"]["_malloc_kb"] = cats["_malloc_mmap"]["malloc_kb"]
             out[f"i{inc}:{mid}"]["_mmap_committed_kb"] = cats["_malloc_mmap"]["mmap_committed_kb"]
@@ -464,6 +470,7 @@ def main():
     res["smaps_split"] = {r: smaps_states(S, r, smap_ids) for r in ["rss-1", "b256-rss"]}
     res["smaps_categories"] = {r: smaps_categories(S, r, smap_ids) for r in ["rss-1", "b256-rss"]}
     res["stages"] = {r: stages(S, r) for r in ["b256-exact", "exact-1"]}
+    res["humongous"] = (load(S, "b256-humongous", "humongous.json") or [])[:40]
     res["gc"] = {r: load(S, r, "gc.json") for r in ["b256-exact", "exact-1", "b256-pressure-512", "scale-full"]}
     res["mat"] = mat_reports(Path(S) / "mat")
     drill = {}

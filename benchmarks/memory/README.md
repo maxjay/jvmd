@@ -11,6 +11,8 @@ heap, allocation agent and config), plus only the flags of one profiling mode.
 | `analyze.py` | Reduces one run: lifecycle checkpoints, allocation or native profiles per phase (mechanism, operation, owner, thread, class, stack), histograms, NMT, smaps split, GC log, JFR stages. |
 | `mat.sh`, `mat_drill.sh` | Eclipse MAT batch analysis of a heap dump: dominators, owner retained sizes, duplicate strings, leak suspects, and one level below the large owners. |
 | `synthesize.py` | Builds the report's tables into `results/summary.json` and `results/allocation-top50.json`. |
+| `tables.py` | Renders the report's main tables (decimal MB/GB) from `results/summary.json`. |
+| `Humongous.java` | Streams `jdk.ObjectAllocationOutsideTLAB` events above a size threshold out of a JFR file, one JSON line each. |
 | `subset_repository.py` | Hard-linked subsets of a Maven repository for the scale and per-JAR experiments. |
 
 Two observational hooks support it:

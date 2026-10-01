@@ -18,30 +18,30 @@ pages resident. These are three different quantities and are never mixed in this
 
 ## Executive summary
 
-1. **Machine seed.** Indexing the 462-JAR fixture repository allocates **31.7–35.1 GB** of Java
-   heap in 36 s (MEASURED; 7 runs, 6 of them within 33.3–35.1 GB).
-   - That is **~40.5 KB per symbol**, linear in symbols (R² 0.998).
-   - The persisted SST database it produces is **437 MB**, an allocation amplification of
+1. **Machine seed.** Indexing the 462-JAR fixture repository allocates **34.9–35.2 GB** of Java
+   heap in 36–38 s (MEASURED; 20 runs across all modes and both configurations).
+   - That is **~40.7 KB per symbol**, linear in symbols (R² 0.9998).
+   - The persisted SST database it produces is **436 MB**, an allocation amplification of
      **~80×**.
-   - Afterwards the Java heap retains **5.6–7.0 MB** after a full GC. That is the same as an
+   - Afterwards the Java heap retains **5.9–7.0 MB** after a full GC. That is the same as an
      empty repository (6.0 MB), so the machine index adds **~1 MB** of retained heap.
    - Seed allocation is almost entirely transient: SST gram postings, symbol encoding, classfile
      reading, fact construction, SST sort runs and canonical digests.
 2. **First-use workspace references** on apache/maven does not produce an answer at the benchmark's
-   1 GiB heap (MEASURED, 0 of 16 attempts).
-   - It allocates **31–37 GB** and drives the live heap to the ceiling (763 MB live after a full GC
-     at the end; 1.06 GB in the OOM dump).
+   1 GiB heap (MEASURED, 0 of 17 attempts).
+   - It allocates **32–38 GB** and drives the live heap to the ceiling (487 MB live after a full GC
+     once the request had failed; 1.06 GB in the OOM dump).
    - In the 13 default-configuration attempts it ended three ways:
      - 6 in a **RocksDB WriteBufferManager write stall** that hangs the daemon (3 of the 5
        unprofiled lifecycles);
      - 6 in `OutOfMemoryError`;
      - 1 finishing server-side after ~4 minutes, with 78 full GCs and the heap at the ceiling,
        after the client had given up at 60 s.
-   - With a 256 MiB RocksDB budget, 3 of 3 attempts ended at the heap ceiling.
+   - With a 256 MiB RocksDB budget, 4 of 4 attempts ended at the heap ceiling.
    - At OOM, `Analyzer.compilerPools` retains 269 MB (javac outcomes and `Bindings` snapshots).
      The in-flight workspace-bindings capture holds 247 MB. 23 copies of a 5.67 MB `ZipFileSystem`
      hold 130 MB. `SemanticFact`s hold 71 MB.
-   - First-use references is **the lifecycle's peak**: heap at 1 GiB, RSS 1.96–2.16 GB.
+   - First-use references is **the lifecycle's peak**: heap at the 1 GiB ceiling, RSS 2.05–2.26 GB.
 3. **A persisted daemon restart fails deterministically** after workspace use at the default
    configuration (MEASURED: 9 of 9 lifecycle restarts, plus 4 profiled and 3 manual reopen
    attempts on a preserved state).
@@ -51,36 +51,36 @@ pages resident. These are three different quantities and are never mixed in this
    - The `store` RocksDB database holds per-source-file LOCAL fact values of up to **8.5 MB each**
      (64 MB for 80 files).
 4. **RSS is mostly not Java data** (MEASURED).
-   - At machine READY: RSS 418–931 MB, live heap 5.6 MB.
-     - The Java heap region keeps 218–588 MB of pages resident from the seed peak.
-     - glibc holds **284–298 MB, of which 215–225 MB is free inside its arenas**.
-   - After a workspace session and mutations: glibc holds 738–993 MB, **555–849 MB of it free**.
-   - The process is ~95% anonymous memory. File-backed residency is 37–46 MB: libjvm, the CDS
+   - At machine READY: RSS 438–976 MB, live heap 5.9 MB.
+     - The Java heap region keeps 229–616 MB of pages resident from the seed peak.
+     - glibc holds **298–304 MB, of which 215–230 MB is free inside its arenas**.
+   - After a workspace session and mutations: glibc holds 774–1 042 MB, **582–910 MB of it free**.
+   - The process is ~95% anonymous memory. File-backed residency is 39–48 MB: libjvm, the CDS
      archive, the JDK modules image and the RocksDB JNI library. No SST or Maven JAR is mmapped.
      Direct and mapped NIO buffers are 0 at every checkpoint.
 5. **RocksDB native memory is bounded by its budget, but its traffic is not.**
-   - The cache holds 38 MB at READY (~88 KB per artifact) and reaches the 64 MiB budget during
+   - The cache holds 40 MB at READY (~88.5 KB per artifact) and reaches the 64 MiB budget during
      workspace admission.
    - During first-use references it drives **~82 GB of malloc traffic**, 76 GB of it block
      fetch and decompression. A later POM edit drives **14 GB**; the same edit with a 256 MiB
      budget drives 0.1 GB.
-6. **One Maven workspace** (apache/maven, 2 open files) retains **46 MB** once admitted, 70 MB
-   after warm queries and 102 MB after mutations (live heap after full GC, above the 5.6 MB
+6. **One Maven workspace** (apache/maven, 2 open files) retains **48 MB** once admitted, 73 MB
+   after warm queries and 107 MB after mutations (live heap after full GC, above the 5.9 MB
    machine baseline).
-   - Closing the session releases all but **18–24 MB**. What stays: the machine-wide
+   - Closing the session releases all but **19–24 MB**. What stays: the machine-wide
      `FileStateRegistry` (4.5–5.0 MB), `MavenResolver` caches (2.7 MB), workspace `LocalArtifacts`
      (1.1 MB) and per-session `RocksIndexStore` workspace entries.
 7. **Warm editor queries allocate a fixed cost per request.**
-   - Completion: 1.22 MB median, 1.26 MB for 1 candidate, 1.81 MB for a capped 50.
-   - Definition: 1.15 MB. Hover: 2.96 MB. `completionItem/resolve`: 0.73 MB.
+   - Completion: 1.28 MB median, 1.26 MB for 1 candidate, 1.81–1.86 MB for a capped 50.
+   - Definition: 1.20 MB. Hover: 3.11 MB. `completionItem/resolve`: 0.77 MB.
    - None of it survives. The largest share is recomputing compiler-input identity (27–40%) and
      file-state stamps (10–14%), independent of the prefix typed.
-8. **Workspace-scale operations each allocate 1–2.7 GB**, dominated by Maven model resolution and
+8. **Workspace-scale operations each allocate 1.1–2.8 GB**, dominated by Maven model resolution and
    canonical digests/`BigInteger` accumulators:
-   - workspace open, ~2.5 GB;
-   - POM edit, ~2.0 GB;
+   - workspace open, 2.5–2.8 GB;
+   - POM edit, ~2.0–2.1 GB;
    - reopen after close, ~1.1 GB;
-   - restart reopen, ~1.9 GB, plus 0.68 GB to the first correct answer.
+   - restart reopen, ~2.0 GB, plus 0.71 GB to the first correct answer.
 
 ---
 
@@ -121,8 +121,15 @@ Phase boundaries are checkpoints, never sleeps:
 
 - **Allocation per phase** is the JVM-wide `ThreadMXBean.getTotalThreadAllocatedBytes` delta
   between two checkpoints, through the benchmark agent.
-- **Observer cost is excluded.** At each checkpoint the snapshot is taken first. The status call
-  and the mode's hooks run next. The next phase's baseline is taken only after them.
+- **It is the raw counter difference** between the snapshots at the phase's two outer checkpoints.
+  It therefore includes everything the JVM did in between: work other threads did while
+  intermediate checkpoints were being observed, and each observation's own cost (~0.9 MB per
+  checkpoint for the snapshot and `daemon.status`). This matters during seed, where a status call
+  can block for up to ~0.8 s while publication continues; excluding observation windows there
+  missed up to 1.2 GB of real seed work. Wall time, in contrast, excludes hook time (histograms,
+  dumps, NMT reports, profiler stop/start).
+- **Units** are decimal throughout: 1 MB = 10⁶ bytes, 1 GB = 10⁹ bytes. NMT (KiB) and G1 log (MiB)
+  values are converted. RocksDB budgets keep their configured MiB names.
 - **Peaks** come from G1 pool peaks, reset at every checkpoint, and from the 50 ms sampler.
 - **"Settled"** means JVM-wide allocation stayed below 1 MiB/s for two consecutive 1 s windows.
 
@@ -139,7 +146,7 @@ measured in a degraded daemon. So the matrix runs every mode twice:
   (no code change), with first-use references skipped. It exists only to reach the later phases
   in a healthy daemon: mutations, close, reconnect, reopen and restart. Its RocksDB cache numbers
   reflect the 256 MiB budget and are labelled. Its Java allocation for phases both configurations
-  reach matches the primary within 0–9% ([Lifecycle](#lifecycle-memory-map)).
+  reach matches the primary within 0–15% ([Lifecycle](#lifecycle-memory-map)); seed within 0.4%.
 - **References to completion** use dedicated 256 MiB runs (`b256-refs-*`) that include
   references, so the OOM itself is profiled and dumped.
 
@@ -176,7 +183,10 @@ all runs, the only oracle failures other than references are these:
 ### Profiler overhead
 
 Phase wall time per mode against the same configuration's control (seconds; the control lists
-both runs). Allocation volume is unaffected by the profilers (differences ≤ 3%).
+both runs). Seed allocation is unaffected by the profilers (34.9–35.2 GB in every mode, ≤ 1%).
+Admission and warm-loop volumes vary more (admission 0.9–2.1 GB in the primary modes, warm
+completion 130–151 MB) because they depend on how much background work overlaps the window, not on
+the profiler.
 
 | Phase | control | exact | alloc | live | retention | nmt | native | rss |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -187,7 +197,7 @@ both runs). Allocation volume is unaffected by the profilers (differences ≤ 3%
 | warm hover ×102 (supp.) | 1.23 / 1.04 | 1.19 | 1.09 | 1.09 | 1.08 | 1.04 | 1.09 | 1.13 |
 | POM edit (supp.) | 5.12 / 5.04 | 5.11 | 6.16 | 5.87 | 5.04 | 5.18 | 5.16 | 5.01 |
 
-Hook time (histograms, dumps, NMT reports, profiler stop/start) is excluded from phase windows by
+Hook time (histograms, dumps, NMT reports, profiler stop/start) is excluded from phase wall time by
 construction. Ordinary latency figures in this report come only from control runs.
 
 ### Instrumentation added
@@ -210,7 +220,7 @@ All of it is observational:
 - JVM-wide allocation includes background work: diagnostics actors, source publication, and the
   60 s machine rescan. The driver therefore settles before each measured phase.
   - The validation run shows why this matters. Warm definitions measured 38.5 MB per request
-    while admission was still running, and 1.15 MB per request once it had settled.
+    while admission was still running, and 1.20 MB per request once it had settled.
 - The async-profiler allocation sampler on JDK 25 cannot separate in-TLAB from outside-TLAB
   allocations. Humongous allocations come from a separate JFR run.
 - Virtual threads appear under their `ForkJoinPool-1-worker-N` carrier in async-profiler. Index
@@ -220,11 +230,11 @@ All of it is observational:
 - async-profiler's `live` mode undercounts survivors in this workload. Workspace open raised the
   post-GC live heap by ~55 MB while `live` attributed 1.7 MB to it. It is used only qualitatively.
 - The `nativemem` sampler (64 KiB interval) measures malloc/free traffic well. Its "unfreed" view
-  understates long-lived RocksDB cache contents (a few MB versus 38–64 MB reported by the cache).
+  understates long-lived RocksDB cache contents (a few MB versus 40–67 MB reported by the cache).
   RocksDB residency is therefore taken from RocksDB's counters and from glibc `malloc_info`.
 - The anonymous-RSS split by address is heuristic: the Java heap reservation, 64 MiB-aligned glibc
   arenas, executable mappings and stack-shaped mappings. HotSpot metaspace reservations are also
-  64 MiB-aligned and are counted with the arenas (13–39 MB).
+  64 MiB-aligned and are counted with the arenas (14–41 MB).
 
 ---
 
@@ -292,84 +302,120 @@ Supplementary control runs (`b256-control`, `b256-control-2`; two values each). 
 the matching `retention` run: post-full-GC heap used. Primary values are given where the primary
 lifecycle reaches the state.
 
-| State | Live heap | Heap used / committed | RSS | PSS | RSS anon / file | RocksDB cache / pinned | Direct / mapped |
+<!-- table:stable -->
+| State | Live heap (post-GC) | Heap used / committed | RSS | PSS | RSS anon / file | RocksDB cache / pinned | Direct / mapped |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| Machine ready (M4) | **5.6 MB** | 31–116 / 94–216 MB | 418 / 551 MB (primary 614 / 692) | 415 / 548 | 380–513 / 37 | 38.2 / 1.5 MB | 0 / 0 |
-| Workspace ready (M9) | **51.7 MB** | 150–187 / 183–488 | 743 / 1024 (primary 790 / 1040) | 740 / 1021 | 697–978 / 46 | 113 / 14.7 (primary **63.8** / 15.2, at the 64 MiB budget) | 0 / 0 |
-| Warm editor (M14x) | **75.5 MB** (primary after references: 464 MB) | 111–213 / 267–357 | 877 / 930 (primary 1899) | 874 / 927 | 831–884 / 46 | 114 / 14.7 (primary 15.9 / 14.1) | 0 / 0 |
-| After mutations (M17r) | 107.3 MB | 182–319 / 344–357 | 1050 / 999 | 1047 / 996 | 1004–953 / 46 | 112 / 2.5 | 0 / 0 |
-| Reconnected (M20) | 102.4 MB | 141–237 / 344–357 | 1050 / 1001 | 1047 / 998 | 1004–955 / 46 | 112 / 2.5 | 0 / 0 |
-| Session closed (M19s) | **24.0 MB** | 162–263 / 344–357 | 1037 / 988 | 1034 / 985 | 991–942 / 46 | 112 / 2.5 | 0 / 0 |
-| All sessions closed (M20bx) | 28.7 MB | 83–120 / 190–197 | 893 / 827 | 890 / 824 | 847–781 / 46 | 112 / 2.5 | 0 / 0 |
-| Restarted, idle (M24i) | **5.4 MB** | 59–60 / 216 | 193 / 194 | 190 / 191 | 155–156 / 38 | 38.5 / 1.4 | 0 / 0 |
-| Restarted, workspace + queries (M26b) | 61.4 MB | 89–125 / 194–197 | 527 / 577 | 524 / 574 | 482–531 / 46 | 108 / 1.5 | 0 / 0 |
+| machine READY, idle (M4) | 5.9 MB | 33–122 / 99–226 | 438 / 577 (primary 644 / 725) | 435 / 574 | 399–538 / 39 | 40.1 / 1.6 (primary 40.0 / 1.6) | 0 / 0 |
+| workspace admitted (M9) | 54.2 MB | 157–196 / 192–512 | 779 / 1 074 (primary 828 / 1 090) | 776 / 1 070 | 731–1 026 / 48 | 118.8–119.0 / 15.4 (primary 66.9 / 15.9–16.0) | 0 / 0 |
+| warm editor, after queries (M14x) | 79.2 MB (primary 487) | 116–224 / 280–374 | 920 / 975 (primary 1 992) | 916 / 972 | 871–927 / 48 | 119.7–119.9 / 15.4 (primary 16.7 / 14.8) | 0 / 0 |
+| after mutations (M17r) | 112.5 MB (primary 487) | 191–334 / 361–374 | 1 101 / 1 048 (primary 2 042) | 1 098 / 1 045 | 999–1 053 / 48 | 117.5 / 2.6 (primary 21.7 / 14.8) | 0 / 0 |
+| documents closed (M18) | 105.8 MB (primary 487) | 193–336 / 361–374 | 1 101 / 1 048 (primary 2 042) | 1 098 / 1 045 | 1 000–1 053 / 48 | 117.5 / 2.6 (primary 21.9 / 14.8) | 0 / 0 |
+| reconnected (M20) | 107.4 MB | 147–249 / 361–374 | 1 101 / 1 050 (primary 2 043) | 1 098 / 1 046 | 1 001–1 053 / 48 | 117.5 / 2.6 (primary 21.9 / 14.8) | 0 / 0 |
+| session closed, settled (M19s) | 25.2 MB | 169–276 / 361–374 | 1 088 / 1 036 (primary 2 028) | 1 085 / 1 033 | 988–1 039 / 48 | 117.5 / 2.6 (primary 21.9 / 14.8) | 0 / 0 |
+| reopened after close (M20b) | 50.3 MB | 72–103 / 199–207 | 950 / 978 (primary 2 058) | 947 / 975 | 902–930 / 48 | 117.5 / 2.6 (primary 67.0 / 14.8) | 0 / 0 |
+| all sessions closed, before shutdown (M20bx) | 30.1 MB | 87–126 / 199–207 | 936 / 867 (primary 2 045) | 934 / 864 | 819–888 / 48 | 117.5 / 2.6 (primary 67.0 / 14.8) | 0 / 0 |
+| restarted, READY idle (M24i) | 5.7 MB | 62–63 / 226 | 202 / 204 | 200 / 201 | 163–164 / 40 | 40.3 / 1.5 | 0 / 0 |
+| restarted, workspace + first queries (M26b) | 64.4 MB | 93–131 / 203–207 | 553 / 605 | 550 / 602 | 505–557 / 48 | 113.1 / 1.5–1.6 | 0 / 0 |
 
+- Primary values from M14x on describe a daemon after the references OOM or stall (degraded).
 - PSS ≈ RSS: almost nothing is shared.
-- Restarted RSS (193 MB) is far below first-boot RSS at the same logical state (418–931 MB). The
+- Restarted RSS (202–204 MB) is far below first-boot RSS at the same logical state (438–725 MB). The
   difference is seed residue: heap pages G1 committed during the seed peak, plus freed glibc arena
   memory.
 
 ### Allocation by phase
 
-Exact JVM-wide allocation per phase. "Primary" columns are `control-2` and `control-3`;
-"supplementary" columns are `b256-control` and `b256-control-2`. Peak heap and peak RSS come from
-the `exact` runs: the 50 ms sampler for RSS, G1 pool peaks for heap.
+Exact JVM-wide allocation per phase (raw counter delta, see [What runs](#what-runs)). "Primary"
+columns are `control-2` and `control-3`; "supplementary" columns are `b256-control` and
+`b256-control-2`. Peak heap and peak RSS come from the `exact` runs: the 50 ms sampler for RSS, G1
+pool peaks for heap. Primary rows after references are omitted: that daemon is degraded.
 
+<!-- table:allocation -->
 | Phase | Primary alloc (MB) | Supp. alloc (MB) | Wall (s, primary / supp.) | Peak heap used (MB) | Peak RSS (MB) |
 |---|---:|---:|---:|---:|---:|
-| JVM start to M1 | 21 / 21 | 22 / 22 | 0.4 | 32 | 107 |
-| **Machine seed (M1→M3)** | **31 737 / 33 377** | **33 380 / 33 251** | 37.1 / 35.6 | 521–528 (pool sum 588–673) | **962–1026** |
-| Workspace open: `session.open` incl. Maven resolution | 2 707 / 2 548 | 2 387 / 2 551 | 6.2 / 5.5 | 276–291 | 746–790 |
-| Admission (didOpen → settled) | 1 807 / 1 934 | 2 092 / 1 942 | 22.2 / 22.0 | 352–392 | 898–966 |
-| First completion (incl. admitting the probe edit) | 419 / 417 | 416 / 417 | 0.7 | 218–225 | 736–790 |
-| Warm completion ×102 | 123 / 123 | 123 / 123 | 0.8 | 209–213 | 733–776 |
-| `completionItem/resolve`, first | 22.5 | 22.1 | 0.13 | | |
-| First definition | 16.0 | 16.0 | 0.07 | | |
-| Warm definition ×102 | 117 | 117 | 0.7 | | |
-| First hover | 32.0 | 31.9 | 0.13 | | |
-| Warm hover ×102 | 303 | 303 | 1.0 | | |
-| **First-use references** | **36 072** (+ warm attempt 8 667–11 627) | n/a (skipped) | 178 (to OOM / stall) | **1 022 (ceiling)** | **1 959–2 155** |
-| Body-only edit admitted | | 128 / 131 | 0.8 | 213 | 777 |
-| Completion after body edit | | 21.4 | 0.09 | | |
-| Relevant API edit | | 91 / 92 | 0.3 | 210 | 782 |
-| Unrelated document opened / unrelated API edit | | 157 / 44 | 0.7 / 0.35 | | |
-| Source file added / removed | | 48 / 142 | 1.9 / 2.4 | | |
-| **POM dependency added** | | **1 971 / 1 974** | 5.1 | 282 | 929 |
-| POM reverted | | 1 932 / 1 933 | 4.7 | | 969 |
-| Reconnect to retained session (to first correct answer) | | 51 / 51 | 0.3 | | |
-| `session.close` | | 1.2 | 0.06 | | |
-| **Reopen after close** (to first correct answer) | 1 052 | 1 091 / 1 091 | 17.6 | 305 | 943 |
-| Restart: JVM start to READY | — (fails) | 69 / 69 | 0.9 | 73 | 214 |
-| Restart: workspace reopen | — | 1 864 / 1 880 | 4.6 | 148 | 482 |
-| Restart: first correct definition | — | 675 / 675 | 17.6 | 169 | 601 |
-| Restart: first completion | — | 66 / 67 | 0.4 | 159 | 539 |
+| JVM start to probe (M0..M1) | 24 / 24 | 24 / 24 | 0.38 / 0.38 | 27–30 | 112 |
+| machine seed (M1..M3) | 34 997 / 35 052 | 35 043 / 34 910 | 37.06 / 35.61 | 546–554 | 1 008–1 076 |
+| idle after READY (M3..M4) | 1 / 1 | 1 / 1 | 2.00 / 2.00 | 32–62 | 444–555 |
+| workspace open: session.open incl. Maven resolution (M5-..M6) | 2 839 / 2 672 | 2 504 / 2 676 | 6.18 / 5.54 | 289–305 | 782–829 |
+| documents opened (M6..M8) | 37 / 33 | 67 / 43 | 0.00 / 0.00 | 264–288 | 782–832 |
+| diagnostic/semantic admission (M8..M9) | 1 991 / 2 150 | 2 282 / 2 135 | 22.23 / 22.00 | 369–410 | 941–1 013 |
+| first completion (M9..M10) | 440 / 438 | 438 / 439 | 0.67 / 0.65 | 229–236 | 771–829 |
+| warm completion x102 (M10..M11) | 130 / 130 | 129 / 130 | 0.77 / 0.80 | 219–223 | 769–813 |
+| completionItem/resolve first | 24 / 24 | 24 / 24 | 0.13 / 0.13 | 235–240 | 775–817 |
+| first definition (M11r-warm..M12) | 18 / 18 | 18 / 18 | 0.07 / 0.07 | 200–206 | 777–824 |
+| warm definition x102 | 124 / 124 | 124 / 124 | 0.67 / 0.72 | 237–238 | 778–824 |
+| first hover | 35 / 34 | 34 / 35 | 0.11 / 0.15 | 206–207 | 780–824 |
+| warm hover x102 | 318 / 318 | 318 / 318 | 1.04 / 1.23 | 232–233 | 784–825 |
+| first-use references (M13w..M14) | 37 825 | — | 177.57 | 1 072 | 2 054 |
+| body-only edit admitted (M14x..M15) | — | 141 / 146 | 0.81 | 224 | 815 |
+| completion after body edit | — | 23 / 24 | 0.09 | 173 | 818 |
+| relevant API edit (M15q..M16) | — | 97 / 97 | 0.29 | 220 | 820 |
+| open unrelated document | — | 165 / 165 | 0.70 | 224 | 821 |
+| unrelated API edit | — | 47 / 47 | 0.35 | 176 | 831 |
+| source file added | — | 52 / 52 | 1.85 | 231 | 832 |
+| source file removed | — | 150 / 150 | 2.35 | 198 | 848 |
+| POM dependency added (M16r..M17) | — | 2 067 / 2 071 | 5.12 | 295 | 974 |
+| POM reverted | — | 2 027 / 2 028 | 4.73 | 339 | 1 016 |
+| documents closed | — | 2 / 2 | 2.00 | 195 | 986 |
+| reconnect to retained session (M18b..M20) | — | 56 / 56 | 0.27 | 254 | 986 |
+| session.close (M20..M19) | — | 2 / 2 | 0.06 | 281 | 987 |
+| reopen after close (M19s..M20b) | — | 1 144 / 1 144 | 17.60 | 320 | 989 |
+| restart: JVM start to READY (M23..M24) | — | 75 / 74 | 0.96 | 77 | 224 |
+| restart: workspace reopen (M24i..M25) | — | 1 956 / 1 972 | 4.59 | 155 | 505 |
+| restart: first correct definition (M25..M26) | — | 709 / 709 | 17.61 | 178 | 630 |
+| restart: first completion (M26..M26b) | — | 70 / 71 | 0.40 | 166 | 565 |
 
 Rates and normalisations:
 
-- Machine seed allocates at ~0.93 GB/s.
-- Workspace open allocates 0.45 GB/s, admission 0.09 GB/s.
-- Seed per artifact: 33.4 GB / 462 = 72 MB per JAR.
+- Machine seed allocates at ~0.95–0.98 GB/s.
+- Workspace open allocates ~0.45 GB/s, admission ~0.1 GB/s.
+- Seed per artifact: 35.0 GB / 462 = 76 MB per JAR.
+- The first-use references value in the primary column is `control-3` (to the OOM); `control-2`
+  stalled before M14. To M14, `exact-1` allocated 35.3 GB, `alloc-1` 32.1 GB and
+  `b256-refs-alloc` 37.1 GB.
 
 ### GC behaviour by phase
 
 From the supplementary `exact` run's G1 log; the primary run is used for references.
 
-| Phase | GC events | Young | Mixed | Full | Pause (ms) | Heap after GC, max | Humongous regions, max | Concurrent cycles |
+<!-- table:gc -->
+| Phase (supplementary `exact`; references from primary `exact-1`) | GC pauses | Young | Mixed | Full | Pause (ms) | Heap after GC, max (MB) | Humongous regions, max | Concurrent cycles |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Seed M1→M2-0 | 8 | 8 | 0 | 0 | 113 | 106 MB | 0 | 0 |
-| Seed M2-0→M2-10 | 30 | 20 | 4 | 0 | 499 | 277 MB | 0 | 6 |
-| Seed M2-10→M2-25 | 51 | 20 | 16 | 0 | 755 | 359 MB | 0 | 15 |
-| Seed M2-25→M2-50 | 76 | 19 | 28 | 0 | 688 | **475 MB** | 9 | 29 |
-| Seed M2-50→M2-75 | 61 | 15 | 24 | 0 | 462 | 282 MB | 0 | 22 |
-| Seed M2-75→M3 | 67 | 19 | 24 | 0 | 500 | 207 MB | 1 | 24 |
-| Workspace open | 68 | 18 | 26 | 0 | 395 | 161 MB | 11 | 24 |
-| Admission (to M9a) | 21 | 5 | 8 | 0 | 227 | 271 MB | 11 | 8 |
-| First completion | 9 | 2 | 3 | 0 | 58 | 99 MB | 28 | 4 |
-| Warm loops (each ×30–102) | 1–3 | | | 0 | 2–14 | 81–107 MB | 5–9 | 0–2 |
-| POM add / revert | 21 / 17 | | | 0 | 187 / 108 | 225 / 258 MB | 10 / 12 | 8 / 6 |
-| **First-use references (primary `exact-1`)** | 544 + 507 (warm) | | | **97 + 160** | **46 096 + 71 760** | 1 024 MB | **205** | |
+| i1 M0..M1 | 1 | 1 | 0 | 0 | 6 | 5 | 0 | 0 |
+| i1 M1..M2-0 | 8 | 8 | 0 | 0 | 113 | 111 | 0 | 0 |
+| i1 M2-0..M2-10 | 30 | 20 | 4 | 0 | 499 | 290 | 0 | 6 |
+| i1 M2-10..M2-25 | 51 | 20 | 16 | 0 | 755 | 376 | 0 | 15 |
+| i1 M2-25..M2-50 | 76 | 19 | 28 | 0 | 688 | 498 | 9 | 29 |
+| i1 M2-50..M2-75 | 61 | 15 | 24 | 0 | 462 | 296 | 0 | 22 |
+| i1 M2-75..M3 | 67 | 19 | 24 | 0 | 500 | 217 | 1 | 24 |
+| i1 M5-..M6 | 68 | 18 | 26 | 0 | 395 | 169 | 11 | 24 |
+| i1 M8..M9a | 21 | 5 | 8 | 0 | 227 | 284 | 11 | 8 |
+| i1 M9..M10 | 9 | 2 | 3 | 0 | 58 | 104 | 28 | 4 |
+| i1 M10..M11 | 1 | 0 | 1 | 0 | 10 | 86 | 5 | 0 |
+| i1 M11p-dot-first..M11p-dot-warm | 1 | 0 | 1 | 0 | 8 | 86 | 6 | 0 |
+| i1 M11p-dot-warm..M11p-g-first | 1 | 1 | 0 | 0 | 2 | 85 | 6 | 1 |
+| i1 M11p-g-first..M11p-g-warm | 2 | 0 | 0 | 0 | 8 | 99 | 0 | 1 |
+| i1 M11p-get-first..M11p-get-warm | 1 | 0 | 1 | 0 | 2 | 85 | 7 | 0 |
+| i1 M11r-..M11r-first | 1 | 0 | 1 | 0 | 6 | 87 | 9 | 0 |
+| i1 M12..M12w | 3 | 1 | 0 | 0 | 14 | 101 | 9 | 2 |
+| i1 M13..M13w | 2 | 0 | 2 | 0 | 9 | 85 | 5 | 0 |
+| i1 M13w..M14x | 3 | 1 | 0 | 0 | 13 | 112 | 5 | 2 |
+| i1 M14x..M15 | 1 | 0 | 1 | 0 | 13 | 89 | 6 | 0 |
+| i1 M15q..M16 | 4 | 1 | 1 | 0 | 23 | 112 | 9 | 2 |
+| i1 M16..M16u- | 1 | 0 | 1 | 0 | 11 | 93 | 7 | 0 |
+| i1 M16u..M16a | 1 | 0 | 1 | 0 | 9 | 96 | 11 | 0 |
+| i1 M16a..M16r | 3 | 1 | 0 | 0 | 15 | 98 | 11 | 2 |
+| i1 M16r..M17 | 21 | 5 | 8 | 0 | 187 | 236 | 10 | 8 |
+| i1 M17..M17r | 17 | 5 | 6 | 0 | 108 | 271 | 12 | 6 |
+| i1 M19s..M20b | 11 | 2 | 5 | 0 | 58 | 148 | 12 | 4 |
+| i2 M23..M23b | 1 | 1 | 0 | 0 | 5 | 5 | 0 | 0 |
+| i2 M24i..M25 | 28 | 24 | 2 | 0 | 168 | 48 | 5 | 2 |
+| i2 M25..M26 | 8 | 6 | 0 | 0 | 46 | 64 | 10 | 2 |
+| i1 M13w..M14 (primary) | 544 | 244 | 100 | 97 | 46 096 | 1 073 | 205 | 213 |
+| i1 M14..M14w (primary) | 507 | 316 | 15 | 160 | 71 760 | 1 073 | 104 | 204 |
+| i1 M14w..M14x (primary) | 2 | 1 | 0 | 1 | 484 | 1 070 | 51 | 2 |
 
-- During seed, heap occupancy *after* collections reaches 475 MB. The post-full-GC live set at
+- During seed, heap occupancy *after* collections reaches 498 MB. The post-full-GC live set at
   the same checkpoints is only 25–90 MB (retention run). Transient seed data therefore survives
   young collections long enough to be promoted and to trigger concurrent cycles: 96 cycles per
   seed.
@@ -383,19 +429,19 @@ From the supplementary `exact` run's G1 log; the primary run is used for referen
 
 | Quantity | Value |
 |---|---|
-| Exact allocation, full seed | 31.7–35.0 GB (7 runs: controls 31.7, 33.4, 33.4, 33.3; profiled 34.2–35.1) |
-| Per indexed JAR | 72–76 MB (`seedAllocated ~ artifacts` R² 0.981) |
-| Per symbol | **40.5 KB** (slope over 5 sizes, R² 0.998) |
-| Per edge | 30.2 KB (R² 0.9985) |
-| Persisted SST database | 436–437 MB (**503.6 B per symbol**, R² 0.99993); total state 437 MB |
+| Exact allocation, full seed | 34.9–35.2 GB (20 runs: controls 35.0, 35.1, 35.0, 34.9; profiled 34.9–35.2; `scale-full` 35.1) |
+| Per indexed JAR | 76 MB mean; slope 79 MB (`seedAllocated ~ artifacts` R² 0.989) |
+| Per symbol | **40.7 KB** (slope over 5 sizes, R² 0.9998) |
+| Per edge | 30.3 KB (R² 0.9999) |
+| Persisted SST database | 435.9 MB (**503.6 B per symbol**, R² 0.99993); total state 436.6 MB |
 | **Allocation amplification** (allocated / persisted SST bytes) | **~80×** full seed; groovy 97×, commons-lang3 92×, guava 82× |
-| Retained heap after seed | 5.6–7.0 MB live (empty repository: 6.0 MB). Slope ~1.9 KB per artifact (R² 0.87). `RocksIndexStore` retains 0.34 MB at READY (artifacts map 240 KB, paths 27 KB) |
-| RocksDB cache at READY | 38–40 MB, slope **88.5 KB per artifact** (R² 0.99); pinned 1.5 MB |
-| Peak heap used | 521–528 MB (sampler); single JARs: groovy 499 MB, guava 246 MB, commons-lang3 133 MB, javax.inject 36 MB (empty: 30 MB) |
-| Peak RSS | 962–1 026 MB |
+| Retained heap after seed | 5.9–7.0 MB live (empty repository: 6.0 MB). Slope ~1.9 KB per artifact (R² 0.87). `RocksIndexStore` retains 0.34 MB at READY (artifacts map 240 KB, paths 27 KB) |
+| RocksDB cache at READY | 40.0–40.3 MB, slope **88.5 KB per artifact** (R² 0.99); pinned 1.5 MB |
+| Peak heap used | 526–554 MB (sampler); single JARs: groovy 499 MB, guava 246 MB, commons-lang3 133 MB, javax.inject 36 MB (empty: 30 MB) |
+| Peak RSS | 1 008–1 090 MB |
 | Native malloc traffic (nativemem) | 11.6 GB: HotSpot 7.0–10.9 GB (C2 compiler arenas), RocksDB 2.96 GB (2.7 GB SST writing and Snappy buffers), zlib 0.19 GB |
 
-### Allocation sites and classes (ATTRIBUTED; `b256-alloc`, 133 K samples, 35.0 GB sampled vs 34.2 GB exact)
+### Allocation sites and classes (ATTRIBUTED; `b256-alloc`, 133 K samples, 35.0 GB sampled vs 35.0 GB exact)
 
 **Mechanism** is the innermost JVMD/library frame matching a rule. **Operation** is the outermost
 pipeline frame: for seed it is 100% `IndexService.scan → indexJar`. **Thread**: 100% virtual
@@ -476,10 +522,10 @@ documentation indexing allocates nothing in this repository.
 
 | JAR | Bytes | Classes | Symbols | Edges | Seed alloc | Alloc / symbol | Peak heap (−30 MB baseline) | Retained Δ | Persisted SST | Wall |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| javax.inject-1 | 2.5 KB | 6 | 8 | 28 | 8.3 MB (−2.5 empty) | — | +6 MB | +0.4 MB | 51 KB | 0.16 s |
-| commons-lang3-3.20.0 | 714 KB | 422 | 6 460 | 8 503 | 285 MB | 44 KB | +103 MB | +0.4 MB | 3.1 MB | 1.2 s |
-| guava-33.4.8-jre | 3.0 MB | 1 968 | 20 317 | 25 867 | 860 MB | 42 KB | +216 MB | +0.3 MB | 10.4 MB | 2.7 s |
-| groovy-4.0.15 | 7.6 MB | 4 584 | 51 066 | 70 302 | 2 478 MB | 49 KB | **+469 MB** | +0.4 MB | 25.6 MB | 6.2 s |
+| javax.inject-1 | 2.5 KB | 6 | 8 | 28 | 8.6 MB (−2.5 empty) | — | +6 MB | +0.4 MB | 51 KB | 0.16 s |
+| commons-lang3-3.20.0 | 714 KB | 422 | 6 460 | 8 503 | 286 MB | 44 KB | +103 MB | +0.4 MB | 3.1 MB | 1.2 s |
+| guava-33.4.8-jre | 3.0 MB | 1 968 | 20 317 | 25 867 | 866 MB | 42 KB | +216 MB | +0.3 MB | 10.4 MB | 2.7 s |
+| groovy-4.0.15 | 7.6 MB | 4 584 | 51 066 | 70 302 | 2 483 MB | 49 KB | **+469 MB** | +0.4 MB | 25.6 MB | 6.2 s |
 
 Native allocation per JAR was not measured separately; the full-seed nativemem profile is above.
 
@@ -508,7 +554,7 @@ byte[] digests / SHA-256      created by CanonicalDigestWriter (ResolutionFact i
 
 ## Workspace and admission allocation
 
-### Workspace open (`session.open`, M5-→M6): 2.4–2.7 GB, 5.5–6.2 s, live heap 5.6 → 61 MB
+### Workspace open (`session.open`, M5-→M6): 2.5–2.8 GB, 5.5–6.2 s, live heap 5.9 → 54 MB
 
 | Owner | Share |
 |---|---:|
@@ -525,7 +571,7 @@ byte[] digests / SHA-256      created by CanonicalDigestWriter (ResolutionFact i
 - JFR stage `project.resolve`: 6 invocations over the run, 2.8 GB exact platform-thread
   allocation, 16 s.
 
-### Admission (M8→M9): 1.8–2.1 GB, ~22 s
+### Admission (M8→M9): 2.0–2.3 GB, ~22 s
 
 | Operation | Share |
 |---|---:|
@@ -550,9 +596,9 @@ M7 (index binding) is inside this window: `analyzer.context.prepare/lookup/creat
 
 | State | Live heap | Above machine baseline |
 |---|---:|---:|
-| Admitted (M9) | 51.7 MB | **+46 MB** |
-| After warm queries | 75.5 MB | +70 MB |
-| After mutations | 107.3 MB | +102 MB |
+| Admitted (M9) | 54.2 MB | **+48 MB** |
+| After warm queries | 79.2 MB | +73 MB |
+| After mutations | 112.5 MB | +107 MB |
 
 At M9 (H2 dump) the top dominators are:
 
@@ -587,15 +633,15 @@ two agree within 1%. Result sizes come from `b256-control-sizes`.
 
 | Request | First use | Warm median | Warm p95 | Warm latency median / p95 | Result | Bytes per result |
 |---|---:|---:|---:|---:|---|---:|
-| completion `project.getGr` (1 candidate) | **417 MB** (first completion, incl. the probe edit) | 1.26 MB | 1.26 MB | 8.2 / – ms | 1 item, 457 B | 1.26 MB/item |
+| completion `project.getGr` (1 candidate) | **438–440 MB** (first completion, incl. the probe edit) | 1.26 MB | 1.26 MB | 8.2 / – ms | 1 item, 457 B | 1.26 MB/item |
 | completion `project.` (capped 50) | 37.9 MB (after the edit) | 1.86 MB | 1.87 MB | 10.0 ms | 50 items, 24.6 KB | 37 KB/item; 75 B per response byte |
 | completion `project.g` / `.get` | 37.2 / 37.4 MB | 1.81 / 1.81 MB | 1.82 / 1.81 | 9.9 / 10.2 ms | 50 items | 36 KB/item |
 | completion `project.getM` | 36.2 MB | 1.28 MB | 1.28 MB | 8.5 ms | 6 items | 214 KB/item |
-| all warm completions (440 samples) | | 1.22 MB | 1.75 MB | 7.4 / 10.9 ms | | |
-| `completionItem/resolve` | 22.4 MB | 0.73 MB | 0.74 MB | 2.2 / 3.1 ms | 437 B | |
-| definition | 16.0 MB | 1.15 MB | 1.15 MB | 5.8 / 6.4 ms | 1 location | |
-| hover | 32.0 MB | 2.96 MB | 2.97 MB | 8.9 / 10.7 ms | 1 036 B | |
-| references (first use) | **31–37 GB, OOM or stall** | — | — | — | — | — |
+| all warm completions (880 samples) | | 1.28 MB | 1.84 MB | 7.0–7.4 / 10.2–10.9 ms | | |
+| `completionItem/resolve` | 23.3–23.5 MB | 0.77 MB | 0.78–0.79 MB | 2.2–2.3 / 2.8–3.1 ms | 437 B | |
+| definition | 16.8 MB | 1.20–1.21 MB | 1.20–1.21 MB | 5.8 / 6.4–6.6 ms | 1 location | |
+| hover | 33.5 MB | 3.10–3.11 MB | 3.11 MB | 8.9–9.9 / 10.7–13.1 ms | 1 036 B | |
+| references (first use) | **32–38 GB, OOM or stall** | — | — | — | — | — |
 
 Prefix narrowing does not change cost per request beyond candidate count:
 
@@ -650,7 +696,7 @@ Across the whole run, JFR's exact platform-thread allocation for javac stages is
 That is 1.39 GB of the 7.63 GB the session thread allocated. The rest is JVMD identity, digest and
 materialisation work.
 
-### First-use references (ATTRIBUTED, `b256-refs-alloc` 36.8 GB sampled / 37.1 GB exact; `alloc-1` 31.7 GB)
+### First-use references (ATTRIBUTED, `b256-refs-alloc` 36.8 GB sampled / 37.1 GB exact; `alloc-1` 32.1 GB)
 
 - **Operations:** workspace bindings (`Application.occurrences → WorkspaceBindings.getBatch →
   load/capture`) 78–79%, background source-fact publication (`SourceIndexPublisher`) 20–22%.
@@ -667,24 +713,24 @@ From the supplementary configuration: two control runs plus the alloc run.
 
 | Mutation | Exact allocation | Wall | Dominant operation / mechanism | Retained Δ (live) | Native | RSS peak |
 |---|---:|---:|---|---:|---:|---:|
-| Body-only edit (`MavenProject.getGroupId` body) admitted | 128–131 MB | 0.8 s | diagnostics actors 76%; javac 38%, semantic declaration extraction 14% | ~0 (75.5 → 75.5 MB) | HotSpot only | 777 MB |
-| Completion after body edit | 21 MB | 0.09 s | | | | |
-| Relevant API edit (member added, offered at caller) | 91–92 MB | 0.3 s | annotation-processing fingerprint 71%, completion 24% | −2.9 MB | | 782 MB |
-| Unrelated API edit (plugin package) | 44 MB, plus 157 MB to open the document | 0.35 s | diagnostics actors 71%; javac 32% | +0.1 MB | | 793 MB |
-| Source file added / removed | 48 / 142 MB | 1.9 / 2.4 s | annotation-processing preparation 49%, completion 36%; javac 23% | +1.4 / −0.2 MB | | 808 MB |
-| **POM dependency added** | **1.97 GB** | 5.1 s | Maven resolution 77% (Maven model 66%), digests 11% | +12.9 MB | RocksDB 110 MB (256 MiB budget) / **14.0 GB** (64 MiB, after references) | 929 MB |
-| POM reverted | 1.93 GB | 4.7 s | same | +14.9 MB | | 969 MB |
+| Body-only edit (`MavenProject.getGroupId` body) admitted | 141–146 MB | 0.8 s | diagnostics actors 76%; javac 38%, semantic declaration extraction 14% | ~0 (79.1 → 79.0 MB) | HotSpot only | 815 MB |
+| Completion after body edit | 23–24 MB | 0.09 s | | | | |
+| Relevant API edit (member added, offered at caller) | 97 MB | 0.3 s | annotation-processing fingerprint 71%, completion 24% | −4.0 MB | | 820 MB |
+| Unrelated API edit (plugin package) | 47 MB, plus 165 MB to open the document | 0.35 s | diagnostics actors 71%; javac 32% | +0.1 MB | | 831 MB |
+| Source file added / removed | 52 / 150 MB | 1.9 / 2.4 s | annotation-processing preparation 49%, completion 36%; javac 23% | +0.5 / −0.3 MB | | 832–848 MB |
+| **POM dependency added** | **2.07 GB** | 5.1 s | Maven resolution 77% (Maven model 66%), digests 11% | +13.6 MB | RocksDB 110 MB (256 MiB budget) / **14.0 GB** (64 MiB, after references) | 974 MB |
+| POM reverted | 2.03 GB | 4.7 s | same | +16.5 MB | | 1 016 MB |
 
 Unrelated-edit selectivity:
 
-- The unrelated API edit costs 44 MB, against 92 MB for the relevant one.
+- The unrelated API edit costs 47 MB, against 97 MB for the relevant one.
 - Completion at the caller afterwards needs no recomputation.
 
 ---
 
 ## Retained heap
 
-### Machine ready (H1, 4.9 MB in the dump; 5.6 MB histogram)
+### Machine ready (H1, 4.9 MB in the dump; 5.9 MB histogram)
 
 The machine-wide index is a negligible part of the heap:
 
@@ -750,12 +796,12 @@ Class histogram during the primary stall (live 1.04 GB):
 
 | Checkpoint | Live heap |
 |---|---:|
-| Before close (M18b) | 100.7 MB |
-| Session closed (M19s) | 24.0 MB |
-| Second session closed (M20bx) | 28.7 MB |
-| Restart, idle (machine baseline) | 5.4 MB |
+| Before close (M18b) | 105.3 MB |
+| Session closed (M19s) | 25.2 MB |
+| Second session closed (M20bx) | 30.1 MB |
+| Restart, idle (machine baseline) | 5.7 MB |
 
-So 77 MB is released, and **18–23 MB stays above the machine baseline**. H5 and H7 dominators:
+So 80 MB is released, and **19–24 MB stays above the machine baseline**. H5 and H7 dominators:
 
 | Owner | H5 (closed) | H7 (2 sessions closed) | Classification |
 |---|---:|---:|---|
@@ -775,9 +821,9 @@ grows per opened session.
 
 | | Retained session reconnect (M18b→M20) | Reopen after close (M19s→M20b) |
 |---|---:|---:|
-| Allocation to first correct definition | **51 MB** | **1.09 GB** |
+| Allocation to first correct definition | **56 MB** | **1.14 GB** |
 | Latency to first correct definition | 0.15–0.2 s | 16.4–17.0 s |
-| Live heap change | +1.7 MB | +24 MB |
+| Live heap change | +0.8 MB | +24 MB |
 | Mechanisms | annotation-processing fingerprint 68%, javac 16% | canonical digests 53%, accumulators 17%, Maven resolution 41% (operation) |
 
 Reconnect reuses the `Session`, `Analyzer`s, `CompilerPool`s and `Documents`; nothing is
@@ -787,10 +833,10 @@ duplicated. Reopen rebuilds all of them.
 
 | | Allocation | Wall | Live heap after |
 |---|---:|---:|---:|
-| JVM start to READY | 69 MB | 0.9 s | 5.4 MB |
-| Workspace reopen | 1.86–1.88 GB | 4.6 s | 22 MB |
-| First correct definition | 675 MB | 17.6 s | 44 MB |
-| First completion | 66 MB | 0.4 s | 61 MB |
+| JVM start to READY | 74–75 MB | 1.0 s | 5.7 MB |
+| Workspace reopen | 1.96–1.97 GB | 4.6 s | 23 MB |
+| First correct definition | 709 MB | 17.6 s | 46 MB |
+| First completion | 70–71 MB | 0.4 s | 62–64 MB |
 
 - **To READY:** ATTRIBUTED Jackson 26–57% (`StoredArtifact` JSON for 462 artifacts), ZIP/JAR 9–41%,
   classfile reading 10–20%. RocksDB native malloc is 9 MB, plus 0.9 MB of open/recovery.
@@ -801,7 +847,7 @@ No machine re-index happens: the restart rescan reuses all 462 artifacts in 59�
 reconstructed:
 
 - the `RocksIndexStore` artifact table (heap 0.34 MB);
-- RocksDB table readers and index blocks (cache 38.5 MB at READY);
+- RocksDB table readers and index blocks (cache 40.3 MB at READY);
 - per workspace: the Maven model, analyzer contexts and javac state, and digest/accumulator
   identities.
 
@@ -823,35 +869,63 @@ reconstructed:
 
 ### HotSpot native memory (NMT, committed MB)
 
-| State | Total | Java heap | Class + metaspace | Thread | Code | GC | Internal | Symbol | Arena chunk |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| M1 (bootstrap) | 315 | 216 | 12.5 | 2.0 | 9.9 | 44.8 | 1.3 | 2.7 | 7.7 |
-| Seed 25% | 517–655 | 395–477 | 14 | 2.1 | 16 | 50–54 | 10.0 | 2.8 | 11–15 (peak **143**) |
-| Machine ready (M4) | **297–360** | 184–237 | 14.8 | 2.3 | 17.5 | 46–49 | 10.0 | 2.8 | 3–10 |
-| Workspace ready (M9) | 412–665 | 224–468 | 40.3 | 19.5 | 40–44 | 47–54 | 10.5 | 5.5 | 0–1 |
-| After references (primary) | **1 262** | **1 024** | 44.4 | 26.4 | 60 | 64 | 10.7 | 5.7 | 0.3 |
-| After mutations (supp.) | 574 | 354 | 42.9 | 19.8 | 55.7 | 51.5 | 10.5 | 5.6 | 7.3 |
-| All sessions closed (supp.) | 415 | 224 | 43.0 | 2.7 | 56.0 | 49.0 | 10.4 | 5.6 | 2.7 |
-| Restarted, idle | 317 | 216 | 13.1 | 2.2 | 11.2 | 44.8 | 1.3 | 2.7 | 9.7 |
+<!-- table:nmt -->
+| Run / state | Total | Java Heap | Class | Metaspace | Thread | Code | GC | Internal | Symbol | Arena Chunk | NMT itself |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| nmt-2 i1:M1 | 331.4 | 226.5 | 1.8 | 11.7 | 2.1 | 10.8 | 47.1 | 1.4 | 2.9 | 9.7 | 1.5 |
+| nmt-2 i1:M3 | 311.8 | 192.9 | 2.0 | 13.6 | 2.4 | 18.5 | 47.9 | 10.5 | 2.9 | 3.3 | 2.1 |
+| nmt-2 i1:M4 | 311.8 | 192.9 | 2.0 | 13.6 | 2.4 | 18.5 | 47.9 | 10.5 | 2.9 | 3.3 | 2.1 |
+| nmt-2 i1:M6 | 592.8 | 386.9 | 4.8 | 31.7 | 19.8 | 33.9 | 51.8 | 10.9 | 5.4 | 7.0 | 3.7 |
+| nmt-2 i1:M9 | 431.6 | 234.9 | 5.6 | 36.7 | 20.4 | 42.6 | 49.2 | 11.0 | 5.8 | 1.0 | 4.4 |
+| nmt-2 i1:M14 | 1 323.2 | 1 073.7 | 6.1 | 40.5 | 27.7 | 62.6 | 67.4 | 11.2 | 5.9 | 0.3 | 5.3 |
+| nmt-2 i1:M14x | 1 327.1 | 1 073.7 | 6.1 | 40.6 | 27.7 | 64.8 | 67.4 | 11.2 | 5.9 | 1.6 | 5.4 |
+| nmt-2 i1:M17r | 1 348.7 | 1 073.7 | 6.1 | 40.9 | 25.3 | 63.5 | 67.6 | 11.2 | 5.9 | 25.1 | 5.1 |
+| nmt-2 i1:M19s | 1 301.7 | 1 073.7 | 6.0 | 40.9 | 2.7 | 63.6 | 67.6 | 11.0 | 5.9 | 6.2 | 5.0 |
+| nmt-2 i1:M20bx | 1 313.7 | 1 073.7 | 6.0 | 41.1 | 2.7 | 64.0 | 67.4 | 11.0 | 5.9 | 17.6 | 5.1 |
+| b256-nmt i1:M1 | 330.4 | 226.5 | 1.7 | 11.4 | 2.1 | 10.4 | 47.0 | 1.4 | 2.9 | 8.1 | 1.5 |
+| b256-nmt i1:M3 | 377.4 | 248.5 | 2.0 | 13.6 | 2.4 | 18.4 | 51.2 | 10.5 | 2.9 | 10.0 | 2.1 |
+| b256-nmt i1:M4 | 377.3 | 248.5 | 2.0 | 13.6 | 2.4 | 18.4 | 51.2 | 10.5 | 2.9 | 10.0 | 2.1 |
+| b256-nmt i1:M6 | 637.9 | 343.9 | 4.8 | 31.5 | 19.8 | 30.7 | 53.3 | 10.9 | 5.3 | 115.7 | 3.7 |
+| b256-nmt i1:M9 | 697.0 | 490.7 | 5.6 | 36.6 | 20.4 | 46.1 | 56.3 | 11.0 | 5.8 | 0.0 | 4.6 |
+| b256-nmt i1:M14x | 733.4 | 490.7 | 5.9 | 38.3 | 20.6 | 58.5 | 56.4 | 11.0 | 5.9 | 19.0 | 5.0 |
+| b256-nmt i1:M17r | 602.2 | 371.2 | 5.9 | 39.1 | 20.8 | 58.4 | 54.0 | 11.0 | 5.9 | 7.6 | 4.9 |
+| b256-nmt i1:M19s | 576.9 | 377.5 | 5.8 | 39.2 | 2.8 | 58.6 | 54.2 | 10.9 | 5.9 | 0.3 | 4.7 |
+| b256-nmt i1:M20bx | 435.2 | 234.9 | 5.8 | 39.2 | 2.8 | 58.8 | 51.4 | 10.9 | 5.9 | 2.8 | 4.7 |
+| b256-nmt i2:M24i | 332.5 | 226.5 | 1.8 | 12.0 | 2.3 | 11.7 | 47.0 | 1.4 | 2.9 | 10.2 | 1.4 |
+| b256-nmt i2:M26b | 495.3 | 280.0 | 5.2 | 34.4 | 20.4 | 41.3 | 48.6 | 1.8 | 5.6 | 32.2 | 3.9 |
 
-NMT self-overhead is 1.3–5.2 MB. The restart failure's NMT at exit is 322 MB committed: heap 226,
+NMT self-overhead is 1.4–5.4 MB. The restart failure's NMT at exit is 322 MB committed: heap 226,
 GC 47, code 9, arena 7.4.
 
 ### glibc malloc arenas (`malloc_info`, MEASURED)
 
-| State | Obtained from OS | Free inside arenas | In use |
+<!-- table:malloc -->
+| Run / state | glibc obtained from OS (MB) | Free inside arenas (MB) | In use (MB) |
 |---|---:|---:|---:|
-| Machine ready | 284–290 MB | **215–220 MB** | 69–70 MB |
-| Workspace ready | 388–477 MB | 270–304 MB | 118–172 MB |
-| After queries (supp.) | 581 MB | 382 MB | 200 MB |
-| After references (primary) | 916–929 MB | **827–839 MB** | 89–90 MB |
-| After mutations | 738–993 MB | 555–837 MB | 156–183 MB |
-| All sessions closed | 748–993 MB | 573–849 MB | 144–175 MB |
-| Restarted, idle | 77 MB | 14 MB | 63 MB |
-| Restarted, workspace | 295 MB | 110 MB | 185 MB |
+| nmt-2 i1:M1 | 89.3 | 26.6 | 62.7 |
+| nmt-2 i1:M3 | 304.2 | 230.4 | 73.7 |
+| nmt-2 i1:M4 | 304.2 | 230.4 | 73.7 |
+| nmt-2 i1:M6 | 329.9 | 186.4 | 143.5 |
+| nmt-2 i1:M9 | 406.7 | 283.2 | 123.6 |
+| nmt-2 i1:M14 | 960.8 | 867.4 | 93.4 |
+| nmt-2 i1:M14x | 974.1 | 879.4 | 94.7 |
+| nmt-2 i1:M17r | 1 041.6 | 878.1 | 163.5 |
+| nmt-2 i1:M19s | 1 041.6 | 910.5 | 131.1 |
+| nmt-2 i1:M20bx | 1 041.6 | 890.0 | 151.5 |
+| b256-nmt i1:M1 | 78.4 | 15.2 | 63.2 |
+| b256-nmt i1:M3 | 297.9 | 215.1 | 82.8 |
+| b256-nmt i1:M4 | 297.9 | 225.1 | 72.8 |
+| b256-nmt i1:M6 | 422.6 | 147.7 | 274.9 |
+| b256-nmt i1:M9 | 499.8 | 319.2 | 180.6 |
+| b256-nmt i1:M14x | 609.4 | 400.2 | 209.2 |
+| b256-nmt i1:M17r | 774.0 | 581.9 | 192.1 |
+| b256-nmt i1:M19s | 782.5 | 603.6 | 178.9 |
+| b256-nmt i1:M20bx | 784.1 | 600.4 | 183.8 |
+| b256-nmt i2:M24i | 80.4 | 14.6 | 65.8 |
+| b256-nmt i2:M26b | 309.2 | 115.7 | 193.5 |
 
 ATTRIBUTED: native malloc traffic is dominated by HotSpot C2 compiler arenas (7–11 GB over the
-seed; the Arena Chunk peak reaches 143 MB) and by RocksDB block fetch/decompression.
+seed; the Arena Chunk peak reaches ~150 MB) and by RocksDB block fetch/decompression.
 
 INFERENCE: freed compiler arenas and RocksDB buffers stay inside glibc's per-thread arenas.
 `malloc_info` shows 72–77 arena mappings. That freed memory, not live native data, is most of the
@@ -865,10 +939,10 @@ non-heap RSS.
 | Workspace open | 64 MiB | 40 → **66.9 MB** | 2.1 MB | 57 MB: SST writing 40, block fetch 12 | 0.7 MB | +340 MB |
 | Workspace open | 256 MiB | 40 → 104 MB | 2.1 MB | 45 MB | 1.0 MB | +370 MB |
 | Admission | 64 / 256 MiB | 67 / 119 MB | **15.4–16.0 MB** | 150–155 MB: SST writing 83–88, memtables 56 | 0.2–1.3 MB | −30 to −157 MB |
-| **First-use references** | 64 MiB | 67 → full (strict limit; inserts failing) | 14 MB | **81.8 GB**: block fetch/decompress **76.5 GB**, memtables 4.3 GB, SST writing 0.9 GB | 13 MB | to 1.96–2.16 GB |
+| **First-use references** | 64 MiB | 67 → full (strict limit; inserts failing) | 14 MB | **81.8 GB**: block fetch/decompress **76.5 GB**, memtables 4.3 GB, SST writing 0.9 GB | 13 MB | to 2.05–2.26 GB |
 | POM add after references | 64 MiB | full | | **14.0 GB** (block fetch) | 0 | |
 | POM add (healthy) | 256 MiB | 107 → 118 MB | 2.6 MB | 110 MB | 0.6 MB | +66 MB |
-| Restart to READY | 256 MiB | 38.5 MB | 1.4 MB | 9 MB (+0.9 MB open/recovery) | | +130 MB |
+| Restart to READY | 256 MiB | 40.3 MB | 1.5 MB | 9 MB (+0.9 MB open/recovery) | | +130 MB |
 
 Why the columns do not sum to RSS:
 
@@ -929,18 +1003,25 @@ memory, not NIO buffers. No JVMD code maps files.
 
 ### RSS split, anonymous by address (rss runs)
 
-| State | RSS | Java heap | glibc arenas + brk | JIT code | Thread stacks | Other anonymous (metaspace, GC, NMT) | File-backed |
+<!-- table:rss -->
+| Run / state | RSS (MB) | Java heap | glibc arenas + brk | JIT code | Thread stacks | Other anonymous | File-backed |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| Machine ready, primary (`rss-1`) | 541 | 218 | 248 | 12 | 2 | 10 | 50 |
-| Machine ready, supp. (`b256-rss`) | 930 | **588** | 262 | 12 | 3 | 15 | 50 |
-| Workspace ready (primary / supp.) | 724 / 1 012 | 206 / 460 | **405 / 420** | 26 / 29 | 16 | 13 / 29 | 59 |
-| After references (primary) | 1 233 | 567 | 530 | 34 | 22 | 21 | 59 |
-| After mutations (supp.) | 978 | 314 | 530 | 32 | 16 | 27 | 59 |
-| All sessions closed (supp.) | 820 | 163 | **535** | 33 | 3 | 26 | 59 |
-| Restarted, idle | 199 | 63 | 71 | 6 | 2 | 7 | 50 |
-| Restarted, workspace | 593 | 214 | 267 | 24 | 16 | 14 | 59 |
+| rss-1 i1:M3 | 567 | 229 | 261 | 13 | 2 | 10 | 53 |
+| rss-1 i1:M4 | 567 | 229 | 261 | 13 | 2 | 10 | 53 |
+| rss-1 i1:M9 | 759 | 216 | 425 | 27 | 17 | 13 | 62 |
+| rss-1 i1:M14 | 1 292 | 594 | 556 | 36 | 23 | 22 | 62 |
+| rss-1 i1:M14x | 1 293 | 595 | 556 | 36 | 23 | 22 | 62 |
+| b256-rss i1:M3 | 976 | 616 | 275 | 13 | 3 | 16 | 53 |
+| b256-rss i1:M4 | 976 | 616 | 275 | 13 | 3 | 16 | 53 |
+| b256-rss i1:M9 | 1 061 | 482 | 441 | 30 | 16 | 30 | 62 |
+| b256-rss i1:M14x | 940 | 328 | 473 | 32 | 17 | 28 | 62 |
+| b256-rss i1:M17r | 1 026 | 329 | 556 | 34 | 17 | 28 | 62 |
+| b256-rss i1:M19s | 1 017 | 329 | 558 | 34 | 3 | 31 | 62 |
+| b256-rss i1:M20bx | 859 | 171 | 561 | 34 | 3 | 28 | 62 |
+| b256-rss i2:M24i | 209 | 66 | 74 | 7 | 2 | 8 | 52 |
+| b256-rss i2:M26b | 622 | 224 | 280 | 25 | 16 | 14 | 62 |
 
-File-backed residency (M9) is 50–59 MB in smaps, 37–46 MB `RssFile`:
+File-backed residency (M9) is 52–62 MB in smaps, 39–48 MB `RssFile`:
 
 - `libjvm.so` 18.8 MB;
 - CDS `classes.jsa` 14.7 MB;
@@ -957,27 +1038,27 @@ the 1 GiB compressed class space and the arena reservations. It is not resident.
 
 | Category | Machine ready | Workspace ready | After references (primary) | Overlap |
 |---|---:|---:|---:|---|
-| Java live heap (post-GC) | 5.6 MB | 51.7 MB | 763–1 040 MB | ⊂ committed heap |
-| Java committed heap | 94–237 MB | 183–488 MB | 1 024 MB | ⊂ NMT, ⊂ RSS anon (only touched pages) |
-| HotSpot NMT committed | 297–360 MB | 412–665 MB | 1 262 MB | includes heap, GC, code, metaspace |
-| RocksDB cache usage | 38.2 MB | 63.8 MB (64 MiB budget) / 113 MB (256) | full | ⊂ glibc in-use |
-| RocksDB pinned | 1.5 MB | 15 MB | 14 MB | ⊂ cache usage |
-| glibc obtained / free in arenas | 284–290 / 215–220 MB | 388–477 / 270–304 MB | 916–929 / 827–839 MB | ⊂ RSS anon (touched pages) |
+| Java live heap (post-GC) | 5.9 MB | 54.2 MB | 487 MB (after the failure) – 1.06 GB (OOM dump) | ⊂ committed heap |
+| Java committed heap | 99–249 MB | 192–512 MB | 1 074 MB | ⊂ NMT, ⊂ RSS anon (only touched pages) |
+| HotSpot NMT committed | 312–377 MB | 432–697 MB | 1 323 MB | includes heap, GC, code, metaspace |
+| RocksDB cache usage | 40.0–40.1 MB | 66.9 MB (64 MiB budget) / 119 MB (256) | full | ⊂ glibc in-use |
+| RocksDB pinned | 1.6 MB | 15.4–16.0 MB | 14.8 MB | ⊂ cache usage |
+| glibc obtained / free in arenas | 298–304 / 215–230 MB | 407–500 / 283–319 MB | 961–974 / 867–879 MB | ⊂ RSS anon (touched pages) |
 | Direct / mapped buffers | 0 / 0 | 0 / 0 | 0 / 0 | — |
-| RSS anonymous | 380–654 MB | 697–994 MB | 1 854 MB | |
-| RSS file-backed | 37 MB | 46 MB | 46 MB | |
-| PSS | 415–548 MB | 740–1 021 MB | ≈ RSS | |
-| **Total RSS** | **418–692 MB** | **743–1 040 MB** | **1 899–2 155 MB** | |
+| RSS anonymous | 399–686 MB | 731–1 042 MB | ~1 944 MB | |
+| RSS file-backed | 39 MB | 48 MB | 48 MB | |
+| PSS | 435–574 MB | 776–1 070 MB | ≈ RSS | |
+| **Total RSS** | **438–725 MB** | **779–1 090 MB** | **1 992–2 260 MB** | |
 
 ### Peaks
 
 | Quantity | Value | Phase |
 |---|---|---|
-| Peak RSS | **2.16 GB**; 1.96–2.06 GB at the primary references OOM; the healthy lifecycle peaks at **1.03 GB** (seed) and 0.97 GB (admission, POM) | first-use references |
-| Peak Java heap used | the ceiling, 1 024 MB (OOM); healthy lifecycle 521–528 MB | references; seed |
-| Peak committed heap | 1 024 MB (references); 669–693 MB (seed) | |
-| Peak RocksDB cache | at the budget: 64 MiB (default) or 148 MB of 256 MiB | admission onwards / references |
-| Peak HotSpot native committed | 1 262 MB (heap 1 024); excluding heap, Arena Chunk peaks at 143 MB during seed | references; seed |
+| Peak RSS | **2.26 GB**; 2.05 GB in `exact-1` at the references OOM; the healthy lifecycle peaks at **1.01–1.09 GB** (seed) and ~1.0 GB (admission, POM revert) | first-use references |
+| Peak Java heap used | the ceiling, 1 074 MB (OOM); healthy lifecycle 526–554 MB | references; seed |
+| Peak committed heap | 1 074 MB (references); ~700–730 MB (seed) | |
+| Peak RocksDB cache | at the budget: 64 MiB (default) or ~155 MB of 256 MiB | admission onwards / references |
+| Peak HotSpot native committed | 1 349 MB (heap 1 074); excluding heap, Arena Chunk peaks at ~150 MB during seed | references; seed |
 
 ---
 
@@ -985,19 +1066,24 @@ the 1 GiB compressed class space and the arena reservations. It is not resident.
 
 Machine index only (`exact`, seed-only): 5 repository sizes, 4 single JARs.
 
-| Repository | JARs | Artifacts | Symbols | Edges | Seed alloc | Live heap | Persisted DB | RocksDB cache | Seed time | Peak heap | Peak RSS |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| empty | 0 | 0 | 0 | 0 | 2.5 MB | 6.0 MB | 0 | 0.3 MB | 0.1 s | 30 MB | 162 MB |
-| 100 | 100 | 100 | 118 190 | 151 984 | 4.78 GB | 6.6 MB | 59.5 MB | 6.7 MB | 5.8 s | 553 MB | 858 MB |
-| 250 | 250 | 250 | 499 990 | 668 605 | 20.7 GB | 6.8 MB | 255 MB | 24.3 MB | 26.5 s | 702 MB | 1 036 MB |
-| 350 | 350 | 350 | 641 975 | 862 981 | 26.2 GB | 6.9 MB | 324 MB | 30.4 MB | 32.0 s | 714 MB | 1 118 MB |
-| full | 462 | 462 | 867 654 | 1 159 791 | 35.1 GB | 7.0 MB | 436 MB | 40.0 MB | 38.5 s | 692 MB | 1 090 MB |
+<!-- table:scale -->
+| Repository | JARs | Symbols | Edges | Seed alloc (GB) | Live heap (MB) | Persisted DB (MB) | RocksDB cache (MB) | Seed (s) | Peak heap (MB) | Peak RSS (MB) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| scale-empty | 0 | 0 | 0 | 0.00 | 6.0 | 0.0 | 0.3 | 0.1 | 30 | 164 |
+| scale-n100 | 100 | 118 190 | 151 984 | 4.78 | 6.6 | 59.5 | 6.7 | 4.0 | 452 | 858 |
+| scale-n250 | 250 | 499 990 | 668 605 | 20.69 | 6.8 | 254.7 | 24.3 | 26.3 | 570 | 1 036 |
+| scale-n350 | 350 | 641 975 | 862 981 | 26.24 | 6.9 | 324.4 | 30.4 | 31.6 | 576 | 1 118 |
+| scale-full | 462 | 867 654 | 1 159 791 | 35.14 | 7.0 | 435.9 | 40.0 | 37.9 | 526 | 1 090 |
+| jar-one-javax.inject-1 | 1 | 8 | 28 | 0.01 | 6.4 | 0.1 | 0.3 | 0.1 | 36 | 143 |
+| jar-one-commons-lang3-3.20.0 | 1 | 6 460 | 8 503 | 0.29 | 6.4 | 3.1 | 0.5 | 1.2 | 133 | 321 |
+| jar-one-guava-33.4.8-jre | 1 | 20 317 | 25 867 | 0.87 | 6.4 | 10.4 | 1.1 | 2.6 | 246 | 478 |
+| jar-one-groovy-4.0.15 | 1 | 51 066 | 70 302 | 2.48 | 6.4 | 25.6 | 3.3 | 6.2 | 499 | 783 |
 
 Linear fits (empirical; five points do not establish asymptotic complexity):
 
 | Quantity | Slope | R² |
 |---|---|---:|
-| Seed allocation | 40.5 KB per symbol / 30.2 KB per edge / 78 MB per artifact | 0.998 / 0.9985 / 0.981 |
+| Seed allocation | 40.7 KB per symbol / 30.3 KB per edge / 79 MB per artifact | 0.9998 / 0.9999 / 0.989 |
 | Persisted SST bytes | 503.6 B per symbol | 0.99993 |
 | RocksDB cache at READY | 88.5 KB per artifact | 0.991 |
 | Seed time | 46 µs per symbol | 0.98 |
@@ -1006,9 +1092,10 @@ Linear fits (empirical; five points do not establish asymptotic complexity):
 - Allocation and persisted bytes grow linearly in symbols and edges.
 - Retained heap is essentially constant: the per-artifact slope is within run-to-run noise
   (±0.3 MB).
-- Peak heap saturates at ~700 MB (4 index readers, the admission budget of 128 MB per JAR estimate,
-  and G1 heuristics). It does not scale with repository size.
-- A machine-only seed reopens at the default budget for every size, with live heap 6.0–6.8 MB.
+- Peak heap used saturates at ~530–580 MB from 250 JARs on (4 index readers, the admission budget
+  of 128 MB per JAR estimate, and G1 heuristics). It does not scale with repository size.
+- A machine-only seed reopens at the default budget for every size, with live heap 6.0–6.8 MB
+  (`scale-full`: 7.0 MB before, 6.8 MB after the restart).
 
 ---
 
@@ -1105,7 +1192,7 @@ Retained:
 | Jackson at restart (reading those rows) | 26–57% of 20–48 MB | | |
 | Jackson in completion responses | 32–34% of each 50-candidate request | | |
 | Source facts (`FactCodec`/`KeyedFacts`/`SourceOverlay`) during references | 6.1 GB (encoding) | | `store` `L/*` rows: 104 MB for 80 files |
-| Source-fact decoding in warm `completionItem/resolve` | 57% of 0.73 MB per request | | |
+| Source-fact decoding in warm `completionItem/resolve` | 57% of 0.77 MB per request | | |
 
 ### RocksDB key construction
 
@@ -1151,8 +1238,8 @@ Covered in [Retained heap → Restart](#restart-supplementary-configuration) and
 - **Default configuration:** the persisted reopen fails after any lifecycle that included
   workspace use (9 of 9, plus 7 direct attempts). It succeeds after a machine-only seed (5 of 5
   sizes).
-- **Supplementary configuration (256 MiB):** the reopen succeeds. It reaches READY with 69 MB
-  allocated, 5.4 MB live and 193 MB RSS.
+- **Supplementary configuration (256 MiB):** the reopen succeeds. It reaches READY with 74–75 MB
+  allocated, 5.7 MB live and 202–204 MB RSS.
 
 ---
 
@@ -1160,19 +1247,19 @@ Covered in [Retained heap → Restart](#restart-supplementary-configuration) and
 
 Factual observations only:
 
-- **Seed churn.** 33–35 GB of transient Java allocation produces 437 MB of SST (~80×).
-  - Allocation scales at ~40.5 KB per symbol.
+- **Seed churn.** ~35 GB of transient Java allocation produces 436 MB of SST (~80×).
+  - Allocation scales at ~40.7 KB per symbol.
   - Classfile reading, gram postings, symbol encoding, fact construction, SST sorting and digests
     account for 86% of it.
 - **Seed retention.** The machine index's on-heap footprint after seed is ~0.34 MB
   (`RocksIndexStore`). Total retained heap is constant at ~6–7 MB regardless of repository size.
-- **Machine data residency.** Machine index data resides in RocksDB native memory (38–40 MB of cache
-  at READY, ~88.5 KB per artifact) and on disk (437 MB of SSTs, ~504 B per symbol). It is read
+- **Machine data residency.** Machine index data resides in RocksDB native memory (40 MB of cache
+  at READY, ~88.5 KB per artifact) and on disk (436 MB of SSTs, ~504 B per symbol). It is read
   through `pread`; there are no file mappings today.
 - **Peak per JAR.** Indexing one large JAR peaks at ~470 MB of transient heap (groovy, 51 K symbols).
 - **Per-request cost.** Every warm editor request recomputes compiler-input identity, file-state
   stamps and annotation-processing fingerprints.
-  - That costs 0.73–2.96 MB per request (fixed, prefix-independent).
+  - That costs 0.77–3.11 MB per request (fixed, prefix-independent).
   - It costs 1.26 MB even for a 1-item completion.
 - **Workspace references.** First-use references holds javac compilation outcomes and binding
   snapshots for the whole workspace on the heap.
@@ -1183,82 +1270,82 @@ Factual observations only:
   observed.
 - **RocksDB read churn.** At the default 64 MiB budget, references and later POM edits drive
   14–82 GB of RocksDB block fetch/decompression malloc. At 256 MiB the same POM edit drives 0.1 GB.
-- **Native residue.** 215–849 MB of process memory is glibc arena memory that is free. NMT-tracked
-  HotSpot native excluding the heap is ~110–240 MB.
+- **Native residue.** 215–910 MB of process memory is glibc arena memory that is free. NMT-tracked
+  HotSpot native excluding the heap is ~85–275 MB.
 - **Heap commit residue.** The Java heap's committed and resident pages track the seed peak
-  (184–588 MB at READY for a 5.6 MB live set) and the references peak (1 GiB, kept).
+  (193–616 MB at READY for a 5.9 MB live set) and the references peak (1 GiB, kept).
 - **ct.sym copies.** One javac platform `ZipFileSystem` of 5.67 MB is retained per compiler
   generation (INFERENCE: `ct.sym`): 1 copy admitted, 4 after mutations, 23 at the references peak.
-- **After close.** Session-scoped state is released on close except about 18–23 MB, of which
+- **After close.** Session-scoped state is released on close except about 19–24 MB, of which
   `FileStateRegistry` is 4.5–5 MB. Per-session `RocksIndexStore.workspaces` entries grow with each
   session.
-- **Workspace-scale recomputation.** Each costs 1–2.7 GB of allocation: workspace open (Maven
-  resolution), POM edits (re-resolution), reopen after close (identities), and restart reopen (1.9 GB
-  + 0.68 GB to the first answer).
+- **Workspace-scale recomputation.** Each costs 1.1–2.8 GB of allocation: workspace open (Maven
+  resolution), POM edits (re-resolution), reopen after close (identities), and restart reopen (2.0 GB
+  + 0.71 GB to the first answer).
 
 ## Top findings (ranked)
 
 | Rank | Memory population | Evidence | Allocated | Retained / native | Lifecycle |
 |---:|---|---|---:|---:|---|
-| 1 | First-use workspace references: javac outcomes, `Bindings` snapshots, in-flight capture | alloc + OOM dump + MAT | 31–37 GB | **763 MB–1.06 GB live (OOM)**; 82 GB RocksDB malloc traffic | per session, first use; released on close |
-| 2 | Machine seed transient structures (postings, encoding, classfile reading, sort runs, digests) | exact + alloc + scale | **33–35 GB** (40.5 KB/symbol) | +1 MB heap; 437 MB SST on disk | machine, once per new or changed artifact |
-| 3 | glibc arena memory freed but retained (HotSpot arenas, RocksDB buffers) | `malloc_info` + smaps | 7–11 GB HotSpot native traffic during seed | **215–849 MB free inside arenas** | process lifetime; grows with each heavy phase |
-| 4 | Java heap committed above live (G1 commit residue) | NMT + smaps + histograms | — | 184–588 MB committed for 5.6 MB live at READY; 1 GiB after references | process lifetime |
+| 1 | First-use workspace references: javac outcomes, `Bindings` snapshots, in-flight capture | alloc + OOM dump + MAT | 32–38 GB | **487 MB–1.06 GB live (OOM)**; 82 GB RocksDB malloc traffic | per session, first use; released on close |
+| 2 | Machine seed transient structures (postings, encoding, classfile reading, sort runs, digests) | exact + alloc + scale | **34.9–35.2 GB** (40.7 KB/symbol) | +1 MB heap; 436 MB SST on disk | machine, once per new or changed artifact |
+| 3 | glibc arena memory freed but retained (HotSpot arenas, RocksDB buffers) | `malloc_info` + smaps | 7–11 GB HotSpot native traffic during seed | **215–910 MB free inside arenas** | process lifetime; grows with each heavy phase |
+| 4 | Java heap committed above live (G1 commit residue) | NMT + smaps + histograms | — | 193–616 MB resident heap for 5.9 MB live at READY; 1 GiB after references | process lifetime |
 | 5 | RocksDB `store` LOCAL fact values (`L/g` up to 8.5 MB each) and the shared WBM/strict cache | `ldb` read + gdb + logs | 6.1 GB `FactCodec` encoding (references) | 64–104 MB on disk; memtable 15–25 MB; **write stall, reopen failure** | persisted per workspace; survives restart |
-| 6 | RocksDB block fetch/decompression churn at the 64 MiB budget | nativemem | 76 GB (references), 14 GB (POM edit after) | cache 38–64 MB resident (budget-bound) | per query when the cache is full |
-| 7 | Workspace open, POM edit, reopen and restart reopen (Maven model, identities) | exact + alloc | 1.1–2.7 GB each | +13–55 MB live | per session or project change |
+| 6 | RocksDB block fetch/decompression churn at the 64 MiB budget | nativemem | 76 GB (references), 14 GB (POM edit after) | cache 40–67 MB resident (budget-bound) | per query when the cache is full |
+| 7 | Workspace open, POM edit, reopen and restart reopen (Maven model, identities) | exact + alloc | 1.1–2.8 GB each | +14–48 MB live | per session or project change |
 | 8 | Canonical digests and `BigInteger` accumulators | alloc + histograms | 3.4 GB seed, 8 GB references, 52–75% of first completion and reopen | 13–106 K `BigInteger` live in `ResidentSemanticState` | everywhere |
-| 9 | Per-request recomputation of input identity and file stamps (warm queries) | exact + alloc + JFR stages | 0.73–2.96 MB per request | 0 | every request |
-| 10 | Compiler state per generation (`CompilerPool`, actor `Analyzer`, ct.sym `ZipFileSystem` 5.67 MB each) | MAT | admission 1.8–2.1 GB | 26 MB admitted → 78 MB after mutations | per session |
+| 9 | Per-request recomputation of input identity and file stamps (warm queries) | exact + alloc + JFR stages | 0.77–3.11 MB per request | 0 | every request |
+| 10 | Compiler state per generation (`CompilerPool`, actor `Analyzer`, ct.sym `ZipFileSystem` 5.67 MB each) | MAT | admission 2.0–2.3 GB | 26 MB admitted → 78 MB after mutations | per session |
 | 11 | `SemanticFact` / `ResidentSemanticState` | MAT | (within references) | 1.1 MB admitted; 95 MB at references | per session |
-| 12 | Machine-wide caches surviving close (`FileStateRegistry`, `MavenResolver`, `LocalArtifacts`, `RocksIndexStore.workspaces`) | MAT | small | 18–23 MB, grows per session | machine lifetime |
+| 12 | Machine-wide caches surviving close (`FileStateRegistry`, `MavenResolver`, `LocalArtifacts`, `RocksIndexStore.workspaces`) | MAT | small | 19–24 MB, grows per session | machine lifetime |
 | 13 | `LiveSourceState` watchers (77 platform threads) | MAT + `/proc` | — | 3.7–13.4 MB heap; 16 MB stack RSS; threads 35 → 196 | per session |
 | 14 | Duplicate path and enum strings; hex hash identities | MAT | 1.66 GB `String` (seed) | 2.8 K copies of one path; 897 copies of one empty hash | per session |
-| 15 | Machine index on heap (`RocksIndexStore` artifact table) | MAT + scale | 0.66 GB Jackson (seed); 20–48 MB to READY at restart | **0.34 MB** (~0.5–0.7 KB per artifact) | machine |
-| 16 | Direct and mapped NIO buffers, file mappings | `BufferPoolMXBean` + smaps | — | **0**; file-backed RSS 37–46 MB (libraries, CDS) | — |
+| 15 | Machine index on heap (`RocksIndexStore` artifact table) | MAT + scale | 0.66 GB Jackson (seed); 20–48 MB of the 75 MB to READY at restart | **0.34 MB** (~0.5–0.7 KB per artifact) | machine |
+| 16 | Direct and mapped NIO buffers, file mappings | `BufferPoolMXBean` + smaps | — | **0**; file-backed RSS 39–48 MB (libraries, CDS) | — |
 
 ---
 
 ## Answers to the required questions
 
-1. **Total heap allocated while seeding.** 31.7–35.1 GB for 462 JARs (6 of 7 runs within 33.3–35.1 GB).
-2. **Top 20 seed sites.** See [the table](#allocation-sites-and-classes-attributed-b256-alloc-133-k-samples-350-gb-sampled-vs-342-gb-exact). They cover 66%.
+1. **Total heap allocated while seeding.** 34.9–35.2 GB for 462 JARs (20 runs).
+2. **Top 20 seed sites.** See [the table](#allocation-sites-and-classes-attributed-b256-alloc-133-k-samples-350-gb-sampled-vs-350-gb-exact). They cover 66%.
 3. **Dominant allocated types.** `byte[]` 47%, `int[]` 13%, `String` 5%, `Object[]` 3%, `SstSorter$Entry` 2.5%.
 4. **Dominant retained types after READY.** `byte[]` 1.7 MB, `String` 0.6 MB, `Class` 0.5 MB, out
-   of 5.6–5.9 MB total.
+   of 5.9 MB total.
 5. **Owners after READY.** JDK/class-loading metadata (~88%) and `IndexService` → `RocksIndexStore`
    (0.41 MB).
-6. **Heap with no workspace open.** 5.6 MB at READY. After sessions have been opened and closed,
-   24–29 MB.
-7. **One Maven workspace retains** +46 MB admitted, +70 MB with warm queries, +102 MB after
+6. **Heap with no workspace open.** 5.9 MB at READY. After sessions have been opened and closed,
+   25–30 MB.
+7. **One Maven workspace retains** +48 MB admitted, +73 MB with warm queries, +107 MB after
    mutations. With references it reaches the 1 GiB ceiling.
-8. **Released on session close.** About 77 MB (100.7 → 24.0 MB). 18–23 MB remains above baseline.
-9. **Warm completion.** 1.22 MB per request median (1.26 MB for 1 item, 1.81 MB for 50; p95 1.75 MB).
-10. **First completion.** 417 MB, including admitting the edit that adds the completion probe.
+8. **Released on session close.** About 80 MB (105.3 → 25.2 MB). 19–24 MB remains above baseline.
+9. **Warm completion.** 1.28 MB per request median (1.26 MB for 1 item, 1.81–1.86 MB for 50; p95 1.84 MB).
+10. **First completion.** 438–440 MB, including admitting the edit that adds the completion probe.
 11. **javac versus JVMD in first use.** Completion 5% javac. Definition 53%. Hover 37%. Admission
     14%. References 17–27%. JFR javac stages: 1.39 GB of the session thread's 7.63 GB.
-12. **Body-only mutation.** 128–131 MB, plus 21 MB for the next completion.
-13. **Relevant API mutation.** 91–92 MB.
-14. **POM mutation.** 1.97 GB to add a dependency, 1.93 GB to revert it.
-15. **RocksDB native memory.** The cache holds 38 MB at READY and sits at the 64 MiB budget from
-    admission on (113–148 MB with a 256 MiB budget). Unflushed memtables add up to 15–25 MB (WAL).
+12. **Body-only mutation.** 141–146 MB, plus 23–24 MB for the next completion.
+13. **Relevant API mutation.** 97 MB.
+14. **POM mutation.** 2.07 GB to add a dependency, 2.03 GB to revert it.
+15. **RocksDB native memory.** The cache holds 40 MB at READY and sits at the 64 MiB budget from
+    admission on (113–155 MB with a 256 MiB budget). Unflushed memtables add up to 15–25 MB (WAL).
     Malloc traffic is 3 GB during seed and 82 GB during references.
-16. **Block cache versus pinned.** Usage 38–67 MB; pinned 1.4–16 MB (index/filter top level and
+16. **Block cache versus pinned.** Usage 40–67 MB; pinned 1.5–16 MB (index/filter top level and
     memtable charges). Memtables are visible as WBM charges and WAL size.
-17. **What NMT accounts for.** HotSpot only: 297–360 MB at READY, of which the heap is 184–237 MB.
-    1.26 GB after references.
+17. **What NMT accounts for.** HotSpot only: 312–377 MB at READY, of which the heap is 193–249 MB.
+    1.32 GB after references.
 18. **What remains outside NMT.**
     - RocksDB malloc (cache, memtables, read buffers).
-    - glibc free-but-retained arenas (215–849 MB).
+    - glibc free-but-retained arenas (215–910 MB).
     - zlib, libstdc++ and JNI library data.
     - Thread stacks are only partly covered.
-19. **Anonymous versus file-backed RSS.** ~95% anonymous. File-backed is 37–46 MB.
+19. **Anonymous versus file-backed RSS.** ~95% anonymous. File-backed is 39–48 MB.
 20. **Mapped or state files with resident pages.** Only libraries and archives: libjvm 19 MB, CDS
     15 MB, `lib/modules` 10 MB, `librocksdbjni` 10 MB. No SST, WAL or JAR.
 21. **High allocation, negligible retention.**
     - machine seed (35 GB, +1 MB);
     - warm queries (0 retained);
-    - workspace open, POM edits, reopen and restart reopen (1–2.7 GB each, +13–55 MB);
+    - workspace open, POM edits, reopen and restart reopen (1.1–2.8 GB each, +14–48 MB);
     - SST and encoding machinery;
     - digests.
 22. **Low allocation, high retention.**
@@ -1269,7 +1356,7 @@ Factual observations only:
     - `LiveSourceState` watchers;
     - and on disk, `store` `L/g` values.
 23. **Populations that scale with symbols or artifacts.**
-    - Seed allocation (40.5 KB per symbol).
+    - Seed allocation (40.7 KB per symbol).
     - Persisted SST (504 B per symbol).
     - RocksDB cache at READY (88.5 KB per artifact).
     - Seed time.
@@ -1279,14 +1366,15 @@ Factual observations only:
     - RocksDB table readers and index blocks.
     - A rescan that reuses all artifacts.
     - Per workspace, everything again: Maven model, contexts, javac state, identities.
-25. **Restart allocation.** 69 MB to READY, 1.86–1.88 GB to reopen the workspace, 675 MB to the first
+25. **Restart allocation.** 74–75 MB to READY, 1.96–1.97 GB to reopen the workspace, 709 MB to the first
     correct definition. At the default configuration the reopen fails after ~1.2 s and 30 MB of
     RocksDB malloc.
-26. **Lifecycle peak.** The heap ceiling (1 GiB) with RSS 1.96–2.16 GB. Without references:
-    RSS 0.96–1.03 GB during seed, heap 521–528 MB.
+26. **Lifecycle peak.** The heap ceiling (1 GiB) with RSS 2.05–2.26 GB. Without references:
+    RSS 1.01–1.09 GB during seed, heap 526–554 MB.
 27. **Phase.** First-use workspace references. Without it, machine seed.
 28. **Humongous allocations.** Yes. G1 shows up to 205 humongous regions during references and
-    9–28 elsewhere. Sites: see [Humongous allocations](#humongous-allocations).
+    9–28 elsewhere. 86% of humongous bytes are source-fact encoding buffers (`FactCodec`, up to
+    16.5 MB each), mostly during references. See [Humongous allocations](#humongous-allocations).
 29. **Populations duplicated across MACHINE, LOCAL and LIVE.**
     - Workspace modules are indexed into SSTs (`LocalArtifacts`) with the machine pipeline.
     - Their source facts are also persisted as LOCAL `store` rows.
@@ -1301,7 +1389,31 @@ Factual observations only:
 
 ## Humongous allocations
 
-<!-- HUMONGOUS -->
+MEASURED with JFR `jdk.ObjectAllocationOutsideTLAB`, stacks at full depth (`b256-humongous`, the
+supplementary lifecycle including references). These are allocations ≥ 512 KiB, half a G1 region
+at a 1 GiB heap. In total: **1 148 allocations, 1.66 GB**.
+
+| Site (innermost JVMD frame) | Class | Bytes | Count | Largest | Phase |
+|---|---|---:|---:|---:|---|
+| `index.FactCodec.string` (`ByteArrayOutputStream` growth) | `byte[]` | 1 002 MB | 654 | **16.45 MB** | references (most), relevant/unrelated API edits |
+| `index.FactCodec.encode` (`toByteArray`) | `byte[]` | 386 MB | 233 | 8.53 MB | references, API edits |
+| `analyzer.Analyzer.publishSource` | `byte[]` | 94 MB | 96 | 4.01 MB | references, edits |
+| `analyzer.CompilerPool.execute` (zipfs `initCEN` of the javac platform archive) | `byte[]` | 71 MB | 35 | 2.03 MB | references, admission, POM revert |
+| `core.AnnotationProcessing.prepare` | `byte[]` | 37 MB | 51 | 1.08 MB | references, POM, admission |
+| `index.FactCodec.string` (map growth) | `HashMap$Node[]` | 20 MB | 38 | 0.52 MB | references |
+| `index.FactCodec.write` | `byte[]` | 18 MB | 5 | 7.52 MB | references |
+| `resolver.engine.Bundle.call` | `byte[]` | 12 MB | 8 | 1.48 MB | POM edit, workspace open |
+| `index.rocks.RocksIndexStore.publishArtifactData` | `byte[]` | 7 MB | 7 | 1.42 MB | admission, workspace open |
+| `index.SourceJoin.join` | `int[]` | 4 MB | 6 | 0.77 MB | workspace open |
+
+- **ATTRIBUTED.** 86% of humongous bytes (1.43 GB) are source-fact encoding buffers. The full
+  stack is `SourceIndexPublisher → LocalArtifacts.recordSource → RocksIndexStore.publishSourceFile →
+  SourceOverlay.replace → KeyedFacts.replace → FactCodec.encode`. These are the same per-file values
+  that reach the `store` database at up to 8.5 MB.
+- **By phase.** First-use references accounts for 1.45 GB. The API and body edits account for
+  25–38 MB each. Machine seed produces only a few (`BinaryReader.read` of ~1 MB class files). G1
+  logged up to 205 humongous regions during references, 28 in the supplementary lifecycle and
+  ≤ 11 during seed.
 
 ## Allocation ledger (major phases)
 
@@ -1328,12 +1440,12 @@ conservation.
 |---|---:|---:|---:|
 | Machine seed: artifact parsing (classfile reading + fact construction) | ~12 GB | ~0 (+1 MB in total) | ~100% |
 | Machine seed: persistence encoding (SST + symbol encoding) | ~17.5 GB | 0 heap; 437 MB written to disk | ~100% of heap |
-| Workspace open | 2.4–2.7 GB | +55 MB | 98% |
-| Admission | 1.8–2.1 GB | −9 MB (61 → 52) | ~100% |
+| Workspace open | 2.5–2.8 GB | +48 MB | 98% |
+| Admission | 2.0–2.3 GB | ~0 (54 → 54 MB) | ~100% |
 | javac (first use, all phases) | ≥ 1.39 GB (JFR stages) | 10–45 MB `CompilerPool` sets | ~97% |
-| First-use references | 31–37 GB | +690 MB (session-scoped) | 98% |
-| Query materialisation (warm, 102 requests) | 0.12–0.32 GB | 0 | 100% |
-| POM edits | 3.9 GB (add + revert) | +28 MB | 99% |
+| First-use references | 32–38 GB | +410 MB post-GC after the failure; ~1 GB at the OOM (session-scoped) | 97–99% |
+| Query materialisation (warm, 102 requests) | 0.12–0.33 GB | 0 | 100% |
+| POM edits | 4.1 GB (add + revert) | +30 MB | 99% |
 
 ---
 
@@ -1341,9 +1453,9 @@ conservation.
 
 - **Single observations.** These were observed once: per-mode profiled runs; per-JAR runs; the
   scale points; and the primary references to completion.
-  - References reached the heap ceiling 3 of 3 times with a 256 MiB budget. At the default budget
+  - References reached the heap ceiling 4 of 4 times with a 256 MiB budget. At the default budget
     it stalled 6 times, threw OOM 6 times and once finished server-side after ~4 minutes.
-  - Seed allocation varies 31.7–35.1 GB across 7 runs.
+  - Seed allocation varies only 34.9–35.2 GB across 20 runs.
 - **First-use references at 1 GiB never produced a correct answer.** Its steady-state allocation
   and retention are therefore unknown; only the OOM and stall states are measured.
 - **Supplementary configuration.** Phases after references were measured only with a 256 MiB
@@ -1357,7 +1469,7 @@ conservation.
   `cur_size_all_mem_tables` are exposed only for the repository database.
 - **The live-object profile undercounts.** Survival evidence relies on post-GC heap deltas and dumps.
 - **glibc arena free memory** is measured. How much of it is resident (versus untouched in the
-  arena) is bounded by smaps (glibc RSS 248–535 MB) but not measured per arena.
+  arena) is bounded by smaps (glibc RSS 261–561 MB) but not measured per arena.
 - **Environment.** All local numbers come from one 4-CPU, 16 GiB container. The CI run of the same
   matrix (second environment) uploaded raw evidence. Its MAT reduction failed (a path bug since
   fixed). Its numbers are not compared in this report.
@@ -1402,6 +1514,7 @@ node benchmarks/memory/profile.ts --mode exact --seed-only --seed-restart --repo
 python3 benchmarks/memory/analyze.py out/*/ --out summary
 for d in out/*/dumps/*.hprof; do bash benchmarks/memory/mat.sh "$d" summary/mat/$(basename "$d" .hprof); bash benchmarks/memory/mat_drill.sh "$d" summary/mat-drill/$(basename "$d" .hprof); done
 python3 benchmarks/memory/synthesize.py summary --out benchmarks/memory/results
+python3 benchmarks/memory/tables.py benchmarks/memory/results/summary.json > tables.md   # the tables marked <!-- table:* --> above
 ```
 
 The whole matrix runs in CI with **Actions → JVMD memory profile → Run workflow**

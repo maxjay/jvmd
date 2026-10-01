@@ -4,15 +4,52 @@ import java.io.IOException;
 import java.nio.file.*;
 import java.util.*;
 
-/** Content identities with a Unix change-time/inode fast path and a conservative fallback. */
+/**
+ * Content identities with a Unix change-time/inode fast path and a conservative fallback.
+ *
+ * Observations can be restored from a {@link FileObservationJournal} across restarts. A restored
+ * observation is reused only when the current reliable stamp (size, mtime, ctime, inode, regular)
+ * equals the persisted stamp and the observation was taken outside the racy timestamp window;
+ * otherwise the bytes are hashed again. Providers without ctime/inode evidence always hash.
+ */
 public final class FileStateRegistry {
     private static final FileStateRegistry SHARED=new FileStateRegistry();
+    /** Effective timestamp granularity assumed when judging restored observations racy. */
+    public static final long DEFAULT_RACY_WINDOW_NANOS=2_000_000_000L;
     /** Process-wide disk observations only; overlays and accepted analysis never live here. */
     public static FileStateRegistry shared(){return SHARED;}
     private record Stamp(Object size, Object modified, Object changed, Object inode,boolean regular) { }
     public record Observation(Object stamp, String hash) { }
     private final Map<Path, Observation> files = new LinkedHashMap<>(256, .75f, true);
     private long hashes, hits, bytes, metadataChecks, enumerations, inventoryEvictions;
+    private FileObservationJournal journal;
+    private final Map<Path,FileObservationJournal.Record> restored=new HashMap<>();
+    private final Map<String,FileObservationJournal.Record> durable=new HashMap<>();
+    private long racyWindowNanos=DEFAULT_RACY_WINDOW_NANOS;
+    private long restoredRecords,restartReuse,restoreStampMismatches,restoreRacyRejections,journalFailures,lastFlushNanos=System.nanoTime();
+
+    /**
+     * Attach a durable observation journal and restore its valid records as unvalidated candidates.
+     * Nothing restored is trusted until {@link #hash(Path)} re-stats the file.
+     */
+    public synchronized void persistence(Path journalFile){
+        flushObservations();
+        journal=new FileObservationJournal(journalFile);
+        restored.clear();durable.clear();
+        var loaded=journal.load();
+        for(var record:loaded.records().values()){
+            try{restored.put(Path.of(record.path()),record);durable.put(record.path(),record);}catch(InvalidPathException ignored){}
+        }
+        restoredRecords=restored.size();
+    }
+    /** Testing/diagnostic hook: the effective granularity window for restored observations. */
+    public synchronized void racyWindowNanos(long value){if(value<0)throw new IllegalArgumentException("window");racyWindowNanos=value;}
+    /** Best-effort durable publication of observations made since the last flush. */
+    public synchronized void flushObservations(){
+        if(journal==null||journal.pending()==0)return;
+        try{journal.flush(durable);}catch(IOException|RuntimeException failure){journalFailures++;}
+        lastFlushNanos=System.nanoTime();
+    }
 
     public synchronized String hash(Path file) throws IOException {
         file = file.toAbsolutePath().normalize();
@@ -23,6 +60,19 @@ public final class FileStateRegistry {
         var previous = files.get(file);
         if (before != null && previous != null && before.equals(previous.stamp())) {
             hits++; return previous.hash();
+        }
+        if (previous == null && before != null) {
+            var candidate = restored.remove(file);
+            if (candidate != null) {
+                if (!matches(before, candidate)) { restoreStampMismatches++; RequestScope.count("restored_stamp_mismatches",1); }
+                else if (racy(candidate)) { restoreRacyRejections++; RequestScope.count("restored_racy_rejections",1); }
+                else {
+                    String hash = candidate.hex();
+                    files.put(file, new Observation(before, hash)); restartReuse++; hits++;
+                    RequestScope.count("restart_hash_reuse",1);
+                    return hash;
+                }
+            }
         }
         // Do not associate bytes read during a concurrent write with a later file stamp.
         for (int attempt = 0; attempt < 3; attempt++) {
@@ -42,11 +92,44 @@ public final class FileStateRegistry {
                 if(after==null&&previous!=null&&hash.equals(previous.hash()))return previous.hash();
                 files.put(file, new Observation(after, hash));
                 while (files.size() > 32768) files.remove(files.keySet().iterator().next());
+                persist(file, after, hash);
                 return hash;
             }
             before = after;
         }
         throw new IOException("Source changed repeatedly while reading: " + file);
+    }
+
+    private static long nanos(Object time){
+        return time instanceof java.nio.file.attribute.FileTime value?value.to(java.util.concurrent.TimeUnit.NANOSECONDS):Long.MIN_VALUE;
+    }
+    private static long number(Object value){return value instanceof Number number?number.longValue():Long.MIN_VALUE;}
+    private static boolean reliable(Stamp stamp){
+        return stamp!=null&&stamp.regular()&&stamp.size() instanceof Number&&stamp.modified() instanceof java.nio.file.attribute.FileTime
+                &&stamp.changed() instanceof java.nio.file.attribute.FileTime&&stamp.inode() instanceof Number;
+    }
+    private static boolean matches(Stamp stamp,FileObservationJournal.Record record){
+        return reliable(stamp)&&number(stamp.size())==record.size()&&nanos(stamp.modified())==record.modifiedNanos()
+                &&nanos(stamp.changed())==record.changedNanos()&&number(stamp.inode())==record.inode();
+    }
+    /** A modification inside the timestamp granularity window could share the recorded stamp. */
+    private boolean racy(FileObservationJournal.Record record){
+        long newest=Math.max(record.modifiedNanos(),record.changedNanos());
+        return record.observedAtNanos()-newest<=racyWindowNanos;
+    }
+    private void persist(Path file,Stamp stamp,String hash){
+        if(journal==null||!reliable(stamp))return;
+        var now=java.time.Instant.now();
+        long observed=Math.multiplyExact(now.getEpochSecond(),1_000_000_000L)+now.getNano();
+        var record=new FileObservationJournal.Record(file.toString(),number(stamp.size()),nanos(stamp.modified()),
+                nanos(stamp.changed()),number(stamp.inode()),observed,HexFormat.of().parseHex(hash));
+        var prior=durable.put(record.path(),record);
+        if(prior!=null&&prior.size()==record.size()&&prior.modifiedNanos()==record.modifiedNanos()
+                &&prior.changedNanos()==record.changedNanos()&&prior.inode()==record.inode()&&Arrays.equals(prior.sha256(),record.sha256())
+                &&!racy(prior)){durable.put(record.path(),prior);return;}
+        while(durable.size()>65536)durable.remove(durable.keySet().iterator().next());
+        journal.append(record);
+        if(journal.pending()>=512||System.nanoTime()-lastFlushNanos>1_000_000_000L)flushObservations();
     }
 
     private Stamp stamp(Path file) throws IOException {
@@ -176,10 +259,18 @@ public final class FileStateRegistry {
         return state.members;
     }
     /** Startup/configuration uncertainty or overflow discards observations, never accepted semantic state. */
-    public synchronized void reconcile(){files.clear();inventories.clear();}
+    public synchronized void reconcile(){files.clear();inventories.clear();restored.clear();}
 
     public synchronized void forget(Path file) { files.remove(file.toAbsolutePath().normalize()); }
     public synchronized Map<String, Object> status() {
-        return Map.of("entries", files.size(), "hashes", hashes, "stat_hits", hits, "bytes_hashed", bytes, "metadata_checks", metadataChecks, "directory_enumerations", enumerations, "inventory_entries", inventories.size(), "inventory_evictions", inventoryEvictions);
+        var result=new LinkedHashMap<String,Object>();
+        result.put("entries", files.size());result.put("hashes", hashes);result.put("stat_hits", hits);result.put("bytes_hashed", bytes);
+        result.put("metadata_checks", metadataChecks);result.put("directory_enumerations", enumerations);
+        result.put("inventory_entries", inventories.size());result.put("inventory_evictions", inventoryEvictions);
+        result.put("restored_observations", restoredRecords);result.put("restored_pending", restored.size());
+        result.put("restart_hash_reuse", restartReuse);result.put("restored_stamp_mismatches", restoreStampMismatches);
+        result.put("restored_racy_rejections", restoreRacyRejections);result.put("journal_failures", journalFailures);
+        if(journal!=null)result.put("journal", journal.status());
+        return Collections.unmodifiableMap(result);
     }
 }

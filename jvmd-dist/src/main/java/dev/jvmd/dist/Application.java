@@ -32,6 +32,9 @@ public final class Application implements AutoCloseable {
     private record TypeCompletionCache(String generation,String prefix,List<Map<String,Object>> rows,boolean complete) { }
     public Application(Config config) {
         this.config = config;
+        // Restart reuse of unchanged content hashes (§90). Restored observations are validated
+        // against current file stamps before use; the journal is never semantic authority.
+        classpathFiles.persistence(config.stateDir().resolve("file-observations-v1.bin"));
         if (config.indexOnStart()) initializeIndex(true);
         dispatcher.status("index", () -> {
             try { return index == null ? java.util.Map.of("phase", "disabled") : index.isDone() ? index.join().status() : java.util.Map.of("phase", "starting"); }
@@ -1132,6 +1135,7 @@ public final class Application implements AutoCloseable {
     @Override public void close() throws Exception {
         if(!closed.compareAndSet(false,true))return;
         try { sessions.close(); } finally {
+            classpathFiles.flushObservations();
             try { if (resolver != null) resolver.close(); }
             finally {
                 var service=bootstrappingIndex;

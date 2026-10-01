@@ -60,23 +60,34 @@ class Bench {
           if(found.some((d:any)=>String(d.message).includes(answer.expect))){row.firstAnswerMs=performance.now()-started;break;}
         }
       }
-      // Every source unit at once, as an editor's or agent's "problems" view asks; paged answers come from the same result.
-      const diagnosing=performance.now(),all:any[]=[];let cursor:string|undefined;
-      // Pages of 50 stay under the daemon's 64 KiB response budget, which would otherwise split a page into fragments.
-      do{const page=await call("diag.get",{session,limit:50,...cursor?{cursor}:{}});if(!cursor)row.diagnoseMs=performance.now()-diagnosing;
-        assert(Array.isArray(page.result?.diagnostics),"diag.get page without diagnostics: "+JSON.stringify(page).slice(0,200));
-        all.push(...page.result.diagnostics);cursor=page.truncated?page.cursor:undefined;}while(cursor);
+      // Every source unit at once, as an editor's or agent's "problems" view asks: the time to that answer.
+      const diagnosing=performance.now();await call("diag.get",{session,limit:1});row.diagnoseMs=performance.now()-diagnosing;
+      // Counters now, before the digest requests below can add work of their own.
+      const actors=(await call("session.status",{session,section:"module_actors"})).result.actor_queries??{};
+      row.javac=Object.values(actors).reduce((a:number,b:any)=>a+Number(b),0);
+      try{const p=(await call("session.status",{session,section:"persistence"})).result.attributed_memo;
+        if(p&&Object.keys(p).length)row.persistence={restores:p.restores,writes:p.writes,refusals:p.refusal_reasons,early_cutoff:p.early_cutoff};}catch{/* this build has no persisted results */}
+      // Then every file's diagnostics from the now-warm result, in path chunks: one whole-workspace page also
+      // carries every file's warnings and can exceed the daemon's 64 KiB response budget, which splits it into
+      // fragments. A chunk that is still split is halved; a single file that is is recorded as such.
+      const all:any[]=[],budget=new Set<string>();
+      const collect=async(paths:string[]):Promise<void>=>{
+        const page=await call("diag.get",{session,paths,limit:1000});
+        if(Array.isArray(page.result?.diagnostics)&&!String(page.cursor??"").startsWith("budget:")){all.push(...page.result.diagnostics);return;}
+        if(paths.length===1){budget.add(path.relative(root,paths[0]));return;}
+        const half=Math.ceil(paths.length/2);await collect(paths.slice(0,half));await collect(paths.slice(half));
+      };
+      const sources=javaFiles(root).filter(f=>f.includes(path.sep+"src"+path.sep+"main"+path.sep)).sort();
+      for(let i=0;i<sources.length;i+=20)await collect(sources.slice(i,i+20));
+      row.budgetSplitFiles=[...budget];
       const perFile=new Map<string,string[]>();
       for(const d of all){const file=String(d.file??""),f=path.relative(root,file.startsWith("file:")?fileURLToPath(file):file);perFile.set(f,[...perFile.get(f)??[],[d.kind,d.code,d.line,d.character,String(d.message).replaceAll(root,"<root>")].join("|")]);}
       row.units=javaFiles(root).filter(f=>f.includes(path.sep+"src"+path.sep+"main"+path.sep)).length;
+      for(const f of budget)perFile.set(f,["<response over budget>"]);
       row.files=Object.fromEntries([...perFile].sort().map(([f,ds])=>[f,sha(ds.sort().join("\n"))]));
       row.diagnostics=all.length;row.digest=sha(JSON.stringify(row.files));
-      const actors=(await call("session.status",{session,section:"module_actors"})).result.actor_queries??{};
-      row.javac=Object.values(actors).reduce((a:number,b:any)=>a+Number(b),0);
       const full=(await call("session.status",{session})).result;
       row.processorRuns=full.annotation_processing?.runs??null;
-      try{const p=(await call("session.status",{session,section:"persistence"})).result.attributed_memo;
-        if(p&&Object.keys(p).length)row.persistence={restores:p.restores,writes:p.writes,refusals:p.refusal_reasons,early_cutoff:p.early_cutoff};}catch{/* this build has no persisted results */}
       row.peakRssBytes=hwm(daemon.process.pid);
       const after=await daemon.allocation.read();row.allocatedBytes=allocated!=null&&after!=null?after-allocated:null;
     }catch(error){

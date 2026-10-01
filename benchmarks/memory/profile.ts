@@ -523,7 +523,9 @@ finally{
   spawnSync("pkill",["-9","-f","-Djvmd.config="+path.join(STATE,"jvmd","config.json")]);
   if(PROJECT){spawnSync("git",["-C",PROJECT,"checkout","--",POM]);spawnSync("rm",["-f",path.join(PROJECT,ADDED_PATH)]);}
 }
-const ops=operations.map(({rawResult,...op}:any)=>op.outcome==="pass"?op:{...op,rawResult:JSON.stringify(rawResult)?.slice(0,2000)});
+const resultShape=(r:any)=>{const items=Array.isArray(r)?r:Array.isArray(r?.items)?r.items:Array.isArray(r?.data)?null:null;
+  return {resultItems:items?items.length:Array.isArray(r?.data)?r.data.length/5:r==null?0:1,resultBytes:r===undefined?0:Buffer.byteLength(JSON.stringify(r))};};
+const ops=operations.map(({rawResult,...op}:any)=>({...op,...resultShape(rawResult),...(op.outcome==="pass"?{}:{rawResult:JSON.stringify(rawResult)?.slice(0,2000)})}));
 writeFileSync(path.join(OUT,"results.json"),JSON.stringify({environment:env,wallMs:performance.now()-started,failures,marks,operations:ops,stall:stalled},null,1));
 log_(`done in ${((performance.now()-started)/1000).toFixed(0)} s; ${failures.length} failures; ${ops.filter(o=>o.outcome&&o.outcome!=="pass"&&o.outcome!=="not_ready"&&o.outcome!=="stale").length} incorrect operations`);
 for(const f of failures)log_("  failure: "+f);

@@ -769,7 +769,7 @@ The before/after lifecycle leg on `994c933` (job 110527233060) failed in all six
 
 `main`'s own benchmarks run (36857728584) fails the same lifecycle the same way as base 1, and a local head run
 fails as head 3. When first-use references finishes in time, head gets one step further than base ever does. The
-remaining failure is a stale oracle in the harness, not a regression:
+remaining failure was first read as a stale oracle in the harness (see the correction below):
 
 - `queries()` inserts two lines into `MavenProject.java` (`benchmarkAdded`) and leaves the document open.
 - The adapter then disconnects with the session retained. Since #48 on `main` (`RetainedSessionAttachTest`), a
@@ -777,9 +777,14 @@ remaining failure is a stale oracle in the harness, not a regression:
 - The reconnect's oracle reads the target (`addAttachedArtifact`, line 1091) from disk; the retained buffer has
   it at line 1093.
 
-Harness fix: the lifecycle closes the edited documents before disconnecting, as the memory control does (M18),
-and the failure message now names the location answered as well as the one expected. The inherited
-first-use-references timeout still fails base and head runs that do not finish it in time.
+Harness change (`44a319f`): the lifecycle closes the edited documents before disconnecting, as the memory control
+does (M18), and the failure names the location answered as well as the one expected.
+
+**Correction.** That did not make the reconnect pass: the benchmarks run on `44a319f` (36923835955) fails the same
+way after 945 s (the first open succeeded in 32.6 s, so it is the reconnect). The retained-buffer explanation is
+therefore not established, and the cause of the reconnect's different location is OPEN. The runner truncates the
+error line, so the lifecycle now also prints the full first line of its error (answered and expected locations)
+to the job log. Main never reaches this step, so whether it is inherited cannot be read from main's runs.
 
 ### Reset checkpoint 4: real-project restart through the daemon (R1)
 

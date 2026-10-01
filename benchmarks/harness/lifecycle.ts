@@ -139,6 +139,8 @@ export async function runLifecycle(o:LifecycleOptions){
     phases.restart_first_completion_ms=performance.now()-restartStarted;
   }catch(error){
     errors.push(String(error).split("\n")[0]);
+    // The summary line is cut short; the whole first line (for an oracle, what was answered and expected) goes to the job log.
+    console.error("[lifecycle] error: "+String(error).split("\n")[0]);
     // A JVMD that stopped answering leaves its thread dump in the run output, so the hang can be read without a rerun.
     if(daemon?.alive())try{phases.thread_dump=daemon.threadDump(o.javaHome,path.join(o.state,"jvmd-threads.txt"));}catch{/* best effort */}
     // Artifacts are not always reachable from where a failure is read: put the evidence in the job log too.

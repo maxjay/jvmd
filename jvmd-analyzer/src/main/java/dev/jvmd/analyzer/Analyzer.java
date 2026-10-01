@@ -79,8 +79,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private Context context;
     private IndexService index;
     private LiveSourceState liveSourceState;
-    private DiagnosticSnapshots snapshots;
-    public void persistence(Path directory){if(snapshots==null){snapshots=new DiagnosticSnapshots(directory);diagnosticStore.persistence(snapshots);snapshots.documents(documents);}}
     /** Attach the LOCAL semantic memo store used for attributed memos and S0 namespace identities. */
     public void memos(SemanticMemoStore store){attributedMemos.attach(store);}
     /** Wait for queued LOCAL memo writes (tests, shutdown and benchmarks). */
@@ -571,7 +569,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         generationFamilyLru.remove(family);
         if(failure!=null)throw failure;
     }
-    public void documents(Documents documents){this.documents=documents;if(snapshots!=null)snapshots.documents(documents);compiler.documents(documents);dependencies.documentHash(documents::hash);dependencies.fileStates(documents.fileStates());if(context!=null)liveSourceState=documents.liveState(context.sources());}
+    public void documents(Documents documents){this.documents=documents;compiler.documents(documents);dependencies.documentHash(documents::hash);dependencies.fileStates(documents.fileStates());if(context!=null)liveSourceState=documents.liveState(context.sources());}
     private ResidentSemanticState semanticState(){return modules.get(context.generation()).semantic;}
     private SemanticReadView semanticReadView(){return semanticReadView(true);}
     private SemanticReadView semanticReadView(boolean admit){
@@ -1194,7 +1192,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             }catch(Exception ignored){}
             return captured;
         });
-        diagnosticStore.inputs(observed);
         if(outcome.result()!=null&&outcome.warnings().isEmpty()){
             dependencies.recordFocused(path,outcome.result().dependencies());
             if(cursor==null&&outcome.tier()==2){
@@ -1311,7 +1308,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             return snapshots;
         });
         bindingComputations+=sources.size();
-        diagnosticStore.inputs(observed);
         var values=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();
         // Resolve every API first: invalidation from a later file must not erase an earlier fresh result.
         if(result.result()!=null&&result.tier()==2&&result.warnings().isEmpty())for(var entry:result.result().entrySet()){
@@ -1332,7 +1328,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 focused.put(file+":"+hash+":"+stamp+":full",new Cached(file,hash,stamp,0,input.text().length(),List.of(),outcome));
                 while(focused.size()>32)focused.remove(focused.keySet().iterator().next());
                 diagnosticStore.put(file,hash,context.generation(),diagnosticStamp(file,observed),envelope,
-                        apiFingerprint(file),snapshot.dependencies(),contribution(file),broadDiagnosticStamp(observed));
+                        apiFingerprint(file),snapshot.dependencies(),contribution(file));
                 attributedMemos.memoize(file,hash,envelope,contribution(file),snapshot);
                 publishSource(file,hash,stamp,semanticPublisherContextFingerprint(observed,stamp),snapshot,result.tier());
             }
@@ -1375,7 +1371,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var envelope=new Envelope(outcome.tier(),"live",false,null,List.copyOf(warnings),Map.of("diagnostics",outcome.diagnostics()));
         if(outcome.warnings().isEmpty())diagnosticStore.put(path,sourceHash,generation,diagnosticStamp(path,observed),envelope,
                 apiFingerprint(path),outcome.result()==null?Set.of():outcome.result().dependencies(),
-                outcome.tier()==2?contribution(path):null,broadDiagnosticStamp(observed));
+                outcome.tier()==2?contribution(path):null);
         if(outcome.warnings().isEmpty()&&outcome.tier()==2)attributedMemos.memoize(path,sourceHash,envelope,contribution(path),outcome.result());
         return envelope;
     }
@@ -2447,7 +2443,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return NamePath.parse(ref).matches(symbol);
     }
     public Map<String,Object> status(){
-        var result=new LinkedHashMap<String,Object>(compiler.status());if(snapshots!=null)result.put("persistent_snapshots",snapshots.status());result.putAll(focusing.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("binding_computations",bindingComputations);result.put("classpath_fingerprints",classpathFingerprints);result.put("diagnostic_store",diagnosticStore.status());result.put("diagnostic_files_analysed",diagnosticFilesAnalysed);result.put("diagnostic_files_reused",diagnosticFilesReused);result.put("index_record_source_calls",indexWrites);result.put("index_record_source_ms",0.0);result.put("index_publish_enqueue_ms",Math.round(indexWriteNanos/1000.0)/1000.0);if(index!=null)result.put("source_publisher",index.sourcePublisherStatus());result.put("api_fingerprint_changes",apiFingerprintChanges);result.put("api_fingerprint_unchanged",apiFingerprintUnchanged);result.put("pending_api_files",dependencies.semantic().pendingCount());result.put("conditional_files",dependencies.semantic().conditionalCount());result.put("dependencies",dependencies.status());
+        var result=new LinkedHashMap<String,Object>(compiler.status());result.putAll(focusing.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("binding_computations",bindingComputations);result.put("classpath_fingerprints",classpathFingerprints);result.put("diagnostic_store",diagnosticStore.status());result.put("diagnostic_files_analysed",diagnosticFilesAnalysed);result.put("diagnostic_files_reused",diagnosticFilesReused);result.put("index_record_source_calls",indexWrites);result.put("index_record_source_ms",0.0);result.put("index_publish_enqueue_ms",Math.round(indexWriteNanos/1000.0)/1000.0);if(index!=null)result.put("source_publisher",index.sourcePublisherStatus());result.put("api_fingerprint_changes",apiFingerprintChanges);result.put("api_fingerprint_unchanged",apiFingerprintUnchanged);result.put("pending_api_files",dependencies.semantic().pendingCount());result.put("conditional_files",dependencies.semantic().conditionalCount());result.put("dependencies",dependencies.status());
         if(liveSourceState!=null)result.put("live_source_state",liveSourceState.status());
         if(context!=null)result.put("resident_semantic_state",semanticState().status());
         result.put("completion_requests",completionRequests);result.put("resident_description_loads",residentDescriptionLoads);result.put("resident_description_cache_hits",residentDescriptionCacheHits);
@@ -2489,5 +2485,5 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     @Override public void close()throws Exception{
         attributedMemos.close();
-        if(snapshots!=null)snapshots.close();diagnosticStore.clear();outlines.clear();focused.clear();focusing.close();sourceTexts.clear();dependencies.semantic().clear();for(var pool:compilerPools.values())pool.close();compilerPools.clear();modules.clear();generationFamilies.clear();generationFamilyLru.clear();compiler=null;}
+        diagnosticStore.clear();outlines.clear();focused.clear();focusing.close();sourceTexts.clear();dependencies.semantic().clear();for(var pool:compilerPools.values())pool.close();compilerPools.clear();modules.clear();generationFamilies.clear();generationFamilyLru.clear();compiler=null;}
 }

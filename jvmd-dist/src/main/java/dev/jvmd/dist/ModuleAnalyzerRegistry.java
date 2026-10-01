@@ -40,12 +40,12 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
     public synchronized long actorCalls(){long calls=0;for(var actor:actors.values())calls+=actor.calls.sum();return calls;}
 
     public synchronized DiagnosticEngine engine(String key,Analyzer.Context context,IndexService index,long totalBudget,
-                                                Documents documents,Path persistenceRoot)throws Exception{
+                                                Documents documents)throws Exception{
         if(closed)throw new IllegalStateException("Module analyzer registry is closed");
         var actor=actors.get(key);
         if(actor==null){actor=new Actor(key);actors.put(key,actor);}
         long actorBudget=Math.max(1,totalBudget/parallelism);
-        actor.ensureConfigured(context,index,actorBudget,documents,persistenceRoot.resolve(Hashing.sha256(key.getBytes(StandardCharsets.UTF_8))));
+        actor.ensureConfigured(context,index,actorBudget,documents);
         return actor.handle;
     }
 
@@ -201,7 +201,6 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
         private volatile String generation;
         private volatile long documentsGeneration=-1,budget=-1;
         private volatile IndexService index;
-        private volatile Path persistence;
         private volatile Thread owner;
         private volatile boolean actorClosed;
 
@@ -214,13 +213,13 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
             analyzer=call(()->new Analyzer(classpathFiles));handle=new Handle(this);
         }
         private String contextKey(){return generation==null?key:generation;}
-        private void ensureConfigured(Analyzer.Context context,IndexService index,long budget,Documents documents,Path persistence)throws Exception{
+        private void ensureConfigured(Analyzer.Context context,IndexService index,long budget,Documents documents)throws Exception{
             long documentGeneration=documents.generation();
             if(Objects.equals(generation,context.generation())&&this.index==index&&this.budget==budget
-                    &&documentsGeneration==documentGeneration&&Objects.equals(this.persistence,persistence))return;
+                    &&documentsGeneration==documentGeneration)return;
             var store=memos;
-            call(()->{analyzer.configure(context,index,budget);analyzer.documents(documents);analyzer.persistence(persistence);if(store!=null)analyzer.memos(store);return null;});
-            generation=context.generation();this.index=index;this.budget=budget;documentsGeneration=documentGeneration;this.persistence=persistence;
+            call(()->{analyzer.configure(context,index,budget);analyzer.documents(documents);if(store!=null)analyzer.memos(store);return null;});
+            generation=context.generation();this.index=index;this.budget=budget;documentsGeneration=documentGeneration;
         }
         private <T> T call(Callable<T> work)throws Exception{
             if(actorClosed)throw new IllegalStateException("Module analyzer actor is closed");

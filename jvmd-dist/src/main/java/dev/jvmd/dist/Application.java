@@ -37,12 +37,19 @@ public final class Application implements AutoCloseable {
     private volatile boolean repositoryScanRequested;
     private final java.util.concurrent.atomic.AtomicBoolean closed=new java.util.concurrent.atomic.AtomicBoolean();
     private static final Set<String> COMPLETION_TYPE_KINDS=Set.of("class","interface","enum","record","annotation");
+    private static void deleteQuietly(Path directory){
+        if(!Files.exists(directory))return;
+        try(var walk=Files.walk(directory)){walk.sorted(Comparator.reverseOrder()).forEach(path->{try{Files.deleteIfExists(path);}catch(Exception ignored){}});}
+        catch(Exception ignored){}
+    }
     private record TypeCompletionCache(String generation,String prefix,List<Map<String,Object>> rows,boolean complete) { }
     public Application(Config config) {
         this.config = config;
         // Restart reuse of unchanged content hashes (§90). Restored observations are validated
         // against current file stamps before use; the journal is never semantic authority.
         classpathFiles.persistence(config.stateDir().resolve("file-observations-v1.bin"));
+        // W7: attributed LOCAL memos are the only persisted diagnostics; old snapshot state is deleted, never migrated.
+        deleteQuietly(config.stateDir().resolve("diagnostics-v2"));
         // LOCAL semantic memo store (§68): independently validated records; loss is only a miss.
         localMemos=new dev.jvmd.index.SemanticMemoStore(config.stateDir().resolve("local-memo-v1"));
         sourceNamespaces=new dev.jvmd.analyzer.SourceNamespaces(localMemos);
@@ -297,8 +304,7 @@ public final class Application implements AutoCloseable {
         var context=contexts.context(path,graph,contextCacheIdentity(session,graph,path),file->createAnalyzerContext(session,file,graph));
         var availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
         long totalBudget=config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size());
-        Path persistence=config.stateDir().resolve("diagnostics-v2").resolve(Hashing.sha256(session.root().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        return diagnosticActors(session).engine(WorkspaceContextManager.key(path,graph),context,availableIndex,totalBudget,documents(session),persistence);
+        return diagnosticActors(session).engine(WorkspaceContextManager.key(path,graph),context,availableIndex,totalBudget,documents(session));
     }
     private WorkspaceAnalysisCoordinator.ExternalResult externalDiagnostics(Session session,Path file)throws Exception{
         var graph=(Resolution)session.state("resolution");if(graph==null)return null;
@@ -855,7 +861,7 @@ public final class Application implements AutoCloseable {
         availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
         try(var span=RequestScope.stage("analyzer.configure")){analyzer.configure(context,availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));}
         analyzer.documents(documents(session));
-        analyzer.persistence(config.stateDir().resolve("diagnostics-v2").resolve(Hashing.sha256(session.root().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))));analyzer.memos(localMemos);
+        analyzer.memos(localMemos);
         return analyzer;
         }
     }

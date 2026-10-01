@@ -561,7 +561,7 @@ final class AttributedMemos implements AutoCloseable {
             var envelope=new Envelope(data.path("tier").asInt(),"live",false,null,List.of(),Map.of("diagnostics",List.copyOf(problems)));
             analyzer.dependencyGraph().recordFocused(path,dependencies);analyzer.resolveContribution(contribution);
             String broad=Analyzer.broadDiagnosticStamp(observed);
-            analyzer.diagnosticStore().put(path,hash,context().generation(),broad,envelope,contribution.apiFingerprint(),dependencies,contribution,broad);
+            analyzer.diagnosticStore().put(path,hash,context().generation(),broad,envelope,contribution.apiFingerprint(),dependencies,contribution);
             attributedMemoRestores++;
             return envelope;
         }catch(Exception failure){attributedMemoFailures.incrementAndGet();return null;}

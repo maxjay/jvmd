@@ -55,6 +55,15 @@ public final class AllocationAgent {
         }
     }
 
+    private static long allocated() {
+        try {
+            var bean = (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
+            return bean.isThreadAllocatedMemorySupported() && bean.isThreadAllocatedMemoryEnabled() ? bean.getTotalThreadAllocatedBytes() : -1;
+        } catch (LinkageError | ClassCastException unavailable) {
+            return -1; // Runtime image without jdk.management.
+        }
+    }
+
     private static long ownAllocated() {
         try {
             return ((com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean()).getCurrentThreadAllocatedBytes();

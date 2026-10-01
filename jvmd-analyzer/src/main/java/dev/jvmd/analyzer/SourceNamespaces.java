@@ -59,6 +59,7 @@ public final class SourceNamespaces {
 
     private final SemanticMemoStore store;
     private final JavaCompiler compiler=ToolProvider.getSystemJavaCompiler();
+    private StandardJavaFileManager fileManager;
     private long parses,memoHits,memoMisses,memoWrites,memoFailures;
 
     /** {@code store} may be null, in which case every request parses. */
@@ -104,12 +105,15 @@ public final class SourceNamespaces {
 
     private Namespace parse(String content,LanguageMode mode)throws Exception{
         parses++;
-        var options=new ArrayList<String>(List.of("-proc:none"));
-        if(!mode.release().isBlank())options.addAll(List.of("--release",mode.release()));
+        // S0 is syntax only: the language level (--source) decides the parse, and --release would
+        // also open the platform's class archive (ct.sym) for every parse. One file manager is shared.
+        var options=new ArrayList<String>(List.of("-proc:none","-Xlint:-options"));
+        if(!mode.release().isBlank())options.addAll(List.of("--source",mode.release()));
         if(mode.preview()&&!mode.release().isBlank())options.add("--enable-preview");
         var diagnostics=new DiagnosticCollector<JavaFileObject>();
         var source=Parser.source(Path.of("/s0/Unit.java").toUri(),content);
-        var task=(JavacTask)compiler.getTask(new java.io.StringWriter(),null,diagnostics,options,null,List.of(source));
+        if(fileManager==null)fileManager=compiler.getStandardFileManager(null,Locale.ROOT,StandardCharsets.UTF_8);
+        var task=(JavacTask)compiler.getTask(new java.io.StringWriter(),fileManager,diagnostics,options,null,List.of(source));
         String pkg="";var top=new ArrayList<String>();var nested=new ArrayList<String>();var declarations=new ArrayList<Declaration>();
         for(var unit:task.parse()){
             if(unit.getPackageName()!=null)pkg=unit.getPackageName().toString();

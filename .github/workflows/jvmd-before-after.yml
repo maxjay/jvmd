@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       base:
-        description: Base revision (default: the merge base with main)
+        description: 'Base revision (default: the merge base with main)'
         default: ''
       lifecycle_pairs:
         description: Interleaved base/PR lifecycle pairs

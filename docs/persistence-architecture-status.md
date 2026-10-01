@@ -334,6 +334,10 @@ subject is reported as incorrect or timeout, never as a latency.
 
   | [36895104366](https://github.com/maxjay/jvmd/actions/runs/36895104366) | B1 | equivalent | `protocol_error` after 174.2 s: not timely | Reached: READY, then a correct first definition (2.2 s) |
 
+  | [36895107922](https://github.com/maxjay/jvmd/actions/runs/36895107922) | B0 | shipping (no `-Xmx`) | Runner lost 5.5 min into references (shutdown signal, exit 143), probably host memory exhaustion | Not reached |
+
+  B0's first hover also fails, at both budgets, with "Editor result exceeds 64 KiB" (a B0 behaviour).
+
   B0 reproduces E9 and E10. At B1 the restart succeeds (strict capacity off) but references still fail
   (M1 open). The shipping-default runs are recorded when they finish.
 
@@ -446,6 +450,15 @@ is valid for.
 | Per-unit `P_diag` | `AttributedMemos.projections` (path → content hash, P_diag) from attribution or restore. Each dependant also recomputes every dependency's P_diag in its own task | Content consumed + projection version | `DiagnosticProjection.of` | Content change | Total for attributed units | Transaction | Inside the record | `logical-unit:` entries, early cutoff | Reuse the established leaf for the same content |
 | Source SCCs / condensation | `drain()`: Tarjan over the whole reachable graph per batch (256 captures or 2 s); `knownDependencies` | Pending set + dependency sets | Tarjan | New captures; dependency changes | A component is final when nothing it reaches is unknown | Process | No | Record writes (SCC peers bind content) | Settled components are kept and not revisited; visit counters |
 | Ordered classpath and search identities | `StaticInputs.slots` per epoch; `ClasspathSequence` in the analyzer | Context classpath + content identities | `StaticInputs` | Classpath or artifact change | Total | Environment epoch | Logical slots in the static key | Static key | Per context and environment |
+
+**P1, configuration work (done).**
+
+- Change: `AttributedMemos.configured()` derives the reactor root, logical source mapper, normalised roots and
+  per-class directories once per `Analyzer.Context` instance. `configure()` replaces the context on any
+  configuration change, which is the one invalidator. Status: `attributed_memo.config_derivations`.
+- Breaking test: `ConfigurationWorkCountTest`. 60 chained captures in one context give 1 derivation; 60 restores
+  with their dependency entries give 1; a reconfiguration adds exactly 1.
+- Before, the coordinate table was walked for every memo, entry and `config:` lookup.
 
 ## Known limits
 

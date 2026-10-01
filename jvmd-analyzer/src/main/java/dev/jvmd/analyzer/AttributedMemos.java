@@ -103,13 +103,34 @@ final class AttributedMemos implements AutoCloseable {
             if(ProcessorAllowlist.entry(processor).map(entry->entry.input()==ProcessorAllowlist.ExtraInput.JPA_XML).orElse(false))return true;
         return false;
     }
+    /**
+     * P1 (corrective pass): everything derived from the configured context alone, derived once per
+     * context instance. {@code Analyzer.configure} replaces the context on any configuration change
+     * (module selection, generated roots, processor settings), which is the only invalidator. Before,
+     * the coordinate table was walked for every memo, dependency entry and {@code config:} lookup.
+     */
+    private record Configured(Analyzer.Context context,Path reactorRoot,LogicalSources logical,List<Path> roots,List<Path> perClassDirectories) { }
+    private volatile Configured configured;
+    private final java.util.concurrent.atomic.AtomicLong configDerivations=new java.util.concurrent.atomic.AtomicLong();
+    private Configured configured(){
+        var current=context();var value=configured;
+        if(value!=null&&value.context()==current)return value;
+        configDerivations.incrementAndGet();
+        var roots=current.sources().stream().map(root->root.toAbsolutePath().normalize()).toList();
+        var directories=current.classpath().stream().map(entry->entry.toAbsolutePath().normalize())
+                .filter(entry->StaticInputs.perClass(entry,current.coordinates(),current.gav())).toList();
+        value=new Configured(current,deriveReactorRoot(current,roots),LogicalSources.of(current),roots,directories);
+        configured=value;return value;
+    }
+    private LogicalSources logical(){return configured().logical();}
+    private Path reactorRoot(){return configured().reactorRoot();}
     /** The outermost module directory of the reactor: the shortest coordinates directory that contains a source root. */
-    private Path reactorRoot(){
+    private static Path deriveReactorRoot(Analyzer.Context context,List<Path> roots){
         Path best=null;
-        for(var entry:context().coordinates().entrySet()){
+        for(var entry:context.coordinates().entrySet()){
             if(entry.getKey().contains("://")||entry.getKey().startsWith("role:"))continue;
             Path candidate;try{candidate=Path.of(entry.getKey()).toAbsolutePath().normalize();}catch(Exception invalid){continue;}
-            boolean contains=false;for(Path root:context().sources())if(root.toAbsolutePath().normalize().startsWith(candidate)&&!root.toAbsolutePath().normalize().equals(candidate))contains=true;
+            boolean contains=false;for(Path root:roots)if(root.startsWith(candidate)&&!root.equals(candidate))contains=true;
             if(contains&&(best==null||candidate.getNameCount()<best.getNameCount()))best=candidate;
         }
         return best;
@@ -148,7 +169,7 @@ final class AttributedMemos implements AutoCloseable {
         var stamps=new HashMap<Path,String>();
         try{
             Path top=reactorRoot();if(top==null)return;
-            var files=resourceFiles(file,LogicalSources.of(context()),top);if(files.isEmpty())return;
+            var files=resourceFiles(file,logical(),top);if(files.isEmpty())return;
             for(Path config:files.get())stamps.put(config,stamp(config));
         }catch(Exception unobservable){return;}
         resourceStamps.put(file,new ResourceStamps(observed,Map.copyOf(stamps)));
@@ -212,10 +233,7 @@ final class AttributedMemos implements AutoCloseable {
         return binaryProjection(binaryName(id.get()),observed);
     }
     /** Other reactor modules' class directories on this context's classpath, in classpath order. */
-    private List<Path> perClassDirectories(){
-        return context().classpath().stream().map(entry->entry.toAbsolutePath().normalize())
-                .filter(entry->StaticInputs.perClass(entry,context().coordinates(),context().gav())).toList();
-    }
+    private List<Path> perClassDirectories(){return configured().perClassDirectories();}
     /** Location-free name of a class directory slot. */
     private String slotName(Path directory){
         String role=context().coordinates().get("role:"+directory);
@@ -316,8 +334,8 @@ final class AttributedMemos implements AutoCloseable {
      */
     private Optional<List<PackageFile>> packageFiles(String pkg,LogicalSources logical)throws Exception{
         var result=new ArrayList<PackageFile>();
-        for(Path root:context().sources()){
-            Path normalized=root.toAbsolutePath().normalize(),directory=pkg.isEmpty()?normalized:normalized.resolve(pkg.replace('.','/'));
+        for(Path normalized:configured().roots()){
+            Path directory=pkg.isEmpty()?normalized:normalized.resolve(pkg.replace('.','/'));
             // Paths sharing the directory's string prefix are contiguous; siblings such as "p.x" sort among them.
             for(Path file:members(normalized).tailSet(directory,false)){
                 if(!file.toString().startsWith(directory.toString()))break;
@@ -368,8 +386,8 @@ final class AttributedMemos implements AutoCloseable {
     private Hash256 absenceIdentity(String binary,LogicalSources logical)throws Exception{
         boolean type=false,pkg=false;
         String relative=binary.replace('.','/');
-        for(Path root:context().sources()){
-            Path normalized=root.toAbsolutePath().normalize(),file=normalized.resolve(relative+".java"),directory=normalized.resolve(relative);
+        for(Path normalized:configured().roots()){
+            Path file=normalized.resolve(relative+".java"),directory=normalized.resolve(relative);
             // A root whose members cannot be listed is UNKNOWN (C3): the failure propagates, never an identity.
             NavigableSet<Path> members=members(normalized);
             if(members.contains(file))type=true;
@@ -402,7 +420,7 @@ final class AttributedMemos implements AutoCloseable {
      */
     private Optional<TreeMap<QueryProof.Key,Hash256>> staticImportBindings(NamespaceResolutionProofs.Header header,Set<Path> dependencies,Bindings.Snapshot attributed,LogicalSources logical)throws Exception{
         var result=new TreeMap<QueryProof.Key,Hash256>();
-        var roots=context().sources().stream().map(root->root.toAbsolutePath().normalize()).toList();var directories=perClassDirectories();
+        var roots=configured().roots();var directories=perClassDirectories();
         for(String type:header.staticImportTypes()){
             var parts=type.split("\\.");
             for(int length=2;length<=parts.length;length++){
@@ -513,12 +531,12 @@ final class AttributedMemos implements AutoCloseable {
         if(context().warnings().stream().anyMatch(warning->warning.startsWith("unsaved_processor_inputs"))){refuseAttributed("unsaved-processor-inputs");return;}
         var projection=projection(file);if(projection.isEmpty()){refuseAttributed("projection-unavailable");return;}
         try{
-            var logical=LogicalSources.of(context());
+            var logical=logical();
             var key=attributedStaticKey(file,sourceHash,logical);if(key.isEmpty())return;
             if(!contribution.sourceHash().equals(sourceHash)){refuseAttributed("contribution-superseded");return;}
             String text=analyzer.documentsState().text(file);
             if(!Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)).equals(sourceHash)){refuseAttributed("source-superseded");return;}
-            var roots=context().sources().stream().map(root->root.toAbsolutePath().normalize()).toList();
+            var roots=configured().roots();
             var dependencies=new TreeMap<Path,Dependency>();
             for(Path dependency:contribution.dependencies()){
                 Path normalized=dependency.toAbsolutePath().normalize();if(normalized.equals(file))continue;
@@ -590,8 +608,8 @@ final class AttributedMemos implements AutoCloseable {
      */
     void drain(boolean closing){
         if(pending.isEmpty())return;
-        var roots=context()==null?List.<Path>of():context().sources().stream().map(root->root.toAbsolutePath().normalize()).toList();
-        var logical=context()==null?null:LogicalSources.of(context());
+        var roots=context()==null?List.<Path>of():configured().roots();
+        var logical=context()==null?null:logical();
         var graph=new HashMap<Path,Set<Path>>();
         java.util.function.Function<Path,Set<Path>> edges=unit->graph.computeIfAbsent(unit,current->{
             var captured=pending.get(current);if(captured!=null)return captured.dependencies().keySet();
@@ -653,7 +671,7 @@ final class AttributedMemos implements AutoCloseable {
         // do not affect the unit's result (it read only its completed units), so binding their current
         // content only narrows reuse.
         if(component.size()>1){
-            var logical=LogicalSources.of(context());
+            var logical=logical();
             for(Path peer:component){
                 if(peer.equals(file)||captured.dependencies().containsKey(peer))continue;
                 var id=logical.logical(peer);Optional<String> hash;
@@ -702,7 +720,7 @@ final class AttributedMemos implements AutoCloseable {
     private final Set<Path> resolving=new HashSet<>();
     private Envelope resolve(Path path,String hash,CompilerInputs.Snapshot observed){
         try{
-            var logical=LogicalSources.of(context());
+            var logical=logical();
             var key=attributedStaticKey(path,hash,logical);if(key.isEmpty())return null;
             String packagePrefix="package:"+scope()+"|";
             var mode=SourceNamespaces.LanguageMode.of(context().compilerOptions());
@@ -831,6 +849,7 @@ final class AttributedMemos implements AutoCloseable {
         result.put("misses",attributedMemoMisses);result.put("last_miss",lastAttributedMemoMiss);result.put("refusals",attributedMemoRefusals);
         result.put("refusal_reasons",Map.copyOf(attributedMemoRefusalReasons));result.put("failures",attributedMemoFailures.get());
         result.put("pending_scc",pending.size());result.put("last_failure",lastFailure);result.put("scc_unknown_sample",unknownSample);result.put("miss_reasons",Map.copyOf(missReasons));result.put("early_cutoff_attributions",earlyCutoffAttributions);result.put("pending_writes",pendingMemoWrites.get());
+        result.put("config_derivations",configDerivations.get());
         result.put("source_namespaces",sourceNamespaces.status());
         if(attributedMemos!=null)result.put("store",attributedMemos.status());
         return Collections.unmodifiableMap(result);

@@ -92,9 +92,11 @@ The CI lifecycle on the pinned `apache/maven` fixture has not produced the numbe
 
 - Run 17 (`c710b4d`): the restarted daemon exited with 1 during startup. The harness killed the old daemon and
   started the new one before the old process had exited. Fixed in `4f87c3f`.
-- Run 19 (`513639c`): the restart now reaches READY, but the editor's `initialize` against it timed out. The
-  harness now prints the daemon log and JVMD thread stacks into the job log on failure, so the next run shows where
-  it waits.
+- Runs 19–21: the editor's `initialize` failed, first by timing out, then with a faulted `session.open`. The
+  harness's new failure evidence (daemon log and busy thread stacks in the job log) showed two RocksDB
+  configuration bugs: a strict block-cache limit that failed reads under cache pressure (fixed in `1745f2e`), and
+  writers stalled indefinitely on the shared write-buffer budget while holding a lock that `initialize` needs
+  (fixed in `1eb5d87`). Both have breaking tests in `RocksMemoryTest`.
 
 The in-process equivalent on the real project is in the table above (first correct completion after a no-change
 restart: 3.0 s, cold 110.5 s).
@@ -203,13 +205,15 @@ Rerun: `mvn -pl jvmd-tests test -Dtest=MachineDecisionBenchmark -DexcludedGroups
 | 2026-10-01 | W6/W9 | c710b4d | Two real-project refusals were removed rather than widened. (1) `capture` returned silently on any query warning, so it was not counted (rule 6); it is now `query-warning:<kind>`. `originates: <gav>` is a deterministic function of the result and is stored in and restored with the record (`SourceOverlayNavigationTest`). (2) `negative-unproven:static-import`: an unresolved name under static imports is bound through each statically imported class: a P_diag entry when it is a source dependency or reactor class, otherwise an absence entry (`ReactorClassBindingTest.unresolvedNamesUnderStaticImportsAreBound`). |
 | 2026-10-01 | W3/W9 | 4f87c3f | A negative resolution now binds only whether a type or package of that name exists, not where. On a branch switch without a rebuild, a dependency module moves from its class output to its sources, which had changed the location-list identity (45 A8 misses) without changing resolution. |
 | 2026-10-01 | W9 | 4f87c3f | CI lifecycle: the restarted daemon exited with 1 during startup. `JvmdDaemon.stop()` returned right after SIGKILL, so the next daemon could start while the killed one still held its store. The harness now waits for the process to exit. |
+| 2026-10-01 | W9 | 1745f2e | CI lifecycle: requests faulted with RocksDB "Insert failed due to LRU cache being full". The shared block cache had a strict capacity limit, so reads failed whenever blocks pinned by concurrent readers, pinned index and filter blocks and charged memtables reached the budget. It is now non-strict: the budget is a capacity target (`RocksMemoryTest.readsSucceedWhilePinnedBlocksExceedTheBudgetAndTheCacheShrinksBack`). This was latent on main (`RocksMemory` is unchanged); the W8 decision does not depend on it (native fails heap allocation and exact p95 regardless). |
+| 2026-10-01 | W9 | 1eb5d87 | CI lifecycle: the editor's `initialize` timed out. All databases share one `WriteBufferManager` with stalling enabled; once the memtables of several databases, each below its own flush threshold, exceeded the shared budget, a writer stalled indefinitely. The source-index publisher stalled while holding the `RocksSemanticInvalidation` monitor, which every semantic-revision read needs. Writers no longer stall (`RocksMemoryTest.aWriteDoesNotStallOnMemtablesHeldByOtherIdleDatabases`, which fails after 60 s without the fix). |
 | 2026-10-01 | W9 | this commit | Disagreement on A8 "javac K": 22 units recompile for K = 20. The extra units sit in strongly connected components with an edited unit, where rule 2 and A6 require content binding. Separately, dependants of an edited module that was not rebuilt compile against its sources (a different context), and an edited Lombok module reruns its external processor once. All three follow from rules this document sets, so they are reported rather than worked around. |
 | 2026-10-01 | W9 | this commit | A10 on the pinned project edits the reactor-root `lombok.config`. Every unit holds it, so all 977 recompile, which is the required result. Per-unit exactness is shown by `ProcessorBindingTest.lombokConfigEditRecompilesExactlyTheUnitsHoldingIt` (a package-level config). |
 
 ## Known limits
 
 - Open: restart to first correct completion in the CI lifecycle (see *Real project*). The restarted daemon does not
-  yet answer the editor's `initialize` within the harness's timeout on the `apache/maven` fixture.
+  yet produced the number on the `apache/maven` fixture; the two RocksDB fixes above remove the failures seen so far.
 - A unit whose javac diagnostics name another file (`foreign-diagnostic-file`) is refused.
 - When a dependency module's sources are newer than its class output (a branch switch without a rebuild), dependants
   compile against its sources. That changes their context and static key, so those units are recompiled once.

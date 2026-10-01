@@ -28,7 +28,7 @@ final class AttributedMemos implements AutoCloseable {
     }
     private SemanticMemoStore attributedMemos;
     private SourceNamespaces sourceNamespaces=new SourceNamespaces(null);
-    private record NamespaceEntry(String hash,Object value) { }
+    private record NamespaceEntry(String hash,SourceNamespaces.LanguageMode mode,Object value) { }
     private final Map<Path,NamespaceEntry> namespaceCache=new java.util.concurrent.ConcurrentHashMap<>();
     private long attributedMemoRestores,attributedMemoMisses,attributedMemoRefusals;
     private final java.util.concurrent.atomic.AtomicLong attributedMemoWrites=new java.util.concurrent.atomic.AtomicLong(),
@@ -311,18 +311,55 @@ final class AttributedMemos implements AutoCloseable {
      */
     private NavigableSet<Path> members(Path root)throws Exception{
         if(epoch!=null){var cached=epoch.members.get(root);if(cached!=null)return cached;}
-        var result=new TreeSet<Path>();
         ObservationFaults.check(root);
+        NavigableSet<Path> result;
         // Live membership only while the live state is trusted (no overflow or unreconciled change);
         // otherwise the directories are observed directly. A failed listing is UNKNOWN and propagates.
-        if(epoch!=null&&epoch.key instanceof CompilerInputs.Snapshot observed&&observed.live()!=null&&observed.trusted()){
-            for(Path file:observed.live().paths())if(file.startsWith(root)&&file.toString().endsWith(".java"))result.add(file);
-        }else try{result.addAll(analyzer.inputFiles().inventory(root,".java",true));}
-        catch(java.io.IOException failure){throw new ObservationFaults.Unavailable("source root unreadable: "+root,failure);}
-        for(Path open:analyzer.documentsState().paths())if(open.startsWith(root)&&open.toString().endsWith(".java"))result.add(open);
-        var value=Collections.unmodifiableNavigableSet(result);
+        if(epoch!=null&&epoch.key instanceof CompilerInputs.Snapshot observed&&observed.live()!=null&&observed.trusted())result=liveMembers(root,observed);
+        else{
+            var listed=new TreeSet<Path>();
+            try{listed.addAll(analyzer.inputFiles().inventory(root,".java",true));}
+            catch(java.io.IOException failure){throw new ObservationFaults.Unavailable("source root unreadable: "+root,failure);}
+            result=listed;
+        }
+        TreeSet<Path> overlays=null;
+        for(Path open:analyzer.documentsState().paths())if(open.startsWith(root)&&open.toString().endsWith(".java")&&!result.contains(open)){
+            if(overlays==null)overlays=new TreeSet<>(result);overlays.add(open);
+        }
+        var value=Collections.unmodifiableNavigableSet(overlays!=null?overlays:result);
         if(epoch!=null)epoch.members.put(root,value);
         return value;
+    }
+    /**
+     * B2: the {@code .java} members of one root under the live source owner, maintained across input
+     * snapshots. Built once per root and live owner; a later snapshot applies only the paths the live
+     * journal reports changed since the previous one (a rebuild only when the journal cannot answer).
+     */
+    private record LiveMembers(LiveSourceState live,long observation,Map<Path,TreeSet<Path>> roots) { }
+    private LiveMembers liveMembers;
+    private long membershipEnumerations,membershipUpdates;
+    private NavigableSet<Path> liveMembers(Path root,CompilerInputs.Snapshot observed){
+        var live=observed.live();long observation=observed.observation();var current=liveMembers;
+        if(current==null||current.live()!=live)current=new LiveMembers(live,observation,new HashMap<>());
+        else if(current.observation()!=observation){
+            var changed=observation>current.observation()?live.changedPathsSince(current.observation()):Optional.<Set<Path>>empty();
+            if(changed.isPresent()){
+                for(var entry:current.roots().entrySet())for(Path file:changed.get()){
+                    if(!file.startsWith(entry.getKey())||!file.toString().endsWith(".java"))continue;
+                    membershipUpdates++;
+                    if(live.contentHash(file)!=null)entry.getValue().add(file);else entry.getValue().remove(file);
+                }
+                current=new LiveMembers(live,observation,current.roots());
+            }else current=new LiveMembers(live,observation,new HashMap<>());
+        }
+        liveMembers=current;
+        var set=current.roots().get(root);
+        if(set==null){
+            membershipEnumerations++;set=new TreeSet<>();
+            for(Path file:live.paths())if(file.startsWith(root)&&file.toString().endsWith(".java"))set.add(file);
+            current.roots().put(root,set);
+        }
+        return set;
     }
     private String scope(){return context().gav()+"|"+Analyzer.classpathContext(context()).scope();}
     private static Hash256 logicalContentIdentity(String hash){return CanonicalDigestWriter.digest("logical-source-content-v1",hash);}
@@ -353,13 +390,23 @@ final class AttributedMemos implements AutoCloseable {
      * top-level type in that package changes it; body edits do not. Each unit's text must still have
      * the snapshotted hash, so a later computation never binds newer content to an older snapshot.
      */
+    /** B2: a package's S0 identity, built at most once per package and epoch, for captures and restores alike. */
+    private Optional<Hash256> currentPackageIdentity(String pkg,LogicalSources logical,SourceNamespaces.LanguageMode mode)throws Exception{
+        return shared("package:"+pkg+"|"+mode,()->{
+            packageIdentityBuilds.incrementAndGet();
+            var files=packageFiles(pkg,logical);
+            return files.isEmpty()?Optional.<Hash256>empty():packageIdentity(pkg,files.get(),mode);
+        });
+    }
+    private final java.util.concurrent.atomic.AtomicLong packageIdentityBuilds=new java.util.concurrent.atomic.AtomicLong();
     private Optional<Hash256> packageIdentity(String pkg,List<PackageFile> files,SourceNamespaces.LanguageMode mode)throws Exception{
         var entries=new ArrayList<Object>();
         for(var file:files){
             if(file.file().getFileName().toString().equals("package-info.java")){entries.add(List.of(file.logical(),file.hash()));continue;}
             var cached=namespaceCache.get(file.file());
+            // An S0 result depends on the content and the language mode only (B2).
             Object value;
-            if(cached!=null&&cached.hash().equals(file.hash()))value=cached.value();
+            if(cached!=null&&cached.hash().equals(file.hash())&&cached.mode().equals(mode))value=cached.value();
             else{
                 String text=analyzer.documentsState().text(file.file());
                 if(!Hashing.sha256(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)).equals(file.hash()))return Optional.empty();
@@ -367,7 +414,7 @@ final class AttributedMemos implements AutoCloseable {
                 value=namespace.completeness()==SemanticCompleteness.COMPLETE
                         ?List.of(namespace.completeness().name(),namespace.packageName(),namespace.topLevelTypes())
                         :List.of("partial",file.hash());
-                namespaceCache.put(file.file(),new NamespaceEntry(file.hash(),value));
+                namespaceCache.put(file.file(),new NamespaceEntry(file.hash(),mode,value));
             }
             entries.add(List.of(file.logical(),value));
         }
@@ -494,7 +541,7 @@ final class AttributedMemos implements AutoCloseable {
     private record Dependency(String logical,Hash256 content,Hash256 projection,boolean binary) { }
     /** A result captured on the owner thread whose SCC is not yet known (W3). */
     private record Pending(SemanticMemoStore.StaticKey key,byte[] result,Map<Path,Dependency> dependencies,
-                           Map<String,List<PackageFile>> packages,TreeMap<QueryProof.Key,Hash256> negatives,SourceNamespaces.LanguageMode mode) { }
+                           Map<String,Hash256> packages,TreeMap<QueryProof.Key,Hash256> negatives,SourceNamespaces.LanguageMode mode) { }
     private final Map<Path,Pending> pending=new LinkedHashMap<>();
     /** Dependency sets of units captured or restored this session, for SCC computation after their contribution is invalidated. */
     private final Map<Path,Set<Path>> knownDependencies=new HashMap<>();
@@ -555,10 +602,11 @@ final class AttributedMemos implements AutoCloseable {
             var header=attributed.header();
             if(header==null){refuseAttributed("header-unavailable");return;}
             if(!header.complete()){refuseAttributed("header-unsupported");return;}
-            var packageNames=new TreeSet<String>(header.consultedPackages());var packages=new TreeMap<String,List<PackageFile>>();
+            var packageNames=new TreeSet<String>(header.consultedPackages());var packages=new TreeMap<String,Hash256>();
+            var mode=SourceNamespaces.LanguageMode.of(context().compilerOptions());
             for(String pkg:packageNames){
-                var files=packageFiles(pkg,logical);if(files.isEmpty()){refuseAttributed("package-unproven");return;}
-                packages.put(pkg,files.get());
+                var identity=currentPackageIdentity(pkg,logical,mode);if(identity.isEmpty()){refuseAttributed("package-unproven");return;}
+                packages.put(pkg,identity.get());
             }
             var diagnostics=(List<?>)((Map<?,?>)envelope.result()).get("diagnostics");
             var negatives=negatives(header,attributed,diagnostics,packageNames,logical,dependencies.keySet());if(negatives.isEmpty())return;
@@ -755,11 +803,10 @@ final class AttributedMemos implements AutoCloseable {
         pendingMemoWrites.incrementAndGet();
         memoWriter().submit(()->{
             try{
-                for(var entry:captured.packages().entrySet()){
-                    var identity=packageIdentity(entry.getKey(),entry.getValue(),captured.mode());
-                    if(identity.isEmpty()){attributedMemoFailures.incrementAndGet();lastFailure="write: package identity unavailable for "+entry.getKey();return;}
-                    dependencies.put(new QueryProof.Key(QueryProof.Domain.NAMESPACE,"package:"+scope+"|"+entry.getKey()),identity.get());
-                }
+                // Package identities were established on the owner thread at capture, from the transaction's
+                // own snapshot; the writer only encodes and stores (A3).
+                for(var entry:captured.packages().entrySet())
+                    dependencies.put(new QueryProof.Key(QueryProof.Domain.NAMESPACE,"package:"+scope+"|"+entry.getKey()),entry.getValue());
                 var certificate=new SemanticMemoStore.Certificate(new QueryProof(dependencies.entrySet().stream()
                         .map(entry->new QueryProof.Dependency(entry.getKey(),entry.getValue())).toList()));
                 store.put(new SemanticMemoStore.MemoRecord(captured.key(),certificate,SemanticMemoStore.Coverage.PRECISE,
@@ -819,10 +866,7 @@ final class AttributedMemos implements AutoCloseable {
                     case NAMESPACE -> {
                         if(value.startsWith(packagePrefix)){
                             String pkg=value.substring(packagePrefix.length());
-                            return shared("package:"+pkg,()->{
-                                var files=packageFiles(pkg,logical);
-                                return files.isEmpty()?Optional.<Hash256>empty():packageIdentity(pkg,files.get(),mode);
-                            });
+                            return currentPackageIdentity(pkg,logical,mode);
                         }
                         if(value.startsWith("class-package:")){
                             String pkg=value.substring("class-package:".length());
@@ -917,6 +961,7 @@ final class AttributedMemos implements AutoCloseable {
         result.put("pending_scc",pending.size());result.put("last_failure",lastFailure);result.put("scc_unknown_sample",unknownSample==null?"":unknownSample.toString());
         result.put("scc",Map.of("drains",sccDrains,"vertex_visits",sccVertexVisits,"edge_visits",sccEdgeVisits,"settled_reuses",sccSettledReuses,"invalidations",sccInvalidations,"settled",settled.size()));result.put("miss_reasons",Map.copyOf(missReasons));result.put("early_cutoff_attributions",earlyCutoffAttributions);result.put("pending_writes",pendingMemoWrites.get());
         result.put("config_derivations",configDerivations.get());
+        result.put("package_identity_builds",packageIdentityBuilds.get());result.put("membership_enumerations",membershipEnumerations);result.put("membership_updates",membershipUpdates);
         result.put("source_namespaces",sourceNamespaces.status());
         if(attributedMemos!=null)result.put("store",attributedMemos.status());
         return Collections.unmodifiableMap(result);

@@ -336,7 +336,9 @@ subject is reported as incorrect or timeout, never as a latency.
 
   | [36895107922](https://github.com/maxjay/jvmd/actions/runs/36895107922) | B0 | shipping (no `-Xmx`) | Runner lost 5.5 min into references (shutdown signal, exit 143), probably host memory exhaustion | Not reached |
 
-  B0's first hover also fails, at both budgets, with "Editor result exceeds 64 KiB" (a B0 behaviour).
+  | [36895111803](https://github.com/maxjay/jvmd/actions/runs/36895111803) | B1 | shipping | Daemon request timeout after 360 s; 62.6 GB allocated; heap 2.3–3.4 GB, RSS 4.0–5.2 GB; later queries and the edit's diagnostics time out, and the runner is lost after ~23 min | Not reached |
+
+  B0's and B1's first hover also fail, at both budgets, with "Editor result exceeds 64 KiB" (present at B0, so not a PR regression; a hover correctness gap to fix under E3).
 
   B0 reproduces E9 and E10. At B1 the restart succeeds (strict capacity off) but references still fail
   (M1 open). The shipping-default runs are recorded when they finish.
@@ -459,6 +461,30 @@ is valid for.
 - Breaking test: `ConfigurationWorkCountTest`. 60 chained captures in one context give 1 derivation; 60 restores
   with their dependency entries give 1; a reconfiguration adds exactly 1.
 - Before, the coordinate table was walked for every memo, entry and `config:` lookup.
+
+**P2, namespace work (done for the memo path).**
+
+- Membership:
+  - A root's `.java` members are enumerated once per live owner (`liveMembers`).
+  - A later input snapshot applies only the paths the live journal reports changed since the previous
+    snapshot (`LiveSourceState.changedPathsSince`); the root is rebuilt only when the journal cannot answer.
+  - Unsaved buffers outside the live state are overlaid on a copy, never on the shared set.
+  - An untrusted live state is still read directly (C3).
+- Package identity:
+  - A package's S0 identity is built at most once per package, input snapshot and language mode
+    (`currentPackageIdentity`). Capture and restore share it, and it is built on the owner thread from the
+    transaction's snapshot.
+  - The writer thread no longer reads documents or parses S0; it only encodes and stores (also A3).
+- S0 cache: `namespaceCache` is keyed by content hash and language mode (before, by content alone).
+- Status: `attributed_memo.membership_enumerations`, `membership_updates`, `package_identity_builds`,
+  `source_namespaces.parses`.
+- Breaking test: `NamespaceWorkCountTest`.
+  - 41 captures in one snapshot: 1 enumeration, at most 2 identity builds (p, q), at most 41 S0 parses.
+  - After one body edit: no new enumeration, at most 2 membership updates, identities rebuilt once for the new
+    snapshot (not per memo), and exactly 1 new S0 parse.
+- Not done: package queries from the editor paths (`LiveSourceState.sources`, which keeps one source per binary
+  name and so loses duplicates across roots) are unchanged. The memo path still lists each root separately, so
+  duplicates across roots stay visible.
 
 **P3, graph work (done).**
 

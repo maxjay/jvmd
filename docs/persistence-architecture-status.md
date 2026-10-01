@@ -595,6 +595,86 @@ results are recorded at checkpoint 5.
   rebuilds consistently; a build that fails after a committed slice publishes nothing, and the next build is
   complete.
 
+## Scope reset (supersedes the corrective-pass gates)
+
+The owner stopped the corrective pass because it had drifted into a general cold-construction and allocation
+project. The reset instruction (`JVMD_PR55_Persistence_Scope_Reset.md`) now governs scope; the architecture
+document stays authoritative for semantics. The corrective brief remains as historical review evidence only.
+
+Goal: persist useful semantic results with sufficient evidence, restore them correctly, maintain what changes,
+show real reuse after restart and keep supported behaviour. Reducing cumulative allocation is not a goal of
+this PR.
+
+- Resume SHA: `c5cd6ec1ac689c97bef19d2ea147a8b2a6ed419c`. Clean working tree; `main` unchanged at `c8fcb9f`.
+- All corrective-pass work up to `c5cd6ec` is kept, including the encoding and posting changes, which have
+  equivalence tests. Nothing was left unfinished in the working tree.
+
+**Measurement model.** These are separate quantities and are never added together:
+
+- input bytes;
+- final persisted bytes;
+- peak heap used;
+- live heap after collection;
+- peak or settled RSS;
+- cumulative Java allocation and cumulative native allocation;
+- elapsed time and outcome.
+
+Cumulative allocation is a supporting diagnostic: it measures traffic, not capacity or stored size. The 1 GiB
+benchmark setting is a heap limit, not the project's size. Earlier figures of 35, 63–68 and 82 GB in this
+document are cumulative traffic over an interval.
+
+**Gate dispositions** (the earlier results above stay as recorded; nothing failed is relabelled as passed):
+
+| Earlier gate | Disposition | State |
+|---|---|---|
+| C1 package certificate | REQUIRED NOW | COMPLETED WITH EVIDENCE: tree-based header, enabled regression, `PackageDeclarationCertificateTest` |
+| C2 old memo rejection | REQUIRED NOW | COMPLETED WITH EVIDENCE: v6, v5 records miss, S0 records still reused |
+| C3 UNKNOWN | REQUIRED NOW | COMPLETED WITH EVIDENCE: `UnknownObservationCertificateTest` (injected failures) |
+| C4 capture frontier | REQUIRED NOW | COMPLETED WITH EVIDENCE: `CaptureFrontierRaceTest` and the processor-resource race test |
+| C5 projection sufficiency | REQUIRED NOW | COMPLETED WITH EVIDENCE: 2,000 mutations, 0 mismatches; processor-dependent cases not in the corpus |
+| P1–P3 configuration, namespace and graph work | Kept as architecture and work-count tests | COMPLETED WITH EVIDENCE: `ConfigurationWorkCountTest`, `NamespaceWorkCountTest`, `SccWorkCountTest` |
+| P4 result cutoff | REQUIRED NOW | COMPLETED WITH EVIDENCE: `OwnerCutoffTest`, live and restored, with a deferred continuation |
+| P5 warm reads | REQUIRED NOW | To check in the restart/editor scenario (below) |
+| R1 constructive restore | REQUIRED NOW | Function table written (checkpoint 3); fresh-process editor evidence still needed |
+| R2 readiness | REQUIRED NOW | COMPLETED WITH EVIDENCE: `ReadinessGatingTest` (faulted scan, offline addition) |
+| M1 first-use references within 60 s at 1 GiB | WITHDRAWN as a #55 gate | PRE-EXISTING FAILURE (B0 also fails); tracked under cold construction below |
+| M2 reopen workspace-used state | REQUIRED NOW | B1 equivalent budget: reopened, with a correct definition after restart. Shipping defaults: not reached (the runner died during references). Needs its own evidence |
+| M3/M4 broad resource and lifetime programme | Narrowed to publication correctness and lifetime safety | Streamed bindings with sliced publication and failure discard: `BoundedBindingsBuildTest` |
+| Reduce the 35/67.8/82 GB totals | DEFERRED — COLD CONSTRUCTION | Improvements already made are kept |
+| Three-subject all-profiler matrix | Replaced by the bounded validation plan | — |
+| Storage experiments (minimal native, routing, stratification, impact) | Reported as they stand | Minimal-native column missing: INCOMPLETE, deferred |
+
+**Remaining work (triage, checkpoint 0 of the reset):**
+
+1. Missing reuse evidence: a fresh-process real-project restart showing which function each hit restored, the
+   first correct completion and definition, repeated prepared requests, one relevant and one irrelevant edit,
+   and a safe close and reopen. The real-project leg of `jvmd-before-after` currently fails in the harness:
+   `benchmarks/persistence.ts` calls the full `session.status`, which exceeds the response budget ("Response
+   contains an unsplittable value"). Harness fix needed.
+2. M2 evidence at shipping defaults without the references phase.
+3. Unresolved regression: cold synthetic "diagnose all" is 2.3–3.4× slower than base, with cumulative
+   allocation +316%, at `5e75c4e` and `323da24`. This is the cost of capturing memos on first admission. Next:
+   one bounded attribution step, then record or repair.
+4. Small fixture footprint table: inputs and persisted stores.
+5. The PR body still describes superseded stages; it needs reconciling.
+6. Cold-construction follow-up (one section below), recording the inherited references failure.
+
+### Cold construction and first-use references (deferred follow-up)
+
+- First-use references on apache/maven at a 1 GiB heap times out at the 360 s daemon request deadline on B0,
+  B1 and later heads. It is a PRE-EXISTING FAILURE: B0 also fails, and the runner was lost at shipping
+  defaults.
+- Local runs at the current head show:
+  - the session thread is busy attributing every workspace unit and encoding its bindings facts;
+  - live heap is near the ceiling, with full GCs;
+  - 48.9–67.8 GB of cumulative allocation per 360 s window (supporting diagnostic).
+- What this PR has already done: streamed outcomes, sliced fact publication, direct fact encoding,
+  declaration-only search postings and bounded batch-outcome retention.
+- Not pursued further in #55: a references engine that attributes only candidate files, per-module
+  `ct.sym`/zipfs sharing, and retention of module-cache outcomes.
+- Evidence: control runs 36895099318, 36895104366, 36895107922, 36895111803; the local JFR window analysis
+  (session thread 90%, fact encoding about half, `Bindings.capture` 26%, attribution 14%).
+
 ## Known limits
 
 - A unit whose javac diagnostics name another file (`foreign-diagnostic-file`) is refused.

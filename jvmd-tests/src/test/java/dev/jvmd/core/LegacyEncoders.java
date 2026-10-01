@@ -20,7 +20,8 @@ final class LegacyEncoders {
     private static void canonicalWrite(DataOutputStream out,Object value)throws IOException{
         if(value instanceof Object[] values){out.writeByte(1);out.writeInt(values.length);for(Object item:values)canonicalWrite(out,item);return;}
         if(value instanceof Collection<?> values){out.writeByte(2);out.writeInt(values.size());for(Object item:values)canonicalWrite(out,item);return;}
-        if(value instanceof Hash256 hash){out.writeByte(4);out.writeInt(Hash256.BYTES);out.write(hash.bytes());return;}
+        // Was Hash256 (int32 32 + raw bytes); the identity type is now Id128, framed the same way.
+        if(value instanceof Id128 hash){out.writeByte(4);out.writeInt(Id128.BYTES);out.write(hash.bytes());return;}
         if(value instanceof byte[] bytes){out.writeByte(5);out.writeInt(bytes.length);out.write(bytes);return;}
         scalar(out,value);
     }

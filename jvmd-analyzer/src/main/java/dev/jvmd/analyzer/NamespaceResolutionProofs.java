@@ -1,7 +1,7 @@
 package dev.jvmd.analyzer;
 
-import dev.jvmd.core.CanonicalDigestWriter;
-import dev.jvmd.core.Hash256;
+import dev.jvmd.core.IdentityEncoder;
+import dev.jvmd.core.Id128;
 import dev.jvmd.index.QueryProof;
 import java.util.*;
 import java.util.regex.Pattern;
@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 public final class NamespaceResolutionProofs {
     @FunctionalInterface
     public interface Lookup {
-        Optional<Hash256> identity(String binaryName)throws Exception;
+        Optional<Id128> identity(String binaryName)throws Exception;
     }
 
     public record Plan(String simpleName,String resolvedBinary,List<String> domains,boolean precise) {
@@ -104,18 +104,18 @@ public final class NamespaceResolutionProofs {
         Objects.requireNonNull(plan);Objects.requireNonNull(lookup);
         if(!plan.precise())throw new IllegalArgumentException("Namespace plan is not precise");
         var result=new ArrayList<QueryProof.Dependency>();
-        Hash256 planIdentity=CanonicalDigestWriter.digest(
+        Id128 planIdentity=IdentityEncoder.of(
                 "namespace-search-plan-v1",plan.simpleName(),plan.domains());
         result.add(new QueryProof.Dependency(
                 QueryProof.Domain.NAMESPACE,"plan:"+plan.simpleName(),planIdentity));
 
         for(String binary:plan.domains()){
-            Hash256 declaration=lookup.identity(binary).orElse(null);
-            Hash256 domain=CanonicalDigestWriter.digest(
+            Id128 declaration=lookup.identity(binary).orElse(null);
+            Id128 domain=IdentityEncoder.of(
                     "namespace-search-domain-v1",binary,declaration);
             result.add(new QueryProof.Dependency(QueryProof.Domain.NAMESPACE,"type:"+binary,domain));
             if(!plan.winner(binary)){
-                Hash256 negative=CanonicalDigestWriter.digest(
+                Id128 negative=IdentityEncoder.of(
                         "negative-resolution-domain-v1",plan.simpleName(),binary,domain);
                 result.add(new QueryProof.Dependency(
                         QueryProof.Domain.NEGATIVE_RESOLUTION,plan.simpleName()+"@"+binary,negative));

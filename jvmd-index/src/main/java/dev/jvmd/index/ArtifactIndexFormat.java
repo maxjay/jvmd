@@ -11,8 +11,8 @@ import java.util.*;
  * Paths and Maven coordinates are intentionally context outside this payload.
  */
 public final class ArtifactIndexFormat {
-    public static final int FORMAT_VERSION=1;
-    public static final String INDEXER_VERSION="jvmd-index-v9";
+    public static final int FORMAT_VERSION=2;
+    public static final String INDEXER_VERSION="jvmd-index-v10";
     private static final byte[] MAGIC="JVIDX001".getBytes(StandardCharsets.US_ASCII);
     private static final int MAX_STRINGS=5_000_000,MAX_SYMBOLS=5_000_000,MAX_RELATIONSHIPS=20_000_000,MAX_STRING_BYTES=32*1024*1024;
 
@@ -67,7 +67,7 @@ public final class ArtifactIndexFormat {
             "return_type","parameter_types","type_parameters","scip_return_disambiguated");
 
     /** Canonical Java-resolution identity shared with LIVE source facts. */
-    public static Hash256 symbolResolutionIdentity(SymbolRecord symbol){
+    public static Id128 symbolResolutionIdentity(SymbolRecord symbol){
         return Objects.requireNonNull(symbol).resolution().identity();
     }
 
@@ -77,7 +77,7 @@ public final class ArtifactIndexFormat {
      * Storage/index generation inputs in Key are deliberately excluded. A format/indexer/runtime
      * generation change with identical normalized facts and relationships retains this identity.
      */
-    public static Hash256 resolutionIdentity(ArtifactData data){
+    public static Id128 resolutionIdentity(ArtifactData data){
         Objects.requireNonNull(data);
         var symbols=data.symbols().stream()
                 .sorted(Comparator.comparing(symbol->symbol.resolution().symbolKey()))
@@ -89,7 +89,7 @@ public final class ArtifactIndexFormat {
                     if(source==null)throw new IllegalArgumentException("Unknown relationship source: "+edge.sourceId());
                     return new Object[]{source.resolution().symbolKey(),edge.target(),edge.kind()};
                 }).sorted(Comparator.comparing(value->value[0].toString()+"\0"+value[1]+"\0"+value[2])).toList();
-        return CanonicalDigestWriter.digest("artifact-java-resolution-v1",symbols,relationships);
+        return IdentityEncoder.of("artifact-java-resolution-v1",symbols,relationships);
     }
 
     private static List<Object> resolutionMetadata(String metadataJson){
@@ -248,7 +248,7 @@ public final class ArtifactIndexFormat {
             out.writeInt(parameter.bounds().size());for(var bound:parameter.bounds())writeType(out,bound);
         }
         out.writeInt(value.directSupertypes().size());for(var parent:value.directSupertypes())writeType(out,parent);
-        out.writeBoolean(value.varargs());out.write(value.identity().bytes());
+        out.writeBoolean(value.varargs());out.writeLong(value.identity().hi());out.writeLong(value.identity().lo());
     }
 
     private static ResolutionFact readResolution(DataInputStream in)throws IOException{
@@ -265,9 +265,8 @@ public final class ArtifactIndexFormat {
         }
         int parentCount=bounded(in.readInt(),4096,"resolution supertype count");var parents=new ArrayList<SemanticType>(parentCount);
         for(int i=0;i<parentCount;i++)parents.add(readType(in));
-        boolean varargs=in.readBoolean();byte[] identity=in.readNBytes(Hash256.BYTES);
-        if(identity.length!=Hash256.BYTES)throw new EOFException("Truncated resolution identity");
-        return new ResolutionFact(symbol,owner,kind,name,descriptor,modifiers,pkg,type,parameters,parents,varargs,new Hash256(identity));
+        boolean varargs=in.readBoolean();Id128 identity=new Id128(in.readLong(),in.readLong());
+        return new ResolutionFact(symbol,owner,kind,name,descriptor,modifiers,pkg,type,parameters,parents,varargs,identity);
     }
 
     private static void writeType(DataOutputStream out,SemanticType type)throws IOException{
@@ -331,7 +330,7 @@ public final class ArtifactIndexFormat {
         int parameters=bounded(input.getInt(),1024,"resolution type parameter count");
         for(int i=0;i<parameters;i++){int bounds=bounded(input.getInt(),1024,"resolution bound count");for(int j=0;j<bounds;j++)skipType(input);}
         int parents=bounded(input.getInt(),4096,"resolution supertype count");for(int i=0;i<parents;i++)skipType(input);
-        input.get();if(input.remaining()<Hash256.BYTES)throw new EOFException("Truncated resolution identity");input.position(input.position()+Hash256.BYTES);
+        input.get();if(input.remaining()<Id128.BYTES)throw new EOFException("Truncated resolution identity");input.position(input.position()+Id128.BYTES);
     }
 
     private static void skipType(java.nio.ByteBuffer input)throws IOException{

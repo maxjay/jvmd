@@ -1,7 +1,7 @@
 package dev.jvmd.index;
 
-import dev.jvmd.core.CanonicalDigestWriter;
-import dev.jvmd.core.Hash256;
+import dev.jvmd.core.IdentityEncoder;
+import dev.jvmd.core.Id128;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -14,7 +14,7 @@ import java.util.function.Predicate;
  * keeps add/remove alignment stable and lets diffs skip unchanged buckets by Merkle identity.
  */
 public final class SemanticUnitMerkle {
-    private static final Hash256 EMPTY=CanonicalDigestWriter.digest("semantic-unit-empty-v1");
+    private static final Id128 EMPTY=IdentityEncoder.of("semantic-unit-empty-v1");
     private static final SemanticUnitMerkle EMPTY_STATE=new SemanticUnitMerkle(Map.of(),EMPTY,0);
 
     public record Diff(Set<String> added,Set<String> changed,Set<String> removed) {
@@ -27,21 +27,21 @@ public final class SemanticUnitMerkle {
     private static final class Bucket {
         final int index;
         final String[] ids;
-        final Hash256[] identities;
-        final Hash256 root;
-        Bucket(int index,String[] ids,Hash256[] identities){
+        final Id128[] identities;
+        final Id128 root;
+        Bucket(int index,String[] ids,Id128[] identities){
             this.index=index;this.ids=ids;this.identities=identities;
-            Hash256 value=CanonicalDigestWriter.digest("semantic-unit-bucket-v1",index,ids.length);
-            for(int i=0;i<ids.length;i++)value=CanonicalDigestWriter.digest("semantic-unit-bucket-entry-v1",value,ids[i],identities[i]);
+            Id128 value=IdentityEncoder.of("semantic-unit-bucket-v1",index,ids.length);
+            for(int i=0;i<ids.length;i++)value=IdentityEncoder.of("semantic-unit-bucket-entry-v1",value,ids[i],identities[i]);
             root=value;
         }
     }
 
     private final Map<Integer,Bucket> buckets;
-    private final Hash256 root;
+    private final Id128 root;
     private final int size;
 
-    private SemanticUnitMerkle(Map<Integer,Bucket> buckets,Hash256 root,int size){
+    private SemanticUnitMerkle(Map<Integer,Bucket> buckets,Id128 root,int size){
         this.buckets=Map.copyOf(buckets);this.root=root;this.size=size;
     }
 
@@ -54,16 +54,16 @@ public final class SemanticUnitMerkle {
         var ordered=new TreeMap<Integer,Bucket>();int size=0;
         for(var group:grouped.entrySet()){
             group.getValue().sort(Comparator.comparing(SemanticFact::id));
-            var ids=new String[group.getValue().size()];var identities=new Hash256[ids.length];
+            var ids=new String[group.getValue().size()];var identities=new Id128[ids.length];
             for(int i=0;i<ids.length;i++){var fact=group.getValue().get(i);ids[i]=fact.id();identities[i]=fact.factIdentity();}
             ordered.put(group.getKey(),new Bucket(group.getKey(),ids,identities));size+=ids.length;
         }
-        Hash256 root=CanonicalDigestWriter.digest("semantic-unit-root-v1",size,ordered.size());
-        for(var entry:ordered.entrySet())root=CanonicalDigestWriter.digest("semantic-unit-root-entry-v1",root,entry.getKey(),entry.getValue().root);
+        Id128 root=IdentityEncoder.of("semantic-unit-root-v1",size,ordered.size());
+        for(var entry:ordered.entrySet())root=IdentityEncoder.of("semantic-unit-root-entry-v1",root,entry.getKey(),entry.getValue().root);
         return new SemanticUnitMerkle(ordered,root,size);
     }
 
-    public Hash256 root(){return root;}
+    public Id128 root(){return root;}
     public int size(){return size;}
 
     public boolean contains(String id){

@@ -1,7 +1,7 @@
 package dev.jvmd.index;
 
-import dev.jvmd.core.CanonicalDigestWriter;
-import dev.jvmd.core.Hash256;
+import dev.jvmd.core.IdentityEncoder;
+import dev.jvmd.core.Id128;
 import java.util.*;
 
 /** Adapters and deterministic LIVE > LOCAL > MACHINE composition for {@link SemanticReadView}. */
@@ -32,10 +32,10 @@ public final class SemanticReadViews {
             @Override public List<String> directSupertypes(String typeId){
                 return state.directSupertypeIds(typeId);
             }
-            @Override public Optional<Hash256> identity(QueryProof.Domain domain,String key){
+            @Override public Optional<Id128> identity(QueryProof.Domain domain,String key){
                 return switch(domain){
                     case EXACT_SYMBOL -> Optional.ofNullable(state.symbol(key)).map(SemanticFact::resolutionIdentity);
-                    case HIERARCHY -> state.symbol(key)==null?Optional.empty():Optional.of(Hash256.fromHex(state.hierarchyApi(key)));
+                    case HIERARCHY -> state.symbol(key)==null?Optional.empty():Optional.of(Id128.fromHex(state.hierarchyApi(key)));
                     case MEMBER_RANGE -> {
                         var member=SemanticReadView.parseMemberIdentityKey(key);
                         yield state.completeness(member.ownerId())==SemanticCompleteness.UNKNOWN
@@ -144,7 +144,7 @@ public final class SemanticReadViews {
                 return List.of();
             }
 
-            @Override public Optional<Hash256> identity(QueryProof.Domain domain,String key)throws Exception{
+            @Override public Optional<Id128> identity(QueryProof.Domain domain,String key)throws Exception{
                 if(domain==QueryProof.Domain.EXACT_SYMBOL||domain==QueryProof.Domain.HIERARCHY){
                     for(var layer:layers)if(layer.symbol(key)!=null)return layer.identity(domain,key);
                     return Optional.empty();
@@ -162,7 +162,7 @@ public final class SemanticReadViews {
                         if(completeness==SemanticCompleteness.COMPLETE)break;
                         if(completeness==SemanticCompleteness.UNKNOWN)return Optional.empty();
                     }
-                    return saw?Optional.of(CanonicalDigestWriter.digest(
+                    return saw?Optional.of(IdentityEncoder.of(
                             domain==QueryProof.Domain.MEMBER_RANGE?"semantic-overlay-member-range-v1":"semantic-overlay-overload-group-v1",
                             key,parts)):Optional.empty();
                 }
@@ -225,7 +225,7 @@ public final class SemanticReadViews {
                 }
                 return List.copyOf(result);
             }
-            @Override public Optional<Hash256> identity(QueryProof.Domain domain,String key)throws Exception{
+            @Override public Optional<Id128> identity(QueryProof.Domain domain,String key)throws Exception{
                 return switch(domain){
                     case EXACT_SYMBOL -> {
                         var value=symbol(key);yield value==null?Optional.empty():Optional.of(value.resolutionIdentity());

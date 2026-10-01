@@ -1,8 +1,8 @@
 package dev.jvmd.tests;
 
-import dev.jvmd.core.Hash256;
+import dev.jvmd.core.Id128;
+import dev.jvmd.core.IdentityEncoder;
 import dev.jvmd.index.*;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -16,8 +16,8 @@ import static org.assertj.core.api.Assertions.*;
 class SemanticProofDagTest {
     @TempDir Path root;
 
-    private static Hash256 hash(String value){
-        return Hash256.sha256(value.getBytes(StandardCharsets.UTF_8));
+    private static Id128 hash(String value){
+        return IdentityEncoder.of("test-value",value);
     }
     private static QueryProof.Dependency dependency(QueryProof.Key key,String identity){
         return new QueryProof.Dependency(key,hash(identity));

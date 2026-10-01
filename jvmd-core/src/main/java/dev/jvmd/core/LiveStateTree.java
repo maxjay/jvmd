@@ -1,26 +1,19 @@
 package dev.jvmd.core;
 
-import java.io.*;
 import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.security.DigestOutputStream;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
 /**
  * Canonical live source-state identity. Mutations update compact semantic aggregates and a
  * deterministic Merkle hierarchy; readers consume already-maintained identities.
  *
- * <p>The algebraic accumulator is deliberately not XOR. Each path-bound contribution is a
- * domain-separated SHA-256 value interpreted in the secp256k1 prime field. Aggregates retain
- * both the modular sum and cardinality, then hash those fixed-size values into the exposed
- * identity. Controlled modular cancellation would require controlling SHA-256 field values;
- * the independent Merkle identity remains the authoritative structural identity.
+ * <p>Identities come from {@link IdentityEncoder} (XXH3-128, non-cryptographic). Runtime identities
+ * assume workspace content does not attack its own language server. The Merkle identity is the
+ * structural authority; the per-domain {@link AlgebraicAccumulator} aggregates are fast filters,
+ * never trust anchors.
  */
 public final class LiveStateTree {
-    private static final BigInteger FIELD=new BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F",16);
     private static final Fingerprint PRESENT=fingerprint("membership-present-v1","present");
     public static final Fingerprint UNKNOWN=fingerprint("semantic-unknown-v1","unknown");
     public static final Fingerprint UNATTRIBUTED_CONTENT=fingerprint("semantic-content-unattributed-v1","unknown");
@@ -269,22 +262,6 @@ public final class LiveStateTree {
         }
     }
 
-    private static BigInteger priority(String key){return new BigInteger(1,digest("merkle-priority-v1",key));}
-    private static BigInteger contribution(String domain,Path path,Fingerprint value){return new BigInteger(1,digest("aggregate-contribution-v1",domain,normalize(path),value.value())).mod(FIELD);}
-    private static String fixedHex(BigInteger value){return String.format(Locale.ROOT,"%064x",value);}
-    private static Fingerprint fingerprint(String domain,Object... parts){return new Fingerprint(HexFormat.of().formatHex(digest(domain,parts)));}
-    private static byte[] digest(String domain,Object... parts){
-        try{
-            MessageDigest digest=MessageDigest.getInstance("SHA-256");
-            try(var out=new DataOutputStream(new DigestOutputStream(OutputStream.nullOutputStream(),digest))){
-                write(out,domain);for(Object part:parts)write(out,part);
-            }
-            return digest.digest();
-        }catch(IOException|NoSuchAlgorithmException impossible){throw new AssertionError(impossible);}
-    }
-    private static void write(DataOutputStream out,Object value)throws IOException{
-        if(value instanceof Object[] values){out.writeByte(1);out.writeInt(values.length);for(Object item:values)write(out,item);return;}
-        if(value instanceof Collection<?> values){out.writeByte(2);out.writeInt(values.size());for(Object item:values)write(out,item);return;}
-        byte[] bytes=Objects.toString(value,"").getBytes(StandardCharsets.UTF_8);out.writeByte(3);out.writeInt(bytes.length);out.write(bytes);
-    }
+    private static BigInteger priority(String key){return new BigInteger(1,IdentityEncoder.of("merkle-priority-v1",key).bytes());}
+    private static Fingerprint fingerprint(String domain,Object... parts){return new Fingerprint(IdentityEncoder.of(domain,parts).hex());}
 }

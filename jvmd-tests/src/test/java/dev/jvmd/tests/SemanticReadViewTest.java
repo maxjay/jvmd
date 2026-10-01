@@ -1,10 +1,10 @@
 package dev.jvmd.tests;
 
-import dev.jvmd.core.Hash256;
+import dev.jvmd.core.Id128;
+import dev.jvmd.core.IdentityEncoder;
 import dev.jvmd.core.AlgebraicAccumulator;
 import dev.jvmd.index.*;
 import java.lang.reflect.Proxy;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.*;
 
 @Tag("phase-1")
 class SemanticReadViewTest {
-    private static Hash256 hash(String value){return Hash256.sha256(value.getBytes(StandardCharsets.UTF_8));}
+    private static Id128 hash(String value){return IdentityEncoder.of("test-value",value);}
 
     @Test void residentAdapterExposesExactResolutionAndDirectHierarchy()throws Exception{
         var state=new ResidentSemanticState();
@@ -308,7 +308,7 @@ class SemanticReadViewTest {
             public SemanticCompleteness completeness(String ownerId){return id.equals(ownerId)?SemanticCompleteness.COMPLETE:SemanticCompleteness.UNKNOWN;}
             public MemberPage members(String ownerId,String prefix,int limit,String cursor){return new MemberPage(List.of(),null);}
             public List<String> directSupertypes(String key){return List.of();}
-            public Optional<Hash256> identity(QueryProof.Domain domain,String key){
+            public Optional<Id128> identity(QueryProof.Domain domain,String key){
                 return domain==QueryProof.Domain.EXACT_SYMBOL&&id.equals(key)?Optional.of(symbol.resolutionIdentity()):Optional.empty();
             }
         };
@@ -335,7 +335,7 @@ class SemanticReadViewTest {
                 return new MemberPage(members.stream().filter(name->name.startsWith(prefix)).limit(limit).map(this::member).toList(),null);
             }
             public List<String> directSupertypes(String id){return List.of();}
-            public Optional<Hash256> identity(QueryProof.Domain domain,String key){
+            public Optional<Id128> identity(QueryProof.Domain domain,String key){
                 var symbol=symbol(key);
                 if(domain==QueryProof.Domain.EXACT_SYMBOL&&symbol!=null)return Optional.of(symbol.resolutionIdentity());
                 if(domain==QueryProof.Domain.MEMBER_RANGE||domain==QueryProof.Domain.OVERLOAD_GROUP){
@@ -360,7 +360,7 @@ class SemanticReadViewTest {
             public SemanticCompleteness completeness(String ownerId){return SemanticCompleteness.UNKNOWN;}
             public MemberPage members(String ownerId,String prefix,int limit,String cursor){return new MemberPage(List.of(),null);}
             public List<String> directSupertypes(String id){return List.of();}
-            public Optional<Hash256> identity(QueryProof.Domain domain,String key){return Optional.empty();}
+            public Optional<Id128> identity(QueryProof.Domain domain,String key){return Optional.empty();}
         };
     }
 }

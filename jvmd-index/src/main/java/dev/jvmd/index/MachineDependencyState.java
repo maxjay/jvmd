@@ -1,7 +1,7 @@
 package dev.jvmd.index;
 
 import dev.jvmd.core.AlgebraicAccumulator;
-import dev.jvmd.core.Hash256;
+import dev.jvmd.core.Id128;
 import java.util.*;
 
 /**
@@ -16,7 +16,7 @@ import java.util.*;
  * boundary; it is never implicitly folded into every workspace root.
  */
 public final class MachineDependencyState {
-    public record Artifact(String key,Hash256 resolutionIdentity) {
+    public record Artifact(String key,Id128 resolutionIdentity) {
         public Artifact {
             Objects.requireNonNull(key);
             Objects.requireNonNull(resolutionIdentity);
@@ -29,7 +29,7 @@ public final class MachineDependencyState {
 
     public record WorkspaceDependencies(ClasspathSequence sequence) {
         public WorkspaceDependencies { Objects.requireNonNull(sequence); }
-        public Hash256 identity(){return sequence.identity();}
+        public Id128 identity(){return sequence.identity();}
         public List<ClasspathSequence.Entry> entries(){return sequence.entries();}
         public ClasspathSequence.Difference diff(WorkspaceDependencies current){
             return sequence.diff(Objects.requireNonNull(current).sequence);
@@ -40,7 +40,7 @@ public final class MachineDependencyState {
     private final AlgebraicAccumulator machine=new AlgebraicAccumulator("machine-dependency-resolution-v1");
 
     public int size(){return artifacts.size();}
-    public Hash256 identity(){return machine.identity();}
+    public Id128 identity(){return machine.identity();}
     public Optional<Artifact> artifact(String key){return Optional.ofNullable(artifacts.get(Objects.requireNonNull(key)));}
 
     public void put(Artifact artifact){

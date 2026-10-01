@@ -1,7 +1,7 @@
 package dev.jvmd.index;
 
-import dev.jvmd.core.CanonicalDigestWriter;
-import dev.jvmd.core.Hash256;
+import dev.jvmd.core.IdentityEncoder;
+import dev.jvmd.core.Id128;
 import java.util.*;
 
 /** Canonical detached declaration fact shared by semantic query consumers. */
@@ -26,7 +26,7 @@ public record SemanticFact(
         String apiIdentity,
         String namespaceIdentity,
         String documentationIdentity,
-        Hash256 factIdentity,
+        Id128 factIdentity,
         ResolutionFact resolutionFact) {
 
     private static final Set<String> TYPES=Set.of("class","interface","enum","record","annotation");
@@ -54,7 +54,7 @@ public record SemanticFact(
                         Set<String> modifiers,String sourceFile,String packageName,String namePath,String fqn,SemanticType type,
                         List<String> typeParameters,List<List<SemanticType>> typeParameterBounds,List<SemanticType> directSupertypes,
                         List<String> parameterNames,boolean varargs,String apiIdentity,String namespaceIdentity,String documentationIdentity,
-                        Hash256 factIdentity){
+                        Id128 factIdentity){
         this(id,ownerId,name,kind,structuralSignature,erasedDescriptor,modifiers,sourceFile,packageName,namePath,fqn,type,
                 typeParameters,typeParameterBounds,directSupertypes,parameterNames,varargs,apiIdentity,namespaceIdentity,documentationIdentity,
                 factIdentity,null);
@@ -83,11 +83,11 @@ public record SemanticFact(
                 kind,name,erasedDescriptor,modifiers,packageName,type,typeParameters,typeParameterBounds,directSupertypes,varargs);
     }
 
-    private static Hash256 identity(String id,String ownerId,String name,String kind,String structuralSignature,String erasedDescriptor,
+    private static Id128 identity(String id,String ownerId,String name,String kind,String structuralSignature,String erasedDescriptor,
                                     Set<String> modifiers,String sourceFile,String packageName,String namePath,String fqn,SemanticType type,
                                     List<String> typeParameters,List<List<SemanticType>> typeParameterBounds,List<SemanticType> directSupertypes,
                                     List<String> parameterNames,boolean varargs,String apiIdentity,String namespaceIdentity,String documentationIdentity){
-        return CanonicalDigestWriter.digest("semantic-fact-v1",
+        return IdentityEncoder.of("semantic-fact-v1",
                 id,ownerId,name,kind,structuralSignature,erasedDescriptor,modifiers.stream().sorted().toList(),
                 sourceFile,packageName,namePath,fqn,type.identity(),typeParameters,
                 typeParameterBounds.stream().map(bounds->bounds.stream().map(SemanticType::identity).toList()).toList(),
@@ -102,7 +102,7 @@ public record SemanticFact(
      * changing them may alter presentation/enrichment, but cannot by itself change what declaration
      * this is, its accessibility, overload shape, type or hierarchy semantics.
      */
-    public Hash256 resolutionIdentity(){return resolutionFact.identity();}
+    public Id128 resolutionIdentity(){return resolutionFact.identity();}
 
     private static String resolutionSymbolKey(String ownerId,String kind,String name,String descriptor,String fqn,String namePath){
         if(TYPES.contains(kind)&&fqn!=null&&!fqn.isBlank())return fqn;

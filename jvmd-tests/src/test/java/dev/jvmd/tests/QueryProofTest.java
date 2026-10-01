@@ -1,8 +1,8 @@
 package dev.jvmd.tests;
 
-import dev.jvmd.core.Hash256;
+import dev.jvmd.core.Id128;
+import dev.jvmd.core.IdentityEncoder;
 import dev.jvmd.index.QueryProof;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -11,8 +11,8 @@ import static org.assertj.core.api.Assertions.*;
 
 @Tag("phase-1")
 class QueryProofTest {
-    private static Hash256 hash(String value){
-        return Hash256.sha256(value.getBytes(StandardCharsets.UTF_8));
+    private static Id128 hash(String value){
+        return IdentityEncoder.of("test-value",value);
     }
     private static QueryProof.Dependency dependency(QueryProof.Domain domain,String key,String identity){
         return new QueryProof.Dependency(domain,key,hash(identity));

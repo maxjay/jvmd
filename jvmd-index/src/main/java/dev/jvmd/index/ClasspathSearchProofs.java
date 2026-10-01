@@ -1,6 +1,6 @@
 package dev.jvmd.index;
 
-import dev.jvmd.core.Hash256;
+import dev.jvmd.core.Id128;
 import java.util.*;
 
 /**
@@ -20,7 +20,7 @@ public final class ClasspathSearchProofs {
     public record Update(ClasspathSequence.Difference structuralDiff,
                          Set<QueryProof.Key> reconsidered,
                          Set<QueryProof.Key> equal,
-                         Map<QueryProof.Key,Hash256> changed,
+                         Map<QueryProof.Key,Id128> changed,
                          Set<QueryProof.Key> unavailable) {
         public Update {
             Objects.requireNonNull(structuralDiff);
@@ -42,7 +42,7 @@ public final class ClasspathSearchProofs {
         var diff=previous.diff(current);
         var reconsidered=new TreeSet<QueryProof.Key>();
         var equal=new TreeSet<QueryProof.Key>();
-        var changed=new TreeMap<QueryProof.Key,Hash256>();
+        var changed=new TreeMap<QueryProof.Key,Id128>();
         var unavailable=new TreeSet<QueryProof.Key>();
         if(diff.equal())return new Update(diff,reconsidered,equal,changed,unavailable);
 
@@ -53,7 +53,7 @@ public final class ClasspathSearchProofs {
             var key=before.key();reconsidered.add(key);
             var after=resolver.resolve(before.binaryName());
             if(after.isEmpty()){unavailable.add(key);continue;}
-            Hash256 identity=after.get().identity();
+            Id128 identity=after.get().identity();
             if(identity.equals(before.identity()))equal.add(key);
             else changed.put(key,identity);
         }

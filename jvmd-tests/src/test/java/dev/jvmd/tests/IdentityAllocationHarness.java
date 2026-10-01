@@ -2,7 +2,7 @@ package dev.jvmd.tests;
 
 import com.sun.management.ThreadMXBean;
 import dev.jvmd.core.AlgebraicAccumulator;
-import dev.jvmd.core.CanonicalDigestWriter;
+import dev.jvmd.core.IdentityEncoder;
 import dev.jvmd.index.*;
 import java.lang.management.ManagementFactory;
 import java.nio.file.*;
@@ -77,7 +77,7 @@ class IdentityAllocationHarness {
         var key="java.util.Map#put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;";
         var zero=AlgebraicAccumulator.Value.ZERO;
         micro(out,"AlgebraicAccumulator contribution + plus",()->zero.plus(AlgebraicAccumulator.contribution("semantic-member-range-v1",key,fact.identity())));
-        micro(out,"5-part digest (strings, long, identity, list)",()->CanonicalDigestWriter.digest("harness-v1","owner",key,42L,fact.identity(),List.of("a","b")));
+        micro(out,"5-part digest (strings, long, identity, list)",()->IdentityEncoder.of("harness-v1","owner",key,42L,fact.identity(),List.of("a","b")));
         String report=out.toString();
         System.out.println(report);
         Files.writeString(Path.of("target","identity-harness.md"),report);
@@ -194,7 +194,7 @@ class IdentityAllocationHarness {
     private static String site(RecordedEvent event){
         for(RecordedFrame frame:event.getStackTrace().getFrames()){
             String type=frame.getMethod().getType().getName();
-            if(!type.startsWith("dev.jvmd.")||type.equals("dev.jvmd.core.CanonicalDigestWriter")||type.equals("dev.jvmd.core.Hash256")
+            if(!type.startsWith("dev.jvmd.")||type.equals("dev.jvmd.core.CanonicalDigestWriter")||type.equals("dev.jvmd.core.Id128")
                     ||type.startsWith("dev.jvmd.core.AlgebraicAccumulator")||type.startsWith("dev.jvmd.core.IdentityEncoder")
                     ||type.equals("dev.jvmd.core.Xxh3")||type.equals("dev.jvmd.core.Id128"))continue;
             return type.substring(type.lastIndexOf('.')+1)+"."+frame.getMethod().getName();
@@ -212,11 +212,11 @@ class IdentityAllocationHarness {
             if(!frame.isJavaFrame())continue;
             String type=frame.getMethod().getType().getName(),method=frame.getMethod().getName();
             // Accumulators and treap priorities (the BigInteger users before P3).
-            if(type.startsWith("dev.jvmd.core.AlgebraicAccumulator")||type.equals("dev.jvmd.core.Hash256")&&method.equals("unsignedInteger")
+            if(type.startsWith("dev.jvmd.core.AlgebraicAccumulator")||type.equals("dev.jvmd.core.Id128")&&method.equals("unsignedInteger")
                     ||type.endsWith(".ResidentSemanticState")&&method.equals("point")||type.endsWith(".ClasspathSequence")&&method.equals("item")
                     ||type.equals("dev.jvmd.core.LiveStateTree")&&Set.of("priority","contribution").contains(method))return Category.ACCUMULATOR;
             if(type.equals("dev.jvmd.core.Hashing"))return Category.CONTENT_HASH;
-            if(type.equals("dev.jvmd.core.CanonicalDigestWriter")||type.equals("dev.jvmd.core.Hash256")
+            if(type.equals("dev.jvmd.core.CanonicalDigestWriter")||type.equals("dev.jvmd.core.Id128")
                     ||type.equals("dev.jvmd.core.IdentityEncoder")||type.startsWith("dev.jvmd.core.IdentityEncoder$")
                     ||type.equals("dev.jvmd.core.Xxh3")||type.equals("dev.jvmd.core.Id128"))return Category.DIGEST;
             if(type.equals("dev.jvmd.core.LiveStateTree")&&Set.of("digest","write","fingerprint").contains(method))return Category.DIGEST;

@@ -1,6 +1,6 @@
 package dev.jvmd.index;
 
-import dev.jvmd.core.Hash256;
+import dev.jvmd.core.Id128;
 import java.util.*;
 
 /**
@@ -45,7 +45,7 @@ public interface SemanticReadView {
             parameterNames=List.copyOf(parameterNames);
             Objects.requireNonNull(origin);
         }
-        public Hash256 resolutionIdentity(){return resolution.identity();}
+        public Id128 resolutionIdentity(){return resolution.identity();}
         public SemanticType semanticType(){return resolution.type();}
         public List<ResolutionFact.TypeParameter> typeParameters(){return resolution.typeParameters();}
         public List<SemanticType> directSupertypes(){return resolution.directSupertypes();}
@@ -81,5 +81,5 @@ public interface SemanticReadView {
      * Empty means this layer does not own a safe identity for that domain. Implementations must not
      * substitute a broader root merely to return a value.
      */
-    Optional<Hash256> identity(QueryProof.Domain domain,String key)throws Exception;
+    Optional<Id128> identity(QueryProof.Domain domain,String key)throws Exception;
 }

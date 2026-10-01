@@ -1,7 +1,7 @@
 package dev.jvmd.index;
 
-import dev.jvmd.core.CanonicalDigestWriter;
-import dev.jvmd.core.Hash256;
+import dev.jvmd.core.IdentityEncoder;
+import dev.jvmd.core.Id128;
 import java.util.*;
 
 /**
@@ -15,7 +15,7 @@ import java.util.*;
  * ordered workspace dependency root produced from this workspace's actual classpath.
  */
 public final class WorkspaceSemanticIdentity {
-    public record Module(String key,Hash256 api,Hash256 namespace,Hash256 hierarchy) implements Comparable<Module> {
+    public record Module(String key,Id128 api,Id128 namespace,Id128 hierarchy) implements Comparable<Module> {
         public Module {
             Objects.requireNonNull(key);
             Objects.requireNonNull(api);
@@ -23,22 +23,22 @@ public final class WorkspaceSemanticIdentity {
             Objects.requireNonNull(hierarchy);
             if(key.isBlank())throw new IllegalArgumentException("Module key must not be blank");
         }
-        public Hash256 identity(){
-            return CanonicalDigestWriter.digest("workspace-module-semantic-v1",key,api,namespace,hierarchy);
+        public Id128 identity(){
+            return IdentityEncoder.of("workspace-module-semantic-v1",key,api,namespace,hierarchy);
         }
         @Override public int compareTo(Module other){return key.compareTo(other.key);}
     }
 
-    private final Hash256 dependencyRoot;
-    private final Hash256 compilerOptions;
-    private final Hash256 processorConfig;
-    private final Hash256 sourceMembership;
-    private final Hash256 generatedOutput;
+    private final Id128 dependencyRoot;
+    private final Id128 compilerOptions;
+    private final Id128 processorConfig;
+    private final Id128 sourceMembership;
+    private final Id128 generatedOutput;
     private final List<Module> modules;
-    private final Hash256 identity;
+    private final Id128 identity;
 
-    public WorkspaceSemanticIdentity(Hash256 dependencyRoot,Hash256 compilerOptions,Hash256 processorConfig,
-                                     Hash256 sourceMembership,Hash256 generatedOutput,Collection<Module> modules){
+    public WorkspaceSemanticIdentity(Id128 dependencyRoot,Id128 compilerOptions,Id128 processorConfig,
+                                     Id128 sourceMembership,Id128 generatedOutput,Collection<Module> modules){
         this.dependencyRoot=Objects.requireNonNull(dependencyRoot);
         this.compilerOptions=Objects.requireNonNull(compilerOptions);
         this.processorConfig=Objects.requireNonNull(processorConfig);
@@ -52,16 +52,16 @@ public final class WorkspaceSemanticIdentity {
                 throw new IllegalArgumentException("Duplicate workspace module: "+module.key());
         }
         this.modules=List.copyOf(ordered.values());
-        this.identity=CanonicalDigestWriter.digest("workspace-semantic-identity-v1",
+        this.identity=IdentityEncoder.of("workspace-semantic-identity-v1",
                 dependencyRoot,compilerOptions,processorConfig,sourceMembership,generatedOutput,
                 this.modules.stream().map(module->new Object[]{module.key(),module.identity()}).toList());
     }
 
-    public Hash256 dependencyRoot(){return dependencyRoot;}
-    public Hash256 compilerOptions(){return compilerOptions;}
-    public Hash256 processorConfig(){return processorConfig;}
-    public Hash256 sourceMembership(){return sourceMembership;}
-    public Hash256 generatedOutput(){return generatedOutput;}
+    public Id128 dependencyRoot(){return dependencyRoot;}
+    public Id128 compilerOptions(){return compilerOptions;}
+    public Id128 processorConfig(){return processorConfig;}
+    public Id128 sourceMembership(){return sourceMembership;}
+    public Id128 generatedOutput(){return generatedOutput;}
     public List<Module> modules(){return modules;}
-    public Hash256 identity(){return identity;}
+    public Id128 identity(){return identity;}
 }

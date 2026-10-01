@@ -1,7 +1,7 @@
 package dev.jvmd.index;
 
-import dev.jvmd.core.CanonicalDigestWriter;
-import dev.jvmd.core.Hash256;
+import dev.jvmd.core.IdentityEncoder;
+import dev.jvmd.core.Id128;
 import java.util.*;
 
 /**
@@ -45,18 +45,18 @@ public final class QueryProof {
         }
     }
 
-    public record Dependency(Key key,Hash256 identity) implements Comparable<Dependency> {
+    public record Dependency(Key key,Id128 identity) implements Comparable<Dependency> {
         public Dependency {
             Objects.requireNonNull(key);
             Objects.requireNonNull(identity);
         }
-        public Dependency(Domain domain,String key,Hash256 identity){
+        public Dependency(Domain domain,String key,Id128 identity){
             this(new Key(domain,key),identity);
         }
         @Override public int compareTo(Dependency other){return key.compareTo(other.key);}
     }
 
-    public record Change(Key key,Hash256 previous,Hash256 current) {
+    public record Change(Key key,Id128 previous,Id128 current) {
         public Change {
             Objects.requireNonNull(key);
             Objects.requireNonNull(previous);
@@ -75,12 +75,12 @@ public final class QueryProof {
     }
 
     private final List<Dependency> dependencies;
-    private final Map<Key,Hash256> identities;
-    private final Hash256 identity;
+    private final Map<Key,Id128> identities;
+    private final Id128 identity;
 
     public QueryProof(Collection<Dependency> dependencies){
         Objects.requireNonNull(dependencies);
-        var ordered=new TreeMap<Key,Hash256>();
+        var ordered=new TreeMap<Key,Id128>();
         for(var dependency:dependencies){
             Objects.requireNonNull(dependency);
             if(ordered.putIfAbsent(dependency.key(),dependency.identity())!=null)
@@ -90,7 +90,7 @@ public final class QueryProof {
         ordered.forEach((key,value)->canonical.add(new Dependency(key,value)));
         this.dependencies=List.copyOf(canonical);
         this.identities=Collections.unmodifiableMap(new TreeMap<>(ordered));
-        this.identity=CanonicalDigestWriter.digest("query-proof-v1",
+        this.identity=IdentityEncoder.of("query-proof-v1",
                 this.dependencies.stream()
                         .map(dependency->new Object[]{
                                 dependency.key().domain().name(),
@@ -102,11 +102,11 @@ public final class QueryProof {
     public static QueryProof empty(){return new QueryProof(List.of());}
 
     public List<Dependency> dependencies(){return dependencies;}
-    public Hash256 identity(){return identity;}
-    public Optional<Hash256> identity(Domain domain,String key){
+    public Id128 identity(){return identity;}
+    public Optional<Id128> identity(Domain domain,String key){
         return Optional.ofNullable(identities.get(new Key(domain,key)));
     }
-    public boolean proves(Domain domain,String key,Hash256 expected){
+    public boolean proves(Domain domain,String key,Id128 expected){
         return identity(domain,key).filter(expected::equals).isPresent();
     }
 
@@ -118,7 +118,7 @@ public final class QueryProof {
         var removed=new ArrayList<Dependency>();
         var keys=new TreeSet<Key>();keys.addAll(identities.keySet());keys.addAll(current.identities.keySet());
         for(var key:keys){
-            Hash256 previous=identities.get(key),next=current.identities.get(key);
+            Id128 previous=identities.get(key),next=current.identities.get(key);
             if(previous==null)added.add(new Dependency(key,next));
             else if(next==null)removed.add(new Dependency(key,previous));
             else if(!previous.equals(next))changed.add(new Change(key,previous,next));

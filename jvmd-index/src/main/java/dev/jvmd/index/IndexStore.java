@@ -1,8 +1,8 @@
 package dev.jvmd.index;
 
-import dev.jvmd.core.Hash256;
+import dev.jvmd.core.Id128;
 import dev.jvmd.core.AlgebraicAccumulator;
-import dev.jvmd.core.CanonicalDigestWriter;
+import dev.jvmd.core.IdentityEncoder;
 import java.nio.file.Path;
 import java.util.*;
 
@@ -64,7 +64,7 @@ public interface IndexStore extends AutoCloseable {
      * so a changed/inserted slot that is rechecked and remains irrelevant reaches a fixed point.
      */
     record ClasspathSearchProof(String binaryName,int searchedEntries,String winnerArtifactKey,
-                                String winnerScip,Hash256 winnerResolutionIdentity) {
+                                String winnerScip,Id128 winnerResolutionIdentity) {
         public ClasspathSearchProof {
             Objects.requireNonNull(binaryName);
             if(binaryName.isBlank())throw new IllegalArgumentException("Classpath search binary name must not be blank");
@@ -75,10 +75,10 @@ public interface IndexStore extends AutoCloseable {
         }
         public boolean resolved(){return winnerScip!=null;}
         public QueryProof.Key key(){return new QueryProof.Key(QueryProof.Domain.CLASSPATH_SEARCH,"binary:"+binaryName);}
-        public Hash256 identity(){
+        public Id128 identity(){
             return resolved()
-                    ?CanonicalDigestWriter.digest("classpath-search-proof-v1",binaryName,winnerArtifactKey,winnerScip,winnerResolutionIdentity)
-                    :CanonicalDigestWriter.digest("classpath-search-proof-v1",binaryName,"<missing>");
+                    ?IdentityEncoder.of("classpath-search-proof-v1",binaryName,winnerArtifactKey,winnerScip,winnerResolutionIdentity)
+                    :IdentityEncoder.of("classpath-search-proof-v1",binaryName,"<missing>");
         }
         /** Structural diff discovery: later slots cannot affect an already established winner. */
         public boolean affectedBy(ClasspathSequence.Difference difference){
@@ -138,7 +138,7 @@ public interface IndexStore extends AutoCloseable {
      * The sequence root is for structural equality/diff discovery, not default query invalidation.
      */
     default Optional<ClasspathSequence> semanticClasspathSequence(String workspace)throws Exception{return Optional.empty();}
-    default Optional<Hash256> semanticClasspathIdentity(String workspace)throws Exception{
+    default Optional<Id128> semanticClasspathIdentity(String workspace)throws Exception{
         return semanticClasspathSequence(workspace).map(ClasspathSequence::identity);
     }
     /**
@@ -200,7 +200,7 @@ public interface IndexStore extends AutoCloseable {
         return null;
     }
     /** Resolution-only identity of one direct owner/name-prefix semantic range. */
-    default Hash256 semanticMemberRangeIdentity(String ownerScip,String prefix,String workspace,SemanticLayer layer)throws Exception{
+    default Id128 semanticMemberRangeIdentity(String ownerScip,String prefix,String workspace,SemanticLayer layer)throws Exception{
         var aggregate=new AlgebraicAccumulator("semantic-member-range-v1");
         String cursor=null;
         do{
@@ -212,7 +212,7 @@ public interface IndexStore extends AutoCloseable {
         return aggregate.identity();
     }
     /** Resolution-only identity of the exact overload group for one direct member name. */
-    default Hash256 semanticOverloadGroupIdentity(String ownerScip,String name,String workspace,SemanticLayer layer)throws Exception{
+    default Id128 semanticOverloadGroupIdentity(String ownerScip,String name,String workspace,SemanticLayer layer)throws Exception{
         var aggregate=new AlgebraicAccumulator("semantic-member-range-v1");
         String cursor=null;
         do{
@@ -221,7 +221,7 @@ public interface IndexStore extends AutoCloseable {
                 aggregate.add(symbol.resolution().symbolKey(),symbol.resolution().identity());
             cursor=page.cursor();
         }while(cursor!=null);
-        return CanonicalDigestWriter.digest("semantic-overload-group-v1",aggregate.identity());
+        return IdentityEncoder.of("semantic-overload-group-v1",aggregate.identity());
     }
     List<ArtifactCandidate> binaryArtifacts(String workspace)throws Exception;
     List<ArtifactWork> pendingSignatureArtifacts(String workspace)throws Exception;

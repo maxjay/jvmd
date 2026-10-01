@@ -1,6 +1,6 @@
 package dev.jvmd.index;
 
-import dev.jvmd.core.Hash256;
+import dev.jvmd.core.Id128;
 import java.util.*;
 
 /** Cheap semantic projection used for discovery before optional description enrichment. */
@@ -15,7 +15,7 @@ public record CompletionCandidate(
         String label,
         String editorLabel,
         List<ParameterLabel> parameters,
-        Hash256 resolutionIdentity,
+        Id128 resolutionIdentity,
         SemanticReadView.Origin origin) {
     public CompletionCandidate(String id,String name,String kind,String structuralSignature,String declaringType,
                                String sourceFile,Set<String> modifiers,String label,List<ParameterLabel> parameters){
@@ -27,7 +27,7 @@ public record CompletionCandidate(
     }
     public CompletionCandidate(String id,String name,String kind,String structuralSignature,String declaringType,
                                String sourceFile,Set<String> modifiers,String label,String editorLabel,List<ParameterLabel> parameters,
-                               Hash256 resolutionIdentity){
+                               Id128 resolutionIdentity){
         this(id,name,kind,structuralSignature,declaringType,sourceFile,modifiers,label,editorLabel,parameters,resolutionIdentity,SemanticReadView.Origin.LIVE);
     }
     public CompletionCandidate {

@@ -34,7 +34,7 @@ final class LocalArtifacts {
         var sourcePaths=new LinkedHashMap<String,Path>();
         var roots=new ArrayList<>(module.sources());roots.addAll(module.outputs());
         var observed=capture(roots);
-        String fingerprint=CompilerInputs.compose("local-artifact-v2",module.directory(),module.gav(),roots,new TreeMap<>(observed));
+        String fingerprint=fingerprint(module,roots,observed);
         var previous=index.artifact(module.directory());
         if(previous!=null&&previous.hasSignatureEdges()&&fingerprint.equals(previous.sha256())){state.observed=observed;state.artifact=previous.id();return previous.id();}
         for(int i=0;i<roots.size();i++){
@@ -67,6 +67,16 @@ final class LocalArtifacts {
         }
         if(!observed.equals(capture(roots)))throw new CompilerInputs.Superseded("Local artifact inputs changed during refresh");
         state.artifact=index.replaceLocal(module,fingerprint,size,mtime,new BinaryReader.Content(List.copyOf(symbols.values()),List.copyOf(edges),Map.of(),List.copyOf(warnings)),sourceData);state.observed=observed;return state.artifact;
+    }
+    /**
+     * The artifact's on-disk content name (its {@code sha256} and storage key), so it stays SHA-256
+     * rather than a runtime identity. NUL cannot occur in paths, GAVs or hex hashes.
+     */
+    private static String fingerprint(IndexService.LocalModule module,List<Path> roots,Map<Path,String> observed){
+        var text=new StringBuilder("local-artifact-v3\0").append(module.directory()).append('\0').append(module.gav()).append('\0').append(roots.size());
+        for(Path root:roots)text.append('\0').append(root);
+        for(var entry:observed.entrySet())text.append('\0').append(entry.getKey()).append('\0').append(entry.getValue());
+        return Hashing.sha256(text.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
     private Map<Path,String> capture(Collection<Path> roots)throws Exception{
         var observed=new TreeMap<Path,String>();

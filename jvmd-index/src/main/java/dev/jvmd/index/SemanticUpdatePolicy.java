@@ -1,6 +1,6 @@
 package dev.jvmd.index;
 
-import dev.jvmd.core.Hash256;
+import dev.jvmd.core.Id128;
 import java.nio.file.Path;
 import java.util.*;
 
@@ -96,7 +96,7 @@ public final class SemanticUpdatePolicy {
             return path!=0?path:id.compareTo(other.id);
         }
     }
-    public record ProofEvaluation(QueryProof dependencies,QueryProof.Key output,Hash256 derivedIdentity) {
+    public record ProofEvaluation(QueryProof dependencies,QueryProof.Key output,Id128 derivedIdentity) {
         public ProofEvaluation {
             Objects.requireNonNull(dependencies);Objects.requireNonNull(output);Objects.requireNonNull(derivedIdentity);
             if(dependencies.dependencies().stream().anyMatch(value->value.key().equals(output)))
@@ -189,7 +189,7 @@ public final class SemanticUpdatePolicy {
         public int size(){return nodes.size();}
         public void clear(){nodes.clear();reverse.clear();producers.clear();}
 
-        public ProofPropagation propagate(Map<QueryProof.Key,Hash256> currentLeaves,ProofRecomputer recomputer)throws Exception{
+        public ProofPropagation propagate(Map<QueryProof.Key,Id128> currentLeaves,ProofRecomputer recomputer)throws Exception{
             Objects.requireNonNull(currentLeaves);Objects.requireNonNull(recomputer);
             var queue=new ArrayDeque<ProofConsumer>();var queued=new HashSet<ProofConsumer>();
             for(var entry:currentLeaves.entrySet()){
@@ -213,7 +213,7 @@ public final class SemanticUpdatePolicy {
                 var result=recomputer.recompute(consumer);
                 if(result.isEmpty()){fallback.add(consumer);continue;}
                 var next=result.get();
-                Hash256 previousIdentity=before.evaluation().derivedIdentity();
+                Id128 previousIdentity=before.evaluation().derivedIdentity();
                 QueryProof.Key previousOutput=before.evaluation().output();
                 register(consumer,next);
                 if(previousIdentity.equals(next.derivedIdentity())&&previousOutput.equals(next.output())){
@@ -267,7 +267,7 @@ public final class SemanticUpdatePolicy {
             if(completeCoverage)preciseProofCoverage.add(file);else preciseProofCoverage.remove(file);
         }
         public boolean proofCovered(Path file){return preciseProofCoverage.contains(normalize(file));}
-        public ProofInvalidation propagateProofChanges(Path changedFile,Map<QueryProof.Key,Hash256> leaves,
+        public ProofInvalidation propagateProofChanges(Path changedFile,Map<QueryProof.Key,Id128> leaves,
                                                        ProofRecomputer recomputer)throws Exception{
             changedFile=normalize(changedFile);
             var propagation=proofs.propagate(leaves,recomputer);

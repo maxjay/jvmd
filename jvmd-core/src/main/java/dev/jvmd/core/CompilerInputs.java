@@ -136,19 +136,7 @@ public final class CompilerInputs {
     }
 
     /** Deterministic length-prefixed composition. Lists retain order; callers canonicalize genuine sets. */
-    public static String compose(String version,Object... components){
-        try{
-            var digest=java.security.MessageDigest.getInstance("SHA-256");
-            var out=new DataOutputStream(new java.security.DigestOutputStream(OutputStream.nullOutputStream(),digest));write(out,version);
-            for(Object value:components)write(out,value);
-            return HexFormat.of().formatHex(digest.digest());
-        }catch(IOException|java.security.NoSuchAlgorithmException impossible){throw new AssertionError(impossible);}
-    }
-    private static void write(DataOutputStream out,Object value)throws IOException{
-        if(value instanceof Map<?,?> map){out.writeByte(1);out.writeInt(map.size());for(var entry:map.entrySet()){write(out,entry.getKey());write(out,entry.getValue());}}
-        else if(value instanceof Collection<?> values){out.writeByte(2);out.writeInt(values.size());for(Object item:values)write(out,item);}
-        else{byte[] bytes=Objects.toString(value,"").getBytes(StandardCharsets.UTF_8);out.writeByte(3);out.writeInt(bytes.length);out.write(bytes);}
-    }
+    public static String compose(String version,Object... components){return IdentityEncoder.of(version,components).hex();}
 
     public synchronized Map<String,Object> status(){
         var result=new LinkedHashMap<String,Object>();

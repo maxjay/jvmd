@@ -2,7 +2,7 @@ package dev.jvmd.tests;
 
 import dev.jvmd.analyzer.CompletionContextResolver;
 import dev.jvmd.analyzer.CompletionProbe;
-import dev.jvmd.core.Hash256;
+import dev.jvmd.core.Id128;
 import dev.jvmd.index.*;
 import java.util.*;
 import org.junit.jupiter.api.Tag;
@@ -149,7 +149,7 @@ class CompletionContextResolverTest {
                 return new MemberPage(matching.subList(offset,to),to<matching.size()?Integer.toString(to):null);
             }
             public List<String> directSupertypes(String typeId){return List.of();}
-            public Optional<Hash256> identity(QueryProof.Domain domain,String key){return Optional.empty();}
+            public Optional<Id128> identity(QueryProof.Domain domain,String key){return Optional.empty();}
         };
         String source="package p; class Use { Object f(Api project){ return project.chain().; } }";
         int cursor=source.indexOf("project.chain().")+"project.chain().".length();
@@ -202,7 +202,7 @@ class CompletionContextResolverTest {
                     return new MemberPage(values,null);
                 }
                 public List<String> directSupertypes(String typeId){return List.of();}
-                public Optional<Hash256> identity(QueryProof.Domain domain,String key){
+                public Optional<Id128> identity(QueryProof.Domain domain,String key){
                     var value=symbols.get(key);return domain==QueryProof.Domain.EXACT_SYMBOL&&value!=null
                             ?Optional.of(value.resolutionIdentity()):Optional.empty();
                 }

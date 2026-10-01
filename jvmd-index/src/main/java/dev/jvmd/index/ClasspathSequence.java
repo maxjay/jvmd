@@ -1,7 +1,7 @@
 package dev.jvmd.index;
 
-import dev.jvmd.core.CanonicalDigestWriter;
-import dev.jvmd.core.Hash256;
+import dev.jvmd.core.IdentityEncoder;
+import dev.jvmd.core.Id128;
 import java.math.BigInteger;
 import java.util.*;
 
@@ -22,9 +22,9 @@ import java.util.*;
  * slot across resolution-relevant generations.
  */
 public final class ClasspathSequence {
-    private static final Hash256 EMPTY=CanonicalDigestWriter.digest("classpath-sequence-empty-v1");
+    private static final Id128 EMPTY=IdentityEncoder.of("classpath-sequence-empty-v1");
 
-    public record Entry(String key,Hash256 resolutionIdentity) {
+    public record Entry(String key,Id128 resolutionIdentity) {
         public Entry {
             Objects.requireNonNull(key);
             Objects.requireNonNull(resolutionIdentity);
@@ -55,14 +55,14 @@ public final class ClasspathSequence {
         final Item item;
         final Node left,right;
         final int size;
-        final Hash256 merkle;
+        final Id128 merkle;
 
         Node(Item item,Node left,Node right){
             this.item=item;this.left=left;this.right=right;
             int leftSize=size(left),rightSize=size(right);
             size=1+leftSize+rightSize;
             // left/right cardinality plus ordered child identities bind the logical sequence positions.
-            merkle=CanonicalDigestWriter.digest("classpath-sequence-node-v1",
+            merkle=IdentityEncoder.of("classpath-sequence-node-v1",
                     leftSize,identity(left),item.entry().key(),item.entry().resolutionIdentity(),
                     rightSize,identity(right));
         }
@@ -88,7 +88,7 @@ public final class ClasspathSequence {
 
     public int size(){return size(root);}
     public boolean isEmpty(){return root==null;}
-    public Hash256 identity(){return identity(root);}
+    public Id128 identity(){return identity(root);}
 
     public Entry get(int index){
         checkIndex(index,size());
@@ -184,7 +184,7 @@ public final class ClasspathSequence {
      * yields the same canonical subtree for the same ordered entries, regardless of its surrounding
      * sequence, so equal ranges can be skipped by identity without enumerating their leaves.
      */
-    private static Hash256 rangeIdentity(Node root,int start,int end,Counter compared){
+    private static Id128 rangeIdentity(Node root,int start,int end,Counter compared){
         int size=size(root);
         if(start<0||end<start||end>size)throw new IndexOutOfBoundsException("Range ["+start+","+end+") outside [0,"+size+")");
         if(start==end)return EMPTY;
@@ -284,7 +284,7 @@ public final class ClasspathSequence {
     }
 
     private static Item item(Entry entry){
-        return new Item(entry,CanonicalDigestWriter.digest("classpath-sequence-priority-v1",entry.key()).unsignedInteger());
+        return new Item(entry,new BigInteger(1,IdentityEncoder.of("classpath-sequence-priority-v1",entry.key()).bytes()));
     }
 
     private static int comparePriority(Item first,Item second){
@@ -310,7 +310,7 @@ public final class ClasspathSequence {
     }
 
     private static int size(Node node){return node==null?0:node.size;}
-    private static Hash256 identity(Node node){return node==null?EMPTY:node.merkle;}
+    private static Id128 identity(Node node){return node==null?EMPTY:node.merkle;}
 
     private static void checkIndex(int index,int size){
         if(index<0||index>=size)throw new IndexOutOfBoundsException(index+" outside [0,"+size+")");

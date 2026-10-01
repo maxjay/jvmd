@@ -1,8 +1,8 @@
 package dev.jvmd.index;
 
 import dev.jvmd.core.AlgebraicAccumulator;
-import dev.jvmd.core.CanonicalDigestWriter;
-import dev.jvmd.core.Hash256;
+import dev.jvmd.core.IdentityEncoder;
+import dev.jvmd.core.Id128;
 import dev.jvmd.core.Hashing;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
@@ -18,7 +18,7 @@ import java.util.*;
 public final class ResidentSemanticState {
     private static final BigInteger FIELD=new BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F",16);
     private static final String EMPTY=Hashing.sha256(new byte[0]);
-    private static final Hash256 EMPTY_HASH=Hash256.fromHex(EMPTY);
+    private static final Id128 EMPTY_HASH=IdentityEncoder.of("resident-node-empty-v1");
 
     public record Aggregate(AlgebraicAccumulator.Value membership,AlgebraicAccumulator.Value api,
                             AlgebraicAccumulator.Value namespace,AlgebraicAccumulator.Value documentation) {
@@ -36,14 +36,14 @@ public final class ResidentSemanticState {
 
     public record Identity(long epoch,String merkleRoot,String membership,String api,String namespace,String documentation) { }
 
-    private record Entry(String key,SemanticFact fact,Hash256 valueIdentity,Aggregate contribution,BigInteger priority) { }
+    private record Entry(String key,SemanticFact fact,Id128 valueIdentity,Aggregate contribution,BigInteger priority) { }
     private static final class Node {
-        final Entry entry;final Node left,right;final Hash256 merkle;
+        final Entry entry;final Node left,right;final Id128 merkle;
         final AlgebraicAccumulator.Value resolutionRange;
         final String minKey,maxKey;
         Node(Entry entry,Node left,Node right){
             this.entry=entry;this.left=left;this.right=right;
-            merkle=CanonicalDigestWriter.digest("resident-node-v1",left==null?EMPTY_HASH:left.merkle,entry.key(),entry.valueIdentity(),right==null?EMPTY_HASH:right.merkle);
+            merkle=IdentityEncoder.of("resident-node-v1",left==null?EMPTY_HASH:left.merkle,entry.key(),entry.valueIdentity(),right==null?EMPTY_HASH:right.merkle);
             var self=AlgebraicAccumulator.contribution("semantic-member-range-v1",entry.key(),entry.fact().resolutionIdentity());
             resolutionRange=(left==null?AlgebraicAccumulator.Value.ZERO:left.resolutionRange)
                     .plus(self).plus(right==null?AlgebraicAccumulator.Value.ZERO:right.resolutionRange);
@@ -259,19 +259,19 @@ public final class ResidentSemanticState {
         return memberAggregates.getOrDefault(ownerId,Aggregate.ZERO);
     }
     /** Resolution-only identity for one direct owner/name-prefix domain. */
-    public synchronized Hash256 memberRangeIdentity(String ownerId,String namePrefix){
+    public synchronized Id128 memberRangeIdentity(String ownerId,String namePrefix){
         String prefix=SemanticFact.memberPrefix(ownerId,Objects.requireNonNullElse(namePrefix,""));
         return resolutionRange(root,prefix,prefix+"\uffff").identity("semantic-member-range-v1");
     }
     /** Resolution-only identity for the exact overload group of one member name. */
-    public synchronized Hash256 overloadGroupIdentity(String ownerId,String name){
+    public synchronized Id128 overloadGroupIdentity(String ownerId,String name){
         String prefix=SemanticFact.memberPrefix(ownerId,Objects.requireNonNullElse(name,""))+"\0";
         var exact=resolutionRange(root,prefix,prefix+"\uffff").identity("semantic-member-range-v1");
-        return CanonicalDigestWriter.digest("semantic-overload-group-v1",exact);
+        return IdentityEncoder.of("semantic-overload-group-v1",exact);
     }
     /** Constant-time validity identity for the effective API reachable from a receiver type. */
     public synchronized String hierarchyApi(String typeId){
-        return CanonicalDigestWriter.digest("hierarchy-validity-v2",uncertaintyGeneration,
+        return IdentityEncoder.of("hierarchy-validity-v2",uncertaintyGeneration,
                 hierarchyApis.getOrDefault(typeId,EMPTY)).hex();
     }
 
@@ -280,7 +280,7 @@ public final class ResidentSemanticState {
 
     public synchronized Identity identity(){
         String structural=root==null?EMPTY:root.merkle.hex();
-        String merkle=CanonicalDigestWriter.digest("resident-state-v2",structural,freshnessIdentity()).hex();
+        String merkle=IdentityEncoder.of("resident-state-v2",structural,freshnessIdentity()).hex();
         return new Identity(epoch,merkle,semanticAggregate.membershipIdentity(),semanticAggregate.apiIdentity(),
                 semanticAggregate.namespaceIdentity(),semanticAggregate.documentationIdentity());
     }
@@ -320,7 +320,7 @@ public final class ResidentSemanticState {
     }
 
     private String freshnessIdentity(){
-        return CanonicalDigestWriter.digest("semantic-freshness-v2",staleAggregate.identity(),
+        return IdentityEncoder.of("semantic-freshness-v2",staleAggregate.identity(),
                 staleAggregate.cardinality(),uncertaintyGeneration).hex();
     }
     private void clearExplicitStale(String unit){
@@ -398,7 +398,7 @@ public final class ResidentSemanticState {
             parentParts.add(new Object[]{parent,composeHierarchyApi(parent,affected,memo,visiting)});
         }
         visiting.remove(typeId);
-        String value=CanonicalDigestWriter.digest("hierarchy-api-v2",typeId,typeApi,
+        String value=IdentityEncoder.of("hierarchy-api-v2",typeId,typeApi,
                 members.apiIdentity(),members.api().cardinality(),parentParts).hex();
         hierarchyApis.put(typeId,value);memo.put(typeId,value);return value;
     }
@@ -444,7 +444,7 @@ public final class ResidentSemanticState {
     }
 
     private static BigInteger point(String domain,String value){
-        return Hash256.sha256((domain+"\0"+Objects.requireNonNullElse(value,"")).getBytes(StandardCharsets.UTF_8)).unsignedInteger().mod(FIELD);
+        return new BigInteger(Hashing.sha256((domain+"\0"+Objects.requireNonNullElse(value,"")).getBytes(StandardCharsets.UTF_8)),16).mod(FIELD);
     }
 
     private static AlgebraicAccumulator.Value resolutionRange(Node node,String lower,String upper){

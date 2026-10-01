@@ -166,7 +166,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private record SemanticAdmission(SemanticDelta delta,List<SemanticFact> removed) {
         SemanticAdmission { Objects.requireNonNull(delta);removed=List.copyOf(removed); }
     }
-    private record SourceLeafChanges(Map<QueryProof.Key,Hash256> changed,int consumersStoppedEqual) {
+    private record SourceLeafChanges(Map<QueryProof.Key,Id128> changed,int consumersStoppedEqual) {
         SourceLeafChanges { changed=Collections.unmodifiableMap(new TreeMap<>(changed)); }
     }
     private record Outline(List<Map<String,Object>> symbols,Set<Path> dependencies) { }
@@ -287,7 +287,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return new QueryProof.Key(QueryProof.Domain.DOCUMENT_SCOPE,
                 "completion-range:"+file.toAbsolutePath().normalize()+"#"+selectorOffset);
     }
-    private static void addProofDependency(Map<QueryProof.Key,Hash256> values,QueryProof.Dependency dependency){
+    private static void addProofDependency(Map<QueryProof.Key,Id128> values,QueryProof.Dependency dependency){
         var previous=values.putIfAbsent(dependency.key(),dependency.identity());
         if(previous!=null&&!previous.equals(dependency.identity()))
             throw new IllegalStateException("Conflicting semantic proof identity for "+dependency.key());
@@ -301,7 +301,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             return content!=null&&semanticState().unitCurrent("source:"+source,content);
         }catch(Exception invalid){return false;}
     }
-    private Optional<Hash256> maintainedNamespaceTypeIdentity(SemanticReadView view,String binary)throws Exception{
+    private Optional<Id128> maintainedNamespaceTypeIdentity(SemanticReadView view,String binary)throws Exception{
         if(liveSourceState!=null){
             var source=liveSourceState.source(binary).orElse(null);
             if(source!=null){
@@ -311,7 +311,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         var symbol=view.type(binary);return symbol==null?Optional.empty():Optional.of(symbol.resolutionIdentity());
     }
-    private boolean addReceiverLookupProof(Map<QueryProof.Key,Hash256> values,SemanticReadView view,
+    private boolean addReceiverLookupProof(Map<QueryProof.Key,Id128> values,SemanticReadView view,
                                            String receiverType,String selectedOwner,String memberName,boolean call,
                                            Collection<String> failures)throws Exception{
         // If javac selected a declaration on an ancestor, the conclusion is an effective hierarchy
@@ -361,7 +361,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
 
     private void registerSourceProof(Path file,String text,Bindings.Snapshot snapshot,FileSemanticContribution contribution)throws Exception{
         file=file.toAbsolutePath().normalize();
-        var consumer=sourceProofConsumer(file);var values=new TreeMap<QueryProof.Key,Hash256>();
+        var consumer=sourceProofConsumer(file);var values=new TreeMap<QueryProof.Key,Id128>();
         var coveredFiles=new HashSet<Path>();var view=semanticReadView();var coverageFailures=new LinkedHashSet<String>();
         var referencesByTarget=new HashMap<String,List<Bindings.ReferenceProof>>();
         for(var reference:snapshot.referenceProofs())
@@ -455,7 +455,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var consumer=completionRangeProofConsumer(file,selectorOffset);
         var owners=semanticHierarchyOwners(view,resolved);
         if(owners==null||owners.isEmpty()){dependencies.semantic().proofs().remove(consumer);return;}
-        var values=new TreeMap<QueryProof.Key,Hash256>();
+        var values=new TreeMap<QueryProof.Key,Id128>();
         for(var owner:owners){
             var proof=SemanticQueryProofs.range(view,owner.symbol().id(),prefix);
             if(proof.isEmpty()){dependencies.semantic().proofs().remove(consumer);return;}
@@ -473,7 +473,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 new SemanticUpdatePolicy.ProofEvaluation(query.proof(),documentProofOutput(file,query.selectorOffset()),query.proof().identity()));
     }
     private Optional<SemanticUpdatePolicy.ProofEvaluation> rebaseProof(
-            SemanticUpdatePolicy.ProofConsumer consumer,Map<QueryProof.Key,Hash256> leaves){
+            SemanticUpdatePolicy.ProofConsumer consumer,Map<QueryProof.Key,Id128> leaves){
         var prior=dependencies.semantic().proofs().evaluation(consumer);if(prior.isEmpty())return Optional.empty();
         var current=new ArrayList<QueryProof.Dependency>();
         for(var dependency:prior.get().dependencies().dependencies())
@@ -876,8 +876,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private void conditionallyInvalidate(Path path,Set<Path> affected){
         diagnosticStore.invalidate(Set.of(path.toAbsolutePath().normalize()));invalidateCompilerCaches(affected);
     }
-    private static Hash256 unavailableProofIdentity(QueryProof.Key key){
-        return CanonicalDigestWriter.digest("semantic-proof-unavailable-v1",key.domain().name(),key.value());
+    private static Id128 unavailableProofIdentity(QueryProof.Key key){
+        return IdentityEncoder.of("semantic-proof-unavailable-v1",key.domain().name(),key.value());
     }
     private static String semanticBinary(SemanticFact fact){
         if(fact==null)return "";
@@ -885,7 +885,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(value==null||value.isBlank())value=fact.typeDeclaration()?fact.resolutionFact().symbolKey():"";
         return Objects.requireNonNullElse(value,"").replace((char)36,'.');
     }
-    private Hash256 currentSourceLeafIdentity(QueryProof.Key key)throws Exception{
+    private Id128 currentSourceLeafIdentity(QueryProof.Key key)throws Exception{
         var view=semanticReadView();
         return switch(key.domain()){
             case EXACT_SYMBOL,MEMBER_RANGE,OVERLOAD_GROUP,HIERARCHY ->
@@ -894,16 +894,16 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             case NAMESPACE -> {
                 if(!key.value().startsWith("type:"))yield unavailableProofIdentity(key);
                 String binary=key.value().substring("type:".length());
-                Hash256 declaration=namespaceTypeIdentity(binary).orElse(null);
-                yield CanonicalDigestWriter.digest("namespace-search-domain-v1",binary,declaration);
+                Id128 declaration=namespaceTypeIdentity(binary).orElse(null);
+                yield IdentityEncoder.of("namespace-search-domain-v1",binary,declaration);
             }
             case NEGATIVE_RESOLUTION -> {
                 int split=key.value().lastIndexOf('@');
                 if(split<=0||split==key.value().length()-1)yield unavailableProofIdentity(key);
                 String simple=key.value().substring(0,split),binary=key.value().substring(split+1);
-                Hash256 declaration=namespaceTypeIdentity(binary).orElse(null);
-                Hash256 domain=CanonicalDigestWriter.digest("namespace-search-domain-v1",binary,declaration);
-                yield CanonicalDigestWriter.digest("negative-resolution-domain-v1",simple,binary,domain);
+                Id128 declaration=namespaceTypeIdentity(binary).orElse(null);
+                Id128 domain=IdentityEncoder.of("namespace-search-domain-v1",binary,declaration);
+                yield IdentityEncoder.of("negative-resolution-domain-v1",simple,binary,domain);
             }
             default -> unavailableProofIdentity(key);
         };
@@ -915,7 +915,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var changedIds=new HashSet<String>();var changedBinaries=new HashSet<String>();
         for(var fact:changedFacts){changedIds.add(fact.id());String binary=semanticBinary(fact);if(fact.typeDeclaration()&&!binary.isBlank())changedBinaries.add(binary);}
         String sourceKey="source:"+changedFile.toAbsolutePath().normalize();
-        var leaves=new TreeMap<QueryProof.Key,Hash256>();
+        var leaves=new TreeMap<QueryProof.Key,Id128>();
         for(var key:dependencies.semantic().proofs().dependencyKeys()){
             boolean affected=switch(key.domain()){
                 case EXACT_SYMBOL -> changedIds.contains(key.value());
@@ -945,8 +945,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         return changedSourceLeaves(leaves);
     }
-    private SourceLeafChanges changedSourceLeaves(Map<QueryProof.Key,Hash256> candidates){
-        var changed=new TreeMap<QueryProof.Key,Hash256>();var changedConsumers=new HashSet<SemanticUpdatePolicy.ProofConsumer>();
+    private SourceLeafChanges changedSourceLeaves(Map<QueryProof.Key,Id128> candidates){
+        var changed=new TreeMap<QueryProof.Key,Id128>();var changedConsumers=new HashSet<SemanticUpdatePolicy.ProofConsumer>();
         var equalCandidates=new HashSet<SemanticUpdatePolicy.ProofConsumer>();
         for(var entry:candidates.entrySet()){
             boolean keyChanged=false;
@@ -972,7 +972,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         String relative=owner.relativize(file).toString();
         return relative.substring(0,relative.length()-5).replace(java.io.File.separatorChar,'.');
     }
-    private Optional<Hash256> membershipTypeIdentity(String binary,boolean present){
+    private Optional<Id128> membershipTypeIdentity(String binary,boolean present){
         if(!present)return Optional.empty();
         if(liveSourceState==null)return Optional.empty();
         var source=liveSourceState.source(binary).orElse(null);if(source==null)return Optional.empty();
@@ -980,29 +980,29 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var resident=semanticState().type(binary);
         if(resident!=null&&semanticState().unitCurrent("source:"+source.file().toAbsolutePath().normalize(),content))
             return Optional.of(resident.resolutionIdentity());
-        return Optional.of(CanonicalDigestWriter.digest("source-namespace-candidate-v1",
+        return Optional.of(IdentityEncoder.of("source-namespace-candidate-v1",
                 binary,source.file().toAbsolutePath().normalize().toString(),content));
     }
     private SourceLeafChanges sourceMembershipLeaves(String binary,boolean present)throws Exception{
         if(binary==null||binary.isBlank())return new SourceLeafChanges(Map.of(),0);
-        var leaves=new TreeMap<QueryProof.Key,Hash256>();Hash256 declaration=membershipTypeIdentity(binary,present).orElse(null);
+        var leaves=new TreeMap<QueryProof.Key,Id128>();Id128 declaration=membershipTypeIdentity(binary,present).orElse(null);
         for(var key:dependencies.semantic().proofs().dependencyKeys()){
             switch(key.domain()){
                 case NAMESPACE -> {
                     if(key.value().equals("type:"+binary))
-                        leaves.put(key,CanonicalDigestWriter.digest("namespace-search-domain-v1",binary,declaration));
+                        leaves.put(key,IdentityEncoder.of("namespace-search-domain-v1",binary,declaration));
                 }
                 case NEGATIVE_RESOLUTION -> {
                     int split=key.value().lastIndexOf('@');
                     if(split>0&&key.value().substring(split+1).replace((char)36,'.').equals(binary)){
                         String simple=key.value().substring(0,split);
-                        Hash256 domain=CanonicalDigestWriter.digest("namespace-search-domain-v1",binary,declaration);
-                        leaves.put(key,CanonicalDigestWriter.digest("negative-resolution-domain-v1",simple,binary,domain));
+                        Id128 domain=IdentityEncoder.of("namespace-search-domain-v1",binary,declaration);
+                        leaves.put(key,IdentityEncoder.of("negative-resolution-domain-v1",simple,binary,domain));
                     }
                 }
                 case RESOLUTION_PATH -> {
                     if(key.value().equals("type:"+binary))
-                        leaves.put(key,CanonicalDigestWriter.digest("document-resolution-path-v1",binary,
+                        leaves.put(key,IdentityEncoder.of("document-resolution-path-v1",binary,
                                 declaration==null?null:binary,declaration));
                 }
                 default -> {}
@@ -1011,7 +1011,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return changedSourceLeaves(leaves);
     }
     private static SourceLeafChanges mergeSourceLeafChanges(SourceLeafChanges first,SourceLeafChanges second){
-        var changed=new TreeMap<QueryProof.Key,Hash256>(first.changed());changed.putAll(second.changed());
+        var changed=new TreeMap<QueryProof.Key,Id128>(first.changed());changed.putAll(second.changed());
         return new SourceLeafChanges(changed,first.consumersStoppedEqual()+second.consumersStoppedEqual());
     }
     private static boolean sourceProofConsumer(SemanticUpdatePolicy.ProofConsumer consumer){
@@ -1372,30 +1372,30 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         identities.sort(String::compareTo);return Hashing.sha256(String.join("\n",identities).getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
-    private Hash256 documentScopeIdentity(Focusing.Result focus){
+    private Id128 documentScopeIdentity(Focusing.Result focus){
         int start=Math.max(0,Math.min(focus.start(),focus.source().length()));
         int end=Math.max(start,Math.min(focus.end(),focus.source().length()));
-        return CanonicalDigestWriter.digest("document-scope-proof-v1",focus.member(),focus.source().substring(start,end));
+        return IdentityEncoder.of("document-scope-proof-v1",focus.member(),focus.source().substring(start,end));
     }
-    private Hash256 documentScopeIdentity(Path path,String patched,int focusCursor)throws Exception{
+    private Id128 documentScopeIdentity(Path path,String patched,int focusCursor)throws Exception{
         return documentScopeIdentity(focusing.focus(path,patched,focusCursor));
     }
-    private Hash256 receiverProofIdentity(DocumentSemanticSnapshot.QueryContext query)throws Exception{return receiverProofIdentity(query,true);}
-    private Hash256 receiverProofIdentity(DocumentSemanticSnapshot.QueryContext query,boolean admit)throws Exception{
-        Hash256 declaration=null;
+    private Id128 receiverProofIdentity(DocumentSemanticSnapshot.QueryContext query)throws Exception{return receiverProofIdentity(query,true);}
+    private Id128 receiverProofIdentity(DocumentSemanticSnapshot.QueryContext query,boolean admit)throws Exception{
+        Id128 declaration=null;
         if(query.receiverSymbolId()!=null&&!query.receiverSymbolId().isBlank())
             declaration=semanticReadView(admit).identity(QueryProof.Domain.EXACT_SYMBOL,query.receiverSymbolId()).orElse(null);
-        return CanonicalDigestWriter.digest("document-receiver-proof-v1",
+        return IdentityEncoder.of("document-receiver-proof-v1",
                 query.receiverType().identity(),Objects.toString(query.receiverSymbolId(),""),
                 query.staticReceiver(),declaration);
     }
-    private Hash256 hierarchyProofIdentity(DocumentSemanticSnapshot.QueryContext query)throws Exception{
+    private Id128 hierarchyProofIdentity(DocumentSemanticSnapshot.QueryContext query)throws Exception{
         if(!context.preciseSourceRoots()||liveSourceState==null||!liveSourceState.snapshot().trusted())
-            if(!ensureHierarchySemanticCurrent(query))return CanonicalDigestWriter.digest("document-hierarchy-proof-v1","<unavailable>");
+            if(!ensureHierarchySemanticCurrent(query))return IdentityEncoder.of("document-hierarchy-proof-v1","<unavailable>");
         return maintainedHierarchyProofIdentity(query);
     }
-    private Hash256 maintainedHierarchyProofIdentity(DocumentSemanticSnapshot.QueryContext query){
-        return CanonicalDigestWriter.digest("document-hierarchy-proof-v1",queryHierarchyApi(query));
+    private Id128 maintainedHierarchyProofIdentity(DocumentSemanticSnapshot.QueryContext query){
+        return IdentityEncoder.of("document-hierarchy-proof-v1",queryHierarchyApi(query));
     }
     private QueryProof.Dependency hierarchyProofDependency(DocumentSemanticSnapshot.QueryContext query)throws Exception{
         if(query.receiverType() instanceof SemanticType.Declared declared){
@@ -1406,14 +1406,14 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         String key="document:"+Objects.toString(query.receiverSymbolId(),"receiver");
         return new QueryProof.Dependency(QueryProof.Domain.HIERARCHY,key,hierarchyProofIdentity(query));
     }
-    private Hash256 accessibilityProofIdentity(DocumentSemanticSnapshot.QueryContext query)throws Exception{
+    private Id128 accessibilityProofIdentity(DocumentSemanticSnapshot.QueryContext query)throws Exception{
         return accessibilityProofIdentity(query,true);
     }
-    private Hash256 accessibilityProofIdentity(DocumentSemanticSnapshot.QueryContext query,boolean admit)throws Exception{
-        Hash256 enclosing=null;
+    private Id128 accessibilityProofIdentity(DocumentSemanticSnapshot.QueryContext query,boolean admit)throws Exception{
+        Id128 enclosing=null;
         if(query.enclosingTypeId()!=null&&!query.enclosingTypeId().isBlank())
             enclosing=semanticReadView(admit).identity(QueryProof.Domain.EXACT_SYMBOL,query.enclosingTypeId()).orElse(null);
-        return CanonicalDigestWriter.digest("document-accessibility-proof-v1",
+        return IdentityEncoder.of("document-accessibility-proof-v1",
                 context.release(),context.compilerOptions(),query.receiverType().identity(),
                 Objects.toString(query.receiverSymbolId(),""),query.staticReceiver(),query.packageName(),
                 Objects.toString(query.enclosingTypeId(),""),enclosing,query.staticContext(),admit?hierarchyProofIdentity(query):maintainedHierarchyProofIdentity(query));
@@ -1433,13 +1433,13 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return modules.get(context.generation()).accessibility.get(query.accessibilityKey());
     }
 
-    private Hash256 namespaceProofIdentity(String text,CompilerInputs.Snapshot observed){
+    private Id128 namespaceProofIdentity(String text,CompilerInputs.Snapshot observed){
         var imports=new TreeSet<String>();
         var matcher=java.util.regex.Pattern.compile("(?m)^\\s*import\\s+(static\\s+)?([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$*][\\w$*]*)*)\\s*;").matcher(text);
         while(matcher.find())imports.add((matcher.group(1)==null?"":"static ")+matcher.group(2));
         var packageMatcher=java.util.regex.Pattern.compile("(?m)^\\s*package\\s+([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)\\s*;").matcher(text);
         String pkg=packageMatcher.find()?packageMatcher.group(1):"";
-        return CanonicalDigestWriter.digest("document-namespace-proof-v1",pkg,List.copyOf(imports),
+        return IdentityEncoder.of("document-namespace-proof-v1",pkg,List.copyOf(imports),
                 observed.live().snapshot().state().namespace().fingerprint().value());
     }
 
@@ -1447,15 +1447,15 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         String value=Objects.requireNonNullElse(binary,"").replace((char)36,'.');
         int split=value.lastIndexOf('.');return split<0?value:value.substring(split+1);
     }
-    private Optional<Hash256> namespaceTypeIdentity(String binary)throws Exception{return namespaceTypeIdentity(binary,true);}
-    private Optional<Hash256> namespaceTypeIdentity(String binary,boolean admit)throws Exception{
+    private Optional<Id128> namespaceTypeIdentity(String binary)throws Exception{return namespaceTypeIdentity(binary,true);}
+    private Optional<Id128> namespaceTypeIdentity(String binary,boolean admit)throws Exception{
         if(liveSourceState!=null){
             var source=liveSourceState.source(binary).orElse(null);
             if(source!=null){
                 Path file=source.file().toAbsolutePath().normalize();
                 if(!(admit?ensureSourceSemanticCurrent(file):sourceSemanticCurrent(file))){
                     String content=Objects.requireNonNullElse(liveSourceState.contentHash(file),"<missing>");
-                    return Optional.of(CanonicalDigestWriter.digest("namespace-type-unavailable-v1",binary,content));
+                    return Optional.of(IdentityEncoder.of("namespace-type-unavailable-v1",binary,content));
                 }
             }
         }
@@ -1495,8 +1495,8 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 context.workspace().isBlank()?"compiler":"workspace:"+context.workspace());
         return new QueryProof.Dependency(key,classpathProofIdentity(key,observed));
     }
-    private Hash256 classpathProofIdentity(QueryProof.Key key,CompilerInputs.Snapshot observed)throws Exception{return classpathProofIdentity(key,observed,true);}
-    private Hash256 classpathProofIdentity(QueryProof.Key key,CompilerInputs.Snapshot observed,boolean admit)throws Exception{
+    private Id128 classpathProofIdentity(QueryProof.Key key,CompilerInputs.Snapshot observed)throws Exception{return classpathProofIdentity(key,observed,true);}
+    private Id128 classpathProofIdentity(QueryProof.Key key,CompilerInputs.Snapshot observed,boolean admit)throws Exception{
         if(key.domain()!=QueryProof.Domain.CLASSPATH_SEARCH)throw new IllegalArgumentException("Not a classpath proof key");
         if(key.value().startsWith("binary:")&&index!=null&&!context.workspace().isBlank()){
             String binary=key.value().substring("binary:".length());
@@ -1508,12 +1508,12 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
             var identity=index.store().semanticClasspathIdentity(context.workspace());
             if(identity.isPresent())return identity.get();
         }
-        return CanonicalDigestWriter.digest("document-classpath-search-fallback-v1",
+        return IdentityEncoder.of("document-classpath-search-fallback-v1",
                 context.release(),context.classpath().stream().map(path->path.toAbsolutePath().normalize().toString()).toList(),
                 observed.environment().value());
     }
-    private Hash256 resolutionPathIdentity(String key)throws Exception{return resolutionPathIdentity(key,true);}
-    private Hash256 resolutionPathIdentity(String key,boolean admit)throws Exception{
+    private Id128 resolutionPathIdentity(String key)throws Exception{return resolutionPathIdentity(key,true);}
+    private Id128 resolutionPathIdentity(String key,boolean admit)throws Exception{
         if(key.startsWith("type:")){
             String binary=key.substring("type:".length());
             if(liveSourceState!=null){
@@ -1521,22 +1521,22 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 if(source!=null){
                     Path file=source.file().toAbsolutePath().normalize();
                     if(!(admit?ensureSourceSemanticCurrent(file):sourceSemanticCurrent(file)))
-                        return CanonicalDigestWriter.digest("document-resolution-path-v1",binary,"<unavailable>");
+                        return IdentityEncoder.of("document-resolution-path-v1",binary,"<unavailable>");
                 }
             }
             var symbol=semanticReadView(admit).type(binary);
-            return CanonicalDigestWriter.digest("document-resolution-path-v1",binary,
+            return IdentityEncoder.of("document-resolution-path-v1",binary,
                     symbol==null?null:symbol.fqn(),symbol==null?null:symbol.resolutionIdentity());
         }
         if(key.startsWith("source:")){
             Path source=Path.of(key.substring("source:".length())).toAbsolutePath().normalize();
             if(!(admit?ensureCompletionSemantics(Set.of(source)):sourceSemanticCurrent(source)))
-                return CanonicalDigestWriter.digest("document-resolution-path-v1",source.toString(),"<unavailable>");
+                return IdentityEncoder.of("document-resolution-path-v1",source.toString(),"<unavailable>");
             var leaf=documents.liveState(context.sources()).leaf(source).orElse(null);
-            return CanonicalDigestWriter.digest("document-resolution-path-v1",source.toString(),
+            return IdentityEncoder.of("document-resolution-path-v1",source.toString(),
                     leaf==null?"<missing>":leaf.api().value());
         }
-        return CanonicalDigestWriter.digest("document-resolution-path-v1",key,"<unknown>");
+        return IdentityEncoder.of("document-resolution-path-v1",key,"<unknown>");
     }
 
     private QueryProof documentContextProof(Path path,String text,Focusing.Result focus,
@@ -1580,7 +1580,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         boolean sameText=content.equals(snapshot.contentIdentity());
         for(var dependency:query.proof().dependencies()){
             var domain=dependency.key().domain();String key=dependency.key().value();
-            Hash256 identity=switch(domain){
+            Id128 identity=switch(domain){
                 case DOCUMENT_SCOPE -> sameText?dependency.identity():documentScopeIdentity(path,patched,focusCursor);
                 case RECEIVER -> receiverProofIdentity(query,false);
                 case RESOLUTION_PATH -> resolutionPathIdentity(key,false);
@@ -1592,14 +1592,14 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                     if(key.equals("visible"))yield namespaceProofIdentity(text,observed);
                     if(key.startsWith("type:")){
                         String binary=key.substring(5);
-                        yield CanonicalDigestWriter.digest("namespace-search-domain-v1",binary,
+                        yield IdentityEncoder.of("namespace-search-domain-v1",binary,
                                 namespaceTypeIdentity(binary,false).orElse(null));
                     }
                     if(key.startsWith("plan:")){
                         if(sameText)yield dependency.identity();
                         String receiver=query.receiverType() instanceof SemanticType.Declared declared?declared.name():null;
                         var plan=NamespaceResolutionProofs.plan(text,NamespaceResolutionProofs.simpleNameFromPlanKey(key),receiver);
-                        yield plan.precise()?CanonicalDigestWriter.digest("namespace-search-plan-v1",plan.simpleName(),plan.domains()):null;
+                        yield plan.precise()?IdentityEncoder.of("namespace-search-plan-v1",plan.simpleName(),plan.domains()):null;
                     }
                     yield null;
                 }
@@ -2222,7 +2222,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var ranges=new ArrayList<Object>();
         for(var owner:hierarchyOwners(query))
             ranges.add(List.of(owner.id(),semanticState().memberRangeIdentity(owner.id(),prefix)));
-        return CanonicalDigestWriter.digest("resident-qualified-completion-rows-v1",
+        return IdentityEncoder.of("resident-qualified-completion-rows-v1",
                 query.accessibilityKey(),query.receiverType().identity(),query.staticReceiver(),query.staticContext(),
                 Objects.toString(query.enclosingTypeId(),""),query.packageName(),prefix,target,ranges).hex();
     }

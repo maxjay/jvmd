@@ -15,7 +15,7 @@ public final class AlgebraicAccumulator {
     public AlgebraicAccumulator(String domain){this.domain=Objects.requireNonNull(domain);}
     public Value value(){return value;}
     public long cardinality(){return value.cardinality();}
-    public Hash256 identity(){return value.identity(domain);}
+    public Id128 identity(){return value.identity(domain);}
 
     public void replace(Object oldKey,Object oldValue,Object newKey,Object newValue){
         if(oldValue!=null)value=value.minus(contribution(domain,oldKey,oldValue));
@@ -32,12 +32,12 @@ public final class AlgebraicAccumulator {
         }
         public Value plus(Value other){return new Value(sum.add(other.sum),Math.addExact(cardinality,other.cardinality));}
         public Value minus(Value other){return new Value(sum.subtract(other.sum),Math.subtractExact(cardinality,other.cardinality));}
-        public Hash256 identity(String domain){return CanonicalDigestWriter.digest("aggregate-v2",domain,cardinality,fixedBytes(sum));}
+        public Id128 identity(String domain){return IdentityEncoder.of("aggregate-v2",domain,cardinality,fixedBytes(sum));}
     }
 
     public static Value contribution(String domain,Object semanticKey,Object valueIdentity){
         Objects.requireNonNull(domain);Objects.requireNonNull(semanticKey);Objects.requireNonNull(valueIdentity);
-        BigInteger point=CanonicalDigestWriter.digest("aggregate-contribution-v2",domain,semanticKey,valueIdentity).unsignedInteger().mod(FIELD);
+        BigInteger point=new BigInteger(1,IdentityEncoder.of("aggregate-contribution-v2",domain,semanticKey,valueIdentity).bytes()).mod(FIELD);
         return new Value(point,1);
     }
 

@@ -33,7 +33,7 @@ public final class RocksIndexStore implements IndexStore {
     private final Map<String,List<WorkspaceEntry>> workspaces=new HashMap<>();
     private final SourceOverlay sourceOverlay;
     private final Map<Long,Long> unmatched=new HashMap<>();
-    private final LinkedHashMap<String,Hash256> semanticProofIdentities=new LinkedHashMap<>(128,.75f,true);
+    private final LinkedHashMap<String,Id128> semanticProofIdentities=new LinkedHashMap<>(128,.75f,true);
     private record SemanticLookup(String workspace,SemanticLayer layer,String value,boolean type) {}
     private record ClasspathLookup(String workspace,String binary) {}
     // Subscribed detached observations. Their owner refreshes them under the publication monitor,
@@ -306,7 +306,7 @@ public final class RocksIndexStore implements IndexStore {
             if(artifact.input().context().kind().equals("sources"))continue;
             entries.add(new ClasspathSequence.Entry(
                     artifact.input().context().path(),
-                    Hash256.fromHex(artifact.resolutionIdentity())));
+                    Id128.fromHex(artifact.resolutionIdentity())));
         }
         return ClasspathSequence.of(entries);
     }
@@ -335,18 +335,18 @@ public final class RocksIndexStore implements IndexStore {
         return domain+"|"+layer+"|"+artifact.id()+"|"+artifact.resolutionIdentity()+"|"+artifact.sourceRevision()+"|"
                 +Objects.toString(artifact.codeKey(),"")+"|"+ownerScip+"|"+Objects.requireNonNullElse(value,"");
     }
-    private Hash256 cacheSemanticProof(String key,java.util.concurrent.Callable<Hash256> loader)throws Exception{
+    private Id128 cacheSemanticProof(String key,java.util.concurrent.Callable<Id128> loader)throws Exception{
         if(key==null)return loader.call();
         var cached=semanticProofIdentities.get(key);if(cached!=null)return cached;
         var value=loader.call();semanticProofIdentities.put(key,value);
         while(semanticProofIdentities.size()>4096)semanticProofIdentities.remove(semanticProofIdentities.keySet().iterator().next());
         return value;
     }
-    @Override public synchronized Hash256 semanticMemberRangeIdentity(String ownerScip,String prefix,String workspace,SemanticLayer layer)throws Exception{
+    @Override public synchronized Id128 semanticMemberRangeIdentity(String ownerScip,String prefix,String workspace,SemanticLayer layer)throws Exception{
         String key=semanticProofCacheKey(ownerScip,prefix,workspace,layer,"range");
         return cacheSemanticProof(key,()->IndexStore.super.semanticMemberRangeIdentity(ownerScip,prefix,workspace,layer));
     }
-    @Override public synchronized Hash256 semanticOverloadGroupIdentity(String ownerScip,String name,String workspace,SemanticLayer layer)throws Exception{
+    @Override public synchronized Id128 semanticOverloadGroupIdentity(String ownerScip,String name,String workspace,SemanticLayer layer)throws Exception{
         String key=semanticProofCacheKey(ownerScip,name,workspace,layer,"overload");
         return cacheSemanticProof(key,()->IndexStore.super.semanticOverloadGroupIdentity(ownerScip,name,workspace,layer));
     }

@@ -1,8 +1,8 @@
 package dev.jvmd.index;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import dev.jvmd.core.CanonicalDigestWriter;
-import dev.jvmd.core.Hash256;
+import dev.jvmd.core.IdentityEncoder;
+import dev.jvmd.core.Id128;
 import dev.jvmd.core.Json;
 import java.io.IOException;
 import java.lang.classfile.ClassFile;
@@ -27,7 +27,7 @@ public record ResolutionFact(
         List<TypeParameter> typeParameters,
         List<SemanticType> directSupertypes,
         boolean varargs,
-        Hash256 identity) {
+        Id128 identity) {
 
     private static final Set<String> RESOLUTION_MODIFIERS=Set.of(
             "public","protected","private","static","abstract","final","native",
@@ -55,7 +55,7 @@ public record ResolutionFact(
         type=Objects.requireNonNull(type);
         typeParameters=List.copyOf(typeParameters);
         directSupertypes=List.copyOf(directSupertypes);
-        if(identity==null)identity=CanonicalDigestWriter.digest("java-resolution-fact-v1",
+        if(identity==null)identity=IdentityEncoder.of("java-resolution-fact-v1",
                 symbolKey,ownerKey,kind,name,erasedDescriptor,modifiers.stream().sorted().toList(),packageName,
                 type.identity(),
                 typeParameters.stream().map(parameter->parameter.bounds().stream().map(SemanticType::identity).toList()).toList(),

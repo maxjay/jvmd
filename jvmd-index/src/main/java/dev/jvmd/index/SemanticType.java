@@ -1,7 +1,7 @@
 package dev.jvmd.index;
 
-import dev.jvmd.core.CanonicalDigestWriter;
-import dev.jvmd.core.Hash256;
+import dev.jvmd.core.IdentityEncoder;
+import dev.jvmd.core.Id128;
 import java.util.*;
 
 /** Detached Java type identity. No javac-owned object may cross this boundary. */
@@ -12,20 +12,20 @@ public sealed interface SemanticType permits SemanticType.Primitive,SemanticType
     default SemanticType substitute(Map<String,SemanticType> substitutions){return this;}
 
     /** Stable binary identity reused by fact hashing and later type interning/persistence. */
-    default Hash256 identity(){
-        if(this instanceof Primitive value)return CanonicalDigestWriter.digest("semantic-type-v1","primitive",value.name());
-        if(this instanceof Declared value)return CanonicalDigestWriter.digest("semantic-type-v1","declared",value.symbolId(),value.name(),
+    default Id128 identity(){
+        if(this instanceof Primitive value)return IdentityEncoder.of("semantic-type-v1","primitive",value.name());
+        if(this instanceof Declared value)return IdentityEncoder.of("semantic-type-v1","declared",value.symbolId(),value.name(),
                 value.arguments().stream().map(SemanticType::identity).toList());
-        if(this instanceof Variable value)return CanonicalDigestWriter.digest("semantic-type-v1","variable",value.symbolId(),value.name());
-        if(this instanceof Array value)return CanonicalDigestWriter.digest("semantic-type-v1","array",value.component().identity());
-        if(this instanceof Executable value)return CanonicalDigestWriter.digest("semantic-type-v1","executable",
+        if(this instanceof Variable value)return IdentityEncoder.of("semantic-type-v1","variable",value.symbolId(),value.name());
+        if(this instanceof Array value)return IdentityEncoder.of("semantic-type-v1","array",value.component().identity());
+        if(this instanceof Executable value)return IdentityEncoder.of("semantic-type-v1","executable",
                 value.parameters().stream().map(SemanticType::identity).toList(),value.returns().identity(),
                 value.thrown().stream().map(SemanticType::identity).toList());
-        if(this instanceof Wildcard value)return CanonicalDigestWriter.digest("semantic-type-v1","wildcard",
+        if(this instanceof Wildcard value)return IdentityEncoder.of("semantic-type-v1","wildcard",
                 value.extendsBound()==null?null:value.extendsBound().identity(),value.superBound()==null?null:value.superBound().identity());
-        if(this instanceof Intersection value)return CanonicalDigestWriter.digest("semantic-type-v1","intersection",
+        if(this instanceof Intersection value)return IdentityEncoder.of("semantic-type-v1","intersection",
                 value.bounds().stream().map(SemanticType::identity).toList());
-        var value=(Unknown)this;return CanonicalDigestWriter.digest("semantic-type-v1","unknown",value.text());
+        var value=(Unknown)this;return IdentityEncoder.of("semantic-type-v1","unknown",value.text());
     }
 
     record Primitive(String name) implements SemanticType {

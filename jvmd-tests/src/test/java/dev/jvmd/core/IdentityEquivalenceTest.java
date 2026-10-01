@@ -1,6 +1,5 @@
 package dev.jvmd.core;
 
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.function.Function;
@@ -37,16 +36,42 @@ class IdentityEquivalenceTest {
         check(Profile.COMPILER_INPUTS,parts->LegacyEncoders.compilerInputs((String)parts[0],rest(parts)),parts->next(Profile.COMPILER_INPUTS,(String)parts[0],rest(parts)));
     }
 
-    /** The encoder under test. Before the single encoder exists, each profile is its own legacy encoder. */
-    private static Object next(Profile profile,String domain,Object... parts){
-        return switch(profile){
-            case CANONICAL -> LegacyEncoders.canonical(domain,parts);
-            case LIVE_STATE -> LegacyEncoders.liveState(domain,parts);
-            case COMPILER_INPUTS -> LegacyEncoders.compilerInputs(domain,parts);
-        };
-    }
-    private static Object legacyIdentity(Ident ident){return Hash256.sha256(("ident-"+ident.n()).getBytes(StandardCharsets.UTF_8));}
+    /** The encoder under test: one encoder replaces all three, with identical arguments. */
+    private static Object next(Profile profile,String domain,Object... parts){return IdentityEncoder.of(domain,parts);}
+    private static Object legacyIdentity(Ident ident){return new Id128(0x5EED+ident.n(),~ident.n());}
     private static Object nextIdentity(Ident ident){return legacyIdentity(ident);}
+
+    @Test void typedBuilderMatchesVarargsOnTheOracleCorpus(){
+        var random=new Random(7);
+        for(int i=0;i<SAMPLES;i++){
+            String domain=DOMAINS[random.nextInt(DOMAINS.length)];
+            Object scalar=SCALARS[random.nextInt(SCALARS.length)];
+            long number=random.nextInt(3)==0?Long.MIN_VALUE+random.nextInt(3):random.nextLong(-1000,1000);
+            var identity=new Id128(random.nextLong(),random.nextLong());
+            byte[] bytes=new byte[random.nextInt(4)];random.nextBytes(bytes);
+            boolean flag=random.nextBoolean();
+            String text=scalar==null?null:scalar.toString();
+            var typed=IdentityEncoder.begin(domain).str(text).num(number).id(identity).bytes(bytes).bool(flag)
+                    .seq(2).str("a").id(null).finish();
+            var varargs=IdentityEncoder.of(domain,scalar,number,identity,bytes,flag,List.of("a",""));
+            assertThat(typed).as("sample %d",i).isEqualTo(varargs);
+            assertThat(IdentityEncoder.begin(domain).num(number).finish()).isEqualTo(IdentityEncoder.of(domain,Long.toString(number)));
+        }
+    }
+
+    @Test void identityPartsNoLongerEqualTheirHexText(){
+        // The one intentional divergence: LiveStateTree/CompilerInputs used to hash an identity as its hex text.
+        var identity=new Id128(1,2);
+        assertThat(IdentityEncoder.of("d",identity)).isNotEqualTo(IdentityEncoder.of("d",identity.hex()));
+    }
+
+    @Test void determinismAssertionsRejectUnorderedInputs(){
+        assertThatThrownBy(()->IdentityEncoder.of("d",new HashSet<>(List.of("a","b")))).isInstanceOf(AssertionError.class);
+        assertThatThrownBy(()->IdentityEncoder.of("d",new HashMap<>(Map.of("a","b")))).isInstanceOf(AssertionError.class);
+        assertThatThrownBy(()->IdentityEncoder.of("d",(Object)new int[]{1})).isInstanceOf(AssertionError.class);
+        assertThatThrownBy(()->IdentityEncoder.of("d",new Ident(1))).isInstanceOf(AssertionError.class);
+        assertThatCode(()->IdentityEncoder.of("d",new TreeSet<>(List.of("a")),new LinkedHashMap<>(Map.of("a","b")))).doesNotThrowAnyException();
+    }
 
     private static void check(Profile profile,Function<Object[],Object> legacy,Function<Object[],Object> next){
         var random=new Random(20261001L+profile.ordinal());

@@ -165,14 +165,14 @@ Tick each box when it is done and green. Each phase is **one commit** and builds
 - [x] Microbenchmark sanity (JMH not required; a loop in a test tagged `perf` is enough): hashing 64 bytes must not allocate beyond the result. Check with `ThreadMXBean.getThreadAllocatedBytes` over 1M iterations; the budget is under 40 bytes/op.
 
 ### P2: One encoder; `Hash256` → `Id128`
-- [ ] `IdentityEncoder` per §2.3–2.4, with both front doors. Add a test that both produce identical results on the oracle corpus.
-- [ ] Switch the oracle test's `next` to `IdentityEncoder`. It **must be green**. If it is red, you changed an equivalence class: fix the encoder, not the test.
-- [ ] Mechanically rename `Hash256` → `Id128` in all 22 production files and 8 test files. `CanonicalDigestWriter.digest(` → `IdentityEncoder.of(` (keep argument lists identical).
-- [ ] `LiveStateTree`: delete its private `digest`/`write`. `fingerprint(domain, parts)` becomes `new Fingerprint(IdentityEncoder.of(domain, parts).hex())` (the type change waits for P4). Delete the dead `contribution` v1, `fixedHex` and `FIELD`.
-- [ ] `CompilerInputs.compose` delegates to `IdentityEncoder.of(version, components).hex()`. Delete its `write`.
-- [ ] Leave domain strings at call sites **unchanged**. The function change already separates eras, and renaming 60 literals is noise. Only the accumulator and priority domains get new names, in P3.
-- [ ] Persisted fallout per §3c: 16-byte resolution identity, `FORMAT_VERSION=2`, `INDEXER_VERSION="jvmd-index-v10"`, plus the stale-snapshot miss test.
-- [ ] Delete `CanonicalDigestWriter.java` and `Hash256.java`.
+- [x] `IdentityEncoder` per §2.3–2.4, with both front doors. Add a test that both produce identical results on the oracle corpus.
+- [x] Switch the oracle test's `next` to `IdentityEncoder`. It **must be green**. If it is red, you changed an equivalence class: fix the encoder, not the test.
+- [x] Mechanically rename `Hash256` → `Id128` in all 22 production files and 8 test files. `CanonicalDigestWriter.digest(` → `IdentityEncoder.of(` (keep argument lists identical).
+- [x] `LiveStateTree`: delete its private `digest`/`write`. `fingerprint(domain, parts)` becomes `new Fingerprint(IdentityEncoder.of(domain, parts).hex())` (the type change waits for P4). Delete the dead `contribution` v1, `fixedHex` and `FIELD`.
+- [x] `CompilerInputs.compose` delegates to `IdentityEncoder.of(version, components).hex()`. Delete its `write`.
+- [x] Leave domain strings at call sites **unchanged**. The function change already separates eras, and renaming 60 literals is noise. Only the accumulator and priority domains get new names, in P3.
+- [x] Persisted fallout per §3c: 16-byte resolution identity, `FORMAT_VERSION=2`, `INDEXER_VERSION="jvmd-index-v10"`, plus the stale-snapshot miss test.
+- [x] Delete `CanonicalDigestWriter.java` and `Hash256.java`.
 
 ### P3: Accumulators and priorities without BigInteger
 - [ ] Rewrite `AlgebraicAccumulator` per §2.5. Keep the public method names (`contribution`, `plus`, `minus`, `identity`, `ZERO`) so callers do not change.
@@ -287,8 +287,8 @@ The lengths cover every branch boundary: 0, 1–3, 4–8, 9–16, 17–128, 129�
 | Phase | Commit | Date | Notes (one line) |
 |---|---|---|---|
 | P0 | d85e7ba | 2026-10-01 | In-repo harness (211 jars + resident + live tree); oracle over 3 legacy encoders, 10k samples each. |
-| P1 | see git log | 2026-10-01 | All 28 vectors + 2101 random lengths vs Python xxhash agree; 64-byte hash allocates only the result. |
-| P2 | | | |
+| P1 | 4c563f0 | 2026-10-01 | All 28 vectors + 2101 random lengths vs Python xxhash agree; 64-byte hash allocates only the result. |
+| P2 | see git log | 2026-10-01 | Oracle green; LocalArtifacts' compose was an on-disk artifact name, moved back to SHA-256 (see commit). |
 | P3 | | | |
 | P4 | | | |
 | P5 | | | |

@@ -9,6 +9,7 @@ set -euo pipefail
 mkdir -p "$2"; dump=$(readlink -f "$1"); out=$(readlink -f "$2")
 base="${dump%.hprof}"; name=$(basename "$base")
 unset JAVA_TOOL_OPTIONS
+cd "$(dirname "$dump")" # MAT writes an Eclipse workspace into the working directory
 query() { # query LABEL COMMAND
   "$MAT_HOME/ParseHeapDump.sh" "$dump" "-command=$2" -format=csv -unzip org.eclipse.mat.api:query >/dev/null 2>&1 || true
   local page; page=$(ls -t "${base}_Query/pages/"*.csv 2>/dev/null | head -1 || true)

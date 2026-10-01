@@ -109,7 +109,8 @@ final class AttributedMemos implements AutoCloseable {
      * (module selection, generated roots, processor settings), which is the only invalidator. Before,
      * the coordinate table was walked for every memo, dependency entry and {@code config:} lookup.
      */
-    private record Configured(Analyzer.Context context,Path reactorRoot,LogicalSources logical,List<Path> roots,List<Path> perClassDirectories) { }
+    private record Configured(Analyzer.Context context,Path reactorRoot,LogicalSources logical,List<Path> roots,List<Path> perClassDirectories,
+                              Map<Path,Boolean> foreign) { }
     private volatile Configured configured;
     private final java.util.concurrent.atomic.AtomicLong configDerivations=new java.util.concurrent.atomic.AtomicLong();
     private Configured configured(){
@@ -119,7 +120,7 @@ final class AttributedMemos implements AutoCloseable {
         var roots=current.sources().stream().map(root->root.toAbsolutePath().normalize()).toList();
         var directories=current.classpath().stream().map(entry->entry.toAbsolutePath().normalize())
                 .filter(entry->StaticInputs.perClass(entry,current.coordinates(),current.gav())).toList();
-        value=new Configured(current,deriveReactorRoot(current,roots),LogicalSources.of(current),roots,directories);
+        value=new Configured(current,deriveReactorRoot(current,roots),LogicalSources.of(current),roots,directories,new java.util.concurrent.ConcurrentHashMap<>());
         configured=value;return value;
     }
     private LogicalSources logical(){return configured().logical();}
@@ -516,7 +517,7 @@ final class AttributedMemos implements AutoCloseable {
         // invalidated: other units' SCCs may pass through it.
         if(attributed!=null){
             var known=new HashSet<Path>();for(Path dependency:attributed.dependencies())known.add(dependency.toAbsolutePath().normalize());
-            knownDependencies.put(file,Set.copyOf(known));
+            known(file,Set.copyOf(known));
         }
         if(attributedMemos==null||contribution==null){if(attributedMemos!=null)refuseAttributed("contribution-unavailable");return;}
         // Context warnings (processor fidelity notes) belong to the context and are part of the static
@@ -592,50 +593,106 @@ final class AttributedMemos implements AutoCloseable {
         }catch(ObservationFaults.Unavailable unknown){refuseAttributed("observation-unavailable");lastFailure=unknown.toString();}
         catch(Exception failure){attributedMemoFailures.incrementAndGet();lastFailure=failure.toString();}
     }
-    private volatile String lastFailure="",unknownSample="";
+    private volatile String lastFailure="";
+    /** Whether a unit belongs to another module's source root; once per unit and context. */
     private boolean foreignModule(Path unit,LogicalSources logical){
-        if(logical==null)return false;var id=logical.logical(unit);
-        return id.isPresent()&&!id.get().startsWith(context().gav()+"|");
+        if(logical==null)return false;
+        return configured().foreign().computeIfAbsent(unit,current->{var id=logical.logical(current);return id.isPresent()&&!id.get().startsWith(context().gav()+"|");});
     }
     private static final int PENDING_BATCH=256;
     private static final long DRAIN_INTERVAL_NANOS=2_000_000_000L;
     private long lastDrain=System.nanoTime();
     /**
+     * P3 (corrective pass): components already found final are settled. A later drain does not traverse
+     * a settled region again; it takes the recorded component as final. A component is settled only when
+     * every successor outside it is settled or a fixed sink (outside the compiler roots, or another
+     * module), so everything a settled node reaches is settled or a sink. Any change of a node's
+     * dependency set ({@link #dependenciesObserved}, {@link #known}) unsettles that node and, through the
+     * reverse edges, every settled node that reaches it: merges, splits and edges to formerly unknown
+     * nodes are re-examined. A context change clears the settled state.
+     */
+    private final Map<Path,Set<Path>> settled=new HashMap<>(),settledEdges=new HashMap<>(),settledReverse=new HashMap<>();
+    private Object settledContext;
+    private long sccDrains,sccVertexVisits,sccEdgeVisits,sccSettledReuses,sccInvalidations;
+    private volatile Path unknownSample;
+    /** Record a unit's dependency set (captured, written or restored). */
+    private void known(Path file,Set<Path> dependencies){knownDependencies.put(file,dependencies);dependenciesObserved(file,dependencies);}
+    /** Every dependency-set observation of {@code file} (Analyzer.resolveContribution, capture, restore). */
+    void dependenciesObserved(Path file,Collection<Path> dependencies){
+        file=file.toAbsolutePath().normalize();var at=settledEdges.get(file);if(at==null||context()==null)return;
+        if(!at.equals(relevant(file,dependencies)))unsettle(file);
+    }
+    /** The edges that matter for SCCs: in the compiler roots (others are sinks) and not the unit itself. */
+    private Set<Path> relevant(Path file,Collection<Path> dependencies){
+        var roots=configured().roots();var result=new HashSet<Path>();
+        for(Path dependency:dependencies){Path normalized=dependency.toAbsolutePath().normalize();if(!normalized.equals(file)&&roots.stream().anyMatch(normalized::startsWith))result.add(normalized);}
+        return result;
+    }
+    private void unsettle(Path changed){
+        var queue=new ArrayDeque<Path>();queue.add(changed);
+        while(!queue.isEmpty()){
+            Path node=queue.poll();var edges=settledEdges.remove(node);
+            if(edges==null)continue;
+            sccInvalidations++;
+            var component=settled.remove(node);
+            if(component!=null)for(Path peer:component)if(settledEdges.containsKey(peer))queue.add(peer);
+            for(Path successor:edges){var reverse=settledReverse.get(successor);if(reverse!=null){reverse.remove(node);if(reverse.isEmpty())settledReverse.remove(successor);}}
+            var reachers=settledReverse.get(node);if(reachers!=null)queue.addAll(reachers);
+        }
+    }
+    private void settle(Set<Path> component,Map<Path,Set<Path>> edgesOf){
+        for(Path member:component){
+            var edges=Set.copyOf(relevant(member,edgesOf.get(member)));
+            settled.put(member,component);settledEdges.put(member,edges);
+            for(Path successor:edges)settledReverse.computeIfAbsent(successor,ignored->new HashSet<>()).add(member);
+        }
+    }
+    /**
      * Write every pending result whose strongly connected component is final: every unit reachable
-     * from it has a known dependency set. Tarjan over the reachable graph; components complete in
-     * reverse topological order, so a component is final when no member and no successor reaches an
-     * unknown unit. When {@code closing}, the rest are refused as {@code scc-unproven}.
+     * from it has a known dependency set. Iterative Tarjan from the pending units; components complete
+     * in reverse topological order, so a component is final when no member and no successor reaches an
+     * unknown unit. Settled regions are not entered (P3). When {@code closing}, the rest are refused as
+     * {@code scc-unproven}.
      */
     void drain(boolean closing){
         if(pending.isEmpty())return;
+        sccDrains++;
+        if(settledContext!=context()){settled.clear();settledEdges.clear();settledReverse.clear();settledContext=context();}
         var roots=context()==null?List.<Path>of():configured().roots();
         var logical=context()==null?null:logical();
-        var graph=new HashMap<Path,Set<Path>>();
+        var graph=new HashMap<Path,Set<Path>>();var sinks=new HashSet<Path>();
         java.util.function.Function<Path,Set<Path>> edges=unit->graph.computeIfAbsent(unit,current->{
             var captured=pending.get(current);if(captured!=null)return captured.dependencies().keySet();
-            if(roots.stream().noneMatch(current::startsWith))return Set.of();
+            if(roots.stream().noneMatch(current::startsWith)){sinks.add(current);return Set.of();}
             // Maven reactor modules form a DAG: a unit of another module's source root cannot reach back
             // into this module, so it is a sink for this module's SCCs.
-            if(foreignModule(current,logical))return Set.of();
+            if(foreignModule(current,logical)){sinks.add(current);return Set.of();}
             var contribution=analyzer.contribution(current);
-            if(contribution==null){var known=knownDependencies.get(current);if(known!=null)return known;unknownSample=context().gav()+" -> "+current+" logical="+(logical==null?"?":logical.logical(current).orElse("none"))+" own="+knownDependencies.size();return null;}
+            if(contribution==null){var known=knownDependencies.get(current);if(known!=null)return known;unknownSample=current;return null;}
             var result=new HashSet<Path>();for(Path dependency:contribution.dependencies())result.add(dependency.toAbsolutePath().normalize());
             return result;
         });
         var index=new HashMap<Path,Integer>();var low=new HashMap<Path,Integer>();var stack=new ArrayDeque<Path>();var onStack=new HashSet<Path>();
-        var component=new HashMap<Path,Set<Path>>();var unknown=new HashMap<Set<Path>,Boolean>();int[] counter={0};
+        // Per node: its component and whether that component is final.
+        var component=new HashMap<Path,Set<Path>>();var isFinal=new HashMap<Path,Boolean>();int[] counter={0};
+        java.util.function.Predicate<Path> reuseSettled=node->{
+            var known=settled.get(node);if(known==null||pending.containsKey(node)&&!pendingMatchesSettled(node))return false;
+            index.put(node,-1);for(Path member:known){component.put(member,known);isFinal.put(member,true);}
+            sccSettledReuses++;return true;
+        };
         for(Path start:new ArrayList<>(pending.keySet())){
-            if(index.containsKey(start))continue;
+            if(index.containsKey(start)||reuseSettled.test(start))continue;
             // Iterative Tarjan: each frame is a node and the iterator over its successors.
             var frames=new ArrayDeque<Map.Entry<Path,Iterator<Path>>>();
-            index.put(start,counter[0]);low.put(start,counter[0]++);stack.push(start);onStack.add(start);
+            index.put(start,counter[0]);low.put(start,counter[0]++);stack.push(start);onStack.add(start);sccVertexVisits++;
             var startEdges=edges.apply(start);frames.push(Map.entry(start,startEdges==null?Collections.emptyIterator():startEdges.iterator()));
             while(!frames.isEmpty()){
                 var frame=frames.peek();Path node=frame.getKey();
                 if(frame.getValue().hasNext()){
-                    Path next=frame.getValue().next();
+                    Path next=frame.getValue().next();sccEdgeVisits++;
                     if(!index.containsKey(next)){
-                        index.put(next,counter[0]);low.put(next,counter[0]++);stack.push(next);onStack.add(next);
+                        if(reuseSettled.test(next))continue;
+                        index.put(next,counter[0]);low.put(next,counter[0]++);stack.push(next);onStack.add(next);sccVertexVisits++;
                         var nextEdges=edges.apply(next);frames.push(Map.entry(next,nextEdges==null?Collections.emptyIterator():nextEdges.iterator()));
                     }else if(onStack.contains(next))low.put(node,Math.min(low.get(node),index.get(next)));
                     continue;
@@ -645,25 +702,34 @@ final class AttributedMemos implements AutoCloseable {
                 if(low.get(node).equals(index.get(node))){
                     var members=new HashSet<Path>();Path member;
                     do{member=stack.pop();onStack.remove(member);members.add(member);}while(!member.equals(node));
-                    boolean reachesUnknown=false;
+                    boolean reachesUnknown=false,settleable=true;
                     for(Path value:members){
                         var successors=edges.apply(value);
                         if(successors==null){reachesUnknown=true;break;}
-                        for(Path successor:successors)if(!members.contains(successor)&&unknown.getOrDefault(component.get(successor),true)){reachesUnknown=true;break;}
+                        for(Path successor:successors){
+                            if(members.contains(successor))continue;
+                            if(!isFinal.getOrDefault(successor,false)){reachesUnknown=true;break;}
+                            if(!sinks.contains(successor)&&!settled.containsKey(successor))settleable=false;
+                        }
                         if(reachesUnknown)break;
                     }
-                    var frozen=Set.copyOf(members);unknown.put(frozen,reachesUnknown);for(Path value:members)component.put(value,frozen);
+                    var frozen=Set.copyOf(members);for(Path value:members){component.put(value,frozen);isFinal.put(value,!reachesUnknown);}
+                    if(!reachesUnknown&&settleable){var edgesOf=new HashMap<Path,Set<Path>>();for(Path value:members)edgesOf.put(value,edges.apply(value));settle(frozen,edgesOf);}
                 }
             }
         }
         for(var iterator=pending.entrySet().iterator();iterator.hasNext();){
             var entry=iterator.next();var members=component.get(entry.getKey());
-            if(members==null||unknown.getOrDefault(members,true)){
+            if(members==null||!isFinal.getOrDefault(entry.getKey(),false)){
                 if(closing){iterator.remove();refuseAttributed("scc-unproven");}
                 continue;
             }
-            iterator.remove();knownDependencies.put(entry.getKey(),Set.copyOf(entry.getValue().dependencies().keySet()));write(entry.getKey(),entry.getValue(),members);
+            iterator.remove();known(entry.getKey(),Set.copyOf(entry.getValue().dependencies().keySet()));write(entry.getKey(),entry.getValue(),members);
         }
+    }
+    /** A pending unit may reuse its settled component only if its captured dependencies are those it was settled with. */
+    private boolean pendingMatchesSettled(Path node){
+        var at=settledEdges.get(node);return at!=null&&at.equals(relevant(node,pending.get(node).dependencies().keySet()));
     }
     private void write(Path file,Pending captured,Set<Path> component){
         var dependencies=new TreeMap<QueryProof.Key,Hash256>(captured.negatives());
@@ -798,7 +864,7 @@ final class AttributedMemos implements AutoCloseable {
             projections.put(path,new Projection(hash,Hash256.fromHex(data.path("p_diag").asText())));
             var warnings=new ArrayList<>(contextWarnings());data.path("warnings").forEach(value->warnings.add(value.asText()));
             var envelope=new Envelope(data.path("tier").asInt(),"live",false,null,List.copyOf(warnings),Map.of("diagnostics",List.copyOf(problems)));
-            analyzer.dependencyGraph().recordFocused(path,dependencies);analyzer.resolveContribution(contribution);knownDependencies.put(path,Set.copyOf(dependencies));
+            analyzer.dependencyGraph().recordFocused(path,dependencies);analyzer.resolveContribution(contribution);known(path,Set.copyOf(dependencies));
             String broad=Analyzer.broadDiagnosticStamp(observed);
             analyzer.diagnosticStore().put(path,hash,context().generation(),broad,envelope,contribution.apiFingerprint(),dependencies,contribution);
             attributedMemoRestores++;
@@ -848,7 +914,8 @@ final class AttributedMemos implements AutoCloseable {
         result.put("enabled",attributedMemos!=null);result.put("writes",attributedMemoWrites.get());result.put("restores",attributedMemoRestores);
         result.put("misses",attributedMemoMisses);result.put("last_miss",lastAttributedMemoMiss);result.put("refusals",attributedMemoRefusals);
         result.put("refusal_reasons",Map.copyOf(attributedMemoRefusalReasons));result.put("failures",attributedMemoFailures.get());
-        result.put("pending_scc",pending.size());result.put("last_failure",lastFailure);result.put("scc_unknown_sample",unknownSample);result.put("miss_reasons",Map.copyOf(missReasons));result.put("early_cutoff_attributions",earlyCutoffAttributions);result.put("pending_writes",pendingMemoWrites.get());
+        result.put("pending_scc",pending.size());result.put("last_failure",lastFailure);result.put("scc_unknown_sample",unknownSample==null?"":unknownSample.toString());
+        result.put("scc",Map.of("drains",sccDrains,"vertex_visits",sccVertexVisits,"edge_visits",sccEdgeVisits,"settled_reuses",sccSettledReuses,"invalidations",sccInvalidations,"settled",settled.size()));result.put("miss_reasons",Map.copyOf(missReasons));result.put("early_cutoff_attributions",earlyCutoffAttributions);result.put("pending_writes",pendingMemoWrites.get());
         result.put("config_derivations",configDerivations.get());
         result.put("source_namespaces",sourceNamespaces.status());
         if(attributedMemos!=null)result.put("store",attributedMemos.status());

@@ -460,6 +460,28 @@ is valid for.
   with their dependency entries give 1; a reconfiguration adds exactly 1.
 - Before, the coordinate table was walked for every memo, entry and `config:` lookup.
 
+**P3, graph work (done).**
+
+- Change: `drain()` keeps settled components and does not traverse them again.
+  - A component is settled only when it is final and every successor outside it is settled or a fixed sink
+    (outside the compiler roots, or another module). Everything a settled node reaches is therefore settled or
+    a sink.
+  - Any change in a node's relevant dependency set (in-root, non-self) unsettles that node and, through reverse
+    edges, every settled node that reaches it. The change can come from `Analyzer.resolveContribution` (the one
+    point that sets contributions), a capture, a write or a restore. Merges, splits and edges to formerly unknown
+    nodes are therefore re-examined. A context change clears the settled state.
+  - Components and finality are kept per node; before, a `HashMap` keyed by the component sets hashed each
+    set on every lookup.
+  - The per-node debug string is gone (`scc_unknown_sample` keeps only the path), and `foreignModule` is cached
+    per unit and context.
+- Status: `attributed_memo.scc` (drains, vertex_visits, edge_visits, settled_reuses, invalidations, settled).
+- Breaking tests: `SccWorkCountTest`.
+  - Chain, hub, layered and random-DAG topologies, drained after every capture: cumulative vertex visits are at
+    most V and edge visits at most E (B1's drain revisited O(V²) on the chain).
+  - A two-unit cycle is written as one component.
+  - A settled pair that later becomes a cycle is unsettled: the new record binds its peer by content, and a
+    body-only edit of the peer recompiles it.
+
 ## Known limits
 
 - A unit whose javac diagnostics name another file (`foreign-diagnostic-file`) is refused.

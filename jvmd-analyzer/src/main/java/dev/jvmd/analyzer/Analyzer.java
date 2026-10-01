@@ -1081,7 +1081,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         catch(Exception failure){throw new IllegalStateException(failure);}
     }
     private void resolveContribution(FileSemanticContribution contribution,SemanticAdmission admission)throws Exception{
-        if(liveSourceState!=null)liveSourceState.semantic(contribution.file(),contribution.sourceHash(),contribution.apiFingerprint(),contribution.exportedNames());
+        if(liveSourceState!=null)liveSourceState.semantic(contribution.file(),contribution.sourceHash(),contribution.apiFingerprint(),contribution.exportedNames());attributedMemos.dependenciesObserved(contribution.file(),contribution.dependencies());
         boolean pending=dependencies.semantic().pending(contribution.file());
         var result=admission==null?dependencies.semantic().resolve(contribution):dependencies.semantic().resolvePrecise(contribution);
         if(pending){if(result.apiChanged().isEmpty())apiFingerprintUnchanged++;else apiFingerprintChanges++;}

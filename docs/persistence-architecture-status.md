@@ -654,7 +654,8 @@ document are cumulative traffic over an interval.
 2. M2 evidence at shipping defaults without the references phase. (Done: reset checkpoint 2.)
 3. Unresolved regression: cold synthetic "diagnose all" is 2.3–3.4× slower than base, with cumulative
    allocation +316%, at `5e75c4e` and `323da24`. This is the cost of capturing memos on first admission. Next:
-   one bounded attribution step, then record or repair.
+   one bounded attribution step, then record or repair. (Attributed and partly repaired: reset checkpoint 1;
+   1.4–1.7× remains.)
 4. Small fixture footprint table: inputs and persisted stores. (Done: reset checkpoint 2.)
 5. The PR body still describes superseded stages; it needs reconciling.
 6. Cold-construction follow-up (one section below), recording the inherited references failure.
@@ -676,7 +677,25 @@ document are cumulative traffic over an interval.
 - **Breaking test.** `SccWorkCountTest.drainsBackOffWhileNothingCanBeWritten`: a 600-unit chain admitted in
   reverse order keeps cumulative vertex visits at most 4·V, and all 600 records are written. It fails without the
   back-off.
-- The CI before/after comparison is recorded once it runs on this head.
+- **CI result** (before/after [36908945746](https://github.com/maxjay/jvmd/actions/runs/36908945746), head
+  `994c933` (same code as `1cb62ed`), base and head on one runner, 5,000 units). "Diagnose all":
+
+  | Session | Base | Head | Head ÷ base | Before the back-off (`eec4853`) |
+  |---|---:|---:|---:|---:|
+  | hub · cold | 14.3 s | 24.2 s | 1.69× | 2.2× |
+  | layered · cold | 16.3 s | 24.4 s | 1.50× | — |
+  | dag · cold | 18.8 s | 26.1 s | 1.39× | — |
+  | hub · A3 private method added to the hub | 17.0 s | 29.7 s | 1.75× | 1.7× |
+  | hub · A1 / A2 | 15.7 / 16.9 s | 3.3 / 3.4 s | 0.21× / 0.20× | — |
+  | layered · A1 / A4 | 17.4 / 17.6 s | 2.6 / 3.4 s | 0.15× / 0.19× | — |
+  | dag · A1 / A5 / A6 | 19.6 / 19.8 / 19.2 s | 3.6 / 7.0 / 4.2 s | 0.18× / 0.35× / 0.22× | — |
+
+- **Disposition: UNRESOLVED REGRESSION, reduced.** The back-off removed the repeated drains. Cold admission still
+  costs 1.4–1.7× base with the same 41 compiler runs: the remaining cost is capturing every unit's memo on first
+  admission. A3 also compiles in 1,189 smaller runs (misses restored on demand) against base's 41. In the hub topology every unit calls the hub, so
+  every unit completed it and all 5,000 must recompile (`RestartScenarioTest.a3…` expects exactly that set; 0
+  restored is the specified result, not a reuse failure).
+- Restart and edit scenarios restore and are 3–7× faster than base, with identical diagnostics.
 
 ### Reset checkpoint 2: restart and reopen (M2, R1)
 

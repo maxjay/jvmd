@@ -17,7 +17,7 @@ import java.util.*;
  *   <tr><td>HIERARCHY</td><td>canonical type SCIP</td><td>{@code document:} keys (document-local)</td></tr>
  *   <tr><td>NAMESPACE</td><td>{@code type:<binary>}, {@code plan:<simple>}, {@code source-roots:<logical roots>}</td><td>{@code visible} (bound to live namespace fingerprint)</td></tr>
  *   <tr><td>NEGATIVE_RESOLUTION</td><td>{@code simple@binary}</td><td>—</td></tr>
- *   <tr><td>RESOLUTION_PATH</td><td>{@code type:<binary>}, {@code logical-source:<gav|root role|relative path>}</td><td>{@code source:<absolute path>}</td></tr>
+ *   <tr><td>RESOLUTION_PATH</td><td>{@code type:<binary>}, {@code logical-source:<gav|root role|relative path>}, {@code source-roots-content:<gav|scope>}</td><td>{@code source:<absolute path>}</td></tr>
  *   <tr><td>CLASSPATH_SEARCH</td><td>{@code binary:<name>} (winner is a logical slot, §61)</td><td>{@code workspace:<session>}, {@code compiler}</td></tr>
  *   <tr><td>DOCUMENT_SCOPE, RECEIVER, ACCESSIBILITY, WORKSPACE</td><td>none</td><td>all (document/session addressed)</td></tr>
  * </table>
@@ -49,6 +49,7 @@ public final class PersistableProofKeys {
             }
             case RESOLUTION_PATH -> value.startsWith("type:")&&binary(value.substring(5))
                     ||value.startsWith("logical-source:")&&logicalSource(value.substring("logical-source:".length()))
+                    ||value.startsWith("source-roots-content:")&&logicalSource(value.substring("source-roots-content:".length()))
                     ?Optional.empty():Optional.of("source-path-resolution");
             case CLASSPATH_SEARCH -> value.startsWith("binary:")&&binary(value.substring(7))?Optional.empty():Optional.of("session-classpath-root");
             case DOCUMENT_SCOPE,RECEIVER,ACCESSIBILITY,WORKSPACE -> Optional.of("document-or-session-addressed");

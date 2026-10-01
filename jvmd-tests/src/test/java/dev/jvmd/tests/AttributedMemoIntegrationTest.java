@@ -55,6 +55,7 @@ class AttributedMemoIntegrationTest {
             assertThat(diagnostics(first,original.a())).isEmpty();
             expected=shape(diagnostics(first,original.b()));
             assertThat(expected).anyMatch(problem->problem.startsWith("compiler.err.prob.found.req"));
+            first.awaitMemoWrites();
             assertThat(memo(first,"writes")).as(memo(first).toString()).isEqualTo(2);
         }
 

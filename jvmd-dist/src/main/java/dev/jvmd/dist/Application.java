@@ -148,6 +148,11 @@ public final class Application implements AutoCloseable {
             return new Envelope(0,"live",false,null,s.warnings(),result);
         });
         dispatcher.register("symbol.overview",this::overview);
+        // §109: speculative impact of a proposed edit; nothing is admitted or invalidated.
+        dispatcher.register("semantic.impact",(s,p)->{
+            Path path=sourcePath(s,Dispatcher.required(p,"path"));
+            return analyzer(s,path).impact(path,Dispatcher.required(p,"text"));
+        });
         dispatcher.register("diag.get",(s,p)->{
             if(p.path("verified").asBoolean()){
                 if(dirty(s))throw new RpcException(-32003,"unsupported_capability",Map.of("capability","verified","reason","Save editor changes before verifying the on-disk build"));

@@ -295,6 +295,26 @@ public final class SemanticUpdatePolicy {
             return wave.run();
         }
 
+        /**
+         * Hypothetical impact (§109): consumers that would be reconsidered if these leaves took the
+         * given identities, plus everything downstream of them, without recomputing or mutating
+         * anything. A hypothetical result is unknown, so downstream consumers are included.
+         */
+        public Set<ProofConsumer> impact(Map<QueryProof.Key,Optional<Hash256>> hypotheticalLeaves){
+            Objects.requireNonNull(hypotheticalLeaves);
+            var result=new TreeSet<ProofConsumer>();var work=new ArrayDeque<ProofConsumer>();
+            for(var entry:hypotheticalLeaves.entrySet())for(var consumer:reverse.getOrDefault(entry.getKey(),Set.of())){
+                var node=nodes.get(consumer);if(node==null)continue;
+                var captured=node.evaluation().dependencies().identity(entry.getKey().domain(),entry.getKey().value());
+                if(entry.getValue().isEmpty()||captured.isEmpty()||!captured.get().equals(entry.getValue().get()))work.add(consumer);
+            }
+            while(!work.isEmpty()){
+                var consumer=work.removeFirst();if(!result.add(consumer))continue;
+                var node=nodes.get(consumer);if(node!=null)work.addAll(reverse.getOrDefault(node.evaluation().output(),Set.of()));
+            }
+            return Collections.unmodifiableSet(result);
+        }
+
         private final class Wave {
             final ProofRecomputation recomputer;
             final TreeSet<Pending> queue=new TreeSet<>();

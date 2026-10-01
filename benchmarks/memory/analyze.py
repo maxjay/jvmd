@@ -420,6 +420,27 @@ def exact_jfr(run, marks, java_home, cache):
     return {"stages": rows, "jfr_allocation_samples": {ph: top(c, 25) for ph, c in samples.items()}, "gc_events": gcs}
 
 
+def humongous(run, marks, java_home, cache, threshold=512 * 1024):
+    """Allocations of at least half a G1 region (1 MiB regions at a 1 GiB heap) from JFR ObjectAllocationOutsideTLAB."""
+    out = collections.defaultdict(lambda: {"count": 0, "bytes": 0, "max": 0})
+    for jfr in sorted(run.glob("exact-i*.jfr")):
+        inc = int(re.search(r"i(\d+)", jfr.stem).group(1))
+        ms = [m for m in marks if m["incarnation"] == inc]
+        for e in jfr_events(java_home, jfr, "jdk.ObjectAllocationOutsideTLAB", cache):
+            v = e["values"]
+            size = v.get("allocationSize") or 0
+            if size < threshold:
+                continue
+            frames = [f"{(f.get('method') or {}).get('type', {}).get('name', '?')}.{(f.get('method') or {}).get('name', '?')}"
+                      for f in ((v.get("stackTrace") or {}).get("frames") or [])]
+            site = next((f for f in frames if f.startswith("dev.jvmd.")), frames[0] if frames else "?")
+            caller = " < ".join(frames[:4])
+            key = (phase_of(ms, iso_ms(v["startTime"])), (v.get("objectClass") or {}).get("name", "?"), site, caller)
+            o = out[key]; o["count"] += 1; o["bytes"] += size; o["max"] = max(o["max"], size)
+    rows = [{"phase": k[0], "class": k[1], "site": k[2], "stack": k[3], **v} for k, v in out.items()]
+    return sorted(rows, key=lambda r: -r["bytes"])
+
+
 def _dur_ms(d):
     if d is None:
         return None
@@ -541,6 +562,7 @@ def main():
             json.dump(gc_log(run, marks), open(dst / "gc.json", "w"), indent=1)
             if a.java_home:
                 json.dump(exact_jfr(run, marks, a.java_home, cache), open(dst / "jfr.json", "w"), indent=1)
+                json.dump(humongous(run, marks, a.java_home, cache), open(dst / "humongous.json", "w"), indent=1)
         if mode in ("alloc", "live", "native"):
             phases = []
             raw = [json.loads(l) for l in open(run / "marks.jsonl")]

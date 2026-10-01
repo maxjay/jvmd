@@ -25,8 +25,10 @@ import java.util.zip.CRC32C;
  * <h2>Layout (little-endian, explicit widths, UTF-8)</h2>
  * <pre>
  *   HEADER   magic "JVMDSEG1" u64 | format u32 | symbols u32 | sections u32 | reserved u32
- *   STRINGS          sorted unique UTF-8 bytes
- *   STRING_OFFSETS   u32[strings+1]                     (StringId = dictionary ordinal, §40)
+ *   STRINGS          sorted unique UTF-8 bytes in deflate blocks of about 16 KiB raw; a string never
+ *                    spans blocks (§42)
+ *   STRING_OFFSETS   u32[strings+1] offsets into the uncompressed concatenation (StringId = ordinal, §40)
+ *   STRING_BLOCKS    (u32 rawStart, u32 compressedStart)[blocks+1] block directory, sentinel last
  *   SYMBOLS          hot rows, 8 × u32 per symbol: key fqn name owner flags descriptor signature kind
  *                    (SymbolId = row ordinal; rows are in binary-key order, so exact lookup is a
  *                    binary search over the key column — no separate id column, §40, §53)
@@ -46,13 +48,15 @@ import java.util.zip.CRC32C;
  */
 public final class MachineSegment implements AutoCloseable {
     static final long MAGIC=0x31474553444d564aL;   // "JVMDSEG1"
-    public static final int FORMAT_VERSION=1;
+    public static final int FORMAT_VERSION=2;
+    /** Raw bytes per compressed string block; small enough that one inflate per cold probe is cheap. */
+    static final int STRING_BLOCK=16*1024;
     static final int ROW=32,COLD=16;
     private static final String RANGE_DOMAIN="semantic-member-range-v1";
     private static final ValueLayout.OfInt INT=ValueLayout.JAVA_INT_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
     private static final ValueLayout.OfLong LONG=ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
 
-    enum Section { STRINGS,STRING_OFFSETS,SYMBOLS,COLD,MEMBER_ORDER,OWNER_OFFSETS,OWNER_AGGREGATES,NAME_ORDER,EDGE_OFFSETS,EDGES,IDENTITY }
+    enum Section { STRINGS,STRING_OFFSETS,SYMBOLS,COLD,MEMBER_ORDER,OWNER_OFFSETS,OWNER_AGGREGATES,NAME_ORDER,EDGE_OFFSETS,EDGES,IDENTITY,STRING_BLOCKS }
 
     /** Thrown when a segment fails validation; callers invalidate and rebuild (never partial authority). */
     public static final class CorruptSegment extends IOException {
@@ -81,9 +85,22 @@ public final class MachineSegment implements AutoCloseable {
         var dictionary=new ArrayList<>(strings);var ids=new HashMap<String,Integer>(dictionary.size()*2);
         for(int i=0;i<dictionary.size();i++)ids.put(dictionary.get(i),i);
 
-        var blob=new ByteArrayOutputStream();var offsets=buffer(4L*(dictionary.size()+1));
-        for(String value:dictionary){offsets.putInt(blob.size());blob.writeBytes(value.getBytes(StandardCharsets.UTF_8));}
-        offsets.putInt(blob.size());
+        var offsets=buffer(4L*(dictionary.size()+1));var compressed=new ByteArrayOutputStream();var blocks=new ByteArrayOutputStream();
+        {
+            var block=new ByteArrayOutputStream();int raw=0,blockStart=0;var deflater=new java.util.zip.Deflater(java.util.zip.Deflater.BEST_SPEED,true);
+            try{
+                for(String value:dictionary){
+                    byte[] bytes=value.getBytes(StandardCharsets.UTF_8);
+                    if(block.size()>0&&block.size()+bytes.length>STRING_BLOCK){
+                        sealBlock(deflater,block,blockStart,compressed,blocks);blockStart=raw;
+                    }
+                    offsets.putInt(raw);block.writeBytes(bytes);raw+=bytes.length;
+                }
+                if(block.size()>0)sealBlock(deflater,block,blockStart,compressed,blocks);
+            }finally{deflater.end();}
+            offsets.putInt(raw);
+            blocks.writeBytes(buffer(8).putInt(raw).putInt(compressed.size()).array());
+        }
 
         var rows=buffer((long)ROW*n);var cold=buffer((long)COLD*n);
         // String id -1 encodes null: absence of a value is preserved, never collapsed to "".
@@ -134,13 +151,20 @@ public final class MachineSegment implements AutoCloseable {
 
         var identity=ArtifactIndexFormat.resolutionIdentity(data);
         var sections=new LinkedHashMap<Section,byte[]>();
-        sections.put(Section.STRINGS,blob.toByteArray());sections.put(Section.STRING_OFFSETS,offsets.array());
+        sections.put(Section.STRINGS,compressed.toByteArray());sections.put(Section.STRING_OFFSETS,offsets.array());
         sections.put(Section.SYMBOLS,rows.array());sections.put(Section.COLD,cold.array());
         sections.put(Section.MEMBER_ORDER,memberOrder.array());sections.put(Section.OWNER_OFFSETS,ownerOffsets.array());
         sections.put(Section.OWNER_AGGREGATES,aggregates.toByteArray());sections.put(Section.NAME_ORDER,nameOrder.array());
         sections.put(Section.EDGE_OFFSETS,edgeOffsets.array());sections.put(Section.EDGES,edges.toByteArray());
-        sections.put(Section.IDENTITY,identity.bytes());
+        sections.put(Section.IDENTITY,identity.bytes());sections.put(Section.STRING_BLOCKS,blocks.toByteArray());
         return publish(target,n,sections);
+    }
+    private static void sealBlock(java.util.zip.Deflater deflater,ByteArrayOutputStream block,int rawStart,ByteArrayOutputStream compressed,ByteArrayOutputStream blocks){
+        blocks.writeBytes(buffer(8).putInt(rawStart).putInt(compressed.size()).array());
+        deflater.reset();deflater.setInput(block.toByteArray());deflater.finish();
+        var out=new byte[Math.max(64,block.size()+64)];
+        while(!deflater.finished()){int n=deflater.deflate(out);compressed.write(out,0,n);}
+        block.reset();
     }
 
     static Hash256 publish(Path target,int count,Map<Section,byte[]> sections)throws IOException{
@@ -179,7 +203,9 @@ public final class MachineSegment implements AutoCloseable {
     private final Arena arena;
     private final MemorySegment file;
     private final long[] offset=new long[Section.values().length],length=new long[Section.values().length];
-    private final int symbols,strings;
+    private final int symbols,strings,stringBlocks;
+    /** Recently inflated string blocks; a tiny direct-mapped cache, the page cache holds the rest (§99). */
+    private final int[] cachedBlock=new int[8];private final byte[][] cachedBytes=new byte[8][];
     private final Hash256 physicalIdentity,semanticIdentity;
 
     private MachineSegment(Arena arena,MemorySegment file,boolean verifyChecksums)throws CorruptSegment{
@@ -209,6 +235,9 @@ public final class MachineSegment implements AutoCloseable {
                 ||length[Section.OWNER_OFFSETS.ordinal()]!=4L*(symbols+1)||length[Section.NAME_ORDER.ordinal()]!=4L*symbols
                 ||length[Section.EDGE_OFFSETS.ordinal()]!=4L*(symbols+1)||length[Section.IDENTITY.ordinal()]!=32)
             throw new CorruptSegment("section sizes");
+        stringBlocks=(int)(length[Section.STRING_BLOCKS.ordinal()]/8)-1;
+        if(stringBlocks<0||length[Section.STRING_BLOCKS.ordinal()]%8!=0)throw new CorruptSegment("string blocks");
+        Arrays.fill(cachedBlock,-1);
         byte[] semantic=new byte[32];MemorySegment.copy(file,ValueLayout.JAVA_BYTE,offset[Section.IDENTITY.ordinal()],semantic,0,32);
         semanticIdentity=new Hash256(semantic);
     }
@@ -244,9 +273,28 @@ public final class MachineSegment implements AutoCloseable {
         if(id==-1)return null;
         if(id<0||id>=strings)throw new IndexOutOfBoundsException("string "+id);
         int start=intAt(Section.STRING_OFFSETS,id),end=intAt(Section.STRING_OFFSETS,id+1);
-        byte[] bytes=new byte[end-start];
-        MemorySegment.copy(file,ValueLayout.JAVA_BYTE,offset[Section.STRINGS.ordinal()]+start,bytes,0,bytes.length);
-        return new String(bytes,StandardCharsets.UTF_8);
+        if(start==end)return "";
+        int low=0,high=stringBlocks-1;
+        while(low<high){int middle=(low+high+1)>>>1;if(intAt(Section.STRING_BLOCKS,2L*middle)<=start)low=middle;else high=middle-1;}
+        int rawStart=intAt(Section.STRING_BLOCKS,2L*low);
+        return new String(block(low),start-rawStart,end-start,StandardCharsets.UTF_8);
+    }
+    private byte[] block(int index){
+        int slot=index&(cachedBlock.length-1);
+        synchronized(cachedBlock){if(cachedBlock[slot]==index)return cachedBytes[slot];}
+        int rawStart=intAt(Section.STRING_BLOCKS,2L*index),rawEnd=intAt(Section.STRING_BLOCKS,2L*index+2);
+        int from=intAt(Section.STRING_BLOCKS,2L*index+1),to=intAt(Section.STRING_BLOCKS,2L*index+3);
+        if(rawEnd<rawStart||to<from||to>length[Section.STRINGS.ordinal()])throw new IllegalStateException("corrupt string block "+index);
+        byte[] input=new byte[to-from];MemorySegment.copy(file,ValueLayout.JAVA_BYTE,offset[Section.STRINGS.ordinal()]+from,input,0,input.length);
+        byte[] output=new byte[rawEnd-rawStart];var inflater=new java.util.zip.Inflater(true);
+        try{
+            inflater.setInput(input);int done=0;
+            while(done<output.length){int n=inflater.inflate(output,done,output.length-done);if(n==0&&(inflater.finished()||inflater.needsInput()))break;done+=n;}
+            if(done!=output.length)throw new IllegalStateException("corrupt string block "+index);
+        }catch(java.util.zip.DataFormatException invalid){throw new IllegalStateException("corrupt string block "+index,invalid);}
+        finally{inflater.end();}
+        synchronized(cachedBlock){cachedBlock[slot]=index;cachedBytes[slot]=output;}
+        return output;
     }
     public String key(int id){return string(row(id,0));}
     public String name(int id){return nz(string(row(id,2)));}

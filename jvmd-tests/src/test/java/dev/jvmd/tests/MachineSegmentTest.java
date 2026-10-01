@@ -43,6 +43,13 @@ class MachineSegmentTest {
                 assertThat(segment.exact(symbol.key())).isEqualTo(symbol.id());
             }
             assertThat(segment.exact("com.fasterxml.jackson.databind.DoesNotExist")).isEqualTo(-1);
+            // W8: the string section is deflate-compressed in blocks; every string above decoded from it.
+            var strings=new TreeSet<String>();
+            for(var symbol:data.symbols())for(String value:Arrays.asList(symbol.key(),symbol.fqn(),symbol.name(),symbol.descriptor(),symbol.signature(),
+                    symbol.kind(),symbol.resolution().encode(),symbol.metadataJson(),symbol.entry(),String.join("\u0000",symbol.parameters())))if(value!=null)strings.add(value);
+            long raw=strings.stream().mapToLong(value->value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length).sum();
+            assertThat(segment.sectionBytes().get("strings")).as("compressed strings vs %d raw bytes",raw).isLessThan(raw/2);
+            assertThat(segment.sectionBytes().get("string_blocks")).isGreaterThan(8L*4);
 
             int mapper=segment.exact("com.fasterxml.jackson.databind.ObjectMapper");
             var expectedMembers=data.symbols().stream().filter(symbol->symbol.ownerId()==mapper&&symbol.name().startsWith("read"))

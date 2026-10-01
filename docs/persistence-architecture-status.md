@@ -508,6 +508,39 @@ is valid for.
   - A settled pair that later becomes a cycle is unsettled: the new record binds its peer by content, and a
     body-only edit of the peer recompiles it.
 
+### Checkpoint 3: owner propagation (stream C)
+
+**P4, result cutoff on the production owner path.** Production code is unchanged here; this is evidence of
+how the existing path behaves, with tests.
+
+- Live path: an edit resolves the new contribution (`Analyzer.resolveContribution`). `SemanticUpdatePolicy`
+  compares the API result and the names consumers actually use, and only an API change that a consumer uses
+  reaches it. That consumer's diagnostics and compiler caches are invalidated. On its next read it is
+  re-attributed, its own API is compared again, and propagation stops at the first equal result.
+- Restored path: a restored record's `logical-unit:` entry compares the dependency's current P_diag
+  (`currentProjection`), restoring or attributing the dependency first. An unchanged P_diag restores the
+  consumer without javac.
+- Deferred consumers:
+  - Source-attribution consumers and document contexts (except completion ranges, which are re-evaluated from
+    their leaves) are deferred: they need javac.
+  - The continuation is owner-side. A deferred source consumer's file joins `affected` (diagnostic store and
+    compiler caches invalidated); a deferred document consumer's cached document semantics are removed. The
+    next read for that file therefore recomputes, and nothing serves the pre-change answer.
+- Breaking tests: `OwnerCutoffTest`. Each answer is compared with a fresh analyzer's diagnostics for the same
+  sources.
+  - An unrelated member change: B and C are not recompiled.
+  - An overload change that B uses: B is recompiled and now reports `cant.apply`; C is not recompiled.
+  - An unequal-depth diamond: evaluated once.
+  - Restored consumers after a relevant change: B is reconsidered; C is cut off at B's equal P_diag.
+  - Restored consumers after an unrelated change: C stays restored.
+  - A deferred completion context: the next request offers the new member.
+- Limits:
+  - The restored path is coarser than the live one. P_diag is a dependency's whole diagnostic-relevant API, so
+    a restored consumer that names A is reconsidered on any change to A's API, while the live path matches
+    the names used.
+  - Document contexts other than completion ranges are not re-evaluated during propagation; they wait for the
+    next read.
+
 ## Known limits
 
 - A unit whose javac diagnostics name another file (`foreign-diagnostic-file`) is refused.

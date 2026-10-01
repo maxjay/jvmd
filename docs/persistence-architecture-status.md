@@ -638,7 +638,7 @@ document are cumulative traffic over an interval.
 | R1 constructive restore | REQUIRED NOW | Function table written (checkpoint 3); fresh-process editor evidence still needed |
 | R2 readiness | REQUIRED NOW | COMPLETED WITH EVIDENCE: `ReadinessGatingTest` (faulted scan, offline addition) |
 | M1 first-use references within 60 s at 1 GiB | WITHDRAWN as a #55 gate | PRE-EXISTING FAILURE (B0 also fails); tracked under cold construction below |
-| M2 reopen workspace-used state | REQUIRED NOW | B1 equivalent budget: reopened, with a correct definition after restart. Shipping defaults: not reached (the runner died during references). Needs its own evidence |
+| M2 reopen workspace-used state | REQUIRED NOW | COMPLETED WITH EVIDENCE: equivalent and shipping, without the references phase (reset checkpoint 2) |
 | M3/M4 broad resource and lifetime programme | Narrowed to publication correctness and lifetime safety | Streamed bindings with sliced publication and failure discard: `BoundedBindingsBuildTest` |
 | Reduce the 35/67.8/82 GB totals | DEFERRED — COLD CONSTRUCTION | Improvements already made are kept |
 | Three-subject all-profiler matrix | Replaced by the bounded validation plan | — |
@@ -651,11 +651,11 @@ document are cumulative traffic over an interval.
    and a safe close and reopen. The real-project leg of `jvmd-before-after` currently fails in the harness:
    `benchmarks/persistence.ts` calls the full `session.status`, which exceeds the response budget ("Response
    contains an unsplittable value"). Harness fix needed.
-2. M2 evidence at shipping defaults without the references phase.
+2. M2 evidence at shipping defaults without the references phase. (Done: reset checkpoint 2.)
 3. Unresolved regression: cold synthetic "diagnose all" is 2.3–3.4× slower than base, with cumulative
    allocation +316%, at `5e75c4e` and `323da24`. This is the cost of capturing memos on first admission. Next:
    one bounded attribution step, then record or repair.
-4. Small fixture footprint table: inputs and persisted stores.
+4. Small fixture footprint table: inputs and persisted stores. (Done: reset checkpoint 2.)
 5. The PR body still describes superseded stages; it needs reconciling.
 6. Cold-construction follow-up (one section below), recording the inherited references failure.
 
@@ -677,6 +677,63 @@ document are cumulative traffic over an interval.
   reverse order keeps cumulative vertex visits at most 4·V, and all 600 records are written. It fails without the
   back-off.
 - The CI before/after comparison is recorded once it runs on this head.
+
+### Reset checkpoint 2: restart and reopen (M2, R1)
+
+The lifecycle control without the references phase (`memory_control` = `equivalent-no-references` /
+`shipping-no-references`), apache/maven fixture, head `eec4853` against B0 `c8fcb9f`, all dispatched together.
+Times are first correct answers; seconds are since the restarted process spawned.
+
+| Run | Config | Reopen after close, definition | Restart READY (M24) | Workspace reopened (M25) | First correct definition after restart (M26) | Request |
+|---|---|---:|---:|---:|---:|---:|
+| [36906898358](https://github.com/maxjay/jvmd/actions/runs/36906898358) head | equivalent | 1.3 s | 1.0 s | 9.8 s | 12.6 s | 2.7 s |
+| [36906906339](https://github.com/maxjay/jvmd/actions/runs/36906906339) B0 | equivalent | 22.6 s | 1.2 s | 9.0 s | 33.4 s | 24.3 s |
+| [36906902564](https://github.com/maxjay/jvmd/actions/runs/36906902564) head | shipping | 0.8 s | 0.8 s | 8.0 s | 10.2 s | 2.2 s |
+| [36906909577](https://github.com/maxjay/jvmd/actions/runs/36906909577) B0 | shipping | 24.2 s | 1.3 s | 9.2 s | 35.7 s | 26.5 s |
+
+- **M2: COMPLETED WITH EVIDENCE at both configurations.** The workspace reopens after close and after a daemon
+  restart, and the first definition is correct; the head answers 9–12× sooner than base. The first correct
+  completion after restart (head) is at 11.0 s (shipping), 0.7 s after the definition.
+- **What the restart reuses here.** This lifecycle diagnoses only two documents, so their SCCs are never final
+  and no `attributed-diagnostics` record is written (`scc-unproven`; the local run at `1cb62ed` wrote no
+  `local-memo-v1` at all). The restart's definition is fresh attribution of the open unit. The gain comes from
+  the persisted workspace state (file observations, project graphs, processor results) and in-process reuse,
+  not from LOCAL memo hits. Restored LOCAL memo hits are shown by the real-project restart suite and the
+  synthetic restart scenarios, not by this control.
+- **Failures in these runs, all inherited.** Hover (first and warm) and `documentSymbol` exceed the 64 KiB
+  editor response budget on head and B0 alike (3 failures in every run). They are PRE-EXISTING FAILURES, not
+  regressions of this PR.
+- **Observed memory (not a gate).** Heap used at READY, shipping: head 1,448 MB, B0 1,082 MB (RSS 2,367 vs
+  1,979 MB). At the equivalent budget the order reverses (head 136 MB, B0 168 MB), so this sample reflects
+  collection timing rather than retained state. Restart READY: head 35 MB heap, 174 MB RSS; B0 59 MB, 206 MB.
+- Cumulative allocation to READY is about 34.9 GB on both (supporting diagnostic only).
+
+**Footprint (local apache/maven fixture, no-references lifecycle at `1cb62ed`, equivalent budget).** Inputs and
+persisted state are different quantities and are not added.
+
+| Input | Count | Bytes |
+|---|---:|---:|
+| Binary jars in the local repository | 490 | 184.1 MB |
+| of which SNAPSHOT jars | 34 | 5.0 MB |
+| Source or javadoc jars | 0 | — |
+| Workspace main sources (203 `pom.xml`) | 1,899 | 9.4 MB |
+| Workspace test sources | 1,311 | 6.5 MB |
+| Generated sources | 214 | 3.0 MB |
+| Compiled classes | 2,503 | 11.0 MB |
+| JDK `modules` image / `ct.sym` | — | 144.5 MB / 10.8 MB |
+
+| Persisted store | Bytes |
+|---|---:|
+| MACHINE index (`db`, RocksDB SST) | 526 MB |
+| Workspace semantic store (`store`) | 1.8 MB |
+| File observations (two registries) | 1.4 MB + 1.9 MB |
+| Project graphs (`graphs`) | 1.4 MB |
+| Processor results (`apt`) | 177 KB |
+| LOCAL memos (`local-memo-v1`) | none written in this lifecycle (`scc-unproven`) |
+| Total | about 533 MB |
+
+Observed in that run: restart READY at 1.1 s, workspace reopened at 9.5 s, correct definition at 11.4 s
+(request 1.8 s), completion at 12.0 s. All oracles passed except `documentSymbol` (64 KiB, inherited).
 
 ### Cold construction and first-use references (deferred follow-up)
 

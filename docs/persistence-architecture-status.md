@@ -562,6 +562,18 @@ how the existing path behaves, with tests.
 - Not yet covered: per-workspace readiness (a workspace's own inputs current while unrelated repository work
   continues). Today only the machine-wide reconciliation is reported.
 
+### Checkpoint 3: what each persisted function restores (R1)
+
+| Function or result | Stored payload | Validity evidence | Restored consumers | Remaining work after a hit |
+|---|---|---|---|---|
+| `s0-namespace` v1 (`SourceNamespaces`) | Package, top-level and nested type names, declarations; COMPLETE or PARTIAL | Content hash, javac runtime version, language mode (`--source`, preview); empty certificate | Package identities of attributed-memo certificates (`currentPackageIdentity`) | None for that file's syntactic namespace |
+| `attributed-diagnostics` v6 (`AttributedMemos`) | Diagnostics and warnings in javac's exact form, API fingerprint, exported and unresolved names, dependency logical ids, P_diag | Static key (source content, context, logical classpath slots with content identities, platform, processors, options) plus a precise certificate: dependency P_diag or content, own and on-demand package S0 identities, class-package and reactor-class entries, negative resolutions, processor resources | `DiagnosticStore` (served as diagnostics), the dependency graph (`recordFocused`), the semantic contribution (`resolveContribution`, which also feeds the live source owner), `knownDependencies`, `projections` (for dependants' early cutoff) | No occurrence graph, symbol facts or document query contexts: definition, hover, references and completion on a restored unit attribute it on first use (bounded to that unit and its context) |
+| External processor result (`AnnotationProcessing`, `apt/**/index.json`) | The processor run's output roots, binary sources and javac diagnostics, under a logical fingerprint | Input fingerprint: sources, classpath, processor path, options and `lombok.config` content | The module's compile context (generated roots and hidden units) and its published diagnostics | None for the processor run; units are attributed or restored through `attributed-diagnostics` |
+
+The restart benchmarks time the first editor operations after a restore: the memory control's M24–M26
+(READY, first correct definition and completion after restart) and the real-project restart suite. Their F
+results are recorded at checkpoint 5.
+
 ## Known limits
 
 - A unit whose javac diagnostics name another file (`foreign-diagnostic-file`) is refused.

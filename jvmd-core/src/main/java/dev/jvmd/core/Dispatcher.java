@@ -17,6 +17,12 @@ public final class Dispatcher {
     private final Map<String, Supplier<Object>> statusProviders = new ConcurrentHashMap<>();
     private final ResponseBudget budgets=new ResponseBudget();
     private final AtomicBoolean shutdown = new AtomicBoolean();
+    private volatile java.util.function.BiFunction<String,Envelope,Envelope> decorator=(_,envelope)->envelope;
+    /**
+     * Annotate handler envelopes, e.g. to state that an index-tier answer was produced while the
+     * repository inventory is still reconciling. Decoration may add warnings; it never changes results.
+     */
+    public void decorate(java.util.function.BiFunction<String,Envelope,Envelope> value){decorator=java.util.Objects.requireNonNull(value);}
     public Dispatcher(Sessions sessions, Metrics metrics) {
         this.sessions = sessions; this.metrics = metrics;
         register("daemon.status", (_, _) -> Envelope.of(2, "index", status()));
@@ -33,7 +39,7 @@ public final class Dispatcher {
     public Envelope query(Session session,String method,JsonNode params)throws Exception{
         if(session==null||method.startsWith("daemon.")||method.startsWith("session."))throw RpcException.invalid("An in-process query requires a workspace method");
         var handler=methods.get(method);if(handler==null)throw new RpcException(-32601,"Method not found",Map.of("method",method));
-        return session.execute(()->RequestScope.call(method,()->{var result=handler.call(session,params);if(result==null)throw new IllegalStateException("Handler omitted envelope");return result;}));
+        return session.execute(()->RequestScope.call(method,()->{var result=handler.call(session,params);if(result==null)throw new IllegalStateException("Handler omitted envelope");return decorator.apply(method,result);}));
     }
     public void register(String name, Handler handler) { methods.put(name, handler); }
     public java.util.Set<String> methods() { return java.util.Set.copyOf(methods.keySet()); }
@@ -82,6 +88,7 @@ public final class Dispatcher {
                 int priority=method.startsWith("document.")?0:method.equals("lsp.diagnostics")?1:method.equals("diag.get")?(params.path("paths").isEmpty()?5:3):2;
                 envelope = session == null ? RequestScope.call(method,()->handler.call(null,params)) : session.execute(priority,() -> RequestScope.call(method,()->handler.call(session,params)));
                 if (envelope == null) throw new IllegalStateException("Handler omitted envelope");
+                envelope = decorator.apply(method, envelope);
                 try(var span=RequestScope.stage("response.encode")){response.set("result", Json.MAPPER.valueToTree(envelope));}
             }
             if(id!=null)response=budgets.enforce(response,method,params);

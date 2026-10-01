@@ -14,6 +14,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class DaemonIndexReadinessTest {
     @TempDir Path temp;
 
+    /**
+     * Opt-in strict gating. By default readiness is session capability and the repository scan
+     * proceeds independently (architecture §95, see ReadinessGatingTest).
+     */
     @Test void sessionOpenReturnsOnlyAfterTheInitialRepositoryScanIsReady() throws Exception {
         var base = TestSupport.config(temp, Duration.ofHours(4));
         IndexFixtures.jar(
@@ -36,7 +40,9 @@ class DaemonIndexReadinessTest {
 
         String property = "jvmd.index.scan.initial_delay_seconds";
         String previous = System.getProperty(property);
+        String strict = System.getProperty("jvmd.ready.awaitRepositoryScan");
         System.setProperty(property, "0");
+        System.setProperty("jvmd.ready.awaitRepositoryScan", "true");
         try (var app = new Application(config)) {
             var opened = TestSupport.request(
                     app.dispatcher(),
@@ -51,6 +57,8 @@ class DaemonIndexReadinessTest {
         } finally {
             if (previous == null) System.clearProperty(property);
             else System.setProperty(property, previous);
+            if (strict == null) System.clearProperty("jvmd.ready.awaitRepositoryScan");
+            else System.setProperty("jvmd.ready.awaitRepositoryScan", strict);
         }
     }
 }

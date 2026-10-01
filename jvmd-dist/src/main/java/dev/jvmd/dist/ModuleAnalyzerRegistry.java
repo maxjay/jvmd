@@ -21,7 +21,10 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
     private final Map<Path,FileSemanticContribution> contributions=new HashMap<>();
     private final int parallelism;
     private final FileStateRegistry classpathFiles;
+    private volatile dev.jvmd.index.SemanticMemoStore memos;
     private boolean closed;
+    /** LOCAL memo store shared by every module actor; records are independently validated. */
+    public ModuleAnalyzerRegistry memos(dev.jvmd.index.SemanticMemoStore store){memos=store;return this;}
 
     public ModuleAnalyzerRegistry(){this(configuredParallelism(),new FileStateRegistry());}
     public ModuleAnalyzerRegistry(int parallelism){this(parallelism,new FileStateRegistry());}
@@ -215,7 +218,8 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
             long documentGeneration=documents.generation();
             if(Objects.equals(generation,context.generation())&&this.index==index&&this.budget==budget
                     &&documentsGeneration==documentGeneration&&Objects.equals(this.persistence,persistence))return;
-            call(()->{analyzer.configure(context,index,budget);analyzer.documents(documents);analyzer.persistence(persistence);return null;});
+            var store=memos;
+            call(()->{analyzer.configure(context,index,budget);analyzer.documents(documents);analyzer.persistence(persistence);if(store!=null)analyzer.memos(store);return null;});
             generation=context.generation();this.index=index;this.budget=budget;documentsGeneration=documentGeneration;this.persistence=persistence;
         }
         private <T> T call(Callable<T> work)throws Exception{

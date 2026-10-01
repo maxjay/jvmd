@@ -48,6 +48,9 @@ public final class IndexService implements AutoCloseable {
         this.storage=Objects.requireNonNull(storage);this.store=Objects.requireNonNull(storage.store());
     }
     public IndexStore store(){return store;}
+    /** Whether the started repository reconciliation has completed at least once. */
+    public boolean repositoryReconciled(){return readiness.isDone()&&!readiness.isCompletedExceptionally();}
+    public CompletableFuture<Void> repositoryReconciliation(){return readiness;}
     public long generation(){return indexed.get();}
     public CompletableFuture<Void> start(){
         long initialDelaySeconds=Long.getLong("jvmd.index.scan.initial_delay_seconds",2L);

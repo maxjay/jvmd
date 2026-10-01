@@ -190,6 +190,17 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private LiveSourceState liveSourceState;
     private DiagnosticSnapshots snapshots;
     public void persistence(Path directory){if(snapshots==null){snapshots=new DiagnosticSnapshots(directory);diagnosticStore.persistence(snapshots);snapshots.documents(documents);}}
+    /** Attach the LOCAL semantic memo store used for attributed memos and S0 namespace identities. */
+    public void memos(SemanticMemoStore store){
+        attributedMemos=store;sourceNamespaces=new SourceNamespaces(store);namespaceCache.clear();
+    }
+    private SemanticMemoStore attributedMemos;
+    private SourceNamespaces sourceNamespaces=new SourceNamespaces(null);
+    private record NamespaceEntry(String hash,Object value) { }
+    private final Map<Path,NamespaceEntry> namespaceCache=new HashMap<>();
+    private long attributedMemoWrites,attributedMemoRestores,attributedMemoMisses,attributedMemoRefusals,attributedMemoFailures;
+    private final Map<String,Long> attributedMemoRefusalReasons=new TreeMap<>();
+    private String lastAttributedMemoMiss="";
     private long budget;
 
     private String platformFingerprint()throws Exception{
@@ -1295,6 +1306,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var restored=restoreDiagnostics(path,hash,precise);
         String broad=broadDiagnosticStamp(observed);
         if(restored==null&&!precise.equals(broad))restored=restoreDiagnostics(path,hash,broad);
+        if(restored==null)restored=restoreAttributed(path,hash,observed);
         return restored;
     }
     public Envelope diagnostics(Path path,Documents documents)throws Exception{
@@ -1348,6 +1360,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
                 while(focused.size()>32)focused.remove(focused.keySet().iterator().next());
                 diagnosticStore.put(file,hash,context.generation(),diagnosticStamp(file,observed),envelope,
                         apiFingerprint(file),snapshot.dependencies(),contribution(file),broadDiagnosticStamp(observed));
+                memoizeAttributed(file,hash,envelope,contribution(file));
                 publishSource(file,hash,stamp,semanticPublisherContextFingerprint(observed,stamp),snapshot,result.tier());
             }
         }
@@ -1390,6 +1403,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(outcome.warnings().isEmpty())diagnosticStore.put(path,sourceHash,generation,diagnosticStamp(path,observed),envelope,
                 apiFingerprint(path),outcome.result()==null?Set.of():outcome.result().dependencies(),
                 outcome.tier()==2?contribution(path):null,broadDiagnosticStamp(observed));
+        if(outcome.warnings().isEmpty()&&outcome.tier()==2)memoizeAttributed(path,sourceHash,envelope,contribution(path));
         return envelope;
     }
     private String residentContextKey(Path file,String patched,int start,CompilerInputs.Snapshot inputs,boolean qualified){
@@ -2459,12 +2473,212 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         if(substring)return Objects.toString(symbol.get("name_path"),"").contains(ref)||Objects.toString(symbol.get("name"),"").contains(ref);
         return NamePath.parse(ref).matches(symbol);
     }
+    // ---- Phase 8: attributed LOCAL memos (architecture §68–75, §84, §87) ----
+
+    /** Bump when the attributed result, its canonical encoding or its certificate rules change (§81). */
+    static final SemanticMemoStore.Function ATTRIBUTED=new SemanticMemoStore.Function("attributed-diagnostics",1);
+
+    private <T> Optional<T> refuseAttributed(String reason){
+        attributedMemoRefusals++;attributedMemoRefusalReasons.merge(reason,1L,Long::sum);return Optional.empty();
+    }
+    private static boolean processorsConfigured(Context context){
+        if(!context.binarySources().isEmpty())return true;
+        for(String option:context.compilerOptions()){
+            if(option.equals("-processor")||option.startsWith("-processorpath")||option.startsWith("--processor-path")
+                    ||option.startsWith("--processor-module-path")||option.equals("-proc:full")||option.equals("-proc:only")
+                    ||option.startsWith("-A"))return true;
+        }
+        return context.warnings().stream().anyMatch(warning->warning.contains("processor")||warning.contains("lombok"));
+    }
+    /** Platform identity from content only: the JDK location is not part of semantic meaning (§103). */
+    private Hash256 platformContentIdentity()throws Exception{
+        Path home=Path.of(System.getProperty("java.home")).toAbsolutePath().normalize();
+        var values=new ArrayList<Object>();
+        for(String name:List.of("release","lib/modules","lib/ct.sym"))values.add(List.of(name,inputFiles.hash(home.resolve(name))));
+        return CanonicalDigestWriter.digest("semantic-platform-content-v1",Runtime.version().toString(),values);
+    }
+    /**
+     * Static memo key (§70, §84): everything the in-process compiler owner holds fixed. Returns empty
+     * when any ambient input cannot be bound logically; that context is simply not memoised.
+     */
+    private Optional<SemanticMemoStore.StaticKey> attributedStaticKey(Path file,String sourceHash,LogicalSources logical)throws Exception{
+        if(attributedMemos==null||context==null)return Optional.empty();
+        if(!context.preciseSourceRoots())return refuseAttributed("imprecise-source-roots");
+        if(hasUnprovenPathOptions(context))return refuseAttributed("path-options");
+        if(processorsConfigured(context))return refuseAttributed("annotation-processors");
+        var source=logical.logical(file);if(source.isEmpty())return refuseAttributed("non-logical-source");
+        for(Path root:context.sources())if(logical.logical(root.resolve("x.java")).isEmpty())return refuseAttributed("non-logical-source-root");
+        Hash256 classpath;
+        if(context.classpath().isEmpty())classpath=ClasspathSequence.empty().identity();
+        else{
+            var caches=modules.get(context.generation());
+            if(caches==null||!caches.classpathPrecise||caches.classpathSequence==null)return refuseAttributed("classpath-unproven");
+            classpath=caches.classpathSequence.identity();
+        }
+        var classpathContext=classpathContext(context);
+        var roots=logical.roots().stream().map(LogicalSources.Root::logical).sorted().toList();
+        return Optional.of(SemanticMemoStore.StaticKey.of(ATTRIBUTED,source.get(),sourceHash,context.gav(),classpathContext.scope(),
+                context.release(),context.compilerOptions(),platformContentIdentity(),classpath,roots));
+    }
+    private String namespaceKey(){return "source-roots:"+context.gav()+"|"+classpathContext(context).scope();}
+    /**
+     * Coarse namespace identity of every compiler source root, from S0 top-level declarations.
+     * Adding, removing or renaming a type anywhere in the roots changes it; body edits do not.
+     */
+    private Optional<Hash256> sourceRootsNamespaceIdentity(LogicalSources logical)throws Exception{
+        var entries=new ArrayList<Object>();var mode=SourceNamespaces.LanguageMode.of(context.compilerOptions());
+        for(Path root:context.sources()){
+            var files=new ArrayList<Path>(inputFiles.inventory(root.toAbsolutePath().normalize(),".java",true));
+            for(Path open:documents.paths())if(open.startsWith(root.toAbsolutePath().normalize())&&open.toString().endsWith(".java")&&!files.contains(open))files.add(open);
+            files.sort(Comparator.naturalOrder());
+            for(Path file:files){
+                var id=logical.logical(file);if(id.isEmpty())return Optional.empty();
+                if(!documents.contains(file)&&!Files.isRegularFile(file))continue;
+                String hash=documents.sourceHash(file);
+                String name=file.getFileName().toString();
+                if(name.equals("module-info.java")||name.equals("package-info.java")){entries.add(List.of(id.get(),hash));continue;}
+                var cached=namespaceCache.get(file);
+                Object value;
+                if(cached!=null&&cached.hash().equals(hash))value=cached.value();
+                else{
+                    var namespace=sourceNamespaces.namespace(documents.text(file),mode);
+                    value=List.of(namespace.completeness().name(),namespace.packageName(),namespace.topLevelTypes());
+                    if(namespace.completeness()!=SemanticCompleteness.COMPLETE)value=List.of("partial",hash);
+                    namespaceCache.put(file,new NamespaceEntry(hash,value));
+                }
+                entries.add(List.of(id.get(),value));
+            }
+        }
+        return Optional.of(CanonicalDigestWriter.digest("attributed-source-namespace-v1",entries));
+    }
+    private static Hash256 logicalContentIdentity(String hash){return CanonicalDigestWriter.digest("logical-source-content-v1",hash);}
+    /**
+     * Dynamic certificate (§71, §75 option B): the content identity of every source in the unit's
+     * transitive dependency closure plus the namespace of all compiler source roots. A closure member
+     * without a complete contribution means coverage is unproven, so nothing is memoised.
+     */
+    private Optional<SemanticMemoStore.Certificate> attributedCertificate(Path file,LogicalSources logical)throws Exception{
+        var dependencies=new TreeMap<QueryProof.Key,Hash256>();
+        var queue=new ArrayDeque<Path>();var seen=new HashSet<Path>();queue.add(file.toAbsolutePath().normalize());
+        while(!queue.isEmpty()){
+            Path current=queue.removeFirst();if(!seen.add(current))continue;
+            if(!current.equals(file.toAbsolutePath().normalize())){
+                if(contribution(current)==null||this.dependencies.semantic().pending(current))return refuseAttributed("incomplete-dependency-closure");
+                var id=logical.logical(current);if(id.isEmpty())return refuseAttributed("non-logical-dependency");
+                dependencies.put(new QueryProof.Key(QueryProof.Domain.RESOLUTION_PATH,"logical-source:"+id.get()),
+                        logicalContentIdentity(documents.sourceHash(current)));
+            }
+            queue.addAll(this.dependencies.semantic().dependencies(current));
+        }
+        var namespace=sourceRootsNamespaceIdentity(logical);if(namespace.isEmpty())return refuseAttributed("non-logical-namespace");
+        dependencies.put(new QueryProof.Key(QueryProof.Domain.NAMESPACE,namespaceKey()),namespace.get());
+        try{
+            return Optional.of(new SemanticMemoStore.Certificate(new QueryProof(dependencies.entrySet().stream()
+                    .map(entry->new QueryProof.Dependency(entry.getKey(),entry.getValue())).toList())));
+        }catch(IllegalArgumentException notPersistable){return refuseAttributed("non-persistable-key");}
+    }
+    /** Persist one complete attributed result. Best effort: failure is a later miss, never an error. */
+    private void memoizeAttributed(Path file,String sourceHash,Envelope envelope,FileSemanticContribution contribution){
+        if(attributedMemos==null||contribution==null||!envelope.warnings().isEmpty())return;
+        try{
+            var logical=LogicalSources.of(context);
+            var key=attributedStaticKey(file,sourceHash,logical);if(key.isEmpty())return;
+            if(!contribution.sourceHash().equals(sourceHash))return;
+            var certificate=attributedCertificate(file,logical);if(certificate.isEmpty())return;
+            var dependencies=new ArrayList<String>();
+            for(Path dependency:contribution.dependencies()){
+                var id=logical.logical(dependency);if(id.isEmpty()){refuseAttributed("non-logical-dependency");return;}
+                dependencies.add(id.get());
+            }
+            dependencies.sort(String::compareTo);
+            var problems=new ArrayList<Map<String,Object>>();
+            for(var problem:(List<?>)((Map<?,?>)envelope.result()).get("diagnostics")){
+                var value=(CompilerPool.Problem)problem;
+                String fileId=value.file()==null?null:sameFile(value.file(),file)?"self":null;
+                if(value.file()!=null&&fileId==null){refuseAttributed("foreign-diagnostic-file");return;}
+                var row=new LinkedHashMap<String,Object>();
+                row.put("source",value.source());row.put("tier",value.tier());row.put("code",value.code());row.put("kind",value.kind());
+                row.put("file",fileId);row.put("line",value.line());row.put("character",value.character());
+                row.put("start",value.start());row.put("end",value.end());row.put("message",logical.toLogicalText(value.message()));
+                problems.add(row);
+            }
+            var result=new LinkedHashMap<String,Object>();
+            result.put("tier",envelope.tier());result.put("diagnostics",problems);
+            result.put("api",contribution.apiFingerprint());
+            result.put("exported",contribution.exportedNames().stream().sorted().toList());
+            result.put("unresolved",contribution.unresolvedTargets().stream().sorted().toList());
+            result.put("dependencies",dependencies);
+            attributedMemos.put(new SemanticMemoStore.MemoRecord(key.get(),certificate.get(),SemanticMemoStore.Coverage.COARSE,
+                    SemanticCompleteness.COMPLETE,SemanticMemoStore.Result.present(Json.MAPPER.writeValueAsBytes(result))));
+            attributedMemoWrites++;
+        }catch(Exception failure){attributedMemoFailures++;}
+    }
+    /**
+     * Restore a memoised attributed result after every static input matched and every certificate
+     * dependency is currently established equal (§74). The restored unit re-enters the coarse
+     * dependency graph, so later changes to its sources invalidate it conservatively.
+     */
+    private Envelope restoreAttributed(Path path,String hash,CompilerInputs.Snapshot observed){
+        if(attributedMemos==null)return null;
+        try{
+            var logical=LogicalSources.of(context);
+            var key=attributedStaticKey(path,hash,logical);if(key.isEmpty())return null;
+            String namespaceKey=namespaceKey();
+            var lookup=attributedMemos.lookup(key.get(),dependency->{
+                if(dependency.domain()==QueryProof.Domain.RESOLUTION_PATH&&dependency.value().startsWith("logical-source:")){
+                    var file=logical.physical(dependency.value().substring("logical-source:".length()));
+                    if(file.isEmpty())return Optional.empty();
+                    return Optional.of(logicalContentIdentity(documents.sourceHash(file.get())));
+                }
+                if(dependency.domain()==QueryProof.Domain.NAMESPACE&&dependency.value().equals(namespaceKey))
+                    return sourceRootsNamespaceIdentity(logical);
+                return Optional.empty();
+            });
+            if(!(lookup instanceof SemanticMemoStore.Lookup.Hit hit)){
+                attributedMemoMisses++;lastAttributedMemoMiss=((SemanticMemoStore.Lookup.Miss)lookup).reason();return null;
+            }
+            if(hit.record().completeness()!=SemanticCompleteness.COMPLETE
+                    ||!(hit.record().result() instanceof SemanticMemoStore.Result.Present present))return null;
+            var data=Json.MAPPER.readTree(present.value());
+            var dependencies=new LinkedHashSet<Path>();
+            for(var value:data.path("dependencies")){
+                var file=logical.physical(value.asText());if(file.isEmpty())return null;dependencies.add(file.get());
+            }
+            var problems=new ArrayList<CompilerPool.Problem>();
+            for(var value:data.path("diagnostics")){
+                String file=value.path("file").isNull()?null:path.toString();
+                problems.add(new CompilerPool.Problem(value.path("source").asText(null),value.path("tier").asInt(),value.path("code").asText(null),
+                        value.path("kind").asText(null),file,value.path("line").asLong(),value.path("character").asLong(),
+                        value.path("start").asLong(),value.path("end").asLong(),logical.toPhysicalText(value.path("message").asText(null))));
+            }
+            var exported=new LinkedHashSet<String>();data.path("exported").forEach(value->exported.add(value.asText()));
+            var unresolved=new LinkedHashSet<String>();data.path("unresolved").forEach(value->unresolved.add(value.asText()));
+            var contribution=new FileSemanticContribution(path,hash,data.path("api").asText(),dependencies,exported,unresolved);
+            var envelope=new Envelope(data.path("tier").asInt(),"live",false,null,List.of(),Map.of("diagnostics",List.copyOf(problems)));
+            this.dependencies.recordFocused(path,dependencies);resolveContribution(contribution);
+            String broad=broadDiagnosticStamp(observed);
+            diagnosticStore.put(path,hash,context.generation(),broad,envelope,contribution.apiFingerprint(),dependencies,contribution,broad);
+            attributedMemoRestores++;
+            return envelope;
+        }catch(Exception failure){attributedMemoFailures++;return null;}
+    }
+    private Map<String,Object> attributedMemoStatus(){
+        var result=new LinkedHashMap<String,Object>();
+        result.put("enabled",attributedMemos!=null);result.put("writes",attributedMemoWrites);result.put("restores",attributedMemoRestores);
+        result.put("misses",attributedMemoMisses);result.put("last_miss",lastAttributedMemoMiss);result.put("refusals",attributedMemoRefusals);
+        result.put("refusal_reasons",Map.copyOf(attributedMemoRefusalReasons));result.put("failures",attributedMemoFailures);
+        result.put("source_namespaces",sourceNamespaces.status());
+        if(attributedMemos!=null)result.put("store",attributedMemos.status());
+        return Collections.unmodifiableMap(result);
+    }
+
     public Map<String,Object> status(){
         var result=new LinkedHashMap<String,Object>(compiler.status());if(snapshots!=null)result.put("persistent_snapshots",snapshots.status());result.putAll(focusing.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("binding_computations",bindingComputations);result.put("classpath_fingerprints",classpathFingerprints);result.put("diagnostic_store",diagnosticStore.status());result.put("diagnostic_files_analysed",diagnosticFilesAnalysed);result.put("diagnostic_files_reused",diagnosticFilesReused);result.put("index_record_source_calls",indexWrites);result.put("index_record_source_ms",0.0);result.put("index_publish_enqueue_ms",Math.round(indexWriteNanos/1000.0)/1000.0);if(index!=null)result.put("source_publisher",index.sourcePublisherStatus());result.put("api_fingerprint_changes",apiFingerprintChanges);result.put("api_fingerprint_unchanged",apiFingerprintUnchanged);result.put("pending_api_files",dependencies.semantic().pendingCount());result.put("conditional_files",dependencies.semantic().conditionalCount());result.put("dependencies",dependencies.status());
         if(liveSourceState!=null)result.put("live_source_state",liveSourceState.status());
         if(context!=null)result.put("resident_semantic_state",semanticState().status());
         result.put("completion_requests",completionRequests);result.put("resident_description_loads",residentDescriptionLoads);result.put("resident_description_cache_hits",residentDescriptionCacheHits);
         result.put("source_proof_evidence",sourceProofEvidence.status());
+        result.put("attributed_memo",attributedMemoStatus());
         result.put("semantic_read_work",Map.of("document_proof_builds",documentProofBuilds,
                 "document_proof_checks",documentProofChecks,"source_semantic_repairs",sourceSemanticRepairs,
                 "hierarchy_recoveries",hierarchyRecoveries));

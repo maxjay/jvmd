@@ -29,6 +29,12 @@ public final class Application implements AutoCloseable {
     private volatile dev.jvmd.runtime.JavaRuntime.Selection debuggeeRuntime;
     private volatile java.util.concurrent.CompletableFuture<IndexService> index;
     private volatile IndexService bootstrappingIndex;
+    // §95 READY gating: the daemon is session-capable once persisted inventory is restored. The
+    // machine-wide repository reconciliation proceeds independently unless explicitly awaited.
+    private final boolean awaitRepositoryScan=Boolean.getBoolean("jvmd.ready.awaitRepositoryScan");
+    private final long constructedNanos=System.nanoTime();
+    private volatile long sessionCapableNanos=-1,repositoryReconciledNanos=-1;
+    private volatile boolean repositoryScanRequested;
     private final java.util.concurrent.atomic.AtomicBoolean closed=new java.util.concurrent.atomic.AtomicBoolean();
     private static final Set<String> COMPLETION_TYPE_KINDS=Set.of("class","interface","enum","record","annotation");
     private record TypeCompletionCache(String generation,String prefix,List<Map<String,Object>> rows,boolean complete) { }
@@ -48,6 +54,14 @@ public final class Application implements AutoCloseable {
         dispatcher.status("aot_cache", () -> AotStatus.runtime(Path.of(System.getProperty("jvmd.aot.log", config.stateDir().resolve("aot.log").toString()))));
         dispatcher.status("resolver", () -> resolver == null ? java.util.Map.of("maven_major", config.mavenMajor(), "initialized", false) : resolver.status());
         dispatcher.status("classpath_files",classpathFiles::status);
+        dispatcher.status("readiness",this::readiness);
+        dispatcher.decorate((method,envelope)->{
+            // A partially reconciled machine universe must not read as established absence (§5).
+            if(!envelope.source().equals("index")||method.startsWith("daemon.")||!repositoryScanRequested)return envelope;
+            var service=index==null||!index.isDone()||index.isCompletedExceptionally()?null:index.join();
+            return service==null||service.repositoryReconciled()?envelope
+                    :envelope.warn("index_reconciling: machine-wide repository inventory is still reconciling; results outside this session's resolved dependencies may be incomplete");
+        });
         dispatcher.status("source_namespaces",sourceNamespaces::status);
         dispatcher.register("session.open", (_, p) -> {
             awaitReady();
@@ -271,7 +285,7 @@ public final class Application implements AutoCloseable {
         var actors=diagnosticActors(session);
         return session.state("diagnostics",()->new WorkspaceAnalysisCoordinator(documents(session),file->diagnosticAnalyzer(session,file),session::yieldInteractive,file->externalDiagnostics(session,file),actors.parallelism()));
     }
-    private ModuleAnalyzerRegistry diagnosticActors(Session session){return session.state("diagnostic_actors",()->new ModuleAnalyzerRegistry(classpathFiles));}
+    private ModuleAnalyzerRegistry diagnosticActors(Session session){return session.state("diagnostic_actors",()->new ModuleAnalyzerRegistry(classpathFiles).memos(localMemos));}
     private DiagnosticEngine diagnosticAnalyzer(Session session,Path path)throws Exception{
         var graph=maintainedResolution(session);
         var contexts=session.state("analysis_contexts",WorkspaceContextManager::new);
@@ -836,7 +850,7 @@ public final class Application implements AutoCloseable {
         availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
         try(var span=RequestScope.stage("analyzer.configure")){analyzer.configure(context,availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));}
         analyzer.documents(documents(session));
-        analyzer.persistence(config.stateDir().resolve("diagnostics-v2").resolve(Hashing.sha256(session.root().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+        analyzer.persistence(config.stateDir().resolve("diagnostics-v2").resolve(Hashing.sha256(session.root().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))));analyzer.memos(localMemos);
         return analyzer;
         }
     }
@@ -1045,7 +1059,12 @@ public final class Application implements AutoCloseable {
                 service=new IndexService(storage,config.m2Repo());
                 bootstrappingIndex=service;
                 if(closed.get())throw new java.util.concurrent.CancellationException("Application closed during index bootstrap");
-                if(scan)service.start().join();
+                if(scan){
+                    repositoryScanRequested=true;
+                    var reconciliation=service.start().whenComplete((_,_)->repositoryReconciledNanos=System.nanoTime());
+                    if(awaitRepositoryScan)reconciliation.join();
+                }
+                sessionCapableNanos=System.nanoTime();
                 return service;
             } catch(Exception|LinkageError e){
                 if(service!=null)try{service.close();}catch(Exception close){e.addSuppressed(close);}
@@ -1058,7 +1077,19 @@ public final class Application implements AutoCloseable {
         }));
     }
     private IndexService index() { initializeIndex(false); return index.join(); }
+    private Map<String,Object> readiness(){
+        var result=new LinkedHashMap<String,Object>();
+        boolean capable=index==null||index.isDone()&&!index.isCompletedExceptionally();
+        result.put("session_capable",capable);result.put("await_repository_scan",awaitRepositoryScan);
+        result.put("repository_scan_requested",repositoryScanRequested);
+        result.put("repository_reconciled",repositoryReconciledNanos>=0);
+        if(sessionCapableNanos>=0)result.put("session_capable_ms",(sessionCapableNanos-constructedNanos)/1_000_000.0);
+        if(repositoryReconciledNanos>=0)result.put("repository_reconciled_ms",(repositoryReconciledNanos-constructedNanos)/1_000_000.0);
+        return result;
+    }
     private void awaitReady(){if(config.indexOnStart())index();}
+    /** Block until the daemon can serve sessions (storage open, persisted inventory restored). */
+    public void awaitSessionCapable(){awaitReady();}
     private void bindIndex(Session session,IndexService database)throws Exception {
         var graph=(Resolution)session.state("resolution");if(graph==null)return;
         String generation=graph.fingerprint()+":"+database.generation();

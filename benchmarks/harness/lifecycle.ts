@@ -115,7 +115,12 @@ export async function runLifecycle(o:LifecycleOptions){
     await c.open(PROJECT);await c.open(HELPER);await queries(c);phases.rss_bytes=rssBytes(pid());
     // The retained session keeps unsaved buffers across a reconnect, so close the edited documents (as an editor
     // closing its tabs without saving) before disconnecting: the reconnect's oracle reads the files on disk.
-    for(const name of [PROJECT,HELPER])c.close(name);
+    // The adapter clears a closed document's diagnostics only after the daemon has applied the close: wait for that, so
+    // the disconnect cannot overtake the close.
+    for(const name of [PROJECT,HELPER]){
+      const since=c.client.notifications.length,uri=c.file(name).uri;c.close(name);
+      await c.client.notification("textDocument/publishDiagnostics",p=>decodeURI(p.uri)===decodeURI(uri)&&p.diagnostics.length===0,since,30000);
+    }
     await running!.stop({closeSession:false});running=undefined;
     if(o.server==="jvmd"){
       // Reconnect, as when an editor window reopens: the daemon and its session are still warm.

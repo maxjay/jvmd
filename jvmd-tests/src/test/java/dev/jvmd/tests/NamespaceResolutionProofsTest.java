@@ -3,6 +3,7 @@ package dev.jvmd.tests;
 import dev.jvmd.core.Hash256;
 import dev.jvmd.analyzer.NamespaceResolutionProofs;
 import dev.jvmd.index.QueryProof;
+import dev.jvmd.index.SemanticKnowledge;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import org.junit.jupiter.api.Tag;
@@ -42,10 +43,10 @@ class NamespaceResolutionProofsTest {
         var plan=NamespaceResolutionProofs.plan(
                 "package p; import a.*; class Use {}", "Missing", null);
         Map<String,Hash256> identities=new HashMap<>();
-        NamespaceResolutionProofs.Lookup lookup=binary->Optional.ofNullable(identities.get(binary));
+        NamespaceResolutionProofs.Lookup lookup=binary->SemanticKnowledge.established(identities.get(binary));
 
-        var before=new QueryProof(NamespaceResolutionProofs.dependencies(plan,lookup));
-        var repeated=new QueryProof(NamespaceResolutionProofs.dependencies(plan,lookup));
+        var before=new QueryProof(NamespaceResolutionProofs.dependencies(plan,lookup).orElseThrow());
+        var repeated=new QueryProof(NamespaceResolutionProofs.dependencies(plan,lookup).orElseThrow());
         assertThat(before).isEqualTo(repeated);
         assertThat(before.dependencies().stream()
                 .filter(value->value.key().domain()==QueryProof.Domain.NEGATIVE_RESOLUTION)
@@ -53,7 +54,7 @@ class NamespaceResolutionProofsTest {
                 .containsExactly("Missing@a.Missing","Missing@java.lang.Missing","Missing@p.Missing");
 
         identities.put("a.Missing",hash("a-missing-v1"));
-        var after=new QueryProof(NamespaceResolutionProofs.dependencies(plan,lookup));
+        var after=new QueryProof(NamespaceResolutionProofs.dependencies(plan,lookup).orElseThrow());
         var difference=before.diff(after);
         assertThat(difference.added()).isEmpty();
         assertThat(difference.removed()).isEmpty();
@@ -64,7 +65,7 @@ class NamespaceResolutionProofsTest {
     @Test void resolvedWildcardWinnerLeavesOtherSearchedDomainsAsNegativeEvidence()throws Exception{
         var plan=NamespaceResolutionProofs.plan(
                 "package p; import a.*; import b.*; class Use {}", "Api", "a.Api");
-        var proof=new QueryProof(NamespaceResolutionProofs.dependencies(plan,binary->Optional.empty()));
+        var proof=new QueryProof(NamespaceResolutionProofs.dependencies(plan,binary->SemanticKnowledge.absent()).orElseThrow());
         assertThat(proof.dependencies().stream()
                 .filter(value->value.key().domain()==QueryProof.Domain.NEGATIVE_RESOLUTION)
                 .map(value->value.key().value()))

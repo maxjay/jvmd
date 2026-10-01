@@ -3,6 +3,7 @@ package dev.jvmd.analyzer;
 import dev.jvmd.core.CanonicalDigestWriter;
 import dev.jvmd.core.Hash256;
 import dev.jvmd.index.QueryProof;
+import dev.jvmd.index.SemanticKnowledge;
 import java.util.*;
 import java.util.regex.Pattern;
 
@@ -10,7 +11,8 @@ import java.util.regex.Pattern;
 public final class NamespaceResolutionProofs {
     @FunctionalInterface
     public interface Lookup {
-        Optional<Hash256> identity(String binaryName)throws Exception;
+        /** PRESENT declaration identity, established ABSENT, or UNKNOWN when currency is unproven. */
+        SemanticKnowledge identity(String binaryName)throws Exception;
     }
 
     public record Plan(String simpleName,String resolvedBinary,List<String> domains,boolean precise) {
@@ -100,7 +102,11 @@ public final class NamespaceResolutionProofs {
         return new Plan(simpleName,resolvedBinary,canonical,structurallyPrecise&&winnerKnown);
     }
 
-    public static List<QueryProof.Dependency> dependencies(Plan plan,Lookup lookup)throws Exception{
+    /**
+     * Namespace leaves for a precise plan, or empty when any searched domain is UNKNOWN. An unproven
+     * domain has no identity and therefore cannot participate in a reusable certificate.
+     */
+    public static Optional<List<QueryProof.Dependency>> dependencies(Plan plan,Lookup lookup)throws Exception{
         Objects.requireNonNull(plan);Objects.requireNonNull(lookup);
         if(!plan.precise())throw new IllegalArgumentException("Namespace plan is not precise");
         var result=new ArrayList<QueryProof.Dependency>();
@@ -110,7 +116,9 @@ public final class NamespaceResolutionProofs {
                 QueryProof.Domain.NAMESPACE,"plan:"+plan.simpleName(),planIdentity));
 
         for(String binary:plan.domains()){
-            Hash256 declaration=lookup.identity(binary).orElse(null);
+            var knowledge=Objects.requireNonNull(lookup.identity(binary));
+            if(!knowledge.known())return Optional.empty();
+            Hash256 declaration=knowledge.presentIdentity().orElse(null);
             Hash256 domain=CanonicalDigestWriter.digest(
                     "namespace-search-domain-v1",binary,declaration);
             result.add(new QueryProof.Dependency(QueryProof.Domain.NAMESPACE,"type:"+binary,domain));
@@ -121,7 +129,7 @@ public final class NamespaceResolutionProofs {
                         QueryProof.Domain.NEGATIVE_RESOLUTION,plan.simpleName()+"@"+binary,negative));
             }
         }
-        return List.copyOf(result);
+        return Optional.of(List.copyOf(result));
     }
 
     public static String simpleNameFromPlanKey(String key){

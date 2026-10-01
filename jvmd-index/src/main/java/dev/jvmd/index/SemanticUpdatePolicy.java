@@ -96,22 +96,73 @@ public final class SemanticUpdatePolicy {
             return path!=0?path:id.compareTo(other.id);
         }
     }
-    public record ProofEvaluation(QueryProof dependencies,QueryProof.Key output,Hash256 derivedIdentity) {
+    /**
+     * One registered reusable conclusion.
+     *
+     * {@code dependencies} is the proof certificate: <em>why</em> the result was valid. Its identity
+     * is the certificate identity and is appropriate for "are my inputs unchanged?" checks.
+     * {@code resultIdentity} is the canonical identity of the semantic <em>result</em> and is the only
+     * identity propagated downstream. Two different certificates may justify the same result; when
+     * a recomputation reproduces an equal result propagation stops (semantic fixed point).
+     */
+    public record ProofEvaluation(QueryProof dependencies,QueryProof.Key output,Hash256 resultIdentity) {
         public ProofEvaluation {
-            Objects.requireNonNull(dependencies);Objects.requireNonNull(output);Objects.requireNonNull(derivedIdentity);
+            Objects.requireNonNull(dependencies);Objects.requireNonNull(output);Objects.requireNonNull(resultIdentity);
             if(dependencies.dependencies().stream().anyMatch(value->value.key().equals(output)))
                 throw new IllegalArgumentException("A proof consumer cannot depend directly on its own output");
         }
+        /** Identity of the dependency certificate; never a substitute for {@link #resultIdentity()}. */
+        public Hash256 certificateIdentity(){return dependencies.identity();}
     }
+
+    /** Outcome of reconsidering one consumer whose inputs may have changed. */
+    public sealed interface Recomputation {
+        /** The result was recomputed now; its result identity decides whether propagation continues. */
+        record Evaluated(ProofEvaluation evaluation) implements Recomputation {
+            public Evaluated { Objects.requireNonNull(evaluation); }
+        }
+        /**
+         * Inputs changed but the result can only be recomputed by the consumer's owner on its next
+         * read (dependency validation on read). The registered certificate is retired; its output
+         * becomes UNKNOWN until the owner registers a new evaluation.
+         */
+        record Deferred(String reason) implements Recomputation { }
+        /** Recomputation is impossible; the caller must apply its conservative fallback. */
+        record Unavailable(String reason) implements Recomputation { }
+
+        static Recomputation evaluated(ProofEvaluation evaluation){return new Evaluated(evaluation);}
+        static Recomputation deferred(String reason){return new Deferred(reason);}
+        static Recomputation unavailable(String reason){return new Unavailable(reason);}
+        static Recomputation of(Optional<ProofEvaluation> evaluation){
+            return evaluation.<Recomputation>map(Evaluated::new).orElseGet(()->new Unavailable("recompute-unavailable"));
+        }
+    }
+    /** Compatibility recomputer: empty means unavailable (conservative fallback). */
     @FunctionalInterface
     public interface ProofRecomputer {
         Optional<ProofEvaluation> recompute(ProofConsumer consumer)throws Exception;
     }
+    @FunctionalInterface
+    public interface ProofRecomputation {
+        Recomputation recompute(ProofConsumer consumer)throws Exception;
+    }
+    /**
+     * Result of one propagation wave.
+     *
+     * {@code recomputations} counts recompute calls including any re-execution forced by a
+     * dependency discovered during the wave; {@code reordered} counts those re-executions.
+     */
     public record ProofPropagation(Set<ProofConsumer> recomputed,Set<ProofConsumer> changed,
-                                   Set<ProofConsumer> equal,Set<ProofConsumer> fallback) {
+                                   Set<ProofConsumer> equal,Set<ProofConsumer> fallback,
+                                   Set<ProofConsumer> deferred,int recomputations,int reordered) {
         public ProofPropagation {
             recomputed=ordered(recomputed);changed=ordered(changed);
-            equal=ordered(equal);fallback=ordered(fallback);
+            equal=ordered(equal);fallback=ordered(fallback);deferred=ordered(deferred);
+            if(recomputations<0||reordered<0)throw new IllegalArgumentException("Negative propagation counters");
+        }
+        public ProofPropagation(Set<ProofConsumer> recomputed,Set<ProofConsumer> changed,
+                                Set<ProofConsumer> equal,Set<ProofConsumer> fallback){
+            this(recomputed,changed,equal,fallback,Set.of(),recomputed.size(),0);
         }
         private static Set<ProofConsumer> ordered(Collection<ProofConsumer> values){
             return Collections.unmodifiableSet(new LinkedHashSet<>(new TreeSet<>(values)));
@@ -119,11 +170,15 @@ public final class SemanticUpdatePolicy {
         private static Set<Path> orderedPaths(Collection<Path> values){
             return Collections.unmodifiableSet(new LinkedHashSet<>(new TreeSet<>(values)));
         }
-        public Set<Path> changedFiles(){
-            var result=new TreeSet<Path>();changed.forEach(value->result.add(value.file()));return orderedPaths(result);
+        private static Set<Path> files(Collection<ProofConsumer> values){
+            var result=new TreeSet<Path>();values.forEach(value->result.add(value.file()));return orderedPaths(result);
         }
-        public Set<Path> fallbackFiles(){
-            var result=new TreeSet<Path>();fallback.forEach(value->result.add(value.file()));return orderedPaths(result);
+        public Set<Path> changedFiles(){return files(changed);}
+        public Set<Path> fallbackFiles(){return files(fallback);}
+        public Set<Path> deferredFiles(){return files(deferred);}
+        /** Consumers whose registered conclusion is no longer reusable as-is. */
+        public Set<ProofConsumer> invalidated(){
+            var result=new TreeSet<ProofConsumer>(changed);result.addAll(fallback);result.addAll(deferred);return ordered(result);
         }
     }
     public record ProofInvalidation(ProofPropagation propagation,Set<Path> coarseReanalyze) {
@@ -136,16 +191,32 @@ public final class SemanticUpdatePolicy {
      * Precise semantic dependency DAG.
      *
      * Leaf proof keys are maintained elsewhere (resident/indexed semantic state). This owner stores
-     * only which reusable conclusions depended on which proof keys and the derived identity each
-     * conclusion published. A leaf event enqueues direct consumers only when the supplied current
-     * leaf identity differs from the identity captured in that consumer's proof. Recomputed equal
-     * derived identities stop propagation immediately.
+     * only which reusable conclusions depended on which proof keys and the result identity each
+     * conclusion published.
+     *
+     * Propagation is height ordered: every consumer has a height strictly greater than the height
+     * of every registered producer of its dependencies, and a wave always recomputes the lowest
+     * pending height first. A consumer is therefore never recomputed before every changed producer
+     * it depends on has settled for the wave, so unequal path lengths cannot cause redundant
+     * recomputation. Dependencies discovered during recomputation re-establish heights; if a newly
+     * discovered producer is still pending, the consumer is re-queued above it rather than publishing
+     * a premature result.
+     *
+     * An unavailable current leaf identity (UNKNOWN) never compares equal to anything; it retires the
+     * affected consumers and, transitively, every consumer of their outputs.
      */
     public static final class ProofDag {
         private record Node(ProofEvaluation evaluation) { }
+        private record Pending(int height,ProofConsumer consumer) implements Comparable<Pending> {
+            @Override public int compareTo(Pending other){
+                int compared=Integer.compare(height,other.height);
+                return compared!=0?compared:consumer.compareTo(other.consumer);
+            }
+        }
         private final Map<ProofConsumer,Node> nodes=new HashMap<>();
         private final Map<QueryProof.Key,Set<ProofConsumer>> reverse=new HashMap<>();
         private final Map<QueryProof.Key,ProofConsumer> producers=new HashMap<>();
+        private final Map<ProofConsumer,Integer> heights=new HashMap<>();
 
         public void register(ProofConsumer consumer,ProofEvaluation evaluation){
             Objects.requireNonNull(consumer);Objects.requireNonNull(evaluation);
@@ -161,12 +232,14 @@ public final class SemanticUpdatePolicy {
             if(cycleFrom(consumer,new HashSet<>(),new HashSet<>())){
                 unlink(consumer,evaluation);nodes.remove(consumer);producers.remove(evaluation.output(),consumer);
                 if(previous!=null){nodes.put(consumer,previous);producers.put(previous.evaluation().output(),consumer);link(consumer,previous.evaluation());}
+                else heights.remove(consumer);
                 throw new IllegalArgumentException("Semantic proof dependencies must form a DAG");
             }
+            updateHeight(consumer);
         }
         public void remove(ProofConsumer consumer){
             var previous=nodes.remove(Objects.requireNonNull(consumer));if(previous==null)return;
-            unlink(consumer,previous.evaluation());producers.remove(previous.evaluation().output(),consumer);
+            unlink(consumer,previous.evaluation());producers.remove(previous.evaluation().output(),consumer);heights.remove(consumer);
         }
         public void removeFile(Path file){
             Path normalized=Objects.requireNonNull(file).toAbsolutePath().normalize();
@@ -186,46 +259,144 @@ public final class SemanticUpdatePolicy {
         public boolean hasConsumers(Path file){
             Path normalized=Objects.requireNonNull(file).toAbsolutePath().normalize();return nodes.keySet().stream().anyMatch(value->value.file().equals(normalized));
         }
+        /** Scheduling height; strictly above every registered producer of the consumer's dependencies. */
+        public OptionalInt height(ProofConsumer consumer){
+            Integer value=heights.get(consumer);return value==null?OptionalInt.empty():OptionalInt.of(value);
+        }
         public int size(){return nodes.size();}
-        public void clear(){nodes.clear();reverse.clear();producers.clear();}
+        public void clear(){nodes.clear();reverse.clear();producers.clear();heights.clear();}
 
+        /** Propagate established leaf identities. */
         public ProofPropagation propagate(Map<QueryProof.Key,Hash256> currentLeaves,ProofRecomputer recomputer)throws Exception{
             Objects.requireNonNull(currentLeaves);Objects.requireNonNull(recomputer);
-            var queue=new ArrayDeque<ProofConsumer>();var queued=new HashSet<ProofConsumer>();
-            for(var entry:currentLeaves.entrySet()){
-                for(var consumer:reverse.getOrDefault(entry.getKey(),Set.of())){
+            var observed=new TreeMap<QueryProof.Key,Optional<Hash256>>();
+            currentLeaves.forEach((key,value)->observed.put(key,Optional.of(Objects.requireNonNull(value))));
+            return propagateObserved(observed,consumer->Recomputation.of(recomputer.recompute(consumer)));
+        }
+
+        /**
+         * Propagate current leaf observations. An empty identity is UNKNOWN: affected consumers are
+         * retired (deferred to their owner's next read) without consulting the recomputer, because
+         * no equality can be established against unavailable evidence.
+         */
+        public ProofPropagation propagateObserved(Map<QueryProof.Key,Optional<Hash256>> currentLeaves,
+                                                  ProofRecomputation recomputer)throws Exception{
+            Objects.requireNonNull(currentLeaves);Objects.requireNonNull(recomputer);
+            var wave=new Wave(recomputer);
+            for(var entry:new TreeMap<>(currentLeaves).entrySet()){
+                var current=Objects.requireNonNull(entry.getValue(),"leaf observation");
+                for(var consumer:new ArrayList<>(reverse.getOrDefault(entry.getKey(),Set.of()))){
                     var node=nodes.get(consumer);if(node==null)continue;
+                    if(current.isEmpty()){wave.retire(consumer,false);continue;}
                     var captured=node.evaluation().dependencies().identity(entry.getKey().domain(),entry.getKey().value());
-                    if(captured.isEmpty()||!captured.get().equals(entry.getValue()))
-                        if(queued.add(consumer))queue.addLast(consumer);
+                    if(captured.isEmpty()||!captured.get().equals(current.get()))wave.enqueue(consumer);
                 }
             }
-            var recomputed=new TreeSet<ProofConsumer>();
-            var changed=new TreeSet<ProofConsumer>();
-            var equal=new TreeSet<ProofConsumer>();
-            var fallback=new TreeSet<ProofConsumer>();
-            int iterations=0,limit=Math.max(16,nodes.size()*Math.max(4,nodes.size()+1));
-            while(!queue.isEmpty()){
-                if(++iterations>limit)throw new IllegalStateException("Semantic proof propagation did not converge");
-                var consumer=queue.removeFirst();queued.remove(consumer);
-                var before=nodes.get(consumer);if(before==null)continue;
-                recomputed.add(consumer);
-                var result=recomputer.recompute(consumer);
-                if(result.isEmpty()){fallback.add(consumer);continue;}
-                var next=result.get();
-                Hash256 previousIdentity=before.evaluation().derivedIdentity();
-                QueryProof.Key previousOutput=before.evaluation().output();
-                register(consumer,next);
-                if(previousIdentity.equals(next.derivedIdentity())&&previousOutput.equals(next.output())){
-                    equal.add(consumer);continue;
-                }
-                changed.add(consumer);
-                var downstream=new LinkedHashSet<ProofConsumer>();
-                downstream.addAll(reverse.getOrDefault(previousOutput,Set.of()));
-                downstream.addAll(reverse.getOrDefault(next.output(),Set.of()));
-                for(var dependent:downstream)if(!dependent.equals(consumer)&&queued.add(dependent))queue.addLast(dependent);
+            return wave.run();
+        }
+
+        private final class Wave {
+            final ProofRecomputation recomputer;
+            final TreeSet<Pending> queue=new TreeSet<>();
+            final Map<ProofConsumer,Integer> queued=new HashMap<>();
+            final Set<ProofConsumer> recomputed=new TreeSet<>(),changed=new TreeSet<>(),equal=new TreeSet<>(),
+                    fallback=new TreeSet<>(),deferred=new TreeSet<>();
+            int recomputations,reordered;
+            Wave(ProofRecomputation recomputer){this.recomputer=recomputer;}
+
+            void enqueue(ProofConsumer consumer){
+                if(!nodes.containsKey(consumer))return;
+                int height=heights.getOrDefault(consumer,0);
+                Integer previous=queued.put(consumer,height);
+                if(previous!=null)queue.remove(new Pending(previous,consumer));
+                queue.add(new Pending(height,consumer));
             }
-            return new ProofPropagation(recomputed,changed,equal,fallback);
+            void dequeue(ProofConsumer consumer){
+                Integer previous=queued.remove(consumer);
+                if(previous!=null)queue.remove(new Pending(previous,consumer));
+            }
+            boolean pendingProducer(ProofConsumer consumer){
+                var node=nodes.get(consumer);if(node==null)return false;
+                for(var dependency:node.evaluation().dependencies().dependencies()){
+                    var producer=producers.get(dependency.key());
+                    if(producer!=null&&!producer.equals(consumer)&&queued.containsKey(producer))return true;
+                }
+                return false;
+            }
+            /**
+             * Retire a consumer whose result can no longer be established now. Its output becomes
+             * UNKNOWN, so every downstream consumer is retired with the same disposition.
+             */
+            void retire(ProofConsumer root,boolean unavailable){
+                var work=new ArrayDeque<ProofConsumer>();work.add(root);
+                while(!work.isEmpty()){
+                    var consumer=work.removeFirst();var node=nodes.get(consumer);if(node==null)continue;
+                    dequeue(consumer);
+                    var output=node.evaluation().output();
+                    remove(consumer);changed.remove(consumer);equal.remove(consumer);
+                    if(unavailable){deferred.remove(consumer);fallback.add(consumer);}
+                    else if(!fallback.contains(consumer))deferred.add(consumer);
+                    work.addAll(reverse.getOrDefault(output,Set.of()));
+                }
+            }
+            ProofPropagation run()throws Exception{
+                int iterations=0,limit=16+4*(nodes.size()+1)*(nodes.size()+1);
+                while(!queue.isEmpty()){
+                    if(++iterations>limit)throw new IllegalStateException("Semantic proof propagation did not converge");
+                    var pending=queue.pollFirst();queued.remove(pending.consumer());
+                    var consumer=pending.consumer();var before=nodes.get(consumer);if(before==null)continue;
+                    if(pendingProducer(consumer)){
+                        // Defensive: heights guarantee producers are polled first; never recompute early.
+                        updateHeight(consumer);enqueue(consumer);reordered++;continue;
+                    }
+                    recomputed.add(consumer);recomputations++;
+                    var outcome=recomputer.recompute(consumer);
+                    switch(outcome){
+                        case Recomputation.Unavailable ignored -> retire(consumer,true);
+                        case Recomputation.Deferred ignored -> retire(consumer,false);
+                        case Recomputation.Evaluated evaluated -> settle(consumer,before.evaluation(),evaluated.evaluation());
+                    }
+                }
+                return new ProofPropagation(recomputed,changed,equal,fallback,deferred,recomputations,reordered);
+            }
+            private void settle(ProofConsumer consumer,ProofEvaluation before,ProofEvaluation next){
+                try{register(consumer,next);}
+                catch(IllegalArgumentException invalid){retire(consumer,true);return;}
+                // A dependency discovered by this recomputation may belong to a producer that has not
+                // settled yet. Its height now exceeds that producer; publish only after it settles.
+                if(pendingProducer(consumer)){enqueue(consumer);reordered++;return;}
+                if(before.resultIdentity().equals(next.resultIdentity())&&before.output().equals(next.output())){
+                    if(!changed.contains(consumer))equal.add(consumer);
+                    return;
+                }
+                equal.remove(consumer);changed.add(consumer);
+                var downstream=new TreeSet<ProofConsumer>();
+                downstream.addAll(reverse.getOrDefault(before.output(),Set.of()));
+                for(var dependent:reverse.getOrDefault(next.output(),Set.of())){
+                    var node=nodes.get(dependent);if(node==null)continue;
+                    var captured=node.evaluation().dependencies().identity(next.output().domain(),next.output().value());
+                    if(captured.isEmpty()||!captured.get().equals(next.resultIdentity()))downstream.add(dependent);
+                }
+                downstream.remove(consumer);
+                downstream.forEach(this::enqueue);
+            }
+        }
+
+        /** Re-establish height(consumer) = 1 + max(height(producer)) and lift dependants above it. */
+        private void updateHeight(ProofConsumer root){
+            var work=new ArrayDeque<ProofConsumer>();work.add(root);
+            while(!work.isEmpty()){
+                var consumer=work.removeFirst();var node=nodes.get(consumer);if(node==null)continue;
+                int height=0;
+                for(var dependency:node.evaluation().dependencies().dependencies()){
+                    var producer=producers.get(dependency.key());
+                    if(producer!=null&&!producer.equals(consumer))height=Math.max(height,heights.getOrDefault(producer,0)+1);
+                }
+                Integer previous=heights.put(consumer,height);
+                if(previous!=null&&previous==height&&consumer!=root)continue;
+                for(var dependent:reverse.getOrDefault(node.evaluation().output(),Set.of()))
+                    if(!dependent.equals(consumer)&&heights.getOrDefault(dependent,-1)<=height)work.addLast(dependent);
+            }
         }
 
         private void link(ProofConsumer consumer,ProofEvaluation evaluation){
@@ -273,6 +444,7 @@ public final class SemanticUpdatePolicy {
             var propagation=proofs.propagate(leaves,recomputer);
             var coarseRoots=new LinkedHashSet<Path>(propagation.fallbackFiles());
             coarseRoots.addAll(propagation.changedFiles());
+            coarseRoots.addAll(propagation.deferredFiles());
             coarseRoots.add(changedFile);
             var reanalyze=new LinkedHashSet<Path>(coarseUnprovenClosure(coarseRoots));
             reanalyze.remove(changedFile);
